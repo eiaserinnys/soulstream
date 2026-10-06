@@ -1,10 +1,12 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ChatAttachment } from '../../hooks/useChatAttachments';
 import type { ChatBodyStyles } from './ChatBody.styles';
 import { DESIGN_ICON_SIZE } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
+import { useTokens } from '../../theme';
+import { getChatRowHorizontalInset } from './ChatBody.styles';
 
 interface Props {
   attachments: ChatAttachment[];
@@ -13,6 +15,7 @@ interface Props {
   textMutedColor: string;
   onRemove: (index: number) => void;
   disabled?: boolean;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function AttachmentChips({
@@ -22,14 +25,24 @@ export function AttachmentChips({
   textMutedColor,
   onRemove,
   disabled = false,
+  presentation = 'default',
 }: Props) {
+  const t = useTokens();
   if (attachments.length === 0) return null;
 
   return (
-    <View style={styles.attachmentRow}>
+    <View style={presentation === 'manuscript'
+      ? [styles.attachmentRow, { paddingHorizontal: getChatRowHorizontalInset(t, presentation) }]
+      : styles.attachmentRow}>
       {attachments.map((attachment, idx) => (
         <View key={`${attachment.path}-${idx}`} style={styles.attachmentTouchFrame}>
-          <View style={styles.attachmentChip}>
+          <View style={presentation === 'manuscript'
+            ? [styles.attachmentChip, {
+                backgroundColor: t.persistentSession.paper,
+                borderColor: t.persistentSession.line,
+                borderWidth: StyleSheet.hairlineWidth,
+              }]
+            : styles.attachmentChip}>
             <Ionicons
               name="document-outline"
               color={textSecondaryColor}

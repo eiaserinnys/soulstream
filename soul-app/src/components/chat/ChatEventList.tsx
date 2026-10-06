@@ -56,6 +56,7 @@ interface Props {
     averageItemLength: number;
   }) => void;
   presentation?: 'default' | 'manuscript';
+  manuscriptDividerLineColor?: string;
 }
 
 export const ChatEventList = memo(function ChatEventList({
@@ -80,7 +81,9 @@ export const ChatEventList = memo(function ChatEventList({
   onContentSizeChange,
   onScrollToIndexFailed,
   presentation = 'default',
+  manuscriptDividerLineColor,
 }: Props) {
+  const dividerLineColor = manuscriptDividerLineColor;
   const [activeSelection, setActiveSelection] = useState<{
     eventKey: string;
     model: MessageSelectionModel;
@@ -98,8 +101,9 @@ export const ChatEventList = memo(function ChatEventList({
       onRetryPending={onRetryPending} onRestorePending={onRestorePending}
       selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
       highlighted={item.key === highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
-      presentation={presentation} />
-  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
+      presentation={presentation}
+      {...(presentation === 'manuscript' ? { dividerLineColor } : {})} />
+  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation, dividerLineColor]);
 
   return (
     <FlatList
@@ -164,13 +168,15 @@ interface RowProps {
   selectText(eventKey: string, model: MessageSelectionModel): void;
   closeSelection(): void;
   presentation: 'default' | 'manuscript';
+  dividerLineColor?: string;
 }
 
 const ChatEventRow = memo(function ChatEventRow({
   item, session, sessionId, api, onRetryPending, onRestorePending,
-  selection, highlighted, selectText, closeSelection, presentation,
+  selection, highlighted, selectText, closeSelection, presentation, dividerLineColor,
 }: RowProps) {
-  if (item.kind === 'typing') return <TypingIndicator session={session} />;
+  if (item.kind === 'typing') return <TypingIndicator session={session}
+    {...(presentation === 'manuscript' ? { presentation } : {})} />;
   if (item.kind === 'turn-summary') {
     return (
       <SearchFocusHighlight active={highlighted}>
@@ -188,7 +194,8 @@ const ChatEventRow = memo(function ChatEventRow({
     );
   }
   if (item.kind === 'event' && item.event.type === 'generation_started') {
-    return <SearchFocusHighlight active={highlighted}><LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'} /></SearchFocusHighlight>;
+    return <SearchFocusHighlight active={highlighted}><LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
+      {...(dividerLineColor === undefined ? {} : { lineColor: dividerLineColor })} /></SearchFocusHighlight>;
   }
   if (item.kind === 'tool') {
     return (

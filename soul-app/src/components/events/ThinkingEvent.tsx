@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import type { SessionEvent } from '../../api/types';
 import { useTokens, type DesignTokens } from '../../theme';
+import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
 
 interface Props {
   event: SessionEvent;
@@ -22,7 +23,9 @@ export function ThinkingEvent({ event, presentation = 'default' }: Props) {
   if (!text) return null;
 
   return (
-    <View style={styles.wrapper}>
+    <View style={presentation === 'manuscript'
+      ? [styles.wrapper, { borderColor: t.persistentSession.line, backgroundColor: t.persistentSession.panel }]
+      : styles.wrapper}>
       <TouchableOpacity
         style={styles.header}
         onPress={() => setExpanded((v) => !v)}
@@ -47,7 +50,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     wrapper: {
       // ToolEvent와 동일하게 어시스턴트 말풍선 본문 시작 지점에 좌측 정렬한다.
       marginLeft: presentation === 'manuscript' ? 0 : t.assistantBubbleIndent,
-      marginRight: t.spacing.md,
+      marginRight: getChatRowHorizontalInset(t, presentation),
       marginVertical: 3,
       borderRadius: t.radius.sm,
       overflow: 'hidden',
@@ -57,7 +60,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: c.surfaceMuted,
+      backgroundColor: presentation === 'manuscript' ? t.persistentSession.panel : c.surfaceMuted,
       padding: t.spacing.sm,
       minHeight: t.hitTarget.min,
       gap: t.spacing.sm,
@@ -70,7 +73,10 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       fontStyle: 'italic',
     },
     chevron: { color: c.textPlaceholder, fontSize: t.chatFontSize.meta },
-    body: { backgroundColor: c.surfaceCode, padding: t.spacing.sm },
+    body: {
+      backgroundColor: presentation === 'manuscript' ? t.persistentSession.panel : c.surfaceCode,
+      padding: t.spacing.sm,
+    },
     text: {
       color: c.textMuted,
       fontSize: t.chatFontSize.meta,

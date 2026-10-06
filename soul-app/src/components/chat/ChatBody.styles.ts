@@ -3,6 +3,14 @@ import type { DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { createSessionVisualRoles } from '../../theme/sessionVisualRoles';
 
+export function getChatRowHorizontalInset(
+  t: DesignTokens,
+  presentation: 'default' | 'manuscript' = 'default',
+  defaultInset = t.spacing.md,
+): number {
+  return presentation === 'manuscript' ? 0 : defaultInset;
+}
+
 export const ADD_GLYPH_INSET_RATIO = 3 / 16; // Ionicons `add` stroke inset within its icon box.
 
 export function makeStyles(t: DesignTokens) {

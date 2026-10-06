@@ -10,6 +10,7 @@ import { createApiClient } from '../../api/client';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens, type DesignTokens } from '../../theme';
+import { getChatRowHorizontalInset } from './ChatBody.styles';
 import {
   approvalIdFromPayload,
   approvalIdFromResolved,
@@ -19,14 +20,16 @@ import {
 interface Props {
   event: SessionEvent;
   sessionId: string;
+  presentation?: 'default' | 'manuscript';
 }
 
 export const ChatToolApprovalRequest = memo(function ChatToolApprovalRequest({
   event,
   sessionId,
+  presentation = 'default',
 }: Props) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
   const payload = event.data as unknown as ToolApprovalPayload;
   const approvalId = approvalIdFromPayload(payload);
   const [localDecision, setLocalDecision] = useState<'approved' | 'rejected' | null>(null);
@@ -114,11 +117,11 @@ export const ChatToolApprovalRequest = memo(function ChatToolApprovalRequest({
   );
 });
 
-function makeStyles(t: DesignTokens) {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
   return StyleSheet.create({
     container: {
       flexDirection: 'row',
-      paddingHorizontal: t.spacing.md,
+      paddingHorizontal: getChatRowHorizontalInset(t, presentation),
       paddingVertical: t.spacing.xs,
       gap: t.spacing.sm,
     },

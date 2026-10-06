@@ -75,7 +75,7 @@ export function ChatComposer({
   const manuscriptAttachmentOutset = (composer.hitTarget - t.iconSize.action) / 2
     + t.iconSize.action * ADD_GLYPH_INSET_RATIO;
   const manuscriptSendOutset = (composer.hitTarget - composer.controlVisualSize) / 2;
-  const lineHeight = t.chatFontSize.body * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio) * fontScale;
+  const lineHeight = t.chatFontSize.body * t.lineHeightRatio * fontScale;
   const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
   const isEmpty = input.length === 0;
   const measurement = useTextInputContentHeight(input, lineHeight);
@@ -150,6 +150,7 @@ export function ChatComposer({
                 ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
                 : { height: inputHeight }),
               paddingVertical: inputPadding,
+              ...(presentation === 'manuscript' && stacked ? { paddingHorizontal: 0 } : {}),
               ...(Platform.OS === 'web'
                 ? isEmpty
                   ? { whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }

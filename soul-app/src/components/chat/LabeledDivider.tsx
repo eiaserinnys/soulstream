@@ -5,11 +5,12 @@ import { useTokens, type DesignTokens } from '../../theme';
 interface LabeledDividerProps {
   label: string;
   alignmentInset?: 'avatar' | 'content';
+  lineColor?: string;
 }
 
-export function LabeledDivider({ label, alignmentInset = 'avatar' }: LabeledDividerProps) {
+export function LabeledDivider({ label, alignmentInset = 'avatar', lineColor }: LabeledDividerProps) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t, alignmentInset), [t, alignmentInset]);
+  const styles = useMemo(() => makeStyles(t, alignmentInset, lineColor), [t, alignmentInset, lineColor]);
 
   return (
     <View style={styles.row}>
@@ -20,7 +21,7 @@ export function LabeledDivider({ label, alignmentInset = 'avatar' }: LabeledDivi
   );
 }
 
-function makeStyles(t: DesignTokens, alignmentInset: 'avatar' | 'content') {
+function makeStyles(t: DesignTokens, alignmentInset: 'avatar' | 'content', lineColor?: string) {
   return StyleSheet.create({
     row: {
       flexDirection: 'row',
@@ -33,7 +34,7 @@ function makeStyles(t: DesignTokens, alignmentInset: 'avatar' | 'content') {
       flex: 1,
       minWidth: t.uiSpacing.xl,
       height: StyleSheet.hairlineWidth,
-      backgroundColor: t.colors.border,
+      backgroundColor: lineColor ?? t.colors.border,
     },
     label: {
       flexShrink: 1,

@@ -5,6 +5,7 @@ import type { SessionEvent } from '../../api/types';
 import type { ToolTraceResponse } from '../../api/client';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
+import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
 
 interface Props {
   /** 도구 호출 이벤트 (event_type === 'tool_start'). 항상 존재한다. */
@@ -103,8 +104,14 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
         testID="tool-event-wrapper"
         style={[
           styles.wrapper,
+          ...(presentation === 'manuscript' ? [{
+            borderColor: t.persistentSession.line,
+            backgroundColor: t.persistentSession.panel,
+          }] : []),
           !expanded && styles.wrapperCollapsed,
-          isError && styles.wrapperError,
+          isError && (presentation === 'manuscript'
+            ? { backgroundColor: t.persistentSession.panel }
+            : styles.wrapperError),
           headerPressed && styles.wrapperPressed,
         ]}
       >
@@ -242,7 +249,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       // 빌드 17: 좌측 들여쓰기를 어시스턴트 말풍선의 본문 시작 지점에 정렬한다
       // (avatar 32pt + gap 8pt + spacing.md). 우측 마진은 일반 메시지와 동일.
       marginLeft: presentation === 'manuscript' ? 0 : t.assistantBubbleIndent,
-      marginRight: t.spacing.md,
+      marginRight: getChatRowHorizontalInset(t, presentation),
       minHeight: t.hitTarget.min,
       paddingTop: touchInsetTop,
       marginBottom: sessionRoles.chat.tool.rowGap - touchInsetTop,

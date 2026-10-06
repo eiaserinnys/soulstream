@@ -136,7 +136,7 @@ export function EventRenderer({
     case 'context_usage':
     case 'compact':
     case 'session_notification':
-      return <SystemEvent event={event} />;
+      return <SystemEvent event={event} {...(presentation === 'manuscript' ? { presentation } : {})} />;
     case 'input_request':
       return (
         <ChatInputRequest
@@ -145,11 +145,13 @@ export function EventRenderer({
         />
       );
     case 'tool_approval_requested':
-      if (!session?.agentSessionId) return <SystemEvent event={event} />;
+      if (!session?.agentSessionId) return <SystemEvent event={event}
+        {...(presentation === 'manuscript' ? { presentation } : {})} />;
       return (
         <ChatToolApprovalRequest
           event={event}
           sessionId={session.agentSessionId}
+          {...(presentation === 'manuscript' ? { presentation } : {})}
         />
       );
     // expired/responded는 store에 append되어 ChatInputRequest selector가 참조. 렌더 불필요.
@@ -162,7 +164,7 @@ export function EventRenderer({
     case 'realtime_status':
     case 'guardrail_tripwire':
     case 'error':
-      return <SystemEvent event={event} />;
+      return <SystemEvent event={event} {...(presentation === 'manuscript' ? { presentation } : {})} />;
     // history_sync는 SSE 연결 직후 baseline 메타 이벤트일 뿐 사용자 메시지가 아니다.
     case 'history_sync':
       return null;

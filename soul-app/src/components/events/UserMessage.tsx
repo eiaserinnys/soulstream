@@ -164,11 +164,9 @@ export function UserMessage({
               onDone={onSelectionDone}
               variant={variant === 'intervention' ? 'intervention' : 'user'}
               textStyle={textStyle}
-              actionColor={
-                variant === 'intervention'
-                  ? t.colors.interventionText
-                  : t.colors.accentText
-              }
+              actionColor={presentation === 'manuscript'
+                ? t.colors.textPrimary
+                : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText}
             />
           ) : (
             <Text
@@ -190,7 +188,9 @@ export function UserMessage({
             <Text
               testID="pending-message-failure-reason"
               numberOfLines={1}
-              style={[styles.pendingReason, textStyle]}
+              style={presentation === 'manuscript'
+                ? [styles.pendingReason, textStyle, { color: t.colors.errorText }]
+                : [styles.pendingReason, textStyle]}
             >
               {failureReason ?? '전달을 확인하지 못했습니다'}
             </Text>
@@ -203,7 +203,9 @@ export function UserMessage({
                   style={styles.pendingAction}
                   onPress={onRetry}
                 >
-                  <Text style={[styles.pendingActionText, { color: variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
+                  <Text style={[styles.pendingActionText, { color: presentation === 'manuscript'
+                    ? t.colors.textPrimary
+                    : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
                     다시 보내기
                   </Text>
                 </Pressable>
@@ -216,7 +218,9 @@ export function UserMessage({
                   style={styles.pendingAction}
                   onPress={onRestore}
                 >
-                  <Text style={[styles.pendingActionText, { color: variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
+                  <Text style={[styles.pendingActionText, { color: presentation === 'manuscript'
+                    ? t.colors.textPrimary
+                    : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
                     입력창으로
                   </Text>
                 </Pressable>
@@ -304,7 +308,7 @@ function makeStyles(t: DesignTokens) {
       alignSelf: 'flex-end',
     },
     manuscriptText: {
-      color: c.textSecondary,
+      color: c.textMuted,
       fontSize: t.chatFontSize.body,
       lineHeight: t.chatFontSize.body * 1.6,
       textAlign: 'right',

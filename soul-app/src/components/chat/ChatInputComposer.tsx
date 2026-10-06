@@ -280,6 +280,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
       textMutedColor={t.colors.textMuted}
       onRemove={removeAttachment}
       disabled={inputDisabled}
+      {...(presentation === 'manuscript' ? { presentation } : {})}
     />
 
     <ChatComposer
