@@ -239,6 +239,64 @@ function findDataIndexByKey(key: React.Key): number {
   return virtuosoData().findIndex((_, index) => itemKeyAt(index) === key);
 }
 
+function reportAtBottom(atBottom: boolean): void {
+  const callback = virtuosoMock.props?.atBottomStateChange as
+    | ((value: boolean) => void)
+    | undefined;
+  if (!callback) throw new Error("Virtuoso atBottom callback이 없습니다.");
+  callback(atBottom);
+}
+
+function configureScroller(
+  container: HTMLElement,
+  { scrollHeight, clientHeight, scrollTop }: {
+    scrollHeight: number;
+    clientHeight: number;
+    scrollTop: number;
+  },
+) {
+  const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]');
+  if (!scroller) throw new Error("Virtuoso scroller mock이 없습니다.");
+  Object.defineProperty(scroller, "scrollHeight", {
+    configurable: true,
+    writable: true,
+    value: scrollHeight,
+  });
+  Object.defineProperty(scroller, "clientHeight", {
+    configurable: true,
+    value: clientHeight,
+  });
+  Object.defineProperty(scroller, "scrollTop", {
+    configurable: true,
+    writable: true,
+    value: scrollTop,
+  });
+  const scrollTo = vi.fn((optionsOrX?: ScrollToOptions | number, y?: number) => {
+    const top = typeof optionsOrX === "number" ? y : optionsOrX?.top;
+    if (top !== undefined) scroller.scrollTop = top;
+  });
+  scroller.scrollTo = scrollTo;
+  return {
+    scroller,
+    scrollTo,
+    setScrollHeight(value: number) {
+      Object.defineProperty(scroller, "scrollHeight", {
+        configurable: true,
+        writable: true,
+        value,
+      });
+    },
+  };
+}
+
+async function addLiveUserMessage(eventId: number): Promise<void> {
+  flushSync(() => {
+    const message = makeUserMessage(eventId);
+    useDashboardStore.getState().processEvent(message.event, eventId);
+  });
+  await flushPassiveEffects();
+}
+
 function flushPassiveEffects(): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, 0);
@@ -328,6 +386,116 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(chatInputMock.props?.presentation).toBe("manuscript");
     expect(chatInputMock.props?.composerAnchorRef).toBe(composerAnchorRef);
   });
+
+  it("(가) 원고형은 atBottom 안에서 위쪽 휠 뒤 새 메시지가 오면 하단을 유지한다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    const geometry = configureScroller(container, {
+      scrollHeight: 800,
+      clientHeight: 400,
+      scrollTop: 400,
+    });
+    flushSync(() => reportAtBottom(true));
+    await flushPassiveEffects();
+
+    flushSync(() => {
+      geometry.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+    });
+    expect(virtuosoMock.props?.followOutput).toBe(false);
+    geometry.setScrollHeight(820);
+
+    await addLiveUserMessage(1001);
+
+    expect(container.textContent).not.toContain("New Messages");
+    expect(virtuosoMock.props?.followOutput).toBeTypeOf("function");
+    expect(geometry.scrollTo).toHaveBeenCalledWith({ top: 820, behavior: "auto" });
+    expect(geometry.scroller.scrollTop).toBe(820);
+  });
+
+  it("(나) 원고형은 아래로 돌아오면 따라가기를 다시 켠다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    const geometry = configureScroller(container, {
+      scrollHeight: 800,
+      clientHeight: 400,
+      scrollTop: 400,
+    });
+    flushSync(() => reportAtBottom(true));
+    await flushPassiveEffects();
+
+    flushSync(() => {
+      geometry.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+      reportAtBottom(false);
+    });
+    expect(virtuosoMock.props?.followOutput).toBe(false);
+    geometry.scroller.scrollTop = 400;
+    flushSync(() => reportAtBottom(true));
+    await flushPassiveEffects();
+    geometry.setScrollHeight(820);
+
+    await addLiveUserMessage(1001);
+
+    expect(container.textContent).not.toContain("New Messages");
+    expect(virtuosoMock.props?.followOutput).toBeTypeOf("function");
+    expect(geometry.scrollTo).toHaveBeenCalledWith({ top: 820, behavior: "auto" });
+    expect(geometry.scroller.scrollTop).toBe(820);
+  });
+
+  it("(다) 원고형은 하단 판정 밖에서 새 메시지가 오면 버튼을 보인다", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    const geometry = configureScroller(container, {
+      scrollHeight: 800,
+      clientHeight: 400,
+      scrollTop: 400,
+    });
+    flushSync(() => reportAtBottom(true));
+    await flushPassiveEffects();
+
+    flushSync(() => {
+      geometry.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+      geometry.scroller.scrollTop = 250;
+      reportAtBottom(false);
+    });
+    geometry.setScrollHeight(820);
+
+    await addLiveUserMessage(1001);
+
+    expect(container.textContent).toContain("New Messages");
+    expect(virtuosoMock.props?.followOutput).toBe(false);
+    expect(geometry.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it.each(["threshold", "returned-to-bottom"] as const)(
+    "(라) 기본 모양은 %s 경로에서 기존처럼 새 메시지 버튼을 보인다",
+    async (scenario) => {
+      useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+      ({ container, root } = await renderChatView({ presentation: "default" }));
+      const geometry = configureScroller(container, {
+        scrollHeight: 800,
+        clientHeight: 400,
+        scrollTop: 400,
+      });
+      flushSync(() => reportAtBottom(true));
+      await flushPassiveEffects();
+
+      flushSync(() => {
+        geometry.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+        if (scenario === "returned-to-bottom") {
+          geometry.scroller.scrollTop = 400;
+          reportAtBottom(false);
+          reportAtBottom(true);
+        }
+      });
+      geometry.setScrollHeight(820);
+
+      await addLiveUserMessage(1001);
+
+      expect(container.textContent).toContain("New Messages");
+      expect(virtuosoMock.props?.followOutput).toBe(false);
+      expect(geometry.scrollTo).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ["manuscript", false, true, 1],
