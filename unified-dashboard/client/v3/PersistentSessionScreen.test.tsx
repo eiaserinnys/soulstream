@@ -5,25 +5,25 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useDashboardStore } from '@seosoyoung/soul-ui/stores/dashboard-store';
 import { PersistentSessionScreen } from './PersistentSessionScreen';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn(), get: vi.fn(), update: vi.fn() }));
 vi.mock('@seosoyoung/soul-ui', async () => {
  const real = await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
  return { ...real, LiquidGlassProvider: ({children}:any) => children, useAuth: () => ({ user:{email:'test@example.com'},refreshAuthStatus:vi.fn() }), useUserPreferencesSync:vi.fn(), useInitialCatalogLoad:vi.fn(), useSessionProvider:(o:any)=> {mocks.provider(o);return {synchronizedSessionKey:o.sessionKey}}, initTheme:vi.fn() };
 });
-vi.mock('../lib/persistent-sessions',()=>({createPersistentSessionsApi:()=>({list:mocks.list})}));
+vi.mock('../lib/persistent-sessions',()=>({createPersistentSessionsApi:()=>({list:mocks.list,get:mocks.get,update:mocks.update})}));
 vi.mock('../providers',()=>({orchestratorSessionProvider:{fetchSessions:mocks.fetchSessions}}));
 vi.mock('../dashboard-navigation',()=>({navigateDashboard:(...args:any[])=>mocks.navigate(...args)}));
 vi.mock('./use-v3-live-data-plane',()=>({useV3LiveDataPlane:vi.fn()}));
 vi.mock('../hooks/useNodes',()=>({useNodes:vi.fn()}));
 vi.mock('./use-session-node-connectivity',()=>({useSessionNodeConnectivity:()=>({nodes:new Map([['node-1',{status:'connected'}]])})}));
-vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:()=> <header/>}));
+vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header><span data-testid="scene-title">{p.sessionName}</span><button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
 vi.mock('../components/ConfigModal',()=>({ConfigModal:(p:any)=>p.open?<div data-testid="config" data-tab={p.initialTab}/>:null}));
 vi.mock('./PersistentSessionChatView',()=>({PersistentSessionChatView:(p:any)=><div data-testid="chat" data-session={p.sessionId} data-upload={p.fileUploadUrl} data-history={p.historyEnabled}/> }));
-vi.mock('../components/PersistentSessionSettingsDialog',()=>({PersistentSessionSettingsDialog:()=>null}));
+
 let host:HTMLDivElement,root:Root;
 const session=(id:string)=>({session_id:id,display_name:id,persistent:true,node_id:'node-1',settings:{default_model:{model_preset:null},show_character:true}});
 beforeEach(()=>{vi.clearAllMocks();localStorage.clear();useDashboardStore.getState().setActiveSession(null);host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
-afterEach(()=>{act(()=>root.unmount());host.remove();});
+afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<PersistentSessionScreen sessionId={id}/>);});}
 it('opens the existing add screen for zero PAS without creating a session',async()=>{mocks.list.mockResolvedValue({sessions:[]});await mount();expect(host.querySelector('[data-testid="config"]')?.getAttribute('data-tab')).toBe('persistent');expect(mocks.fetchSessions).not.toHaveBeenCalled();});
 it('provides the common frame spacing tokens to reused card components',async()=>{
@@ -44,4 +44,10 @@ it('keeps the same chat and selected card summary while hosting the explicit det
 });
 it('clears the PAS tree and settings when changing PAS or leaving its route',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('one');act(()=>useDashboardStore.setState({tree:{id:'old-pas-tree'} as any,persistentSessionDisplaySettings:{sessionId:'one',showCharacter:true} as any}));await mount('two');expect(useDashboardStore.getState().activeSessionKey).toBe('two');expect(useDashboardStore.getState().tree).toBeNull();expect(useDashboardStore.getState().persistentSessionDisplaySettings).toBeNull();await act(()=>root.render(<div/>));expect(useDashboardStore.getState().activeSessionKey).toBeNull();expect(useDashboardStore.getState().activeSessionSummary).toBeNull();
+});
+
+it('publishes a settings name save to the header without remounting chat',async()=>{
+ const resource={...session('one'),display_name:'이전 이름',agent_id:'agent',agent_name:'에이전트',settings:{default_model:{model_preset:'sol',reasoning_effort:'high'},fallback_model:null,show_character:true,animate_character:true,show_generation_separator:true,show_jev_candidates:true,show_turn_usage:true},runtime:{current_model:{model_preset:'sol',reasoning_effort:'high',model:'sol'},pending:null}};
+ mocks.list.mockResolvedValue({sessions:[resource]});mocks.get.mockResolvedValue({session:resource});mocks.update.mockImplementation(async(_id:string,patch:any)=>({session:{...resource,display_name:patch.display_name}}));vi.stubGlobal('fetch',vi.fn(async()=>Response.json({messages:[],next_cursor:null,presets:[]})));
+ await mount('one');const chat=host.querySelector('[data-testid="chat"]');await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='PAS 설정')!.click());const input=document.body.querySelector<HTMLInputElement>('input[aria-label="세션 이름"]')!;expect(input).not.toBeNull();await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'새 이름');input.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>[...document.body.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='변경 저장')!.click());expect(mocks.update).toHaveBeenCalledWith('one',expect.objectContaining({display_name:'새 이름'}));expect(host.querySelector('[data-testid="scene-title"]')?.textContent).toBe('새 이름');expect(host.querySelector('[data-testid="chat"]')).toBe(chat);expect(mocks.fetchSessions).toHaveBeenCalledOnce();
 });
