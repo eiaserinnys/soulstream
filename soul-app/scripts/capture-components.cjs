@@ -550,6 +550,43 @@ async function runManuscriptChatCaptures(browser, base) {
   }
 }
 
+async function runDefaultCardDetailCapture(browser, base) {
+  const name = 'card-detail-default-iphone-light';
+  const viewport = { width: 390, height: 844 };
+  const context = await browser.newContext({ viewport, screen: viewport, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  page.on('pageerror', (error) => result.errors.push({ name, message: error.message }));
+  page.on('console', (msg) => {
+    if (msg.type() === 'warning' || msg.type() === 'error') result.warnings.push({ name, message: msg.text() });
+  });
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== base) {
+      result.errors.push({ name, message: 'External request: ' + route.request().url() });
+      await route.abort(); return;
+    }
+    await route.continue();
+  });
+  const url = new URL(base + prefix + 'index.html');
+  url.searchParams.set('section', 'cardHome');
+  url.searchParams.set('theme', 'light');
+  await page.goto(url.toString());
+  await page.getByTestId('review-card-home').waitFor();
+  await page.getByTestId('postit-open-public-review').click();
+  await page.getByTestId('card-detail-container').waitFor();
+  await page.getByTestId('settings-segment-card-detail-items').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  const geometry = await page.getByTestId('card-detail-container').evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+  await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+  result.viewports.push({ name, viewport, theme: 'light', sample: 'cardHome-default-detail', geometry });
+  result.interactions.push(`${name}: 카드 홈 검수 창에서 기본 CardDetailContent 열기`);
+  await context.close();
+}
+
 async function runPersistentTaskCaptures(browser, base) {
   const scenarios = [
     { name: 'tasks-iphone-light', width: 390, height: 844, theme: 'light', sample: 'list', mobile: true },
@@ -693,6 +730,8 @@ async function runPersistentTaskCaptures(browser, base) {
       await runCardChecksCaptures(browser, base);
     } else if (captureMode === 'manuscript-chat') {
       await runManuscriptChatCaptures(browser, base);
+    } else if (captureMode === 'card-detail-default') {
+      await runDefaultCardDetailCapture(browser, base);
     } else if (captureMode === 'persistent-tasks' || captureMode === 'persistent-standard-row') {
       await runPersistentTaskCaptures(browser, base);
     } else {
