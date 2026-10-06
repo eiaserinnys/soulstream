@@ -180,6 +180,29 @@ const ChatEventRow = memo(function ChatEventRow({
       </SearchFocusHighlight>
     );
   }
+  if (item.kind === 'turn-usage') {
+    return (
+      <SearchFocusHighlight active={highlighted}>
+        <>
+          <EventContextMenu sessionId={sessionId} event={item.event}>
+            <TurnUsageCaptionRow
+              title={item.title}
+              expandedTitle={item.expandedTitle}
+              lines={item.lines}
+              presentation={presentation}
+            />
+          </EventContextMenu>
+          {item.summaries?.map((summary) => (
+            <TurnSummaryCaption
+              key={summary.key}
+              content={summary.content}
+              presentation={presentation}
+            />
+          ))}
+        </>
+      </SearchFocusHighlight>
+    );
+  }
   if (item.kind === 'jev-candidates') {
     return (
       <SearchFocusHighlight active={highlighted}>
@@ -250,6 +273,14 @@ const ChatEventRow = memo(function ChatEventRow({
             onSelectionDone={closeSelection}
           />
         </EventContextMenu>
+        {item.turnUsageCaption
+          ? <TurnUsageCaptionRow
+            title={item.turnUsageCaption.title}
+            expandedTitle={item.turnUsageCaption.expandedTitle}
+            lines={item.turnUsageCaption.lines}
+            presentation={presentation}
+          />
+          : null}
         {item.summaries?.map((summary) => (
           <TurnSummaryCaption
             key={summary.key}
@@ -262,6 +293,31 @@ const ChatEventRow = memo(function ChatEventRow({
   );
 
 });
+
+function TurnUsageCaptionRow({
+  title,
+  expandedTitle,
+  lines,
+  presentation,
+}: {
+  title: string;
+  expandedTitle?: string;
+  lines: string[];
+  presentation: 'default' | 'manuscript';
+}) {
+  return (
+    <CollapsibleCaption
+      title={title}
+      {...(expandedTitle !== undefined ? { expandedTitle } : {})}
+      initiallyCollapsed
+      alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
+    >
+      {lines.map((line, index) => (
+        <CollapsibleCaptionLine key={`${title}-${index}`} wrap>{line}</CollapsibleCaptionLine>
+      ))}
+    </CollapsibleCaption>
+  );
+}
 
 const itemKey = (item: ChatRenderItem) => item.key;
 

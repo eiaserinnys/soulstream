@@ -6,6 +6,7 @@ import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../th
 
 interface CollapsibleCaptionProps {
   title: string;
+  expandedTitle?: string;
   children: ReactNode;
   initiallyCollapsed?: boolean;
   align?: 'start' | 'end';
@@ -16,6 +17,7 @@ const CaptionAlignContext = createContext<'start' | 'end'>('start');
 
 export function CollapsibleCaption({
   title,
+  expandedTitle,
   children,
   initiallyCollapsed = true,
   align = 'start',
@@ -43,11 +45,12 @@ export function CollapsibleCaption({
           <View style={styles.contentStack}>
             <View style={[styles.titleRow, pressed && styles.titlePressed]}>
               <Text
-                numberOfLines={1}
-                ellipsizeMode="tail"
+                {...(expanded && expandedTitle !== undefined
+                  ? {}
+                  : { numberOfLines: 1 as const, ellipsizeMode: 'tail' as const })}
                 style={[styles.title, pressed && styles.titlePressedText]}
               >
-                {title}
+                {expanded ? expandedTitle ?? title : title}
               </Text>
               <DisclosureIcon
                 expanded={expanded}
@@ -63,12 +66,21 @@ export function CollapsibleCaption({
 }
 
 /** Passive text only: the caption's single touch target owns all press behavior. */
-export function CollapsibleCaptionLine({ children }: { children: ReactNode }) {
+export function CollapsibleCaptionLine({
+  children,
+  wrap = false,
+}: {
+  children: ReactNode;
+  wrap?: boolean;
+}) {
   const t = useTokens();
   const align = useContext(CaptionAlignContext);
   const styles = useMemo(() => makeStyles(t, align, 'avatar'), [t, align]);
   return (
-    <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contentLine}>
+    <Text
+      {...(wrap ? {} : { numberOfLines: 1 as const, ellipsizeMode: 'tail' as const })}
+      style={styles.contentLine}
+    >
       {children}
     </Text>
   );

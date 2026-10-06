@@ -414,10 +414,12 @@ async function runCardChecksCaptures(browser, base) {
 
 async function runManuscriptChatCaptures(browser, base) {
   const scenarios = [
-    { name: 'iphone-light', width: 390, height: 844, theme: 'light', mobile: true },
-    { name: 'iphone-dark', width: 390, height: 844, theme: 'dark', mobile: true },
-    { name: 'ipad-light', width: 834, height: 1194, theme: 'light', mobile: false },
-    { name: 'ipad-dark', width: 834, height: 1194, theme: 'dark', mobile: false },
+    { name: 'iphone-light-350', width: 390, height: 844, columnWidth: 350, theme: 'light', mobile: true },
+    { name: 'iphone-dark-350', width: 390, height: 844, columnWidth: 350, theme: 'dark', mobile: true },
+    { name: 'ipad-light-400', width: 834, height: 1194, columnWidth: 400, theme: 'light', mobile: false },
+    { name: 'ipad-dark-400', width: 834, height: 1194, columnWidth: 400, theme: 'dark', mobile: false },
+    { name: 'ipad-light-480', width: 834, height: 1194, columnWidth: 480, theme: 'light', mobile: false },
+    { name: 'ipad-dark-480', width: 834, height: 1194, columnWidth: 480, theme: 'dark', mobile: false },
   ];
   for (const scenario of scenarios) {
     const context = await browser.newContext({
@@ -434,7 +436,7 @@ async function runManuscriptChatCaptures(browser, base) {
     await page.addInitScript((theme) => {
       localStorage.setItem('soul-app-settings', JSON.stringify({ state: { appearance: theme }, version: 0 }));
     }, scenario.theme);
-    await page.goto(`${base}${prefix}index.html?section=chat&theme=${scenario.theme}`);
+    await page.goto(`${base}${prefix}index.html?section=chat&theme=${scenario.theme}&pasColumnWidth=${scenario.columnWidth}`);
     await page.getByTestId('component-review').waitFor();
     const sample = page.getByTestId('manuscript-presentation-scroll');
     await sample.scrollIntoViewIfNeeded();
@@ -542,10 +544,119 @@ async function runManuscriptChatCaptures(browser, base) {
     await sample.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
     await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript.png`), fullPage: true });
     const manuscriptGeometry = await captureGeometry('manuscript');
+    const persistentProjection = page.getByTestId('review-persistent-chat-projection');
+    await persistentProjection.scrollIntoViewIfNeeded();
+    const chatColumns = page.getByTestId('review-persistent-chat-columns');
+    const defaultColumn = page.getByTestId('review-persistent-column-default');
+    const manuscriptColumn = page.getByTestId('review-persistent-column-manuscript');
+    const scrollColumnsTo = async (side) => chatColumns.evaluate((element, target) => {
+      element.scrollLeft = target === 'manuscript' ? element.scrollWidth : 0;
+    }, side);
+    await scrollColumnsTo('default');
+    const defaultTurnLine = defaultColumn.getByText(/— 턴 완료 · 입력 645,367/);
+    await defaultTurnLine.waitFor();
+    if (scenario.name === 'iphone-light-350') {
+      await defaultColumn.screenshot({ path: path.join(output, `${scenario.name}-pas-default-invariant.png`) });
+    }
+    result.interactions.push(`${scenario.name}: 기본 ChatBody의 기존 턴 완료 줄 ${await defaultTurnLine.textContent()}`);
+
+    await scrollColumnsTo('manuscript');
+    if (scenario.name === 'iphone-light-350') {
+      await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-pas-manuscript-collapsed.png`) });
+    }
+    const usageTitle = '컨텍스트 약 63.0% · 정가 $0.62';
+    const usageCaption = manuscriptColumn.getByRole('button', { name: usageTitle, exact: true });
+    await usageCaption.waitFor();
+    assert.equal(await manuscriptColumn.getByText('컨텍스트 약 630,000 / 1,000,000 (63.0%)', { exact: true }).count(), 0);
+    await usageCaption.scrollIntoViewIfNeeded();
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-collapsed.png`) });
+    await usageCaption.click();
+    const firstContextLine = manuscriptColumn.getByText('컨텍스트 약 630,000 / 1,000,000 (63.0%)', { exact: true });
+    const firstStatsLine = manuscriptColumn.getByText(
+      '턴 완료 · 입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $17.91)',
+      { exact: true },
+    );
+    await firstContextLine.waitFor();
+    await firstStatsLine.waitFor();
+    assert.equal(await usageCaption.getByText(usageTitle, { exact: true }).count(), 0);
+    const measureWrappedLine = async (line) => line.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        text: element.textContent,
+        width: box.width,
+        height: box.height,
+        scrollWidth: element.scrollWidth,
+        scrollHeight: element.scrollHeight,
+        lineHeight: Number.parseFloat(style.lineHeight),
+        textOverflow: style.textOverflow,
+        whiteSpace: style.whiteSpace,
+      };
+    });
+    const firstLineMetrics = await measureWrappedLine(firstStatsLine);
+    assert.equal(firstLineMetrics.text, '턴 완료 · 입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $17.91)');
+    assert.ok(firstLineMetrics.scrollWidth <= firstLineMetrics.width + 1, JSON.stringify(firstLineMetrics));
+    assert.ok(firstLineMetrics.height > firstLineMetrics.lineHeight + 1, JSON.stringify(firstLineMetrics));
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-expanded-turn1.png`) });
+
+    const secondTurnTitle = '컨텍스트 22.0% · 정가 $1.40';
+    const secondTurnCaption = manuscriptColumn.getByRole('button', { name: secondTurnTitle, exact: true });
+    const costOnlyCaption = manuscriptColumn.getByRole('button', { name: '정가 $0.80', exact: true });
+    const tokenOnlyCaption = manuscriptColumn.getByRole('button', { name: '입력 150 · 출력 35', exact: true });
+    const errorUsageCaption = manuscriptColumn.getByRole('button', { name: '컨텍스트 약 41.5%', exact: true });
+    assert.equal(await secondTurnCaption.count(), 1);
+    assert.equal(await costOnlyCaption.count(), 1);
+    assert.equal(await tokenOnlyCaption.count(), 1);
+    assert.equal(await errorUsageCaption.count(), 1);
+    await secondTurnCaption.scrollIntoViewIfNeeded();
+    await secondTurnCaption.click();
+    const secondContextLine = manuscriptColumn.getByText('컨텍스트 220,000 / 1,000,000 (22.0%)', { exact: true });
+    const secondStatsLine = manuscriptColumn.getByText(
+      '턴 완료 · 입력 1,304,874 (캐시 1,304,862) · 출력 18,244 · 정가 $1.40 (세션 $1,234.50)',
+      { exact: true },
+    );
+    await secondContextLine.waitFor();
+    await secondStatsLine.waitFor();
+    assert.equal(await secondTurnCaption.getByText(secondTurnTitle, { exact: true }).count(), 0);
+    const secondLineMetrics = await measureWrappedLine(secondStatsLine);
+    assert.equal(secondLineMetrics.text, '턴 완료 · 입력 1,304,874 (캐시 1,304,862) · 출력 18,244 · 정가 $1.40 (세션 $1,234.50)');
+    assert.ok(secondLineMetrics.scrollWidth <= secondLineMetrics.width + 1, JSON.stringify(secondLineMetrics));
+    assert.ok(secondLineMetrics.height > secondLineMetrics.lineHeight + 1, JSON.stringify(secondLineMetrics));
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-expanded-turn2.png`) });
+
+    await costOnlyCaption.scrollIntoViewIfNeeded();
+    await costOnlyCaption.click();
+    const costOnlyExpanded = '턴 완료 · 정가 $0.80';
+    await manuscriptColumn.getByText(costOnlyExpanded, { exact: true }).waitFor();
+    assert.equal(await costOnlyCaption.getByText('정가 $0.80', { exact: true }).count(), 0);
+    assert.equal(await manuscriptColumn.getByText(costOnlyExpanded, { exact: true }).count(), 1);
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-cost-only.png`) });
+    await tokenOnlyCaption.scrollIntoViewIfNeeded();
+    await tokenOnlyCaption.click();
+    const tokenOnlyExpanded = '턴 완료 · 입력 150 · 출력 35';
+    await manuscriptColumn.getByText(tokenOnlyExpanded, { exact: true }).waitFor();
+    assert.equal(await tokenOnlyCaption.getByText('입력 150 · 출력 35', { exact: true }).count(), 0);
+    assert.equal(await manuscriptColumn.getByText(tokenOnlyExpanded, { exact: true }).count(), 1);
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-token-only.png`) });
+    await errorUsageCaption.scrollIntoViewIfNeeded();
+    await errorUsageCaption.click();
+    await manuscriptColumn.getByText('컨텍스트 약 415,000 / 1,000,000 (41.5%)', { exact: true }).waitFor();
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-error-expanded.png`) });
+    const noUsageAssistant = manuscriptColumn.getByText('사용량이 없으면 아래 사용량 줄을 표시하지 않습니다.', { exact: true });
+    await noUsageAssistant.scrollIntoViewIfNeeded();
+    assert.equal(await manuscriptColumn.getByRole('button', { name: '턴 완료', exact: true }).count(), 0);
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-no-value-complete.png`) });
+    await page.getByTestId('review-persistent-turn-usage-toggle').click();
+    await usageCaption.waitFor({ state: 'detached' });
+    await manuscriptColumn.getByText(/예시 오류: 연결이 끊겼습니다/).waitFor();
+    await manuscriptColumn.getByText('다음 턴의 응답입니다.', { exact: true }).waitFor();
+    await manuscriptColumn.getByText(/예시 오류: 연결이 끊겼습니다/).scrollIntoViewIfNeeded();
+    await manuscriptColumn.screenshot({ path: path.join(output, `${scenario.name}-usage-disabled.png`) });
+    result.interactions.push(`${scenario.name}: ChatBody usage 접힘·펼침, production-sized 통계 줄바꿈, 빈 완료 감춤, 비용/토큰 전용, 두 턴 분리, 오류 유지와 표시 끔`);
     await page.getByTestId('chat-composer-text-input').last().scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, `${scenario.name}-manuscript-composer.png`) });
     result.viewports.push({ name: scenario.name, viewport: { width: scenario.width, height: scenario.height },
-      theme: scenario.theme, geometry: { default: defaultGeometry, manuscript: manuscriptGeometry } });
+      columnWidth: scenario.columnWidth, theme: scenario.theme, geometry: { default: defaultGeometry, manuscript: manuscriptGeometry } });
     await context.close();
   }
 }

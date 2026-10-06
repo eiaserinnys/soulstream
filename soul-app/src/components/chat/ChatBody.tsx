@@ -21,6 +21,7 @@ import type { SessionEvent } from '../../api/types';
 import type { ChatRenderItem } from './groupChatEvents';
 import { makeStyles } from './ChatBody.styles';
 import { useChatHistoryPagination } from './useChatHistoryPagination';
+import { PERSISTENT_HISTORY_EVENT_TYPES } from '../../api/persistentHistoryEventTypes';
 import { useChatBottomFollow } from './useChatBottomFollow';
 import { useTokens } from '../../theme';
 import { ChatEventList } from './ChatEventList';
@@ -195,6 +196,7 @@ export function ChatBody({
       const settings = persistentSession.persistent ? {
         show_generation_separator: persistentSession.settings.show_generation_separator === true,
         show_jev_candidates: persistentSession.settings.show_jev_candidates === true,
+        show_turn_usage: persistentSession.settings.show_turn_usage !== false,
       } : null;
       finishPersistentDisplaySettingsLoad(sessionId, requestId, settings);
     }).catch(() => {
@@ -244,6 +246,9 @@ export function ChatBody({
   } = useChatHistoryPagination({
     api,
     sessionId,
+    ...(presentation === 'manuscript'
+      ? { timelineEventTypes: PERSISTENT_HISTORY_EVENT_TYPES }
+      : {}),
     snapshotGeneration,
     active: detailedNetworkActive,
     authScope,
@@ -347,6 +352,8 @@ export function ChatBody({
       showGenerationSeparator: displaySettings.show_generation_separator,
       showJevCandidates: displaySettings.show_jev_candidates,
     } : undefined,
+    presentation,
+    showTurnUsage: displaySettings?.show_turn_usage !== false,
   });
   const focusEventIndex = focusEventId == null
     ? -1

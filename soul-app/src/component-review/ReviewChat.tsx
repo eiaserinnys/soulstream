@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
-import { FlatList, ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
+import { ChatBody } from '../components/chat/ChatBody';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { AttachmentChips } from '../components/chat/AttachmentChips';
 import { ChatInterruptButton } from '../components/chat/ChatInterruptButton';
@@ -17,9 +18,6 @@ import { GlassButton } from '../components/GlassSurface';
 import { message, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
 import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
-import { ChatEventList } from '../components/chat/ChatEventList';
-import type { ChatRenderItem } from '../components/chat/groupChatEvents';
-import { useChatRenderItems } from '../components/chat/useChatRenderItems';
 import type { SessionEvent } from '../api/types';
 import { useChatStore } from '../store/chatStore';
 import { persistentJevCandidatesFixture } from './persistentJevCandidatesFixture';
@@ -48,16 +46,39 @@ const persistentChatEvents: SessionEvent[] = [
   { id: '900', type: 'assistant_message', data: { text: '앞 답변입니다. 다음 세대를 준비합니다.' } },
   { id: '901', type: 'generation_started', data: { generation: 2 } },
   { id: '902', type: 'assistant_message', data: { text: '다음 세대의 첫 답변입니다.' } },
-  { id: '903', type: 'complete', data: { result: '응답을 마쳤습니다.', model: 'public-model', usage: { input_tokens: 100, output_tokens: 20 } } },
-  { id: '904', type: 'user_message', data: { input_id: 'public-input-1', text: '관련 자료를 찾아줘.' } },
-  persistentJevCandidatesFixture('905', 'public-input-1'),
-  { id: '906', type: 'user_message', data: { input_id: 'public-input-2', text: '비슷한 기록이 있는지 확인해줘.' } },
-  persistentJevCandidatesFixture('907', 'public-input-2', { selectedCount: 0 }),
-  { id: '908', type: 'user_message', data: { input_id: 'public-input-3', text: '긴 후보 요약이 입력 말풍선 아래에서 어떻게 보이는지 확인해줘.' } },
-  persistentJevCandidatesFixture('909', 'public-input-3', { selectedCount: 1, longLine: true }),
-  { id: '910', type: 'user_message', data: { input_id: 'public-input-4', text: 'Jev 후보와 담당 카드 기록의 순서를 확인해줘.' } },
+  { id: '903', type: 'context_usage', data: {
+    used_tokens: 630_000, max_tokens: 1_000_000, percent: 63, estimated: true,
+  } },
+  { id: '904', type: 'complete', data: {
+    result: '응답을 마쳤습니다.', model: 'public-model',
+    usage: { input_tokens: 6, cache_read_input_tokens: 645_361, output_tokens: 6_139 },
+    turn_cost_usd: 0.621749, session_cost_usd: 17.91,
+  } },
+  { id: '905', type: 'user_message', data: { input_id: 'public-input-1', text: '다음 요청으로 넘어갑니다.' } },
+  { id: '906', type: 'assistant_message', data: { text: '다음 턴의 응답입니다.' } },
+  { id: '907', type: 'context_usage', data: {
+    used_tokens: 220_000, max_tokens: 1_000_000, percent: 22,
+  } },
+  { id: '908', type: 'complete', data: {
+    result: '두 번째 턴을 마쳤습니다.', model: 'public-model',
+    usage: { input_tokens: 12, cache_read_input_tokens: 1_304_862, output_tokens: 18_244 },
+    turn_cost_usd: 1.4, session_cost_usd: 1_234.5,
+  } },
+  { id: '909', type: 'user_message', data: { input_id: 'public-input-2', text: '정가만 있는 완료 기록을 확인합니다.' } },
+  { id: '910', type: 'complete', data: { result: '비용 기록', turn_cost_usd: 0.8 } },
+  { id: '911', type: 'user_message', data: { input_id: 'public-input-3', text: '입출력 토큰만 있는 완료 기록을 확인합니다.' } },
+  { id: '912', type: 'complete', data: {
+    result: '토큰 기록', usage: { input_tokens: 150, output_tokens: 35 },
+  } },
+  { id: '913', type: 'user_message', data: { input_id: 'public-input-4', text: '관련 자료를 찾아줘.' } },
+  persistentJevCandidatesFixture('914', 'public-input-4'),
+  { id: '915', type: 'user_message', data: { input_id: 'public-input-5', text: '비슷한 기록이 있는지 확인해줘.' } },
+  persistentJevCandidatesFixture('916', 'public-input-5', { selectedCount: 0 }),
+  { id: '917', type: 'user_message', data: { input_id: 'public-input-6', text: '긴 후보 요약이 입력 말풍선 아래에서 어떻게 보이는지 확인해줘.' } },
+  persistentJevCandidatesFixture('918', 'public-input-6', { selectedCount: 1, longLine: true }),
+  { id: '919', type: 'user_message', data: { input_id: 'public-input-7', text: 'Jev 후보와 담당 카드 기록의 순서를 확인해줘.' } },
   {
-    id: '911',
+    id: '920',
     type: 'debug',
     data: {
       kind: 'assigned_card_context_snapshot',
@@ -67,7 +88,7 @@ const persistentChatEvents: SessionEvent[] = [
         identityMissing: false,
         registrationId: 'review-registration',
         executionCommandId: 'review-command',
-        inputId: 'public-input-4',
+        inputId: 'public-input-7',
         snapshot: {
           capturedAt: '2026-10-02T01:00:00.000Z',
           cards: [{ title: 'PAS 후보와 담당 카드 기록 함께 표시', status: 'running', latestReportAt: null }],
@@ -75,60 +96,99 @@ const persistentChatEvents: SessionEvent[] = [
       },
     },
   },
-  persistentJevCandidatesFixture('912', 'public-input-4', { selectedCount: 1 }),
+  persistentJevCandidatesFixture('921', 'public-input-7', { selectedCount: 1 }),
+  { id: '922', type: 'context_usage', data: {
+    used_tokens: 415_000, max_tokens: 1_000_000, percent: 41.5, estimated: true,
+  } },
+  { id: '923', type: 'error', data: { message: '예시 오류: 연결이 끊겼습니다.' } },
+  { id: '924', type: 'context_usage', data: {
+    used_tokens: 500_000, max_tokens: 1_000_000, percent: 50,
+  } },
+  { id: '925', type: 'user_message', data: { input_id: 'public-input-8', text: '사용량이 없는 완료 기록도 확인합니다.' } },
+  { id: '926', type: 'assistant_message', data: { text: '사용량이 없으면 아래 사용량 줄을 표시하지 않습니다.' } },
+  { id: '927', type: 'complete', data: { result: '통계 없는 완료' } },
 ];
 
 function ReviewPersistentChatProjection() {
   const t = useTokens();
-  const styles = makeStyles(t);
-  const flatListRef = useRef<FlatList<ChatRenderItem>>(null);
+  const { width, height } = useWindowDimensions();
+  const columnWidth = getPersistentReviewColumnWidth(width);
   const settings = useChatStore(state => {
     const current = state.persistentDisplaySettings;
     return current?.sessionId === 'review-pas-1' ? current.settings : null;
   });
   const showGenerationSeparator = settings?.show_generation_separator === true;
   const showJevCandidates = settings?.show_jev_candidates === true;
-  const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates', value: boolean) => {
+  const showTurnUsage = settings?.show_turn_usage !== false;
+  const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates' | 'show_turn_usage', value: boolean) => {
     const current = useChatStore.getState().persistentDisplaySettings;
     if (current?.sessionId !== 'review-pas-1' || !current.settings) return;
     useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, [key]: value });
   };
-  const { reversedItems } = useChatRenderItems({
-    events: persistentChatEvents,
-    pendingOptimistic: undefined,
-    streamingSlots: undefined,
-    sessionStatus: 'completed',
-    persistentDisplaySettings: settings ? {
-      showGenerationSeparator: settings.show_generation_separator,
-      showJevCandidates: settings.show_jev_candidates,
-    } : undefined,
-  });
-  return <View testID="review-persistent-chat-projection" style={styles.container}>
+  useEffect(() => {
+    initializePersistentReviewChat();
+  }, []);
+  return <View testID="review-persistent-chat-projection" style={{ gap: t.spacing.md }}>
     <View>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>세대 구분선 표시</Text>
       <Switch accessibilityLabel="검수 창 세대 구분선 표시" testID="review-persistent-generation-toggle" value={showGenerationSeparator} onValueChange={value => updateDisplaySetting('show_generation_separator', value)} />
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>Jev 후보 표시</Text>
       <Switch accessibilityLabel="검수 창 Jev 후보 표시" testID="review-persistent-jev-toggle" value={showJevCandidates} onValueChange={value => updateDisplaySetting('show_jev_candidates', value)} />
+      <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>턴 끝 사용량 표시</Text>
+      <Switch accessibilityLabel="검수 창 턴 끝 사용량 표시" testID="review-persistent-turn-usage-toggle" value={showTurnUsage} onValueChange={value => updateDisplaySetting('show_turn_usage', value)} />
     </View>
-    <ChatEventList
-      flatListRef={flatListRef}
-      items={reversedItems}
-      session={undefined}
-      sessionId="review-pas-1"
-      api={null}
-      styles={styles}
-      accentColor={t.colors.accent}
-      requestOlder={() => {}}
-      onScroll={() => {}}
-      onScrollBeginDrag={() => {}}
-      historyLoading={false}
-      reachedTop
-      hasFetchError={false}
-      retryFromError={() => {}}
-      mvcpEnabled={false}
-      onContentSizeChange={() => {}}
-    />
+    <ScrollView
+      testID="review-persistent-chat-columns"
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ flexDirection: 'row', gap: t.spacing.md }}
+    >
+      <ReviewPersistentChatColumn title="기본" width={columnWidth} height={height} />
+      <ReviewPersistentChatColumn title="원고형" width={columnWidth} height={height} presentation="manuscript" />
+    </ScrollView>
   </View>;
+}
+
+function getPersistentReviewColumnWidth(viewportWidth: number): number {
+  const requestedWidth = typeof window === 'undefined'
+    ? null
+    : Number(new URLSearchParams(window.location.search).get('pasColumnWidth'));
+  if (requestedWidth === 350 || requestedWidth === 400 || requestedWidth === 480) return requestedWidth;
+  return viewportWidth >= 768 ? 480 : 350;
+}
+
+function initializePersistentReviewChat() {
+  const store = useChatStore.getState();
+  store.mergeEvents('review-pas-1', persistentChatEvents);
+  const requestId = store.beginPersistentDisplaySettingsLoad('review-pas-1');
+  store.finishPersistentDisplaySettingsLoad('review-pas-1', requestId, {
+    show_generation_separator: true,
+    show_jev_candidates: true,
+    show_turn_usage: true,
+  });
+}
+
+function ReviewPersistentChatColumn({
+  title,
+  width,
+  height,
+  presentation = 'default',
+}: {
+  title: string;
+  width: number;
+  height: number;
+  presentation?: 'default' | 'manuscript';
+}) {
+  const t = useTokens();
+  return (
+    <View
+      testID={`review-persistent-column-${presentation}`}
+      style={{ width, height, gap: t.spacing.sm, backgroundColor: t.colors.background }}
+    >
+      <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>{title}</Text>
+      <ChatBody sessionId="review-pas-1" active={false} presentation={presentation} />
+    </View>
+  );
 }
 
 export function ReviewChat() {
@@ -144,7 +204,7 @@ export function ReviewChat() {
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
   return <>
-    <ReviewSection title="영구 세션 표시 · raw timeline/SSE → 묶기 → 채팅 목록">
+    <ReviewSection title="PAS 대화 목록 · 기본 / 원고형">
       <ReviewPersistentChatProjection />
     </ReviewSection>
     <ReviewSection title="입력창 · 빈 입력·여러 줄·전송·첨부·정지·비활성">

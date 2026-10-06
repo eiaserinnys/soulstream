@@ -150,6 +150,7 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
 import { useAuthStore } from '../../../store/authStore';
 import { useDraftStore } from '../../../store/draftStore';
+import { PERSISTENT_HISTORY_EVENT_TYPES } from '../../../api/persistentHistoryEventTypes';
 
 const realUseChatSendFlow = jest.requireActual('../useChatSendFlow').useChatSendFlow as
   typeof import('../useChatSendFlow').useChatSendFlow;
@@ -292,6 +293,22 @@ describe('ChatBody store subscription boundary', () => {
     fireEvent(anchor, 'layout', expandedLayout);
     expect(onComposerLayout).toHaveBeenNthCalledWith(1, singleLineLayout);
     expect(onComposerLayout).toHaveBeenNthCalledWith(2, expandedLayout);
+  });
+
+  test('기본 채팅은 history eventTypes를 생략하고 원고형만 정본 목록과 complete를 요청한다', async () => {
+    await preparePersistentChatDrafts();
+    const view = render(<View><ChatBody sessionId={SID} /></View>);
+    await act(async () => { await Promise.resolve(); });
+
+    const defaultOptions = mockUseChatHistoryPagination.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(defaultOptions).not.toHaveProperty('timelineEventTypes');
+
+    view.rerender(<View><ChatBody sessionId={SID} presentation="manuscript" /></View>);
+    await act(async () => { await Promise.resolve(); });
+
+    const manuscriptOptions = mockUseChatHistoryPagination.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(manuscriptOptions.timelineEventTypes).toEqual([...PERSISTENT_HISTORY_EVENT_TYPES]);
+    view.unmount();
   });
 
   test('채팅은 캐시에 없는 세션 한 건을 한 번 받아 오고 피드 후보는 늘리지 않는다', async () => {

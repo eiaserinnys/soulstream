@@ -42,12 +42,30 @@ describe('useChatHistoryPagination pagination', () => {
       SID_A,
       expect.objectContaining({ limit: 100, before: undefined }),
     );
+    expect(api.getTimeline.mock.calls[0][1]).not.toHaveProperty('eventTypes');
     expect(mergeEvents).toHaveBeenCalledTimes(1);
     // ASC reverse — id 1, 2 순서 (시간순)
     const passedEvents = mergeEvents.mock.calls[0][1] as SessionEvent[];
     expect(passedEvents.map((e) => e.id)).toEqual(['1', '2']);
     // 첫 페이지(before=undefined) → setLastEventId(가장 최신=마지막)
     expect(setLastEventId).toHaveBeenCalledWith(SID_A, '2');
+  });
+
+  test('원고형 이력 조회는 지정된 eventTypes를 각 페이지에 전달한다', async () => {
+    const eventTypes = ['user_message', 'context_usage', 'complete'];
+    const api = makeApi(async () => ({ messages: [], next_cursor: null }));
+    const deps = makeDeps({ api, sessionId: SID_A, timelineEventTypes: eventTypes });
+
+    renderHook(() => useChatHistoryPagination(deps));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(api.getTimeline).toHaveBeenCalledWith(
+      SID_A,
+      expect.objectContaining({ eventTypes }),
+    );
   });
 
   test('C1b — semantic timeline의 assistant_message만으로 완료 말풍선을 병합한다', async () => {
