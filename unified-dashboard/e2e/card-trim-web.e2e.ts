@@ -45,6 +45,7 @@ for(const width of [1440,1920,2560])test(`trim web ${width}`,async({page})=>{
  await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
  const detail=page.getByTestId('card-detail'),workspace=page.getByTestId('v3-card-workspace');
  await expect(detail).toBeVisible();await page.waitForTimeout(300);
+ const frame=await detail.boundingBox();expect(frame!.y+frame!.height).toBeLessThanOrEqual(1064);
  const initial=await geometry(page),expectedTotal=Math.min(initial.work,1666),expectedCard=Math.round((expectedTotal-16)*750/1650);
  expect(initial.card).toBeCloseTo(expectedCard,0);expect(initial.chat).toBeCloseTo(expectedTotal-16-expectedCard,0);expect(initial.right).toBe(width-16);
  await page.screenshot({path:path.join(output,`${width}-initial.png`)});
@@ -124,7 +125,13 @@ test('trim WebGL titles caveats and reduced motion',async({page})=>{
  const detail=page.getByTestId('card-detail');
  await page.evaluate(()=>{localStorage.setItem('ls.webglGlass','1');window.dispatchEvent(new Event('ls.webglGlass:change'));});
  await expect(detail).toHaveAttribute('data-liquid-glass-webgl','true');
- await detail.getByRole('button',{name:/확인함 3개 펼치기/}).click();
+ writeFileSync(path.join(output,'1920-webgl-geometry.json'),JSON.stringify(await detail.evaluate(el=>{
+  const sels=['.v3-workspace','.v3-card-workspace-pair','.v3-card-detail','.v3-card-panel-scroll','.v3-card-composer-slot'];
+  return sels.map(selector=>{const node=document.querySelector(selector)!;const rect=node.getBoundingClientRect(),style=getComputedStyle(node);return {selector,top:rect.top,height:rect.height,client:(node as HTMLElement).clientHeight,scroll:(node as HTMLElement).scrollHeight,position:style.position,display:style.display,overflow:style.overflow,rows:style.gridTemplateRows};});
+ }),null,2));
+ const frame=await detail.boundingBox();expect(frame!.y+frame!.height).toBeLessThanOrEqual(1064);
+ // Contrast fixtures use keyboard activation to avoid Playwright's unrelated auto-scroll retry.
+ await detail.getByRole('button',{name:/확인함 3개 펼치기/}).evaluate(el=>(el as HTMLElement).focus({preventScroll:true}));await page.keyboard.press('Enter');
  const selectors=['.v3-card-check-item-title','.v3-card-check-item-caveat span'];
  const scroll=detail.locator('.v3-card-panel-scroll');
  for(const [name,y] of [['top',0],['mid',330],['bottom',-1]] as const){
@@ -134,7 +141,7 @@ test('trim WebGL titles caveats and reduced motion',async({page})=>{
    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const ctx=canvas.getContext('2d')!;
    return sels.flatMap(selector=>[...el.querySelectorAll<HTMLElement>(selector)].flatMap(node=>{
     const range=document.createRange();range.selectNodeContents(node);const style=getComputedStyle(node);ctx.clearRect(0,0,1,1);ctx.fillStyle=style.color;ctx.fillRect(0,0,1,1);
-    return [...range.getClientRects()].filter(r=>r.width>0&&r.height>0&&r.top>=viewport.top&&r.bottom<dock.top-26).map(r=>({selector,text:node.textContent,item:node.closest('[data-item-id]')?.getAttribute('data-item-id'),display:node.closest('[data-item-display]')?.getAttribute('data-item-display'),rgba:[...ctx.getImageData(0,0,1,1).data],box:[r.left,r.top,r.right,r.bottom],font:style.font,color:style.color}));
+    return [...range.getClientRects()].filter(r=>r.width>0&&r.height>0&&r.top>=viewport.top&&r.bottom<Math.min(dock.top-26,window.innerHeight)).map(r=>({selector,text:node.textContent,item:node.closest('[data-item-id]')?.getAttribute('data-item-id'),display:node.closest('[data-item-display]')?.getAttribute('data-item-display'),rgba:[...ctx.getImageData(0,0,1,1).data],box:[r.left,r.top,r.right,r.bottom],font:style.font,color:style.color}));
    }));
   },selectors);
   expect(text.length).toBeGreaterThan(0);
