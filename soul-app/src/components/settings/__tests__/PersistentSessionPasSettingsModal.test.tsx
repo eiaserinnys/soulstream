@@ -102,6 +102,52 @@ test('keeps unsaved account edits when an immediate display update succeeds', as
   expect(screen.getByTestId('persistent-pas-settings-save').props.disabled).toBeFalsy();
 });
 
+test('keeps an immediately saved display value when saving unsaved account edits', async () => {
+  let serverSession = session();
+  api.updatePersistentSession.mockImplementation(async (_id: string, input: {
+    display_name?: string;
+    settings?: Record<string, unknown>;
+  }) => {
+    serverSession = session({
+      ...serverSession,
+      display_name: input.display_name ?? serverSession.display_name,
+      settings: { ...serverSession.settings, ...input.settings },
+    });
+    return { session: serverSession, model_change: 'none' };
+  });
+
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
+  fireEvent.changeText(screen.getByLabelText('세션 이름'), '수정한 이름');
+  fireEvent.press(await screen.findByText('모델 B', { exact: true }));
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-display'));
+  fireEvent(screen.getByTestId('persistent-show-character'), 'valueChange', false);
+
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledTimes(1));
+  expect(api.updatePersistentSession.mock.calls[0]).toEqual(['pas-1', { settings: { show_character: false } }]);
+  await waitFor(() => expect(screen.getByTestId('persistent-show-character').props.value).toBe(false));
+
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-account-model'));
+  await waitFor(() => expect(screen.getByTestId('persistent-pas-settings-save').props.disabled).toBeFalsy());
+  fireEvent.press(screen.getByTestId('persistent-pas-settings-save'));
+
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledTimes(2));
+  expect(api.updatePersistentSession.mock.calls[1]).toEqual(['pas-1', {
+    display_name: '수정한 이름',
+    settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'high' } },
+  }]);
+  expect(api.updatePersistentSession.mock.calls[1][1].settings).not.toHaveProperty('show_character');
+  expect(api.updatePersistentSession.mock.calls[1][1].settings).not.toHaveProperty('animate_character');
+  expect(api.updatePersistentSession.mock.calls[1][1].settings).not.toHaveProperty('show_generation_separator');
+  expect(api.updatePersistentSession.mock.calls[1][1].settings).not.toHaveProperty('show_jev_candidates');
+  expect(api.updatePersistentSession.mock.calls[1][1].settings).not.toHaveProperty('show_turn_usage');
+
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-display'));
+  await waitFor(() => expect(screen.getByTestId('persistent-show-character').props.value).toBe(false));
+  expect(useChatStore.getState().persistentDisplaySettings?.settings?.show_character).toBe(false);
+});
+
 test('applies a successful display update to the open chat after the settings modal unmounts', async () => {
   let resolveUpdate!: (result: { session: ReturnType<typeof session>; model_change: 'none' }) => void;
   api.updatePersistentSession.mockReturnValueOnce(new Promise((resolve) => { resolveUpdate = resolve; }));
