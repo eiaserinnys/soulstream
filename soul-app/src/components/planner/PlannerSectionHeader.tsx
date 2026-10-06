@@ -26,7 +26,7 @@ export function PlannerSectionHeader({
   testID?: string;
   countTestID?: string;
   countSuffix?: string;
-  variant?: 'default' | 'board' | 'lane' | 'compact';
+  variant?: 'default' | 'board' | 'lane' | 'compact' | 'quiet';
   actionLabel?: string;
   onAction?: () => void;
   extraAction?: { label: string; onPress(): void };
@@ -49,6 +49,7 @@ export function PlannerSectionHeader({
   if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={[styles.title, styles.countedTitle]}>
     {title + ' '}<Text testID={countTestID}>{`${count ?? 0}${countSuffix??'개'}`}</Text>
   </Text>;
+  if (variant === 'quiet') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={styles.quietTitle}>{title}</Text>;
   if (onToggle) return (
     <TouchableOpacity testID={testID} accessibilityRole="button"
       accessibilityLabel={`${title} ${expanded ? '접기' : '펼치기'}`}
@@ -88,6 +89,7 @@ function makeStyles(t: DesignTokens) {
     compactTitle: { flex: 1, ...t.foundation.typography.body, fontWeight: '600', color: t.colors.textSecondary },
     compactDisclosure: { width: planner.actionColumn, height: planner.actionColumn, alignItems: 'center', justifyContent: 'center' },
     title: { color: t.colors.textPrimary, ...planner.typography.section },
+    quietTitle: { ...planner.typography.meta, color: t.colors.textMuted },
     flexibleTitle: { flex: 1 },
     countedRow: { alignItems: 'baseline', gap: t.uiSpacing.sm },
     countedTitle: { flexGrow: 0, flexBasis: 'auto', flexShrink: 1 },
