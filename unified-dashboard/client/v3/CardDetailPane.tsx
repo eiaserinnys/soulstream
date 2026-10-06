@@ -24,7 +24,7 @@ import { cardStatusLabel } from "./CardActions";
 import { StatusChip } from "./StatusChip";
 const EMPTY_PENDING_CONFIRMATIONS:Readonly<Record<number,boolean>>={};
 export { cardRequestMarkdown } from "./card-request-markdown";
-type CardDetailPaneBaseProps={cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState;onSampleChange?(update:(current:CardDetail)=>CardDetail):void};
+type CardDetailPaneBaseProps={cardId:string;folders:readonly CatalogFolder[];onClose():void;onOpenSession(session:SessionSummary,selection?:CardSessionSelection):void;detailOnly?:boolean;focus?:string|null;initialSessionId?:string|null;sampleDetail?:CardDetail;sampleExecution?:CardExecutionState;onSampleChange?(update:(current:CardDetail)=>CardDetail):void};
 export type CardDetailPaneProps=CardDetailPaneBaseProps&({variant?:"default";onOpenCard?:never}|{variant:"summary";onOpenCard():void});
 export function CardDetailPane(props:CardDetailPaneProps) {
  const {cardId,folders,onClose,onOpenSession,initialSessionId,sampleDetail,sampleExecution,onSampleChange}=props;
@@ -165,7 +165,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
    <section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined}/></section>
   </div>:null}
   {card.now?<div key={cardId} className="v3-detail-gutter v3-card-now-slot"><CardNowPanel now={card.now} nowHistory={detail?.nowHistory} itemsCount={card.items?.length??0} activeCount={itemSummary.activeCount} onComplete={()=>void complete()} pending={pending||execution?.phase==='pending'}/></div>:null}
-  <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={tabs} value={tab} onChange={changeTab}/></div>
+  <div className="v3-detail-gutter v3-card-tabs"><DetailTabs id={tabId} label="카드 보기" panelId={`${tabId}-panel`} variant="card" tabs={props.detailOnly?tabs.filter(([id])=>id!=="sessions"):tabs} value={tab} onChange={changeTab}/></div>
   {execution && execution.phase!=="pending"?<p role={execution.phase==="error"?"alert":"status"} className="v3-card-error">{execution.message}</p>:null}
   {error?<p role="alert" className="v3-card-error">{error}</p>:null}
   <div className="v3-detail-scroll v3-card-panel-scroll v3-detail-gutter" data-card-active-tab={tab} ref={scroll} style={dockStyle} role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`}>
@@ -176,9 +176,9 @@ export function CardDetailPane(props:CardDetailPaneProps) {
     <section className="v3-detail-section" data-card-tab-panel="comments" hidden={tab!=="comments"}>
      <CardTimeline key={cardId} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
     </section>
-    <section className="v3-detail-section v3-card-session-history" data-card-section="sessions" data-card-tab-panel="sessions" hidden={tab!=="sessions"}>
+    {!props.detailOnly&&<section className="v3-detail-section v3-card-session-history" data-card-section="sessions" data-card-tab-panel="sessions" hidden={tab!=="sessions"}>
      <CardSessionHistory key={`${cardId}:${initialSessionId??""}`} sessionIds={sessionIds} linkedSessions={detail?.sessions} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} initialSessionId={initialSessionId} onOpenSession={onOpenSession}/>
-    </section>
+    </section>}
     <section className="v3-detail-section v3-description-content" data-card-tab-panel="notes" hidden={tab!=="notes"}>
      <CardNotes key={cardId} brief={card.brief??""} notes={detail?.notes??[]} sessions={detail?.sessions??[]} portraitUrl={portrait} userPortraitUrl={user?.picture??""}/>
     </section>

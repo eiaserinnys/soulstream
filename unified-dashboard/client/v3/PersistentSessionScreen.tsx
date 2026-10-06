@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, DashboardIconCap, LiquidGlassProvider, ProfileAvatar, SwayCharacter, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
-import { Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, ListTodo, X } from 'lucide-react';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
 import { usePersistentSessionGeometry } from './use-persistent-session-geometry';
 import { navigateDashboard } from '../dashboard-navigation';
@@ -18,6 +18,10 @@ import { PersistentSessionChatView } from './PersistentSessionChatView';
 import { PersistentSessionSettingsDialog } from '../components/PersistentSessionSettingsDialog';
 import { V3GlobalToolbar } from './V3GlobalToolbar';
 import { persistentSessionPortrait } from './PersistentSessionEntry';
+import { PersistentSessionTaskList } from './PersistentSessionTaskList';
+import { CardDetailPane } from './CardDetailPane';
+import { CardWorkspace } from './CardWorkspace';
+import { useCardNavigation } from './card-navigation';
 import './v3-dashboard-styles';
 import './persistent-session-screen.css';
 
@@ -43,6 +47,10 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const [activatedId, setActivatedId] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const cardNavigation = useCardNavigation();
+  const folders = useDashboardStore(state => state.catalog?.folders);
   const activeSessionKey = useDashboardStore(state => state.activeSessionKey);
   const activeSessionSummary = useDashboardStore(state => state.activeSessionSummary);
   const composerAnchorRef = useRef<HTMLDivElement>(null);
@@ -64,6 +72,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   useEffect(() => {
     let current = true;
     setLoading(true); setError(null); setActivatedId(null);
+    setTasksOpen(false); setSelectedCardId(null);
     void api.list().then(async result => {
       if (!current) return;
       setListing(result);
@@ -83,6 +92,14 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [api, retry, sessionId, user?.email]);
+  useEffect(() => () => {
+    useCardNavigation.getState().close();
+    const state = useDashboardStore.getState();
+    if (sessionId && state.activeSessionKey === sessionId) {
+      state.setActiveSessionSummary(null);
+      state.setActiveSession(null);
+    }
+  }, [sessionId]);
   const disabled = !activeSessionSummary?.nodeId || nodes.get(activeSessionSummary.nodeId)?.status !== 'connected';
   const lastId = user?.email ? readPersistentSessionDevicePreferences(user.email).lastSessionId : null;
   return <div ref={appRef} className="v3-shell persistent-session-screen" data-testid="persistent-session-screen">
@@ -91,8 +108,19 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={lastId === session.session_id} portrait={<ProfileAvatar role="assistant" shape="circle" hasPortrait portraitUrl={persistentSessionPortrait(session.node_id, session.agent_id)} fallbackEmoji="🤖"/>} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}
       {chatReady && !error && <PersistentSessionChatView key={sessionId} sessionId={sessionId!} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={!disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={stream.synchronizedSessionKey === activeSessionKey}/>}
     </main>
+    {chatReady && !error && <>
+      <div className="persistent-session-task-toggle"><DashboardIconCap label="작업 목록" aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo/></DashboardIconCap></div>
+      {tasksOpen && <aside className={`persistent-session-tasks${selectedCardId ? ' is-card-open' : ''}`} aria-label="작업" style={geometry ? { bottom: `calc(100% - ${geometry.lineY}px)` } : undefined}>
+        <div className="persistent-session-task-head">
+          {selectedCardId ? <DashboardIconCap label="작업 목록으로" onClick={() => setSelectedCardId(null)}><ArrowLeft/></DashboardIconCap> : <h2>작업</h2>}
+          <DashboardIconCap label="작업 목록 닫기" onClick={() => setTasksOpen(false)}><X/></DashboardIconCap>
+        </div>
+        {selectedCardId ? <CardDetailPane key={selectedCardId} variant="summary" cardId={selectedCardId} folders={folders ?? []} onClose={() => setSelectedCardId(null)} onOpenSession={() => {}} onOpenCard={() => cardNavigation.open(selectedCardId)}/> : <div className="persistent-session-task-scroll"><PersistentSessionTaskList onOpenCard={setSelectedCardId}/></div>}
+      </aside>}
+      {selectedCardId && cardNavigation.cardId === selectedCardId && <CardWorkspace detailOnly cardId={selectedCardId} folders={folders ?? []} onClose={cardNavigation.close} onOpenSession={() => {}} mobileMode={false} mobileTab="cards" activeSession={undefined} chatInputDisabled historyEnabled={false} sessionStreamActive={false} sessionConnectionStatus="disconnected" reconnectSession={() => {}} onAcknowledgedReview={() => {}}/>}
+    </>}
     {geometry && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.mainWidth + geometry.lineLeftReach }}/>}
-    {displaySettings && geometry?.body && <div data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen} assetBaseUrl="/characters/seosoyoung"/></div>}
+    {displaySettings && geometry?.body && <div data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen && !(selectedCardId && cardNavigation.cardId === selectedCardId)} assetBaseUrl="/characters/seosoyoung"/></div>}
     {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap label="캐릭터 표시" aria-pressed={displaySettings.showCharacter} disabled={details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <Eye/> : <EyeOff/>}</DashboardIconCap></div>}
     {details.error && <div className="persistent-session-save-error"><SettingsAlert>{details.error}</SettingsAlert></div>}
     {settingsOpen && resource?.node_id && <PersistentSessionSettingsDialog sessionId={resource.session_id} nodeId={resource.node_id} onClose={() => setSettingsOpen(false)}/>}
