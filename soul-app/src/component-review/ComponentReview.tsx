@@ -41,6 +41,7 @@ import { useUIStore } from '../store/uiStore';
 import { FolderWorkspaceReadOverlay } from '../components/planner/FolderWorkspaceReadOverlay';
 import { ReviewCardChecks } from './ReviewCardChecks';
 import { ReviewPersistent } from './ReviewPersistent';
+import { ReviewPersistentTaskListN7 } from './ReviewPersistentTaskListN7';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -136,7 +137,7 @@ function Gallery() {
     backgroundColor: t.colors.background,
   }), [t]);
   if (section === 'nativeSettings' || section === 'pasSettings') return <ReviewNativeSettings/>;
-  if (section === 'persistent') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewPersistent /></View>;
+  if (section === 'persistent') return <View style={{ flex: 1, backgroundColor: t.colors.background }}>{typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('sample') === 'n7-task-list' ? <ReviewPersistentTaskListN7 /> : <ReviewPersistent />}</View>;
   if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
   if (section === 'cardColors') return <ReviewCardColors />;

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { settingsStorage } from './settingsStorage';
-import type { CardAssignment } from '../api/cardTypes';
+import type { CardAssignment, CardStatus } from '../api/cardTypes';
 import {
   DEFAULT_USER_PREFERENCES,
   normalizeUserPreferences,
@@ -19,6 +19,7 @@ export type ServerType = 'soul-server' | 'orchestrator';
 export interface PersistentSessionDevicePreference {
   openOnStart: boolean;
   lastSessionId: string | null;
+  collapsedTaskGroups: CardStatus[];
 }
 
 export type PersistentSessionDevicePrefs = Record<string, PersistentSessionDevicePreference>;
@@ -51,12 +52,14 @@ interface SettingsState {
   getPersistentSessionDevicePreference: (serverUrl: string, email: string | null | undefined) => PersistentSessionDevicePreference;
   setPersistentSessionOpenOnStart: (serverUrl: string, email: string | null | undefined, openOnStart: boolean) => void;
   setPersistentSessionLastSessionId: (serverUrl: string, email: string | null | undefined, sessionId: string | null) => void;
+  setPersistentSessionCollapsedTaskGroups: (serverUrl: string, email: string | null | undefined, collapsedTaskGroups: CardStatus[]) => void;
   applyUserPreferences: (preferences: UserPreferencesSnapshot) => void;
 }
 
 const DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE: PersistentSessionDevicePreference = {
   openOnStart: false,
   lastSessionId: null,
+  collapsedTaskGroups: ['todo'],
 };
 
 function persistentSessionDevicePreferenceKey(serverUrl: string, email: string | null | undefined): string | null {
@@ -95,9 +98,12 @@ export const useSettingsStore = create<SettingsState>()(
         })),
       getPersistentSessionDevicePreference: (serverUrl, email) => {
         const key = persistentSessionDevicePreferenceKey(serverUrl, email);
-        return key
-          ? get().persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE
-          : DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE;
+        const stored = key ? get().persistentSessionDevicePrefs[key] : undefined;
+        return {
+          ...DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE,
+          ...stored,
+          collapsedTaskGroups: stored?.collapsedTaskGroups ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE.collapsedTaskGroups,
+        };
       },
       setPersistentSessionOpenOnStart: (serverUrl, email, openOnStart) => {
         const key = persistentSessionDevicePreferenceKey(serverUrl, email);
@@ -121,6 +127,19 @@ export const useSettingsStore = create<SettingsState>()(
             [key]: {
               ...(state.persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE),
               lastSessionId: sessionId,
+            },
+          },
+        }));
+      },
+      setPersistentSessionCollapsedTaskGroups: (serverUrl, email, collapsedTaskGroups) => {
+        const key = persistentSessionDevicePreferenceKey(serverUrl, email);
+        if (!key) return;
+        set((state) => ({
+          persistentSessionDevicePrefs: {
+            ...state.persistentSessionDevicePrefs,
+            [key]: {
+              ...(state.persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE),
+              collapsedTaskGroups: [...collapsedTaskGroups],
             },
           },
         }));

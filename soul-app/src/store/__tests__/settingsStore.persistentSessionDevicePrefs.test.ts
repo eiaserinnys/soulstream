@@ -28,11 +28,11 @@ test('stores device preferences by server and decoded account email', async () =
   store.setPersistentSessionOpenOnStart('https://soul-one.test', 'second@example.com', true);
 
   expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul-one.test', 'first@example.com'))
-    .toEqual({ openOnStart: true, lastSessionId: 'pas-one' });
+    .toEqual({ openOnStart: true, lastSessionId: 'pas-one', collapsedTaskGroups: ['todo'] });
   expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul-two.test', 'first@example.com'))
-    .toEqual({ openOnStart: false, lastSessionId: null });
+    .toEqual({ openOnStart: false, lastSessionId: null, collapsedTaskGroups: ['todo'] });
   expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul-one.test', 'second@example.com'))
-    .toEqual({ openOnStart: true, lastSessionId: null });
+    .toEqual({ openOnStart: true, lastSessionId: null, collapsedTaskGroups: ['todo'] });
 
   await new Promise((resolve) => setTimeout(resolve, 0));
   const stored = JSON.parse((await AsyncStorage.getItem('soul-app-settings'))!);
@@ -43,7 +43,7 @@ test('stores device preferences by server and decoded account email', async () =
 test('defaults to closed and keeps device preferences outside server user preferences', async () => {
   const store = useSettingsStore.getState();
   expect(store.getPersistentSessionDevicePreference('https://soul-one.test', 'first@example.com'))
-    .toEqual({ openOnStart: false, lastSessionId: null });
+    .toEqual({ openOnStart: false, lastSessionId: null, collapsedTaskGroups: ['todo'] });
 
   store.setPersistentSessionOpenOnStart('https://soul-one.test', 'first@example.com', true);
   const devicePrefs = useSettingsStore.getState().persistentSessionDevicePrefs;
@@ -52,4 +52,23 @@ test('defaults to closed and keeps device preferences outside server user prefer
     devicePrefs,
   );
   expect(useSettingsStore.getState().appearance).toBe('dark');
+});
+
+test('persists collapsed task groups by server and account and restores them after rehydration', async () => {
+  const getPreference = () => useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul-one.test', 'first@example.com');
+  expect(getPreference().collapsedTaskGroups).toEqual(['todo']);
+
+  const store = useSettingsStore.getState() as any;
+  store.setPersistentSessionCollapsedTaskGroups('https://soul-one.test', 'first@example.com', ['blocked', 'todo']);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const stored = JSON.parse((await AsyncStorage.getItem('soul-app-settings'))!);
+  const key = JSON.stringify(['https://soul-one.test', 'first@example.com']);
+  expect(stored.state.persistentSessionDevicePrefs[key].collapsedTaskGroups).toEqual(['blocked', 'todo']);
+
+  const persistedValue = await AsyncStorage.getItem('soul-app-settings');
+  useSettingsStore.setState({ persistentSessionDevicePrefs: {} });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await AsyncStorage.setItem('soul-app-settings', persistedValue!);
+  await useSettingsStore.persist.rehydrate();
+  expect(getPreference().collapsedTaskGroups).toEqual(['blocked', 'todo']);
 });
