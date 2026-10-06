@@ -1252,7 +1252,7 @@ describe("CommandDispatcher.apply_persistent_session_instructions", () => {
 
     await dispatcher.dispatch({
       type: "apply_persistent_session_instructions",
-      session_id: "sess-pas",
+      agentSessionId: "sess-pas",
       origin: "extracted",
       ops: [{ op: "add", text: "  Keep replies concise.  ", source_turns: ["T195"], source_event_ids: [42] }],
       anchor: "input-195",
@@ -1271,6 +1271,49 @@ describe("CommandDispatcher.apply_persistent_session_instructions", () => {
       agentSessionId: "sess-pas",
       results: [{ status: "ok", item }],
     }]);
+  });
+
+  it("continues to accept the legacy session_id envelope", async () => {
+    const applyPersistentInstructions = vi.fn(async () => ({
+      sessionId: "sess-pas",
+      results: [{ status: "ok" as const }],
+    }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { persistentSessions: { applyPersistentInstructions } } as unknown as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "apply_persistent_session_instructions",
+      session_id: "sess-pas",
+      origin: "user",
+      ops: [{ op: "add", text: "Keep replies concise." }],
+      requestId: "instructions-legacy",
+    });
+
+    expect(applyPersistentInstructions).toHaveBeenCalledWith("sess-pas", {
+      session_id: "sess-pas",
+      origin: "user",
+      ops: [{ op: "add", text: "Keep replies concise.", source_turns: [], source_event_ids: [] }],
+    });
+    expect(sent).toEqual([expect.objectContaining({
+      type: "persistent_session_instructions_applied",
+      requestId: "instructions-legacy",
+      agentSessionId: "sess-pas",
+      results: [{ status: "ok" }],
+    })]);
+  });
+
+  it("requires a session ID using the existing invalid-request error path", async () => {
+    const { dispatcher, sent } = createDispatcher();
+
+    await dispatcher.dispatch({
+      type: "apply_persistent_session_instructions",
+      origin: "user",
+      ops: [{ op: "add", text: "Keep replies concise." }],
+      requestId: "instructions-no-session",
+    });
+
+    expect(sent).toEqual([expect.objectContaining({ type: "error", code: "INVALID_REQUEST" })]);
   });
 
   it("rejects unknown command keys", async () => {
