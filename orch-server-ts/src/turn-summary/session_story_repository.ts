@@ -60,6 +60,15 @@ export interface SessionStoryRepositoryPort {
     limit: number,
   ): Promise<UnfoldedTurnSummary[]>;
   countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts>;
+  // Used by the fold to look up where the markers a stored narrative cites sit
+  // in the conversation. The concrete repository already implements it for the
+  // turn-summary read API; no additional `turn_number` producer is introduced.
+  loadTurnSummaryRange(
+    sessionId: string,
+    fromTurnNumber: number,
+    toTurnNumber: number | null,
+    limit: number,
+  ): Promise<UnfoldedTurnSummary[]>;
   listCompletedFoldCandidates(
     input: ListCompletedFoldCandidatesInput,
   ): Promise<CompletedSessionFoldCandidate[]>;

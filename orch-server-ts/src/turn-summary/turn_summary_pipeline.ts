@@ -147,6 +147,7 @@ export class TurnSummaryPipeline {
       await this.deps.repository.loadPreviousSummaries(
         job.sessionId,
         config.historyLimit,
+        turn.turnStartEventId,
       );
     const result = await this.deps.summarizer.summarize({
       userText: turn.userText,
