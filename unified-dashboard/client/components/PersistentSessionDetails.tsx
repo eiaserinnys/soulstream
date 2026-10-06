@@ -70,6 +70,7 @@ export function usePersistentSessionDetailsController({
     ? persistentSessionDetailsDraft(resource)
     : draftState.draft;
   const [pending, setPending] = useState(false);
+  const [savingDisplayField, setSavingDisplayField] = useState<DisplayField | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorScope, setErrorScope] = useState<"account" | "display" | null>(null);
 
@@ -101,17 +102,24 @@ export function usePersistentSessionDetailsController({
   const saveDisplayField = useCallback(async (field: DisplayField, value: boolean) => {
     if (!resource || !resource.node_id || pending) return;
     setPending(true);
+    setSavingDisplayField(field);
     setError(null);
     setErrorScope(null);
     try {
       const key = DISPLAY_SETTING[field];
       const { session } = await api.update(resource.session_id, { settings: { [key]: value } });
+      setDraftState((current) => {
+        const next = persistentSessionDetailsDraft(session);
+        const previous = current.sessionId === session.session_id ? current.draft : next;
+        return { sessionId: session.session_id, draft: { ...next, displayName: previous.displayName, modelPreset: previous.modelPreset } };
+      });
       onSaved(session);
     } catch (caught) {
       setError("저장하지 못했습니다. 다시 눌러 주세요.");
       setErrorScope("display");
       if (caught instanceof PersistentSessionError && caught.code === "NOT_PERSISTENT") onNotPersistent?.();
     } finally {
+      setSavingDisplayField(null);
       setPending(false);
     }
   }, [api, onNotPersistent, onSaved, pending, resource]);
@@ -175,13 +183,14 @@ export function usePersistentSessionDetailsController({
     }
   }, [acceptSaved, api, draft, onNotPersistent, pending, resource]);
 
-  return { draft, pending, error, errorScope, onFieldChange, save, resetDraft };
+  return { draft, pending, savingDisplayField, error, errorScope, onFieldChange, save, resetDraft };
 }
 
 export function PersistentSessionDetails({
   resource,
   draft,
   pending,
+  savingDisplayField = null,
   error,
   errorScope,
   section = "all",
@@ -196,6 +205,7 @@ export function PersistentSessionDetails({
   resource: PersistentSession;
   draft: PersistentSessionDetailsDraft;
   pending: boolean;
+  savingDisplayField?: DisplayField | null;
   error: string | null;
   errorScope?: "account" | "display" | null;
   section?: PersistentSessionDetailsSection;
@@ -244,22 +254,22 @@ export function PersistentSessionDetails({
   return <div className="space-y-4">
     {visibleError ? <SettingsAlert scrollIntoView>{visibleError}</SettingsAlert> : null}
     {nodeUnknown ? <SettingsAlert>이 세션의 노드를 알 수 없어 편집할 수 없습니다.</SettingsAlert> : null}
-    {showsAccount ? <>
-      <div>
+    <div>
+      {showsAccount ? <>
         {nameField}
         <SettingFieldWidget field={textField("agent", "에이전트", agentLabel(resource), true, "만든 뒤에는 바꿀 수 없습니다.")} value={agentLabel(resource)} onChange={() => undefined} />
         <SettingFieldWidget field={{ ...textField("current_model", "현재 실행 모델", currentModel, true), read_only_display: section === "account" }} value={currentModel} onChange={() => undefined} />
         <SettingFieldWidget field={{ ...textField("pending", "대기 중인 변경", pendingValue, true, resaveNeeded ? "기본 모델 변경 요청이 없습니다. 다시 저장해 주세요." : ""), read_only_display: section === "account" }} value={pendingValue} onChange={() => undefined} />
-      </div>
-      <PersistentSessionAvailability resource={resource} presets={weeklyAvailability} />
-    </> : null}
-    {showsDisplay ? <div>
-      <DisplayToggle field="showCharacter" label="캐릭터 표시" value={draft.showCharacter} resourceValue={resource.settings.show_character} pending={pending} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
-      <DisplayToggle field="animateCharacter" label="캐릭터 움직임" value={draft.animateCharacter} resourceValue={resource.settings.animate_character} pending={pending} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
-      <DisplayToggle field="showGenerationSeparator" label="세대 구분선 표시" description="세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다." value={draft.showGenerationSeparator} resourceValue={resource.settings.show_generation_separator} pending={pending} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
-      <DisplayToggle field="showJevCandidates" label="Jev 후보 표시" description="내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다." value={draft.showJevCandidates} resourceValue={resource.settings.show_jev_candidates} pending={pending} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
-      <DisplayToggle field="showTurnUsage" label="턴 끝 사용량 표시" value={draft.showTurnUsage} resourceValue={resource.settings.show_turn_usage} pending={pending} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
-    </div> : null}
+      </> : null}
+      {showsDisplay ? <>
+        <DisplayToggle field="showCharacter" label="캐릭터 표시" value={draft.showCharacter} resourceValue={resource.settings.show_character} pending={pending} saving={pending && savingDisplayField === "showCharacter"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
+        <DisplayToggle field="animateCharacter" label="캐릭터 움직임" value={draft.animateCharacter} resourceValue={resource.settings.animate_character} pending={pending} saving={pending && savingDisplayField === "animateCharacter"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
+        <DisplayToggle field="showGenerationSeparator" label="세대 구분선 표시" description="세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다." value={draft.showGenerationSeparator} resourceValue={resource.settings.show_generation_separator} pending={pending} saving={pending && savingDisplayField === "showGenerationSeparator"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
+        <DisplayToggle field="showJevCandidates" label="Jev 후보 표시" description="내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다." value={draft.showJevCandidates} resourceValue={resource.settings.show_jev_candidates} pending={pending} saving={pending && savingDisplayField === "showJevCandidates"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
+        <DisplayToggle field="showTurnUsage" label="턴 끝 사용량 표시" value={draft.showTurnUsage} resourceValue={resource.settings.show_turn_usage} pending={pending} saving={pending && savingDisplayField === "showTurnUsage"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
+      </> : null}
+    </div>
+    {showsAccount ? <PersistentSessionAvailability resource={resource} presets={weeklyAvailability} /> : null}
     {showsAccount ? <>
       <SettingsGroupBox title="실행 대상"><div className="v3-succession-assignment">{modelSelect}</div></SettingsGroupBox>
       <div className="flex flex-wrap gap-2">
@@ -276,6 +286,7 @@ function DisplayToggle({
   value,
   resourceValue,
   pending,
+  saving,
   immediate,
   disabled,
   onChange,
@@ -286,6 +297,7 @@ function DisplayToggle({
   value: boolean;
   resourceValue: boolean;
   pending: boolean;
+  saving: boolean;
   immediate: boolean;
   disabled: boolean;
   onChange<K extends PersistentSessionDetailsField>(field: K, value: PersistentSessionDetailsDraft[K], options?: { saveImmediately?: boolean }): void;
@@ -295,7 +307,7 @@ function DisplayToggle({
     field={{ ...boolField(field, label, displayValue, description), read_only: disabled || (!immediate && pending) }}
     value={String(displayValue)}
     interactionBlocked={immediate && pending}
-    saving={immediate && pending}
+    saving={immediate ? saving : undefined}
     onChange={(next) => onChange(field, next === "true", { saveImmediately: immediate })}
   />;
 }

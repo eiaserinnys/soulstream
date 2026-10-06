@@ -5,8 +5,8 @@
 .config-dialog [data-slot="dialog-panel-scroll"] { border-radius:0; }
 .config-dialog .config-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,3fr); min-height:0; }
 .config-dialog.persistent-session-settings-popup > [data-slot="dialog-panel-scroll"] { display:flex; }
-.config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { display:flex; flex:1; flex-direction:column; min-height:0; }
-.config-dialog.persistent-session-settings-popup .config-layout { flex:1; grid-template-rows:minmax(0,1fr); min-height:0; }
+.config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { display:flex; flex:1 0 100%; flex-direction:column; min-width:0; min-height:100%; }
+.config-dialog.persistent-session-settings-popup .config-layout { flex:1 0 auto; }
 .config-dialog.persistent-session-settings-popup .config-layout > .config-category-nav,
 .config-dialog.persistent-session-settings-popup .config-layout > .config-detail { min-height:0; }
 .config-dialog .config-category-nav { padding:var(--v3-space-6) var(--v3-space-3); background:var(--control-surface); border-right:1px solid var(--border); }
@@ -48,6 +48,7 @@
 .config-dialog .config-detail [data-testid="config-field-row"] > div > div > span:first-child { font:var(--v3-type-body) var(--v3-font-family); }
 .config-dialog .config-detail .config-pas-open-on-start { padding:0 0 var(--v3-space-6); }
 .config-dialog .persistent-settings-read-only-value { min-width:0; overflow-wrap:anywhere; white-space:normal; color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); }
+.config-dialog .config-detail .persistent-session-quota-rows [data-testid="config-field-row"]:last-child { border-bottom:0; }
 .config-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius:var(--radius-lg); }
 @media (max-width:40rem) {
  .config-dialog { height:calc(100dvh - var(--v3-space-8)); }

@@ -48,7 +48,7 @@ function BoolToggle({
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
         value ? "bg-primary" : "bg-input",
-        disabled && "opacity-50 cursor-not-allowed",
+        (disabled || interactionBlocked) && "opacity-50 cursor-not-allowed",
         "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
       )}
     >
@@ -157,13 +157,14 @@ export function SettingFieldWidget({
   onChange,
   className,
   interactionBlocked = false,
-  saving = false,
+  saving,
 }: {
   field: SettingField;
   value: string;
   onChange: (v: string) => void;
   className?: string;
   interactionBlocked?: boolean;
+  /** PAS callers pass false while idle to keep the status slot and row geometry stable. */
   saving?: boolean;
 }) {
   return (
@@ -192,10 +193,10 @@ export function SettingFieldWidget({
           {field.description}
         </p>
       </div>
-      <div className="relative min-w-0">
+      {saving === undefined ? <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} /> : <div className="relative min-w-0">
         <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} />
         {saving ? <span role="status" className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-xs text-muted-foreground">저장 중…</span> : null}
-      </div>
+      </div>}
     </div>
   );
 }

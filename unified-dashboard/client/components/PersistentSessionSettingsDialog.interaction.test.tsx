@@ -69,6 +69,9 @@ it("saves one display field immediately and publishes only the returned settings
   expect(switchControl?.disabled).toBe(false);
   expect(switchControl?.getAttribute("aria-disabled")).toBe("true");
   expect(document.activeElement).toBe(switchControl);
+  expect(document.body.querySelectorAll('[role="status"]')).toHaveLength(1);
+  expect([...document.body.querySelectorAll('[role="switch"]')].every((control) => control.classList.contains("opacity-50"))).toBe(true);
+  expect(document.body.querySelector('[role="status"]')?.closest('[data-testid="config-field-row"]')?.textContent).toContain("캐릭터 표시");
 
   await act(async () => release());
   await settle();
@@ -101,8 +104,14 @@ it("keeps the persisted switch value when an immediate update fails", async () =
   expect(document.body.textContent).toContain("저장하지 못했습니다. 다시 눌러 주세요.");
 });
 
-it("keeps unsaved name and model drafts when an immediate display save succeeds", async () => {
-  const resource = makeSession();
+it.each([
+  ["캐릭터 표시", "show_character", "showCharacter"],
+  ["캐릭터 움직임", "animate_character", "animateCharacter"],
+  ["세대 구분선 표시", "show_generation_separator", "showGenerationSeparator"],
+  ["Jev 후보 표시", "show_jev_candidates", "showJevCandidates"],
+  ["턴 끝 사용량 표시", "show_turn_usage", "showTurnUsage"],
+] as const)("preserves drafts and the immediately saved %s through account save", async (label, key, storeKey) => {
+  let resource = makeSession();
   const calls: Array<{ path: string; method: string; body: unknown }> = [];
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
@@ -110,7 +119,7 @@ it("keeps unsaved name and model drafts when an immediate display save succeeds"
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
     calls.push({ path: url.pathname, method, body });
     if (method === "PUT") {
-      resource.settings.show_character = false;
+      resource = { ...resource, display_name: body.display_name ?? resource.display_name, settings: { ...resource.settings, ...body.settings } };
       return Response.json({ session: resource, model_change: "none" });
     }
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
@@ -126,15 +135,25 @@ it("keeps unsaved name and model drafts when an immediate display save succeeds"
   await setInput(nameInput!, "보존할 이름 초안");
   click("모델 초안 선택");
   click("표시와 모션");
-  await act(async () => switchFor("캐릭터 표시")?.click());
+  await act(async () => switchFor(label)?.click());
   await settle();
-  expect(calls.filter((call) => call.method === "PUT").map((call) => call.body)).toEqual([{ settings: { show_character: false } }]);
+  expect(calls.filter((call) => call.method === "PUT").map((call) => call.body)).toEqual([{ settings: { [key]: false } }]);
 
   click("계정과 모델");
   await settle();
   const persistedNameInput = [...document.body.querySelectorAll<HTMLInputElement>("input")].find((input) => input.closest("[data-testid=config-field-row]")?.textContent?.includes("세션 이름"));
   expect(persistedNameInput?.value).toBe("보존할 이름 초안");
   expect(document.body.querySelector('[aria-label="기본 모델"]')?.textContent).toContain("Sol");
+  click("변경 저장");
+  await settle();
+  expect(calls.filter((call) => call.method === "PUT").map((call) => call.body)).toEqual([
+    { settings: { [key]: false } },
+    { display_name: "보존할 이름 초안", settings: { default_model: { model_preset: "sample-sol", reasoning_effort: null } } },
+  ]);
+  expect(resource.settings[key]).toBe(false);
+  expect(useDashboardStore.getState().persistentSessionDisplaySettings?.[storeKey]).toBe(false);
+  click("표시와 모션");
+  expect(switchFor(label)?.getAttribute("aria-checked")).toBe("false");
 });
 
 it("shows server-calculated weekly headroom for session providers and omits remaining percent", async () => {
@@ -224,7 +243,7 @@ function DraftPreservationHarness({ resource: initialResource, request }: { reso
   const [resource, setResource] = useState(initialResource);
   const [section, setSection] = useState<"account" | "display">("account");
   const api = useMemo(() => createPersistentSessionsApi(request), [request]);
-  const details = usePersistentSessionDetailsController({ resource, api, onSaved: setResource });
+  const details = usePersistentSessionDetailsController({ resource, api, onSaved: (session) => { setResource(session); useDashboardStore.getState().setPersistentSessionDisplaySettings(session.session_id, session.settings); } });
   return <>
     <button type="button" onClick={() => details.onFieldChange("modelPreset", "sample-sol")}>모델 초안 선택</button>
     <button type="button" onClick={() => setSection("account")}>계정과 모델</button>
@@ -233,6 +252,7 @@ function DraftPreservationHarness({ resource: initialResource, request }: { reso
       resource={resource}
       draft={details.draft}
       pending={details.pending}
+      savingDisplayField={details.savingDisplayField}
       error={details.error}
       errorScope={details.errorScope}
       section={section}

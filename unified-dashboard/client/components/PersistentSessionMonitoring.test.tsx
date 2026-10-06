@@ -84,6 +84,7 @@ it("distinguishes missing records, loading, and query failure without substituti
   await settle();
   expect(container.textContent).toContain("세대 기록 없음");
   expect(container.textContent).not.toContain("0.0%");
+  expect(container.querySelector('[aria-label="최근 기록"]')).toBeNull();
   expect(container.textContent?.match(/세대 기록 없음|기록 없음/g)).toHaveLength(1);
 
   const failedRequest: typeof fetch = vi.fn(async () => new Response("unavailable", { status: 503 }));
@@ -115,6 +116,52 @@ it("retries the history read from its inline error action", async () => {
   expect(historyAttempts).toBe(2);
   expect(container.textContent).not.toContain("조회 실패");
   expect(container.textContent).toContain("세대 3");
+});
+
+
+it.each([
+  ["weekly_headroom", "주간 사용 여유"],
+  ["settings", "설정 변경"],
+  ["target model preset unavailable", "모델 사용 불가"],
+  ["unknown_internal_reason", "세대 교체"],
+] as const)("translates generation reason %s", async (reason, label) => {
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname.includes("model-presets")) return Response.json({ model_presets: [] });
+    const current = url.searchParams.get("event_types") === "generation_started";
+    return Response.json({ messages: [{ id: current ? 2 : 1, event_type: "generation_started", payload: { reason, current: { model: "example-model" } }, created_at: "2026-10-06T02:00:00.000Z" }], next_cursor: null });
+  };
+  await act(async () => root.render(<PersistentSessionMonitoring sessionId="reason-pas" nodeId="sample-node" request={request} />));
+  await settle();
+  expect(container.querySelector('[data-testid="persistent-session-history-row"] p')?.textContent).toBe(`${label} · example-model`);
+});
+
+it("retries only the failed older page and preserves already loaded rows", async () => {
+  const calls: string[] = [];
+  let olderAttempts = 0;
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname.includes("model-presets")) return Response.json({ model_presets: [] });
+    calls.push(url.search);
+    if (url.searchParams.get("event_types") === "generation_started") return Response.json({ messages: [], next_cursor: null });
+    if (url.searchParams.has("before") && ++olderAttempts === 1) return new Response("unavailable", { status: 503 });
+    const older = url.searchParams.has("before");
+    return Response.json({ messages: [{ id: older ? 1 : 2, event_type: "complete", payload: { turn_cost_usd: 0.5 }, created_at: "2026-10-06T02:00:00.000Z" }], next_cursor: older ? null : "older-page" });
+  };
+  await act(async () => root.render(<PersistentSessionMonitoring sessionId="page-pas" nodeId="sample-node" request={request} />));
+  await settle();
+  const more = () => [...container.querySelectorAll("button")].find((button) => button.textContent === "더 읽기");
+  await act(async () => more()?.click());
+  await settle();
+  expect(container.textContent).toContain("조회 실패");
+  expect([...container.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["더 읽기"]);
+  expect(historyRowIds()).toEqual(["2"]);
+  await act(async () => more()?.click());
+  await settle();
+  expect(historyRowIds()).toEqual(["2", "1"]);
+  expect(calls.filter((query) => query.includes("before=older-page"))).toHaveLength(2);
+  expect(calls.filter((query) => !query.includes("before=") && !query.includes("event_types=generation_started&"))).toHaveLength(1);
+  expect(container.textContent).not.toContain("조회 실패");
 });
 
 async function settle() {

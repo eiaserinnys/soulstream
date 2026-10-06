@@ -167,7 +167,7 @@ export function PersistentSessionMonitoringView({
     </div> : null}
     {!isLoading && !hasError ? <>
       {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
-      <section className="space-y-2" aria-label="최근 기록">
+      {hasAnyDisplayedRecord || history.nextCursor ? <section className="space-y-2" aria-label="최근 기록">
         <h3 className="text-sm font-medium">최근 기록</h3>
         {visibleEvents.length > 0 ? <ol className="space-y-2" aria-label="최근 세션 기록">
           {visibleEvents.map(({ event, detail }) => <li key={String(event.id)} data-testid="persistent-session-history-row" data-event-id={String(event.id)} className="min-w-0">
@@ -180,9 +180,8 @@ export function PersistentSessionMonitoringView({
         </Button> : null}
         {history.error ? <div className="space-y-2">
           <SettingsAlert>조회 실패: {history.error}</SettingsAlert>
-          <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
         </div> : null}
-      </section>
+      </section> : null}
     </> : null}
   </div>;
 }
@@ -197,7 +196,7 @@ export function PersistentSessionAvailability({
   const rows = useMemo(() => persistentSessionQuotaRows(resource, presets), [presets, resource]);
   if (rows.length === 0) return null;
   return <SettingsGroupBox title="계정 여유">
-    <div className="space-y-1">
+    <div className="persistent-session-quota-rows space-y-1">
       {rows.map((row) => <SettingFieldWidget
         key={row.key}
         field={readField(row.key, row.label, row.value, row.description)}
@@ -317,13 +316,17 @@ function generationSummary(event: TimelineEvent): string {
   const current = asRecord(event.payload.current);
   const model = asString(current?.model) ?? asString(current?.model_preset);
   const reason = asString(event.payload.reason);
-  const reasonLabel = reason ? generationReasonLabel(reason) : "모델 변경";
+  const reasonLabel = generationReasonLabel(reason);
   return [reasonLabel, model].filter(Boolean).join(" · ") || "세대 교체";
 }
 
-function generationReasonLabel(reason: string): string {
-  if (reason === "weekly_headroom") return "주간 사용 여유";
-  return reason.replaceAll("_", " ");
+function generationReasonLabel(reason: string | null): string {
+  switch (reason) {
+    case "weekly_headroom": return "주간 사용 여유";
+    case "settings": return "설정 변경";
+    case "target model preset unavailable": return "모델 사용 불가";
+    default: return "세대 교체";
+  }
 }
 
 function readField(key: string, label: string, value: string, description = ""): SettingField {

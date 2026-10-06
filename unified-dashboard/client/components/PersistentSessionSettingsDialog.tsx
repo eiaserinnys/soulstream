@@ -99,6 +99,7 @@ export function PersistentSessionSettingsDialog({
               resource={resource}
               draft={details.draft}
               pending={details.pending}
+              savingDisplayField={details.savingDisplayField}
               error={details.error}
               errorScope={details.errorScope}
               section={selectedSection}
