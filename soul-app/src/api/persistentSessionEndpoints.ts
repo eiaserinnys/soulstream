@@ -13,6 +13,8 @@ export interface PersistentSessionSettings {
   show_generation_separator?: boolean;
   show_character?: boolean;
   show_jev_candidates?: boolean;
+  animate_character?: boolean;
+  show_turn_usage?: boolean;
 }
 
 export interface PersistentSessionResource {
@@ -47,6 +49,8 @@ export interface PersistentSessionSettingsPatch {
   show_generation_separator?: boolean;
   show_character?: boolean;
   show_jev_candidates?: boolean;
+  animate_character?: boolean;
+  show_turn_usage?: boolean;
 }
 
 /** Model fields used when changing the default model. */

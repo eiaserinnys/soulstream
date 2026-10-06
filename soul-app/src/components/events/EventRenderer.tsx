@@ -22,6 +22,7 @@ interface Props {
   onSelectionDone?: () => void;
   onRetryPending?: (eventId: string) => void;
   onRestorePending?: (eventId: string) => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function EventRenderer({
@@ -32,6 +33,7 @@ export function EventRenderer({
   onSelectionDone,
   onRetryPending,
   onRestorePending,
+  presentation = 'default',
 }: Props) {
   const pending = event as PendingOptimisticEvent;
   const pendingActions = pending.pendingStatus === 'failed'
@@ -45,6 +47,7 @@ export function EventRenderer({
       return (
         <UserMessage
           event={event}
+          presentation={presentation}
           session={session}
           variant="normal"
           pendingStatus={pending.pendingStatus}
@@ -61,6 +64,7 @@ export function EventRenderer({
       return (
         <UserMessage
           event={event}
+          presentation={presentation}
           session={session}
           variant="intervention"
           pendingStatus={pending.pendingStatus}
@@ -75,6 +79,7 @@ export function EventRenderer({
       return (
         <AssistantMessage
           event={event}
+          presentation={presentation}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
@@ -86,6 +91,7 @@ export function EventRenderer({
         return (
           <UserMessage
             event={event}
+            presentation={presentation}
             session={session}
             variant="normal"
             selectionModel={selectionModel}
@@ -96,6 +102,7 @@ export function EventRenderer({
       return (
         <AssistantMessage
           event={event}
+          presentation={presentation}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
@@ -122,14 +129,14 @@ export function EventRenderer({
     case 'thinking_start':
     case 'thinking_delta':
     case 'thinking_end':
-      return <ThinkingEvent event={event} />;
+      return <ThinkingEvent event={event} presentation={presentation} />;
     case 'session_start':
       return null;
     case 'complete':
     case 'context_usage':
     case 'compact':
     case 'session_notification':
-      return <SystemEvent event={event} />;
+      return <SystemEvent event={event} {...(presentation === 'manuscript' ? { presentation } : {})} />;
     case 'input_request':
       return (
         <ChatInputRequest
@@ -138,11 +145,13 @@ export function EventRenderer({
         />
       );
     case 'tool_approval_requested':
-      if (!session?.agentSessionId) return <SystemEvent event={event} />;
+      if (!session?.agentSessionId) return <SystemEvent event={event}
+        {...(presentation === 'manuscript' ? { presentation } : {})} />;
       return (
         <ChatToolApprovalRequest
           event={event}
           sessionId={session.agentSessionId}
+          {...(presentation === 'manuscript' ? { presentation } : {})}
         />
       );
     // expired/responded는 store에 append되어 ChatInputRequest selector가 참조. 렌더 불필요.
@@ -155,7 +164,7 @@ export function EventRenderer({
     case 'realtime_status':
     case 'guardrail_tripwire':
     case 'error':
-      return <SystemEvent event={event} />;
+      return <SystemEvent event={event} {...(presentation === 'manuscript' ? { presentation } : {})} />;
     // history_sync는 SSE 연결 직후 baseline 메타 이벤트일 뿐 사용자 메시지가 아니다.
     case 'history_sync':
       return null;

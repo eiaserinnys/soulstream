@@ -9,6 +9,7 @@ interface CollapsibleCaptionProps {
   children: ReactNode;
   initiallyCollapsed?: boolean;
   align?: 'start' | 'end';
+  alignmentInset?: 'avatar' | 'content';
 }
 
 const CaptionAlignContext = createContext<'start' | 'end'>('start');
@@ -18,15 +19,16 @@ export function CollapsibleCaption({
   children,
   initiallyCollapsed = true,
   align = 'start',
+  alignmentInset = 'avatar',
 }: CollapsibleCaptionProps) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t, align), [t, align]);
+  const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
   const [expanded, setExpanded] = useState(() => !initiallyCollapsed);
   const [pressed, setPressed] = useState(false);
 
   return (
     <CaptionAlignContext.Provider value={align}>
-      <View style={styles.wrapper}>
+      <View testID="collapsible-caption-wrapper" style={styles.wrapper}>
         <CompactTouchTarget
           accessibilityRole="button"
           accessibilityLabel={title}
@@ -64,7 +66,7 @@ export function CollapsibleCaption({
 export function CollapsibleCaptionLine({ children }: { children: ReactNode }) {
   const t = useTokens();
   const align = useContext(CaptionAlignContext);
-  const styles = useMemo(() => makeStyles(t, align), [t, align]);
+  const styles = useMemo(() => makeStyles(t, align, 'avatar'), [t, align]);
   return (
     <Text numberOfLines={1} ellipsizeMode="tail" style={styles.contentLine}>
       {children}
@@ -72,20 +74,21 @@ export function CollapsibleCaptionLine({ children }: { children: ReactNode }) {
   );
 }
 
-function makeStyles(t: DesignTokens, align: 'start' | 'end') {
+function makeStyles(t: DesignTokens, align: 'start' | 'end', alignmentInset: 'avatar' | 'content') {
   const endAligned = align === 'end';
   const bubbleMaxWidth = createSessionVisualRoles(t).chat.bubbleMaxWidth;
+  const contentAligned = alignmentInset === 'content';
   return StyleSheet.create({
     wrapper: {
-      paddingHorizontal: endAligned ? t.spacing.md : t.spacing.lg,
+      paddingHorizontal: contentAligned ? 0 : endAligned ? t.spacing.md : t.spacing.lg,
     },
     touchFrame: {
       alignSelf: 'stretch',
     },
     touchSurface: {
       alignSelf: endAligned ? 'flex-end' : 'stretch',
-      width: endAligned ? bubbleMaxWidth : '100%',
-      marginRight: endAligned ? t.avatarSize.message + t.spacing.sm : 0,
+      width: endAligned && !contentAligned ? bubbleMaxWidth : '100%',
+      marginRight: endAligned && !contentAligned ? t.avatarSize.message + t.spacing.sm : 0,
       alignItems: 'stretch',
       justifyContent: 'flex-start',
     },

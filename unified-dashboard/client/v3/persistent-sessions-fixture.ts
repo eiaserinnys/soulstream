@@ -21,6 +21,8 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
     show_generation_separator: true,
     show_character: true,
     show_jev_candidates: true,
+    animate_character: true,
+    show_turn_usage: true,
   });
   const build = (id: string, name: string, agentId: string | null, agentName: string | null, preset: string, current: string, effort: string | null = defaultEffort[preset] ?? null): PersistentSession => ({
     session_id: id,

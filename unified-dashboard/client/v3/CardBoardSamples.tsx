@@ -31,10 +31,12 @@ export function CardBoardSamples() {
   const [assignmentScenario,setAssignmentScenario]=useState<'unassigned'|'partial'|'agent'|'assigned'|'live'>('assigned');
   const assignmentSession={...reviewSession,status:assignmentScenario==='live'?'running' as const:'completed' as const};
   const [settings,setSettings]=useState<Record<string,Partial<typeof reviewCard>>>({});
-  const [checkScenario,setCheckScenario]=useState<"full"|"agent"|"outside"|"no-now-complete"|"two-confirmed">("full");
-  const sampleItems=checkScenario==="no-now-complete"?reviewCardItems.map(item=>item.display==="dropped"?item:{...item,state:"done" as const,display:"confirmed" as const,confirmed:{at:reviewNow.updatedAt,rev:item.rev}})
+  const [checkScenario,setCheckScenario]=useState<"full"|"agent"|"outside"|"no-now-complete"|"two-confirmed"|"question-only"|"many-sessions"|"long-caption"|"no-evidence">("full");
+  const sampleItems=checkScenario==="question-only"?reviewCardItems.map(item=>({...item,display:"todo" as const,confirmed:null})):checkScenario==="no-now-complete"?reviewCardItems.map(item=>item.display==="dropped"?item:{...item,state:"done" as const,display:"confirmed" as const,confirmed:{at:reviewNow.updatedAt,rev:item.rev}})
+    :checkScenario==="long-caption"?reviewCardItems.map(item=>({...item,evidence:item.evidence.map(evidence=>evidence.type==="image"?{...evidence,label:"확대한 이미지 아래에서 긴 설명의 두 번째 줄까지 잘리지 않고 온전히 읽는지 확인합니다".slice(0,40)}:evidence)}))
+    :checkScenario==="no-evidence"?reviewCardItems.map(item=>({...item,evidence:[]}))
     :checkScenario==="two-confirmed"?reviewCardItems.filter(item=>item.display!=="confirmed"||item.id!==reviewCardItems.filter(value=>value.display==="confirmed").at(-1)!.id):reviewCardItems;
-  const sampleNow=checkScenario==="no-now-complete"?null:checkScenario==="agent"||checkScenario==="outside"?{...reviewNow,turn:checkScenario,ask:checkScenario==="agent"?"결과를 준비하고 있습니다.":"외부 응답을 기다립니다."}:reviewNow;
+  const sampleNow=checkScenario==="no-now-complete"?null:checkScenario==="agent"||checkScenario==="outside"?{...reviewNow,turn:checkScenario,ask:checkScenario==="agent"?"결과를 준비하고 있습니다.":"외부 응답을 기다립니다."}:checkScenario==="question-only"?{...reviewNow,turn:"user" as const,ask:"질문에 답해 주세요"}:reviewNow;
   const [sampleDetails,setSampleDetails]=useState<Record<string,CardDetail>>({});
   const assignmentCard=assignmentScenario==='assigned'||assignmentScenario==='live'
     ?{assigneeKind:'session' as const,assigneeSessionId:reviewSession.agentSessionId,nodeId:'sample-node',assigneeAgentId:null,modelPreset:'sample-sol'}
@@ -73,7 +75,7 @@ export function CardBoardSamples() {
   const renderCard=(card:CardRow,variant:PostItVariant="compact")=><PostItCardView card={card} variant={variant} activity={card.latestActivity??null} assignee={reviewSession}
     onOpen={()=>{
       // Seed the existing ID query with review fixtures; keep the operational resolver.
-      queryClient.setQueryData(["sessions","ids",null,[reviewSession.agentSessionId]],{
+      queryClient.setQueryData(["sessions","ids",null,[reviewSession.agentSessionId],"card-history"],{
         pages:[{sessions:[assignmentSession],total:1}],pageParams:[0],
       });
       setSelectedSession(undefined);setMobileTab("projects");setSelected(card.id);
@@ -87,7 +89,8 @@ export function CardBoardSamples() {
   const selectedCardDetail=selectedCard?sampleDetails[selectedCard.id]??{
     ...(selectedCard.items?{...reviewDetail,notes:reviewNotes,nowHistory:reviewNowHistory}:legacyReviewDetail),
     card:{...selectedCard,...(startExample==='todo'||startExample==='queued'?{status:startExample}:startExample==='pending'?{status:'running' as const}:{}),brief:conversation==="short"?"내부 요약을 접지 않고 표시합니다.":"내부 요약을 접지 않고 표시합니다.\n\n".repeat(30)},
-    sessions:[{sessionId:reviewSession.agentSessionId,cardId:selectedCard.id,displayName:reviewSession.displayName??null,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:assignmentSession.status,createdAt:reviewCard.createdAt,updatedAt:reviewCard.updatedAt,callerSessionId:null}],
+    sessions:checkScenario==="many-sessions"?Array.from({length:75},(_,i)=>({sessionId:i===0?reviewSession.agentSessionId:`trim-session-${String(i).padStart(3,"0")}`,cardId:selectedCard.id,displayName:`검수 세션 ${i+1}`,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:"completed",createdAt:new Date(Date.parse(reviewCard.createdAt)+i*60000).toISOString(),updatedAt:reviewCard.updatedAt,callerSessionId:null})):
+     [{sessionId:reviewSession.agentSessionId,cardId:selectedCard.id,displayName:reviewSession.displayName??null,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:assignmentSession.status,createdAt:reviewCard.createdAt,updatedAt:reviewCard.updatedAt,callerSessionId:null}],
     comments:Array.from({length:conversation==="short"?1:20},(_,index)=>({id:`detail-comment-${index}`,cardId:selectedCard.id,authorKind:"user" as const,authorId:"sample",sessionId:null,kind:"comment" as const,body:`커멘트 ${index+1}: 탭을 바꾸어도 작성 중 문장과 첨부는 유지됩니다.`,createdAt:reviewCard.createdAt,...(selectedCard.items&&index===0?{itemId:5}:{})})),
     questions:[{id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:"확인했습니다",askedAt:reviewCard.createdAt,answeredAt:reviewCard.createdAt}],
   }:undefined;
@@ -108,7 +111,7 @@ export function CardBoardSamples() {
     </div>
     <div className="v3-detail-section-head">{(['unassigned','partial','agent','assigned','live'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={assignmentScenario===value} onClick={()=>{setSelected(null);setSettings({});setSampleDetails({});setAssignmentScenario(value);}}>{{unassigned:'담당 없음',partial:'부분 설정',agent:'에이전트 지정',assigned:'담당 연결',live:'실행 중'}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(['normal','todo','queued','pending'] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={startExample===value} onClick={()=>{setStartExample(value);setSelected(comparison.id);}}>{{normal:'기본 상세',todo:'드래프트 상세',queued:'대기 상세',pending:'시작 확인 중'}[value]}</Button>)}</div>
-    <div className="v3-detail-section-head" data-testid="card-check-scenarios">{(["full","agent","outside","no-now-complete","two-confirmed"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={checkScenario===value} onClick={()=>{setSelected(null);setSampleDetails({});setCheckScenario(value);}}>{{full:"일곱 상태",agent:"에이전트 차례 띠",outside:"바깥 대기 띠","no-now-complete":"상황판 없이 모두 확인","two-confirmed":"확인함 두 개"}[value]}</Button>)}</div>
+    <div className="v3-detail-section-head" data-testid="card-check-scenarios">{(["full","agent","outside","no-now-complete","two-confirmed","question-only","many-sessions","long-caption","no-evidence"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={checkScenario===value} onClick={()=>{setSelected(null);setSampleDetails({});setCheckScenario(value);}}>{{full:"일곱 상태",agent:"에이전트 차례 띠",outside:"바깥 대기 띠","no-now-complete":"상황판 없이 모두 확인","two-confirmed":"확인함 두 개","question-only":"질문만 있는 카드","many-sessions":"많은 세션","long-caption":"긴 이미지 설명","no-evidence":"캡처 없는 보고"}[value]}</Button>)}</div>
     <div className="v3-detail-section-head">{(["short","long"] as const).map(value=><Button key={value} size="sm" variant="ghost" aria-pressed={conversation===value} onClick={()=>setConversation(value)}>{value==="short"?"짧은 커멘트":"긴 커멘트"}</Button>)}</div>
     {mode==="board"?<CardBoardWorkspace title={scope==="folder"?"현재 폴더 카드":"전체 카드"} cards={visibleCards} completed={completed} renderCard={card=>renderCard(card,"compact")} completion={{includeCompleted,onChange}}
       draftAction={<DashboardIconCap size="small" label="새 카드" onClick={()=>setAdding(true)}><Plus className="h-4 w-4"/></DashboardIconCap>}/>

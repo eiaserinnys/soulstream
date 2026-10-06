@@ -8,6 +8,7 @@ import {
   type FlatList,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type LayoutChangeEvent,
 } from 'react-native';
 import {
   useChatStore,
@@ -49,6 +50,10 @@ interface Props {
   storyOpenRequestId?: number | null;
   onFocusEventHandled?: (sessionId: string, eventId: number) => void;
   onStoryOpenRequestHandled?: () => void;
+  /** 같은 채팅 부품을 원고형으로 표시한다. 기본 채팅은 기존 모양을 유지한다. */
+  presentation?: 'default' | 'manuscript';
+  /** 입력 줄과 대기 첨부를 감싼 묶음의 ChatBody 기준 배치. */
+  onComposerLayout?: (event: LayoutChangeEvent) => void;
 }
 
 if (
@@ -83,6 +88,8 @@ export function ChatBody({
   storyOpenRequestId = null,
   onFocusEventHandled,
   onStoryOpenRequestHandled,
+  presentation = 'default',
+  onComposerLayout,
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -489,6 +496,7 @@ export function ChatBody({
         highlightedItemKey={highlightedItemKey}
         onContentSizeChange={onContentSizeChange}
         onScrollToIndexFailed={handleScrollToIndexFailed}
+        presentation={presentation}
       />
 
       <ClaudeRuntimeTasksStrip sessionId={sessionId} api={api} />
@@ -507,6 +515,8 @@ export function ChatBody({
         appForeground={appForeground}
         minimumBottomPadding={minimumBottomPadding}
         requestBottomFollow={requestBottomFollow}
+        presentation={presentation}
+        onComposerLayout={onComposerLayout}
       />
     </AppKeyboardAvoidingView>
   );

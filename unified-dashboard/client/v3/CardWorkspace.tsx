@@ -2,7 +2,9 @@ import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { CardDetailPane } from "./CardDetailPane";
 import { WorkspaceSessionColumn } from "./WorkspaceSessionColumn";
-import { cardWorkspaceWidthForKey, clampCardWorkspaceWidth, defaultCardWorkspaceWidth, resizeCardWorkspaceWidth } from "./folder-workspace-run-model";
+import { DragHandle } from "@seosoyoung/soul-ui";
+import { cardWorkspaceLayout, cardWorkspaceLayoutForKey, resizeCardWorkspace, type CardWorkspaceLayout } from "./card-workspace-layout";
+import { readV3CardWorkspaceLayout, writeV3CardWorkspaceLayout } from "./v3-session-panel-width";
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 
 /** Card overlay uses the folder workspace's panel, split and mobile classes. */
@@ -17,7 +19,7 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
  const workspace=useRef<HTMLDivElement>(null);
  const workspaceWidthRef=useRef(0);
  const [workspaceWidth,setWorkspaceWidth]=useState(0);
- const [splitWidth,setSplitWidth]=useState<number|null>(null);
+ const [layout,setLayout]=useState<CardWorkspaceLayout|null>(readV3CardWorkspaceLayout);
  const [host,setHost]=useState<Element|null>(null);
  useLayoutEffect(()=>{
   const focus=document.activeElement as HTMLElement|null;
@@ -39,7 +41,23 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
   observer.observe(element);
   return ()=>observer.disconnect();
  },[host]);
- const cardWidth=splitWidth===null?defaultCardWorkspaceWidth(workspaceWidth):clampCardWorkspaceWidth(splitWidth,workspaceWidth);
+ const resolved=cardWorkspaceLayout(workspaceWidth,layout);
+ const update=(next:CardWorkspaceLayout|null)=>{setLayout(next);writeV3CardWorkspaceLayout(next);};
+ const drag=(delta:number,edge:"left"|"middle")=>{
+  const width=workspaceWidthRef.current;
+  if(width>0){const next=resizeCardWorkspace(width,layout,delta*document.documentElement.clientWidth/100,edge);if(next!==undefined)update(next);}
+ };
+ const key=(event:import("react").KeyboardEvent<HTMLDivElement>,edge:"left"|"middle")=>{
+  if(!["Home","ArrowLeft","ArrowRight"].includes(event.key))return;
+  event.preventDefault();
+  const next=cardWorkspaceLayoutForKey(workspaceWidthRef.current,layout,event.key,edge);
+  if(next!==undefined)update(next);
+ };
+ const panes=<>
+  <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/>
+  <WorkspaceSessionColumn {...chat} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}
+   separatorAria={{"aria-valuenow":resolved.cardWidth,"aria-valuemin":resolved.minimum,"aria-valuemax":resolved.totalWidth-resolved.gap-resolved.minimum,"aria-valuetext":`카드 ${Math.round(resolved.cardWidth)}픽셀, 대화 ${Math.round(resolved.chatWidth)}픽셀`}}/>
+ </>;
  const content=<div className="v3-workspace-scrim is-chat-open" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}
   onKeyDown={event=>{
    if(event.defaultPrevented)return;
@@ -51,24 +69,14 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
    }
   }}>
-  <div ref={workspace} className="v3-workspace is-chat-open" data-testid="v3-card-workspace" data-placement="overlay" data-mobile-view={mobileMode?mobileTab:undefined}
-   data-card-width-px={Math.round(cardWidth)}
-   style={!mobileMode&&workspaceWidth>0?{gridTemplateColumns:`${cardWidth}px ${V3_PANEL_GAP_PX}px minmax(0, 1fr)`}:undefined}>
-   <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/>
-   <WorkspaceSessionColumn {...chat} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider"
-    onResize={delta=>{
-     const width=workspaceWidthRef.current||workspace.current?.getBoundingClientRect().width||0;
-     if(width<=0)return;
-     const deltaPx=delta*document.documentElement.clientWidth/100;
-     setSplitWidth(current=>resizeCardWorkspaceWidth(current??defaultCardWorkspaceWidth(width),width,deltaPx));
-    }}
-    onResizeKeyDown={event=>{
-     const width=workspaceWidthRef.current||workspace.current?.getBoundingClientRect().width||0;
-     if(width<=0)return;
-     if(event.key==="Home"){event.preventDefault();setSplitWidth(null);return;}
-     const next=cardWorkspaceWidthForKey(splitWidth??defaultCardWorkspaceWidth(width),width,event.key);
-     if(next!==null){event.preventDefault();setSplitWidth(next);}
-    }}/>
+  <div ref={workspace} className="v3-workspace is-chat-open" data-testid="v3-card-workspace" data-placement="overlay" data-mobile-view={mobileMode?mobileTab:undefined} onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}
+   data-card-width-px={Math.round(resolved.cardWidth)} data-pair-width-px={Math.round(resolved.totalWidth)}>
+   {mobileMode?panes:<div className="v3-card-workspace-pair" style={workspaceWidth>0?{width:resolved.totalWidth,gridTemplateColumns:`${resolved.cardWidth}px ${resolved.gap}px minmax(0,1fr)`}:undefined}>
+    <div className="v3-workspace-divider v3-card-workspace-left-divider" data-testid="v3-card-workspace-left-divider" role="separator" aria-orientation="vertical" aria-label="카드와 대화 전체 폭" aria-valuenow={resolved.totalWidth} aria-valuemin={resolved.totalMinimum} aria-valuemax={workspaceWidth} aria-valuetext={`${Math.round(resolved.totalWidth)}픽셀`} tabIndex={0} onKeyDown={event=>key(event,"left")}>
+     <DragHandle widthPx={V3_PANEL_GAP_PX} onDrag={delta=>drag(delta,"left")}/>
+    </div>
+    {panes}
+   </div>}
   </div>
  </div>;
  return host?createPortal(content,host):content;
