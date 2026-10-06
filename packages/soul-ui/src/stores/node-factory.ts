@@ -30,6 +30,7 @@ import type {
   AssistantMessageEvent,
   AssistantErrorEvent,
   AwaySummaryEvent,
+  ContextUsageEvent,
   TurnSummaryEvent,
   TextNode,
 } from "@shared/types";
@@ -254,6 +255,19 @@ export function createNodeFromEvent(
           sessionCostPartial: e.session_cost_partial,
         },
       );
+    }
+
+    case "context_usage": {
+      const e = event as ContextUsageEvent;
+      return makeNode(`context-usage-${eventId}`, "context_usage", "", {
+        completed: true,
+        contextUsageData: {
+          usedTokens: e.used_tokens,
+          maxTokens: e.max_tokens,
+          percent: e.percent,
+          estimated: e.estimated,
+        },
+      });
     }
 
     case "error": {

@@ -11,6 +11,7 @@ interface LogicalCoordinate {
   sessionKey: string | null;
   groupedKeys: string[];
   prependedCount: number;
+  historyRows: number;
   insertedBeforeVisible: number;
 }
 
@@ -23,6 +24,7 @@ export function useChatLogicalInsertionCoordinate(
   grouped: ChatTimelineItem[],
   sessionKey: string | null,
   prependedCount: number,
+  projectHistoryRows = false,
 ): {
   firstItemIndex: number;
   recordFirstVisibleKey: (key: string | null) => void;
@@ -36,6 +38,7 @@ export function useChatLogicalInsertionCoordinate(
     sessionKey,
     groupedKeys,
     prependedCount,
+    historyRows: prependedCount,
     insertedBeforeVisible: 0,
   }));
 
@@ -57,6 +60,15 @@ export function useChatLogicalInsertionCoordinate(
       sessionKey,
       groupedKeys,
       prependedCount,
+      // The store counts default rows. Manuscript history can hide complete rows;
+      // use the projected keys before the old first row for that same prepend.
+      historyRows: shouldResetViewportBasis
+        ? prependedCount
+        : projectHistoryRows
+          ? coordinate.historyRows + (coordinate.prependedCount !== prependedCount
+            ? countInsertedRowsBeforeKey(coordinate.groupedKeys, groupedKeys, coordinate.groupedKeys[0] ?? null)
+            : 0)
+          : prependedCount,
       insertedBeforeVisible:
         shouldResetViewportBasis
           ? 0
@@ -75,7 +87,7 @@ export function useChatLogicalInsertionCoordinate(
   }
 
   const firstItemIndex = computeFirstItemIndex(
-    prependedCount + renderCoordinate.insertedBeforeVisible,
+    renderCoordinate.historyRows + renderCoordinate.insertedBeforeVisible,
   );
   const recordFirstVisibleKey = useCallback(
     (key: string | null) => {

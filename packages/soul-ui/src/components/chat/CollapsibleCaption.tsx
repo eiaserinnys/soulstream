@@ -7,6 +7,8 @@ import { Button } from "../ui/button";
 export interface CollapsibleCaptionProps {
   title: string;
   children: ReactNode;
+  expandedTitle?: string;
+  wrapExpandedTitle?: boolean;
   initiallyCollapsed?: boolean;
   align?: "start" | "end";
   alignmentInset?: "avatar" | "content";
@@ -15,13 +17,17 @@ export interface CollapsibleCaptionProps {
 export function CollapsibleCaption({
   title,
   children,
+  expandedTitle,
+  wrapExpandedTitle = false,
   initiallyCollapsed = true,
   align = "start",
   alignmentInset = "avatar",
 }: CollapsibleCaptionProps) {
-  const contentAligned = alignmentInset === "content";
-  const contentId = useId();
   const [expanded, setExpanded] = useState(() => !initiallyCollapsed);
+  const contentAligned = alignmentInset === "content";
+  const wrapTitle = expanded && wrapExpandedTitle && expandedTitle !== undefined;
+  const visibleTitle = expanded && expandedTitle !== undefined ? expandedTitle : title;
+  const contentId = useId();
 
   return (
     <div
@@ -33,12 +39,12 @@ export function CollapsibleCaption({
         <Button
           aria-controls={contentId}
           aria-expanded={expanded}
-          className={`${contentAligned ? (align === "end" ? "-me-px justify-end !pe-0" : "-ms-px justify-start !ps-0") : (align === "end" ? "-me-2 justify-end !pe-2" : "-ms-2 justify-start")} max-w-full h-6 sm:h-6 gap-2 !text-xs !font-medium text-muted-foreground`}
+          className={`${contentAligned ? (align === "end" ? "-me-px justify-end !pe-0" : "-ms-px justify-start !ps-0") : (align === "end" ? "-me-2 justify-end !pe-2" : "-ms-2 justify-start")} ${wrapTitle ? "max-w-full !h-auto min-h-6" : "max-w-full h-6 sm:h-6"} gap-2 !text-xs !font-medium text-muted-foreground`}
           onClick={() => setExpanded((value) => !value)}
           size="xs"
           variant="ghost"
         >
-          <span className={`min-w-0 truncate ${align === "end" ? "text-right" : "text-left"}`}>{title}</span>
+          <span className={`min-w-0 ${wrapTitle ? "max-w-full whitespace-normal break-keep break-words" : "truncate"} ${align === "end" ? "text-right" : "text-left"}`}>{visibleTitle}</span>
           <DisclosureActionIcon expanded={expanded} />
         </Button>
         <div className={`mt-0.5 min-w-0 space-y-0.5 ${align === "end" ? "max-w-full text-right" : ""}`} hidden={!expanded} id={contentId}>

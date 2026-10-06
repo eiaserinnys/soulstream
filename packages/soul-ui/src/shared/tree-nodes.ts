@@ -196,6 +196,17 @@ export interface CompleteNode extends BaseNode {
   sessionCostPartial?: boolean;
 }
 
+/** PAS transcript projection source; hidden from the default transcript. */
+export interface ContextUsageNode extends BaseNode {
+  type: "context_usage";
+  contextUsageData: {
+    usedTokens: number;
+    maxTokens: number;
+    percent: number;
+    estimated?: boolean;
+  };
+}
+
 /** 에러 노드 */
 export interface ErrorNode extends BaseNode {
   type: "error";
@@ -292,6 +303,7 @@ export type EventTreeNode =
   | ResultNode
   | CompactNode
   | CompleteNode
+  | ContextUsageNode
   | ErrorNode
   | InputRequestNodeDef
   | ToolApprovalNodeDef

@@ -745,6 +745,29 @@ describe("createNodeFromEvent", () => {
   });
 });
 
+describe("context_usage event node", () => {
+  it("preserves the payload values on a typed tree node", () => {
+    const node = createNodeFromEvent({
+      type: "context_usage",
+      used_tokens: 6_300,
+      max_tokens: 10_000,
+      percent: 63,
+      estimated: true,
+    }, 91);
+
+    expect(node).toMatchObject({
+      id: "context-usage-91",
+      type: "context_usage",
+      contextUsageData: {
+        usedTokens: 6_300,
+        maxTokens: 10_000,
+        percent: 63,
+        estimated: true,
+      },
+    });
+  });
+});
+
 // === applyUpdate ===
 
 describe("applyUpdate", () => {

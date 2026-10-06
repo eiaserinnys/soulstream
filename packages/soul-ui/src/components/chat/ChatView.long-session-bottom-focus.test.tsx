@@ -329,6 +329,80 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(chatInputMock.props?.composerAnchorRef).toBe(composerAnchorRef);
   });
 
+  it.each([
+    ["manuscript", false, true, 1],
+    ["manuscript", true, false, 1],
+    ["default", false, true, 2],
+  ] as const)("preserves the existing row coordinate after %s history prepend (usage %s, context %s)", async (presentation, showTurnUsage, withContext, addedRows) => {
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("sess-long", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      show_turn_usage: showTurnUsage,
+    });
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000), makeAssistantMessage(1001)]);
+    ({ container, root } = await renderChatView({ presentation }));
+    const before = setFirstVisibleDataIndex(1);
+    const beforeFirstIndex = virtuosoMock.props?.firstItemIndex as number;
+    const beforeLength = virtuosoData().length;
+    const beforePrepended = useDashboardStore.getState().chatPrependedCount;
+
+    flushSync(() => {
+      useDashboardStore.getState().processHistoryEvents([
+        makeUserMessage(900),
+        ...(withContext ? [{ eventId: 901, event: { type: "context_usage", used_tokens: 500, max_tokens: 1000, percent: 50 } as SoulSSEEvent }] : []),
+        makeComplete(902),
+      ]);
+    });
+    await flushPassiveEffects();
+
+    expect(useDashboardStore.getState().chatPrependedCount - beforePrepended).toBe(2);
+    expect(virtuosoData().length - beforeLength).toBe(addedRows);
+    const afterFirstIndex = virtuosoMock.props?.firstItemIndex as number;
+    expect(beforeFirstIndex - afterFirstIndex).toBe(addedRows);
+    expect(afterFirstIndex + findDataIndexByKey(before.key)).toBe(before.absoluteIndex);
+  });
+
+  it.each([
+    ["unloaded", null, true],
+    ["other session", { sessionId: "other", showTurnUsage: false }, true],
+    ["missing key", { sessionId: "sess-long" }, true],
+    ["explicit false", { sessionId: "sess-long", showTurnUsage: false }, false],
+  ] as const)("defaults manuscript usage to on for %s", async (_label, settings, expected) => {
+    useDashboardStore.setState({ persistentSessionDisplaySettings: settings as any });
+    useDashboardStore.getState().processHistoryEvents([
+      makeUserMessage(1),
+      { eventId: 2, event: { type: "context_usage", used_tokens: 500, max_tokens: 1000, percent: 50 } as SoulSSEEvent },
+      makeComplete(3),
+      makeUserMessage(4),
+      { eventId: 5, event: { type: "context_usage", used_tokens: 600, max_tokens: 1000, percent: 60 } as SoulSSEEvent },
+      { eventId: 6, event: { type: "error", message: "실패" } as SoulSSEEvent },
+    ]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    const complete = virtuosoData().find(item => item.type === "single" && item.msg.treeNodeType === "complete");
+    const error = virtuosoData().find(item => item.type === "single" && item.msg.treeNodeType === "error");
+    expect(Boolean(complete?.msg.turnUsageCaption)).toBe(expected);
+    expect(Boolean(error?.msg.turnUsageCaption)).toBe(expected);
+  });
+
+  it.each(["manuscript", "default"] as const)("settles a single-pixel bottom gap in %s without changing the default tolerance", async presentation => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1)]);
+    ({ container, root } = await renderChatView({ presentation }));
+    const scroller = container.querySelector<HTMLElement>('[data-testid="virtuoso"]')!;
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scroller, "scrollTop", { configurable: true, writable: true, value: 399 });
+    const nativeScrollTo = vi.fn(() => { scroller.scrollTop = 400; });
+    scroller.scrollTo = nativeScrollTo;
+    const heightChanged = virtuosoMock.props?.totalListHeightChanged as () => void;
+    heightChanged();
+    expect(nativeScrollTo).toHaveBeenCalledTimes(presentation === "manuscript" ? 1 : 0);
+    expect(scroller.scrollTop).toBe(presentation === "manuscript" ? 400 : 399);
+    heightChanged();
+    expect(nativeScrollTo).toHaveBeenCalledTimes(presentation === "manuscript" ? 1 : 0);
+  });
+
   it("keeps retrying bottom focus after a late false atBottom report until the session reaches bottom", async () => {
     useDashboardStore.getState().processHistoryEvents([
       makeUserMessage(1000),

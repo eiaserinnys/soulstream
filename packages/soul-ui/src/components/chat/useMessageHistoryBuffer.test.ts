@@ -45,6 +45,19 @@ describe("buildHistoryPageUrl", () => {
     expect(url.searchParams.get("event_types")).not.toContain("thinking");
     expect(url.searchParams.get("event_types")).not.toContain("context_usage");
   });
+
+  it("requests turn usage events only for manuscript history", () => {
+    const regular = new URL(buildHistoryPageUrl("sess-1", null), "https://example.test");
+    const manuscript = new URL(buildHistoryPageUrl("sess-1", null, true), "https://example.test");
+
+    expect(regular.searchParams.get("event_types")).not.toContain("context_usage");
+    expect(regular.searchParams.get("event_types")).not.toContain("complete");
+    expect(manuscript.searchParams.get("event_types")?.split(",")).toEqual([
+      ...regular.searchParams.get("event_types")!.split(","),
+      "context_usage",
+      "complete",
+    ]);
+  });
 });
 
 describe("buildToolTraceUrl", () => {
