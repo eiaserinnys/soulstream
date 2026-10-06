@@ -111,6 +111,7 @@ interface SetPersistentSessionSettingsCmd extends CommandLike {
 
 interface ApplyPersistentSessionInstructionsCmd extends CommandLike {
   type: "apply_persistent_session_instructions";
+  agentSessionId?: string;
   session_id?: string;
   origin?: unknown;
   ops?: unknown;
@@ -252,13 +253,20 @@ async function handleApplyPersistentSessionInstructions(
   cmd: ApplyPersistentSessionInstructionsCmd,
 ): Promise<void> {
   const unknownKey = Object.keys(cmd).find((key) => ![
-    "type", "session_id", "origin", "ops", "anchor", "requestId", "request_id",
+    "type", "agentSessionId", "session_id", "origin", "ops", "anchor", "requestId", "request_id",
   ].includes(key));
   if (unknownKey) {
     throw new CommandDispatchError(`apply_persistent_session_instructions.${unknownKey} is not supported`, "INVALID_REQUEST");
   }
+  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  if (!sessionId) {
+    throw new CommandDispatchError(
+      "apply_persistent_session_instructions requires agentSessionId",
+      "INVALID_REQUEST",
+    );
+  }
   const parsed = parsePersistentInstructionsApplyPayload({
-    session_id: cmd.session_id,
+    session_id: sessionId,
     origin: cmd.origin,
     ops: cmd.ops,
     ...(cmd.anchor === undefined ? {} : { anchor: cmd.anchor }),
