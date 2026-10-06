@@ -8,9 +8,8 @@ import type { CardSessionSelection } from "./CardSessionHistory";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
-import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
-import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
+import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 import { useNodes } from "../hooks/useNodes";
 import { ConfigModal } from "../components/ConfigModal";
 import { V3SearchModal } from "./V3SearchModal";
@@ -53,6 +52,7 @@ import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
 import { useV3MutationProjection } from "./use-v3-mutation-projection";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
+import { useV3MainColumns } from "./use-v3-main-columns";
 import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
 import { useProjectNavigationMutations } from "./use-project-navigation-mutations";
 import { useFolderSessions } from "./use-folder-sessions";
@@ -96,18 +96,10 @@ function V3DashboardContent() {
   const [markdownDocumentsRevision, setMarkdownDocumentsRevision] = useState(0);
   const [detailChatVisible, setDetailChatVisible] = useState(false);
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
-  const [navigationWidth, setNavigationWidth] = useState(() => readV3NavigationWidth());
+  const { navigationWidth, sessionPanelWidth, resizeNavigation, resizeSessionPanel } = useV3MainColumns();
   const plannerSurfaceRef = useRef<HTMLDivElement>(null);
   const plannerScrollRef = useRef<HTMLDivElement>(null);
   const plannerWebglActive = useGlassSurface(plannerSurfaceRef, { enabled: true });
-  const resizeNavigation = useCallback((deltaPercent: number) => {
-    const deltaPx = document.documentElement.clientWidth * deltaPercent / 100;
-    setNavigationWidth((current) => {
-      const next = clampDashboardLeftSidebarWidth(current + deltaPx);
-      writeDashboardLeftSidebarWidth(next);
-      return next;
-    });
-  }, []);
   useEffect(() => { initTheme(); }, []);
   useEffect(() => {
     if (selectedDateFollowsToday.current) setSelectedDate(today);
@@ -520,8 +512,8 @@ function V3DashboardContent() {
     "--v3-panel-gap": `${V3_PANEL_GAP_PX}px`,
     "--v3-outer-inset": `${V3_OUTER_INSET_PX}px`,
     "--v3-content-max-width": `${V3_CONTENT_MAX_WIDTH_PX}px`,
-    "--v3-navigation-width": `${navigationWidth || V3_NAVIGATION_DEFAULT_WIDTH_PX}px`,
-    "--v3-session-panel-width": `${sessionPanel.panelWidth}px`,
+    "--v3-navigation-width": `${navigationWidth}px`,
+    "--v3-session-panel-width": `${sessionPanelWidth}px`,
   } as CSSProperties;
   const workspaceFolderEntry = useMemo(
     () => selectedFolderEntry ? {
@@ -645,7 +637,7 @@ function V3DashboardContent() {
         </div>
       </main>
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
-        <DragHandle onDrag={sessionPanel.resize} widthPx={V3_PANEL_GAP_PX} />
+        <DragHandle onDrag={resizeSessionPanel} widthPx={V3_PANEL_GAP_PX} />
       </div>
       <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openFeedSession} onAcknowledged={acknowledgeReview} />
       {cardNavigation.cardId ? <CardWorkspace cardId={cardNavigation.cardId} initialSessionId={cardNavigation.initialSessionId} folders={catalog?.folders??[]} onClose={closeCardWorkspace} onOpenSession={openSession}
