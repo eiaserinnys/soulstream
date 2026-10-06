@@ -31,7 +31,7 @@ export function V3GlobalToolbar({
 
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      if (variant !== 'default' || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
       event.preventDefault();
       if (variant === 'default') onOpenSearch?.();
     };

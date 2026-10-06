@@ -68,3 +68,11 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 | 27. 앱 완료 푸시 | `orch-server-ts/src/node/event_ingress_controller.ts:NodeEventIngressController.process` (L117–143), `production.ts` additional sink (L356–360), `push/push_notifier.ts:PushNotifier.handleEvent` (L117–137), `handleSessionEnded`, `runtime/live_db_catalog_repository.ts:loadSessionReviewState` | 적용된 `session_ended`가 PushNotifier에 전달된다. `loadSessionReviewState`가 DB `sessions.review_required`와 `session_type`을 한 번 조회해 완료 자격과 LLM 제외를 판정한다. 세션 캐시는 본문·호출자·폴더 등 부가 정보에만 쓰며 seed 도착 순서가 완료 자격에 영향을 주지 않는다. | DB에 세션 행이 없거나 `review_required=false`면 사유를 `pushNotification action=suppressed`로 기록한다. DB 조회 실패는 기존 notifier 경고를 남긴다. llm, 미지원 status, 오래된/중복 이벤트, 제외 폴더는 기존대로 건너뛴다. 입력 대기 알림은 별도 caller-source 정책을 유지한다. |
 
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.
+
+## PAS 전화면 웹 진입
+
+`App`의 `/persistent`와 `/persistent/:sessionId`는 `PersistentSessionScreen`을 lazy로 연다. 홈 툴바의 초상 입구와 기기별 시작 선호도 같은 주소를 `navigateDashboard`로 연다. 인증은 기존 `main.tsx`의 AuthGate를 통과하고, 일반 대시보드와 PAS의 lifecycle은 함께 마운트하지 않는다.
+
+`PersistentSessionScreen`은 PAS 목록으로 대상의 영구 세션 여부를 확인한 뒤 `resolveSessionForOpen`의 대상 ID 조회로 summary를 받는다. `activateRunSession`의 summary → 활성 세션 → 탭 순서 다음에 `PersistentSessionChatView`를 마운트한다. 상세 stream은 기존 `useSessionProvider` 한 벌이고 cursor scope는 origin과 이메일이다. 다른 PAS나 홈으로 이동하면 기존 cleanup이 이전 구독을 닫는다.
+
+전송은 원고형 `ChatView`의 기존 `ChatInput` → 세션 개입 경로를 그대로 쓴다. 입력과 업로드는 소유 노드의 연결 상태로 제한하고 `/api/attachments/sessions?nodeId=<encoded nodeId>`를 쓴다. 표시·모션의 토글은 `usePersistentSessionDetailsController`의 즉시 저장과 활성 세션 표시 설정 투영을 재사용한다. 설정창과 카드 상세 오버레이는 대화 마운트와 활성 ID를 유지한다.

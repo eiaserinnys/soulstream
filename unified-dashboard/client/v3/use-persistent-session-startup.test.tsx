@@ -12,3 +12,8 @@ it('evaluates once, prefers the last valid PAS, and home does not bounce',async(
  await act(async()=>root.render(<Harness path="/"/>));expect(mocks.navigate).toHaveBeenCalledWith('/persistent/b',true);
  await act(async()=>root.render(<Harness path="/persistent/b"/>));await act(async()=>root.render(<Harness path="/"/>));expect(mocks.list).toHaveBeenCalledTimes(1);act(()=>root.unmount());});
 it.each(['/components','/persistent/a','/?session=external'])('honors explicit entry %s',async path=>{mocks.list.mockClear();mocks.navigate.mockClear();window.history.replaceState(null,'',path);const root=createRoot(document.createElement('div'));function H(){usePersistentSessionStartup(window.location.pathname);return null}await act(async()=>root.render(<H/>));expect(mocks.list).not.toHaveBeenCalled();act(()=>root.unmount());window.history.replaceState(null,'','/');});
+it.each([
+ [[],null,null],
+ [[{session_id:'a'}],null,'/persistent/a'],
+ [[{session_id:'a'},{session_id:'b'}],'deleted','/persistent'],
+])('handles startup PAS inventory %j',async(sessions,last,target)=>{localStorage.clear();mocks.list.mockClear();mocks.navigate.mockClear();setPersistentSessionOpenOnStart('startup@example.com',true);setPersistentSessionLastSessionId('startup@example.com',last);mocks.list.mockResolvedValue({sessions});const root=createRoot(document.createElement('div'));function H(){usePersistentSessionStartup('/');return null}await act(async()=>root.render(<H/>));if(target)expect(mocks.navigate).toHaveBeenCalledWith(target,true);else expect(mocks.navigate).not.toHaveBeenCalled();act(()=>root.unmount());});

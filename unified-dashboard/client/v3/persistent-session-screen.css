@@ -35,3 +35,5 @@
 @media (min-width: 768px) and (max-width: 1100px) {
   .persistent-session-screen { --pas-main-width: clamp(360px, calc(100vw - 420px), 500px); --pas-list-width: clamp(160px, calc((100vw - var(--pas-main-width)) / 2 - 40px), 240px); --pas-detail-width: min(340px, calc(100vw - 48px)); }
 }
+/* Empty history has no Virtuoso flex child; retain the same composer seat. */
+.persistent-session-main [data-slot="chat-root"] > [data-testid="chat-input"] { margin-top: auto; }
