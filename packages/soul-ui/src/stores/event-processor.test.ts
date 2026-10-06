@@ -159,6 +159,40 @@ describe("processEventsBatch — dedup", () => {
     expect(result.notifications).toEqual([]);
   });
 
+  it("context_usage가 빈 트리에서도 context_usage node를 만든다", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [{
+        event: {
+          type: "context_usage",
+          used_tokens: 6_300,
+          max_tokens: 10_000,
+          percent: 63,
+          estimated: true,
+        } as SoulSSEEvent,
+        eventId: 14,
+      }],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(result.root?.children).toEqual([
+      expect.objectContaining({
+        id: "context-usage-14",
+        type: "context_usage",
+        contextUsageData: {
+          usedTokens: 6_300,
+          maxTokens: 10_000,
+          percent: 63,
+          estimated: true,
+        },
+      }),
+    ]);
+  });
+
   it("generation_started 행을 보존하고 커서가 전진한다", () => {
     const ctx = createProcessingContext();
     const event = {

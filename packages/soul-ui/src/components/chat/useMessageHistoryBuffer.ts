@@ -134,10 +134,17 @@ export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId
   return { event, eventId: m.id };
 }
 
-export function buildHistoryPageUrl(sessionId: string, before: string | null): string {
+export function buildHistoryPageUrl(
+  sessionId: string,
+  before: string | null,
+  includeTurnUsage = false,
+): string {
+  const eventTypes = includeTurnUsage
+    ? [...CHAT_HISTORY_EVENT_TYPES, "context_usage", "complete"]
+    : CHAT_HISTORY_EVENT_TYPES;
   const qs = new URLSearchParams({
     limit: String(HISTORY_PAGE_SIZE),
-    event_types: CHAT_HISTORY_EVENT_TYPES.join(","),
+    event_types: eventTypes.join(","),
   });
   if (before !== null) qs.set("before", before);
   return `/api/sessions/${encodeURIComponent(sessionId)}/timeline?${qs}`;
@@ -147,8 +154,9 @@ async function fetchHistoryPage(
   sessionId: string,
   before: string | null,
   signal: AbortSignal,
+  includeTurnUsage: boolean,
 ): Promise<TimelineResponse> {
-  const response = await fetch(buildHistoryPageUrl(sessionId, before), {
+  const response = await fetch(buildHistoryPageUrl(sessionId, before, includeTurnUsage), {
     credentials: "include",
     signal,
   });
@@ -162,6 +170,7 @@ export function useMessageHistoryBuffer(
   sessionId: string | null,
   scrollerRef: RefObject<HTMLElement | null>,
   enabled = true,
+  includeTurnUsage = false,
 ): UseMessageHistoryBufferResult {
   const historyResetVersion = useDashboardStore((state) => state.historyResetVersion);
   const [loading, setLoading] = useState(false);
@@ -250,6 +259,7 @@ export function useMessageHistoryBuffer(
         generation.sessionId,
         before,
         abortController.signal,
+        includeTurnUsage,
       );
       if (!isActiveGeneration(generation)) return "stale";
 
@@ -323,7 +333,7 @@ export function useMessageHistoryBuffer(
         if (isActiveGeneration(generation)) setLoading(false);
       }
     }
-  }, [isActiveGeneration, scrollerRef, updateBlockedReason, updateReachedTop]);
+  }, [includeTurnUsage, isActiveGeneration, scrollerRef, updateBlockedReason, updateReachedTop]);
 
   const loadNextPage = useCallback(async (run: FillRun): Promise<HistoryPageOutcome> => {
     const outcome = await requestHistoryPage(run);

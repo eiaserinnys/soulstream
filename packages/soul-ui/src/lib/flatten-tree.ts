@@ -13,6 +13,7 @@ import type {
   TextNode,
   ToolNode,
   CompleteNode,
+  ContextUsageNode,
   UserMessageNode,
   SystemMessageNode,
   SessionNotificationNode,
@@ -45,6 +46,16 @@ export interface ChatMessage {
   content: string;
   /** complete 전용: 라벨과 분리해 우측 정렬할 비용·토큰 수치 */
   captionStats?: string;
+  /** manuscript-only source data for the PAS turn usage projection. */
+  contextUsageData?: ContextUsageNode["contextUsageData"];
+  turnCostUsd?: number;
+  sessionCostUsd?: number;
+  sessionCostPartial?: boolean;
+  turnUsageCaption?: {
+    title: string;
+    contextText?: string;
+    completeText?: string;
+  };
   timestamp?: number;
   /** thinking 전용: 접기 토글에 표시할 내면 사고 텍스트 */
   thinkingContent?: string;
@@ -166,6 +177,11 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.role === b.role &&
     a.content === b.content &&
     a.captionStats === b.captionStats &&
+    a.contextUsageData === b.contextUsageData &&
+    a.turnCostUsd === b.turnCostUsd &&
+    a.sessionCostUsd === b.sessionCostUsd &&
+    a.sessionCostPartial === b.sessionCostPartial &&
+    a.turnUsageCaption === b.turnUsageCaption &&
     a.timestamp === b.timestamp &&
     a.thinkingContent === b.thinkingContent &&
     a.toolName === b.toolName &&
@@ -217,11 +233,18 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
  * - identity 보존: 같은 treeNodeId의 이전 ChatMessage가 shallowEqual이면 재사용
  *   (atom b0c41f5c — VirtualizedItem React.memo 동작에 필수, 평탄화 후에도 보존)
  */
-export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
+export interface FlattenTreeOptions {
+  includePersistentTurnUsage?: boolean;
+}
+
+export function flattenTree(
+  root: EventTreeNode | null,
+  options: FlattenTreeOptions = {},
+): ChatMessage[] {
   if (!root) return [];
 
   const messages: ChatMessage[] = [];
-  collectMessages(root, messages);
+  collectMessages(root, messages, options);
   return placePersistentJevCandidatesAtInputAnchors(
     placeTurnSummariesAtResponseAnchors(
       placeAssignedCardContextsAtInputAnchors(messages),
@@ -242,6 +265,7 @@ function intern(treeNodeId: string, fresh: ChatMessage): ChatMessage {
 function collectMessages(
   node: EventTreeNode,
   out: ChatMessage[],
+  options: FlattenTreeOptions,
 ): void {
   // session 루트: pid가 있으면 시스템 메시지로 표시
   if (node.type === "session") {
@@ -258,7 +282,7 @@ function collectMessages(
       out.push(intern(sessionPidId, fresh));
     }
   } else {
-    const msg = nodeToMessage(node);
+    const msg = nodeToMessage(node, options);
     if (msg) {
       // raw-event ChatMessage의 durable ID 전달은 이 경계 하나가 소유한다.
       // 각 switch 분기에 흩어 넣으면 complete/error/compact 같은 렌더 행이
@@ -269,11 +293,11 @@ function collectMessages(
   }
 
   for (const child of node.children) {
-    collectMessages(child, out);
+    collectMessages(child, out, options);
   }
 }
 
-function nodeToMessage(node: EventTreeNode): ChatMessage | null {
+function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMessage | null {
   switch (node.type) {
     case "user_message": {
       const n = node as UserMessageNode;
@@ -447,8 +471,27 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: n.timestamp,
         usage: n.usage,
         totalCostUsd: n.totalCostUsd,
+        ...(options.includePersistentTurnUsage ? {
+          turnCostUsd: n.turnCostUsd,
+          sessionCostUsd: n.sessionCostUsd,
+          sessionCostPartial: n.sessionCostPartial,
+        } : {}),
         treeNodeId: node.id,
         treeNodeType: node.type,
+      };
+    }
+
+    case "context_usage": {
+      if (!options.includePersistentTurnUsage) return null;
+      const n = node as ContextUsageNode;
+      return {
+        id: n.id,
+        role: "system",
+        content: "",
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        contextUsageData: n.contextUsageData,
       };
     }
 

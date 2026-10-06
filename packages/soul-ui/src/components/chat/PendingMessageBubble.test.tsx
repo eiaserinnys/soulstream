@@ -83,7 +83,15 @@ describe("PendingMessageBubble", () => {
     const manuscriptHtml = renderToStaticMarkup(createElement(PendingMessageBubble, { ...props, presentation: "manuscript" }));
 
     expect(defaultHtml).toContain("bg-gradient-to-b");
-    expect(manuscriptHtml).toContain("mt-10 mb-5 ms-12 flex justify-end");
+    const host = document.createElement("div");
+    host.innerHTML = manuscriptHtml;
+    const row = host.firstElementChild!;
+    expect(row.classList.contains("mt-10")).toBe(false);
+    expect(row.classList.contains("mb-5")).toBe(false);
+    expect(row.classList.contains("pt-10")).toBe(true);
+    expect(row.classList.contains("pb-5")).toBe(true);
+    host.innerHTML = defaultHtml;
+    expect(host.firstElementChild?.className).toBe("flex justify-end px-3 py-1.5");
     expect(manuscriptHtml).toContain('data-slot="chat-body"');
     expect(manuscriptHtml).not.toContain("text-white/75");
     expect(manuscriptHtml).toContain("text-right text-muted-foreground");
