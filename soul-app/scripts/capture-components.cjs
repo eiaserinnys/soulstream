@@ -218,6 +218,55 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
   });
   result.viewports.push({ name, viewport: { width, height }, state, theme });
 
+  if (captureMode === 'card-trim') {
+    if (phone) await page.getByTestId('postit-open-public-card-checks').click();
+    await page.getByTestId('card-detail-header').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    const panelBefore = await metric('card-now-panel');
+    const firstItemBefore = await metric('card-check-item-1');
+    await shot('detail-initial');
+    assert.equal(await page.getByTestId('card-check-item-1-status').count(), 0);
+    assert.equal(await page.getByTestId('card-now-turn-band').getByText('내 차례', { exact: true }).count(), 0);
+    assert.match(await page.getByTestId('card-now-turn-band').getAttribute('aria-label'), /내 차례/);
+    await shot('user-turn');
+    await page.getByLabel('이전 상황').click();
+    const panelPast = await metric('card-now-panel');
+    const firstItemPast = await metric('card-check-item-1');
+    assert.equal(panelBefore.height, panelPast.height);
+    assert.equal(firstItemBefore.y, firstItemPast.y);
+    assert.equal(await page.getByText('아래 확인 항목은 지금 상태입니다.', { exact: true }).count(), 0);
+    await shot('past');
+    result.viewports[result.viewports.length - 1].history = { panelBefore, panelPast, firstItemBefore, firstItemPast };
+    await page.getByTestId('card-now-latest').click();
+    await page.getByTestId('card-check-item-4-caveat').scrollIntoViewIfNeeded();
+    await shot('caveat');
+    const caveat = await metric('card-check-item-4-caveat');
+    const resultBottom = await page.getByText('수정 뒤 다시 확인할 결과입니다.', { exact: true }).evaluate(el => el.getBoundingClientRect().bottom);
+    assert.ok(caveat.y >= resultBottom);
+    await page.getByTestId('card-check-item-3-evidence-0').scrollIntoViewIfNeeded();
+    assert.equal(await page.getByText('화면 캡처 공개 예시', { exact: true }).count(), 0);
+    await page.getByTestId('card-check-item-3-evidence-0').click();
+    await page.getByTestId('image-viewer-caption-0').waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-testid="image-viewer-caption-0"]')?.getBoundingClientRect().bottom <= innerHeight);
+    await shot('image-caption');
+    await page.getByLabel('이미지 닫기').click();
+    await page.getByTestId('settings-segment-card-detail-sessions').click();
+    await page.getByTestId('task-run-row-public-shell-session-1').waitFor();
+    await shot('sessions');
+    await page.getByTestId('task-run-row-public-shell-session-1').click();
+    if (phone) {
+      await page.getByTestId('card-detail-header').waitFor({ state: 'hidden' });
+      await page.goto(url.toString());
+      await page.getByTestId('postit-open-public-card-checks').click();
+    } else await page.getByTestId('card-detail-header').waitFor();
+    await page.getByTestId('settings-segment-card-detail-notes').click();
+    await page.getByTestId('card-brief-frame').waitFor();
+    await shot('notes');
+    result.interactions.push(`${name}: 상황판 높이·항목 y 유지, 상태 글 제거, caveat→증거, 이미지 캡션·닫기, 세션 선택, 노트 프레임`);
+    await context.close();
+    return;
+  }
+
   if (phone) {
     const row = page.getByTestId('postit-open-public-card-checks');
     await row.waitFor();
@@ -233,9 +282,6 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
     assert.ok(header.y >= 47, `phone header must begin below the 47pt top safe area: ${JSON.stringify(header)}`);
     assert.equal(Math.round(dockBottomInset), 42, `phone dock must end 42pt above the screen edge: ${JSON.stringify(dock)}`);
     result.viewports[result.viewports.length - 1].phoneFrame = { header, dock, dockBottomInset };
-    for (const display of ['아직', '하는 중', '됐다고 보고', '다시 봐 주세요', '고칠 점 2', '확인함', '뺌']) {
-      await page.getByText(display, { exact: false }).first().waitFor();
-    }
     await shot('detail-initial');
     await shot('still');
     const panelBefore = await metric('card-now-panel');
@@ -380,7 +426,7 @@ async function runCardChecksCaptures(browser, base) {
     assert.equal(await denied.getByTestId('component-review').count(), 0);
     await denied.close();
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
-    if (captureMode === 'card-checks') {
+    if (captureMode === 'card-checks' || captureMode === 'card-trim') {
       await runCardChecksCaptures(browser, base);
     } else {
       const phone = devices['iPhone 14 Pro Max'];

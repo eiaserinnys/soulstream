@@ -182,6 +182,17 @@ function createCardChecksReviewApi(): ApiClient {
   };
   return {
     ...base,
+    getPersistentSession: async (sessionId: string) => {
+      const session = entryShellSessions.find((entry) => entry.agentSessionId === sessionId);
+      if (!session) throw new Error('공개 예시 세션을 찾을 수 없습니다.');
+      return { session: {
+        session_id: sessionId, display_name: session.displayName ?? null,
+        node_id: session.nodeId ?? null, folder_id: session.folderId ?? null, agent_id: session.agentId ?? null,
+        persistent: false, settings: { default_model: { model_preset: session.modelPreset ?? null, reasoning_effort: null } },
+        runtime: { current_model: { model_preset: session.modelPreset ?? null, reasoning_effort: null, model: null }, pending: null },
+      } };
+    },
+
     listCards: async (folderId?: string) => ({ cards: folderId && folderId !== card.folderId ? [] : [{ ...card }] }),
     listCompletedCards: async () => ({ cards: [], nextCursor: null }),
     getCard: async (id: string) => {

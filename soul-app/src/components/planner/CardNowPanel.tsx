@@ -68,7 +68,7 @@ export function CardNowPanel({
     ? '완료로 옮길까요?'
     : isLatest
       ? entry.ask || ''
-      : '아래 확인 항목은 지금 상태입니다.';
+      : '';
 
   return (
     <View testID="card-now-panel-frame" style={pinnedHeight === null ? undefined : { height: pinnedHeight }}>
@@ -88,10 +88,10 @@ export function CardNowPanel({
           </View>
         </View>
         <Text testID="card-now-text" numberOfLines={isLatest ? undefined : 3} style={[styles.nowText, !isLatest && styles.dimText]}>{entry.text}</Text>
-        <View style={[styles.turnBand, turnStyle, !isLatest && styles.pastBand, completePrompt && styles.completeBand]}>
+        <View testID="card-now-turn-band" accessible={isLatest && !completePrompt} accessibilityLabel={isLatest && !completePrompt ? `${turnLabel(entry.turn)}${entry.ask ? `, ${entry.ask}` : ''}` : undefined} style={[styles.turnBand, turnStyle, !isLatest && styles.pastBand, completePrompt && styles.completeBand]}>
           {isLatest ? (
             <>
-              <Text style={[styles.turnLabel, { color: completePrompt ? t.colors.statusCompleted : turnLabelColor }]}>{completePrompt ? '모두 확인했습니다' : turnLabel(entry.turn)}</Text>
+              {completePrompt || entry.turn !== 'user' || !entry.ask ? <Text style={[styles.turnLabel, { color: completePrompt ? t.colors.statusCompleted : turnLabelColor }]}>{completePrompt ? '모두 확인했습니다' : turnLabel(entry.turn)}</Text> : null}
               <Text numberOfLines={3} style={styles.turnText}>{bandText}</Text>
               {completePrompt ? <GlassButton testID="card-now-complete" size="compact" variant="primary" borderRadius={t.foundation.radius.round} disabled={completeDisabled || !onComplete} accessibilityLabel="완료" onPress={() => onComplete?.()}>
                 <Text style={styles.completeText}>완료</Text>
@@ -99,7 +99,6 @@ export function CardNowPanel({
             </>
           ) : (
             <>
-              <Text style={[styles.turnText, styles.dimText]} numberOfLines={2}>{bandText}</Text>
               <CompactTouchTarget
                 testID="card-now-latest"
                 accessibilityLabel="최신 상황"
@@ -174,7 +173,7 @@ function makeStyles(t: DesignTokens) {
     agentTurn: { backgroundColor: withAlphaColor(t.colors.statusRunning, 0.12) },
     userTurn: { backgroundColor: withAlphaColor(t.colors.warning, 0.12) },
     outsideTurn: { backgroundColor: withAlphaColor(t.colors.statusIdle, 0.12) },
-    pastBand: { backgroundColor: 'transparent', justifyContent: 'space-between', paddingHorizontal: 0, marginTop: 'auto' },
+    pastBand: { backgroundColor: 'transparent', justifyContent: 'flex-end', paddingHorizontal: 0, marginTop: 'auto' },
     completeBand: { backgroundColor: withAlphaColor(t.colors.statusCompleted, 0.12) },
     turnLabel: { ...planner.typography.meta, fontWeight: '700' },
     turnText: { ...planner.typography.body, color: t.colors.textPrimary, flex: 1, flexShrink: 1 },

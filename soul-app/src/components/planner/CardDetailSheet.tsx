@@ -76,7 +76,6 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
   const composer = useRef<CardCommentComposerHandle>(null);
   const [composerBusy, setComposerBusy] = useState(false);
   const chooseAnswer = React.useCallback((answer: string) => composer.current?.chooseAnswer(answer), []);
-  const [sessionsExpanded, setSessionsExpanded] = useState(false);
   const scroll = useRef<ScrollView>(null);
   const [frameWidth, setFrameWidth] = useState(windowWidth);
   const [dockHeight, setDockHeight] = useState(0);
@@ -178,6 +177,13 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
     if (onOpenSession) onOpenSession(id);
     else useUIStore.getState().openSessionAtEvent(id);
   };
+  const sessionSummaries = useMemo(() => (detail?.sessions ?? []).map((session) => ({
+    ...session,
+    folderId: session.folderId ?? null, displayName: session.displayName ?? null,
+    nodeId: session.nodeId ?? null, sessionType: session.sessionType ?? null,
+    agentId: session.agentId ?? null, predecessorSessionId: null,
+    reviewState: session.reviewState ?? 'not_required',
+  })), [detail?.sessions]);
   const sessionIds = [...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId] : []), ...(detail?.sessions ?? []).map((session) => session.agentSessionId)])];
   const tabOptions = [
     { value: 'items' as const, label: '확인 항목', count: needsReview || undefined, countBadge: true },
@@ -233,7 +239,10 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
         <SettingsSegmentedControl<CardDetailTab> id="card-detail" variant="detail" value={tab} options={tabOptions} onChange={setTab} />
       </View>
       <View style={styles.bodyFrame}>
-        <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
+        {detail && tab === 'sessions' ? <View testID="card-sessions" style={{ flex: 1, marginBottom: dockBottom }}>
+          <FolderSessionHistory api={api} small virtualized sessionIds={sessionIds} sessionSummaries={sessionSummaries} onOpenSession={openSession}
+            contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]} />
+        </View> : <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
           contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
           onContentSizeChange={() => {
@@ -251,15 +260,9 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
             onRecentConfirmation={setRecentConfirmation}
             onSetTarget={setItemTarget} paneWidth={frameWidth} /> : null}
           {detail && tab === 'comments' ? <CardTimeline detail={detail} onChooseAnswer={chooseAnswer} /> : null}
-          {detail && tab === 'sessions' ? <View testID="card-sessions" style={styles.sessions}>
-            <FolderSessionHistory api={api} small sessionIds={sessionsExpanded ? sessionIds : sessionIds.slice(0, 3)} onOpenSession={openSession} />
-            {sessionIds.length > 3 ? <CompactTouchTarget accessibilityRole="button" onPress={() => setSessionsExpanded((old) => !old)}>
-              <Text style={styles.link}>{sessionsExpanded ? '접기' : `${sessionIds.length - 3}개 더`}</Text>
-            </CompactTouchTarget> : null}
-          </View> : null}
           {detail && tab === 'notes' ? <CardNotes brief={detail.card.brief} notes={detail.notes ?? []} sessions={detail.sessions} assigneeSessionId={detail.card.assigneeSessionId} /> : null}
           {detail && tab === 'items' && cardItems.length === 0 ? <Text style={styles.empty}>확인 항목이 없습니다.</Text> : null}
-        </ScrollView>
+        </ScrollView>}
         <View testID="card-detail-dock" style={[styles.dock, { bottom: dockBottom }]} onLayout={(event) => {
           const next = event.nativeEvent.layout.height;
           setDockHeight((current) => current === next ? current : next);

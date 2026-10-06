@@ -76,3 +76,13 @@ it('native settings review client keeps settings and owned-agent APIs together',
     setReviewSection('entryShell');
   }
 });
+
+it('카드 검수의 대화는 일반 세션의 표시 설정 조회 계약을 제공한다', async () => {
+  setReviewSection('cardChecks');
+  try {
+    const api = createApiClient();
+    const session = (await api.getPersistentSession('public-shell-session-0')).session;
+    expect(session).toMatchObject({ session_id: 'public-shell-session-0', persistent: false });
+    expect(session.settings.default_model).toHaveProperty('model_preset');
+  } finally { setReviewSection('entryShell'); }
+});
