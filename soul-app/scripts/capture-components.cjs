@@ -19,6 +19,11 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://local.test');
   if (url.pathname.startsWith('/api/')) {
     apiRequests.push({ method: req.method, path: url.pathname, authorization: !!req.headers.authorization });
+    if (url.pathname === '/api/attachments/files' && req.method === 'GET' && !req.headers.authorization) {
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/S7sAAAAASUVORK5CYII=', 'base64'));
+      return;
+    }
     if (url.pathname !== '/api/auth/status' || req.method !== 'GET') {
       res.writeHead(403); res.end('Unexpected API request'); return;
     }
@@ -661,6 +666,328 @@ async function runManuscriptChatCaptures(browser, base) {
   }
 }
 
+async function runDefaultCardDetailCapture(browser, base) {
+  const name = 'card-detail-default-iphone-light';
+  const viewport = { width: 390, height: 844 };
+  const context = await browser.newContext({ viewport, screen: viewport, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  page.on('pageerror', (error) => result.errors.push({ name, message: error.message }));
+  page.on('console', (msg) => {
+    if (msg.type() === 'warning' || msg.type() === 'error') result.warnings.push({ name, message: msg.text() });
+  });
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== base) {
+      result.errors.push({ name, message: 'External request: ' + route.request().url() });
+      await route.abort(); return;
+    }
+    await route.continue();
+  });
+  const url = new URL(base + prefix + 'index.html');
+  url.searchParams.set('section', 'cardHome');
+  url.searchParams.set('theme', 'light');
+  await page.goto(url.toString());
+  await page.getByTestId('review-card-home').waitFor();
+  await page.getByTestId('postit-open-public-review').click();
+  await page.getByTestId('card-detail-container').waitFor();
+  await page.getByTestId('settings-segment-card-detail-items').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  const geometry = await page.getByTestId('card-detail-container').evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+  await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+  result.viewports.push({ name, viewport, theme: 'light', sample: 'cardHome-default-detail', geometry });
+  result.interactions.push(`${name}: 카드 홈 검수 창에서 기본 CardDetailContent 열기`);
+  await context.close();
+}
+
+async function runPersistentTaskCaptures(browser, base) {
+  const scenarios = [
+    ...['light', 'dark'].flatMap((theme) => [
+      { name: `tasks-iphone-${theme}`, width: 390, height: 844, theme, sample: 'list', mobile: true },
+      { name: `tasks-ipad-landscape-240-${theme}`, width: 1024, height: 768, theme, sample: 'list', sampleWidth: 240 },
+      { name: `tasks-ipad-portrait-170-${theme}`, width: 768, height: 1024, theme, sample: 'list', sampleWidth: 170 },
+      { name: `row-iphone-${theme}`, width: 390, height: 844, theme, sample: 'row', mobile: true },
+      { name: `row-interact-iphone-${theme}`, width: 390, height: 844, theme, sample: 'row', mobile: true, pressed: true },
+      { name: `card-318-${theme}-summary`, width: 1024, height: 768, theme, sample: 'card', sampleWidth: 318, cardCase: 'summary' },
+      { name: `card-340-${theme}-summary`, width: 768, height: 1024, theme, sample: 'card', sampleWidth: 340, cardCase: 'summary' },
+      { name: `card-session-null-label-${theme}`, width: 390, height: 844, theme, sample: 'card', mobile: true, cardCase: 'session-null-label' },
+      { name: `state-list-error-${theme}`, width: 390, height: 844, theme, sample: 'list', mobile: true, state: 'list-error' },
+      { name: `state-list-empty-${theme}`, width: 390, height: 844, theme, sample: 'list', mobile: true, state: 'empty' },
+      { name: `state-list-loading-${theme}`, width: 390, height: 844, theme, sample: 'list', mobile: true, state: 'list-loading' },
+      { name: `state-card-error-${theme}`, width: 390, height: 844, theme, sample: 'card', mobile: true, cardCase: 'summary', state: 'card-error' },
+      { name: `state-card-loading-${theme}`, width: 390, height: 844, theme, sample: 'card', mobile: true, cardCase: 'summary', state: 'card-loading' },
+    ]),
+    ...[170, 240].flatMap((sampleWidth) => ['light', 'dark'].map((theme) => ({
+      name: `tasks-mixed-numbers-${sampleWidth}-${theme}`, width: sampleWidth === 170 ? 768 : 1024,
+      height: sampleWidth === 170 ? 1024 : 768, theme, sample: 'list', sampleWidth, state: 'mixed-numbers',
+    }))),
+    ...['light', 'dark'].map((theme) => ({ name: `card-two-images-iphone-600-${theme}`, width: 390, height: 844,
+      theme, sample: 'card', sampleWidth: 358, panelHeight: 600, cardCase: 'two-images', mobile: true })),
+    { name: 'card-two-images-ipad-landscape-318-700-light', width: 1024, height: 768, theme: 'light', sample: 'card',
+      sampleWidth: 318, panelHeight: 700, cardCase: 'two-images' },
+    { name: 'card-two-images-ipad-portrait-340-900-dark', width: 768, height: 1024, theme: 'dark', sample: 'card',
+      sampleWidth: 340, panelHeight: 900, cardCase: 'two-images' },
+    ...['light', 'dark'].map((theme) => ({ name: `card-blank-paragraphs-iphone-600-${theme}`, width: 390, height: 844,
+      theme, sample: 'card', sampleWidth: 358, panelHeight: 600, cardCase: 'blank-paragraphs', mobile: true })),
+    ...['light', 'dark'].map((theme) => ({ name: `card-session-named-${theme}`, width: 390, height: 844,
+      theme, sample: 'card', cardCase: 'session-named', mobile: true })),
+    ...[
+      { name: 'realistic-iphone-600', width: 390, height: 844, theme: 'light', sampleWidth: 358, panelHeight: 600, cardCase: 'realistic', mobile: true },
+      { name: 'realistic-ipad-landscape-318-700', width: 1024, height: 768, theme: 'light', sampleWidth: 318, panelHeight: 700, cardCase: 'realistic' },
+      { name: 'realistic-ipad-portrait-340-900', width: 768, height: 1024, theme: 'dark', sampleWidth: 340, panelHeight: 900, cardCase: 'realistic' },
+    ].flatMap((scenario) => ['light', 'dark'].map((theme) => ({ ...scenario, name: `${scenario.name}-${theme}`, theme, sample: 'card' }))),
+    ...[
+      { name: 'iphone-358', width: 390, height: 844, sampleWidth: 358, mobile: true },
+      { name: 'ipad-landscape-318', width: 1024, height: 768, sampleWidth: 318 },
+      { name: 'ipad-portrait-340', width: 768, height: 1024, sampleWidth: 340 },
+    ].flatMap((viewport) => ['long-title', 'no-progress', 'sparse'].flatMap((sampleCase) => ['light', 'dark'].map((theme) => ({
+      ...viewport, name: `card-${sampleCase}-${viewport.name}-${theme}`, theme, sample: 'card',
+      cardCase: sampleCase === 'long-title' ? 'long' : sampleCase === 'no-progress' ? 'no-progress' : 'sparse',
+    })))),
+    { name: 'card-row-standard-current', width: 390, height: 844, theme: 'light', sample: 'standard-row', mobile: true },
+  ];
+  const measure = (locator) => locator.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      x: Math.round(box.x * 10) / 10, y: Math.round(box.y * 10) / 10,
+      width: Math.round(box.width * 10) / 10, height: Math.round(box.height * 10) / 10,
+      right: Math.round(box.right * 10) / 10, bottom: Math.round(box.bottom * 10) / 10,
+      clientHeight: element.clientHeight, scrollHeight: element.scrollHeight,
+      lineHeight: Number.parseFloat(style.lineHeight) || null,
+    };
+  });
+  const touchDown = async (page, locator) => {
+    const box = await locator.boundingBox();
+    const testId = await locator.getAttribute('data-testid');
+    const idleBackground = await locator.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const session = await page.context().newCDPSession(page);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 1, x: box.x + box.width / 2,
+      y: box.y + box.height / 2, radiusX: 1, radiusY: 1, force: 1 }] });
+    await page.waitForFunction(({ id, idle }) => {
+      const element = document.querySelector(`[data-testid="${id}"]`);
+      return !!element && getComputedStyle(element).backgroundColor !== idle;
+    }, { id: testId, idle: idleBackground });
+    const pressedBackground = await locator.evaluate((element) => getComputedStyle(element).backgroundColor);
+    assert.notEqual(pressedBackground, idleBackground, `${testId}: pressed background did not change`);
+    return { session, idleBackground, pressedBackground };
+  };
+
+  const captureScenarios = captureMode === 'persistent-standard-row'
+    ? scenarios.filter((scenario) => scenario.sample === 'standard-row') : scenarios;
+  for (const scenario of captureScenarios) {
+    const context = await browser.newContext({
+      viewport: { width: scenario.width, height: scenario.height },
+      screen: { width: scenario.width, height: scenario.height },
+      deviceScaleFactor: 1, isMobile: scenario.mobile === true, hasTouch: true,
+    });
+    await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    page.on('pageerror', (error) => result.errors.push({ name: scenario.name, message: error.message }));
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning' || msg.type() === 'error') result.warnings.push({ name: scenario.name, message: msg.text() });
+    });
+    await page.route('**/*', async (route) => {
+      if (new URL(route.request().url()).origin !== base) {
+        result.errors.push({ name: scenario.name, message: 'External request: ' + route.request().url() });
+        await route.abort(); return;
+      }
+      await route.continue();
+    });
+    const url = new URL(base + prefix + 'index.html');
+    url.searchParams.set('section', scenario.sample === 'standard-row' ? 'rows' : 'persistent');
+    url.searchParams.set('theme', scenario.theme);
+    if (scenario.sample !== 'standard-row') url.searchParams.set('sample', scenario.sample);
+    if (scenario.sampleWidth) url.searchParams.set('width', String(scenario.sampleWidth));
+    if (scenario.cardCase) url.searchParams.set('case', scenario.cardCase);
+    if (scenario.panelHeight) url.searchParams.set('height', String(scenario.panelHeight));
+    if (scenario.state) url.searchParams.set('state', scenario.state);
+    await page.goto(url.toString());
+    await page.getByTestId(scenario.sample === 'standard-row' ? 'component-review' : 'persistent-review-paper').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    const name = scenario.name;
+    let geometry;
+    if (scenario.sample === 'list') {
+      if (scenario.state === 'list-error') {
+        await page.getByTestId('persistent-task-list-error').waitFor();
+        assert.equal(await page.getByLabel('작업 목록 다시 조회').count(), 1);
+        const error = await measure(page.getByTestId('persistent-task-list-error'));
+        const retry = await measure(page.getByLabel('작업 목록 다시 조회'));
+        assert.ok(Math.abs(error.x - retry.x) <= 1, `${name}: retry button does not share the error start line ${JSON.stringify({ error, retry })}`);
+        geometry = { error, retry };
+      } else if (scenario.state === 'list-loading') {
+        await page.getByTestId('persistent-task-list-loading').waitFor();
+      } else if (scenario.state === 'empty') {
+        await page.getByTestId('persistent-task-list-empty').waitFor();
+        assert.equal(await page.getByText('카드가 없습니다.', { exact: true }).count(), 1);
+      } else if (scenario.state === 'mixed-numbers') {
+        await page.getByTestId('persistent-task-group-running').waitFor();
+        const titleIds = [7, 98, 412, 1024].map((number) => `card-public-persistent-mixed-${number}-summary-title`);
+        const titles = await Promise.all(titleIds.map(async (id) => ({ id, box: await measure(page.getByTestId(id)) })));
+        const starts = titles.map(({ box }) => box.x);
+        assert.ok(starts.every((x) => Math.abs(x - starts[0]) <= 1), `${name}: number columns differ ${JSON.stringify(titles)}`);
+        geometry = { component: await measure(page.getByTestId('persistent-task-list')), titleStarts: titles };
+      } else {
+        await page.getByTestId('persistent-task-group-running').waitFor();
+        const groups = await page.getByTestId(/^persistent-task-group-/).evaluateAll((elements) => elements.map((el) => el.getAttribute('data-testid')));
+        assert.deepEqual(groups, [
+          'persistent-task-group-running', 'persistent-task-group-blocked', 'persistent-task-group-review',
+          'persistent-task-group-queued', 'persistent-task-group-todo',
+        ]);
+        assert.equal(await page.getByTestId('card-row-public-persistent-412-summary').count(), 1);
+        assert.equal(await page.getByTestId('card-public-persistent-old-number').count(), 0);
+        const shortTitle = page.getByTestId('card-public-persistent-417-summary-title');
+        const shortTitleFit = await shortTitle.evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
+        assert.equal(shortTitleFit, true, `${name}: six-character title does not fit at ${scenario.sampleWidth ?? 'full'}px ${JSON.stringify(geometry)}`);
+      }
+      await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+      geometry ??= scenario.state ? await measure(page.getByTestId(scenario.state === 'list-error' ? 'persistent-task-list-error'
+        : scenario.state === 'list-loading' ? 'persistent-task-list-loading' : 'persistent-task-list-empty'))
+        : { component: await measure(page.getByTestId('persistent-task-list')), title: await measure(page.getByTestId('card-public-persistent-415-summary-title')) };
+      if (!scenario.state && scenario.sampleWidth === 170) {
+        assert.ok(Math.abs(geometry.title.width - 113.1) <= 0.5, `${name}: three-digit task title width changed ${JSON.stringify(geometry.title)}`);
+      }
+      if (!scenario.state) {
+        const title = page.getByTestId('card-public-persistent-415-summary-title');
+        const overflow = await title.evaluate((element) => element.scrollHeight > element.clientHeight + 1);
+        assert.equal(overflow, false, `${name}: one-line task title overflowed ${JSON.stringify(geometry)}`);
+        await page.getByTestId('card-row-public-persistent-412-summary').click();
+        assert.equal(await page.evaluate(() => window.__persistentReviewOpenedCard), 'public-persistent-412');
+        result.interactions.push(`${name}: 다섯 상태 그룹·번호 없는 카드·행 열기`);
+      }
+    } else if (scenario.sample === 'row') {
+      await page.getByTestId('card-public-persistent-412-summary-title').waitFor();
+      await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+      geometry = await measure(page.getByTestId('card-public-persistent-412-summary-title'));
+      if (scenario.pressed) {
+        const row = page.getByTestId('card-row-public-persistent-412-summary');
+        const { session, idleBackground, pressedBackground } = await touchDown(page, row);
+        await page.screenshot({ path: path.join(output, `${name}-pressed.png`), fullPage: true });
+        await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await session.detach();
+        geometry = { ...geometry, idleBackground, pressedBackground };
+      } else await page.getByTestId('card-row-public-persistent-412-summary').click();
+      if (!scenario.pressed) assert.equal(await page.evaluate(() => window.__persistentReviewOpenedCard), 'public-persistent-412');
+      result.interactions.push(`${name}: 실제 CardRow 요약 행${scenario.pressed ? ' idle·pressed 캡처' : ' 전체 눌림'}`);
+    } else if (scenario.sample === 'card') {
+      if (scenario.state === 'card-error') await page.getByTestId('card-read-summary-error-state').waitFor();
+      else if (scenario.state === 'card-loading') await page.getByTestId('card-read-summary-loading-state').waitFor();
+      else await page.getByTestId('card-read-summary-title').waitFor();
+      const title = page.getByTestId('card-read-summary-title');
+      geometry = scenario.state ? await measure(page.getByTestId(scenario.state === 'card-error' ? 'card-read-summary-error-state' : 'card-read-summary-loading-state'))
+        : await measure(title);
+      if (!scenario.state && scenario.cardCase === 'long') {
+        const clamp = await title.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { lines: style.webkitLineClamp, height: element.clientHeight, lineHeight: Number.parseFloat(style.lineHeight) };
+        });
+        assert.equal(clamp.lines, '2', `${name}: long card title is not clamped to two lines ${JSON.stringify(clamp)}`);
+        assert.ok(clamp.height <= clamp.lineHeight * 2 + 1, `${name}: long card title exceeds two lines ${JSON.stringify(clamp)}`);
+        assert.ok(geometry.scrollHeight > geometry.clientHeight, `${name}: long card title did not reach the ellipsis ${JSON.stringify(geometry)}`);
+      }
+      if (!scenario.state) {
+        assert.equal(await page.getByTestId('card-read-summary-open').count(), 1);
+        assert.equal(await page.getByTestId('settings-segment-card-detail-items').count(), 0);
+        assert.equal(await page.getByPlaceholder('커멘트').count(), 0);
+      }
+      if (!scenario.state && scenario.cardCase === 'sparse') {
+        assert.equal(await page.getByTestId('card-read-summary-number').count(), 0);
+        assert.equal(await page.getByTestId('card-read-summary-request').count(), 0);
+        assert.equal(await page.getByTestId('card-read-summary-progress').count(), 0);
+      }
+      if (!scenario.state && scenario.cardCase === 'no-progress') assert.equal(await page.getByTestId('card-read-summary-progress').count(), 0);
+      if (!scenario.state && scenario.cardCase === 'session-null-label') {
+        assert.equal(await page.getByTestId('card-read-summary-assignee').count(), 1);
+        assert.equal(await page.getByText('public-s', { exact: true }).count(), 1);
+      }
+      if (!scenario.state && scenario.cardCase === 'session-named') {
+        assert.equal(await page.getByTestId('card-read-summary-assignee').count(), 1);
+        assert.equal(await page.getByText('로젤린', { exact: true }).count(), 1);
+      }
+      if (!scenario.state && scenario.cardCase === 'two-images') {
+        const images = [page.getByTestId('card-request-image-0'), page.getByTestId('card-request-image-1')];
+        assert.equal(await Promise.all(images.map((image) => image.count())).then((counts) => counts.reduce((sum, count) => sum + count, 0)), 2);
+        for (const image of images) {
+          const imageStyle = await image.evaluate((element) => ({ width: getComputedStyle(element).width, height: getComputedStyle(element).height }));
+          assert.deepEqual(imageStyle, { width: '104px', height: '60px' }, `${name}: expected existing compact attachment image ${JSON.stringify(imageStyle)}`);
+        }
+        const progress = page.getByTestId('card-read-summary-progress');
+        const progressLabel = page.getByText('경과', { exact: true });
+        const scrollBox = await page.getByTestId('card-read-summary-scroll').boundingBox();
+        const progressBox = await progressLabel.boundingBox();
+        assert.ok(progressBox.y >= scrollBox.y && progressBox.y < scrollBox.y + scrollBox.height,
+          `${name}: progress label is outside the first panel viewport ${JSON.stringify({ scrollBox, progressBox })}`);
+        geometry = { ...geometry, scroll: await measure(page.getByTestId('card-read-summary-scroll')),
+          progress: await measure(progress), imageBoxes: await Promise.all(images.map(measure)) };
+        await images[0].click();
+        await page.getByTestId('image-viewer-pages').waitFor();
+        await page.screenshot({ path: path.join(output, `${name}-viewer-open.png`), fullPage: true });
+        await page.getByLabel('이미지 닫기').click();
+        await page.getByTestId('image-viewer-pages').waitFor({ state: 'detached' });
+      }
+      if (!scenario.state && scenario.cardCase === 'blank-paragraphs') {
+        const requestText = await page.getByTestId('card-read-summary-request').evaluate((element) => element.innerText);
+        assert.equal(/\n\s*\n/.test(requestText), false, `${name}: summary request retains a blank line ${JSON.stringify(requestText)}`);
+        const request = page.getByTestId('card-read-summary-request').getByText(/첫 문단/);
+        const clamp = await request.evaluate((element) => getComputedStyle(element).webkitLineClamp);
+        assert.equal(clamp, '4', `${name}: blank paragraph request lost its four-line clamp`);
+        geometry = { ...geometry, requestText };
+      }
+      if (!scenario.state && scenario.cardCase === 'realistic') {
+        assert.equal(await page.getByTestId(/^card-read-summary-result-/).count(), 7);
+        const request = page.getByTestId('card-read-summary-request').getByText(/수퍼바이저 세션을/);
+        const clamp = await request.evaluate((element) => ({ lines: getComputedStyle(element).webkitLineClamp,
+          clientHeight: element.clientHeight, lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight) }));
+        assert.equal(clamp.lines, '4', `${name}: request is not clamped to four lines ${JSON.stringify(clamp)}`);
+        const panelBox = await page.getByTestId('persistent-review-card-panel').boundingBox();
+        const footerBox = await page.getByTestId('card-read-summary-footer').boundingBox();
+        const scroll = await measure(page.getByTestId('card-read-summary-scroll'));
+        const panelBottom = panelBox.y + panelBox.height;
+        const footerBottom = footerBox.y + footerBox.height;
+        assert.ok(footerBottom <= panelBottom + 1 && footerBox.y > panelBox.y, `${name}: open action escaped panel ${JSON.stringify({ panelBox, footerBox })}`);
+        if (scenario.panelHeight <= 700) assert.ok(scroll.scrollHeight > scroll.clientHeight, `${name}: realistic card should scroll ${JSON.stringify(scroll)}`);
+        geometry = { panel: panelBox, footer: footerBox, scroll };
+      }
+      await page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true });
+      if (!scenario.state) {
+        const open = page.getByTestId('card-read-summary-open');
+        if (scenario.cardCase === 'realistic') {
+          const { session, idleBackground, pressedBackground } = await touchDown(page, open);
+          const expectedPaperPress = scenario.theme === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)';
+          assert.equal(pressedBackground, expectedPaperPress, `${name}: paper button must use the neutral planner press color`);
+          await page.screenshot({ path: path.join(output, `${name}-open-pressed.png`), fullPage: true });
+          await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+          await session.detach();
+          result.interactions.push(`${name}: 종이 버튼 눌림 상태 ${idleBackground} → ${pressedBackground}`);
+        } else await open.click();
+        assert.equal(await page.evaluate(() => window.__persistentReviewOpenedCard), scenario.cardCase === 'long'
+          ? 'public-persistent-long' : scenario.cardCase === 'sparse' ? 'public-persistent-sparse'
+            : scenario.cardCase === 'no-progress' ? 'public-persistent-no-progress'
+              : scenario.cardCase === 'realistic' ? 'public-persistent-realistic'
+                : scenario.cardCase === 'two-images' ? 'public-persistent-two-images'
+                  : scenario.cardCase === 'blank-paragraphs' ? 'public-persistent-blank-paragraphs'
+                    : scenario.cardCase === 'session-named' ? 'public-persistent-session-named'
+                      : scenario.cardCase === 'session-null-label' ? 'public-persistent-session-null-label' : 'public-persistent-412');
+        result.interactions.push(`${name}: 읽기 요약과 카드 열기 콜백`);
+      }
+    } else {
+      const standardRow = page.getByTestId('card-row-public-todo');
+      await standardRow.waitFor();
+      await standardRow.screenshot({ path: path.join(output, `${name}.png`) });
+      geometry = await measure(standardRow);
+      result.interactions.push(`${name}: 기본 CardRow 캡처`);
+    }
+    result.viewports.push({ name, viewport: { width: scenario.width, height: scenario.height }, theme: scenario.theme,
+      sample: scenario.sample, sampleWidth: scenario.sampleWidth ?? null, geometry });
+    await context.close();
+  }
+
+}
+
 (async () => {
   await fs.mkdir(output, { recursive: true });
   server.listen(0, '127.0.0.1');
@@ -679,6 +1006,11 @@ async function runManuscriptChatCaptures(browser, base) {
       await runCardChecksCaptures(browser, base);
     } else if (captureMode === 'manuscript-chat') {
       await runManuscriptChatCaptures(browser, base);
+    } else if (captureMode === 'card-detail-default') {
+      await runDefaultCardDetailCapture(browser, base);
+    } else if (captureMode === 'persistent-tasks' || captureMode === 'persistent-standard-row') {
+      await runPersistentTaskCaptures(browser, base);
+      if (captureMode === 'persistent-tasks') await runDefaultCardDetailCapture(browser, base);
     } else {
       const phone = devices['iPhone 14 Pro Max'];
       await runViewport(browser, base, { ...phone, defaultBrowserType: undefined }, 'iphone14-pro-max');
@@ -689,8 +1021,9 @@ async function runManuscriptChatCaptures(browser, base) {
       }
     }
     assert.deepEqual(result.errors, []);
-    assert.ok(apiRequests.length > 0);
-    assert.ok(apiRequests.every((r) => r.method === 'GET' && r.path === '/api/auth/status' && !r.authorization));
+    assert.ok(apiRequests.some((r) => r.method === 'GET' && r.path === '/api/auth/status' && !r.authorization));
+    assert.ok(apiRequests.every((r) => r.method === 'GET' && !r.authorization
+      && (r.path === '/api/auth/status' || r.path === '/api/attachments/files')));
     result.passed = true;
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {

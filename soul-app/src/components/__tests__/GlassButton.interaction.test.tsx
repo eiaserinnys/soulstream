@@ -21,15 +21,17 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 
 import React from 'react';
 import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import {
   DARK_COLORS,
   PHONE_FOUNDATION,
   type DesignTokens,
 } from '../../theme/tokens';
 import { createPrimitiveRoles } from '../../theme/surfacePrimitives';
+import { createPlannerVisualRoles } from '../../theme/plannerVisualRoles';
 import { useSettingsStore } from '../../store/settingsStore';
-import { GlassButton, resolveGlassButtonBackground } from '../GlassSurface';
+import { useTokens } from '../../theme';
+import { GlassButton, resolveGlassButtonBackground, resolvePaperButtonBackground } from '../GlassSurface';
 
 describe('GlassButton interaction contract', () => {
   beforeEach(() => {
@@ -175,6 +177,34 @@ describe('GlassButton interaction contract', () => {
       borderWidth: 2,
       borderColor: 'transparent',
     });
+  });
+
+  test('paper 변형은 persistent 종이 표면과 선 테두리를 쓴다', () => {
+    const tokens = renderHook(() => useTokens()).result.current;
+    const screen = render(<GlassButton variant="paper" testID="paper-button" surfaceTestID="paper-surface" onPress={() => undefined}>
+      <Text>카드 열기</Text>
+    </GlassButton>);
+    const surface = StyleSheet.flatten(screen.getByTestId('paper-surface').props.style);
+    const button = screen.getByTestId('paper-button');
+
+    expect(surface).toMatchObject({ backgroundColor: tokens.persistentSession.paper, borderColor: tokens.persistentSession.line });
+    expect(StyleSheet.flatten(button.props.style).backgroundColor).toBe(tokens.persistentSession.paper);
+  });
+
+  test('paper 변형 눌림은 planner의 중립 눌림 색을 쓰고 기본 보조 버튼은 유지한다', () => {
+    const tokens = renderHook(() => useTokens()).result.current;
+    const plannerPressedColor = createPlannerVisualRoles(tokens).grouped.pressedColor;
+    const secondaryRole = createPrimitiveRoles(tokens).buttonSecondary;
+    expect(resolvePaperButtonBackground(tokens, secondaryRole, false, true)).toBe(plannerPressedColor);
+    expect(resolvePaperButtonBackground(tokens, secondaryRole, false, false)).toBe(tokens.persistentSession.paper);
+    expect(resolveGlassButtonBackground(secondaryRole, false, true, false)).toBe(secondaryRole.pressedColor);
+    expect(resolveGlassButtonBackground(createPrimitiveRoles(tokens).buttonPrimary, false, true, false))
+      .toBe(createPrimitiveRoles(tokens).buttonPrimary.pressedColor);
+
+    const secondary = render(<GlassButton variant="secondary" testID="secondary-pressed" onPress={() => undefined}>
+      <Text>기본</Text>
+    </GlassButton>);
+    expect(StyleSheet.flatten(secondary.getByTestId('secondary-pressed').props.style).backgroundColor).toBe(secondaryRole.backgroundColor);
   });
 });
 
