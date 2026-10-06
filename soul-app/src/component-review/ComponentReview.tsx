@@ -46,6 +46,7 @@ const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
   { value: 'project', label: '프로젝트' }, { value: 'settings', label: '선택·설정' },
   { value: 'nativeSettings', label: '앱 설정' },
+  { value: 'pasSettings', label: 'PAS 설정' },
   { value: 'persistent', label: '영구 세션' },
   { value: 'surfaces', label: '표면' },
   { value: 'board', label: '보드' },
@@ -70,7 +71,8 @@ export function initializeReview() {
   const folderTabs = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'folderTabs';
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
   const cardChecks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardChecks';
-  const nativeSettings = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'nativeSettings';
+  const settingsSection = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
+  const nativeSettings = settingsSection === 'nativeSettings' || settingsSection === 'pasSettings';
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
@@ -84,7 +86,7 @@ export function initializeReview() {
     });
   }
   if (nativeSettings) {
-    useAuthStore.setState({ jwt: firstNativeConnection ? null : 'public-review-fixture', authRejected: false });
+    useAuthStore.setState({ jwt: firstNativeConnection ? null : 'header.eyJlbWFpbCI6InB1YmxpYy1yZXZpZXdAZXhhbXBsZS5pbnZhbGlkIiwic3ViIjoicHVibGljLXJldmlld0BleGFtcGxlLmludmFsaWQiLCJuYW1lIjoiUHVibGljIFJldmlldyIsInBpY3R1cmUiOiIiLCJleHAiOjIwMDAwMDAwMDB9.signature', authRejected: false });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-error') useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: window.location.origin + '/assets/ios-components/unavailable-photo.jpg' } });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-fallback') useSettingsStore.setState({ wallpaper: { mode: 'photo' } });
   }
@@ -120,7 +122,7 @@ function Gallery() {
     padding: t.cardLayout.padding, gap: t.uiSpacing.xl,
     backgroundColor: t.colors.background,
   }), [t]);
-  if (section === 'nativeSettings') return <ReviewNativeSettings/>;
+  if (section === 'nativeSettings' || section === 'pasSettings') return <ReviewNativeSettings/>;
   if (section === 'persistent') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewPersistent /></View>;
   if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
@@ -156,9 +158,10 @@ function Gallery() {
         window.location.assign(url.toString());
         return;
       }
-      if (next === 'dialogues' || section === 'dialogues' || next === 'nativeSettings') {
+      if (next === 'dialogues' || section === 'dialogues' || next === 'nativeSettings' || next === 'pasSettings') {
         const url = new URL(window.location.href);
         url.searchParams.set('section', next);
+        if (next === 'nativeSettings' || next === 'pasSettings') url.searchParams.set('safeArea', 'fixture');
         window.history.replaceState(null, '', url);
         initializeReview();
       }
@@ -195,7 +198,7 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
   const params = new URLSearchParams(search);
   if (params.get('safeArea') !== 'fixture') return null;
   const cardChecks = params.get('section') === 'cardChecks';
-  if (!cardChecks && params.get('section') !== 'nativeSettings') return null;
+  if (!cardChecks && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 
   return {
     frame: { x: 0, y: 0, width, height },
