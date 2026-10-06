@@ -7,7 +7,8 @@ import { useSearchStore } from './searchStore';
 
 /**
  * 태블릿 v3 레이아웃에서 좌측 내비·중앙 플래너·우측 세션 패널의 선택 상태와
- * 업무+채팅 오버레이, 가로 모드 패널 폭(드래그 결과)을 관리한다.
+ * 업무+채팅 오버레이를 관리하고, split 레이아웃이 계산한 드래그 폭을 저장한다.
+ * 폭의 한도는 배치에서 계산하며 store는 결과 값만 보관한다.
  *
  * 폰 레이아웃에서는 react-navigation의 navigation params로 세션을 전달하므로 본 store는
  * 태블릿 SplitLayout 안에서만 사용한다. 단, activeSessionId를 settingsStore와 분리해 둔
@@ -108,8 +109,7 @@ interface UIState {
   closeFolderOverlay: () => void;
   openSettings: () => void;
   closeSettings: () => void;
-  setPaneLeftWidth: (w: number) => void;
-  setPaneMiddleWidth: (w: number) => void;
+  setThreePaneWidths: (left: number, middle: number) => void;
   setPaneMiddleWidthTwoPane: (w: number) => void;
 }
 
@@ -315,8 +315,10 @@ export const useUIStore = create<UIState>()(
       }),
       openSettings: () => set({ settingsVisible: true }),
       closeSettings: () => set({ settingsVisible: false }),
-      setPaneLeftWidth: (w) => set({ paneLeftWidth: Math.round(w) }),
-      setPaneMiddleWidth: (w) => set({ paneMiddleWidth: Math.round(w) }),
+      setThreePaneWidths: (left, middle) => set({
+        paneLeftWidth: Math.round(left),
+        paneMiddleWidth: Math.round(middle),
+      }),
       setPaneMiddleWidthTwoPane: (w) => set({ paneMiddleWidthTwoPane: Math.round(w) }),
     }),
     {

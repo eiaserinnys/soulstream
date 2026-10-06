@@ -20,14 +20,14 @@ describe('main split pane widths', () => {
       panelGap: 12,
       paneLeftWidth: 240,
       paneMiddleWidth: 900,
-    })).toEqual({ left: 240, middle: 666 });
+    })).toEqual({ left: 240, middle: 606 });
 
     expect(resolveThreePaneWidths({
       rowWidth: 1170,
       panelGap: 12,
       paneLeftWidth: 360,
       paneMiddleWidth: 600,
-    })).toEqual({ left: 360, middle: 546 });
+    })).toEqual({ left: 360, middle: 486 });
   });
 
   it('clamps landscape drags against the other pane currently shown and the feed minimum', () => {
@@ -35,7 +35,7 @@ describe('main split pane widths', () => {
       rowWidth: 1170,
       panelGap: 12,
       left: 240,
-    })).toBe(666);
+    })).toBe(606);
     expect(clampThreePaneMiddleDrag(200, {
       rowWidth: 1170,
       panelGap: 12,
@@ -46,7 +46,7 @@ describe('main split pane widths', () => {
       rowWidth: 1170,
       panelGap: 12,
       middle: 480,
-    })).toBe(426);
+    })).toBe(366);
     expect(clampThreePaneLeftDrag(100, {
       rowWidth: 1170,
       panelGap: 12,
@@ -63,12 +63,12 @@ describe('main split pane widths', () => {
     };
 
     expect(resolveTwoPaneMiddleWidth({ ...base, paneMiddleWidthTwoPane: null })).toBe(417);
-    expect(resolveTwoPaneMiddleWidth({ ...base, paneMiddleWidthTwoPane: 520 })).toBe(520);
-    expect(resolveTwoPaneMiddleWidth({ ...base, paneMiddleWidthTwoPane: 700 })).toBe(558);
+    expect(resolveTwoPaneMiddleWidth({ ...base, paneMiddleWidthTwoPane: 480 })).toBe(480);
+    expect(resolveTwoPaneMiddleWidth({ ...base, paneMiddleWidthTwoPane: 700 })).toBe(498);
   });
 
   it('clamps portrait drags while preserving the minimum feed width', () => {
-    expect(clampTwoPaneMiddleDrag(600, { rowWidth: 810, panelGap: 12 })).toBe(558);
+    expect(clampTwoPaneMiddleDrag(600, { rowWidth: 810, panelGap: 12 })).toBe(498);
     expect(clampTwoPaneMiddleDrag(100, { rowWidth: 810, panelGap: 12 })).toBe(280);
   });
 });

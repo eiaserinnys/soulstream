@@ -5,7 +5,7 @@ import { useTokens, type DesignTokens } from '../../theme';
 interface Props {
   /** 현재 좌측 패널 폭 (pt). PanResponder 시작 시 baseline으로 캡처. */
   initialWidth: number;
-  /** 드래그 중 매 이동마다 새 폭을 부모에 통지. 부모가 store clamp/persist 처리. */
+  /** 드래그 중 계산된 폭을 부모 레이아웃에 전달한다. */
   onWidthChange: (next: number) => void;
 }
 

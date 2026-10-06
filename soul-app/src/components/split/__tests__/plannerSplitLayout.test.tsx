@@ -6,7 +6,7 @@ import {
   SafeAreaView,
   type Metrics,
 } from 'react-native-safe-area-context';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { ThreePaneLayout } from '../ThreePaneLayout';
 import { TwoPaneWithDrawer } from '../TwoPaneWithDrawer';
 import { TabletSafeAreaFrame } from '../TabletSafeAreaFrame';
@@ -24,7 +24,10 @@ jest.mock('../MainListPane', () => ({
   MainListPane: () => require('react').createElement(require('react-native').View, { testID: 'planner-main' }),
 }));
 jest.mock('../Splitter', () => ({
-  Splitter: () => require('react').createElement(require('react-native').View, { testID: 'splitter' }),
+  Splitter: ({ onWidthChange }: { onWidthChange: (width: number) => void }) => require('react').createElement(
+    require('react-native').View,
+    { testID: 'splitter', onWidthChange },
+  ),
 }));
 jest.mock('../../../screens/SessionFeedScreen', () => ({
   SessionFeedScreen: ({ onOpenSession }: { onOpenSession?: (sessionId: string) => void }) => (
@@ -108,11 +111,39 @@ describe('iPad v3 planner shell', () => {
   });
 
   it('저장된 가운데 폭 700을 넓은 가로 행에서 그대로 렌더링한다', () => {
-    useUIStore.getState().setPaneMiddleWidth(700);
+    useUIStore.setState({ paneMiddleWidth: 700 });
     const screen = render(<ThreePaneLayout />);
     fireLayout(screen, 1400);
 
     expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).width).toBe(700);
+  });
+
+  it('가로 사이드바를 끌면 보이는 가운데 폭을 함께 저장해 되살아나지 않게 한다', async () => {
+    useUIStore.setState({ paneLeftWidth: 240, paneMiddleWidth: 700 });
+    const screen = render(<ThreePaneLayout />);
+    fireLayout(screen, 1170);
+
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-sidebar').props.style).width).toBe(240);
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).width).toBe(606);
+
+    const leftSplitter = screen.getAllByTestId('splitter')[0];
+    await act(async () => leftSplitter.props.onWidthChange(200));
+
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-sidebar').props.style).width).toBe(200);
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).width).toBe(606);
+    expect(useUIStore.getState()).toMatchObject({ paneLeftWidth: 200, paneMiddleWidth: 606 });
+  });
+
+  it('가로 사이드바 드래그는 예전 360pt 상한에서 멈추지 않는다', async () => {
+    useUIStore.setState({ paneLeftWidth: 240, paneMiddleWidth: 280 });
+    const screen = render(<ThreePaneLayout />);
+    fireLayout(screen, 1400);
+
+    const leftSplitter = screen.getAllByTestId('splitter')[0];
+    await act(async () => leftSplitter.props.onWidthChange(500));
+
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-sidebar').props.style).width).toBe(500);
+    expect(useUIStore.getState().paneLeftWidth).toBe(500);
   });
 
   it.each([
@@ -168,12 +199,12 @@ describe('iPad v3 planner shell', () => {
       scale: 1,
       fontScale: 1,
     });
-    useUIStore.getState().setPaneMiddleWidthTwoPane(520);
+    useUIStore.getState().setPaneMiddleWidthTwoPane(480);
     const screen = render(<TwoPaneWithDrawer />);
     fireLayout(screen, 810);
 
-    expect(520).toBeGreaterThan(Math.floor(834 * 0.5));
-    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).width).toBe(520);
+    expect(480).toBeGreaterThan(Math.floor(834 * 0.5));
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).width).toBe(480);
   });
 
   it.each([

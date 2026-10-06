@@ -41,8 +41,7 @@ export function ThreePaneLayout() {
   const paneLeftWidth = useUIStore((s) => s.paneLeftWidth);
   const paneMiddleWidth = useUIStore((s) => s.paneMiddleWidth);
   const folderOverlayVisible = useUIStore((s) => s.folderOverlayVisible);
-  const setPaneLeftWidth = useUIStore((s) => s.setPaneLeftWidth);
-  const setPaneMiddleWidth = useUIStore((s) => s.setPaneMiddleWidth);
+  const setThreePaneWidths = useUIStore((s) => s.setThreePaneWidths);
   const rowWidth = measuredRowWidth
     ?? windowWidth - insets.left - insets.right - 2 * t.tabletShell.outerInset;
   const paneWidths = resolveThreePaneWidths({
@@ -65,22 +64,28 @@ export function ThreePaneLayout() {
           </SplitPanelSurface>
           <Splitter
             initialWidth={paneWidths.left}
-            onWidthChange={(width) => setPaneLeftWidth(clampThreePaneLeftDrag(width, {
-              rowWidth,
-              panelGap: t.tabletShell.panelGap,
-              middle: paneWidths.middle,
-            }))}
+            onWidthChange={(width) => setThreePaneWidths(
+              clampThreePaneLeftDrag(width, {
+                rowWidth,
+                panelGap: t.tabletShell.panelGap,
+                middle: paneWidths.middle,
+              }),
+              paneWidths.middle,
+            )}
           />
           <SplitPanelSurface testID="split-panel-main" style={[styles.pane, { width: paneWidths.middle }]}>
             <MainListPane />
           </SplitPanelSurface>
           <Splitter
             initialWidth={paneWidths.middle}
-            onWidthChange={(width) => setPaneMiddleWidth(clampThreePaneMiddleDrag(width, {
-              rowWidth,
-              panelGap: t.tabletShell.panelGap,
-              left: paneWidths.left,
-            }))}
+            onWidthChange={(width) => setThreePaneWidths(
+              paneWidths.left,
+              clampThreePaneMiddleDrag(width, {
+                rowWidth,
+                panelGap: t.tabletShell.panelGap,
+                left: paneWidths.left,
+              }),
+            )}
           />
           <SplitPanelSurface testID="split-panel-session" style={[styles.pane, { flex: 1 }]}>
             <TabletSessionFeedPane />

@@ -1,6 +1,7 @@
 export const PANE_LEFT_MIN_WIDTH = 180;
 export const PANE_MIDDLE_MIN_WIDTH = 280;
-export const PANE_FEED_MIN_WIDTH = 240;
+// 피드 300pt에서 얼굴·배지·여백 218pt를 빼면 제목에 82pt가 남는다.
+export const PANE_FEED_MIN_WIDTH = 300;
 
 export function resolveThreePaneWidths({
   rowWidth,
