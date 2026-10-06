@@ -83,7 +83,10 @@ describe('manuscript agent message groups', () => {
       event('2', 'user_message', 'browser'),
       event('3', 'user_message', 'agent'),
     ];
-    const { result, rerender } = renderHook(
+    const { result, rerender } = renderHook<
+      ReturnType<typeof renderItems>,
+      { events: SessionEvent[] }
+    >(
       ({ events }) => renderItems(events),
       { initialProps: { events: firstPage } },
     );
