@@ -3,6 +3,9 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import type { CardCheckItem } from '../../../api/cardTypes';
 import { summarizeCardItems } from '../../../lib/card-check-item-summary';
 import { CardCheckItems } from '../CardCheckItems';
+import { StyleSheet } from 'react-native';
+import { renderHook } from '@testing-library/react-native';
+import { useTokens } from '../../../theme';
 
 function item(id: number, display: CardCheckItem['display'], overrides: Partial<CardCheckItem> = {}): CardCheckItem {
   const state = display === 'doing' ? 'doing' : display === 'dropped' ? 'dropped' : display === 'reported' || display === 'changed' ? 'done' : 'todo';
@@ -116,17 +119,26 @@ test.each([
   [null, null, null, '06:47'],
   ['2026-10-05T08:00:00', null, null, '08:00'],
   [null, { kind: 'comment', at: '2026-10-05T09:30:00', commentId: 'c1' }, null, '06:47 커멘트에서 추가'],
-  ['2026-10-05T08:00:00', null, '실기기 미확인', null],
-] as const)('아래 줄은 못 본 것을 우선하고 없으면 웹과 같은 시각을 보인다 (%s, %s, %s)', (reportedAt, from, caveat, expected) => {
+  ['2026-10-05T08:00:00', null, '실기기 미확인', '08:00'],
+  ['2026-10-05T08:00:00', { kind: 'spoken', at: '', commentId: 'c1' }, '실기기 미확인', '08:00, 06:47 대화에서 추가'],
+] as const)('못 본 것이 있어도 아래 줄은 시각과 출처를 보인다 (%s, %s, %s)', (reportedAt, from, caveat, expected) => {
   const screen = render(<CardCheckItems items={[item(1, 'reported', {
     createdAt: '2026-10-05T06:47:00', reportedAt, from, caveat,
   })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
     onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
-  if (expected) expect(screen.getByText(expected)).toBeTruthy();
-  else {
-    expect(screen.getByText('실기기 미확인')).toBeTruthy();
-    expect(screen.queryByText('08:00')).toBeNull();
-  }
+  expect(screen.getByText(expected)).toBeTruthy();
+  if (caveat) expect(screen.getByText(caveat)).toBeTruthy();
+});
+
+test.each(['한 줄 못 본 것', '첫째 줄\n둘째 줄\n셋째 줄'])('경고 아이콘은 못 본 것 첫 줄의 줄 높이 안에서 가운데에 놓인다: %s', (caveat) => {
+  const t = renderHook(() => useTokens()).result.current;
+  const screen = render(<CardCheckItems items={[item(1, 'reported', { caveat })]}
+    pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  expect(StyleSheet.flatten(screen.getByTestId('card-check-item-1-caveat-row').props.style)).toMatchObject({ alignItems: 'flex-start' });
+  expect(StyleSheet.flatten(screen.getByTestId('card-check-item-1-caveat-icon-frame').props.style)).toMatchObject({
+    height: t.foundation.typography.meta.lineHeight, justifyContent: 'center',
+  });
 });
 
  test('못 본 것은 결과 아래 증거 위에 두고 이미지 설명은 확대 창에만 보인다', () => {

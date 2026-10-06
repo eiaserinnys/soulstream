@@ -93,6 +93,7 @@ export function FolderSessionHistory({
   const [detailOwner, setDetailOwner] = useState(scopeGeneration);
   const requestSerial = useRef(0);
   const requestBySessionId = useRef<Record<string, number>>({});
+  const inFlightSessionIds = useRef(new Set<string>());
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -101,15 +102,20 @@ export function FolderSessionHistory({
   useEffect(() => {
     requestSerial.current += 1;
     requestBySessionId.current = {};
+    inFlightSessionIds.current.clear();
     setDetailOwner(scopeGeneration);
     setDetailStatusById({});
   }, [scopeGeneration]);
   const loadSessionDetails = useCallback((sessionIdsToLoad: readonly string[]) => {
     if (!api || !active || sessionIdsToLoad.length === 0) return;
-    const requestedIds = [...new Set(sessionIdsToLoad)];
+    const requestedIds = [...new Set(sessionIdsToLoad)].filter((id) => !inFlightSessionIds.current.has(id));
+    if (requestedIds.length === 0) return;
     const requestId = ++requestSerial.current;
     const requestScopeGeneration = scopeGeneration;
-    requestedIds.forEach((sessionId) => { requestBySessionId.current[sessionId] = requestId; });
+    requestedIds.forEach((sessionId) => {
+      requestBySessionId.current[sessionId] = requestId;
+      inFlightSessionIds.current.add(sessionId);
+    });
     setDetailStatusById((current) => {
       const next = { ...current };
       requestedIds.forEach((sessionId) => { next[sessionId] = 'loading'; });
@@ -122,6 +128,9 @@ export function FolderSessionHistory({
           || captureAuthScope().generation !== requestScopeGeneration
           || !isSessionStoreScopeCurrent(requestScopeGeneration)
         ) return;
+        requestedIds.forEach((id) => {
+          if (requestBySessionId.current[id] === requestId) inFlightSessionIds.current.delete(id);
+        });
         const currentSessions = sessions.filter((session) => (
           requestBySessionId.current[session.agentSessionId] === requestId
         ));
@@ -143,6 +152,9 @@ export function FolderSessionHistory({
           || captureAuthScope().generation !== requestScopeGeneration
           || !isSessionStoreScopeCurrent(requestScopeGeneration)
         ) return;
+        requestedIds.forEach((id) => {
+          if (requestBySessionId.current[id] === requestId) inFlightSessionIds.current.delete(id);
+        });
         setDetailStatusById((current) => {
           const next = { ...current };
           requestedIds.forEach((sessionId) => {

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { Modal, StyleSheet } from 'react-native';
+import { fireEvent, render, renderHook } from '@testing-library/react-native';
+import { useTokens } from '../../theme';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ImageViewerModal } from '../ImageViewerModal';
 import { AttachmentImage } from '../AttachmentImage';
@@ -27,6 +28,7 @@ test('closing an attachment leaves its original thumbnail available', () => {
 });
 
 test('캡션은 해당 이미지 페이지 아래에만 나타나고 기본 첨부는 그대로다', () => {
+  const t = renderHook(() => useTokens()).result.current;
   const screen = render(<AttachmentImage source={{ uri: 'https://test/one.png' }}
     sources={[{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }]}
     captions={['첫 화면', '둘째 화면']} accessibilityLabel="첫 화면 썸네일" />);
@@ -34,4 +36,7 @@ test('캡션은 해당 이미지 페이지 아래에만 나타나고 기본 첨�
   fireEvent.press(screen.getByLabelText('첫 화면 썸네일'));
   expect(screen.getByTestId('image-viewer-caption-0').props.children).toBe('첫 화면');
   expect(screen.getByTestId('image-viewer-caption-1').props.children).toBe('둘째 화면');
+  expect(StyleSheet.flatten(screen.getByTestId('image-viewer-caption-0').props.style)).toMatchObject({
+    backgroundColor: t.colors.surface, textAlign: 'center', padding: t.spacing.md,
+  });
 });

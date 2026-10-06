@@ -50,6 +50,7 @@ function CaptionedImagePage({ source, caption, index, viewport }: {
         <Image source={source} style={imageArea} resizeMode="contain" accessibilityLabel={`이미지 ${index + 1}`} />
       </ScrollView>
     </View>
-    <Text testID={`image-viewer-caption-${index}`} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, padding: t.spacing.md }}>{caption}</Text>
+    <Text testID={`image-viewer-caption-${index}`} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary,
+      backgroundColor: t.colors.surface, textAlign: 'center', padding: t.spacing.md }}>{caption}</Text>
   </View>;
 }

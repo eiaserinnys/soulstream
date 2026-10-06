@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { FlatList, StyleSheet } from 'react-native';
 import type { Session } from '../../../api/types';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
@@ -24,6 +24,31 @@ jest.mock('../../useSessionCardAnimation', () => ({
 }));
 
 import { FolderSessionHistory } from '../FolderSessionHistory';
+
+test('첫 요청이 끝나기 전에 겹치는 세션이 노출되어도 새 ID만 요청하고 앞선 응답을 반영한다', async () => {
+  useSessionStore.setState({ sessions: {} });
+  let resolveFirst!: (sessions: Session[]) => void;
+  let resolveSecond!: (sessions: Session[]) => void;
+  const api = { getSessionsByIds: jest.fn()
+    .mockImplementationOnce(() => new Promise<Session[]>((resolve) => { resolveFirst = resolve; }))
+    .mockImplementationOnce(() => new Promise<Session[]>((resolve) => { resolveSecond = resolve; })) };
+  const screen = render(<FolderSessionHistory api={api as never} sessionIds={['A', 'B', 'C']} virtualized />);
+  const expose = (ids: string[]) => act(() => {
+    const list = screen.UNSAFE_getByType(FlatList);
+    list.props.onViewableItemsChanged({ viewableItems: list.props.data.filter(({ session }: { session: Session }) => ids.includes(session.agentSessionId)).map((item: unknown) => ({ item })) });
+  });
+  expose(['A', 'B']);
+  expect(api.getSessionsByIds).toHaveBeenNthCalledWith(1, ['A', 'B']);
+  expose(['B', 'C']);
+  expect(api.getSessionsByIds).toHaveBeenNthCalledWith(2, ['C']);
+  const sessions = ['A', 'B', 'C'].map((id) => ({ agentSessionId: id, displayName: id, status: 'completed', createdAt: '', updatedAt: '' } as Session));
+  await act(async () => resolveFirst(sessions.slice(0, 2)));
+  expect(screen.getByTestId('task-run-row-B')).toBeTruthy();
+  expect(useSessionStore.getState().sessions.B).toEqual(sessions[1]);
+  await act(async () => resolveSecond(sessions.slice(2)));
+  expect(screen.getByTestId('task-run-row-C')).toBeTruthy();
+  expect(api.getSessionsByIds).toHaveBeenCalledTimes(2);
+});
 
 beforeEach(() => {
   useNodeConnectivityStore.getState().reset();

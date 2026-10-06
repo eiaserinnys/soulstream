@@ -45,7 +45,7 @@ test('인계와 노트는 같은 본문 크기와 확인 항목 프레임 토큰
   for (const id of ['card-brief-frame', 'card-note-note-1']) {
     expect(StyleSheet.flatten(screen.getByTestId(id).props.style)).toMatchObject({
       borderWidth: StyleSheet.hairlineWidth, borderRadius: t.foundation.radius.field,
-      paddingVertical: t.uiSpacing.xs, paddingHorizontal: t.uiSpacing.sm,
+      paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.md,
     });
   }
   expect(screen.getByText('인계 요약').parent?.props.testID).not.toBe('card-brief-frame');

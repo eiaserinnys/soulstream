@@ -100,5 +100,5 @@ function makeNoteStyles(t: DesignTokens) {
 
 function cardRecordFrame(t: DesignTokens) {
   return { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border,
-    borderRadius: t.foundation.radius.field, paddingVertical: t.uiSpacing.xs, paddingHorizontal: t.uiSpacing.sm };
+    borderRadius: t.foundation.radius.field, paddingVertical: t.uiSpacing.md, paddingHorizontal: t.uiSpacing.md };
 }

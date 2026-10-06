@@ -137,8 +137,10 @@ export function CardCheckItemRow({
             <View style={styles.changedReason}><Text style={styles.reopened}>확인한 뒤 바뀜</Text><Text style={styles.result} testID={`card-check-item-${item.id}-reopened`}>{item.reopened}</Text></View>
           ) : null}
           {item.result ? <Text style={[styles.result, item.display === 'dropped' && styles.droppedResult]}>{item.result}</Text> : null}
-          {item.caveat ? <View style={styles.caveatRow}>
-            <Ionicons testID={`card-check-item-${item.id}-caveat-icon`} name="warning-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.warningText} />
+          {item.caveat ? <View testID={`card-check-item-${item.id}-caveat-row`} style={styles.caveatRow}>
+            <View testID={`card-check-item-${item.id}-caveat-icon-frame`} style={styles.caveatIconFrame}>
+              <Ionicons testID={`card-check-item-${item.id}-caveat-icon`} name="warning-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.warningText} />
+            </View>
             <Text style={styles.caveat} testID={`card-check-item-${item.id}-caveat`}>{item.caveat}</Text>
           </View> : null}
           {item.evidence.length ? (
@@ -179,7 +181,7 @@ export function CardCheckItemRow({
             </View>
           ) : null}
           <View style={styles.footer}>
-            {!item.caveat && metadata ? <Text style={styles.source}>{metadata}</Text> : null}
+            {metadata ? <Text testID={`card-check-item-${item.id}-metadata`} style={styles.source}>{metadata}</Text> : null}
             {item.display !== 'dropped' ? <CompactTouchTarget
               testID={`card-check-item-${item.id}-fix`}
               accessibilityLabel={`${item.id} ${item.title} 고칠 점 남기기`}
@@ -232,7 +234,8 @@ function makeStyles(t: DesignTokens) {
     linkSurface: { minHeight: t.controlHeight.chip, backgroundColor: t.colors.surfaceCode, maxWidth: '100%', borderRadius: t.foundation.radius.round, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, paddingHorizontal: t.uiSpacing.sm },
     linkText: { ...planner.typography.meta, color: t.colors.link, fontWeight: '600', flexShrink: 1 },
     footer: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.xs },
-    caveatRow: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, flexShrink: 1 },
+    caveatRow: { flexDirection: 'row', alignItems: 'flex-start', gap: t.uiSpacing.xxs, flexShrink: 1 },
+    caveatIconFrame: { height: planner.typography.meta.lineHeight, justifyContent: 'center' },
     caveat: { ...planner.typography.meta, color: t.colors.warningText, flexShrink: 1 },
     source: { ...planner.typography.meta, color: t.colors.textMuted, flexShrink: 1 },
     fixFrame: { marginLeft: 'auto', flexShrink: 0 },
