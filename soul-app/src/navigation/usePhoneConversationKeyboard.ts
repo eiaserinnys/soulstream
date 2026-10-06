@@ -33,9 +33,11 @@ export function usePhoneConversationKeyboard(navigation: { getParent(): { setOpt
       return () => {
         showSub.remove();
         hideSub.remove();
-        // 자기 stack 최상단에 남는 탭 전환만 복원한다. push된 상세는 표시를 직접 소유한다.
+        // 위에 push된 화면이 숨김을 맡은 경우만 보존한다. pop과 탭 전환은 복원한다.
         const stack = navigation.getState();
-        if (hiddenByKeyboard && stack.routes[stack.index].key === routeKey) parent?.setOptions({ tabBarStyle: visible });
+        const coveredByNextScreen = stack.routes.some(route => route.key === routeKey)
+          && stack.routes[stack.index].key !== routeKey;
+        if (hiddenByKeyboard && !coveredByNextScreen) parent?.setOptions({ tabBarStyle: visible });
       };
     }, [navigation, t.colors])
   );

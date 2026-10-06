@@ -48,3 +48,21 @@ test('키보드 숨김 뒤 같은 stack 카드 상세가 숨김을 맡으면 PAS
   expect(parent.setOptions).toHaveBeenLastCalledWith({ tabBarStyle: { backgroundColor: 'transparent', display: 'none' } });
   subscribe.mockRestore();
 });
+
+test('키보드를 연 Chat을 Feed stack에서 pop하면 cleanup이 탭 이동을 위한 탭 바를 복원한다', () => {
+  const listeners: Record<string, () => void> = {};
+  const subscribe = jest.spyOn(Keyboard, 'addListener').mockImplementation((event, callback) => {
+    listeners[event] = callback as () => void;
+    return { remove: jest.fn() } as any;
+  });
+  const parent = { setOptions: jest.fn() };
+  let stack = { index: 1, routes: [{ key: 'feed' }, { key: 'chat' }] };
+  const navigation = { getParent: () => parent, getState: () => stack };
+  const hook = renderHook(() => usePhoneConversationKeyboard(navigation));
+  act(() => (listeners.keyboardWillShow ?? listeners.keyboardDidShow)());
+  stack = { index: 0, routes: [{ key: 'feed' }] };
+  hook.unmount();
+  expect(parent.setOptions.mock.calls.map(([options]) => options.tabBarStyle.display)).toStrictEqual(['none', undefined]);
+  expect(parent.setOptions).toHaveBeenLastCalledWith({ tabBarStyle: { backgroundColor: 'transparent' } });
+  subscribe.mockRestore();
+});
