@@ -33,6 +33,7 @@ import {
   type PersistentSessionEditorSection,
 } from './PersistentSessionSettingsFields';
 import { persistentChatDisplaySettings, savePersistentSessionSettings } from './persistentSessionSettingsActions';
+import { persistentSessionQuotaRows } from './PersistentSessionMonitoring';
 import { usePersistentSessionApiFactory } from './persistentSessionApi';
 
 const NO_MODEL = '모델 정보 없음';
@@ -121,6 +122,7 @@ export function PersistentSessionEditor({
   onPresetsChange,
   onPresetsStateChange,
   onDirtyChange,
+  onPasSaveActionChange,
 }: {
   serverUrl: string;
   /** Without an id the editor adds a new session. */
@@ -136,6 +138,7 @@ export function PersistentSessionEditor({
   onPresetsChange?(presets: ModelPresetAvailability[]): void;
   onPresetsStateChange?(state: 'loading' | 'ready' | 'error'): void;
   onDirtyChange?(dirty: boolean): void;
+  onPasSaveActionChange?(save: () => void, disabled: boolean, busy: boolean): void;
 }) {
   const t = useTokens();
   const styles = useSettingsFormStyles();
@@ -157,6 +160,8 @@ export function PersistentSessionEditor({
   const [targetsError, setTargetsError] = useState<string | null>(null);
   const [targetsReload, setTargetsReload] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [displaySaving, setDisplaySaving] = useState(false);
+  const [displayError, setDisplayError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   const [registration, setRegistration] = useState<{ sessionId: string; name: string } | null>(null);
@@ -299,6 +304,12 @@ export function PersistentSessionEditor({
       else if (!failure.responseLost) setError(failure.text); // a lost answer is explained by its own notice below
     } finally { if (mounted.current) setSaving(false); }
   };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const savePasAction = useCallback(() => { void saveRef.current(); }, []);
+  useEffect(() => {
+    if (mode === 'pas') onPasSaveActionChange?.(savePasAction, saving || loading || !canSave || !dirty, saving);
+  }, [mode, onPasSaveActionChange, savePasAction, saving, loading, canSave, dirty]);
   const release = async () => {
     if (!session || saving) return;
     setSaving(true); setError(null);
@@ -334,6 +345,7 @@ export function PersistentSessionEditor({
     ? defaults.unavailable_reason ?? (targetsLoaded && (!baseline.agentId || !baseline.modelPreset) ? '기본 프로필이나 기본 모델을 지금 쓸 수 없습니다. 목록에서 골라 주세요.' : null)
     : null;
   const sessionDisplay = session ? persistentSessionDisplayValues(session) : null;
+  const quotaRows = session ? persistentSessionQuotaRows(session, presets) : [];
   const displayChange = (field: PersistentSessionDisplayField, value: boolean) => {
     const draftField: Record<PersistentSessionDisplayField, keyof Draft> = {
       show_character: 'showCharacter', animate_character: 'animateCharacter',
@@ -341,9 +353,10 @@ export function PersistentSessionEditor({
     };
     if (mode !== 'pas') { update({ [draftField[field]]: value }); return; }
     if (!session || saving) return;
-    setSaving(true); setError(null);
+    setSaving(true); setDisplaySaving(true); setError(null); setDisplayError(null);
     void savePersistentSessionSettings(createApi(serverUrl), session.session_id, { [field]: value })
       .then((saved) => {
+        if (saved.persistent) useChatStore.getState().applyPersistentDisplaySettings(session.session_id, persistentChatDisplaySettings(saved));
         if (!mounted.current) return;
         const next = draftFromSession(saved);
         setSession(saved);
@@ -363,16 +376,14 @@ export function PersistentSessionEditor({
           showJevCandidates: next.showJevCandidates,
           showTurnUsage: next.showTurnUsage,
         }));
-        if (saved.persistent) useChatStore.getState().applyPersistentDisplaySettings(saved.session_id, persistentChatDisplaySettings(saved));
       })
-      .catch((cause: unknown) => {
-        if (mounted.current) setError(describePersistentFailure(cause, 'save').text);
+      .catch(() => {
+        if (mounted.current) setDisplayError('저장 실패. 다시 눌러 주세요.');
       })
-      .finally(() => { if (mounted.current) setSaving(false); });
+      .finally(() => { if (mounted.current) { setSaving(false); setDisplaySaving(false); } });
   };
   return <View testID={mode === 'pas' ? 'persistent-session-pas-editor' : 'persistent-session-editor'} style={styles.editor}>
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
-    {mode === 'pas' && saving ? <ActivityIndicator accessibilityLabel="저장 중" color={t.colors.accent} /> : null}
     {loadError ? <View style={styles.block}><Text accessibilityRole="alert" style={styles.error}>{loadError}</Text><Action label="다시 불러오기" onPress={() => setReload((value) => value + 1)} testID="persistent-session-reload" /></View> : null}
     {loaded && mode === 'workspace' ? <Text style={styles.heading}>{session ? session.display_name ?? '이름 없음' : '새 영구 에이전트 세션'}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -400,6 +411,7 @@ export function PersistentSessionEditor({
         show_turn_usage: draft.showTurnUsage,
       }}
       displaySaving={saving}
+      displayStatus={displaySaving ? 'saving' : displayError ? 'error' : null}
       onDisplayChange={displayChange}
       loadingTargets={loadingTargets}
       targetsError={targetsError}
@@ -409,6 +421,17 @@ export function PersistentSessionEditor({
       nodeMissing={nodeMissing}
       needsResave={needsResave}
     /> : null}
+    {mode === 'pas' && section === 'account-model' && session ? <SettingsSection id="persistent-session-account-quota" title="" flattened>
+      <Group title="계정 여유">
+        {loadingTargets ? <ActivityIndicator accessibilityLabel="계정 여유 불러오는 중" color={t.colors.accent} />
+          : targetsError ? <ReadOnlyField label="7일 여유" value="조회 실패" />
+            : quotaRows.length ? quotaRows.map((row) => <View key={row.key} style={{ gap: t.spacing.xs }}>
+              <ReadOnlyField label={row.label} value={row.headroomLabel ?? '기록 없음'} />
+              {row.metadata ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{row.metadata}</Text> : null}
+            </View>)
+              : <ReadOnlyField label="7일 여유" value="기록 없음" />}
+      </Group>
+    </SettingsSection> : null}
     {!session && defaults && loaded ? <SettingsSection id="persistent-editor-groups" title="" flattened>
       <Group title="세션 설정">
         <Input label="세션 이름" value={draft.name} onChangeText={(name) => update({ name })} />
@@ -431,9 +454,6 @@ export function PersistentSessionEditor({
         <Text style={styles.help}>비워 두면 서버가 정한 문장으로 시작합니다: {defaults.initial_instruction}</Text>
       </Group> : null}
     </SettingsSection> : null}
-    {mode === 'pas' && session && section === 'account-model' ? <View style={styles.block}>
-      <View style={styles.actions}><Action label={saving ? '저장 중…' : '저장'} primary disabled={saving || loading || !canSave || !dirty} onPress={() => void save()} testID="persistent-pas-settings-save" /></View>
-    </View> : null}
     {mode === 'workspace' && session ? <View style={styles.block}>
       <View style={styles.actions}><Action label="영구 세션 해제" disabled={saving || loading || nodeMissing} onPress={confirmRelease} testID="persistent-session-release" /></View>
       <Text style={styles.help}>해제해도 세션과 대화 기록은 남습니다.</Text>

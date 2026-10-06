@@ -107,7 +107,7 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
           quota_label: null,
         } : {
           status: 'ok' as const,
-          headroom: 22.5,
+          headroom: 12.5,
           remaining_percent: 72.5,
           window_remaining_percent: 50,
           resets_at: '2026-10-09T01:00:00Z',

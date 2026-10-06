@@ -69,6 +69,7 @@ export function PersistentSessionSettingsFields({
   presets,
   display,
   displaySaving,
+  displayStatus,
   onDisplayChange,
   loadingTargets,
   targetsError,
@@ -87,6 +88,7 @@ export function PersistentSessionSettingsFields({
   presets: ModelPresetAvailability[];
   display: PersistentSessionDisplayValues;
   displaySaving: boolean;
+  displayStatus: 'saving' | 'error' | null;
   onDisplayChange(field: PersistentSessionDisplayField, value: boolean): void;
   loadingTargets: boolean;
   targetsError: string | null;
@@ -162,11 +164,17 @@ export function PersistentSessionSettingsFields({
     </SettingsSection>;
   }
   if (section === 'display') {
-    return <SettingsSection id="persistent-editor-groups" title="" flattened><Group>{displayFields}</Group></SettingsSection>;
+    return <SettingsSection id="persistent-editor-groups" title="" flattened>{session.persistent ? <Group>
+      {displayFields}
+      <View style={{ height: t.foundation.typography.body.lineHeight, justifyContent: 'center' }}>
+        {displayStatus === 'saving' ? <ActivityIndicator size="small" accessibilityLabel="저장 중" color={t.colors.accent} /> : null}
+        {displayStatus === 'error' ? <Text accessibilityRole="alert" style={styles.error}>저장 실패. 다시 눌러 주세요.</Text> : null}
+      </View>
+    </Group> : null}</SettingsSection>;
   }
   return <SettingsSection id="persistent-editor-groups" title="" flattened>
     <Group title="세션 설정">{accountFields}</Group>
-    <Group title="채팅 표시">{displayFields}</Group>
+    {session.persistent ? <Group title="채팅 표시">{displayFields}</Group> : null}
     <PersistentSessionRuntimeFields session={session} presets={presets} needsResave={needsResave} />
   </SettingsSection>;
 }

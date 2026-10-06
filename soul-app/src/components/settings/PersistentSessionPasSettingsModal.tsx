@@ -1,14 +1,13 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import type { PersistentSessionResource } from '../../api/persistentSessionEndpoints';
-import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
 import { AppModalSurface } from '../AppModalSurface';
 import { GlassButton } from '../GlassSurface';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens, type DesignTokens } from '../../theme';
 import { PersistentSessionEditor } from './PersistentSessionViews';
 import { PersistentSessionMonitoring } from './PersistentSessionMonitoring';
+import { settingsPanelPage } from './SettingsFormParts';
 import { SettingsSegmentedControl } from './SettingsSegmentedControl';
 
 const SECTIONS = [
@@ -17,7 +16,6 @@ const SECTIONS = [
   { value: 'history', label: '기록' },
 ] as const;
 type Section = typeof SECTIONS[number]['value'];
-type ReadState = 'loading' | 'ready' | 'error';
 
 export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }: {
   sessionId: string;
@@ -27,18 +25,16 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const editorScroll = useRef<ScrollView>(null);
+  const savePasRef = useRef<() => void>(() => undefined);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const [section, setSection] = useState<Section>('account-model');
-  const [session, setSession] = useState<PersistentSessionResource | null>(null);
-  const [sessionState, setSessionState] = useState<ReadState>(serverUrl ? 'loading' : 'error');
-  const [presets, setPresets] = useState<ModelPresetAvailability[]>([]);
-  const [presetsState, setPresetsState] = useState<ReadState>(serverUrl ? 'loading' : 'error');
   const [dirty, setDirty] = useState(false);
-  const onSessionChange = useCallback((value: PersistentSessionResource | null) => setSession(value), []);
-  const onLoadStateChange = useCallback((value: ReadState) => setSessionState(value), []);
-  const onPresetsChange = useCallback((value: ModelPresetAvailability[]) => setPresets(value), []);
-  const onPresetsStateChange = useCallback((value: ReadState) => setPresetsState(value), []);
+  const [saveStatus, setSaveStatus] = useState({ disabled: true, busy: false });
   const onDirtyChange = useCallback((value: boolean) => setDirty(value), []);
+  const onPasSaveActionChange = useCallback((save: () => void, disabled: boolean, busy: boolean) => {
+    savePasRef.current = save;
+    setSaveStatus((current) => current.disabled === disabled && current.busy === busy ? current : { disabled, busy });
+  }, []);
   const revealEditorError = useCallback(() => editorScroll.current?.scrollTo({ y: 0, animated: true }), []);
   const requestClose = useCallback(() => {
     if (!dirty) { onClose(); return; }
@@ -61,15 +57,15 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
     <View testID="persistent-session-pas-settings-modal" style={styles.root}>
       <View style={styles.header}>
         <Text accessibilityRole="header" style={styles.title}>영구 세션</Text>
-        <GlassButton
+        <TouchableOpacity
           testID="persistent-session-pas-close"
           accessibilityRole="button"
           accessibilityLabel="설정 닫기"
           onPress={requestClose}
-          style={styles.close}
+          style={styles.headerAction}
         >
-          <Text style={styles.closeText}>닫기</Text>
-        </GlassButton>
+          <Text style={styles.actionText}>닫기</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.selector}>
         <SettingsSegmentedControl<Section>
@@ -81,7 +77,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
       </View>
       <View style={styles.body}>
         <View style={[styles.pane, section === 'history' && styles.hidden]}>
-          <ScrollView ref={editorScroll} testID="persistent-session-pas-settings-scroll" style={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView ref={editorScroll} testID="persistent-session-pas-settings-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
             <PersistentSessionEditor
               mode="pas"
               serverUrl={serverUrl}
@@ -90,27 +86,32 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
               onRevealError={revealEditorError}
               section={section === 'display' ? 'display' : 'account-model'}
               onDone={() => undefined}
-              onSessionChange={onSessionChange}
-              onLoadStateChange={onLoadStateChange}
-              onPresetsChange={onPresetsChange}
-              onPresetsStateChange={onPresetsStateChange}
               onDirtyChange={onDirtyChange}
+              onPasSaveActionChange={onPasSaveActionChange}
             />
           </ScrollView>
         </View>
         <View style={[styles.pane, section !== 'history' && styles.hidden]}>
-          <ScrollView testID="persistent-session-pas-monitoring-scroll" style={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView testID="persistent-session-pas-monitoring-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
             <PersistentSessionMonitoring
               serverUrl={serverUrl}
               sessionId={sessionId}
-              session={session}
-              sessionState={sessionState}
-              presets={presets}
-              presetsState={presetsState}
             />
           </ScrollView>
         </View>
       </View>
+      {section === 'account-model' ? <View testID="persistent-session-pas-settings-footer" style={styles.footer}>
+        <GlassButton
+          variant="primary"
+          testID="persistent-pas-settings-save"
+          accessibilityLabel="저장"
+          disabled={saveStatus.disabled}
+          onPress={() => savePasRef.current()}
+          style={styles.footerAction}
+        >
+          <Text style={styles.primaryText}>{saveStatus.busy ? '저장 중…' : '저장'}</Text>
+        </GlassButton>
+      </View> : null}
     </View>
   </AppModalSurface>;
 }
@@ -126,12 +127,14 @@ function makeStyles(t: DesignTokens) {
       gap: t.spacing.sm,
     },
     title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary },
-    close: { paddingHorizontal: t.spacing.xs },
-    closeText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' },
+    headerAction: { minHeight: t.hitTarget.min, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs },
+    actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' },
+    primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
     selector: { paddingHorizontal: t.foundation.pageInset, paddingBottom: t.spacing.sm },
     body: { flex: 1, minHeight: 0 },
     pane: { flex: 1, minHeight: 0 },
     hidden: { display: 'none' },
-    scroll: { flex: 1 },
+    footer: { flexDirection: 'row', gap: t.spacing.sm, paddingHorizontal: t.foundation.pageInset, paddingVertical: t.cardLayout.padding, paddingBottom: t.spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border },
+    footerAction: { flexGrow: 1 },
   });
 }
