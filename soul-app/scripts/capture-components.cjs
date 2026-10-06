@@ -10,7 +10,8 @@ const [playwrightPath, evidencePath, tabletSize, captureMode] = process.argv.sli
 if (!playwrightPath || !evidencePath) throw new Error('Playwright path와 증거 경로가 필요합니다.');
 const { chromium, devices } = require(path.resolve(playwrightPath));
 const output = path.resolve(evidencePath);
-const root = path.resolve(__dirname, '../../unified-dashboard/dist/assets/ios-components');
+const root = process.env.COMPONENT_REVIEW_BUNDLE ? path.resolve(process.env.COMPONENT_REVIEW_BUNDLE)
+  : path.resolve(__dirname, '../../unified-dashboard/dist/assets/ios-components');
 const prefix = '/assets/ios-components/';
 const apiRequests = [];
 const result = { passed: false, viewports: [], interactions: [], errors: [], warnings: [], apiRequests };
@@ -1003,7 +1004,9 @@ async function runPersistentTaskCaptures(browser, base) {
     assert.equal(await denied.getByTestId('component-review').count(), 0);
     await denied.close();
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
-    if (captureMode === 'card-checks' || captureMode === 'card-trim') {
+    if (captureMode === 'persistent-fullscreen') {
+      await require('./persistent-fullscreen-capture.cjs').runPersistentFullscreenCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'card-checks' || captureMode === 'card-trim') {
       await runCardChecksCaptures(browser, base);
     } else if (captureMode === 'manuscript-chat') {
       await runManuscriptChatCaptures(browser, base);

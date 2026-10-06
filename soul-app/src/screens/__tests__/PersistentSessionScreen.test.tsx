@@ -1,4 +1,6 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+let mockDevice = 'phone';
+jest.mock('../../theme/useDeviceType', () => ({ useDeviceType: () => mockDevice, deviceTypeToBaseKey: (device: string) => device === 'phone' ? 'phone' : 'tablet' }));
 jest.mock('../../components/chat/ChatBody', () => {
   const React = require('react'); const { View, TextInput } = require('react-native');
   return { ChatBody: (props: any) => {
@@ -23,6 +25,8 @@ import { PersistentSessionProvider, usePersistentSessionHost } from '../../navig
 import { PersistentSessionScreen } from '../PersistentSessionScreen';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import type { StoreApi } from 'zustand';
+import { StyleSheet, View } from 'react-native';
+import { useChatStore } from '../../store/chatStore';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -32,8 +36,8 @@ test('카드를 여는 동안 ChatBody의 mount·id·입력을 유지하고 기�
   act(() => store.getState().open({ session_id: 'pas-1', display_name: '관제', persistent: true } as any));
   fireEvent.changeText(view.getByTestId('persistent-draft'), '진행 중인 입력');
   fireEvent.press(view.getByTestId('persistent-session-tasks'));
-  expect(view.getByTestId('persistent-body-probe').props.active).toBe(false);
-  expect(view.getByTestId('persistent-body-probe').props.sessionId).toBe('pas-1');
+  expect(view.getByTestId('persistent-body-probe', { includeHiddenElements: true }).props.active).toBe(false);
+  expect(view.getByTestId('persistent-body-probe', { includeHiddenElements: true }).props.sessionId).toBe('pas-1');
   fireEvent.press(view.getByTestId('choose-card'));
   fireEvent.press(view.getByTestId('open-card'));
   expect(onOpenCard).toHaveBeenCalledWith('card-1');
@@ -42,4 +46,35 @@ test('카드를 여는 동안 ChatBody의 mount·id·입력을 유지하고 기�
   act(() => store.getState().swipe('right'));
   expect(view.getByTestId('persistent-body-probe').props.active).toBe(true);
   expect(view.getByTestId('persistent-draft').props.value).toBe('진행 중인 입력');
+});
+
+test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점을 유지한다', () => {
+  mockDevice = 'tabletLandscape';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
+  let width = 1180;
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, width, 796);
+    else if (this.props.testID === 'persistent-session-conversation') callback((width - 480) / 2, 100, 480, 720);
+  });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-1', display_name: '관제', persistent: true } as any);
+    const request = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
+    useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-1', request, { show_character: true, animate_character: true });
+  });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  const body = view.getByTestId('persistent-body-probe');
+  fireEvent(body, 'composerLayout', { nativeEvent: { layout: { x: 0, y: 644, width: 480, height: 76 } } });
+  const before = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
+  const line = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style);
+  expect(before.width).toBe(152);
+  expect(before.top + before.height).toBe(line.top + 1);
+  width = 1340;
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  const after = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
+  expect(after.left).toBeGreaterThan(before.left);
+  expect(after.width).toBe(152);
+  view.unmount();
+  measure.mockRestore();
+  dimensions.mockRestore();
 });

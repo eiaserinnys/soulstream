@@ -23,6 +23,7 @@ import {
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
 import { dialogueApi } from './dialogue-fixtures';
 import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
+import { createPersistentFullscreenReviewApi } from './persistent-fullscreen-fixtures';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
@@ -309,6 +310,7 @@ export function createApiClient(): ApiClient {
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
   if (section === 'nativeSettings') return nativeSettingsApi;
+  if (section === 'persistent') return createPersistentFullscreenReviewApi(window.location.search);
   if (section === 'dialogues' && new URLSearchParams(window.location.search).get('sample') === 'persistent-select') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;

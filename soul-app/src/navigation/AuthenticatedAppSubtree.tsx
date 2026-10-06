@@ -1,5 +1,6 @@
 import React from 'react';
-import { SplitLayout } from '../components/split/SplitLayout';
+import { TabletNavigator } from './TabletNavigator';
+import { PersistentSessionProvider } from './PersistentSessionContext';
 import type { DeviceType } from '../theme/useDeviceType';
 import { TabNavigator } from './TabNavigator';
 import { UiUsageEventsHost } from '../components/UiUsageEventsHost';
@@ -40,5 +41,7 @@ export function AuthenticatedAppSubtree({
 }
 
 function AuthenticatedAppInstance({ device }: Pick<Props, 'device'>) {
-  return device === 'phone' ? <TabNavigator /> : <SplitLayout />;
+  return <PersistentSessionProvider>
+    {device === 'phone' ? <TabNavigator /> : <TabletNavigator />}
+  </PersistentSessionProvider>;
 }

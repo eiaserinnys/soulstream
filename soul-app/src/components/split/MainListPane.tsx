@@ -25,6 +25,7 @@ import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../planner/Ca
 import { CompletedCardsToggle } from '../planner/CompletedCardsToggle';
 import { useAuthScopeGeneration } from '../../lib/auth-scope';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
+import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 
 export function MainListPane({
   onMenuPress,
@@ -123,6 +124,7 @@ export function MainListPane({
             onOpenNewFolder={() => dailyRef.current?.openNewFolder()}
           />
         ) : null}
+        <TabletPersistentEntry />
       </TabletPaneHeader>
       {!effectiveShowSearch && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
         <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}

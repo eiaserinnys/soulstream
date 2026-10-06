@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
+import { calculatePersistentSessionLayout, type PersistentSessionRect } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
 import { createApiClient } from '../api/client';
 import { ChatBody } from '../components/chat/ChatBody';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
@@ -42,8 +42,10 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
   const { handleAppearanceChange } = useDisplayPreferenceActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingCharacter, setSavingCharacter] = useState(false);
-  const [app, setApp] = useState<LayoutRectangle | null>(null);
-  const [main, setMain] = useState<LayoutRectangle | null>(null);
+  const appRef = React.useRef<View>(null);
+  const mainRef = React.useRef<View>(null);
+  const [app, setApp] = useState<PersistentSessionRect | null>(null);
+  const [main, setMain] = useState<PersistentSessionRect | null>(null);
   const [composer, setComposer] = useState<LayoutRectangle | null>(null);
   const compact = phone || (app?.height ?? Infinity) < FRAME.compactHeight;
   const headerHeight = compact ? FRAME.compactHeader : FRAME.header;
@@ -51,14 +53,19 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
   const columnWidth = phone ? app?.width ?? 0 : widths.conversation;
   const columnLeft = app ? (app.width - columnWidth) / 2 : 0;
+  const measureApp = React.useCallback(() => appRef.current?.measureInWindow((left, top, width, height) => setApp({ left, top, width, height })), []);
+  const measureMain = React.useCallback(() => mainRef.current?.measureInWindow((left, top, width, height) => setMain({ left, top, width, height })), []);
+  // RN 웹은 크기가 같은 열의 x 이동만으로 onLayout을 다시 보내지 않는다.
+  // 열 배치를 바꾼 commit 뒤에도 같은 window 좌표계로 실측한다.
+  React.useLayoutEffect(measureMain, [measureMain, columnLeft, columnWidth, headerHeight, app?.height]);
   const composerRoles = createSessionVisualRoles(t).chat.composer;
   const inputRowHeight = Math.max(composerRoles.contentMinHeight,
     t.chatFontSize.body * t.lineHeightRatio * fontScale + composerRoles.inputPaddingVertical * 2);
   const geometry = app && main && composer ? calculatePersistentSessionLayout({
-    app: { left: 0, top: 0, width: app.width, height: app.height },
-    header: { left: 0, top: 0, width: app.width, height: headerHeight },
-    main: { left: main.x, top: main.y, width: main.width, height: main.height },
-    composer: { left: main.x + composer.x, top: main.y + composer.y, width: composer.width, height: composer.height },
+    app,
+    header: { left: app.left, top: app.top, width: app.width, height: headerHeight },
+    main,
+    composer: { left: main.left + composer.x, top: main.top + composer.y, width: composer.width, height: composer.height },
     inputRowHeight, pointerFine: false, showCharacter: display?.show_character === true,
     phoneConfigured: phone || compact,
   }) : null;
@@ -91,7 +98,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
     </LiquidGlassButton>;
   return <SafeAreaView testID="persistent-session-safe-area" edges={['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
-    <View testID="persistent-session-screen" style={{ flex: 1 }} onLayout={event => setApp(event.nativeEvent.layout)} {...gestures.panHandlers}>
+    <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...gestures.panHandlers}>
       <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: t.foundation.pageInset, gap: t.uiSpacing.sm }}>
         <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }}>{session?.display_name ?? '영구 세션'}</Text>
@@ -100,10 +107,10 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
         {action('options-outline', '영구 세션 설정', () => setSettingsOpen(true), 'persistent-session-settings')}
         {phone ? action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks') : null}
       </View>
-      <View testID="persistent-session-conversation" pointerEvents={phone && scene === 'cards' ? 'none' : 'auto'}
+      <View ref={mainRef} testID="persistent-session-conversation" pointerEvents={phone && scene === 'cards' ? 'none' : 'auto'}
         accessibilityElementsHidden={phone && scene === 'cards'} importantForAccessibility={phone && scene === 'cards' ? 'no-hide-descendants' : 'auto'}
         style={{ position: 'absolute', top: headerHeight, bottom: 0, left: columnLeft, width: columnWidth,
-          opacity: phone && scene === 'cards' ? 0 : 1 }} onLayout={event => setMain(event.nativeEvent.layout)}>
+          opacity: phone && scene === 'cards' ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript"
           active={active && scene === 'conversation'} minimumBottomPadding={phone ? 0 : insets.bottom}
           onComposerLayout={event => setComposer(event.nativeEvent.layout)} />

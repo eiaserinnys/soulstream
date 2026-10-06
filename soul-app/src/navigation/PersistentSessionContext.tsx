@@ -14,6 +14,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { useAuthStore } from '../store/authStore';
 import { createPersistentSessionScene, type PersistentSessionScene } from '../store/persistentSessionScene';
 import { useSettingsStore } from '../store/settingsStore';
+import { useSessionStore } from '../store/sessionStore';
 import { useTokens } from '../theme';
 
 interface PersistentSessionHost {
@@ -103,6 +104,9 @@ export function usePersistentSessionHost() {
   if (!host) throw new Error('PersistentSessionProvider가 필요합니다.');
   return host;
 }
+export function useOptionalPersistentSessionHost() {
+  return useContext(Context);
+}
 export function usePersistentSessionScene<T>(selector: (state: PersistentSessionScene) => T) {
   return useStore(usePersistentSessionHost().store, selector);
 }
@@ -112,10 +116,15 @@ export function PersistentSessionPortrait({ session, size }: {
   const t = useTokens();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const jwt = useAuthStore(state => state.jwt);
+  const storedPortrait = useSessionStore(state => {
+    if (!session) return null;
+    return state.sessions[session.session_id]?.agentPortraitUrl
+      ?? Object.values(state.sessions).find(item => item.nodeId === session.node_id && item.agentId === session.agent_id)?.agentPortraitUrl;
+  });
   const avatar = resolveSessionCardAvatar({
     agentSessionId: session?.session_id ?? '', agentId: session?.agent_id,
-    agentName: session?.agent_name, agentPortraitUrl: session?.agent_id && session.node_id
-      ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null,
+    agentName: session?.agent_name, agentPortraitUrl: storedPortrait ?? (session?.agent_id && session.node_id
+      ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null),
   }, serverUrl);
   const style = { width: size, height: size, borderRadius: size / 2 };
   return avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={style} />
