@@ -18,6 +18,7 @@ import {
 } from '../events/message-selection-model';
 import { ToolEvent } from '../events/ToolEvent';
 import { TurnSummaryCaption } from '../events/TurnSummaryCaption';
+import { TurnEndCaptions } from './TurnEndCaptions';
 import { TypingIndicator } from './TypingIndicator';
 import { HistoryFetchError } from './HistoryFetchError';
 import { useTokens } from '../../theme';
@@ -177,6 +178,18 @@ const ChatEventRow = memo(function ChatEventRow({
     return (
       <SearchFocusHighlight active={highlighted}>
         <TurnSummaryCaption content={item.content} presentation={presentation} />
+      </SearchFocusHighlight>
+    );
+  }
+  if (item.kind === 'turn-end-captions') {
+    const captions = <TurnEndCaptions usage={item.usage} summaries={item.summaries} />;
+    return (
+      <SearchFocusHighlight active={highlighted}>
+        {item.usage ? (
+          <EventContextMenu sessionId={sessionId} event={item.event}>
+            {captions}
+          </EventContextMenu>
+        ) : captions}
       </SearchFocusHighlight>
     );
   }

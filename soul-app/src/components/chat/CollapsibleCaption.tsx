@@ -13,6 +13,21 @@ interface CollapsibleCaptionProps {
   alignmentInset?: 'avatar' | 'content';
 }
 
+interface CollapsibleCaptionHeaderProps {
+  title: string;
+  expandedTitle?: string;
+  expanded: boolean;
+  pressed?: boolean;
+  align?: 'start' | 'end';
+  alignmentInset?: 'avatar' | 'content';
+}
+
+interface CollapsibleCaptionBodyProps {
+  children: ReactNode;
+  align?: 'start' | 'end';
+  alignmentInset?: 'avatar' | 'content';
+}
+
 const CaptionAlignContext = createContext<'start' | 'end'>('start');
 
 export function CollapsibleCaption({
@@ -43,24 +58,64 @@ export function CollapsibleCaption({
           surfaceStyle={styles.touchSurface}
         >
           <View style={styles.contentStack}>
-            <View style={[styles.titleRow, pressed && styles.titlePressed]}>
-              <Text
-                {...(expanded && expandedTitle !== undefined
-                  ? {}
-                  : { numberOfLines: 1 as const, ellipsizeMode: 'tail' as const })}
-                style={[styles.title, pressed && styles.titlePressedText]}
-              >
-                {expanded ? expandedTitle ?? title : title}
-              </Text>
-              <DisclosureIcon
-                expanded={expanded}
-                color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
-              />
-            </View>
-            {expanded ? <View style={styles.content}>{children}</View> : null}
+            <CollapsibleCaptionHeader
+              title={title}
+              expandedTitle={expandedTitle}
+              expanded={expanded}
+              pressed={pressed}
+              align={align}
+              alignmentInset={alignmentInset}
+            />
+            {expanded ? (
+              <CollapsibleCaptionBody align={align} alignmentInset={alignmentInset}>
+                {children}
+              </CollapsibleCaptionBody>
+            ) : null}
           </View>
         </CompactTouchTarget>
       </View>
+    </CaptionAlignContext.Provider>
+  );
+}
+
+export function CollapsibleCaptionHeader({
+  title,
+  expandedTitle,
+  expanded,
+  pressed = false,
+  align = 'start',
+  alignmentInset = 'avatar',
+}: CollapsibleCaptionHeaderProps) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
+  return (
+    <View style={[styles.titleRow, pressed && styles.titlePressed]}>
+      <Text
+        {...(expanded && expandedTitle !== undefined
+          ? {}
+          : { numberOfLines: 1 as const, ellipsizeMode: 'tail' as const })}
+        style={[styles.title, pressed && styles.titlePressedText]}
+      >
+        {expanded ? expandedTitle ?? title : title}
+      </Text>
+      <DisclosureIcon
+        expanded={expanded}
+        color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
+      />
+    </View>
+  );
+}
+
+export function CollapsibleCaptionBody({
+  children,
+  align = 'start',
+  alignmentInset = 'avatar',
+}: CollapsibleCaptionBodyProps) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
+  return (
+    <CaptionAlignContext.Provider value={align}>
+      <View style={styles.content}>{children}</View>
     </CaptionAlignContext.Provider>
   );
 }

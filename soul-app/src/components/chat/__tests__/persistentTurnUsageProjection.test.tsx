@@ -12,6 +12,15 @@ function project(events: SessionEvent[], showTurnUsage = true) {
   return projectPersistentTurnUsage(groupChatEvents(events), events, showTurnUsage);
 }
 
+function turnEndItems(items: ReturnType<typeof project>) {
+  return items.filter((item) => (item.kind as string) === 'turn-end-captions') as Array<{
+    kind: 'turn-end-captions';
+    key: string;
+    usage?: { title: string; expandedTitle?: string; lines: string[] };
+    summaries?: Array<{ content: string; key: string }>;
+  }>;
+}
+
 describe('projectPersistentTurnUsage', () => {
   test('pairs each completion with its own preceding context and preserves terminal keys', () => {
     const events = [
@@ -32,18 +41,20 @@ describe('projectPersistentTurnUsage', () => {
     ];
 
     const items = project(events);
-    const usageItems = items.filter((item) => item.kind === 'turn-usage');
+    const usageItems = items.filter((item) => item.kind === 'turn-end-captions' && item.usage);
 
     expect(usageItems.map((item) => item.key)).toEqual(['evt-11', 'evt-14']);
-    expect(usageItems.map((item) => item.title)).toEqual([
+    expect(usageItems.map((item) => item.kind === 'turn-end-captions' ? item.usage?.title : undefined)).toEqual([
       '컨텍스트 약 63.0% · 정가 $0.62',
       '컨텍스트 22.0% · 정가 $0.05',
     ]);
     expect(usageItems[0]).toMatchObject({
-      expandedTitle: '컨텍스트 약 630,000 / 1,000,000 (63.0%)',
-      lines: [
-        '턴 완료 · 입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $17.91)',
-      ],
+      usage: {
+        expandedTitle: '컨텍스트 약 630,000 / 1,000,000 (63.0%)',
+        lines: [
+          '턴 완료 · 입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $17.91)',
+        ],
+      },
     });
     expect(items.filter((item) => item.kind === 'event' && item.event.type === 'context_usage'))
       .toHaveLength(0);
@@ -57,7 +68,7 @@ describe('projectPersistentTurnUsage', () => {
 
     const items = project(events);
 
-    expect(items.some((item) => item.kind === 'turn-usage')).toBe(false);
+    expect(items.some((item) => item.kind === 'turn-end-captions')).toBe(false);
     expect(items.some((item) => item.kind === 'event' && item.event.id === '30')).toBe(false);
     expect(items.map((item) => item.key)).toEqual(['evt-31']);
   });
@@ -84,7 +95,7 @@ describe('projectPersistentTurnUsage', () => {
         lines: [],
       },
     });
-    expect(items.some((item) => item.kind === 'turn-usage')).toBe(false);
+    expect(items.some((item) => item.kind === 'turn-end-captions')).toBe(false);
     expect(items.some((item) => item.kind === 'event' && item.event.id === '22')).toBe(false);
   });
 
@@ -104,7 +115,100 @@ describe('projectPersistentTurnUsage', () => {
     expect(items.find((item) => item.key === 'evt-33')).toMatchObject({
       kind: 'event', event: errorEvent,
     });
-    expect(items.some((item) => item.kind === 'turn-usage')).toBe(false);
+    expect(items.some((item) => item.kind === 'turn-end-captions')).toBe(false);
+  });
+
+  test('moves a turn summary to the first complete after its final response', () => {
+    const events = [
+      event('1', 'user_message', { text: '질문' }),
+      event('2', 'assistant_message', { text: '답변' }),
+      event('3', 'complete', { usage: { input_tokens: 10, output_tokens: 2 }, turn_cost_usd: 0.4 }),
+      event('4', 'user_message', { text: '다음 질문' }),
+      event('40', 'turn_summary', { content: '턴 요약 본문', final_response_event_id: 2, parent_event_id: 2 }),
+    ];
+
+    const items = project(events);
+
+    expect(items.map((item) => item.key)).toEqual(['evt-1', 'evt-2', 'evt-3', 'evt-4']);
+    expect(turnEndItems(items)).toEqual([
+      expect.objectContaining({
+        key: 'evt-3',
+        usage: expect.objectContaining({ title: '정가 $0.40' }),
+        summaries: [expect.objectContaining({ key: 'turn-summary-40', content: '턴 요약 본문' })],
+      }),
+    ]);
+    const responseRow = items.find((item) => item.key === 'evt-2');
+    expect(responseRow?.kind).toBe('event');
+    if (responseRow?.kind === 'event') expect(responseRow.summaries).toBeUndefined();
+  });
+
+  test('keeps a summary separate when a boundary precedes the first complete', () => {
+    const events = [
+      event('2', 'assistant_message', { text: '이전 답변' }),
+      event('3', 'intervention_sent', { text: '새 입력' }),
+      event('4', 'complete', { usage: { input_tokens: 10, output_tokens: 2 }, turn_cost_usd: 0.4 }),
+      event('40', 'turn_summary', { content: '이전 턴 요약', final_response_event_id: 2, parent_event_id: 2 }),
+    ];
+
+    const items = project(events);
+
+    expect(turnEndItems(items)).toEqual([
+      expect.objectContaining({ key: 'turn-summary-40', summaries: [expect.objectContaining({ content: '이전 턴 요약' })] }),
+      expect.objectContaining({ key: 'evt-4', usage: expect.any(Object) }),
+    ]);
+  });
+
+  test('keeps a summary-only row at the current position when its complete is outside loaded history', () => {
+    const events = [
+      event('2', 'assistant_message', { text: '로드된 응답' }),
+      event('40', 'turn_summary', { content: '페이지 경계 요약', final_response_event_id: 90, parent_event_id: 2 }),
+    ];
+
+    const items = project(events);
+
+    expect(items.map((item) => item.key)).toEqual(['evt-2', 'turn-summary-40']);
+    expect(turnEndItems(items)).toEqual([
+      expect.objectContaining({ key: 'turn-summary-40', summaries: [expect.objectContaining({ content: '페이지 경계 요약' })] }),
+    ]);
+  });
+
+  test('retains the completion row for its summary when usage display is off', () => {
+    const events = [
+      event('2', 'assistant_message', { text: '답변' }),
+      event('3', 'complete', { usage: { input_tokens: 10, output_tokens: 2 }, turn_cost_usd: 0.4 }),
+      event('40', 'turn_summary', { content: '턴 요약 본문', final_response_event_id: 2, parent_event_id: 2 }),
+    ];
+
+    const items = project(events, false);
+
+    expect(items.map((item) => item.key)).toEqual(['evt-2', 'evt-3']);
+    expect(turnEndItems(items)).toEqual([
+      expect.objectContaining({ key: 'evt-3', summaries: [expect.objectContaining({ content: '턴 요약 본문' })] }),
+    ]);
+  });
+
+  test('drops empty assigned-card snapshots only from manuscript and keeps cards with content', () => {
+    const snapshotEvent = (id: string, cards: unknown[]) => event(id, 'debug', {
+      kind: 'assigned_card_context_snapshot',
+      content: 'prepared input snapshot',
+      capture: {
+        source: 'prepared_model_input', identityMissing: false,
+        registrationId: 'registration', executionCommandId: 'execution', inputId: `input-${id}`,
+        snapshot: { cards },
+      },
+    });
+    const empty = snapshotEvent('10', []);
+    const card = snapshotEvent('20', [{ title: '작업 카드', status: 'running', latestReportAt: null }]);
+    const emptyEvents = [event('1', 'user_message', { text: '질문', input_id: 'input-10' }), empty];
+    const cardEvents = [event('2', 'user_message', { text: '질문', input_id: 'input-20' }), card];
+
+    const emptyManuscript = project(emptyEvents);
+    const cardManuscript = project(cardEvents);
+    const emptyDefault = groupChatEvents(emptyEvents);
+
+    expect(emptyManuscript.some((item) => JSON.stringify(item).includes('담당 카드 없음'))).toBe(false);
+    expect(cardManuscript.some((item) => item.kind === 'turn-summary' && item.content.includes('작업 카드'))).toBe(true);
+    expect(emptyDefault.some((item) => item.kind === 'turn-summary' && item.content === '담당 카드 없음')).toBe(true);
   });
 
   test('manuscript projection leaves the default render-item shape unchanged', () => {
@@ -123,7 +227,40 @@ describe('projectPersistentTurnUsage', () => {
 
     expect(defaultHook.result.current.reversedItems).toEqual(groupChatEvents(events).reverse());
     expect(defaultHook.result.current.reversedItems.map((item) => item.kind)).toEqual(['event', 'event']);
-    expect(manuscriptHook.result.current.reversedItems.map((item) => item.kind)).toEqual(['turn-usage']);
+    expect(manuscriptHook.result.current.reversedItems.map((item) => item.kind)).toEqual(['turn-end-captions']);
     expect(manuscriptHook.result.current.reversedItems[0].key).toBe('evt-41');
+  });
+
+  test('a late turn summary joins the existing completion row', () => {
+    const initialEvents = [
+      event('1', 'user_message', { text: '질문' }),
+      event('2', 'assistant_message', { text: '답변' }),
+      event('3', 'complete', { usage: { input_tokens: 10, output_tokens: 2 }, turn_cost_usd: 0.4 }),
+    ];
+    const base = {
+      pendingOptimistic: undefined,
+      streamingSlots: undefined,
+      sessionStatus: 'completed',
+      presentation: 'manuscript' as const,
+    };
+    let events = initialEvents;
+    const hook = renderHook(() => useChatRenderItems({ ...base, events }));
+    const initialRow = hook.result.current.reversedItems.find((item) => item.kind === 'turn-end-captions');
+    expect(initialRow?.key).toBe('evt-3');
+
+    events = [
+      ...initialEvents,
+      event('40', 'turn_summary', {
+        content: '늦게 도착한 요약', final_response_event_id: 2, parent_event_id: 2,
+      }),
+    ];
+    hook.rerender({});
+
+    const rows = hook.result.current.reversedItems.filter((item) => item.kind === 'turn-end-captions');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      key: 'evt-3',
+      summaries: [expect.objectContaining({ content: '늦게 도착한 요약' })],
+    });
   });
 });

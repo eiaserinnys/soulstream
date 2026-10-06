@@ -47,6 +47,14 @@ export type TurnUsageRenderItem = TurnUsageCaption & {
   summaries?: TurnSummaryRenderItem[];
 };
 
+export type TurnEndCaptionsRenderItem = {
+  kind: 'turn-end-captions';
+  event: SessionEvent;
+  key: string;
+  usage?: TurnUsageCaption;
+  summaries?: TurnSummaryRenderItem[];
+};
+
 export type ChatRenderItem =
   | {
       kind: 'event';
@@ -65,6 +73,7 @@ export type ChatRenderItem =
   | TurnSummaryRenderItem
   | JevCandidatesRenderItem
   | TurnUsageRenderItem
+  | TurnEndCaptionsRenderItem
   | { kind: 'typing'; key: string };
 
 export interface PersistentDisplayProjectionSettings {
