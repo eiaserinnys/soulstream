@@ -1,14 +1,16 @@
 export interface LabeledDividerProps {
   label: string;
+  alignmentInset?: "avatar" | "content";
 }
 
-export function LabeledDivider({ label }: LabeledDividerProps) {
+export function LabeledDivider({ label, alignmentInset = "avatar" }: LabeledDividerProps) {
+  const contentAligned = alignmentInset === "content";
   return (
     <div
-      className="flex gap-2 px-3 py-1"
+      className={contentAligned ? "flex py-1" : "flex gap-2 px-3 py-1"}
       data-slot="labeled-divider-row"
     >
-      <span aria-hidden="true" className="w-8 shrink-0" />
+      {!contentAligned && <span aria-hidden="true" className="w-8 shrink-0" />}
       <div className="min-w-0 flex-1">
         <div
           aria-label={label}

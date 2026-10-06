@@ -5,26 +5,30 @@ import { Button } from "../ui/button";
 export const PendingMessageBubble = memo(function PendingMessageBubble({
   sessionId,
   pending,
+  presentation = "default",
   onRetry,
   onRestore,
 }: {
   sessionId: string;
   pending: PendingChatSend;
+  presentation?: "default" | "manuscript";
   onRetry: (sessionId: string, pending: PendingChatSend) => void;
   onRestore: (sessionId: string, pending: PendingChatSend) => void;
 }) {
   const isSending = pending.status === "sending";
+  const manuscript = presentation === "manuscript";
 
   return (
     <div
-      className="flex justify-end px-3 py-1.5"
+      className={manuscript ? "mt-10 mb-5 flex justify-end" : "flex justify-end px-3 py-1.5"}
       data-slot="chat-pending-message"
+      data-chat-presentation={manuscript ? "manuscript" : undefined}
       data-status={pending.status}
     >
       <div
-        className={`max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)] ${isSending ? "opacity-55" : ""}`}
+        className={manuscript ? `w-full max-w-full text-right text-muted-foreground ${isSending ? "opacity-55" : ""}` : `max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)] ${isSending ? "opacity-55" : ""}`}
       >
-        <div className="whitespace-pre-wrap break-words text-base leading-snug">
+          <div className={manuscript ? "whitespace-pre-wrap text-base text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "whitespace-pre-wrap break-words text-base leading-snug"}>
           {pending.messageText}
         </div>
         {isSending ? (

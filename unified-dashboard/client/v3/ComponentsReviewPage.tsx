@@ -30,6 +30,7 @@ import { CardBoardSamples } from "./CardBoardSamples";
 import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
+import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChatReviewSample";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -227,6 +228,7 @@ export function ComponentsReviewPage() {
                 <AssistantMessage msg={{id:"caption-sample-answer",role:"assistant",treeNodeId:"caption-sample-answer",treeNodeType:"assistant_message",content:"구현을 맡겼습니다. 다른 작업 결과를 기다립니다."}}/>
                 <SystemMessage msg={{id:"caption-sample-summary",role:"system",treeNodeId:"caption-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
                 <PersistentChatDisplayReviewSample />
+                <PersistentManuscriptChatReviewSample />
                 <LabeledDivider label="다음 대화" />
                 <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>

@@ -22,6 +22,7 @@ const virtuosoMock = vi.hoisted(() => ({
   reachedTop: false,
   props: null as Record<string, unknown> | null,
 }));
+const chatInputMock = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 
 vi.mock("react-virtuoso", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
@@ -91,7 +92,10 @@ vi.mock("./useMessageHistoryBuffer", () => ({
 }));
 
 vi.mock("../ChatInput", () => ({
-  ChatInput: () => createElement("div", { "data-testid": "chat-input" }),
+  ChatInput: (props: Record<string, unknown>) => {
+    chatInputMock.props = props;
+    return createElement("div", { "data-testid": "chat-input" });
+  },
 }));
 
 vi.mock("./VirtualizedItem", () => ({
@@ -241,13 +245,16 @@ function flushPassiveEffects(): Promise<void> {
   });
 }
 
-async function renderChatView(): Promise<{ container: HTMLDivElement; root: Root }> {
+async function renderChatView(props: Partial<NonNullable<Parameters<typeof ChatView>[0]>> = {}): Promise<{ container: HTMLDivElement; root: Root }> {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
 
   flushSync(() => {
-    root.render(createElement(ChatView));
+    root.render(createElement(
+      ChatView as unknown as ComponentType<Record<string, unknown>>,
+      props as Record<string, unknown>,
+    ));
   });
   await flushPassiveEffects();
 
@@ -289,6 +296,7 @@ describe("ChatView long-session initial bottom focus", () => {
     virtuosoMock.historyLoading = false;
     virtuosoMock.reachedTop = false;
     virtuosoMock.props = null;
+    chatInputMock.props = null;
   });
 
   afterEach(async () => {
@@ -304,6 +312,21 @@ describe("ChatView long-session initial bottom focus", () => {
     useDashboardStore.getState().reset();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("hides only the Follow row in manuscript mode and forwards the composer anchor", async () => {
+    const composerAnchorRef = { current: null };
+    ({ container, root } = await renderChatView({
+      presentation: "manuscript",
+      composerAnchorRef,
+    }));
+
+    expect(container.querySelector<HTMLElement>('[data-slot="chat-root"]')?.dataset.chatPresentation)
+      .toBe("manuscript");
+    expect(container.textContent).not.toContain("Follow");
+    expect(container.querySelector('[data-testid="runtime-strips"]')).not.toBeNull();
+    expect(chatInputMock.props?.presentation).toBe("manuscript");
+    expect(chatInputMock.props?.composerAnchorRef).toBe(composerAnchorRef);
   });
 
   it("keeps retrying bottom focus after a late false atBottom report until the session reaches bottom", async () => {

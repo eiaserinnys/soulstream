@@ -29,32 +29,32 @@ function shouldAnimateEnter(key: string): boolean {
 }
 
 /** 메시지 타입에 따라 적절한 컴포넌트로 라우팅 */
-export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string }) {
+export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string; presentation?: "default" | "manuscript" }) {
   let body: ReactNode;
   switch (msg.role) {
     case "user":
-      body = <UserMessage msg={msg} llmContext={llmContext} />;
+      body = <UserMessage msg={msg} llmContext={llmContext} presentation={presentation} />;
       break;
     case "intervention":
-      body = <InterventionMessage msg={msg} />;
+      body = <InterventionMessage msg={msg} presentation={presentation} />;
       break;
     case "assistant":
       // thinking 노드와 text 노드를 독립 컴포넌트로 분리
       body = msg.treeNodeType === "thinking"
         ? <ThinkingMessage msg={msg} />
-        : <AssistantMessage msg={msg} llmContext={llmContext} />;
+        : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} />;
       break;
     case "tool":
       body = <ToolMessage msg={msg} />;
       break;
     case "system":
-      body = <SystemMessage msg={msg} />;
+      body = <SystemMessage msg={msg} presentation={presentation} />;
       break;
     case "system_message":
       body = <SystemPromptMessage msg={msg} />;
       break;
     case "notification":
-      body = <SystemMessage msg={msg} />;
+      body = <SystemMessage msg={msg} presentation={presentation} />;
       break;
     case "input_request":
       body = sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} /> : null;
@@ -72,5 +72,5 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
   if (body == null) return null;
 
   const animate = shouldAnimateEnter(msg.id);
-  return <div className={animate ? "message-enter" : undefined}>{body}</div>;
+  return <div className={animate ? "message-enter" : undefined} data-slot={presentation === "manuscript" ? "chat-manuscript-message" : undefined} data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}>{body}</div>;
 });

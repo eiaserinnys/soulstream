@@ -11,7 +11,7 @@ import {
   pickMessageAvatarUrl,
 } from "./userAvatarSelectors";
 
-export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement> }) {
+export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript" }) {
   // caller_info v1 (atom ed3a216d): 세션-수준 발신자 신원 avatar_url —
   // 메시지 단위 caller_info(msg.callerInfo) 부재 시 fallback. 4 source(browser/slack/agent/soul-app) 동일 entry.
   const callerAvatarUrl = useDashboardStore((s) =>
@@ -52,11 +52,12 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   // hasPortrait는 ProfileAvatar 본문에서 사용되지 않는 dead prop이지만 인터페이스를 위해 유지.
   // user 발신 시 portraitUrl 존재 여부로 결정 (기존 userConfig?.hasPortrait fallback은 ProfileAvatar가 무시하므로 제거).
   const hasPortrait = isAgent ? !!agentPortraitUrl : isLlm ? false : !!userPortraitUrl;
+  const manuscript = presentation === "manuscript";
 
   return (
-    <div className="flex justify-end gap-2 px-3 py-1.5" data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId}>
-      <div {...bubbleProps} data-slot="chat-message-bubble" className={cn("max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]", bubbleProps?.className)}>
-        {header ?? <div className="mb-1 flex items-baseline justify-end gap-1.5">
+    <div className={manuscript ? "mt-10 mb-5 flex justify-end" : "flex justify-end gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
+      <div {...bubbleProps} data-slot="chat-message-bubble" className={cn(manuscript ? "w-full max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]", bubbleProps?.className)}>
+        {!manuscript && (header ?? <div className="mb-1 flex items-baseline justify-end gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {displayName}
           </span>
@@ -65,20 +66,20 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
               {displayId}
             </span>
           )}
-        </div>}
-        <div data-slot="chat-body" className="chat-message-selectable break-words text-base leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white">
-          {children ?? <MarkdownContent content={msg.content} linkTone="onUserBubble" enableBlockquoteCopy />}
+        </div>)}
+        <div data-slot="chat-body" className={cn("chat-message-selectable text-base", manuscript ? "whitespace-pre-wrap text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "break-words leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white")}>
+          {children ?? <MarkdownContent content={msg.content} linkTone={manuscript ? undefined : "onUserBubble"} enableBlockquoteCopy />}
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />
         )}
       </div>
-      <ProfileAvatar
+      {!manuscript && <ProfileAvatar
         role="user"
         hasPortrait={hasPortrait}
         fallbackEmoji={isAgent ? "\u{1F916}" : "\u{1F464}"}
         portraitUrl={isAgent ? agentPortraitUrl : userPortraitUrl}
-      />
+      />}
     </div>
   );
 });

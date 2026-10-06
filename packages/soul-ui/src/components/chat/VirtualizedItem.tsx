@@ -20,6 +20,7 @@ import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 export type VirtualizedItemProps = {
   item: ChatTimelineItem;
+  presentation?: "default" | "manuscript";
   llmContext?: LlmContext;
   sessionId?: string;
   toolGroupKey?: string;
@@ -31,6 +32,7 @@ export type VirtualizedItemProps = {
 
 function VirtualizedItemImpl({
   item,
+  presentation = "default",
   llmContext,
   sessionId,
   toolGroupKey,
@@ -48,6 +50,7 @@ function VirtualizedItemImpl({
       <PendingMessageBubble
         sessionId={sessionId}
         pending={item.pending}
+        presentation={presentation}
         onRetry={(_sessionId, pending) => onRetryPending?.(pending)}
         onRestore={(_sessionId, pending) => onRestorePending?.(pending)}
       />
@@ -58,6 +61,7 @@ function VirtualizedItemImpl({
       <>
         <VirtualizedItemImpl
           item={item.anchor}
+          presentation={presentation}
           llmContext={llmContext}
           sessionId={sessionId}
           toolGroupKey={toolGroupKey}
@@ -72,6 +76,7 @@ function VirtualizedItemImpl({
             msg={summary}
             llmContext={llmContext}
             sessionId={sessionId}
+            presentation={presentation}
           />
         ))}
       </>
@@ -89,7 +94,7 @@ function VirtualizedItemImpl({
     );
   }
   return (
-    <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} />
+    <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} presentation={presentation} />
   );
 }
 
@@ -104,6 +109,7 @@ function VirtualizedItemImpl({
  * 별도 보호되어 이중 안전망.
  */
 export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemProps): boolean {
+  if (prev.presentation !== next.presentation) return false;
   if (prev.llmContext !== next.llmContext) return false;
   if (prev.sessionId !== next.sessionId) return false;
   if (prev.toolGroupKey !== next.toolGroupKey) return false;

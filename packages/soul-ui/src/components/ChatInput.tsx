@@ -10,7 +10,7 @@ import { handleClipboardFiles } from "../lib/clipboard-files";
  * 본 컴포넌트는 레이아웃, draft/포커스, 세션 전환 사이드 이펙트에 집중한다.
  */
 
-import { useCallback, useRef, useEffect, useMemo, useState } from "react";
+import { useCallback, useRef, useEffect, useMemo, useState, type RefObject } from "react";
 import { Loader2, Square } from "lucide-react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { FileAttachmentPreview } from "./FileAttachmentPreview";
@@ -42,12 +42,16 @@ interface ChatInputProps {
    */
   fileUploadUrl?: string;
   registerPendingSendActions?: (actions: PendingChatSendActions | null) => void;
+  presentation?: "default" | "manuscript";
+  composerAnchorRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function ChatInput({
   additionalDisabled = false,
   fileUploadUrl,
   registerPendingSendActions,
+  presentation = "default",
+  composerAnchorRef,
 }: ChatInputProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
@@ -301,81 +305,90 @@ export function ChatInput({
     sending,
     ctxCount: llmMessages.length,
   });
+  const pendingAttachments = effectiveFileUploadUrl && files.length > 0 ? (
+    <div className="flex gap-2 overflow-x-auto pb-2">
+      {files.map((f) => (
+        <FileAttachmentPreview
+          key={f.id}
+          file={f.file}
+          status={f.status}
+          onRemove={() => removeFile(f.id)}
+        />
+      ))}
+    </div>
+  ) : null;
+  const composer = (
+    <ChatInputComposer presentation={presentation}>
+      {showInterrupt && (
+        <Button
+          data-slot={presentation === "manuscript" ? "chat-interrupt-button" : undefined}
+          variant="destructive-outline"
+          size="icon"
+          onClick={() => void interruptSession()}
+          disabled={interruptDisabled}
+          title="Stop running conversation"
+          aria-label="Stop running conversation"
+          className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"
+        >
+          {interrupting ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Square className="h-4 w-4 fill-current" aria-hidden="true" />
+          )}
+        </Button>
+      )}
+      {effectiveFileUploadUrl && <PaperclipButton onClick={() => fileInputRef.current?.click()} />}
+      <ChatInputEditor
+        ref={textareaRef}
+        text={text}
+        onChangeText={handleChangeText}
+        onSend={sendMessage}
+        placeholder={mode.placeholder}
+        buttonLabel={mode.buttonLabel}
+        modeIcon={mode.modeIcon}
+        modeLabel={mode.modeLabel}
+        borderColor={mode.borderColor}
+        buttonVariant={mode.buttonVariant}
+        disabled={isDisabled}
+        textareaDisabled={textareaDisabled}
+        onPaste={event => {
+          if (effectiveFileUploadUrl && !textareaDisabled && !sending) handleClipboardFiles(event, addFiles);
+        }}
+      />
+    </ChatInputComposer>
+  );
+  const suggestion = lastSuggestion && !sending ? (
+    <SuggestionChip
+      text={lastSuggestion}
+      onShortTap={(t) => {
+        setText(t);
+        if (activeSessionKey) setDraft(activeSessionKey, t);
+      }}
+      onSendImmediate={async (t) => {
+        await send(t);
+      }}
+    />
+  ) : null;
 
   return (
     <div
       data-testid="chat-input"
-      className="shrink-0 pt-2"
+      className={presentation === "manuscript" ? "shrink-0" : "shrink-0 pt-2"}
     >
-      {/* 첨부 파일 목록 (fileUploadUrl이 있고 파일이 있을 때만) */}
-      {effectiveFileUploadUrl && files.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {files.map((f) => (
-            <FileAttachmentPreview
-              key={f.id}
-              file={f.file}
-              status={f.status}
-              onRemove={() => removeFile(f.id)}
-            />
-          ))}
-        </div>
-      )}
-
       {/* prompt_suggestion chip — turn 직후 SDK가 제안한 다음 prompt 후보.
           가드: !sending(전송 중 새 turn 시작 불가).
           isDisabled는 의도적으로 사용하지 않는다 — chip의 본질은 "비어있는 입력창에 채우기"이므로
           !text.trim() 가드가 들어가면 chip이 사라진다.
           짧은 탭 → setText, 1초 롱프레스 → 즉시 send. clear는 응답 시작(text_start) 시 자동. */}
-      {lastSuggestion && !sending && (
-        <SuggestionChip
-          text={lastSuggestion}
-          onShortTap={(t) => {
-            setText(t);
-            if (activeSessionKey) setDraft(activeSessionKey, t);
-          }}
-          onSendImmediate={async (t) => {
-            await send(t);
-          }}
-        />
-      )}
-
-      <ChatInputComposer>
-        {showInterrupt && (
-          <Button
-            variant="destructive-outline"
-            size="icon"
-            onClick={() => void interruptSession()}
-            disabled={interruptDisabled}
-            title="Stop running conversation"
-            aria-label="Stop running conversation"
-            className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"
-          >
-            {interrupting ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <Square className="h-4 w-4 fill-current" aria-hidden="true" />
-            )}
-          </Button>
-        )}
-        {effectiveFileUploadUrl && <PaperclipButton onClick={() => fileInputRef.current?.click()} />}
-        <ChatInputEditor
-          ref={textareaRef}
-          text={text}
-          onChangeText={handleChangeText}
-          onSend={sendMessage}
-          placeholder={mode.placeholder}
-          buttonLabel={mode.buttonLabel}
-          modeIcon={mode.modeIcon}
-          modeLabel={mode.modeLabel}
-          borderColor={mode.borderColor}
-          buttonVariant={mode.buttonVariant}
-          disabled={isDisabled}
-          textareaDisabled={textareaDisabled}
-          onPaste={event => {
-            if (effectiveFileUploadUrl && !textareaDisabled && !sending) handleClipboardFiles(event, addFiles);
-          }}
-        />
-      </ChatInputComposer>
+      {presentation === "manuscript" ? (
+        <>
+          {suggestion}
+          <div ref={composerAnchorRef} data-slot="chat-composer-anchor">
+            {pendingAttachments}
+            {composer}
+          </div>
+        </>
+      ) : <>{pendingAttachments}{suggestion}{composer}</>}
 
       {(error || interruptError || uploadError) && (
         <div className="chat-tone-danger rounded px-2 py-1 text-xs">

@@ -20,7 +20,7 @@ function productTsxFiles(directory: URL): URL[] {
 }
 
 function chatViewCallCount(source: string): number {
-  return source.match(/<ChatView(?:\s|>)/g)?.length ?? 0;
+  return source.match(/<(?:PersistentSessionChatView|ChatView)(?:\s|>)/g)?.length ?? 0;
 }
 
 describe("ChatView product mount inventory", () => {
@@ -35,9 +35,10 @@ describe("ChatView product mount inventory", () => {
       .sort((a, b) => a.path.localeCompare(b.path));
 
     expect(actual).toEqual([
-      { path: "unified-dashboard/client/v3/FolderBoardWorkspace.tsx", count: 1 },
       { path: "unified-dashboard/client/v3/FolderWorkspace.tsx", count: 2 },
+      { path: "unified-dashboard/client/v3/PersistentSessionChatView.tsx", count: 1 },
+      { path: "unified-dashboard/client/v3/WorkspaceSessionColumn.tsx", count: 1 },
     ]);
-    expect(actual.reduce((sum, entry) => sum + entry.count, 0)).toBe(3);
+    expect(actual.reduce((sum, entry) => sum + entry.count, 0)).toBe(4);
   });
 });

@@ -8,9 +8,10 @@ import { useGlassSurface } from "../LiquidGlassProvider";
 import type { LlmContext } from "./hooks";
 
 /** text 노드: 일반 텍스트 표시 */
-export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement> }) {
+export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript" }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
-  const webglActive = useGlassSurface(bubbleRef, { enabled: true });
+  const manuscript = presentation === "manuscript";
+  const webglActive = useGlassSurface(bubbleRef, { enabled: !manuscript });
   const activeSession = useDashboardStore((s) => s.activeSessionSummary);
 
   // 세션에 바인딩된 에이전트 정보
@@ -32,21 +33,21 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
     : null;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5" data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId}>
-      <ProfileAvatar
+    <div className={manuscript ? "flex" : "flex gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
+      {!manuscript && <ProfileAvatar
         role="assistant"
         hasPortrait={hasPortrait}
         fallbackEmoji={"\u{1F916}"}
         portraitUrl={agentPortraitUrl}
-      />
+      />}
       <div
         ref={bubbleRef}
         {...bubbleProps}
         data-slot="chat-message-bubble"
-        className={cn("max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]", bubbleProps?.className)}
+        className={cn(manuscript ? "w-full min-w-0 text-foreground" : "max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]", bubbleProps?.className)}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
-        {header ?? <div className="mb-1 flex items-baseline gap-1.5">
+        {!manuscript && (header ?? <div className="mb-1 flex items-baseline gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {displayName}
           </span>
@@ -60,14 +61,14 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
               {tokenInfo}
             </span>
           )}
-        </div>}
+        </div>)}
         {msg.isStreaming ? (
-          <div data-slot="chat-body" className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">
+          <div data-slot="chat-body" className={cn("text-base text-foreground whitespace-pre-wrap", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "leading-snug break-words")}>
             {msg.content}
             <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 align-text-bottom animate-caret-blink" aria-hidden="true" />
           </div>
         ) : (
-          <div data-slot="chat-body" className="break-words text-base leading-snug text-foreground">
+          <div data-slot="chat-body" className={cn("text-base text-foreground", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "break-words leading-snug")}>
             {children ?? <MarkdownContent content={msg.content} enableBlockquoteCopy />}
           </div>
         )}

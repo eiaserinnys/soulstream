@@ -102,6 +102,28 @@ describe("chat caption parts", () => {
     expect(container.querySelector("[hidden]")).toBeNull();
   });
 
+  it("removes avatar insets when caption rows align to manuscript content", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <>
+        <CollapsibleCaption title="Jev 후보 1" align="end" alignmentInset="content">
+          <span>후보</span>
+        </CollapsibleCaption>
+        <LabeledDivider label="새 세대" alignmentInset="content" />
+      </>,
+    ));
+
+    const caption = container.querySelector('[data-slot="collapsible-caption"]');
+    const divider = container.querySelector('[data-slot="labeled-divider-row"]');
+    expect(caption?.querySelector(".w-8")).toBeNull();
+    expect(caption?.className).not.toContain("px-3");
+    expect(divider?.querySelector(".w-8")).toBeNull();
+    expect(divider?.className).not.toContain("px-3");
+  });
+
   it("renders a labeled, non-interactive separator with decorative lines", () => {
     container = document.createElement("div");
     document.body.appendChild(container);

@@ -9,6 +9,7 @@ export interface CollapsibleCaptionProps {
   children: ReactNode;
   initiallyCollapsed?: boolean;
   align?: "start" | "end";
+  alignmentInset?: "avatar" | "content";
 }
 
 export function CollapsibleCaption({
@@ -16,17 +17,19 @@ export function CollapsibleCaption({
   children,
   initiallyCollapsed = true,
   align = "start",
+  alignmentInset = "avatar",
 }: CollapsibleCaptionProps) {
+  const contentAligned = alignmentInset === "content";
   const contentId = useId();
   const [expanded, setExpanded] = useState(() => !initiallyCollapsed);
 
   return (
     <div
-      className={align === "end" ? "flex justify-end gap-2 px-3 py-1" : "flex gap-2 px-3 py-1"}
+      className={contentAligned ? (align === "end" ? "flex justify-end py-1" : "flex py-1") : (align === "end" ? "flex justify-end gap-2 px-3 py-1" : "flex gap-2 px-3 py-1")}
       data-slot="collapsible-caption"
     >
-      {align === "start" && <span className="w-8 shrink-0" />}
-      <div className={align === "end" ? "min-w-0 flex w-full max-w-[86%] flex-col items-end" : "min-w-0 flex-1"}>
+      {align === "start" && !contentAligned && <span className="w-8 shrink-0" />}
+      <div className={align === "end" ? (contentAligned ? "min-w-0 flex w-full flex-col items-end" : "min-w-0 flex w-full max-w-[86%] flex-col items-end") : "min-w-0 flex-1"}>
         <Button
           aria-controls={contentId}
           aria-expanded={expanded}
@@ -42,7 +45,7 @@ export function CollapsibleCaption({
           {children}
         </div>
       </div>
-      {align === "end" && <span className="w-8 shrink-0" />}
+      {align === "end" && !contentAligned && <span className="w-8 shrink-0" />}
     </div>
   );
 }

@@ -226,6 +226,32 @@
 }
 [data-slot="chat-input-mode"] { height: var(--chat-composer-control-size); }
 
+[data-slot="chat-root"][data-chat-presentation="manuscript"] .w-8.shrink-0 {
+  display: none;
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-tool-row"] {
+  padding-inline: 0;
+  gap: 0;
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-thinking-indicator"] {
+  padding-inline: 0;
+}
+
+[data-slot="chat-manuscript-message"] > :first-child {
+  padding-inline: 0;
+  margin-inline: 0;
+  gap: 0;
+}
+[data-slot="chat-pending-message"][data-chat-presentation="manuscript"] {
+  margin-inline: 0;
+}
+[data-slot="chat-input-composer"][data-chat-presentation="manuscript"] > :is([data-slot="dashboard-icon-cap"], [data-slot="chat-interrupt-button"]):first-child {
+  margin-inline-start: calc((var(--spacing) * 4 - var(--chat-composer-control-size)) / 2);
+}
+[data-slot="chat-input-composer"][data-chat-presentation="manuscript"] > [data-testid="send-button"]:last-child {
+  margin-inline-end: calc((var(--spacing) * 4 - var(--chat-composer-control-size)) / 2);
+}
+
 /* The folder combo's existing surface is the canonical control/panel tint.
    Render it once in either glass mode; disabled content never fades the tint. */
 :root { --control-surface: color-mix(in srgb, var(--background) 48%, transparent); }
@@ -1001,6 +1027,9 @@ pre[data-markdown-code-layout="document"] {
  * Node colors: original Tailwind -500 — vibrant on white bg.
  * ============================================================ */
 :root {
+  --persistent-session-paper: #fbfaf7;
+  --persistent-session-panel: #fffefa;
+  --persistent-session-line: #d6d6ce;
   /* Panel edge inset — shared by ReactFlow Panel, ChatInput, scroll-to-bottom */
   --panel-inset: 15px;
 
@@ -1109,6 +1138,9 @@ pre[data-markdown-code-layout="document"] {
 }
 
 .dark {
+  --persistent-session-paper: #20231f;
+  --persistent-session-panel: #292d27;
+  --persistent-session-line: #474b41;
   /* Node accent palette (dark — muted) */
   --node-user:         hsl(217, 70%, 68%);   /* #7ba3e6 — muted blue    */
   --node-response:     hsl(160, 60%, 52%);   /* #4db894 — muted emerald */

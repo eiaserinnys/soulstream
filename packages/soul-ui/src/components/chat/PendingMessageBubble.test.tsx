@@ -2,8 +2,9 @@
  * @vitest-environment jsdom
  */
 
-import { act } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import { mergePendingTextIntoComposer } from "./pending-chat-send";
@@ -64,5 +65,27 @@ describe("PendingMessageBubble", () => {
   it("restores the failed sentence before any text typed during the wait", () => {
     expect(mergePendingTextIntoComposer("실패 문장", "새 입력")).toBe("실패 문장\n\n새 입력");
     expect(mergePendingTextIntoComposer("실패 문장", "")).toBe("실패 문장");
+  });
+
+  it("keeps the optimistic row right-aligned and bubbleless in manuscript mode", () => {
+    const pending: PendingChatSend = {
+      id: "pending-manuscript",
+      status: "sending",
+      text: "보내는 중",
+      messageText: "보내는 중",
+      attachmentPaths: [],
+      attachments: [],
+      mode: "intervention",
+      reason: "",
+    };
+    const props = { sessionId: "session-7", pending, onRetry: vi.fn(), onRestore: vi.fn() };
+    const defaultHtml = renderToStaticMarkup(createElement(PendingMessageBubble, props));
+    const manuscriptHtml = renderToStaticMarkup(createElement(PendingMessageBubble, { ...props, presentation: "manuscript" }));
+
+    expect(defaultHtml).toContain("bg-gradient-to-b");
+    expect(manuscriptHtml).toContain("mt-10 mb-5 flex justify-end");
+    expect(manuscriptHtml).not.toContain("ms-12");
+    expect(manuscriptHtml).toContain("text-right text-muted-foreground");
+    expect(manuscriptHtml).not.toContain("bg-gradient-to-b");
   });
 });
