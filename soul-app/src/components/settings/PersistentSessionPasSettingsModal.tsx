@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { AppModalSurface } from '../AppModalSurface';
 import { GlassButton } from '../GlassSurface';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -54,7 +55,11 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
     surfaceTestID="persistent-session-pas-settings-surface"
     safeAreaTestID="persistent-session-pas-settings-safe-area"
   >
-    <View testID="persistent-session-pas-settings-modal" style={styles.root}>
+    <AppKeyboardAvoidingView
+      testID="persistent-session-pas-settings-modal"
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={styles.header}>
         <Text accessibilityRole="header" style={styles.title}>영구 세션</Text>
         <TouchableOpacity
@@ -112,7 +117,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
           <Text style={styles.primaryText}>{saveStatus.busy ? '저장 중…' : '저장'}</Text>
         </GlassButton>
       </View> : null}
-    </View>
+    </AppKeyboardAvoidingView>
   </AppModalSurface>;
 }
 

@@ -96,6 +96,7 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
   const displayEvents = useMemo(() => history.filter((event) =>
     (event.event_type === 'generation_started' && event.id !== latestGeneration?.id)
     || event.event_type === 'complete'), [history, latestGeneration]);
+  const hasGenerationOrHistory = Boolean(latestGeneration) || displayEvents.length > 0;
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore || historyState !== 'ready') return;
@@ -123,12 +124,12 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
   return <SettingsSection id="persistent-session-monitoring" title="" flattened>
     <Group title="최근 기록">
       {isLoading ? <ActivityIndicator accessibilityLabel="기록 불러오는 중" color={t.colors.accent} /> : null}
-      {!isLoading && generationState === 'ready' ? <ReadOnlyField label="현재 세대" value={generationValue} /> : null}
+      {!isLoading && generationState === 'ready' && hasGenerationOrHistory ? <ReadOnlyField label="현재 세대" value={generationValue} /> : null}
       {!isLoading && (generationState === 'error' || historyState === 'error') ? <View style={styles.errorBlock}>
         <Text accessibilityRole="alert" style={styles.error}>조회 실패</Text>
         <Action label="다시 시도" onPress={retry} testID="persistent-session-monitoring-retry" />
       </View> : null}
-      {!isLoading && historyState === 'ready' && displayEvents.length === 0 ? <Text testID="persistent-session-monitoring-empty" style={styles.body}>기록 없음</Text> : null}
+      {!isLoading && generationState === 'ready' && historyState === 'ready' && displayEvents.length === 0 ? <Text testID="persistent-session-monitoring-empty" style={styles.body}>기록 없음</Text> : null}
       {!isLoading && historyState === 'ready' ? displayEvents.map((event) => {
         const time = new Date(event.created_at).toLocaleString('ko-KR', {
           month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',

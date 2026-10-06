@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
+import { Platform } from 'react-native';
 import { ApiHttpError } from '../../../api/clientCore';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -8,6 +9,7 @@ jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
 import { createApiClient } from '../../../api/client';
 import { useChatStore } from '../../../store/chatStore';
 import { useSettingsStore } from '../../../store/settingsStore';
+import { AppKeyboardAvoidingView } from '../../AppKeyboardAvoidingView';
 import { PersistentSessionPasSettingsModal } from '../PersistentSessionPasSettingsModal';
 import { normalizePersistentHistory, persistentHistoryForTurnPairing } from '../PersistentSessionMonitoring';
 
@@ -164,6 +166,28 @@ test('keeps the account save action in the modal footer', async () => {
   expect(screen.getByTestId('persistent-pas-settings-save')).toBeTruthy();
 });
 
+test('uses the standard keyboard avoiding wrapper around the fixed save action', async () => {
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+
+  const keyboardAvoider = screen.UNSAFE_getByType(AppKeyboardAvoidingView);
+  expect(keyboardAvoider.props.behavior).toBe(Platform.OS === 'ios' ? 'padding' : undefined);
+  expect(keyboardAvoider.props.testID).toBe('persistent-session-pas-settings-modal');
+});
+
+test('indicates a display save in progress by disabling switches without adding a status row', async () => {
+  api.updatePersistentSession.mockImplementation(() => new Promise(() => {}));
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-display'));
+  await screen.findByTestId('persistent-show-character');
+
+  fireEvent(screen.getByTestId('persistent-show-character'), 'valueChange', false);
+
+  await waitFor(() => expect(screen.getByTestId('persistent-show-character').props.disabled).toBe(true));
+  expect(screen.queryByLabelText('저장 중')).toBeNull();
+});
+
 test('keeps the saved switch value when the immediate update fails', async () => {
   api.updatePersistentSession.mockRejectedValueOnce(new ApiHttpError('failed', 503, JSON.stringify({ error: { code: 'NODE_UNAVAILABLE', message: 'unavailable' } })));
   const screen = open();
@@ -185,7 +209,9 @@ test('loads real monitoring data and distinguishes an empty timeline from a fail
   });
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   expect(screen.getAllByText('기록')).toHaveLength(1);
-  expect(await screen.findByText('세대 기록 없음')).toBeTruthy();
+  expect(await screen.findByText('기록 없음')).toBeTruthy();
+  expect(screen.queryByText('세대 기록 없음')).toBeNull();
+  expect(screen.getAllByText('기록 없음', { exact: true })).toHaveLength(1);
   expect(screen.getByTestId('persistent-session-monitoring-empty')).toBeTruthy();
 
   screen.unmount();
