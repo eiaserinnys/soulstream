@@ -11,6 +11,7 @@ import { MorningReviewSheet } from '../components/planner/MorningReviewSheet';
 import { SearchFilterModal } from '../components/search/SearchFilterModal';
 import { SettingsOptionRow } from '../components/settings/SettingsOptionRow';
 import { SettingsModal } from '../components/settings/SettingsModal';
+import { ReviewNativeSettings } from './ReviewNativeSettings';
 import { CardStatusMenu } from '../components/planner/CardStatusMenu';
 import { ImageViewerModal } from '../components/ImageViewerModal';
 import { DEFAULT_SEARCH_FILTERS } from '../store/searchStore';
@@ -47,6 +48,7 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
         onChange={value => { setFilters(current => ({ ...current, ...value })); setResult('검색 필터 변경'); }} onClose={close} /> : null}
       {opened === 'settings-target' ? <SettingsOptionRow selected="public-node-1" label="실행 노드" emptyLabel="노드 없음" options={Array.from({ length: 8 }, (_, index) => ({ id: `public-node-${index + 1}`, label: `public-node-${index + 1}` }))} onSelect={id => saved('선택: ' + id)}/> : null}
       {opened === 'settings' ? <SettingsModal visible onClose={close} /> : null}
+      {opened === 'pas-settings' ? <ReviewNativeSettings entry="pas" onClose={close} /> : null}
       {opened === 'card-status' ? <CardStatusMenu api={api} card={makeCard('todo')} onClose={close} /> : null}
       {opened === 'image-viewer' ? <ImageViewerModal sources={[require('../../assets/icon.png')]} initialIndex={0} onClose={close} /> : null}
       <ReviewDialogueOwners opened={opened} preview={preview} onClose={close} />

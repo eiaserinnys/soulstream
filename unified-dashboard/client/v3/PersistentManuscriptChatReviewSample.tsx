@@ -27,6 +27,13 @@ const messages: ChatMessage[] = [
     content: "지금은 응답을 이어 쓰고 있습니다.",
     isStreaming: true,
   }),
+  makeMessage("system", "default-complete", {
+    content: "턴 완료",
+    treeNodeType: "complete",
+    usage: { input_tokens: 6, cache_read_input_tokens: 645_361, output_tokens: 6_139 },
+    totalCostUsd: 0.62,
+    captionStats: "입력 645,367 (캐시 645,361) · 출력 6,139 · 정가 $0.62 (세션 $17.91)",
+  }),
   makeMessage("user", "user-message", {
     content: "내 입력은 오른쪽에 놓입니다.\n줄바꿈과 긴 한글 단어도 보존합니다.",
   }),
@@ -69,6 +76,7 @@ const messages: ChatMessage[] = [
  * Maps keep other sessions' changes; preferences are never snapshotted. */
 function ManuscriptColumn() {
   const [ready, setReady] = useState(false);
+  const [showTurnUsage, setShowTurnUsage] = useState(true);
   useLayoutEffect(() => {
     const store = useDashboardStore.getState();
     const saved = Object.fromEntries(
@@ -94,12 +102,21 @@ function ManuscriptColumn() {
       { type: "user_message", user: "User", text: "긴 내 발언은 왼쪽에 여백을 남깁니다. 여러 줄로 이어지는 글도 오른쪽 끝을 유지하고, 목록과 코드와 첨부는 내용 폭으로 정렬합니다.\n첫째 줄\n둘째 줄\n\n첫 문단입니다.\n\n둘째 문단입니다." },
       { type: "assistant_message", content: "- 문단과 목록의 행간은 같습니다\n- 본문은 1.6배입니다\n\n| 항목 | 값 |\n| --- | --- |\n| 행간 | 1.6 |" },
       { type: "tool_approval_requested", approval_id: "review-approval", tool_use_id: "review-tool", tool_name: "Edit", tool_input: { file_path: "review.txt" }, timestamp: 0 },
-      { type: "complete", result: "응답 완료", usage: { input_tokens: 1200, output_tokens: 340 }, total_cost_usd: 0.07 },
+      { type: "complete", result: "가격만 있는 응답", turn_cost_usd: 2.4 },
+      { type: "complete", result: "토큰만 있는 응답", usage: { input_tokens: 8, output_tokens: 2 } },
+      { type: "complete", result: "표시할 사용량이 없는 응답" },
       { type: "generation_started", timestamp: 0 },
+      { type: "context_usage", used_tokens: 500, max_tokens: 1_000, percent: 50 },
       { type: "error", message: "응답 연결이 끊겼습니다." },
+      { type: "context_usage", used_tokens: 900, max_tokens: 1_000, percent: 90 },
+      { type: "complete", result: "연속 첫 번째 턴", usage: { input_tokens: 900, output_tokens: 30 }, turn_cost_usd: 1.1 },
+      { type: "complete", result: "연속 두 번째 턴", usage: { input_tokens: 40, output_tokens: 20 }, turn_cost_usd: 0.2 },
       { type: "intervention_sent", user: "User", text: "실행 중 보낸 발언도 같은 여백을 유지합니다." },
       { type: "user_message", user: "User", text: "첨부 이미지와 파일 링크입니다.\n\n- 첫째 메모\n- 둘째 메모\n\n```ts\nconst manuscript = true;\n```\n\n| 항목 | 값 |\n| --- | --- |\n| 모양 | 원고형 |\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf](https://example.com/review-note.pdf)" },
       { type: "assistant_message", content: "마지막 문장 아래에도 여유가 있습니다." },
+      { type: "context_usage", used_tokens: 645_367, max_tokens: 1_024_000, percent: 63, estimated: true },
+      { type: "complete", result: "응답 완료", usage: { input_tokens: 6, cache_read_input_tokens: 645_361, output_tokens: 6_139 }, total_cost_usd: 0.62, turn_cost_usd: 0.62, session_cost_usd: 17.91 },
+      { type: "context_usage", used_tokens: 750, max_tokens: 1_000, percent: 75 },
     ] as SoulSSEEvent[];
     store.processEvents(events.map((event, index) => ({ event, eventId: index + 1 })));
     setReady(true);
@@ -127,10 +144,23 @@ function ManuscriptColumn() {
     } : null);
   };
   return <div className="w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden">
-    <div className="flex gap-2 pb-3 text-xs text-muted-foreground">
+    <div className="flex flex-wrap gap-2 pb-3 text-xs text-muted-foreground">
       <button onClick={() => showPending(null)}>원고형</button>
       <button onClick={() => showPending("sending")}>전송 중</button>
       <button onClick={() => showPending("failed")}>전송 실패</button>
+      <button onClick={() => {
+        const show = !showTurnUsage;
+        setShowTurnUsage(show);
+        useDashboardStore.getState().setPersistentSessionDisplaySettings(REVIEW_SESSION, {
+          show_generation_separator: true,
+          show_jev_candidates: true,
+          show_character: true,
+          animate_character: true,
+          show_turn_usage: show,
+        });
+      }}>
+        {showTurnUsage ? "사용량 줄 끄기" : "사용량 줄 켜기"}
+      </button>
     </div>
     <div className="h-screen min-h-0" data-testid="manuscript-review-column">
       {ready && <ChatView presentation="manuscript" historyEnabled={false} fileUploadUrl="/api/attachments/sessions" />}
@@ -141,7 +171,7 @@ function ManuscriptColumn() {
 export function PersistentManuscriptChatReviewSample() {
   const { chatTypographyStyle } = useChatTypography();
   return <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
-    <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle}>
+    <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
       <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
       {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
     </div>

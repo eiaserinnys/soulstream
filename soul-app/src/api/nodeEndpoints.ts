@@ -9,10 +9,21 @@ export interface ModelPresetAvailability {
   reason_label: string | null;
   resets_at: string | null;
   usage_warning: boolean;
+  weekly_headroom?: WeeklyHeadroom | null;
   /** Effort levels the node advertised. Absent = no effort control for this preset. */
   supported_efforts?: string[];
   /** Effort applied when the create request omits one. Absent = backend default. */
   default_effort?: string;
+}
+
+export interface WeeklyHeadroom {
+  status: 'ok' | 'stale' | 'unavailable';
+  headroom: number | null;
+  remaining_percent: number | null;
+  window_remaining_percent: number | null;
+  resets_at: string | null;
+  observed_at: string | null;
+  quota_label: string | null;
 }
 
 export function createNodeEndpoints({ base, authFetch, readJson }: ApiRequestContext) {

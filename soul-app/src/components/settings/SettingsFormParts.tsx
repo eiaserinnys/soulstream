@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 
 import { useTextInputContentHeight } from '../chat/useTextInputContentHeight';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -62,9 +62,27 @@ export function SettingsReadOnlyField({ label, value }: { label: string; value: 
 }
 
 /** One editor group: a heading and its fields. */
-export function SettingsFormGroup({ title, children }: { title: string; children: React.ReactNode }) {
+export function SettingsFormGroup({ title, children }: { title?: string; children: React.ReactNode }) {
   const styles = useSettingsFormStyles();
-  return <View style={styles.group}><Text style={styles.heading}>{title}</Text>{children}</View>;
+  return <View style={styles.group}>{title ? <Text style={styles.heading}>{title}</Text> : null}{children}</View>;
+}
+
+export function SettingsToggleRow({ label, value, onValueChange, disabled, testID, help }: {
+  label: string;
+  value: boolean;
+  onValueChange(value: boolean): void;
+  disabled?: boolean;
+  testID?: string;
+  help?: string;
+}) {
+  const styles = useSettingsFormStyles();
+  return <View style={styles.listRow}>
+    <View style={styles.grow}>
+      <Text style={styles.body}>{label}</Text>
+      {help ? <Text style={styles.help}>{help}</Text> : null}
+    </View>
+    <Switch accessibilityLabel={label} testID={testID} value={value} disabled={disabled} onValueChange={onValueChange} />
+  </View>;
 }
 
 /** Props of the scroll page that holds a settings list or editor; a hidden page stays mounted. */
