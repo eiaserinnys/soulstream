@@ -47,6 +47,7 @@ const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
   assigned_card_context: "render",
   generation_started: "render",
   persistent_jev_candidates: "render",
+  context_usage: "hidden",
 } as const satisfies Record<
   EventTreeNode["type"],
   "render" | "hidden" | "synthetic"
@@ -345,6 +346,49 @@ describe("flattenTree", () => {
     expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.result).toBe("hidden");
     expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.assistant_error).toBe("hidden");
     expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.session).toBe("synthetic");
+  });
+
+  it("keeps context usage out of default rows and exposes it with complete details for manuscript projection", () => {
+    const contextUsage = {
+      type: "context_usage",
+      id: "context-usage-1",
+      content: "",
+      completed: true,
+      children: [],
+      contextUsageData: {
+        usedTokens: 6_300,
+        maxTokens: 10_000,
+        percent: 63,
+        estimated: true,
+      },
+    } as unknown as EventTreeNode;
+    const complete = makeComplete("complete-2", "done", {
+      usage: { input_tokens: 1_200, output_tokens: 340 },
+      turnCostUsd: 1.4,
+      sessionCostUsd: 1.4,
+      sessionCostPartial: true,
+    });
+    const tree = makeSession([contextUsage, complete]);
+
+    const defaultMessages = flattenTree(tree);
+    const manuscriptMessages = flattenTree(tree, { includePersistentTurnUsage: true });
+
+    expect(defaultMessages.map((message) => message.treeNodeType)).toEqual(["complete"]);
+    expect(defaultMessages[0]).not.toHaveProperty("turnCostUsd");
+    expect(manuscriptMessages.map((message) => message.treeNodeType)).toEqual([
+      "context_usage",
+      "complete",
+    ]);
+    expect(manuscriptMessages[0]).toMatchObject({
+      contextUsageData: { usedTokens: 6_300, maxTokens: 10_000, percent: 63, estimated: true },
+      eventId: 1,
+    });
+    expect(manuscriptMessages[1]).toMatchObject({
+      turnCostUsd: 1.4,
+      sessionCostUsd: 1.4,
+      sessionCostPartial: true,
+      eventId: 2,
+    });
   });
 
   it("실제 flattenTree에서 legacy summary를 complete보다 앞의 raw event ID 위치에 둔다", () => {

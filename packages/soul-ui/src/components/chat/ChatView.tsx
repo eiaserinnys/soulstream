@@ -21,6 +21,7 @@ import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, typ
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
+import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
@@ -139,10 +140,23 @@ export function ChatView({
   const llmContext = useLlmContext();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
+  const isManuscript = presentation === "manuscript";
+  const showTurnUsage = persistentSessionDisplaySettings?.sessionId === activeSessionKey
+    ? persistentSessionDisplaySettings.showTurnUsage
+    : true;
+  const messages = useMemo(
+    () => isManuscript
+      ? flattenTree(tree, { includePersistentTurnUsage: true })
+      : flattenTree(tree),
+    [isManuscript, tree, treeVersion],
+  );
+  const transcriptMessages = useMemo(
+    () => isManuscript ? projectPersistentTurnUsage(messages, showTurnUsage) : messages,
+    [isManuscript, messages, showTurnUsage],
+  );
   const visibleMessages = useMemo(
     () => projectPersistentChatDisplayMessages(
-      messages,
+      transcriptMessages,
       persistentSessionDisplaySettings?.sessionId === activeSessionKey
         ? {
           show_generation_separator: persistentSessionDisplaySettings.showGenerationSeparator,
@@ -150,7 +164,7 @@ export function ChatView({
         }
         : null,
     ),
-    [messages, persistentSessionDisplaySettings, activeSessionKey],
+    [transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );
   const grouped = useMemo(() => groupMessages(visibleMessages), [visibleMessages]);
   const chatStatus = activeSessionSummary?.status ?? "unknown";
@@ -406,7 +420,7 @@ export function ChatView({
     if (frame !== null) window.cancelAnimationFrame(frame);
     focusScrollRetryRef.current = { key: null, attempts: 0, frame: null };
   }, [activeSessionKey, focusEventRequestId]);
-  const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled);
+  const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled, isManuscript);
   requestOlderRef.current = history.requestOlder;
   useEffect(() => {
     if (focusHistoryCrawlRef.current.requestId !== focusEventRequestId) {

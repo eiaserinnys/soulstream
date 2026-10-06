@@ -23,6 +23,9 @@ describe("manuscript review isolation", () => {
     try {
       act(() => root.render(<PersistentManuscriptChatReviewSample />));
       expect(host.querySelector('[data-presentation="manuscript"]')).not.toBeNull();
+      expect(host.querySelector('[data-testid="default-review-column"][data-chat-presentation="default"]')).not.toBeNull();
+      expect(host.querySelector('[data-testid="manuscript-review-column"]')).not.toBeNull();
+      expect(host.querySelector('[data-testid="default-review-column"]')?.textContent).toContain("턴 완료");
       expect(useDashboardStore.getState().activeSessionKey).toBe("components-review-manuscript");
       act(() => {
         useDashboardStore.getState().setChatFontSize(18);
@@ -31,6 +34,11 @@ describe("manuscript review isolation", () => {
         (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "전송 실패")!).click();
       });
       expect(useDashboardStore.getState().pendingChatSends["components-review-manuscript"]?.status).toBe("failed");
+      act(() => (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "사용량 줄 끄기")!).click());
+      expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showTurnUsage).toBe(false);
+      expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showJevCandidates).toBe(true);
+      act(() => (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "사용량 줄 켜기")!).click());
+      expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showTurnUsage).toBe(true);
       act(() => root.unmount());
       const restored = useDashboardStore.getState();
       expect(restored.activeSessionKey).toBe("previous");
