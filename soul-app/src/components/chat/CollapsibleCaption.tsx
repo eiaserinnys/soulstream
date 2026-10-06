@@ -28,7 +28,7 @@ export function CollapsibleCaption({
 
   return (
     <CaptionAlignContext.Provider value={align}>
-      <View style={styles.wrapper}>
+      <View testID="collapsible-caption-wrapper" style={styles.wrapper}>
         <CompactTouchTarget
           accessibilityRole="button"
           accessibilityLabel={title}

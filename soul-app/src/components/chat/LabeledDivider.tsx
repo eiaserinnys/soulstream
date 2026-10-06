@@ -13,9 +13,9 @@ export function LabeledDivider({ label, alignmentInset = 'avatar' }: LabeledDivi
 
   return (
     <View style={styles.row}>
-      <View accessibilityElementsHidden importantForAccessibility="no" style={styles.line} />
+      <View testID="labeled-divider-left-line" accessibilityElementsHidden importantForAccessibility="no" style={styles.line} />
       <Text numberOfLines={1} ellipsizeMode="tail" style={styles.label}>{label}</Text>
-      <View accessibilityElementsHidden importantForAccessibility="no" style={styles.line} />
+      <View testID="labeled-divider-right-line" accessibilityElementsHidden importantForAccessibility="no" style={styles.line} />
     </View>
   );
 }

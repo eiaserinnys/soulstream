@@ -296,35 +296,38 @@ function ReviewMessagePresentation({
   imageMessage.data = { ...imageMessage.data, attachments: ['/review/one.png'], node_id: 'public-node' };
 
   return (
-    <View testID={`manuscript-presentation-column-${presentation}`} style={{ width, padding: t.spacing.md, gap: t.spacing.md, backgroundColor: presentation === 'manuscript' ? t.persistentSession.paper : t.colors.background }}>
-      <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>{title}</Text>
-      <UserMessage presentation={presentation} event={message('user_message', '긴 요청 문단입니다. 조사한 결과와 다음 행동을 알려주세요.')} />
-      <UserMessage presentation={presentation} variant="intervention" event={message('intervention_sent', '실행 중 추가한 개입 발언입니다.')} />
-      <UserMessage presentation={presentation} event={imageMessage} session={{ ...presentationSession, nodeId: 'public-node' }} />
-      <AttachmentImage source={require('../../assets/icon.png')} accessibilityLabel="공개 이미지 첨부 열기" />
-      <AssistantMessage presentation={presentation} session={presentationSession} event={message('assistant_message', markdown)} />
-      <AssistantMessage presentation={presentation} session={presentationSession} event={message('text_delta', '지금 응답을 작성하고 있습니다…')} />
-      <EventRenderer presentation={presentation} event={approval} session={presentationSession} sessionId={presentationSession.agentSessionId} />
-      <ToolEvent presentation={presentation} start={message('tool_start', '')} result={message('tool_result', '')} sessionId={presentationSession.agentSessionId} />
-      <SystemEvent event={{ id: 'review-shape-error', type: 'error', data: { message: '도구 요청에서 발생한 오류입니다. 재시도할 수 있습니다.' } }} />
-      <CollapsibleCaption title="Jev 후보 2 · 본문 시작선" align="end" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}>
-        <CollapsibleCaptionLine>요약 · 일치도 3/3</CollapsibleCaptionLine>
-        <CollapsibleCaptionLine>카드 · 일치도 2/3</CollapsibleCaptionLine>
-      </CollapsibleCaption>
-      <TurnSummaryCaption content={assignedCardPreview} presentation={presentation} />
-      <LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'} />
-      <AttachmentChips
-        attachments={[{ path: '/review/waiting.png', name: '대기 첨부.png' }]}
-        styles={styles}
-        textSecondaryColor={t.colors.textSecondary}
-        textMutedColor={t.colors.textMuted}
-        onRemove={() => {}}
-      />
-      <ChatComposer presentation={presentation} input="한 줄 입력" onChangeInput={() => {}} onSend={() => {}}
-        onPickAttachment={() => {}} uploading={false} sending={false} voiceControls={null} />
-      <ChatComposer presentation={presentation} input={'여러 줄로 자라는 입력\n두 번째 줄도 확인합니다'} onChangeInput={() => {}} onSend={() => {}}
-        onPickAttachment={() => {}} uploading={false} sending={false} voiceControls={null} />
-      <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>입력창의 줄 높이와 대기 첨부를 비교합니다.</Text>
+    <View style={{ width, paddingHorizontal: presentation === 'manuscript' && width >= 480 ? 0 : presentation === 'manuscript' ? t.spacing.xl : t.spacing.md,
+      backgroundColor: presentation === 'manuscript' ? t.persistentSession.paper : t.colors.background }}>
+      <View testID={`manuscript-presentation-column-${presentation}`} style={{ width: width - 2 * (presentation === 'manuscript' && width >= 480 ? 0 : presentation === 'manuscript' ? t.spacing.xl : t.spacing.md), gap: t.spacing.md }}>
+        <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>{title}</Text>
+        <UserMessage presentation={presentation} event={message('user_message', '긴 요청 문단입니다. 조사한 결과와 다음 행동을 알려주세요.')} />
+        <UserMessage presentation={presentation} variant="intervention" event={message('intervention_sent', '실행 중 추가한 개입 발언입니다.')} />
+        <UserMessage presentation={presentation} event={imageMessage} session={{ ...presentationSession, nodeId: 'public-node' }} />
+        <AttachmentImage source={require('../../assets/icon.png')} accessibilityLabel="공개 이미지 첨부 열기" />
+        <AssistantMessage presentation={presentation} session={presentationSession} event={message('assistant_message', markdown)} />
+        <AssistantMessage presentation={presentation} session={presentationSession} event={message('text_delta', '지금 응답을 작성하고 있습니다…')} />
+        <EventRenderer presentation={presentation} event={approval} session={presentationSession} sessionId={presentationSession.agentSessionId} />
+        <ToolEvent presentation={presentation} start={message('tool_start', '')} result={message('tool_result', '')} sessionId={presentationSession.agentSessionId} />
+        <SystemEvent event={{ id: 'review-shape-error', type: 'error', data: { message: '도구 요청에서 발생한 오류입니다. 재시도할 수 있습니다.' } }} />
+        <CollapsibleCaption title="Jev 후보 2 · 본문 시작선" align="end" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}>
+          <CollapsibleCaptionLine>요약 · 일치도 3/3</CollapsibleCaptionLine>
+          <CollapsibleCaptionLine>카드 · 일치도 2/3</CollapsibleCaptionLine>
+        </CollapsibleCaption>
+        <TurnSummaryCaption content={assignedCardPreview} presentation={presentation} />
+        <LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'} />
+        <AttachmentChips
+          attachments={[{ path: '/review/waiting.png', name: '대기 첨부.png' }]}
+          styles={styles}
+          textSecondaryColor={t.colors.textSecondary}
+          textMutedColor={t.colors.textMuted}
+          onRemove={() => {}}
+        />
+        <ChatComposer presentation={presentation} input="한 줄 입력" onChangeInput={() => {}} onSend={() => {}}
+          onPickAttachment={() => {}} uploading={false} sending={false} voiceControls={null} />
+        <ChatComposer presentation={presentation} input={'여러 줄로 자라는 입력\n두 번째 줄도 확인합니다'} onChangeInput={() => {}} onSend={() => {}}
+          onPickAttachment={() => {}} uploading={false} sending={false} voiceControls={null} />
+        <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>입력창의 줄 높이와 대기 첨부를 비교합니다.</Text>
+      </View>
     </View>
   );
 }

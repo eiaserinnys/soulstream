@@ -13,7 +13,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { GlassSurface } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { createSessionVisualRoles, useTokens } from '../../theme';
-import { makeStyles } from './ChatBody.styles';
+import { ADD_GLYPH_INSET_RATIO, makeStyles } from './ChatBody.styles';
 import { AttachmentPickerButton } from './AttachmentPickerButton';
 
 interface Props {
@@ -71,6 +71,9 @@ export function ChatComposer({
   const controlsDisabled = uploading || disabled;
   const { fontScale } = useWindowDimensions();
   const composer = createSessionVisualRoles(t).chat.composer;
+  const manuscriptAttachmentOutset = (composer.hitTarget - t.iconSize.action) / 2
+    + t.iconSize.action * ADD_GLYPH_INSET_RATIO;
+  const manuscriptSendOutset = (composer.hitTarget - composer.controlVisualSize) / 2;
   const lineHeight = t.chatFontSize.body * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio) * fontScale;
   const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
   const isEmpty = input.length === 0;
@@ -109,7 +112,12 @@ export function ChatComposer({
         >
           <View
             testID="chat-composer-attach-slot"
-            style={[styles.composerAttachmentSlot, stacked && styles.composerAttachmentSlotStacked]}
+            style={[
+              styles.composerAttachmentSlot,
+              stacked && styles.composerAttachmentSlotStacked,
+              presentation === 'manuscript' && !stacked && { marginLeft: -manuscriptAttachmentOutset },
+              presentation === 'manuscript' && stacked && { left: -manuscriptAttachmentOutset },
+            ]}
           >
             <AttachmentPickerButton
               testID="chat-composer-attach-button"
@@ -183,7 +191,10 @@ export function ChatComposer({
               accessibilityLabel={sendAccessibilityLabel}
               accessibilityState={{ disabled: !canSend || sending, busy: sending }}
               disabled={!canSend || sending}
-              frameStyle={styles.composerControlFrame}
+              frameStyle={[
+                styles.composerControlFrame,
+                presentation === 'manuscript' && { marginRight: -manuscriptSendOutset },
+              ]}
               surfaceStyle={[styles.sendBtn, !sending && !canSend && styles.sendBtnDisabled]}
               onPress={() => {
                 if (canSend && !sending) onSend();

@@ -48,7 +48,7 @@ export function makeStyles(t: DesignTokens) {
     },
     manuscriptComposerBox: {
       minHeight: sessionRoles.chat.composer.minHeight,
-      paddingHorizontal: sessionRoles.chat.composer.edgePaddingHorizontal,
+      paddingHorizontal: 0,
       paddingVertical: 0,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: t.persistentSession.line,
