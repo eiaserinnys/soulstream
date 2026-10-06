@@ -227,13 +227,11 @@ export function UserMessage({
       </View>
       {presentation === 'manuscript' ? null : isSystem ? (
         <Image
-          testID="user-message-avatar"
           source={require('../../../assets/icon-symbol.png')}
           style={styles.avatar}
         />
       ) : avatarUri ? (
         <Image
-          testID="user-message-avatar"
           source={{
             uri: avatarUri,
             ...(useBearer && jwt
@@ -243,7 +241,7 @@ export function UserMessage({
           style={styles.avatar}
         />
       ) : (
-        <View testID="user-message-avatar" style={[styles.avatar, styles.avatarFallback]}>
+        <View style={[styles.avatar, styles.avatarFallback]}>
           <Text style={styles.avatarFallbackText}>{fallbackChar}</Text>
         </View>
       )}

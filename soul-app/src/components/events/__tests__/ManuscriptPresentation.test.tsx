@@ -1,5 +1,5 @@
 import { fireEvent, render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 import { AssistantMessage } from '../AssistantMessage';
 import { UserMessage } from '../UserMessage';
 import { ChatComposer } from '../../chat/ChatComposer';
@@ -12,12 +12,11 @@ test('원고형은 기존 메시지 부품에서 말풍선을 없애고 기본 �
   const standardUser = render(<UserMessage event={event} />);
   const standardBubble = StyleSheet.flatten(standardUser.getByTestId('user-message-bubble').props.style);
   expect(standardBubble.backgroundColor).toBeTruthy();
-  expect(standardUser.getByTestId('user-message-avatar')).toBeTruthy();
 
   const manuscriptUser = render(<UserMessage presentation="manuscript" event={event} />);
   const manuscriptBubble = StyleSheet.flatten(manuscriptUser.getByTestId('user-message-bubble').props.style);
   const manuscriptText = StyleSheet.flatten(manuscriptUser.getByTestId('user-message-text').props.style);
-  expect(manuscriptUser.queryByTestId('user-message-avatar')).toBeNull();
+  expect(manuscriptUser.UNSAFE_queryAllByType(Image)).toHaveLength(0);
   expect(manuscriptBubble.backgroundColor).toBeUndefined();
   expect(manuscriptText.textAlign).toBe('right');
   expect(manuscriptText.color).toBe(LIGHT_COLORS.textSecondary);
@@ -28,11 +27,10 @@ test('원고형은 기존 메시지 부품에서 말풍선을 없애고 기본 �
   const standardAssistant = render(<AssistantMessage event={assistantEvent} />);
   const standardAssistantBubble = StyleSheet.flatten(standardAssistant.getByTestId('assistant-message-bubble').props.style);
   expect(standardAssistantBubble.backgroundColor).toBeTruthy();
-  expect(standardAssistant.getByTestId('assistant-message-avatar')).toBeTruthy();
 
   const manuscriptAssistant = render(<AssistantMessage presentation="manuscript" event={assistantEvent} />);
   const manuscriptAssistantBubble = StyleSheet.flatten(manuscriptAssistant.getByTestId('assistant-message-bubble').props.style);
-  expect(manuscriptAssistant.queryByTestId('assistant-message-avatar')).toBeNull();
+  expect(manuscriptAssistant.UNSAFE_queryAllByType(Image)).toHaveLength(0);
   expect(manuscriptAssistantBubble.backgroundColor).toBeUndefined();
   expect(manuscriptAssistantBubble.maxWidth).toBeUndefined();
   const manuscriptAssistantText = StyleSheet.flatten(manuscriptAssistant.getByTestId('assistant-streaming-text').props.style);

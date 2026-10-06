@@ -113,7 +113,6 @@ export function AssistantMessage({
       : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
       {presentation === 'manuscript' ? null : avatarUri ? (
         <Image
-          testID="assistant-message-avatar"
           source={{
             uri: avatarUri,
             ...(useBearer && jwt
@@ -123,7 +122,7 @@ export function AssistantMessage({
           style={styles.avatar}
         />
       ) : (
-        <View testID="assistant-message-avatar" style={[styles.avatar, styles.avatarFallback]}>
+        <View style={[styles.avatar, styles.avatarFallback]}>
           <Text style={styles.avatarFallbackText}>{fallbackChar}</Text>
         </View>
       )}
