@@ -17,6 +17,9 @@ export const persistentSessionSettingsRouteAuthRequirements = {
   "GET /api/persistent-sessions/:session_id": true,
   "PUT /api/persistent-sessions/:session_id": true,
   "POST /api/persistent-sessions": true,
+  "GET /api/persistent-sessions/:session_id/instructions": true,
+  "POST /api/persistent-sessions/:session_id/instructions": true,
+  "PUT /api/persistent-sessions/:session_id/instructions/:instruction_id": true,
 } as const;
 
 /** Node-reported input failures that are the caller's problem rather than an unavailable node. */
@@ -66,6 +69,40 @@ export function registerPersistentSessionSettingsRoutes(
       return sendError(reply, error);
     }
   });
+
+  app.get<{ Params: { session_id: string } }>("/api/persistent-sessions/:session_id/instructions", async (request, reply) => {
+    try {
+      return reply.send(await service.listInstructions(request, request.params.session_id));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.post<{ Params: { session_id: string } }>("/api/persistent-sessions/:session_id/instructions", async (request, reply) => {
+    try {
+      const result = await service.addInstruction(request, request.params.session_id, request.body);
+      return reply.code(result.status).send(result.body);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  app.put<{ Params: { session_id: string; instruction_id: string } }>(
+    "/api/persistent-sessions/:session_id/instructions/:instruction_id",
+    async (request, reply) => {
+      try {
+        const result = await service.updateInstruction(
+          request,
+          request.params.session_id,
+          request.params.instruction_id,
+          request.body,
+        );
+        return reply.code(result.status).send(result.body);
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
 }
 
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
