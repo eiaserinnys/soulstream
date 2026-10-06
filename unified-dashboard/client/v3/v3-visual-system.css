@@ -386,25 +386,6 @@
   }
 }
 
-@media (max-width: 1680px) {
-  .v3-shell {
-    grid-template-columns:
-      calc(min(var(--v3-navigation-width), 280px) + var(--v3-outer-inset))
-      var(--v3-panel-gap)
-      minmax(0, 1fr)
-      var(--v3-panel-gap)
-      calc(min(var(--v3-session-panel-width), 400px) + var(--v3-outer-inset));
-  }
-
-  .v3-navigation {
-    width: min(var(--v3-navigation-width), 280px);
-  }
-
-  .v3-session-panel {
-    width: min(var(--v3-session-panel-width), 400px);
-  }
-}
-
 @media (max-width: 1180px) {
   .v3-shell {
     grid-template-columns:

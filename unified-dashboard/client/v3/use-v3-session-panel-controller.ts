@@ -14,11 +14,6 @@ import type { FolderSectionFocusRequest } from "./FolderSectionNavigation";
 import { activateRunSession } from "./folder-workspace-run-model";
 import { errorText } from "./v3-dashboard-utils";
 import { sessionPanelGroups } from "./v3-session-panel-model";
-import {
-  clampV3SessionPanelWidth,
-  readV3SessionPanelWidth,
-  writeV3SessionPanelWidth,
-} from "./v3-session-panel-width";
 import { orchestratorSessionProvider } from "../providers";
 import {
   resolveSessionForOpen,
@@ -52,7 +47,6 @@ export function useV3SessionPanelController({
   const panelRef = useRef<HTMLElement>(null);
   const focusRequestSequence = useRef(0);
   const openRequestSequence = useRef(0);
-  const [panelWidth, setPanelWidth] = useState(() => readV3SessionPanelWidth());
   const [focusRequest, setFocusRequest] = useState<FolderSectionFocusRequest | null>(null);
   const [workspaceFolderError, setWorkspaceFolderError] = useState<string | null>(null);
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
@@ -68,14 +62,6 @@ export function useV3SessionPanelController({
     [acknowledgedReviewIds, sessions],
   );
 
-  const resize = useCallback((deltaPercent: number) => {
-    const deltaPx = document.documentElement.clientWidth * deltaPercent / 100;
-    setPanelWidth((current) => {
-      const next = clampV3SessionPanelWidth(current - deltaPx);
-      writeV3SessionPanelWidth(next);
-      return next;
-    });
-  }, []);
   const clearFocusRequest = useCallback(() => setFocusRequest(null), []);
   const acknowledgeFocusRequest = useCallback((requestId: number) => {
     setFocusRequest((current) => current?.requestId === requestId ? null : current);
@@ -185,12 +171,10 @@ export function useV3SessionPanelController({
 
   return {
     panelRef,
-    panelWidth,
     sessions,
     reviewSessions,
     focusRequest,
     workspaceFolderError,
-    resize,
     openSession,
     openFeedSession,
     openSessionById,
