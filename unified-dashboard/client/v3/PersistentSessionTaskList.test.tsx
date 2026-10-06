@@ -74,6 +74,31 @@ describe("persistent session task list", () => {
     expect(membershipMock).not.toHaveBeenCalled();
   });
 
+  it("starts with only drafts collapsed and persists group toggles", async () => {
+    localStorage.clear();
+    const cards = [baseCard("running", "running"), baseCard("draft", "todo")];
+    membershipMock.mockReturnValue({ cards, loading: false, error: null, retry: vi.fn() });
+    await act(() => root.render(<PersistentSessionTaskList onOpenCard={() => {}}/>));
+
+    const draftGroup = container.querySelector<HTMLElement>('[data-task-status-group="todo"]')!;
+    const draftToggle = draftGroup.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(draftToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(draftToggle.textContent).toContain("드래프트");
+    expect(draftToggle.textContent).toContain("1");
+    expect(draftGroup.querySelector(".v3-run-list")).toBeNull();
+    expect(container.querySelector<HTMLButtonElement>('[data-task-status-group="running"] button[aria-expanded]')?.getAttribute("aria-expanded")).toBe("true");
+    expect(localStorage.getItem("soulstream:pas-task-groups:v1")).toBe(JSON.stringify({ collapsed: ["todo"] }));
+
+    await act(() => draftToggle.click());
+    expect(container.querySelector('[data-task-status-group="todo"] .v3-run-list')).not.toBeNull();
+    expect(JSON.parse(localStorage.getItem("soulstream:pas-task-groups:v1")!)).toEqual({ collapsed: [] });
+
+    await act(() => root.unmount());
+    root = createRoot(container);
+    await act(() => root.render(<PersistentSessionTaskList cards={cards} onOpenCard={() => {}}/>));
+    expect(container.querySelector<HTMLButtonElement>('[data-task-status-group="todo"] button[aria-expanded]')?.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("renders the summary row with only its optional number, one-line title, and assignee portrait", async () => {
     const open = vi.fn();
     const card = { ...baseCard("summary", "running"), number: 42, title: "긴 카드 제목" };
@@ -120,6 +145,15 @@ describe("persistent session task list", () => {
     expect(slots).toHaveLength(4);
     expect(slots.map(slot => slot.textContent)).toEqual(["#1024", "#1024", "#1024", "#1024"]);
     expect(slots.every(slot => slot.getAttribute("aria-hidden") === "true")).toBe(true);
+  });
+
+  it("keeps the number reservation across collapsed groups", () => {
+    localStorage.setItem("soulstream:pas-task-groups:v1", JSON.stringify({ collapsed: ["todo"] }));
+    const cards = [{ ...baseCard("visible", "running"), number: 7 }, { ...baseCard("draft", "todo"), number: 1024 }];
+    act(() => root.render(<PersistentSessionTaskList cards={cards} onOpenCard={() => {}}/>));
+
+    expect(container.querySelector('[data-task-status-group="todo"] .v3-run-list')).toBeNull();
+    expect(container.querySelector('[data-task-status-group="running"] .v3-card-summary-number-reserve')?.textContent).toBe("#1024");
   });
 
   it("offers a retry for membership errors and replaces the error with the refreshed list", async () => {

@@ -9,9 +9,33 @@
 .v3-persistent-task-list > section { min-width: 0; }
 .v3-persistent-task-list .v3-detail-section-head { margin: 0 0 var(--v3-space-2); }
 .v3-persistent-task-list .v3-detail-section-head h3 {
-  color: var(--v3-text-secondary);
-  font: var(--v3-type-meta) var(--v3-font-family);
+  min-width: 0;
+  width: 100%;
 }
+.v3-persistent-task-group-toggle {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  min-height: var(--v3-action-size);
+  align-items: center;
+  gap: var(--v3-space-2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--v3-space-2);
+  color: var(--v3-text-secondary);
+  background: transparent;
+  font: var(--v3-type-meta) var(--v3-font-family);
+  text-align: left;
+  cursor: pointer;
+}
+.v3-persistent-task-group-toggle:hover { background: color-mix(in srgb, var(--muted) 54%, transparent); }
+.v3-persistent-task-group-name { min-width: 0; flex: 1; }
+.v3-persistent-task-group-count {
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+  font-variant-numeric: tabular-nums;
+}
+.v3-persistent-task-group-toggle > svg { flex: none; }
 .v3-persistent-task-list .v3-run-list { gap: var(--v3-space-1); }
 .v3-card-summary-row {
   --ring: var(--muted-foreground);
@@ -60,7 +84,8 @@
 .v3-persistent-task-review { display: flex; min-width: 0; flex-direction: column; gap: var(--v3-space-5); }
 .v3-persistent-task-review-list,
 .v3-persistent-task-review-detail { min-width: 0; box-sizing: border-box; border: 1px solid var(--persistent-session-line); padding: var(--v3-space-4); background: var(--persistent-session-paper); }
-.v3-persistent-task-review-list { width: 264px; max-width: 100%; }
+.v3-persistent-task-review-lists { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-start; gap: var(--v3-space-4); }
+.v3-persistent-task-review-list { max-width: 100%; }
 .v3-persistent-task-review-details { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-start; gap: var(--v3-space-4); }
 .v3-persistent-task-review-detail { display: flex; min-height: 0; overflow: hidden; }
 .v3-persistent-task-review-detail > .v3-detail-pane { width: 100%; height: 100%; min-height: 0; overflow: hidden; }

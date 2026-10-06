@@ -123,7 +123,8 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
           {selectedCardId ? <DashboardIconCap label="작업 목록으로" onClick={() => setSelectedCardId(null)}><ArrowLeft/></DashboardIconCap> : <h2>작업</h2>}
           <DashboardIconCap label="작업 목록 닫기" onClick={() => setTasksOpen(false)}><X/></DashboardIconCap>
         </div>
-        {selectedCardId ? <CardDetailPane key={selectedCardId} variant="summary" cardId={selectedCardId} folders={folders ?? []} onClose={() => setSelectedCardId(null)} onOpenSession={() => {}} onOpenCard={() => cardNavigation.open(selectedCardId)}/> : <div className="persistent-session-task-scroll"><PersistentSessionTaskList onOpenCard={setSelectedCardId}/></div>}
+        <div className="persistent-session-task-scroll" hidden={Boolean(selectedCardId)}><PersistentSessionTaskList onOpenCard={setSelectedCardId}/></div>
+        {selectedCardId ? <CardDetailPane key={selectedCardId} variant="summary" cardId={selectedCardId} folders={folders ?? []} onClose={() => setSelectedCardId(null)} onOpenSession={() => {}} onOpenCard={() => cardNavigation.open(selectedCardId)}/> : null}
       </aside>}
       {selectedCardId && cardNavigation.cardId === selectedCardId && <CardWorkspace detailOnly cardId={selectedCardId} folders={folders ?? []} onClose={cardNavigation.close} onOpenSession={() => {}} mobileMode={false} mobileTab="cards" activeSession={undefined} chatInputDisabled historyEnabled={false} sessionStreamActive={false} sessionConnectionStatus="disconnected" reconnectSession={() => {}} onAcknowledgedReview={() => {}}/>}
     </>}
