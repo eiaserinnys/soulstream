@@ -57,6 +57,9 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
   //   tool_result: { type, result, is_error, timestamp, tool_name, tool_use_id }
   // 빌드 14까지는 클라이언트가 name/input/content 키를 읽어 모두 빈 값으로 보였음.
   const toolName: string = startData?.tool_name ?? startData?.name ?? '도구';
+  const displayToolName = presentation === 'manuscript'
+    ? stripMcpToolPrefix(toolName)
+    : toolName;
 
   const inputText = useMemo(
     () => formatBody(trace?.input ?? startData?.tool_input ?? startData?.input),
@@ -85,9 +88,13 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
   }, [api, sessionId, traceId, trace, traceLoading]);
 
   const isError = resultData?.is_error === true;
-  const statusIcon = !result ? 'time-outline' : isError ? 'close-circle' : 'checkmark-circle';
-  const statusLabel = !result ? '실행 중' : isError ? '오류' : '완료';
-  const statusColor = !result ? t.colors.warning : isError ? t.colors.error : t.colors.success;
+  const statusIcon = presentation === 'manuscript'
+    ? !result ? 'time-outline' : isError ? 'close' : 'checkmark'
+    : !result ? 'time-outline' : isError ? 'close-circle' : 'checkmark-circle';
+  const statusLabel = !result ? '실행 중' : isError ? presentation === 'manuscript' ? '실패' : '오류' : '완료';
+  const statusColor = presentation === 'manuscript'
+    ? t.colors.textSecondary
+    : !result ? t.colors.warning : isError ? t.colors.error : t.colors.success;
 
   // 헤더 우측 한 줄 미리보기 — 공백/줄바꿈을 단일 공백으로 압축한 뒤 그대로 넘긴다.
   // 빌드 18: 임의 60자 cap을 제거 — RN <Text numberOfLines={1}>이 실제 사용 가능 폭에 맞춰
@@ -104,10 +111,6 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
         testID="tool-event-wrapper"
         style={[
           styles.wrapper,
-          ...(presentation === 'manuscript' ? [{
-            borderColor: t.persistentSession.line,
-            backgroundColor: t.persistentSession.panel,
-          }] : []),
           !expanded && styles.wrapperCollapsed,
           isError && presentation !== 'manuscript' && styles.wrapperError,
           headerPressed && styles.wrapperPressed,
@@ -125,9 +128,9 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
             numberOfLines={1}
             ellipsizeMode="tail"
           >
-            {toolName}
+            {displayToolName}
           </Text>
-          {previewLine ? (
+          {presentation !== 'manuscript' && previewLine ? (
             <Text style={styles.preview} numberOfLines={1} ellipsizeMode="tail">
               {previewLine}
             </Text>
@@ -136,7 +139,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
             testID="tool-event-chevron"
             name={expanded ? 'chevron-up' : 'chevron-down'}
             size={toolRole.chevronSize}
-            color={t.colors.textPlaceholder}
+            color={presentation === 'manuscript' ? t.colors.textSecondary : t.colors.textPlaceholder}
           />
         </View>
         {expanded && (
@@ -187,7 +190,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
         testID="tool-event-header-touch"
         style={styles.headerTouchOverlay}
         accessibilityRole="button"
-        accessibilityLabel={`${toolName}, ${statusLabel}${previewLine ? `, ${previewLine}` : ''}`}
+        accessibilityLabel={`${displayToolName}, ${statusLabel}${presentation !== 'manuscript' && previewLine ? `, ${previewLine}` : ''}`}
         accessibilityState={{ expanded }}
         onPressIn={() => setHeaderPressed(true)}
         onPressOut={() => setHeaderPressed(false)}
@@ -222,6 +225,10 @@ function formatBody(raw: unknown): string {
   return String(raw);
 }
 
+function stripMcpToolPrefix(toolName: string): string {
+  return toolName.replace(/^mcp__.*?__/, '');
+}
+
 function formatProgress(trace: ToolTraceResponse | null): string {
   if (!trace?.progress?.length) return '';
   return trace.progress
@@ -254,11 +261,15 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       position: 'relative',
     },
     wrapper: {
-      borderRadius: t.radius.sm,
-      borderWidth: 1,
-      borderColor: c.border,
       overflow: 'hidden',
-      backgroundColor: c.surfaceMuted,
+      ...(presentation === 'manuscript'
+        ? {}
+        : {
+            borderRadius: t.radius.sm,
+            borderWidth: 1,
+            borderColor: c.border,
+            backgroundColor: c.surfaceMuted,
+          }),
     },
     wrapperCollapsed: { height: toolVisualHeight },
     wrapperError: { backgroundColor: c.errorBg },
@@ -282,15 +293,26 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       paddingVertical: sessionRoles.chat.tool.paddingVertical,
       gap: sessionRoles.chat.tool.gap,
     },
-    name: {
-      maxWidth: '36%',
-      minWidth: 0,
-      flexShrink: 1,
-      color: c.textSecondary,
-      fontSize: sessionRoles.chat.tool.fontSize,
-      lineHeight: sessionRoles.chat.tool.lineHeight,
-      fontWeight: '600',
-    },
+    name: presentation === 'manuscript'
+      ? {
+          maxWidth: '100%',
+          flex: 1,
+          minWidth: 0,
+          flexShrink: 1,
+          color: c.textSecondary,
+          fontSize: t.chatFontSize.meta,
+          lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
+          fontWeight: '400',
+        }
+      : {
+          maxWidth: '36%',
+          minWidth: 0,
+          flexShrink: 1,
+          color: c.textSecondary,
+          fontSize: sessionRoles.chat.tool.fontSize,
+          lineHeight: sessionRoles.chat.tool.lineHeight,
+          fontWeight: '600',
+        },
     nameOnly: { maxWidth: '100%', flex: 1 },
     preview: {
       flex: 1,

@@ -31,6 +31,21 @@ export function renderItemContainsEventId(
     return item.events.some((row) => Number(row.event.id) === eventId
       || row.summaries?.some((summary) => Number(summary.event.id) === eventId) === true);
   }
+  if (item.kind === 'activity') {
+    return item.items.some((entry) => {
+      if (entry.kind === 'tool') {
+        return (
+          Number(entry.start.id) === eventId ||
+          Number(entry.result?.id) === eventId ||
+          entry.summaries?.some((summary) => Number(summary.event.id) === eventId) === true
+        );
+      }
+      return (
+        Number(entry.event.id) === eventId ||
+        entry.summaries?.some((summary) => Number(summary.event.id) === eventId) === true
+      );
+    });
+  }
   return (
     Number(item.event.id) === eventId ||
     item.summaries?.some((summary) => Number(summary.event.id) === eventId) === true

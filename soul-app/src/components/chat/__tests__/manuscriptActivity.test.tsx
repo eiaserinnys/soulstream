@@ -1,0 +1,95 @@
+import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { LIGHT_COLORS } from '../../../theme/colors';
+import type { SessionEvent } from '../../../api/types';
+import type { ManuscriptActivityRenderItem } from '../manuscriptActivityProjection';
+import { ManuscriptActivitySegment } from '../ManuscriptActivitySegment';
+
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+
+const ev = (id: string, type: SessionEvent['type'], data: Record<string, unknown> = {}): SessionEvent => ({
+  id,
+  type,
+  data,
+});
+
+function activityItem(): ManuscriptActivityRenderItem {
+  const failedStart = ev('1', 'tool_start', {
+    tool_use_id: 'tool-1',
+    tool_name: 'mcp__soulstream__Read',
+    tool_input: 'private preview',
+  });
+  const failedResult = ev('2', 'tool_result', {
+    tool_use_id: 'tool-1',
+    result: 'failed output',
+    is_error: true,
+  });
+  const thought = ev('3', 'thinking_delta', { thinking: '실행 사이의 생각 행' });
+  const runningStart = ev('4', 'tool_start', {
+    tool_use_id: 'tool-2',
+    tool_name: 'mcp__node__Bash',
+    tool_input: 'running input',
+  });
+
+  return {
+    kind: 'activity',
+    key: 'activity-tool-1',
+    items: [
+      { kind: 'tool', start: failedStart, result: failedResult, key: 'tool-1' },
+      { kind: 'event', event: thought, key: 'evt-3' },
+      { kind: 'tool', start: runningStart, key: 'tool-4' },
+    ],
+  };
+}
+
+describe('ManuscriptActivitySegment', () => {
+  it('한 줄 접힘 표시에 도구 수와 실행·실패 상태를 보여주고, 펼치면 개별 줄을 유지한다', () => {
+    const screen = render(
+      <ManuscriptActivitySegment item={activityItem()} sessionId="session-1" api={null} />,
+    );
+    const toggle = screen.getByTestId('manuscript-activity-toggle');
+
+    expect(screen.getByText('도구 2회')).toBeTruthy();
+    expect(screen.getByText('실행 중')).toBeTruthy();
+    const failure = screen.getByText('실패 1');
+    expect(StyleSheet.flatten(failure.props.style).color).toBe(LIGHT_COLORS.errorText);
+    expect(screen.queryByText('Read')).toBeNull();
+    expect(screen.queryByText('Bash')).toBeNull();
+    expect(screen.queryByTestId('manuscript-activity-items')).toBeNull();
+    expect(toggle.props.accessibilityState.expanded).toBe(false);
+
+    fireEvent.press(toggle);
+
+    expect(screen.getAllByTestId('tool-event-row-slot')).toHaveLength(2);
+    expect(screen.getByText('Read')).toBeTruthy();
+    expect(screen.getByText('Bash')).toBeTruthy();
+    expect(screen.getByText('실행 사이의 생각 행')).toBeTruthy();
+    expect(screen.queryByText('mcp__soulstream__Read')).toBeNull();
+    expect(screen.queryByText('private preview')).toBeNull();
+
+    const rowToggles = screen.getAllByTestId('tool-event-header-touch');
+    fireEvent.press(rowToggles[0]);
+    expect(screen.getByText('private preview')).toBeTruthy();
+    fireEvent.press(rowToggles[0]);
+    expect(screen.queryByText('private preview')).toBeNull();
+    expect(screen.getByTestId('manuscript-activity-toggle').props.accessibilityState.expanded).toBe(true);
+    fireEvent.press(screen.getByTestId('manuscript-activity-toggle'));
+    expect(screen.queryByTestId('manuscript-activity-items')).toBeNull();
+  });
+
+  it('접힌 줄은 글자·아이콘만 두고 surface와 외곽선을 그리지 않는다', () => {
+    const screen = render(
+      <ManuscriptActivitySegment item={activityItem()} sessionId="session-1" api={null} />,
+    );
+    const header = screen.getByTestId('manuscript-activity-toggle');
+    const style = StyleSheet.flatten(header.props.style);
+    const toolIcon = screen.getByTestId('manuscript-activity-icon');
+    const icon = screen.getByTestId('manuscript-activity-chevron');
+
+    expect(style.borderWidth).toBeUndefined();
+    expect(style.backgroundColor).toBeUndefined();
+    expect(toolIcon.props.name).toBe('construct-outline');
+    expect(toolIcon.props.color).toBe(LIGHT_COLORS.textSecondary);
+    expect(icon.props.name).toBe('chevron-down');
+  });
+});

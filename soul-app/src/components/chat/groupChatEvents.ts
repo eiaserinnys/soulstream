@@ -6,24 +6,31 @@ import {
   type StreamingSlots,
 } from '../../store/chatStore';
 import { placeJevCandidateCaptions, placeTurnSummaries } from './turnSummaryProjection';
+import type { ManuscriptActivityRenderItem } from './manuscriptActivityProjection';
 
-/**
- * 채팅 본문 FlatList의 RenderItem 타입.
- *
- * - `event`: 일반 이벤트(user_message, assistant_message, thinking, system 등).
- *   orphan tool_result는 출력에서 제외 (F-F 가드 — invisible phantom cell 차단).
- * - `tool`: tool_start와 같은 tool_use_id의 tool_result를 한 그룹으로 묶은 항목.
- *   매칭 result가 없으면 `result`는 undefined.
- * - anchored `turn-summary`: 응답 행의 `summaries`에 결합되어 행 key와 수를 유지.
- * - standalone `turn-summary`: 유효 anchor 후보가 전혀 없는 legacy fail-open 캡션.
- * - `typing`: 세션 status='running'일 때 화면 최하단에 추가되는 타이핑 인디케이터.
- */
+/** FlatList items: events, paired tools, turn captions, manuscript activity, and typing. */
 export type TurnSummaryRenderItem = {
   kind: 'turn-summary';
   event: SessionEvent;
   content: string;
   anchorEventId: number;
   key: string;
+};
+
+export type ChatEventRenderItem = {
+  kind: 'event';
+  event: SessionEvent;
+  key: string;
+  summaries?: TurnSummaryRenderItem[];
+  turnUsageCaption?: TurnUsageCaption;
+};
+
+export type ChatToolRenderItem = {
+  kind: 'tool';
+  start: SessionEvent;
+  result?: SessionEvent;
+  key: string;
+  summaries?: TurnSummaryRenderItem[];
 };
 
 export type JevCandidatesRenderItem = {
@@ -55,13 +62,7 @@ export type TurnEndCaptionsRenderItem = {
   summaries?: TurnSummaryRenderItem[];
 };
 
-export type EventRenderItem = {
-  kind: 'event';
-  event: SessionEvent;
-  key: string;
-  summaries?: TurnSummaryRenderItem[];
-  turnUsageCaption?: TurnUsageCaption;
-};
+export type EventRenderItem = ChatEventRenderItem;
 
 export type AgentMessageGroupRenderItem = {
   kind: 'agent-message-group';
@@ -70,19 +71,14 @@ export type AgentMessageGroupRenderItem = {
 };
 
 export type ChatRenderItem =
-  | EventRenderItem
-  | {
-      kind: 'tool';
-      start: SessionEvent;
-      result?: SessionEvent;
-      key: string;
-      summaries?: TurnSummaryRenderItem[];
-    }
+  | ChatEventRenderItem
+  | ChatToolRenderItem
   | TurnSummaryRenderItem
   | JevCandidatesRenderItem
   | TurnUsageRenderItem
   | TurnEndCaptionsRenderItem
   | AgentMessageGroupRenderItem
+  | ManuscriptActivityRenderItem
   | { kind: 'typing'; key: string };
 
 export interface PersistentDisplayProjectionSettings {
@@ -529,6 +525,9 @@ export function placePendingOptimistic(
 
 function renderItemSortKey(item: ChatRenderItem): number {
   if (item.kind === 'typing') return Number.MAX_SAFE_INTEGER;
+  if (item.kind === 'activity') {
+    return Math.max(...item.items.map(renderItemSortKey));
+  }
   if (item.kind === 'turn-summary') return item.anchorEventId;
   if (item.kind === 'jev-candidates') return item.anchorEventId;
   if (item.kind === 'agent-message-group') {

@@ -57,8 +57,8 @@ export function TypingIndicator({ session, presentation = 'default' }: Props) {
         style={presentation === 'manuscript' ? styles.manuscriptContent : styles.bubble}
       >
         <ThinkingOrb
-          inkColor={t.colors.textPrimary}
-          surfaceColor={t.colors.surface}
+          inkColor={presentation === 'manuscript' ? t.colors.textSecondary : t.colors.textPrimary}
+          surfaceColor={presentation === 'manuscript' ? t.colors.textSecondary : t.colors.surface}
         />
         <Text style={styles.label}>생각 중입니다…</Text>
       </View>

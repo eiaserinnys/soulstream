@@ -10,6 +10,7 @@ import {
   streamingSlotRenderItems,
   type ChatRenderItem,
 } from './groupChatEvents';
+import { projectManuscriptActivity } from './manuscriptActivityProjection';
 import { replaceEqualDeep } from '../../lib/structural-sharing';
 import { bottomFollowTargetKey } from './bottomFollow';
 import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
@@ -55,10 +56,6 @@ export function useChatRenderItems({
     },
     [events, pendingOptimistic, persistentDisplaySettings, presentation, showTurnUsage, snapshotStreams],
   );
-  const baseReversedItems = useMemo(
-    () => [...baseRenderItems].reverse(),
-    [baseRenderItems],
-  );
   const streamingRenderItems = useMemo(
     () => streamingSlotRenderItems(streamingSlots),
     [streamingSlots],
@@ -87,16 +84,17 @@ export function useChatRenderItems({
     sessionStatus,
     streamingRenderItems,
   ]);
-  const bottomReversedItems = useMemo(
-    () => [...bottomRenderItems].reverse(),
-    [bottomRenderItems],
+  const chronologicalItems = useMemo(
+    () => [...baseRenderItems, ...bottomRenderItems],
+    [baseRenderItems, bottomRenderItems],
+  );
+  const presentedItems = useMemo(
+    () => projectManuscriptActivity(chronologicalItems, presentation === 'manuscript'),
+    [chronologicalItems, presentation],
   );
   const incomingReversedItems = useMemo(
-    () =>
-      bottomReversedItems.length > 0
-        ? bottomReversedItems.concat(baseReversedItems)
-        : baseReversedItems,
-    [baseReversedItems, bottomReversedItems],
+    () => [...presentedItems].reverse(),
+    [presentedItems],
   );
   // Match by the existing render key, so prepend/append and streaming insertion
   // preserve row identities too. This is only the previous projection, not a store/index.
@@ -113,9 +111,7 @@ export function useChatRenderItems({
     previousItems.current = result;
     return result;
   }, [incomingReversedItems]);
-  const bottomFollowItemKey =
-    bottomFollowTargetKey(bottomRenderItems) ??
-    bottomFollowTargetKey(baseRenderItems);
+  const bottomFollowItemKey = bottomFollowTargetKey(presentedItems);
 
   return { reversedItems, bottomFollowItemKey };
 }

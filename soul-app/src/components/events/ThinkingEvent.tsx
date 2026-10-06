@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import type { SessionEvent } from '../../api/types';
-import { useTokens, type DesignTokens } from '../../theme';
+import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
 
 interface Props {
@@ -22,10 +22,12 @@ export function ThinkingEvent({ event, presentation = 'default' }: Props) {
 
   if (!text) return null;
 
+  if (presentation === 'manuscript') {
+    return <Text testID="thinking-event-text" style={styles.manuscriptText}>{text}</Text>;
+  }
+
   return (
-    <View style={presentation === 'manuscript'
-      ? [styles.wrapper, { borderColor: t.persistentSession.line, backgroundColor: t.persistentSession.panel }]
-      : styles.wrapper}>
+    <View style={styles.wrapper}>
       <TouchableOpacity
         style={styles.header}
         onPress={() => setExpanded((v) => !v)}
@@ -46,7 +48,15 @@ export function ThinkingEvent({ event, presentation = 'default' }: Props) {
 
 function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
   const c = t.colors;
+  const sessionRoles = createSessionVisualRoles(t);
   return StyleSheet.create({
+    manuscriptText: {
+      alignSelf: 'stretch',
+      marginVertical: sessionRoles.chat.messageGap / 2,
+      color: c.textPrimary,
+      fontSize: t.chatFontSize.body,
+      lineHeight: t.chatFontSize.body * 1.6,
+    },
     wrapper: {
       // ToolEvent와 동일하게 어시스턴트 말풍선 본문 시작 지점에 좌측 정렬한다.
       marginLeft: presentation === 'manuscript' ? 0 : t.assistantBubbleIndent,

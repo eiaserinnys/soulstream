@@ -30,11 +30,31 @@ test('본문 검색 anchor는 일반 발화, tool result, turn summary가 속한
       content: 'legacy 요약',
       anchorEventId: 40,
     },
+    {
+      kind: 'activity',
+      key: 'activity-tool-50',
+      items: [
+        {
+          kind: 'tool',
+          key: 'tool-50',
+          start: { id: '50', type: 'tool_start', data: {} },
+          result: { id: '51', type: 'tool_result', data: {} },
+        },
+        {
+          kind: 'event',
+          key: 'evt-52',
+          event: { id: '52', type: 'thinking_delta', data: {} },
+        },
+      ],
+    },
   ];
 
   expect(findChatRenderItemKeyForEvent(items, 10)).toBe('evt-10');
   expect(findChatRenderItemKeyForEvent(items, 21)).toBe('tool-20');
   expect(findChatRenderItemKeyForEvent(items, 30)).toBe('evt-10');
   expect(findChatRenderItemKeyForEvent(items, 40)).toBe('turn-summary-40');
+  expect(findChatRenderItemKeyForEvent(items, 50)).toBe('activity-tool-50');
+  expect(findChatRenderItemKeyForEvent(items, 51)).toBe('activity-tool-50');
+  expect(findChatRenderItemKeyForEvent(items, 52)).toBe('activity-tool-50');
   expect(findChatRenderItemKeyForEvent(items, 99)).toBeNull();
 });
