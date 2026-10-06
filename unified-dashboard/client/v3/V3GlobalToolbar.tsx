@@ -5,7 +5,7 @@ import {
   useGlassSurface,
   useLiquidLens,
 } from "@seosoyoung/soul-ui";
-import { Home, Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
 import { PersistentSessionEntry } from './PersistentSessionEntry';
@@ -42,7 +42,7 @@ export function V3GlobalToolbar({
   if (variant === 'minimal') return <header ref={headerRef} className="persistent-session-header" data-testid="v3-global-toolbar">
     <div className="persistent-session-brand"><span>소울스트림</span><strong>{sessionName}</strong></div>
     <div className="dashboard-toolbar-actions">
-      <DashboardIconCap label="홈" onClick={onOpenHome}><Home/></DashboardIconCap>
+      <DashboardIconCap label="홈" onClick={onOpenHome}><span aria-hidden="true" className="text-base leading-none">⌂</span></DashboardIconCap>
       <ThemeToggle variant="chrome"/>
       <ConfigButton variant="chrome" onClick={onOpenConfig}/>
     </div>

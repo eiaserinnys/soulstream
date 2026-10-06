@@ -18,6 +18,26 @@ describe("v3 icon action cap contract", () => {
     expect(css).toMatch(/\.dashboard-icon-cap \{[\s\S]*width: 44px;[\s\S]*height: 44px;[\s\S]*border-radius: 22px;/);
   });
 
+  it("uses the same text icon contract for all minimal PAS header actions", () => {
+    const toolbar = read("./V3GlobalToolbar.tsx");
+    const theme = read("../../../packages/soul-ui/src/components/ThemeToggle.tsx");
+    const config = read("../components/ConfigButton.tsx");
+    const minimal = toolbar.match(/if \(variant === 'minimal'\)[\s\S]*?<div className="dashboard-toolbar-actions">([\s\S]*?)<\/div>/)?.[1] ?? "";
+    const homeIcon = minimal.match(/<DashboardIconCap label="홈" onClick=\{onOpenHome\}>([\s\S]*?)<\/DashboardIconCap>/)?.[1] ?? "";
+    const themeIcon = theme.match(/function ChromeThemeToggle[\s\S]*?<DashboardIconCap[\s\S]*?>([\s\S]*?)<\/DashboardIconCap>/)?.[1] ?? "";
+    const configIcon = config.match(/function ChromeConfigButton[\s\S]*?<DashboardIconCap[\s\S]*?>([\s\S]*?)<\/DashboardIconCap>/)?.[1] ?? "";
+    const icons = [homeIcon, themeIcon, configIcon];
+
+    expect(minimal.indexOf('label="홈"')).toBeLessThan(minimal.indexOf('<ThemeToggle variant="chrome"/>'));
+    expect(minimal.indexOf('<ThemeToggle variant="chrome"/>')).toBeLessThan(minimal.indexOf('<ConfigButton variant="chrome"'));
+    expect(icons).toHaveLength(3);
+    for (const icon of icons) {
+      expect(icon).toMatch(/^\s*<span aria-hidden="true" className="text-base leading-none">[^<]+<\/span>\s*$/);
+      expect(icon).not.toMatch(/<svg\b/i);
+    }
+    expect(homeIcon).toContain("⌂");
+  });
+
   it.each([
     ["./FolderCardSection.tsx", ["카드 추가"]],
     ["../../../packages/soul-ui/src/folder-status/FolderCompletionAction.tsx", ["actionLabel"]],
