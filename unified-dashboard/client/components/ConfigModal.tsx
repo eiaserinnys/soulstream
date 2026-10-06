@@ -38,6 +38,10 @@ import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
 import { ConfigResultMessage } from "./config/ConfigResultMessage";
 import { useConfigSettings } from "../hooks/useConfigSettings";
+import {
+  readPersistentSessionDevicePreferences,
+  setPersistentSessionOpenOnStart,
+} from "../lib/persistent-session-device-preferences";
 import { LiquidGlassTab } from "./LiquidGlassTab";
 import { ChatTypographyTab } from "./ChatTypographyTab";
 import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
@@ -91,6 +95,10 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
   const [localChat, setLocalChat] = useState<import("@seosoyoung/soul-ui").ChatFontSize>(14);
   const [localGlass, setLocalGlass] = useState(DEFAULT_LIQUID_GLASS_SETTINGS);
   const [selectedTab, setSelectedTab] = useState<string>(initialTab ?? "appearance");
+  const userEmail = typeof user?.email === "string" ? user.email : null;
+  const [pasDevicePreferences, setPasDevicePreferences] = useState(() => userEmail
+    ? readPersistentSessionDevicePreferences(userEmail)
+    : { openOnStart: false, lastSessionId: null });
   const [mobileIndex, setMobileIndex] = useState(!initialTab);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const saveInFlight = useRef(false);
@@ -127,6 +135,9 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
   useEffect(() => {
     if (!open) { setSelectedTab(initialTab ?? "appearance"); setMobileIndex(!initialTab); setDiscardPrompt(false); }
   }, [open]);
+  useEffect(() => {
+    if (open && userEmail) setPasDevicePreferences(readPersistentSessionDevicePreferences(userEmail));
+  }, [open, userEmail]);
 
   const activeCategory = categories.find((c) => c.name === selectedTab);
   const isNonConfigTab = selectedTab === "appearance" ||
@@ -189,6 +200,15 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
               {selectedTab === "appearance" ? <div className="config-appearance">
                 <WallpaperPicker local={Boolean(api)} />
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined}/>
+                {userEmail ? <SettingFieldWidget
+                  className="config-pas-open-on-start"
+                  field={{ key: "pas_open_on_start", field_name: "pas_open_on_start", label: "시작할 때 영구 세션으로 열기", description: "", value: pasDevicePreferences.openOnStart, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false }}
+                  value={String(pasDevicePreferences.openOnStart)}
+                  onChange={(value) => {
+                    const next = setPersistentSessionOpenOnStart(userEmail, value === "true");
+                    setPasDevicePreferences(next);
+                  }}
+                /> : null}
                 <details className="config-advanced"><summary>유리 효과 세부 조정<span>고급</span></summary><LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined}/></details>
               </div> : selectedTab === CHAT_TAB_NAME ? (
                 <ChatTypographyTab preference={api ? {value:localChat,set:setLocalChat} : undefined} />
