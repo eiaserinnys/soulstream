@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
+import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { calculatePersistentSessionLayout, type PersistentSessionRect } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
 import { createApiClient } from '../api/client';
 import { ChatBody } from '../components/chat/ChatBody';
@@ -46,7 +47,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
   const mainRef = React.useRef<View>(null);
   const [app, setApp] = useState<PersistentSessionRect | null>(null);
   const [main, setMain] = useState<PersistentSessionRect | null>(null);
-  const [composer, setComposer] = useState<LayoutRectangle | null>(null);
+  const [composer, setComposer] = useState<{ anchor: LayoutRectangle; box: LayoutRectangle } | null>(null);
   const compact = phone || (app?.height ?? Infinity) < FRAME.compactHeight;
   const headerHeight = compact ? FRAME.compactHeader : FRAME.header;
   const portrait = app ? app.height > app.width : false;
@@ -69,9 +70,8 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
     app,
     header: { left: app.left, top: app.top, width: app.width, height: headerHeight },
     main,
-    baselineBottom: main.top + composer.y + composer.height,
-    rowBottomGap: t.spacing.xs,
-    inputRowHeight, pointerFine: false, showCharacter: display?.show_character === true,
+    baselineBottom: main.top + composer.anchor.y + composer.box.y + composer.box.height,
+    inputRowHeight, rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter: display?.show_character === true,
     phoneConfigured: phone || compact,
   }) : null;
   const back = React.useCallback(() => {
@@ -119,9 +119,9 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
           opacity: phone && scene === 'cards' ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript"
           active={active && scene === 'conversation'} minimumBottomPadding={phone ? 0 : insets.bottom}
-          onComposerLayout={event => {
+          onComposerLayout={(event: LayoutChangeEvent, box: LayoutRectangle) => {
             const layout = event.nativeEvent.layout;
-            if (layout.width > 0 && layout.height > 0) setComposer(layout);
+            if (layout.width > 0 && layout.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor: layout, box });
           }} />
       </View>
       {geometry ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',
@@ -134,11 +134,13 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
       </View> : null}
       {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
         left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,
-        top: geometry.lineY + (inputRowHeight - t.hitTarget.min) / 2 }}>
+        top: geometry.toggle.top + (geometry.toggle.height - t.hitTarget.min) / 2 }}>
         <LiquidGlassButton iconOnly size="compact" variant="paper" disabled={savingCharacter} testID="persistent-session-character-toggle"
           accessibilityLabel={display?.show_character ? '캐릭터 숨기기' : '캐릭터 표시'}
-          accessibilityState={{ selected: display?.show_character === true }} onPress={() => void toggleCharacter()}>
-          <Ionicons testID="persistent-session-character-toggle-icon" name={display?.show_character ? 'person' : 'person-outline'}
+          onPress={() => void toggleCharacter()}>
+          <MaterialCommunityIcons
+            testID="persistent-session-character-toggle-icon"
+            name={display?.show_character ? 'account-off-outline' : 'account-outline'}
             size={t.iconSize.navigation} color={display?.show_character ? t.colors.textPrimary : t.colors.textMuted} />
         </LiquidGlassButton>
       </View> : null}

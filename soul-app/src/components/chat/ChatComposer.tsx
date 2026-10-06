@@ -8,6 +8,8 @@ import {
   TextInput,
   View,
   useWindowDimensions,
+  type LayoutChangeEvent,
+  type LayoutRectangle,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -35,6 +37,7 @@ interface Props {
   minimumBottomPadding?: number;
   embedded?: boolean;
   onInputRef?: (input: TextInput | null) => void;
+  onComposerBoxLayout?: (box: LayoutRectangle, row: LayoutRectangle) => void;
   presentation?: 'default' | 'manuscript';
 }
 
@@ -56,6 +59,7 @@ export function ChatComposer({
   sendAccessibilityLabel = '메시지 보내기',
   sendDisabled = false,
   onInputRef,
+  onComposerBoxLayout,
   presentation = 'default',
 }: Props) {
   React.useEffect(() => {
@@ -79,6 +83,21 @@ export function ChatComposer({
   const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
   const isEmpty = input.length === 0;
   const measurement = useTextInputContentHeight(input, lineHeight);
+  const composerRowLayout = React.useRef<LayoutRectangle | null>(null);
+  const composerBoxLayout = React.useRef<LayoutRectangle | null>(null);
+  const reportComposerBoxLayout = React.useCallback(() => {
+    const row = composerRowLayout.current;
+    const box = composerBoxLayout.current;
+    if (row && box) onComposerBoxLayout?.(box, row);
+  }, [onComposerBoxLayout]);
+  const handleComposerRowLayout = React.useCallback((event: LayoutChangeEvent) => {
+    composerRowLayout.current = event.nativeEvent.layout;
+    reportComposerBoxLayout();
+  }, [reportComposerBoxLayout]);
+  const handleComposerSurfaceLayout = React.useCallback((event: LayoutChangeEvent) => {
+    composerBoxLayout.current = event.nativeEvent.layout;
+    reportComposerBoxLayout();
+  }, [reportComposerBoxLayout]);
   const measuredHeight = input ? measurement.contentHeight : 0;
   const multilineExpanded = measuredHeight > singleLineHeight + 1;
   const inputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight, measuredHeight));
@@ -107,11 +126,13 @@ export function ChatComposer({
         embedded ? { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }
           : { paddingBottom: Math.max(t.spacing.sm, minimumBottomPadding) },
       ]}
+      onLayout={onComposerBoxLayout ? handleComposerRowLayout : undefined}
     >
       <ComposerSurface
         presentation={presentation}
         testID="chat-composer-box"
         style={composerSurfaceStyle}
+        onLayout={onComposerBoxLayout ? handleComposerSurfaceLayout : undefined}
       >
         <View
           testID="chat-composer-content-row"
@@ -238,13 +259,15 @@ function ComposerSurface({
   testID,
   style,
   children,
+  onLayout,
 }: {
   presentation: 'default' | 'manuscript';
   testID: string;
   style: React.ComponentProps<typeof View>['style'];
   children: React.ReactNode;
+  onLayout?: React.ComponentProps<typeof View>['onLayout'];
 }) {
   return presentation === 'manuscript'
-    ? <View testID={testID} style={style}>{children}</View>
-    : <GlassSurface role="glassDense" testID={testID} style={style}>{children}</GlassSurface>;
+    ? <View testID={testID} style={style} onLayout={onLayout}>{children}</View>
+    : <GlassSurface role="glassDense" testID={testID} style={style} onLayout={onLayout}>{children}</GlassSurface>;
 }

@@ -145,9 +145,27 @@ describe('ChatComposer', () => {
     };
     const screen = render(<ChatComposer {...props} input="" presentation="manuscript" />);
     const field = screen.getByTestId('chat-composer-text-input');
+    const box = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
 
     expect(field.props.placeholder).toBeUndefined();
     expect(field.props.accessibilityLabel).toBe('메시지');
+    expect(box.paddingBottom).toBeGreaterThan(0);
+  });
+
+  test('reports the composer box and row rectangles for anchor-relative baseline measurement', () => {
+    const onComposerBoxLayout = jest.fn();
+    const props: any = {
+      input: '', onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(),
+      uploading: false, sending: false, voiceControls: null, presentation: 'manuscript', embedded: true,
+      onComposerBoxLayout,
+    };
+    const screen = render(<ChatComposer {...props} />);
+    const row = { x: 0, y: 14, width: 360, height: 70 };
+    const box = { x: 0, y: 0, width: 360, height: 54 };
+    fireEvent(screen.getByTestId('chat-composer-row'), 'layout', { nativeEvent: { layout: row } });
+    fireEvent(screen.getByTestId('chat-composer-box'), 'layout', { nativeEvent: { layout: box } });
+
+    expect(onComposerBoxLayout).toHaveBeenLastCalledWith(box, row);
   });
 
   test('wrap stacks the row, stays stacked until empty, and preserves mounted controls and input', () => {
