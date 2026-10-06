@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Button, DashboardIconCap, LiquidGlassProvider, ProfileAvatar, SwayCharacter, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
 import { ArrowLeft, Eye, EyeOff, ListTodo, X } from 'lucide-react';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
@@ -22,8 +22,15 @@ import { PersistentSessionTaskList } from './PersistentSessionTaskList';
 import { CardDetailPane } from './CardDetailPane';
 import { CardWorkspace } from './CardWorkspace';
 import { useCardNavigation } from './card-navigation';
+import { V3_CARD_GAP_PX, V3_PANEL_GAP_PX, V3_OUTER_INSET_PX } from './v3-layout-metrics';
 import './v3-dashboard-styles';
 import './persistent-session-screen.css';
+
+const shellStyle = {
+  '--v3-card-gap': `${V3_CARD_GAP_PX}px`,
+  '--v3-panel-gap': `${V3_PANEL_GAP_PX}px`,
+  '--v3-outer-inset': `${V3_OUTER_INSET_PX}px`,
+} as CSSProperties;
 
 export function PersistentSessionScreen({ sessionId }: { sessionId?: string }) {
   return <LiquidGlassProvider renderDefaultCanvas={false}><PersistentSessionContent sessionId={sessionId}/></LiquidGlassProvider>;
@@ -102,7 +109,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   }, [sessionId]);
   const disabled = !activeSessionSummary?.nodeId || nodes.get(activeSessionSummary.nodeId)?.status !== 'connected';
   const lastId = user?.email ? readPersistentSessionDevicePreferences(user.email).lastSessionId : null;
-  return <div ref={appRef} className="v3-shell persistent-session-screen" data-testid="persistent-session-screen">
+  return <div ref={appRef} className="v3-shell persistent-session-screen" style={shellStyle} data-testid="persistent-session-screen">
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" sessionName={resource?.display_name ?? undefined} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}/>
     <main ref={mainRef} className="persistent-session-main">
       {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={lastId === session.session_id} portrait={<ProfileAvatar role="assistant" shape="circle" hasPortrait portraitUrl={persistentSessionPortrait(session.node_id, session.agent_id)} fallbackEmoji="🤖"/>} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}
