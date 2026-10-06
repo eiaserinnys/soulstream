@@ -225,8 +225,8 @@ test('완료 저장 중·실패 시 상세를 유지하고 중복 저장을 막�
 test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydrate하고 트리·탐색을 보존한다', async () => {
   useSessionStore.setState({ sessions: {} });
   const sessions = Array.from({ length: 34 }, (_, index) => ({ agentSessionId: `run-${index}`, displayName: `세션 ${index}`, status: 'completed',
-    createdAt: '2026-09-29T00:00:00Z', updatedAt: '2026-09-30T00:00:00Z', callerSessionId: index ? 'run-0' : null }));
-  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, sessions: sessions.map(({ callerSessionId, ...session }) => session) }),
+    createdAt: '2026-09-29T00:00:00Z', updatedAt: new Date(Date.UTC(2026, 8, 30, 0, index)).toISOString(), callerSessionId: index ? 'run-0' : null }));
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, sessions }),
     getSessionsByIds: jest.fn(async (ids: string[]) => sessions.filter(session => ids.includes(session.agentSessionId))) };
   const onClose = jest.fn();
   const onOpenSession = jest.fn();
@@ -238,6 +238,10 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   const list = screen.UNSAFE_getByType(FlatList);
   expect(screen.queryByTestId('card-detail-scroll')).toBeNull();
   expect(list.props.data).toHaveLength(34);
+  expect(list.props.data[0].session.updatedAt).toBe(sessions[0].updatedAt);
+  const orderBefore = list.props.data.map((row: any) => row.session.agentSessionId);
+  expect(orderBefore).toEqual(['run-0', ...sessions.slice(1).reverse().map(session => session.agentSessionId)]);
+  expect(list.props.data[1].depth).toBe(1);
   const history = screen.UNSAFE_getByType(FolderSessionHistory);
   expect(history.props.sessionIds).toEqual(sessions.map((session) => session.agentSessionId));
   act(() => list.props.onViewableItemsChanged({ viewableItems: [{ item: list.props.data[0] }], changed: [] }));
@@ -246,8 +250,9 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   expect(api.getSessionsByIds.mock.calls.flatMap(([ids]) => ids)).not.toContain('run-33');
   const lastRow = screen.UNSAFE_getByType(FlatList).props.data.find((row: any) => row.session.agentSessionId === 'run-33');
   act(() => list.props.onViewableItemsChanged({ viewableItems: [{ item: lastRow }], changed: [] }));
-  await waitFor(() => expect(useSessionStore.getState().sessions['run-33'].updatedAt).toBe('2026-09-30T00:00:00Z'));
+  await waitFor(() => expect(useSessionStore.getState().sessions['run-33'].updatedAt).toBe(sessions[33].updatedAt));
 
+  expect(screen.UNSAFE_getByType(FlatList).props.data.map((row: any) => row.session.agentSessionId)).toEqual(orderBefore);
   expect(StyleSheet.flatten(screen.getByTestId('task-run-depth-run-0').props.style).marginLeft).toBe(0);
   await userEvent.press(screen.getByTestId('task-run-row-run-0'));
   expect(onClose).toHaveBeenCalled();

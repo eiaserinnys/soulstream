@@ -247,6 +247,7 @@ async function runCardChecksViewport(browser, base, { name, width, height, state
     assert.equal(await page.getByText('화면 캡처 공개 예시', { exact: true }).count(), 0);
     await page.getByTestId('card-check-item-3-evidence-0').click();
     await page.getByTestId('image-viewer-caption-0').waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-testid="image-viewer-caption-0"]')?.getBoundingClientRect().bottom <= innerHeight);
     await shot('image-caption');
     await page.getByLabel('이미지 닫기').click();
     await page.getByTestId('settings-segment-card-detail-sessions').click();

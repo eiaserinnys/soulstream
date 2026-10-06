@@ -177,6 +177,13 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
     if (onOpenSession) onOpenSession(id);
     else useUIStore.getState().openSessionAtEvent(id);
   };
+  const sessionSummaries = useMemo(() => (detail?.sessions ?? []).map((session) => ({
+    ...session,
+    folderId: session.folderId ?? null, displayName: session.displayName ?? null,
+    nodeId: session.nodeId ?? null, sessionType: session.sessionType ?? null,
+    agentId: session.agentId ?? null, predecessorSessionId: session.predecessorSessionId ?? null,
+    reviewState: session.reviewState ?? 'not_required',
+  })), [detail?.sessions]);
   const sessionIds = [...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId] : []), ...(detail?.sessions ?? []).map((session) => session.agentSessionId)])];
   const tabOptions = [
     { value: 'items' as const, label: '확인 항목', count: needsReview || undefined, countBadge: true },
@@ -233,7 +240,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
       </View>
       <View style={styles.bodyFrame}>
         {detail && tab === 'sessions' ? <View testID="card-sessions" style={{ flex: 1, marginBottom: dockBottom }}>
-          <FolderSessionHistory api={api} small virtualized sessionIds={sessionIds} onOpenSession={openSession}
+          <FolderSessionHistory api={api} small virtualized sessionIds={sessionIds} sessionSummaries={sessionSummaries} onOpenSession={openSession}
             contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]} />
         </View> : <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
           contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
