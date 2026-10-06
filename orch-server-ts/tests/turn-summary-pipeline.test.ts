@@ -417,7 +417,11 @@ describe("TurnSummaryPipeline", () => {
     const summarize = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         summary: "위임 결과 요약",
-        standing_instructions: [{ text: "항상 짧게 답하라", confidence: 0.99 }],
+        standing_instructions: [{
+          text: "항상 짧게 답하라",
+          confidence: 0.99,
+          existing_id: null,
+        }],
       }),
       model: "gpt-5.6-luna",
       latencyMs: 1,
@@ -499,8 +503,12 @@ describe("TurnSummaryPipeline", () => {
             confidence: 0.92,
             existing_id: "instruction-existing",
           },
-          { text: "앞으로 응답은 한국어로 해 줘.", confidence: 0.7 },
-          { text: "낮은 신뢰도 항목", confidence: 0.69 },
+          {
+            text: "앞으로 응답은 한국어로 해 줘.",
+            confidence: 0.7,
+            existing_id: null,
+          },
+          { text: "낮은 신뢰도 항목", confidence: 0.69, existing_id: null },
         ],
       }),
       model: "gpt-5.6-luna",
@@ -645,7 +653,11 @@ describe("TurnSummaryPipeline", () => {
         summarize: vi.fn().mockResolvedValue({
           content: JSON.stringify({
             summary: "선호를 기록했다.",
-            standing_instructions: [{ text: "간결하게 답해 줘.", confidence: 0.9 }],
+            standing_instructions: [{
+              text: "간결하게 답해 줘.",
+              confidence: 0.9,
+              existing_id: null,
+            }],
           }),
           model: "gpt-5.6-luna",
           latencyMs: 1,

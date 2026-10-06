@@ -49,7 +49,7 @@ type TurnSummarySkipReason =
   | "already_summarized"
   | "session_not_summarizable";
 
-const PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA = {
+export const PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["summary", "standing_instructions"],
@@ -60,11 +60,11 @@ const PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["text", "confidence"],
+        required: ["text", "confidence", "existing_id"],
         properties: {
           text: { type: "string", minLength: 1 },
           confidence: { type: "number" },
-          existing_id: { type: "string" },
+          existing_id: { type: ["string", "null"] },
         },
       },
     },
@@ -528,7 +528,8 @@ function parseStructuredTurnSummary(
       rawInstruction.text.trim().length === 0 ||
       typeof rawInstruction.confidence !== "number" ||
       !Number.isFinite(rawInstruction.confidence) ||
-      (rawInstruction.existing_id !== undefined &&
+      !Object.hasOwn(rawInstruction, "existing_id") ||
+      (rawInstruction.existing_id !== null &&
         typeof rawInstruction.existing_id !== "string")
     ) {
       return null;
@@ -536,7 +537,7 @@ function parseStructuredTurnSummary(
     standingInstructions.push({
       text: rawInstruction.text.trim(),
       confidence: rawInstruction.confidence,
-      ...(rawInstruction.existing_id === undefined
+      ...(typeof rawInstruction.existing_id !== "string"
         ? {}
         : { existingId: rawInstruction.existing_id }),
     });

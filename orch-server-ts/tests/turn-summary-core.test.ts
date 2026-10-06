@@ -24,6 +24,8 @@ import {
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
 import { TurnSummaryProviderRouter } from
   "../src/turn-summary/turn_summary_provider_router.js";
+import * as turnSummaryPipelineModule from
+  "../src/turn-summary/turn_summary_pipeline.js";
 import {
   buildTurnSummaryPrompt,
   truncateCodepoints,
@@ -124,6 +126,46 @@ afterEach(() => {
 });
 
 describe("turn summary prompt", () => {
+  it("uses a strict-compatible PAS output schema", () => {
+    const schema = Reflect.get(
+      turnSummaryPipelineModule,
+      "PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA",
+    );
+    const objectSchemas: Record<string, unknown>[] = [];
+
+    const visit = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      if (value === null || typeof value !== "object") return;
+      const record = value as Record<string, unknown>;
+      if (record.type === "object") {
+        objectSchemas.push(record);
+        expect(record.additionalProperties).toBe(false);
+        const properties = record.properties as Record<string, unknown>;
+        const required = record.required as string[];
+        expect([...required].sort()).toEqual(Object.keys(properties).sort());
+      }
+      Object.values(record).forEach(visit);
+    };
+
+    visit(schema);
+    expect(objectSchemas.length).toBeGreaterThan(0);
+    const outputProperties = (schema as Record<string, unknown>)
+      .properties as Record<string, unknown>;
+    const standingInstructions = outputProperties.standing_instructions as
+      Record<string, unknown>;
+    const instructionSchema = standingInstructions.items as
+      Record<string, unknown>;
+    const instructionProperties = instructionSchema.properties as
+      Record<string, unknown>;
+    expect(instructionSchema.required).toContain("existing_id");
+    expect(instructionProperties.existing_id).toEqual({
+      type: ["string", "null"],
+    });
+  });
+
   it("truncates on Unicode codepoint boundaries", () => {
     expect(truncateCodepoints("가😀나다", 3)).toBe("가😀나");
   });
@@ -159,6 +201,7 @@ describe("turn summary prompt", () => {
     expect(prompt).toContain("앞으로 계속 적용되는 규칙이나 선호");
     expect(prompt).toContain("에이전트 발언에서는 뽑지 않는다");
     expect(prompt).toContain("existing_id");
+    expect(prompt).toContain("새 지시는 existing_id를 null로 반환한다");
   });
 
   it("forwards optional summarizer output options through the provider router", async () => {
