@@ -31,6 +31,7 @@ export function TurnEndCaptions({ usage, summaries }: Props) {
               title={usage.title}
               expandedTitle={usage.expandedTitle}
               expanded={usageExpanded}
+              titleCanShrink={false}
               onToggle={() => setUsageExpanded((value) => !value)}
             />
           ) : null}
@@ -71,12 +72,14 @@ function CaptionHeadButton({
   expandedTitle,
   contentWidth,
   expanded,
+  titleCanShrink,
   onToggle,
 }: {
   title: string;
   expandedTitle?: string;
   contentWidth?: number;
   expanded: boolean;
+  titleCanShrink?: boolean;
   onToggle(): void;
 }) {
   const [pressed, setPressed] = useState(false);
@@ -90,13 +93,14 @@ function CaptionHeadButton({
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       activeOpacity={1}
-      frameStyle={[{ maxWidth: '100%' }, contentWidthStyle]}
+      frameStyle={[{ maxWidth: '100%', flexShrink: 0 }, contentWidthStyle]}
       surfaceStyle={[{ alignSelf: 'flex-end', maxWidth: '100%' }, contentWidth ? { width: '100%' } : undefined]}
     >
       <CollapsibleCaptionHeader
         title={title}
         expandedTitle={expandedTitle}
         expanded={expanded}
+        titleCanShrink={titleCanShrink}
         pressed={pressed}
         align="end"
         alignmentInset="content"

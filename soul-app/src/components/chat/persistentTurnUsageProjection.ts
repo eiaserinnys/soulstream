@@ -37,13 +37,20 @@ export function projectPersistentTurnUsage(
     }
     return [item];
   });
+  const completeIndexById = new Map<number, number>();
+  manuscriptItems.forEach((item, index) => {
+    if (item.kind !== 'event' || item.event.type !== 'complete') return;
+    const id = positivePayloadEventId(Number(item.event.id));
+    if (id !== null) completeIndexById.set(id, index);
+  });
   const summariesByCompleteIndex = new Map<number, TurnSummaryRenderItem[]>();
   const fallbackSummariesByAnchorIndex = new Map<number, TurnSummaryRenderItem[]>();
   const pairedSummaryKeys = new Set<string>();
 
   const pairSummary = (summary: TurnSummaryRenderItem, anchorIndex: number) => {
     if (summary.event.type !== 'turn_summary') return;
-    const completeIndex = findFirstCompleteAfterFinalResponse(manuscriptItems, summary);
+    const completeId = findFirstCompleteAfterFinalResponse(events, summary);
+    const completeIndex = completeId === null ? null : completeIndexById.get(completeId) ?? null;
     const target = completeIndex === null
       ? fallbackSummariesByAnchorIndex
       : summariesByCompleteIndex;
@@ -58,7 +65,8 @@ export function projectPersistentTurnUsage(
     if (item.kind === 'event' || item.kind === 'tool') {
       item.summaries?.forEach((summary) => pairSummary(summary, index));
     } else if (item.kind === 'turn-summary' && item.event.type === 'turn_summary') {
-      const completeIndex = findFirstCompleteAfterFinalResponse(manuscriptItems, item);
+      const completeId = findFirstCompleteAfterFinalResponse(events, item);
+      const completeIndex = completeId === null ? null : completeIndexById.get(completeId) ?? null;
       if (completeIndex !== null) {
         const bucket = summariesByCompleteIndex.get(completeIndex) ?? [];
         bucket.push(item);
@@ -124,18 +132,20 @@ export function projectPersistentTurnUsage(
 }
 
 function findFirstCompleteAfterFinalResponse(
-  items: readonly ChatRenderItem[],
+  events: readonly SessionEvent[],
   summary: TurnSummaryRenderItem,
 ): number | null {
   const finalResponseEventId = positivePayloadEventId(summary.event.data?.final_response_event_id);
   if (finalResponseEventId === null) return null;
-  const finalResponseIndex = items.findIndex((item) => renderItemEventIds(item).includes(finalResponseEventId));
+  const finalResponseIndex = events.findIndex((event) => positivePayloadEventId(Number(event.id)) === finalResponseEventId);
   if (finalResponseIndex === -1) return null;
 
-  for (let index = finalResponseIndex + 1; index < items.length; index += 1) {
-    const rowEvents = itemEvents(items[index]);
-    if (rowEvents.some((event) => isTurnBoundary(event.type))) return null;
-    if (rowEvents.some((event) => event.type === 'complete')) return index;
+  for (let index = finalResponseIndex + 1; index < events.length; index += 1) {
+    const event = events[index];
+    if (isTurnBoundary(event.type)) return null;
+    if (event.type === 'complete') {
+      return positivePayloadEventId(Number(event.id));
+    }
   }
   return null;
 }
@@ -144,27 +154,6 @@ function positivePayloadEventId(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
     ? value
     : null;
-}
-
-function renderItemEventIds(item: ChatRenderItem): number[] {
-  if (item.kind === 'event') {
-    const id = Number(item.event.id);
-    return Number.isSafeInteger(id) && id > 0 ? [id] : [];
-  }
-  if (item.kind === 'tool') {
-    return [item.start, item.result].flatMap((event) => {
-      if (!event) return [];
-      const id = Number(event.id);
-      return Number.isSafeInteger(id) && id > 0 ? [id] : [];
-    });
-  }
-  return [];
-}
-
-function itemEvents(item: ChatRenderItem): SessionEvent[] {
-  if (item.kind === 'event') return [item.event];
-  if (item.kind === 'tool') return [item.start, ...(item.result ? [item.result] : [])];
-  return [];
 }
 
 function isTurnBoundary(type: SessionEvent['type']): boolean {

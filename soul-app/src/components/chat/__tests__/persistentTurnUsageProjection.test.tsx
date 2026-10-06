@@ -158,6 +158,23 @@ describe('projectPersistentTurnUsage', () => {
     ]);
   });
 
+  test('does not pair across a hidden generation boundary', () => {
+    const events = [
+      event('2', 'assistant_message', { text: '이전 답변' }),
+      event('3', 'generation_started', { generation: 2 }),
+      event('4', 'complete', { usage: { input_tokens: 10, output_tokens: 2 }, turn_cost_usd: 0.4 }),
+      event('40', 'turn_summary', { content: '이전 턴 요약', final_response_event_id: 2, parent_event_id: 2 }),
+    ];
+
+    const items = project(events);
+
+    expect(items.map((item) => item.key)).toEqual(['evt-2', 'turn-summary-40', 'evt-4']);
+    expect(turnEndItems(items)).toEqual([
+      expect.objectContaining({ key: 'turn-summary-40', summaries: [expect.objectContaining({ content: '이전 턴 요약' })] }),
+      expect.objectContaining({ key: 'evt-4', usage: expect.any(Object) }),
+    ]);
+  });
+
   test('keeps a summary-only row at the current position when its complete is outside loaded history', () => {
     const events = [
       event('2', 'assistant_message', { text: '로드된 응답' }),

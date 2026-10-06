@@ -43,6 +43,7 @@ import { ReviewCardChecks } from './ReviewCardChecks';
 import { ReviewPersistent } from './ReviewPersistent';
 import { ReviewPersistentTaskListN7 } from './ReviewPersistentTaskListN7';
 import { ReviewTurnEndCaptions } from './ReviewTurnEndCaptions';
+import { ReviewAgentMessageGroup } from './ReviewAgentMessageGroup';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -140,8 +141,15 @@ function Gallery() {
   if (section === 'nativeSettings' || section === 'pasSettings') return <ReviewNativeSettings/>;
   if (section === 'persistent') {
     const sample = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('sample') : null;
+    const persistentContent = sample === 'n7-task-list'
+      ? <ReviewPersistentTaskListN7 />
+      : sample === 'turn-end'
+        ? <ReviewTurnEndCaptions />
+        : sample === 'agent-messages'
+          ? <ReviewAgentMessageGroup />
+          : <ReviewPersistent />;
     return <View style={{ flex: 1, backgroundColor: t.colors.background }}>
-      {sample === 'n7-task-list' ? <ReviewPersistentTaskListN7 /> : sample === 'turn-end' ? <ReviewTurnEndCaptions /> : <ReviewPersistent />}
+      {persistentContent}
     </View>;
   }
   if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;

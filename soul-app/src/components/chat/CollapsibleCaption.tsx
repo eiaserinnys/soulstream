@@ -18,12 +18,22 @@ interface CollapsibleCaptionHeaderProps {
   expandedTitle?: string;
   expanded: boolean;
   pressed?: boolean;
+  titleCanShrink?: boolean;
   align?: 'start' | 'end';
   alignmentInset?: 'avatar' | 'content';
 }
 
 interface CollapsibleCaptionBodyProps {
   children: ReactNode;
+  align?: 'start' | 'end';
+  alignmentInset?: 'avatar' | 'content';
+}
+
+interface CollapsibleCaptionTriggerProps {
+  title: string;
+  expandedTitle?: string;
+  expanded: boolean;
+  onToggle(): void;
   align?: 'start' | 'end';
   alignmentInset?: 'avatar' | 'content';
 }
@@ -83,6 +93,7 @@ export function CollapsibleCaptionHeader({
   expandedTitle,
   expanded,
   pressed = false,
+  titleCanShrink = true,
   align = 'start',
   alignmentInset = 'avatar',
 }: CollapsibleCaptionHeaderProps) {
@@ -94,7 +105,7 @@ export function CollapsibleCaptionHeader({
         {...(expanded && expandedTitle !== undefined
           ? {}
           : { numberOfLines: 1 as const, ellipsizeMode: 'tail' as const })}
-        style={[styles.title, pressed && styles.titlePressedText]}
+        style={[styles.title, !titleCanShrink && styles.titleNoShrink, pressed && styles.titlePressedText]}
       >
         {expanded ? expandedTitle ?? title : title}
       </Text>
@@ -103,6 +114,45 @@ export function CollapsibleCaptionHeader({
         color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
       />
     </View>
+  );
+}
+
+/** Interactive header only, for disclosures whose expanded content has its own controls. */
+export function CollapsibleCaptionTrigger({
+  title,
+  expandedTitle,
+  expanded,
+  onToggle,
+  align = 'start',
+  alignmentInset = 'avatar',
+}: CollapsibleCaptionTriggerProps) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <CompactTouchTarget
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ expanded }}
+      onPress={onToggle}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      activeOpacity={1}
+      frameStyle={styles.touchFrame}
+      surfaceStyle={styles.touchSurface}
+    >
+      <View style={styles.contentStack}>
+        <CollapsibleCaptionHeader
+          title={title}
+          expandedTitle={expandedTitle}
+          expanded={expanded}
+          pressed={pressed}
+          align={align}
+          alignmentInset={alignmentInset}
+        />
+      </View>
+    </CompactTouchTarget>
   );
 }
 
@@ -186,6 +236,9 @@ function makeStyles(t: DesignTokens, align: 'start' | 'end', alignmentInset: 'av
       color: t.colors.textPlaceholder,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
+    },
+    titleNoShrink: {
+      flexShrink: 0,
     },
     titlePressedText: {
       color: t.colors.textSecondary,

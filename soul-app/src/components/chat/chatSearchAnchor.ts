@@ -27,6 +27,10 @@ export function renderItemContainsEventId(
       item.summaries?.some((summary) => Number(summary.event.id) === eventId) === true
     );
   }
+  if (item.kind === 'agent-message-group') {
+    return item.events.some((row) => Number(row.event.id) === eventId
+      || row.summaries?.some((summary) => Number(summary.event.id) === eventId) === true);
+  }
   return (
     Number(item.event.id) === eventId ||
     item.summaries?.some((summary) => Number(summary.event.id) === eventId) === true

@@ -55,14 +55,22 @@ export type TurnEndCaptionsRenderItem = {
   summaries?: TurnSummaryRenderItem[];
 };
 
+export type EventRenderItem = {
+  kind: 'event';
+  event: SessionEvent;
+  key: string;
+  summaries?: TurnSummaryRenderItem[];
+  turnUsageCaption?: TurnUsageCaption;
+};
+
+export type AgentMessageGroupRenderItem = {
+  kind: 'agent-message-group';
+  events: EventRenderItem[];
+  key: string;
+};
+
 export type ChatRenderItem =
-  | {
-      kind: 'event';
-      event: SessionEvent;
-      key: string;
-      summaries?: TurnSummaryRenderItem[];
-      turnUsageCaption?: TurnUsageCaption;
-    }
+  | EventRenderItem
   | {
       kind: 'tool';
       start: SessionEvent;
@@ -74,11 +82,52 @@ export type ChatRenderItem =
   | JevCandidatesRenderItem
   | TurnUsageRenderItem
   | TurnEndCaptionsRenderItem
+  | AgentMessageGroupRenderItem
   | { kind: 'typing'; key: string };
 
 export interface PersistentDisplayProjectionSettings {
   showGenerationSeparator: boolean;
   showJevCandidates: boolean;
+}
+
+function isAgentUserUtterance(event: SessionEvent): boolean {
+  const data = event.data as Record<string, unknown> | undefined;
+  const callerInfo = data?.caller_info;
+  const userUtterance = event.type === 'user_message'
+    || event.type === 'intervention_sent'
+    || (event.type === 'realtime_transcript' && data?.role === 'user');
+  return userUtterance
+    && callerInfo !== null
+    && typeof callerInfo === 'object'
+    && (callerInfo as Record<string, unknown>).source === 'agent';
+}
+
+/** Fold consecutive agent-authored user utterance rows without changing other presentations. */
+export function groupAgentUserUtterances(items: ChatRenderItem[]): ChatRenderItem[] {
+  const out: ChatRenderItem[] = [];
+  let pending: EventRenderItem[] = [];
+
+  const flush = () => {
+    if (pending.length === 0) return;
+    out.push({
+      kind: 'agent-message-group',
+      events: pending,
+      key: `agent-message-group-${pending[0].key}`,
+    });
+    pending = [];
+  };
+
+  for (const item of items) {
+    if (item.kind === 'event' && isAgentUserUtterance(item.event)) {
+      pending.push(item);
+      continue;
+    }
+    flush();
+    out.push(item);
+  }
+
+  flush();
+  return out;
 }
 
 function streamingIdentity(event: SessionEvent): string | null {
@@ -482,6 +531,9 @@ function renderItemSortKey(item: ChatRenderItem): number {
   if (item.kind === 'typing') return Number.MAX_SAFE_INTEGER;
   if (item.kind === 'turn-summary') return item.anchorEventId;
   if (item.kind === 'jev-candidates') return item.anchorEventId;
+  if (item.kind === 'agent-message-group') {
+    return Math.min(...item.events.map((event) => Number(event.event.id)));
+  }
   if (item.kind === 'tool') {
     return Math.max(Number(item.start.id), Number(item.result?.id ?? item.start.id));
   }
