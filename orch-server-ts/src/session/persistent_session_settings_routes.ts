@@ -1,8 +1,8 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import { mapNodeCommandError } from "../http/api_errors.js";
+import { PersistentSessionApiError } from "./persistent_session_api_error.js";
 import {
-  PersistentSessionApiError,
   type PersistentSessionSettingsService,
 } from "./persistent_session_settings_service.js";
 import { SessionCommandRouteError } from "./session_command_router.js";

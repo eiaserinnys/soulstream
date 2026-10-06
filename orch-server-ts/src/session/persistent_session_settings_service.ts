@@ -7,13 +7,6 @@ import {
   type PersistentModelSelection,
   type PersistentSettingsPatch,
 } from "@soulstream/wire-schema/persistent-session-settings";
-import {
-  parsePersistentInstructionsApplyPayload,
-  readPersistentInstructions,
-  type PersistentInstruction,
-  type PersistentInstructionsApplyPayload,
-} from "@soulstream/wire-schema/persistent-session-instructions";
-
 import type { ServiceCaller } from "../auth/service_caller.js";
 import type {
   HostPersistentSessionRow,
@@ -40,6 +33,8 @@ import {
   type PersistentSessionResource,
   type PersistentSettingsView,
 } from "./persistent_session_resource.js";
+import { PersistentSessionApiError } from "./persistent_session_api_error.js";
+import { PersistentSessionInstructionsService } from "./persistent_session_instructions_service.js";
 
 /** New PAS defaults live here and nowhere else; the screens only render what `create_defaults` returns. */
 export const PERSISTENT_CREATE_NODE_ID = "eiaserinnys";
@@ -76,33 +71,17 @@ export type PersistentSessionSettingsServiceDeps = {
 
 type CallerRequest = FastifyRequest | ServiceCaller;
 type SettingsAck = { persistent: boolean; modelChange: "none" | "next_execution_start" };
-type PersistentInstructionsAck = NodeCommandResponse & {
-  type: "persistent_session_instructions_applied";
-  results: Array<{
-    status: "ok" | "cap_reached" | "not_found";
-    item?: PersistentInstruction;
-  }>;
-};
-type PersistentInstructionView = Pick<
-  PersistentInstruction,
-  "id" | "text" | "source_turns" | "created_at" | "updated_at" | "origin"
->;
-
-/** Failure with the HTTP status and public error code the route should answer with. */
-export class PersistentSessionApiError extends Error {
-  constructor(
-    readonly statusCode: number,
-    readonly code: string,
-    message: string,
-    readonly extra: Record<string, unknown> = {},
-  ) {
-    super(message);
-    this.name = "PersistentSessionApiError";
-  }
-}
 
 export class PersistentSessionSettingsService {
-  constructor(private readonly deps: PersistentSessionSettingsServiceDeps) {}
+  private readonly instructions: PersistentSessionInstructionsService;
+
+  constructor(private readonly deps: PersistentSessionSettingsServiceDeps) {
+    this.instructions = new PersistentSessionInstructionsService({
+      reads: deps.reads,
+      access: deps.access,
+      commands: deps.commands,
+    });
+  }
 
   async list(request: CallerRequest) {
     const rows = await (await this.deps.reads()).listPersistentSessions();
@@ -123,15 +102,8 @@ export class PersistentSessionSettingsService {
   async listInstructions(
     request: CallerRequest,
     sessionId: string,
-  ): Promise<{ instructions: PersistentInstructionView[] }> {
-    const row = await this.requirePersistentRow(request, sessionId);
-    const instructions = readPersistentInstructions(row.metadata)
-      .filter((instruction) => instruction.status === "active")
-      .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
-      .map(({ id, text, source_turns, created_at, updated_at, origin }) => ({
-        id, text, source_turns, created_at, updated_at, origin,
-      }));
-    return { instructions };
+  ) {
+    return this.instructions.list(request, sessionId);
   }
 
   async addInstruction(
@@ -139,14 +111,7 @@ export class PersistentSessionSettingsService {
     sessionId: string,
     input: unknown,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const payload = parseInstructionAddBody(sessionId, input);
-    await this.requirePersistentRow(request, sessionId);
-    const result = firstInstructionResult(await this.sendInstructions(payload));
-    if (result.status === "cap_reached") return { status: 409, body: { error: "cap_reached" } };
-    if (result.status !== "ok" || result.item === undefined) {
-      throw new Error(`Unexpected persistent instruction add result: ${result.status}`);
-    }
-    return { status: 201, body: { instruction: result.item } };
+    return this.instructions.add(request, sessionId, input);
   }
 
   async updateInstruction(
@@ -155,14 +120,7 @@ export class PersistentSessionSettingsService {
     instructionId: string,
     input: unknown,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
-    const payload = parseInstructionUpdateBody(sessionId, instructionId, input);
-    await this.requirePersistentRow(request, sessionId);
-    const result = firstInstructionResult(await this.sendInstructions(payload));
-    if (result.status === "not_found") return { status: 404, body: { error: "not_found" } };
-    if (result.status !== "ok" || result.item === undefined) {
-      throw new Error(`Unexpected persistent instruction update result: ${result.status}`);
-    }
-    return { status: 200, body: { instruction: result.item } };
+    return this.instructions.update(request, sessionId, instructionId, input);
   }
 
   async update(request: CallerRequest, sessionId: string, input: unknown) {
@@ -240,18 +198,6 @@ export class PersistentSessionSettingsService {
     return row;
   }
 
-  private async requirePersistentRow(request: CallerRequest, sessionId: string): Promise<HostSessionRow> {
-    await this.deps.access.requireSessionAccess({ request, sessionId });
-    const row = await this.requireRow(sessionId);
-    if (row.session_type === "llm") {
-      throw new PersistentSessionApiError(422, "INVALID_REQUEST", "LLM sessions cannot be persistent");
-    }
-    if (!readPersistentEnabled(row.metadata)) {
-      throw new PersistentSessionApiError(409, "NOT_PERSISTENT", "Session is not a persistent agent session");
-    }
-    return row;
-  }
-
   private async resource(row: Record<string, unknown>): Promise<PersistentSessionResource> {
     const names = await this.agentNames([row]);
     return buildPersistentSessionResource(row, names.get(agentKey(row)) ?? null);
@@ -274,24 +220,6 @@ export class PersistentSessionSettingsService {
       persistent: response.persistent === true,
       modelChange: response.modelChange === "next_execution_start" ? "next_execution_start" : "none",
     };
-  }
-
-  private async sendInstructions(payload: PersistentInstructionsApplyPayload): Promise<PersistentInstructionsAck["results"]> {
-    const command: ExistingSessionActionPayload<"apply_persistent_session_instructions"> = {
-      type: "apply_persistent_session_instructions",
-      agentSessionId: payload.session_id,
-      origin: payload.origin,
-      ops: payload.ops,
-      ...(payload.anchor === undefined ? {} : { anchor: payload.anchor }),
-    };
-    const routed = await this.deps.commands.router.routeExistingSessionPendingCommand(command, {
-      timeoutMs: this.deps.commands.timeoutMs,
-    });
-    const response = await this.deps.commands.bridge.sendPendingCommand(routed) as PersistentInstructionsAck;
-    if (response.type !== "persistent_session_instructions_applied") {
-      throw new Error(`Unexpected persistent instruction response: ${response.type}`);
-    }
-    return response.results;
   }
 
   /** Existing default (stored, else the running model) decides whether this save changes the preset or keeps the effort. */
@@ -440,50 +368,6 @@ type UpdateBody = {
   enabled?: boolean;
   settings?: PersistentSettingsPatch;
 };
-
-function parseInstructionAddBody(sessionId: string, input: unknown): PersistentInstructionsApplyPayload {
-  const body = requireObjectBody(input);
-  rejectInstructionUnknownKeys(body, ["text"]);
-  return parseInstructionPayload(sessionId, { op: "add", text: body.text });
-}
-
-function parseInstructionUpdateBody(
-  sessionId: string,
-  instructionId: string,
-  input: unknown,
-): PersistentInstructionsApplyPayload {
-  const body = requireObjectBody(input);
-  rejectInstructionUnknownKeys(body, ["text", "status"]);
-  return parseInstructionPayload(sessionId, {
-    op: "update",
-    id: instructionId,
-    ...(body.text === undefined ? {} : { text: body.text }),
-    ...(body.status === undefined ? {} : { status: body.status }),
-  });
-}
-
-function parseInstructionPayload(sessionId: string, op: Record<string, unknown>): PersistentInstructionsApplyPayload {
-  const parsed = parsePersistentInstructionsApplyPayload({
-    session_id: sessionId,
-    origin: "user",
-    ops: [op],
-  });
-  if (!parsed.ok) throw new PersistentSessionApiError(400, "INVALID_REQUEST", parsed.message);
-  return parsed.value;
-}
-
-function rejectInstructionUnknownKeys(body: Record<string, unknown>, allowed: readonly string[]): void {
-  const unknown = Object.keys(body).find((key) => !allowed.includes(key));
-  if (unknown !== undefined) {
-    throw new PersistentSessionApiError(400, "INVALID_REQUEST", `${unknown} is not supported`);
-  }
-}
-
-function firstInstructionResult(results: PersistentInstructionsAck["results"]) {
-  const result = results[0];
-  if (result === undefined) throw new Error("Persistent instruction ACK returned no result");
-  return result;
-}
 
 function parseUpdateBody(input: unknown): UpdateBody {
   const body = requireObjectBody(input);
