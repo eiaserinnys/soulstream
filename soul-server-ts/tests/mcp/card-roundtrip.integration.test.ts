@@ -160,7 +160,7 @@ describe("card orchestrator MCP roundtrip", () => {
     expect(comment.structuredContent).not.toHaveProperty("body");
     const now=await call("update_card_now",{card_id:"card-1",now:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"},context);
     expect(now.isError).not.toBe(true);
-    expect(now.structuredContent).toMatchObject({card:{id:"card-1",number:1,version:expect.any(Number),status:"todo"}});
+    expect(now.structuredContent).toMatchObject({card:{id:"card-1",number:1,version:6,status:"todo"}});
     const note=await call("add_card_note",{card_id:"card-1",text:"화면 주소와 구현 기록"},context);
     expect(note.isError).not.toBe(true);
     expect(note.structuredContent).toMatchObject({id:expect.any(String),createdAt:expect.any(String)});
