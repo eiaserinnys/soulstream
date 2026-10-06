@@ -58,7 +58,12 @@ export function TurnEndCaptions({
           {usageCaption.contextText && <div className="min-w-0 whitespace-normal break-keep break-words text-xs text-muted-foreground">{usageCaption.contextText}</div>}
           {usageCaption.completeText && <div className="min-w-0 whitespace-normal break-keep break-words text-xs text-muted-foreground">{usageCaption.completeText}</div>}
         </CollapsibleCaptionBody>}
-        {summaryCaption && <CollapsibleCaptionBody id={summaryBodyId} expanded={summaryExpanded} align="end">
+        {summaryCaption && <CollapsibleCaptionBody
+          id={summaryBodyId}
+          expanded={summaryExpanded}
+          align="end"
+          className={usageCaption && usageExpanded && summaryExpanded ? "mt-2" : undefined}
+        >
           <div className="min-w-0 whitespace-pre-line break-keep break-words text-xs text-muted-foreground">{summaryCaption.content}</div>
         </CollapsibleCaptionBody>}
       </div>

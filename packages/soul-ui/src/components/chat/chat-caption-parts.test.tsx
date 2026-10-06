@@ -127,6 +127,41 @@ describe("chat caption parts", () => {
     expect(divider?.className).not.toContain("px-3");
   });
 
+  it("separates turn-end usage and summary bodies by one spacing token", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <TurnEndCaptions
+        usageCaption={{ title: "사용량", contextText: "컨텍스트", completeText: "턴 완료" }}
+        summaryCaption={{ treeNodeId: "summary", content: "요약 내용" }}
+      />,
+    ));
+
+    const headers = container.querySelectorAll("button");
+    act(() => {
+      headers[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      headers[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const bodies = container.querySelectorAll("[id]");
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]?.className).toContain("mt-0.5");
+    expect(bodies[1]?.className).toContain("mt-2");
+  });
+
+  it("keeps the summary-only body at the default caption spacing", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <TurnEndCaptions summaryCaption={{ treeNodeId: "summary", content: "요약 내용" }} />,
+    ));
+
+    expect(container.querySelector("[id]")?.className).toContain("mt-0.5");
+  });
+
   // jsdom does not load Tailwind CSS; browser captures verify the rendered bounds.
   it.each([
     ["content", "end", "-me-px", "!pe-0", "-me-2"],

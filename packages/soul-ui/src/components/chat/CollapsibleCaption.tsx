@@ -3,6 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { DisclosureActionIcon } from "../DisclosureActionIcon";
 import { Button } from "../ui/button";
+import { cn } from "../../lib/cn";
 
 export interface CollapsibleCaptionProps {
   title: string;
@@ -59,14 +60,16 @@ export function CollapsibleCaptionBody({
   expanded,
   align,
   children,
+  className,
 }: {
   id: string;
   expanded: boolean;
   align: "start" | "end";
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className={`mt-0.5 min-w-0 space-y-0.5 ${align === "end" ? "max-w-full text-right" : ""}`} hidden={!expanded} id={id}>
+    <div className={cn(className ?? "mt-0.5", "min-w-0 space-y-0.5", align === "end" && "max-w-full text-right")} hidden={!expanded} id={id}>
       {children}
     </div>
   );

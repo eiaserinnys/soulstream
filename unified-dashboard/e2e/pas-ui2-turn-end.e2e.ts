@@ -7,7 +7,7 @@ const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/,
 const output = path.resolve("../../../.local/artifacts", stamp + "-pas-ui2-turn-end-web");
 mkdirSync(output, { recursive: true });
 
-for (const width of [1440, 340]) {
+for (const width of [1440, 340, 1280, 390]) {
   test("PAS turn end captions " + width + "px", async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
@@ -108,8 +108,9 @@ for (const width of [1440, 340]) {
     ]);
     expect(bodyGeometry[0]).not.toBeNull();
     expect(bodyGeometry[1]).not.toBeNull();
-    expect(bodyGeometry[0]!.y + bodyGeometry[0]!.height).toBeLessThanOrEqual(bodyGeometry[1]!.y);
-    await sample.screenshot({ path: path.join(output, String(width) + "-expanded.png"), animations: "disabled" });
+    const bodyGap = bodyGeometry[1]!.y - (bodyGeometry[0]!.y + bodyGeometry[0]!.height);
+    expect(bodyGap).toBe(8);
+    await sample.screenshot({ path: path.join(output, String(width) + "-both-open.png"), animations: "disabled" });
 
     const manuscript = page.getByTestId("manuscript-review-column");
     await expect(manuscript).toBeVisible();
@@ -133,6 +134,6 @@ for (const width of [1440, 340]) {
     await expect(defaultSummary).toContainText("기존 요약");
     await expect(defaultSummary.getByRole("button")).toHaveCount(0);
     await defaultSummary.screenshot({ path: path.join(output, String(width) + "-default-summary.png"), animations: "disabled" });
-    writeFileSync(path.join(output, String(width) + "-geometry.json"), JSON.stringify({ geometry, expandedBodies: bodyGeometry }, null, 2));
+    writeFileSync(path.join(output, String(width) + "-geometry.json"), JSON.stringify({ geometry, expandedBodies: bodyGeometry, bodyGap }, null, 2));
   });
 }
