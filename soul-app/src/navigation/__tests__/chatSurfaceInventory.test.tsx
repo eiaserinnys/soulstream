@@ -67,6 +67,7 @@ test('push 진입과 제품 ChatBody 마운트 표면을 누락 없이 고정한
   expect(findProductFilesContaining(/<ChatBody\b/)).toEqual([
     'components/split/ChatPane.tsx',
     'screens/ChatScreen.tsx',
+    'screens/PersistentSessionScreen.tsx',
   ]);
 });
 

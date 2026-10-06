@@ -32,6 +32,7 @@ import { useChatRenderItems } from './useChatRenderItems';
 import { useChatSseStream } from './useChatSseStream';
 import { captureAuthScope, useAuthScopeGeneration } from '../../lib/auth-scope';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
+import { persistentChatDisplaySettings } from '../settings/persistentSessionSettingsActions';
 import { renderItemContainsEventId } from './chatSearchAnchor';
 import { SessionStoryPanel } from './SessionStoryPanel';
 import { useAppForegroundLifecycle } from '../../hooks/useAppForegroundLifecycle';
@@ -184,20 +185,25 @@ export function ChatBody({
     [authScope, serverUrl]
   );
 
+  const displaySettingsSessionRef = useRef(sessionId);
   useEffect(() => {
-    if (!sessionId || !detailedNetworkActive || !api) {
+    const previousSessionId = displaySettingsSessionRef.current;
+    if (previousSessionId !== sessionId) clearPersistentDisplaySettings(previousSessionId);
+    displaySettingsSessionRef.current = sessionId;
+    if (!sessionId || !api) clearPersistentDisplaySettings(sessionId);
+  }, [api, clearPersistentDisplaySettings, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !api) {
       clearPersistentDisplaySettings(sessionId);
       return;
     }
+    if (!detailedNetworkActive) return;
     let active = true;
     const requestId = beginPersistentDisplaySettingsLoad(sessionId);
     void api.getPersistentSession(sessionId).then(({ session: persistentSession }) => {
       if (!active) return;
-      const settings = persistentSession.persistent ? {
-        show_generation_separator: persistentSession.settings.show_generation_separator === true,
-        show_jev_candidates: persistentSession.settings.show_jev_candidates === true,
-        show_turn_usage: persistentSession.settings.show_turn_usage !== false,
-      } : null;
+      const settings = persistentSession.persistent ? persistentChatDisplaySettings(persistentSession) : null;
       finishPersistentDisplaySettingsLoad(sessionId, requestId, settings);
     }).catch(() => {
       if (active) finishPersistentDisplaySettingsLoad(sessionId, requestId, null);

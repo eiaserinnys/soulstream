@@ -207,7 +207,7 @@ export function ReviewChat() {
     <ReviewSection title="PAS 대화 목록 · 기본 / 원고형">
       <ReviewPersistentChatProjection />
     </ReviewSection>
-    <ReviewSection title="입력창 · 빈 입력·여러 줄·전송·첨부·정지·비활성">
+    <ReviewSection testID="review-chat-composer" title="입력창 · 빈 입력·여러 줄·전송·첨부·정지·비활성">
       <SettingsSegmentedControl<typeof options[number]['value']> id="review-composer-state" value={state} onChange={setState} options={options} />
       <ChatComposer input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
         onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}

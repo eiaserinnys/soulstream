@@ -270,7 +270,69 @@ describe('ChatBody store subscription boundary', () => {
     };
     mockHistoryLoadingRef.current = false;
     resetStores();
+    useChatStore.getState().clearPersistentDisplaySettings();
+    mockApiClient.getPersistentSession.mockReset().mockResolvedValue({ session: { persistent: false, settings: {} } });
     mockRenderRealtimeVoiceControls.mockClear();
+  });
+
+  test('PAS 초기 조회는 저장 응답과 같은 다섯 표시 키를 전달한다', async () => {
+    mockApiClient.getPersistentSession.mockResolvedValue({ session: { persistent: true, settings: {
+      show_character: false, animate_character: false, show_generation_separator: true,
+      show_jev_candidates: true, show_turn_usage: false,
+    } } });
+    const view = await renderSettled();
+    expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+      show_character: false, animate_character: false, show_generation_separator: true,
+      show_jev_candidates: true, show_turn_usage: false,
+    });
+    view.unmount();
+  });
+
+  test('일반 세션 초기 조회의 표시 설정은 null이다', async () => {
+    const view = await renderSettled();
+    expect(useChatStore.getState().persistentDisplaySettings?.settings).toBeNull();
+    view.unmount();
+  });
+
+  test('비활성 중 표시 설정과 입력 초안을 보존하고 재활성 때 다시 조회한다', async () => {
+    mockApiClient.getPersistentSession.mockResolvedValue({ session: { persistent: true, settings: {
+      show_character: true, animate_character: false, show_generation_separator: true,
+      show_jev_candidates: false, show_turn_usage: true,
+    } } });
+    const view = await renderSettled();
+    fireEvent.changeText(view.getByTestId('chat-composer-input'), '작성 중인 문장');
+    const saved = useChatStore.getState().persistentDisplaySettings;
+    view.rerender(<View><ChatBody sessionId={SID} active={false} /></View>);
+    expect(useChatStore.getState().persistentDisplaySettings).toEqual(saved);
+    expect(mockApiClient.getPersistentSession).toHaveBeenCalledTimes(1);
+    let resolveReload!: (value: unknown) => void;
+    mockApiClient.getPersistentSession.mockReturnValueOnce(new Promise(resolve => { resolveReload = resolve; }));
+    view.rerender(<View><ChatBody sessionId={SID} active /></View>);
+    expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual(saved?.settings);
+    await act(async () => { resolveReload({ session: { persistent: true, settings: {
+      show_character: false, animate_character: true, show_generation_separator: false,
+      show_jev_candidates: true, show_turn_usage: false,
+    } } }); });
+    expect(mockApiClient.getPersistentSession).toHaveBeenCalledTimes(2);
+    expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+      show_character: false, animate_character: true, show_generation_separator: false,
+      show_jev_candidates: true, show_turn_usage: false,
+    });
+    expect(view.getByTestId('chat-composer-input').props.value).toBe('작성 중인 문장');
+    view.unmount();
+  });
+
+  test('비활성 상태에서도 세션 변경과 API 제거는 이전 표시 설정을 지운다', async () => {
+    mockApiClient.getPersistentSession.mockResolvedValue({ session: { persistent: true, settings: {} } });
+    const view = await renderSettled();
+    view.rerender(<View><ChatBody sessionId={OTHER_SID} active={false} /></View>);
+    expect(useChatStore.getState().persistentDisplaySettings).toBeNull();
+    view.rerender(<View><ChatBody sessionId={OTHER_SID} active /></View>);
+    await act(async () => { await Promise.resolve(); });
+    expect(useChatStore.getState().persistentDisplaySettings?.sessionId).toBe(OTHER_SID);
+    await act(async () => { useSettingsStore.setState({ serverUrl: '' }); });
+    expect(useChatStore.getState().persistentDisplaySettings).toBeNull();
+    view.unmount();
   });
 
   test('원고형 표시를 목록과 입력에 전달하고 입력 묶음 배치를 올린다', async () => {

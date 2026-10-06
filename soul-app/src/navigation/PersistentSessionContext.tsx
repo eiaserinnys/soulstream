@@ -1,0 +1,125 @@
+import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Image, ScrollView, Text, View } from 'react-native';
+import { useStore } from 'zustand';
+import type { StoreApi } from 'zustand';
+import { createApiClient } from '../api/client';
+import type { PersistentSessionCreateDefaults, PersistentSessionResource } from '../api/persistentSessionEndpoints';
+import { decodeAuthJwt } from '../auth/jwt-payload';
+import { AppModalSurface } from '../components/AppModalSurface';
+import { LiquidGlassButton } from '../components/LiquidGlassButton';
+import { GroupedGlassRow, GroupedGlassSheet } from '../components/planner/GroupedGlassSheet';
+import { resolveSessionCardAvatar } from '../components/sessionCardDisplay';
+import { resolvePersistentSessionEntry } from '../lib/persistent-session-entry';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { useAuthStore } from '../store/authStore';
+import { createPersistentSessionScene, type PersistentSessionScene } from '../store/persistentSessionScene';
+import { useSettingsStore } from '../store/settingsStore';
+import { useTokens } from '../theme';
+
+interface PersistentSessionHost {
+  store: StoreApi<PersistentSessionScene>;
+  portrait: Pick<PersistentSessionResource, 'session_id' | 'node_id' | 'agent_id' | 'agent_name'> | null;
+  requestEntry(onOpen: () => void, startup?: boolean): Promise<void>;
+}
+const Context = createContext<PersistentSessionHost | null>(null);
+
+export function PersistentSessionProvider({ children }: { children: React.ReactNode }) {
+  const [store] = useState(createPersistentSessionScene);
+  const t = useTokens();
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const jwt = useAuthStore(state => state.jwt);
+  const email = decodeAuthJwt(jwt)?.email;
+  const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl, jwt]);
+  const [sessions, setSessions] = useState<PersistentSessionResource[]>([]);
+  const [defaults, setDefaults] = useState<PersistentSessionCreateDefaults | null>(null);
+  const [sheet, setSheet] = useState<'loading' | 'choose' | 'error' | 'add' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const destination = useRef<() => void>(() => undefined);
+  const pending = useRef(false);
+  const last = useSettingsStore(state => state.getPersistentSessionDevicePreference(serverUrl, email).lastSessionId);
+  const portrait = sessions.find(session => session.session_id === last) ?? sessions[0]
+    ?? (defaults ? { session_id: '', node_id: defaults.node_id, agent_id: defaults.preferred_agent_id, agent_name: null } : null);
+
+  function open(session: PersistentSessionResource) {
+    store.getState().open(session);
+    useSettingsStore.getState().setPersistentSessionLastSessionId(serverUrl, email, session.session_id);
+    setSheet(null);
+    destination.current();
+  }
+  async function requestEntry(onOpen: () => void, startup = false) {
+    if (pending.current) return;
+    destination.current = onOpen;
+    pending.current = true;
+    setError(null);
+    setSheet('loading');
+    try {
+      if (!api) throw new Error('서버에 연결해 주세요.');
+      const result = await api.listPersistentSessions();
+      setSessions(result.sessions); setDefaults(result.create_defaults);
+      const entry = resolvePersistentSessionEntry(result.sessions, last, startup);
+      if (entry.kind === 'open') open(entry.session);
+      else setSheet(entry.kind === 'home' ? null : entry.kind);
+    } catch {
+      setError('영구 세션을 불러오지 못했습니다.'); setSheet('error');
+    } finally { pending.current = false; }
+  }
+  const closeAdd = useRef<() => void>(() => setSheet(null));
+  return <Context.Provider value={{ store, portrait, requestEntry }}>
+    {children}
+    {sheet ? <AppModalSurface visible variant="expanded" presentationStyle="pageSheet" modalId="modal_settings"
+      onRequestClose={() => sheet === 'add' ? closeAdd.current() : setSheet(null)}>
+      {sheet === 'add' ? <SettingsScreen category="persistent" initialPersistentDestination={{ kind: 'editor' }}
+        onClose={() => setSheet(null)} registerCloseRequest={close => { closeAdd.current = close; }} />
+        : <View style={{ flex: 1, padding: t.foundation.pageInset, gap: t.uiSpacing.lg }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+            <Text style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>영구 세션</Text>
+            <LiquidGlassButton accessibilityLabel="영구 세션 선택 닫기" onPress={() => setSheet(null)}>
+              <Text style={{ ...t.foundation.typography.body, color: t.colors.accent }}>닫기</Text>
+            </LiquidGlassButton>
+          </View>
+          {sheet === 'loading' ? <ActivityIndicator testID="persistent-entry-loading" color={t.colors.accent} /> : null}
+          {sheet === 'error' ? <>
+            <Text testID="persistent-entry-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>
+            <LiquidGlassButton accessibilityLabel="영구 세션 다시 조회" onPress={() => void requestEntry(destination.current)}>
+              <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text>
+            </LiquidGlassButton>
+          </> : null}
+          {sheet === 'choose' ? <ScrollView showsVerticalScrollIndicator={false}>
+            <GroupedGlassSheet>{sessions.map(session => <GroupedGlassRow key={session.session_id}
+              testID={`persistent-entry-${session.session_id}`} selected={session.session_id === last}
+              accessibilityLabel={session.display_name ?? session.session_id} onPress={() => open(session)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.md, padding: t.cardLayout.padding }}>
+              <PersistentSessionPortrait session={session} size={t.avatarSize.message} />
+              <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textPrimary }}>{session.display_name ?? session.session_id}</Text>
+            </GroupedGlassRow>)}</GroupedGlassSheet>
+          </ScrollView> : null}
+        </View>}
+    </AppModalSurface> : null}
+  </Context.Provider>;
+}
+
+export function usePersistentSessionHost() {
+  const host = useContext(Context);
+  if (!host) throw new Error('PersistentSessionProvider가 필요합니다.');
+  return host;
+}
+export function usePersistentSessionScene<T>(selector: (state: PersistentSessionScene) => T) {
+  return useStore(usePersistentSessionHost().store, selector);
+}
+export function PersistentSessionPortrait({ session, size }: {
+  session: PersistentSessionHost['portrait']; size: number;
+}) {
+  const t = useTokens();
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const jwt = useAuthStore(state => state.jwt);
+  const avatar = resolveSessionCardAvatar({
+    agentSessionId: session?.session_id ?? '', agentId: session?.agent_id,
+    agentName: session?.agent_name, agentPortraitUrl: session?.agent_id && session.node_id
+      ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null,
+  }, serverUrl);
+  const style = { width: size, height: size, borderRadius: size / 2 };
+  return avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={style} />
+    : <View style={[style, { alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.surfaceMuted }]}>
+      <Text style={{ ...t.foundation.typography.label, color: t.colors.textPrimary }}>{avatar.fallbackChar}</Text>
+    </View>;
+}

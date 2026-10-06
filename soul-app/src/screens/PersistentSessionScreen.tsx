@@ -1,0 +1,147 @@
+import React, { useMemo, useState } from 'react';
+import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
+import { createApiClient } from '../api/client';
+import { ChatBody } from '../components/chat/ChatBody';
+import { LiquidGlassButton } from '../components/LiquidGlassButton';
+import { CardDetailContent } from '../components/planner/CardDetailSheet';
+import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
+import { SwayCharacter } from '../components/persistent/SwayCharacter';
+import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/persistentSessionFrame';
+import { PersistentSessionPasSettingsModal } from '../components/settings/PersistentSessionPasSettingsModal';
+import { persistentChatDisplaySettings, savePersistentSessionSettings } from '../components/settings/persistentSessionSettingsActions';
+import { useDisplayPreferenceActions } from '../components/settings/useDisplayPreferenceActions';
+import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
+import { useChatStore } from '../store/chatStore';
+import { useSettingsStore } from '../store/settingsStore';
+import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
+
+export interface PersistentSessionScreenProps {
+  active?: boolean;
+  onHome(): void;
+  onOpenCard(cardId: string): void;
+  onOpenSession?(sessionId: string): void;
+}
+
+export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onOpenSession }: PersistentSessionScreenProps) {
+  const t = useTokens();
+  const device = useDeviceType();
+  const phone = device === 'phone';
+  const { fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const host = usePersistentSessionHost();
+  const session = usePersistentSessionScene(state => state.session);
+  const scene = usePersistentSessionScene(state => state.scene);
+  const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  const display = useChatStore(state => state.persistentDisplaySettings && state.persistentDisplaySettings.sessionId === session?.session_id
+    ? state.persistentDisplaySettings.settings : null);
+  const { handleAppearanceChange } = useDisplayPreferenceActions();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savingCharacter, setSavingCharacter] = useState(false);
+  const [app, setApp] = useState<LayoutRectangle | null>(null);
+  const [main, setMain] = useState<LayoutRectangle | null>(null);
+  const [composer, setComposer] = useState<LayoutRectangle | null>(null);
+  const compact = phone || (app?.height ?? Infinity) < FRAME.compactHeight;
+  const headerHeight = compact ? FRAME.compactHeader : FRAME.header;
+  const portrait = app ? app.height > app.width : false;
+  const widths = portrait ? FRAME.portrait : FRAME.landscape;
+  const columnWidth = phone ? app?.width ?? 0 : widths.conversation;
+  const columnLeft = app ? (app.width - columnWidth) / 2 : 0;
+  const composerRoles = createSessionVisualRoles(t).chat.composer;
+  const inputRowHeight = Math.max(composerRoles.contentMinHeight,
+    t.chatFontSize.body * t.lineHeightRatio * fontScale + composerRoles.inputPaddingVertical * 2);
+  const geometry = app && main && composer ? calculatePersistentSessionLayout({
+    app: { left: 0, top: 0, width: app.width, height: app.height },
+    header: { left: 0, top: 0, width: app.width, height: headerHeight },
+    main: { left: main.x, top: main.y, width: main.width, height: main.height },
+    composer: { left: main.x + composer.x, top: main.y + composer.y, width: composer.width, height: composer.height },
+    inputRowHeight, pointerFine: false, showCharacter: display?.show_character === true,
+    phoneConfigured: phone || compact,
+  }) : null;
+  const back = React.useCallback(() => {
+    const state = host.store.getState();
+    if (state.scene === 'cards') { state.swipe('right'); return true; }
+    return false;
+  }, [host.store]);
+  React.useEffect(() => {
+    if (!active) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', back);
+    return () => sub.remove();
+  }, [active, back]);
+  const gestures = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, state) => Math.abs(state.dx) > t.hitTarget.min && Math.abs(state.dx) > Math.abs(state.dy),
+    onPanResponderRelease: (_event, state) => host.store.getState().swipe(state.dx < 0 ? 'left' : 'right'),
+  }), [host.store, t.hitTarget.min]);
+  async function toggleCharacter() {
+    if (!api || !session || savingCharacter) return;
+    setSavingCharacter(true);
+    try {
+      const saved = await savePersistentSessionSettings(api, session.session_id, { show_character: !display?.show_character });
+      useChatStore.getState().applyPersistentDisplaySettings(session.session_id, persistentChatDisplaySettings(saved));
+    } catch { Alert.alert('캐릭터 표시를 저장하지 못했습니다', '다시 시도해 주세요.'); }
+    finally { setSavingCharacter(false); }
+  }
+  const action = (icon: React.ComponentProps<typeof Ionicons>['name'], label: string, onPress: () => void, testID: string) =>
+    <LiquidGlassButton iconOnly variant="paper" size="compact" accessibilityLabel={label} onPress={onPress} testID={testID}>
+      <Ionicons name={icon} size={t.iconSize.navigation} color={t.colors.textPrimary} />
+    </LiquidGlassButton>;
+  return <SafeAreaView testID="persistent-session-safe-area" edges={['top', 'left', 'right']}
+    style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
+    <View testID="persistent-session-screen" style={{ flex: 1 }} onLayout={event => setApp(event.nativeEvent.layout)} {...gestures.panHandlers}>
+      <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: t.foundation.pageInset, gap: t.uiSpacing.sm }}>
+        <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }}>{session?.display_name ?? '영구 세션'}</Text>
+        {action('home-outline', '홈으로 돌아가기', onHome, 'persistent-session-home')}
+        {action(t.mode === 'light' ? 'moon-outline' : 'sunny-outline', '밝기 전환', () => void handleAppearanceChange(t.mode === 'light' ? 'dark' : 'light'), 'persistent-session-appearance')}
+        {action('options-outline', '영구 세션 설정', () => setSettingsOpen(true), 'persistent-session-settings')}
+        {phone ? action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks') : null}
+      </View>
+      <View testID="persistent-session-conversation" pointerEvents={phone && scene === 'cards' ? 'none' : 'auto'}
+        accessibilityElementsHidden={phone && scene === 'cards'} importantForAccessibility={phone && scene === 'cards' ? 'no-hide-descendants' : 'auto'}
+        style={{ position: 'absolute', top: headerHeight, bottom: 0, left: columnLeft, width: columnWidth,
+          opacity: phone && scene === 'cards' ? 0 : 1 }} onLayout={event => setMain(event.nativeEvent.layout)}>
+        <ChatBody sessionId={session?.session_id} presentation="manuscript"
+          active={active && scene === 'conversation'} minimumBottomPadding={phone ? 0 : insets.bottom}
+          onComposerLayout={event => setComposer(event.nativeEvent.layout)} />
+      </View>
+      {geometry ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',
+        left: columnLeft - geometry.lineLeftReach, top: geometry.lineY,
+        width: columnWidth + geometry.lineLeftReach, height: StyleSheet.hairlineWidth, backgroundColor: t.persistentSession.line }} /> : null}
+      {!phone && geometry?.body ? <View testID="persistent-session-character-seat" pointerEvents="none" style={{ position: 'absolute',
+        left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}>
+        <SwayCharacter width={geometry.body.width} height={geometry.body.height} shown motionEnabled={display?.animate_character === true}
+          active={active && !settingsOpen} />
+      </View> : null}
+      {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
+        left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,
+        top: geometry.toggle.top + (geometry.toggle.height - t.hitTarget.min) / 2 }}>
+        <LiquidGlassButton iconOnly size="compact" variant="paper" disabled={savingCharacter} testID="persistent-session-character-toggle"
+          accessibilityLabel={display?.show_character ? '캐릭터 숨기기' : '캐릭터 표시'}
+          accessibilityState={{ selected: display?.show_character === true }} onPress={() => void toggleCharacter()}>
+          <Ionicons name="person-outline" size={t.iconSize.navigation} color={t.colors.textSecondary} />
+        </LiquidGlassButton>
+      </View> : null}
+      {!phone ? <View style={{ position: 'absolute', top: headerHeight, right: t.foundation.pageInset }}>
+        {action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks')}
+      </View> : null}
+      {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
+        top: headerHeight + (phone ? 0 : t.hitTarget.min),
+        bottom: phone ? 0 : portrait && geometry ? app!.height - geometry.lineY + t.uiSpacing.md : t.uiSpacing.md,
+        right: phone ? 0 : t.foundation.pageInset, width: phone ? '100%' : selectedCardId ? widths.detail : widths.tasks,
+        backgroundColor: selectedCardId || phone ? t.persistentSession.panel : t.persistentSession.paper,
+        borderRadius: phone ? 0 : t.foundation.radius.card,
+        borderWidth: selectedCardId && !phone ? StyleSheet.hairlineWidth : 0, borderColor: t.persistentSession.line,
+        paddingHorizontal: selectedCardId ? 0 : t.uiSpacing.sm, paddingBottom: phone ? 0 : insets.bottom }}>
+        {selectedCardId ? <CardDetailContent key={selectedCardId} variant="readSummary" api={api} cardId={selectedCardId}
+          onClose={() => host.store.getState().selectCard(null)} onOpenCard={() => onOpenCard(selectedCardId)} onOpenSession={onOpenSession} />
+          : <PersistentSessionTaskList api={api} onOpenCard={cardId => host.store.getState().selectCard(cardId)} />}
+      </View> : null}
+      {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
+        onClose={() => setSettingsOpen(false)} /> : null}
+    </View>
+  </SafeAreaView>;
+}

@@ -23,10 +23,11 @@ interface Props {
   onClose?: () => void;
   connectionOnly?: boolean;
   registerCloseRequest?: (close: () => void) => void;
+  initialPersistentDestination?: SettingsPersistentDestination;
 }
 
 /** All three entry points share this stable host and the production form controllers. */
-export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = 'screen', flattened = false, category: initialCategory, showAdmin, onClose, connectionOnly = false, registerCloseRequest }: Props = {}) {
+export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = 'screen', flattened = false, category: initialCategory, showAdmin, onClose, connectionOnly = false, registerCloseRequest, initialPersistentDestination }: Props = {}) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const window = useWindowDimensions();
@@ -36,7 +37,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
   const isAdmin = showAdmin ?? detectedAdmin;
   const [category, setCategory] = useState<SettingsCategory | null>(connectionOnly ? 'connection' : initialCategory ?? null);
   const [jobs, setJobs] = useState<SettingsJobDestination>({ kind: 'list' });
-  const [persistent, setPersistent] = useState<SettingsPersistentDestination>({ kind: 'list' });
+  const [persistent, setPersistent] = useState<SettingsPersistentDestination>(initialPersistentDestination ?? { kind: 'list' });
   const [scopes, setScopes] = useState<Partial<Record<SettingsCategory, SettingsSaveScope>>>({});
   const register = useCallback((id: SettingsCategory, scope: SettingsSaveScope | null) => setScopes(current => {
     const next = { ...current }; if (scope) next[id] = scope; else delete next[id]; return next;

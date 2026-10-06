@@ -20,7 +20,7 @@ it('covers every live modal owner and groups every native Alert caller', () => {
 
 it('allows exactly the real modal and detail preview IDs in the dialogues section', () => {
   const ids = [...dialogueSamples.map(s => s.value), 'card-detail', 'folder-detail', 'session-detail'];
-  expect(dialoguePreviewGroups.map(g => g.items.length)).toEqual([3, 5, 3, 4, 2, 3]);
+  expect(dialoguePreviewGroups.map(g => g.items.length)).toEqual([3, 6, 3, 4, 2, 3]);
   expect(dialoguePreviewGroups.flatMap(g => g.items.map(item => item.value)).sort()).toEqual(ids.sort());
   for (const id of ids) expect(getDialoguePreviewSample('?section=dialogues&sample=' + id)).toBe(id);
   expect(getDialoguePreviewSample('?section=rows&sample=card-create')).toBeNull();

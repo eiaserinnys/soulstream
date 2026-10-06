@@ -309,6 +309,7 @@ export function createApiClient(): ApiClient {
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
   if (section === 'nativeSettings') return nativeSettingsApi;
+  if (section === 'dialogues' && new URLSearchParams(window.location.search).get('sample') === 'persistent-select') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;
   return api as unknown as ApiClient;

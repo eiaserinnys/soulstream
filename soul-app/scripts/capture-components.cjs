@@ -68,7 +68,7 @@ async function runViewport(browser, base, options, name) {
     await page.screenshot({ path: path.join(output, name + '-' + part + '.png') });
   };
   const tab = (value) => page.getByTestId('settings-segment-review-section-' + value).click();
-  const metric = async (id) => page.getByTestId(id).evaluate((el) => {
+  const metric = async (id, scope = page) => scope.getByTestId(id).evaluate((el) => {
     const b = el.getBoundingClientRect();
     return { x: b.x, y: b.y, width: b.width, height: b.height };
   });
@@ -85,18 +85,19 @@ async function runViewport(browser, base, options, name) {
   await shot('sessions');
   result.interactions.push(name + ': 카드 전체 행·로컬 완료·세션 검수 확인');
   await tab('chat');
-  const input = page.getByTestId('chat-composer-text-input');
+  const composerSample = page.getByTestId('review-chat-composer');
+  const input = composerSample.getByTestId('chat-composer-text-input');
   await input.fill('공개 예시 여러 줄 입력\n두 번째 줄\n세 번째 줄');
-  const send = page.getByTestId('chat-composer-send-button');
+  const send = composerSample.getByTestId('chat-composer-send-button');
   await input.click();
   result.viewports[result.viewports.length - 1].composer = {
-    input: await metric('chat-composer-text-input'), send: await metric('chat-composer-send-button'),
-    content: await metric('chat-composer-content-row'),
+    input: await metric('chat-composer-text-input', composerSample), send: await metric('chat-composer-send-button', composerSample),
+    content: await metric('chat-composer-content-row', composerSample),
   };
   await shot('composer');
   await send.click();
   assert.equal(await input.inputValue(), '');
-  await page.getByTestId('chat-composer-attach-button').click();
+  await composerSample.getByTestId('chat-composer-attach-button').click();
   await page.getByLabel('공개 예시 첨부 열기').click();
   await page.getByLabel('이미지 닫기').click();
   await page.getByLabel('답변 텍스트 선택', { exact: true }).click();
