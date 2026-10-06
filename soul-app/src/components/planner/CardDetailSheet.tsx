@@ -181,7 +181,7 @@ export function CardDetailContent({ api, cardId, onClose, onOpenSession, inline 
     ...session,
     folderId: session.folderId ?? null, displayName: session.displayName ?? null,
     nodeId: session.nodeId ?? null, sessionType: session.sessionType ?? null,
-    agentId: session.agentId ?? null, predecessorSessionId: session.predecessorSessionId ?? null,
+    agentId: session.agentId ?? null, predecessorSessionId: null,
     reviewState: session.reviewState ?? 'not_required',
   })), [detail?.sessions]);
   const sessionIds = [...new Set([...(card?.assigneeSessionId ? [card.assigneeSessionId] : []), ...(detail?.sessions ?? []).map((session) => session.agentSessionId)])];
