@@ -21,7 +21,7 @@ vi.mock('../components/ConfigModal',()=>({ConfigModal:(p:any)=>p.open?<div data-
 vi.mock('./PersistentSessionChatView',()=>({PersistentSessionChatView:(p:any)=><div data-testid="chat" data-session={p.sessionId} data-upload={p.fileUploadUrl} data-history={p.historyEnabled}/> }));
 vi.mock('../components/PersistentSessionSettingsDialog',()=>({PersistentSessionSettingsDialog:()=>null}));
 let host:HTMLDivElement,root:Root;
-const session=(id:string)=>({session_id:id,display_name:id,persistent:true,node_id:'node-1',settings:{}});
+const session=(id:string)=>({session_id:id,display_name:id,persistent:true,node_id:'node-1',settings:{default_model:{model_preset:null},show_character:true}});
 beforeEach(()=>{vi.clearAllMocks();localStorage.clear();useDashboardStore.getState().setActiveSession(null);host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();});
 async function mount(id?:string){await act(async()=>{root.render(<PersistentSessionScreen sessionId={id}/>);});}

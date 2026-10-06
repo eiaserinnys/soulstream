@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import {
   ThemeToggle,
   DashboardIconCap,
@@ -12,13 +12,14 @@ import { ConfigButton } from "../components/ConfigButton";
 export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
-  variant = 'default', sessionName, onOpenHome,
+  variant = 'default', sessionName, onOpenHome, headerRef,
 }: {
   onOpenConfig(): void;
   onOpenSearch?(): void;
   variant?: 'default' | 'minimal';
   sessionName?: string;
   onOpenHome?(): void;
+  headerRef?: RefObject<HTMLElement | null>;
 }) {
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
@@ -37,7 +38,7 @@ export function V3GlobalToolbar({
     return () => window.removeEventListener("keydown", openSearch);
   }, [onOpenSearch, variant]);
 
-  if (variant === 'minimal') return <header className="persistent-session-header" data-testid="v3-global-toolbar">
+  if (variant === 'minimal') return <header ref={headerRef} className="persistent-session-header" data-testid="v3-global-toolbar">
     <div className="persistent-session-brand"><span>소울스트림</span><strong>{sessionName}</strong></div>
     <div className="dashboard-toolbar-actions">
       <DashboardIconCap label="홈" onClick={onOpenHome}><Home/></DashboardIconCap>

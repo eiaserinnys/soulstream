@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, LiquidGlassProvider, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
+import { Button, DashboardIconCap, LiquidGlassProvider, SwayCharacter, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
+import { Eye, EyeOff } from 'lucide-react';
+import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
+import { usePersistentSessionGeometry } from './use-persistent-session-geometry';
 import { navigateDashboard } from '../dashboard-navigation';
 import { ConfigModal } from '../components/ConfigModal';
 import { SettingsAlert, SettingsListRow } from '../components/config/SettingsListDetail';
@@ -42,8 +45,20 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const activeSessionKey = useDashboardStore(state => state.activeSessionKey);
   const activeSessionSummary = useDashboardStore(state => state.activeSessionSummary);
   const composerAnchorRef = useRef<HTMLDivElement>(null);
+  const appRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const displaySettings = useDashboardStore(state => state.persistentSessionDisplaySettings);
+  const [visible, setVisible] = useState(() => !document.hidden);
+  useEffect(() => { const changed = () => setVisible(!document.hidden); document.addEventListener('visibilitychange', changed); return () => document.removeEventListener('visibilitychange', changed); }, []);
   const resource = listing?.sessions.find(session => session.session_id === sessionId) ?? null;
   const chatReady = Boolean(sessionId && activatedId === sessionId && activeSessionKey === sessionId);
+  const geometry = usePersistentSessionGeometry({ app: appRef, header: headerRef, main: mainRef, composer: composerAnchorRef, enabled: chatReady, showCharacter: displaySettings?.showCharacter ?? false });
+  const applySaved = useCallback((saved: PersistentSession) => {
+    setListing(current => current ? { ...current, sessions: current.sessions.map(session => session.session_id === saved.session_id ? saved : session) } : current);
+    useDashboardStore.getState().setPersistentSessionDisplaySettings(saved.session_id, saved.settings);
+  }, []);
+  const details = usePersistentSessionDetailsController({ resource, api, onSaved: applySaved });
   const stream = useSessionProvider({ sessionKey: chatReady ? activeSessionKey : null, getSessionProvider: () => orchestratorSessionProvider, active: chatReady, cursorScope: `${window.location.origin}|${user?.email ?? 'anonymous'}`, onConnectionError });
   useEffect(() => {
     let current = true;
@@ -69,12 +84,16 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   }, [api, retry, sessionId, user?.email]);
   const disabled = !activeSessionSummary?.nodeId || nodes.get(activeSessionSummary.nodeId)?.status !== 'connected';
   const lastId = user?.email ? readPersistentSessionDevicePreferences(user.email).lastSessionId : null;
-  return <div className="v3-shell persistent-session-screen" data-testid="persistent-session-screen">
-    <V3GlobalToolbar variant="minimal" sessionName={resource?.display_name ?? undefined} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}/>
-    <main className="persistent-session-main">
+  return <div ref={appRef} className="v3-shell persistent-session-screen" data-testid="persistent-session-screen">
+    <V3GlobalToolbar headerRef={headerRef} variant="minimal" sessionName={resource?.display_name ?? undefined} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}/>
+    <main ref={mainRef} className="persistent-session-main">
       {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={lastId === session.session_id} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}
       {chatReady && !error && <PersistentSessionChatView key={sessionId} sessionId={sessionId!} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={!disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={stream.synchronizedSessionKey === activeSessionKey}/>}
     </main>
+    {geometry && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.mainWidth + geometry.lineLeftReach }}/ >}
+    {displaySettings && geometry?.body && <div data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen} assetBaseUrl="/characters/seosoyoung"/></div>}
+    {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap label="캐릭터 표시" aria-pressed={displaySettings.showCharacter} disabled={details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <Eye/> : <EyeOff/>}</DashboardIconCap></div>}
+    {details.error && <div className="persistent-session-save-error"><SettingsAlert>{details.error}</SettingsAlert></div>}
     {settingsOpen && resource?.node_id && <PersistentSessionSettingsDialog sessionId={resource.session_id} nodeId={resource.node_id} onClose={() => setSettingsOpen(false)}/>}
     <ConfigModal open={configOpen} initialTab="persistent" onOpenChange={open => { setConfigOpen(open); if (!open) navigateDashboard('/'); }}/>
   </div>;
