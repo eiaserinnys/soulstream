@@ -1,19 +1,23 @@
 import React from 'react';
 import { act, render, waitFor } from '@testing-library/react-native';
+import * as Notifications from 'expo-notifications';
 import { Alert, Linking } from 'react-native';
 
+const mockAuthenticatedProps = jest.fn();
 jest.mock('expo-notifications', () => ({
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  getLastNotificationResponseAsync: jest.fn(async () => null),
+  clearLastNotificationResponseAsync: jest.fn(async () => undefined),
 }));
 jest.mock('../AuthenticatedAppSubtree', () => {
   const ReactModule = require('react');
   const { Text } = require('react-native');
   return {
-    AuthenticatedAppSubtree: () => ReactModule.createElement(
+    AuthenticatedAppSubtree: (props: unknown) => { mockAuthenticatedProps(props); return ReactModule.createElement(
       Text,
       { testID: 'authenticated-app' },
       'Authenticated app',
-    ),
+    ); },
   };
 });
 jest.mock('../../screens/LoginScreen', () => {
@@ -38,7 +42,7 @@ jest.mock('../../widgets/usageWidgetDeepLink', () => ({ useUsageWidgetDeepLink: 
 jest.mock('../../lib/wallpaper-source', () => ({ resolveBackgroundImageSource: () => null }));
 jest.mock('../../lib/ui-usage-events', () => ({ recordUiUsageEvent: jest.fn() }));
 jest.mock('../navigationRef', () => ({
-  navigationRef: { isReady: jest.fn(() => false), navigate: jest.fn() },
+  navigationRef: { isReady: jest.fn(() => false), navigate: jest.fn(), addListener: jest.fn(() => () => {}) },
 }));
 jest.mock('../notificationSessionRoute', () => ({ openNotificationSession: jest.fn() }));
 jest.mock('../phoneSessionNavigation', () => ({
@@ -79,6 +83,8 @@ let fetchMock: jest.Mock;
 let configRequest: () => Promise<Response>;
 
 beforeEach(() => {
+  mockAuthenticatedProps.mockClear();
+  jest.mocked(Notifications.getLastNotificationResponseAsync).mockReset().mockResolvedValue(null);
   jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(null);
   jest.spyOn(Linking, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
   (navigationRef.isReady as jest.Mock).mockReset().mockReturnValue(false);
@@ -459,4 +465,20 @@ test('401 이후 늦게 끝난 설정 조회 실패가 로그인 거부 신호�
 
   expect(screen.getByTestId('login-screen')).toBeTruthy();
   expect(useAuthStore.getState()).toMatchObject({ jwt: null, authRejected: true });
+});
+
+
+test('시작 평가가 초기 URL과 알림 읽기를 기다리고 알림 intent를 먼저 전달한다', async () => {
+  jest.spyOn(useAuthStore.persist, 'hasHydrated').mockReturnValue(true);
+  jest.spyOn(useSettingsStore.persist, 'hasHydrated').mockReturnValue(true);
+  jest.spyOn(useUIStore.persist, 'hasHydrated').mockReturnValue(true);
+  (navigationRef.isReady as jest.Mock).mockReturnValue(true);
+  let finish!: (response: any) => void;
+  jest.mocked(Notifications.getLastNotificationResponseAsync).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const screen = render(<RootNavigator />);
+  await waitFor(() => expect(screen.getByTestId('authenticated-app')).toBeTruthy());
+  expect(mockAuthenticatedProps.mock.calls.at(-1)![0].startupReady).toBe(false);
+  await act(async () => { finish({ notification: { request: { content: { data: { sessionId: 'notification-session' } } } } }); });
+  await waitFor(() => expect(mockAuthenticatedProps.mock.calls.at(-1)![0]).toMatchObject({ startupReady: true, sessionIntent: true }));
+  expect(require('../notificationSessionRoute').openNotificationSession).toHaveBeenCalledWith('phone', 'notification-session', expect.any(Function));
 });

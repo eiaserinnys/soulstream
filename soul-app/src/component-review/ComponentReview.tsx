@@ -86,10 +86,16 @@ export function initializeReview() {
       show_jev_candidates: true,
     });
   }
-  if (nativeSettings) {
+  if (nativeSettings || persistent) {
     useAuthStore.setState({ jwt: firstNativeConnection ? null : 'header.eyJlbWFpbCI6InB1YmxpYy1yZXZpZXdAZXhhbXBsZS5pbnZhbGlkIiwic3ViIjoicHVibGljLXJldmlld0BleGFtcGxlLmludmFsaWQiLCJuYW1lIjoiUHVibGljIFJldmlldyIsInBpY3R1cmUiOiIiLCJleHAiOjIwMDAwMDAwMDB9.signature', authRejected: false });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-error') useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: window.location.origin + '/assets/ios-components/unavailable-photo.jpg' } });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-fallback') useSettingsStore.setState({ wallpaper: { mode: 'photo' } });
+  }
+  if (persistent) {
+    const params = new URLSearchParams(window.location.search);
+    const email = 'public-review@example.invalid';
+    useSettingsStore.getState().setPersistentSessionOpenOnStart('https://public-fixture.invalid', email, params.get('startup') === '1');
+    useSettingsStore.getState().setPersistentSessionLastSessionId('https://public-fixture.invalid', email, params.get('last'));
   }
   const longSelection = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chips') === 'long';
   if (longSelection) useSettingsStore.setState({ cardAssignments: {

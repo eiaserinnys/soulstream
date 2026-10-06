@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { DefaultTheme, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../navigation/PersistentSessionContext';
+import { PersistentSessionStartup } from '../navigation/PersistentSessionStartup';
 import { TabletNavigator } from '../navigation/TabletNavigator';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { useDeviceType, useTokens } from '../theme';
@@ -25,6 +26,8 @@ export function ReviewPersistentFullscreen() {
       onReady={() => setReady(true)}>
       {phone ? <PersistentSessionScreen onHome={() => {}} onOpenCard={() => {}} /> : <TabletNavigator />}
     </NavigationContainer>
-    <EntryDriver ready={ready || phone} phone={phone} />
+    {new URLSearchParams(window.location.search).get('sample') === 'startup'
+      ? <PersistentSessionStartup ready={ready} sessionIntent={false} onOpen={() => { if (!phone) navigation.navigate('PersistentSession'); }} />
+      : <EntryDriver ready={ready || phone} phone={phone} />}
   </PersistentSessionProvider>;
 }

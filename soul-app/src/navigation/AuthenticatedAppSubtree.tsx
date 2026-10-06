@@ -1,6 +1,7 @@
 import React from 'react';
 import { TabletNavigator } from './TabletNavigator';
 import { PersistentSessionProvider } from './PersistentSessionContext';
+import { PersistentSessionStartup } from './PersistentSessionStartup';
 import type { DeviceType } from '../theme/useDeviceType';
 import { TabNavigator } from './TabNavigator';
 import { UiUsageEventsHost } from '../components/UiUsageEventsHost';
@@ -10,6 +11,9 @@ interface Props {
   generation: string;
   device: DeviceType;
   onUiUsageEventsEnabled?: () => void;
+  startupReady?: boolean;
+  sessionIntent?: boolean;
+  onOpenPersistent?: () => void;
 }
 
 /**
@@ -23,6 +27,9 @@ export function AuthenticatedAppSubtree({
   generation,
   device,
   onUiUsageEventsEnabled,
+  startupReady = false,
+  sessionIntent = false,
+  onOpenPersistent,
 }: Props) {
   const snapshotCurrentView = React.useCallback(() => {
     if (device === 'phone') {
@@ -35,13 +42,15 @@ export function AuthenticatedAppSubtree({
   return (
     <>
       <UiUsageEventsHost generation={generation} onCollectionEnabled={snapshotCurrentView} />
-      <AuthenticatedAppInstance key={generation} device={device} />
+      <AuthenticatedAppInstance key={generation} device={device} startupReady={startupReady}
+        sessionIntent={sessionIntent} onOpenPersistent={onOpenPersistent} />
     </>
   );
 }
 
-function AuthenticatedAppInstance({ device }: Pick<Props, 'device'>) {
-  return <PersistentSessionProvider>
+function AuthenticatedAppInstance({ device, startupReady, sessionIntent, onOpenPersistent }: Pick<Props, 'device' | 'startupReady' | 'sessionIntent' | 'onOpenPersistent'>) {
+  return <PersistentSessionProvider sessionIntent={sessionIntent}>
     {device === 'phone' ? <TabNavigator /> : <TabletNavigator />}
+    {onOpenPersistent ? <PersistentSessionStartup ready={startupReady === true} sessionIntent={sessionIntent === true} onOpen={onOpenPersistent} /> : null}
   </PersistentSessionProvider>;
 }

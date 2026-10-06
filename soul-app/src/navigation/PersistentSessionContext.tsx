@@ -16,15 +16,17 @@ import { createPersistentSessionScene, type PersistentSessionScene } from '../st
 import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useTokens } from '../theme';
+import { useAppNoticeStore } from '../store/appNoticeStore';
 
 interface PersistentSessionHost {
   store: StoreApi<PersistentSessionScene>;
   portrait: Pick<PersistentSessionResource, 'session_id' | 'node_id' | 'agent_id' | 'agent_name'> | null;
   requestEntry(onOpen: () => void, startup?: boolean): Promise<void>;
+  initialize(onOpen: () => void, openOnStart: boolean): Promise<void>;
 }
 const Context = createContext<PersistentSessionHost | null>(null);
 
-export function PersistentSessionProvider({ children }: { children: React.ReactNode }) {
+export function PersistentSessionProvider({ children, sessionIntent = false }: { children: React.ReactNode; sessionIntent?: boolean }) {
   const [store] = useState(createPersistentSessionScene);
   const t = useTokens();
   const serverUrl = useSettingsStore(state => state.serverUrl);
@@ -36,7 +38,10 @@ export function PersistentSessionProvider({ children }: { children: React.ReactN
   const [sheet, setSheet] = useState<'loading' | 'choose' | 'error' | 'add' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const destination = useRef<() => void>(() => undefined);
-  const pending = useRef(false);
+  const pending = useRef<'manual' | 'startup' | null>(null);
+  const intent = useRef(sessionIntent);
+  intent.current = sessionIntent;
+  React.useEffect(() => { if (sessionIntent && pending.current === 'startup') setSheet(null); }, [sessionIntent]);
   const last = useSettingsStore(state => state.getPersistentSessionDevicePreference(serverUrl, email).lastSessionId);
   const portrait = sessions.find(session => session.session_id === last) ?? sessions[0]
     ?? (defaults ? { session_id: '', node_id: defaults.node_id, agent_id: defaults.preferred_agent_id, agent_name: null } : null);
@@ -47,25 +52,34 @@ export function PersistentSessionProvider({ children }: { children: React.ReactN
     setSheet(null);
     destination.current();
   }
-  async function requestEntry(onOpen: () => void, startup = false) {
-    if (pending.current) return;
-    destination.current = onOpen;
-    pending.current = true;
-    setError(null);
-    setSheet('loading');
+  async function readEntry(onOpen: () => void, mode: 'manual' | 'startup' | 'portrait') {
+    if (mode !== 'portrait') {
+      if (pending.current) return;
+      destination.current = onOpen;
+      pending.current = mode;
+      setError(null);
+      setSheet('loading');
+    }
     try {
       if (!api) throw new Error('서버에 연결해 주세요.');
       const result = await api.listPersistentSessions();
       setSessions(result.sessions); setDefaults(result.create_defaults);
-      const entry = resolvePersistentSessionEntry(result.sessions, last, startup);
+      if (mode === 'portrait') return;
+      if (mode === 'startup' && intent.current) { setSheet(null); return; }
+      const entry = resolvePersistentSessionEntry(result.sessions, last, mode === 'startup');
       if (entry.kind === 'open') open(entry.session);
       else setSheet(entry.kind === 'home' ? null : entry.kind);
     } catch {
-      setError('영구 세션을 불러오지 못했습니다.'); setSheet('error');
-    } finally { pending.current = false; }
+      if (mode === 'startup') {
+        setSheet(null);
+        if (!intent.current) useAppNoticeStore.getState().showNotice({ tone: 'error', title: '영구 세션을 불러오지 못했습니다.', message: '입구에서 다시 시도해 주세요.' });
+      } else if (mode === 'manual') { setError('영구 세션을 불러오지 못했습니다.'); setSheet('error'); }
+    } finally { if (mode !== 'portrait') pending.current = null; }
   }
+  const requestEntry = (onOpen: () => void, startup = false) => readEntry(onOpen, startup ? 'startup' : 'manual');
+  const initialize = (onOpen: () => void, openOnStart: boolean) => readEntry(onOpen, openOnStart ? 'startup' : 'portrait');
   const closeAdd = useRef<() => void>(() => setSheet(null));
-  return <Context.Provider value={{ store, portrait, requestEntry }}>
+  return <Context.Provider value={{ store, portrait, requestEntry, initialize }}>
     {children}
     {sheet ? <AppModalSurface visible variant="expanded" presentationStyle="pageSheet" modalId="modal_settings"
       onRequestClose={() => sheet === 'add' ? closeAdd.current() : setSheet(null)}>
