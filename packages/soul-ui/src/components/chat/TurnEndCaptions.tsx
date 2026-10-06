@@ -36,7 +36,7 @@ export function TurnEndCaptions({
   return (
     <div className="flex justify-end py-1" data-slot="turn-end-captions" data-tree-node-id={treeNodeId}>
       <div className="min-w-0 flex w-full flex-col items-end">
-        <div className="flex min-w-0 max-w-full items-center justify-end gap-3">
+        <div className="flex w-full min-w-0 max-w-full flex-wrap items-center justify-end gap-3">
           {usageCaption && <CollapsibleCaptionHeader
             id={usageBodyId}
             expanded={usageExpanded}

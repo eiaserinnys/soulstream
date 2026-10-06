@@ -51,6 +51,20 @@ for (const width of [1440, 340]) {
     await expect(expandedAgentSample.locator('[data-slot="chat-body"]')).toHaveCount(3);
     await agentReview.screenshot({ path: path.join(output, String(width) + "-agent-groups.png"), animations: "disabled" });
     const combined = page.getByTestId("turn-end-both").locator('[data-slot="turn-end-captions"]');
+    const usageOnly = page.getByTestId("turn-end-usage-only").locator('[data-slot="turn-end-captions"]');
+    const summaryOnly = page.getByTestId("turn-end-summary-only").locator('[data-slot="turn-end-captions"]');
+    const usageOnlyTitle = usageOnly.getByRole("button").locator("span");
+    const summaryOnlyTitle = summaryOnly.getByRole("button").locator("span");
+    await usageOnly.screenshot({ path: path.join(output, String(width) + "-usage-only.png"), animations: "disabled" });
+    await summaryOnly.screenshot({ path: path.join(output, String(width) + "-summary-only.png"), animations: "disabled" });
+    const regularCaption = page.locator('[data-slot="collapsible-caption"]').filter({ hasText: "Jev 후보 3" }).first();
+    await regularCaption.screenshot({ path: path.join(output, String(width) + "-default-collapsible-caption.png"), animations: "disabled" });
+    await expect(usageOnlyTitle).toHaveText("컨텍스트 약 63% · 정가 $1.40");
+    await expect(summaryOnlyTitle).toHaveText("요약");
+    for (const title of [usageOnlyTitle, summaryOnlyTitle]) {
+      const bounds = await title.evaluate(element => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }));
+      expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.clientWidth);
+    }
     const headers = combined.getByRole("button");
     await expect(headers).toHaveCount(2);
     await expect(headers.nth(0)).toHaveAttribute("aria-expanded", "false");
