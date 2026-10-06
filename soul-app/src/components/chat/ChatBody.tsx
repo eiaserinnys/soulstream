@@ -25,9 +25,7 @@ import { PERSISTENT_HISTORY_EVENT_TYPES } from '../../api/persistentHistoryEvent
 import { useChatBottomFollow } from './useChatBottomFollow';
 import { useTokens } from '../../theme';
 import { ChatEventList } from './ChatEventList';
-import { ClaudeRuntimeTasksStrip } from './ClaudeRuntimeTasksStrip';
-import { ClaudeRuntimeSchedulesStrip } from './ClaudeRuntimeSchedulesStrip';
-import { ClaudeRuntimeSignalsStrip } from './ClaudeRuntimeSignalsStrip';
+import { ChatRuntimeStrips } from './ChatRuntimeStrips';
 import { useChatRenderItems } from './useChatRenderItems';
 import { useChatSseStream } from './useChatSseStream';
 import { captureAuthScope, useAuthScopeGeneration } from '../../lib/auth-scope';
@@ -513,9 +511,7 @@ export function ChatBody({
         presentation={presentation}
       />
 
-      <ClaudeRuntimeTasksStrip sessionId={sessionId} api={api} presentation={presentation} />
-      <ClaudeRuntimeSchedulesStrip sessionId={sessionId} api={api} presentation={presentation} />
-      <ClaudeRuntimeSignalsStrip sessionId={sessionId} api={api} presentation={presentation} />
+      <ChatRuntimeStrips sessionId={sessionId} api={api} presentation={presentation} />
 
       <ChatInputComposer
         key={sessionId}

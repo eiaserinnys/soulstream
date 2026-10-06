@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +27,8 @@ import { chatAuxiliarySurface } from './chatAuxiliarySurface';
 
 interface Props {
   presentation?: 'default' | 'manuscript';
+  separateBelow?: boolean;
+  onVisibilityChange?(visible: boolean): void;
   sessionId: string;
   api: ApiClient | null;
 }
@@ -35,7 +37,7 @@ const TERMINAL_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
   'completed', 'failed', 'stopped', 'killed',
 ]);
 
-export function ClaudeRuntimeTasksStrip({ sessionId, api, presentation = 'default' }: Props) {
+export function ClaudeRuntimeTasksStrip({ sessionId, api, presentation = 'default', separateBelow = true, onVisibilityChange }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const runtime = useChatStore((s) => s.claudeRuntimeBySession[sessionId]);
@@ -85,10 +87,12 @@ export function ClaudeRuntimeTasksStrip({ sessionId, api, presentation = 'defaul
     }
   };
 
-  if (tasks.length === 0 && !hasModeState && !loading && !recoveryNeeded) return null;
+  const visible = tasks.length > 0 || hasModeState || loading || recoveryNeeded;
+  useLayoutEffect(() => { onVisibilityChange?.(visible); }, [visible, onVisibilityChange]);
+  if (!visible) return null;
 
   return (
-    <View testID="runtime-tasks-strip" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
+    <View testID="runtime-tasks-strip" style={[styles.container, chatAuxiliarySurface(t, presentation, separateBelow)]}>
       <View style={styles.header}>
         <CompactTouchTarget
           testID="runtime-tasks-header-touch"

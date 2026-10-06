@@ -111,7 +111,30 @@ test('phone 카드 목록은 제목과 같은 가장자리·종이 바탕을 쓰
   expect(panel.paddingTop).toBeGreaterThan(0);
   expect(panel.backgroundColor).toBe(paper.backgroundColor);
   fireEvent.press(view.getByTestId('choose-card'));
+  const header = StyleSheet.flatten(view.getByTestId('persistent-summary-header').props.style);
+  expect(header.paddingHorizontal + (44 - 32) / 2).toBe(20);
   fireEvent.press(view.getByLabelText('목록으로'));
   expect(store.getState().selectedCardId).toBeNull();
   view.unmount();
+});
+
+test.each([[1180, 820], [1194, 834], [820, 1180], [834, 1194]])('iPad %s×%s 목록의 초상 끝은 헤더 원 끝이며 요약 위치와 목록 복귀는 유지한다', (width, height) => {
+  mockDevice = height > width ? 'tabletPortrait' : 'tabletLandscape';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width, height, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, width, height - 24);
+  });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  act(() => { view.getByTestId('persistent-session-screen').props.onLayout(); store.getState().open({ session_id: 'pas-1' } as any); store.getState().toggleScene(); });
+  const list = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
+  expect(width - list.right - list.paddingHorizontal).toBe(width - 20);
+  fireEvent.press(view.getByTestId('choose-card'));
+  const summary = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
+  expect(summary.right).toBe(height > width ? 20 : width - (width - 480) / 2 - 480 - 24 - 318);
+  const back = view.getByTestId('persistent-summary-back');
+  const wrapper = StyleSheet.flatten(view.getByTestId('persistent-summary-header').props.style);
+  expect(wrapper.paddingHorizontal + (48 - 32) / 2).toBe(20);
+  fireEvent.press(back);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style).right).toBe(list.right);
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
 });

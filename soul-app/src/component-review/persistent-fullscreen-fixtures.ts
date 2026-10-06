@@ -37,6 +37,13 @@ export function createPersistentFullscreenReviewApi(search: string): ApiClient {
     getTimeline: async (id, params) => params?.eventTypes?.includes('user_message')
       ? { messages: params?.before ? [] : history, next_cursor: null }
       : nativeSettingsReviewApi.getTimeline(id, params),
+    ...(query.has('runtime') ? {
+      listClaudeBackgroundTasks: async (sessionId: string) => {
+        const response = await nativeSettingsReviewApi.listClaudeBackgroundTasks(sessionId);
+        return { ...response, tasks: query.get('runtime') === 'none' ? [] : response.tasks };
+      },
+      listClaudeSchedules: async (sessionId: string) => ({ sessionId, nextRunAt: null, schedules: [] }),
+    } : {}),
     sessionEventsUrl: reviewSessionEventsUrl,
   } as ApiClient;
 }

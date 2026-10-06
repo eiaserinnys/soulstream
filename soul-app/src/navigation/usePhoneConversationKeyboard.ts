@@ -5,7 +5,7 @@ import { getDefaultTabBarStyle } from './TabNavigator';
 import { useTokens } from '../theme';
 
 /** 포커스된 대화에서만 등록하는 기존 phone 키보드/탭 표시 계약. */
-export function usePhoneConversationKeyboard(navigation: { getParent(): { setOptions(options: unknown): void } | undefined }) {
+export function usePhoneConversationKeyboard(navigation: { getParent(): { setOptions(options: unknown): void } | undefined; getState(): { index: number; routes: { key: string }[] } }) {
   const t = useTokens();
   // 키보드 등장 시 탭 바를 숨겨 KAV의 effective bottom = 화면 바닥이 되게 한다.
   // tabBarHideOnKeyboard는 iPad iOS 18+에서 hide 애니메이션 잔존 버그(둥근 상단 edge가
@@ -14,6 +14,8 @@ export function usePhoneConversationKeyboard(navigation: { getParent(): { setOpt
   useFocusEffect(
     useCallback(() => {
       const parent = navigation.getParent();
+      const initialStack = navigation.getState();
+      const routeKey = initialStack.routes[initialStack.index].key;
       const visible = getDefaultTabBarStyle(t.colors);
       const hidden = { ...visible, display: 'none' as const };
       let hiddenByKeyboard = false;
@@ -31,8 +33,9 @@ export function usePhoneConversationKeyboard(navigation: { getParent(): { setOpt
       return () => {
         showSub.remove();
         hideSub.remove();
-        // 탭 전환·블러 시 탭 바를 보이는 상태로 복원 (키보드 떠 있는 상태에서 탭 이동 케이스).
-        if (hiddenByKeyboard) parent?.setOptions({ tabBarStyle: visible });
+        // 자기 stack 최상단에 남는 탭 전환만 복원한다. push된 상세는 표시를 직접 소유한다.
+        const stack = navigation.getState();
+        if (hiddenByKeyboard && stack.routes[stack.index].key === routeKey) parent?.setOptions({ tabBarStyle: visible });
       };
     }, [navigation, t.colors])
   );

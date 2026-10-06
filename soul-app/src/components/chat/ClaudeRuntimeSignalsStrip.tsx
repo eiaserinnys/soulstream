@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -23,11 +23,13 @@ import { chatAuxiliarySurface } from './chatAuxiliarySurface';
 
 interface Props {
   presentation?: 'default' | 'manuscript';
+  separateBelow?: boolean;
+  onVisibilityChange?(visible: boolean): void;
   sessionId: string;
   api: ApiClient | null;
 }
 
-export function ClaudeRuntimeSignalsStrip({ sessionId, api, presentation = 'default' }: Props) {
+export function ClaudeRuntimeSignalsStrip({ sessionId, api, presentation = 'default', separateBelow = true, onVisibilityChange }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const runtime = useChatStore((s) => s.claudeRuntimeBySession[sessionId]);
@@ -52,10 +54,12 @@ export function ClaudeRuntimeSignalsStrip({ sessionId, api, presentation = 'defa
     setExpanded(false);
   }, [sessionId]);
 
-  if (notifications.length === 0 && remoteTriggers.length === 0 && !mirror) return null;
+  const visible = notifications.length > 0 || remoteTriggers.length > 0 || !!mirror;
+  useLayoutEffect(() => { onVisibilityChange?.(visible); }, [visible, onVisibilityChange]);
+  if (!visible) return null;
 
   return (
-    <View testID="runtime-signals-strip" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
+    <View testID="runtime-signals-strip" style={[styles.container, chatAuxiliarySurface(t, presentation, separateBelow)]}>
       <View style={styles.header}>
         <CompactTouchTarget
           testID="runtime-signals-header-touch"

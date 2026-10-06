@@ -147,7 +147,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
       {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
         top: headerHeight + (phone ? 0 : t.hitTarget.min),
         ...(phone ? { bottom: 0 } : { maxHeight: Math.max(0, (portrait && geometry ? geometry.lineY : app?.height ?? 0) - headerHeight - t.hitTarget.min - t.uiSpacing.md) }),
-        right: phone ? 0 : portrait ? t.foundation.pageInset : app ? app.width - columnLeft - columnWidth - t.uiSpacing.xl - (selectedCardId ? widths.detail : widths.tasks) : t.foundation.pageInset,
+        right: phone ? 0 : !selectedCardId ? t.foundation.pageInset - t.uiSpacing.sm : portrait ? t.foundation.pageInset : app ? app.width - columnLeft - columnWidth - t.uiSpacing.xl - (selectedCardId ? widths.detail : widths.tasks) : t.foundation.pageInset,
         width: phone ? '100%' : selectedCardId ? widths.detail : widths.tasks,
         backgroundColor: selectedCardId && !phone ? t.persistentSession.panel : t.persistentSession.paper,
         borderRadius: phone ? 0 : t.foundation.radius.card,
@@ -155,7 +155,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
         paddingHorizontal: selectedCardId ? 0 : phone ? t.foundation.pageInset : t.uiSpacing.sm,
         paddingTop: phone && !selectedCardId ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
         {selectedCardId ? <>
-          <View style={{ paddingHorizontal: t.foundation.pageInset, alignItems: 'flex-start' }}>
+          <View testID="persistent-summary-header" style={{ paddingHorizontal: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2, alignItems: 'flex-start' }}>
             <LiquidGlassButton iconOnly size="compact" variant="paper" accessibilityLabel="목록으로" testID="persistent-summary-back"
               onPress={() => host.store.getState().selectCard(null)}>
               <Ionicons name="chevron-back" size={t.iconSize.navigation} color={t.colors.textPrimary} />

@@ -202,6 +202,7 @@ test('Chat focus hides the parent tab bar for keyboard events and restores it on
   const setTabOptions = jest.fn();
   const navigation = {
     getParent: () => ({ setOptions: setTabOptions }),
+    getState: () => ({ index: 0, routes: [{ key: 'chat-keyboard' }] }),
     navigate: jest.fn(),
     setOptions: jest.fn(),
     setParams: jest.fn(),
