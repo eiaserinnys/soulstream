@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 167개 $defs (top-level wire 81 + supporting/SSE 86). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 171개 $defs (top-level wire 83 + supporting/SSE 88). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -11,6 +11,7 @@
     "interrupt_session",
     "acknowledge_session_review",
     "set_persistent_session_settings",
+    "apply_persistent_session_instructions",
     "subscribe_events",
     "list_sessions",
     "list_runner_inventory",
@@ -1177,6 +1178,43 @@
         "modelChange": { "type": "string", "enum": ["none", "next_execution_start"] }
       }
     },
+    "PersistentInstructionRecord": {
+      "type": "object",
+      "description": "sessions.metadata에 저장되는 세션 지속 지시 한 항목.",
+      "required": ["id", "text", "source_turns", "source_event_ids", "created_at", "updated_at", "status", "origin"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "source_turns": { "type": "array", "items": { "type": "string", "pattern": "^T[0-9]+$" } },
+        "source_event_ids": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "removed"] },
+        "origin": { "type": "string", "enum": ["extracted", "agent", "user"] }
+      }
+    },
+    "PersistentInstructionApplyResult": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["ok", "cap_reached", "not_found"] },
+        "item": { "$ref": "#/$defs/PersistentInstructionRecord" }
+      }
+    },
+    "PersistentSessionInstructionsApplied": {
+      "type": "object",
+      "description": "노드→orch: persistent instruction command의 항목별 저장 결과 ACK.",
+      "required": ["type", "requestId", "agentSessionId", "results"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "persistent_session_instructions_applied" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "results": { "type": "array", "items": { "$ref": "#/$defs/PersistentInstructionApplyResult" } }
+      }
+    },
     "RespondAck": {
       "type": "object",
       "description": "노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.",
@@ -1553,6 +1591,60 @@
             "animate_character": { "type": "boolean" }
           }
         },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" }
+      }
+    },
+    "ApplyPersistentSessionInstructions": {
+      "type": "object",
+      "description": "orch→소유 노드: 세션 지속 지시를 추가·수정하고 ACK 결과를 돌려준다.",
+      "required": ["type", "session_id", "origin", "ops"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "apply_persistent_session_instructions" },
+        "session_id": { "type": "string", "minLength": 1 },
+        "origin": { "type": "string", "enum": ["extracted", "agent", "user"] },
+        "ops": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["op", "text"],
+                "additionalProperties": false,
+                "properties": {
+                  "op": { "const": "add" },
+                  "text": { "type": "string", "minLength": 1 },
+                  "source_turns": { "type": "array", "items": { "type": "string", "pattern": "^T[0-9]+$" } },
+                  "source_event_ids": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["op", "id"],
+                "additionalProperties": false,
+                "properties": {
+                  "op": { "const": "update" },
+                  "id": { "type": "string", "minLength": 1 },
+                  "text": { "type": "string", "minLength": 1 },
+                  "status": { "type": "string", "enum": ["active", "removed"] }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["op", "id", "source_turns", "source_event_ids"],
+                "additionalProperties": false,
+                "properties": {
+                  "op": { "const": "touch" },
+                  "id": { "type": "string", "minLength": 1 },
+                  "source_turns": { "type": "array", "items": { "type": "string", "pattern": "^T[0-9]+$" } },
+                  "source_event_ids": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+                }
+              }
+            ]
+          }
+        },
+        "anchor": { "type": "string", "minLength": 1, "description": "입력의 Jev input_id. 기록 이벤트에서 input_id로 내보낸다." },
         "requestId": { "type": "string" },
         "request_id": { "type": "string" }
       }
@@ -3616,6 +3708,7 @@
     { "$ref": "#/$defs/InterruptSessionAck" },
     { "$ref": "#/$defs/AcknowledgeSessionReviewAck" },
     { "$ref": "#/$defs/PersistentSessionSettingsUpdated" },
+    { "$ref": "#/$defs/PersistentSessionInstructionsApplied" },
     { "$ref": "#/$defs/RespondAck" },
     { "$ref": "#/$defs/ToolApprovalAck" },
     { "$ref": "#/$defs/RealtimeCallCreated" },
@@ -3636,6 +3729,7 @@
     { "$ref": "#/$defs/InterruptSession" },
     { "$ref": "#/$defs/AcknowledgeSessionReview" },
     { "$ref": "#/$defs/SetPersistentSessionSettings" },
+    { "$ref": "#/$defs/ApplyPersistentSessionInstructions" },
     { "$ref": "#/$defs/Respond" },
     { "$ref": "#/$defs/ApproveTool" },
     { "$ref": "#/$defs/RejectTool" },

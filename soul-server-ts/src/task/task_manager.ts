@@ -129,6 +129,7 @@ export class TaskManager {
         this.tasks.set(task.agentSessionId, task);
       },
       persistence,
+      logger,
       modelCatalog: this.modelCatalog,
       resolveCurrentBackend: (task) => {
         if (task.modelPresetBackend) return task.modelPresetBackend;

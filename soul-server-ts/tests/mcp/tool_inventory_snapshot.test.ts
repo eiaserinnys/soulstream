@@ -76,7 +76,7 @@ describe("advertised MCP tool inventory", () => {
     expect(internal.find(tool => tool.name === "run_card")).toBeDefined();
     for(const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"])
       expect(internal.find(tool=>tool.name===name)).toBeDefined();
-    expect(internal).toHaveLength(119);
+    expect(internal).toHaveLength(122);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });

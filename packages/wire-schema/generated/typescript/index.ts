@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 167개 $defs (top-level wire 81 + supporting/SSE 86). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 171개 $defs (top-level wire 83 + supporting/SSE 88). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -30,6 +30,7 @@ export type SoulstreamUpstreamProtocol =
   | InterruptSessionAck
   | AcknowledgeSessionReviewAck
   | PersistentSessionSettingsUpdated
+  | PersistentSessionInstructionsApplied
   | RespondAck
   | ToolApprovalAck
   | RealtimeCallCreated
@@ -50,6 +51,7 @@ export type SoulstreamUpstreamProtocol =
   | InterruptSession
   | AcknowledgeSessionReview
   | SetPersistentSessionSettings
+  | ApplyPersistentSessionInstructions
   | Respond
   | ApproveTool
   | RejectTool
@@ -1734,6 +1736,32 @@ export interface PersistentSessionSettingsUpdated {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: persistent instruction command의 항목별 저장 결과 ACK.
+ */
+export interface PersistentSessionInstructionsApplied {
+  type: "persistent_session_instructions_applied";
+  requestId: string;
+  agentSessionId: string;
+  results: PersistentInstructionApplyResult[];
+}
+export interface PersistentInstructionApplyResult {
+  status: "ok" | "cap_reached" | "not_found";
+  item?: PersistentInstructionRecord;
+}
+/**
+ * sessions.metadata에 저장되는 세션 지속 지시 한 항목.
+ */
+export interface PersistentInstructionRecord {
+  id: string;
+  text: string;
+  source_turns: string[];
+  source_event_ids: number[];
+  created_at: string;
+  updated_at: string;
+  status: "active" | "removed";
+  origin: "extracted" | "agent" | "user";
+}
+/**
  * 노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
  */
 export interface RespondAck {
@@ -2091,6 +2119,40 @@ export interface SetPersistentSessionSettings {
   requestId?: string;
   request_id?: string;
   [k: string]: unknown;
+}
+/**
+ * orch→소유 노드: 세션 지속 지시를 추가·수정하고 ACK 결과를 돌려준다.
+ */
+export interface ApplyPersistentSessionInstructions {
+  type: "apply_persistent_session_instructions";
+  session_id: string;
+  origin: "extracted" | "agent" | "user";
+  ops: (
+    | {
+        op: "add";
+        text: string;
+        source_turns?: string[];
+        source_event_ids?: number[];
+      }
+    | {
+        op: "update";
+        id: string;
+        text?: string;
+        status?: "active" | "removed";
+      }
+    | {
+        op: "touch";
+        id: string;
+        source_turns: string[];
+        source_event_ids: number[];
+      }
+  )[];
+  /**
+   * 입력의 Jev input_id. 기록 이벤트에서 input_id로 내보낸다.
+   */
+  anchor?: string;
+  requestId?: string;
+  request_id?: string;
 }
 /**
  * orch→노드: AskUserQuestion 응답.
@@ -3030,6 +3092,7 @@ export const CONTROL_COMMAND_TYPES = [
   "interrupt_session",
   "acknowledge_session_review",
   "set_persistent_session_settings",
+  "apply_persistent_session_instructions",
   "subscribe_events",
   "list_sessions",
   "list_runner_inventory",

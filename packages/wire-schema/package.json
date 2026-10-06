@@ -15,7 +15,8 @@
     "./card-orchestration": "./src/card_orchestration.ts",
     "./card-attachments": "./src/card_attachments.ts",
     "./card-colors": "./src/card_colors.ts",
-    "./persistent-session-settings": "./src/persistent_session_settings.ts"
+    "./persistent-session-settings": "./src/persistent_session_settings.ts",
+    "./persistent-session-instructions": "./src/persistent_session_instructions.ts"
   },
   "scripts": {
     "generate": "bash scripts/generate.sh",

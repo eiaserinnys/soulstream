@@ -2057,6 +2057,91 @@ describe("generation checkpoint context", () => {
     expect(getAssignedCardContext).toHaveBeenCalledTimes(1);
   });
 
+  it("injects active instructions newest first with their source turns", async () => {
+    const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
+      story: {
+        highlight: null,
+        narrative: "",
+        unfoldedTurnSummaries: [],
+        narrativeThroughEventId: null,
+        foldCount: 0,
+        updatedAt: null,
+      },
+      lastSummarizedFinalResponseEventId: null,
+      recent: { records: [], omittedUnsummarized: 0 },
+      childSessions: [],
+      childSessionTotal: 0,
+      totals: { events: 0, turnSummaries: 0 },
+    });
+    const getSupervisedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-10-05T00:00:00.000Z",
+      counts: { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 },
+      cards: [],
+      openQuestions: [],
+      openQuestionTotal: 0,
+    });
+    const builder = makeBuilder({ getGenerationCheckpointMaterial, getSupervisedCardContext } as unknown as Partial<SessionDB>);
+    const task = makeTask({
+      agentSessionId: ownSessionIdForContextTest,
+      metadata: [{
+        type: "persistent_instructions",
+        value: [
+          {
+            id: "older",
+            text: "Multi-turn preference.",
+            source_turns: ["T195", "T210"],
+            source_event_ids: [31],
+            created_at: "2026-10-01T00:00:00.000Z",
+            updated_at: "2026-10-05T00:00:00.000Z",
+            status: "active",
+            origin: "extracted",
+          },
+          {
+            id: "newest",
+            text: "Newest preference.",
+            source_turns: ["T220"],
+            source_event_ids: [42],
+            created_at: "2026-10-05T00:00:00.000Z",
+            updated_at: "2026-10-06T00:00:00.000Z",
+            status: "active",
+            origin: "agent",
+          },
+          {
+            id: "without-turn",
+            text: "Manual preference.",
+            source_turns: [],
+            source_event_ids: [],
+            created_at: "2026-10-01T00:00:00.000Z",
+            updated_at: "2026-10-04T00:00:00.000Z",
+            status: "active",
+            origin: "user",
+          },
+          {
+            id: "removed",
+            text: "Removed preference.",
+            source_turns: ["T225"],
+            source_event_ids: [43],
+            created_at: "2026-10-01T00:00:00.000Z",
+            updated_at: "2026-10-03T00:00:00.000Z",
+            status: "removed",
+            origin: "extracted",
+          },
+        ],
+      }],
+    });
+
+    const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
+    const checkpoint = String(context.combinedContextItems.find((item) => item.key === "persistent_checkpoint")?.content);
+
+    expect(checkpoint).toContain([
+      "## 지속 지시",
+      "- (T220) Newest preference.",
+      "- (T195, T210) Multi-turn preference.",
+      "- Manual preference.",
+    ].join("\n"));
+    expect(checkpoint).not.toContain("Removed preference.");
+  });
+
   it("writes numbered cards and sessions as #N lines in the first input of a new generation", async () => {
     const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
       story: {

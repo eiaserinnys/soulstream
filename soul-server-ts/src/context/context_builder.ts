@@ -1,4 +1,5 @@
 /** Builds input context; agent and folder instructions form the system prompt. */
+import { readPersistentInstructions } from "@soulstream/wire-schema/persistent-session-instructions";
 import { fetchAssignedCardContextItem, type AssignedCardContextCapture } from "./assigned_card_context.js";
 import type { Logger } from "pino";
 import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
@@ -245,7 +246,7 @@ export class ExecutionContextBuilder {
       BOARD_WORKSPACE_SESSION_LIMIT,
     );
     const checkpoint = generation
-      ? await this.readPersistentCheckpoint(task.agentSessionId)
+      ? await this.readPersistentCheckpoint(task)
       : null;
     const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
@@ -333,7 +334,8 @@ export class ExecutionContextBuilder {
     return checkpoint ? { ...prepared, checkpointStats: checkpoint.stats } : prepared;
   }
 
-  private async readPersistentCheckpoint(sessionId: string) {
+  private async readPersistentCheckpoint(task: Task) {
+    const sessionId = task.agentSessionId;
     const [material, cards] = await Promise.all([
       this.db.getGenerationCheckpointMaterial(sessionId, PERSISTENT_CHECKPOINT_READ_LIMITS),
       this.db.getSupervisedCardContext({
@@ -346,7 +348,12 @@ export class ExecutionContextBuilder {
     return buildPersistentCheckpoint({
       material,
       cards,
-      standingInstructions: [],
+      standingInstructions: readPersistentInstructions(task.metadata)
+        .filter((instruction) => instruction.status === "active")
+        .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+        .map((instruction) => instruction.source_turns.length > 0
+          ? `- (${instruction.source_turns.join(", ")}) ${instruction.text}`
+          : `- ${instruction.text}`),
       ownSessionId: sessionId,
     }, PERSISTENT_CHECKPOINT_BUDGET);
   }

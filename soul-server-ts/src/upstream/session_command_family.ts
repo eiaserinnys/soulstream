@@ -1,6 +1,7 @@
 import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
 import { parsePersistentSettingsPatch, type PersistentSettingsPatch } from "@soulstream/wire-schema/persistent-session-settings";
+import { parsePersistentInstructionsApplyPayload } from "@soulstream/wire-schema/persistent-session-instructions";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
@@ -108,6 +109,14 @@ interface SetPersistentSessionSettingsCmd extends CommandLike {
   settings?: unknown;
 }
 
+interface ApplyPersistentSessionInstructionsCmd extends CommandLike {
+  type: "apply_persistent_session_instructions";
+  session_id?: string;
+  origin?: unknown;
+  ops?: unknown;
+  anchor?: unknown;
+}
+
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
 type ListRunnerInventoryCmd = CommandLike & { type: "list_runner_inventory" };
 
@@ -133,6 +142,8 @@ export function createSessionCommandFamily(
       handleAcknowledgeSessionReview(deps, cmd as AcknowledgeSessionReviewCmd),
     set_persistent_session_settings: (cmd) =>
       handleSetPersistentSessionSettings(deps, cmd as SetPersistentSessionSettingsCmd),
+    apply_persistent_session_instructions: (cmd) =>
+      handleApplyPersistentSessionInstructions(deps, cmd as ApplyPersistentSessionInstructionsCmd),
     subscribe_events: (cmd) =>
       handleSubscribeEvents(deps, cmd as SubscribeEventsCmd),
     list_sessions: (cmd) => handleListSessions(deps, cmd as ListSessionsCmd),
@@ -233,6 +244,46 @@ async function handleSetPersistentSessionSettings(
     agentSessionId: sessionId,
     persistent: result.persistent,
     modelChange: result.modelChange,
+  });
+}
+
+async function handleApplyPersistentSessionInstructions(
+  deps: SessionCommandFamilyDeps,
+  cmd: ApplyPersistentSessionInstructionsCmd,
+): Promise<void> {
+  const unknownKey = Object.keys(cmd).find((key) => ![
+    "type", "session_id", "origin", "ops", "anchor", "requestId", "request_id",
+  ].includes(key));
+  if (unknownKey) {
+    throw new CommandDispatchError(`apply_persistent_session_instructions.${unknownKey} is not supported`, "INVALID_REQUEST");
+  }
+  const parsed = parsePersistentInstructionsApplyPayload({
+    session_id: cmd.session_id,
+    origin: cmd.origin,
+    ops: cmd.ops,
+    ...(cmd.anchor === undefined ? {} : { anchor: cmd.anchor }),
+  });
+  if (!parsed.ok) throw new CommandDispatchError(parsed.message, "INVALID_REQUEST");
+
+  let result: Awaited<ReturnType<TaskManager["persistentSessions"]["applyPersistentInstructions"]>>;
+  try {
+    result = await deps.taskManager.persistentSessions.applyPersistentInstructions(
+      parsed.value.session_id,
+      parsed.value,
+    );
+  } catch (err) {
+    if (err instanceof PersistentSessionControlError) {
+      throw new CommandDispatchError(err.message, err.code);
+    }
+    throw err;
+  }
+  const requestId = commandRequestId(cmd);
+  if (!requestId) return;
+  await deps.send({
+    type: "persistent_session_instructions_applied",
+    requestId,
+    agentSessionId: parsed.value.session_id,
+    results: result.results,
   });
 }
 

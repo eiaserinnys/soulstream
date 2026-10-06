@@ -140,6 +140,31 @@
     "name": "add_card_report"
   },
   {
+    "description": "퍼시스턴트 세션에 지속 지시를 추가한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "add_persistent_instruction"
+  },
+  {
     "annotations": {
       "destructiveHint": true
     },
@@ -3317,6 +3342,26 @@
       "type": "object"
     },
     "name": "list_nodes"
+  },
+  {
+    "description": "퍼시스턴트 세션에 저장된 활성 지시를 조회한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_persistent_instructions"
   },
   {
     "description": "반복 작업의 실행 이력과 연결된 Soulstream session_id를 조회한다.",
@@ -7925,6 +7970,42 @@
       "type": "object"
     },
     "name": "update_markdown_document"
+  },
+  {
+    "description": "저장된 지속 지시의 문장이나 상태를 바꾼다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "instruction_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "removed"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "instruction_id"
+      ],
+      "type": "object"
+    },
+    "name": "update_persistent_instruction"
   },
   {
     "description": "반복 작업을 CAS version으로 수정하거나 일시정지·재개한다. 1회 작업의 실행 시각은 run_at으로 바꾼다.",

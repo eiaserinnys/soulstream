@@ -69,4 +69,91 @@ export function registerPersistentSessionTools(
       }
     },
   );
+
+  server.registerTool(
+    "list_persistent_instructions",
+    {
+      description: "퍼시스턴트 세션에 저장된 활성 지시를 조회한다.",
+      inputSchema: { session_id: z.string().min(1) },
+    },
+    async ({ session_id }) => {
+      try {
+        const instructions = await runtime.taskManager.persistentSessions
+          .listPersistentInstructions(session_id);
+        const firstLine = instructions[0]?.text ?? "저장된 지속 지시가 없습니다.";
+        return withFirstLine({
+          session_id,
+          instructions: instructions.map(({ id, text, source_turns }) => ({ id, text, source_turns })),
+        }, firstLine);
+      } catch (err) {
+        return errorResultFromError(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_persistent_instruction",
+    {
+      description: "퍼시스턴트 세션에 지속 지시를 추가한다.",
+      inputSchema: {
+        session_id: z.string().min(1),
+        text: z.string().trim().min(1),
+      },
+    },
+    async ({ session_id, text }) => {
+      try {
+        const result = await runtime.taskManager.persistentSessions.applyPersistentInstructions(session_id, {
+          origin: "agent",
+          ops: [{ op: "add", text }],
+        });
+        const outcome = result.results[0]!;
+        if (outcome.status === "cap_reached") {
+          return withFirstLine({ session_id, status: outcome.status }, "활성 지속 지시 상한에 도달했습니다.");
+        }
+        return withFirstLine({ session_id, status: outcome.status, instruction: outcome.item }, outcome.item?.text ?? "지시를 추가하지 못했습니다.");
+      } catch (err) {
+        return errorResultFromError(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_persistent_instruction",
+    {
+      description: "저장된 지속 지시의 문장이나 상태를 바꾼다.",
+      inputSchema: {
+        session_id: z.string().min(1),
+        instruction_id: z.string().min(1),
+        text: z.string().trim().min(1).optional(),
+        status: z.enum(["active", "removed"]).optional(),
+      },
+    },
+    async ({ session_id, instruction_id, text, status }) => {
+      if (text === undefined && status === undefined) return errorResult("text 또는 status가 필요합니다.");
+      try {
+        const result = await runtime.taskManager.persistentSessions.applyPersistentInstructions(session_id, {
+          origin: "agent",
+          ops: [{ op: "update", id: instruction_id, ...(text === undefined ? {} : { text }), ...(status === undefined ? {} : { status }) }],
+        });
+        const outcome = result.results[0]!;
+        if (outcome.status === "not_found") {
+          return withFirstLine({ session_id, instruction_id, status: outcome.status }, "지시를 찾지 못했습니다.");
+        }
+        if (outcome.status === "cap_reached") {
+          return withFirstLine({ session_id, instruction_id, status: outcome.status }, "활성 지속 지시 상한에 도달했습니다.");
+        }
+        return withFirstLine({ session_id, status: outcome.status, instruction: outcome.item }, outcome.item?.text ?? "지시가 갱신되었습니다.");
+      } catch (err) {
+        return errorResultFromError(err);
+      }
+    },
+  );
+}
+
+function withFirstLine(value: Record<string, unknown>, firstLine: string) {
+  const result = jsonResult(value);
+  return {
+    ...result,
+    content: [{ type: "text" as const, text: `${firstLine}\n${result.content[0]?.text ?? ""}` }],
+  };
 }
