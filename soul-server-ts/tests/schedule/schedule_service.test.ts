@@ -68,6 +68,43 @@ describe("SoulstreamScheduleService", () => {
       .toBe("2026-01-01T00:02:00.000Z");
   });
 
+  it("replaces the prior marked keepalive with one durable fixed-prompt wakeup", async () => {
+    const db = makeDb();
+    const existing = makeSchedule({
+      scheduleId: "keepalive-old",
+      sourceTool: "persistent_cache_keepalive",
+    });
+    const unrelated = makeSchedule({ scheduleId: "user-wakeup" });
+    db.listSchedules = vi.fn(async () => [existing, unrelated]) as never;
+    db.cancelSchedule = vi.fn(async (_sessionId: string, scheduleId: string) => ({
+      outcome: "cancelled",
+      schedule: { ...existing, scheduleId, status: "cancelled" as const },
+    })) as never;
+    const { service } = makeService(db);
+    const now = new Date("2026-01-01T00:00:00.000Z");
+
+    await service.deleteCacheKeepaliveSchedules("sess-1");
+    const schedule = await service.scheduleCacheKeepalive(
+      "sess-1",
+      "2026-01-01T00:50:00.000Z",
+      now,
+    );
+
+    expect(db.cancelSchedule).toHaveBeenCalledOnce();
+    expect(db.cancelSchedule).toHaveBeenCalledWith("sess-1", "keepalive-old");
+    expect(db.createSchedule).toHaveBeenCalledOnce();
+    expect(db.createSchedule).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "sess-1",
+      kind: "wakeup",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      sourceTool: "persistent_cache_keepalive",
+      recurring: false,
+      runOnceAt: new Date("2026-01-01T00:50:00.000Z"),
+      nextRunAt: new Date("2026-01-01T00:50:00.000Z"),
+    }));
+    expect(schedule.sourceTool).toBe("persistent_cache_keepalive");
+  });
+
   it("stores CronCreate in the same durable model and advances recurring schedules from now", async () => {
     const db = makeDb();
     const { service } = makeService(db);

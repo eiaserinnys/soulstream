@@ -54,6 +54,7 @@ export interface AddInterventionParams {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  purpose?: "cache_keepalive";
   context?: ContextItem[];
   source?: string;
   rateLimitType?: string;
@@ -160,6 +161,7 @@ export class TaskInterventionRoute {
       user: request.user,
       callerInfo: request.callerInfo,
       attachmentPaths: request.attachmentPaths,
+      purpose: request.purpose,
       context: request.context,
       source: request.source,
       rateLimitType: request.rateLimitType,

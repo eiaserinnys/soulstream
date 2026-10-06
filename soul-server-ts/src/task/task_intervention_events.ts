@@ -29,6 +29,9 @@ export function buildInterventionSentEvent(
   if (message.callerInfo) {
     interventionEvent.caller_info = message.callerInfo;
   }
+  if (message.purpose) {
+    interventionEvent.purpose = message.purpose;
+  }
   if (message.attachmentPaths && message.attachmentPaths.length > 0) {
     interventionEvent.attachments = message.attachmentPaths;
   }

@@ -10,6 +10,7 @@ import type { ClaudeDeliveryTranscriptReceiptReader } from
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type {
   EngineFactory,
@@ -45,6 +46,7 @@ export interface TaskRuntimeCompositionParams {
   persistence: EventPersistence;
   broadcaster: SessionBroadcaster;
   scheduleService: SoulstreamScheduleService;
+  providerUsage?: ProviderUsageCommandHandler;
   orchProxyConfig: OrchProxyConfig;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
   claudeTranscriptReceipt?: Pick<
@@ -163,6 +165,13 @@ export function composeTaskRuntime(
     },
     params.worktreeResolver,
     params.sessionMutations,
+    params.providerUsage
+      ? {
+          persistentSessions: taskManager.persistentSessions,
+          providerUsage: params.providerUsage,
+          scheduleService,
+        }
+      : undefined,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

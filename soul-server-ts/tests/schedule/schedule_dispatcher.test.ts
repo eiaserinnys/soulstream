@@ -66,6 +66,33 @@ describe("ScheduleDispatcher", () => {
     );
   });
 
+  it("marks a persistent cache keepalive when dispatching its durable wakeup", async () => {
+    const schedule = makeSchedule({
+      sourceTool: "persistent_cache_keepalive",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+    });
+    const service = makeService({
+      claimDueSchedules: [{ schedule, claimToken: "claim-keepalive" }],
+      consumeClaimedSchedule: schedule,
+      confirmScheduleStillFiring: schedule,
+    });
+    const taskManager = { addIntervention: vi.fn(async () => ({ autoResumed: true })) };
+    const dispatcher = new ScheduleDispatcher(
+      { nodeId: "owner-node" },
+      service as never,
+      taskManager as never,
+      vi.fn(),
+      logger,
+    );
+
+    await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
+
+    expect(taskManager.addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({ purpose: "cache_keepalive" }),
+      expect.any(Function),
+    );
+  });
+
   it("rechecks the store after claim so delete/cancel wins the race before speech", async () => {
     const schedule = makeSchedule();
     const service = makeService({

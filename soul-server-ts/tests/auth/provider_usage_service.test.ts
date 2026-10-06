@@ -11,6 +11,10 @@ import {
   codexLimitsFromUsageResponse,
   geminiLimitsFromQuotaResponse,
 } from "../../src/auth/provider_usage.js";
+import {
+  readProviderUsageObservation,
+  resetProviderUsageObservationMemo,
+} from "../../src/auth/provider_usage_observation.js";
 import type { ClaudeAuthCommandHandler } from "../../src/auth/claude_auth.js";
 import {
   createProviderUsageDeadline,
@@ -69,6 +73,30 @@ function hangingFetch(): typeof fetch {
 }
 
 describe("ProviderUsageService", () => {
+  it("updates the process observation memo through provider_usage_get", async () => {
+    resetProviderUsageObservationMemo();
+    const claudeAuth = {
+      fetchUsage: vi.fn(async () => ({
+        success: true,
+        data: {
+          five_hour: { utilization: 20, resets_at: "2026-10-06T01:00:00.000Z" },
+          seven_day: { utilization: 35, resets_at: "2026-10-07T00:00:00.000Z" },
+        },
+      })),
+    } as unknown as ClaudeAuthCommandHandler;
+    const service = new ProviderUsageService({ claudeAuth });
+
+    const response = await service.fetchUsage("req-usage", "provider_usage_get", "claude");
+
+    expect(response.success).toBe(true);
+    expect(readProviderUsageObservation("claude")?.result).toMatchObject({
+      status: "auto",
+      weeklyUsedPercent: 35,
+      shortUsedPercent: 20,
+    });
+    expect(readProviderUsageObservation("claude")?.observed_at).toBeTruthy();
+  });
+
   it("timestamps remote quota observations and marks code review separately from execution", () => {
     const before = Date.now();
     const limits = codexLimitsFromUsageResponse({ rate_limit: { primary_window: { used_percent: 85, limit_window_seconds: 18000 } }, code_review_rate_limit: { primary_window: { used_percent: 100 } } });

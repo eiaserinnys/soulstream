@@ -190,6 +190,9 @@ export class ScheduleDispatcher {
             display_name: "Soulstream Scheduler",
             user_id: "soulstream-scheduler",
           },
+          ...(ready.sourceTool === "persistent_cache_keepalive"
+            ? { purpose: "cache_keepalive" as const }
+            : {}),
           queueIfRunning: false,
         },
         this.onResume,

@@ -12,6 +12,7 @@ import {
   type ClaudeAuthCommandHandler,
 } from "./claude_auth.js";
 import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
+import { rememberProviderUsageObservation } from "./provider_usage_observation.js";
 import {
   PROVIDER_USAGE_REQUEST_TIMEOUT_MS,
   PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS,
@@ -243,6 +244,9 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
           attempts,
         ),
       );
+      if ((provider === "claude" || provider === "codex") && limits.status !== "error") {
+        rememberProviderUsageObservation(provider, limits);
+      }
       providerUsageSummary(
         this.config.logger,
         {

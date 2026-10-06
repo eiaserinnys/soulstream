@@ -129,6 +129,7 @@ export class AutoResumeTransition {
           callerInfo: message.callerInfo ?? task.callerInfo,
           attachmentPaths: message.attachmentPaths,
           contextItems: message.context,
+          purpose: message.purpose,
         });
       const resumedReviewState = reviewStateAfterFollowup(
         task.reviewState ?? "not_required",
