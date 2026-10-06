@@ -9,16 +9,20 @@ import {
   View,
   type ImageSourcePropType,
 } from 'react-native';
-import type {
-  Appearance,
-  WallpaperMode,
-  WallpaperSettings,
+import {
+  useSettingsStore,
+  type Appearance,
+  type WallpaperMode,
+  type WallpaperSettings,
 } from '../../store/settingsStore';
+import { decodeAuthJwt } from '../../auth/jwt-payload';
+import { useAuthStore } from '../../store/authStore';
 import { useDeviceType, useTokens, type DesignTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { SettingsDivider, SettingsSection } from './SettingsSection';
 import { SettingsSegmentedControl } from './SettingsSegmentedControl';
 import { SettingsPhoto } from './SettingsPhoto';
+import { SettingsToggleRow } from './SettingsFormParts';
 import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 
 const APPEARANCE_OPTIONS = [
@@ -72,6 +76,11 @@ export function DisplaySettingsSection({
   const workspace = useSettingsWorkspace();
   const wide = workspace ? workspace.wide && !workspace.columns : deviceWide;
   const styles = useMemo(() => makeStyles(t), [t]);
+  const serverUrl = useSettingsStore((state) => state.serverUrl);
+  const jwt = useAuthStore((state) => state.jwt);
+  const email = decodeAuthJwt(jwt)?.email;
+  const openOnStart = useSettingsStore((state) => state.getPersistentSessionDevicePreference(serverUrl, email).openOnStart);
+  const setOpenOnStart = useSettingsStore((state) => state.setPersistentSessionOpenOnStart);
 
   return (
     <SettingsSection id="display" title="화면과 배경" flattened={flattened}>
@@ -162,6 +171,17 @@ export function DisplaySettingsSection({
             </View>
           </View>
         ) : null}
+      <SettingsDivider />
+      <View style={styles.block}>
+        <SettingsToggleRow
+          label="시작할 때 영구 세션으로 열기"
+          value={openOnStart}
+          disabled={!email || !serverUrl}
+          help={!serverUrl ? '서버 연결 후 사용할 수 있습니다.' : !email ? '로그인하면 사용할 수 있습니다.' : undefined}
+          testID="settings-persistent-session-open-on-start"
+          onValueChange={(value) => setOpenOnStart(serverUrl, email, value)}
+        />
+      </View>
     </SettingsSection>
   );
 }

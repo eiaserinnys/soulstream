@@ -11,6 +11,7 @@ import {
 } from './groupChatEvents';
 import { replaceEqualDeep } from '../../lib/structural-sharing';
 import { bottomFollowTargetKey } from './bottomFollow';
+import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
 
 const TYPING_RENDER_ITEM: ChatRenderItem = {
   kind: 'typing',
@@ -23,6 +24,8 @@ interface Args {
   streamingSlots: StreamingSlots | undefined;
   sessionStatus: string | undefined;
   persistentDisplaySettings?: PersistentDisplayProjectionSettings;
+  presentation?: 'default' | 'manuscript';
+  showTurnUsage?: boolean;
 }
 
 export function useChatRenderItems({
@@ -31,17 +34,22 @@ export function useChatRenderItems({
   streamingSlots,
   sessionStatus,
   persistentDisplaySettings,
+  presentation = 'default',
+  showTurnUsage,
 }: Args): {
   reversedItems: ChatRenderItem[];
   bottomFollowItemKey: string | null;
 } {
   const snapshotStreams = streamingSlots?.assistantSnapshotStreams;
   const baseRenderItems = useMemo<ChatRenderItem[]>(
-    () => placePendingOptimistic(
-      groupChatEvents(events, snapshotStreams, persistentDisplaySettings),
-      pendingOptimistic,
-    ),
-    [events, pendingOptimistic, persistentDisplaySettings, snapshotStreams],
+    () => {
+      const grouped = groupChatEvents(events, snapshotStreams, persistentDisplaySettings);
+      const presented = presentation === 'manuscript'
+        ? projectPersistentTurnUsage(grouped, events, showTurnUsage !== false)
+        : grouped;
+      return placePendingOptimistic(presented, pendingOptimistic);
+    },
+    [events, pendingOptimistic, persistentDisplaySettings, presentation, showTurnUsage, snapshotStreams],
   );
   const baseReversedItems = useMemo(
     () => [...baseRenderItems].reverse(),

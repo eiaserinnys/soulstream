@@ -16,6 +16,13 @@ import {
 // 런타임 서버 모드는 앱 초기화 시 /api/config에서 별도 조회
 export type ServerType = 'soul-server' | 'orchestrator';
 
+export interface PersistentSessionDevicePreference {
+  openOnStart: boolean;
+  lastSessionId: string | null;
+}
+
+export type PersistentSessionDevicePrefs = Record<string, PersistentSessionDevicePreference>;
+
 export type {
   Appearance,
   UserPreferencesSnapshot,
@@ -35,17 +42,32 @@ interface SettingsState {
   nodeId: string;
   appearance: Appearance;
   wallpaper: WallpaperSettings;
+  persistentSessionDevicePrefs: PersistentSessionDevicePrefs;
   setSettings: (serverUrl: string, serverType: ServerType) => void;
   setNodeId: (nodeId: string) => void;
   setAppearance: (appearance: Appearance) => void;
   setWallpaper: (wallpaper: WallpaperSettings) => void;
   setWallpaperMode: (mode: WallpaperMode) => void;
+  getPersistentSessionDevicePreference: (serverUrl: string, email: string | null | undefined) => PersistentSessionDevicePreference;
+  setPersistentSessionOpenOnStart: (serverUrl: string, email: string | null | undefined, openOnStart: boolean) => void;
+  setPersistentSessionLastSessionId: (serverUrl: string, email: string | null | undefined, sessionId: string | null) => void;
   applyUserPreferences: (preferences: UserPreferencesSnapshot) => void;
+}
+
+const DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE: PersistentSessionDevicePreference = {
+  openOnStart: false,
+  lastSessionId: null,
+};
+
+function persistentSessionDevicePreferenceKey(serverUrl: string, email: string | null | undefined): string | null {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!serverUrl || !normalizedEmail) return null;
+  return JSON.stringify([serverUrl, normalizedEmail]);
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       cardIncludeCompleted: {},
       setCardIncludeCompleted: (scope, includeCompleted) => set((state) => ({
         cardIncludeCompleted: { ...state.cardIncludeCompleted, [scope]: includeCompleted },
@@ -59,6 +81,7 @@ export const useSettingsStore = create<SettingsState>()(
       nodeId: '',
       appearance: DEFAULT_USER_PREFERENCES.appearance,
       wallpaper: DEFAULT_USER_PREFERENCES.wallpaper,
+      persistentSessionDevicePrefs: {},
       setSettings: (serverUrl, serverType) => set({ serverUrl, serverType }),
       setNodeId: (nodeId) => set({ nodeId }),
       setAppearance: (appearance) => set({ appearance }),
@@ -70,6 +93,38 @@ export const useSettingsStore = create<SettingsState>()(
             mode === 'photo' ? { ...state.wallpaper, mode } : { mode },
           ),
         })),
+      getPersistentSessionDevicePreference: (serverUrl, email) => {
+        const key = persistentSessionDevicePreferenceKey(serverUrl, email);
+        return key
+          ? get().persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE
+          : DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE;
+      },
+      setPersistentSessionOpenOnStart: (serverUrl, email, openOnStart) => {
+        const key = persistentSessionDevicePreferenceKey(serverUrl, email);
+        if (!key) return;
+        set((state) => ({
+          persistentSessionDevicePrefs: {
+            ...state.persistentSessionDevicePrefs,
+            [key]: {
+              ...(state.persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE),
+              openOnStart,
+            },
+          },
+        }));
+      },
+      setPersistentSessionLastSessionId: (serverUrl, email, sessionId) => {
+        const key = persistentSessionDevicePreferenceKey(serverUrl, email);
+        if (!key) return;
+        set((state) => ({
+          persistentSessionDevicePrefs: {
+            ...state.persistentSessionDevicePrefs,
+            [key]: {
+              ...(state.persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE),
+              lastSessionId: sessionId,
+            },
+          },
+        }));
+      },
       applyUserPreferences: (preferences) => {
         const normalized = normalizeUserPreferences(preferences);
         set({
@@ -81,6 +136,16 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'soul-app-settings',
       storage: createJSONStorage(() => settingsStorage),
+      partialize: (state) => ({
+        cardIncludeCompleted: state.cardIncludeCompleted,
+        cardAssignments: state.cardAssignments,
+        serverUrl: state.serverUrl,
+        serverType: state.serverType,
+        nodeId: state.nodeId,
+        appearance: state.appearance,
+        wallpaper: state.wallpaper,
+        persistentSessionDevicePrefs: state.persistentSessionDevicePrefs,
+      }),
     }
   )
 );

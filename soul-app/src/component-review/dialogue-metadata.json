@@ -40,6 +40,10 @@
       "label": "설정",
       "source": "settings/SettingsModal.tsx"
     },
+    "pas-settings": {
+      "label": "영구 세션 설정",
+      "source": "settings/PersistentSessionPasSettingsModal.tsx"
+    },
     "owned-agents": {
       "label": "내 에이전트",
       "source": "settings/OwnedAgentsSettingsSection.tsx"
@@ -111,6 +115,7 @@
       "title": "설정과 출력",
       "ids": [
         "settings",
+        "pas-settings",
         "owned-agents",
         "task-output"
       ]
@@ -193,6 +198,7 @@
     "components/planner/plannerNativeUI.ts",
     "components/planner/projectManagement.ts",
     "components/settings/ClaudeProviderSection.tsx",
+    "components/settings/PersistentSessionPasSettingsModal.tsx",
     "components/settings/PersistentSessionViews.tsx",
     "components/settings/RecurringJobViews.tsx",
     "components/settings/SettingsWorkspaceContext.tsx",
