@@ -82,7 +82,57 @@ async function runPersistentFullscreenCaptures({ browser, base, prefix, output, 
   await runEntryCaptures({ browser, base, prefix, output, result });
 }
 
-module.exports = { runPersistentFullscreenCaptures, runPhoneCaptures, runEntryCaptures };
+module.exports = { runPersistentFullscreenCaptures, runPhoneCaptures, runEntryCaptures, runSettingsCaptures, runHistoryCapture };
+
+async function runHistoryCapture(env) {
+  const { context, page } = await fixturePage(env, 'history', { width: 390, height: 844 }, 'sample=screen&history=long&safeArea=fixture');
+  const pas = page.getByTestId('persistent-session-screen');
+  await pas.getByText('공개 대화 40:', { exact: false }).waitFor();
+  const scroller = await pas.evaluateHandle(root => Array.from(root.querySelectorAll('div'))
+    .filter(el => ['auto', 'scroll'].includes(getComputedStyle(el).overflowY))
+    .sort((a, b) => (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight))[0]);
+  await scroller.evaluate(el => { el.scrollTop = 140; });
+  await page.waitForTimeout(200); // FlatList receives the real scroll event.
+  const before = await scroller.evaluate(el => el.scrollTop);
+  assert.ok(before > 0, '최신 위치에서 벗어난 이력 표본');
+  await page.getByTestId('phone-tab-PersistentTab').click();
+  await page.getByTestId('card-row-public-persistent-412-summary').click();
+  await page.getByTestId('card-read-summary-open').click();
+  await page.getByTestId('card-detail-frame').getByLabel('뒤로', { exact: true }).click();
+  await page.getByTestId('card-read-summary-open').waitFor();
+  await page.getByTestId('phone-tab-PersistentTab').click();
+  const after = await scroller.evaluate(el => ({ connected: el.isConnected, offset: el.scrollTop }));
+  assert.ok(after.connected, '상세 왕복에서 같은 목록 DOM 유지');
+  assert.ok(Math.abs(after.offset - before) <= 1, '읽던 위치 유지');
+  await page.screenshot({ path: path.join(env.output, 'iphone-reading-position.png') });
+  env.result.viewports.push({ name: 'history', before, after });
+  env.result.interactions.push('실제 FlatList의 과거 읽기 위치와 DOM을 카드 상세 왕복 뒤 유지');
+  await context.close();
+}
+
+async function runSettingsCaptures(env) {
+  for (const scenario of [
+    { name: 'iphone-light', width: 390, height: 844, theme: 'light' },
+    { name: 'iphone-dark', width: 390, height: 844, theme: 'dark' },
+    { name: 'ipad-l-light', width: 1180, height: 820, theme: 'light' },
+    { name: 'ipad-p-dark', width: 820, height: 1180, theme: 'dark' },
+  ]) {
+    const { context, page } = await fixturePage(env, scenario.name, { width: scenario.width, height: scenario.height },
+      `sample=screen&theme=${scenario.theme}&safeArea=fixture`);
+    await page.getByTestId('persistent-session-settings').click();
+    await page.getByText('표시와 모션', { exact: true }).click();
+    // AppModalSurface's existing fade must settle before comparing its surface.
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(env.output, `${scenario.name}-settings.png`) });
+    const surface = await page.getByTestId('persistent-session-pas-settings-surface').evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor, box: element.getBoundingClientRect().toJSON(),
+    }));
+    env.result.viewports.push({ ...scenario, surface });
+    await page.getByLabel('설정 닫기', { exact: true }).click();
+    await page.getByTestId('persistent-session-screen').waitFor();
+    await context.close();
+  }
+}
 
 async function fixturePage({ browser, base, prefix, result }, name, viewport, query) {
   const context = await browser.newContext({ viewport, hasTouch: true, reducedMotion: 'reduce' });
@@ -186,6 +236,7 @@ async function runEntryCaptures(env) {
     const { context, page } = await fixturePage(env, scenario.name, scenario.viewport ?? { width: 390, height: 844 }, scenario.query + '&safeArea=' + (scenario.name === 'safe-zero' ? 'zero' : 'fixture'));
     if (scenario.manual) await page.getByTestId('phone-tab-PersistentTab').click();
     await page.getByTestId(scenario.expected).waitFor();
+    await page.waitForTimeout(400); // Existing sheet slide/fade presentation.
     if (scenario.name === 'entry-two-dark') {
       await page.screenshot({ path: path.join(output, `${scenario.name}.png`) });
       await page.getByTestId('persistent-entry-review-pas-2').click();

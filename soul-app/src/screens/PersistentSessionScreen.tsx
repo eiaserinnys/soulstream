@@ -51,7 +51,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
   const headerHeight = compact ? FRAME.compactHeader : FRAME.header;
   const portrait = app ? app.height > app.width : false;
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
-  const columnWidth = phone ? app?.width ?? 0 : widths.conversation;
+  const columnWidth = phone ? Math.max(0, (app?.width ?? 0) - t.foundation.pageInset * 2) : widths.conversation;
   const columnLeft = app ? (app.width - columnWidth) / 2 : 0;
   const measureApp = React.useCallback(() => appRef.current?.measureInWindow((left, top, width, height) => setApp({ left, top, width, height })), []);
   const measureMain = React.useCallback(() => mainRef.current?.measureInWindow((left, top, width, height) => setMain({ left, top, width, height })), []);

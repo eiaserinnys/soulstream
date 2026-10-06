@@ -78,3 +78,18 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   measure.mockRestore();
   dimensions.mockRestore();
 });
+
+test('phone의 원고형 열은 공통 pageInset으로 본문과 입력의 가장자리를 지킨다', () => {
+  mockDevice = 'phone';
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+  });
+  const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  const column = StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style);
+  expect(column.left).toBe(20);
+  expect(column.width).toBe(350);
+  expect(view.queryByTestId('persistent-session-character-seat')).toBeNull();
+  view.unmount();
+  measure.mockRestore();
+});

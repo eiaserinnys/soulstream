@@ -67,6 +67,8 @@ const entryShellReviewApi = createReviewApi('normal', { home: true, entryShell: 
     onCardMutation: (mutation) => entryShellMutationLog.push(mutation) });
 const entryShellApi = {
   ...entryShellReviewApi,
+  // Ordinary fixture ids yield the existing handled 404/null display projection.
+  getPersistentSession: nativeSettingsReviewApi.getPersistentSession,
   getCatalog: async (query?: { folder_id?: string; limit?: number; offset?: number }) => {
     entryShellFeedRequests.push({ type: 'getCatalog' });
     if (!query?.folder_id && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'entryShell') {
