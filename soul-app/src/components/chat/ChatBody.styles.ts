@@ -3,6 +3,14 @@ import type { DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { createSessionVisualRoles } from '../../theme/sessionVisualRoles';
 
+export function getChatRowHorizontalInset(
+  t: DesignTokens,
+  presentation: 'default' | 'manuscript' = 'default',
+  defaultInset = t.spacing.md,
+): number {
+  return presentation === 'manuscript' ? 0 : defaultInset;
+}
+
 export const ADD_GLYPH_INSET_RATIO = 3 / 16; // Ionicons `add` stroke inset within its icon box.
 
 export function makeStyles(t: DesignTokens) {
@@ -33,6 +41,11 @@ export function makeStyles(t: DesignTokens) {
       paddingHorizontal: t.spacing.md,
       paddingVertical: t.spacing.sm,
     },
+    manuscriptInputRow: {
+      paddingHorizontal: 0,
+      paddingTop: 0,
+      paddingBottom: 0,
+    },
     composerBox: {
       minHeight: sessionRoles.chat.composer.minHeight,
       borderRadius: t.radius.lg + 6,
@@ -40,6 +53,11 @@ export function makeStyles(t: DesignTokens) {
       paddingVertical: sessionRoles.chat.composer.edgePaddingVertical - StyleSheet.hairlineWidth,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.border,
+    },
+    manuscriptComposerBox: {
+      minHeight: sessionRoles.chat.composer.minHeight,
+      paddingHorizontal: 0,
+      paddingVertical: 0,
     },
     composerContentRow: {
       minHeight: sessionRoles.chat.composer.contentMinHeight,

@@ -67,8 +67,9 @@ for (const width of [1920, 1440]) {
     await expect(workspace).toBeVisible();
     await expect(detail).toBeVisible();
     const expectedWorkspaceWidth = width === 1920 ? 1552 : 1072;
-    const expectedChatWidth = expectedWorkspaceWidth - 466 - 16;
-    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    const expectedCardWidth=Math.round((expectedWorkspaceWidth-16)*750/1650);
+    const expectedChatWidth = expectedWorkspaceWidth - expectedCardWidth - 16;
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedCardWidth));
     await page.clock.runFor(250);
     const alignment = await detail.evaluate(element => {
       const rect = (selector: string) => {
@@ -92,7 +93,7 @@ for (const width of [1920, 1440]) {
       return { width: element.getBoundingClientRect().width, detail: detail.width, chat: chat.width };
     });
     expect(initialGeometry.width).toBe(expectedWorkspaceWidth);
-    expect(Math.abs(initialGeometry.detail - 466)).toBeLessThanOrEqual(1);
+    expect(Math.abs(initialGeometry.detail - expectedCardWidth)).toBeLessThanOrEqual(1);
     expect(initialGeometry.chat).toBeCloseTo(expectedChatWidth, 2);
 
     const tabs = [...await detail.getByRole("tab").allTextContents()].map(value => value.replace(/\d+/g, "").trim());
@@ -176,27 +177,19 @@ for (const width of [1920, 1440]) {
       await page.mouse.move(box!.x + box!.width / 2 + delta, box!.y + 80);
       await page.mouse.up();
     };
-    await dragBy(-66);
+    await dragBy(400-expectedCardWidth);
     await expect(workspace).toHaveAttribute("data-card-width-px", "400");
-    await page.screenshot({ path: path.join(output, `${width}-split-400.png`), animations: "disabled" });
-    const stateAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-state').boundingBox();
-    const titleAt400 = await detail.locator('[data-item-id="4"] .v3-card-check-item-title').boundingBox();
-    expect(stateAt400!.y).toBeLessThan(titleAt400!.y + titleAt400!.height);
+    await expect(detail.locator(".v3-card-check-item-state")).toHaveCount(0);
     await dragBy(-1);
     await expect(workspace).toHaveAttribute("data-card-width-px", "399");
-    const stateAt399 = await detail.locator('[data-item-id="4"] .v3-card-check-item-state').boundingBox();
-    const titleAt399 = await detail.locator('[data-item-id="4"] .v3-card-check-item-title').boundingBox();
-    expect(stateAt399!.y).toBeGreaterThan(titleAt399!.y);
-    await divider.focus();
-    await page.keyboard.press("Home");
-    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
-    await dragBy(500);
-    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
-    await dragBy(-1000);
-    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedWorkspaceWidth * 0.25));
-    await divider.focus();
-    await page.keyboard.press("Home");
-    await expect(workspace).toHaveAttribute("data-card-width-px", "466");
+    await divider.focus();await page.keyboard.press("Home");
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedCardWidth));
+    await dragBy(2000);
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedWorkspaceWidth*.75-16));
+    await dragBy(-2000);
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedWorkspaceWidth*.25));
+    await divider.focus();await page.keyboard.press("Home");
+    await expect(workspace).toHaveAttribute("data-card-width-px", String(expectedCardWidth));
 
     await detail.locator('[data-item-id="5"] .v3-card-check-item-target').click();
     const input = detail.getByPlaceholder("커멘트", { exact: true });
@@ -208,7 +201,7 @@ for (const width of [1920, 1440]) {
     await detail.getByRole("tab", { name: "확인 항목" }).click();
     await detail.getByRole("button", { name: "커멘트 전송", exact: true }).click();
     await expect(detail.locator('[data-item-id="5"]')).toHaveAttribute("data-item-display", "fix");
-    await expect(detail.locator('[data-item-id="5"] .v3-card-check-item-state')).toContainText("고칠 점 3");
+    await expect(detail.locator('[data-item-id="5"] [role="checkbox"]')).toHaveAttribute("aria-label",/고칠 점 3/);
     await expect(detail.locator(".v3-card-sent-notice")).toContainText("보냈습니다.");
     await expect(detail.getByRole("tab", { name: "확인 항목" })).toHaveAttribute("aria-selected", "true");
     await detail.locator('[data-item-id="5"]').evaluate(element => element.scrollIntoView({ block: "start" }));
@@ -281,7 +274,7 @@ for (const width of [1920, 1440]) {
     await expect(page.getByTestId("v3-card-workspace")).toHaveCount(0);
     writeFileSync(path.join(output, `${width}-metrics.json`), JSON.stringify({
       viewport: { width, height: width === 1920 ? 1080 : 810 },
-      initialGeometry, alignment, currentLayout, pastLayout, stateAt400, titleAt400, stateAt399, titleAt399, sessionStyleBefore,
+      initialGeometry, alignment, currentLayout, pastLayout, sessionStyleBefore,
     }, null, 2));
     expect(errors).toEqual([]);
     expect(writes).toEqual([]);
@@ -336,7 +329,7 @@ for (const width of [1920, 1440]) {
     await detail.getByPlaceholder("커멘트", { exact: true }).fill("좁은 화면에서 상태 글이 제목 아래로 내려옵니다.");
     await detail.getByRole("button", { name: "커멘트 전송", exact: true }).click();
     await expect(row).toHaveAttribute("data-item-display", "fix");
-    await expect(row.locator(".v3-card-check-item-state")).toHaveText("고칠 점 3");
+    await expect(row.locator('[role="checkbox"]')).toHaveAttribute("aria-label",/고칠 점 3/);
     await page.screenshot({ path: path.join(output, `${width}-sent-notice.png`), animations: "disabled" });
     await row.evaluate(element => element.scrollIntoView({ block: "start" }));
     await expect(row).toBeVisible();

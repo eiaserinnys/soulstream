@@ -59,6 +59,28 @@ export function formatContextUsageText(input: {
   return percent === undefined ? usage : `${usage} (${percent.toFixed(1)}%)`;
 }
 
+export function formatTurnUsageCaptionTitle(input: {
+  percent?: unknown;
+  estimated?: unknown;
+  usage?: unknown;
+  turnCostUsd?: unknown;
+}): string | undefined {
+  const parts: string[] = [];
+  const percent = asFiniteNumber(input.percent);
+  if (percent !== undefined) {
+    const qualifier = input.estimated === true ? "약 " : "";
+    parts.push(`컨텍스트 ${qualifier}${percent.toFixed(1)}%`);
+  }
+
+  const turnCostUsd = asFiniteNumber(input.turnCostUsd);
+  if (turnCostUsd !== undefined) {
+    parts.push(`정가 ${formatPrice(turnCostUsd)}`);
+  }
+
+  if (parts.length > 0) return parts.join(TURN_USAGE_SEPARATOR);
+  return formatTurnCompleteStats({ usage: input.usage });
+}
+
 function formatPrice(value: number): string {
   const rounded = value.toFixed(2);
   if (value > 0 && rounded === "0.00") return "<$0.01";

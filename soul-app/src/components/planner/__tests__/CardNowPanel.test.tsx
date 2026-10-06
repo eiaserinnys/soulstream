@@ -19,7 +19,8 @@ test('이전·다음은 상황만 넘기고 최신 now 및 확인 항목 상태�
   fireEvent.press(screen.getByLabelText('이전 상황'));
   expect(screen.getByText('지난 확인입니다.')).toBeTruthy();
   expect(screen.getByTestId('card-now-panel-frame').props.style).toEqual({ height: 140 });
-  expect(screen.getByText('아래 확인 항목은 지금 상태입니다.')).toBeTruthy();
+  expect(screen.queryByText('아래 확인 항목은 지금 상태입니다.')).toBeNull();
+  expect(screen.getByText('최신으로')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('다음 상황'));
   expect(screen.getByText(now.text)).toBeTruthy();
   expect(screen.getByTestId('card-now-panel-frame').props.style).toBeUndefined();
@@ -46,7 +47,11 @@ test.each([
   ['agent', '에이전트 차례'], ['user', '내 차례'], ['outside', '바깥 대기'],
 ] as const)('%s 차례의 표기를 보여 준다', (turn, label) => {
   const screen = render(<CardNowPanel now={{ ...now, turn, ask: turn === 'user' ? '확인해 주세요.' : null }} history={[]} />);
-  expect(screen.getByText(label)).toBeTruthy();
+  if (turn === 'user') {
+    expect(screen.queryByText(label)).toBeNull();
+    expect(screen.getByTestId('card-now-turn-band').props.accessibilityLabel).toContain(label);
+    expect(screen.getByTestId('card-now-turn-band').props.accessible).toBe(true);
+  } else expect(screen.getByText(label)).toBeTruthy();
 });
 
 test('모두 확인 띠의 완료는 사용자 조작으로만 실행되고 요청 중에는 눌리지 않는다', () => {
@@ -60,4 +65,9 @@ test('모두 확인 띠의 완료는 사용자 조작으로만 실행되고 요�
   screen.rerender(<CardNowPanel now={now} history={[]} allConfirmed onComplete={onComplete} completeDisabled />);
   fireEvent.press(screen.getByTestId('card-now-complete'));
   expect(onComplete).toHaveBeenCalledTimes(1);
+});
+
+test('요청이 빈 내 차례는 꼬리표를 남긴다', () => {
+  const screen = render(<CardNowPanel now={{ ...now, turn: 'user', ask: '' }} history={[]} />);
+  expect(screen.getByText('내 차례')).toBeTruthy();
 });

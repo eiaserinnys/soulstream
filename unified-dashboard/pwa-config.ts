@@ -13,6 +13,7 @@ export const DASHBOARD_PWA_OPTIONS = {
       "**/manifest.webmanifest",
       "**/registerSW.js",
       "**/sw-update-migration.js",
+      "**/characters/seosoyoung/**",
     ],
     runtimeCaching: [
       {

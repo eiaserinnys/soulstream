@@ -40,6 +40,24 @@ test('raw Jev debug is projected directly below its input with only display text
   expect(JSON.stringify(items[1])).not.toContain('candidate_counts');
 });
 
+test('new, extended, and legacy Jev observations keep the same rendered rows', () => {
+  const selectedExpected = {
+    title: 'Jev 후보 2',
+    lines: ['T38 · 요약 한 줄 · 3/3', '#412 · 카드 한 줄 · 2/3'],
+  };
+  const events = [
+    persistentJevCandidatesFixture('62', 'input-60', { selectedCount: 2 }),
+    persistentJevCandidatesFixture('64', 'input-61', { selectedCount: 2, includeUnknownField: true }),
+    persistentJevCandidatesFixture('66', 'input-62', { selectedCount: 2, includeNewFields: false }),
+  ];
+  const inputs = [userEvent('60'), userEvent('61'), userEvent('62')];
+  const items = groupChatEvents(events.flatMap((event, index) => [inputs[index]!, event]), undefined, enabled)
+    .filter(item => item.kind === 'jev-candidates');
+
+  expect(items).toHaveLength(3);
+  for (const item of items) expect(item).toMatchObject(selectedExpected);
+});
+
 test('ReviewChat candidate fixtures project empty and long candidate observations', () => {
   const emptyInput = userEvent('20');
   const longInput = userEvent('21');

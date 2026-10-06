@@ -272,6 +272,28 @@ describe('ChatBody store subscription boundary', () => {
     mockRenderRealtimeVoiceControls.mockClear();
   });
 
+  test('원고형 표시를 목록과 입력에 전달하고 입력 묶음 배치를 올린다', async () => {
+    await preparePersistentChatDrafts();
+    const onComposerLayout = jest.fn();
+    const view = render(
+      <View>
+        <ChatBody sessionId={SID} presentation="manuscript" onComposerLayout={onComposerLayout} />
+      </View>,
+    );
+
+    await act(async () => { await Promise.resolve(); });
+
+    expect(mockRenderChatEventList.mock.calls.at(-1)?.[0].presentation).toBe('manuscript');
+    expect(mockRenderChatComposer.mock.calls.at(-1)?.[0].presentation).toBe('manuscript');
+    const anchor = view.getByTestId('chat-composer-anchor');
+    const singleLineLayout = { nativeEvent: { layout: { x: 0, y: 120, width: 320, height: 80 } } };
+    const expandedLayout = { nativeEvent: { layout: { x: 0, y: 80, width: 320, height: 120 } } };
+    fireEvent(anchor, 'layout', singleLineLayout);
+    fireEvent(anchor, 'layout', expandedLayout);
+    expect(onComposerLayout).toHaveBeenNthCalledWith(1, singleLineLayout);
+    expect(onComposerLayout).toHaveBeenNthCalledWith(2, expandedLayout);
+  });
+
   test('채팅은 캐시에 없는 세션 한 건을 한 번 받아 오고 피드 후보는 늘리지 않는다', async () => {
     await preparePersistentChatDrafts();
     resetStores();

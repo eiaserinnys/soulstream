@@ -85,21 +85,47 @@ describe("createPersistentJevObserver", () => {
     });
   });
 
-  it("uses the shared wire guard to reject oversized or extended observations", async () => {
+  it("preserves new observation details and unknown extension keys in the event", async () => {
+    const observation = {
+      ...validObservation("input-1"),
+      future_observation_key: { version: 2 },
+      candidate_counts: { ...validObservation("input-1").candidate_counts, future_count: 8 },
+      selected: [{ ...validSelectedCandidate(), future_candidate_key: "preserved" }],
+      unselected_top: [
+        { kind: "card", label: "#7", raw_score: 1.8, future_top_key: true },
+      ],
+      top_raw_scores: {
+        turn_summaries: null,
+        cards: 1.8,
+        search_sessions: null,
+        recent_completed_sessions: null,
+      },
+    };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ observation }), { status: 200 }));
+    const { enqueueEvent, observer } = makeDeps(fetchImpl as typeof fetch);
+
+    await observer({ sessionId: "session-1", inputId: "input-1", request: "preserve extensions" });
+
+    expect(enqueueEvent).toHaveBeenCalledTimes(1);
+    expect(enqueueEvent.mock.calls[0][1]).toMatchObject({
+      kind: "persistent_jev_candidates",
+      observation,
+    });
+  });
+
+  it("uses the shared wire guard to reject oversized or invalid observations", async () => {
     const observation = validObservation("input-1");
     const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ observation: { ...observation, extra: true } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         observation: { ...observation, selected: Array.from({ length: 6 }, (_, index) => validSelectedCandidate(index)) },
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        observation: { ...observation, selected: [{ ...validSelectedCandidate(), extra: true }] },
+        observation: { ...observation, selected: [{ ...validSelectedCandidate(), score: 4 }] },
       }), { status: 200 }));
     const { enqueueEvent, observer } = makeDeps(fetchImpl as typeof fetch);
 
-    await observer({ sessionId: "session-1", inputId: "input-1", request: "extra observation field" });
     await observer({ sessionId: "session-1", inputId: "input-1", request: "too many candidates" });
-    await observer({ sessionId: "session-1", inputId: "input-1", request: "extra candidate field" });
+    await observer({ sessionId: "session-1", inputId: "input-1", request: "invalid candidate score" });
 
     expect(enqueueEvent).not.toHaveBeenCalled();
   });

@@ -44,6 +44,9 @@ export type StreamingSlotKind = 'assistant' | 'thinking';
 export type PersistentChatDisplaySettings = {
   show_generation_separator: boolean;
   show_jev_candidates: boolean;
+  show_character?: boolean;
+  animate_character?: boolean;
+  show_turn_usage?: boolean;
 };
 
 type PersistentDisplaySettingsState = {

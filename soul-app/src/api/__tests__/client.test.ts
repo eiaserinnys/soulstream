@@ -768,6 +768,22 @@ describe('client timeline history', () => {
     expect(headers.get('Authorization')).toBe('Bearer test-jwt');
   });
 
+  it('getTimeline includes explicitly requested event types', async () => {
+    const fetchMock = makeFetchMock({ messages: [], next_cursor: null });
+    const api = createApiClient(BASE);
+
+    await api.getTimeline('sess-1', {
+      limit: 100,
+      before: 'cursor-1',
+      eventTypes: ['context_usage', 'complete'],
+    });
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      `${BASE}/api/sessions/sess-1/timeline?limit=100&before=cursor-1&event_types=context_usage%2Ccomplete`,
+    );
+  });
+
   it('getMessages keeps the raw compatibility endpoint', async () => {
     const fetchMock = makeFetchMock({ messages: [], next_cursor: null });
     const api = createApiClient(BASE);

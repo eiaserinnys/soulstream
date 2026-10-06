@@ -42,7 +42,7 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
     const result = await new OrchestratorSessionProvider().fetchSessions();
 
     expect(jsonShape(result.sessions[0])).toEqual(
-      fixture.expectedUnifiedDashboardSession,
+      {...fixture.expectedUnifiedDashboardSession,cardId:null},
     );
     expect(result).toMatchObject({ total: 1, hasMore: false });
   });
@@ -196,4 +196,9 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
       noticesTruncated: true,
     });
   });
+});
+it("passes cancellation through targeted session batches to the HTTP fetch",async()=>{
+ const controller=new AbortController(),request=vi.fn().mockResolvedValue({ok:true,json:async()=>({sessions:[],total:0})});vi.stubGlobal("fetch",request);
+ await new OrchestratorSessionProvider().fetchSessions({sessionIds:["one"],signal:controller.signal} as any);
+ expect(request.mock.calls[0][1]?.signal).toBe(controller.signal);vi.restoreAllMocks();
 });

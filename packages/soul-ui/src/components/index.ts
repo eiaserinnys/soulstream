@@ -25,6 +25,8 @@ export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 export { MarkdownDeleteDialog } from "./MarkdownDeleteDialog";
 export type { MarkdownDeleteDialogProps } from "./MarkdownDeleteDialog";
 export { MarkdownContent } from "./MarkdownContent";
+export { SwayCharacter } from "./SwayCharacter";
+export type { SwayCharacterProps } from "./SwayCharacter";
 export { SessionContextMenu } from "./SessionContextMenu";
 export type {
   SessionContextMenuExtraAction,

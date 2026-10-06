@@ -9,10 +9,11 @@ vi.mock("@seosoyoung/soul-ui",()=>({
  ChatView:()=>createElement("div",{"data-testid":"chat-content"},"선택한 세션 대화"),
  DashboardIconCap:({label,...props}:HTMLAttributes<HTMLButtonElement>&{label:string})=>createElement("button",{...props,"aria-label":label}),
  DragHandle:()=>null,SessionModelPresetBadge:()=>null,SessionStoryDisclosure:()=>null,
- STATUS_CONFIG:{completed:{label:"완료"},unknown:{label:"알 수 없음"}},useGlassSurface:()=>false,
+ STATUS_CONFIG:{completed:{label:"완료"},unknown:{label:"알 수 없음"}},useGlassSurface:()=>false,useSessionMenu:()=>vi.fn(),
 }));
 vi.mock("./V3SessionReviewBanner",()=>({V3SessionReviewBanner:()=>null}));
 vi.mock("./SessionStreamStatus",()=>({SessionStreamStatus:()=>null}));
+vi.mock("./PersistentSessionChatView",()=>({PersistentSessionChatView:()=>createElement("div",{"data-testid":"chat-content"},"선택한 세션 대화")}));
 afterEach(()=>document.body.replaceChildren());
 
 it("shows the selected session in the existing resizable column without an overlay",()=>{

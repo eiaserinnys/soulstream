@@ -134,6 +134,22 @@ describe('ChatComposer', () => {
     expect(StyleSheet.flatten(field().props.style).overflow).toBeUndefined();
   });
 
+  test('manuscript input omits placeholder and keeps an accessible name', () => {
+    const props = {
+      onChangeInput: jest.fn(),
+      onPickAttachment: jest.fn(),
+      onSend: jest.fn(),
+      uploading: false,
+      sending: false,
+      voiceControls: null,
+    };
+    const screen = render(<ChatComposer {...props} input="" presentation="manuscript" />);
+    const field = screen.getByTestId('chat-composer-text-input');
+
+    expect(field.props.placeholder).toBeUndefined();
+    expect(field.props.accessibilityLabel).toBe('메시지');
+  });
+
   test('wrap stacks the row, stays stacked until empty, and preserves mounted controls and input', () => {
     const measurementRef = { current: null as any };
     let contentHeight = 48;

@@ -36,5 +36,9 @@ export function cardItemTargetText(id: number, title?: string): string {
 }
 
 export function cardProgressText(summary: ReturnType<typeof summarizeCardItems>): string {
-  return `볼 것 ${summary.needsReview}, 확인 ${summary.confirmed}`;
+  return [summary.needsReview ? `볼 것 ${summary.needsReview}` : '', summary.confirmed ? `확인 ${summary.confirmed}` : ''].filter(Boolean).join(', ');
+}
+
+export function cardAskPreview(needsReview: number, ask?: string | null): string {
+  return [needsReview ? `볼 것 ${needsReview}` : '', ask || ''].filter(Boolean).join(', ');
 }

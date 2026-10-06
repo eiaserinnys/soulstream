@@ -151,3 +151,17 @@ test('완료는 기존 version/opId 계약을 쓰고 실패하면 알리고 카�
    }
   }
  });
+
+test.each(['full', 'compact'] as const)('볼 것이 없는 %s 타일은 요청만 보이고 요청도 없으면 띠를 숨긴다', variant => {
+  const now = { text: '답변 대기', turn: 'user' as const, ask: '어떤 색으로 할까요?', updatedAt: '', sessionId: 's1' };
+  const source = { ...cardFixture(), now, items: [] };
+  const screen = render(<PostItCard api={null} card={source} variant={variant} onOpen={jest.fn()} />);
+  expect(screen.getByText('어떤 색으로 할까요?')).toBeTruthy();
+  expect(screen.queryByText(/볼 것 0/)).toBeNull();
+  screen.rerender(<PostItCard api={null} card={{ ...source, now: { ...now, ask: null } }} variant={variant} onOpen={jest.fn()} />);
+  expect(screen.queryByTestId(`postit-${source.id}-ask-preview`)).toBeNull();
+});
+
+test.each([[0, 0, ''], [0, 2, '확인 2'], [1, 0, '볼 것 1'], [1, 2, '볼 것 1, 확인 2']])('진행 표시는 0인 개수를 읽지 않는다 (%s/%s)', (needsReview, confirmed, expected) => {
+  expect(require('../../../lib/card-check-item-summary').cardProgressText({ needsReview, confirmed })).toBe(expected);
+});

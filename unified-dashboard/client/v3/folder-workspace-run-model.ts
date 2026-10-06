@@ -14,32 +14,6 @@ export const MIN_WORKSPACE_SPLIT = 25;
 export const MAX_WORKSPACE_SPLIT = 75;
 export const DEFAULT_WORKSPACE_SPLIT = 60;
 export const WORKSPACE_SPLIT_STEP = 2;
-export const CARD_WORKSPACE_SPLIT_MAX_PX = 466;
-
-export function defaultCardWorkspaceWidth(workspaceWidth: number): number {
-  if (!Number.isFinite(workspaceWidth) || workspaceWidth <= 0) return 0;
-  return Math.min(workspaceWidth * DEFAULT_WORKSPACE_SPLIT / 100, CARD_WORKSPACE_SPLIT_MAX_PX);
-}
-
-export function clampCardWorkspaceWidth(requestedWidth: number, workspaceWidth: number): number {
-  const maximum = defaultCardWorkspaceWidth(workspaceWidth);
-  if (maximum === 0) return 0;
-  const minimum = Math.min(workspaceWidth * MIN_WORKSPACE_SPLIT / 100, maximum);
-  if (!Number.isFinite(requestedWidth)) return maximum;
-  return Math.max(minimum, Math.min(requestedWidth, maximum));
-}
-
-export function resizeCardWorkspaceWidth(currentWidth: number, workspaceWidth: number, deltaPx: number): number {
-  return clampCardWorkspaceWidth(currentWidth + deltaPx, workspaceWidth);
-}
-
-export function cardWorkspaceWidthForKey(currentWidth: number, workspaceWidth: number, key: string): number | null {
-  if (key === "Home") return defaultCardWorkspaceWidth(workspaceWidth);
-  if (key === "ArrowLeft") return clampCardWorkspaceWidth(currentWidth - workspaceWidth * WORKSPACE_SPLIT_STEP / 100, workspaceWidth);
-  if (key === "ArrowRight") return clampCardWorkspaceWidth(currentWidth + workspaceWidth * WORKSPACE_SPLIT_STEP / 100, workspaceWidth);
-  return null;
-}
-
 export interface RunTreeNode {
   session: SessionSummary;
   runNumber: number | null;

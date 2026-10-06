@@ -99,6 +99,66 @@ def test_schema_is_valid_draft_2020_12() -> None:
     jsonschema.Draft202012Validator.check_schema(schema)
 
 
+def test_persistent_jev_observation_accepts_extensions_and_optional_score_details() -> None:
+    schema = _load_schema()
+    observation_schema = {
+        "$schema": schema["$schema"],
+        "$defs": schema["$defs"],
+        "$ref": "#/$defs/PersistentJevObservation",
+    }
+    validator = jsonschema.Draft202012Validator(observation_schema)
+    observation = {
+        "input_id": "input-1",
+        "selected": [{
+            "kind": "session",
+            "session_id": "session-1",
+            "label": "Prior session",
+            "line": "A relevant summary",
+            "score": 3,
+            "raw_score": 2.65,
+            "sources": ["search"],
+        }],
+        "candidate_counts": {
+            "turn_summaries": 1,
+            "cards": 1,
+            "search_sessions": 1,
+            "recent_completed_sessions": 0,
+        },
+        "model": "jev-latest",
+        "latency_ms": 20,
+        "top_raw_score": 2.65,
+    }
+    # The stored older shape remains valid.
+    validator.validate(observation)
+    extended = {
+        **observation,
+        "future_observation_key": True,
+        "selected": [{**observation["selected"][0], "future_candidate_key": "ignored"}],
+        "candidate_counts": {**observation["candidate_counts"], "future_count": 5},
+        "unselected_top": [
+            {"kind": "turn_summary", "label": "T2", "raw_score": 1.9},
+            {"kind": "session", "label": "Other session", "raw_score": 1.8, "sources": ["search"]},
+        ],
+        "top_raw_scores": {
+            "turn_summaries": 1.9,
+            "cards": None,
+            "search_sessions": 2.65,
+            "recent_completed_sessions": 2.65,
+            "future_kind": 2,
+        },
+    }
+    validator.validate(extended)
+
+    invalid_observations = [
+        {**observation, "unselected_top": [{"kind": "unknown", "label": "bad", "raw_score": 1}]},
+        {**observation, "unselected_top": [{"kind": "card", "label": "bad", "raw_score": 3.1}]},
+        {**observation, "top_raw_scores": {"turn_summaries": 3.1, "cards": None, "search_sessions": None, "recent_completed_sessions": None}},
+    ]
+    for invalid_observation in invalid_observations:
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate(invalid_observation)
+
+
 def test_sse_error_declares_current_turn_retry_separately_from_future_recovery() -> None:
     properties = _load_schema()["$defs"]["SSEEventError"]["properties"]
 

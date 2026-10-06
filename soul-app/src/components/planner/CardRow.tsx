@@ -21,7 +21,7 @@ import { resolveSessionAgentLabel, resolveSessionCardAvatar } from '../sessionCa
 import { formatRelativeTime } from '../../lib/relative-time';
 import { CardRequestView } from './CardRequestView';
 import { CardReportView } from './CardReportView';
-import { cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
+import { cardAskPreview, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS, summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useCardStore } from '../../store/cardStore';
 import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
@@ -60,6 +60,7 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
   const jwt = useAuthStore((state) => state.jwt);
   const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
   const itemSummary = useMemo(() => summarizeCardItems(card.items, pendingItemConfirmations), [card.items, pendingItemConfirmations]);
+  const askPreview = cardAskPreview(itemSummary.needsReview, card.now?.ask);
   const agentId = assigned?.agentId ?? card.assigneeAgentId;
   const nodeId = assigned?.nodeId ?? card.nodeId;
   const identity = { agentSessionId: card.assigneeSessionId ?? card.id, agentId, agentName: assigned?.agentName,
@@ -94,8 +95,8 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
             </View> : null}
           </View>
           <View style={styles.contextRow}>{board ? <CardStatusChip card={card} board /> : <Text testID={`card-${card.id}-preview`} style={styles.context} numberOfLines={1}>{preview}</Text>}</View>
-          {!board && card.now?.turn === 'user' ? <Text testID={`card-${card.id}-ask-preview`} style={styles.context} numberOfLines={1}>
-            {`볼 것 ${itemSummary.needsReview}${card.now.ask ? `, ${card.now.ask}` : ''}`}
+          {!board && card.now?.turn === 'user' && askPreview ? <Text testID={`card-${card.id}-ask-preview`} accessibilityLabel={askPreview} style={styles.context} numberOfLines={1}>
+            {askPreview}
           </Text> : null}
         </View>
         {board ? null : <View style={styles.rightRail}>{complete}{time}</View>}
@@ -113,8 +114,8 @@ export function CardRow({ api, card, onOpen, today, queueIndex, board = false }:
             {card.latestActivity.format === 'html' ? <CardReportView report={{ ...card.latestActivity, id: `${card.id}-activity`, cardId: card.id, title: '' }} />
               : <CardRequestView request={card.latestActivity.body} />}
           </View> : null}
-          {card.now?.turn === 'user' ? <Text testID={`card-${card.id}-board-ask-preview`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }} numberOfLines={1}>
-            {`볼 것 ${itemSummary.needsReview}${card.now.ask ? `, ${card.now.ask}` : ''}`}
+          {card.now?.turn === 'user' && askPreview ? <Text testID={`card-${card.id}-board-ask-preview`} accessibilityLabel={askPreview} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }} numberOfLines={1}>
+            {askPreview}
           </Text> : null}
         </View>
       </> : identityContent}
@@ -128,6 +129,6 @@ function CardItemSummary({ card, summary }: { card: CardDto; summary: ReturnType
     {summary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
         backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
-    <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>확인 {summary.confirmed}</Text>
+    {summary.confirmed ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>확인 {summary.confirmed}</Text> : null}
   </View>;
 }

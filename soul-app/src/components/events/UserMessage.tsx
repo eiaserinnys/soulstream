@@ -3,7 +3,7 @@ import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
-import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { createSessionVisualRoles, TABLET_SPACING, useTokens, type DesignTokens } from '../../theme';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
 import {
   extractMessageCaller,
@@ -33,6 +33,7 @@ interface Props {
   failureReason?: string;
   onRetry?: () => void;
   onRestore?: () => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 /**
@@ -94,6 +95,7 @@ export function UserMessage({
   failureReason,
   onRetry,
   onRestore,
+  presentation = 'default',
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -118,9 +120,12 @@ export function UserMessage({
   const attachmentSources = attachments.map((path) => buildAttachmentUri(serverUrl, nodeId, path))
     .filter((uri): uri is string => uri !== null).map((uri) => ({ uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }));
 
-  const bubbleStyle =
-    variant === 'intervention' ? styles.bubbleIntervention : styles.bubble;
-  const textStyle = variant === 'intervention' ? styles.textIntervention : styles.text;
+  const bubbleStyle = presentation === 'manuscript'
+    ? styles.manuscriptBubble
+    : variant === 'intervention' ? styles.bubbleIntervention : styles.bubble;
+  const textStyle = presentation === 'manuscript'
+    ? styles.manuscriptText
+    : variant === 'intervention' ? styles.textIntervention : styles.text;
 
   // F-11H (2026-05-09, atom F-11): caller_info.source==="system"이면 본인/슬랙/agent
   // 분기와 별도로 *로컬 정적 자산(icon-symbol.png)*을 표시한다. 서버는 caller_info.avatar_url=null로
@@ -137,7 +142,9 @@ export function UserMessage({
   const fallbackChar = pickFallbackChar(caller, profile, session?.userName, '나');
 
   return (
-    <View style={children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
+    <View style={presentation === 'manuscript'
+      ? styles.manuscriptRow
+      : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
       <View
         testID="user-message-bubble"
         style={[children == null ? bubbleStyle : [bubbleStyle, { backgroundColor: t.colors.accentTint }], pendingStatus === 'sending' && styles.pendingSendingBubble]}
@@ -145,7 +152,8 @@ export function UserMessage({
         {messageKind}
         {children}
         {attachments.length > 0 && (
-          <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null]}>
+          <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
+            ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
             {attachmentSources.map((source, idx) => <AttachmentImage key={`${idx}-${source.uri}`}
               source={source} sources={attachmentSources} index={idx} accessibilityLabel={`첨부 이미지 ${idx + 1}`} />)}
           </View>
@@ -157,11 +165,9 @@ export function UserMessage({
               onDone={onSelectionDone}
               variant={variant === 'intervention' ? 'intervention' : 'user'}
               textStyle={textStyle}
-              actionColor={
-                variant === 'intervention'
-                  ? t.colors.interventionText
-                  : t.colors.accentText
-              }
+              actionColor={presentation === 'manuscript'
+                ? t.colors.textPrimary
+                : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText}
             />
           ) : (
             <Text
@@ -183,7 +189,9 @@ export function UserMessage({
             <Text
               testID="pending-message-failure-reason"
               numberOfLines={1}
-              style={[styles.pendingReason, textStyle]}
+              style={presentation === 'manuscript'
+                ? [styles.pendingReason, textStyle, { color: t.colors.errorText }]
+                : [styles.pendingReason, textStyle]}
             >
               {failureReason ?? '전달을 확인하지 못했습니다'}
             </Text>
@@ -196,7 +204,9 @@ export function UserMessage({
                   style={styles.pendingAction}
                   onPress={onRetry}
                 >
-                  <Text style={[styles.pendingActionText, { color: variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
+                  <Text style={[styles.pendingActionText, { color: presentation === 'manuscript'
+                    ? t.colors.textPrimary
+                    : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
                     다시 보내기
                   </Text>
                 </Pressable>
@@ -209,7 +219,9 @@ export function UserMessage({
                   style={styles.pendingAction}
                   onPress={onRestore}
                 >
-                  <Text style={[styles.pendingActionText, { color: variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
+                  <Text style={[styles.pendingActionText, { color: presentation === 'manuscript'
+                    ? t.colors.textPrimary
+                    : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText }]}>
                     입력창으로
                   </Text>
                 </Pressable>
@@ -218,7 +230,7 @@ export function UserMessage({
           </View>
         ) : null}
       </View>
-      {isSystem ? (
+      {presentation === 'manuscript' ? null : isSystem ? (
         <Image
           source={require('../../../assets/icon-symbol.png')}
           style={styles.avatar}
@@ -283,6 +295,25 @@ function makeStyles(t: DesignTokens) {
       fontSize: t.chatFontSize.body,
       lineHeight: t.chatFontSize.body * t.lineHeightRatio,
     },
+    manuscriptRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'flex-end',
+      marginLeft: t.spacing.xxxl,
+      marginRight: 0,
+      marginTop: Math.min(t.spacing.xxxl, TABLET_SPACING.xxl),
+      marginBottom: t.spacing.lg,
+    },
+    manuscriptBubble: {
+      flexShrink: 1,
+      alignSelf: 'flex-end',
+    },
+    manuscriptText: {
+      color: c.textMuted,
+      fontSize: t.chatFontSize.body,
+      lineHeight: t.chatFontSize.body * 1.6,
+      textAlign: 'right',
+    },
     pendingSendingBubble: {
       opacity: 0.58,
     },
@@ -315,6 +346,9 @@ function makeStyles(t: DesignTokens) {
     },
     attachmentList: {
       gap: t.spacing.xs,
+    },
+    manuscriptAttachmentList: {
+      alignItems: 'flex-end',
     },
     // 본문 텍스트가 함께 있을 때만 텍스트와 분리하는 하단 여백.
     attachmentListWithText: {

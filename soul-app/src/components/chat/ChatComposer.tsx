@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  StyleSheet,
   TextInput,
   View,
   useWindowDimensions,
@@ -13,7 +14,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { GlassSurface } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { createSessionVisualRoles, useTokens } from '../../theme';
-import { makeStyles } from './ChatBody.styles';
+import { ADD_GLYPH_INSET_RATIO, makeStyles } from './ChatBody.styles';
 import { AttachmentPickerButton } from './AttachmentPickerButton';
 
 interface Props {
@@ -34,6 +35,7 @@ interface Props {
   minimumBottomPadding?: number;
   embedded?: boolean;
   onInputRef?: (input: TextInput | null) => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function ChatComposer({
@@ -54,6 +56,7 @@ export function ChatComposer({
   sendAccessibilityLabel = '메시지 보내기',
   sendDisabled = false,
   onInputRef,
+  presentation = 'default',
 }: Props) {
   React.useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined' || document.getElementById('chat-composer-placeholder-style')) return;
@@ -69,6 +72,9 @@ export function ChatComposer({
   const controlsDisabled = uploading || disabled;
   const { fontScale } = useWindowDimensions();
   const composer = createSessionVisualRoles(t).chat.composer;
+  const manuscriptAttachmentOutset = (composer.hitTarget - t.iconSize.action) / 2
+    + t.iconSize.action * ADD_GLYPH_INSET_RATIO;
+  const manuscriptSendOutset = (composer.hitTarget - composer.controlVisualSize) / 2;
   const lineHeight = t.chatFontSize.body * t.lineHeightRatio * fontScale;
   const singleLineHeight = Math.max(composer.contentMinHeight, lineHeight + composer.inputPaddingVertical * 2);
   const isEmpty = input.length === 0;
@@ -79,6 +85,12 @@ export function ChatComposer({
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
   const [stacked, setStacked] = React.useState(false);
   const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
+  const composerSurfaceStyle = presentation === 'manuscript'
+    ? [styles.manuscriptComposerBox, {
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: t.persistentSession.line,
+      }]
+    : styles.composerBox;
   React.useLayoutEffect(() => {
     if (isEmpty) setStacked(false);
     else if (!stacked && multilineExpanded) setStacked(true);
@@ -91,15 +103,15 @@ export function ChatComposer({
     <View
       {...(embedded ? { testID: 'chat-composer-row' } : {})}
       style={[
-        styles.inputRow,
+        presentation === 'manuscript' ? styles.manuscriptInputRow : styles.inputRow,
         embedded ? { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }
           : { paddingBottom: Math.max(t.spacing.sm, minimumBottomPadding) },
       ]}
     >
-      <GlassSurface
-        role="glassDense"
+      <ComposerSurface
+        presentation={presentation}
         testID="chat-composer-box"
-        style={styles.composerBox}
+        style={composerSurfaceStyle}
       >
         <View
           testID="chat-composer-content-row"
@@ -107,7 +119,15 @@ export function ChatComposer({
         >
           <View
             testID="chat-composer-attach-slot"
-            style={[styles.composerAttachmentSlot, stacked && styles.composerAttachmentSlotStacked]}
+            style={[
+              styles.composerAttachmentSlot,
+              stacked && styles.composerAttachmentSlotStacked,
+              ...(presentation === 'manuscript'
+                ? [stacked
+                  ? { left: -manuscriptAttachmentOutset }
+                  : { marginLeft: -manuscriptAttachmentOutset }]
+                : []),
+            ]}
           >
             <AttachmentPickerButton
               testID="chat-composer-attach-button"
@@ -130,6 +150,7 @@ export function ChatComposer({
                 ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
                 : { height: inputHeight }),
               paddingVertical: inputPadding,
+              ...(presentation === 'manuscript' && stacked ? { paddingHorizontal: 0 } : {}),
               ...(Platform.OS === 'web'
                 ? isEmpty
                   ? { whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }
@@ -142,8 +163,10 @@ export function ChatComposer({
             } : undefined}
             value={input}
             onChangeText={onChangeInput}
-            placeholder={placeholder}
-            accessibilityLabel={inputAccessibilityLabel}
+            placeholder={presentation === 'manuscript' ? undefined : placeholder}
+            accessibilityLabel={presentation === 'manuscript'
+              ? inputAccessibilityLabel ?? '메시지'
+              : inputAccessibilityLabel}
             placeholderTextColor={t.colors.textPlaceholder}
             multiline
             {...(Platform.OS === 'web' ? { rows: 1 } : {})}
@@ -181,7 +204,9 @@ export function ChatComposer({
               accessibilityLabel={sendAccessibilityLabel}
               accessibilityState={{ disabled: !canSend || sending, busy: sending }}
               disabled={!canSend || sending}
-              frameStyle={styles.composerControlFrame}
+              frameStyle={presentation === 'manuscript'
+                ? [styles.composerControlFrame, { marginRight: -manuscriptSendOutset }]
+                : styles.composerControlFrame}
               surfaceStyle={[styles.sendBtn, !sending && !canSend && styles.sendBtnDisabled]}
               onPress={() => {
                 if (canSend && !sending) onSend();
@@ -203,7 +228,23 @@ export function ChatComposer({
             </CompactTouchTarget>
           </View>
         </View>
-      </GlassSurface>
+      </ComposerSurface>
     </View>
   );
+}
+
+function ComposerSurface({
+  presentation,
+  testID,
+  style,
+  children,
+}: {
+  presentation: 'default' | 'manuscript';
+  testID: string;
+  style: React.ComponentProps<typeof View>['style'];
+  children: React.ReactNode;
+}) {
+  return presentation === 'manuscript'
+    ? <View testID={testID} style={style}>{children}</View>
+    : <GlassSurface role="glassDense" testID={testID} style={style}>{children}</GlassSurface>;
 }

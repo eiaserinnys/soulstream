@@ -7,7 +7,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUIStore } from '../../store/uiStore';
 import { SidebarPane } from './SidebarPane';
 import { MainListPane } from './MainListPane';
@@ -19,6 +19,7 @@ import { SplitPanelSurface } from './SplitPanelSurface';
 import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
 import { TabletHomeComposerHost } from './TabletHomeComposerHost';
+import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths';
 
 const DRAWER_WIDTH = 280;
 const ANIM_MS = 240;
@@ -43,10 +44,13 @@ export function TwoPaneWithDrawer() {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const { width: screenWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [measuredRowWidth, setMeasuredRowWidth] = useState<number | null>(null);
 
   const paneMiddleWidth = useUIStore((s) => s.paneMiddleWidth);
+  const paneMiddleWidthTwoPane = useUIStore((s) => s.paneMiddleWidthTwoPane);
   const folderOverlayVisible = useUIStore((s) => s.folderOverlayVisible);
-  const setPaneMiddleWidth = useUIStore((s) => s.setPaneMiddleWidth);
+  const setPaneMiddleWidthTwoPane = useUIStore((s) => s.setPaneMiddleWidthTwoPane);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   // -DRAWER_WIDTH(닫힘) ~ 0(열림) 사이에서 보간.
@@ -69,8 +73,15 @@ export function TwoPaneWithDrawer() {
     }).start();
   }, [drawerOpen, slideX, backdrop]);
 
-  // 세로 모드에서 중앙 패널이 너무 넓으면 세션 패널이 좁아진다 — 화면 폭의 절반으로 추가 clamp.
-  const clampedMiddle = Math.min(paneMiddleWidth, Math.floor(screenWidth * 0.5));
+  const rowWidth = measuredRowWidth
+    ?? screenWidth - insets.left - insets.right - 2 * t.tabletShell.outerInset;
+  const resolvedMiddleWidth = resolveTwoPaneMiddleWidth({
+    rowWidth,
+    panelGap: t.tabletShell.panelGap,
+    windowWidth: screenWidth,
+    paneMiddleWidth,
+    paneMiddleWidthTwoPane,
+  });
 
   return (
     <SafeAreaView
@@ -81,16 +92,20 @@ export function TwoPaneWithDrawer() {
         <View
           pointerEvents={folderOverlayVisible ? 'none' : 'auto'}
           style={styles.row}
+          onLayout={({ nativeEvent }) => setMeasuredRowWidth(nativeEvent.layout.width)}
         >
-          <SplitPanelSurface testID="split-panel-main" style={[styles.pane, { width: clampedMiddle }]}>
+          <SplitPanelSurface testID="split-panel-main" style={[styles.pane, { width: resolvedMiddleWidth }]}>
             <MainListPane
               onMenuPress={() => setDrawerOpen(true)}
               showSearch
             />
           </SplitPanelSurface>
           <Splitter
-            initialWidth={clampedMiddle}
-            onWidthChange={setPaneMiddleWidth}
+            initialWidth={resolvedMiddleWidth}
+            onWidthChange={(width) => setPaneMiddleWidthTwoPane(clampTwoPaneMiddleDrag(width, {
+              rowWidth,
+              panelGap: t.tabletShell.panelGap,
+            }))}
           />
           <SplitPanelSurface testID="split-panel-session" style={[styles.pane, { flex: 1 }]}>
             <TabletSessionFeedPane />

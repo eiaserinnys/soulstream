@@ -3,6 +3,9 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import type { CardCheckItem } from '../../../api/cardTypes';
 import { summarizeCardItems } from '../../../lib/card-check-item-summary';
 import { CardCheckItems } from '../CardCheckItems';
+import { StyleSheet } from 'react-native';
+import { renderHook } from '@testing-library/react-native';
+import { useTokens } from '../../../theme';
 
 function item(id: number, display: CardCheckItem['display'], overrides: Partial<CardCheckItem> = {}): CardCheckItem {
   const state = display === 'doing' ? 'doing' : display === 'dropped' ? 'dropped' : display === 'reported' || display === 'changed' ? 'done' : 'todo';
@@ -24,10 +27,11 @@ test('서버 display 일곱 값을 그대로 표시하고 확인·고칠 점 조
   await act(async () => {});
 
   for (const label of ['아직', '하는 중', '됐다고 보고', '다시 봐 주세요', '고칠 점 2', '확인함', '뺌']) {
-    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText(label)).toBeNull();
   }
-  const runningDot = screen.getByTestId('card-check-item-2-status').children[0] as any;
-  expect(runningDot.props.style).toMatchObject({ width: 8, height: 8 });
+  expect(screen.queryByTestId('card-check-item-2-status')).toBeNull();
+  expect(screen.getByTestId('card-check-item-3-expand').props.accessibilityLabel).toContain('됐다고 보고');
+  expect(screen.getByTestId('card-check-item-5-expand').props.accessibilityLabel).toContain('고칠 점 2');
   expect(screen.getByText('범위에서 뺀 이유')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('1 항목 1 확인'));
   expect(onConfirm).toHaveBeenCalledWith(1, true);
@@ -115,15 +119,37 @@ test.each([
   [null, null, null, '06:47'],
   ['2026-10-05T08:00:00', null, null, '08:00'],
   [null, { kind: 'comment', at: '2026-10-05T09:30:00', commentId: 'c1' }, null, '06:47 커멘트에서 추가'],
-  ['2026-10-05T08:00:00', null, '실기기 미확인', null],
-] as const)('아래 줄은 못 본 것을 우선하고 없으면 웹과 같은 시각을 보인다 (%s, %s, %s)', (reportedAt, from, caveat, expected) => {
+  ['2026-10-05T08:00:00', null, '실기기 미확인', '08:00'],
+  ['2026-10-05T08:00:00', { kind: 'spoken', at: '', commentId: 'c1' }, '실기기 미확인', '08:00, 06:47 대화에서 추가'],
+] as const)('못 본 것이 있어도 아래 줄은 시각과 출처를 보인다 (%s, %s, %s)', (reportedAt, from, caveat, expected) => {
   const screen = render(<CardCheckItems items={[item(1, 'reported', {
     createdAt: '2026-10-05T06:47:00', reportedAt, from, caveat,
   })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
     onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
-  if (expected) expect(screen.getByText(expected)).toBeTruthy();
-  else {
-    expect(screen.getByText('실기기 미확인')).toBeTruthy();
-    expect(screen.queryByText('08:00')).toBeNull();
-  }
+  expect(screen.getByText(expected)).toBeTruthy();
+  if (caveat) expect(screen.getByText(caveat)).toBeTruthy();
+});
+
+test.each(['한 줄 못 본 것', '첫째 줄\n둘째 줄\n셋째 줄'])('경고 아이콘은 못 본 것 첫 줄의 줄 높이 안에서 가운데에 놓인다: %s', (caveat) => {
+  const t = renderHook(() => useTokens()).result.current;
+  const screen = render(<CardCheckItems items={[item(1, 'reported', { caveat })]}
+    pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  expect(StyleSheet.flatten(screen.getByTestId('card-check-item-1-caveat-row').props.style)).toMatchObject({ alignItems: 'flex-start' });
+  expect(StyleSheet.flatten(screen.getByTestId('card-check-item-1-caveat-icon-frame').props.style)).toMatchObject({
+    height: t.foundation.typography.meta.lineHeight, justifyContent: 'center',
+  });
+});
+
+ test('못 본 것은 결과 아래 증거 위에 두고 이미지 설명은 확대 창에만 보인다', () => {
+  const screen = render(<CardCheckItems items={[item(1, 'reported', {
+    caveat: '실기기 미확인', evidence: [{ type: 'image', url: 'https://example.test/photo.png', label: '수정된 화면' }],
+  })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+  expect(screen.queryByText('수정된 화면')).toBeNull();
+  const rendered = JSON.stringify(screen.toJSON());
+  expect(rendered.indexOf('실기기 미확인')).toBeGreaterThan(rendered.indexOf('확인할 결과'));
+  expect(rendered.indexOf('실기기 미확인')).toBeLessThan(rendered.indexOf('card-check-item-1-evidence-images'));
+  fireEvent.press(screen.getByLabelText('수정된 화면'));
+  expect(screen.getByTestId('image-viewer-caption-0').props.children).toBe('수정된 화면');
 });

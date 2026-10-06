@@ -11,9 +11,21 @@ describe("persistent sessions review fixture", () => {
   const save = (handler: ReturnType<typeof make>, id: string, preset: string, effort: string | null) =>
     call(handler, `/api/persistent-sessions/${id}`, "PUT", { settings: { default_model: { model_preset: preset, reasoning_effort: effort } } });
 
-  it("returns all five settings keys in the list and its create defaults", async () => {
+  it("returns all seven settings keys in the list and its create defaults", async () => {
     const { json } = await call(make(), "/api/persistent-sessions", "GET");
-    expect(Object.keys(json.sessions[0].settings).sort()).toEqual(["default_model", "fallback_model", "show_character", "show_generation_separator", "show_jev_candidates"]);
+    expect(Object.keys(json.sessions[0].settings).sort()).toEqual([
+      "animate_character",
+      "default_model",
+      "fallback_model",
+      "show_character",
+      "show_generation_separator",
+      "show_jev_candidates",
+      "show_turn_usage",
+    ]);
+    expect(json.sessions[0].settings.animate_character).toBe(true);
+    expect(json.sessions[0].settings.show_turn_usage).toBe(true);
+    expect(json.create_defaults.settings.animate_character).toBe(true);
+    expect(json.create_defaults.settings.show_turn_usage).toBe(true);
     expect(json.create_defaults.settings.show_jev_candidates).toBe(true);
   });
 

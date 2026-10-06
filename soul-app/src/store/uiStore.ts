@@ -7,7 +7,8 @@ import { useSearchStore } from './searchStore';
 
 /**
  * 태블릿 v3 레이아웃에서 좌측 내비·중앙 플래너·우측 세션 패널의 선택 상태와
- * 업무+채팅 오버레이, 가로 모드 패널 폭(드래그 결과)을 관리한다.
+ * 업무+채팅 오버레이를 관리하고, split 레이아웃이 계산한 드래그 폭을 저장한다.
+ * 폭의 한도는 배치에서 계산하며 store는 결과 값만 보관한다.
  *
  * 폰 레이아웃에서는 react-navigation의 navigation params로 세션을 전달하므로 본 store는
  * 태블릿 SplitLayout 안에서만 사용한다. 단, activeSessionId를 settingsStore와 분리해 둔
@@ -69,6 +70,8 @@ interface UIState {
   paneLeftWidth: number;
   /** 가로 3-pane에서 중앙 플래너 폭 (pt). 우측 세션 패널은 나머지를 가변 점유. */
   paneMiddleWidth: number;
+  /** 세로 2-pane에서 중앙 플래너 폭. null이면 가로 폭과 창 폭 절반에서 계산. */
+  paneMiddleWidthTwoPane: number | null;
 
   setActiveSection: (section: ActiveSection) => void;
   refreshTodayDate: (now?: Date) => void;
@@ -106,8 +109,8 @@ interface UIState {
   closeFolderOverlay: () => void;
   openSettings: () => void;
   closeSettings: () => void;
-  setPaneLeftWidth: (w: number) => void;
-  setPaneMiddleWidth: (w: number) => void;
+  setThreePaneWidths: (left: number, middle: number) => void;
+  setPaneMiddleWidthTwoPane: (w: number) => void;
 }
 
 type HydrationFailureListener = () => void;
@@ -161,6 +164,7 @@ export const useUIStore = create<UIState>()(
       completedSessionSearchIntentId: null,
       paneLeftWidth: PANE_LEFT_DEFAULT,
       paneMiddleWidth: PANE_MIDDLE_DEFAULT,
+      paneMiddleWidthTwoPane: null,
 
       setActiveSection: (section) => set({ activeSection: section }),
       refreshTodayDate: (now = new Date()) => set((state) => {
@@ -311,8 +315,11 @@ export const useUIStore = create<UIState>()(
       }),
       openSettings: () => set({ settingsVisible: true }),
       closeSettings: () => set({ settingsVisible: false }),
-      setPaneLeftWidth: (w) => set({ paneLeftWidth: clamp(w, 180, 360) }),
-      setPaneMiddleWidth: (w) => set({ paneMiddleWidth: clamp(w, 280, 600) }),
+      setThreePaneWidths: (left, middle) => set({
+        paneLeftWidth: Math.round(left),
+        paneMiddleWidth: Math.round(middle),
+      }),
+      setPaneMiddleWidthTwoPane: (w) => set({ paneMiddleWidthTwoPane: Math.round(w) }),
     }),
     {
       name: 'soul-app-ui',
@@ -321,6 +328,7 @@ export const useUIStore = create<UIState>()(
       partialize: (state) => ({
         paneLeftWidth: state.paneLeftWidth,
         paneMiddleWidth: state.paneMiddleWidth,
+        paneMiddleWidthTwoPane: state.paneMiddleWidthTwoPane,
       }),
       // 빌드 19: paneMiddleWidth 기본값 360 → 480로 변경. 빌드 18에서 한 번 떴다가
       // 360을 persist한 사용자도 새 기본값을 받게 한다 (스플리터 버그 때문에 그 때
@@ -364,10 +372,6 @@ useUIStore.subscribe((state, previousState) => {
     useSearchStore.getState().rememberSession(state.activeSessionId);
   }
 });
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 function localDate(now = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;

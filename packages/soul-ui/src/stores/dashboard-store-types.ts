@@ -85,7 +85,14 @@ export type { ChatFontSize, LiquidGlassSettings, WallpaperMode, WallpaperSetting
 
 export interface DashboardState {
   /** Current PAS chat display settings, read by the dashboard for one active session. */
-  persistentSessionDisplaySettings: { sessionId: string; showGenerationSeparator: boolean; showJevCandidates: boolean } | null;
+  persistentSessionDisplaySettings: {
+    sessionId: string;
+    showGenerationSeparator: boolean;
+    showJevCandidates: boolean;
+    showCharacter: boolean;
+    animateCharacter: boolean;
+    showTurnUsage: boolean;
+  } | null;
   /** 뷰 모드 — URL 해시에서 파생. */
   viewMode: DashboardViewMode;
 
@@ -255,7 +262,13 @@ export interface FolderBoardLayoutSnapshot {
 // === Actions Interface ===
 
 export interface DashboardActions {
-  setPersistentSessionDisplaySettings: (sessionId: string, settings: { show_generation_separator: boolean; show_jev_candidates: boolean } | null) => void;
+  setPersistentSessionDisplaySettings: (sessionId: string, settings: {
+    show_generation_separator: boolean;
+    show_jev_candidates: boolean;
+    show_character: boolean;
+    animate_character: boolean;
+    show_turn_usage: boolean;
+  } | null) => void;
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
   setActiveSessionSummary: (summary: SessionSummary | null) => void;
