@@ -155,4 +155,7 @@ export const tsOnlyRouteKeys = [
   "GET /api/persistent-sessions/{session_id}",
   "PUT /api/persistent-sessions/{session_id}",
   "POST /api/persistent-sessions",
+  "GET /api/persistent-sessions/{session_id}/instructions",
+  "POST /api/persistent-sessions/{session_id}/instructions",
+  "PUT /api/persistent-sessions/{session_id}/instructions/{instruction_id}",
 ] as const;

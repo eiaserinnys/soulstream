@@ -7,7 +7,6 @@ import {
   type PersistentModelSelection,
   type PersistentSettingsPatch,
 } from "@soulstream/wire-schema/persistent-session-settings";
-
 import type { ServiceCaller } from "../auth/service_caller.js";
 import type {
   HostPersistentSessionRow,
@@ -34,6 +33,8 @@ import {
   type PersistentSessionResource,
   type PersistentSettingsView,
 } from "./persistent_session_resource.js";
+import { PersistentSessionApiError } from "./persistent_session_api_error.js";
+import { PersistentSessionInstructionsService } from "./persistent_session_instructions_service.js";
 
 /** New PAS defaults live here and nowhere else; the screens only render what `create_defaults` returns. */
 export const PERSISTENT_CREATE_NODE_ID = "eiaserinnys";
@@ -71,21 +72,16 @@ export type PersistentSessionSettingsServiceDeps = {
 type CallerRequest = FastifyRequest | ServiceCaller;
 type SettingsAck = { persistent: boolean; modelChange: "none" | "next_execution_start" };
 
-/** Failure with the HTTP status and public error code the route should answer with. */
-export class PersistentSessionApiError extends Error {
-  constructor(
-    readonly statusCode: number,
-    readonly code: string,
-    message: string,
-    readonly extra: Record<string, unknown> = {},
-  ) {
-    super(message);
-    this.name = "PersistentSessionApiError";
-  }
-}
-
 export class PersistentSessionSettingsService {
-  constructor(private readonly deps: PersistentSessionSettingsServiceDeps) {}
+  private readonly instructions: PersistentSessionInstructionsService;
+
+  constructor(private readonly deps: PersistentSessionSettingsServiceDeps) {
+    this.instructions = new PersistentSessionInstructionsService({
+      reads: deps.reads,
+      access: deps.access,
+      commands: deps.commands,
+    });
+  }
 
   async list(request: CallerRequest) {
     const rows = await (await this.deps.reads()).listPersistentSessions();
@@ -101,6 +97,30 @@ export class PersistentSessionSettingsService {
   async get(request: CallerRequest, sessionId: string): Promise<{ session: PersistentSessionResource }> {
     await this.deps.access.requireSessionAccess({ request, sessionId });
     return { session: await this.resource(await this.requireRow(sessionId)) };
+  }
+
+  async listInstructions(
+    request: CallerRequest,
+    sessionId: string,
+  ) {
+    return this.instructions.list(request, sessionId);
+  }
+
+  async addInstruction(
+    request: CallerRequest,
+    sessionId: string,
+    input: unknown,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    return this.instructions.add(request, sessionId, input);
+  }
+
+  async updateInstruction(
+    request: CallerRequest,
+    sessionId: string,
+    instructionId: string,
+    input: unknown,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    return this.instructions.update(request, sessionId, instructionId, input);
   }
 
   async update(request: CallerRequest, sessionId: string, input: unknown) {
