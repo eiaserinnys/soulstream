@@ -22,11 +22,11 @@ import type { ModelCatalog } from "../model_catalog.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
+import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
 
 const DECISION_EVENT_WINDOW = 200;
 const HUMAN_SOURCES = new Set(["browser", "soul-app", "slack"]);
 const INPUT_EVENT_TYPES = new Set(["user_message", "intervention_sent"]);
-const KEEPALIVE_PURPOSE = "cache_keepalive";
 
 export interface PersistentDecisionInputDependencies {
   db: Pick<SessionDB, "readEvents">;
@@ -106,7 +106,7 @@ export function countKeepalivesSinceHumanInput(
     if (!INPUT_EVENT_TYPES.has(event.event_type)) continue;
     const callerInfo = asRecord(event.payload.caller_info);
     if (typeof callerInfo?.source === "string" && HUMAN_SOURCES.has(callerInfo.source)) break;
-    if (event.payload.purpose === KEEPALIVE_PURPOSE) count += 1;
+    if (isCacheKeepaliveInput(event.payload)) count += 1;
   }
   return count;
 }

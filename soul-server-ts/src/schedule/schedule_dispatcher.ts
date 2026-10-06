@@ -3,6 +3,11 @@ import type { Logger } from "pino";
 import { PeriodicMaintenanceLoop } from "../runtime/periodic_maintenance_loop.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { StartExecutionCallback } from "../task/task_intervention_route.js";
+import { isActiveTaskStatus } from "../task/task_models.js";
+import {
+  CACHE_KEEPALIVE_PURPOSE,
+  isCacheKeepaliveSchedule,
+} from "../task/persistent_keepalive_marker.js";
 
 import type { SoulstreamScheduleService } from "./schedule_service.js";
 import type { SoulstreamSchedule } from "./schedule_models.js";
@@ -41,7 +46,10 @@ export class ScheduleDispatcher {
       | "finishDispatch"
       | "failDispatch"
     >,
-    private readonly taskManager: Pick<TaskManager, "addIntervention" | "getScheduleResumeState">,
+    private readonly taskManager: Pick<
+      TaskManager,
+      "addIntervention" | "getScheduleResumeState" | "getTask"
+    >,
     private readonly onResume: StartExecutionCallback,
     private readonly logger: Logger,
   ) {
@@ -155,6 +163,7 @@ export class ScheduleDispatcher {
         );
         return;
       }
+      const cacheKeepalive = isCacheKeepaliveSchedule(ready);
       if (ready.sourceTool === "ResumeAfterLimit") {
         const terminalEventId = resumeAfterLimitTerminalEventId(ready);
         const current = terminalEventId === null
@@ -180,6 +189,13 @@ export class ScheduleDispatcher {
           return;
         }
       }
+      if (cacheKeepalive) {
+        const task = this.taskManager.getTask(ready.sessionId);
+        if (task && (isActiveTaskStatus(task.status) || task.interventionQueue.length > 0)) {
+          await this.service.finishDispatch(ready, claimToken, now);
+          return;
+        }
+      }
       const result = await this.taskManager.addIntervention(
         {
           agentSessionId: ready.sessionId,
@@ -190,14 +206,18 @@ export class ScheduleDispatcher {
             display_name: "Soulstream Scheduler",
             user_id: "soulstream-scheduler",
           },
-          ...(ready.sourceTool === "persistent_cache_keepalive"
-            ? { purpose: "cache_keepalive" as const }
+          ...(cacheKeepalive
+            ? { purpose: CACHE_KEEPALIVE_PURPOSE }
             : {}),
           queueIfRunning: false,
         },
         this.onResume,
       );
       if ("deferred" in result) {
+        if (cacheKeepalive) {
+          await this.service.finishDispatch(ready, claimToken, now);
+          return;
+        }
         await this.service.deferDispatch(
           ready,
           claimToken,
@@ -233,6 +253,7 @@ function resumeAfterLimitTerminalEventId(schedule: SoulstreamSchedule): number |
 }
 
 function buildScheduledPrompt(schedule: SoulstreamSchedule): string {
+  if (isCacheKeepaliveSchedule(schedule)) return schedule.prompt;
   const header = schedule.kind === "wakeup"
     ? "Scheduled wakeup"
     : `Scheduled cron${schedule.cronExpression ? ` (${schedule.cronExpression})` : ""}`;

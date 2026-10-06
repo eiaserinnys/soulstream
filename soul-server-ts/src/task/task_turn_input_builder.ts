@@ -22,6 +22,7 @@ import { isSessionDataHostError } from "../control_plane/session_data_host_clien
 import type { TurnOrigin } from "../engine/protocol.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
 import { prepareGenerationTurnInput } from "./generation_turn_input.js";
+import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
 
 export const CLAUDE_ROLLOVER_PROMPT_MAX_CHARS = 80_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS = 60_000;
@@ -130,7 +131,10 @@ export class TaskTurnInputBuilder {
 
     const composed = composeInterventionTurnPrompt(interventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})));
     const contextItems = ctx?.contextItems ?? [];
-    const prompt = appendContextBlock(composed.prompt, contextItems);
+    const followupContextItems = isCacheKeepaliveInput(firstIntervention)
+      ? contextItems.filter((item) => item.key !== "assigned_cards")
+      : contextItems;
+    const prompt = appendContextBlock(composed.prompt, followupContextItems);
     const systemPrompt =
       effectiveTaskBackend(task, agent) === "claude" && includeFullContext
         ? ctx?.effectiveSystemPrompt

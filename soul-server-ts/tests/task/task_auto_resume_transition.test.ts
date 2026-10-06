@@ -182,6 +182,43 @@ describe("AutoResumeTransition", () => {
     expect(observePersistentResume).not.toHaveBeenCalled();
   });
 
+  it("does not send a system cache keepalive input to the persistent Jev observer", async () => {
+    const task = makeTerminalTask({ persistent: true });
+    const observePersistentResume = vi.fn(async () => undefined);
+    const persistence = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_registration",
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistence.persistence,
+      observePersistentResume,
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+
+    await transition.resume(task, {
+      text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      user: "Soulstream Scheduler",
+      callerInfo: { source: "system", user_id: "soulstream-scheduler" },
+      purpose: "cache_keepalive",
+    }, onResume);
+
+    expect(observePersistentResume).not.toHaveBeenCalled();
+    expect(persistence.enqueueEvent).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "user_message",
+        purpose: "cache_keepalive",
+      }),
+    );
+  });
+
   it("skips observation when the original status was initializing", async () => {
     const task = makeTerminalTask({ status: "initializing", persistent: true });
     const observePersistentResume = vi.fn(async () => undefined);

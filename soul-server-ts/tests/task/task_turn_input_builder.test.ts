@@ -519,6 +519,32 @@ describe("TaskTurnInputBuilder", () => {
     );
   });
 
+  it.each([
+    ["cache keepalive", {
+      text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      user: "Soulstream Scheduler",
+      callerInfo: { source: "system" },
+      purpose: "cache_keepalive" as const,
+    }, false],
+    ["ordinary input", { text: "continue", user: "u" }, true],
+  ])("%s %s assigned-card reminder context", async (_label, intervention, shouldIncludeAssignedCards) => {
+    const { builder } = makeSubject({
+      contextBuilder: {
+        buildFollowupContext: vi.fn().mockResolvedValue({
+          contextItems: [
+            { key: "assigned_cards", label: "Assigned Cards", content: "assigned card reminder" },
+            { key: "running_sessions", label: "Running Sessions", content: "other context" },
+          ],
+        }),
+      },
+    });
+
+    const input = await builder.prepareFollowupTurnInput(makeTask(), claudeAgent, [intervention]);
+
+    expect(input.prompt).toContain("other context");
+    expect(input.prompt.includes("assigned card reminder")).toBe(shouldIncludeAssignedCards);
+  });
+
   it("binds a durable delivery to one stable engine input UUID", async () => {
     const deliveryId = "delivery-after-worker-restart";
     const task = makeTask();

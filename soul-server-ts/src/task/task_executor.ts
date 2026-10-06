@@ -91,6 +91,7 @@ import type { SoulstreamScheduleService } from "../schedule/schedule_service.js"
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
 import { decidePersistentGeneration } from "./persistent_decision.js";
+import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
 import {
   buildPersistentDecisionInput,
   completeEventEndedAt,
@@ -587,7 +588,7 @@ export class TaskExecutor {
     const firstIntervention = sortInterventionsByPriority(task.interventionQueue)[0];
     return !!firstIntervention
       && !isRuntimeFollowup(firstIntervention)
-      && firstIntervention.purpose !== "cache_keepalive";
+      && !isCacheKeepaliveInput(firstIntervention);
   }
 
   private async decidePersistentArrival(task: Task): Promise<void> {
@@ -600,7 +601,7 @@ export class TaskExecutor {
     ) return;
     const firstIntervention = sortInterventionsByPriority(task.interventionQueue)[0];
     if (!firstIntervention || isRuntimeFollowup(firstIntervention)) return;
-    if (firstIntervention.purpose === "cache_keepalive") return;
+    if (isCacheKeepaliveInput(firstIntervention)) return;
 
     const now = new Date();
     const input = await buildPersistentDecisionInput(
@@ -1929,7 +1930,7 @@ function keepaliveResultFor(
   completeEvent: SSEEventPayload,
   interventions: readonly InterventionMessage[],
 ): { input_tokens: number; cached_input_tokens: number; cache_hit: boolean } | undefined {
-  if (!interventions.some((intervention) => intervention.purpose === "cache_keepalive")) {
+  if (!interventions.some(isCacheKeepaliveInput)) {
     return undefined;
   }
   const firstCall = (completeEvent as { first_call?: unknown }).first_call;

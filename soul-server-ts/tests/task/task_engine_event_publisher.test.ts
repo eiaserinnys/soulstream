@@ -345,6 +345,26 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.sessionCost).toEqual({ usd: 3.2, partial: true });
   });
 
+  it("includes a cache keepalive complete in the session cost total", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({
+      interventionQueue: [{
+        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+        user: "Soulstream Scheduler",
+        purpose: "cache_keepalive",
+      }],
+    });
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      session_cost_usd: 5.75,
+      timestamp: 2,
+    } as SSEEventPayload);
+
+    expect(task.sessionCost).toEqual({ usd: 5.75, partial: false });
+  });
+
   it("logs session cost metadata failure and continues publishing", async () => {
     const deps = makePublisherDeps();
     const error = new Error("metadata storage down");
