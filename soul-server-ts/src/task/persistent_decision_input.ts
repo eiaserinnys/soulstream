@@ -53,6 +53,9 @@ export async function buildPersistentDecisionInput(
     DECISION_EVENT_WINDOW,
   );
   const orderedEvents = [...events].sort((left, right) => left.id - right.id);
+  const generationMetadataEvents = task.lastEventId > 0
+    ? await deps.db.readEvents(task.agentSessionId, 0, task.lastEventId, ["metadata"])
+    : [];
   const contextUsage = latestContextUsage(orderedEvents);
   const settings = readStoredPersistentSettings(task.metadata);
   const currentPreset = task.modelPreset!;
@@ -65,7 +68,7 @@ export async function buildPersistentDecisionInput(
       providerForPreset(preset, deps.modelCatalog),
     ]),
   );
-  const checkpointTokens = collectCheckpointTokensByPreset(task, orderedEvents);
+  const checkpointTokens = collectCheckpointTokensByPreset(task, generationMetadataEvents);
   const lastComplete = [...orderedEvents].reverse().find((event) => event.event_type === "complete");
   const lastCallEndedAt = options.lastCallEndedAt
     ?? lastComplete?.created_at.toISOString()
@@ -126,10 +129,11 @@ function latestContextUsage(
 
 function collectCheckpointTokensByPreset(
   task: Task,
-  events: readonly { event_type: string; payload: Record<string, unknown> }[],
+  events: readonly { id: number; event_type: string; payload: Record<string, unknown> }[],
 ): Record<string, number | undefined> {
   const checkpoints: Record<string, number | undefined> = {};
-  for (const event of events) {
+  const measuredGenerations = new Set<number>();
+  for (const event of [...events].sort((left, right) => left.id - right.id)) {
     if (event.event_type !== "metadata" || event.payload.metadata_type !== "persistent_generation") {
       continue;
     }
@@ -139,10 +143,13 @@ function collectCheckpointTokensByPreset(
     const inputTokens = firstCall?.input_tokens;
     if (typeof preset === "string" && typeof inputTokens === "number") {
       checkpoints[preset] = inputTokens;
+      if (typeof firstCall?.generation === "number") {
+        measuredGenerations.add(firstCall.generation);
+      }
     }
   }
   const currentFirstCall = task.persistentGeneration?.firstCall;
-  if (currentFirstCall) {
+  if (currentFirstCall && !measuredGenerations.has(currentFirstCall.generation)) {
     checkpoints[currentFirstCall.modelPreset] = currentFirstCall.inputTokens;
   }
   return checkpoints;

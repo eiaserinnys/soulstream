@@ -174,6 +174,52 @@ describe("buildPersistentDecisionInput", () => {
     expect(providerUsage.fetchUsage).not.toHaveBeenCalled();
   });
 
+  it("keeps a prior preset checkpoint from persistent-generation metadata beyond the recent event window", async () => {
+    const task = makeTask();
+    const oldGenerationMetadata = {
+      id: 17,
+      session_id: task.agentSessionId,
+      event_type: "metadata",
+      payload: {
+        metadata_type: "persistent_generation",
+        value: {
+          number: 2,
+          first_call: {
+            generation: 2,
+            model_preset: "codex-6.1-sol",
+            input_tokens: 28_000,
+          },
+        },
+      },
+      searchable_text: "",
+      created_at: new Date("2026-10-05T00:00:00.000Z"),
+    };
+    const readEvents = vi.fn(async (
+      _sessionId: string,
+      _afterId: number,
+      _limit: number,
+      eventTypes?: string[],
+    ) => eventTypes ? [oldGenerationMetadata] : []);
+    const usage = makeUsage(35, 20);
+    rememberProviderUsageObservation("claude", usage);
+    rememberProviderUsageObservation("codex", usage);
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+
+    expect(input.checkpoint_tokens_by_preset).toEqual({ "codex-6.1-sol": 28_000 });
+    expect(readEvents).toHaveBeenCalledWith(task.agentSessionId, 0, task.lastEventId, ["metadata"]);
+  });
+
   it("defaults missing context and checkpoints, and refreshes stale provider observations once", async () => {
     const task = makeTask();
     const readEvents = vi.fn().mockResolvedValue([]);
