@@ -82,15 +82,20 @@ describe("persistent session task list", () => {
 
     const draftGroup = container.querySelector<HTMLElement>('[data-task-status-group="todo"]')!;
     const draftToggle = draftGroup.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    const draftName = draftToggle.querySelector<HTMLElement>(".v3-persistent-task-group-name")!;
+    const draftCount = draftToggle.querySelector<HTMLElement>(".v3-persistent-task-group-count")!;
     expect(draftToggle.getAttribute("aria-expanded")).toBe("false");
-    expect(draftToggle.textContent).toContain("드래프트");
-    expect(draftToggle.textContent).toContain("1");
+    expect(draftName.textContent).toBe("드래프트");
+    expect(draftName.nextElementSibling).toBe(draftCount);
+    expect(draftCount.textContent).toBe("1개");
+    expect(draftCount.nextElementSibling?.tagName.toLowerCase()).toBe("svg");
     expect(draftGroup.querySelector(".v3-run-list")).toBeNull();
     expect(container.querySelector<HTMLButtonElement>('[data-task-status-group="running"] button[aria-expanded]')?.getAttribute("aria-expanded")).toBe("true");
     expect(localStorage.getItem("soulstream:pas-task-groups:v1")).toBe(JSON.stringify({ collapsed: ["todo"] }));
 
     await act(() => draftToggle.click());
     expect(container.querySelector('[data-task-status-group="todo"] .v3-run-list')).not.toBeNull();
+    expect(container.querySelector('[data-task-status-group="todo"] .v3-persistent-task-group-count')?.textContent).toBe("1개");
     expect(JSON.parse(localStorage.getItem("soulstream:pas-task-groups:v1")!)).toEqual({ collapsed: [] });
 
     await act(() => root.unmount());

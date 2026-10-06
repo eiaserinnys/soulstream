@@ -11,15 +11,20 @@
 .v3-persistent-task-list .v3-detail-section-head h3 {
   min-width: 0;
   width: 100%;
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-meta) var(--v3-font-family);
 }
 .v3-persistent-task-group-toggle {
+  --ring: var(--muted-foreground);
   display: flex;
   min-width: 0;
   width: 100%;
   min-height: var(--v3-action-size);
   align-items: center;
   gap: var(--v3-space-2);
-  padding: 0;
+  margin-inline: -4px;
+  padding-block: 0;
+  padding-inline: 4px;
   border: 0;
   border-radius: var(--v3-space-2);
   color: var(--v3-text-secondary);
@@ -28,14 +33,16 @@
   text-align: left;
   cursor: pointer;
 }
-.v3-persistent-task-group-toggle:hover { background: color-mix(in srgb, var(--muted) 54%, transparent); }
-.v3-persistent-task-group-name { min-width: 0; flex: 1; }
+.v3-persistent-task-group-toggle:hover { background: color-mix(in srgb, var(--muted) 72%, var(--persistent-session-paper)); }
+.v3-persistent-task-group-toggle:active,
+.v3-persistent-task-group-toggle[data-pressed] { background: color-mix(in srgb, var(--muted) 82%, var(--persistent-session-paper)); }
+.v3-persistent-task-group-name { min-width: 0; }
 .v3-persistent-task-group-count {
   color: var(--v3-text-tertiary);
   font: var(--v3-type-meta) var(--v3-font-family);
   font-variant-numeric: tabular-nums;
 }
-.v3-persistent-task-group-toggle > svg { flex: none; }
+.v3-persistent-task-group-toggle > svg { flex: none; margin-inline-start: auto; }
 .v3-persistent-task-list .v3-run-list { gap: var(--v3-space-1); }
 .v3-card-summary-row {
   --ring: var(--muted-foreground);

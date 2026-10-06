@@ -74,7 +74,7 @@ function TaskListContent({cards,loading,error,retry,onOpenCard}: {
           <button type="button" className="v3-persistent-task-group-toggle outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-expanded={expanded} onClick={()=>setCollapsedGroups(current=>expanded?[...current,group.status]:current.filter(status=>status!==group.status))}>
             <span className="v3-persistent-task-group-name">{group.label}</span>
-            <span className="v3-persistent-task-group-count">{group.cards.length}</span>
+            <span className="v3-persistent-task-group-count">{group.cards.length}개</span>
             <DisclosureActionIcon expanded={expanded} className="h-4 w-4"/>
           </button>
         </h3></div>
