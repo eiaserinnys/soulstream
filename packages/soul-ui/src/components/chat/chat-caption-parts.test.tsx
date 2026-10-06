@@ -124,6 +124,29 @@ describe("chat caption parts", () => {
     expect(divider?.className).not.toContain("px-3");
   });
 
+  // jsdom does not load Tailwind CSS; browser captures verify the rendered bounds.
+  it.each([
+    ["content", "end", "-me-px", "!pe-0", "-me-2"],
+    ["content", "start", "-ms-px", "!ps-0", "-ms-2"],
+    ["avatar", "end", "-me-2", "!pe-2", "-me-px"],
+    ["avatar", "start", "-ms-2", "justify-start", "-ms-px"],
+  ] as const)("keeps %s %s caption edges within their inset contract", (alignmentInset, align, margin, padding, excludedMargin) => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <CollapsibleCaption title="Jev 후보 1" alignmentInset={alignmentInset} align={align}>
+        <span>후보</span>
+      </CollapsibleCaption>,
+    ));
+
+    const button = container.querySelector("button")!;
+    expect(button.classList.contains(margin)).toBe(true);
+    expect(button.classList.contains(padding)).toBe(true);
+    expect(button.classList.contains(excludedMargin)).toBe(false);
+  });
+
   it("renders a labeled, non-interactive separator with decorative lines", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
