@@ -10,7 +10,7 @@ import {CardSessionHistory} from "./CardSessionHistory";
 
 vi.mock("@seosoyoung/soul-ui",async original=>({...await original<typeof import("@seosoyoung/soul-ui")>(),useSessionMenu:()=>vi.fn()}));
 vi.mock("@seosoyoung/soul-ui/cards/CardSessionVirtualList",()=>({CardSessionVirtualList:({data,itemContent,endReached}:any)=><div><button onClick={()=>endReached(data.length-1)}>다음 묶음</button>{data.map((row:any,index:number)=><div key={row.node.session.agentSessionId}>{itemContent(index,row)}</div>)}</div>}));
-vi.mock("./SessionRunList",()=>({SessionRunList:({tree}:any)=><>{tree.map((node:any)=><button data-session-id={node.session.agentSessionId} key={node.session.agentSessionId}>{node.session.displayName}</button>)}</>}));
+vi.mock("./SessionRunList",()=>({SessionRunList:({tree}:any)=><>{tree.map((node:any)=><button data-session-id={node.session.agentSessionId} data-run-number={node.runNumber} key={node.session.agentSessionId}>{node.session.displayName}</button>)}</>}));
 let root:Root,container:HTMLDivElement,client:QueryClient;
 const requests:string[][]=[];
 let sessions:SessionSummary[]=[];
@@ -60,4 +60,18 @@ it("keeps two inherited child indents on a grandchild",async()=>{
  let node=container.querySelector('[data-session-id="grandchild"]')!.parentElement,count=0;
  while(node&&node!==container){if(node.classList.contains("v3-run-children"))count++;node=node.parentElement;}
  expect(count).toBe(2);
+});
+it("keeps the newest assignee and earlier page order when an inaccessible ID appears on the final page",async()=>{
+ const all=Array.from({length:75},(_,i)=>summary(`s-${String(i).padStart(3,"0")}`,i));
+ sessions=all.filter(s=>s.agentSessionId!=="s-010");
+ const metadata=all.map(s=>({sessionId:s.agentSessionId,createdAt:s.createdAt})) as CardLinkedSession[];
+ await mount(all.map(s=>s.agentSessionId).reverse(),metadata);await wait(()=>expect(rows()).toHaveLength(50));
+ const first=rows();await more();await wait(()=>expect(requests).toHaveLength(2));await wait(()=>expect(rows()).toHaveLength(75));
+ expect(rows()[0]).toBe("s-074");expect(rows().filter(id=>first.includes(id!))).toEqual(first);
+});
+it("numbers the newest session from all 75 IDs before and after older pages arrive",async()=>{
+ sessions=Array.from({length:75},(_,i)=>summary(`s-${String(i).padStart(3,"0")}`,i));
+ await mount(sessions.map(s=>s.agentSessionId));await wait(()=>expect(rows()).toHaveLength(50));
+ const number=()=>container.querySelector('[data-session-id="s-074"]')!.getAttribute("data-run-number");
+ expect(number()).toBe("75");await more();await wait(()=>expect(rows()).toHaveLength(75));expect(number()).toBe("75");
 });

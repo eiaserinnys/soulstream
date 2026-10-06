@@ -108,3 +108,12 @@ it("frames the handoff and each note separately from the section titles",()=>{
  expect(html).toContain('class="v3-card-note-frame"');
  expect(html).toContain('class="v3-card-note-row v3-card-note-frame"');
 });
+it("does not show missing capture or an empty image block for link-only reported evidence",()=>{
+ const html=renderToStaticMarkup(<CardCheckItemRow item={item(1,"reported",{result:"결과",evidence:[{type:"link",url:"/components",label:"증거 링크"}]})} checked={false} pending={false} expanded onConfirmChange={()=>{}} onToggleExpanded={()=>{}} onTargetItem={()=>{}} onOpenImage={()=>{}}/>);
+ const node=document.createElement("div");node.innerHTML=html;
+ expect(node.textContent).not.toContain("캡처 없음");expect(node.querySelector('[data-evidence-type="image"]')).toBeNull();expect(node.querySelector('[data-evidence-type="link"] a')).not.toBeNull();
+});
+it.each(["todo","doing","fix"] as const)("does not render an empty evidence slot between result and footer (%s)",display=>{
+ const html=renderToStaticMarkup(<CardCheckItemRow item={item(1,display,{result:"결과",caveat:display==="fix"?"못 본 것":null})} checked={false} pending={false} expanded onConfirmChange={()=>{}} onToggleExpanded={()=>{}} onTargetItem={()=>{}} onOpenImage={()=>{}}/>);
+ const node=document.createElement("div");node.innerHTML=html;expect(node.querySelector('[data-evidence-type="image"]')).toBeNull();
+});

@@ -18,6 +18,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
  const showBody=expanded||dropped;
  const images=item.evidence.filter(evidence=>evidence.type==="image");
  const links=item.evidence.filter(evidence=>evidence.type==="link");
+ const missingEvidence=item.evidence.length===0&&(display==="reported"||display==="changed");
  const when=[item.reportedAt?formatTime(item.reportedAt):null,
   item.from?`${formatTime(item.createdAt)} ${item.from.kind==="spoken"?"대화에서 추가":"커멘트에서 추가"}`:item.reportedAt?null:formatTime(item.createdAt)].filter(Boolean).join(", ");
  const metadata=<span className="v3-card-check-item-meta">{when}</span>;
@@ -36,12 +37,12 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
     {display==="changed"&&item.reopened?<p className="v3-card-check-item-reopened"><strong>확인한 뒤 바뀜</strong><span>{item.reopened}</span></p>:null}
     {item.result?<p className="v3-card-check-item-result">{item.result}</p>:null}
     {item.caveat?<p className="v3-card-check-item-caveat"><TriangleAlert className="h-3 w-3" aria-hidden="true"/><span>{item.caveat}</span></p>:null}
-    <div className="v3-card-check-item-evidence" data-evidence-type="image">
+    {images.length>0||missingEvidence?<div className="v3-card-check-item-evidence" data-evidence-type="image">
      {images.map((evidence,index)=><figure key={`${evidence.url}:${index}`} title={evidence.label}>
       <MarkdownImage variant="card-evidence" src={evidence.url} alt={evidence.label} onOpen={onOpenImage}/>
      </figure>)}
-     {images.length===0&&(display==="reported"||display==="changed")?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
-    </div>
+     {missingEvidence?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
+    </div>:null}
     {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=><a key={`${evidence.url}:${index}`} href={evidence.url} target="_blank" rel="noreferrer" title={evidence.label}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>)}</div>:null}
     <div className="v3-card-check-item-foot">
      {metadata}

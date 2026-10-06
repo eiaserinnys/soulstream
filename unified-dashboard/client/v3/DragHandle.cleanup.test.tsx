@@ -30,3 +30,6 @@ it("keeps the normal mouse delta and ends on release",async()=>{
  await act(()=>{handle.dispatchEvent(pointer("pointerup",100));document.dispatchEvent(new MouseEvent("mouseup"));});
  expect(document.body.style.cursor).toBe("");expect(document.body.style.userSelect).toBe("");
 });
+it("owns touch dragging instead of allowing browser panning to cancel it",()=>{
+ expect(handle.style.touchAction).toBe("none");
+});

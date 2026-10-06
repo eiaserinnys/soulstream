@@ -237,3 +237,34 @@ test('review r7 independent resize preferences focus and pointer cleanup',async(
  await page.getByTestId('release-frame').evaluate(el=>el.remove());box=(await handle.boundingBox())!;await page.mouse.move(box.x+box.width/2,box.y+80);await page.mouse.down();await page.keyboard.press('Escape');await expect(detail).toHaveCount(0);expect(await page.evaluate(()=>({cursor:document.body.style.cursor,select:document.body.style.userSelect}))).toEqual(original);await page.mouse.up();
  writeFileSync(path.join(output,'r7-resize-metrics.json'),JSON.stringify({initial,defaultWide,selected,minimum,restored,aria,original,errors,writes},null,2));expect(errors).toEqual([]);expect(writes).toEqual([]);
 });
+
+test('review r8 evidence gaps note headings and stable session numbers',async({page})=>{
+ const phase=process.env.CARD_REVIEW_PHASE??'after';
+ const {board,errors,writes,batches}=await prepare(page,1440);
+ await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
+ const detail=page.getByTestId('card-detail'),fix=detail.locator('[data-item-id="5"]');
+ await fix.evaluate(el=>{const scroll=el.closest('.v3-card-panel-scroll')!;scroll.scrollTop+=el.getBoundingClientRect().top-scroll.getBoundingClientRect().top;});
+ const gap=await fix.evaluate(el=>{const caveat=el.querySelector('.v3-card-check-item-caveat')!.getBoundingClientRect(),foot=el.querySelector('.v3-card-check-item-foot')!.getBoundingClientRect();return {pixels:foot.top-caveat.bottom,evidenceSlots:el.querySelectorAll('[data-evidence-type="image"]').length};});
+ await page.screenshot({path:path.join(output,`r8-${phase}-gap.png`)});
+ if(phase==='after'){
+  const linkRow=detail.locator('[data-item-id="4"]');
+  await expect(linkRow.locator('.v3-card-check-item-no-image')).toHaveCount(0);
+  await expect(linkRow.locator('[data-evidence-type="image"]')).toHaveCount(0);
+  await expect(linkRow.locator('[data-evidence-type="link"] a')).toHaveCount(1);
+  await linkRow.evaluate(el=>{const scroll=el.closest('.v3-card-panel-scroll')!;scroll.scrollTop+=el.getBoundingClientRect().top-scroll.getBoundingClientRect().top;});
+  await page.screenshot({path:path.join(output,'r8-after-link.png')});
+ }
+ await detail.getByRole('tab',{name:/노트/}).click();
+ const headings=await detail.evaluate(el=>[...el.querySelectorAll('.v3-card-notes h3')].map(h=>({text:h.textContent,font:getComputedStyle(h).font,size:getComputedStyle(h).fontSize,lineHeight:getComputedStyle(h).lineHeight})));
+ await page.screenshot({path:path.join(output,`r8-${phase}-notes.png`)});
+ await detail.getByRole('button',{name:'카드 닫기'}).click();await board.getByRole('button',{name:'많은 세션',exact:true}).click();await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();await detail.getByRole('tab',{name:/세션/}).click();
+ const scroll=detail.locator('[data-testid=card-session-virtual] [data-virtuoso-scroller]'),top=detail.locator('[data-session-id="trim-session-074"]');await expect(top).toBeVisible();
+ const firstNumber=await top.locator('.v3-run-number').textContent();await page.screenshot({path:path.join(output,`r8-${phase}-sessions-first.png`)});
+ for(let i=0;i<5&&!batches.some(batch=>batch.length===25);i++){await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight;});await page.waitForTimeout(300);}
+ expect(batches.map(ids=>ids.length)).toEqual([50,25]);await scroll.evaluate(el=>{el.scrollTop=0;});await expect(top).toBeVisible();
+ const finalNumber=await top.locator('.v3-run-number').textContent();await page.screenshot({path:path.join(output,`r8-${phase}-sessions-complete.png`)});
+ const touch=await page.getByTestId('v3-card-workspace-left-divider').locator('.cursor-col-resize').evaluate(el=>getComputedStyle(el).touchAction);
+ writeFileSync(path.join(output,`r8-${phase}-metrics.json`),JSON.stringify({phase,gap,headings,firstNumber,finalNumber,touch,errors,writes},null,2));
+ if(phase==='after'){expect(gap).toEqual({pixels:8,evidenceSlots:0});expect(new Set(headings.map(h=>h.font)).size).toBe(1);expect(headings[0].size).toBe('14px');expect(headings[0].lineHeight).toBe('20px');expect(firstNumber).toBe('세션 #75');expect(finalNumber).toBe(firstNumber);expect(touch).toBe('none');}
+ expect(errors).toEqual([]);expect(writes).toEqual([]);
+});

@@ -13,7 +13,7 @@ import { CardCommentInput } from "./CardCommentInput";
 import { CardDetailPane } from "./CardDetailPane";
 import { CardRowView } from "./CardRow";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
-vi.mock("./useCardSessionPages",()=>({useCardSessionPages:()=>({sessions:[],loading:false})}));
+vi.mock("./useCardSessionPages",async original=>({...await original<typeof import("./useCardSessionPages")>(),useCardSessionPages:()=>({sessions:[],loading:false})}));
 
 vi.mock("@seosoyoung/soul-ui", async original => ({
   ...await original<typeof import("@seosoyoung/soul-ui")>(),

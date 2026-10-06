@@ -53,7 +53,7 @@ export function DragHandle({ onDrag, widthPx = 4 }: DragHandleProps) {
       onPointerDown={onPointerDown} onPointerMove={onPointerMove}
       onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}
       className="cursor-col-resize bg-transparent shrink-0 relative z-10"
-      style={{ width: widthPx }}
+      style={{ width: widthPx, touchAction: "none" }}
     >
       <div
         className="absolute inset-y-0 left-0 right-0"

@@ -4,7 +4,7 @@ import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardTimeline } from "./CardTimeline";
 import { CardSessionHistory } from "./CardSessionHistory";
 import { CardDetailPane, cardRequestMarkdown } from "./CardDetailPane";
-vi.mock("./useCardSessionPages",()=>({useCardSessionPages:()=>lookup}));
+vi.mock("./useCardSessionPages",async original=>({...await original<typeof import("./useCardSessionPages")>(),useCardSessionPages:()=>lookup}));
 vi.mock("@seosoyoung/soul-ui/cards/CardSessionVirtualList",()=>({CardSessionVirtualList:({data,itemContent}:any)=><div>{data.map((row:any,i:number)=><div key={i}>{itemContent(i,row)}</div>)}</div>}));
 const lookup = vi.hoisted(() => ({ sessions: [] as import("@seosoyoung/soul-ui").SessionSummary[], loading: false }));
 vi.mock("@seosoyoung/soul-ui", async importOriginal => ({...await importOriginal<typeof import("@seosoyoung/soul-ui")>(), useAuth: () => ({user:{picture:"https://example.test/user.png"}}), useSessionListProvider: vi.fn(() => lookup)}));

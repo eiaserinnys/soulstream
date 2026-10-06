@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useDashboardStore, useSessionMenu, type SessionSummary } from "@seosoyoung/soul-ui";
 import type {CardLinkedSession} from "@seosoyoung/soul-ui/cards/card-types";
-import {useCardSessionPages} from "./useCardSessionPages";
-import { buildRunTree, resolveRunSessions } from "./folder-workspace-run-model";
+import {useCardSessionPages,projectCardSessionHistory} from "./useCardSessionPages";
 import { CardSessionVirtualList } from "@seosoyoung/soul-ui/cards/CardSessionVirtualList";
 import { SessionRunList } from "./SessionRunList";
 
@@ -20,18 +19,9 @@ export function CardSessionHistory({ sessionIds, linkedSessions=[], onOpenSessio
   const sessionChosen = useRef(false);
   const catalog = useDashboardStore(state => state.catalog);
   const activeSessionId = useDashboardStore(state => state.activeSessionKey);
-  const orderedIds=useMemo(()=>{
-    const dates=new Map((catalog?.sessionList??[]).map(session=>[session.agentSessionId,session.createdAt]));
-    for(const session of linkedSessions)dates.set(session.sessionId,session.createdAt);
-    const time=(id:string)=>Date.parse(dates.get(id)??"")||0;
-    return [...new Set(sessionIds)].sort((left,right)=>time(right)-time(left)||right.localeCompare(left));
-  },[sessionIds,linkedSessions,catalog?.sessionList]);
-  const targeted=useCardSessionPages(orderedIds);
-  const resolved = useMemo(() => resolveRunSessions({
-      sessionIds, catalogSessions: catalog?.sessionList ?? [],
-      targetedSessions: targeted.sessions, targetedLoading: targeted.loading,
-  }), [catalog?.sessionList, sessionIds, targeted.sessions, targeted.loading]);
-  const tree = useMemo(() => buildRunTree(sessionIds, resolved.sessions, targeted.hasMore?undefined:resolved.loadStateById), [sessionIds, resolved,targeted.hasMore]);
+  const targeted=useCardSessionPages(sessionIds,linkedSessions);
+  const resolved=useMemo(()=>projectCardSessionHistory(sessionIds,linkedSessions,catalog?.sessionList??[],targeted),[sessionIds,linkedSessions,catalog?.sessionList,targeted.sessions,targeted.loading,targeted.hasMore]);
+  const tree=resolved.tree;
   const rows=useMemo(()=>{
     const result:{node:(typeof tree)[number];depth:number}[]=[];
     const append=(nodes:typeof tree,depth:number)=>{for(const node of nodes){result.push({node:{...node,children:[]},depth});append(node.children,depth+1);}};
