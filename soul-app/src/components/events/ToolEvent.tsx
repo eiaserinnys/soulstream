@@ -109,9 +109,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
             backgroundColor: t.persistentSession.panel,
           }] : []),
           !expanded && styles.wrapperCollapsed,
-          isError && (presentation === 'manuscript'
-            ? { backgroundColor: t.persistentSession.panel }
-            : styles.wrapperError),
+          isError && presentation !== 'manuscript' && styles.wrapperError,
           headerPressed && styles.wrapperPressed,
         ]}
       >

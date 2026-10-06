@@ -52,6 +52,10 @@ test('원고형은 대기·승인·오류·도구·생각·담당 카드·첨부
   expect(typingRow).toBeTruthy();
   expect(StyleSheet.flatten(typingRow?.props.style).marginHorizontal).toBe(0);
   expect(typing.UNSAFE_queryAllByType(Image)).toHaveLength(0);
+  const typingSurface = StyleSheet.flatten(typing.getByTestId('typing-indicator-bubble').props.style);
+  expect(typingSurface.backgroundColor).toBeUndefined();
+  expect(typingSurface.borderWidth).toBeUndefined();
+  expect(typingSurface.paddingHorizontal).toBeUndefined();
 
   const approval = render(<ChatToolApprovalRequest presentation="manuscript" event={{
     id: 'approval', type: 'tool_approval_requested', data: { approval_id: 'approval-1', tool_name: 'Read' },
@@ -123,6 +127,22 @@ test('원고형 전송 실패와 선택 작업은 종이 위에서 읽히는 색
   const selection = render(<UserMessage presentation="manuscript" event={event}
     selectionModel={{ kind: 'plain', text: '선택할 문장' }} onSelectionDone={() => {}} />);
   expect(StyleSheet.flatten(selection.getByText('완료').props.style).color).toBe(LIGHT_COLORS.textPrimary);
+
+  const assistantSelection = render(<AssistantMessage presentation="manuscript"
+    event={message('assistant_message', '선택할 답변')}
+    selectionModel={{ kind: 'plain', text: '선택할 답변' }} onSelectionDone={() => {}} />);
+  expect(StyleSheet.flatten(assistantSelection.getByText('완료').props.style).color).toBe(LIGHT_COLORS.textPrimary);
+});
+
+test.each(['normal', 'intervention'] as const)('원고형 %s 발언은 글과 함께 있는 첨부를 오른쪽 끝에 놓는다', variant => {
+  useSettingsStore.setState({ serverUrl: 'https://chat.test' });
+  const screen = render(<UserMessage presentation="manuscript" variant={variant}
+    session={{ nodeId: 'node-1' }}
+    event={{ id: 'attached', type: 'user_message', data: {
+      text: '첨부 두 장이 달린 조금 긴 내 발언입니다.', attachments: ['/files/one.png', '/files/two.png'],
+    } }} />);
+  const list = screen.UNSAFE_getAllByType(View)[2];
+  expect(StyleSheet.flatten(list?.props.style).alignItems).toBe('flex-end');
 });
 
 test('원고형 입력 밑줄과 조작부는 열 가장자리에 맞추고 기본 입력 여백은 유지한다', () => {

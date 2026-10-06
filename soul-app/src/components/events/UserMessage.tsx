@@ -152,7 +152,8 @@ export function UserMessage({
         {messageKind}
         {children}
         {attachments.length > 0 && (
-          <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null]}>
+          <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
+            ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
             {attachmentSources.map((source, idx) => <AttachmentImage key={`${idx}-${source.uri}`}
               source={source} sources={attachmentSources} index={idx} accessibilityLabel={`첨부 이미지 ${idx + 1}`} />)}
           </View>
@@ -345,6 +346,9 @@ function makeStyles(t: DesignTokens) {
     },
     attachmentList: {
       gap: t.spacing.xs,
+    },
+    manuscriptAttachmentList: {
+      alignItems: 'flex-end',
     },
     // 본문 텍스트가 함께 있을 때만 텍스트와 분리하는 하단 여백.
     attachmentListWithText: {

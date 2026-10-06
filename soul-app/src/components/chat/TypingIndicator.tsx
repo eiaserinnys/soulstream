@@ -54,7 +54,7 @@ export function TypingIndicator({ session, presentation = 'default' }: Props) {
       <View
         testID="typing-indicator-bubble"
         accessibilityLabel="생각 중입니다…"
-        style={styles.bubble}
+        style={presentation === 'manuscript' ? styles.manuscriptContent : styles.bubble}
       >
         <ThinkingOrb
           inkColor={t.colors.textPrimary}
@@ -106,6 +106,12 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       color: c.textMuted,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
+    },
+    manuscriptContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: t.spacing.sm,
+      paddingVertical: t.spacing.sm,
     },
   });
 }

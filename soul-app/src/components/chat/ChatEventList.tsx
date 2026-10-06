@@ -56,7 +56,6 @@ interface Props {
     averageItemLength: number;
   }) => void;
   presentation?: 'default' | 'manuscript';
-  manuscriptDividerLineColor?: string;
 }
 
 export const ChatEventList = memo(function ChatEventList({
@@ -81,9 +80,7 @@ export const ChatEventList = memo(function ChatEventList({
   onContentSizeChange,
   onScrollToIndexFailed,
   presentation = 'default',
-  manuscriptDividerLineColor,
 }: Props) {
-  const dividerLineColor = manuscriptDividerLineColor;
   const [activeSelection, setActiveSelection] = useState<{
     eventKey: string;
     model: MessageSelectionModel;
@@ -101,9 +98,8 @@ export const ChatEventList = memo(function ChatEventList({
       onRetryPending={onRetryPending} onRestorePending={onRestorePending}
       selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
       highlighted={item.key === highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
-      presentation={presentation}
-      {...(presentation === 'manuscript' ? { dividerLineColor } : {})} />
-  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation, dividerLineColor]);
+      presentation={presentation} />
+  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
   return (
     <FlatList
@@ -168,13 +164,13 @@ interface RowProps {
   selectText(eventKey: string, model: MessageSelectionModel): void;
   closeSelection(): void;
   presentation: 'default' | 'manuscript';
-  dividerLineColor?: string;
 }
 
 const ChatEventRow = memo(function ChatEventRow({
   item, session, sessionId, api, onRetryPending, onRestorePending,
-  selection, highlighted, selectText, closeSelection, presentation, dividerLineColor,
+  selection, highlighted, selectText, closeSelection, presentation,
 }: RowProps) {
+  const t = useTokens();
   if (item.kind === 'typing') return <TypingIndicator session={session}
     {...(presentation === 'manuscript' ? { presentation } : {})} />;
   if (item.kind === 'turn-summary') {
@@ -195,7 +191,7 @@ const ChatEventRow = memo(function ChatEventRow({
   }
   if (item.kind === 'event' && item.event.type === 'generation_started') {
     return <SearchFocusHighlight active={highlighted}><LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
-      {...(dividerLineColor === undefined ? {} : { lineColor: dividerLineColor })} /></SearchFocusHighlight>;
+      {...(presentation === 'manuscript' ? { lineColor: t.persistentSession.line } : {})} /></SearchFocusHighlight>;
   }
   if (item.kind === 'tool') {
     return (

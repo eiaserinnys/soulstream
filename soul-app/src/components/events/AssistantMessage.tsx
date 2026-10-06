@@ -142,6 +142,7 @@ export function AssistantMessage({
             variant="assistant"
             textStyle={styles.streamingText}
             markdownStyle={markdownInputStyle}
+            {...(presentation === 'manuscript' ? { actionColor: t.colors.textPrimary } : {})}
           />
         ) : renderAsPlainStreamingText ? (
           <Text

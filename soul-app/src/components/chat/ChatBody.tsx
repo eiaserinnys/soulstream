@@ -497,7 +497,6 @@ export function ChatBody({
         onContentSizeChange={onContentSizeChange}
         onScrollToIndexFailed={handleScrollToIndexFailed}
         presentation={presentation}
-        {...(presentation === 'manuscript' ? { manuscriptDividerLineColor: t.persistentSession.line } : {})}
       />
 
       <ClaudeRuntimeTasksStrip sessionId={sessionId} api={api} />
