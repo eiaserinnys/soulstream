@@ -146,7 +146,7 @@ export class CardDispatcher {
           const itemTarget=itemId === undefined ? undefined : change.committedCard?.items?.find(item=>item.id===itemId);
           const confirmedItemIds=await cards.listConfirmedItemsSinceLastCommentDelivery(card.id,op.created_at);
           notification=buildCardChangeNotification(change,comment,fallback,{
-            ...(itemTarget ? {itemTarget:{id:itemTarget.id,title:itemTarget.title}} : {}),confirmedItemIds,
+            ...(itemTarget ? {itemTarget:{id:itemTarget.id,title:itemTarget.title,state:itemTarget.state,confirmed:itemTarget.confirmed !== null}} : {}),confirmedItemIds,
           });
         }
         const answeredQuestion=op.operation_type === "answer_card_question" ? detail.questions.find(q=>q.id === payload.question_id) : undefined;
