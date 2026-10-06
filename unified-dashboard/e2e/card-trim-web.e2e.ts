@@ -7,8 +7,11 @@ const base=process.env.CARD_CHECK_ITEMS_BASE_URL;
 if(!base)throw new Error("CARD_CHECK_ITEMS_BASE_URL is required");
 mkdirSync(output,{recursive:true});
 async function prepare(page:Page,width:number) {
- const errors:string[]=[],writes:string[]=[],batches:string[][]=[];
+ const errors:string[]=[],writes:string[]=[],batches:string[][]=[],aborted:{ids:string[];error:string}[]=[];
  page.on("pageerror",error=>errors.push(error.message));
+ const targetedIds=(url:string)=>{const u=new URL(url),ids=u.searchParams.getAll('session_id');return u.pathname==='/api/sessions'&&ids.some(id=>id.startsWith('trim-session-'))?ids:[];};
+ page.on('requestfinished',request=>{const ids=targetedIds(request.url());if(ids.length)batches.push(ids);});
+ page.on('requestfailed',request=>{const ids=targetedIds(request.url());if(ids.length)aborted.push({ids,error:request.failure()?.errorText??''});});
  page.on("request",request=>{const u=new URL(request.url());if(u.pathname.startsWith('/api/')&&!['GET','HEAD'].includes(request.method())&&!u.pathname.includes('ui-events'))writes.push(u.pathname);});
  await page.setViewportSize({width,height:1080});
  await page.emulateMedia({colorScheme:"dark",reducedMotion:"no-preference"});
@@ -19,14 +22,13 @@ async function prepare(page:Page,width:number) {
  await page.route('**/api/sessions?**',route=>{
   const ids=new URL(route.request().url()).searchParams.getAll('session_id');
   if(!ids.some(id=>id.startsWith('trim-session-')))return route.fallback();
-  batches.push(ids);
   return route.fulfill({json:{sessions:ids.map(id=>({agentSessionId:id,nodeId:'eiaserinnys',agentId:'roselin',displayName:id.startsWith("trim-session-")?`검수 세션 ${Number(id.split('-').at(-1))+1}`:"담당 세션",status:'completed',eventCount:1,prompt:'검수 대화',createdAt:new Date(Date.parse('2026-10-01T00:00:00Z')+(id.startsWith('trim-session-')?Number(id.split('-').at(-1)):0)*60000).toISOString(),updatedAt:'2026-10-05T08:00:00Z'})),total:ids.length}});
  });
  await page.goto(new URL('/components',base).href);
  await expect(page.getByTestId('components-review')).toBeVisible();
  await page.locator('.v3-shell.v3-components-page').evaluate(el=>(el as HTMLElement).style.setProperty('--v3-navigation-width','336px'));
  await page.evaluate(()=>document.fonts.ready);
- return {board:page.getByTestId('card-board-sample'),errors,writes,batches};
+ return {board:page.getByTestId('card-board-sample'),errors,writes,batches,aborted};
 }
 async function drag(page:Page,id:string,delta:number) {
  const handle=page.getByTestId(id).locator('.cursor-col-resize');
@@ -240,7 +242,7 @@ test('review r7 independent resize preferences focus and pointer cleanup',async(
 
 test('review r8 evidence gaps note headings and stable session numbers',async({page})=>{
  const phase=process.env.CARD_REVIEW_PHASE??'after';
- const {board,errors,writes,batches}=await prepare(page,1440);
+ const {board,errors,writes,batches,aborted}=await prepare(page,1440);
  await board.getByTestId('postit-size-comparison').locator('.v3-postit-open').first().click();
  const detail=page.getByTestId('card-detail'),fix=detail.locator('[data-item-id="5"]');
  await fix.evaluate(el=>{const scroll=el.closest('.v3-card-panel-scroll')!;scroll.scrollTop+=el.getBoundingClientRect().top-scroll.getBoundingClientRect().top;});
@@ -261,10 +263,10 @@ test('review r8 evidence gaps note headings and stable session numbers',async({p
  const scroll=detail.locator('[data-testid=card-session-virtual] [data-virtuoso-scroller]'),top=detail.locator('[data-session-id="trim-session-074"]');await expect(top).toBeVisible();
  const firstNumber=await top.locator('.v3-run-number').textContent();await page.screenshot({path:path.join(output,`r8-${phase}-sessions-first.png`)});
  for(let i=0;i<5&&!batches.some(batch=>batch.length===25);i++){await scroll.evaluate(el=>{el.scrollTop=el.scrollHeight;});await page.waitForTimeout(300);}
- expect(batches.map(ids=>ids.length)).toEqual([50,25]);await scroll.evaluate(el=>{el.scrollTop=0;});await expect(top).toBeVisible();
+ writeFileSync(path.join(output,`r8-${phase}-requests.json`),JSON.stringify({batches,aborted},null,2));expect(batches.map(ids=>ids.length)).toEqual([50,25]);await scroll.evaluate(el=>{el.scrollTop=0;});await expect(top).toBeVisible();
  const finalNumber=await top.locator('.v3-run-number').textContent();await page.screenshot({path:path.join(output,`r8-${phase}-sessions-complete.png`)});
  const touch=await page.getByTestId('v3-card-workspace-left-divider').locator('.cursor-col-resize').evaluate(el=>getComputedStyle(el).touchAction);
- writeFileSync(path.join(output,`r8-${phase}-metrics.json`),JSON.stringify({phase,gap,headings,firstNumber,finalNumber,touch,errors,writes},null,2));
+ writeFileSync(path.join(output,`r8-${phase}-metrics.json`),JSON.stringify({phase,gap,headings,firstNumber,finalNumber,touch,completedBatches:batches.map(ids=>ids.length),aborted,errors,writes},null,2));
  if(phase==='after'){expect(gap).toEqual({pixels:8,evidenceSlots:0});expect(new Set(headings.map(h=>h.font)).size).toBe(1);expect(headings[0].size).toBe('14px');expect(headings[0].lineHeight).toBe('20px');expect(firstNumber).toBe('세션 #75');expect(finalNumber).toBe(firstNumber);expect(touch).toBe('none');}
  expect(errors).toEqual([]);expect(writes).toEqual([]);
 });
