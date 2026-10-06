@@ -3,9 +3,9 @@ import { View } from 'react-native';
 import { useTokens } from '../theme';
 import { PlannerSectionHeader } from '../components/planner/PlannerSectionHeader';
 
-export function ReviewSection({ title, children }: { title: string; children: React.ReactNode }) {
+export function ReviewSection({ title, children, testID }: { title: string; children: React.ReactNode; testID?: string }) {
   const t = useTokens();
-  return <View style={{ gap: t.spacing.md }}>
+  return <View testID={testID} style={{ gap: t.spacing.md }}>
     <PlannerSectionHeader title={title} />
     {children}
   </View>;

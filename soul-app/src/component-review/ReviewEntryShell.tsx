@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, Text, View, type AlertButton } from 'react-native';
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
+import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
 import { TabNavigator } from '../navigation/TabNavigator';
 import { SplitLayout } from '../components/split/SplitLayout';
 import { useDeviceType } from '../theme';
@@ -55,7 +56,7 @@ export function ReviewEntryShell() {
     ...DefaultTheme,
     colors: { ...DefaultTheme.colors, background: t.colors.background },
   };
-  return <View style={{ flex: 1 }}><NavigationContainer theme={navigationTheme}>{device === 'phone' ? <TabNavigator /> : <SplitLayout />}</NavigationContainer>
+  return <View style={{ flex: 1 }}><NavigationContainer theme={navigationTheme}>{device === 'phone' ? <PersistentSessionProvider><TabNavigator /></PersistentSessionProvider> : <SplitLayout />}</NavigationContainer>
     <EntryShellAlertHarness />
   </View>;
 }

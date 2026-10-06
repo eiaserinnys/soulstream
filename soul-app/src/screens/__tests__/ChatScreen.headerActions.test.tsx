@@ -135,7 +135,7 @@ test('header 선렌더 뒤 focus history가 바뀌어도 press 순간 최신 Fol
   expect(headerLeft.getByTestId('mock-chat-status-dot')).toBeTruthy();
 
   capturedHistory!.recordFocus('FolderTab');
-  capturedHistory!.recordFocus('ChatTab');
+  capturedHistory!.recordChatOpen();
   const back = headerLeft.getByLabelText('이전 패널로 돌아가기');
   const style = StyleSheet.flatten(back.props.style);
   expect(back.props.accessibilityHint).toBe('채팅을 열기 전에 보던 화면으로 돌아갑니다');
@@ -202,6 +202,7 @@ test('Chat focus hides the parent tab bar for keyboard events and restores it on
   const setTabOptions = jest.fn();
   const navigation = {
     getParent: () => ({ setOptions: setTabOptions }),
+    getState: () => ({ index: 0, routes: [{ key: 'chat-keyboard' }] }),
     navigate: jest.fn(),
     setOptions: jest.fn(),
     setParams: jest.fn(),

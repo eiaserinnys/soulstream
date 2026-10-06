@@ -21,6 +21,7 @@ import { makeCard } from './fixtures';
 import { dialogueApi as api, dialogueFolder, dialogueFolders } from './dialogue-fixtures';
 import { type DialogueSample } from './dialogue-inventory';
 import { ReviewDialogueOwners } from './ReviewDialogueOwners';
+import { ReviewPersistentEntry } from './ReviewPersistentEntry';
 
 const assignment = { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model' };
 
@@ -49,6 +50,7 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
       {opened === 'settings-target' ? <SettingsOptionRow selected="public-node-1" label="실행 노드" emptyLabel="노드 없음" options={Array.from({ length: 8 }, (_, index) => ({ id: `public-node-${index + 1}`, label: `public-node-${index + 1}` }))} onSelect={id => saved('선택: ' + id)}/> : null}
       {opened === 'settings' ? <SettingsModal visible onClose={close} /> : null}
       {opened === 'pas-settings' ? <ReviewNativeSettings entry="pas" onClose={close} /> : null}
+      {opened === 'persistent-select' ? <ReviewPersistentEntry onOpen={() => saved('영구 세션 선택')} /> : null}
       {opened === 'card-status' ? <CardStatusMenu api={api} card={makeCard('todo')} onClose={close} /> : null}
       {opened === 'image-viewer' ? <ImageViewerModal sources={[require('../../assets/icon.png')]} initialIndex={0} onClose={close} /> : null}
       <ReviewDialogueOwners opened={opened} preview={preview} onClose={close} />

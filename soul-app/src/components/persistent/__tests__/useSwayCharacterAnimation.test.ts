@@ -53,10 +53,14 @@ test('starts only after reduced-motion is known and resets to still for every in
   });
   expect(view.result.current.phase.value).toBe(0);
 
+  act(() => {
+    for (const listener of (globalThis as any).__appStateListeners) listener('active');
+  });
+  expect(repeat).toHaveBeenCalledTimes(4);
   view.rerender({ motionEnabled: true, active: false, shown: true });
   expect(view.result.current.phase.value).toBe(0);
   view.rerender({ motionEnabled: true, active: true, shown: false });
   expect(view.result.current.phase.value).toBe(0);
-  expect(repeat).toHaveBeenCalledTimes(3);
+  expect(repeat).toHaveBeenCalledTimes(4);
   view.unmount();
 });

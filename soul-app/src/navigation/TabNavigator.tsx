@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, type ViewStyle } from 'react-native';
 import {
   type BottomTabBarButtonProps,
@@ -42,6 +42,9 @@ import { openPhoneChat, openPhoneSearchSession } from './phoneSessionNavigation'
 import { useSearchStore } from '../store/searchStore';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { PhonePersistentSession, PersistentPhoneTabIcon } from './PhonePersistentSession';
+import { usePersistentSessionHost, usePersistentSessionScene } from './PersistentSessionContext';
+import type { PhoneReturnTab } from './phonePanelHistory';
 import { ROOT_SECTION_CONFIG, type RootSectionKey } from './rootSectionConfig';
 import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../components/planner/DailyHeaderActions';
@@ -86,15 +89,7 @@ export type RootTabParamList = {
   DailyTab: undefined;
   FolderTab: NavigatorScreenParams<FolderStackParamList> | undefined;
   FeedTab: NavigatorScreenParams<FeedStackParamList> | undefined;
-  ChatTab: {
-    screen: 'Chat';
-    params: {
-      sessionId: string;
-      focusEventId?: number;
-      storyOpenRequestId?: number;
-      usageEntry?: 'notification';
-    };
-  } | undefined;
+  PersistentTab: NavigatorScreenParams<PersistentStackParamList> | undefined;
   SettingsTab: undefined;
 };
 
@@ -112,14 +107,17 @@ export type FolderStackParamList = {
 export type FeedStackParamList = {
   Feed: undefined;
   Search: { initialQuery?: string } | undefined;
-};
-export type ChatStackParamList = {
   Chat: {
     sessionId?: string;
     focusEventId?: number;
     storyOpenRequestId?: number;
     usageEntry?: 'notification';
+    returnTab?: PhoneReturnTab;
   } | undefined;
+};
+export type PersistentStackParamList = {
+  PersistentSession: undefined;
+  CardDetail: { cardId: string };
 };
 export type SettingsStackParamList = {
   Settings: undefined;
@@ -131,7 +129,7 @@ export type SettingsStackParamList = {
 const DailyStack = createNativeStackNavigator<DailyStackParamList>();
 const FolderStack = createNativeStackNavigator<FolderStackParamList>();
 const FeedStack = createNativeStackNavigator<FeedStackParamList>();
-const ChatStack = createNativeStackNavigator<ChatStackParamList>();
+const PersistentStack = createNativeStackNavigator<PersistentStackParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 
 function stackScreenOptions(t: DesignTokens) {
@@ -372,17 +370,17 @@ function FeedNavigator() {
         component={PhoneSearchScreen}
         options={{ title: '검색', headerLargeTitleEnabled: false }}
       />
+      <FeedStack.Screen name="Chat" component={ChatScreen} options={{ ...rootScreenOptions('ChatTab'), gestureEnabled: false }} />
     </FeedStack.Navigator>
   );
 }
 
-function ChatNavigator() {
+function PersistentNavigator() {
   const t = useTokens();
-  return (
-    <ChatStack.Navigator screenOptions={stackScreenOptions(t)}>
-      <ChatStack.Screen name="Chat" component={ChatScreen} options={rootScreenOptions('ChatTab')} />
-    </ChatStack.Navigator>
-  );
+  return <PersistentStack.Navigator screenOptions={{ ...stackScreenOptions(t), headerShown: false }}>
+    <PersistentStack.Screen name="PersistentSession" component={PhonePersistentSession} />
+    <PersistentStack.Screen name="CardDetail" component={PhoneCardDetail} />
+  </PersistentStack.Navigator>;
 }
 
 function SettingsNavigator() {
@@ -413,7 +411,7 @@ const TAB_COMPONENTS: Record<
   // 빌드 26: 키보드 등장 시 탭 바 숨김은 ChatScreen 내부에서 useFocusEffect +
   // Keyboard 리스너로 처리한다. 시작 시점 리스너는 iOS 26.3.1 + RN New Arch에서
   // KeyboardObserver TurboModule race로 부팅 크래시를 일으키므로 다시 추가하지 않는다.
-  ChatTab: ChatNavigator,
+  PersistentTab: PersistentNavigator,
   SettingsTab: SettingsNavigator,
 };
 
@@ -429,11 +427,14 @@ function PhoneTabNavigator() {
   useSessionsStream();
   useNodeConnectivityStream();
   const panelHistory = usePhonePanelHistory();
+  const host = usePersistentSessionHost();
+  const scene = usePersistentSessionScene(state => state.scene);
+  const [focusedTab, setFocusedTab] = useState<keyof RootTabParamList>(host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB);
   const t = useTokens();
   const c = t.colors;
   return (
     <Tab.Navigator
-      initialRouteName={INITIAL_ROOT_TAB}
+      initialRouteName={host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB}
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: 'transparent' },
@@ -453,11 +454,20 @@ function PhoneTabNavigator() {
             key={name}
             name={name}
             component={TAB_COMPONENTS[name]}
-            listeners={{ focus: () => panelHistory.recordFocus(name) }}
+            listeners={({ navigation }) => ({ focus: () => { panelHistory.recordFocus(name); setFocusedTab(name); host.store.setState({ visible: name === 'PersistentTab' }); },
+              ...(name === 'PersistentTab' ? { tabPress: (event: { preventDefault(): void }) => {
+                event.preventDefault();
+                if (navigation.isFocused() && host.store.getState().session) host.store.getState().toggleScene();
+                else void host.requestEntry(() => navigation.navigate('PersistentTab'));
+              } } : {}),
+            })}
             options={{
-              tabBarIcon: ({ color, size }) => (
-                <Ionicons name={config.icon} color={color} size={size} />
-              ),
+              tabBarButtonTestID: `phone-tab-${name}`,
+              ...(name === 'PersistentTab' ? { tabBarAccessibilityLabel: focusedTab === 'PersistentTab'
+                ? scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기' : '영구 세션 열기' } : {}),
+              tabBarIcon: ({ color, size }) => name === 'PersistentTab'
+                ? <PersistentPhoneTabIcon color={color} size={size} active={focusedTab === name} />
+                : <Ionicons name={config.icon} color={color} size={size} />,
             }}
           />
         );

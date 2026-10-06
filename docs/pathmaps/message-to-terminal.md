@@ -69,6 +69,15 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.
 
+## 앱 PAS 전화면 진입과 대화 상태 (N5)
+
+| 경로 | 구현 | 계약 |
+| :-- | :-- | :-- |
+| iPhone 입구 | `navigation/TabNavigator.tsx`, `PersistentSessionContext.tsx`, `phoneSessionNavigation.ts` | Daily·Folder·Persistent·Feed·Settings의 중앙만 tabPress를 가로챈다. 다른 탭의 입구는 목록 0/1/복수 규칙으로 대화에 진입하고 PAS 안에서는 현재 id로 scene만 전환한다. 일반 세션의 피드·검색·알림·폴더·카드 입구는 공통 openPhoneChat의 initial:false 중첩 진입으로 FeedStack의 [Feed, Chat]을 유지한다. Chat route의 gestureEnabled:false는 기존 가장자리 밀기 없는 계약을 유지한다. 출발 탭은 route params와 인스턴스별 phonePanelHistory에 보존하고 Chat pop 뒤 복귀한다. |
+| iPad 입구 | `navigation/TabletNavigator.tsx`, `navigation/TabletPersistentEntry.tsx` | Main 위에 PersistentSession을 push한다. 홈은 pop한다. RootNavigator의 알림과 session URL은 tabletSessionNavigation.openTabletSessionFromRoot로 PAS leave → 기존 Main popTo → workspace 열기 순서를 지킨다. Main을 새로 push하지 않는다. Main/SplitLayout의 기존 세션·노드 SSE 호스트는 계속 마운트되어 있다. 좁은 iPad 창의 phone 계약 전환에도 인증된 PersistentSessionProvider의 session/scene/selectedCardId가 이어진다. |
+| 시작 평가 | `PersistentSessionStartup.tsx`, `authenticatedStartupReady.ts`, `RootNavigator.tsx` | auth/settings/UI hydration, navigation ready, 초기 링크·알림 읽기가 끝난 인증 인스턴스에서 한 번만 평가한다. 세션 intent가 우선하며 시작 조회 중 들어온 intent도 PAS 응답 이동을 취소한다. 이미 열린 선택 sheet도 intent에서 닫으며 수동 조회 중에는 입구에서만 로딩을 표시한다. foreground·회전·홈 복귀·설정 변경은 재평가하지 않는다. 실패는 기존 홈 notice와 수동 입구로 복구한다. |
+| 본문·전송·스트림 | `screens/PersistentSessionScreen.tsx` → `components/chat/ChatBody.tsx` → 기존 history/SSE/send 훅 | session id를 원고형 ChatBody 한 인스턴스에 전달한다. scene cards/상세 push는 active=false로 상세 네트워크만 멈춘다. 마운트·초안·첨부·표시 설정은 유지한다. RN 웹 검수 창에서는 기본 native stack의 상세 push가 이전 화면을 display:none으로 숨겨 읽던 위치를 초기화한다. 관제 결정에 따라 별도 스크롤 복원은 추가하지 않으며 iOS 상세 왕복 위치 보존은 실기기 확인 항목이다. 초기 PAS GET와 저장 응답은 persistentChatDisplaySettings 한 함수로 다섯 키를 투영한다. 비활성 중 표시 설정을 유지하고 재활성 begin/finish는 요청 id로 늦은 응답을 폐기한다. |
+| 키보드·안전 영역 | `usePhoneConversationKeyboard.ts`, `PersistentSessionScreen.tsx` | 기존 ChatScreen의 포커스 한정 keyboardWill/Did 이벤트 규칙을 PAS와 공유한다. 키보드가 숨긴 탭 바는 자기 route가 stack에서 제거된 pop이나 자기 route가 최상단에 남은 탭 전환에서 복원한다. 자기 route가 남아 있고 그 위에 CardDetail이 push된 경우에는 상세가 탭 숨김을 소유하므로 PAS cleanup이 복원하지 않는다. phone 탭 네비게이터가 하단 안전 영역을, PAS 틀이 top/좌우를 소유한다. phone composer minimumBottomPadding은 0, tablet은 하단 inset 한 번이다. |
 ## PAS 전화면 웹 진입
 
 `App`의 `/persistent`와 `/persistent/:sessionId`는 `PersistentSessionScreen`을 lazy로 연다. 홈 툴바의 초상 입구와 기기별 시작 선호도 같은 주소를 `navigateDashboard`로 연다. 인증은 기존 `main.tsx`의 AuthGate를 통과하고, 일반 대시보드와 PAS의 lifecycle은 함께 마운트하지 않는다.

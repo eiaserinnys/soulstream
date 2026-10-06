@@ -1,5 +1,7 @@
 import React from 'react';
-import { SplitLayout } from '../components/split/SplitLayout';
+import { TabletNavigator } from './TabletNavigator';
+import { PersistentSessionProvider } from './PersistentSessionContext';
+import { PersistentSessionStartup } from './PersistentSessionStartup';
 import type { DeviceType } from '../theme/useDeviceType';
 import { TabNavigator } from './TabNavigator';
 import { UiUsageEventsHost } from '../components/UiUsageEventsHost';
@@ -9,6 +11,10 @@ interface Props {
   generation: string;
   device: DeviceType;
   onUiUsageEventsEnabled?: () => void;
+  startupReady?: boolean;
+  sessionIntent?: boolean;
+  onOpenPersistent?: () => void;
+  onPersistentLeaveReady?: (leave: (() => void) | null) => void;
 }
 
 /**
@@ -22,6 +28,10 @@ export function AuthenticatedAppSubtree({
   generation,
   device,
   onUiUsageEventsEnabled,
+  startupReady = false,
+  sessionIntent = false,
+  onOpenPersistent,
+  onPersistentLeaveReady,
 }: Props) {
   const snapshotCurrentView = React.useCallback(() => {
     if (device === 'phone') {
@@ -34,11 +44,15 @@ export function AuthenticatedAppSubtree({
   return (
     <>
       <UiUsageEventsHost generation={generation} onCollectionEnabled={snapshotCurrentView} />
-      <AuthenticatedAppInstance key={generation} device={device} />
+      <AuthenticatedAppInstance key={generation} device={device} startupReady={startupReady}
+        sessionIntent={sessionIntent} onOpenPersistent={onOpenPersistent} onPersistentLeaveReady={onPersistentLeaveReady} />
     </>
   );
 }
 
-function AuthenticatedAppInstance({ device }: Pick<Props, 'device'>) {
-  return device === 'phone' ? <TabNavigator /> : <SplitLayout />;
+function AuthenticatedAppInstance({ device, startupReady, sessionIntent, onOpenPersistent, onPersistentLeaveReady }: Pick<Props, 'device' | 'startupReady' | 'sessionIntent' | 'onOpenPersistent' | 'onPersistentLeaveReady'>) {
+  return <PersistentSessionProvider sessionIntent={sessionIntent} onLeaveReady={onPersistentLeaveReady}>
+    {device === 'phone' ? <TabNavigator /> : <TabletNavigator />}
+    {onOpenPersistent ? <PersistentSessionStartup ready={startupReady === true} sessionIntent={sessionIntent === true} onOpen={onOpenPersistent} /> : null}
+  </PersistentSessionProvider>;
 }

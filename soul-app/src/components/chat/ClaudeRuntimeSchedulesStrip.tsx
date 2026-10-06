@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,13 +21,17 @@ import { RUNTIME_STRIP_DETAILS_MAX_HEIGHT } from './runtimeStripOverflow';
 import { canDeleteClaudeRuntimeSchedule } from './scheduleDeletePolicy';
 import { DisclosureIcon } from '../DisclosureIcon';
 import { useClaudeRuntimeSchedulesRefresh } from './useClaudeRuntimeListRefresh';
+import { chatAuxiliarySurface } from './chatAuxiliarySurface';
 
 interface Props {
+  presentation?: 'default' | 'manuscript';
+  separateBelow?: boolean;
+  onVisibilityChange?(visible: boolean): void;
   sessionId: string;
   api: ApiClient | null;
 }
 
-export function ClaudeRuntimeSchedulesStrip({ sessionId, api }: Props) {
+export function ClaudeRuntimeSchedulesStrip({ sessionId, api, presentation = 'default', separateBelow = true, onVisibilityChange }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const runtime = useChatStore((s) => s.claudeRuntimeBySession[sessionId]);
@@ -62,10 +66,12 @@ export function ClaudeRuntimeSchedulesStrip({ sessionId, api }: Props) {
     }
   };
 
-  if (schedules.length === 0 && !loading && !recoveryNeeded) return null;
+  const visible = schedules.length > 0 || loading || recoveryNeeded;
+  useLayoutEffect(() => { onVisibilityChange?.(visible); }, [visible, onVisibilityChange]);
+  if (!visible) return null;
 
   return (
-    <View style={styles.container}>
+    <View testID="runtime-schedules-strip" style={[styles.container, chatAuxiliarySurface(t, presentation, separateBelow)]}>
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => setExpanded((value) => !value)}

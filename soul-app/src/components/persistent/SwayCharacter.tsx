@@ -22,7 +22,7 @@ export function SwayCharacter({
   active,
 }: SwayCharacterProps) {
   const [imageFailed, setImageFailed] = useState(false);
-  const { phase } = useSwayCharacterAnimation({ motionEnabled, active, shown });
+  const { phase } = useSwayCharacterAnimation({ motionEnabled, active, shown: shown && !imageFailed });
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ skewX: `${MAX_SWAY_DEGREES * Math.sin(phase.value)}deg` }],
   }));

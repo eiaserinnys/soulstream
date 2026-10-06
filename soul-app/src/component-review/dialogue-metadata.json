@@ -44,6 +44,10 @@
       "label": "영구 세션 설정",
       "source": "settings/PersistentSessionPasSettingsModal.tsx"
     },
+    "persistent-select": {
+      "label": "영구 세션 선택",
+      "source": "../navigation/PersistentSessionContext.tsx"
+    },
     "owned-agents": {
       "label": "내 에이전트",
       "source": "settings/OwnedAgentsSettingsSection.tsx"
@@ -98,7 +102,8 @@
         "folder-picker",
         "execution-picker",
         "search-filter",
-        "settings-target"
+        "settings-target",
+        "persistent-select"
       ]
     },
     {
@@ -211,6 +216,7 @@
     "navigation/RootNavigator.tsx",
     "navigation/phoneSessionNavigation.ts",
     "screens/DailyPlannerScreen.tsx",
+    "screens/PersistentSessionScreen.tsx",
     "screens/SettingsContent.tsx",
     "screens/StarredFoldersScreen.tsx"
   ]

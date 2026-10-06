@@ -10,7 +10,8 @@ const [playwrightPath, evidencePath, tabletSize, captureMode] = process.argv.sli
 if (!playwrightPath || !evidencePath) throw new Error('Playwright path와 증거 경로가 필요합니다.');
 const { chromium, devices } = require(path.resolve(playwrightPath));
 const output = path.resolve(evidencePath);
-const root = path.resolve(__dirname, '../../unified-dashboard/dist/assets/ios-components');
+const root = process.env.COMPONENT_REVIEW_BUNDLE ? path.resolve(process.env.COMPONENT_REVIEW_BUNDLE)
+  : path.resolve(__dirname, '../../unified-dashboard/dist/assets/ios-components');
 const prefix = '/assets/ios-components/';
 const apiRequests = [];
 const result = { passed: false, viewports: [], interactions: [], errors: [], warnings: [], apiRequests };
@@ -68,7 +69,7 @@ async function runViewport(browser, base, options, name) {
     await page.screenshot({ path: path.join(output, name + '-' + part + '.png') });
   };
   const tab = (value) => page.getByTestId('settings-segment-review-section-' + value).click();
-  const metric = async (id) => page.getByTestId(id).evaluate((el) => {
+  const metric = async (id, scope = page) => scope.getByTestId(id).evaluate((el) => {
     const b = el.getBoundingClientRect();
     return { x: b.x, y: b.y, width: b.width, height: b.height };
   });
@@ -85,18 +86,19 @@ async function runViewport(browser, base, options, name) {
   await shot('sessions');
   result.interactions.push(name + ': 카드 전체 행·로컬 완료·세션 검수 확인');
   await tab('chat');
-  const input = page.getByTestId('chat-composer-text-input');
+  const composerSample = page.getByTestId('review-chat-composer');
+  const input = composerSample.getByTestId('chat-composer-text-input');
   await input.fill('공개 예시 여러 줄 입력\n두 번째 줄\n세 번째 줄');
-  const send = page.getByTestId('chat-composer-send-button');
+  const send = composerSample.getByTestId('chat-composer-send-button');
   await input.click();
   result.viewports[result.viewports.length - 1].composer = {
-    input: await metric('chat-composer-text-input'), send: await metric('chat-composer-send-button'),
-    content: await metric('chat-composer-content-row'),
+    input: await metric('chat-composer-text-input', composerSample), send: await metric('chat-composer-send-button', composerSample),
+    content: await metric('chat-composer-content-row', composerSample),
   };
   await shot('composer');
   await send.click();
   assert.equal(await input.inputValue(), '');
-  await page.getByTestId('chat-composer-attach-button').click();
+  await composerSample.getByTestId('chat-composer-attach-button').click();
   await page.getByLabel('공개 예시 첨부 열기').click();
   await page.getByLabel('이미지 닫기').click();
   await page.getByLabel('답변 텍스트 선택', { exact: true }).click();
@@ -1002,7 +1004,35 @@ async function runPersistentTaskCaptures(browser, base) {
     assert.equal(await denied.getByTestId('component-review').count(), 0);
     await denied.close();
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
-    if (captureMode === 'card-checks' || captureMode === 'card-trim') {
+    if (captureMode === 'persistent-correction-default') {
+      await require('./persistent-corrections-capture.cjs').runDefaultChatCapture({ browser, base, prefix, root, output, result });
+    } else if (captureMode === 'persistent-corrections') {
+      await require('./persistent-corrections-capture.cjs').runCorrectionCaptures({ browser, base, prefix, root, output, result });
+    } else if (captureMode === 'persistent-fix-regression') {
+      const env = { browser, base, prefix, root, output, result };
+      await require('./persistent-baseline-capture.cjs').runPersistentBaselineCaptures(env);
+      const captures = require('./persistent-fullscreen-capture.cjs');
+      await captures.runSettingsCaptures(env);
+      await captures.runEntryCaptures(env);
+    } else if (captureMode === 'persistent-fix-pressed') {
+      await require('./persistent-fixes-capture.cjs').runPressedCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-fixes') {
+      await require('./persistent-fixes-capture.cjs').runPersistentFixCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-fullscreen') {
+      await require('./persistent-fullscreen-capture.cjs').runPersistentFullscreenCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-phone') {
+      const captures = require('./persistent-fullscreen-capture.cjs');
+      await captures.runPhoneCaptures({ browser, base, prefix, output, result });
+      await captures.runEntryCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-history') {
+      await require('./persistent-fullscreen-capture.cjs').runHistoryCapture({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-settings') {
+      await require('./persistent-fullscreen-capture.cjs').runSettingsCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-entry') {
+      await require('./persistent-fullscreen-capture.cjs').runEntryCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-baseline') {
+      await require('./persistent-baseline-capture.cjs').runPersistentBaselineCaptures({ browser, base, prefix, root, output, result });
+    } else if (captureMode === 'card-checks' || captureMode === 'card-trim') {
       await runCardChecksCaptures(browser, base);
     } else if (captureMode === 'manuscript-chat') {
       await runManuscriptChatCaptures(browser, base);

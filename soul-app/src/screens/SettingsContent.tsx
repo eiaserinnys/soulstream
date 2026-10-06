@@ -25,6 +25,7 @@ import {
 import { useTokens } from '../theme';
 import { useSettingsWorkspace, useSettingsSaveScope } from '../components/settings/SettingsWorkspaceContext';
 import { makeSettingsStyles } from './SettingsScreen.styles';
+import { useDisplayPreferenceActions } from '../components/settings/useDisplayPreferenceActions';
 
 type NodeInfo = Awaited<
   ReturnType<ReturnType<typeof createApiClient>['listNodes']>
@@ -56,7 +57,6 @@ export function SettingsContent({
     nodeId,
     setNodeId,
     appearance,
-    setAppearance,
     wallpaper,
     setWallpaper,
     setWallpaperMode,
@@ -79,13 +79,10 @@ export function SettingsContent({
   const [visited, setVisited] = useState<SettingsCategory[]>([category ?? 'display']);
   useEffect(() => { if (category) setVisited(current => current.includes(category) ? current : [...current, category]); }, [category]);
   const testRevision = useRef(0);
-  const preferencesRevision = useRef(0);
-  const identity = useRef({ serverUrl, jwt });
-  identity.current = { serverUrl, jwt };
+  const { preferencesRevision, identity, backgroundStatus, setBackgroundStatus, savePreferences, handleAppearanceChange } = useDisplayPreferenceActions();
   const [connectionSaved, setConnectionSaved] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [backendReload, setBackendReload] = useState(0);
-  const [backgroundStatus, setBackgroundStatus] = useState<string | null>(null);
   const backgroundPending = useRef(false);
   const backgroundRequest = useRef(0);
   const [savingBackground, setSavingBackground] = useState(false);
@@ -109,8 +106,8 @@ export function SettingsContent({
     return () => { active = false; };
   }, [serverUrl, jwt, setNodeId, backendReload]);
 
-  useEffect(() => () => { ++testRevision.current; ++preferencesRevision.current; ++backgroundRequest.current; }, []);
-  useEffect(() => { ++preferencesRevision.current; ++backgroundRequest.current; backgroundPending.current = false; setSavingBackground(false); setBackgroundStatus(null); }, [serverUrl, jwt]);
+  useEffect(() => () => { ++testRevision.current; ++backgroundRequest.current; }, []);
+  useEffect(() => { ++backgroundRequest.current; backgroundPending.current = false; setSavingBackground(false); }, [serverUrl, jwt]);
   useEffect(() => { ++testRevision.current; setTestResult(null); setTesting(false); }, [serverUrl, jwt]);
 
   async function handleTest() {
@@ -144,24 +141,6 @@ export function SettingsContent({
       ++testRevision.current; setTesting(false); setTestResult(null);
     };
     if (url !== serverUrl && workspace) workspace.changeConnection(apply); else apply();
-  }
-
-  async function savePreferences(nextAppearance: Appearance, nextWallpaper: WallpaperSettings, options: { clearBackground?: boolean } = {}) {
-    const revision = ++preferencesRevision.current;
-    const scope = identity.current;
-    setBackgroundStatus('이 기기에 적용했습니다.');
-    if (!scope.serverUrl || !scope.jwt) return;
-    try {
-      const response = await createApiClient(scope.serverUrl).putUserPreferences({ appearance: nextAppearance, wallpaper: nextWallpaper }, options);
-      if (revision !== preferencesRevision.current || identity.current.serverUrl !== scope.serverUrl || identity.current.jwt !== scope.jwt) return;
-      applyUserPreferences(response.preferences);
-      setBackgroundStatus('이 기기와 서버에 적용했습니다.');
-    } catch { if (revision === preferencesRevision.current && identity.current.serverUrl === scope.serverUrl && identity.current.jwt === scope.jwt) setBackgroundStatus('이 기기에 적용했습니다. 서버 동기화에 실패했습니다.'); }
-  }
-
-  async function handleAppearanceChange(next: Appearance) {
-    setAppearance(next);
-    await savePreferences(next, wallpaper);
   }
 
   async function handleWallpaperModeChange(next: WallpaperMode) {

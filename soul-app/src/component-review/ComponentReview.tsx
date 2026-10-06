@@ -36,7 +36,7 @@ import { folders, folderTabReviewFolders } from './fixtures';
 import { getDialoguePreviewSample } from './dialogue-inventory';
 import { ReviewDialoguePreview } from './ReviewDialoguePreview';
 import { ReviewDialogues } from './ReviewDialogues';
-import { dialogueFolders, dialogueSessions, reviewSessionPortraits } from './dialogue-fixtures';
+import { dialogueFolders, dialogueSessions, dialogueImageUrl, reviewSessionPortraits } from './dialogue-fixtures';
 import { useUIStore } from '../store/uiStore';
 import { FolderWorkspaceReadOverlay } from '../components/planner/FolderWorkspaceReadOverlay';
 import { ReviewCardChecks } from './ReviewCardChecks';
@@ -73,10 +73,11 @@ export function initializeReview() {
   const cardChecks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardChecks';
   const settingsSection = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
   const nativeSettings = settingsSection === 'nativeSettings' || settingsSection === 'pasSettings';
+  const persistent = settingsSection === 'persistent';
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (chat) {
     const state = useChatStore.getState();
     const requestId = state.beginPersistentDisplaySettingsLoad('review-pas-1');
@@ -85,16 +86,28 @@ export function initializeReview() {
       show_jev_candidates: true,
     });
   }
-  if (nativeSettings) {
+  if (nativeSettings || persistent) {
     useAuthStore.setState({ jwt: firstNativeConnection ? null : 'header.eyJlbWFpbCI6InB1YmxpYy1yZXZpZXdAZXhhbXBsZS5pbnZhbGlkIiwic3ViIjoicHVibGljLXJldmlld0BleGFtcGxlLmludmFsaWQiLCJuYW1lIjoiUHVibGljIFJldmlldyIsInBpY3R1cmUiOiIiLCJleHAiOjIwMDAwMDAwMDB9.signature', authRejected: false });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-error') useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: window.location.origin + '/assets/ios-components/unavailable-photo.jpg' } });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-fallback') useSettingsStore.setState({ wallpaper: { mode: 'photo' } });
+  }
+  if (persistent) {
+    const params = new URLSearchParams(window.location.search);
+    const email = 'public-review@example.invalid';
+    useSettingsStore.getState().setPersistentSessionOpenOnStart('https://public-fixture.invalid', email, params.get('startup') === '1');
+    useSettingsStore.getState().setPersistentSessionLastSessionId('https://public-fixture.invalid', email, params.get('last'));
   }
   const longSelection = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chips') === 'long';
   if (longSelection) useSettingsStore.setState({ cardAssignments: {
     [entryShell ? 'https://public-fixture.invalid' : '']: { folderId: folders[0].id, nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-exhausted-model' },
   } });
   const fixtureSessions = Object.fromEntries(reviewSessionPortraits(dialogueSessions).map(session => [session.agentSessionId, session]));
+  if (persistent) {
+    for (const index of [1, 2, 3]) fixtureSessions[`review-pas-${index}`] = {
+      ...fixtureSessions[dialogueSessions[0].agentSessionId], agentSessionId: `review-pas-${index}`,
+      agentPortraitUrl: dialogueImageUrl(),
+    };
+  }
   if (entryShell) {
     useSessionStore.setState({
       sessions: {},
@@ -105,7 +118,7 @@ export function initializeReview() {
       catalogLoadState: 'loading',
     });
   } else {
-    useSessionStore.setState({ catalog: { folders: folderTabs ? (new URLSearchParams(window.location.search).get('state') === 'empty' ? [] : folderTabReviewFolders) : dialogues ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues ? fixtureSessions : {} }, ...(dialogues ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
+    useSessionStore.setState({ catalog: { folders: folderTabs ? (new URLSearchParams(window.location.search).get('state') === 'empty' ? [] : folderTabReviewFolders) : dialogues ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues || persistent ? fixtureSessions : {} }, ...(dialogues || persistent ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
   }
 }
 
@@ -197,7 +210,7 @@ export function ComponentReview() {
 function getNativeSettingsSafeAreaFixture(search: string, width: number, height: number): { frame: Rect; insets: EdgeInsets } | null {
   const params = new URLSearchParams(search);
   if (params.get('safeArea') !== 'fixture') return null;
-  const cardChecks = params.get('section') === 'cardChecks';
+  const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent';
   if (!cardChecks && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 
   return {

@@ -2,10 +2,11 @@ import React from 'react';
 import { ROOT_TAB_ORDER } from './tabContract';
 
 export type PhoneRootTab = (typeof ROOT_TAB_ORDER)[number];
-export type PhoneReturnTab = Exclude<PhoneRootTab, 'ChatTab'>;
+export type PhoneReturnTab = PhoneRootTab;
 
 export interface PhonePanelHistory {
   recordFocus(tab: PhoneRootTab): void;
+  recordChatOpen(origin?: PhoneReturnTab): void;
   getReturnTab(): PhoneReturnTab;
 }
 
@@ -17,10 +18,11 @@ export function createPhonePanelHistory(): PhonePanelHistory {
 
   return {
     recordFocus(tab) {
-      if (tab === 'ChatTab' && activeTab && activeTab !== 'ChatTab') {
-        returnTab = activeTab;
-      }
       activeTab = tab;
+    },
+    recordChatOpen(origin) {
+      returnTab = origin ?? activeTab ?? returnTab;
+      activeTab = null;
     },
     getReturnTab() {
       return returnTab;

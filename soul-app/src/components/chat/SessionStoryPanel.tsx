@@ -11,8 +11,10 @@ import type { ApiClient } from '../../api/client';
 import type { SessionStoryResponse } from '../../api/sessionEndpoints';
 import { useTokens, type DesignTokens } from '../../theme';
 import { DisclosureIcon } from '../DisclosureIcon';
+import { chatAuxiliarySurface } from './chatAuxiliarySurface';
 
 interface Props {
+  presentation?: 'default' | 'manuscript';
   sessionId: string;
   api: Pick<ApiClient, 'getSessionStory'> | null;
   openRequestId?: number | null;
@@ -32,6 +34,7 @@ export function SessionStoryPanel({
   api,
   openRequestId = null,
   onOpenRequestHandled,
+  presentation = 'default',
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -126,7 +129,7 @@ export function SessionStoryPanel({
   if (!api || loadState === 'hidden') return null;
 
   return (
-    <View testID="session-story-panel" style={styles.container}>
+    <View testID="session-story-panel" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
       <TouchableOpacity
         testID="session-story-toggle"
         accessibilityRole="button"

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   View,
@@ -39,14 +39,16 @@ import { useUsageWidgetDeepLink } from '../widgets/usageWidgetDeepLink';
 import { recordUiUsageEvent } from '../lib/ui-usage-events';
 import {
   cancelPlannerSessionWorkspaceOpen,
-  openPlannerSessionWorkspace,
 } from '../lib/planner-folder-workspace';
 import {
   cancelPhoneSearchSessionOpen,
+  openPhoneChat,
   openPhoneSearchSessionFromRoot,
   type PhoneRootNavigation,
 } from './phoneSessionNavigation';
 import { parseSessionSearchIntentUrl, type SessionSearchIntent } from './sessionSearchIntent';
+import { useAuthenticatedStartupReady } from './authenticatedStartupReady';
+import { openTabletSessionFromRoot } from './tabletSessionNavigation';
 
 type PendingSessionSearchIntent = {
   readonly id: number;
@@ -75,6 +77,8 @@ export function RootNavigator({
 }) {
   const tokens = useTokens();
   const device = useDeviceType();
+  const leavePersistent = useRef<(() => void) | null>(null);
+  const onPersistentLeaveReady = useCallback((leave: (() => void) | null) => { leavePersistent.current = leave; }, []);
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const wallpaper = useSettingsStore((s) => s.wallpaper);
   const applyUserPreferences = useSettingsStore((s) => s.applyUserPreferences);
@@ -94,6 +98,12 @@ export function RootNavigator({
     () => useUIStore.persist.hasHydrated() || hasUIStoreHydrationFailed(),
   );
   const nextSessionIntentId = useRef(0);
+  const [initialLinkChecked, setInitialLinkChecked] = useState(false);
+  const [initialNotificationChecked, setInitialNotificationChecked] = useState(false);
+  const [sessionIntentReceived, setSessionIntentReceived] = useState(false);
+  const [pendingNotification, setPendingNotification] = useState<string | null>(null);
+  const notificationEventReceived = useRef(false);
+  const startup = useAuthenticatedStartupReady();
 
   // 빌드 20: 푸시 토큰 등록·해제 추적용. serverUrl이 바뀌면 이전 URL을 deregister.
   const prevServerRef = useRef<string | null>(null);
@@ -127,6 +137,7 @@ export function RootNavigator({
       const parsed = parseSessionSearchIntentUrl(value);
       if (source === 'event' && parsed) urlEventReceived.current = true;
       if (!parsed) return;
+      setSessionIntentReceived(true);
       const id = ++nextSessionIntentId.current;
       cancelPhoneSearchSessionOpen();
       cancelPlannerSessionWorkspaceOpen();
@@ -148,12 +159,24 @@ export function RootNavigator({
     };
     void Linking.getInitialURL().then((value) => {
       if (active && !urlEventReceived.current) receive(value, 'initial');
-    });
+    }).catch(() => {}).finally(() => { if (active) setInitialLinkChecked(true); });
     const subscription = Linking.addEventListener('url', ({ url }) => receive(url, 'event'));
     return () => {
       active = false;
       subscription.remove();
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Notifications.getLastNotificationResponseAsync().then(response => {
+      const sid = response?.notification.request.content.data?.sessionId;
+      if (active && !notificationEventReceived.current && typeof sid === 'string' && sid) {
+        setSessionIntentReceived(true);
+        setPendingNotification(sid);
+      }
+    }).catch(() => {}).finally(() => { if (active) setInitialNotificationChecked(true); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -198,6 +221,7 @@ export function RootNavigator({
         ],
       );
     };
+    if (device === 'phone') leavePersistent.current?.();
     const open = device === 'phone'
       ? openPhoneSearchSessionFromRoot(
           navigationRef as unknown as PhoneRootNavigation,
@@ -205,7 +229,8 @@ export function RootNavigator({
           intent.eventId,
           offerPhoneIntentRetry,
         )
-      : openPlannerSessionWorkspace(
+      : openTabletSessionFromRoot(
+          navigationRef, leavePersistent.current,
           intent.sessionId,
           intent.eventId,
           undefined,
@@ -277,28 +302,28 @@ export function RootNavigator({
           | undefined;
         const sid = data?.sessionId;
         if (!sid) return;
-        const navigated = device !== 'phone' || navigationRef.isReady();
-        recordUiUsageEvent({
-          type: 'notification_open',
-          target: { kind: 'session', id: sid },
-          entry: 'notification',
-          attrs: { surface: 'push', navigated },
-        });
-        openNotificationSession(device, sid, (sessionId) => {
-          // phone TabNavigator — navigationRef로 ChatTab 진입.
-          // React Navigation의 nested navigator + 외부 ref navigate는 타입 시스템이
-          // 직접 표현 못 하는 known limitation이라 any 캐스트 사용 (런타임은 정상).
-          if (navigationRef.isReady()) {
-            (navigationRef as any).navigate('ChatTab', {
-              screen: 'Chat',
-              params: { sessionId, usageEntry: 'notification' },
-            });
-          }
-        });
+        notificationEventReceived.current = true;
+        setSessionIntentReceived(true);
+        setPendingNotification(sid);
       },
     );
     return () => sub.remove();
   }, [authScopeGeneration, device]);
+
+  useEffect(() => {
+    if (!pendingNotification || !usageDestinationReady || !startup.navigationReady) return;
+    if (device !== 'phone' && !uiStoreHydrated) return;
+    const sid = pendingNotification;
+    if (device === 'phone') leavePersistent.current?.();
+    recordUiUsageEvent({ type: 'notification_open', target: { kind: 'session', id: sid },
+      entry: 'notification', attrs: { surface: 'push', navigated: true } });
+    if (device === 'phone') openNotificationSession(device, sid, sessionId => {
+      openPhoneChat({ getParent: () => navigationRef }, sessionId, undefined, undefined, 'notification');
+    });
+    else void openTabletSessionFromRoot(navigationRef, leavePersistent.current, sid, undefined, undefined, 'notification');
+    setPendingNotification(null);
+    void Notifications.clearLastNotificationResponseAsync().catch(() => {});
+  }, [pendingNotification, usageDestinationReady, startup.navigationReady, device, uiStoreHydrated]);
 
   // 빌드 20: jwt + serverUrl이 모두 갖춰지면 푸시 토큰 register.
   // serverUrl이 바뀌었으면 이전 서버에서 명시 deregister 후 새 서버에 register
@@ -393,6 +418,10 @@ export function RootNavigator({
         generation={authScopeGeneration}
         device={device}
         onUiUsageEventsEnabled={onUiUsageEventsEnabled}
+        startupReady={startup.hydrated && uiStoreHydrated && startup.navigationReady && initialLinkChecked && initialNotificationChecked}
+        sessionIntent={sessionIntentReceived}
+        onPersistentLeaveReady={onPersistentLeaveReady}
+        onOpenPersistent={() => (navigationRef as any).navigate(device === 'phone' ? 'PersistentTab' : 'PersistentSession')}
       />
     </AppWallpaperBackground>
   );

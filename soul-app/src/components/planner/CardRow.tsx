@@ -90,6 +90,7 @@ function SummaryCardRow({ card, onOpen, summaryNumberTemplate }: CardRowSharedPr
     accessibilityLabel={`${card.number == null ? '' : `#${card.number} `}${card.title} 카드 요약`}
     onPress={onOpen}
     style={({ pressed }) => ({ minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs,
+      marginHorizontal: -t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.sm,
       backgroundColor: pressed ? pressedColor : 'transparent' })}
   >
     {card.number == null ? null : <View style={{ position: 'relative', flexShrink: 0 }}>

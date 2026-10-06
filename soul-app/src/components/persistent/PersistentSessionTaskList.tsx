@@ -42,7 +42,8 @@ export function PersistentSessionTaskList({ api, onOpenCard }: PersistentSession
   </Text>;
 
   return <ScrollView testID="persistent-task-list" showsVerticalScrollIndicator={false}
-    contentContainerStyle={{ gap: t.uiSpacing.xxl }}>
+    style={{ marginHorizontal: -t.uiSpacing.sm }}
+    contentContainerStyle={{ gap: t.uiSpacing.xxl, paddingHorizontal: t.uiSpacing.sm }}>
     {groups.map((group) => <View key={group.status} testID={`persistent-task-group-${group.status}`} style={{ gap: t.uiSpacing.md }}>
       <PlannerSectionHeader title={group.label} variant="quiet" />
       <View>

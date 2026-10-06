@@ -372,7 +372,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       requestId = state.persistentDisplaySettingsRequestId + 1;
       return {
         persistentDisplaySettingsRequestId: requestId,
-        persistentDisplaySettings: { sessionId, settings: null, requestId },
+        persistentDisplaySettings: {
+          sessionId,
+          settings: state.persistentDisplaySettings?.sessionId === sessionId
+            ? state.persistentDisplaySettings.settings : null,
+          requestId,
+        },
       };
     });
     return requestId;

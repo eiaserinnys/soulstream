@@ -25,6 +25,7 @@ import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../planner/Ca
 import { CompletedCardsToggle } from '../planner/CompletedCardsToggle';
 import { useAuthScopeGeneration } from '../../lib/auth-scope';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
+import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 
 export function MainListPane({
   onMenuPress,
@@ -107,7 +108,8 @@ export function MainListPane({
             />
           )}
         </View>
-        {view === 'board' && !effectiveShowSearch ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+        {view === 'board' && !effectiveShowSearch ? <>
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
             <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
@@ -116,13 +118,15 @@ export function MainListPane({
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="보드 확대" onPress={() => boardRef.current?.openExpanded()}>
             <Ionicons name="expand-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
           </LiquidGlassButton>
-        </View> : null}
+        </> : null}
         {activeSection.kind === 'daily' && !effectiveShowSearch && view === 'existing' ? (
           <DailyHeaderActions
             onOpenReview={() => dailyRef.current?.openReview()}
             onOpenNewFolder={() => dailyRef.current?.openNewFolder()}
           />
         ) : null}
+        <TabletPersistentEntry />
+        </View>
       </TabletPaneHeader>
       {!effectiveShowSearch && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
         <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}

@@ -23,6 +23,7 @@ import {
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
 import { dialogueApi } from './dialogue-fixtures';
 import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
+import { createPersistentFullscreenReviewApi } from './persistent-fullscreen-fixtures';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
@@ -66,6 +67,8 @@ const entryShellReviewApi = createReviewApi('normal', { home: true, entryShell: 
     onCardMutation: (mutation) => entryShellMutationLog.push(mutation) });
 const entryShellApi = {
   ...entryShellReviewApi,
+  // Ordinary fixture ids yield the existing handled 404/null display projection.
+  getPersistentSession: nativeSettingsReviewApi.getPersistentSession,
   getCatalog: async (query?: { folder_id?: string; limit?: number; offset?: number }) => {
     entryShellFeedRequests.push({ type: 'getCatalog' });
     if (!query?.folder_id && typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'entryShell') {
@@ -309,6 +312,8 @@ export function createApiClient(): ApiClient {
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
   if (section === 'nativeSettings') return nativeSettingsApi;
+  if (section === 'persistent') return createPersistentFullscreenReviewApi(window.location.search);
+  if (section === 'dialogues' && new URLSearchParams(window.location.search).get('sample') === 'persistent-select') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;
   return api as unknown as ApiClient;
