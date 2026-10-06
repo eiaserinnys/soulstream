@@ -51,9 +51,10 @@ export function CardSessionHistory({ sessionIds, linkedSessions=[], onOpenSessio
     {sessionIds.length === 0 ? <p className="v3-detail-empty">아직 세션이 없습니다.</p> : null}
     {targeted.error?<p role="alert" className="v3-detail-empty">{targeted.error}</p>:null}
     <div className="v3-card-session-virtual" data-testid="card-session-virtual" role="region" aria-label="카드 세션 목록">
-     <CardSessionVirtualList data={rows} style={{height:"100%"}} className="v3-session-panel-scroll" initialItemCount={1}
+     {rows.length > 0 ? <CardSessionVirtualList data={rows} style={{height:"100%"}} className="v3-session-panel-scroll" initialItemCount={1}
       computeItemKey={(_,row)=>row.node.session.agentSessionId} endReached={loadMore}
       itemContent={(_,row)=>Array.from({length:row.depth}).reduce<import("react").ReactNode>(child=><div className="v3-run-children">{child}</div>,<SessionRunList size="small" tree={[row.node]} activeSessionId={activeSessionId} onOpenSession={openSession} onContextMenu={(session,event)=>openMenu(session.agentSessionId,event)}/>)}/>
+      : null}
     </div>
   </>;
 }

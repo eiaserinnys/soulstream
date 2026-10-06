@@ -41,6 +41,9 @@
 }
 .v3-card-check-item-title-button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--ring); }
 .v3-card-check-item-title-button:disabled { cursor: default; }
+.v3-card-check-item-readonly-status { display: grid; width: var(--v3-action-size); height: var(--v3-action-size); flex: none; place-items: center; color: var(--v3-text-tertiary); }
+.v3-card-check-item-readonly-status[data-checked="true"] { color: var(--v3-complete); }
+.v3-card-check-item-readonly-title { display: grid; min-width: 0; min-height: var(--v3-action-size); flex: 1; grid-template-columns: min-content minmax(0, 1fr); align-items: baseline; gap: var(--v3-space-2); padding: var(--v3-space-3) var(--v3-space-3) var(--v3-space-3) 0; color: inherit; }
 .v3-card-check-item-number { flex: none; color: var(--v3-text-tertiary); font: var(--v3-type-card) var(--v3-font-family); }
 .v3-card-check-item-title { min-width: 0; flex: 1; font: var(--v3-type-card) var(--v3-font-family); overflow-wrap: anywhere; }
 .v3-card-check-item-title del { text-decoration-thickness: from-font; }
