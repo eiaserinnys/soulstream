@@ -33,7 +33,7 @@ describe("ChatMessageItem presentation", () => {
 
     expect(defaultHtml).toContain("bg-gradient-to-b");
     expect(defaultHtml).toContain("w-8 h-8");
-    expect(manuscriptHtml.match(/data-chat-presentation="manuscript"/g)).toHaveLength(3);
+    expect(manuscriptHtml.match(/data-slot="chat-manuscript-message"/g)).toHaveLength(3);
     expect(manuscriptHtml).not.toContain("bg-gradient-to-b");
     expect(manuscriptHtml).not.toContain("w-8 h-8");
     expect(manuscriptHtml).toContain("text-right");

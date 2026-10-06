@@ -67,9 +67,11 @@ const messages: ChatMessage[] = [
   }),
 ];
 
-function ReviewComposer({ multiline, presentation, running = false }: { multiline: boolean; presentation: "default" | "manuscript"; running?: boolean }) {
+function ReviewComposer({ multiline, presentation, running = false, sampleId }: { multiline: boolean; presentation: "default" | "manuscript"; running?: boolean; sampleId: string }) {
   const [text, setText] = useState(multiline ? "첫 줄 입력\n둘째 줄 입력" : "");
+  const [actionStatus, setActionStatus] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { chatTypographyStyle } = useChatTypography();
   const file = useMemo(
     () => new File(["검수 첨부 내용"], "검수 메모.txt", { type: "text/plain" }),
@@ -82,18 +84,18 @@ function ReviewComposer({ multiline, presentation, running = false }: { multilin
   useTextareaAutoHeight(textareaRef, text, 16);
 
   return (
-    <div className="space-y-2" style={chatTypographyStyle}>
+    <div className="space-y-2" style={chatTypographyStyle} data-testid={`review-composer-${sampleId}`}>
       <div data-slot="chat-composer-anchor">
         <FileAttachmentPreview file={imageFile} status="done" onRemove={() => undefined} />
         <FileAttachmentPreview file={file} status="done" onRemove={() => undefined} />
         <ChatInputComposer presentation={presentation}>
-          {running && <Button data-slot="chat-interrupt-button" variant="destructive-outline" size="icon" aria-label="Stop running conversation" className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"><Square className="h-4 w-4 fill-current" aria-hidden="true" /></Button>}
-          <PaperclipButton onClick={() => undefined} />
+          {running && <Button data-slot="chat-interrupt-button" variant="destructive-outline" size="icon" aria-label="Stop running conversation" onClick={() => setActionStatus("interrupted")} className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"><Square className="h-4 w-4 fill-current" aria-hidden="true" /></Button>}
+          <PaperclipButton onClick={() => fileInputRef.current?.click()} />
           <ChatInputEditor
             ref={textareaRef}
             text={text}
             onChangeText={setText}
-            onSend={() => setText("")}
+            onSend={() => { setText(""); setActionStatus("sent"); }}
             placeholder="메시지 입력"
             buttonLabel="보내기"
             modeIcon=""
@@ -104,7 +106,9 @@ function ReviewComposer({ multiline, presentation, running = false }: { multilin
             textareaDisabled={false}
           />
         </ChatInputComposer>
+        <input ref={fileInputRef} data-testid="review-file-picker" type="file" className="sr-only" onChange={(event) => setActionStatus(event.target.files?.[0]?.name ?? "")} />
       </div>
+      <span data-testid="review-composer-action" aria-live="polite">{actionStatus}</span>
     </div>
   );
 }
@@ -113,13 +117,13 @@ function ChatColumn({ presentation }: { presentation: "default" | "manuscript" }
   const { chatTypographyStyle } = useChatTypography();
   const column = (
     <div
-      className={presentation === "manuscript" ? "shrink-0" : "shrink-0 bg-background"}
+      className={presentation === "manuscript" ? "w-full" : "w-full bg-background"}
       data-slot="chat-root"
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
-      style={{ ...chatTypographyStyle, width: 520 }}
+      style={{ ...chatTypographyStyle, width: "100%" }}
     >
       <p className={presentation === "manuscript" ? "py-2 text-sm font-medium text-muted-foreground" : "px-3 py-2 text-sm font-medium text-muted-foreground"}>
-        {presentation === "default" ? "기본 모양" : "원고형"} · 520
+        {presentation === "default" ? "기본 모양" : "원고형"}
       </p>
       <div className="overflow-y-auto py-2">
         {messages.map((msg) => (
@@ -132,22 +136,22 @@ function ChatColumn({ presentation }: { presentation: "default" | "manuscript" }
         ))}
       </div>
       <div className={presentation === "manuscript" ? "space-y-4 pb-3" : "space-y-4 px-3 pb-3"}>
-        <ReviewComposer multiline={false} presentation={presentation} />
-        <ReviewComposer multiline presentation={presentation} />
-        <ReviewComposer multiline={false} presentation={presentation} running />
+        <ReviewComposer multiline={false} presentation={presentation} sampleId={`${presentation}-one-line`} />
+        <ReviewComposer multiline presentation={presentation} sampleId={`${presentation}-multiline`} />
+        <ReviewComposer multiline={false} presentation={presentation} running sampleId={`${presentation}-running`} />
       </div>
     </div>
   );
   return (
     presentation === "manuscript"
-      ? <div className="bg-[var(--persistent-session-paper)] p-6">{column}</div>
-      : column
+      ? <div className="w-full bg-[var(--persistent-session-paper)] p-5 lg:w-[568px] lg:p-6">{column}</div>
+      : <div className="w-full max-w-[520px]">{column}</div>
   );
 }
 
 export function PersistentManuscriptChatReviewSample() {
   return (
-    <div className="flex gap-4 overflow-x-auto" data-testid="persistent-manuscript-chat-review">
+    <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
       <ChatColumn presentation="default" />
       <ChatColumn presentation="manuscript" />
     </div>
