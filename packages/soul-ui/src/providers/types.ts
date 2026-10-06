@@ -16,6 +16,8 @@ import type { DetailCursorStore } from "./detail-cursor-store";
 
 /** 세션 목록 조회 옵션 */
 export interface FetchSessionsOptions {
+  /** 조회 소유자가 사라지면 요청을 취소한다. */
+  signal?: AbortSignal;
   /** 특정 세션 요약만 조회. 빈 배열은 세션을 조회하지 않는다. */
   sessionIds?: readonly string[];
   /** 세션 타입 필터 */

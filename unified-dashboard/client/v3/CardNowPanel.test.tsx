@@ -19,7 +19,7 @@ describe("card now panel",()=>{
  it("uses now as the latest slot and hides navigation for zero or one history value",()=>{
   const html=renderToStaticMarkup(<CardNowPanel now={now} nowHistory={[history[1]]} itemsCount={2} activeCount={1}/>);
   expect(html).toContain("현재 상황");expect(html).not.toContain("응답 시점의 과거 값");
-  expect(html).toContain("내 차례");expect(html).toContain("확인해 주세요");
+  expect(html).toContain('aria-label="내 차례"');expect(html).not.toContain('<strong>내 차례</strong>');expect(html).toContain("확인해 주세요");
   expect(html).not.toContain("이전 상황");expect(html).not.toContain("다음 상황");
  });
  it("shows a completed prompt without changing the stored turn",()=>{
@@ -41,8 +41,13 @@ describe("card now panel",()=>{
    const previous=()=>container.querySelector<HTMLButtonElement>('[aria-label="이전 상황"]')!.click();
    await act(previous);await act(previous);
    expect(container.querySelector('[data-now-view="past"]')).not.toBeNull();
+   expect(container.querySelector('[data-now-view="past"]')?.textContent).not.toContain("아래 확인 항목은 지금 상태입니다");
    await act(()=>[...container.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent==="최신으로")!.click());
    expect(container.querySelector('[data-now-view="current"]')).not.toBeNull();
   } finally {await act(()=>root.unmount());container.remove();vi.unstubAllGlobals();}
  });
+});
+
+it("retains the user turn fallback when ask is empty",()=>{
+ expect(renderToStaticMarkup(<CardNowPanel now={{...now,ask:""}} itemsCount={1} activeCount={1}/>)).toContain('<strong>내 차례</strong>');
 });

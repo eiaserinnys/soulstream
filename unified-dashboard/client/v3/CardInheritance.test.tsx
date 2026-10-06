@@ -13,6 +13,7 @@ import { CardCommentInput } from "./CardCommentInput";
 import { CardDetailPane } from "./CardDetailPane";
 import { CardRowView } from "./CardRow";
 import type { CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
+vi.mock("./useCardSessionPages",async original=>({...await original<typeof import("./useCardSessionPages")>(),useCardSessionPages:()=>({sessions:[],loading:false})}));
 
 vi.mock("@seosoyoung/soul-ui", async original => ({
   ...await original<typeof import("@seosoyoung/soul-ui")>(),
@@ -30,7 +31,9 @@ beforeEach(()=>{
 afterEach(async()=>{await act(()=>root.unmount());container.remove();useCardStore.getState().reset();vi.restoreAllMocks();});
 
 it("uses the run row's three text lines and list activity without fetching detail",async()=>{
-  await act(()=>root.render(<CardRow card={{...card,latestActivity:{kind:"report",format:"markdown",body:"보고 원문 첫 줄\n다음 줄",createdAt:card.createdAt}}} folderLabel="오늘 폴더"/>));
+  const current={...card,latestActivity:{kind:"report" as const,format:"markdown" as const,body:"보고 원문 첫 줄\n다음 줄",createdAt:card.createdAt}};
+  useCardStore.setState({byId:{inherit:current}});
+  await act(()=>root.render(<CardRow card={current} folderLabel="오늘 폴더"/>));
   const copy=container.querySelector(".v3-run-copy")!;
   expect(copy.querySelector(".v3-run-identity")?.children).toHaveLength(2);
   expect(copy.querySelector(".v3-run-agent-line")?.textContent).toContain("오늘 폴더");

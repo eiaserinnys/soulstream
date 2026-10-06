@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEventHandler } from "react";
+import { useRef, type KeyboardEventHandler, type AriaAttributes } from "react";
 import {
   DragHandle,
   useGlassSurface,
@@ -15,7 +15,7 @@ export function WorkspaceSessionColumn({
   activeSession, chatClassName, chatTestId, resizeClassName, resizeTestId,
   onResize, onResizeKeyDown, onClose, chatInputDisabled, fileUploadUrl,
   historyEnabled, sessionStreamActive, sessionConnectionStatus, reconnectSession,
-  onAcknowledgedReview,
+  onAcknowledgedReview,separatorAria,
 }: {
   activeSession: SessionSummary | undefined;
   chatClassName: string; chatTestId: string;
@@ -28,6 +28,7 @@ export function WorkspaceSessionColumn({
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
+  separatorAria?:Pick<AriaAttributes,"aria-valuenow"|"aria-valuemin"|"aria-valuemax"|"aria-valuetext">;
 }) {
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: true });
@@ -39,7 +40,7 @@ export function WorkspaceSessionColumn({
   });
   return <>
     <div className={resizeClassName} data-testid={resizeTestId} role="separator"
-      aria-orientation="vertical" aria-label="채팅 패널 크기 조절" tabIndex={0} onKeyDown={resizeKey}>
+      aria-orientation="vertical" aria-label="채팅 패널 크기 조절" {...separatorAria} tabIndex={0} onKeyDown={resizeKey}>
       <DragHandle onDrag={onResize} widthPx={V3_PANEL_GAP_PX}/>
     </div>
     <section ref={chatSurfaceRef}

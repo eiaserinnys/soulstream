@@ -68,7 +68,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
   return <>
     <Paper id={card.id} title={card.title} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
       activity={activity?{kind:activity.kind,text:cardActivityPreview(activity)}:null}
-      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={turnText} turnLabel={hasItems&&card.now?.turn==="user"?`볼 것 ${itemSummary.toReviewCount}`:undefined}
+      summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={turnText} turnLabel={card.now?.turn==="user"&&itemSummary.toReviewCount>0?`볼 것 ${itemSummary.toReviewCount}`:undefined}
       assigneeName={name} onOpen={onOpen} error={error}
       avatar={<ProfileAvatar role="assistant" hasPortrait={Boolean(portrait)} portraitUrl={portrait}
         fallbackEmoji={assigned ? card.assigneeKind === "human" ? "👤" : "🤖" : "·"}/>}
