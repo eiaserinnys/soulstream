@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 163개 $defs (top-level wire 81 + supporting/SSE 82). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 167개 $defs (top-level wire 81 + supporting/SSE 86). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -613,6 +613,36 @@ export interface PersistentJevObservation {
   model: "jev-latest";
   latency_ms: number;
   top_raw_score: number;
+  /**
+   * @maxItems 5
+   */
+  unselected_top?:
+    | []
+    | [PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession]
+    | [
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession
+      ]
+    | [
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession
+      ]
+    | [
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession
+      ]
+    | [
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession,
+        PersistentJevUnselectedTopTurnSummary | PersistentJevUnselectedTopCard | PersistentJevUnselectedTopSession
+      ];
+  top_raw_scores?: PersistentJevTopRawScores;
+  [k: string]: unknown;
 }
 export interface PersistentJevTurnSummaryCandidate {
   kind: "turn_summary";
@@ -623,6 +653,7 @@ export interface PersistentJevTurnSummaryCandidate {
   line: string;
   score: number;
   raw_score: number;
+  [k: string]: unknown;
 }
 export interface PersistentJevCardCandidate {
   kind: "card";
@@ -632,6 +663,7 @@ export interface PersistentJevCardCandidate {
   line: string;
   score: number;
   raw_score: number;
+  [k: string]: unknown;
 }
 export interface PersistentJevSessionCandidate {
   kind: "session";
@@ -645,12 +677,44 @@ export interface PersistentJevSessionCandidate {
    * @maxItems 2
    */
   sources?: ["search" | "recent_completed"] | ["search" | "recent_completed", "search" | "recent_completed"];
+  [k: string]: unknown;
 }
 export interface PersistentJevCandidateCounts {
   turn_summaries: number;
   cards: number;
   search_sessions: number;
   recent_completed_sessions: number;
+  [k: string]: unknown;
+}
+export interface PersistentJevUnselectedTopTurnSummary {
+  kind: "turn_summary";
+  label: string;
+  raw_score: number;
+  [k: string]: unknown;
+}
+export interface PersistentJevUnselectedTopCard {
+  kind: "card";
+  label: string;
+  raw_score: number;
+  [k: string]: unknown;
+}
+export interface PersistentJevUnselectedTopSession {
+  kind: "session";
+  label: string;
+  raw_score: number;
+  /**
+   * @minItems 1
+   * @maxItems 2
+   */
+  sources: ["search" | "recent_completed"] | ["search" | "recent_completed", "search" | "recent_completed"];
+  [k: string]: unknown;
+}
+export interface PersistentJevTopRawScores {
+  turn_summaries: number | null;
+  cards: number | null;
+  search_sessions: number | null;
+  recent_completed_sessions: number | null;
+  [k: string]: unknown;
 }
 /**
  * SSE: 턴 종료.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 163개 $defs (top-level wire 81 + supporting/SSE 82). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 167개 $defs (top-level wire 81 + supporting/SSE 86). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -2465,7 +2465,7 @@
         "search_sessions",
         "recent_completed_sessions"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "turn_summaries": {
           "type": "integer",
@@ -2499,7 +2499,7 @@
         "score",
         "raw_score"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "kind": {
           "const": "card"
@@ -2545,7 +2545,7 @@
         "latency_ms",
         "top_raw_score"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "input_id": {
           "type": "string",
@@ -2582,6 +2582,68 @@
           "type": "number",
           "minimum": 0,
           "maximum": 3
+        },
+        "unselected_top": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/PersistentJevUnselectedTopTurnSummary" },
+              { "$ref": "#/$defs/PersistentJevUnselectedTopCard" },
+              { "$ref": "#/$defs/PersistentJevUnselectedTopSession" }
+            ]
+          }
+        },
+        "top_raw_scores": {
+          "$ref": "#/$defs/PersistentJevTopRawScores"
+        }
+      }
+    },
+    "PersistentJevTopRawScores": {
+      "type": "object",
+      "required": ["turn_summaries", "cards", "search_sessions", "recent_completed_sessions"],
+      "additionalProperties": true,
+      "properties": {
+        "turn_summaries": { "type": ["number", "null"], "minimum": 0, "maximum": 3 },
+        "cards": { "type": ["number", "null"], "minimum": 0, "maximum": 3 },
+        "search_sessions": { "type": ["number", "null"], "minimum": 0, "maximum": 3 },
+        "recent_completed_sessions": { "type": ["number", "null"], "minimum": 0, "maximum": 3 }
+      }
+    },
+    "PersistentJevUnselectedTopTurnSummary": {
+      "type": "object",
+      "required": ["kind", "label", "raw_score"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "const": "turn_summary" },
+        "label": { "type": "string", "minLength": 1 },
+        "raw_score": { "type": "number", "minimum": 0, "maximum": 3 }
+      }
+    },
+    "PersistentJevUnselectedTopCard": {
+      "type": "object",
+      "required": ["kind", "label", "raw_score"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "const": "card" },
+        "label": { "type": "string", "minLength": 1 },
+        "raw_score": { "type": "number", "minimum": 0, "maximum": 3 }
+      }
+    },
+    "PersistentJevUnselectedTopSession": {
+      "type": "object",
+      "required": ["kind", "label", "raw_score", "sources"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "const": "session" },
+        "label": { "type": "string", "minLength": 1 },
+        "raw_score": { "type": "number", "minimum": 0, "maximum": 3 },
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["search", "recent_completed"] },
+          "minItems": 1,
+          "maxItems": 2
         }
       }
     },
@@ -2595,7 +2657,7 @@
         "score",
         "raw_score"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "kind": {
           "const": "session"
@@ -2650,7 +2712,7 @@
         "score",
         "raw_score"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "kind": {
           "const": "turn_summary"
