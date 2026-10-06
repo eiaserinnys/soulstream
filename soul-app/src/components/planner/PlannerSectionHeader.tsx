@@ -49,6 +49,15 @@ export function PlannerSectionHeader({
   if (variant === 'lane') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={[styles.title, styles.countedTitle]}>
     {title + ' '}<Text testID={countTestID}>{`${count ?? 0}${countSuffix??'개'}`}</Text>
   </Text>;
+  if (variant === 'quiet' && onToggle) return <TouchableOpacity testID={testID} accessibilityRole="button"
+    accessibilityLabel={`${title}${count !== undefined ? `, ${count}${countSuffix ?? ''}` : ''}, ${expanded ? '접기' : '펼치기'}`}
+    accessibilityState={{ expanded }} style={styles.row} onPress={onToggle}>
+    <Text numberOfLines={1} style={styles.quietTitle}>{title}</Text>
+    {count !== undefined ? <Text testID={countTestID} style={styles.quietCount}>{countSuffix ? `${count}${countSuffix}` : count}</Text> : null}
+    <View testID={disclosureFrameTestID} style={styles.disclosureFrame}>
+      <DisclosureIcon expanded={expanded === true} color={t.colors.textMuted} size={t.iconSize.compact} />
+    </View>
+  </TouchableOpacity>;
   if (variant === 'quiet') return <Text testID={testID} numberOfLines={1} accessibilityRole="header" style={styles.quietTitle}>{title}</Text>;
   if (onToggle) return (
     <TouchableOpacity testID={testID} accessibilityRole="button"
@@ -90,6 +99,7 @@ function makeStyles(t: DesignTokens) {
     compactDisclosure: { width: planner.actionColumn, height: planner.actionColumn, alignItems: 'center', justifyContent: 'center' },
     title: { color: t.colors.textPrimary, ...planner.typography.section },
     quietTitle: { ...planner.typography.meta, color: t.colors.textMuted },
+    quietCount: { ...planner.typography.meta, color: t.colors.textSecondary, fontVariant: ['tabular-nums'], marginRight: 'auto' },
     flexibleTitle: { flex: 1 },
     countedRow: { alignItems: 'baseline', gap: t.uiSpacing.sm },
     countedTitle: { flexGrow: 0, flexBasis: 'auto', flexShrink: 1 },

@@ -5,7 +5,7 @@ jest.mock('../../../hooks/useCardActions', () => ({
 }));
 
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import type { Session } from '../../../api/types';
 import { cardFixture } from '../../../test-support/cards';
@@ -66,6 +66,23 @@ test('quiet 헤더는 그룹 이름표용 meta 스타일을 쓰고 기본 호출
 
   expect(title).toMatchObject({ fontSize: 13, color: expect.any(String) });
   expect(header.minHeight).toBeUndefined();
+});
+
+test('quiet 접기 헤더는 quiet 제목, 개수, DisclosureIcon과 expanded 상태를 함께 표시한다', () => {
+  const onToggle = jest.fn();
+  const screen = render(<PlannerSectionHeader testID="quiet-toggle" countTestID="quiet-count" disclosureFrameTestID="quiet-disclosure"
+    variant="quiet" title="드래프트" count={12} countSuffix="개" expanded={false} onToggle={onToggle} />);
+  const header = screen.getByTestId('quiet-toggle');
+
+  expect(header.props.accessibilityRole).toBe('button');
+  expect(header.props.accessibilityState).toEqual({ expanded: false });
+  expect(screen.getByText('드래프트')).toBeTruthy();
+  expect(screen.getByTestId('quiet-count').props.children).toBe('12개');
+  expect(screen.getByTestId('quiet-disclosure')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByText('드래프트').props.style)).toMatchObject({ fontSize: 13 });
+
+  fireEvent.press(header);
+  expect(onToggle).toHaveBeenCalledTimes(1);
 });
 
 test('세션 담당 메타는 폴더 이모지 중복 없이 에이전트 표시명과 상대 시각을 표시한다', () => {

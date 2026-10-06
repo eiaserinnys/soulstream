@@ -9,8 +9,9 @@ jest.mock('../../components/chat/ChatBody', () => {
   } };
 });
 jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
-  const { Pressable } = require('react-native');
-  return { PersistentSessionTaskList: ({ onOpenCard }: any) => <Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} /> };
+  const { Pressable, View } = require('react-native');
+  return { PersistentSessionTaskList: ({ onOpenCard, visible = true }: any) => <View testID="persistent-task-list-mock"
+    style={{ display: visible ? 'flex' : 'none' }}><Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} /></View> };
 });
 jest.mock('../../components/planner/CardDetailSheet', () => {
   const { Pressable, View } = require('react-native');
@@ -137,4 +138,17 @@ test.each([[1180, 820], [1194, 834], [820, 1180], [834, 1194]])('iPad %s×%s 목
   fireEvent.press(back);
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style).right).toBe(list.right);
   view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+});
+
+test('카드 요약을 열어도 작업 목록을 숨긴 채 유지하고 목록 복귀 때 다시 보인다', () => {
+  mockDevice = 'phone';
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  act(() => { store.getState().open({ session_id: 'pas-1' } as any); store.getState().toggleScene(); });
+  fireEvent.press(view.getByTestId('choose-card'));
+
+  expect(StyleSheet.flatten(view.getByTestId('persistent-task-list-mock', { includeHiddenElements: true }).props.style).display).toBe('none');
+  expect(view.getByTestId('persistent-summary-header')).toBeTruthy();
+  fireEvent.press(view.getByTestId('persistent-summary-back'));
+  expect(StyleSheet.flatten(view.getByTestId('persistent-task-list-mock').props.style).display).toBe('flex');
+  view.unmount();
 });

@@ -154,6 +154,8 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
         borderWidth: selectedCardId && !phone ? StyleSheet.hairlineWidth : 0, borderColor: t.persistentSession.line,
         paddingHorizontal: selectedCardId ? 0 : phone ? t.foundation.pageInset : t.uiSpacing.sm,
         paddingTop: phone && !selectedCardId ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
+        <PersistentSessionTaskList api={api} visible={!selectedCardId}
+          onOpenCard={cardId => host.store.getState().selectCard(cardId)} />
         {selectedCardId ? <>
           <View testID="persistent-summary-header" style={{ paddingHorizontal: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2, alignItems: 'flex-start' }}>
             <LiquidGlassButton iconOnly size="compact" variant="paper" accessibilityLabel="목록으로" testID="persistent-summary-back"
@@ -164,7 +166,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
           <CardDetailContent key={selectedCardId} variant="readSummary" fitContent={!phone} api={api} cardId={selectedCardId}
           onClose={() => host.store.getState().selectCard(null)} onOpenCard={() => onOpenCard(selectedCardId)} onOpenSession={onOpenSession} />
           </>
-          : <PersistentSessionTaskList api={api} onOpenCard={cardId => host.store.getState().selectCard(cardId)} />}
+          : null}
       </View> : null}
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
