@@ -12,10 +12,10 @@ import { HttpResponseError } from "../lib/http-response-error";
 import {
   createPersistentSessionsApi,
   PersistentSessionError,
-  type ModelSelection,
   type PersistentCreateDefaults,
   type PersistentSession,
 } from "../lib/persistent-sessions";
+import { PersistentSessionDetails, usePersistentSessionDetailsController } from "./PersistentSessionDetails";
 import { NodeModelPresetSelect } from "./NodeModelPresetSelect";
 import { SettingFieldWidget, type SettingField } from "./config/SettingFieldWidget";
 import {
@@ -35,19 +35,7 @@ type Editor = {
   modelPreset: string;
   folderId: string;
   firstMessage: string;
-  showGenerationSeparator: boolean;
-  showJevCandidates: boolean;
 };
-
-const editorFromSession = (session: PersistentSession): Editor => ({
-  name: session.display_name ?? "",
-  agentId: session.agent_id ?? "",
-  modelPreset: session.settings.default_model.model_preset ?? "",
-  folderId: session.folder_id ?? "",
-  firstMessage: "",
-  showGenerationSeparator: session.settings.show_generation_separator,
-  showJevCandidates: session.settings.show_jev_candidates,
-});
 
 const editorFromDefaults = (defaults: PersistentCreateDefaults | null): Editor => ({
   name: "",
@@ -55,8 +43,6 @@ const editorFromDefaults = (defaults: PersistentCreateDefaults | null): Editor =
   modelPreset: defaults?.settings.default_model.model_preset ?? "",
   folderId: "",
   firstMessage: "",
-  showGenerationSeparator: defaults?.settings.show_generation_separator ?? true,
-  showJevCandidates: defaults?.settings.show_jev_candidates ?? true,
 });
 
 /** 입력 검증에서 막힌 경우. 서버에 도달하지 않았으므로 일부 저장 안내를 붙이지 않는다. */
@@ -66,10 +52,6 @@ const PARTIAL_SAVE_NOTE = "일부 변경이 저장됐을 수 있습니다. 다�
 
 /** 서버가 분명히 거절한 응답(4xx)이 아니면 요청이 처리됐는지 알 수 없다. */
 const isClearRejection = (caught: unknown) => caught instanceof HttpResponseError && caught.status < 500;
-
-/** 같은 모델은 프리셋과 추론 수준이 모두 같다. 추론 수준이 없는 것은 null과 같다. */
-const sameModel = (a: ModelSelection, b: ModelSelection) =>
-  a.model_preset === b.model_preset && (a.reasoning_effort ?? null) === (b.reasoning_effort ?? null);
 
 export function PersistentSessionsTab({ request, assignment }: { request?: typeof fetch; assignment?: AssignmentData }) {
   const api = useMemo(() => createPersistentSessionsApi(request), [request]);
@@ -105,7 +87,7 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
     setSessions(result.sessions);
     setDefaults(result.create_defaults);
     setSelected(next);
-    if (!keepEditor || (select && !next)) setEditor(next ? editorFromSession(next) : editorFromDefaults(result.create_defaults));
+    if (!keepEditor || (select && !next)) setEditor(editorFromDefaults(result.create_defaults));
   }, [api]);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -129,21 +111,20 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
 
   const choose = (session: PersistentSession) => {
     setSelected(session);
-    setEditor(editorFromSession(session));
     setRegistration(null);
     setError(null);
   };
 
   /** 서버가 돌려준 저장값으로 목록과 입력을 갱신한다. */
-  const applySaved = (session: PersistentSession) => {
+  const applySaved = useCallback((session: PersistentSession) => {
     setSessions((current) => current.some((item) => item.session_id === session.session_id)
       ? current.map((item) => item.session_id === session.session_id ? session : item)
       : [...current, session]);
     setSelected(session);
-    setEditor(editorFromSession(session));
     setRegistration(null);
+    setError(null);
     setPersistentSessionDisplaySettings(session.session_id, session.settings);
-  };
+  }, [setPersistentSessionDisplaySettings]);
 
   const mutate = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -167,26 +148,14 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
   };
   const defaultModelWrite = () => {
     if (!editor.modelPreset) throw new FormError("기본 모델을 선택하세요.");
-    const saved = selected?.settings.default_model;
-    // 선택을 그대로 두면 기록된 추론 수준을 보존하고, 새 선택은 서버가 카탈로그 기본값을 정한다.
-    const reasoning = saved && saved.model_preset === editor.modelPreset ? saved.reasoning_effort : null;
-    return { default_model: { model_preset: editor.modelPreset, reasoning_effort: reasoning } };
+    return { default_model: { model_preset: editor.modelPreset, reasoning_effort: null } };
   };
 
-  const save = () => mutate(async () => {
-    if (!selected) return;
-    const settings: Partial<ReturnType<typeof defaultModelWrite> & {
-      show_generation_separator: boolean;
-      show_jev_candidates: boolean;
-    }> = defaultModelWrite();
-    if (editor.showGenerationSeparator !== selected.settings.show_generation_separator) {
-      settings.show_generation_separator = editor.showGenerationSeparator;
-    }
-    if (editor.showJevCandidates !== selected.settings.show_jev_candidates) {
-      settings.show_jev_candidates = editor.showJevCandidates;
-    }
-    const { session } = await api.update(selected.session_id, { display_name: validName(), settings });
-    applySaved(session);
+  const details = usePersistentSessionDetailsController({
+    resource: selected,
+    api,
+    onSaved: applySaved,
+    onNotPersistent: () => { void refresh({ select: selected?.session_id ?? null, keepEditor: true }); },
   });
 
   const create = () => mutate(async () => {
@@ -233,13 +202,6 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
   // 소유 노드를 모르는 세션은 서버가 아무것도 저장하지 못한다. 생성 기본 노드로 대신하지 않고 편집을 막는다.
   const nodeUnknown = Boolean(selected && !selected.node_id);
   const modelNodeId = selected ? selected.node_id ?? "" : nodeId;
-  const resaveNeeded = Boolean(selected && !nodeUnknown && selected.settings.default_model.model_preset && (() => {
-    const saved = selected.settings.default_model;
-    const pending = selected.runtime.pending;
-    return !sameModel(saved, selected.runtime.current_model)
-      && !(pending && sameModel({ model_preset: pending.target_model_preset, reasoning_effort: pending.target_reasoning_effort }, saved));
-  })());
-
   const modelSelect = <NodeModelPresetSelect
     className="v3-model-preset-field"
     triggerClassName="v3-model-preset-trigger"
@@ -283,30 +245,21 @@ export function PersistentSessionsTab({ request, assignment }: { request?: typeo
     </>}>
       {selected || defaults ? <SettingsDetailHeader
         title={selected ? selected.display_name ?? "이름 없음" : "새 영구 에이전트 세션"}
-        actions={selected ? <Button type="button" size="sm" variant="outline" disabled={busy || nodeUnknown} onClick={() => void release()}>영구 세션 해제</Button> : null}
+        actions={selected ? <Button type="button" size="sm" variant="outline" disabled={busy || details.pending || nodeUnknown} onClick={() => void release()}>영구 세션 해제</Button> : null}
       /> : null}
 
-      {error ? <SettingsAlert key={error.key} scrollIntoView>{error.message}</SettingsAlert> : null}
+      {error && !selected ? <SettingsAlert key={error.key} scrollIntoView>{error.message}</SettingsAlert> : null}
 
-      {selected ? <>
-        {nodeUnknown ? <SettingsAlert>이 세션의 노드를 알 수 없어 편집할 수 없습니다.</SettingsAlert> : null}
-        <div>
-          {nameField}
-          <SettingFieldWidget field={textField("agent", "에이전트", agentLabel(selected), true, "만든 뒤에는 바꿀 수 없습니다.")} value={agentLabel(selected)} onChange={() => undefined} />
-          <SettingFieldWidget field={textField("current_model", "현재 실행 모델", currentModelText(selected), true)} value={currentModelText(selected)} onChange={() => undefined} />
-          <SettingFieldWidget
-            field={textField("pending", "대기 중인 변경", pendingText(selected), true, resaveNeeded ? "기본 모델 변경 요청이 없습니다. 다시 저장해 주세요." : "")}
-            value={pendingText(selected)}
-            onChange={() => undefined}
-          />
-          <SettingFieldWidget field={boolField("show_generation_separator", "세대 구분선 표시", editor.showGenerationSeparator, "세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.")} value={String(editor.showGenerationSeparator)} onChange={(value) => setEditor((current) => ({ ...current, showGenerationSeparator: value === "true" }))} />
-          <SettingFieldWidget field={boolField("show_jev_candidates", "Jev 후보 표시", editor.showJevCandidates, "내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.")} value={String(editor.showJevCandidates)} onChange={(value) => setEditor((current) => ({ ...current, showJevCandidates: value === "true" }))} />
-        </div>
-        <SettingsGroupBox title="실행 대상"><div className="v3-succession-assignment">{modelSelect}</div></SettingsGroupBox>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" disabled={busy || nodeUnknown} onClick={() => void save()}>{busy ? "저장 중..." : "변경 저장"}</Button>
-        </div>
-      </> : defaults ? <>
+      {selected ? <PersistentSessionDetails
+        resource={selected}
+        draft={details.draft}
+        pending={busy || details.pending}
+        error={error?.message ?? details.error}
+        modelPresetCatalog={modelPresetCatalog}
+        onFieldChange={details.onFieldChange}
+        onSave={() => { void details.save(); }}
+        onModelError={fail}
+      /> : defaults ? <>
         {defaults.unavailable_reason ? <SettingsAlert>{defaults.unavailable_reason}</SettingsAlert> : null}
         {registration ? <SettingsAlert scrollIntoView>세션은 만들어졌으나 등록하지 못했습니다. “{registration.name}” 세션이 일반 세션으로 남아 있습니다.</SettingsAlert> : null}
         {createUnknown ? <SettingsAlert scrollIntoView>세션이 만들어졌는지 알 수 없습니다. 일반 세션으로 만들어졌을 수 있으니 세션 목록에서 확인하고, 이 목록을 다시 읽어 주세요.</SettingsAlert> : null}
@@ -357,10 +310,6 @@ function textField(key: string, label: string, value: string, readOnly: boolean,
   return { key, field_name: key, label, description, value, value_type: "str", sensitive: false, hot_reloadable: true, read_only: readOnly };
 }
 
-function boolField(key: string, label: string, value: boolean, description = ""): SettingField {
-  return { key, field_name: key, label, description, value, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
-}
-
 function agentLabel(session: PersistentSession): string {
   return session.agent_name ?? session.agent_id ?? "에이전트 정보 없음";
 }
@@ -369,12 +318,6 @@ function currentModelText(session: PersistentSession): string {
   const { model_preset, model, reasoning_effort } = session.runtime.current_model;
   const parts = [model ?? model_preset, reasoning_effort].filter((part): part is string => Boolean(part));
   return parts.length > 0 ? parts.join(" · ") : "모델 정보 없음";
-}
-
-function pendingText(session: PersistentSession): string {
-  const pending = session.runtime.pending;
-  if (!pending) return "대기 변경 없음";
-  return `다음 실행부터 ${pending.target_model_preset}${pending.target_reasoning_effort ? ` · ${pending.target_reasoning_effort}` : ""}`;
 }
 
 function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }

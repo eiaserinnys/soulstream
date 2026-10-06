@@ -191,8 +191,14 @@ export function createDialoguesApi() {
     },
   };
   const ownedAgents = createOwnedAgentsFixture(new URLSearchParams(window.location.search).get('ownedState') ?? 'normal');
+  const sample = new URLSearchParams(window.location.search).get("sample");
+  const persistentState = new URLSearchParams(window.location.search).get("persistentState") ?? (
+    sample === "persistent-settings-window-saving" ? "display-save-delayed"
+      : sample === "persistent-settings-window-failure" ? "display-save-failure"
+        : "normal"
+  );
   const persistentSessions = createPersistentSessionsFixture({
-    scenario: new URLSearchParams(window.location.search).get("persistentState") ?? "normal",
+    scenario: persistentState,
     nodeId: "sample-node",
     folderId: dialoguesFolders[0]!.id,
   });
@@ -207,6 +213,7 @@ export function createDialoguesApi() {
     if (path.startsWith("/api/persistent-sessions")) return persistentSessions(input, init);
     let value: unknown;
     if (path === "/cogito/briefs") value = {status:"ok",node_count:1,nodes:[{node_id:"sample-node",status:"ok",data:{status:"ok"}}]};
+    else if (path.startsWith("/api/sessions/") && path.endsWith("/timeline")) value = { messages: [], next_cursor: null };
     else if (path === "/api/config/settings") {
       if (method === "PUT") configValue = body.changes?.sample ?? configValue;
       value =

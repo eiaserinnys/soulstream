@@ -205,6 +205,23 @@ describe("ConfigModal layout", () => {
     expect(saveButton).toBeNull();
   });
 
+  it("stores the PAS startup choice immediately under the normalized device key", async () => {
+    localStorage.clear();
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+
+    const row = Array.from(document.body.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
+      .find((element) => element.textContent?.includes("시작할 때 영구 세션으로 열기"));
+    expect(row).not.toBeUndefined();
+    const toggle = row?.querySelector<HTMLButtonElement>("[role=switch]");
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    flushSync(() => toggle?.click());
+
+    expect(JSON.parse(localStorage.getItem("soulstream-pas-device:admin@example.com") ?? "null"))
+      .toEqual({ openOnStart: true, lastSessionId: null });
+    expect(vi.mocked(fetch)).not.toHaveBeenCalledWith("/api/user/preferences", expect.anything());
+  });
+
   it("opens recurring jobs from the orchestrator settings surface", async () => {
     ({ container, root } = renderModal());
     await settleConfigModal();

@@ -13,6 +13,7 @@ import { BoardRenameDialog, BoardMoveDialog } from "@seosoyoung/soul-ui/board-wo
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { useLocalDialogueUpload } from "./use-local-dialogue-upload";
 import { ConfigModal } from "../components/ConfigModal";
+import { PersistentSessionSettingsDialog } from "../components/PersistentSessionSettingsDialog";
 import { SearchModal } from "../components/SearchModal";
 import {saveProjectFormContext} from "./project-form-actions";
 import { ProjectDialog } from "./ProjectDialog";
@@ -58,6 +59,13 @@ export function DialoguesSamples({
   };
   const stars: readonly string[] = [];
   if (id.startsWith("connection-")) return <ConnectionDialog snapshot={{phase: id.slice("connection-".length) as "planned" | "disconnected" | "checking" | "recovering" | "new-version", fresh: false}}/>;
+  if (id.startsWith("persistent-settings-window")) return <PersistentSessionSettingsDialog
+    sessionId="sample-pas-1"
+    nodeId="sample-node"
+    request={api.request}
+    modelPresetCatalog={dialoguesAssignment.modelPresetCatalog}
+    onClose={onClose}
+  />;
   if (id === "project-create" || id === "project-edit")
     return (
       <ProjectDialog
