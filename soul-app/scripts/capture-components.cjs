@@ -720,6 +720,14 @@ async function runPersistentTaskCaptures(browser, base) {
       { name: 'realistic-ipad-landscape-318-700', width: 1024, height: 768, theme: 'light', sampleWidth: 318, panelHeight: 700, cardCase: 'realistic' },
       { name: 'realistic-ipad-portrait-340-900', width: 768, height: 1024, theme: 'dark', sampleWidth: 340, panelHeight: 900, cardCase: 'realistic' },
     ].flatMap((scenario) => ['light', 'dark'].map((theme) => ({ ...scenario, name: `${scenario.name}-${theme}`, theme, sample: 'card' }))),
+    ...[
+      { name: 'iphone-358', width: 390, height: 844, sampleWidth: 358, mobile: true },
+      { name: 'ipad-landscape-318', width: 1024, height: 768, sampleWidth: 318 },
+      { name: 'ipad-portrait-340', width: 768, height: 1024, sampleWidth: 340 },
+    ].flatMap((viewport) => ['long-title', 'no-progress', 'sparse'].flatMap((sampleCase) => ['light', 'dark'].map((theme) => ({
+      ...viewport, name: `card-${sampleCase}-${viewport.name}-${theme}`, theme, sample: 'card',
+      cardCase: sampleCase === 'long-title' ? 'long' : sampleCase === 'no-progress' ? 'no-progress' : 'sparse',
+    })))),
     { name: 'card-row-standard-current', width: 390, height: 844, theme: 'light', sample: 'standard-row', mobile: true },
   ];
   const measure = (locator) => locator.evaluate((element) => {
