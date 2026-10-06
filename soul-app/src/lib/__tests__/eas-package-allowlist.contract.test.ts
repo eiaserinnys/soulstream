@@ -63,6 +63,17 @@ test('value imports still fail when their package source has no allowlist entry'
   );
 });
 
+test('allows the shared persistent turn usage source for app imports', () => {
+  const sharedSource = 'packages/soul-ui/src/lib/persistent-turn-usage.ts';
+  const allowedLines = new Set(
+    fs.readFileSync(path.join(repoRoot, '.easignore'), 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim()),
+  );
+
+  expect(() => assertPackageFilesAllowed(new Set([sharedSource]), allowedLines)).not.toThrow();
+});
+
 function sourceFilesUnder(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const entryPath = path.join(directory, entry.name);

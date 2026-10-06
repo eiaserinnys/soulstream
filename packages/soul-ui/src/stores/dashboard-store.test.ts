@@ -85,6 +85,28 @@ describe("session-scoped search event focus", () => {
     expect(useDashboardStore.getState().focusEventRequestId).toBe(secondRequestId + 1);
   });
 });
+
+describe("persistent session display settings", () => {
+  it("stores character and turn usage settings for the active session", () => {
+    useDashboardStore.getState().setActiveSession("persistent-session-settings");
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("persistent-session-settings", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: false,
+      animate_character: false,
+      show_turn_usage: false,
+    });
+
+    expect(useDashboardStore.getState().persistentSessionDisplaySettings).toEqual({
+      sessionId: "persistent-session-settings",
+      showGenerationSeparator: true,
+      showJevCandidates: true,
+      showCharacter: false,
+      animateCharacter: false,
+      showTurnUsage: false,
+    });
+  });
+});
 import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
 import type {
   TextStartEvent,
@@ -2163,10 +2185,22 @@ describe("dashboard-store", () => {
       expect(afterRepeat[1]).toBe(candidate);
 
       const store = useDashboardStore.getState();
-      store.setPersistentSessionDisplaySettings(sessionId, { show_generation_separator: true, show_jev_candidates: true });
+      store.setPersistentSessionDisplaySettings(sessionId, {
+        show_generation_separator: true,
+        show_jev_candidates: true,
+        show_character: true,
+        animate_character: true,
+        show_turn_usage: true,
+      });
       const hidden = projectPersistentChatDisplayMessages(afterRepeat, { show_generation_separator: false, show_jev_candidates: false });
       expect(hidden).toHaveLength(1);
-      store.setPersistentSessionDisplaySettings(sessionId, { show_generation_separator: true, show_jev_candidates: true });
+      store.setPersistentSessionDisplaySettings(sessionId, {
+        show_generation_separator: true,
+        show_jev_candidates: true,
+        show_character: true,
+        animate_character: true,
+        show_turn_usage: true,
+      });
       const restored = projectPersistentChatDisplayMessages(afterRepeat, { show_generation_separator: true, show_jev_candidates: true });
       expect(restored[1]).toBe(candidate);
     });

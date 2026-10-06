@@ -103,6 +103,9 @@ export const createSessionSlice: StateCreator<
       sessionId,
       showGenerationSeparator: settings.show_generation_separator,
       showJevCandidates: settings.show_jev_candidates,
+      showCharacter: settings.show_character,
+      animateCharacter: settings.animate_character,
+      showTurnUsage: settings.show_turn_usage,
     } : null });
   },
 
