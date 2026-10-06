@@ -129,7 +129,8 @@ export function CardDetailContent(props: CardDetailContentProps) {
     ?? detail?.sessions.find((session) => session.agentSessionId === card?.assigneeSessionId);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
-  const agent = assigned ?? { agentSessionId: card?.id ?? '', agentId: card?.assigneeAgentId, agentPortraitUrl: null };
+  const agent = assigned ?? { agentSessionId: card?.assigneeKind === 'session' && card.assigneeSessionId ? card.assigneeSessionId : card?.id ?? '',
+    agentId: card?.assigneeAgentId, agentPortraitUrl: null };
   const nodeId = assigned?.nodeId ?? card?.nodeId;
   const identity = { ...agent, agentPortraitUrl: agent.agentPortraitUrl ?? (agent.agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agent.agentId}/portrait` : null) };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
@@ -206,9 +207,9 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const selectedItem = targetItem;
   if (props.variant === 'readSummary') return <CardReadSummary card={card} items={cardItems} error={error}
     assigneeLabel={card?.assigneeKind === 'human' ? card.assigneeUserId ?? '사용자'
-      : card?.assigneeKind === 'session' ? assigned?.displayName ?? null
+      : card?.assigneeKind === 'session' ? assigned?.displayName?.trim() || resolveSessionAgentLabel(identity)
         : card?.assigneeKind === 'agent' ? resolveSessionAgentLabel(identity) : null}
-    human={card?.assigneeKind === 'human'} avatar={avatar} onOpenCard={props.onOpenCard} />;
+    hasAssignee={card?.assigneeKind != null} human={card?.assigneeKind === 'human'} avatar={avatar} onOpenCard={props.onOpenCard} />;
   return <><AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     onOverlapChange={onOverlapChange} style={folderStyles.container}>
     <CardTransitionSettings api={api} action={statusAction}/>
@@ -319,11 +320,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
   </>;
 }
 
-function CardReadSummary({ card, items, error, assigneeLabel, human, avatar, onOpenCard }: {
+function CardReadSummary({ card, items, error, assigneeLabel, hasAssignee, human, avatar, onOpenCard }: {
   card: CardDto | undefined;
   items: CardCheckItem[];
   error: string | null;
   assigneeLabel: string | null;
+  hasAssignee: boolean;
   human: boolean | undefined;
   avatar: ReturnType<typeof resolveSessionCardAvatar>;
   onOpenCard(): void;
@@ -332,9 +334,12 @@ function CardReadSummary({ card, items, error, assigneeLabel, human, avatar, onO
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
-  if (!card) return error
-    ? <Text testID="card-read-summary-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>
-    : <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={t.colors.accent} /></View>;
+  if (!card) return <View testID={error ? 'card-read-summary-error-state' : 'card-read-summary-loading-state'}
+    style={{ flexGrow: 1, flexShrink: 1, minHeight: t.foundation.minHeight.row,
+    padding: t.foundation.pageInset, justifyContent: error ? 'flex-start' : 'center', alignItems: error ? 'stretch' : 'center' }}>
+    {error ? <Text testID="card-read-summary-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>
+      : <ActivityIndicator color={t.colors.accent} />}
+  </View>;
 
   const assigneeUri = human ? profile?.picture : avatar.uri;
   const assigneeFallback = human ? assigneeLabel?.[0] ?? '사' : avatar.fallbackChar;
@@ -344,35 +349,36 @@ function CardReadSummary({ card, items, error, assigneeLabel, human, avatar, onO
   const spacing = t.uiSpacing;
 
   return <View testID="card-read-summary" style={{ flex: 1, minHeight: 0 }}>
-    <ScrollView testID="card-read-summary-scroll" showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ padding: t.foundation.pageInset, gap: spacing.xl }}>
+    <ScrollView testID="card-read-summary-scroll" style={{ flex: 1, minHeight: 0 }} showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ padding: t.foundation.pageInset, gap: spacing.xl, flexGrow: 1 }}>
       <View style={{ gap: spacing.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 0, gap: spacing.sm }}>
           <CardStatusChip card={card} board detail />
           {card.number == null ? null : <Text testID="card-read-summary-number" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }} numberOfLines={1}>#{card.number}</Text>}
         </View>
         <Text testID="card-read-summary-title" numberOfLines={2} ellipsizeMode="tail"
-          style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>
+          style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary }}>
           {card.title}
         </Text>
       </View>
-      {assigneeLabel ? <View testID="card-read-summary-assignee" style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+      {hasAssignee ? <View testID="card-read-summary-assignee" style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
         {assigneeUri
           ? <Image testID="card-read-summary-avatar" source={{ uri: assigneeUri,
             ...(jwt && assigneeUri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
             style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round, flexShrink: 0 }} />
           : <View testID="card-read-summary-avatar" style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round,
             flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth,
-            borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }}>
+            borderColor: t.persistentSession.line, backgroundColor: t.persistentSession.panel }}>
             <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{assigneeFallback}</Text>
           </View>}
-        <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>{assigneeLabel}</Text>
+        {assigneeLabel ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>{assigneeLabel}</Text> : null}
       </View> : null}
       {hasRequest ? <View testID="card-read-summary-request" style={{ gap: spacing.sm }}>
         <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>요청</Text>
         <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm }}>
-          <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: t.persistentSession.line }} />
-          <View style={{ flex: 1, minWidth: 0 }}><CardRequestView request={card.request} attachments={card.attachments} /></View>
+          <View style={{ width: spacing.xxs, backgroundColor: t.persistentSession.line }} />
+          <View style={{ flex: 1, minWidth: 0 }}><CardRequestView request={card.request} attachments={card.attachments}
+            bodyStyle={{ ...t.foundation.typography.body, color: t.colors.textSecondary }} numberOfLines={4} /></View>
         </View>
       </View> : null}
       {hasProgress ? <View testID="card-read-summary-progress" style={{ gap: spacing.sm }}>
@@ -385,9 +391,11 @@ function CardReadSummary({ card, items, error, assigneeLabel, human, avatar, onO
           <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, flex: 1, minWidth: 0 }} selectable>{item.result}</Text>
         </View>)}
       </View> : null}
-      <GlassButton testID="card-read-summary-open" accessibilityLabel="카드 열기" onPress={onOpenCard} style={{ alignSelf: 'stretch' }}>
+    </ScrollView>
+    <View testID="card-read-summary-footer" style={{ paddingHorizontal: t.foundation.pageInset, paddingTop: spacing.sm, paddingBottom: t.foundation.pageInset }}>
+      <GlassButton testID="card-read-summary-open" variant="paper" accessibilityLabel="카드 열기" onPress={onOpenCard} style={{ alignSelf: 'stretch' }}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>카드 열기</Text>
       </GlassButton>
-    </ScrollView>
+    </View>
   </View>;
 }

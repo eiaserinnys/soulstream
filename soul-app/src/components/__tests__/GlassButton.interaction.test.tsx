@@ -21,7 +21,7 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 
 import React from 'react';
 import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import {
   DARK_COLORS,
   PHONE_FOUNDATION,
@@ -29,6 +29,7 @@ import {
 } from '../../theme/tokens';
 import { createPrimitiveRoles } from '../../theme/surfacePrimitives';
 import { useSettingsStore } from '../../store/settingsStore';
+import { useTokens } from '../../theme';
 import { GlassButton, resolveGlassButtonBackground } from '../GlassSurface';
 
 describe('GlassButton interaction contract', () => {
@@ -175,6 +176,18 @@ describe('GlassButton interaction contract', () => {
       borderWidth: 2,
       borderColor: 'transparent',
     });
+  });
+
+  test('paper 변형은 persistent 종이 표면과 선 테두리를 쓴다', () => {
+    const tokens = renderHook(() => useTokens()).result.current;
+    const screen = render(<GlassButton variant="paper" testID="paper-button" surfaceTestID="paper-surface" onPress={() => undefined}>
+      <Text>카드 열기</Text>
+    </GlassButton>);
+    const surface = StyleSheet.flatten(screen.getByTestId('paper-surface').props.style);
+    const button = screen.getByTestId('paper-button');
+
+    expect(surface).toMatchObject({ backgroundColor: tokens.persistentSession.paper, borderColor: tokens.persistentSession.line });
+    expect(StyleSheet.flatten(button.props.style).backgroundColor).toBe(tokens.persistentSession.paper);
   });
 });
 

@@ -22,7 +22,7 @@ export function ReviewRows() {
         })}
       </View>
     </ReviewSection>
-    <ReviewSection title="카드 요약 행 · PAS">
+    <ReviewSection title="요약 행">
       <View testID="review-card-summary-row" style={{ padding: t.foundation.pageInset }}>
         <CardRow api={api} card={{ ...initialCards[2], number: 412, title: '모바일 흐름 확인' }} variant="summary"
           onOpen={() => setSelected('모바일 흐름 확인')} />

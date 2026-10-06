@@ -26,3 +26,14 @@ test('전체 목록은 global useCardList 결과의 활성 카드를 묶고 행 
   fireEvent.press(screen.getByTestId('card-row-card-running-summary'));
   expect(onOpenCard).toHaveBeenCalledWith('card-running');
 });
+
+test('전체 목록 조회 실패에서 기존 새로고침 동작으로 다시 불러온다', async () => {
+  const running = cardFixture({ id: 'card-running-retry', status: 'running' });
+  const listCards = jest.fn().mockRejectedValueOnce(new Error('일시적인 조회 실패')).mockResolvedValue({ cards: [running] });
+  const screen = render(<PersistentSessionTaskList api={{ listCards } as any} onOpenCard={jest.fn()} />);
+
+  await waitFor(() => expect(screen.getByText('일시적인 조회 실패')).toBeTruthy());
+  fireEvent.press(screen.getByLabelText('작업 목록 다시 조회'));
+  await waitFor(() => expect(screen.getByTestId('card-row-card-running-retry-summary')).toBeTruthy());
+  expect(listCards).toHaveBeenCalledTimes(2);
+});

@@ -6,7 +6,7 @@ jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jes
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
-import { act, fireEvent, render, renderHook, userEvent, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, userEvent, waitFor, within } from '@testing-library/react-native';
 import { ActionSheetIOS, Alert, FlatList, StyleSheet } from 'react-native';
 import type { CardCheckItem, CardDetail, CardDto } from '../../../api/cardTypes';
 import { useCardStore } from '../../../store/cardStore';
@@ -572,6 +572,7 @@ test('읽기 요약은 기존 요청과 경과 결과만 보여 주고 카드 �
   expect(screen.getByLabelText('화면 설계.pdf')).toBeTruthy();
   expect(screen.getByText('요청')).toBeTruthy();
   expect(screen.getByText('요청 원문')).toBeTruthy();
+  expect(screen.getByText('요청 원문').props.numberOfLines).toBe(4);
   expect(screen.getByText('경과')).toBeTruthy();
   expect(screen.getByText('현재 경과')).toBeTruthy();
   expect(screen.getByText('사용자에게 보이는 결과')).toBeTruthy();
@@ -580,6 +581,8 @@ test('읽기 요약은 기존 요청과 경과 결과만 보여 주고 카드 �
   expect(screen.queryByPlaceholderText('커멘트')).toBeNull();
   expect(screen.queryByTestId('settings-segment-card-detail-items')).toBeNull();
   expect(screen.queryByTestId('card-detail-dock')).toBeNull();
+  expect(within(screen.getByTestId('card-read-summary-scroll')).queryByTestId('card-read-summary-open')).toBeNull();
+  expect(screen.getByTestId('card-read-summary-footer')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('card-read-summary-open'));
   expect(onOpenCard).toHaveBeenCalledTimes(1);
@@ -595,4 +598,36 @@ test('읽기 요약은 요청·경과가 없는 카드에서 해당 구역과 �
   expect(screen.queryByTestId('card-read-summary-request')).toBeNull();
   expect(screen.queryByTestId('card-read-summary-progress')).toBeNull();
   expect(screen.getByTestId('card-read-summary-open')).toBeTruthy();
+});
+
+test('표시 이름이 없는 세션 담당은 세션 ID 기반 이름과 글자 초상을 남긴다', async () => {
+  const assigneeSession = {
+    agentSessionId: 'assigned-session', displayName: null, status: 'idle', createdAt: '', updatedAt: '',
+    agentName: null, agentId: null, agentPortraitUrl: null, nodeId: null,
+  };
+  const sourceCard = { ...card, assigneeKind: 'session' as const, assigneeSessionId: assigneeSession.agentSessionId,
+    assigneeAgentId: null, number: 412 };
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, card: sourceCard, sessions: [assigneeSession] }) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()}
+    variant="readSummary" onOpenCard={jest.fn()} />);
+
+  await waitFor(() => expect(screen.getByTestId('card-read-summary-title')).toBeTruthy());
+
+  expect(screen.getByTestId('card-read-summary-assignee')).toBeTruthy();
+  expect(screen.getByText('assigned')).toBeTruthy();
+  expect(screen.getByTestId('card-read-summary-avatar').props.children.props.children).toBe('a');
+});
+
+test('읽기 요약의 실패와 불러오는 중은 본문 inset과 카드 행 높이를 유지한다', async () => {
+  const failure = render(<CardDetailContent api={{ getCard: jest.fn().mockRejectedValue(new Error('읽기 실패')) } as any}
+    cardId={card.id} onClose={jest.fn()} variant="readSummary" onOpenCard={jest.fn()} />);
+  await waitFor(() => expect(failure.getByTestId('card-read-summary-error-state')).toBeTruthy());
+  const tokens = renderHook(() => useTokens()).result.current;
+  expect(StyleSheet.flatten(failure.getByTestId('card-read-summary-error-state').props.style))
+    .toMatchObject({ padding: tokens.foundation.pageInset, minHeight: tokens.foundation.minHeight.row });
+
+  const loading = render(<CardDetailContent api={{ getCard: jest.fn(() => new Promise(() => {})) } as any}
+    cardId="loading-card" onClose={jest.fn()} variant="readSummary" onOpenCard={jest.fn()} />);
+  expect(StyleSheet.flatten(loading.getByTestId('card-read-summary-loading-state').props.style))
+    .toMatchObject({ padding: tokens.foundation.pageInset, minHeight: tokens.foundation.minHeight.row });
 });

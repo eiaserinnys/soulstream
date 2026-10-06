@@ -10,7 +10,7 @@ import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { decodeAuthJwt } from '../../auth/jwt-payload';
-import { useTokens } from '../../theme';
+import { createPlannerVisualRoles, useTokens } from '../../theme';
 import type { ColorScheme } from '../../theme/colors';
 import { GlassButton } from '../GlassSurface';
 import { makeSessionCardStyles } from '../sessionCardFrame';
@@ -63,6 +63,7 @@ export function CardRow({ variant = 'default', ...props }: CardRowProps) {
 
 function SummaryCardRow({ card, onOpen }: Omit<CardRowProps, 'variant'>) {
   const t = useTokens();
+  const pressedColor = createPlannerVisualRoles(t).grouped.pressedColor;
   const assigned = useSessionStore((state) => card.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const jwt = useAuthStore((state) => state.jwt);
@@ -83,12 +84,13 @@ function SummaryCardRow({ card, onOpen }: Omit<CardRowProps, 'variant'>) {
     accessibilityRole="button"
     accessibilityLabel={`${card.number == null ? '' : `#${card.number} `}${card.title} 카드 요약`}
     onPress={onOpen}
-    style={{ minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.md }}
+    style={({ pressed }) => ({ minHeight: t.hitTarget.min, flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs,
+      backgroundColor: pressed ? pressedColor : 'transparent' })}
   >
-    {card.number == null ? null : <Text testID={`card-${card.id}-number`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary, minWidth: t.hitTarget.min }} numberOfLines={1}>
+    {card.number == null ? null : <Text testID={`card-${card.id}-number`} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary, flexShrink: 0 }} numberOfLines={1}>
       #{card.number}
     </Text>}
-    <Text testID={`card-${card.id}-summary-title`} style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, flex: 1, minWidth: 0 }} numberOfLines={1}>
+    <Text testID={`card-${card.id}-summary-title`} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, flex: 1, minWidth: 0 }} numberOfLines={1}>
       {card.title}
     </Text>
     {hasAssignee ? uri
@@ -96,7 +98,7 @@ function SummaryCardRow({ card, onOpen }: Omit<CardRowProps, 'variant'>) {
         style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round, flexShrink: 0 }} />
       : <View testID={`card-${card.id}-avatar`} style={{ width: t.avatarSize.compact, height: t.avatarSize.compact,
         borderRadius: t.foundation.radius.round, flexShrink: 0, alignItems: 'center', justifyContent: 'center',
-        borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }}>
+        borderWidth: StyleSheet.hairlineWidth, borderColor: t.persistentSession.line, backgroundColor: t.persistentSession.panel }}>
         <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{fallback}</Text>
       </View> : null}
   </Pressable>;

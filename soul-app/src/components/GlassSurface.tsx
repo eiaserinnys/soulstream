@@ -269,7 +269,7 @@ export interface GlassButtonProps {
   accessibilityRole?: AccessibilityRole;
   accessibilityState?: AccessibilityState;
   'aria-pressed'?: boolean;
-  variant?: 'primary' | 'secondary';
+  variant?: 'primary' | 'secondary' | 'paper';
   size?: 'standard' | 'compact' | 'card';
   iconOnly?: boolean;
   borderRadius?: number;
@@ -304,9 +304,8 @@ export function GlassButton({
 }: GlassButtonProps) {
   const t = useTokens();
   const [focused, setFocused] = React.useState(false);
-  const primitive = createPrimitiveRoles(t)[
-    variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'
-  ];
+  const primitive = createPrimitiveRoles(t)[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
+  const paper = variant === 'paper';
   const standardMinHeight = Math.max(t.hitTarget.min, primitive.minHeight);
   const resolvedRadius = borderRadius ?? primitive.radius;
   const horizontal = iconOnly ? 0 : padding?.horizontal ?? primitive.padding.horizontal;
@@ -314,17 +313,6 @@ export function GlassButton({
   const iconBoundaryStyle: ViewStyle | undefined = iconOnly
     ? { width: t.hitTarget.min, height: t.hitTarget.min }
     : undefined;
-
-  if (iconOnly && size !== 'standard') {
-    const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
-    const visualStyle: ViewStyle = { width: visualSize, height: visualSize, borderRadius: resolvedRadius,
-      alignItems: 'center', justifyContent: 'center' };
-    return <CompactTouchTarget testID={testID} frameStyle={frameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
-      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
-      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: primitive.backgroundColor }]}>{children}</View>
-        : <GlassSurfaceImpl role={primitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle]}>{children}</GlassSurfaceImpl>}
-    </CompactTouchTarget>;
-  }
 
   const renderButton = (nativePressFeedback: boolean) => (
     <Pressable
@@ -351,14 +339,11 @@ export function GlassButton({
           borderRadius: resolvedRadius,
           gap: t.spacing.xs,
           opacity: disabled ? 0.55 : 1,
-          backgroundColor: resolveGlassButtonBackground(
-            primitive,
-            !!disabled,
-            pressed,
-            nativePressFeedback,
-          ),
-          borderWidth: 2,
-          borderColor: focused && !disabled ? primitive.focusedColor : 'transparent',
+          backgroundColor: paper
+            ? disabled ? primitive.disabledColor : pressed ? primitive.pressedColor : t.persistentSession.paper
+            : resolveGlassButtonBackground(primitive, !!disabled, pressed, nativePressFeedback),
+          borderWidth: paper ? 0 : 2,
+          borderColor: paper ? 'transparent' : focused && !disabled ? primitive.focusedColor : 'transparent',
         },
         !iconOnly && { minHeight: standardMinHeight },
         contentStyle,
@@ -368,6 +353,31 @@ export function GlassButton({
       {children}
     </Pressable>
   );
+
+  if (paper) {
+    const paperSurfaceStyle: ViewStyle = { overflow: 'hidden', backgroundColor: t.persistentSession.paper,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: focused && !disabled ? primitive.focusedColor : t.persistentSession.line,
+      borderRadius: resolvedRadius };
+    if (iconOnly && size !== 'standard') {
+      const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
+      return <CompactTouchTarget testID={testID} frameStyle={frameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
+        <View testID={surfaceTestID} style={[style, paperSurfaceStyle, { width: visualSize, height: visualSize, alignItems: 'center', justifyContent: 'center' }]}>{children}</View>
+      </CompactTouchTarget>;
+    }
+    return <View testID={surfaceTestID} style={[paperSurfaceStyle, style]}>{renderButton(false)}</View>;
+  }
+
+  if (iconOnly && size !== 'standard') {
+    const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
+    const visualStyle: ViewStyle = { width: visualSize, height: visualSize, borderRadius: resolvedRadius,
+      alignItems: 'center', justifyContent: 'center' };
+    return <CompactTouchTarget testID={testID} frameStyle={frameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
+      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: primitive.backgroundColor }]}>{children}</View>
+        : <GlassSurfaceImpl role={primitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle]}>{children}</GlassSurfaceImpl>}
+    </CompactTouchTarget>;
+  }
 
   if (variant === 'primary') {
     return (
