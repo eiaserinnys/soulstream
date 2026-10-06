@@ -15,12 +15,12 @@
 .v3-persistent-task-list .v3-run-list { gap: var(--v3-space-1); }
 .v3-card-summary-row {
   display: grid;
-  width: 100%;
   min-width: 0;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: var(--v3-space-1);
-  padding: var(--v3-space-2) var(--v3-space-1);
+  margin-inline: -4px;
+  padding: var(--v3-space-2) 4px;
   color: var(--v3-text-primary);
   background: transparent;
   font: var(--v3-type-body) var(--v3-font-family);
@@ -48,8 +48,9 @@
   border-color: var(--persistent-session-line);
   color: var(--v3-text-primary);
   background: var(--persistent-session-panel);
-  box-shadow: none;
 }
+.v3-persistent-task-paper-button:not(:focus-visible),
+.v3-persistent-task-paper-button[data-slot="button"]:not(:focus-visible) { box-shadow: none; }
 .v3-persistent-task-paper-button:hover,
 .v3-persistent-task-paper-button[data-slot="button"]:hover { background: color-mix(in srgb, var(--muted) 72%, var(--persistent-session-panel)); }
 .v3-persistent-task-paper-button:active,

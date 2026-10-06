@@ -215,11 +215,11 @@ function CardReadSummary({card,detail,assigneeName,portrait,onOpenCard}: {
   </header>
   <div className="v3-card-read-summary-content" data-testid="card-read-summary-scroll" tabIndex={0}>
    {hasRequest?<section className="v3-detail-section" data-card-summary-section="request">
-    <div className="v3-detail-section-head v3-card-read-summary-section-label"><h3>요청</h3></div>
+    <div className="v3-card-read-summary-section-label"><h3>요청</h3></div>
     <CardTimeline card={card} detail={detail} portraitUrl={portrait} pending={false} onAnswer={()=>{}} requestOnly/>
    </section>:null}
    {hasElapsed?<section className="v3-detail-section" data-card-summary-section="elapsed">
-    <div className="v3-detail-section-head v3-card-read-summary-section-label"><h3>경과</h3></div>
+    <div className="v3-card-read-summary-section-label"><h3>경과</h3></div>
     {nowText?<p className="v3-card-read-summary-now">{nowText}</p>:null}
     {results.length?<ul className="v3-card-read-summary-results">{results.map(item=><li key={item.id}>{item.result}</li>)}</ul>:null}
    </section>:null}

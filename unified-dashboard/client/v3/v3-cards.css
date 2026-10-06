@@ -162,12 +162,12 @@
 .v3-card-read-summary-assignee { display: flex; min-width: 0; align-items: center; gap: var(--v3-space-2); color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-read-summary-assignee > :first-child { width: var(--v3-space-5); height: var(--v3-space-5); flex: none; border-radius: var(--v3-space-2); }
 .v3-card-read-summary-assignee > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v3-card-read-summary-content { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; gap: var(--v3-space-4); overflow-x: hidden; overflow-y: auto; padding-top: var(--v3-space-4); scrollbar-width: none; }
+.v3-card-read-summary-content { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; gap: var(--v3-space-4); overflow-x: hidden; overflow-y: auto; margin-top: var(--v3-space-2); margin-inline: -4px; padding: var(--v3-space-4) 4px 0; scrollbar-width: none; }
 .v3-card-read-summary-content::-webkit-scrollbar { display: none; }
 .v3-card-read-summary-content:focus-visible { outline: none; border-radius: var(--v3-space-2); box-shadow: inset 0 0 0 2px var(--ring); }
 .v3-card-read-summary-content > .v3-detail-section { min-width: 0; margin: 0; }
-.v3-card-read-summary-section-label { margin: 0 0 var(--v3-space-2); }
-.v3-card-read-summary-section-label h3 { color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
+.v3-card-read-summary-section-label { display: flex; align-items: center; gap: var(--v3-space-2); margin: 0 0 var(--v3-space-2); }
+.v3-card-read-summary-section-label h3 { margin: 0; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); letter-spacing: 0; }
 .v3-card-read-summary-now,
 .v3-card-read-summary-results { margin: 0; color: var(--v3-text-primary); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; }
 .v3-card-read-summary-results { display: flex; flex-direction: column; gap: var(--v3-space-1); padding-inline-start: var(--v3-space-4); list-style: disc; }
