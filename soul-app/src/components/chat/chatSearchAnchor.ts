@@ -13,6 +13,10 @@ export function renderItemContainsEventId(
 ): boolean {
   if (item.kind === 'typing') return false;
   if (item.kind === 'jev-candidates') return false;
+  if (item.kind === 'turn-usage') {
+    return Number(item.event.id) === eventId
+      || item.summaries?.some((summary) => Number(summary.event.id) === eventId) === true;
+  }
   if (item.kind === 'turn-summary') {
     return Number(item.event.id) === eventId;
   }

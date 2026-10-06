@@ -21,7 +21,9 @@ const HISTORY_PAGE_SIZE = 100;
 
 export interface UseChatHistoryPaginationDeps {
   /** API 클라이언트 (없으면 fetch 발사 안 함). */
-  api: { getTimeline: (sid: string, params: { limit: number; before: string | undefined; signal?: AbortSignal }) => Promise<MessagesResponse> } | null;
+  api: { getTimeline: (sid: string, params: { limit: number; before: string | undefined; signal?: AbortSignal; eventTypes?: string[] }) => Promise<MessagesResponse> } | null;
+  /** PAS 원고형만 서버 semantic timeline 타입과 complete를 명시한다. */
+  timelineEventTypes?: readonly string[];
   /** 표시할 세션 ID. undefined면 fetch 발사 안 함. */
   sessionId: string | undefined;
   /** 같은 세션에서 서버가 스냅샷 재로드를 지시할 때 증가하는 generation. */
@@ -89,6 +91,7 @@ export function useChatHistoryPagination(
     applyStateOnlyEvent,
     onInitialPageCommitted,
     onAsyncCommitError,
+    timelineEventTypes,
   } = deps;
 
   const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(
@@ -177,11 +180,20 @@ export function useChatHistoryPagination(
       historyLoadingRef.current = true;
       setHistoryLoading(true);
       try {
-        const res = await api.getTimeline(requestSessionId, {
+        const params: {
+          limit: number;
+          before: string | undefined;
+          signal?: AbortSignal;
+          eventTypes?: string[];
+        } = {
           limit: HISTORY_PAGE_SIZE,
           before,
           signal: controller?.signal,
-        });
+        };
+        if (timelineEventTypes !== undefined) {
+          params.eventTypes = [...timelineEventTypes];
+        }
+        const res = await api.getTimeline(requestSessionId, params);
         if (!isCurrentRequest(requestGeneration, requestAuthScope, requestSessionId, controller)) {
           return;
         }
@@ -337,6 +349,7 @@ export function useChatHistoryPagination(
       applyStateOnlyEvent,
       onInitialPageCommitted,
       onAsyncCommitError,
+      timelineEventTypes,
     ],
   );
   const loadHistoryPageRef = useRef(loadHistoryPage);
@@ -399,7 +412,7 @@ export function useChatHistoryPagination(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, api, authScope, snapshotGeneration]);
+  }, [sessionId, api, authScope, snapshotGeneration, timelineEventTypes]);
 
   // 화면 숨김/background는 owner를 버리지 않고 진행 중인 작업만 중단한다.
   // 완료된 첫 페이지·pagination cursor는 보존하여 재활성화가 중복 initial fetch를 만들지 않는다.

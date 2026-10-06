@@ -71,6 +71,7 @@ export function makeDeps(opts: {
   onInitialPageCommitted?: jest.Mock;
   onAsyncCommitError?: jest.Mock;
   authScope?: AuthScopeSnapshot;
+  timelineEventTypes?: string[];
 }) {
   const refs = opts.refs ?? makeRefs();
   return {
@@ -79,6 +80,7 @@ export function makeDeps(opts: {
     snapshotGeneration: opts.snapshotGeneration ?? 0,
     active: opts.active ?? true,
     authScope: opts.authScope ?? captureAuthScope(),
+    timelineEventTypes: opts.timelineEventTypes,
     mergeEvents: opts.mergeEvents ?? jest.fn(),
     setLastEventId: opts.setLastEventId ?? jest.fn(),
     flatListRef: opts.flatListRef ?? makeFlatListRef(),
