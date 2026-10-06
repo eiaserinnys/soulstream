@@ -143,24 +143,31 @@ describe("card orchestrator MCP roundtrip", () => {
     await seed();
     const set=await call("set_card_items",{card_id:"card-1",items:[{title:"가입 화면 확인"}]},context);
     expect(set.isError).not.toBe(true);
-    expect(set.structuredContent).toMatchObject({card:{items:[{id:1,title:"가입 화면 확인",display:"todo"}]}});
+    expect(set.structuredContent).toMatchObject({card:{id:"card-1",number:1,version:2,status:"todo"},
+      items:[{id:1,title:"가입 화면 확인",state:"todo"}]});
     const report=await call("report_card_item",{card_id:"card-1",item_id:1,state:"done",result:"가입 뒤 다음 화면이 열립니다",
       evidence:[{type:"link",url:"https://example.test/join",label:"가입 화면"}]},context);
     expect(report.isError).not.toBe(true);
-    expect(report.structuredContent).toMatchObject({card:{items:[{id:1,state:"done",display:"reported"}]}});
+    expect(report.structuredContent).toMatchObject({card:{id:"card-1",number:1,version:3,status:"todo"},
+      item:{id:1,title:"가입 화면 확인",state:"done"}});
     const added=await call("add_card_item",{card_id:"card-1",title:"안내 문구 확인",from_comment_id:"seed-comment"},context);
     expect(added.isError).not.toBe(true);
-    expect(added.structuredContent).toMatchObject({card:{items:[{}, {id:2,title:"안내 문구 확인",from:{commentId:"seed-comment",kind:"spoken"}}]}});
+    expect(added.structuredContent).toMatchObject({card:{id:"card-1",number:1,version:4,status:"todo"},
+      item:{id:2,title:"안내 문구 확인",state:"todo"}});
     const comment=await call("add_card_comment",{card_id:"card-1",text:"안내 문구를 고쳐 주세요",mode:"spoken",item_id:2},context);
     expect(comment.isError).not.toBe(true);
-    expect(comment.structuredContent).toMatchObject({itemId:2,kind:"spoken",body:"안내 문구를 고쳐 주세요"});
+    expect(comment.structuredContent).toMatchObject({id:expect.any(String),itemId:2,kind:"spoken",authorKind:"user"});
+    expect(comment.structuredContent).not.toHaveProperty("body");
     const now=await call("update_card_now",{card_id:"card-1",now:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"},context);
     expect(now.isError).not.toBe(true);
+    expect(now.structuredContent).toMatchObject({card:{id:"card-1",number:1,version:6,status:"todo"}});
     const note=await call("add_card_note",{card_id:"card-1",text:"화면 주소와 구현 기록"},context);
     expect(note.isError).not.toBe(true);
+    expect(note.structuredContent).toMatchObject({id:expect.any(String),createdAt:expect.any(String)});
+    expect(note.structuredContent).not.toHaveProperty("body");
     const notes=await call("list_card_notes",{card_id:"card-1",limit:20},context);
     expect(notes.isError).not.toBe(true);
-    expect(notes.structuredContent).toMatchObject({notes:[{kind:"note",body:"화면 주소와 구현 기록"}],nextCursor:null});
+    expect(notes.structuredContent).toMatchObject({notes:[{id:note.structuredContent?.id,kind:"note",body:"화면 주소와 구현 기록"}],nextCursor:null});
     const review=await call("request_card_review",{card_id:"card-1",ask:"가입과 수정 화면을 확인해 주세요"},context);
     expect(review.isError).not.toBe(true);
     const detail=await call("get_card",{card_id:"card-1"},context);
