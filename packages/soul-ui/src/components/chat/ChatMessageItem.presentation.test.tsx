@@ -106,6 +106,7 @@ describe("ChatMessageItem presentation", () => {
     const button = host.querySelector<HTMLButtonElement>('[data-slot="collapsible-caption"] button')!;
     expect(button.textContent).toContain("컨텍스트 약 63.0% · 정가 $0.62");
     expect(button.querySelector("span")?.className).toContain("truncate");
+    expect(button.querySelector("span")?.classList.contains("break-keep")).toBe(false);
 
     act(() => button.click());
 
@@ -122,7 +123,22 @@ describe("ChatMessageItem presentation", () => {
     expect(expandedButton.classList.contains("w-full")).toBe(false);
     expect(expandedButton.classList.contains("max-w-full")).toBe(true);
     expect(details.textContent).toBe(completeText);
+    for (const text of [expandedTitle, details.firstElementChild!]) {
+      expect(text.classList.contains("break-keep")).toBe(true);
+      expect(text.classList.contains("break-words")).toBe(true);
+    }
     expect(caption.textContent?.match(/컨텍스트 약 645,367 \/ 1,024,000 \(63\.0%\)/g)).toHaveLength(1);
+
+    act(() => root?.render(createElement(ChatMessageItem, {
+      msg: makeMessage("system", "jev-default", {
+        treeNodeType: "persistent_jev_candidates",
+        jevCandidates: [],
+      }),
+    })));
+    const defaultButton = host.querySelector("button")!;
+    expect(defaultButton.querySelector("span")?.classList.contains("break-keep")).toBe(false);
+    act(() => defaultButton.click());
+    expect(defaultButton.querySelector("span")?.classList.contains("break-keep")).toBe(false);
   });
 
   it.each<[string, Partial<ChatMessage>, ChatMessage["contextUsageData"] | undefined, string]>([

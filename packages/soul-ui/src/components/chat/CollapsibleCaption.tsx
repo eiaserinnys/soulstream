@@ -44,7 +44,7 @@ export function CollapsibleCaption({
           size="xs"
           variant="ghost"
         >
-          <span className={`min-w-0 ${wrapTitle ? "max-w-full whitespace-normal break-words" : "truncate"} ${align === "end" ? "text-right" : "text-left"}`}>{visibleTitle}</span>
+          <span className={`min-w-0 ${wrapTitle ? "max-w-full whitespace-normal break-keep break-words" : "truncate"} ${align === "end" ? "text-right" : "text-left"}`}>{visibleTitle}</span>
           <DisclosureActionIcon expanded={expanded} />
         </Button>
         <div className={`mt-0.5 min-w-0 space-y-0.5 ${align === "end" ? "max-w-full text-right" : ""}`} hidden={!expanded} id={contentId}>

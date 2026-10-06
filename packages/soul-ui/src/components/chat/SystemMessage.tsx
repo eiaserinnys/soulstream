@@ -33,7 +33,7 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
     alignmentInset="content"
   >
     {usageCaption.contextText && usageCaption.completeText
-      ? <div className="min-w-0 whitespace-normal break-words text-xs text-muted-foreground">{usageCaption.completeText}</div>
+      ? <div className="min-w-0 whitespace-normal break-keep break-words text-xs text-muted-foreground">{usageCaption.completeText}</div>
       : null}
   </CollapsibleCaption>;
 
