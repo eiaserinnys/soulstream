@@ -205,7 +205,7 @@ function isFreshObservation(observedAt: string | null, now: Date): boolean {
 
 function toAccountObservation(
   result: Pick<ProviderLimits,
-    "weeklyUsedPercent" | "weeklyResetAt" | "shortUsedPercent" | "shortResetAt" | "quotas">,
+    "weeklyUsedPercent" | "weeklyResetAt" | "shortUsedPercent" | "shortResetAt">,
   observedAt: string | null,
   now: Date,
 ): AccountObservation {
@@ -213,14 +213,11 @@ function toAccountObservation(
     ? null
     : 100 - result.weeklyUsedPercent
       - ((result.weeklyResetAt - now.getTime() / 1_000) / (7 * 24 * 60 * 60)) * 100;
-  const weeklyQuota = result.quotas.find((quota) =>
-    quota.window === "7d"
-    && quota.resetAt === result.weeklyResetAt
-    && quota.usedPercent === result.weeklyUsedPercent,
-  );
   return {
     weekly_headroom: weeklyHeadroom,
-    weekly_remaining_percent: weeklyQuota?.remainingPercent ?? null,
+    weekly_remaining_percent: result.weeklyUsedPercent === null
+      ? null
+      : 100 - result.weeklyUsedPercent,
     short_remaining_percent: result.shortUsedPercent === null
       ? null
       : 100 - result.shortUsedPercent,

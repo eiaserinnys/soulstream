@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
-import type { ProviderUsageCommandHandler } from "../../src/auth/provider_usage.js";
+import {
+  codexLimitsFromUsageResponse,
+  type ProviderUsageCommandHandler,
+} from "../../src/auth/provider_usage.js";
 import {
   rememberProviderUsageObservation,
   resetProviderUsageObservationMemo,
 } from "../../src/auth/provider_usage_observation.js";
+import { decidePersistentGeneration } from "../../src/task/persistent_decision.js";
 import { buildPersistentDecisionInput } from "../../src/task/persistent_decision_input.js";
 
 const now = new Date("2026-10-06T00:00:00.000Z");
@@ -34,7 +38,7 @@ function makeTask(): Task {
   };
 }
 
-function makeUsage(weeklyUsedPercent: number, shortUsedPercent: number) {
+function makeUsage(weeklyUsedPercent: number, shortUsedPercent: number, weeklyWindow = "7d") {
   const weeklyResetAt = now.getTime() / 1_000 + 86_400;
   return {
     status: "auto" as const,
@@ -52,7 +56,7 @@ function makeUsage(weeklyUsedPercent: number, shortUsedPercent: number) {
     quotas: [{
       id: "weekly",
       label: "7일",
-      window: "7d",
+      window: weeklyWindow,
       unit: null,
       used: null,
       remaining: null,
@@ -154,7 +158,7 @@ describe("buildPersistentDecisionInput", () => {
       fetchUsage: vi.fn(),
     } as unknown as ProviderUsageCommandHandler;
     rememberProviderUsageObservation("claude", makeUsage(35, 20), now.toISOString());
-    rememberProviderUsageObservation("codex", makeUsage(45, 15), now.toISOString());
+    rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
 
     const input = await buildPersistentDecisionInput(
       { task, trigger: "arrival", now },
@@ -192,9 +196,10 @@ describe("buildPersistentDecisionInput", () => {
 
   it("forces one usage refresh for limit_hit even when observations are fresh", async () => {
     const task = makeTask();
-    const usage = makeUsage(35, 20);
-    rememberProviderUsageObservation("claude", usage, now.toISOString());
-    rememberProviderUsageObservation("codex", usage, now.toISOString());
+    const claudeUsage = makeUsage(35, 20);
+    const codexUsage = makeUsage(35, 20, "168h");
+    rememberProviderUsageObservation("claude", claudeUsage, now.toISOString());
+    rememberProviderUsageObservation("codex", codexUsage, now.toISOString());
     const fetchUsage = vi.fn(async () => ({ success: true }));
 
     const input = await buildPersistentDecisionInput(
@@ -214,14 +219,64 @@ describe("buildPersistentDecisionInput", () => {
     expect(input.accounts.codex?.weekly_remaining_percent).toBe(65);
   });
 
+  it("switches using weekly quota from normalized Codex usage through input collection", async () => {
+    const task = makeTask();
+    const codexUsage = codexLimitsFromUsageResponse({
+      plan_type: "pro",
+      rate_limit: {
+        primary_window: {
+          used_percent: 20,
+          limit_window_seconds: 604_800,
+          reset_at: Math.floor(Date.parse("2026-10-10T00:00:00.000Z") / 1_000),
+        },
+        secondary_window: {
+          used_percent: 20,
+          limit_window_seconds: 18_000,
+          reset_at: Math.floor(Date.parse("2026-10-06T05:00:00.000Z") / 1_000),
+        },
+      },
+    });
+    expect(codexUsage.quotas.find((quota) => quota.id === "codex:7d")?.window).toBe("168h");
+    rememberProviderUsageObservation("claude", makeUsage(35, 20), now.toISOString());
+    const fetchUsage = vi.fn(async () => {
+      rememberProviderUsageObservation("codex", codexUsage, now.toISOString());
+      return { success: true };
+    });
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "limit_hit", now, limitResetAt: "2026-10-06T01:00:00.000Z" },
+      {
+        db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+    const decision = decidePersistentGeneration(input);
+
+    expect(fetchUsage).toHaveBeenCalledOnce();
+    expect(input.accounts.codex?.weekly_remaining_percent).toBe(80);
+    expect(decision).toMatchObject({
+      action: "new_generation",
+      target_preset: "codex-6.1-sol",
+      rule: "limit_hit.switch",
+    });
+  });
+
   it("keeps the last provider observations when forced limit_hit refresh fails", async () => {
     const task = makeTask();
     const oldObservation = {
       ...makeUsage(35, 20),
       observedAt: "2026-10-05T00:00:00.000Z",
     };
+    const oldCodexObservation = {
+      ...makeUsage(35, 20, "168h"),
+      observedAt: oldObservation.observedAt,
+    };
     rememberProviderUsageObservation("claude", oldObservation, "2026-10-05T00:00:00.000Z");
-    rememberProviderUsageObservation("codex", oldObservation, "2026-10-05T00:00:00.000Z");
+    rememberProviderUsageObservation("codex", oldCodexObservation, "2026-10-05T00:00:00.000Z");
     const fetchUsage = vi.fn(async () => ({ success: false }));
 
     const input = await buildPersistentDecisionInput(
@@ -270,9 +325,10 @@ describe("buildPersistentDecisionInput", () => {
       _limit: number,
       eventTypes?: string[],
     ) => eventTypes ? [oldGenerationMetadata] : []);
-    const usage = makeUsage(35, 20);
-    rememberProviderUsageObservation("claude", usage);
-    rememberProviderUsageObservation("codex", usage);
+    const claudeUsage = makeUsage(35, 20);
+    const codexUsage = makeUsage(35, 20, "168h");
+    rememberProviderUsageObservation("claude", claudeUsage);
+    rememberProviderUsageObservation("codex", codexUsage);
 
     const input = await buildPersistentDecisionInput(
       { task, trigger: "arrival", now },
@@ -293,16 +349,17 @@ describe("buildPersistentDecisionInput", () => {
   it("defaults missing context and checkpoints, and refreshes stale provider observations once", async () => {
     const task = makeTask();
     const readEvents = vi.fn().mockResolvedValue([]);
-    const refreshed = makeUsage(30, 10);
+    const refreshedClaude = makeUsage(30, 10);
+    const refreshedCodex = makeUsage(30, 10, "168h");
     const providerUsage = {
       fetchUsage: vi.fn(async () => {
-        rememberProviderUsageObservation("claude", refreshed, now.toISOString());
-        rememberProviderUsageObservation("codex", refreshed, now.toISOString());
+        rememberProviderUsageObservation("claude", refreshedClaude, now.toISOString());
+        rememberProviderUsageObservation("codex", refreshedCodex, now.toISOString());
         return { success: true };
       }),
     } as unknown as ProviderUsageCommandHandler;
     rememberProviderUsageObservation("claude", {
-      ...refreshed,
+      ...refreshedClaude,
       observedAt: "2026-10-05T23:00:00.000Z",
     }, new Date(now.getTime() - 301_000).toISOString());
 
@@ -335,8 +392,12 @@ describe("buildPersistentDecisionInput", () => {
       ...makeUsage(35, 20),
       observedAt: "2026-10-05T00:00:00.000Z",
     };
+    const oldCodexObservation = {
+      ...makeUsage(35, 20, "168h"),
+      observedAt: oldObservation.observedAt,
+    };
     rememberProviderUsageObservation("claude", oldObservation, "2026-10-05T00:00:00.000Z");
-    rememberProviderUsageObservation("codex", oldObservation, "2026-10-05T00:00:00.000Z");
+    rememberProviderUsageObservation("codex", oldCodexObservation, "2026-10-05T00:00:00.000Z");
     const fetchUsage = vi.fn(async () => ({ success: false }));
 
     const input = await buildPersistentDecisionInput(
@@ -364,9 +425,10 @@ describe("buildPersistentDecisionInput", () => {
 
   it("preserves a missing provider source timestamp for the decision stale check", async () => {
     const task = makeTask();
-    const usage = { ...makeUsage(35, 20), observedAt: null };
-    rememberProviderUsageObservation("claude", usage, now.toISOString());
-    rememberProviderUsageObservation("codex", usage, now.toISOString());
+    const claudeUsage = { ...makeUsage(35, 20), observedAt: null };
+    const codexUsage = { ...makeUsage(35, 20, "168h"), observedAt: null };
+    rememberProviderUsageObservation("claude", claudeUsage, now.toISOString());
+    rememberProviderUsageObservation("codex", codexUsage, now.toISOString());
     const fetchUsage = vi.fn();
 
     const input = await buildPersistentDecisionInput(
@@ -400,9 +462,10 @@ describe("buildPersistentDecisionInput", () => {
       searchable_text: "",
       created_at: new Date("2026-10-05T23:55:00.000Z"),
     };
-    const usage = makeUsage(35, 20);
-    rememberProviderUsageObservation("claude", usage);
-    rememberProviderUsageObservation("codex", usage);
+    const claudeUsage = makeUsage(35, 20);
+    const codexUsage = makeUsage(35, 20, "168h");
+    rememberProviderUsageObservation("claude", claudeUsage);
+    rememberProviderUsageObservation("codex", codexUsage);
 
     const input = await buildPersistentDecisionInput(
       { task, trigger: "arrival", now },

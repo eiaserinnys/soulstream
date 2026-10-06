@@ -84,7 +84,7 @@ function makeModelCatalog(): Pick<ModelCatalog, "resolve"> {
   };
 }
 
-function makeUsage(): ProviderLimits {
+function makeUsage(weeklyWindow = "7d"): ProviderLimits {
   const weeklyResetAt = Date.now() / 1_000 + 7 * 24 * 60 * 60;
   return {
     status: "auto",
@@ -102,7 +102,7 @@ function makeUsage(): ProviderLimits {
     quotas: [{
       id: "weekly",
       label: "7일",
-      window: "7d",
+      window: weeklyWindow,
       unit: null,
       used: null,
       remaining: null,
@@ -280,7 +280,7 @@ describe("TaskExecutor persistent decision wiring", () => {
     ];
     const runtime = makeRuntime(task, events);
     rememberProviderUsageObservation("claude", makeUsage());
-    rememberProviderUsageObservation("codex", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
     const persistentSessions = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
     const contextBuilder = makeContextBuilder();
     const sessionMutations = { setModelSelection: vi.fn(async () => undefined) };
@@ -350,7 +350,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       created_at: new Date(now - 60_000),
     }]);
     rememberProviderUsageObservation("claude", makeUsage());
-    rememberProviderUsageObservation("codex", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
     const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
     const executor = taskExecutor(task, runtime, () => makeEngine([{
       type: "complete",
@@ -390,7 +390,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       created_at: new Date(now - 60_000),
     }]);
     rememberProviderUsageObservation("claude", makeUsage());
-    rememberProviderUsageObservation("codex", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
     const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
     const executor = taskExecutor(task, runtime, () => makeEngine([{
       type: "complete",
@@ -426,9 +426,10 @@ describe("TaskExecutor persistent decision wiring", () => {
     const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
     const fetchUsage = vi.fn(async () => {
       await refreshGate;
-      const usage = makeUsage();
-      rememberProviderUsageObservation("claude", usage);
-      rememberProviderUsageObservation("codex", usage);
+      const claudeUsage = makeUsage();
+      const codexUsage = makeUsage("168h");
+      rememberProviderUsageObservation("claude", claudeUsage);
+      rememberProviderUsageObservation("codex", codexUsage);
       return { success: true } as never;
     });
     (runtime.providerUsage as unknown as { fetchUsage: typeof fetchUsage }).fetchUsage = fetchUsage;
@@ -472,7 +473,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       created_at: new Date(now - 60_000),
     }]);
     rememberProviderUsageObservation("claude", makeUsage());
-    rememberProviderUsageObservation("codex", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
     const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
     const contextBuilder = makeContextBuilder();
     const sessionMutations = { setModelSelection: vi.fn(async () => undefined) };
@@ -527,7 +528,7 @@ describe("TaskExecutor persistent decision wiring", () => {
     }];
     const runtime = makeRuntime(task, events);
     rememberProviderUsageObservation("claude", makeUsage());
-    rememberProviderUsageObservation("codex", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
     const engine = makeEngine([{
       type: "complete",
       usage: {},
@@ -571,7 +572,7 @@ describe("TaskExecutor persistent decision wiring", () => {
     });
     const runtime = makeRuntime(task, []);
     rememberProviderUsageObservation("claude", makeUsage());
-    rememberProviderUsageObservation("codex", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
     const engine: EnginePort = {
       ...makeEngine([]),
       async *execute(): AsyncIterable<SSEEventPayload> {
@@ -601,7 +602,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       resumeScheduleRuntime.service.scheduleResumeAfterLimit(...args),
     );
     rememberProviderUsageObservation("claude", makeUsage());
-    rememberProviderUsageObservation("codex", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
     const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
     const executor = taskExecutor(task, runtime, () => limitHitEngine(resetAt));
     const startedAt = Date.now();
@@ -681,7 +682,7 @@ describe("TaskExecutor persistent decision wiring", () => {
   it("waits until the event reset and preserves nonpersistent limit behavior", async () => {
     const task = makeTask();
     const resetAt = "2026-10-06T13:00:00.000Z";
-    const depleted = makeUsage();
+    const depleted = makeUsage("168h");
     depleted.shortUsedPercent = 95;
     const runtime = makeRuntime(task, []);
     rememberProviderUsageObservation("claude", makeUsage());
