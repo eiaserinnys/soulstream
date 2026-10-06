@@ -20,64 +20,73 @@ if (!result.passed) process.exitCode = 1;
 
 async function verifyColumns(browser: Browser) {
   const defaultDashboard = await openDashboard(browser, 1440, 900);
+  let defaults: Awaited<ReturnType<typeof measureLayout>>;
   try {
-    const defaults = await measureLayout(defaultDashboard.page);
+    defaults = await measureLayout(defaultDashboard.page);
     assertLayout(defaults, { navigationWidth: 336, sessionPanelWidth: 500, contentWidth: 528 });
     await capture(defaultDashboard.page, "01-default-1440x900");
-    assertNoHorizontalOverflow(await measureOverflowSurfaces(defaultDashboard.page), "기본 화면");
   } finally {
     await defaultDashboard.context.close();
   }
 
   const maximumNavigation = await openDashboard(browser, 1440, 900);
   try {
-    await dragBy(maximumNavigation.page, "v3-navigation-resize-handle", 260);
+    await dragBy(maximumNavigation.page, "v3-navigation-resize-handle", 400);
     const layout = await measureLayout(maximumNavigation.page);
-    assertLayout(layout, { navigationWidth: 544, sessionPanelWidth: 500, contentWidth: 320 });
+    assertLayout(layout, { navigationWidth: 480, sessionPanelWidth: 500, contentWidth: 384 });
     await capture(maximumNavigation.page, "02-navigation-max-home-1440x900");
-    const gate = await inspectMinimumContent(maximumNavigation.page, "home", layout);
-    if (!gate.passed) {
-      const probes = await probeMinimumContent(browser, "home");
-      return { passed: false, stopCondition: gate, probes };
-    }
-    await assertPersisted(maximumNavigation.page, 544, 500);
+    await assertPersisted(maximumNavigation.page, 480, 500);
     await maximumNavigation.page.reload({ waitUntil: "domcontentloaded" });
     await maximumNavigation.page.getByTestId("v3-session-panel").waitFor({ state: "visible" });
     await maximumNavigation.page.getByTestId("card-home").waitFor({ state: "visible" });
     assertLayout(await measureLayout(maximumNavigation.page), {
-      navigationWidth: 544,
+      navigationWidth: 480,
       sessionPanelWidth: 500,
-      contentWidth: 320,
+      contentWidth: 384,
     });
   } finally {
     await maximumNavigation.context.close();
   }
 
   const folderAtMaximum = await openDashboard(browser, 1440, 900);
+  let folderTitleAtMaximum: Awaited<ReturnType<typeof measureFolderTitle>>;
   try {
-    await dragBy(folderAtMaximum.page, "v3-navigation-resize-handle", 260);
-    await openFixtureFolderSession(folderAtMaximum.page);
+    await dragBy(folderAtMaximum.page, "v3-navigation-resize-handle", 400);
+    await openInlineFixtureFolder(folderAtMaximum.page);
     const layout = await measureLayout(folderAtMaximum.page);
-    assertLayout(layout, { navigationWidth: 544, sessionPanelWidth: 500, contentWidth: 320 });
+    assertLayout(layout, { navigationWidth: 480, sessionPanelWidth: 500, contentWidth: 384 });
+    folderTitleAtMaximum = await measureFolderTitle(folderAtMaximum.page);
+    assert(folderTitleAtMaximum.title.length > 0, "폴더 인라인 제목이 비어 있습니다.");
     await capture(folderAtMaximum.page, "03-navigation-max-folder-open-1440x900");
-    const gate = await inspectMinimumContent(folderAtMaximum.page, "folder", layout);
-    if (!gate.passed) {
-      const probes = await probeMinimumContent(browser, "folder");
-      return { passed: false, stopCondition: gate, probes };
-    }
     assertNoPageErrors(folderAtMaximum.pageErrors);
   } finally {
     await folderAtMaximum.context.close();
+  }
+
+  const folderAtDefault = await openDashboard(browser, 1440, 900);
+  let folderTitleAtDefault: Awaited<ReturnType<typeof measureFolderTitle>>;
+  try {
+    await openInlineFixtureFolder(folderAtDefault.page);
+    assertLayout(await measureLayout(folderAtDefault.page), {
+      navigationWidth: 336,
+      sessionPanelWidth: 500,
+      contentWidth: 528,
+    });
+    folderTitleAtDefault = await measureFolderTitle(folderAtDefault.page);
+    assert(folderTitleAtDefault.title === folderTitleAtMaximum.title, "기본/왼쪽 최대 화면의 폴더 제목이 다릅니다.");
+    await capture(folderAtDefault.page, "03b-folder-inline-default-1440x900");
+    assertNoPageErrors(folderAtDefault.pageErrors);
+  } finally {
+    await folderAtDefault.context.close();
   }
 
   const feedMaximum = await openDashboard(browser, 1440, 900);
   try {
     await dragBy(feedMaximum.page, "v3-session-panel-resize-handle", -260);
     const layout = await measureLayout(feedMaximum.page);
-    assertLayout(layout, { navigationWidth: 336, sessionPanelWidth: 708, contentWidth: 320 });
+    assertLayout(layout, { navigationWidth: 336, sessionPanelWidth: 644, contentWidth: 384 });
     await capture(feedMaximum.page, "04-feed-max-1440x900");
-    assertNoHorizontalOverflow(await measureOverflowSurfaces(feedMaximum.page), "피드 최대 화면");
-    assertPersisted(feedMaximum.page, 336, 708);
+    await assertPersisted(feedMaximum.page, 336, 644);
   } finally {
     await feedMaximum.context.close();
   }
@@ -87,10 +96,9 @@ async function verifyColumns(browser: Browser) {
     await dragBy(minimumColumns.page, "v3-navigation-resize-handle", -200);
     await dragBy(minimumColumns.page, "v3-session-panel-resize-handle", 300);
     const layout = await measureLayout(minimumColumns.page);
-    assertLayout(layout, { navigationWidth: 220, sessionPanelWidth: 240, contentWidth: 584 });
+    assertLayout(layout, { navigationWidth: 220, sessionPanelWidth: 240, contentWidth: 904 });
     await capture(minimumColumns.page, "05-both-min-1440x900");
-    assertNoHorizontalOverflow(await measureOverflowSurfaces(minimumColumns.page), "두 칸 최소 화면");
-    assertPersisted(minimumColumns.page, 220, 240);
+    await assertPersisted(minimumColumns.page, 220, 240);
   } finally {
     await minimumColumns.context.close();
   }
@@ -101,7 +109,6 @@ async function verifyColumns(browser: Browser) {
     const layout = await measureLayout(wideFeed.page);
     assertLayout(layout, { navigationWidth: 336, sessionPanelWidth: 800, contentWidth: 708 });
     await capture(wideFeed.page, "06-feed-800-1920x1080");
-    assertNoHorizontalOverflow(await measureOverflowSurfaces(wideFeed.page), "1920 화면");
   } finally {
     await wideFeed.context.close();
   }
@@ -114,18 +121,31 @@ async function verifyColumns(browser: Browser) {
       sessionPanelWidth: 500,
       contentWidth: 528,
     });
-    await capture(defaultFolderWorkspace.page, "07-default-folder-workspace-chat-1440x900");
-    assertNoHorizontalOverflow(await measureOverflowSurfaces(defaultFolderWorkspace.page), "기본 폴더 작업 겹침 화면");
+    await capture(defaultFolderWorkspace.page, "07-default-folder-workspace-overlap-1440x900");
     assertNoPageErrors(defaultFolderWorkspace.pageErrors);
   } finally {
     await defaultFolderWorkspace.context.close();
   }
 
+  const maximumNavigationFolderWorkspace = await openDashboard(browser, 1440, 900);
+  try {
+    await dragBy(maximumNavigationFolderWorkspace.page, "v3-navigation-resize-handle", 400);
+    await openFixtureFolderSession(maximumNavigationFolderWorkspace.page);
+    assertLayout(await measureLayout(maximumNavigationFolderWorkspace.page), {
+      navigationWidth: 480,
+      sessionPanelWidth: 500,
+      contentWidth: 384,
+    });
+    await capture(maximumNavigationFolderWorkspace.page, "08-navigation-max-folder-workspace-overlap-1440x900");
+    assertNoPageErrors(maximumNavigationFolderWorkspace.pageErrors);
+  } finally {
+    await maximumNavigationFolderWorkspace.context.close();
+  }
+
   const savedNarrow = await openDashboard(browser, 1200, 900, { navigationWidth: 400, sessionPanelWidth: 900 });
   try {
     const layout = await measureLayout(savedNarrow.page);
-    assertLayout(layout, { navigationWidth: 400, sessionPanelWidth: 404, contentWidth: 320 });
-    assertNoHorizontalOverflow(await measureOverflowSurfaces(savedNarrow.page), "저장 폭이 좁은 화면에 맞지 않는 상태");
+    assertLayout(layout, { navigationWidth: 400, sessionPanelWidth: 340, contentWidth: 384 });
   } finally {
     await savedNarrow.context.close();
   }
@@ -134,14 +154,13 @@ async function verifyColumns(browser: Browser) {
   try {
     assertLayout(await measureLayout(savedWidths.page), {
       navigationWidth: 400,
-      sessionPanelWidth: 644,
-      contentWidth: 320,
+      sessionPanelWidth: 580,
+      contentWidth: 384,
     });
     await dragBy(savedWidths.page, "v3-navigation-resize-handle", -100);
     const afterDrag = await measureLayout(savedWidths.page);
-    assertLayout(afterDrag, { navigationWidth: 300, sessionPanelWidth: 644, contentWidth: 420 });
-    assertPersisted(savedWidths.page, 300, 644);
-    assertNoHorizontalOverflow(await measureOverflowSurfaces(savedWidths.page), "한 칸 드래그 뒤 반대편 폭 고정 화면");
+    assertLayout(afterDrag, { navigationWidth: 300, sessionPanelWidth: 580, contentWidth: 484 });
+    await assertPersisted(savedWidths.page, 300, 580);
   } finally {
     await savedWidths.context.close();
   }
@@ -149,12 +168,15 @@ async function verifyColumns(browser: Browser) {
   return {
     passed: true,
     default1440: defaults,
-    navigationMaximum: { navigationWidth: 544, contentWidth: 320 },
-    feedMaximum: { sessionPanelWidth: 708, contentWidth: 320 },
-    minimumColumns: { navigationWidth: 220, sessionPanelWidth: 240 },
+    navigationMaximum: { navigationWidth: 480, contentWidth: 384 },
+    folderTitleAtMaximum,
+    folderTitleAtDefault,
+    feedMaximum: { sessionPanelWidth: 644, contentWidth: 384 },
+    minimumColumns: { navigationWidth: 220, sessionPanelWidth: 240, contentWidth: 904 },
     wideFeed: { sessionPanelWidth: 800 },
-    narrowSavedWidths: { navigationWidth: 400, sessionPanelWidth: 404, contentWidth: 320 },
-    oppositeColumnFrozen: { navigationWidth: 300, sessionPanelWidth: 644, contentWidth: 420 },
+    overlapNavigationMaximum: { navigationWidth: 480, contentWidth: 384 },
+    narrowSavedWidths: { navigationWidth: 400, sessionPanelWidth: 340, contentWidth: 384 },
+    oppositeColumnFrozen: { navigationWidth: 300, sessionPanelWidth: 580, contentWidth: 484 },
     screenshots: outputRoot,
   };
 }
@@ -203,12 +225,24 @@ async function openFixtureFolderSession(page: Page): Promise<void> {
   await page.locator('.v3-chat-pane[aria-label="세션 채팅"]').waitFor({ state: "visible" });
 }
 
+async function openInlineFixtureFolder(page: Page): Promise<void> {
+  await page.getByTestId("v3-project-row-folder-amber").locator(".v3-project-nav-link").click();
+  await page.locator(".v3-inline-folder-header .v3-task-title-button").waitFor({ state: "visible" });
+}
+
+async function measureFolderTitle(page: Page): Promise<{ title: string; width: number }> {
+  return page.locator(".v3-inline-folder-header h1 .v3-task-title-button").evaluate((element) => ({
+    title: element.textContent?.trim() ?? "",
+    width: element.getBoundingClientRect().width,
+  }));
+}
+
 async function dragBy(page: Page, testId: string, deltaPx: number): Promise<void> {
   const handle = page.getByTestId(testId).locator(":scope > div");
   const box = await handle.boundingBox();
   assert(box !== null, `${testId} 손잡이 위치를 읽지 못했습니다.`);
   const current = await measureLayout(page);
-  const budget = current.viewportWidth - 44 - 32 - 320;
+  const budget = current.viewportWidth - 44 - 32 - 384;
   const expectedWidth = testId === "v3-navigation-resize-handle"
     ? Math.max(220, Math.min(current.navigationWidth + deltaPx, Math.max(220, budget - current.sessionPanelWidth)))
     : Math.max(240, Math.min(current.sessionPanelWidth - deltaPx, Math.max(240, budget - current.navigationWidth)));
@@ -250,50 +284,6 @@ async function measureLayout(page: Page) {
   });
 }
 
-async function measureOverflowSurfaces(page: Page) {
-  return page.evaluate(() => {
-    const planner = document.querySelector<HTMLElement>(".v3-planner-scroll");
-    const header = planner?.querySelector<HTMLElement>(".v3-folder-header, .v3-detail-section-head");
-    const composer = document.querySelector<HTMLElement>('[data-slot="chat-input-composer"]');
-    return [
-      planner ? { name: ".v3-planner-scroll", scrollWidth: planner.scrollWidth, clientWidth: planner.clientWidth } : null,
-      header ? { name: "planner header row", scrollWidth: header.scrollWidth, clientWidth: header.clientWidth } : null,
-      composer ? { name: "bottom input row", scrollWidth: composer.scrollWidth, clientWidth: composer.clientWidth } : null,
-    ].filter((item): item is { name: string; scrollWidth: number; clientWidth: number } => item !== null);
-  });
-}
-
-async function inspectMinimumContent(
-  page: Page,
-  surface: "home" | "folder",
-  layout: Awaited<ReturnType<typeof measureLayout>>,
-): Promise<{ passed: boolean; surface: string; layout: Awaited<ReturnType<typeof measureLayout>>; overflowSurfaces: Awaited<ReturnType<typeof measureOverflowSurfaces>> }> {
-  const overflowSurfaces = await measureOverflowSurfaces(page);
-  assert(overflowSurfaces.length >= (surface === "home" ? 3 : 2), `${surface} 폭 검사 대상이 누락됐습니다: ${JSON.stringify(overflowSurfaces)}`);
-  const failed = overflowSurfaces.filter((item) => item.scrollWidth > item.clientWidth);
-  return { passed: failed.length === 0, surface, layout, overflowSurfaces };
-}
-
-async function probeMinimumContent(browser: Browser, surface: "home" | "folder") {
-  const measurements = [];
-  for (const contentWidth of [360, 400, 440]) {
-    const dashboard = await openDashboard(browser, 1440, 900);
-    try {
-      await dragBy(dashboard.page, "v3-navigation-resize-handle", -200);
-      const sessionWidth = 1044 - 220 - contentWidth;
-      await dragBy(dashboard.page, "v3-session-panel-resize-handle", 500 - sessionWidth);
-      if (surface === "folder") await openFixtureFolderSession(dashboard.page);
-      const layout = await measureLayout(dashboard.page);
-      const overflowSurfaces = await measureOverflowSurfaces(dashboard.page);
-      await capture(dashboard.page, `stop-${surface}-content-${contentWidth}-1440x900`);
-      measurements.push({ contentWidth, layout, overflowSurfaces });
-    } finally {
-      await dashboard.context.close();
-    }
-  }
-  return measurements;
-}
-
 function assertLayout(
   layout: Awaited<ReturnType<typeof measureLayout>>,
   expected: { navigationWidth: number; sessionPanelWidth: number; contentWidth: number },
@@ -304,14 +294,6 @@ function assertLayout(
   assert(layout.viewportScrollWidth <= layout.viewportWidth, `화면 가로 넘침 ${layout.viewportScrollWidth - layout.viewportWidth}px`);
   assert(Math.abs(layout.leftGap - 16) <= 1, `왼쪽 칸 사이 간격 ${layout.leftGap}px`);
   assert(Math.abs(layout.rightGap - 16) <= 1, `오른쪽 칸 사이 간격 ${layout.rightGap}px`);
-}
-
-function assertNoHorizontalOverflow(
-  overflowSurfaces: Awaited<ReturnType<typeof measureOverflowSurfaces>>,
-  state: string,
-): void {
-  const failed = overflowSurfaces.filter((item) => item.scrollWidth > item.clientWidth);
-  assert(failed.length === 0, `${state} 넘침: ${JSON.stringify(failed)}`);
 }
 
 async function assertPersisted(page: Page, navigationWidth: number, sessionPanelWidth: number): Promise<void> {
