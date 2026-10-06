@@ -6,6 +6,8 @@
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import { redirectRetiredDashboardPathname } from "./dashboard-routes";
+import { usePersistentSessionStartup } from './v3/use-persistent-session-startup';
+import { V3Toast } from './v3/V3Toast';
 
 const V3DashboardLayout = lazy(() =>
   import("./v3/V3DashboardLayout").then((mod) => ({
@@ -28,6 +30,7 @@ const PersistentSessionScreen = lazy(() => import('./v3/PersistentSessionScreen'
 
 export function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
+  const startupToast = usePersistentSessionStartup(pathname);
 
   useEffect(() => {
     const handlePopState = () => setPathname(window.location.pathname);
@@ -49,7 +52,7 @@ export function App() {
   }, []);
 
   return (
-    <Suspense fallback={null}>
+    <><V3Toast message={startupToast}/><Suspense fallback={null}>
       {/^\/persistent(?:\/[^/]+)?\/?$/.test(pathname)
         ? <PersistentSessionScreen sessionId={pathname.split('/')[2] ? decodeURIComponent(pathname.split('/')[2]!) : undefined}/>
         : pathname === "/dialogues/ios" || pathname === "/dialogues/ios/"
@@ -58,6 +61,6 @@ export function App() {
         ? <IosComponentsReviewPage />
         : pathname === "/dialogues" || pathname === "/dialogues/" ? <DialoguesReviewPage />
         : pathname === "/components" ? <ComponentsReviewLayout /> : <V3DashboardLayout />}
-    </Suspense>
+    </Suspense></>
   );
 }

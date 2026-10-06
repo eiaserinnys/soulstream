@@ -1,0 +1,4 @@
+/** @vitest-environment jsdom */
+import { act } from 'react';import { createRoot } from 'react-dom/client';import { expect,it } from 'vitest';import { ProfileAvatar } from './ProfileAvatar';
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT=true;
+it('keeps the rounded default and adds a circle without changing avatar size',()=>{const host=document.createElement('div');const root=createRoot(host);act(()=>root.render(<ProfileAvatar role="assistant" hasPortrait portraitUrl="/portrait" fallbackEmoji="🤖"/>));expect(host.querySelector('img')?.className).toBe('w-8 h-8 rounded-lg shrink-0 object-cover');act(()=>root.render(<ProfileAvatar role="assistant" hasPortrait portraitUrl="/portrait" fallbackEmoji="🤖" shape="circle"/>));expect(host.querySelector('img')?.className).toBe('w-8 h-8 rounded-full shrink-0 object-cover');act(()=>root.unmount());});

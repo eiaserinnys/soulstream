@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "./App";
+vi.mock('./v3/use-persistent-session-startup',()=>({usePersistentSessionStartup:()=>null}));
 
 vi.mock("./v3/V3DashboardLayout", () => ({
   V3DashboardLayout: () => <div data-testid="dashboard" />,

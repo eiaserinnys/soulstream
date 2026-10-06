@@ -8,6 +8,7 @@ import {
 import { Home, Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
+import { PersistentSessionEntry } from './PersistentSessionEntry';
 
 export function V3GlobalToolbar({
   onOpenConfig,
@@ -70,6 +71,7 @@ export function V3GlobalToolbar({
         <kbd>⌘K</kbd>
       </button>
       <div className="dashboard-toolbar-actions">
+        <PersistentSessionEntry/>
         <ConfigButton variant="chrome" onClick={onOpenConfig} />
         <ThemeToggle variant="chrome" />
       </div>
