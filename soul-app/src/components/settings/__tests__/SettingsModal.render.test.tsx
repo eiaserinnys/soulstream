@@ -56,5 +56,5 @@ test('the open-on-start switch writes an account and server local preference imm
   fireEvent(toggle, 'valueChange', true);
 
   expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul.test', 'review@example.com'))
-    .toEqual({ openOnStart: true, lastSessionId: null });
+    .toEqual({ openOnStart: true, lastSessionId: null, collapsedTaskGroups: ['todo'] });
 });
