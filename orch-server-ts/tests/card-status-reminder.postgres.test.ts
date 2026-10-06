@@ -55,6 +55,12 @@ describe("durable card status reminders", () => {
     await receipt("root", rootStatus, 60000, reason);
     return id;
   }
+  async function deliveredComment(cardId: string, body: string, idempotencyKey: string) {
+    const comment = await cards.addComment({ ...human, cardId, body, idempotencyKey });
+    const id = String(comment.id);
+    await cards.markCommentDelivered(cardId, id);
+    return { id };
+  }
   async function tick() { now += 60000; await dispatcher.tick(); await dispatcher.drain(); }
   async function notice(eventId: number, aggregate = "pending", age = 0) {
     await h.sql`INSERT INTO session_deliveries(delivery_id,target_session_id,relation_key,intent,source,payload_hash,state,aggregate_state,created_at)
@@ -89,6 +95,56 @@ describe("durable card status reminders", () => {
     await cards.setCardStatus({ ...human, cardId: id, status: "blocked" });
     await dispatcher.sessionEnded("root"); expect(messages).toHaveBeenCalledTimes(2);
     await unchanged(id, "blocked");
+  });
+  it("reminds once when a delivered user comment has no later card change", async () => {
+    const id = await seed("review", undefined, "running");
+    const comment = await deliveredComment(id, "수정해 주세요", "unhandled-comment");
+    await receipt("root");
+    await dispatcher.sessionEnded("root");
+    await dispatcher.sessionEnded("root");
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(messages.mock.calls[0]![0]).toBe("root");
+    expect(messages.mock.calls[0]![1]).toBe(`[카드 상태 확인] 카드 ${id}는 '검수'인데, 사용자 커멘트(ID ${comment.id})가 전달된 뒤 카드 상태, 항목, 커멘트에 바뀐 것이 없습니다. 수정 지시였으면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행하고, 질문이었으면 답 커멘트를 남기세요.`);
+    expect(messages.mock.calls[0]![3]!.deliveryId).toBe(`card-reminder:${id}:comment_unhandled:${comment.id}:root`);
+    await unchanged(id, "review");
+  });
+  it("does not remind after the assigned session replies to the delivered comment", async () => {
+    const id = await seed("review", undefined, "running");
+    await deliveredComment(id, "질문이 있습니다", "answered-comment");
+    await cards.addComment({ actorKind: "agent", actorSessionId: "root", cardId: id, body: "확인했습니다", mode: "reply", idempotencyKey: "comment-reply" });
+    await receipt("root");
+    await dispatcher.sessionEnded("root");
+    expect(messages).not.toHaveBeenCalled();
+    await unchanged(id, "review");
+  });
+  it("does not remind after the assigned session changes card status", async () => {
+    const id = await seed("review", undefined, "running");
+    await deliveredComment(id, "검수가 끝났습니다", "handled-by-status");
+    await cards.setCardStatus({ actorKind: "agent", actorSessionId: "root", cardId: id, status: "done" });
+    await receipt("root");
+    await dispatcher.sessionEnded("root");
+    expect(messages).not.toHaveBeenCalled();
+    await unchanged(id, "done");
+  });
+  it("does not remind while a delivery to the card tree is still pending", async () => {
+    const id = await seed("review", undefined, "running");
+    await deliveredComment(id, "반영해 주세요", "pending-delivery-comment");
+    await notice(await receipt("child"));
+    await receipt("root");
+    await dispatcher.sessionEnded("root");
+    expect(messages).not.toHaveBeenCalled();
+    await unchanged(id, "review");
+  });
+  it("does not remind for an undelivered latest user comment", async () => {
+    const id = await seed("review", undefined, "running");
+    await deliveredComment(id, "이전 요청", "older-delivered-comment");
+    const latest = await cards.addComment({ ...human, cardId: id, body: "새 요청", idempotencyKey: "latest-undelivered-comment" });
+    const latestId = String(latest.id);
+    await h.sql`UPDATE card_comments SET created_at=created_at+INTERVAL '1 second' WHERE id=${latestId}`;
+    await receipt("root");
+    await dispatcher.sessionEnded("root");
+    expect(messages).not.toHaveBeenCalled();
+    await unchanged(id, "review");
   });
   it.each([["review", "interrupted", null], ["review", "error", "limit_hit"], ["running", "completed", null], ["review", "running", null]])("not_running excludes card=%s root=%s reason=%s", async (status, rootStatus, reason) => {
     const id = await seed(status!, "initializing", rootStatus!, reason); await dispatcher.sessionEnded("root");

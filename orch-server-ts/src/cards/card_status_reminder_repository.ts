@@ -31,6 +31,13 @@ export async function readCardReminderFacts(sql: SqlClient, now: number, endedRo
           WHERE s.status IN ('initializing','running')) AS "activeTree",
         EXISTS(SELECT 1 FROM session_deliveries d JOIN tree t ON t.session_id=d.target_session_id
           WHERE d.aggregate_state='pending' AND d.created_at>${new Date(now - PENDING_DELIVERY_FAILURE_CEILING_MS)}) AS "pendingDeliveries",
+        (SELECT CASE WHEN latest_comment.delivered_at IS NOT NULL AND NOT EXISTS(
+            SELECT 1 FROM folder_operations op
+            WHERE op.target_id=c.id AND op.actor_session_id=r.session_id AND op.created_at>latest_comment.created_at
+          ) THEN latest_comment.id ELSE NULL END
+          FROM (SELECT id,delivered_at,created_at FROM card_comments
+            WHERE card_id=c.id AND author_kind='user' ORDER BY created_at DESC,id DESC LIMIT 1) latest_comment
+        ) AS "unhandledCommentId",
         EXISTS(SELECT 1 FROM tree t JOIN sessions s USING(session_id)
           WHERE s.session_id<>r.session_id AND s.status IN ('completed','error','interrupted')
             AND s.notify_completion IS DISTINCT FROM FALSE AND s.termination_detail IS DISTINCT FROM 'user_stop'
