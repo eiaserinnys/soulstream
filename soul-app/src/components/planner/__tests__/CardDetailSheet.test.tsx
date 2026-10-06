@@ -633,3 +633,24 @@ test('읽기 요약의 실패와 불러오는 중은 본문 inset과 카드 행 
   expect(StyleSheet.flatten(loading.getByTestId('card-read-summary-loading-state').props.style))
     .toMatchObject({ padding: tokens.foundation.pageInset, minHeight: tokens.foundation.minHeight.row });
 });
+
+test('PAS 위에서 기본 카드 상세와 연결 세션 탭을 읽어도 활성 세션·표시 설정·채팅 이벤트를 바꾸지 않는다', async () => {
+  const { useChatStore } = require('../../../store/chatStore');
+  const { useUIStore } = require('../../../store/uiStore');
+  useUIStore.setState({ activeSessionId: 'pas-preserved' });
+  useChatStore.setState({ persistentDisplaySettings: { sessionId: 'pas-preserved', requestId: 27,
+    settings: { show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true } } });
+  const chatBefore = useChatStore.getState();
+  const onOpenSession = jest.fn();
+  const source = { ...detail, card: { ...card, assigneeKind: 'session' as const, assigneeSessionId: 's1' } };
+  const api = { getCard: jest.fn().mockResolvedValue(source) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} onOpenSession={onOpenSession} />);
+  await waitFor(() => expect(screen.getByTestId('card-detail-frame')).toBeTruthy());
+  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
+  await waitFor(() => expect(screen.getByTestId('task-run-row-s1')).toBeTruthy());
+  expect(onOpenSession).not.toHaveBeenCalled();
+  expect(useUIStore.getState().activeSessionId).toBe('pas-preserved');
+  expect(useChatStore.getState()).toBe(chatBefore);
+  fireEvent.press(screen.getByTestId('task-run-row-s1'));
+  expect(onOpenSession).toHaveBeenCalledWith('s1');
+});

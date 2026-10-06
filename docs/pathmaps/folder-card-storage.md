@@ -102,3 +102,9 @@
 | 전달·중복 억제 | `CardDispatcherOptions.deliveryExists` → `SessionDeliveryRepository.get`, 기존 sendMessage → `sendCardChangeOnce` | ID는 `card-reminder:{cardId}:{kind}:{상태 시점의 epoch 마이크로초}:{rootSessionId}`다. 어느 상태든 같은 전달 행이 있으면 재전송하지 않는다. 수신자는 뿌리, actorKind와 caller_info.source는 system이다. pending 행 재전송은 기존 전달 경로가 담당한다. |
 
 뿌리 종료 계기에서는 세션 기본 키 조회로 종료 상태를 먼저 확인하고 실행 중 갱신은 카드 후보·트리 사실 조회를 생략한다. 리마인더 점검 전체의 예외는 warn으로 격리해 기존 한도·종료·자동배정 처리를 이어 간다. 판정과 전송은 기존 디스패처 enqueue 체인에서 카드 mutation과 순서를 맞춘다. 실패는 warn으로 남기고 다음 tick과 기존 전달 처리에 맡긴다. 리마인더는 카드 상태를 바꾸지 않으며 새 타이머·표·재시도 계층을 만들지 않는다. brief 갱신·같은 상태 재기록·디스패처 재시작에도 같은 상태 시점의 리마인더가 반복되지 않는다.
+
+## 앱 PAS 카드 상세와 복귀 (N5)
+
+`PersistentSessionScreen`의 cards scene은 기존 `PersistentSessionTaskList`와 `CardDetailContent variant="readSummary"`를 조합한다. 읽기 요약의 「카드 열기」는 phone PersistentStack.CardDetail 또는 tablet Main/PersistentSession/CardDetail native stack에 같은 카드 id를 push한다. 실제 상세는 기존 `PhoneCardDetail`/`CardDetailContent`이며 닫으면 goBack으로 동일 PAS·scene·선택 카드에 복귀한다. 일반 Daily/Folder의 CardDetail 계약은 유지한다.
+
+앱 CardDetailContent는 담당 세션 메타를 읽고 FolderSessionHistory에 목록을 전달한다. 목록의 세션 조회는 sessionStore 메타만 merge하며 담당 세션을 자동 선택하지 않는다. useChatStore 표시 설정·이벤트와 UI 활성 세션을 변경하는 경로가 없다. 세션 행을 직접 누를 때만 openSession 콜백을 실행하여 PAS를 떠나 기존 일반 대화 진입 helper로 연다. 카드 커멘트 초안은 card-comment 키, 첨부는 그 composer의 로컬 훅 상태여서 PAS ChatBody 초안과 분리돼 있다. PAS ChatBody는 상세를 열고 닫는 동안 스택 아래에 같은 session id로 마운트되어 있다.

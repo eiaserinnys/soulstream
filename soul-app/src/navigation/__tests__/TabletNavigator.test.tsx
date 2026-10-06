@@ -29,7 +29,7 @@ test('Main은 유지된 채 PAS와 같은 스택의 카드 상세를 push하고 
   const props = jest.mocked(PersistentSessionScreen).mock.calls.at(-1)![0];
   props.onOpenCard('card-1');
   expect(navigation.navigate).toHaveBeenCalledWith('CardDetail', { cardId: 'card-1' });
-  render(React.createElement(stack.screens[2].component, { route: { params: { cardId: 'card-1' } }, navigation }));
+  render(<PersistentSessionProvider>{React.createElement(stack.screens[2].component, { route: { params: { cardId: 'card-1' } }, navigation })}</PersistentSessionProvider>);
   const cardProps = jest.mocked(CardDetailContent).mock.calls.at(-1)![0];
   expect(cardProps.cardId).toBe('card-1');
   cardProps.onClose();

@@ -37,13 +37,13 @@ jest.mock('../../screens/SessionFeedScreen', () => {
 });
 
 describe('phone session navigation', () => {
-  test('현재 stack의 부모 tab에서 ChatTab.Chat으로 이동한다', () => {
+  test('현재 stack의 부모 tab에서 FeedTab.Chat으로 이동한다', () => {
     const navigate = jest.fn();
     const getParent = jest.fn(() => ({ navigate }));
 
     expect(openPhoneChat({ getParent }, 'session-1')).toBe(true);
     expect(getParent).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith('ChatTab', {
+    expect(navigate).toHaveBeenCalledWith('FeedTab', {
       screen: 'Chat',
       params: { sessionId: 'session-1' },
     });
@@ -72,7 +72,7 @@ describe('phone session navigation', () => {
     expect(source).not.toContain("getParent()?.getParent()?.navigate('ChatTab'");
   });
 
-  test('폰 피드 화면에서 세션을 누르면 실제로 ChatTab.Chat에 도달한다', () => {
+  test('폰 피드 화면에서 세션을 누르면 실제로 FeedTab.Chat에 도달한다', () => {
     const navigate = jest.fn();
     const screen = render(
       React.createElement(PhoneSessionFeedScreen, {
@@ -83,7 +83,7 @@ describe('phone session navigation', () => {
 
     fireEvent.press(screen.getByTestId('mock-session-feed-open'));
 
-    expect(navigate).toHaveBeenCalledWith('ChatTab', {
+    expect(navigate).toHaveBeenCalledWith('FeedTab', {
       screen: 'Chat',
       params: { sessionId: 'session-1' },
     });
@@ -105,3 +105,20 @@ function read(relativePath: string): string {
 
 // These route contracts isolate screen bodies, including the new card detail route.
 jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: () => null, CardDetailSheet: () => null }));
+
+test.each(['DailyTab', 'FolderTab', 'PersistentTab', 'FeedTab', 'SettingsTab'])('실제 출발 %s가 Feed/Chat params에 보존되고 돌아갈 때 Chat을 pop한다', origin => {
+  const navigate = jest.fn();
+  const goBack = jest.fn();
+  const navigation = { getParent: () => ({ navigate, getState: () => ({ index: 0, routes: [{ name: origin }] }) }), goBack };
+  openPhoneChat(navigation, 'ordinary');
+  expect(navigate).toHaveBeenCalledWith('FeedTab', { screen: 'Chat', params: { sessionId: 'ordinary', returnTab: origin } });
+  openPreviousPhonePanel(navigation, origin as any);
+  expect(goBack).toHaveBeenCalledTimes(1);
+  expect(navigate).toHaveBeenLastCalledWith(origin);
+});
+test('Feed/Chat에서 다른 세션을 열어도 원래 Folder 복귀 경로와 알림 usageEntry가 유지된다', () => {
+  const navigate = jest.fn();
+  const tabs = { navigate, getRootState: () => ({ index: 0, routes: [{ name: 'FeedTab', state: { index: 1, routes: [{ name: 'Feed' }, { name: 'Chat', params: { returnTab: 'FolderTab' } }] } }] }) };
+  openPhoneChat({ getParent: () => tabs }, 'new-session', undefined, undefined, 'notification');
+  expect(navigate).toHaveBeenCalledWith('FeedTab', { screen: 'Chat', params: { sessionId: 'new-session', returnTab: 'FolderTab', usageEntry: 'notification' } });
+});

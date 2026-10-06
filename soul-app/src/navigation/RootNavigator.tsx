@@ -43,6 +43,7 @@ import {
 } from '../lib/planner-folder-workspace';
 import {
   cancelPhoneSearchSessionOpen,
+  openPhoneChat,
   openPhoneSearchSessionFromRoot,
   type PhoneRootNavigation,
 } from './phoneSessionNavigation';
@@ -312,7 +313,7 @@ export function RootNavigator({
     recordUiUsageEvent({ type: 'notification_open', target: { kind: 'session', id: sid },
       entry: 'notification', attrs: { surface: 'push', navigated: true } });
     openNotificationSession(device, sid, sessionId => {
-      (navigationRef as any).navigate('ChatTab', { screen: 'Chat', params: { sessionId, usageEntry: 'notification' } });
+      openPhoneChat({ getParent: () => navigationRef }, sessionId, undefined, undefined, 'notification');
     });
     setPendingNotification(null);
     void Notifications.clearLastNotificationResponseAsync().catch(() => {});

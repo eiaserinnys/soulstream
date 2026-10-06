@@ -60,7 +60,7 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   act(() => {
     store.getState().open({ session_id: 'pas-1', display_name: '관제', persistent: true } as any);
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
-    useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-1', request, { show_character: true, animate_character: true });
+    useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-1', request, { show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true });
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');

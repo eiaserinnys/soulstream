@@ -1,10 +1,10 @@
 import React, { useCallback, useMemo, useRef } from 'react';
-import { View, Text, SafeAreaView, StyleSheet, Keyboard, Platform, TouchableOpacity } from 'react-native';
+import { View, Text, SafeAreaView, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
-import type { ChatStackParamList } from '../navigation/TabNavigator';
-import { getDefaultTabBarStyle } from '../navigation/TabNavigator';
+import { useIsFocused } from '@react-navigation/native';
+import type { FeedStackParamList } from '../navigation/TabNavigator';
+import { usePhoneConversationKeyboard } from '../navigation/usePhoneConversationKeyboard';
 import { useSessionStore } from '../store/sessionStore';
 import { StatusDot } from '../components/chat/StatusDot';
 import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHeaderTitle';
@@ -25,7 +25,7 @@ import { usePhonePanelHistory } from '../navigation/phonePanelHistory';
 import { useSearchStore } from '../store/searchStore';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 
-type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
+type Props = NativeStackScreenProps<FeedStackParamList, 'Chat'>;
 
 /**
  * 폰 TabNavigator 안에서 사용되는 채팅 화면.
@@ -47,34 +47,10 @@ export function ChatScreen({ route, navigation }: Props) {
   const menus = usePlannerContextMenus(api);
   const isFocused = useIsFocused();
 
-  // 키보드 등장 시 탭 바를 숨겨 KAV의 effective bottom = 화면 바닥이 되게 한다.
-  // tabBarHideOnKeyboard는 iPad iOS 18+에서 hide 애니메이션 잔존 버그(둥근 상단 edge가
-  // 키보드 위에 남음)가 있어 사용하지 않는다. 대신 useFocusEffect 안에서 Keyboard
-  // 리스너로 tabBarStyle.display를 동적 토글하여 같은 UX를 얻으면서 잔존 edge를 피한다.
-  useFocusEffect(
-    useCallback(() => {
-      const parent = navigation.getParent();
-      const visible = getDefaultTabBarStyle(t.colors);
-      const hidden = { ...visible, display: 'none' as const };
-      // iOS는 keyboardWill* 가 키보드 애니메이션과 동기. Android는 Will* 미지원이라 Did* 사용.
-      const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-      const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-      const showSub = Keyboard.addListener(showEvt, () => {
-        parent?.setOptions({ tabBarStyle: hidden });
-      });
-      const hideSub = Keyboard.addListener(hideEvt, () => {
-        parent?.setOptions({ tabBarStyle: visible });
-      });
-      return () => {
-        showSub.remove();
-        hideSub.remove();
-        // 탭 전환·블러 시 탭 바를 보이는 상태로 복원 (키보드 떠 있는 상태에서 탭 이동 케이스).
-        parent?.setOptions({ tabBarStyle: visible });
-      };
-    }, [navigation, t.colors])
-  );
+  usePhoneConversationKeyboard(navigation);
 
   const sessionId = route.params?.sessionId;
+  React.useEffect(() => { panelHistory.recordChatOpen(route.params?.returnTab); }, [panelHistory, route.params?.returnTab]);
   React.useEffect(() => {
     if (sessionId) useSearchStore.getState().rememberSession(sessionId);
   }, [sessionId]);
@@ -184,7 +160,7 @@ export function ChatScreen({ route, navigation }: Props) {
         request={menus.sessionSuccession}
         onClose={menus.closeSessionSuccession}
         onCreated={(createdSessionId) => navigation.navigate('Chat', {
-          sessionId: createdSessionId,
+          sessionId: createdSessionId, returnTab: route.params?.returnTab,
         })}
       />
     </>

@@ -35,11 +35,12 @@ function TabletPersistentSession({ navigation }: NativeStackScreenProps<TabletSt
 }
 
 function TabletCardDetail({ route, navigation }: NativeStackScreenProps<TabletStackParamList, 'CardDetail'>) {
+  const host = usePersistentSessionHost();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   return <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
     <CardDetailContent api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
-      onOpenSession={sessionId => { navigation.popTo('Main'); void openPlannerSessionWorkspace(sessionId); }} />
+      onOpenSession={sessionId => { host.store.getState().leave(); navigation.popTo('Main'); void openPlannerSessionWorkspace(sessionId); }} />
   </SafeAreaView>;
 }
 

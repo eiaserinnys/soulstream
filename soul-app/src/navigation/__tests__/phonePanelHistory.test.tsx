@@ -8,32 +8,32 @@ import {
   usePhonePanelHistory,
 } from '../phonePanelHistory';
 
-const NON_CHAT_TABS = ROOT_TAB_ORDER.filter((name) => name !== 'ChatTab');
+const NON_CHAT_TABS = ROOT_TAB_ORDER;
 
 describe('phone panel history', () => {
-  test.each(NON_CHAT_TABS)('%s에서 ChatTab으로 들어오면 정확한 직전 root tab을 반환한다', (name) => {
+  test.each(NON_CHAT_TABS)('%s에서 Feed/Chat으로 들어오면 정확한 직전 root tab을 반환한다', (name) => {
     const history = createPhonePanelHistory();
 
     history.recordFocus(name);
-    history.recordFocus('ChatTab');
+    history.recordChatOpen();
 
     expect(history.getReturnTab()).toBe(name);
   });
 
-  test('ChatTab 재포커스와 같은 Chat stack 안의 세션 전환은 직전 panel을 덮지 않는다', () => {
+  test('Feed/Chat 재포커스와 같은 Chat stack 안의 세션 전환은 직전 panel을 덮지 않는다', () => {
     const history = createPhonePanelHistory();
 
     history.recordFocus('FolderTab');
-    history.recordFocus('ChatTab');
-    history.recordFocus('ChatTab');
+    history.recordChatOpen();
+    history.recordChatOpen();
 
     expect(history.getReturnTab()).toBe('FolderTab');
   });
 
-  test('이력 없는 최초 ChatTab 진입은 FeedTab으로 귀결한다', () => {
+  test('이력 없는 최초 Feed/Chat 진입은 FeedTab으로 귀결한다', () => {
     const history = createPhonePanelHistory();
 
-    history.recordFocus('ChatTab');
+    history.recordChatOpen();
 
     expect(history.getReturnTab()).toBe('FeedTab');
   });
@@ -53,7 +53,7 @@ describe('phone panel history', () => {
     );
     const first = captured!;
     first.recordFocus('FolderTab');
-    first.recordFocus('ChatTab');
+    first.recordChatOpen();
     expect(first.getReturnTab()).toBe('FolderTab');
 
     screen.rerender(

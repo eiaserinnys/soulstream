@@ -68,3 +68,13 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 | 27. 앱 완료 푸시 | `orch-server-ts/src/node/event_ingress_controller.ts:NodeEventIngressController.process` (L117–143), `production.ts` additional sink (L356–360), `push/push_notifier.ts:PushNotifier.handleEvent` (L117–137), `handleSessionEnded`, `runtime/live_db_catalog_repository.ts:loadSessionReviewState` | 적용된 `session_ended`가 PushNotifier에 전달된다. `loadSessionReviewState`가 DB `sessions.review_required`와 `session_type`을 한 번 조회해 완료 자격과 LLM 제외를 판정한다. 세션 캐시는 본문·호출자·폴더 등 부가 정보에만 쓰며 seed 도착 순서가 완료 자격에 영향을 주지 않는다. | DB에 세션 행이 없거나 `review_required=false`면 사유를 `pushNotification action=suppressed`로 기록한다. DB 조회 실패는 기존 notifier 경고를 남긴다. llm, 미지원 status, 오래된/중복 이벤트, 제외 폴더는 기존대로 건너뛴다. 입력 대기 알림은 별도 caller-source 정책을 유지한다. |
 
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.
+
+## 앱 PAS 전화면 진입과 대화 상태 (N5)
+
+| 경로 | 구현 | 계약 |
+| :-- | :-- | :-- |
+| iPhone 입구 | `navigation/TabNavigator.tsx`, `PersistentSessionContext.tsx`, `phoneSessionNavigation.ts` | Daily·Folder·Persistent·Feed·Settings의 중앙만 tabPress를 가로챈다. 다른 탭의 입구는 목록 0/1/복수 규칙으로 대화에 진입하고 PAS 안에서는 현재 id로 scene만 전환한다. 일반 세션의 피드·검색·알림·폴더·카드 입구는 공통 openPhoneChat으로 FeedStack.Chat에 간다. 출발 탭은 route params와 인스턴스별 phonePanelHistory에 보존하고 Chat pop 뒤 복귀한다. |
+| iPad 입구 | `navigation/TabletNavigator.tsx`, `components/split/TabletPersistentEntry.tsx` | Main 위에 PersistentSession을 push한다. 홈은 pop한다. Main/SplitLayout의 기존 세션·노드 SSE 호스트는 계속 마운트되어 있다. 좁은 iPad 창의 phone 계약 전환에도 인증된 PersistentSessionProvider의 session/scene/selectedCardId가 이어진다. |
+| 시작 평가 | `PersistentSessionStartup.tsx`, `authenticatedStartupReady.ts`, `RootNavigator.tsx` | auth/settings/UI hydration, navigation ready, 초기 링크·알림 읽기가 끝난 인증 인스턴스에서 한 번만 평가한다. 세션 intent가 우선하며 시작 조회 중 들어온 intent도 PAS 응답 이동을 취소한다. foreground·회전·홈 복귀·설정 변경은 재평가하지 않는다. 실패는 기존 홈 notice와 수동 입구로 복구한다. |
+| 본문·전송·스트림 | `screens/PersistentSessionScreen.tsx` → `components/chat/ChatBody.tsx` → 기존 history/SSE/send 훅 | session id를 원고형 ChatBody 한 인스턴스에 전달한다. scene cards/상세 push는 active=false로 상세 네트워크만 멈춘다. 마운트·초안·첨부·viewport를 유지한다. 초기 PAS GET와 저장 응답은 persistentChatDisplaySettings 한 함수로 다섯 키를 투영한다. 비활성 중 표시 설정을 유지하고 재활성 begin/finish는 요청 id로 늦은 응답을 폐기한다. |
+| 키보드·안전 영역 | `usePhoneConversationKeyboard.ts`, `PersistentSessionScreen.tsx` | 기존 ChatScreen의 포커스 한정 keyboardWill/Did 이벤트 규칙을 PAS와 공유한다. phone 탭 네비게이터가 하단 안전 영역을, PAS 틀이 top/좌우를 소유한다. phone composer minimumBottomPadding은 0, tablet은 하단 inset 한 번이다. |

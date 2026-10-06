@@ -1006,6 +1006,14 @@ async function runPersistentTaskCaptures(browser, base) {
     result.interactions.push('미인증 직접 URL: gallery mount 차단');
     if (captureMode === 'persistent-fullscreen') {
       await require('./persistent-fullscreen-capture.cjs').runPersistentFullscreenCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-phone') {
+      const captures = require('./persistent-fullscreen-capture.cjs');
+      await captures.runPhoneCaptures({ browser, base, prefix, output, result });
+      await captures.runEntryCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-entry') {
+      await require('./persistent-fullscreen-capture.cjs').runEntryCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-baseline') {
+      await require('./persistent-baseline-capture.cjs').runPersistentBaselineCaptures({ browser, base, prefix, output, result });
     } else if (captureMode === 'card-checks' || captureMode === 'card-trim') {
       await runCardChecksCaptures(browser, base);
     } else if (captureMode === 'manuscript-chat') {

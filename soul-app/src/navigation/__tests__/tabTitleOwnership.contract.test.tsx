@@ -53,16 +53,17 @@ jest.mock('../../components/planner/FolderWorkspace', () => ({
   FolderWorkspace: (props: Record<string, unknown>) => mockFolderWorkspace(props),
 }));
 
+import { PersistentSessionProvider } from '../PersistentSessionContext';
 import { ROOT_TAB_ORDER, TabNavigator } from '../TabNavigator';
 import { ROOT_SECTION_CONFIG } from '../rootSectionConfig';
 import { useSettingsStore } from '../../store/settingsStore';
 
 function renderStackNavigators() {
-  render(<TabNavigator />);
+  render(<PersistentSessionProvider><TabNavigator /></PersistentSessionProvider>);
   const tabCapture = getBottomTabCaptures()[0];
   expect(tabCapture.screens.map((screen) => screen.name)).toEqual(ROOT_TAB_ORDER);
   for (const screen of tabCapture.screens) {
-    render(React.createElement(screen.component));
+    render(<PersistentSessionProvider>{React.createElement(screen.component)}</PersistentSessionProvider>);
   }
 }
 
@@ -83,18 +84,20 @@ test('5개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
   const stacks = getNativeStackCaptures();
   const roots = stacks.map((capture) => capture.screens[0]);
 
-  expect(roots.map((screen) => [screen.name, screen.options.title])).toEqual([
+  expect(roots.map((screen) => [screen.name, screen.options?.title])).toEqual([
     ['Daily', '카드'],
     ['FolderList', '폴더'],
     ['Feed', '피드'],
-    ['Chat', '챗'],
+    ['PersistentSession', undefined],
     ['Settings', '설정'],
   ]);
-  for (const [index, root] of roots.entries()) {
+  expect(roots.find(root => root.name === 'PersistentSession')!.options).toBeUndefined();
+  expect(stacks.find(stack => stack.screens[0].name === 'PersistentSession')!.navigatorProps?.screenOptions).toEqual({ headerShown: false });
+  for (const root of roots.filter(root => root.name !== 'PersistentSession')) {
     expect(root.options.title).not.toMatch(/[📅⭐📁📰💬⚙️]/u);
     expect(root.options.headerTitle).toEqual(expect.any(Function));
     expect(root.options.headerTitleAlign).toBe('left');
-    const section = ROOT_TAB_ORDER[index]!;
+    const section = ({ Daily: 'DailyTab', FolderList: 'FolderTab', Feed: 'FeedTab', Settings: 'SettingsTab' } as const)[root.name as 'Daily'];
     const header = render(React.createElement(root.options.headerTitle));
     expect(header.getByTestId(`root-header-title-${section}`).props.children)
       .toBe(ROOT_SECTION_CONFIG[section].title);
@@ -105,7 +108,8 @@ test('5개 phone root route는 emoji 없는 shared icon+title을 단독 소유�
 
   const tabScreens = getBottomTabCaptures()[0]!.screens;
   for (const screen of tabScreens) {
-    const icon = render(React.createElement(screen.options.tabBarIcon, { color: 'red', size: 22 }));
+    const icon = render(<PersistentSessionProvider>{React.createElement(screen.options.tabBarIcon, { color: 'red', size: 22 })}</PersistentSessionProvider>);
+    if (screen.name === 'PersistentTab') { expect(icon.getByTestId('persistent-phone-tab-portrait')).toBeTruthy(); continue; }
     expect(icon.UNSAFE_getByType('Ionicons' as any).props.name)
       .toBe(ROOT_SECTION_CONFIG[screen.name as keyof typeof ROOT_SECTION_CONFIG].icon);
   }

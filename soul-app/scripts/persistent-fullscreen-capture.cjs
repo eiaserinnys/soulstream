@@ -36,6 +36,11 @@ async function runPersistentFullscreenCaptures({ browser, base, prefix, output, 
     assert.ok(Math.abs(body.y + body.height - line.y) <= 1, '몸과 선의 접점');
     assert.equal(conversation.width, scenario.column);
     await page.screenshot({ path: path.join(output, `${scenario.name}-chat.png`) });
+    const pas = page.getByTestId('persistent-session-screen');
+    const input = pas.getByTestId('chat-composer-text-input');
+    await input.fill('상세를 다녀온 뒤에도 남길 입력');
+    await pas.getByTestId('chat-composer-attach-button').click();
+    await pas.getByTestId('chat-attachment-remove-0').waitFor();
     await page.getByTestId('persistent-session-tasks').click();
     await page.getByTestId('card-row-public-persistent-412-summary').click();
     await page.getByTestId('card-read-summary-open').waitFor();
@@ -48,11 +53,149 @@ async function runPersistentFullscreenCaptures({ browser, base, prefix, output, 
     await page.getByTestId('card-detail-frame').waitFor();
     await page.getByTestId('card-detail-frame').getByLabel('뒤로', { exact: true }).click();
     await page.getByTestId('card-read-summary-open').waitFor();
+    await page.getByTestId('persistent-session-tasks').click();
+    assert.equal(await input.inputValue(), '상세를 다녀온 뒤에도 남길 입력');
+    await page.getByTestId('chat-attachment-remove-0').waitFor();
+    const withAttachment = await measure('persistent-session-baseline');
+    const attachedBody = await measure('persistent-session-character-seat');
+    assert.ok(Math.abs(attachedBody.y + attachedBody.height - withAttachment.y) <= 1, '첨부 후 몸과 선 접점');
+    await input.fill('첫 줄\n둘째 줄\n셋째 줄');
+    const expanded = await measure('persistent-session-baseline');
+    assert.ok(expanded.y < line.y, '여러 줄·첨부에서 선이 올라감');
+    await page.screenshot({ path: path.join(output, `${scenario.name}-expanded.png`) });
+    await page.getByTestId('persistent-session-character-toggle').click();
+    await page.getByTestId('persistent-session-character-seat').waitFor({ state: 'hidden' });
+    await page.getByTestId('persistent-session-character-toggle').waitFor();
+    await page.getByTestId('persistent-session-settings').click();
+    await page.getByText('표시와 모션', { exact: true }).click();
+    await page.getByTestId('persistent-show-character').click();
+    await page.screenshot({ path: path.join(output, `${scenario.name}-settings.png`) });
+    await page.getByLabel('설정 닫기', { exact: true }).click();
+    await page.getByTestId('persistent-session-character-seat').waitFor();
     await page.getByTestId('persistent-session-home').click();
     await page.getByTestId('tablet-persistent-entry').waitFor();
     result.viewports.push({ ...scenario, body, line, conversation, panel });
     result.interactions.push(`${scenario.name}: 실제 입구·카드 열기·같은 요약 복귀·홈 pop`);
     await context.close();
   }
+  await runPhoneCaptures({ browser, base, prefix, output, result });
+  await runEntryCaptures({ browser, base, prefix, output, result });
 }
-module.exports = { runPersistentFullscreenCaptures };
+
+module.exports = { runPersistentFullscreenCaptures, runPhoneCaptures, runEntryCaptures };
+
+async function fixturePage({ browser, base, prefix, result }, name, viewport, query) {
+  const context = await browser.newContext({ viewport, hasTouch: true, reducedMotion: 'reduce' });
+  await context.addCookies([{ name: 'review', value: 'fixture', url: base }]);
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  page.on('pageerror', error => result.errors.push({ name, message: error.message }));
+  await page.route('**/*', async route => {
+    const url = route.request().url();
+    if (url.startsWith('data:') || new URL(url).origin === base) return route.continue();
+    result.errors.push({ name, message: 'External request: ' + url });
+    await route.abort();
+  });
+  await page.goto(`${base}${prefix}index.html?section=persistent&${query}`);
+  await page.evaluate(() => document.fonts.ready);
+  return { context, page };
+}
+async function swipe(page, direction) {
+  const frame = await page.getByTestId('persistent-session-screen').boundingBox();
+  const left = frame.x + frame.width * 0.2;
+  const right = frame.x + frame.width * 0.8;
+  const y = frame.y + frame.height / 2;
+  await page.mouse.move(direction === 'left' ? right : left, y);
+  await page.mouse.down();
+  await page.mouse.move(direction === 'left' ? left : right, y, { steps: 10 });
+  await page.mouse.up();
+}
+async function runPhoneCaptures(env) {
+  const { output, result } = env;
+  for (const theme of ['light', 'dark']) {
+    const name = `iphone-${theme}`;
+    const { context, page } = await fixturePage(env, name, { width: 390, height: 844 }, `sample=screen&theme=${theme}&safeArea=fixture`);
+    await page.getByTestId('persistent-session-screen').waitFor();
+    assert.equal(await page.getByTestId('persistent-session-character-seat').count(), 0, 'phone 캐릭터 없음');
+    const tabs = await page.getByTestId(/^phone-tab-/).evaluateAll(elements => elements.map(element => ({
+      id: element.getAttribute('data-testid'), box: element.getBoundingClientRect().toJSON(), selected: element.getAttribute('aria-selected'), label: element.getAttribute('aria-label')
+    })));
+    assert.deepEqual(tabs.map(tab => tab.id), ['phone-tab-DailyTab', 'phone-tab-FolderTab', 'phone-tab-PersistentTab', 'phone-tab-FeedTab', 'phone-tab-SettingsTab']);
+    assert.ok(Math.abs(tabs[2].box.x + tabs[2].box.width / 2 - 195) <= 1, '중앙 슬롯');
+    const header = await page.getByTestId('persistent-session-header').boundingBox();
+    const pas = page.getByTestId('persistent-session-screen');
+    const input = pas.getByTestId('chat-composer-text-input');
+    await input.fill('카드 상세에서도 보존할 초안');
+    await pas.getByTestId('chat-composer-attach-button').click();
+    await pas.getByTestId('chat-attachment-remove-0').waitFor();
+    const composer = await pas.getByTestId('chat-composer-box').boundingBox();
+    assert.ok(header.y >= 47, '상단 fixture 안전 영역');
+    assert.ok(composer.y + composer.height <= tabs[2].box.y + 1, '탭 위 입력 접근');
+    await page.screenshot({ path: path.join(output, `${name}-chat.png`) });
+    await page.getByTestId('phone-tab-PersistentTab').click();
+    await page.getByTestId('persistent-phone-tab-list').first().waitFor();
+    await page.getByTestId('card-row-public-persistent-412-summary').click();
+    await page.getByTestId('card-read-summary-open').waitFor();
+    await page.screenshot({ path: path.join(output, `${name}-card.png`) });
+    await page.getByTestId('card-read-summary-open').click();
+    await page.getByTestId('card-detail-frame').waitFor();
+    await page.getByTestId('settings-segment-card-detail-sessions').click();
+    await page.getByTestId('card-sessions').waitFor();
+    await page.getByTestId('card-detail-frame').getByLabel('뒤로', { exact: true }).click();
+    await page.getByTestId('card-read-summary-open').waitFor();
+    await swipe(page, 'right');
+    await page.getByTestId('card-row-public-persistent-412-summary').waitFor();
+    await swipe(page, 'right');
+    await page.getByTestId('persistent-session-conversation').getByTestId('chat-composer-text-input').waitFor();
+    assert.equal(await input.inputValue(), '카드 상세에서도 보존할 초안');
+    await page.getByTestId('chat-attachment-remove-0').waitFor();
+    await swipe(page, 'left');
+    await page.getByTestId('persistent-phone-tab-list').first().waitFor();
+    await page.getByTestId('phone-tab-PersistentTab').click();
+    await input.waitFor();
+    await page.getByTestId('persistent-session-settings').click();
+    await page.getByText('표시와 모션', { exact: true }).click();
+    await page.getByTestId('persistent-show-character').waitFor();
+    await page.screenshot({ path: path.join(output, `${name}-settings.png`) });
+    await page.getByLabel('설정 닫기', { exact: true }).click();
+    assert.equal(await input.inputValue(), '카드 상세에서도 보존할 초안');
+    await page.getByTestId('persistent-session-home').click();
+    await page.getByTestId('phone-tab-DailyTab').waitFor();
+    await page.getByTestId('phone-tab-PersistentTab').click();
+    await input.waitFor();
+    assert.equal(await page.getByTestId('persistent-phone-tab-list').count(), 0, '다른 탭 입구는 대화로 복귀');
+    result.viewports.push({ name, tabs, header, composer });
+    result.interactions.push(`${name}: 중앙 슬롯·좌우 밀기·상세→목록→대화·동일 초안/첨부·설정 복귀·홈 입구`);
+    await context.close();
+  }
+}
+async function runEntryCaptures(env) {
+  const { output, result } = env;
+  for (const scenario of [
+    { name: 'entry-zero', query: 'sample=entry&count=0', manual: true, expected: 'settings-section-persistent-editor-groups' },
+    { name: 'entry-one', query: 'sample=entry&count=1', manual: true, expected: 'persistent-session-screen' },
+    { name: 'entry-two-dark', query: 'sample=entry&count=2&theme=dark', manual: true, expected: 'persistent-entry-review-pas-2' },
+    { name: 'entry-error', query: 'sample=entry&state=persistent-error', manual: true, expected: 'persistent-entry-error' },
+    { name: 'entry-loading', query: 'sample=entry&state=entry-loading', manual: true, expected: 'persistent-entry-loading' },
+    { name: 'startup-zero', query: 'sample=startup&startup=1&count=0', expected: 'phone-tab-DailyTab' },
+    { name: 'startup-last', query: 'sample=startup&startup=1&count=2&last=review-pas-2', expected: 'persistent-session-screen' },
+    { name: 'startup-choose', query: 'sample=startup&startup=1&count=2', expected: 'persistent-entry-review-pas-1' },
+    { name: 'safe-zero', query: 'sample=screen&count=1', expected: 'persistent-session-screen' },
+    { name: 'ipad-low-height', query: 'sample=screen&count=1&safeArea=fixture', expected: 'persistent-session-screen', viewport: { width: 1180, height: 480 } },
+  ]) {
+    const { context, page } = await fixturePage(env, scenario.name, scenario.viewport ?? { width: 390, height: 844 }, scenario.query + '&safeArea=' + (scenario.name === 'safe-zero' ? 'zero' : 'fixture'));
+    if (scenario.manual) await page.getByTestId('phone-tab-PersistentTab').click();
+    await page.getByTestId(scenario.expected).waitFor();
+    if (scenario.name === 'entry-two-dark') {
+      await page.screenshot({ path: path.join(output, `${scenario.name}.png`) });
+      await page.getByTestId('persistent-entry-review-pas-2').click();
+      await page.getByText('공개 예시 두 번째 영구 세션', { exact: true }).waitFor();
+    } else await page.screenshot({ path: path.join(output, `${scenario.name}.png`) });
+    if (scenario.name === 'ipad-low-height') {
+      assert.equal(await page.getByTestId('persistent-session-character-seat').count(), 0);
+      assert.equal(await page.getByTestId('persistent-session-character-toggle').count(), 0);
+    }
+    result.interactions.push(scenario.name);
+    await context.close();
+  }
+}

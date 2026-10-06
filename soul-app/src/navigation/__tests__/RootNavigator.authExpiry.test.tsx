@@ -47,6 +47,7 @@ jest.mock('../navigationRef', () => ({
 jest.mock('../notificationSessionRoute', () => ({ openNotificationSession: jest.fn() }));
 jest.mock('../phoneSessionNavigation', () => ({
   openPhoneSearchSessionFromRoot: jest.fn(),
+  openPhoneChat: jest.fn(),
   cancelPhoneSearchSessionOpen: jest.fn(),
 }));
 jest.mock('../../lib/planner-folder-workspace', () => ({

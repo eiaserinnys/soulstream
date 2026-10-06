@@ -6,6 +6,7 @@ export type RootSectionKey =
   | 'StarredTab'
   | 'ProjectTab'
   | 'FeedTab'
+  | 'PersistentTab'
   | 'ChatTab'
   | 'SettingsTab';
 
@@ -20,6 +21,7 @@ export const ROOT_SECTION_CONFIG: Record<RootSectionKey, RootSectionDefinition> 
   StarredTab: { title: '중요 작업', icon: 'star-outline' },
   ProjectTab: { title: '프로젝트', icon: 'folder-outline' },
   FeedTab: { title: '피드', icon: 'reader-outline' },
+  PersistentTab: { title: '영구 세션', icon: 'list-outline' },
   ChatTab: { title: '챗', icon: 'chatbubble-ellipses-outline' },
   SettingsTab: { title: '설정', icon: 'settings-outline' },
 };

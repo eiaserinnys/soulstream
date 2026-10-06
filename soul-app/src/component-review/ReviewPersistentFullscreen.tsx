@@ -3,7 +3,7 @@ import { DefaultTheme, NavigationContainer, createNavigationContainerRef } from 
 import { PersistentSessionProvider, usePersistentSessionHost } from '../navigation/PersistentSessionContext';
 import { PersistentSessionStartup } from '../navigation/PersistentSessionStartup';
 import { TabletNavigator } from '../navigation/TabletNavigator';
-import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
+import { TabNavigator } from '../navigation/TabNavigator';
 import { useDeviceType, useTokens } from '../theme';
 
 const navigation = createNavigationContainerRef<any>();
@@ -11,7 +11,7 @@ function EntryDriver({ ready, phone }: { ready: boolean; phone: boolean }) {
   const host = usePersistentSessionHost();
   useEffect(() => {
     if (!ready || new URLSearchParams(window.location.search).get('sample') !== 'screen') return;
-    void host.requestEntry(() => { if (!phone) navigation.navigate('PersistentSession'); }, true);
+    void host.requestEntry(() => { navigation.navigate(phone ? 'PersistentTab' : 'PersistentSession'); }, true);
   }, [ready, phone]);
   return null;
 }
@@ -24,10 +24,10 @@ export function ReviewPersistentFullscreen() {
   return <PersistentSessionProvider>
     <NavigationContainer ref={navigation} theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: t.colors.background } }}
       onReady={() => setReady(true)}>
-      {phone ? <PersistentSessionScreen onHome={() => {}} onOpenCard={() => {}} /> : <TabletNavigator />}
+      {phone ? <TabNavigator /> : <TabletNavigator />}
     </NavigationContainer>
-    {new URLSearchParams(window.location.search).get('sample') === 'startup'
-      ? <PersistentSessionStartup ready={ready} sessionIntent={false} onOpen={() => { if (!phone) navigation.navigate('PersistentSession'); }} />
-      : <EntryDriver ready={ready || phone} phone={phone} />}
+    {new URLSearchParams(window.location.search).get('sample') !== 'screen'
+      ? <PersistentSessionStartup ready={ready} sessionIntent={false} onOpen={() => { navigation.navigate(phone ? 'PersistentTab' : 'PersistentSession'); }} />
+      : <EntryDriver ready={ready} phone={phone} />}
   </PersistentSessionProvider>;
 }

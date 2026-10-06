@@ -1,16 +1,20 @@
 import { Alert } from 'react-native';
 import { useSearchStore } from '../store/searchStore';
 import { resolvePlannerSessionFolder } from '../lib/planner-folder-workspace';
+import { ROOT_TAB_ORDER } from './tabContract';
 import type { PhoneReturnTab } from './phonePanelHistory';
 
 type ParentTabNavigator = {
   navigate: (...args: any[]) => void;
+  getState?: () => any;
+  getRootState?: () => any;
 };
 
 export type PhoneRootNavigation = ParentTabNavigator;
 
 export type PhoneStackNavigation = {
   getParent: () => ParentTabNavigator | undefined;
+  goBack?: () => void;
 };
 
 let latestSearchOpenRequest = 0;
@@ -26,15 +30,23 @@ export function openPhoneChat(
   sessionId: string,
   focusEventId?: number,
   storyOpenRequestId?: number,
+  usageEntry?: 'notification',
 ): boolean {
   latestSearchOpenRequest += 1;
   const tabs = navigation.getParent();
   if (!tabs) return false;
   useSearchStore.getState().rememberSession(sessionId);
-  tabs.navigate('ChatTab', {
+  const state = tabs.getRootState?.() ?? tabs.getState?.();
+  const route = state?.routes?.[state.index];
+  const child = route?.state?.routes?.[route.state.index];
+  const returnTab = route?.name === 'FeedTab' && child?.name === 'Chat' ? child.params?.returnTab
+    : route && ROOT_TAB_ORDER.includes(route.name) ? route.name : undefined;
+  tabs.navigate('FeedTab', {
     screen: 'Chat',
     params: {
       sessionId,
+      ...(returnTab === undefined ? {} : { returnTab }),
+      ...(usageEntry === undefined ? {} : { usageEntry }),
       ...(focusEventId === undefined ? {} : { focusEventId }),
       ...(storyOpenRequestId === undefined ? {} : { storyOpenRequestId }),
     },
@@ -124,6 +136,7 @@ export function openPreviousPhonePanel(
 ): boolean {
   const tabs = navigation.getParent();
   if (!tabs) return false;
+  navigation.goBack?.();
   tabs.navigate(returnTab);
   return true;
 }
