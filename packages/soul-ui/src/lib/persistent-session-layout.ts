@@ -36,7 +36,7 @@ export interface PersistentSessionLayoutInput {
 }
 
 export interface PersistentSessionLayout {
-  /** Composer's top edge in app-local coordinates. */
+  /** Baseline row's Y coordinate in app-local coordinates. */
   lineY: number;
   /** Body and toggle rectangles are app-local; null means not rendered. */
   body: PersistentSessionRect | null;

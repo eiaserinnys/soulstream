@@ -17,13 +17,15 @@ export function usePersistentSessionGeometry({ app, header, main, composer, enab
       const appRect = app.current!.getBoundingClientRect();
       const headerRect = header.current!.getBoundingClientRect();
       const mainRect = main.current!.getBoundingClientRect();
-      const composerRect = composer.current!.getBoundingClientRect();
-      const inputRowHeight = composer.current!.querySelector('[data-testid="send-button"]')?.getBoundingClientRect().height ?? 0;
+      const composerElement = composer.current!.querySelector<HTMLElement>('[data-slot="chat-input-composer"]')!;
+      const baselineBottom = composerElement.getBoundingClientRect().bottom;
+      const rowBottomGap = Number.parseFloat(getComputedStyle(composerElement).paddingBottom) || 0;
+      const inputRowHeight = composerElement.querySelector('[data-testid="send-button"]')?.getBoundingClientRect().height ?? 0;
       const style = getComputedStyle(app.current!);
       const safeBottom = parseFloat(style.paddingBottom) || 0;
       const viewportBottom = window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : appRect.bottom;
       const usableApp = { left: appRect.left, top: appRect.top, width: appRect.width, height: Math.min(appRect.bottom, viewportBottom) - appRect.top - safeBottom };
-      setGeometry({ ...calculatePersistentSessionLayout({ app: usableApp, header: headerRect, main: mainRect, composer: composerRect, inputRowHeight, pointerFine: pointer.matches, showCharacter, phoneConfigured: false }), mainLeft: mainRect.left - appRect.left, mainWidth: mainRect.width });
+      setGeometry({ ...calculatePersistentSessionLayout({ app: usableApp, header: headerRect, main: mainRect, baselineBottom, inputRowHeight, rowBottomGap, pointerFine: pointer.matches, showCharacter, phoneConfigured: false }), mainLeft: mainRect.left - appRect.left, mainWidth: mainRect.width });
     };
     const schedule = () => { if (frame === null) frame = requestAnimationFrame(measure); };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
