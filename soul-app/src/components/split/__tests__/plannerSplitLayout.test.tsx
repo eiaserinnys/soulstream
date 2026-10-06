@@ -1,4 +1,5 @@
 import React from 'react';
+import * as ReactNative from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import {
   SafeAreaProvider,
@@ -59,7 +60,16 @@ describe('iPad v3 planner shell', () => {
     mockOpenPlannerSessionWorkspace.mockClear();
     mockOpenFeedSessionCardWorkspace.mockClear();
     useSearchStore.getState().reset();
-    useUIStore.setState({ folderOverlayVisible: false });
+    useUIStore.setState({
+      folderOverlayVisible: false,
+      paneLeftWidth: 240,
+      paneMiddleWidth: 480,
+      paneMiddleWidthTwoPane: null,
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('가로는 좌 내비·중앙 플래너·우 세션의 3열과 업무 오버레이를 공유한다', () => {
@@ -95,6 +105,14 @@ describe('iPad v3 planner shell', () => {
       9,
       'search',
     );
+  });
+
+  it('저장된 가운데 폭 700을 넓은 가로 행에서 그대로 렌더링한다', () => {
+    useUIStore.getState().setPaneMiddleWidth(700);
+    const screen = render(<ThreePaneLayout />);
+    fireLayout(screen, 1400);
+
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).width).toBe(700);
   });
 
   it.each([
@@ -141,6 +159,21 @@ describe('iPad v3 planner shell', () => {
 
     fireEvent.press(screen.getByTestId('planner-sessions'));
     expect(mockOpenFeedSessionCardWorkspace).toHaveBeenCalledWith('session-1');
+  });
+
+  it('세로 저장 폭은 화면 절반보다 커도 현재 폭으로 렌더링한다', () => {
+    jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({
+      width: 834,
+      height: 1194,
+      scale: 1,
+      fontScale: 1,
+    });
+    useUIStore.getState().setPaneMiddleWidthTwoPane(520);
+    const screen = render(<TwoPaneWithDrawer />);
+    fireLayout(screen, 810);
+
+    expect(520).toBeGreaterThan(Math.floor(834 * 0.5));
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).width).toBe(520);
   });
 
   it.each([
@@ -199,6 +232,18 @@ function renderWithMetrics(element: React.ReactElement, metrics: Metrics) {
       {element}
     </SafeAreaProvider>,
   );
+}
+
+function fireLayout(screen: ReturnType<typeof render>, width: number) {
+  const row = screen.UNSAFE_getAllByType(View).find((node) => {
+    const style = StyleSheet.flatten(node.props.style);
+    return style?.flexDirection === 'row';
+  });
+  if (!row) throw new Error('split 행의 onLayout을 찾지 못했습니다.');
+
+  fireEvent(row, 'layout', {
+    nativeEvent: { layout: { width, height: 800, x: 0, y: 0 } },
+  });
 }
 
 function expectPanelRadius(
