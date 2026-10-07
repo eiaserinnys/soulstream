@@ -500,6 +500,68 @@ describe("beginGenerationRolloverIfPending", () => {
     expect(task.lastEventId).toBe(26);
   });
 
+  it("marks a reset generation on the start event and its completed first-call sample", async () => {
+    const task = makeTask({
+      persistentGeneration: {
+        number: 1,
+        pending: {
+          number: 2,
+          reason: "context reset",
+          requestedAt: "2026-10-05T00:00:00.000Z",
+          targetModelPreset: "codex-new",
+          resetContext: true,
+          keepInstructions: false,
+        },
+      },
+    });
+    beginGenerationRolloverIfPending(task, agent, makeCatalog());
+    const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+      record: {} as never,
+      eventId: 26,
+    }));
+    await publishStarted(task, {
+      estimatedTokens: 321,
+      chars: 987,
+      sections: { state: 111, story: 0, summaries: 0, recent: 0 },
+      summarizedThroughTurn: null,
+      recentFromEventId: null,
+      recentToEventId: null,
+    }, { enqueueEventAndWaitForSessionAck } as unknown as EventPersistence);
+
+    const started = enqueueEventAndWaitForSessionAck.mock.calls[0]?.[1] as unknown as
+      Record<string, unknown>;
+    expect(started).toMatchObject({
+      type: "generation_started",
+      generation: 2,
+      context_reset: true,
+    });
+
+    task.codexThreadId = "native-new";
+    task.activeGenerationRollover!.firstCall = {
+      inputTokens: 5_000,
+      cachedInputTokens: 2_000,
+    };
+    const enqueueMetadataEffect = vi.fn(async () => 27);
+    await complete(task, { enqueueMetadataEffect } as unknown as EventPersistence);
+
+    expect(task.persistentGeneration?.firstCall).toMatchObject({
+      generation: 2,
+      inputTokens: 5_000,
+      cachedInputTokens: 2_000,
+      contextReset: true,
+    });
+    expect(enqueueMetadataEffect.mock.calls[0]?.[1]).toMatchObject({
+      value: {
+        first_call: {
+          generation: 2,
+          input_tokens: 5_000,
+          cached_input_tokens: 2_000,
+          context_reset: true,
+        },
+      },
+    });
+  });
+
   it("records the new generation and measured first_call, preserving the previous measurement when absent", async () => {
     const task = makeTask();
     beginGenerationRolloverIfPending(task, agent, makeCatalog());

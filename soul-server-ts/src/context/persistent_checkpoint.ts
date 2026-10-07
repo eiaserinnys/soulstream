@@ -71,27 +71,41 @@ export function buildPersistentCheckpoint(
     cards: SupervisedCardSnapshot;
     standingInstructions: string[];
     ownSessionId: string;
+    resetContext?: boolean;
+    keepInstructions?: boolean;
   },
   budget: PersistentCheckpointBudget = PERSISTENT_CHECKPOINT_BUDGET,
 ): { item: ContextItem; stats: PersistentCheckpointStats } {
+  const resetContext = input.resetContext === true;
   const state = buildStateSection(input.material, input.cards, input.ownSessionId, budget);
-  const instructions = buildInstructionsSection(input.standingInstructions, budget.instructionsTokens);
-  const story = buildStorySection(input.material.story.narrative, budget.narrativeTokens);
-  const summaries = buildSummarySection(input.material, budget.summaryTokens);
+  const instructions = input.keepInstructions === false
+    ? ""
+    : buildInstructionsSection(input.standingInstructions, budget.instructionsTokens);
+  const story = resetContext
+    ? ""
+    : buildStorySection(input.material.story.narrative, budget.narrativeTokens);
+  const summaries = resetContext
+    ? ""
+    : buildSummarySection(input.material, budget.summaryTokens);
   const fixedSections = [state, instructions, story, summaries].filter(Boolean);
   const fixedText = joinSections(fixedSections);
-  const recentBudget = Math.max(
-    budget.recentMinimumTokens,
-    budget.totalTokens - estimateClaudeTextTokens(`${CHECKPOINT_HEAD}\n\n${fixedText}`),
-  );
-  const recent = buildRecentSection(
-    input.material,
-    recentBudget,
-    budget.totalTokens,
-    fixedText,
-    budget.recentMinimumTokens,
-  );
-  const text = joinSections([CHECKPOINT_HEAD, ...fixedSections, recent.text]);
+  const recent = resetContext
+    ? { text: "", records: [] as GenerationCheckpointMaterial["recent"]["records"] }
+    : buildRecentSection(
+        input.material,
+        Math.max(
+          budget.recentMinimumTokens,
+          budget.totalTokens - estimateClaudeTextTokens(`${CHECKPOINT_HEAD}\n\n${fixedText}`),
+        ),
+        budget.totalTokens,
+        fixedText,
+        budget.recentMinimumTokens,
+      );
+  const text = joinSections([
+    ...(resetContext ? [] : [CHECKPOINT_HEAD]),
+    ...fixedSections,
+    recent.text,
+  ]);
   const stats: PersistentCheckpointStats = {
     estimatedTokens: estimateClaudeTextTokens(text),
     chars: text.length,
@@ -101,7 +115,7 @@ export function buildPersistentCheckpoint(
       summaries: estimateClaudeTextTokens(summaries),
       recent: estimateClaudeTextTokens(recent.text),
     },
-    summarizedThroughTurn: input.material.totals.turnSummaries > 0
+    summarizedThroughTurn: !resetContext && input.material.totals.turnSummaries > 0
       ? Math.max(0, input.material.totals.turnSummaries - input.material.story.unfoldedTurnSummaries.length)
       : null,
     recentFromEventId: recent.records[0]?.event_id ?? null,

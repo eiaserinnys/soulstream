@@ -355,6 +355,8 @@ export class ExecutionContextBuilder {
           ? `- (${instruction.source_turns.join(", ")}) ${instruction.text}`
           : `- ${instruction.text}`),
       ownSessionId: sessionId,
+      resetContext: task.activeGenerationRollover?.resetContext === true,
+      keepInstructions: task.activeGenerationRollover?.keepInstructions !== false,
     }, PERSISTENT_CHECKPOINT_BUDGET);
   }
 

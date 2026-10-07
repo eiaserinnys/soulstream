@@ -81,6 +81,9 @@ export function buildPersistentGenerationMetadataEntry(
             model_preset: firstCall.modelPreset,
             model: firstCall.model,
             measured_at: firstCall.measuredAt,
+            ...(firstCall.contextReset === undefined
+              ? {}
+              : { context_reset: firstCall.contextReset }),
           }
         : null,
       pending: pending
@@ -90,6 +93,8 @@ export function buildPersistentGenerationMetadataEntry(
             requested_at: pending.requestedAt,
             target_model_preset: pending.targetModelPreset,
             target_reasoning_effort: pending.targetReasoningEffort ?? null,
+            reset_context: pending.resetContext ?? false,
+            keep_instructions: pending.keepInstructions ?? true,
             applying_from: pending.applyingFrom ?? null,
             ...(pending.applyingFrom === undefined
               ? {}
@@ -155,6 +160,9 @@ function parsePersistentGenerationFirstCall(value: unknown):
     modelPreset: record.model_preset,
     model: record.model,
     measuredAt: record.measured_at,
+    ...(typeof record.context_reset === "boolean"
+      ? { contextReset: record.context_reset }
+      : {}),
   };
 }
 
@@ -175,6 +183,8 @@ function parsePersistentGenerationPending(value: unknown):
     reason: record.reason,
     requestedAt: record.requested_at,
     targetModelPreset: record.target_model_preset,
+    resetContext: record.reset_context === true,
+    keepInstructions: record.keep_instructions !== false,
     ...(isReasoningEffort(record.target_reasoning_effort)
       ? { targetReasoningEffort: record.target_reasoning_effort }
       : {}),

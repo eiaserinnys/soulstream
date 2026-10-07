@@ -48,6 +48,8 @@ export function beginGenerationRolloverIfPending(
       reason: pending.reason,
       requestedAt: pending.requestedAt,
       fromBackendSessionId,
+      resetContext: pending.resetContext === true,
+      keepInstructions: pending.keepInstructions !== false,
       ...(isResumedApplication
         ? {
             ...(pending.previousModelPreset === undefined
@@ -65,6 +67,8 @@ export function beginGenerationRolloverIfPending(
     task.activeGenerationRollover = active;
   } else {
     active.requestedAt = pending.requestedAt;
+    active.resetContext = pending.resetContext === true;
+    active.keepInstructions = pending.keepInstructions !== false;
     if (pending.applyingFrom === undefined) {
       active.previousModelPreset ??= task.modelPreset ?? null;
       active.previousBackend ??= effectiveTaskBackend(task, agent);
@@ -253,6 +257,7 @@ export async function publishStarted(
       recent_from_event_id: checkpoint.recentFromEventId,
       recent_to_event_id: checkpoint.recentToEventId,
     },
+    context_reset: active.resetContext === true,
     _dedupe_key:
       `generation_started:${task.agentSessionId}:${active.number}:${active.requestedAt}`,
     timestamp: Date.now() / 1000,
@@ -285,6 +290,7 @@ export async function complete(
         modelPreset: task.modelPreset ?? "",
         model: task.model ?? "",
         measuredAt: new Date().toISOString(),
+        contextReset: active.resetContext === true,
       }
     : previousFirstCall;
   const nextState = {

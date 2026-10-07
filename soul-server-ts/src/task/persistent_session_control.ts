@@ -260,8 +260,16 @@ export class PersistentSessionControl {
       modelPreset?: string;
       reasoningEffort?: ReasoningEffort;
       reason: string;
+      resetContext?: boolean;
+      keepInstructions?: boolean;
     },
   ): Promise<RequestGenerationRolloverResult> {
+    if (input.keepInstructions === false && input.resetContext !== true) {
+      throw new PersistentSessionControlError(
+        "INVALID_REQUEST",
+        "keep_instructions=false requires reset_context=true",
+      );
+    }
     let task = this.deps.getTask(sessionId);
     if (!task) {
       task = await this.deps.loadEvictedTask(sessionId) ?? undefined;
@@ -298,6 +306,15 @@ export class PersistentSessionControl {
 
     const generation = task.persistentGeneration ?? { number: 1 };
     const pendingGeneration = generation.pending?.number ?? generation.number + 1;
+    const existingReset = generation.pending?.resetContext === true;
+    const incomingReset = input.resetContext === true;
+    const resetContext = existingReset || incomingReset;
+    const keepInstructions = resetContext
+      ? !(
+          (existingReset && generation.pending?.keepInstructions === false)
+          || (incomingReset && input.keepInstructions === false)
+        )
+      : true;
     const nextGeneration = {
       ...generation,
       pending: {
@@ -306,6 +323,8 @@ export class PersistentSessionControl {
         requestedAt: new Date().toISOString(),
         targetModelPreset: targetPreset.id,
         ...(reasoningEffort === undefined ? {} : { targetReasoningEffort: reasoningEffort }),
+        resetContext,
+        keepInstructions,
         ...(generation.pending?.applyingFrom === undefined
           ? {}
           : {

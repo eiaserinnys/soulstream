@@ -64,6 +64,7 @@ export interface PersistentGenerationFirstCall {
   modelPreset: string;
   model: string;
   measuredAt: string;
+  contextReset?: boolean;
 }
 
 export interface PersistentGenerationPending {
@@ -72,6 +73,8 @@ export interface PersistentGenerationPending {
   requestedAt: string;
   targetModelPreset: string;
   targetReasoningEffort?: ReasoningEffort;
+  resetContext?: boolean;
+  keepInstructions?: boolean;
   applyingFrom?: string;
   previousModelPreset?: string | null;
   previousBackend?: string;
@@ -90,6 +93,8 @@ export interface ActiveGenerationRollover {
   reason: string;
   requestedAt: string;
   fromBackendSessionId: string;
+  resetContext?: boolean;
+  keepInstructions?: boolean;
   previousModelPreset?: string | null;
   previousBackend?: string;
   firstCompleteObserved?: boolean;

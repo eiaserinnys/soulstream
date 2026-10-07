@@ -44,15 +44,19 @@ export function registerPersistentSessionTools(
         model_preset: z.string().min(1).optional(),
         reasoning_effort: z.enum(MODEL_REASONING_EFFORTS).optional(),
         reason: z.string().optional(),
+        reset_context: z.boolean().optional(),
+        keep_instructions: z.boolean().optional(),
       },
     },
-    async ({ session_id, model_preset, reasoning_effort, reason }) => {
+    async ({ session_id, model_preset, reasoning_effort, reason, reset_context, keep_instructions }) => {
       try {
         const result = await runtime.taskManager.persistentSessions
           .requestGenerationRollover(session_id, {
             modelPreset: model_preset,
             reasoningEffort: reasoning_effort,
             reason: reason ?? "manual",
+            resetContext: reset_context ?? false,
+            keepInstructions: keep_instructions ?? true,
           });
         return jsonResult({
           session_id: result.sessionId,

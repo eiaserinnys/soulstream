@@ -213,6 +213,86 @@ describe("PersistentSessionControl", () => {
     });
   });
 
+  it("keeps reset options when a later automatic request replaces the target", async () => {
+    const task = makeRolloverTask();
+    const { control } = makeRolloverControl(task);
+
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-preset",
+      reason: "manual reset",
+      resetContext: true,
+    });
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "claude-preset",
+      reason: "arrival threshold",
+    });
+
+    expect(task.persistentGeneration?.pending).toMatchObject({
+      reason: "arrival threshold",
+      targetModelPreset: "claude-preset",
+      resetContext: true,
+      keepInstructions: true,
+    });
+  });
+
+  it("keeps reset options when reset is requested after an automatic request", async () => {
+    const task = makeRolloverTask();
+    const { control } = makeRolloverControl(task);
+
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "claude-preset",
+      reason: "arrival threshold",
+    });
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-preset",
+      reason: "manual reset",
+      resetContext: true,
+    });
+
+    expect(task.persistentGeneration?.pending).toMatchObject({
+      reason: "manual reset",
+      targetModelPreset: "codex-preset",
+      resetContext: true,
+      keepInstructions: true,
+    });
+  });
+
+  it("keeps keep_instructions=false when a later automatic request replaces the target", async () => {
+    const task = makeRolloverTask();
+    const { control } = makeRolloverControl(task);
+
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-preset",
+      reason: "manual reset",
+      resetContext: true,
+      keepInstructions: false,
+    });
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "claude-preset",
+      reason: "arrival threshold",
+    });
+
+    expect(task.persistentGeneration?.pending).toMatchObject({
+      reason: "arrival threshold",
+      targetModelPreset: "claude-preset",
+      resetContext: true,
+      keepInstructions: false,
+    });
+  });
+
+  it("rejects keep_instructions=false without reset_context before persisting", async () => {
+    const task = makeRolloverTask();
+    const { control, enqueueMetadataEffect } = makeRolloverControl(task);
+
+    await expect(control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: "codex-preset",
+      reason: "manual",
+      keepInstructions: false,
+    })).rejects.toThrow(/keep.*instructions.*reset/i);
+
+    expect(enqueueMetadataEffect).not.toHaveBeenCalled();
+  });
+
   it("preserves applying_from while replacing an in-flight target", async () => {
     const task = makeRolloverTask({
       persistentGeneration: {

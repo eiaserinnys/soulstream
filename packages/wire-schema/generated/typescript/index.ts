@@ -1275,6 +1275,7 @@ export interface SSEEventGenerationStarted {
   type: "generation_started";
   generation: number;
   reason: string;
+  context_reset?: boolean;
   previous: {
     model_preset: string | null;
     backend: string;

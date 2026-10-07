@@ -26,6 +26,8 @@ const applyingState = {
     requestedAt: "2026-10-05T09:00:00.000Z",
     targetModelPreset: "codex-balanced",
     targetReasoningEffort: "high",
+    resetContext: false,
+    keepInstructions: true,
     applyingFrom: "native-old",
     previousModelPreset: "codex-source",
     previousBackend: "codex",
@@ -119,10 +121,28 @@ describe("resolveGenerationState", () => {
         reason: "manual",
         requestedAt: "2026-10-05T09:00:00.000Z",
         fromBackendSessionId: "native-old",
+        resetContext: false,
+        keepInstructions: true,
         previousModelPreset: "codex-source",
         previousBackend: "codex",
       },
     });
+  });
+
+  it("restores reset flags on an applying generation", () => {
+    const resetState = {
+      ...applyingState,
+      pending: {
+        ...applyingState.pending,
+        resetContext: true,
+        keepInstructions: false,
+      },
+    };
+    const persisted = buildPersistentGenerationMetadataEntry(resetState);
+
+    expect(extractPersistentGeneration([persisted])).toEqual(resetState);
+    expect(resolveGenerationState(resetState, "native-old").activeGenerationRollover)
+      .toMatchObject({ resetContext: true, keepInstructions: false });
   });
 
   it("treats a changed native session ID as completed and preserves the prior first call", () => {

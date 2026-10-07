@@ -818,6 +818,7 @@ def test_generation_started_event_contract() -> None:
         "type": "generation_started",
         "generation": 2,
         "reason": "weekly_headroom",
+        "context_reset": True,
         "previous": {"model_preset": "claude-opus", "backend": "claude"},
         "current": {
             "model_preset": "codex-sol",
@@ -857,6 +858,13 @@ def test_generation_started_event_contract() -> None:
 
     event_definition = schema["$defs"]["SSEEventGenerationStarted"]
     assert event_definition["additionalProperties"] is True
+    assert "context_reset" not in event_definition["required"]
+    assert event_definition["properties"]["context_reset"]["type"] == "boolean"
+    assert jsonschema.Draft202012Validator(schema).is_valid({
+        "type": "event",
+        "agentSessionId": "session-generation-started",
+        "event": {key: value for key, value in payload.items() if key != "context_reset"},
+    })
     assert schema["x-soulstream-event-durability"]["generation_started"] == "durable"
     assert "generation_started" in schema["x-soulstream-session-timeline-event-types"]
 
