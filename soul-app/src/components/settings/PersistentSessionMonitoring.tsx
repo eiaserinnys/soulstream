@@ -40,6 +40,7 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
   const [generationState, setGenerationState] = useState<ReadState>('loading');
   const [latestGeneration, setLatestGeneration] = useState<HistoricalMessage | null>(null);
   const [latestPersistentDecision, setLatestPersistentDecision] = useState<HistoricalMessage | null>(null);
+  const [decisionError, setDecisionError] = useState(false);
   const [historyState, setHistoryState] = useState<ReadState>('loading');
   const [history, setHistory] = useState<HistoricalMessage[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -51,6 +52,7 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
       setGenerationState('error');
       setHistoryState('error');
       setLatestPersistentDecision(null);
+      setDecisionError(false);
       return;
     }
     let active = true;
@@ -58,6 +60,7 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
     setGenerationState('loading');
     setHistoryState('loading');
     setLatestPersistentDecision(null);
+    setDecisionError(false);
     void api.getTimeline(sessionId, { eventTypes: ['generation_started'], limit: 1 })
       .then((result) => {
         if (!active) return;
@@ -71,7 +74,7 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
       if (!active) return;
       setLatestPersistentDecision(normalizePersistentHistory(result.messages).find((event) =>
         event.event_type === 'debug' && event.payload.kind === 'persistent_decision') ?? null);
-    }).catch(() => { if (active) setLatestPersistentDecision(null); });
+    }).catch(() => { if (active) { setLatestPersistentDecision(null); setDecisionError(true); } });
     void api.getTimeline(sessionId, { eventTypes: HISTORY_EVENT_TYPES, limit: HISTORY_PAGE_SIZE })
       .then((result) => {
         if (!active) return;
@@ -143,11 +146,11 @@ export function PersistentSessionMonitoring({ serverUrl, sessionId }: {
           latestPersistentDecision.payload.reason,
         ].filter((part): part is string => typeof part === 'string' && part.length > 0).join(' · ')}
       /> : null}
-      {!isLoading && (generationState === 'error' || historyState === 'error') ? <View style={styles.errorBlock}>
+      {!isLoading && (generationState === 'error' || historyState === 'error' || decisionError) ? <View style={styles.errorBlock}>
         <Text accessibilityRole="alert" style={styles.error}>조회 실패</Text>
         <Action label="다시 시도" onPress={retry} testID="persistent-session-monitoring-retry" />
       </View> : null}
-      {!isLoading && generationState === 'ready' && historyState === 'ready' && displayEvents.length === 0 ? <Text testID="persistent-session-monitoring-empty" style={styles.body}>기록 없음</Text> : null}
+      {!isLoading && !decisionError && generationState === 'ready' && historyState === 'ready' && displayEvents.length === 0 ? <Text testID="persistent-session-monitoring-empty" style={styles.body}>기록 없음</Text> : null}
       {!isLoading && historyState === 'ready' ? displayEvents.map((event) => {
         const time = new Date(event.created_at).toLocaleString('ko-KR', {
           month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',

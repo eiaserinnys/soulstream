@@ -76,7 +76,7 @@ export function PersistentSessionInstructionsFields({
       <Text accessibilityRole="alert" style={styles.error}>조회 실패</Text>
       <Action label="다시 시도" disabled={busy} onPress={onRetry} testID="persistent-instructions-retry" />
     </View> : null}
-    {!loading && !loadError && instructions.length === 0 ? <Notice text="등록된 지속 지시가 없습니다." /> : null}
+    {!loading && !loadError && instructions.length === 0 ? <Notice text="지속 지시 없음" /> : null}
     {!loadError ? instructions.map((instruction) => editingId === instruction.id
       ? <View key={instruction.id} style={{ gap: t.spacing.sm }} testID={`persistent-instruction-edit-${instruction.id}`}>
         <Input
@@ -95,7 +95,7 @@ export function PersistentSessionInstructionsFields({
         </View>
       </View>
       : <View key={instruction.id} style={{ gap: t.spacing.xs }} testID={`persistent-instruction-${instruction.id}`}>
-        <SettingsListRow title={instruction.text} detail={detail(instruction)} onPress={() => onEditStart(instruction)} testID={`persistent-instruction-open-${instruction.id}`} />
+        <SettingsListRow title={instruction.text} detail={detail(instruction)} onPress={() => onEditStart(instruction)} disabled={busy} testID={`persistent-instruction-open-${instruction.id}`} />
         <View style={{ flexDirection: 'row', gap: t.spacing.sm }}>
           <Action label="삭제" disabled={busy} onPress={() => onDelete(instruction)} testID={`persistent-instruction-delete-${instruction.id}`} />
         </View>

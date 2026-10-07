@@ -9,8 +9,6 @@ import {
 } from '../../api/client';
 import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
 import type { PersistentSessionSettingsPatch } from '../../api/persistentSessionEndpoints';
-import type { PersistentSessionInstruction } from '../../api/persistentSessionEndpoints';
-import { ApiHttpError } from '../../api/clientCore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens } from '../../theme';
@@ -30,122 +28,19 @@ import { SettingsSection } from './SettingsSection';
 import { useSettingsSaveScope } from './SettingsWorkspaceContext';
 import {
   PersistentSessionSettingsFields,
-  PersistentSessionInstructionsFields,
   persistentSessionDisplayValues,
   type PersistentSessionDisplayField,
   type PersistentSessionEditorSection,
 } from './PersistentSessionSettingsFields';
 import {
-  addPersistentSessionInstruction,
-  loadPersistentSessionInstructions,
   persistentChatDisplaySettings,
   savePersistentSessionSettings,
-  updatePersistentSessionInstruction,
 } from './persistentSessionSettingsActions';
 import { persistentSessionQuotaRows } from './PersistentSessionMonitoring';
 import { usePersistentSessionApiFactory } from './persistentSessionApi';
 
 const NO_MODEL = '모델 정보 없음';
 const NO_PROFILE = '프로필 정보 없음';
-
-export function PersistentSessionInstructions({ serverUrl, sessionId }: { serverUrl: string; sessionId: string }) {
-  const createApi = usePersistentSessionApiFactory();
-  const [instructions, setInstructions] = useState<PersistentSessionInstruction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState('');
-  const [addingText, setAddingText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [reload, setReload] = useState(0);
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setLoadError(false);
-    void loadPersistentSessionInstructions(createApi(serverUrl), sessionId)
-      .then((result) => { if (active) setInstructions(result.instructions); })
-      .catch(() => { if (active) setLoadError(true); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [createApi, serverUrl, sessionId, reload]);
-
-  const failMutation = (cause: unknown) => {
-    if (!mounted.current) return;
-    if (cause instanceof ApiHttpError && cause.status === 409) {
-      try {
-        if ((JSON.parse(cause.body) as { error?: unknown }).error === 'cap_reached') {
-          setMutationError('지속 지시를 더 추가할 수 없습니다.');
-          return;
-        }
-      } catch { /* Show the standard settings error below. */ }
-    }
-    setMutationError(describePersistentFailure(cause, 'save').text);
-  };
-
-  const add = async () => {
-    const text = addingText.trim();
-    if (!text || busy) return;
-    setBusy(true); setMutationError(null);
-    try {
-      const result = await addPersistentSessionInstruction(createApi(serverUrl), sessionId, text);
-      if (!mounted.current) return;
-      setInstructions((current) => [result.instruction, ...current.filter((item) => item.id !== result.instruction.id)]);
-      setAddingText('');
-    } catch (cause) { failMutation(cause); }
-    finally { if (mounted.current) setBusy(false); }
-  };
-
-  const save = async () => {
-    if (!editingId || busy) return;
-    const id = editingId;
-    const text = editingText.trim();
-    setBusy(true); setMutationError(null);
-    try {
-      const result = await updatePersistentSessionInstruction(createApi(serverUrl), sessionId, id, text ? { text } : { status: 'removed' });
-      if (!mounted.current) return;
-      if (!text || (result.instruction as PersistentSessionInstruction & { status?: string }).status === 'removed') {
-        setInstructions((current) => current.filter((item) => item.id !== id));
-      } else {
-        setInstructions((current) => [result.instruction, ...current.filter((item) => item.id !== id)]);
-      }
-      setEditingId(null); setEditingText('');
-    } catch (cause) { failMutation(cause); }
-    finally { if (mounted.current) setBusy(false); }
-  };
-
-  const remove = async (instruction: PersistentSessionInstruction) => {
-    if (busy) return;
-    setBusy(true); setMutationError(null);
-    try {
-      await updatePersistentSessionInstruction(createApi(serverUrl), sessionId, instruction.id, { status: 'removed' });
-      if (mounted.current) setInstructions((current) => current.filter((item) => item.id !== instruction.id));
-    } catch (cause) { failMutation(cause); }
-    finally { if (mounted.current) setBusy(false); }
-  };
-
-  return <PersistentSessionInstructionsFields
-    instructions={instructions}
-    loading={loading}
-    loadError={loadError}
-    mutationError={mutationError}
-    editingId={editingId}
-    editingText={editingText}
-    addingText={addingText}
-    busy={busy}
-    onRetry={() => setReload((value) => value + 1)}
-    onEditStart={(instruction) => { setMutationError(null); setEditingId(instruction.id); setEditingText(instruction.text); }}
-    onEditText={setEditingText}
-    onEditSave={() => void save()}
-    onEditCancel={() => { setEditingId(null); setEditingText(''); setMutationError(null); }}
-    onDelete={(instruction) => void remove(instruction)}
-    onAddText={(value) => { setAddingText(value); setMutationError(null); }}
-    onAdd={() => void add()}
-  />;
-}
 
 export function PersistentSessionsList({
   serverUrl,

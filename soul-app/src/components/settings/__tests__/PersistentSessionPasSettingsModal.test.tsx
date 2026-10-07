@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { Platform } from 'react-native';
+import { Platform, Text } from 'react-native';
 import { ApiHttpError } from '../../../api/clientCore';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -88,6 +88,10 @@ test('loads the persistent instructions group in the history section', async () 
   expect(await screen.findByText('요청한 범위부터 확인합니다.')).toBeTruthy();
   expect(screen.getByText(/T195, T210/)).toBeTruthy();
   expect(api.getPersistentSessionInstructions).toHaveBeenCalledWith('pas-1');
+  const order = screen.UNSAFE_getAllByType(Text)
+    .map((text) => text.props.children)
+    .filter((value) => value === '최근 기록' || value === '지속 지시');
+  expect(order.indexOf('최근 기록')).toBeLessThan(order.indexOf('지속 지시'));
 });
 
 test('saves a PAS display toggle as one immediate field and adopts the server response', async () => {
@@ -380,8 +384,13 @@ test('does not render a last-decision row when the timeline has no persistent de
 });
 
 test('keeps normal monitoring rows when only the decision request fails', async () => {
+  let decisionRequests = 0;
   api.getTimeline.mockImplementation(async (_id: string, query?: { eventTypes?: string[]; debugKinds?: string[] }) => {
-    if (query?.debugKinds) throw new Error('debug query unsupported');
+    if (query?.debugKinds) {
+      decisionRequests += 1;
+      if (decisionRequests === 1) throw new Error('debug query unsupported');
+      return { messages: [], next_cursor: null };
+    }
     if (query?.eventTypes?.length === 1) return { messages: [
       { id: 31, parent_event_id: null, event_type: 'generation_started', payload: { generation: 8 }, created_at: '2026-10-06T12:00:00Z' },
     ], next_cursor: null };
@@ -395,7 +404,12 @@ test('keeps normal monitoring rows when only the decision request fails', async 
   expect(await monitoring.findByText('현재 세대')).toBeTruthy();
   expect(monitoring.getByText('8')).toBeTruthy();
   expect(monitoring.queryByText('마지막 판단')).toBeNull();
-  expect(monitoring.queryByText('조회 실패')).toBeNull();
+  expect(await monitoring.findByText('조회 실패')).toBeTruthy();
+  expect(monitoring.queryByTestId('persistent-session-monitoring-empty')).toBeNull();
+  fireEvent.press(monitoring.getByTestId('persistent-session-monitoring-retry'));
+  await waitFor(() => expect(decisionRequests).toBe(2));
+  expect(monitoring.getByText('현재 세대')).toBeTruthy();
+  expect(monitoring.getByText('8')).toBeTruthy();
 });
 
 test('does not pair context usage from a failed turn with a later completion', async () => {

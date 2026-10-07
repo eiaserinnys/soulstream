@@ -6,7 +6,8 @@ import { AppModalSurface } from '../AppModalSurface';
 import { GlassButton } from '../GlassSurface';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens, type DesignTokens } from '../../theme';
-import { PersistentSessionEditor, PersistentSessionInstructions } from './PersistentSessionViews';
+import { PersistentSessionInstructions } from './PersistentSessionInstructions';
+import { PersistentSessionEditor } from './PersistentSessionViews';
 import { PersistentSessionMonitoring } from './PersistentSessionMonitoring';
 import { settingsPanelPage } from './SettingsFormParts';
 import { SettingsSegmentedControl } from './SettingsSegmentedControl';
@@ -98,11 +99,11 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
         </View>
         <View style={[styles.pane, section !== 'history' && styles.hidden]}>
           <ScrollView testID="persistent-session-pas-monitoring-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
-            <PersistentSessionInstructions serverUrl={serverUrl} sessionId={sessionId} />
             <PersistentSessionMonitoring
               serverUrl={serverUrl}
               sessionId={sessionId}
             />
+            <PersistentSessionInstructions serverUrl={serverUrl} sessionId={sessionId} />
           </ScrollView>
         </View>
       </View>
