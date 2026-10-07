@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Button, DashboardIconCap, LiquidGlassProvider, ProfileAvatar, SwayCharacter, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
-import { ArrowLeft, Eye, EyeOff, ListTodo, X } from 'lucide-react';
+import { Button, DashboardIconCap, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, ProfileAvatar, SwayCharacter, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useSessionProvider, useUserPreferencesSync } from '@seosoyoung/soul-ui';
+import { ArrowLeft, ListTodo, X } from 'lucide-react';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
 import { usePersistentSessionGeometry } from './use-persistent-session-geometry';
 import { navigateDashboard } from '../dashboard-navigation';
@@ -127,9 +127,9 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       </aside>}
       {selectedCardId && cardNavigation.cardId === selectedCardId && <CardWorkspace detailOnly cardId={selectedCardId} folders={folders ?? []} onClose={cardNavigation.close} onOpenSession={() => {}} mobileMode={false} mobileTab="cards" activeSession={undefined} chatInputDisabled historyEnabled={false} sessionStreamActive={false} sessionConnectionStatus="disconnected" reconnectSession={() => {}} onAcknowledgedReview={() => {}}/>}
     </>}
-    {geometry && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.mainWidth + geometry.lineLeftReach }}/>}
+    {geometry?.body && geometry.lineLeftReach > 0 && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.lineLeftReach }}/>}
     {displaySettings && geometry?.body && <div data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen && !(selectedCardId && cardNavigation.cardId === selectedCardId)} assetBaseUrl="/characters/seosoyoung"/></div>}
-    {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap label="캐릭터 표시" aria-pressed={displaySettings.showCharacter} disabled={details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <Eye/> : <EyeOff/>}</DashboardIconCap></div>}
+    {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap label={displaySettings.showCharacter ? '캐릭터 숨기기' : '캐릭터 표시'} disabled={details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <PersistentSessionPortraitOffIcon/> : <PersistentSessionPortraitIcon/>}</DashboardIconCap></div>}
     {settingsOpen && resource?.node_id && <PersistentSessionSettingsDialog sessionId={resource.session_id} nodeId={resource.node_id} onSaved={applySaved} onClose={() => setSettingsOpen(false)}/>}
     <ConfigModal open={configOpen} initialTab="persistent" onOpenChange={open => { setConfigOpen(open); if (!open) navigateDashboard('/'); }}/>
   </div>;

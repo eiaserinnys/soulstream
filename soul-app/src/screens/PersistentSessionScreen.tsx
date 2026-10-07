@@ -69,7 +69,8 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
     app,
     header: { left: app.left, top: app.top, width: app.width, height: headerHeight },
     main,
-    composer: { left: main.left + composer.x, top: main.top + composer.y, width: composer.width, height: composer.height },
+    baselineBottom: main.top + composer.y + composer.height,
+    rowBottomGap: t.spacing.xs,
     inputRowHeight, pointerFine: false, showCharacter: display?.show_character === true,
     phoneConfigured: phone || compact,
   }) : null;

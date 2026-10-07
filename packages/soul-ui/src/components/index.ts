@@ -57,6 +57,7 @@ export { SessionStoryDisclosure } from "./SessionStoryDisclosure";
 export { ThemeToggle } from "./ThemeToggle";
 export { DashboardIconCap } from "./DashboardIconCap";
 export type { DashboardIconCapProps } from "./DashboardIconCap";
+export { PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon } from "./PersistentSessionPortraitIcons";
 export { DisclosureActionIcon } from "./DisclosureActionIcon";
 export type { DisclosureActionIconProps } from "./DisclosureActionIcon";
 export { CollapsibleCaption } from "./chat/CollapsibleCaption";
