@@ -40,6 +40,9 @@ const createDefaults = {
 
 async function prepare(page: Page, width: number) {
   const errors: string[] = [];
+  let releaseLiveEvent = () => {};
+  const liveEventGate = new Promise<void>(resolve => { releaseLiveEvent = resolve; });
+  let eventStreamRequests = 0;
   page.on("pageerror", error => errors.push(error.stack ?? error.message));
   await page.setViewportSize({ width, height: 900 });
   await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
@@ -48,7 +51,7 @@ async function prepare(page: Page, width: number) {
     localStorage.setItem("ls.webglGlass", "0");
   });
   await installV3VisualQaRoutes(page, {
-    timelineEventCount: 24,
+    timelineEventCount: 80,
     liveEventText: "새 메시지 버튼 검수",
   });
   await page.route("**/api/persistent-sessions**", async route => {
@@ -66,23 +69,40 @@ async function prepare(page: Page, width: number) {
     return route.fallback();
   });
   await page.route("**/api/sessions/*/events", async route => {
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    const requestIndex = eventStreamRequests++;
+    if (requestIndex === 1) {
+      await liveEventGate;
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          "retry: 60000",
+          "",
+          "id: 81",
+          "event: assistant_message",
+          `data: ${JSON.stringify({
+            type: "assistant_message",
+            timestamp: 81,
+            content: `새 메시지 버튼 검수 ${sessionId}`,
+            tool_use_id: `${sessionId}-live`,
+            _final_for_live_stream: true,
+          })}`,
+          "",
+          "",
+        ].join("\n"),
+      });
+    }
+    if (requestIndex > 1) {
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: "retry: 60000\n\n: idle\n\n" });
+    }
     return route.fulfill({
       status: 200,
       contentType: "text/event-stream",
       body: [
-        "event: history_sync",
-        `data: ${JSON.stringify({ type: "history_sync", last_event_id: 24, is_live: true, status: "running" })}`,
+        "retry: 100",
         "",
-        "id: 25",
-        "event: assistant_message",
-        `data: ${JSON.stringify({
-          type: "assistant_message",
-          timestamp: 25,
-          content: `새 메시지 버튼 검수 ${sessionId}`,
-          tool_use_id: `${sessionId}-live`,
-          _final_for_live_stream: true,
-        })}`,
+        "event: history_sync",
+        `data: ${JSON.stringify({ type: "history_sync", last_event_id: 80, is_live: true, status: "running" })}`,
         "",
         "",
       ].join("\n"),
@@ -99,10 +119,14 @@ async function prepare(page: Page, width: number) {
   await expect(page.getByRole("button", { name: "서버 설정", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "작업 목록", exact: true })).toBeVisible();
   await expect(page.locator('[data-testid="send-button"]')).toBeVisible();
-  const scroller = page.locator('[data-chat-scroller="true"]');
+  const scroller = page.locator('[data-virtuoso-scroller="true"]');
   await expect(scroller).toBeVisible();
-  await scroller.evaluate(element => element.dispatchEvent(new WheelEvent("wheel", { deltaY: -300, bubbles: true })));
-  return errors;
+  await expect(page.getByText(/^히스토리 run-alpha-2 #/).first()).toBeVisible();
+  await expect.poll(() => scroller.evaluate(element => element.scrollHeight - element.clientHeight)).toBeGreaterThan(900);
+  await expect.poll(() => scroller.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThanOrEqual(2);
+  const initialScrollTop = await scroller.evaluate(element => element.scrollTop);
+  expect(initialScrollTop).toBeGreaterThan(0);
+  return { errors, scroller, releaseLiveEvent };
 }
 
 async function capture(page: Page, name: string) {
@@ -112,7 +136,7 @@ async function capture(page: Page, name: string) {
 
 for (const width of [1440, 1280]) {
   test(`PAS bare icon caps ${width}`, async ({ page }) => {
-    const errors = await prepare(page, width);
+    const { errors, scroller, releaseLiveEvent } = await prepare(page, width);
     const screen = page.getByTestId("persistent-session-screen");
     const bare = screen.locator('button[data-appearance="bare"]');
     await expect(bare).not.toHaveCount(0);
@@ -165,20 +189,16 @@ for (const width of [1440, 1280]) {
     expect(focusStyle.outlineStyle !== "none" || focusStyle.boxShadow !== "none").toBe(true);
     await capture(page, `pas-${width}-focus`);
 
-    const taskToggle = page.getByRole("button", { name: "작업 목록", exact: true });
-    await taskToggle.hover();
-    const hoverBackground = await taskToggle.evaluate(button => getComputedStyle(button).backgroundColor);
-    expect(hoverBackground).not.toBe("rgba(0, 0, 0, 0)");
-    await capture(page, `pas-${width}-hover`);
-    await taskToggle.hover();
-    await page.mouse.down();
-    const pressedBackground = await taskToggle.evaluate(button => getComputedStyle(button).backgroundColor);
-    expect(pressedBackground).not.toBe("rgba(0, 0, 0, 0)");
-    await capture(page, `pas-${width}-pressed`);
-    await page.mouse.up();
-
+    const initialScrollTop = await scroller.evaluate(element => element.scrollTop);
+    await scroller.hover();
+    await page.mouse.wheel(0, -500);
+    await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeLessThan(initialScrollTop);
+    await expect.poll(() => scroller.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeGreaterThan(48);
+    releaseLiveEvent();
+    await expect(page.getByText("새 메시지 버튼 검수 run-alpha-2", { exact: true })).toBeVisible();
     const newMessages = page.getByRole("button", { name: "새 메시지로 이동", exact: true });
     await expect(newMessages).toBeVisible();
+    await expect.poll(() => scroller.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeGreaterThan(48);
     const newMessagesStyle = await newMessages.evaluate(button => {
       const rect = button.getBoundingClientRect();
       const style = getComputedStyle(button);
@@ -201,13 +221,23 @@ for (const width of [1440, 1280]) {
     writeFileSync(path.join(output, `pas-${width}-new-messages-geometry.json`), JSON.stringify(newMessagesStyle, null, 2));
     await newMessages.click();
     await expect(newMessages).toHaveCount(0);
+    await expect.poll(() => scroller.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThanOrEqual(2);
 
-    if (width === 1440) {
-      await expect(screen.locator(".persistent-session-tasks")).toBeVisible();
-      await expect(taskToggle).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "작업 목록 닫기", exact: true })).toBeVisible();
-      await capture(page, "pas-1440-tasks-open");
-    }
+    const taskToggle = page.getByRole("button", { name: "작업 목록", exact: true });
+    await taskToggle.hover();
+    const hoverBackground = await taskToggle.evaluate(button => getComputedStyle(button).backgroundColor);
+    expect(hoverBackground).not.toBe("rgba(0, 0, 0, 0)");
+    await capture(page, `pas-${width}-hover`);
+    await taskToggle.hover();
+    await page.mouse.down();
+    const pressedBackground = await taskToggle.evaluate(button => getComputedStyle(button).backgroundColor);
+    expect(pressedBackground).not.toBe("rgba(0, 0, 0, 0)");
+    await capture(page, `pas-${width}-pressed`);
+    await page.mouse.up();
+    await expect(screen.locator(".persistent-session-tasks")).toBeVisible();
+    await expect(taskToggle).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "작업 목록 닫기", exact: true })).toBeVisible();
+    await capture(page, `pas-${width}-tasks-open`);
 
     expect(errors).toEqual([]);
   });
