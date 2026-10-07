@@ -198,6 +198,7 @@ export function PersistentSessionDetails({
   modelPresetCatalog,
   weeklyAvailability = [],
   monitoring,
+  instructions,
   onFieldChange,
   onSave,
   onModelError,
@@ -213,6 +214,7 @@ export function PersistentSessionDetails({
   modelPresetCatalog?: NodeModelPresetCatalog;
   weeklyAvailability?: readonly ModelPresetAvailability[];
   monitoring?: ReactNode;
+  instructions?: ReactNode;
   onFieldChange<K extends PersistentSessionDetailsField>(field: K, value: PersistentSessionDetailsDraft[K], options?: { saveImmediately?: boolean }): void;
   onSave(): void;
   onModelError?(message: string): void;
@@ -232,7 +234,7 @@ export function PersistentSessionDetails({
       && !(next && sameModel({ model_preset: next.target_model_preset, reasoning_effort: next.target_reasoning_effort }, saved));
   })();
 
-  if (showsRecord) return <div className="space-y-4">{monitoring}</div>;
+  if (showsRecord) return <div className="space-y-4">{monitoring}{instructions}</div>;
 
   const nameField = <SettingFieldWidget
     field={textField("display_name", "세션 이름", draft.displayName, nodeUnknown)}

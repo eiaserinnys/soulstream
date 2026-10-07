@@ -34,6 +34,7 @@ import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChat
 import { PersistentTurnEndCaptionsReviewSample } from "./PersistentTurnEndCaptionsReviewSample";
 import { PersistentAgentMessageGroupReviewSample } from "./PersistentAgentMessageGroupReviewSample";
 import { PersistentSessionSettingsReviewSample } from "./PersistentSessionSettingsReviewSample";
+import { PersistentSessionInstructionsReviewSample } from "./PersistentSessionInstructionsReviewSample";
 import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenReviewSample';
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
@@ -293,7 +294,8 @@ export function ComponentsReviewPage() {
                 })} onSelect={setFolder} onContextMenu={() => open("폴더 메뉴")} onReorder={async () => open("폴더 순서")}/></div>
             </Sample>
             <ComponentsReviewControls/>
-            <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
+            <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
+            <Sample name="PersistentSessionInstructions" state="빈 목록 · 항목 여럿 · 편집 중 · 상한 안내"><PersistentSessionInstructionsReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>
             </div>
           </section>

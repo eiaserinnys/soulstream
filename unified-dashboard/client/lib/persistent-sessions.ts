@@ -69,6 +69,17 @@ export type PersistentSessionCreate = {
   settings: DefaultModelWrite;
 };
 
+export type PersistentInstruction = {
+  id: string;
+  text: string;
+  source_turns: string[];
+  created_at: string;
+  updated_at: string;
+  origin: string;
+};
+
+export type PersistentInstructionUpdate = { text: string } | { status: "removed" };
+
 /** 등록 실패 응답은 만들어진 세션의 ID와 이름을 함께 준다. */
 export class PersistentSessionError extends HttpResponseError {
   constructor(
@@ -107,6 +118,12 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch) {
     },
     update: (sessionId: string, input: PersistentSessionWrite) =>
       call<{ session: PersistentSession; model_change: "none" | "next_execution_start" }>(`/${encodeURIComponent(sessionId)}`, "PUT", input),
+    listInstructions: (sessionId: string) =>
+      call<{ instructions: PersistentInstruction[] }>(`/${encodeURIComponent(sessionId)}/instructions`),
+    addInstruction: (sessionId: string, text: string) =>
+      call<{ instruction: PersistentInstruction }>(`/${encodeURIComponent(sessionId)}/instructions`, "POST", { text }),
+    updateInstruction: (sessionId: string, instructionId: string, input: PersistentInstructionUpdate) =>
+      call<{ instruction: PersistentInstruction }>(`/${encodeURIComponent(sessionId)}/instructions/${encodeURIComponent(instructionId)}`, "PUT", input),
     create: (input: PersistentSessionCreate) =>
       call<{ session: PersistentSession; creation: "started"; warnings: unknown[] }>("", "POST", input),
   };
@@ -120,11 +137,14 @@ async function failure(response: Response): Promise<PersistentSessionError> {
   let createdSession: PersistentSessionError["createdSession"] = null;
   try {
     const payload = await response.json() as {
-      error?: { code?: unknown; message?: unknown };
+      error?: { code?: unknown; message?: unknown } | string;
       created_session?: { session_id?: unknown; display_name?: unknown };
     };
-    if (typeof payload.error?.message === "string") message = payload.error.message;
-    if (typeof payload.error?.code === "string") code = payload.error.code;
+    if (typeof payload.error === "string") code = payload.error;
+    else {
+      if (typeof payload.error?.message === "string") message = payload.error.message;
+      if (typeof payload.error?.code === "string") code = payload.error.code;
+    }
     if (typeof payload.created_session?.session_id === "string") {
       createdSession = {
         session_id: payload.created_session.session_id,

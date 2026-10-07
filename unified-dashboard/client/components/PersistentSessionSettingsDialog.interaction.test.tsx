@@ -38,6 +38,7 @@ it("saves one display field immediately and publishes only the returned settings
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
     calls.push({ path: url.pathname, method, body });
     if (url.pathname === "/api/persistent-sessions/sample-pas" && method === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
     if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
     if (method === "PUT") return await new Promise<Response>((resolve) => {
       release = () => {
@@ -50,6 +51,7 @@ it("saves one display field immediately and publishes only the returned settings
 
   await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
   await settle();
+  expect(calls.some((call) => call.path === "/api/persistent-sessions/sample-pas/instructions" && call.method === "GET")).toBe(true);
   click("표시와 모션");
   expect([...document.body.querySelectorAll<HTMLButtonElement>("[role=switch]")].map((control) => control.getAttribute("aria-label"))).toEqual([
     "캐릭터 표시", "캐릭터 움직임", "세대 구분선 표시", "Jev 후보 표시", "턴 끝 사용량 표시",
@@ -84,6 +86,7 @@ it("keeps the persisted switch value when an immediate update fails", async () =
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
     if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
     if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
     if ((init?.method ?? "GET") === "PUT") return Response.json({ error: { message: "예시 저장 실패" } }, { status: 503 });
     throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
@@ -122,6 +125,7 @@ it.each([
       resource = { ...resource, display_name: body.display_name ?? resource.display_name, settings: { ...resource.settings, ...body.settings } };
       return Response.json({ session: resource, model_change: "none" });
     }
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
     throw new Error(`Unexpected request: ${method} ${url.pathname}`);
   };
 
@@ -161,6 +165,7 @@ it("shows server-calculated weekly headroom for session providers and omits rema
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
     if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
     if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
     if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [
       { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: "2026-10-08T00:00:00.000Z", usage_warning: false,
@@ -198,6 +203,7 @@ it("uses the shared account detail draft and save action", async () => {
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
     if (url.pathname === "/api/persistent-sessions/sample-pas" && method === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
     if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
     if (method === "PUT") {
       calls.push({ method, body });
@@ -225,6 +231,47 @@ it("uses the shared account detail draft and save action", async () => {
     body: { display_name: "수정한 검수 세션", settings: { default_model: { model_preset: "sample-opus", reasoning_effort: null } } },
   }]);
   expect(document.body.textContent).toContain("수정한 검수 세션");
+});
+
+it("keeps the settings dialog open when Escape cancels instruction editing and closes it otherwise", async () => {
+  const resource = makeSession();
+  const onClose = vi.fn();
+  const instruction = {
+    id: "instruction-1",
+    text: "간결하게 답합니다.",
+    source_turns: ["T195"],
+    created_at: "2026-10-06T10:00:00.000Z",
+    updated_at: "2026-10-06T11:00:00.000Z",
+    origin: "user",
+  };
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") {
+      return Response.json({ session: resource });
+    }
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [instruction] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [] });
+    throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<DismissiblePersistentSessionSettingsDialog request={request} onClose={onClose} />));
+  await settle();
+  click("기록");
+  click("수정");
+
+  const editInput = document.querySelector<HTMLInputElement>('input[aria-label="지속 지시 수정"]')!;
+  await act(async () => editInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+
+  expect(document.querySelector('[data-testid="persistent-session-settings-dialog"]')).not.toBeNull();
+  expect(document.querySelector('input[aria-label="지속 지시 수정"]')).toBeNull();
+  expect(document.body.textContent).toContain("간결하게 답합니다.");
+  expect(onClose).not.toHaveBeenCalled();
+
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+  await settle();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-testid="persistent-session-settings-dialog"]')).toBeNull();
 });
 
 async function settle() {
@@ -262,6 +309,18 @@ function DraftPreservationHarness({ resource: initialResource, request }: { reso
       onSave={() => { void details.save(); }}
     />
   </>;
+}
+
+function DismissiblePersistentSessionSettingsDialog({ request, onClose }: { request: typeof fetch; onClose(): void }) {
+  const [open, setOpen] = useState(true);
+  if (!open) return null;
+  return <PersistentSessionSettingsDialog
+    sessionId="sample-pas"
+    nodeId="sample-node"
+    request={request}
+    onClose={() => { onClose(); setOpen(false); }}
+    modelPresetCatalog={modelPresetCatalog}
+  />;
 }
 
 function click(label: string) {

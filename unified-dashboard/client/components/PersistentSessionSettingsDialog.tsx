@@ -21,6 +21,7 @@ import {
   type PersistentSessionDetailsSection,
 } from "./PersistentSessionDetails";
 import { usePersistentSessionMonitoring, PersistentSessionMonitoringView } from "./PersistentSessionMonitoring";
+import { PersistentSessionInstructionsView, usePersistentSessionInstructions } from "./PersistentSessionInstructions";
 
 const categories: ConfigCategoryNavItem[] = [
   { name: "account", label: "계정과 모델" },
@@ -52,6 +53,7 @@ export function PersistentSessionSettingsDialog({
   const [mobileIndex, setMobileIndex] = useState(true);
   const setPersistentSessionDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const monitoring = usePersistentSessionMonitoring({ sessionId, nodeId, request });
+  const instructions = usePersistentSessionInstructions({ sessionId, api });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,6 +112,7 @@ export function PersistentSessionSettingsDialog({
               modelPresetCatalog={modelPresetCatalog}
               weeklyAvailability={monitoring.modelPresets}
               monitoring={<PersistentSessionMonitoringView state={monitoring} />}
+              instructions={<PersistentSessionInstructionsView state={instructions.state} actions={instructions.actions} />}
               onFieldChange={details.onFieldChange}
               onSave={() => { void details.save(); }}
               onModelError={setModelError}
