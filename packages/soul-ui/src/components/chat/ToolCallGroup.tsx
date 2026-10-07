@@ -89,6 +89,9 @@ const ToolCallItem = memo(function ToolCallItem({
             msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
           )}
         >
+          {expanded
+            ? <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
+            : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
           <StatusIcon className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate text-left">{shortName}</span>
           {duration && <span className="shrink-0 text-muted-foreground">{duration}</span>}
