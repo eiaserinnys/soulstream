@@ -17,6 +17,20 @@ export type { SessionTimelineEventType } from "@soulstream/wire-schema";
 
 export type RequestedTimelineEventType = SessionTimelineEventType | "complete";
 
+export const DEFAULT_TIMELINE_DEBUG_KINDS = [
+  "assigned_card_context_snapshot",
+  "persistent_jev_candidates",
+] as const;
+
+export type RequestedTimelineDebugKind =
+  | (typeof DEFAULT_TIMELINE_DEBUG_KINDS)[number]
+  | "persistent_decision";
+
+export const ALLOWED_TIMELINE_DEBUG_KINDS = new Set<RequestedTimelineDebugKind>([
+  ...DEFAULT_TIMELINE_DEBUG_KINDS,
+  "persistent_decision",
+]);
+
 export type SessionHistoryRawEvent = {
   eventId: number;
   eventType: string;
@@ -54,6 +68,7 @@ export type SessionHistoryProvider = {
     before: string | null,
     limit: number,
     eventTypes?: readonly RequestedTimelineEventType[],
+    debugKinds?: readonly RequestedTimelineDebugKind[],
   ) => Promise<[unknown[], string | null]>;
   readTimelineTrace: (sessionId: string, timelineId: string) => Promise<unknown | null | undefined>;
   readStory: (sessionId: string) => Promise<SessionStoryResponse>;
@@ -112,10 +127,13 @@ export class SessionHistoryReadService {
     before: string | null,
     limit: number,
     eventTypes?: readonly RequestedTimelineEventType[],
+    debugKinds?: readonly RequestedTimelineDebugKind[],
   ): Promise<SessionHistoryPageResponse> {
-    const [messages, nextCursor] = eventTypes === undefined
-      ? await this.provider.readTimeline(sessionId, before, limit)
-      : await this.provider.readTimeline(sessionId, before, limit, eventTypes);
+    const [messages, nextCursor] = debugKinds === undefined
+      ? eventTypes === undefined
+        ? await this.provider.readTimeline(sessionId, before, limit)
+        : await this.provider.readTimeline(sessionId, before, limit, eventTypes)
+      : await this.provider.readTimeline(sessionId, before, limit, eventTypes, debugKinds);
     return { messages, next_cursor: nextCursor };
   }
 

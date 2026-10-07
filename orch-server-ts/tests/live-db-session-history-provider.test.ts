@@ -4,6 +4,7 @@ import { SESSION_TIMELINE_EVENT_TYPES } from "@soulstream/wire-schema";
 import {
   createApp,
   createLiveDbCatalogRepository,
+  DEFAULT_TIMELINE_DEBUG_KINDS,
   type LivePostgresSql,
 } from "../src/index.js";
 
@@ -299,11 +300,93 @@ describe("live DB session history provider", () => {
     expect(timelineQuery?.values).toEqual([
       "sess-filtered",
       ["user_message", "assistant_message", "tool_start", "tool_result"],
+      DEFAULT_TIMELINE_DEBUG_KINDS,
       "2026-08-12T00:00:00.000Z",
       "2026-08-12T00:00:00.000Z",
       42,
       101,
     ]);
+  });
+
+  it("keeps the default debug kinds across all timeline cursor query branches", async () => {
+    const harness = createSqlHarness((text) =>
+      text.includes("SELECT EXISTS") ? [{ exists: true }] : [],
+    );
+    const provider = createLiveDbCatalogRepository({ sql: harness.sql })
+      .sessionHistoryProvider;
+
+    await provider.readTimeline("sess-default", null, 10);
+    await provider.readTimeline("sess-default", "2026-08-12T00:00:00.000Z", 10);
+    await provider.readTimeline("sess-default", "2026-08-12T00:00:00.000Z,42", 10);
+
+    const timelineQueries = harness.calls.filter((call) =>
+      call.text.includes("event_type = ANY"),
+    );
+    expect(timelineQueries).toHaveLength(3);
+    for (const query of timelineQueries) {
+      expect(query.text).toContain("payload->>'kind' = ANY(?::text[])");
+      expect(query.values[2]).toEqual([
+        "assigned_card_context_snapshot",
+        "persistent_jev_candidates",
+      ]);
+    }
+    expect(timelineQueries[0]?.text).not.toContain("created_at < ?");
+    expect(timelineQueries[1]?.text).toContain("created_at < ?");
+    expect(timelineQueries[2]?.text).toContain("created_at = ? AND id < ?");
+  });
+
+  it("returns only the explicitly requested persistent_decision kind, newest first", async () => {
+    const latestAt = new Date("2026-10-06T11:00:00.000Z");
+    const olderAt = new Date("2026-10-06T10:00:00.000Z");
+    const harness = createSqlHarness((text) => {
+      if (text.includes("SELECT EXISTS")) return [{ exists: true }];
+      if (text.includes("event_type = ANY")) {
+        return [
+          {
+            id: 12,
+            parent_event_id: null,
+            event_type: "debug",
+            payload: { type: "debug", kind: "persistent_decision", action: "continue" },
+            created_at: latestAt,
+          },
+          {
+            id: 11,
+            parent_event_id: null,
+            event_type: "debug",
+            payload: { type: "debug", kind: "persistent_decision", action: "sleep" },
+            created_at: olderAt,
+          },
+        ];
+      }
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({ sql: harness.sql })
+      .sessionHistoryProvider;
+
+    const [messages, nextCursor] = await provider.readTimeline(
+      "sess-decisions",
+      null,
+      1,
+      ["debug"],
+      ["persistent_decision"],
+    );
+
+    expect(messages).toEqual([expect.objectContaining({
+      id: 12,
+      event_type: "debug",
+      payload: expect.objectContaining({ kind: "persistent_decision", action: "continue" }),
+    })]);
+    expect(nextCursor).toBe(`${latestAt.toISOString()},12`);
+    const timelineQuery = harness.calls.find((call) =>
+      call.text.includes("event_type = ANY"),
+    );
+    expect(timelineQuery?.values.slice(0, 3)).toEqual([
+      "sess-decisions",
+      ["debug"],
+      ["persistent_decision"],
+    ]);
+    expect(timelineQuery?.values.at(-1)).toBe(2);
+    expect(timelineQuery?.text).toContain("ORDER BY created_at DESC, id DESC");
   });
 
   it("keeps legacy complete fallback only when the requested subset needs assistant output", async () => {
