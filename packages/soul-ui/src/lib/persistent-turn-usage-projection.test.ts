@@ -74,6 +74,50 @@ describe("projectPersistentTurnUsage", () => {
     expect(projectPersistentTurnUsage([complete], true)).toEqual([complete]);
   });
 
+  it("joins an anchored record to the existing complete caption without changing usage or summary", () => {
+    const user = makeMessage("user-1", "user_message", { inputId: "input-1" });
+    const assistant = makeMessage("assistant-2", "assistant_message", { role: "assistant", content: "응답" });
+    const complete = makeMessage("complete-3", "complete", {
+      usage: { input_tokens: 1_200, output_tokens: 340 },
+      turnCostUsd: 1.4,
+      sessionCostUsd: 1.4,
+      turnSummaryCaption: { treeNodeId: "summary-4", content: "기존 요약" },
+    });
+    const record = makeMessage("record-5", "persistent_instruction_recorded", {
+      preparedInputId: "input-1",
+      persistentInstructionRecorded: {
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195"], action: "added" }],
+        capReached: false,
+      },
+    });
+
+    const result = projectPersistentTurnUsage([user, assistant, complete, record], true);
+
+    expect(result.map((message) => message.id)).toEqual(["user-1", "assistant-2", "complete-3"]);
+    expect(result[2]?.turnUsageCaption).toEqual({
+      title: "정가 $1.40",
+      contextText: undefined,
+      completeText: "턴 완료 · 입력 1,200 · 출력 340 · 정가 $1.40 (세션 $1.40)",
+    });
+    expect(result[2]?.turnSummaryCaption).toEqual({ treeNodeId: "summary-4", content: "기존 요약" });
+    expect(result[2]?.persistentInstructionRecorded?.instructions[0]?.text).toBe("간결하게 답합니다.");
+  });
+
+  it("keeps an instruction caption when usage is disabled", () => {
+    const record = { instructions: [], capReached: true };
+    const complete = makeMessage("complete-1", "complete", { persistentInstructionRecorded: record });
+
+    const result = projectPersistentTurnUsage([
+      complete,
+      makeMessage("record-2", "persistent_instruction_recorded", { persistentInstructionRecorded: record }),
+    ], false);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "complete-1",
+      persistentInstructionRecorded: record,
+    });
+  });
+
   it("keeps errors, adds their paired context below, and emits no row for context without a terminal", () => {
     const error = makeMessage("error-2", "error", {
       content: "실패",

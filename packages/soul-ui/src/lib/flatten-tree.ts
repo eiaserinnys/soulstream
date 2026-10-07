@@ -28,11 +28,14 @@ import type {
   AssignedCardContextNode,
   GenerationStartedNode,
   PersistentJevCandidatesNode,
+  PersistentInstructionRecordedNode,
+  PersistentInstructionRecordedData,
 } from "@shared/types";
 import { extractNodeEventId } from "./event-tree-id";
 import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
 import { placeAssignedCardContextsAtInputAnchors } from "./assigned-card-context-projection";
 import { placePersistentJevCandidatesAtInputAnchors } from "./persistent-jev-candidates";
+import { placePersistentInstructionRecordedAtTurnEnds } from "./persistent-instruction-recorded";
 import { formatRateLimitNotice } from "@shared/rate-limit-notice";
 import { formatTurnCompleteStats, TURN_COMPLETE_LABEL } from "./turn-usage-format";
 
@@ -143,6 +146,8 @@ export interface ChatMessage {
   assignedCardCount?: number;
   /** persistent_jev_candidates 전용 후보 표시값. */
   jevCandidates?: import("./persistent-jev-candidates").PersistentJevCandidate[];
+  /** persistent_instruction_recorded 전용 캡션 표시값. */
+  persistentInstructionRecorded?: PersistentInstructionRecordedData;
 }
 
 /**
@@ -230,6 +235,15 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     && a.preparedInputId === b.preparedInputId
     && a.assignedCardCount === b.assignedCardCount
     && a.jevCandidates === b.jevCandidates
+    && (
+      a.persistentInstructionRecorded === b.persistentInstructionRecorded
+      || (
+        a.persistentInstructionRecorded !== undefined
+        && b.persistentInstructionRecorded !== undefined
+        && a.persistentInstructionRecorded.instructions === b.persistentInstructionRecorded.instructions
+        && a.persistentInstructionRecorded.capReached === b.persistentInstructionRecorded.capReached
+      )
+    )
   );
 }
 
@@ -256,9 +270,11 @@ export function flattenTree(
 
   const messages: ChatMessage[] = [];
   collectMessages(root, messages, options);
-  return placePersistentJevCandidatesAtInputAnchors(
-    placeTurnSummariesAtResponseAnchors(
-      placeAssignedCardContextsAtInputAnchors(messages),
+  return placePersistentInstructionRecordedAtTurnEnds(
+    placePersistentJevCandidatesAtInputAnchors(
+      placeTurnSummariesAtResponseAnchors(
+        placeAssignedCardContextsAtInputAnchors(messages),
+      ),
     ),
   );
 }
@@ -554,6 +570,23 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
     case "persistent_jev_candidates": {
       const n = node as PersistentJevCandidatesNode;
       return { id: n.id, role: "system", content: "", timestamp: n.timestamp, treeNodeId: n.id, treeNodeType: n.type, preparedInputId: n.preparedInputId, jevCandidates: n.candidates };
+    }
+
+    case "persistent_instruction_recorded": {
+      const n = node as PersistentInstructionRecordedNode;
+      return {
+        id: n.id,
+        role: "system",
+        content: "",
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        preparedInputId: n.preparedInputId,
+        persistentInstructionRecorded: {
+          instructions: n.instructions,
+          capReached: n.capReached,
+        },
+      };
     }
 
     case "turn_summary": {

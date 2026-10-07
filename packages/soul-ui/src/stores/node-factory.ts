@@ -38,6 +38,7 @@ import { formatRetryingErrorHistory } from "@shared/sse-events";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
 import { isPersistentJevCandidatesDebugEvent } from "../lib/persistent-jev-candidates";
+import { isPersistentInstructionRecordedDebugEvent } from "../lib/persistent-instruction-recorded";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
 import { TRUNCATE_THRESHOLD } from "./event-update";
@@ -431,6 +432,20 @@ export function createNodeFromEvent(
             completed: true,
             preparedInputId: event.observation.input_id,
             candidates: event.observation.selected,
+            timestamp: event.timestamp,
+          },
+        );
+      }
+      if (isPersistentInstructionRecordedDebugEvent(event)) {
+        return makeNode(
+          `persistent-instruction-recorded-${eventId}`,
+          "persistent_instruction_recorded",
+          "",
+          {
+            completed: true,
+            preparedInputId: event.input_id,
+            instructions: event.instructions,
+            capReached: event.cap_reached,
             timestamp: event.timestamp,
           },
         );

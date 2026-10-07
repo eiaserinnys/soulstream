@@ -2,12 +2,37 @@ import { pairTurnUsage } from "./persistent-turn-usage";
 import type { ChatMessage } from "./flatten-tree";
 import { formatContextUsageText, formatTurnCompleteStats, formatTurnUsageCaptionTitle, TURN_COMPLETE_LABEL, TURN_USAGE_SEPARATOR } from "./turn-usage-format";
 
+function mergePersistentInstructionRecordedCaptions(messages: ChatMessage[]): ChatMessage[] {
+  const consumed = new Set<number>();
+  const captions = new Map<number, NonNullable<ChatMessage["persistentInstructionRecorded"]>>();
+
+  messages.forEach((message, index) => {
+    if (message.treeNodeType !== "persistent_instruction_recorded" || !message.persistentInstructionRecorded) return;
+    for (let previous = index - 1; previous >= 0; previous -= 1) {
+      const candidate = messages[previous]!;
+      if (candidate.treeNodeType === "user_message" || candidate.treeNodeType === "intervention") break;
+      if (candidate.treeNodeType === "complete") {
+        captions.set(previous, message.persistentInstructionRecorded);
+        consumed.add(index);
+        break;
+      }
+    }
+  });
+
+  return messages.flatMap((message, index) => {
+    if (consumed.has(index)) return [];
+    const caption = captions.get(index);
+    return caption ? [{ ...message, persistentInstructionRecorded: caption }] : [message];
+  });
+}
+
 /** Adds PAS usage captions while leaving default transcript messages untouched. */
 export function projectPersistentTurnUsage(
   messages: ChatMessage[],
   showTurnUsage: boolean,
 ): ChatMessage[] {
-  const sourceMessages = messages.filter((message) => (
+  const captionedMessages = mergePersistentInstructionRecordedCaptions(messages);
+  const sourceMessages = captionedMessages.filter((message) => (
     message.treeNodeType === "context_usage"
     || message.treeNodeType === "complete"
     || message.treeNodeType === "error"
@@ -67,13 +92,13 @@ export function projectPersistentTurnUsage(
     }
   }
 
-  return messages.flatMap((message) => {
+  return captionedMessages.flatMap((message) => {
     if (message.treeNodeType === "context_usage") return [];
     if (message.treeNodeType === "complete") {
-      if (!showTurnUsage) return message.turnSummaryCaption ? [message] : [];
+      if (!showTurnUsage) return message.turnSummaryCaption || message.persistentInstructionRecorded ? [message] : [];
       const caption = captions.get(String(message.eventId ?? message.id));
       if (caption) return [{ ...message, turnUsageCaption: caption }];
-      return message.turnSummaryCaption ? [message] : [];
+      return message.turnSummaryCaption || message.persistentInstructionRecorded ? [message] : [];
     }
     if (message.treeNodeType === "error") {
       const caption = captions.get(String(message.eventId ?? message.id));

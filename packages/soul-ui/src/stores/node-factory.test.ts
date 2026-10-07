@@ -56,6 +56,28 @@ function makeCtxWithRoot(): { ctx: ProcessingContext; root: EventTreeNode } {
 
 describe("createNodeFromEvent", () => {
   describe("creation events (returns non-null)", () => {
+    it("creates a persistent instruction recorded node and ignores unrelated debug kinds", () => {
+      const event = {
+        type: "debug",
+        kind: "persistent_instruction_recorded",
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195", "T210"], action: "added" }],
+        cap_reached: true,
+        input_id: "input-195",
+        timestamp: 1700000123,
+      } as const;
+
+      const node = createNodeFromEvent(event, 73);
+      expect(node).toMatchObject({
+        id: "persistent-instruction-recorded-73",
+        type: "persistent_instruction_recorded",
+        preparedInputId: "input-195",
+        instructions: event.instructions,
+        capReached: true,
+        timestamp: event.timestamp,
+      });
+      expect(createNodeFromEvent({ type: "debug", kind: "persistent_decision" } as const, 74)).toBeNull();
+    });
+
     it("should create node for user_message", () => {
       const event: UserMessageEvent = {
         type: "user_message",
