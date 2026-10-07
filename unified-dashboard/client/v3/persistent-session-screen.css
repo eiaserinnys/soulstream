@@ -50,3 +50,6 @@
 }
 /* Empty history has no Virtuoso flex child; retain the same composer seat. */
 .persistent-session-main [data-slot="chat-root"] > [data-testid="chat-input"] { margin-top: auto; }
+@media (max-width: 760px) {
+  .persistent-session-screen .v3-workspace-scrim { inset-block-end: 0; }
+}

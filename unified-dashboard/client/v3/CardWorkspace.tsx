@@ -8,8 +8,8 @@ import { readV3CardWorkspaceLayout, writeV3CardWorkspaceLayout } from "./v3-sess
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 
 /** Card overlay uses the folder workspace's panel, split and mobile classes. */
-export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,mobileTab,initialSessionId,sampleDetail,sampleExecution,onSampleChange,...chat}: {
- cardId:string;folders:ComponentProps<typeof CardDetailPane>["folders"];onClose():void;
+export function CardWorkspace({cardId,folders,onClose,onCloseChat,onOpenSession,mobileMode,mobileTab,initialSessionId,sampleDetail,sampleExecution,onSampleChange,...chat}: {
+ cardId:string;folders:ComponentProps<typeof CardDetailPane>["folders"];onClose():void;onCloseChat?():void;
  onOpenSession:ComponentProps<typeof CardDetailPane>["onOpenSession"];mobileMode:boolean;mobileTab:string;
  initialSessionId?:ComponentProps<typeof CardDetailPane>["initialSessionId"];
  sampleExecution?:ComponentProps<typeof CardDetailPane>["sampleExecution"];
@@ -55,7 +55,7 @@ export function CardWorkspace({cardId,folders,onClose,onOpenSession,mobileMode,m
  };
  const panes=<>
   <CardDetailPane cardId={cardId} folders={folders} onClose={onClose} onOpenSession={onOpenSession} initialSessionId={initialSessionId} sampleDetail={sampleDetail} sampleExecution={sampleExecution} onSampleChange={onSampleChange}/>
-  <WorkspaceSessionColumn {...chat} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}
+  <WorkspaceSessionColumn {...chat} onClose={mobileMode?onCloseChat:undefined} chatClassName="" chatTestId="v3-card-session-chat" resizeClassName="v3-workspace-divider" resizeTestId="v3-card-workspace-divider" onResize={delta=>drag(delta,"middle")} onResizeKeyDown={event=>key(event,"middle")}
    separatorAria={{"aria-valuenow":resolved.cardWidth,"aria-valuemin":resolved.minimum,"aria-valuemax":resolved.totalWidth-resolved.gap-resolved.minimum,"aria-valuetext":`카드 ${Math.round(resolved.cardWidth)}픽셀, 대화 ${Math.round(resolved.chatWidth)}픽셀`}}/>
  </>;
  const content=<div className="v3-workspace-scrim is-chat-open" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}

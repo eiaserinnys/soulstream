@@ -118,7 +118,7 @@ export function CardBoardSamples() {
       : <><PostItGrid>{cards.filter(card=>card.status!=="done").map(card=><div key={card.id}>{renderCard(card,"default")}</div>)}</PostItGrid>{includeCompleted?<CompletedCardCollection browser={completed} renderCard={card=>renderCard(card,"default")}/>:null}</>}
     {selectedCard?<CardWorkspace cardId={selectedCard.id} sampleExecution={startExample==='pending'?{phase:'pending',message:'시작 중…'}:undefined} sampleDetail={selectedCardDetail}
       onSampleChange={update=>setSampleDetails(previous=>({...previous,[selectedCard.id]:update(previous[selectedCard.id]??selectedCardDetail!)}))}
-      folders={reviewFolders} onClose={()=>setSelected(null)} onOpenSession={(session,selection)=>{
+      folders={reviewFolders} onClose={()=>setSelected(null)} onCloseChat={()=>setMobileTab("today")} onOpenSession={(session,selection)=>{
         activateRunSession(session,useDashboardStore.getState());setSelectedSession(session);if(selection?.source!=='automatic')setMobileTab("chat");
       }}
       mobileMode={mobileMode} mobileTab={mobileTab} activeSession={selectedSession} chatInputDisabled historyEnabled={false} sessionStreamActive={false}

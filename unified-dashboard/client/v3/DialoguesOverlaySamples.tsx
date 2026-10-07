@@ -123,6 +123,7 @@ export function DialoguesOverlaySamples({
         sampleDetail={reviewDetail}
         folders={dialoguesFolders}
         onClose={onClose}
+        onCloseChat={()=>setMobileTab("today")}
         onOpenSession={session=>{
           activateRunSession(session,useDashboardStore.getState());setSelectedSession(session);setMobileTab("chat");
           api.record("샘플 세션 열기");onChanged();

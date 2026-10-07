@@ -28,6 +28,10 @@
     display: none;
   }
 
+  .v3-workspace[data-testid="v3-card-workspace"]:not([data-mobile-view="chat"]) .v3-chat-pane {
+    display: none;
+  }
+
   .v3-workspace[data-mobile-view="chat"] .v3-chat-pane {
     display: flex;
     width: 100%;
