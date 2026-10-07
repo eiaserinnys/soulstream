@@ -39,7 +39,7 @@ export function usePersistentChatDisplaySettings(
     return () => { active = false; };
   }, [api, beginLoad, clearSettings, detailedNetworkActive, finishLoad, sessionId]);
 
-  const current = settings?.sessionId === sessionId ? settings.settings : undefined;
+  const current = settings?.sessionId === sessionId ? settings?.settings : undefined;
   return {
     persistentDisplaySettings: current ? {
       showGenerationSeparator: current.show_generation_separator,

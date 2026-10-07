@@ -22,6 +22,18 @@ export function ReviewPersistentButtons() {
         >
           <Ionicons name="home-outline" size={t.iconSize.navigation} color={t.colors.textPrimary} />
         </LiquidGlassButton>
+        <LiquidGlassButton
+          iconOnly
+          size="compact"
+          variant="plain"
+          disabled
+          accessibilityLabel="비활성 설정 버튼"
+          onPress={() => undefined}
+          testID="persistent-review-plain-disabled-button"
+          surfaceTestID="persistent-review-plain-disabled-button-visual"
+        >
+          <Ionicons name="options-outline" size={t.iconSize.navigation} color={t.colors.textPrimary} />
+        </LiquidGlassButton>
         <ChatNewMessageButton onPress={() => undefined} />
       </View>
     </View>

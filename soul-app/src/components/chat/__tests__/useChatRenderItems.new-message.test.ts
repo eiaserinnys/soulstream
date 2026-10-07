@@ -16,8 +16,8 @@ function streamingSlots(text: string): StreamingSlots {
 }
 
 test('원고형 응답 streaming 내용 변경은 하단 follow key를 갱신한다', () => {
-  const { result, rerender } = renderHook(
-    ({ text }) => useChatRenderItems({
+  const { result, rerender } = renderHook<ReturnType<typeof useChatRenderItems>, { text: string }>(
+    ({ text }: { text: string }) => useChatRenderItems({
       events: [],
       pendingOptimistic: undefined,
       streamingSlots: streamingSlots(text),

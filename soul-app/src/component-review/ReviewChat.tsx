@@ -138,6 +138,31 @@ function ReviewPersistentChatProjection() {
   };
   useEffect(() => {
     initializePersistentReviewChat(includeTurnSummary);
+    if (typeof window === 'undefined') return;
+    const reviewWindow = window as Window & {
+      __appendReviewManuscriptStream?: (text: string) => void;
+      __clearReviewManuscriptStream?: () => void;
+    };
+    let deltaId = 0;
+    reviewWindow.__appendReviewManuscriptStream = (text) => {
+      deltaId += 1;
+      useChatStore.getState().setStreamingEvent('review-pas-1', 'assistant', {
+        id: `review-manuscript-delta-${deltaId}`,
+        type: 'text_delta',
+        data: {
+          streamIdentity: 'review-manuscript-stream',
+          liveTextMode: deltaId === 1 ? 'replace' : 'append',
+          text,
+        },
+      });
+    };
+    reviewWindow.__clearReviewManuscriptStream = () => {
+      useChatStore.getState().clearStreamingEvent('review-pas-1', 'assistant', 'review-manuscript-stream');
+    };
+    return () => {
+      delete reviewWindow.__appendReviewManuscriptStream;
+      delete reviewWindow.__clearReviewManuscriptStream;
+    };
   }, [includeTurnSummary]);
   return <View testID="review-persistent-chat-projection" style={{ gap: t.spacing.md }}>
     <View>
@@ -226,7 +251,8 @@ export function ReviewChat() {
         onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
         sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
         interruptControls={state === 'interrupting' ? <ChatInterruptButton
-          interrupting={state === 'interrupting'} styles={styles} accentTextColor={t.colors.accentText} disabled
+          interrupting={state === 'interrupting'} styles={styles} accentTextColor={t.colors.accentText}
+          textPrimaryColor={t.colors.textPrimary} disabled
           onPress={() => {}}
         /> : null}
         inputAccessibilityLabel="공개 예시 메시지" />
