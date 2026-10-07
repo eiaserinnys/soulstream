@@ -149,6 +149,41 @@ describe('useChatBottomFollow', () => {
     expect(flatListRef.current?.scrollToOffset).toHaveBeenCalledTimes(1);
   });
 
+  it('따라가기가 꺼진 뒤 새 하단 항목이 오면 표시하고, 하단 이동 요청에서 숨긴다', () => {
+    const flatListRef = createListRef();
+    const { result, rerender } = renderHook<
+      ReturnType<typeof useChatBottomFollow>,
+      { bottomItemKey: string }
+    >(
+      ({ bottomItemKey }) => useChatBottomFollow({
+        flatListRef,
+        sessionId: 'sess-new-message',
+        bottomItemKey,
+        presentation: 'manuscript',
+      }),
+      { initialProps: { bottomItemKey: 'event-1' } },
+    );
+    flushAnimationFrame();
+    act(() => {
+      result.current.onScrollBeginDrag();
+      result.current.onScrollOffsetChange(80);
+    });
+
+    rerender({ bottomItemKey: 'event-2' });
+    expect(result.current.showNewMessage).toBe(true);
+
+    act(() => result.current.requestBottomFollow());
+    expect(result.current.showNewMessage).toBe(false);
+    flushAnimationFrame();
+    expect(flatListRef.current?.scrollToOffset).toHaveBeenLastCalledWith({
+      offset: 0,
+      animated: false,
+    });
+
+    act(() => result.current.onScrollOffsetChange(0));
+    expect(result.current.showNewMessage).toBe(false);
+  });
+
   it('같은 frame 안의 연속 요청은 한 번으로 합친다', () => {
     const flatListRef = createListRef();
     const { result } = renderHook(() =>

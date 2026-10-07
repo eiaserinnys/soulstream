@@ -10,7 +10,9 @@ interface Props {
   disabled: boolean;
   styles: ChatBodyStyles;
   accentTextColor: string;
+  textPrimaryColor: string;
   onPress: () => void;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function ChatInterruptButton({
@@ -18,23 +20,28 @@ export function ChatInterruptButton({
   disabled,
   styles,
   accentTextColor,
+  textPrimaryColor,
   onPress,
+  presentation = 'default',
 }: Props) {
   return (
     <CompactTouchTarget
       testID="chat-composer-interrupt-button"
       surfaceTestID="chat-composer-interrupt-visual"
       frameStyle={styles.composerControlFrame}
-      surfaceStyle={styles.stopBtn}
+      surfaceStyle={presentation === 'manuscript'
+        ? [styles.composerSecondaryControl, disabled && styles.composerControlDisabled]
+        : styles.stopBtn}
       onPress={onPress}
       disabled={disabled}
       accessibilityLabel="세션 중단"
       accessibilityState={{ disabled, busy: interrupting }}
     >
       {interrupting ? (
-        <ActivityIndicator size="small" color={accentTextColor} />
+        <ActivityIndicator size="small" color={presentation === 'manuscript' ? textPrimaryColor : accentTextColor} />
       ) : (
-        <Ionicons name="stop" color={accentTextColor} size={DESIGN_ICON_SIZE.standard} />
+        <Ionicons name={presentation === 'manuscript' ? 'stop-outline' : 'stop'}
+          color={presentation === 'manuscript' ? textPrimaryColor : accentTextColor} size={DESIGN_ICON_SIZE.standard} />
       )}
     </CompactTouchTarget>
   );

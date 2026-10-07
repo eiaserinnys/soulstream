@@ -98,7 +98,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
     finally { setSavingCharacter(false); }
   }
   const action = (icon: React.ComponentProps<typeof Ionicons>['name'], label: string, onPress: () => void, testID: string) =>
-    <LiquidGlassButton iconOnly variant="paper" size="compact" accessibilityLabel={label} onPress={onPress} testID={testID}>
+    <LiquidGlassButton iconOnly variant="plain" size="compact" accessibilityLabel={label} onPress={onPress} testID={testID} surfaceTestID={`${testID}-visual`}>
       <Ionicons name={icon} size={t.iconSize.navigation} color={t.colors.textPrimary} />
     </LiquidGlassButton>;
   return <SafeAreaView testID="persistent-session-safe-area" edges={['top', 'left', 'right']}
@@ -134,7 +134,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
       {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
         left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,
         top: geometry.toggle.top + (geometry.toggle.height - t.hitTarget.min) / 2 }}>
-        <LiquidGlassButton iconOnly size="compact" variant="paper" disabled={savingCharacter} testID="persistent-session-character-toggle"
+        <LiquidGlassButton iconOnly size="compact" variant="plain" disabled={savingCharacter} testID="persistent-session-character-toggle"
           accessibilityLabel={display?.show_character ? '캐릭터 숨기기' : '캐릭터 표시'}
           onPress={() => void toggleCharacter()}>
           <MaterialCommunityIcons
@@ -160,7 +160,7 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
           onOpenCard={cardId => host.store.getState().selectCard(cardId)} />
         {selectedCardId ? <>
           <View testID="persistent-summary-header" style={{ paddingHorizontal: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2, alignItems: 'flex-start' }}>
-            <LiquidGlassButton iconOnly size="compact" variant="paper" accessibilityLabel="목록으로" testID="persistent-summary-back"
+            <LiquidGlassButton iconOnly size="compact" variant="plain" accessibilityLabel="목록으로" testID="persistent-summary-back" surfaceTestID="persistent-summary-back-visual"
               onPress={() => host.store.getState().selectCard(null)}>
               <Ionicons name="chevron-back" size={t.iconSize.navigation} color={t.colors.textPrimary} />
             </LiquidGlassButton>

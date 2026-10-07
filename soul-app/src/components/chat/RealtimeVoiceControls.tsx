@@ -13,7 +13,7 @@ import {
   startRealtimeVoiceSession,
   type RealtimeVoiceController,
 } from '../../services/realtimeVoice';
-import { useTokens, type DesignTokens } from '../../theme';
+import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 
 interface Props {
@@ -23,6 +23,7 @@ interface Props {
   events: SessionEvent[];
   disabled?: boolean;
   compact?: boolean;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function RealtimeVoiceControls({
@@ -32,6 +33,7 @@ export function RealtimeVoiceControls({
   events,
   disabled,
   compact = false,
+  presentation = 'default',
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -189,15 +191,17 @@ export function RealtimeVoiceControls({
   const toggleContent = (
     <>
       {busy ? (
-        <ActivityIndicator size="small" color={t.colors.accentText} />
+        <ActivityIndicator size="small" color={presentation === 'manuscript' ? t.colors.textPrimary : t.colors.accentText} />
       ) : (
         <Ionicons
-          name={isActive ? 'stop' : 'mic'}
+          name={presentation === 'manuscript' ? (isActive ? 'stop-outline' : 'mic-outline') : (isActive ? 'stop' : 'mic')}
           size={t.iconSize.standard}
-          color={isActive ? t.colors.accentText : t.colors.textSecondary}
+          color={presentation === 'manuscript'
+            ? (voiceDisabled ? t.colors.textMuted : t.colors.textPrimary)
+            : (isActive ? t.colors.accentText : t.colors.textSecondary)}
         />
       )}
-      {compact && isActive ? (
+      {compact && isActive && presentation !== 'manuscript' ? (
         <RealtimeVoiceWaveform level={audioLevel} styles={styles} />
       ) : null}
     </>
@@ -219,8 +223,8 @@ export function RealtimeVoiceControls({
           onPress={toggleVoice}
           disabled={voiceDisabled}
           surfaceStyle={[
-            styles.compactIconButton,
-            isActive && styles.activeButton,
+            presentation === 'manuscript' ? styles.manuscriptCompactIconButton : styles.compactIconButton,
+            presentation !== 'manuscript' && isActive && styles.activeButton,
             voiceDisabled && styles.disabledButton,
           ]}
         >
@@ -348,6 +352,7 @@ export function waveformBarHeights(level: number): number[] {
 }
 
 function makeStyles(t: DesignTokens) {
+  const composer = createSessionVisualRoles(t).chat.composer;
   return StyleSheet.create({
     container: {
       flexDirection: 'row',
@@ -375,6 +380,14 @@ function makeStyles(t: DesignTokens) {
       backgroundColor: t.colors.surface,
       borderWidth: 1,
       borderColor: t.colors.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    manuscriptCompactIconButton: {
+      width: composer.controlVisualSize,
+      height: composer.controlVisualSize,
+      borderRadius: composer.controlVisualSize / 2,
+      backgroundColor: 'transparent',
       justifyContent: 'center',
       alignItems: 'center',
     },

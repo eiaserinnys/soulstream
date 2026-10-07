@@ -86,6 +86,19 @@ describe('RealtimeVoiceControls', () => {
       .toMatchObject({ width: 40, height: 40 });
   });
 
+  it('원고형 음성 버튼은 채움·테두리 없이 실선 마이크 아이콘을 쓴다', () => {
+    const screen = render(
+      <RealtimeVoiceControls api={api as never} sessionId="sess-1" backend="codex" events={[]} compact presentation="manuscript" />,
+    );
+    const visual = screen.getByTestId('realtime-voice-toggle-visual');
+    const icon = screen.UNSAFE_root.findByProps({ name: 'mic-outline' });
+    const visualStyle = StyleSheet.flatten(visual.props.style);
+
+    expect(visualStyle.backgroundColor).toBe('transparent');
+    expect(visualStyle.borderWidth).toBeUndefined();
+    expect(icon.props.color).toBeTruthy();
+  });
+
   it('shows realtime start 422 detail instead of silently swallowing it', async () => {
     (startRealtimeVoiceSession as jest.Mock).mockRejectedValueOnce(
       new Error(

@@ -322,6 +322,8 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
             disabled={interrupting || !api}
             styles={styles}
             accentTextColor={t.colors.accentText}
+            textPrimaryColor={t.colors.textPrimary}
+            presentation={presentation}
             onPress={handleInterrupt}
           />
         ) : null
@@ -333,6 +335,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
           backend={backend}
           disabled={sending || inputDisabled}
           compact
+          presentation={presentation}
         />
       }
       {...(onComposerLayout ? { onComposerBoxLayout: handleComposerBoxLayout } : {})}

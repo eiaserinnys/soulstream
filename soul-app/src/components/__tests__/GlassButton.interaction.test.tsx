@@ -191,6 +191,58 @@ describe('GlassButton interaction contract', () => {
     expect(StyleSheet.flatten(button.props.style).backgroundColor).toBe(tokens.persistentSession.paper);
   });
 
+  test('plain compact 아이콘은 투명 원형 표면과 기존 hit frame을 유지하고 눌릴 때만 ghost 색을 쓴다', () => {
+    const tokens = renderHook(() => useTokens()).result.current;
+    const screen = render(
+      <>
+        <GlassButton
+          variant="plain"
+          iconOnly
+          size="compact"
+          testID="plain-button"
+          surfaceTestID="plain-surface"
+          onPress={() => undefined}
+        >
+          <Text>↓</Text>
+        </GlassButton>
+        <GlassButton
+          variant="paper"
+          iconOnly
+          size="compact"
+          testID="paper-button"
+          onPress={() => undefined}
+        >
+          <Text>↑</Text>
+        </GlassButton>
+      </>,
+    );
+    const button = screen.getByTestId('plain-button');
+    const surface = screen.getByTestId('plain-surface');
+    const hitFrame = StyleSheet.flatten(button.props.style);
+    const visual = StyleSheet.flatten(surface.props.style);
+    const existingFrame = StyleSheet.flatten(screen.getByTestId('paper-button').props.style);
+
+    expect(hitFrame).toMatchObject({
+      minWidth: existingFrame.minWidth,
+      minHeight: existingFrame.minHeight,
+    });
+    expect(visual).toMatchObject({
+      width: tokens.foundation.iconFrame.compact,
+      height: tokens.foundation.iconFrame.compact,
+      borderRadius: tokens.foundation.radius.round,
+      backgroundColor: 'transparent',
+    });
+    expect(visual.borderWidth).toBeUndefined();
+    expect(visual.borderColor).toBeUndefined();
+
+    fireEvent(button, 'pressIn');
+    expect(StyleSheet.flatten(screen.getByTestId('plain-surface').props.style).backgroundColor)
+      .toBe(tokens.colors.accentTint);
+    fireEvent(button, 'pressOut');
+    expect(StyleSheet.flatten(screen.getByTestId('plain-surface').props.style).backgroundColor)
+      .toBe('transparent');
+  });
+
   test('paper 변형 눌림은 planner의 중립 눌림 색을 쓰고 기본 보조 버튼은 유지한다', () => {
     const tokens = renderHook(() => useTokens()).result.current;
     const plannerPressedColor = createPlannerVisualRoles(tokens).grouped.pressedColor;

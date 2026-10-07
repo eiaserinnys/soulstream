@@ -24,6 +24,7 @@ import { TypingIndicator } from './TypingIndicator';
 import { ManuscriptActivitySegment } from './ManuscriptActivitySegment';
 import { HistoryFetchError } from './HistoryFetchError';
 import { useTokens } from '../../theme';
+import { ChatNewMessageButton } from './ChatNewMessageButton';
 import { CollapsibleCaption, CollapsibleCaptionLine } from './CollapsibleCaption';
 import { LabeledDivider } from './LabeledDivider';
 
@@ -59,6 +60,8 @@ interface Props {
     averageItemLength: number;
   }) => void;
   presentation?: 'default' | 'manuscript';
+  showNewMessage?: boolean;
+  onPressNewMessage?: () => void;
 }
 
 export const ChatEventList = memo(function ChatEventList({
@@ -83,7 +86,10 @@ export const ChatEventList = memo(function ChatEventList({
   onContentSizeChange,
   onScrollToIndexFailed,
   presentation = 'default',
+  showNewMessage = false,
+  onPressNewMessage,
 }: Props) {
+  const t = useTokens();
   const [activeSelection, setActiveSelection] = useState<{
     eventKey: string;
     model: MessageSelectionModel;
@@ -109,7 +115,7 @@ export const ChatEventList = memo(function ChatEventList({
     );
   }, [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
-  return (
+  const list = (
     <FlatList
       ref={flatListRef}
       data={items}
@@ -157,6 +163,21 @@ export const ChatEventList = memo(function ChatEventList({
         ) : null
       }
     />
+  );
+  if (presentation !== 'manuscript' || !showNewMessage || !onPressNewMessage) return list;
+  return (
+    <View style={{ flex: 1 }}>
+      {list}
+      <View pointerEvents="box-none" style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: t.spacing.sm,
+        alignItems: 'center',
+      }}>
+        <ChatNewMessageButton onPress={onPressNewMessage} />
+      </View>
+    </View>
   );
 });
 
