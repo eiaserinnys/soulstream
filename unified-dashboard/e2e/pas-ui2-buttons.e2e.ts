@@ -202,6 +202,13 @@ for (const width of [1440, 1280]) {
     await newMessages.click();
     await expect(newMessages).toHaveCount(0);
 
+    if (width === 1440) {
+      await expect(screen.locator(".persistent-session-tasks")).toBeVisible();
+      await expect(taskToggle).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "작업 목록 닫기", exact: true })).toBeVisible();
+      await capture(page, "pas-1440-tasks-open");
+    }
+
     expect(errors).toEqual([]);
   });
 }

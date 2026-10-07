@@ -117,7 +117,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       {chatReady && !error && <PersistentSessionChatView key={sessionId} sessionId={sessionId!} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={!disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={stream.synchronizedSessionKey === activeSessionKey}/>}
     </main>
     {chatReady && !error && <>
-      <div className="persistent-session-task-toggle"><DashboardIconCap appearance="bare" label="작업 목록" aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap></div>
+      {!tasksOpen && <div className="persistent-session-task-toggle"><DashboardIconCap appearance="bare" label="작업 목록" aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap></div>}
       {tasksOpen && <aside className={`persistent-session-tasks${selectedCardId ? ' is-card-open' : ''}`} aria-label="작업" style={geometry ? { bottom: `calc(100% - ${geometry.lineY}px)` } : undefined}>
         <div className="persistent-session-task-head">
           {selectedCardId ? <DashboardIconCap appearance="bare" label="작업 목록으로" onClick={() => setSelectedCardId(null)}><ArrowLeft className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap> : <h2>작업</h2>}
