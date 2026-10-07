@@ -20,14 +20,15 @@ export function usePersistentChatDisplaySettings(
   useEffect(() => {
     if (!ownsSessionConnection) return;
     const previousSessionId = displaySettingsSessionRef.current;
-    if (previousSessionId !== sessionId) clearSettings(previousSessionId);
+    if (previousSessionId && previousSessionId !== sessionId) clearSettings(previousSessionId);
     displaySettingsSessionRef.current = sessionId;
-    if (!sessionId || !api) clearSettings(sessionId);
+    if (sessionId && !api) clearSettings(sessionId);
   }, [api, clearSettings, ownsSessionConnection, sessionId]);
 
   useEffect(() => {
     if (!ownsSessionConnection) return;
-    if (!sessionId || !api) {
+    if (!sessionId) return;
+    if (!api) {
       clearSettings(sessionId);
       return;
     }
