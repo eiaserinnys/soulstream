@@ -1,5 +1,5 @@
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Alert, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Alert, Text, View, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { Session, SessionEvent } from '../../api/types';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
@@ -31,7 +31,7 @@ interface Props {
   minimumBottomPadding: number;
   requestBottomFollow(): void;
   presentation?: 'default' | 'manuscript';
-  onComposerLayout?: (event: LayoutChangeEvent) => void;
+  onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
 }
 
 const EMPTY_EVENTS: SessionEvent[] = [];
@@ -49,6 +49,27 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const composerAnchorLayout = useRef<LayoutRectangle | null>(null);
+  const composerBoxLayout = useRef<LayoutRectangle | null>(null);
+  const composerRowLayout = useRef<LayoutRectangle | null>(null);
+  const reportComposerLayout = useCallback(() => {
+    const anchor = composerAnchorLayout.current;
+    const row = composerRowLayout.current;
+    const box = composerBoxLayout.current;
+    if (anchor && row && box) {
+      onComposerLayout?.(anchor, { ...box, y: anchor.height - row.height + box.y });
+    }
+  }, [onComposerLayout]);
+  const handleComposerAnchorLayout = useCallback((event: LayoutChangeEvent) => {
+    const { x, y, width, height } = event.nativeEvent.layout;
+    composerAnchorLayout.current = { x, y, width, height };
+    reportComposerLayout();
+  }, [reportComposerLayout]);
+  const handleComposerBoxLayout = useCallback((box: LayoutRectangle, row: LayoutRectangle) => {
+    composerBoxLayout.current = box;
+    composerRowLayout.current = row;
+    reportComposerLayout();
+  }, [reportComposerLayout]);
   const nodesReady = useNodeConnectivityStore(state => state.ready);
   const connectedNodeIds = useNodeConnectivityStore(state => state.connectedNodeIds);
   const inputDraft = usePersistentDraft('chat', [nodeId, sessionId], '');
@@ -314,6 +335,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
           compact
         />
       }
+      {...(onComposerLayout ? { onComposerBoxLayout: handleComposerBoxLayout } : {})}
     />
   </>;
   return <>
@@ -328,7 +350,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
       ) : null}
 
       {onComposerLayout ? (
-        <View testID="chat-composer-anchor" collapsable={false} onLayout={onComposerLayout}>
+        <View testID="chat-composer-anchor" collapsable={false} onLayout={handleComposerAnchorLayout}>
           {attachmentsAndComposer}
         </View>
       ) : attachmentsAndComposer}

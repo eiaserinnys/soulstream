@@ -1,4 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 let mockDevice = 'phone';
 jest.mock('../../theme/useDeviceType', () => ({ useDeviceType: () => mockDevice, deviceTypeToBaseKey: (device: string) => device === 'phone' ? 'phone' : 'tablet' }));
 jest.mock('../../components/chat/ChatBody', () => {
@@ -13,6 +14,7 @@ jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
   return { PersistentSessionTaskList: ({ onOpenCard, visible = true }: any) => <View testID="persistent-task-list-mock"
     style={{ display: visible ? 'flex' : 'none' }}><Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} /></View> };
 });
+jest.mock('../../components/persistent/SwayCharacter', () => ({ SwayCharacter: () => null }));
 jest.mock('../../components/planner/CardDetailSheet', () => {
   const { Pressable, View } = require('react-native');
   return { CardDetailContent: ({ onOpenCard, onClose }: any) => <View><Pressable testID="open-card" onPress={onOpenCard} /><Pressable testID="summary-back" onPress={onClose} /></View> };
@@ -65,13 +67,17 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');
-  fireEvent(body, 'composerLayout', { nativeEvent: { layout: { x: 0, y: 644, width: 480, height: 76 } } });
+  act(() => body.props.onComposerLayout(
+    { x: 0, y: 644, width: 480, height: 76 },
+    { x: 0, y: 20, width: 480, height: 56 },
+  ));
   const before = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
   const line = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style);
   expect(before.width).toBe(152);
+  expect(line.top).toBe(795);
   expect(before.top + before.height).toBe(line.top + 1);
   const toggle = StyleSheet.flatten(view.getByTestId('persistent-session-character-toggle-seat').props.style);
-  expect(toggle.top + 48 / 2).toBe(line.top + 48 / 2);
+  expect(toggle.top + 48 / 2).toBeLessThan(line.top);
   expect(view.getByTestId('persistent-session-screen').props.onMoveShouldSetResponder).toBeUndefined();
   width = 0;
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
@@ -85,6 +91,72 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   view.unmount();
   measure.mockRestore();
   dimensions.mockRestore();
+});
+
+test('입력 줄과 대기 첨부가 anchor 안에서 늘어나도 캐릭터 기준선은 입력 밑줄에 고정된다', () => {
+  mockDevice = 'tabletLandscape';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
+    else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 720);
+  });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-baseline', display_name: '관제', persistent: true } as any);
+    const request = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-baseline');
+    useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-baseline', request, {
+      show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true,
+    });
+  });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  const body = view.getByTestId('persistent-body-probe');
+  const reportLayout = (anchorY: number, boxY: number, boxHeight: number) => act(() => body.props.onComposerLayout(
+    { x: 0, y: anchorY, width: 480, height: boxY + boxHeight },
+    { x: 0, y: boxY, width: 480, height: boxHeight },
+  ));
+
+  reportLayout(600, 20, 56);
+  const firstLine = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style);
+  const firstBody = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
+  reportLayout(540, 80, 56);
+  const secondLine = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style);
+  const secondBody = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
+
+  expect(secondLine.top).toBe(firstLine.top);
+  expect(secondBody.top + secondBody.height).toBe(firstBody.top + firstBody.height);
+  expect(firstBody.top + firstBody.height).toBe(firstLine.top + 1);
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+});
+
+test.each([
+  [true, 'account-off-outline', '캐릭터 숨기기'],
+  [false, 'account-outline', '캐릭터 표시'],
+] as const)('캐릭터 %s 상태는 동작을 나타내는 사람 아이콘과 이름을 쓴다', (shown, icon, label) => {
+  mockDevice = 'tabletLandscape';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
+    else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 720);
+  });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: `pas-toggle-${shown}`, display_name: '관제', persistent: true } as any);
+    const sessionId = `pas-toggle-${shown}`;
+    const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
+    useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
+      show_character: shown, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true,
+    });
+  });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
+    { x: 0, y: 600, width: 480, height: 76 },
+    { x: 0, y: 20, width: 480, height: 56 },
+  ));
+
+  expect(view.getByTestId('persistent-session-character-toggle-icon').props.name).toBe(icon);
+  expect(view.getByLabelText(label)).toBeTruthy();
+  expect(view.getByTestId('persistent-session-character-toggle').props.accessibilityState?.selected).toBeUndefined();
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
 });
 
 test('phone의 원고형 열은 공통 pageInset으로 본문과 입력의 가장자리를 지킨다', () => {

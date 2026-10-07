@@ -349,12 +349,21 @@ describe('ChatBody store subscription boundary', () => {
     expect(mockRenderChatEventList.mock.calls.at(-1)?.[0].presentation).toBe('manuscript');
     expect(mockRenderChatComposer.mock.calls.at(-1)?.[0].presentation).toBe('manuscript');
     const anchor = view.getByTestId('chat-composer-anchor');
-    const singleLineLayout = { nativeEvent: { layout: { x: 0, y: 120, width: 320, height: 80 } } };
-    const expandedLayout = { nativeEvent: { layout: { x: 0, y: 80, width: 320, height: 120 } } };
+    const singleLineLayout = { nativeEvent: { layout: { x: 0, y: 120, width: 320, height: 76 } } };
+    const attachmentLayout = { nativeEvent: { layout: { x: 0, y: 66, width: 320, height: 130 } } };
+    const expandedLayout = { nativeEvent: { layout: { x: 0, y: 80, width: 320, height: 203 } } };
+    const singleLineBox = { x: 0, y: 0, width: 320, height: 56 };
+    const singleLineRow = { x: 0, y: 0, width: 320, height: 76 };
+    const expandedBox = { x: 0, y: 0, width: 320, height: 183 };
+    const expandedRow = { x: 0, y: 0, width: 320, height: 203 };
     fireEvent(anchor, 'layout', singleLineLayout);
+    mockRenderChatComposer.mock.calls.at(-1)?.[0].onComposerBoxLayout(singleLineBox, singleLineRow);
+    fireEvent(anchor, 'layout', attachmentLayout);
     fireEvent(anchor, 'layout', expandedLayout);
-    expect(onComposerLayout).toHaveBeenNthCalledWith(1, singleLineLayout);
-    expect(onComposerLayout).toHaveBeenNthCalledWith(2, expandedLayout);
+    mockRenderChatComposer.mock.calls.at(-1)?.[0].onComposerBoxLayout(expandedBox, expandedRow);
+    expect(onComposerLayout).toHaveBeenNthCalledWith(1, singleLineLayout.nativeEvent.layout, { ...singleLineBox, y: 0 });
+    expect(onComposerLayout).toHaveBeenNthCalledWith(2, attachmentLayout.nativeEvent.layout, { ...singleLineBox, y: 54 });
+    expect(onComposerLayout).toHaveBeenLastCalledWith(expandedLayout.nativeEvent.layout, { ...expandedBox, y: 0 });
   });
 
   test('기본 채팅은 history eventTypes를 생략하고 원고형만 정본 목록과 complete를 요청한다', async () => {

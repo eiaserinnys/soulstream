@@ -58,6 +58,7 @@ export function makeStyles(t: DesignTokens) {
       minHeight: sessionRoles.chat.composer.minHeight,
       paddingHorizontal: 0,
       paddingVertical: 0,
+      paddingBottom: t.spacing.xs,
     },
     composerContentRow: {
       minHeight: sessionRoles.chat.composer.contentMinHeight,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Alert, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import { ChatInputComposer } from '../ChatInputComposer';
@@ -46,7 +46,10 @@ jest.mock('../useChatSendFlow', () => ({
   }),
 }));
 
-function renderChatInputComposer(sessionStatus: string = 'running') {
+function renderChatInputComposer(
+  sessionStatus: string = 'running',
+  onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void,
+) {
   const api = { interruptSession: mockInterruptSession } as unknown as ApiClient;
   const props = {
     sessionId: 'session-1',
@@ -58,6 +61,7 @@ function renderChatInputComposer(sessionStatus: string = 'running') {
     appForeground: true,
     minimumBottomPadding: 0,
     requestBottomFollow: jest.fn(),
+    onComposerLayout,
   };
   const screen = render(<ChatInputComposer {...props} />);
   return { ...screen, props };
@@ -84,6 +88,35 @@ describe('ChatInputComposer interrupt progress', () => {
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();
+  });
+
+  test('Fabric layout event 재사용 뒤에도 anchor 사각형을 보존한다', () => {
+    const onComposerLayout = jest.fn();
+    const screen = renderChatInputComposer('running', onComposerLayout);
+    const anchor = screen.getByTestId('chat-composer-anchor');
+    const composerBox = screen.getByTestId('chat-composer-box');
+    let composerRow = composerBox.parent;
+    while (composerRow && (typeof composerRow.props.onLayout !== 'function'
+      || composerRow.props.onLayout === composerBox.props.onLayout)) {
+      composerRow = composerRow.parent;
+    }
+    expect(composerRow).toBeTruthy();
+
+    const anchorLayout = { x: 0, y: 0, width: 320, height: 810 };
+    const rowLayout = { x: 0, y: 0, width: 320, height: 56 };
+    const boxLayout = { x: 0, y: 0, width: 320, height: 56 };
+    const reusedEvent = { nativeEvent: { layout: anchorLayout } } as unknown as LayoutChangeEvent;
+
+    fireEvent(anchor, 'layout', reusedEvent);
+    reusedEvent.nativeEvent.layout = rowLayout;
+    fireEvent(composerRow!, 'layout', reusedEvent);
+    reusedEvent.nativeEvent.layout = boxLayout;
+    fireEvent(composerBox, 'layout', reusedEvent);
+
+    expect(onComposerLayout).toHaveBeenCalledTimes(1);
+    expect(onComposerLayout).toHaveBeenCalledWith(anchorLayout, { ...boxLayout, y: 754 });
+    const [reportedAnchor, reportedBox] = onComposerLayout.mock.calls[0];
+    expect(reportedAnchor.y + reportedBox.y + reportedBox.height).toBe(810);
   });
 
   test('중단 요청 성공 뒤 세션이 running을 벗어나면 진행 표시를 해제한다', async () => {

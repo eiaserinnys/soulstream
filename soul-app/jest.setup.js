@@ -33,9 +33,10 @@ jest.mock('expo-glass-effect', () => {
   };
 });
 
-// Ionicons loads expo-font's ESM entrypoint, which Jest leaves untransformed. The
-// component-level tests observe icon names and sizes through this host component.
+// Expo vector icons load expo-font's ESM entrypoint, which Jest leaves untransformed.
+// The component-level tests observe icon names and sizes through these host components.
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 
 // UI 사용 로그가 runtime build version을 읽는다. jest-expo 54의 ESM Constants 진입점은
 // 일부 단위 테스트에서 변환 대상 밖으로 남으므로, 테스트에는 고정된 native metadata를 준다.
