@@ -22,6 +22,7 @@
  */
 
 import type { StateCreator } from "zustand";
+import type { StoreApi } from "zustand/vanilla";
 import type { SessionNotice, EventTreeNode, SoulSSEEvent } from "@shared/types";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 import {
@@ -114,12 +115,20 @@ export type EventProcessingSlice = Pick<
     | "setHistoryCursor"
   >;
 
-export const createEventProcessingSlice: StateCreator<
-  DashboardState & DashboardActions,
-  [],
-  [],
-  EventProcessingSlice
-> = (set, get) => ({
+type ChatSessionStoreApi = StoreApi<DashboardState & DashboardActions>;
+
+export interface EventProcessingSliceOptions {
+  flattenTree?: typeof flattenTree;
+  composerStore?: ChatSessionStoreApi;
+}
+
+export function createEventProcessingSlice(
+  options: EventProcessingSliceOptions = {},
+): StateCreator<DashboardState & DashboardActions, [], [], EventProcessingSlice> {
+  const flattenMessages = options.flattenTree ?? flattenTree;
+  const composerStore = options.composerStore;
+
+  return (set, get) => ({
   ...getEventProcessingInitialState(),
 
   setHistoryCursor: (historyCursor) => set({ historyCursor }),
@@ -148,18 +157,23 @@ export const createEventProcessingSlice: StateCreator<
       state.activeSessionSummary,
       state.lastEventId,
     );
-    const pendingChatSends = clearMatchingPendingChatSend(
-      state.pendingChatSends,
+    const matchingPendingChatSends = clearMatchingPendingChatSend(
+      composerStore?.getState().pendingChatSends ?? state.pendingChatSends,
       state.activeSessionKey,
       events,
     );
+    const pendingChatSends = composerStore ? undefined : matchingPendingChatSends;
+    if (composerStore && matchingPendingChatSends && state.activeSessionKey) {
+      composerStore.getState().setPendingChatSend(state.activeSessionKey, null);
+    }
 
     // prompt_suggestion: clear → set 순서. 같은 배치에 둘 다 있을 때 새 값이 정본이 됨.
+    const composerActions = composerStore?.getState() ?? get();
     if (result.clearPromptSuggestionFor) {
-      get().clearPromptSuggestion(result.clearPromptSuggestionFor);
+      composerActions.clearPromptSuggestion(result.clearPromptSuggestionFor);
     }
     if (result.promptSuggestion) {
-      get().setPromptSuggestion(
+      composerActions.setPromptSuggestion(
         result.promptSuggestion.sessionId,
         result.promptSuggestion.text,
       );
@@ -217,7 +231,7 @@ export const createEventProcessingSlice: StateCreator<
       }
       : null;
     const beforeGrouped = groupMessages(projectPersistentChatDisplayMessages(
-      flattenTree(state.tree),
+      flattenMessages(state.tree),
       displaySettings,
     )).length;
 
@@ -238,22 +252,27 @@ export const createEventProcessingSlice: StateCreator<
         state.lastEventId,
         true,
       );
-      const pendingChatSends = clearMatchingPendingChatSend(
-        state.pendingChatSends,
+      const matchingPendingChatSends = clearMatchingPendingChatSend(
+        composerStore?.getState().pendingChatSends ?? state.pendingChatSends,
         state.activeSessionKey,
         events,
       );
+      const pendingChatSends = composerStore ? undefined : matchingPendingChatSends;
+      if (composerStore && matchingPendingChatSends && state.activeSessionKey) {
+        composerStore.getState().setPendingChatSend(state.activeSessionKey, null);
+      }
       const nextClaudeRuntime = events.reduce(
         (runtime, item) => applyClaudeRuntimeStoreEvent(runtime, item.event),
         state.claudeRuntime,
       );
 
       // prompt_suggestion: clear → set 순서. 히스토리 prepend 경로에서도 동일하게 처리.
+      const composerActions = composerStore?.getState() ?? get();
       if (result.clearPromptSuggestionFor) {
-        get().clearPromptSuggestion(result.clearPromptSuggestionFor);
+        composerActions.clearPromptSuggestion(result.clearPromptSuggestionFor);
       }
       if (result.promptSuggestion) {
-        get().setPromptSuggestion(
+        composerActions.setPromptSuggestion(
           result.promptSuggestion.sessionId,
           result.promptSuggestion.text,
         );
@@ -261,7 +280,7 @@ export const createEventProcessingSlice: StateCreator<
 
       const afterGrouped = result.updated
         ? groupMessages(projectPersistentChatDisplayMessages(
-          flattenTree(result.root),
+          flattenMessages(result.root),
           displaySettings,
         )).length
         : beforeGrouped;
@@ -292,4 +311,5 @@ export const createEventProcessingSlice: StateCreator<
 
     return { addedCount: addedGrouped };
   },
-});
+  });
+}

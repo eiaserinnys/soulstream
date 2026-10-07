@@ -266,14 +266,36 @@ export interface FlattenTreeOptions {
   includePersistentTurnUsage?: boolean;
 }
 
+export interface FlattenTreeCache {
+  flattenTree: (root: EventTreeNode | null, options?: FlattenTreeOptions) => ChatMessage[];
+  clear: () => void;
+}
+
+/** A ChatView instance can own identity reuse without sharing event ids with another transcript. */
+export function createFlattenTreeCache(): FlattenTreeCache {
+  const cache = new Map<string, ChatMessage>();
+  return {
+    flattenTree: (root, options = {}) => flattenTreeWithCache(root, options, cache),
+    clear: () => cache.clear(),
+  };
+}
+
 export function flattenTree(
   root: EventTreeNode | null,
   options: FlattenTreeOptions = {},
 ): ChatMessage[] {
+  return flattenTreeWithCache(root, options, messageCache);
+}
+
+function flattenTreeWithCache(
+  root: EventTreeNode | null,
+  options: FlattenTreeOptions,
+  cache: Map<string, ChatMessage>,
+): ChatMessage[] {
   if (!root) return [];
 
   const messages: ChatMessage[] = [];
-  collectMessages(root, messages, options);
+  collectMessages(root, messages, options, cache);
   return placePersistentInstructionRecordedAtTurnEnds(
     placePersistentJevCandidatesAtInputAnchors(
       placeTurnSummariesAtResponseAnchors(
@@ -284,12 +306,12 @@ export function flattenTree(
 }
 
 /** 캐시 조회·갱신 후 reference를 반환한다. */
-function intern(treeNodeId: string, fresh: ChatMessage): ChatMessage {
-  const cached = messageCache.get(treeNodeId);
+function intern(treeNodeId: string, fresh: ChatMessage, cache: Map<string, ChatMessage>): ChatMessage {
+  const cached = cache.get(treeNodeId);
   if (cached && shallowEqualChatMessage(cached, fresh)) {
     return cached;
   }
-  messageCache.set(treeNodeId, fresh);
+  cache.set(treeNodeId, fresh);
   return fresh;
 }
 
@@ -297,6 +319,7 @@ function collectMessages(
   node: EventTreeNode,
   out: ChatMessage[],
   options: FlattenTreeOptions,
+  cache: Map<string, ChatMessage>,
 ): void {
   // session 루트: pid가 있으면 시스템 메시지로 표시
   if (node.type === "session") {
@@ -310,7 +333,7 @@ function collectMessages(
         treeNodeId: node.id,
         treeNodeType: "session",
       };
-      out.push(intern(sessionPidId, fresh));
+      out.push(intern(sessionPidId, fresh, cache));
     }
   } else {
     const msg = nodeToMessage(node, options);
@@ -319,12 +342,12 @@ function collectMessages(
       // 각 switch 분기에 흩어 넣으면 complete/error/compact 같은 렌더 행이
       // 누락되어 legacy turn_summary의 시간축이 불완전해진다.
       msg.eventId = extractNodeEventId(node);
-      out.push(intern(msg.treeNodeId, msg));
+      out.push(intern(msg.treeNodeId, msg, cache));
     }
   }
 
   for (const child of node.children) {
-    collectMessages(child, out, options);
+    collectMessages(child, out, options, cache);
   }
 }
 

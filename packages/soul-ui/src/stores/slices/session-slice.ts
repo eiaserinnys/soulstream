@@ -57,12 +57,10 @@ export function getSessionSliceInitialState(): Pick<
   };
 }
 
-export const createSessionSlice: StateCreator<
-  DashboardState & DashboardActions,
-  [],
-  [],
-  SessionSlice
-> = (set, get) => ({
+export function createSessionSlice(
+  clearMessageCache: () => void = clearFlattenTreeCache,
+): StateCreator<DashboardState & DashboardActions, [], [], SessionSlice> {
+  return (set, get) => ({
   ...getSessionSliceInitialState(),
 
   // --- 활성 세션 ---
@@ -86,7 +84,7 @@ export const createSessionSlice: StateCreator<
     }
 
     // 세션 전환 시 ChatMessage identity 캐시를 비워 이전 세션 항목이 누설되지 않도록 한다.
-    clearFlattenTreeCache();
+    clearMessageCache();
     set({
       ...getSessionResetState(),
       activeSessionKey: key,
@@ -112,7 +110,7 @@ export const createSessionSlice: StateCreator<
   // --- 트리 초기화 ---
   // event-processing-slice의 초기 상태를 같은 set() 호출로 되돌린다.
   clearTree: () => {
-    clearFlattenTreeCache();
+    clearMessageCache();
     const {
       pendingNotifications: _keepBrowserNotices,
       historyResetVersion: _keepHistoryResetVersion,
@@ -136,7 +134,7 @@ export const createSessionSlice: StateCreator<
     // selectedFolderId를 유지하면서 세션 관련 상태만 초기화
     const { selectedFolderId } = get();
     // 세션 해제 시 ChatMessage identity 캐시도 비운다.
-    clearFlattenTreeCache();
+    clearMessageCache();
     set({
       ...getSessionResetState(),
       activeSessionKey: null,
@@ -147,4 +145,5 @@ export const createSessionSlice: StateCreator<
       selectedFolderId,
     });
   },
-});
+  });
+}

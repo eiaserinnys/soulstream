@@ -150,35 +150,6 @@ it("shows structured request attachments and opens the existing image viewer",as
  await act(()=>image.click());expect(document.querySelector('[role="dialog"] img')?.getAttribute('alt')).toBe('첨부 이미지.png');
 });
 
-it("uses cached summary detail immediately while refreshing it in the background",async()=>{
- const cached={...detail,card:{...card,title:"캐시된 제목",request:"캐시된 요청",attachments:[],now:null,items:[]}};
- const loadCard=vi.fn(()=>new Promise<CardDetail>(()=>{}));
- useCardStore.setState({byId:{inherit:cached.card},details:{inherit:cached},errors:{inherit:"이전 요청 오류"},loadCard});
- await act(()=>root.render(<CardDetailPane variant="summary" cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}} onOpenCard={()=>{}}/>));
-
- expect(container.querySelector('.v3-card-read-summary-title')?.textContent).toBe("캐시된 제목");
- expect(container.textContent).toContain("캐시된 요청");
- expect(container.querySelector('[role="alert"]')).toBeNull();
- expect(loadCard).toHaveBeenCalledOnce();
-});
-
-it("opens the existing full card through the summary callback without exposing mutations",async()=>{
- const summaryCard={...card,number:41,request:"요청 본문",attachments:[],now:null,items:[]};
- const summary:CardDetail={...detail,card:summaryCard,reports:[],questions:[],comments:[]};
- const openCard=vi.fn(),mutate=vi.fn(),execute=vi.fn(),confirmItem=vi.fn(),addComment=vi.fn();
- useCardStore.setState({byId:{inherit:summaryCard},details:{inherit:summary},mutate,execute,confirmItem,addComment});
- await act(()=>root.render(<CardDetailPane variant="summary" cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}}
-  onOpenCard={openCard} sampleDetail={summary}/>));
-
- expect(container.querySelectorAll("button")).toHaveLength(1);
- expect(container.querySelector('[role="tab"]')).toBeNull();
- expect(container.querySelector("textarea")).toBeNull();
- await act(()=>[...container.querySelectorAll<HTMLButtonElement>("button")].find(button=>button.textContent?.includes("카드 열기"))!.click());
- expect(openCard).toHaveBeenCalledTimes(1);
- expect(mutate).not.toHaveBeenCalled();expect(execute).not.toHaveBeenCalled();
- expect(confirmItem).not.toHaveBeenCalled();expect(addComment).not.toHaveBeenCalled();
-});
-
 it("reopens a completed detail through the existing status menu without reports",async()=>{
  const completed={...card,status:"done" as const,version:8};const current={...detail,card:completed,reports:[]};
  const loadCard=vi.fn().mockResolvedValue(current),mutate=vi.fn().mockResolvedValue(undefined),execute=vi.fn().mockResolvedValue(current);

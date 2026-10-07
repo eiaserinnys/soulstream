@@ -8,7 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SoulSSEEvent } from "@shared/types";
 
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { createChatSessionStore, useDashboardStore } from "../../stores/dashboard-store";
 import { ChatView } from "./ChatView";
 import { MAX_SEARCH_FOCUS_HISTORY_PAGES } from "./ChatView.reverse-helpers";
 
@@ -22,7 +22,10 @@ const virtuosoMock = vi.hoisted(() => ({
   reachedTop: false,
   props: null as Record<string, unknown> | null,
 }));
-const chatInputMock = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+const chatInputMock = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+  activeSessionKey: null as string | null,
+}));
 
 vi.mock("react-virtuoso", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
@@ -91,12 +94,18 @@ vi.mock("./useMessageHistoryBuffer", () => ({
   }),
 }));
 
-vi.mock("../ChatInput", () => ({
-  ChatInput: (props: Record<string, unknown>) => {
-    chatInputMock.props = props;
-    return createElement("div", { "data-testid": "chat-input" });
-  },
-}));
+vi.mock("../ChatInput", async () => {
+  const { useChatStore } = await vi.importActual<typeof import("../../stores/chat-store-scope")>(
+    "../../stores/chat-store-scope",
+  );
+  return {
+    ChatInput: (props: Record<string, unknown>) => {
+      chatInputMock.props = props;
+      chatInputMock.activeSessionKey = useChatStore((state) => state.activeSessionKey);
+      return createElement("div", { "data-testid": "chat-input" });
+    },
+  };
+});
 
 vi.mock("./VirtualizedItem", () => ({
   VirtualizedItem: ({ item }: { item: any }) => {
@@ -360,6 +369,7 @@ describe("ChatView long-session initial bottom focus", () => {
     virtuosoMock.reachedTop = false;
     virtuosoMock.props = null;
     chatInputMock.props = null;
+    chatInputMock.activeSessionKey = null;
   });
 
   afterEach(async () => {
@@ -581,6 +591,15 @@ describe("ChatView long-session initial bottom focus", () => {
     button?.click();
     await flushPassiveEffects();
     expect(container.querySelector('button[aria-label="새 메시지로 이동"]')).toBeNull();
+  });
+
+  it("uses the assigned transcript scope while keeping the PAS session selected globally", async () => {
+    const scope = createChatSessionStore("assigned-session");
+
+    ({ container, root } = await renderChatView({ storeScope: scope }));
+
+    expect(chatInputMock.activeSessionKey).toBe("assigned-session");
+    expect(useDashboardStore.getState().activeSessionKey).toBe("sess-long");
   });
 
   it.each([

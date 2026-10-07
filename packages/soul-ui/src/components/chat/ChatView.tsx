@@ -20,9 +20,9 @@
 import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type RefObject } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { ArrowDown } from "lucide-react";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useDashboardStore, type ChatSessionStoreScope } from "../../stores/dashboard-store";
 import { DashboardIconCap } from "../DashboardIconCap";
-import { flattenTree } from "../../lib/flatten-tree";
+import { ChatStoreScopeProvider, useChatFlattenTree, useChatStore, useChatStoreApi } from "../../stores/chat-store-scope";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
@@ -60,12 +60,16 @@ import { ChatHistoryStatus } from "./ChatHistoryStatus";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import type { PendingChatSendActions } from "./pending-chat-send";
 
-interface ChatViewProps {
+export interface ChatViewProps {
   chatInputDisabled?: boolean;
   fileUploadUrl?: string;
   historyEnabled?: boolean;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
+  /** Optional in-memory session scope for a second, independent transcript. */
+  storeScope?: ChatSessionStoreScope;
+  /** Receives only LLM continuation session changes from this transcript. */
+  onSessionChange?: (sessionId: string) => void;
 }
 
 function isGenerationDivider(item: ChatTimelineItem): boolean {
@@ -102,28 +106,38 @@ function canNestedScrollerConsumeVerticalInput(
   return false;
 }
 
-export function ChatView({
+export function ChatView(props: ChatViewProps = {}) {
+  const content = <ChatViewContent {...props} />;
+  return props.storeScope ? (
+    <ChatStoreScopeProvider scope={props.storeScope}>{content}</ChatStoreScopeProvider>
+  ) : content;
+}
+
+function ChatViewContent({
   chatInputDisabled = false,
   fileUploadUrl,
   historyEnabled = true,
   presentation = "default",
   composerAnchorRef,
-}: ChatViewProps = {}) {
-  const tree = useDashboardStore((s) => s.tree);
-  const treeVersion = useDashboardStore((s) => s.treeVersion);
-  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const persistentSessionDisplaySettings = useDashboardStore((s) => s.persistentSessionDisplaySettings);
+  onSessionChange,
+}: Omit<ChatViewProps, "storeScope"> = {}) {
+  const tree = useChatStore((s) => s.tree);
+  const treeVersion = useChatStore((s) => s.treeVersion);
+  const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const persistentSessionDisplaySettings = useChatStore((s) => s.persistentSessionDisplaySettings);
   const pendingChatSend = useDashboardStore((s) => (
-    s.activeSessionKey ? s.pendingChatSends[s.activeSessionKey] : undefined
+    activeSessionKey ? s.pendingChatSends[activeSessionKey] : undefined
   ));
-  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
-  const requestedFocusEventId = useDashboardStore((s) => (
+  const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
+  const requestedFocusEventId = useChatStore((s) => (
     s.focusEventSessionId === null || s.focusEventSessionId === s.activeSessionKey
       ? s.focusEventId
       : null
   ));
-  const focusEventTarget = useDashboardStore((s) => s.focusEventTarget);
-  const focusEventRequestId = useDashboardStore((s) => s.focusEventRequestId);
+  const focusEventTarget = useChatStore((s) => s.focusEventTarget);
+  const focusEventRequestId = useChatStore((s) => s.focusEventRequestId);
+  const chatStore = useChatStoreApi();
+  const flattenMessages = useChatFlattenTree();
   const pendingSendActionsRef = useRef<PendingChatSendActions | null>(null);
   const registerPendingSendActions = useCallback((actions: PendingChatSendActions | null) => {
     pendingSendActionsRef.current = actions;
@@ -138,7 +152,7 @@ export function ChatView({
       pendingSendActionsRef.current?.restore(activeSessionKey, pending);
     }
   }, [activeSessionKey]);
-  const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
+  const setFocusEventId = useChatStore((s) => s.setFocusEventId);
   /**
    * 채팅창 좌표 정본 — store에서 직접 select.
    *
@@ -146,7 +160,7 @@ export function ChatView({
    * 원고형은 아래 좌표 훅에서 투영된 행 증가량으로 바꾼다.
    * 같은 set() 안에서 tree와 함께 갱신되므로 1렌더 사이클 정합이 보장된다.
    */
-  const chatPrependedCount = useDashboardStore((s) => s.chatPrependedCount);
+  const chatPrependedCount = useChatStore((s) => s.chatPrependedCount);
   const {chatFontSize,chatTypographyStyle}=useChatTypography();
   const llmContext = useLlmContext();
 
@@ -157,9 +171,9 @@ export function ChatView({
     : true;
   const messages = useMemo(
     () => isManuscript
-      ? flattenTree(tree, { includePersistentTurnUsage: true })
-      : flattenTree(tree),
-    [isManuscript, tree, treeVersion],
+      ? flattenMessages(tree, { includePersistentTurnUsage: true })
+      : flattenMessages(tree),
+    [flattenMessages, isManuscript, tree, treeVersion],
   );
   const transcriptMessages = useMemo(
     () => {
@@ -400,7 +414,7 @@ export function ChatView({
     }
     if (retry.frame !== null) return;
     if (retry.attempts >= 3) {
-      const state = useDashboardStore.getState();
+      const state = chatStore.getState();
       if (
         state.activeSessionKey === activeSessionKey
         && state.focusEventId === requestedFocusEventId
@@ -414,7 +428,7 @@ export function ChatView({
     retry.attempts += 1;
     retry.frame = window.requestAnimationFrame(() => {
       retry.frame = null;
-      const state = useDashboardStore.getState();
+      const state = chatStore.getState();
       if (
         state.activeSessionKey !== activeSessionKey
         || state.focusEventId !== requestedFocusEventId
@@ -434,6 +448,7 @@ export function ChatView({
   }, [
     activeSessionKey,
     cancelPendingRetention,
+    chatStore,
     focusEventId,
     focusEventRequestId,
     setFocusEventId,
@@ -866,7 +881,7 @@ export function ChatView({
               el.classList.remove("chat-focus-ring");
               focusRingOwnersRef.current.delete(el);
             }
-            const currentFocus = useDashboardStore.getState();
+            const currentFocus = chatStore.getState();
             if (
               currentFocus.focusEventId === focusEventId
               && currentFocus.focusEventSessionId === activeSessionKey
@@ -925,6 +940,7 @@ export function ChatView({
         additionalDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
         registerPendingSendActions={registerPendingSendActions}
+        onSessionChange={onSessionChange}
       />
     </div>
   );

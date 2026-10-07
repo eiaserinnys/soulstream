@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState, useRef, useCallback } from "react";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useChatStore } from "../../stores/chat-store-scope";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { toolResultToText } from "../../shared/tool-result";
 
@@ -19,7 +19,7 @@ export interface LlmContext {
 }
 
 export function useLlmContext(): LlmContext {
-  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
+  const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
   return useMemo(() => {
     if (!activeSessionSummary || activeSessionSummary.sessionType !== "llm") return { isLlm: false };
     return {
@@ -41,7 +41,7 @@ export function useLazyLoadContent(
   error: string | null;
   loadFullContent: () => void;
 } {
-  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const [fullContent, setFullContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +150,7 @@ export function useLazyLoadToolTrace(
   error: string | null;
   loadTrace: () => void;
 } {
-  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const [trace, setTrace] = useState<ToolTraceResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

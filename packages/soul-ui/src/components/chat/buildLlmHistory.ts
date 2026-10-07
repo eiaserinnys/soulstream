@@ -8,7 +8,7 @@
  */
 
 import { flattenTree } from "../../lib/flatten-tree";
-import type { ChatMessage } from "../../lib/flatten-tree";
+import type { ChatMessage, FlattenTreeCache } from "../../lib/flatten-tree";
 import type { EventTreeNode } from "@shared/types";
 
 export interface LlmHistoryMessage {
@@ -25,9 +25,10 @@ export interface LlmHistoryMessage {
  */
 export function buildLlmHistory(
   tree: EventTreeNode | null | undefined,
+  flattenMessages: FlattenTreeCache["flattenTree"] = flattenTree,
 ): LlmHistoryMessage[] {
   if (!tree) return [];
-  const flat: ChatMessage[] = flattenTree(tree);
+  const flat: ChatMessage[] = flattenMessages(tree);
   const msgs: LlmHistoryMessage[] = [];
   for (const m of flat) {
     if (m.role === "user") {

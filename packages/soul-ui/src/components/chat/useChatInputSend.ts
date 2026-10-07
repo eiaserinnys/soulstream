@@ -7,6 +7,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import type { EventTreeNode } from "@shared/types";
+import type { FlattenTreeCache } from "../../lib/flatten-tree";
 import type { PendingChatSend, PendingChatSendAttachment } from "../../stores/dashboard-store-types";
 import { useAuth } from "../../providers/AuthProvider";
 import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
@@ -20,6 +21,7 @@ export const MAX_MESSAGE_LENGTH = 50_000;
 export interface UseChatInputSendArgs {
   activeSessionKey: string | null;
   tree: EventTreeNode | null | undefined;
+  flattenMessages?: FlattenTreeCache["flattenTree"];
   isFinished: boolean;
   isLlmFinished: boolean;
   llmProvider?: string;
@@ -138,6 +140,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
             : undefined;
           const result = await submitLlmContinuation({
             tree: args.tree,
+            flattenMessages: args.flattenMessages,
             text: trimmed,
             provider: args.llmProvider,
             model: args.llmModel,

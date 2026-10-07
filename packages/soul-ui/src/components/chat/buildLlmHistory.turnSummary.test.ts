@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EventTreeNode } from "@shared/types";
+import type { ChatMessage } from "../../lib/flatten-tree";
 import { buildLlmHistory } from "./buildLlmHistory";
 
 const node = (
@@ -38,5 +39,19 @@ describe("buildLlmHistory turn summary projection", () => {
       { role: "user", content: "둘째 질문" },
       { role: "assistant", content: "둘째 답변" },
     ]);
+  });
+
+  it("uses the owning ChatView's flattener when supplied", () => {
+    const tree = node("session-root", "session", "", { children: [] }) as unknown as EventTreeNode;
+    const flattenMessages = vi.fn(() => [{
+      role: "user",
+      content: "scoped transcript",
+      treeNodeType: "user_message",
+    }] as ChatMessage[]);
+
+    expect(buildLlmHistory(tree, flattenMessages)).toEqual([
+      { role: "user", content: "scoped transcript" },
+    ]);
+    expect(flattenMessages).toHaveBeenCalledWith(tree);
   });
 });

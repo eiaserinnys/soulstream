@@ -2,7 +2,6 @@
 .persistent-session-screen {
   --pas-main-width: 520px;
   --pas-list-width: 264px;
-  --pas-detail-width: 392px;
   --pas-header-height: 76px;
   --pas-compact-header-height: 56px;
   --pas-task-scroll-inset: var(--v3-space-2);
@@ -36,21 +35,18 @@
 .persistent-session-task-head h2 { font: var(--v3-type-body) var(--v3-font-family); }
 .persistent-session-task-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: var(--pas-task-scroll-inset); }
 .persistent-session-task-scroll::-webkit-scrollbar { display: none; }
-.persistent-session-tasks.is-card-open { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--v3-space-4); width: var(--pas-detail-width); padding: var(--v3-space-2) var(--v3-space-5) var(--v3-space-5); border: 1px solid var(--persistent-session-line); border-radius: var(--v3-space-4); background: var(--persistent-session-panel); }
-.persistent-session-tasks > .v3-card-read-summary { flex: 1; height: auto; min-height: 0; }
 @media (min-width: 1101px) {
   .persistent-session-tasks { width: min(var(--pas-list-width), calc((100% - var(--pas-main-width)) / 2 - var(--v3-space-8) - var(--v3-space-4))); }
-  .persistent-session-tasks.is-card-open { width: min(var(--pas-detail-width), calc((100% - var(--pas-main-width)) / 2 - var(--v3-space-4) - var(--v3-space-4))); }
 }
 @media (max-width: 767px) {
   .persistent-session-task-toggle { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--v3-space-5); }
-  .persistent-session-tasks, .persistent-session-tasks.is-card-open { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--v3-space-5); left: var(--v3-space-5); width: auto; background: var(--persistent-session-paper); }
+  .persistent-session-tasks { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--v3-space-5); left: var(--v3-space-5); width: auto; background: var(--persistent-session-paper); }
 }
 @media (min-width: 1101px) and (max-width: 1250px) {
-  .persistent-session-screen { --pas-main-width: 480px; --pas-list-width: 240px; --pas-detail-width: calc((100vw - var(--pas-main-width)) / 2 - var(--v3-space-8)); }
+  .persistent-session-screen { --pas-main-width: 480px; --pas-list-width: 240px; }
 }
 @media (min-width: 768px) and (max-width: 1100px) {
-  .persistent-session-screen { --pas-main-width: clamp(360px, calc(100vw - 420px), 500px); --pas-list-width: clamp(160px, calc((100vw - var(--pas-main-width)) / 2 - 40px), 240px); --pas-detail-width: min(340px, calc(100vw - 48px)); }
+  .persistent-session-screen { --pas-main-width: clamp(360px, calc(100vw - 420px), 500px); --pas-list-width: clamp(160px, calc((100vw - var(--pas-main-width)) / 2 - 40px), 240px); }
 }
 /* Empty history has no Virtuoso flex child; retain the same composer seat. */
 .persistent-session-main [data-slot="chat-root"] > [data-testid="chat-input"] { margin-top: auto; }

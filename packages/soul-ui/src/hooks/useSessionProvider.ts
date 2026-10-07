@@ -6,7 +6,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useStore } from "zustand";
 import { useDashboardStore } from "../stores/dashboard-store";
+import type { DashboardActions, DashboardState } from "../stores/dashboard-store-types";
+import type { StoreApi } from "zustand/vanilla";
 import type { SoulSSEEvent } from "../shared/types";
 import type { SessionStorageProvider } from "../providers/types";
 import type { DetailCursorStore } from "../providers/detail-cursor-store";
@@ -20,6 +23,8 @@ export interface UseSessionProviderOptions {
   sessionKey: string | null;
   /** Provider/server/user identity. Provider identity itself is isolated by its owned store. */
   cursorScope: string;
+  /** Optional transcript store; omitted by existing single-chat surfaces. */
+  store?: StoreApi<DashboardState & DashboardActions>;
   /** Hidden chat surfaces do not fetch or subscribe. */
   active?: boolean;
   getSessionProvider: () => SessionStorageProvider;
@@ -50,13 +55,15 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   const {
     sessionKey,
     cursorScope,
+    store,
     active = true,
     getSessionProvider,
     onConnectionError,
   } = options;
 
-  const processEvents = useDashboardStore((state) => state.processEvents);
-  const clearTree = useDashboardStore((state) => state.clearTree);
+  const chatStore = store ?? useDashboardStore;
+  const processEvents = useStore(chatStore, (state) => state.processEvents);
+  const clearTree = useStore(chatStore, (state) => state.clearTree);
   const clearTreeRef = useRef(clearTree);
   clearTreeRef.current = clearTree;
   const processEventsRef = useRef(processEvents);
@@ -160,7 +167,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       : chunk.map(({ event, eventId }) => ({ event, eventId }));
     if (resetMarker) {
       clearTreeRef.current();
-      useDashboardStore.setState((state) => ({
+      chatStore.setState((state) => ({
         historyResetVersion: state.historyResetVersion + 1,
       }));
     }
@@ -194,7 +201,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       generationRef.current += 1;
       clearTimersAndQueue();
       clearTreeRef.current();
-      useDashboardStore.setState((state) => ({
+      chatStore.setState((state) => ({
         historyResetVersion: state.historyResetVersion + 1,
       }));
       setSynchronizedSessionKey(null);
@@ -254,7 +261,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
         drainQueue();
       }, 0);
     }
-  }, [clearTimersAndQueue, commitCursor, committedCursor, disconnectActiveConnection]);
+  }, [chatStore, clearTimersAndQueue, commitCursor, committedCursor, disconnectActiveConnection]);
 
   const enqueueEvent = useCallback((
     event: SoulSSEEvent,
@@ -292,12 +299,12 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       if (previous.cursorScope !== cursorScope) {
         previous.provider?.detailCursorStore?.clearScope(previous.cursorScope);
       }
-      const hadHistoryCursor = useDashboardStore.getState().historyCursor !== null;
+      const hadHistoryCursor = chatStore.getState().historyCursor !== null;
       clearTree();
       if (hadHistoryCursor) {
         // clearTree also removes the cursor snapshot. Invalidate the buffer
         // generation so a remount that already read that snapshot refetches.
-        useDashboardStore.setState((state) => ({
+        chatStore.setState((state) => ({
           historyResetVersion: state.historyResetVersion + 1,
         }));
       }
@@ -327,7 +334,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
         // Every physical connection starts with replay/snapshot. Suppress raw
         // detail notifications until its history_sync marker; the global feed
         // stream remains the canonical all-session notification plane.
-        useDashboardStore.getState().processingCtx.historySynced = false;
+        chatStore.getState().processingCtx.historySynced = false;
       }
       setStatus(nextStatus);
       if (nextStatus === "error") {
@@ -375,6 +382,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     active,
     clearTimersAndQueue,
     clearTree,
+    chatStore,
     committedCursor,
     cursorScope,
     disconnectActiveConnection,

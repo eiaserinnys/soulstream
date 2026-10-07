@@ -16,7 +16,7 @@ import {
   type RefObject,
 } from "react";
 import type { SoulSSEEvent } from "@shared/types";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useChatStore, useChatStoreApi } from "../../stores/chat-store-scope";
 import { diag } from "../../lib/diag";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 
@@ -172,7 +172,8 @@ export function useMessageHistoryBuffer(
   enabled = true,
   includeTurnUsage = false,
 ): UseMessageHistoryBufferResult {
-  const historyResetVersion = useDashboardStore((state) => state.historyResetVersion);
+  const chatStore = useChatStoreApi();
+  const historyResetVersion = useChatStore((state) => state.historyResetVersion);
   const [loading, setLoading] = useState(false);
   const [reachedTop, setReachedTop] = useState(false);
   const [blockedReason, setBlockedReason] =
@@ -200,12 +201,12 @@ export function useMessageHistoryBuffer(
   }), [enabled, historyResetVersion, sessionId]);
 
   const isActiveGeneration = useCallback((generation: HistoryGeneration): boolean => {
-    const store = useDashboardStore.getState();
+    const store = chatStore.getState();
     return generation.ready
       && activeGenerationRef.current === generation
       && store.activeSessionKey === generation.sessionId
       && store.historyResetVersion === generation.historyResetVersion;
-  }, []);
+  }, [chatStore]);
 
   const resolveCommittedGeneration = useCallback((
     target: HistoryActivationTarget,
@@ -278,12 +279,12 @@ export function useMessageHistoryBuffer(
       const events = [...messages].reverse().map(toSSEEvent);
       // store update가 만든 React commit부터 geometry 신호를 받을 준비를 끝낸다.
       run.awaitingCommit = true;
-      const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
+      const { addedCount } = chatStore.getState().processHistoryEvents(events);
       if (!isActiveGeneration(generation)) return "stale";
 
       initialPageLoadedRef.current = true;
       nextCursorRef.current = nextCursor;
-      useDashboardStore.getState().setHistoryCursor({
+      chatStore.getState().setHistoryCursor({
         sessionId: generation.sessionId,
         historyResetVersion: generation.historyResetVersion,
         nextCursor,
@@ -333,7 +334,7 @@ export function useMessageHistoryBuffer(
         if (isActiveGeneration(generation)) setLoading(false);
       }
     }
-  }, [includeTurnUsage, isActiveGeneration, scrollerRef, updateBlockedReason, updateReachedTop]);
+  }, [chatStore, includeTurnUsage, isActiveGeneration, scrollerRef, updateBlockedReason, updateReachedTop]);
 
   const loadNextPage = useCallback(async (run: FillRun): Promise<HistoryPageOutcome> => {
     const outcome = await requestHistoryPage(run);
@@ -425,7 +426,7 @@ export function useMessageHistoryBuffer(
             sessionId: activationTarget.sessionId,
             historyResetVersion: activationTarget.historyResetVersion,
           };
-      const cursorSnapshot = useDashboardStore.getState().historyCursor;
+      const cursorSnapshot = chatStore.getState().historyCursor;
       const resumableCursor = cursorSnapshot?.sessionId === activationTarget.sessionId
         && cursorSnapshot.historyResetVersion === activationTarget.historyResetVersion
         ? cursorSnapshot
@@ -437,7 +438,7 @@ export function useMessageHistoryBuffer(
       setReachedTop(reachedTopRef.current);
       setBlockedReason(null);
       if (cursorSnapshot !== null && resumableCursor === null) {
-        useDashboardStore.getState().setHistoryCursor(null);
+        chatStore.getState().setHistoryCursor(null);
       }
     }
 

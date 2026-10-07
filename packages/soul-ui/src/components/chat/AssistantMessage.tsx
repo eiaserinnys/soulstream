@@ -1,7 +1,7 @@
 import { cn } from "../../lib/cn";
 import { memo, useRef, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
 import { useGlassSurface } from "../LiquidGlassProvider";
@@ -12,7 +12,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
   const bubbleRef = useRef<HTMLDivElement>(null);
   const manuscript = presentation === "manuscript";
   const webglActive = useGlassSurface(bubbleRef, { enabled: !manuscript });
-  const activeSession = useDashboardStore((s) => s.activeSessionSummary);
+  const activeSession = useChatStore((s) => s.activeSessionSummary);
 
   // 세션에 바인딩된 에이전트 정보
   const agentName = activeSession?.agentName;
