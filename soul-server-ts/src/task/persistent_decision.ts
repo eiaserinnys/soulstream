@@ -132,10 +132,12 @@ export function decidePersistentGeneration(
     }
 
     const currentAccount = accountForPreset(input, input.current_preset);
-    if (
-      isStaleForValue(input, currentAccount, currentAccount?.short_remaining_percent, config)
-      || currentAccount!.short_remaining_percent! < config.keepalive_short_floor
-    ) {
+    if (!meetsShortFloorOrHasNoShortWindow(
+      input,
+      currentAccount,
+      config.keepalive_short_floor,
+      config,
+    )) {
       return createResult(
         context,
         "let_cool",
@@ -204,8 +206,12 @@ export function decidePersistentGeneration(
     )
     .filter((preset) => {
       const account = accountForPreset(input, preset);
-      return !isStaleForValue(input, account, account?.short_remaining_percent, config)
-        && account!.short_remaining_percent! >= config.generation_short_floor
+      return meetsShortFloorOrHasNoShortWindow(
+        input,
+        account,
+        config.generation_short_floor,
+        config,
+      )
         && !isStaleForValue(input, account, account?.weekly_remaining_percent, config)
         && account!.weekly_remaining_percent! > 0;
     });
@@ -302,9 +308,13 @@ function selectPreset(
 ): PresetSelection {
   const afterShortFloor = candidatePresets.filter((preset) => {
     const account = accountForPreset(input, preset);
-    const shortRemaining = account?.short_remaining_percent ?? null;
-    return isStaleForValue(input, account, shortRemaining, config)
-      || (shortRemaining !== null && shortRemaining >= config.generation_short_floor);
+    return isStaleForValue(input, account, account?.short_remaining_percent, config)
+      || meetsShortFloorOrHasNoShortWindow(
+        input,
+        account,
+        config.generation_short_floor,
+        config,
+      );
   });
 
   if (afterShortFloor.length === 0) {
@@ -315,7 +325,10 @@ function selectPreset(
     afterShortFloor.length === 2
     && afterShortFloor.some((preset) => {
       const account = accountForPreset(input, preset);
-      return isStaleForValue(input, account, account?.short_remaining_percent, config)
+      return (
+        !hasFreshObservationWithoutShortWindow(input, account, config)
+        && isStaleForValue(input, account, account?.short_remaining_percent, config)
+      )
         || isStaleForValue(input, account, account?.weekly_headroom, config);
     })
   ) {
@@ -349,6 +362,28 @@ function isStaleForValue(
       > config.usage_stale_seconds
     || value === null
     || value === undefined;
+}
+
+function meetsShortFloorOrHasNoShortWindow(
+  input: DecisionInput,
+  account: AccountObservation | undefined,
+  floor: number,
+  config: PersistentDecisionConfig,
+): boolean {
+  return hasFreshObservationWithoutShortWindow(input, account, config)
+    || (
+      !isStaleForValue(input, account, account?.short_remaining_percent, config)
+      && account!.short_remaining_percent! >= floor
+    );
+}
+
+function hasFreshObservationWithoutShortWindow(
+  input: DecisionInput,
+  account: AccountObservation | undefined,
+  config: PersistentDecisionConfig,
+): boolean {
+  return account?.short_remaining_percent === null
+    && !isStaleForValue(input, account, 0, config);
 }
 
 function presetConfigFor(
