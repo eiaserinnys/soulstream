@@ -233,6 +233,47 @@ it("uses the shared account detail draft and save action", async () => {
   expect(document.body.textContent).toContain("수정한 검수 세션");
 });
 
+it("keeps the settings dialog open when Escape cancels instruction editing and closes it otherwise", async () => {
+  const resource = makeSession();
+  const onClose = vi.fn();
+  const instruction = {
+    id: "instruction-1",
+    text: "간결하게 답합니다.",
+    source_turns: ["T195"],
+    created_at: "2026-10-06T10:00:00.000Z",
+    updated_at: "2026-10-06T11:00:00.000Z",
+    origin: "user",
+  };
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") {
+      return Response.json({ session: resource });
+    }
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [instruction] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [] });
+    throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<DismissiblePersistentSessionSettingsDialog request={request} onClose={onClose} />));
+  await settle();
+  click("기록");
+  click("수정");
+
+  const editInput = document.querySelector<HTMLInputElement>('input[aria-label="지속 지시 수정"]')!;
+  await act(async () => editInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+
+  expect(document.querySelector('[data-testid="persistent-session-settings-dialog"]')).not.toBeNull();
+  expect(document.querySelector('input[aria-label="지속 지시 수정"]')).toBeNull();
+  expect(document.body.textContent).toContain("간결하게 답합니다.");
+  expect(onClose).not.toHaveBeenCalled();
+
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+  await settle();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-testid="persistent-session-settings-dialog"]')).toBeNull();
+});
+
 async function settle() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
@@ -268,6 +309,18 @@ function DraftPreservationHarness({ resource: initialResource, request }: { reso
       onSave={() => { void details.save(); }}
     />
   </>;
+}
+
+function DismissiblePersistentSessionSettingsDialog({ request, onClose }: { request: typeof fetch; onClose(): void }) {
+  const [open, setOpen] = useState(true);
+  if (!open) return null;
+  return <PersistentSessionSettingsDialog
+    sessionId="sample-pas"
+    nodeId="sample-node"
+    request={request}
+    onClose={() => { onClose(); setOpen(false); }}
+    modelPresetCatalog={modelPresetCatalog}
+  />;
 }
 
 function click(label: string) {

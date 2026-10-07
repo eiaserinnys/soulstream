@@ -166,6 +166,7 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
         void saveEdit(instructionId);
       } else if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         cancelEditing();
       }
     },

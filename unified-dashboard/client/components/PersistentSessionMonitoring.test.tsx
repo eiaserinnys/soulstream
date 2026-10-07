@@ -244,6 +244,11 @@ it("hides only the last-decision row when its dedicated request fails", async ()
   expect(container.textContent).toContain("세대 5");
   expect(container.textContent).toContain("조회 실패: 기록을 불러오지 못했습니다 (503)");
   expect([...container.querySelectorAll("button")].some((button) => button.textContent === "다시 시도")).toBe(true);
+  const generationRow = [...container.querySelectorAll<HTMLElement>("[data-testid=config-field-row]")]
+    .find((row) => row.querySelector("span")?.textContent === "현재 세대");
+  const decisionError = [...container.querySelectorAll<HTMLElement>("[role=alert]")]
+    .find((alert) => alert.textContent?.includes("조회 실패: 기록을 불러오지 못했습니다 (503)"));
+  expect(decisionError?.parentElement?.previousElementSibling).toBe(generationRow);
   expect([...container.querySelectorAll("[data-testid=config-field-row] span")].map((span) => span.textContent)).not.toContain("마지막 판단");
 });
 

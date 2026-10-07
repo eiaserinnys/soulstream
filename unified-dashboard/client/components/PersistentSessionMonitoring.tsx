@@ -189,11 +189,11 @@ export function PersistentSessionMonitoringView({
       <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
     </div> : null}
     {!isLoading && !hasError ? <>
+      {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
       {decisionError ? <div className="space-y-2">
         <SettingsAlert>조회 실패: {decisionError}</SettingsAlert>
         <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
       </div> : null}
-      {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
       {latestDecisionText ? <SettingFieldWidget field={readField("last-decision", "마지막 판단", latestDecisionText)} value={latestDecisionText} onChange={() => undefined} /> : null}
       {hasAnyDisplayedRecord || history.nextCursor ? <section className="space-y-2" aria-label="최근 기록">
         <h3 className="text-sm font-medium">최근 기록</h3>
