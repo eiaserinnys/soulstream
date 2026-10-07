@@ -78,6 +78,24 @@ describe("update_persistent_session_settings MCP forwarding", () => {
           arguments: { session_id: "target-session", unrecognized: true },
         });
         expect(result.isError).toBe(true);
+
+        const defaultModelResult = await client.callTool({
+          name: "update_persistent_session_settings",
+          arguments: {
+            session_id: "target-session",
+            default_model: { model_preset: "codex-6.1-sol", unrecognized: true },
+          },
+        });
+        expect(defaultModelResult.isError).toBe(true);
+
+        const fallbackModelResult = await client.callTool({
+          name: "update_persistent_session_settings",
+          arguments: {
+            session_id: "target-session",
+            fallback_model: { model_preset: "codex-6.1-sol", unrecognized: true },
+          },
+        });
+        expect(fallbackModelResult.isError).toBe(true);
         expect(fetch).not.toHaveBeenCalled();
       } finally {
         await client.close();

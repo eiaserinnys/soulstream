@@ -8026,6 +8026,7 @@
           "type": "boolean"
         },
         "default_model": {
+          "additionalProperties": false,
           "properties": {
             "model_preset": {
               "minLength": 1,
@@ -8051,6 +8052,7 @@
         "fallback_model": {
           "anyOf": [
             {
+              "additionalProperties": false,
               "properties": {
                 "model_preset": {
                   "minLength": 1,
