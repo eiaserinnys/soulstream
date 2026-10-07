@@ -9,12 +9,37 @@ import { resolveReasoningEffortForCreate } from "./task_reasoning_effort.js";
 import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isRuntimeFollowup, sortInterventionsByPriority } from "./task_intervention_queue.js";
 import { buildPersistentGenerationMetadataEntry } from "./task_metadata.js";
+import { resolveGenerationState } from "./persistent_generation_state.js";
 
 import type {
   ActiveGenerationRollover,
   PersistentGenerationRolloverFailure,
   Task,
 } from "./task_models.js";
+
+export async function reconcileGenerationBeforeExecution(
+  task: Task,
+  persistence: EventPersistence,
+): Promise<void> {
+  const current = task.persistentGeneration;
+  if (!current?.pending?.applyingFrom) return;
+  const resolved = resolveGenerationState(current, task.codexThreadId, task);
+  if (resolved.persistentGeneration === current) return;
+  const entry = buildPersistentGenerationMetadataEntry(resolved.persistentGeneration);
+  const eventId = await persistence.enqueueMetadataEffect(task.agentSessionId, entry, {
+    replaceExistingType: "persistent_generation",
+    waitForAck: true,
+    semanticDedupeKey:
+      `generation_reconciled:${task.agentSessionId}:${current.pending.number}:${current.pending.requestedAt}`,
+    ...(task.executionRegistration
+      ? { registrationId: task.executionRegistration.registrationId }
+      : {}),
+  });
+  task.metadata = replacePersistentGenerationMetadata(task, entry);
+  task.persistentGeneration = resolved.persistentGeneration;
+  task.activeGenerationRollover = resolved.activeGenerationRollover;
+  if (eventId !== null) task.lastEventId = eventId;
+}
 
 export function beginGenerationRolloverIfPending(
   task: Task,
@@ -293,7 +318,13 @@ export async function complete(
         contextReset: active.resetContext === true,
       }
     : previousFirstCall;
+  const pending = task.persistentGeneration?.pending;
+  const resolved = pending ? resolveGenerationState({
+    ...task.persistentGeneration!,
+    pending: { ...pending, applyingFrom: active.fromBackendSessionId },
+  }, nativeSessionId, task).persistentGeneration : { number: active.number };
   const nextState = {
+    ...resolved,
     number: active.number,
     backendSessionId: nativeSessionId,
     startedAt: new Date().toISOString(),

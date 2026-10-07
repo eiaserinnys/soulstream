@@ -168,7 +168,7 @@ describe("beginGenerationRolloverIfPending", () => {
       },
     });
     const hydrated = extractPersistentGeneration([metadataEntry])!;
-    const resolved = resolveGenerationState(hydrated, "native-old");
+    const resolved = resolveGenerationState(hydrated, "native-old", { modelPreset: "codex-new", reasoningEffort: "high" });
     const task = makeTask({
       modelPreset: "codex-new",
       model: "codex-model-new",

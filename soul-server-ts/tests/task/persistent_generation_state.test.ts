@@ -96,7 +96,7 @@ describe("extractPersistentGeneration", () => {
 
 describe("resolveGenerationState", () => {
   it("defaults a missing entry to generation one", () => {
-    expect(resolveGenerationState(undefined, "native-current").persistentGeneration)
+    expect(resolveGenerationState(undefined, "native-current", {}).persistentGeneration)
       .toEqual({ number: 1 });
   });
 
@@ -107,14 +107,14 @@ describe("resolveGenerationState", () => {
       pending: { ...applyingState.pending, applyingFrom: undefined },
     };
 
-    expect(resolveGenerationState(state, "native-old")).toEqual({
+    expect(resolveGenerationState(state, "native-old", {})).toEqual({
       persistentGeneration: state,
       activeGenerationRollover: undefined,
     });
   });
 
   it("restores the active rollover while the native session ID is still the predecessor", () => {
-    expect(resolveGenerationState(applyingState, "native-old")).toEqual({
+    expect(resolveGenerationState(applyingState, "native-old", {})).toEqual({
       persistentGeneration: applyingState,
       activeGenerationRollover: {
         number: 2,
@@ -141,12 +141,24 @@ describe("resolveGenerationState", () => {
     const persisted = buildPersistentGenerationMetadataEntry(resetState);
 
     expect(extractPersistentGeneration([persisted])).toEqual(resetState);
-    expect(resolveGenerationState(resetState, "native-old").activeGenerationRollover)
+    expect(resolveGenerationState(resetState, "native-old", {}).activeGenerationRollover)
       .toMatchObject({ resetContext: true, keepInstructions: false });
   });
 
+  it.each([
+    { modelPreset: "claude-sonnet", reasoningEffort: "medium" as const },
+    { modelPreset: "codex-balanced", reasoningEffort: "medium" as const },
+  ])("preserves a changed target after completing the applying generation (%j)", (model) => {
+    const resolved = resolveGenerationState(applyingState, "native-new", model);
+    expect(resolved.persistentGeneration).toEqual({ number: 2, backendSessionId: "native-new", firstCall,
+      pending: { number: 3, reason: "manual", requestedAt: applyingState.pending.requestedAt,
+        targetModelPreset: "codex-balanced", targetReasoningEffort: "high",
+        resetContext: false, keepInstructions: true } });
+    expect(resolved.activeGenerationRollover).toBeUndefined();
+  });
+
   it("treats a changed native session ID as completed and preserves the prior first call", () => {
-    expect(resolveGenerationState(applyingState, "native-new")).toEqual({
+    expect(resolveGenerationState(applyingState, "native-new", { modelPreset: "codex-balanced", reasoningEffort: "high" })).toEqual({
       persistentGeneration: {
         number: 2,
         backendSessionId: "native-new",

@@ -107,6 +107,7 @@ import {
 } from "./task_model_preset.js";
 import {
   beginGenerationRolloverIfPending,
+  reconcileGenerationBeforeExecution,
   commitStart as commitGenerationStart,
   complete as completeGenerationRollover,
   persistUnavailablePresetFailure,
@@ -444,7 +445,11 @@ export class TaskExecutor {
       return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
     }
 
-    if (!this.shouldDecidePersistentArrival(task)) {
+    const shouldDecideArrival = this.shouldDecidePersistentArrival(task);
+    const applyingFrom = task.persistentGeneration?.pending?.applyingFrom;
+    const needsGenerationReconciliation = applyingFrom !== undefined
+      && task.codexThreadId !== applyingFrom;
+    if (!shouldDecideArrival && !needsGenerationReconciliation) {
       beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
       return this.startPreparedExecution(
         task,
@@ -466,7 +471,8 @@ export class TaskExecutor {
 
     const execution = (async () => {
       try {
-        await this.decidePersistentArrival(task);
+        if (shouldDecideArrival) await this.decidePersistentArrival(task);
+        await reconcileGenerationBeforeExecution(task, this.persistence);
         beginGenerationRolloverIfPending(task, agent, this.modelCatalog, this.logger);
         await this.startPreparedExecution(
           task,
@@ -1382,6 +1388,9 @@ export class TaskExecutor {
               );
               continue;
             }
+          }
+          if (turnInput.generationRollover) {
+            await completeGenerationRollover(task, this.persistence);
           }
           break;
         }

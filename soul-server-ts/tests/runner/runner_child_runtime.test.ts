@@ -159,6 +159,33 @@ describe("RunnerChildRuntime startup", () => {
 });
 
 describe("RunnerChildRuntime backend session rotation", () => {
+  it("preserves the preparation error and old lifecycle when rollover uses an obsolete native ID", async () => {
+    const { runtime, sessionId } = await createRotationRuntime("backend-session-fresh");
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    const previous = executeCommandFrame("previous-command", {
+      agentSessionId: sessionId, prompt: "previous", resumeSessionId: "backend-session-fresh",
+    });
+    await child.prepareExecution(previous);
+    await child.outbox.finishExecution({ commandId: previous.commandId, state: "failed",
+      progressedAt: new Date().toISOString(), terminalError: { code: "limit_hit", message: "quota" } });
+    const before = child.lifecycle.read();
+    const send = vi.spyOn(child, "sendRequired").mockResolvedValue(undefined);
+    const shutdown = vi.spyOn(runtime, "shutdown");
+    try {
+      await child.drainExecution(rotationCommand(sessionId));
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({
+        kind: "execution_ended", commandId: "rotate-backend-session",
+        error: { code: "execution_failed", message: "runner backend session rollover conflicts with durable bootstrap" },
+      }));
+      expect(child.lifecycle.read()).toEqual(before);
+      expect(shutdown).not.toHaveBeenCalled();
+      await expect(child.outbox.readBootstrap()).resolves.toMatchObject({ payload: { backend_session_id: "backend-session-fresh" } });
+    } finally {
+      shutdown.mockRestore();
+      await runtime.shutdown();
+    }
+  });
+
   it("rotates a Codex backend session ID when bootstrap already exists", async () => {
     const { runtime, sessionId } = await createRotationRuntime("backend-session-old");
     const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
@@ -267,6 +294,9 @@ describe("RunnerChildRuntime backend session rotation", () => {
 type RunnerChildRuntimeRotationHarness = {
   activeCommandId?: string;
   outbox: RunnerSqliteEventOutbox;
+  lifecycle: { read(): unknown };
+  sendRequired(frame: unknown): Promise<void>;
+  drainExecution(command: Extract<RunnerCommandFrame, { kind: "execute" }>): Promise<void>;
   prepareExecution(
     command: Extract<RunnerCommandFrame, { kind: "execute" }>,
   ): Promise<void>;

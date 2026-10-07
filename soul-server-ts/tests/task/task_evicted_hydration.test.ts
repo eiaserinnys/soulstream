@@ -253,6 +253,25 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     });
   });
 
+  it("preserves a later target as the next pending generation after native rotation", () => {
+    const task = hydrateEvictedTaskFromSessionRow(makeRow({
+      claude_session_id: "native-new", model_preset: "claude-sonnet", reasoning_effort: "medium",
+      metadata: [{ type: "persistent_generation", value: {
+        number: 1, pending: { number: 2, reason: "model change", requested_at: "2026-10-07T22:05:59Z",
+          applying_from: "native-old", target_model_preset: "codex-6.1-sol", target_reasoning_effort: "high",
+          previous_model_preset: "claude-opus", previous_backend: "claude",
+          reset_context: true, keep_instructions: false },
+      } }],
+    }), makeLogger());
+    expect(task?.persistentGeneration).toMatchObject({ number: 2, backendSessionId: "native-new",
+      pending: { number: 3, reason: "model change", targetModelPreset: "codex-6.1-sol",
+        targetReasoningEffort: "high", resetContext: true, keepInstructions: false } });
+    expect(task?.persistentGeneration?.pending).not.toHaveProperty("applyingFrom");
+    expect(task?.persistentGeneration?.pending).not.toHaveProperty("previousBackend");
+    expect(task?.persistentGeneration?.pending).not.toHaveProperty("previousModelPreset");
+    expect(task?.activeGenerationRollover).toBeUndefined();
+  });
+
   it("drops malformed first-call token usage during generation hydration", () => {
     const task = hydrateEvictedTaskFromSessionRow(
       makeRow({
