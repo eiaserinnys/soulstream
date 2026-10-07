@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TurnEndCaptions } from '../components/chat/TurnEndCaptions';
-import type { TurnSummaryRenderItem } from '../components/chat/groupChatEvents';
+import type {
+  PersistentInstructionRecordedCaption,
+  TurnSummaryRenderItem,
+} from '../components/chat/groupChatEvents';
 import { useTokens } from '../theme';
 
 const usage = {
@@ -33,8 +37,23 @@ const longSummary: TurnSummaryRenderItem = {
   key: 'turn-summary-941',
 };
 
+const recordedInstructions: PersistentInstructionRecordedCaption = {
+  instructions: [{
+    id: 'review-instruction-1',
+    text: 'Keep decisions in the session note',
+    source_turns: ['T195', 'T210'],
+  }],
+  capReached: true,
+};
+
+const capOnly: PersistentInstructionRecordedCaption = {
+  instructions: [],
+  capReached: true,
+};
+
 export function ReviewTurnEndCaptions() {
   const t = useTokens();
+  const insets = useSafeAreaInsets();
   const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const variant = query.get('variant') ?? 'both';
   const [lateSummary, setLateSummary] = useState(false);
@@ -45,12 +64,22 @@ export function ReviewTurnEndCaptions() {
     return () => clearTimeout(timeout);
   }, [variant]);
 
-  const withUsage = variant !== 'summary-only';
-  const withSummary = variant === 'summary-only' || variant === 'both' || variant === 'long' || variant === 'late';
+  const withUsage = variant !== 'summary-only' && variant !== 'cap-only';
+  const withSummary = variant === 'summary-only' || variant === 'both' || variant === 'long'
+    || variant === 'late' || variant === 'recorded';
   const selectedSummary = variant === 'long' ? longSummary : summary;
+  const instructionCaption = variant === 'recorded' ? recordedInstructions
+    : variant === 'cap-only' ? capOnly
+      : undefined;
 
   return (
-    <View testID="review-turn-end-captions" style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: t.colors.background }}>
+    <View testID="review-turn-end-captions" style={{
+      flex: 1,
+      justifyContent: 'flex-end',
+      paddingTop: insets.top,
+      paddingBottom: insets.bottom,
+      backgroundColor: t.colors.background,
+    }}>
       <TurnEndCaptions
         usage={withUsage ? (variant === 'long' ? {
           ...usage,
@@ -59,6 +88,7 @@ export function ReviewTurnEndCaptions() {
           lines: ['턴 완료 · 입력 986,420 (캐시 914,008) · 출력 42,618 · 정가 $12.45 (세션 $124.50)'],
         } : usage) : undefined}
         summaries={withSummary && (variant !== 'late' || lateSummary) ? [selectedSummary] : undefined}
+        persistentInstructionRecorded={instructionCaption}
       />
     </View>
   );

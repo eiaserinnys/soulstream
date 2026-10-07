@@ -222,7 +222,11 @@ const ChatEventRow = memo(function ChatEventRow({
     );
   }
   if (item.kind === 'turn-end-captions') {
-    const captions = <TurnEndCaptions usage={item.usage} summaries={item.summaries} />;
+    const captions = <TurnEndCaptions
+      usage={item.usage}
+      summaries={item.summaries}
+      persistentInstructionRecorded={item.persistentInstructionRecorded}
+    />;
     return (
       <SearchFocusHighlight active={highlighted}>
         {item.usage ? (

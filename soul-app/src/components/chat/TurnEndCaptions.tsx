@@ -2,7 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { useTokens, type DesignTokens } from '../../theme';
-import type { TurnSummaryRenderItem, TurnUsageCaption } from './groupChatEvents';
+import type {
+  PersistentInstructionRecordedCaption,
+  TurnSummaryRenderItem,
+  TurnUsageCaption,
+} from './groupChatEvents';
 import {
   CollapsibleCaptionBody,
   CollapsibleCaptionHeader,
@@ -12,15 +16,25 @@ import {
 interface Props {
   usage?: TurnUsageCaption;
   summaries?: TurnSummaryRenderItem[];
+  persistentInstructionRecorded?: PersistentInstructionRecordedCaption;
 }
 
-export function TurnEndCaptions({ usage, summaries }: Props) {
+export function TurnEndCaptions({ usage, summaries, persistentInstructionRecorded }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const [usageExpanded, setUsageExpanded] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [instructionRecordedExpanded, setInstructionRecordedExpanded] = useState(false);
+  const hasRecordedInstructions = Boolean(
+    persistentInstructionRecorded
+    && (persistentInstructionRecorded.instructions.length > 0 || persistentInstructionRecorded.capReached),
+  );
 
-  if (!usage && !summaries?.length) return null;
+  if (!usage && !summaries?.length && !hasRecordedInstructions) return null;
+
+  const instructionRecordedTitle = persistentInstructionRecorded?.instructions.length
+    ? '📌 지속 지시로 기록했습니다'
+    : '📌 지속 지시 상한에 닿았습니다';
 
   return (
     <View testID="turn-end-captions" style={styles.wrapper}>
@@ -42,8 +56,17 @@ export function TurnEndCaptions({ usage, summaries }: Props) {
               onToggle={() => setSummaryExpanded((value) => !value)}
             />
           ) : null}
+          {hasRecordedInstructions ? (
+            <CaptionHeadButton
+              title={instructionRecordedTitle}
+              expanded={instructionRecordedExpanded}
+              onToggle={() => setInstructionRecordedExpanded((value) => !value)}
+            />
+          ) : null}
         </View>
-        {((usageExpanded && usage) || (summaryExpanded && summaries?.length)) ? (
+        {((usageExpanded && usage)
+          || (summaryExpanded && summaries?.length)
+          || (instructionRecordedExpanded && hasRecordedInstructions)) ? (
           <View testID="turn-end-captions-bodies" style={styles.bodies}>
             {usageExpanded && usage ? (
               <CollapsibleCaptionBody align="end" alignmentInset="content">
@@ -61,6 +84,23 @@ export function TurnEndCaptions({ usage, summaries }: Props) {
                     {summary.content}
                   </CollapsibleCaptionLine>
                 ))}
+              </CollapsibleCaptionBody>
+            ) : null}
+            {instructionRecordedExpanded && hasRecordedInstructions && persistentInstructionRecorded ? (
+              <CollapsibleCaptionBody align="end" alignmentInset="content">
+                {persistentInstructionRecorded.instructions.map((instruction) => {
+                  const sourceTurns = instruction.source_turns.join(', ');
+                  return (
+                    <CollapsibleCaptionLine key={instruction.id} wrap>
+                      {sourceTurns ? `${instruction.text} (${sourceTurns})` : instruction.text}
+                    </CollapsibleCaptionLine>
+                  );
+                })}
+                {persistentInstructionRecorded.capReached ? (
+                  <CollapsibleCaptionLine key="persistent-instruction-cap" wrap>
+                    상한(50)에 닿아 더 기록하지 못했습니다
+                  </CollapsibleCaptionLine>
+                ) : null}
               </CollapsibleCaptionBody>
             ) : null}
           </View>
