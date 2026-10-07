@@ -2,6 +2,11 @@ import { z } from "zod";
 import type { McpToolDefinition } from "./tool_definitions.js";
 const TOOL_TRUNCATE_DEFAULT = 500;
 
+export interface SessionReadPeriod {
+  readonly since: string;
+  readonly until: string;
+}
+
 export const sessionTools = {
   list_sessions: { name: "list_sessions", audience: "all", config: {
       description:
@@ -9,6 +14,8 @@ export const sessionTools = {
       inputSchema: {
         cursor: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(100).default(20),
+        since: z.string().min(1).optional(),
+        until: z.string().min(1).optional(),
         search: z.string().optional(),
         folder_id: z.string().optional(),
         folder_name: z.string().optional(),
@@ -32,6 +39,8 @@ export const sessionTools = {
         tool_content: z
           .enum(["truncate", "full", "omit"])
           .default("truncate"),
+        since: z.string().min(1).optional(),
+        until: z.string().min(1).optional(),
       },
     } },
   get_session_event: { name: "get_session_event", audience: "all", config: {
@@ -105,6 +114,8 @@ export const sessionTools = {
         from_turn_number: z.number().int().positive().optional(),
         to_turn_number: z.number().int().positive().optional(),
         limit: z.number().int().min(1).max(100).default(50),
+        since: z.string().min(1).optional(),
+        until: z.string().min(1).optional(),
       },
     } },
   expand_session_turn: { name: "expand_session_turn", audience: "all", config: {

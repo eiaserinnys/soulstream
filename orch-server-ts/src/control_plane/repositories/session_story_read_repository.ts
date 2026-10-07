@@ -6,6 +6,7 @@ import type {
   LiveSearchQueryRunner,
   LiveSearchSql,
 } from "../../runtime/live_db_sql.js";
+import type { SessionReadPeriod } from "@soulstream/mcp-contract";
 
 export interface HostSessionStoryTurnSummary {
   readonly eventId: number;
@@ -103,10 +104,10 @@ export class SessionStoryReadRepository {
     options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number } = {},
   ): Promise<HostSessionTurnSummaryCounts> {
     const run = (sql: LiveSearchSql) => sql<Array<{
-      total_count: number | string;
-      digested_count: number | string;
-      undigested_count: number | string;
-    }>>`
+          total_count: number | string;
+          digested_count: number | string;
+          undigested_count: number | string;
+        }>>`
       WITH input AS (
         SELECT ${sessionId}::text AS session_id
       ),
@@ -127,7 +128,7 @@ export class SessionStoryReadRepository {
       JOIN input ON input.session_id = e.session_id
       WHERE e.event_type = 'turn_summary'
         AND (${options.beforeEventId ?? null}::bigint IS NULL OR e.id < ${options.beforeEventId ?? null})
-    `;
+      `;
     const rows = options.signal === undefined && options.deadlineAt === undefined
       ? await run(this.sql as unknown as LiveSearchSql)
       : await this.runOwnedSearch(options.signal, options.deadlineAt, (query) => query((sql) => run(sql)));
@@ -143,9 +144,37 @@ export class SessionStoryReadRepository {
     fromTurnNumber: number,
     toTurnNumber: number | null,
     limit: number,
-    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number } = {},
+    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number; readonly period?: SessionReadPeriod } = {},
   ): Promise<HostSessionStoryTurnSummary[]> {
     const run = (query: LiveSearchSql) => {
+      if (options.period) {
+        return query<SummaryRow[]>`
+          WITH ordered_summaries AS (
+            SELECT session_id, id, payload, created_at,
+              ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+            FROM events
+            WHERE session_id = ${sessionId} AND event_type = 'turn_summary'
+          )
+          SELECT id, payload, created_at, turn_number
+          FROM ordered_summaries
+          WHERE turn_number >= ${fromTurnNumber}
+            AND (${toTurnNumber}::integer IS NULL OR turn_number <= ${toTurnNumber})
+            AND (${options.beforeEventId ?? null}::bigint IS NULL OR id < ${options.beforeEventId ?? null})
+            AND (
+              (created_at >= ${options.period.since}::timestamptz
+                AND created_at < ${options.period.until}::timestamptz)
+              OR EXISTS (
+                SELECT 1 FROM events final_response
+                WHERE final_response.session_id = ordered_summaries.session_id
+                  AND final_response.id::text = ordered_summaries.payload->>'final_response_event_id'
+                  AND final_response.created_at >= ${options.period.since}::timestamptz
+                  AND final_response.created_at < ${options.period.until}::timestamptz
+              )
+            )
+          ORDER BY turn_number ASC
+          LIMIT ${limit}
+        `;
+      }
       return toTurnNumber === null
       ? query<SummaryRow[]>`
           WITH ordered_summaries AS (

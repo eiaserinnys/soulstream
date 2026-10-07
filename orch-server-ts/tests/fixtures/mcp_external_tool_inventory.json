@@ -1365,6 +1365,10 @@
         "session_id": {
           "type": "string"
         },
+        "since": {
+          "minLength": 1,
+          "type": "string"
+        },
         "to_turn_number": {
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991,
@@ -1374,6 +1378,10 @@
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991,
           "type": "integer"
+        },
+        "until": {
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
@@ -1843,6 +1851,10 @@
         "session_id": {
           "type": "string"
         },
+        "since": {
+          "minLength": 1,
+          "type": "string"
+        },
         "tool_content": {
           "default": "truncate",
           "enum": [
@@ -1857,6 +1869,10 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "until": {
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
@@ -1899,6 +1915,14 @@
           "type": "string"
         },
         "search": {
+          "type": "string"
+        },
+        "since": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "until": {
+          "minLength": 1,
           "type": "string"
         }
       },

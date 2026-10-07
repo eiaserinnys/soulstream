@@ -3,6 +3,14 @@ import { formatCardReference } from "@soulstream/mcp-contract";
 import { readSessionReferences } from "../../cards/card_reference_repository.js";
 import type { RepositorySql } from "../../cards/control_plane/card_types.js";
 import type { SqlClient } from "../control_plane_types.js";
+import type { SessionReadPeriod } from "@soulstream/mcp-contract";
+
+type SessionSummaryQueryRow = HostSessionSummaryRow & {
+  event_count: string | number;
+  last_event_id: string | number | null;
+  last_read_event_id: string | number | null;
+  total_count: string | number;
+};
 
 export interface HostSessionRow extends Record<string, unknown> {
   session_id: string;
@@ -71,13 +79,65 @@ export class SessionReadRepository {
     offset: number;
     folderId?: string | null;
     nodeId?: string | null;
+    period?: SessionReadPeriod;
   }): Promise<{ sessions: HostSessionSummaryRow[]; total: number }> {
-    const rows = await this.sql<Array<HostSessionSummaryRow & {
-      event_count: string | number;
-      last_event_id: string | number | null;
-      last_read_event_id: string | number | null;
-      total_count: string | number;
-    }>>`
+    let rows: SessionSummaryQueryRow[];
+    if (params.period) {
+      rows = await this.sql<SessionSummaryQueryRow[]>`
+        WITH paged AS (
+          SELECT
+            s.session_id,
+            s.card_id,
+            s.display_name,
+            s.status,
+            s.session_type,
+            s.created_at,
+            s.updated_at,
+            s.away_summary,
+            s.caller_session_id,
+            s.last_event_id,
+            s.last_read_event_id,
+            s.node_id,
+            s.agent_id,
+            s.model_preset,
+            s.model,
+            NULLIF(s.reasoning_effort, 'auto') AS reasoning_effort,
+            s.predecessor_session_id,
+            COUNT(*) OVER()::BIGINT AS total_count
+          FROM sessions s
+          WHERE (
+            ${params.search ?? null}::text IS NULL
+            OR s.display_name ILIKE '%' || ${params.search ?? null} || '%'
+          )
+            AND (
+              ${params.folderId ?? null}::text IS NULL
+              OR s.folder_id = ${params.folderId ?? null}
+            )
+            AND (
+              ${params.nodeId ?? null}::text IS NULL
+              OR s.node_id = ${params.nodeId ?? null}
+            )
+            AND EXISTS (
+              SELECT 1 FROM events e
+              WHERE e.session_id = s.session_id
+                AND e.created_at >= ${params.period.since}::timestamptz
+                AND e.created_at < ${params.period.until}::timestamptz
+            )
+          ORDER BY s.session_id ASC
+          LIMIT ${params.limit} OFFSET ${params.offset}
+        )
+        SELECT
+          paged.*,
+          (
+            SELECT COUNT(*)::BIGINT
+            FROM events
+            WHERE events.session_id = paged.session_id
+          ) AS event_count
+        FROM paged
+        ORDER BY paged.session_id ASC
+      `;
+    } else {
+      rows = await this.sql<SessionSummaryQueryRow[]>`
       WITH paged AS (
         SELECT
           s.session_id,
@@ -128,7 +188,8 @@ export class SessionReadRepository {
         ) AS event_count
       FROM paged
       ORDER BY paged.updated_at DESC, paged.session_id DESC
-    `;
+      `;
+    }
     return {
       sessions: rows.map(({ total_count: _totalCount, ...row }) => ({
         ...row,

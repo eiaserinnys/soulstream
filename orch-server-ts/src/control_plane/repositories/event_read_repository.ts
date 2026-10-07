@@ -1,4 +1,5 @@
 import type { SqlClient } from "../control_plane_types.js";
+import type { SessionReadPeriod } from "@soulstream/mcp-contract";
 import {
   type LiveSearchDbConnectionFactory,
   type LiveSearchPendingQuery,
@@ -85,16 +86,32 @@ export class EventReadRepository {
     afterId: number,
     limit: number,
     eventTypes?: string[],
+    period?: SessionReadPeriod,
   ): Promise<HostEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
-    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-      SELECT * FROM event_read(
-        ${sessionId},
-        ${afterId},
-        ${limit},
-        ${types as unknown as string[] | null}
-      )
-    `;
+    const rows = period
+      ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          SELECT id, session_id, event_type, payload, searchable_text, created_at
+          FROM events
+          WHERE session_id = ${sessionId}
+            AND id > ${afterId}
+            AND created_at >= ${period.since}::timestamptz
+            AND created_at < ${period.until}::timestamptz
+            AND (
+              ${types as unknown as string[] | null}::text[] IS NULL
+              OR event_type = ANY(${types as unknown as string[] | null}::text[])
+            )
+          ORDER BY id ASC
+          LIMIT ${limit}
+        `
+      : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          SELECT * FROM event_read(
+            ${sessionId},
+            ${afterId},
+            ${limit},
+            ${types as unknown as string[] | null}
+          )
+        `;
     return rows.map(normalizeEvent);
   }
 
