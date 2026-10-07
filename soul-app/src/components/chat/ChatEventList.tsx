@@ -293,7 +293,8 @@ const ChatEventRow = memo(function ChatEventRow({
     );
   }
   if (item.kind === 'event' && item.event.type === 'generation_started') {
-    return <SearchFocusHighlight active={highlighted}><LabeledDivider label="새 세대" alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
+    const label = item.event.data.context_reset === true ? '새 세대 · 문맥 초기화' : '새 세대';
+    return <SearchFocusHighlight active={highlighted}><LabeledDivider label={label} alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
       {...(presentation === 'manuscript' ? { lineColor: t.persistentSession.line } : {})} /></SearchFocusHighlight>;
   }
   if (item.kind === 'tool') {

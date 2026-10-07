@@ -4,7 +4,7 @@ import type { FlatList, NativeScrollEvent, NativeSyntheticEvent } from 'react-na
 import type { StreamingSlots } from '../../../store/chatStore';
 import type { SessionEvent } from '../../../api/types';
 import type { ChatBodyStyles } from '../ChatBody.styles';
-import type { ChatRenderItem } from '../groupChatEvents';
+import type { ChatRenderItem, PersistentDisplayProjectionSettings } from '../groupChatEvents';
 import { ChatEventList } from '../ChatEventList';
 import { useChatBottomFollow } from '../useChatBottomFollow';
 import { useChatRenderItems } from '../useChatRenderItems';
@@ -66,6 +66,13 @@ jest.mock('../../events/TurnSummaryCaption', () => ({
 jest.mock('../TypingIndicator', () => ({ TypingIndicator: () => null }));
 jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
 jest.mock('../ChatNewMessageButton', () => ({ ChatNewMessageButton: () => null }));
+jest.mock('../LabeledDivider', () => {
+  const ReactModule = jest.requireActual('react');
+  const Native = jest.requireActual('react-native');
+  return {
+    LabeledDivider: ({ label }: { label: string }) => ReactModule.createElement(Native.Text, null, label),
+  };
+});
 jest.mock('../../../theme', () => ({
   useTokens: () => ({
     colors: { accentTint: 'transparent', accent: 'blue' },
@@ -90,12 +97,14 @@ function Harness({
   sessionId = 'sess-a',
   streamingSlots,
   presentation = 'default',
+  persistentDisplaySettings,
   showNewMessage = false,
 }: {
   events: SessionEvent[];
   sessionId?: string;
   streamingSlots?: StreamingSlots;
   presentation?: 'default' | 'manuscript';
+  persistentDisplaySettings?: PersistentDisplayProjectionSettings;
   showNewMessage?: boolean;
 }) {
   const flatListRef = useRef<FlatList<ChatRenderItem> | null>(null);
@@ -104,6 +113,7 @@ function Harness({
     pendingOptimistic: undefined,
     streamingSlots,
     sessionStatus: 'running',
+    persistentDisplaySettings,
   });
   const follow = useChatBottomFollow({
     flatListRef,
@@ -173,5 +183,19 @@ describe('chat row render isolation', () => {
     mockRenderOrder.length = 0;
     view.rerender(<Harness events={[...base, ev('5', 'tool_start', { tool_use_id: 'tool-b', tool_name: 'exec_command' })]} />);
     expect(mockRenderOrder).toEqual(['tool:5']);
+  });
+
+  it.each([
+    ['true', { context_reset: true }, '새 세대 · 문맥 초기화'],
+    ['false', { context_reset: false }, '새 세대'],
+    ['missing', {}, '새 세대'],
+  ] as const)('generation divider keeps its label for context_reset %s', (_name, data, expected) => {
+    const view = render(<Harness
+      events={[ev('generation', 'generation_started', data)]}
+      persistentDisplaySettings={{ showGenerationSeparator: true, showJevCandidates: false }}
+    />);
+
+    expect(view.getByText(expected)).toBeTruthy();
+    expect(view.queryByText(expected === '새 세대' ? '새 세대 · 문맥 초기화' : '새 세대')).toBeNull();
   });
 });
