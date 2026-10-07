@@ -20,6 +20,7 @@ export type RequestedTimelineEventType = SessionTimelineEventType | "complete";
 export const DEFAULT_TIMELINE_DEBUG_KINDS = [
   "assigned_card_context_snapshot",
   "persistent_jev_candidates",
+  "persistent_instruction_recorded",
 ] as const;
 
 export type RequestedTimelineDebugKind =

@@ -57,7 +57,7 @@ describe("session timeline event_types filter", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/sessions/sess-1/timeline?event_types=debug&debug_kinds=persistent_decision&debug_kinds=persistent_jev_candidates&limit=1",
+      url: "/api/sessions/sess-1/timeline?event_types=debug&debug_kinds=persistent_decision&debug_kinds=persistent_jev_candidates&debug_kinds=persistent_instruction_recorded&limit=1",
     });
 
     expect(response.statusCode).toBe(200);
@@ -66,7 +66,7 @@ describe("session timeline event_types filter", () => {
       null,
       1,
       ["debug"],
-      ["persistent_decision", "persistent_jev_candidates"],
+      ["persistent_decision", "persistent_jev_candidates", "persistent_instruction_recorded"],
     );
     await app.close();
   });

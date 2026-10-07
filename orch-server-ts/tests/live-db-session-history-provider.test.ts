@@ -328,7 +328,9 @@ describe("live DB session history provider", () => {
       expect(query.values[2]).toEqual([
         "assigned_card_context_snapshot",
         "persistent_jev_candidates",
+        "persistent_instruction_recorded",
       ]);
+      expect(query.values[2]).not.toContain("persistent_decision");
     }
     expect(timelineQueries[0]?.text).not.toContain("created_at < ?");
     expect(timelineQueries[1]?.text).toContain("created_at < ?");
