@@ -11,7 +11,11 @@ export function bottomFollowTargetKey<T extends { key: string; kind?: string }>(
   items: readonly T[],
 ): string | null {
   for (let i = items.length - 1; i >= 0; i -= 1) {
-    if (items[i].kind !== 'typing') return items[i].key;
+    const item = items[i] as T & { event?: { type?: string } };
+    if (
+      item.kind !== 'typing'
+      && !(item.kind === 'event' && item.event?.type === 'generation_started')
+    ) return item.key;
   }
   return items.length > 0 ? items[items.length - 1].key : null;
 }
