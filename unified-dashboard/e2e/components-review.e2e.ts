@@ -222,7 +222,9 @@ for (const width of [1440, 340]) {
 
     await page.evaluate(() => document.fonts.ready);
     await activity.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-activity-${width}.png`), animations: "disabled" });
-    await defaultChat.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-default-after-${width}.png`), animations: "disabled" });
+    const defaultToolRow = defaultChat.locator('[data-tree-node-id="review-tool"]');
+    await expect(defaultToolRow).toBeVisible();
+    await defaultToolRow.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-default-after-${width}.png`), animations: "disabled" });
     writeFileSync(path.join(w13CaptureRoot, `${w13Stamp}-w13-geometry-${width}.json`), JSON.stringify(geometry, null, 2));
 
     const closedGroup = activity.locator("[data-slot=manuscript-activity-toggle]").nth(1);

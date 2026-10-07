@@ -349,7 +349,9 @@
   padding-block: 4px;
 }
 
-.v3-chat-pane [data-slot="tool-call-group-toggle"] {
+.v3-chat-pane [data-slot="tool-call-group-toggle"],
+.v3-shell [data-slot="manuscript-activity-toggle"],
+.v3-shell [data-slot="manuscript-tool-call-item"] [data-slot="tool-call-item-toggle"] {
   font: var(--v3-type-meta) var(--v3-font-family);
 }
 
