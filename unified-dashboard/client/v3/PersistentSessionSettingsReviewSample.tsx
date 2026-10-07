@@ -68,8 +68,16 @@ export function PersistentSessionSettingsReviewSample() {
       { id: 102, event_type: "complete", payload: { usage: { input_tokens: 8900, output_tokens: 1200 }, turn_cost_usd: 0.31 }, created_at: "2026-10-06T02:30:00.000Z" },
     ] : [];
     const eventTypes = url.searchParams.get("event_types")?.split(",");
-    const filtered = eventTypes ? messages.filter((message) => eventTypes.includes(message.event_type)) : messages;
-    return Response.json({ messages: filtered, next_cursor: null });
+    const debugKinds = url.searchParams.getAll("debug_kinds");
+    const filtered = messages.filter((message) => {
+      if (eventTypes && !eventTypes.includes(message.event_type)) return false;
+      const kind = "kind" in message.payload ? message.payload.kind : undefined;
+      if (debugKinds.length > 0 && (message.event_type !== "debug" || !debugKinds.includes(String(kind)))) return false;
+      return true;
+    });
+    const rawLimit = url.searchParams.get("limit");
+    const limit = rawLimit === null ? null : Number(rawLimit);
+    return Response.json({ messages: limit !== null && Number.isFinite(limit) ? filtered.slice(0, limit) : filtered, next_cursor: null });
   };
 
   return <div className="space-y-4">

@@ -27,7 +27,7 @@ type MonitoringState = {
   loadingMore: boolean;
 };
 
-const HISTORY_EVENT_TYPES = "generation_started,complete,context_usage,error,user_message,intervention_sent,debug";
+const HISTORY_EVENT_TYPES = "generation_started,complete,context_usage,error,user_message,intervention_sent";
 const DISPLAY_EVENT_TYPES = new Set(["generation_started", "complete", "context_usage"]);
 const PERCENT_FORMAT = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
 
@@ -43,6 +43,8 @@ export function usePersistentSessionMonitoring({
   const [generationState, setGenerationState] = useState<ReadState>("loading");
   const [generation, setGeneration] = useState<TimelineEvent | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [latestDecision, setLatestDecision] = useState<TimelineEvent | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
   const [history, setHistory] = useState<MonitoringState>({
     state: "loading",
     events: [],
@@ -58,6 +60,8 @@ export function usePersistentSessionMonitoring({
     setGenerationState("loading");
     setGeneration(null);
     setGenerationError(null);
+    setLatestDecision(null);
+    setDecisionError(null);
     setHistory({ state: "loading", events: [], nextCursor: null, error: null, loadingMore: false });
 
     void readTimeline(request, sessionId, {
@@ -71,6 +75,20 @@ export function usePersistentSessionMonitoring({
       if (!active) return;
       setGenerationError(errorMessage(caught));
       setGenerationState("error");
+    });
+
+    void readTimeline(request, sessionId, {
+      event_types: "debug",
+      debug_kinds: "persistent_decision",
+      limit: "1",
+    }).then((page) => {
+      if (!active) return;
+      setLatestDecision(latestPersistentDecision(page.messages));
+      setDecisionError(null);
+    }).catch((caught: unknown) => {
+      if (!active) return;
+      setLatestDecision(null);
+      setDecisionError(errorMessage(caught));
     });
 
     void readTimeline(request, sessionId, {
@@ -122,7 +140,7 @@ export function usePersistentSessionMonitoring({
     }
   }, [history.loadingMore, history.nextCursor, request, sessionId]);
 
-  return { generationState, generation, generationError, history, loadMore, retry, modelPresets };
+  return { generationState, generation, generationError, history, latestDecision, decisionError, loadMore, retry, modelPresets };
 }
 
 export function PersistentSessionMonitoring({
@@ -143,7 +161,7 @@ export function PersistentSessionMonitoringView({
 }: {
   state: ReturnType<typeof usePersistentSessionMonitoring>;
 }) {
-  const { generationState, generation, generationError, history, loadMore, retry } = state;
+  const { generationState, generation, generationError, history, latestDecision, decisionError, loadMore, retry } = state;
   const usageByTerminalId = useMemo(() => turnUsageByTerminalId(history.events), [history.events]);
   const isLoading = generationState === "loading" || history.state === "loading";
   const error = generationError ?? history.error;
@@ -152,7 +170,6 @@ export function PersistentSessionMonitoringView({
     () => displayHistoryEvents(history.events, generation, usageByTerminalId),
     [generation, history.events, usageByTerminalId],
   );
-  const latestDecision = useMemo(() => latestPersistentDecision(history.events), [history.events]);
   const latestDecisionAction = latestDecision ? asString(latestDecision.payload.action) : null;
   const latestDecisionReason = latestDecision ? asString(latestDecision.payload.reason) : null;
   const latestDecisionText = latestDecision && latestDecisionAction && latestDecisionReason
@@ -172,6 +189,10 @@ export function PersistentSessionMonitoringView({
       <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
     </div> : null}
     {!isLoading && !hasError ? <>
+      {decisionError ? <div className="space-y-2">
+        <SettingsAlert>조회 실패: {decisionError}</SettingsAlert>
+        <Button type="button" size="sm" variant="outline" onClick={retry}>다시 시도</Button>
+      </div> : null}
       {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
       {latestDecisionText ? <SettingFieldWidget field={readField("last-decision", "마지막 판단", latestDecisionText)} value={latestDecisionText} onChange={() => undefined} /> : null}
       {hasAnyDisplayedRecord || history.nextCursor ? <section className="space-y-2" aria-label="최근 기록">

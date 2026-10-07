@@ -53,7 +53,8 @@ it("pairs failed turns by event id and deduplicates overlapping pages despite ti
   await settle();
 
   expect(calls).toContain("/api/sessions/sample-pas/timeline?event_types=generation_started&limit=1");
-  expect(calls).toContain("/api/sessions/sample-pas/timeline?event_types=generation_started%2Ccomplete%2Ccontext_usage%2Cerror%2Cuser_message%2Cintervention_sent%2Cdebug&limit=100");
+  expect(calls).toContain("/api/sessions/sample-pas/timeline?event_types=generation_started%2Ccomplete%2Ccontext_usage%2Cerror%2Cuser_message%2Cintervention_sent&limit=100");
+  expect(calls).toContain("/api/sessions/sample-pas/timeline?event_types=debug&debug_kinds=persistent_decision&limit=1");
   expect(container.textContent).toContain("세대 7");
   expect(container.textContent).toContain("컨텍스트 22.0% · 정가 $0.42");
   expect(container.textContent).toContain("정가 $0.62");
@@ -100,6 +101,7 @@ it("retries the history read from its inline error action", async () => {
   const request: typeof fetch = vi.fn(async (input) => {
     const url = new URL(String(input), "https://sample.invalid");
     if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [] });
+    if (url.searchParams.has("debug_kinds")) return Response.json({ messages: [], next_cursor: null });
     if (url.searchParams.get("event_types") === "generation_started") {
       return Response.json({ messages: [{ id: 3, event_type: "generation_started", payload: { generation: 3 }, created_at: "2026-10-06T02:00:00.000Z" }], next_cursor: null });
     }
@@ -160,11 +162,11 @@ it("retries only the failed older page and preserves already loaded rows", async
   await settle();
   expect(historyRowIds()).toEqual(["2", "1"]);
   expect(calls.filter((query) => query.includes("before=older-page"))).toHaveLength(2);
-  expect(calls.filter((query) => !query.includes("before=") && !query.includes("event_types=generation_started&"))).toHaveLength(1);
+  expect(calls.filter((query) => !query.includes("before=") && !query.includes("event_types=generation_started&") && !query.includes("debug_kinds="))).toHaveLength(1);
   expect(container.textContent).not.toContain("조회 실패");
 });
 
-it("requests debug events for monitoring and renders the newest persistent decision below the generation row", async () => {
+it("requests the latest persistent decision separately and renders it below the generation row", async () => {
   const calls: URL[] = [];
   const request: typeof fetch = async (input) => {
     const url = new URL(String(input), "https://sample.invalid");
@@ -174,11 +176,15 @@ it("requests debug events for monitoring and renders the newest persistent decis
       messages: [{ id: 40, event_type: "generation_started", payload: { generation: 7 }, created_at: "2026-10-06T02:00:00.000Z" }],
       next_cursor: null,
     });
-    return Response.json({
+    if (url.searchParams.has("debug_kinds")) return Response.json({
       messages: [
         { id: 21, event_type: "debug", payload: { kind: "persistent_decision", trigger: "turn_end", action: "wait_until", rule: "newest", reason: "다음 확인 시각까지 기다립니다.", inputs_snapshot: {} }, created_at: "2026-10-06T03:00:00.000Z" },
         { id: 22, event_type: "debug", payload: { kind: "persistent_decision", trigger: "turn_end", action: "new_generation", rule: "older", reason: "사용 여유를 확인합니다.", inputs_snapshot: {} }, created_at: "2026-10-06T02:00:00.000Z" },
       ],
+      next_cursor: null,
+    });
+    return Response.json({
+      messages: [],
       next_cursor: null,
     });
   };
@@ -186,7 +192,11 @@ it("requests debug events for monitoring and renders the newest persistent decis
   await act(async () => root.render(<PersistentSessionMonitoring sessionId="decision-pas" nodeId="sample-node" request={request} />));
   await settle();
 
-  expect(calls.some((url) => url.searchParams.get("event_types") === "generation_started,complete,context_usage,error,user_message,intervention_sent,debug")).toBe(true);
+  expect(calls.some((url) => url.searchParams.get("event_types") === "generation_started,complete,context_usage,error,user_message,intervention_sent" && !url.searchParams.has("debug_kinds"))).toBe(true);
+  const decisionRequest = calls.find((url) => url.searchParams.get("debug_kinds") === "persistent_decision");
+  expect(decisionRequest?.searchParams.get("event_types")).toBe("debug");
+  expect(decisionRequest?.searchParams.get("limit")).toBe("1");
+  expect(decisionRequest?.searchParams.getAll("debug_kinds")).toEqual(["persistent_decision"]);
   const rows = [...container.querySelectorAll<HTMLElement>("[data-testid=config-field-row]")];
   const rowLabel = (row: HTMLElement) => row.querySelector("span")?.textContent;
   const generationIndex = rows.findIndex((row) => rowLabel(row) === "현재 세대");
@@ -206,12 +216,34 @@ it("does not render a last-decision row when monitoring history has no decision"
       messages: [{ id: 30, event_type: "generation_started", payload: { generation: 4 }, created_at: "2026-10-06T02:00:00.000Z" }],
       next_cursor: null,
     });
+    if (url.searchParams.has("debug_kinds")) return Response.json({ messages: [], next_cursor: null });
     return Response.json({ messages: [], next_cursor: null });
   };
 
   await act(async () => root.render(<PersistentSessionMonitoring sessionId="no-decision-pas" nodeId="sample-node" request={request} />));
   await settle();
 
+  expect([...container.querySelectorAll("[data-testid=config-field-row] span")].map((span) => span.textContent)).not.toContain("마지막 판단");
+});
+
+it("hides only the last-decision row when its dedicated request fails", async () => {
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname.includes("model-presets")) return Response.json({ model_presets: [] });
+    if (url.searchParams.has("debug_kinds")) return new Response("unavailable", { status: 503 });
+    if (url.searchParams.get("event_types") === "generation_started") return Response.json({
+      messages: [{ id: 31, event_type: "generation_started", payload: { generation: 5 }, created_at: "2026-10-06T02:00:00.000Z" }],
+      next_cursor: null,
+    });
+    return Response.json({ messages: [], next_cursor: null });
+  };
+
+  await act(async () => root.render(<PersistentSessionMonitoring sessionId="decision-error-pas" nodeId="sample-node" request={request} />));
+  await settle();
+
+  expect(container.textContent).toContain("세대 5");
+  expect(container.textContent).toContain("조회 실패: 기록을 불러오지 못했습니다 (503)");
+  expect([...container.querySelectorAll("button")].some((button) => button.textContent === "다시 시도")).toBe(true);
   expect([...container.querySelectorAll("[data-testid=config-field-row] span")].map((span) => span.textContent)).not.toContain("마지막 판단");
 });
 
