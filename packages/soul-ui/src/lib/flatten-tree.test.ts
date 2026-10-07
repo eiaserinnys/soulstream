@@ -47,10 +47,11 @@ const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
   assigned_card_context: "render",
   generation_started: "render",
   persistent_jev_candidates: "render",
+  persistent_instruction_recorded: "conditional",
   context_usage: "hidden",
 } as const satisfies Record<
   EventTreeNode["type"],
-  "render" | "hidden" | "synthetic"
+  "render" | "hidden" | "synthetic" | "conditional"
 >;
 
 function makeSession(children: EventTreeNode[] = []): SessionNode {
@@ -346,6 +347,35 @@ describe("flattenTree", () => {
     expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.result).toBe("hidden");
     expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.assistant_error).toBe("hidden");
     expect(CHAT_MESSAGE_EVENT_ID_INVENTORY.session).toBe("synthetic");
+  });
+
+  it("places persistent instruction records after the anchored turn end and hides an unmatched anchor", () => {
+    const anchor = { ...makeUserMessage("user-message-10", "질문"), inputId: "input-10" };
+    const answer = makeAssistantMessage(20);
+    const complete = makeComplete("complete-30", "complete");
+    const record = makeRawEventNode("persistent_instruction_recorded" as EventTreeNode["type"], 40, {
+      preparedInputId: "input-10",
+      instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+      capReached: false,
+    });
+    const unrelated = makeRawEventNode("persistent_instruction_recorded" as EventTreeNode["type"], 50, {
+      preparedInputId: "missing-input",
+      instructions: [{ id: "instruction-2", text: "근거를 밝힙니다.", source_turns: [210], action: "updated" }],
+      capReached: false,
+    });
+
+    const messages = flattenTree(makeSession([anchor, record, answer, complete, unrelated]));
+
+    expect(messages.map(message => message.treeNodeType)).toEqual([
+      "user_message", "assistant_message", "complete", "persistent_instruction_recorded",
+    ]);
+    expect(messages.at(-1)).toMatchObject({
+      preparedInputId: "input-10",
+      persistentInstructionRecorded: {
+        instructions: [{ id: "instruction-1", source_turns: [195] }],
+        capReached: false,
+      },
+    });
   });
 
   it("keeps context usage out of default rows and exposes it with complete details for manuscript projection", () => {

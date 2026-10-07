@@ -162,6 +162,120 @@ describe("chat caption parts", () => {
     expect(container.querySelector("[id]")?.className).toContain("mt-0.5");
   });
 
+  it("renders the recorded instruction caption and its source turns", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const msg = {
+      id: "record-1",
+      role: "system",
+      content: "",
+      treeNodeId: "record-1",
+      treeNodeType: "persistent_instruction_recorded",
+      persistentInstructionRecorded: {
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195, 210], action: "added" }],
+        capReached: true,
+      },
+    } as unknown as ChatMessage;
+    act(() => root?.render(<SystemMessage msg={msg} presentation="manuscript" />));
+
+    const button = container.querySelector("button");
+    expect(button?.textContent).toBe("📌 지속 지시로 기록했습니다");
+    act(() => button?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(container.textContent).toContain("간결하게 답합니다. (T195, T210)");
+    expect(container.textContent).toContain("상한(50)에 닿아 더 기록하지 못했습니다");
+  });
+
+  it("uses the turn-end caption group for manuscript complete rows", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const msg = {
+      id: "complete-1",
+      role: "system",
+      content: "완료",
+      treeNodeId: "complete-1",
+      treeNodeType: "complete",
+      turnUsageCaption: { title: "사용량", completeText: "턴 완료" },
+      turnSummaryCaption: { treeNodeId: "summary-1", content: "요약 내용" },
+      persistentInstructionRecorded: {
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+        capReached: false,
+      },
+    } as unknown as ChatMessage;
+
+    act(() => root?.render(<SystemMessage msg={msg} presentation="manuscript" />));
+
+    const group = container.querySelector('[data-slot="turn-end-captions"]');
+    expect(Array.from(group?.querySelectorAll("button") ?? []).map(button => button.textContent)).toEqual([
+      "사용량", "요약", "📌 지속 지시로 기록했습니다",
+    ]);
+  });
+
+  it("renders the default transcript caption after the summary row with the existing end alignment", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const msg = {
+      id: "record-1",
+      role: "system",
+      content: "",
+      treeNodeId: "record-1",
+      treeNodeType: "persistent_instruction_recorded",
+      persistentInstructionRecorded: {
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+        capReached: false,
+      },
+    } as unknown as ChatMessage;
+
+    act(() => root?.render(<SystemMessage msg={msg} />));
+
+    const row = container.querySelector('[data-slot="collapsible-caption"]');
+    expect(container.querySelector("button")?.textContent).toBe("📌 지속 지시로 기록했습니다");
+    expect(row?.className).toContain("justify-end");
+    expect(row?.querySelector(".w-8")).not.toBeNull();
+  });
+
+  it("uses the cap-only title when no instruction was recorded", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <TurnEndCaptions persistentInstructionCaption={{ instructions: [], capReached: true }} />,
+    ));
+
+    const button = container.querySelector("button");
+    expect(button?.textContent).toBe("📌 지속 지시 상한에 닿았습니다");
+    act(() => button?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(container.textContent).toContain("상한(50)에 닿아 더 기록하지 못했습니다");
+  });
+
+  it("adds the record after usage and summary in the existing turn-end caption row", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => root?.render(
+      <TurnEndCaptions
+        usageCaption={{ title: "사용량", contextText: "컨텍스트", completeText: "턴 완료" }}
+        summaryCaption={{ treeNodeId: "summary", content: "요약 내용" }}
+        persistentInstructionCaption={{
+          instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+          capReached: false,
+        }}
+      />,
+    ));
+
+    expect(Array.from(container.querySelectorAll("button")).map(button => button.textContent)).toEqual([
+      "사용량", "요약", "📌 지속 지시로 기록했습니다",
+    ]);
+    expect(container.querySelectorAll('[data-slot="turn-end-captions"]')).toHaveLength(1);
+  });
+
   // jsdom does not load Tailwind CSS; browser captures verify the rendered bounds.
   it.each([
     ["content", "end", "-me-px", "!pe-0", "-me-2"],

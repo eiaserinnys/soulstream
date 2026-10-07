@@ -5,6 +5,7 @@ import { CollapsibleCaption } from "./CollapsibleCaption";
 import { TurnEndCaptions } from "./TurnEndCaptions";
 import { LabeledDivider } from "./LabeledDivider";
 import { formatPersistentJevCandidates } from "../../lib/persistent-jev-candidates";
+import { formatPersistentInstructionRecorded, persistentInstructionRecordedTitle } from "../../lib/persistent-instruction-recorded";
 import { ManuscriptAgentMessageGroup } from "./ManuscriptAgentMessageGroup";
 
 export const SystemMessage = memo(function SystemMessage({ msg, presentation = "default" }: { msg: ChatMessage; presentation?: "default" | "manuscript" }) {
@@ -18,6 +19,18 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
     const lines = formatPersistentJevCandidates({ selected: candidates });
     return <CollapsibleCaption title={`Jev 후보 ${candidates.length}`} align="end" alignmentInset={alignmentInset}>
       {lines.map((line, index) => <div className="min-w-0 truncate text-xs text-muted-foreground" key={`${index}-${line}`}>{line}</div>)}
+    </CollapsibleCaption>;
+  }
+  if (msg.treeNodeType === "persistent_instruction_recorded") {
+    const recorded = msg.persistentInstructionRecorded;
+    if (!recorded) return null;
+    const lines = formatPersistentInstructionRecorded(recorded);
+    return <CollapsibleCaption
+      title={persistentInstructionRecordedTitle(recorded)}
+      align="end"
+      alignmentInset={alignmentInset}
+    >
+      {lines.map((line, index) => <div className="min-w-0 whitespace-normal break-keep break-words text-xs text-muted-foreground" key={`${index}-${line}`}>{line}</div>)}
     </CollapsibleCaption>;
   }
   const isError = msg.isError;
@@ -47,6 +60,7 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
       treeNodeId={msg.treeNodeId}
       usageCaption={usageCaption}
       summaryCaption={msg.turnSummaryCaption}
+      persistentInstructionCaption={msg.persistentInstructionRecorded}
     />;
   }
 
@@ -54,6 +68,7 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
     return <TurnEndCaptions
       treeNodeId={msg.treeNodeId}
       summaryCaption={{ treeNodeId: msg.treeNodeId, content: msg.content }}
+      persistentInstructionCaption={msg.persistentInstructionRecorded}
     />;
   }
 

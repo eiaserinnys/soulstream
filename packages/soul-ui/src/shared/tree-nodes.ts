@@ -282,6 +282,23 @@ export interface PersistentJevCandidatesNode extends BaseNode {
   candidates: PersistentJevCandidate[];
 }
 
+export interface PersistentInstructionRecordedInstruction {
+  id: string;
+  text: string;
+  source_turns: number[];
+  action: "added" | "updated";
+}
+
+export interface PersistentInstructionRecordedData {
+  instructions: PersistentInstructionRecordedInstruction[];
+  capReached: boolean;
+}
+
+export interface PersistentInstructionRecordedNode extends BaseNode, PersistentInstructionRecordedData {
+  type: "persistent_instruction_recorded";
+  preparedInputId?: string;
+}
+
 /** Claude API 에러 노드 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorNode extends BaseNode {
   type: "assistant_error";
@@ -313,4 +330,5 @@ export type EventTreeNode =
   | TurnSummaryNode
   | AssignedCardContextNode
   | GenerationStartedNode
-  | PersistentJevCandidatesNode;
+  | PersistentJevCandidatesNode
+  | PersistentInstructionRecordedNode;
