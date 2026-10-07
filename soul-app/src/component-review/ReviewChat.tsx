@@ -125,15 +125,14 @@ function ReviewPersistentChatProjection() {
   const includeTurnSummary = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('turnSummary') === '1';
   const settings = useChatStore(state => {
-    const current = state.persistentDisplaySettings;
-    return current?.sessionId === 'review-pas-1' ? current.settings : null;
+    return state.persistentDisplaySettingsBySession['review-pas-1']?.settings ?? null;
   });
   const showGenerationSeparator = settings?.show_generation_separator === true;
   const showJevCandidates = settings?.show_jev_candidates === true;
   const showTurnUsage = settings?.show_turn_usage !== false;
   const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates' | 'show_turn_usage', value: boolean) => {
-    const current = useChatStore.getState().persistentDisplaySettings;
-    if (current?.sessionId !== 'review-pas-1' || !current.settings) return;
+    const current = useChatStore.getState().persistentDisplaySettingsBySession['review-pas-1'];
+    if (!current?.settings) return;
     useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, [key]: value });
   };
   useEffect(() => {

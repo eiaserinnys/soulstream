@@ -10,8 +10,7 @@ const EMPTY_EVENTS: SessionEvent[] = [];
 function useSessionRenderItems() {
   const events = useChatStore(state => state.eventsBySession[SESSION_ID] ?? EMPTY_EVENTS);
   const settings = useChatStore(state => {
-    const current = state.persistentDisplaySettings;
-    return current?.sessionId === SESSION_ID ? current.settings : null;
+    return state.persistentDisplaySettingsBySession[SESSION_ID]?.settings ?? null;
   });
   return useChatRenderItems({
     events,

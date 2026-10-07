@@ -8,14 +8,18 @@ import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useUIStore } from '../../../store/uiStore';
 import {
+  CardPanelOverlayFrame,
   FolderWorkspaceReadOverlay,
   resolveFolderPaneWidth,
 } from '../FolderWorkspaceReadOverlay';
+import { ChatPane } from '../../split/ChatPane';
 import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+const mockOverlayChatMounted = jest.fn();
+const mockOverlayChatUnmounted = jest.fn();
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: () => mockWindowDimensions,
@@ -34,12 +38,24 @@ jest.mock('react-native-webview', () => ({
 
 jest.mock('../CardDetailSheet', () => ({ CardDetailContent: () => require('react').createElement(require('react-native').View, { testID: 'overlay-card-detail' }) }));
 
-jest.mock('../../split/ChatPane', () => ({
-  ChatPane: (props: unknown) => require('react').createElement(
-    require('react-native').View,
-    { testID: 'overlay-chat', ...(props as object) },
-  ),
-}));
+jest.mock('../../split/ChatPane', () => {
+  const React = require('react');
+  const ChatPaneMinimumBottomPaddingContext = React.createContext(undefined);
+  return {
+    ChatPaneMinimumBottomPaddingContext,
+    ChatPane: (props: unknown) => {
+      React.useEffect(() => {
+        mockOverlayChatMounted();
+        return () => mockOverlayChatUnmounted();
+      }, []);
+      const minimumBottomPadding = React.useContext(ChatPaneMinimumBottomPaddingContext);
+      return React.createElement(
+        require('react-native').View,
+        { testID: 'overlay-chat', ...(props as object), minimumBottomPadding },
+      );
+    },
+  };
+});
 
 jest.mock('../../../lib/planner-folder-workspace', () => ({
   retryPlannerSessionWorkspace: jest.fn(),
@@ -62,6 +78,8 @@ jest.mock('../FolderSessionHistory', () => ({
 
 beforeEach(() => {
   mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+  mockOverlayChatMounted.mockClear();
+  mockOverlayChatUnmounted.mockClear();
   usePlannerStore.getState().resetForTest();
   useCardStore.setState({ rows: {}, details: {} });
   useSessionStore.setState({
@@ -95,7 +113,18 @@ test('서버가 미소속으로 확인한 세션만 단독 채팅 안내를 렌�
   expect(screen.queryByText(/캐시된 폴더 연결/)).toBeNull();
   expect(screen.getByTestId('overlay-chat')).toBeTruthy();
   expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
+  expect(screen.getByTestId('overlay-chat').props.minimumBottomPadding).toBeUndefined();
   expect(screen.queryByTestId('task-run-history')).toBeNull();
+});
+
+test('카드 패널 프레임은 실제로 전달받은 하단 여백을 내부 ChatPane에 전달한다', () => {
+  const screen = render(
+    <CardPanelOverlayFrame visible width={TABLET_SHELL_LAYOUT.folderPane.maxWidth} onClose={jest.fn()} chatPaneMinimumBottomPadding={20}>
+      <ChatPane active />
+    </CardPanelOverlayFrame>,
+  );
+
+  expect(screen.getByTestId('overlay-chat').props.minimumBottomPadding).toBe(20);
 });
 
 test('닫힌 overlay는 ChatPane mount 상태를 보존하되 active=false로 상세 연결을 막는다', () => {
@@ -301,6 +330,23 @@ test('카드 첫 열기는 소속 작업이 아닌 담당 대화를 기존 오�
   expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
   expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
   expect(useUIStore.getState().activeSessionId).toBe('owner');
+});
+
+test('카드 상세로 바꿔도 기존 오른쪽 ChatPane을 다시 마운트하지 않는다', async () => {
+  useCardStore.getState().putDetail(cardDetail('card-chat-stability', 'owner'));
+  useUIStore.getState().openSessionOverlay('session-only');
+  const screen = render(<FolderWorkspaceReadOverlay />);
+  expect(mockOverlayChatMounted).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    useUIStore.getState().openCardOverlay('card-chat-stability');
+    await Promise.resolve();
+  });
+
+  expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
+  expect(screen.getByTestId('overlay-chat')).toBeTruthy();
+  expect(mockOverlayChatMounted).toHaveBeenCalledTimes(1);
+  expect(mockOverlayChatUnmounted).not.toHaveBeenCalled();
 });
 
 test('카드 담당 없으면 기존 대화를 유지하고 이후 갱신은 자동 선택하지 않는다', async () => {

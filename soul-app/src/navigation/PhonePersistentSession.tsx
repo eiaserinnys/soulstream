@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -6,11 +6,11 @@ import { GLASS_BUTTON_BORDER_WIDTH } from '../components/GlassSurface';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { usePersistentSessionHost, usePersistentSessionScene, PersistentSessionPortrait } from './PersistentSessionContext';
 import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
-import { openPhoneChat } from './phoneSessionNavigation';
 
 export function PhonePersistentSession({ navigation }: { navigation: any }) {
   const host = usePersistentSessionHost();
   const focused = useIsFocused();
+  const [cardDetailOpen, setCardDetailOpen] = useState(false);
   usePhoneConversationKeyboard(navigation);
   const home = useCallback(() => {
     host.store.getState().leave();
@@ -22,9 +22,15 @@ export function PhonePersistentSession({ navigation }: { navigation: any }) {
     if (state.scene === 'cards') state.swipe('right');
     else home();
   }), [host.store, home, navigation]));
-  return <PersistentSessionScreen active={focused} onHome={home}
-    onOpenCard={cardId => navigation.navigate('CardDetail', { cardId })}
-    onOpenSession={sessionId => { host.store.getState().leave(); openPhoneChat(navigation, sessionId); }} />;
+  useFocusEffect(useCallback(() => {
+    setCardDetailOpen(false);
+  }, []));
+  const openCard = useCallback((cardId: string) => {
+    setCardDetailOpen(true);
+    navigation.navigate('CardDetail', { cardId });
+  }, [navigation]);
+  return <PersistentSessionScreen active={focused} chatActive={focused || cardDetailOpen}
+    onOpenPhoneCard={openCard} onHome={home} />;
 }
 
 export function PersistentPhoneTabIcon({ color, size, active }: { color: string; size: number; active: boolean }) {

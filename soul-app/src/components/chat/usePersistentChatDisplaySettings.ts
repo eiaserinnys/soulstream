@@ -7,22 +7,28 @@ export function usePersistentChatDisplaySettings(
   api: ApiClient | null,
   detailedNetworkActive: boolean,
   sessionId: string | undefined,
+  ownsSessionConnection = true,
 ) {
-  const settings = useChatStore(state => state.persistentDisplaySettings);
+  const settings = useChatStore(state => sessionId
+    ? state.persistentDisplaySettingsBySession[sessionId]
+    : undefined);
   const beginLoad = useChatStore(state => state.beginPersistentDisplaySettingsLoad);
   const finishLoad = useChatStore(state => state.finishPersistentDisplaySettingsLoad);
   const clearSettings = useChatStore(state => state.clearPersistentDisplaySettings);
   const displaySettingsSessionRef = useRef(sessionId);
 
   useEffect(() => {
+    if (!ownsSessionConnection) return;
     const previousSessionId = displaySettingsSessionRef.current;
-    if (previousSessionId !== sessionId) clearSettings(previousSessionId);
+    if (previousSessionId && previousSessionId !== sessionId) clearSettings(previousSessionId);
     displaySettingsSessionRef.current = sessionId;
-    if (!sessionId || !api) clearSettings(sessionId);
-  }, [api, clearSettings, sessionId]);
+    if (sessionId && !api) clearSettings(sessionId);
+  }, [api, clearSettings, ownsSessionConnection, sessionId]);
 
   useEffect(() => {
-    if (!sessionId || !api) {
+    if (!ownsSessionConnection) return;
+    if (!sessionId) return;
+    if (!api) {
       clearSettings(sessionId);
       return;
     }
@@ -37,9 +43,9 @@ export function usePersistentChatDisplaySettings(
       if (active) finishLoad(sessionId, requestId, null);
     });
     return () => { active = false; };
-  }, [api, beginLoad, clearSettings, detailedNetworkActive, finishLoad, sessionId]);
+  }, [api, beginLoad, clearSettings, detailedNetworkActive, finishLoad, ownsSessionConnection, sessionId]);
 
-  const current = settings?.sessionId === sessionId ? settings?.settings : undefined;
+  const current = settings?.settings;
   return {
     persistentDisplaySettings: current ? {
       showGenerationSeparator: current.show_generation_separator,

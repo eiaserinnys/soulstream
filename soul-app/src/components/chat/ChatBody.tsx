@@ -42,6 +42,8 @@ interface Props {
   sessionId: string | undefined;
   /** 실제 화면에 표시되는 동안만 상세 REST/SSE를 연다. mount된 UI state는 보존한다. */
   active?: boolean;
+  /** 같은 세션을 읽는 보조 뷰는 공유 SSE 연결의 lifecycle을 소유하지 않는다. */
+  ownsSessionConnection?: boolean;
   /** inputRow가 보장할 최소 paddingBottom. iPad 패널 내부 home-indicator 보호에 사용한다. */
   minimumBottomPadding?: number;
   /** Task Tree row navigation anchor. */
@@ -83,6 +85,7 @@ const EMPTY_EVENTS: SessionEvent[] = [];
 export function ChatBody({
   sessionId,
   active = true,
+  ownsSessionConnection = true,
   minimumBottomPadding = 0,
   focusEventId = null,
   storyOpenRequestId = null,
@@ -150,7 +153,10 @@ export function ChatBody({
     };
   }
   const appForeground = useAppForegroundLifecycle();
-  const detailedNetworkActive = active && appForeground;
+  const composerActive = active && appForeground;
+  const detailedNetworkActive = composerActive && ownsSessionConnection;
+  const ownsSessionConnectionRef = useRef(ownsSessionConnection);
+  ownsSessionConnectionRef.current = ownsSessionConnection;
   const composerRef = useRef<ChatInputComposerHandle>(null);
   const handleRetryPending = useCallback((eventId: string) => composerRef.current?.retryPending(eventId), []);
   const handleRestorePending = useCallback((eventId: string) => composerRef.current?.restorePending(eventId), []);
@@ -178,8 +184,10 @@ export function ChatBody({
     () => (serverUrl ? createApiClient(serverUrl, { authScope }) : null),
     [authScope, serverUrl]
   );
-  const { persistentDisplaySettings, showTurnUsage } = usePersistentChatDisplaySettings(api, detailedNetworkActive, sessionId);
-  useEnsureSessionCached(api, sessionId);
+  const { persistentDisplaySettings, showTurnUsage } = usePersistentChatDisplaySettings(
+    api, detailedNetworkActive, sessionId, ownsSessionConnection,
+  );
+  useEnsureSessionCached(ownsSessionConnection ? api : null, sessionId);
 
   const commitPendingSnapshotBaseline = useCallback(
     (committedSessionId: string) => {
@@ -260,7 +268,7 @@ export function ChatBody({
   // history pagination reset(historyCursor·reachedTop·mvcpEnabled·frontier·retry 등)은
   // useChatHistoryPagination 내부 effect[sessionId, api, authScope]가 처리한다.
   useEffect(() => {
-    if (!sessionId) return;
+    if (!ownsSessionConnection || !sessionId) return;
     // 새 세션 진입이라면 NewSessionSheet가 보관해 둔 첫 prompt를 optimistic으로 머지.
     // (기존 세션 진입이면 pending이 비어 있어 no-op)
     // 빈 문자열은 호출자(NewSessionSheet)가 prompt.trim().length > 0 가드로 차단하므로
@@ -287,11 +295,11 @@ export function ChatBody({
     clearStreamingEvents(sessionId);
     // sendError 리셋은 useChatSendFlow가 sessionId 변경 시 자동 처리한다 (정본 이동에 따른 책임 이동).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, api]);
+  }, [ownsSessionConnection, sessionId, api]);
 
   useEffect(() => {
     return () => {
-      if (sessionId) clearStreamingEvents(sessionId);
+      if (ownsSessionConnectionRef.current && sessionId) clearStreamingEvents(sessionId);
     };
   }, [sessionId, clearStreamingEvents]);
 
@@ -299,6 +307,7 @@ export function ChatBody({
     api,
     sessionId,
     active: detailedNetworkActive,
+    ownsSessionConnection,
     scopeGeneration,
     isCatchingUpRef,
     historyLoadingRef,
@@ -476,7 +485,7 @@ export function ChatBody({
         onPressNewMessage={requestBottomFollow}
       />
 
-      <ChatRuntimeStrips sessionId={sessionId} api={api} presentation={presentation} />
+      <ChatRuntimeStrips sessionId={sessionId} api={ownsSessionConnection ? api : null} presentation={presentation} />
 
       <ChatInputComposer
         key={sessionId}
@@ -486,7 +495,7 @@ export function ChatBody({
         nodeId={nodeId}
         backend={session?.backend}
         api={api}
-        detailedNetworkActive={detailedNetworkActive}
+        detailedNetworkActive={composerActive}
         appForeground={appForeground}
         minimumBottomPadding={minimumBottomPadding}
         requestBottomFollow={requestBottomFollow}

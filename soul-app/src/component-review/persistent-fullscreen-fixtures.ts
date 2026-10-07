@@ -8,14 +8,24 @@ import { dialogueMessages, reviewSessionEventsUrl } from './chat-fixtures';
 export function createPersistentFullscreenReviewApi(search: string): ApiClient {
   const query = new URLSearchParams(search);
   const base = createPersistentReviewApi(query.get('state'));
+  const cardOverlaySample = query.get('sample') === 'card-overlay';
+  const cardOverlayCard = { ...persistentReviewCards.realisticCard,
+    assigneeKind: 'session' as const, assigneeSessionId: 'review-pas-2', assigneeAgentId: null };
   const history = query.get('history') === 'long' ? Array.from({ length: 40 }, (_, index) => ({
     ...dialogueMessages[index % dialogueMessages.length], id: 40 - index, parent_event_id: null,
     payload: { text: `공개 대화 ${40 - index}: 카드 상세를 다녀온 뒤에도 읽던 위치를 확인합니다.` },
   })) : dialogueMessages;
   return {
     ...base, ...nativeSettingsReviewApi,
-    listCards: base.listCards,
+    listCards: cardOverlaySample ? async () => ({ cards: [cardOverlayCard] }) : base.listCards,
     getCard: async id => {
+      if (cardOverlaySample && id === cardOverlayCard.id) {
+        const detail = await base.getCard(id);
+        const assignedSession: Session = { agentSessionId: 'review-pas-2', displayName: '로젤린', status: 'idle',
+          nodeId: 'public-node', agentId: 'public-agent', agentName: '로젤린', agentPortraitUrl: dialogueImageUrl(),
+          sessionType: 'interactive', createdAt: '2026-10-06T01:00:00Z', updatedAt: '2026-10-06T01:00:00Z' };
+        return { ...detail, card: cardOverlayCard, sessions: [assignedSession] };
+      }
       const detail = await base.getCard(query.get('case') === 'long' ? persistentReviewCards.blankParagraphCard.id : id);
       return query.get('case') === 'long' ? { ...detail, card: { ...detail.card, id } } : detail;
     },

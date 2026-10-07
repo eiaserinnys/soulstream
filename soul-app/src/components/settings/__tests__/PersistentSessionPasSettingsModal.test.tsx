@@ -57,7 +57,7 @@ beforeEach(() => {
   api.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
   api.getPersistentSessionInstructions.mockResolvedValue({ instructions: [] });
   useSettingsStore.setState({ serverUrl: 'https://soul.test' });
-  useChatStore.setState({ persistentDisplaySettings: null, persistentDisplaySettingsRequestId: 0 });
+  useChatStore.setState({ persistentDisplaySettingsBySession: {}, persistentDisplaySettingsRequestId: 0 });
 });
 
 const open = () => render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={jest.fn()} />);
@@ -168,7 +168,7 @@ test('keeps an immediately saved display value when saving unsaved account edits
 
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-display'));
   await waitFor(() => expect(screen.getByTestId('persistent-show-character').props.value).toBe(false));
-  expect(useChatStore.getState().persistentDisplaySettings?.settings?.show_character).toBe(false);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings?.show_character).toBe(false);
 });
 
 test('applies a successful display update to the open chat after the settings modal unmounts', async () => {
@@ -204,7 +204,7 @@ test('applies a successful display update to the open chat after the settings mo
     resolveUpdate({ session: session({ settings: { ...session().settings, show_character: false } }), model_change: 'none' });
   });
 
-  expect(useChatStore.getState().persistentDisplaySettings).toEqual({
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']).toEqual({
     sessionId: 'pas-1',
     requestId: 2,
     settings: {

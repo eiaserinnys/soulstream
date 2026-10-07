@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,24 +12,32 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { TabletPaneHeader } from './TabletPaneHeader';
 import { resolveTabletBottomSafeAreaPadding } from './tabletShellInsets';
 
+/** A containing card panel may provide the bottom clearance it actually reserves. */
+export const ChatPaneMinimumBottomPaddingContext = createContext<number | undefined>(undefined);
+
 /**
  * 우측 채팅 패널 — 상단 인라인 헤더(상태 도트 + 세션 이름) + ChatBody.
  */
-export function ChatPane({ active = true }: { active?: boolean }) {
+export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose, ownsSessionConnection = true }: {
+  active?: boolean; sessionId?: string | null; onClose?: () => void; ownsSessionConnection?: boolean;
+}) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
-  const minimumBottomPadding = resolveTabletBottomSafeAreaPadding(
+  const panelMinimumBottomPadding = useContext(ChatPaneMinimumBottomPaddingContext);
+  const minimumBottomPadding = panelMinimumBottomPadding ?? resolveTabletBottomSafeAreaPadding(
     insets.bottom,
     t.tabletShell.outerInset,
   );
 
-  const sessionId = useUIStore((s) => s.activeSessionId);
-  const focusEventId = useUIStore((s) => s.focusEventId);
-  const storyOpenRequestId = useUIStore((s) => s.storyOpenRequestId);
-  const clearFocusEventId = useUIStore((s) => s.clearFocusEventId);
+  const independentSession = sessionIdOverride !== undefined;
+  const activeSessionId = useUIStore((s) => independentSession ? null : s.activeSessionId);
+  const sessionId = sessionIdOverride === undefined ? activeSessionId : sessionIdOverride;
+  const focusEventId = useUIStore((s) => independentSession ? null : s.focusEventId);
+  const storyOpenRequestId = useUIStore((s) => independentSession ? null : s.storyOpenRequestId);
+  const clearFocusEventId = useUIStore((s) => independentSession ? undefined : s.clearFocusEventId);
   const clearStoryOpenRequestId = useUIStore(
-    (s) => s.clearStoryOpenRequestId,
+    (s) => independentSession ? undefined : s.clearStoryOpenRequestId,
   );
   const session = useSessionStore((s) =>
     sessionId ? s.sessions[sessionId] : undefined
@@ -52,7 +60,7 @@ export function ChatPane({ active = true }: { active?: boolean }) {
             <TouchableOpacity
               testID="tablet-chat-close"
               style={styles.closeButton}
-              onPress={() => useUIStore.getState().setActiveSessionId(null)}
+              onPress={onClose ?? (() => useUIStore.getState().setActiveSessionId(null))}
               accessibilityLabel="챗 닫기"
             >
               <Ionicons
@@ -78,9 +86,10 @@ export function ChatPane({ active = true }: { active?: boolean }) {
         <ChatBody
           sessionId={sessionId ?? undefined}
           active={active}
+          ownsSessionConnection={ownsSessionConnection}
           minimumBottomPadding={minimumBottomPadding}
-          focusEventId={focusEventId}
-          storyOpenRequestId={storyOpenRequestId}
+          focusEventId={independentSession ? undefined : focusEventId}
+          storyOpenRequestId={independentSession ? undefined : storyOpenRequestId}
           onFocusEventHandled={clearFocusEventId}
           onStoryOpenRequestHandled={clearStoryOpenRequestId}
         />

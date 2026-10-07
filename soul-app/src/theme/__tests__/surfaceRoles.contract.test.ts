@@ -361,7 +361,7 @@ describe('surface role contract', () => {
   test('floating task overlay는 split panel용 glassSoft 반경을 그대로 사용한다', () => {
     const source = read('components/planner/FolderWorkspaceReadOverlay.tsx');
     expect(source).toContain('role="glassSoft"');
-    expect(source).toContain('testID="task-workspace-sheet-surface"');
+    expect(source).toContain('testID={`${testID}-sheet-surface`}');
     expect(source).not.toContain('<AppGlassCard role="modal"');
     expect(source).not.toContain('createFullHeightPanelStyle');
     expect(source).not.toContain('borderRadius: 0');

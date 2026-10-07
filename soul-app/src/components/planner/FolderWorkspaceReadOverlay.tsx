@@ -20,7 +20,7 @@ import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useCardStore } from '../../store/cardStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
-import { ChatPane } from '../split/ChatPane';
+import { ChatPane, ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';
 import { TabletPaneHeader } from '../split/TabletPaneHeader';
 import { AppGlassCard } from '../AppGlassCard';
 import { CardDetailContent } from './CardDetailSheet';
@@ -35,6 +35,97 @@ const ANIMATION_MS = 240;
 export function FolderWorkspaceReadOverlay({ host = 'root' }: { host?: 'root' | 'board' }) {
   const expanded = useUIStore((state) => state.cardBoardExpanded);
   return expanded === (host === 'board') ? <FolderWorkspaceOverlayContent /> : null;
+}
+
+export function CardDetailPane({ api, cardId, detailWidth, onClose, onOpenSession }: {
+  api: ReturnType<typeof createApiClient> | null;
+  cardId: string;
+  detailWidth?: number;
+  onClose(): void;
+  onOpenSession?(id: string): void;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  return <View testID="task-workspace-task-pane" style={[styles.folderPane, detailWidth === undefined ? null : { width: detailWidth }]}>
+    <CardDetailContent key={cardId} api={api} cardId={cardId} inline onClose={onClose} onOpenSession={onOpenSession} />
+  </View>;
+}
+
+export function CardConversationPane({ active, sessionId, onClose, hideChat = false, ownsSessionConnection = true }: {
+  active: boolean;
+  sessionId?: string | null;
+  onClose?: () => void;
+  hideChat?: boolean;
+  ownsSessionConnection?: boolean;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  return <View testID="task-workspace-chat-pane" style={styles.chatPane}>
+    {hideChat ? null : <ChatPane active={active} sessionId={sessionId} onClose={onClose} ownsSessionConnection={ownsSessionConnection} />}
+  </View>;
+}
+
+export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose, onOpenSession, sessionId, onCloseChat, hideChat = false, ownsSessionConnection = true }: {
+  api: ReturnType<typeof createApiClient> | null;
+  cardId: string;
+  active: boolean;
+  detailWidth?: number;
+  onClose(): void;
+  onOpenSession?(id: string): void;
+  sessionId?: string | null;
+  onCloseChat?: () => void;
+  hideChat?: boolean;
+  ownsSessionConnection?: boolean;
+}) {
+  return <>
+    <CardDetailPane api={api} cardId={cardId} detailWidth={detailWidth} onClose={onClose} onOpenSession={onOpenSession} />
+    <CardConversationPane active={active} sessionId={sessionId} onClose={onCloseChat} hideChat={hideChat} ownsSessionConnection={ownsSessionConnection} />
+  </>;
+}
+
+export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testID = 'task-workspace', direction = 'row', chatPaneMinimumBottomPadding, children }: {
+  visible: boolean;
+  width: number;
+  onClose(): void;
+  onHidden?: () => void;
+  testID?: string;
+  direction?: 'row' | 'column';
+  chatPaneMinimumBottomPadding?: number;
+  children: React.ReactNode;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: visible ? 1 : 0,
+      duration: ANIMATION_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web',
+    }).start(({ finished }) => {
+      if (finished && !visible) onHidden?.();
+    });
+  }, [onHidden, progress, visible]);
+
+  const translateX = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [width, 0],
+  });
+  return <View pointerEvents={visible ? 'auto' : 'none'} style={styles.overlayLayer} testID={`${testID}-overlay`}>
+    <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View testID={`${testID}-backdrop-close`} style={StyleSheet.absoluteFill} />
+      </TouchableWithoutFeedback>
+    </Animated.View>
+    <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, transform: [{ translateX }] }]}>
+      <AppGlassCard role="glassSoft" testID={`${testID}-sheet-surface`}
+        style={[styles.sheetSurface, direction === 'column' ? styles.sheetSurfaceColumn : null]}>
+        <ChatPaneMinimumBottomPaddingContext.Provider value={chatPaneMinimumBottomPadding}>
+          {children}
+        </ChatPaneMinimumBottomPaddingContext.Provider>
+      </AppGlassCard>
+    </Animated.View>
+  </View>;
 }
 
 function FolderWorkspaceOverlayContent() {
@@ -59,7 +150,6 @@ function FolderWorkspaceOverlayContent() {
   ));
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  const progress = useRef(new Animated.Value(0)).current;
   const overlayWidth = getFolderWorkspaceOverlayWidth(screenWidth);
   const sheetWidth = overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);
   const folderPaneWidth = cardId
@@ -83,121 +173,81 @@ function FolderWorkspaceOverlayContent() {
     initializeCardSessionSelection,
   ]);
 
-  useEffect(() => {
-    Animated.timing(progress, {
-      toValue: visible ? 1 : 0,
-      duration: ANIMATION_MS,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: Platform.OS !== 'web',
-  }).start();
-  }, [progress, visible]);
-
-  const translateX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [sheetWidth, 0],
-  });
-
   return (
-    <View
-      pointerEvents={visible ? 'auto' : 'none'}
-      style={styles.overlayLayer}
-      testID="task-workspace-overlay"
-    >
-      <Animated.View style={[styles.backdrop, { opacity: progress }]}>
-        <TouchableWithoutFeedback onPress={requestClose}>
-          <View testID="task-workspace-backdrop-close" style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-      </Animated.View>
-      <Animated.View
-        testID="task-workspace-sheet"
-        style={[
-          styles.sheet,
-          {
-            width: sheetWidth,
-            transform: [{ translateX }],
-          },
-        ]}
-      >
-        <AppGlassCard
-          role="glassSoft"
-          testID="task-workspace-sheet-surface"
-          style={styles.sheetSurface}
-        >
-          <View
-            testID="task-workspace-task-pane"
-            style={[styles.folderPane, { width: folderPaneWidth }]}
-          >
-          {cardId ? <CardDetailContent key={cardId} api={api} cardId={cardId} inline onClose={close} onOpenSession={setActiveSessionId} /> : pageId ? (
-            <FolderWorkspace
-              api={api}
-              folderPageId={pageId}
-              active={visible}
-              onOpenSession={setActiveSessionId}
-              onClose={close}
-              onOpenFolder={(folderId, projectPageId) => {
-                useUIStore.getState().setActiveSection({ kind: 'project', folderId, projectPageId });
-                useUIStore.getState().openFolderOverlay(projectPageId);
-              }}
-            />
-          ) : (
-            <>
-              <TabletPaneHeader style={styles.headerRow}>
-                <Text style={styles.title} numberOfLines={3}>
-                  {sessionId
-                    ? getSessionDisplayName(session, sessionId)
-                    : '세션을 선택하세요'}
-                </Text>
-                <TouchableOpacity
-                  onPress={close}
-                  accessibilityRole="button"
-                  accessibilityLabel="세션 패널 닫기"
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={t.iconSize.navigation} color={t.colors.textMuted} />
-                </TouchableOpacity>
-              </TabletPaneHeader>
-              <ScrollView contentContainerStyle={styles.folderContent}>
-                {resolution?.status === 'loading' ? (
-                  <View testID="session-task-loading" style={styles.stateRow}>
-                    <ActivityIndicator color={t.colors.accent} />
-                    <Text style={styles.sessionOnlyHint}>폴더 연결을 확인하는 중입니다.</Text>
-                  </View>
-                ) : resolution?.status === 'error' ? (
-                  <View testID="session-task-error" style={styles.errorState}>
-                    <Text style={styles.sessionOnlyHint}>
-                      {resolution.message ?? '폴더 연결을 확인하지 못했습니다.'}
-                    </Text>
-                    {sessionId && resolution.retryable ? (
-                      <TouchableOpacity
-                        testID="session-task-retry"
-                        accessibilityRole="button"
-                        accessibilityLabel="폴더 연결 다시 시도"
-                        style={styles.retryButton}
-                        onPress={() => retryPlannerSessionWorkspace(
-                          sessionId,
-                          focusEventId,
-                          storyOpenRequestId,
-                        )}
-                      >
-                        <Text style={styles.retryText}>다시 시도</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ) : (
-                  <Text testID="session-task-unlinked" style={styles.sessionOnlyHint}>
-                    이 세션은 폴더에 연결되어 있지 않아 세션 채팅만 표시합니다.
+    <CardPanelOverlayFrame visible={visible} width={sheetWidth} onClose={requestClose}>
+      <>
+        {cardId ? <CardDetailPane api={api} cardId={cardId} detailWidth={folderPaneWidth}
+          onClose={close} onOpenSession={setActiveSessionId} /> : <>
+          <View testID="task-workspace-task-pane" style={[styles.folderPane, { width: folderPaneWidth }]}>
+            {pageId ? (
+              <FolderWorkspace
+                api={api}
+                folderPageId={pageId}
+                active={visible}
+                onOpenSession={setActiveSessionId}
+                onClose={close}
+                onOpenFolder={(folderId, projectPageId) => {
+                  useUIStore.getState().setActiveSection({ kind: 'project', folderId, projectPageId });
+                  useUIStore.getState().openFolderOverlay(projectPageId);
+                }}
+              />
+            ) : (
+              <>
+                <TabletPaneHeader style={styles.headerRow}>
+                  <Text style={styles.title} numberOfLines={3}>
+                    {sessionId
+                      ? getSessionDisplayName(session, sessionId)
+                      : '세션을 선택하세요'}
                   </Text>
-                )}
-              </ScrollView>
-            </>
-          )}
+                  <TouchableOpacity
+                    onPress={close}
+                    accessibilityRole="button"
+                    accessibilityLabel="세션 패널 닫기"
+                    style={styles.closeButton}
+                  >
+                    <Ionicons name="close" size={t.iconSize.navigation} color={t.colors.textMuted} />
+                  </TouchableOpacity>
+                </TabletPaneHeader>
+                <ScrollView contentContainerStyle={styles.folderContent}>
+                  {resolution?.status === 'loading' ? (
+                    <View testID="session-task-loading" style={styles.stateRow}>
+                      <ActivityIndicator color={t.colors.accent} />
+                      <Text style={styles.sessionOnlyHint}>폴더 연결을 확인하는 중입니다.</Text>
+                    </View>
+                  ) : resolution?.status === 'error' ? (
+                    <View testID="session-task-error" style={styles.errorState}>
+                      <Text style={styles.sessionOnlyHint}>
+                        {resolution.message ?? '폴더 연결을 확인하지 못했습니다.'}
+                      </Text>
+                      {sessionId && resolution.retryable ? (
+                        <TouchableOpacity
+                          testID="session-task-retry"
+                          accessibilityRole="button"
+                          accessibilityLabel="폴더 연결 다시 시도"
+                          style={styles.retryButton}
+                          onPress={() => retryPlannerSessionWorkspace(
+                            sessionId,
+                            focusEventId,
+                            storyOpenRequestId,
+                          )}
+                        >
+                          <Text style={styles.retryText}>다시 시도</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+                  ) : (
+                    <Text testID="session-task-unlinked" style={styles.sessionOnlyHint}>
+                      이 세션은 폴더에 연결되어 있지 않아 세션 채팅만 표시합니다.
+                    </Text>
+                  )}
+                </ScrollView>
+              </>
+            )}
           </View>
-          <View testID="task-workspace-chat-pane" style={styles.chatPane}>
-            <ChatPane active={visible} />
-          </View>
-        </AppGlassCard>
-      </Animated.View>
-    </View>
+        </>}
+        <CardConversationPane active={visible} />
+      </>
+    </CardPanelOverlayFrame>
   );
 }
 
@@ -230,6 +280,7 @@ function makeStyles(t: DesignTokens) {
       flex: 1,
       flexDirection: 'row',
     },
+    sheetSurfaceColumn: { flexDirection: 'column' },
     folderPane: {
       borderRightWidth: StyleSheet.hairlineWidth,
       borderRightColor: t.colors.borderSubtle,

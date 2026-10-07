@@ -4,7 +4,7 @@ import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View,
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ApiClient } from '../../api/client';
-import type { CardCheckItem, CardDto, CardStatus } from '../../api/cardTypes';
+import type { CardCheckItem, CardStatus } from '../../api/cardTypes';
 import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
 import { useCardTransition } from '../../hooks/useCardTransition';
 import { useCardComments } from '../../hooks/useCardComments';
@@ -14,7 +14,6 @@ import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
-import { decodeAuthJwt } from '../../auth/jwt-payload';
 import { resolveSessionCardAvatar, resolveSessionAgentLabel } from '../sessionCardDisplay';
 import { useDeviceType, useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
@@ -51,10 +50,7 @@ type CardDetailContentProps = {
   onClose(): void;
   onOpenSession?(id: string): void;
   inline?: boolean;
-} & (
-  | { variant?: 'default'; onOpenCard?: never }
-  | { variant: 'readSummary'; onOpenCard(): void; fitContent?: boolean }
-);
+};
 
 export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
   api: ApiClient | null; cardId: string | null; onClose(): void; onOpenSession?(id: string): void;
@@ -205,11 +201,6 @@ export function CardDetailContent(props: CardDetailContentProps) {
     { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
   ];
   const selectedItem = targetItem;
-  if (props.variant === 'readSummary') return <CardReadSummary card={card} items={cardItems} error={error} fitContent={props.fitContent}
-    assigneeLabel={card?.assigneeKind === 'human' ? card.assigneeUserId ?? '사용자'
-      : card?.assigneeKind === 'session' ? assigned?.displayName?.trim() || resolveSessionAgentLabel(identity)
-        : card?.assigneeKind === 'agent' ? resolveSessionAgentLabel(identity) : null}
-    hasAssignee={card?.assigneeKind != null} human={card?.assigneeKind === 'human'} avatar={avatar} onOpenCard={props.onOpenCard} />;
   return <><AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     onOverlapChange={onOverlapChange} style={folderStyles.container}>
     <CardTransitionSettings api={api} action={statusAction}/>
@@ -318,86 +309,4 @@ export function CardDetailContent(props: CardDetailContentProps) {
   </AppKeyboardAvoidingView>
     {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)} /> : null}
   </>;
-}
-
-function CardReadSummary({ card, items, error, assigneeLabel, hasAssignee, human, avatar, onOpenCard, fitContent = false }: {
-  card: CardDto | undefined;
-  items: CardCheckItem[];
-  error: string | null;
-  assigneeLabel: string | null;
-  hasAssignee: boolean;
-  human: boolean | undefined;
-  avatar: ReturnType<typeof resolveSessionCardAvatar>;
-  onOpenCard(): void;
-  fitContent?: boolean;
-}) {
-  const t = useTokens();
-  const jwt = useAuthStore((state) => state.jwt);
-  const serverUrl = useSettingsStore((state) => state.serverUrl);
-  const profile = useMemo(() => decodeAuthJwt(jwt), [jwt]);
-  if (!card) return <View testID={error ? 'card-read-summary-error-state' : 'card-read-summary-loading-state'}
-    style={{ flexGrow: 1, flexShrink: 1, minHeight: t.foundation.minHeight.row,
-    padding: t.foundation.pageInset, justifyContent: error ? 'flex-start' : 'center', alignItems: error ? 'stretch' : 'center' }}>
-    {error ? <Text testID="card-read-summary-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>
-      : <ActivityIndicator color={t.colors.accent} />}
-  </View>;
-
-  const assigneeUri = human ? profile?.picture : avatar.uri;
-  const assigneeFallback = human ? assigneeLabel?.[0] ?? '사' : avatar.fallbackChar;
-  const results = items.filter((item) => item.display !== 'dropped' && !!item.result?.trim());
-  const hasRequest = !!card.request.trim() || (card.attachments?.length ?? 0) > 0;
-  const hasProgress = !!card.now?.text.trim() || results.length > 0;
-  const spacing = t.uiSpacing;
-
-  return <View testID="card-read-summary" style={fitContent ? { flexShrink: 1, minHeight: 0 } : { flex: 1, minHeight: 0 }}>
-    <ScrollView testID="card-read-summary-scroll" style={fitContent ? { flexGrow: 0, flexShrink: 1, flexBasis: 'auto', minHeight: 0 } : { flex: 1, minHeight: 0 }} showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ padding: t.foundation.pageInset, gap: spacing.xl, flexGrow: 1 }}>
-      <View style={{ gap: spacing.md }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 0, gap: spacing.sm }}>
-          <CardStatusChip card={card} board detail />
-          {card.number == null ? null : <Text testID="card-read-summary-number" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }} numberOfLines={1}>#{card.number}</Text>}
-        </View>
-        <Text testID="card-read-summary-title" numberOfLines={2} ellipsizeMode="tail"
-          style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary }}>
-          {card.title}
-        </Text>
-      </View>
-      {hasAssignee ? <View testID="card-read-summary-assignee" style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-        {assigneeUri
-          ? <Image testID="card-read-summary-avatar" source={{ uri: assigneeUri,
-            ...(jwt && assigneeUri.startsWith(serverUrl) ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
-            style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round, flexShrink: 0 }} />
-          : <View testID="card-read-summary-avatar" style={{ width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round,
-            flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth,
-            borderColor: t.persistentSession.line, backgroundColor: t.persistentSession.panel }}>
-            <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{assigneeFallback}</Text>
-          </View>}
-        {assigneeLabel ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>{assigneeLabel}</Text> : null}
-      </View> : null}
-      {hasRequest ? <View testID="card-read-summary-request" style={{ gap: spacing.sm }}>
-        <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>요청</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm }}>
-          <View style={{ width: spacing.xxs, backgroundColor: t.persistentSession.line }} />
-          <View style={{ flex: 1, minWidth: 0 }}><CardRequestView request={card.request} attachments={card.attachments}
-            bodyStyle={{ ...t.foundation.typography.body, color: t.colors.textMuted }} numberOfLines={4}
-            collapseBlankLines attachmentImageVariant="cardCheckItem" /></View>
-        </View>
-      </View> : null}
-      {hasProgress ? <View testID="card-read-summary-progress" style={{ gap: spacing.sm }}>
-        <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>경과</Text>
-        {card.now?.text.trim() ? <Text testID="card-read-summary-now" style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }} selectable>
-          {card.now.text}
-        </Text> : null}
-        {results.map((item) => <View key={item.id} testID={`card-read-summary-result-${item.id}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
-          <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>•</Text>
-          <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, flex: 1, minWidth: 0 }} selectable>{item.result}</Text>
-        </View>)}
-      </View> : null}
-    </ScrollView>
-    <View testID="card-read-summary-footer" style={{ paddingHorizontal: t.foundation.pageInset, paddingTop: spacing.sm, paddingBottom: t.foundation.pageInset }}>
-      <GlassButton testID="card-read-summary-open" variant="paper" accessibilityLabel="카드 열기" onPress={onOpenCard} style={{ alignSelf: 'stretch' }}>
-        <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>카드 열기</Text>
-      </GlassButton>
-    </View>
-  </View>;
 }
