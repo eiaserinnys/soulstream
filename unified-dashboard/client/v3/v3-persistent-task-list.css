@@ -18,7 +18,7 @@
   --ring: var(--muted-foreground);
   display: flex;
   min-width: 0;
-  width: 100%;
+  width: calc(100% + var(--v3-space-2));
   min-height: var(--v3-action-size);
   align-items: center;
   gap: var(--v3-space-2);
