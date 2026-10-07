@@ -2,6 +2,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
+import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
   EngineExecuteParams,
@@ -158,6 +159,69 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startNewExecution", () => {
+  it.each([
+    ["cache keepalive", true, "previous answer"],
+    ["same text without marker", false, "ok"],
+  ] as const)(
+    "%s carries the expected assistant preview into terminal_transition",
+    async (_label, cacheKeepalive, expectedPreview) => {
+      const mocks = makeMocks();
+      const sideEffectPersistence = new EventPersistence(
+        {} as SessionDB,
+        mocks.broadcaster,
+        silentLogger,
+        {} as never,
+        {} as never,
+      );
+      const persistence = {
+        ...mocks.persistence,
+        handleSideEffects: (...args: unknown[]) =>
+          sideEffectPersistence.handleSideEffects(
+            ...args as Parameters<typeof sideEffectPersistence.handleSideEffects>,
+          ),
+      } as unknown as EventPersistence;
+      const executor = new TaskExecutor(
+        () => makeFakeEngine([
+          { type: "text_start", timestamp: 0 },
+          { type: "text_delta", text: "ok", timestamp: 0.5 },
+          { type: "assistant_message", content: "ok", timestamp: 1 },
+          { type: "complete", result: "ok", timestamp: 2 },
+        ] as SSEEventPayload[]),
+        mocks.db,
+        persistence,
+        mocks.broadcaster,
+        silentLogger,
+      );
+      const task = makeTask();
+      task.lastAssistantText = "previous answer";
+      task.interventionQueue.push({
+        text: "same input text",
+        user: "Soulstream Scheduler",
+        ...(cacheKeepalive ? { purpose: "cache_keepalive" } : {}),
+      });
+      const recordExecutionRegistration = mocks
+        .recordExecutionRegistrationAndWaitForApplication.getMockImplementation();
+      if (!recordExecutionRegistration) {
+        throw new Error("execution registration test implementation is missing");
+      }
+      mocks.recordExecutionRegistrationAndWaitForApplication.mockImplementation(
+        async (...args) => {
+          const application = await recordExecutionRegistration(...args);
+          application.canonicalSession.last_assistant_text = "previous answer";
+          return application;
+        },
+      );
+
+      executor.startNewExecution(task, agent);
+      await task.executionPromise;
+
+      const terminalTransition = mocks.enqueueTerminalTransitionAndWaitForApplication
+        .mock.calls.at(-1)?.[2];
+      expect(task.lastAssistantText).toBe(expectedPreview);
+      expect(terminalTransition?.last_assistant_text).toBe(expectedPreview);
+    },
+  );
+
   it("waits for a retained-runner release claim before direct admission", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => makeFakeEngine([

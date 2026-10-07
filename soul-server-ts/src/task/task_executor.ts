@@ -1324,6 +1324,7 @@ export class TaskExecutor {
         currentTurnInterventions = turnInput.interventions ?? [];
       }
       const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
+      const isCacheKeepaliveTurn = currentTurnInterventions.some(isCacheKeepaliveInput);
       const turnReceipt = this.beginDeliveryTurn(task, currentTurnInterventions);
       let turnCompletedEvent: SSEEventPayload | undefined;
       try {
@@ -1360,6 +1361,7 @@ export class TaskExecutor {
             await this.observeDeliveryTurn(task, turnReceipt, event);
             await this.engineEventPublisher.publishEngineEvent(task, event, {
               alreadyPersisted: runner.eventPersistence === "runner",
+              isCacheKeepaliveTurn,
             });
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }

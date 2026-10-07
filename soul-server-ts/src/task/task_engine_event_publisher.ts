@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import {
   clearEventPersistenceInternals,
   shouldPersistEvent,
+  type EventSideEffectOptions,
   type EventPersistence,
 } from "../db/event_persistence.js";
 import { isUsageLimitStopErrorCode } from "../engine/usage_limit_stop.js";
@@ -40,7 +41,7 @@ export class TaskEngineEventPublisher {
   async publishEngineEvent(
     task: Task,
     event: SSEEventPayload,
-    options: { alreadyPersisted?: boolean } = {},
+    options: { alreadyPersisted?: boolean } & EventSideEffectOptions = {},
   ): Promise<void> {
     const eventType = (event as { type: string }).type;
 
@@ -58,7 +59,12 @@ export class TaskEngineEventPublisher {
     if (!persistent) {
       await this.broadcastTransientEvent(task, event, eventType);
     }
-    await this.handleSideEffects(task, event, eventType);
+    await this.handleSideEffects(
+      task,
+      event,
+      eventType,
+      options.isCacheKeepaliveTurn ? { isCacheKeepaliveTurn: true } : undefined,
+    );
   }
 
   private captureClaudeRuntimeState(task: Task, event: SSEEventPayload): void {
@@ -279,13 +285,23 @@ export class TaskEngineEventPublisher {
     task: Task,
     event: SSEEventPayload,
     eventType: string,
+    options?: EventSideEffectOptions,
   ): Promise<void> {
     try {
-      await this.deps.persistence.handleSideEffects(
-        task.agentSessionId,
-        event,
-        task,
-      );
+      if (options) {
+        await this.deps.persistence.handleSideEffects(
+          task.agentSessionId,
+          event,
+          task,
+          options,
+        );
+      } else {
+        await this.deps.persistence.handleSideEffects(
+          task.agentSessionId,
+          event,
+          task,
+        );
+      }
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
