@@ -62,7 +62,7 @@ describe("ChatMessageItem presentation", () => {
     expect(manuscriptHtml).toContain("text-muted-foreground");
   });
 
-  it("renders manuscript complete usage as a collapsed caption with the full details inside", () => {
+  it("renders manuscript complete usage collapsed with its details hidden below the header", () => {
     const msg = makeMessage("system", "complete-18", {
       treeNodeType: "complete",
       turnUsageCaption: {
@@ -76,15 +76,15 @@ describe("ChatMessageItem presentation", () => {
       createElement(ChatMessageItem, { msg, presentation: "manuscript" }),
     );
 
-    expect(html).toContain('data-slot="collapsible-caption"');
+    expect(html).toContain('data-slot="turn-end-captions"');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("컨텍스트 약 63.0% · 정가 $1.40");
-    expect(html).not.toContain("컨텍스트 약 6,300 / 10,000 (63.0%)");
     expect(html).toContain('hidden=""');
+    expect(html).toContain("컨텍스트 약 6,300 / 10,000 (63.0%)");
     expect(html).toContain("턴 완료 · 입력 1,200 · 출력 340 · 정가 $1.40");
   });
 
-  it("expands into two full wrapped rows without repeating the folded title", () => {
+  it("expands context and completion details below a stable header", () => {
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
@@ -103,27 +103,26 @@ describe("ChatMessageItem presentation", () => {
       }),
     })));
 
-    const button = host.querySelector<HTMLButtonElement>('[data-slot="collapsible-caption"] button')!;
+    const button = host.querySelector<HTMLButtonElement>('[data-slot="turn-end-captions"] button')!;
     expect(button.textContent).toContain("컨텍스트 약 63.0% · 정가 $0.62");
     expect(button.querySelector("span")?.className).toContain("truncate");
     expect(button.querySelector("span")?.classList.contains("break-keep")).toBe(false);
 
     act(() => button.click());
 
-    const caption = host.querySelector('[data-slot="collapsible-caption"]')!;
+    const caption = host.querySelector('[data-slot="turn-end-captions"]')!;
     const expandedButton = caption.querySelector("button")!;
     const expandedTitle = expandedButton.querySelector("span")!;
     const details = caption.querySelector("[id]")!;
-    expect(expandedTitle.textContent).toBe(contextText);
-    expect(expandedTitle.textContent).not.toContain("컨텍스트 약 63.0% · 정가 $0.62");
-    expect(expandedTitle.className).toContain("whitespace-normal");
+    expect(expandedTitle.textContent).toBe("컨텍스트 약 63.0% · 정가 $0.62");
+    expect(expandedTitle.className).toContain("truncate");
     expect(expandedTitle.className.split(/\s+/)).not.toContain("flex-1");
-    expect(expandedTitle.className).not.toContain("truncate");
-    expect(expandedButton.className).toContain("!h-auto");
+    expect(expandedButton.className).not.toContain("!h-auto");
     expect(expandedButton.classList.contains("w-full")).toBe(false);
     expect(expandedButton.classList.contains("max-w-full")).toBe(true);
-    expect(details.textContent).toBe(completeText);
-    for (const text of [expandedTitle, details.firstElementChild!]) {
+    expect(details.textContent).toBe(contextText + completeText);
+    expect(details.children).toHaveLength(2);
+    for (const text of Array.from(details.children)) {
       expect(text.classList.contains("break-keep")).toBe(true);
       expect(text.classList.contains("break-words")).toBe(true);
     }
@@ -146,7 +145,7 @@ describe("ChatMessageItem presentation", () => {
     ["tokens only", { usage: { input_tokens: 150, output_tokens: 35 } }, undefined, "턴 완료 · 입력 150 · 출력 35"],
     ["context and price", { turnCostUsd: 0.62 }, { usedTokens: 326300, maxTokens: 1000000, percent: 32.6 }, "턴 완료 · 정가 $0.62"],
     ["full stats without context", { usage: { input_tokens: 150, output_tokens: 35 }, turnCostUsd: 0.62, sessionCostUsd: 17.91 }, undefined, "턴 완료 · 입력 150 · 출력 35 · 정가 $0.62 (세션 $17.91)"],
-  ])("expands %s with the app completion label and each value once", (_label, completeData, context, expected) => {
+  ])("expands %s with the app completion label and each value once in its body", (_label, completeData, context, expected) => {
     const messages = [
       ...(context ? [makeMessage("system", "context", { treeNodeType: "context_usage", contextUsageData: context })] : []),
       makeMessage("system", "complete", { treeNodeType: "complete", ...completeData }),
@@ -161,18 +160,20 @@ describe("ChatMessageItem presentation", () => {
     act(() => button.click());
     expect(button.classList.contains("w-full")).toBe(false);
     expect(button.classList.contains("max-w-full")).toBe(true);
-    const caption = host.querySelector('[data-slot="collapsible-caption"]')!;
+    const caption = host.querySelector('[data-slot="turn-end-captions"]')!;
     expect(caption.textContent).toContain(expected);
     expect(caption.textContent?.match(/턴 완료/g)).toHaveLength(1);
     if (context) {
-      expect(button.textContent).toBe("컨텍스트 326,300 / 1,000,000 (32.6%)");
-      expect(caption.querySelector("[id]")?.textContent).toBe(expected);
+      expect(button.textContent).not.toBe("컨텍스트 326,300 / 1,000,000 (32.6%)");
+      expect(caption.querySelector("[id]")?.textContent).toContain("컨텍스트 326,300 / 1,000,000 (32.6%)");
+      expect(caption.querySelector("[id]")?.textContent).toContain(expected);
     } else {
-      expect(button.textContent).toBe(expected);
-      expect(caption.querySelector("[id]")?.textContent).toBe("");
+      expect(button.textContent).not.toBe(expected);
+      expect(caption.querySelector("[id]")?.textContent).toBe(expected);
     }
+    const detailsText = caption.querySelector("[id]")?.textContent ?? "";
     for (const value of ["$0.00", "$0.62", "입력 150", "출력 35", "$17.91"]) {
-      if (expected.includes(value)) expect(caption.textContent?.split(value)).toHaveLength(2);
+      if (expected.includes(value)) expect(detailsText.split(value)).toHaveLength(2);
     }
   });
 

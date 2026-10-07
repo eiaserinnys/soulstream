@@ -56,6 +56,10 @@ export interface ChatMessage {
     contextText?: string;
     completeText?: string;
   };
+  turnSummaryCaption?: {
+    treeNodeId: string;
+    content: string;
+  };
   timestamp?: number;
   /** thinking 전용: 접기 토글에 표시할 내면 사고 텍스트 */
   thinkingContent?: string;
@@ -120,6 +124,8 @@ export interface ChatMessage {
    * 멀티-소스 세션에서 메시지마다 발신자 표시. 세션-수준 metadata propagation에 의존하지 않는다.
    */
   callerInfo?: CallerInfo;
+  /** manuscript-only presentation group for consecutive agent-originated user rows. */
+  manuscriptAgentMessages?: ChatMessage[];
   /** DB 이벤트 ID. 히스토리-라이브 병합 시 dedup 기준. */
   eventId?: number;
   /** session_notification 전용 exactly-once 식별자. */
@@ -133,6 +139,8 @@ export interface ChatMessage {
   inputId?: string;
   /** assigned_card_context 전용 exact anchor. */
   preparedInputId?: string;
+  /** assigned_card_context 전용 capture 시점의 카드 수. */
+  assignedCardCount?: number;
   /** persistent_jev_candidates 전용 후보 표시값. */
   jevCandidates?: import("./persistent-jev-candidates").PersistentJevCandidate[];
 }
@@ -182,6 +190,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.sessionCostUsd === b.sessionCostUsd &&
     a.sessionCostPartial === b.sessionCostPartial &&
     a.turnUsageCaption === b.turnUsageCaption &&
+    a.turnSummaryCaption === b.turnSummaryCaption &&
     a.timestamp === b.timestamp &&
     a.thinkingContent === b.thinkingContent &&
     a.toolName === b.toolName &&
@@ -213,11 +222,13 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.contextItems === b.contextItems &&
     a.agentInfo === b.agentInfo &&
     a.callerInfo === b.callerInfo &&
+    a.manuscriptAgentMessages === b.manuscriptAgentMessages &&
     a.eventId === b.eventId &&
     a.summaryFinalResponseEventId === b.summaryFinalResponseEventId &&
     a.summaryParentEventId === b.summaryParentEventId
     && a.inputId === b.inputId
     && a.preparedInputId === b.preparedInputId
+    && a.assignedCardCount === b.assignedCardCount
     && a.jevCandidates === b.jevCandidates
   );
 }
@@ -531,6 +542,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         treeNodeId: n.id,
         treeNodeType: n.type,
         preparedInputId: n.preparedInputId,
+        assignedCardCount: n.capture?.snapshot.cards.length,
       };
     }
 

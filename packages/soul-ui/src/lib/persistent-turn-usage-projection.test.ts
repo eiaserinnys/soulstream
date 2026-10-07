@@ -65,6 +65,15 @@ describe("projectPersistentTurnUsage", () => {
     expect(projectPersistentTurnUsage([emptyComplete], true)).toEqual([]);
   });
 
+  it("preserves a summary-bearing complete when usage is disabled or unavailable", () => {
+    const complete = makeMessage("complete-1", "complete", {
+      turnSummaryCaption: { treeNodeId: "summary-1", content: "응답 내용을 요약했습니다." },
+    });
+
+    expect(projectPersistentTurnUsage([complete], false)).toEqual([complete]);
+    expect(projectPersistentTurnUsage([complete], true)).toEqual([complete]);
+  });
+
   it("keeps errors, adds their paired context below, and emits no row for context without a terminal", () => {
     const error = makeMessage("error-2", "error", {
       content: "실패",

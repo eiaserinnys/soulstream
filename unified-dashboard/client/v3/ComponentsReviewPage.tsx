@@ -31,6 +31,8 @@ import { CardCheckItemsSamples } from "./CardCheckItemsSamples";
 import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
 import { PersistentChatDisplayReviewSample } from "./PersistentChatDisplayReviewSample";
 import { PersistentManuscriptChatReviewSample } from "./PersistentManuscriptChatReviewSample";
+import { PersistentTurnEndCaptionsReviewSample } from "./PersistentTurnEndCaptionsReviewSample";
+import { PersistentAgentMessageGroupReviewSample } from "./PersistentAgentMessageGroupReviewSample";
 import { PersistentSessionSettingsReviewSample } from "./PersistentSessionSettingsReviewSample";
 import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenReviewSample';
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
@@ -234,6 +236,8 @@ export function ComponentsReviewPage() {
                 <SystemMessage msg={{id:"caption-sample-summary",role:"system",treeNodeId:"caption-sample-summary",treeNodeType:"turn_summary",content:"기존 요약: 다른 작업 결과를 기다립니다."}}/>
                 <PersistentChatDisplayReviewSample />
                 <PersistentManuscriptChatReviewSample />
+                <PersistentTurnEndCaptionsReviewSample />
+                <PersistentAgentMessageGroupReviewSample />
                 <LabeledDivider label="다음 대화" />
                 <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>
