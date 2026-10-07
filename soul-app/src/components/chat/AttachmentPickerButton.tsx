@@ -12,6 +12,7 @@ interface AttachmentPickerButtonProps {
   disabled?: boolean;
   testID?: string;
   surfaceTestID?: string;
+  presentation?: 'default' | 'manuscript';
 }
 
 export function AttachmentPickerButton({
@@ -20,6 +21,7 @@ export function AttachmentPickerButton({
   disabled = false,
   testID = 'chat-composer-attach-button',
   surfaceTestID = 'chat-composer-attach-visual',
+  presentation = 'default',
 }: AttachmentPickerButtonProps) {
   const t = useTokens();
   const styles = React.useMemo(() => makeStyles(t), [t]);
@@ -45,7 +47,7 @@ export function AttachmentPickerButton({
       {uploading ? (
         <ActivityIndicator size="small" color={t.colors.textMuted} />
       ) : (
-        <Ionicons name="add" color={t.colors.textMuted} size={t.iconSize.action} />
+        <Ionicons name={presentation === 'manuscript' ? 'add-outline' : 'add'} color={t.colors.textMuted} size={t.iconSize.action} />
       )}
     </CompactTouchTarget>
   );

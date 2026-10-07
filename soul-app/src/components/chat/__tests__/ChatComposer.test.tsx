@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
@@ -9,6 +9,9 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 }));
 
 import { ChatComposer } from '../ChatComposer';
+import { ChatInterruptButton } from '../ChatInterruptButton';
+import { makeStyles } from '../ChatBody.styles';
+import { useTokens } from '../../../theme';
 import { ADD_GLYPH_INSET_RATIO } from '../ChatBody.styles';
 import * as inputMeasurement from '../useTextInputContentHeight';
 
@@ -166,6 +169,56 @@ describe('ChatComposer', () => {
     fireEvent(screen.getByTestId('chat-composer-box'), 'layout', { nativeEvent: { layout: box } });
 
     expect(onComposerBoxLayout).toHaveBeenLastCalledWith(box, row);
+  });
+
+  test('원고형 도구 버튼은 외곽선 없는 outline glyph를 쓰고 기본 채팅은 그대로 둔다', () => {
+    const props = {
+      onChangeInput: jest.fn(),
+      onPickAttachment: jest.fn(),
+      onSend: jest.fn(),
+      uploading: false,
+      sending: false,
+      voiceControls: null,
+    };
+    const normal = render(<ChatComposer {...props} input="초안" />);
+    const normalAttach = normal.getByTestId('chat-composer-attach-visual').props.children;
+    const normalSend = normal.getByTestId('chat-composer-send-visual').props.children;
+    expect(normalAttach.props.name).toBe('add');
+    expect(normalSend.props.name).toBe('send');
+    expect(StyleSheet.flatten(normal.getByTestId('chat-composer-send-visual').props.style).backgroundColor)
+      .not.toBe('transparent');
+
+    const manuscript = render(<ChatComposer {...props} input="초안" presentation="manuscript" />);
+    const attach = manuscript.getByTestId('chat-composer-attach-visual');
+    const send = manuscript.getByTestId('chat-composer-send-visual');
+    expect(attach.props.children.props.name).toBe('add-outline');
+    expect(send.props.children.props.name).toBe('send-outline');
+    expect(StyleSheet.flatten(attach.props.style).backgroundColor).toBe('transparent');
+    expect(StyleSheet.flatten(send.props.style).backgroundColor).toBe('transparent');
+    expect(send.props.children.props.color).toBeTruthy();
+  });
+
+  test('원고형 중단 버튼은 투명 표면의 outline glyph를 쓰고 일반 채팅은 빨간 채움을 유지한다', () => {
+    const tokens = renderHook(() => useTokens()).result.current;
+    const styles = makeStyles(tokens);
+    const defaultButton = render(<ChatInterruptButton
+      interrupting={false} disabled={false} styles={styles}
+      accentTextColor={tokens.colors.accentText} textPrimaryColor={tokens.colors.textPrimary}
+      onPress={jest.fn()}
+    />);
+    expect(defaultButton.getByTestId('chat-composer-interrupt-visual').props.children.props.name).toBe('stop');
+    expect(StyleSheet.flatten(defaultButton.getByTestId('chat-composer-interrupt-visual').props.style).backgroundColor)
+      .toBe(tokens.colors.error);
+
+    const manuscript = render(<ChatInterruptButton
+      interrupting={false} disabled={false} presentation="manuscript" styles={styles}
+      accentTextColor={tokens.colors.accentText} textPrimaryColor={tokens.colors.textPrimary}
+      onPress={jest.fn()}
+    />);
+    const visual = manuscript.getByTestId('chat-composer-interrupt-visual');
+    expect(visual.props.children.props.name).toBe('stop-outline');
+    expect(StyleSheet.flatten(visual.props.style).backgroundColor).toBe('transparent');
+    expect(visual.props.children.props.color).toBe(tokens.colors.textPrimary);
   });
 
   test('wrap stacks the row, stays stacked until empty, and preserves mounted controls and input', () => {

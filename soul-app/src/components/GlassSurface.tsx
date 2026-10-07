@@ -271,7 +271,7 @@ export interface GlassButtonProps {
   accessibilityRole?: AccessibilityRole;
   accessibilityState?: AccessibilityState;
   'aria-pressed'?: boolean;
-  variant?: 'primary' | 'secondary' | 'paper';
+  variant?: 'primary' | 'secondary' | 'paper' | 'plain';
   size?: 'standard' | 'compact' | 'card';
   iconOnly?: boolean;
   borderRadius?: number;
@@ -306,12 +306,15 @@ export function GlassButton({
 }: GlassButtonProps) {
   const t = useTokens();
   const [focused, setFocused] = React.useState(false);
-  const primitive = createPrimitiveRoles(t)[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
+  const [plainPressed, setPlainPressed] = React.useState(false);
+  const buttonPrimitive = createPrimitiveRoles(t)[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
+  const primitive = createPrimitiveRoles(t).iconFrame;
   const paper = variant === 'paper';
-  const standardMinHeight = Math.max(t.hitTarget.min, primitive.minHeight);
-  const resolvedRadius = borderRadius ?? primitive.radius;
-  const horizontal = iconOnly ? 0 : padding?.horizontal ?? primitive.padding.horizontal;
-  const vertical = iconOnly ? 0 : padding?.vertical ?? primitive.padding.vertical;
+  const plain = variant === 'plain';
+  const standardMinHeight = Math.max(t.hitTarget.min, buttonPrimitive.minHeight);
+  const resolvedRadius = borderRadius ?? (plain && iconOnly ? t.foundation.radius.round : buttonPrimitive.radius);
+  const horizontal = iconOnly ? 0 : padding?.horizontal ?? buttonPrimitive.padding.horizontal;
+  const vertical = iconOnly ? 0 : padding?.vertical ?? buttonPrimitive.padding.vertical;
   const iconBoundaryStyle: ViewStyle | undefined = iconOnly
     ? { width: t.hitTarget.min, height: t.hitTarget.min }
     : undefined;
@@ -342,10 +345,12 @@ export function GlassButton({
           gap: t.spacing.xs,
           opacity: disabled ? 0.55 : 1,
           backgroundColor: paper
-            ? resolvePaperButtonBackground(t, primitive, !!disabled, pressed)
-            : resolveGlassButtonBackground(primitive, !!disabled, pressed, nativePressFeedback),
-          borderWidth: paper ? 0 : GLASS_BUTTON_BORDER_WIDTH,
-          borderColor: paper ? 'transparent' : focused && !disabled ? primitive.focusedColor : 'transparent',
+            ? resolvePaperButtonBackground(t, buttonPrimitive, !!disabled, pressed)
+            : plain
+              ? resolvePlainButtonBackground(buttonPrimitive, !!disabled, pressed, focused)
+            : resolveGlassButtonBackground(buttonPrimitive, !!disabled, pressed, nativePressFeedback),
+          borderWidth: paper || plain ? 0 : GLASS_BUTTON_BORDER_WIDTH,
+          borderColor: paper || plain ? 'transparent' : focused && !disabled ? buttonPrimitive.focusedColor : 'transparent',
         },
         !iconOnly && { minHeight: standardMinHeight },
         contentStyle,
@@ -356,9 +361,55 @@ export function GlassButton({
     </Pressable>
   );
 
+  if (plain && iconOnly && size !== 'standard') {
+    const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
+    return (
+      <Pressable
+        testID={testID}
+        onPress={onPress}
+        onFocus={() => {
+          if (!disabled) setFocused(true);
+        }}
+        onBlur={() => setFocused(false)}
+        onPressIn={() => setPlainPressed(true)}
+        onPressOut={() => setPlainPressed(false)}
+        disabled={disabled}
+        hitSlop={hitSlop ?? t.spacing.sm}
+        accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
+        {...(Platform.OS === 'web' && ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
+        style={[{
+          minWidth: Math.max(t.hitTarget.min, primitive.minHeight),
+          minHeight: Math.max(t.hitTarget.min, primitive.minHeight),
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: disabled ? 0.55 : 1,
+        }, frameStyle]}
+      >
+        <View
+          testID={surfaceTestID}
+          style={[{
+            width: visualSize,
+            height: visualSize,
+            borderRadius: resolvedRadius,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'transparent',
+          }, style, (plainPressed || focused) && !disabled
+            ? { backgroundColor: resolvePlainButtonBackground(buttonPrimitive, false, plainPressed, focused) }
+            : undefined]}
+        >
+          {children}
+        </View>
+      </Pressable>
+    );
+  }
+
   if (paper) {
     const paperSurfaceStyle: ViewStyle = { overflow: 'hidden', backgroundColor: t.persistentSession.paper,
-      borderWidth: StyleSheet.hairlineWidth, borderColor: focused && !disabled ? primitive.focusedColor : t.persistentSession.line,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: focused && !disabled ? buttonPrimitive.focusedColor : t.persistentSession.line,
       borderRadius: resolvedRadius };
     if (iconOnly && size !== 'standard') {
       const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
@@ -370,14 +421,16 @@ export function GlassButton({
     return <View testID={surfaceTestID} style={[paperSurfaceStyle, style]}>{renderButton(false)}</View>;
   }
 
+  if (plain) return <View style={style}>{renderButton(false)}</View>;
+
   if (iconOnly && size !== 'standard') {
     const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
     const visualStyle: ViewStyle = { width: visualSize, height: visualSize, borderRadius: resolvedRadius,
       alignItems: 'center', justifyContent: 'center' };
     return <CompactTouchTarget testID={testID} frameStyle={frameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
-      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: primitive.backgroundColor }]}>{children}</View>
-        : <GlassSurfaceImpl role={primitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle]}>{children}</GlassSurfaceImpl>}
+      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }]}>{children}</View>
+        : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle]}>{children}</GlassSurfaceImpl>}
     </CompactTouchTarget>;
   }
 
@@ -391,7 +444,7 @@ export function GlassButton({
 
   return (
     <GlassSurfaceImpl
-      role={primitive.surfaceRole}
+      role={buttonPrimitive.surfaceRole}
       testID={surfaceTestID}
       isInteractive
       cornerRadius={resolvedRadius}
@@ -423,6 +476,15 @@ export function resolvePaperButtonBackground(
 ): string {
   if (disabled) return primitive.disabledColor;
   return pressed ? createPlannerVisualRoles(t).grouped.pressedColor : t.persistentSession.paper;
+}
+
+export function resolvePlainButtonBackground(
+  primitive: Pick<PrimitiveRoleDefinition, 'pressedColor'>,
+  disabled: boolean,
+  pressed: boolean,
+  focused: boolean,
+): string {
+  return !disabled && (pressed || focused) ? primitive.pressedColor : 'transparent';
 }
 
 const styles = StyleSheet.create({

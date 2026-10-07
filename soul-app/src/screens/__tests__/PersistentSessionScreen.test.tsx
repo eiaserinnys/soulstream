@@ -174,6 +174,24 @@ test('phone의 원고형 열은 공통 pageInset으로 본문과 입력의 가�
   measure.mockRestore();
 });
 
+test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 쓴다', () => {
+  mockDevice = 'phone';
+  const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  for (const testID of [
+    'persistent-session-home-visual',
+    'persistent-session-appearance-visual',
+    'persistent-session-settings-visual',
+    'persistent-session-tasks-visual',
+  ]) {
+    const style = StyleSheet.flatten(view.getByTestId(testID).props.style);
+    expect(style.backgroundColor).toBe('transparent');
+    expect(style.borderWidth).toBeUndefined();
+    expect(style.borderColor).toBeUndefined();
+    expect(style.borderRadius).toBeGreaterThan(0);
+  }
+  view.unmount();
+});
+
 test('phone 카드 목록은 제목과 같은 가장자리·종이 바탕을 쓰고 요약에는 목록으로 버튼이 있다', () => {
   mockDevice = 'phone';
   const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);

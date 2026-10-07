@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FlatList } from 'react-native';
 import type { ChatRenderItem } from './groupChatEvents';
 import {
@@ -10,6 +10,7 @@ interface UseChatBottomFollowArgs {
   flatListRef: React.RefObject<FlatList<ChatRenderItem> | null>;
   sessionId: string | undefined;
   bottomItemKey: string | null;
+  presentation?: 'default' | 'manuscript';
 }
 
 /**
@@ -23,12 +24,14 @@ export function useChatBottomFollow({
   flatListRef,
   sessionId,
   bottomItemKey,
+  presentation = 'default',
 }: UseChatBottomFollowArgs) {
   const isAtBottomRef = useRef(true);
   const pendingBottomRef = useRef(false);
   const previousBottomItemKeyRef = useRef<string | null>(null);
   const contentMeasuredRef = useRef(false);
   const scrollFrameRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const [showNewMessage, setShowNewMessage] = useState(false);
 
   const cancelScheduledScroll = useCallback(() => {
     if (scrollFrameRef.current === null) return;
@@ -46,6 +49,7 @@ export function useChatBottomFollow({
   }, [flatListRef]);
 
   const requestBottomFollow = useCallback(() => {
+    setShowNewMessage(false);
     scheduleBottomScroll();
   }, [scheduleBottomScroll]);
 
@@ -58,7 +62,10 @@ export function useChatBottomFollow({
   const onScrollOffsetChange = useCallback((offsetY: number) => {
     const isAtBottom = isNearInvertedListBottom(offsetY);
     isAtBottomRef.current = isAtBottom;
-    if (isAtBottom) pendingBottomRef.current = false;
+    if (isAtBottom) {
+      pendingBottomRef.current = false;
+      setShowNewMessage(false);
+    }
   }, []);
 
   const onContentSizeChange = useCallback((height: number) => {
@@ -77,6 +84,7 @@ export function useChatBottomFollow({
     pendingBottomRef.current = false;
     previousBottomItemKeyRef.current = null;
     contentMeasuredRef.current = false;
+    setShowNewMessage(false);
     cancelScheduledScroll();
     return cancelScheduledScroll;
   }, [cancelScheduledScroll, sessionId]);
@@ -84,16 +92,23 @@ export function useChatBottomFollow({
   useEffect(() => {
     const previousKey = previousBottomItemKeyRef.current;
     previousBottomItemKeyRef.current = bottomItemKey;
-    if (!shouldFollowNewBottomItem({
+    if (shouldFollowNewBottomItem({
       wasAtBottom: isAtBottomRef.current || pendingBottomRef.current,
       previousKey,
       nextKey: bottomItemKey,
-    })) return;
-    scheduleBottomScroll();
-  }, [bottomItemKey, scheduleBottomScroll, sessionId]);
+    })) {
+      setShowNewMessage(false);
+      scheduleBottomScroll();
+      return;
+    }
+    if (presentation === 'manuscript' && previousKey && bottomItemKey && previousKey !== bottomItemKey && !isAtBottomRef.current && !pendingBottomRef.current) {
+      setShowNewMessage(true);
+    }
+  }, [bottomItemKey, presentation, scheduleBottomScroll, sessionId]);
 
   return {
     requestBottomFollow,
+    showNewMessage,
     suspendBottomFollow,
     onScrollBeginDrag: suspendBottomFollow,
     onScrollOffsetChange,

@@ -156,6 +156,7 @@ export function ChatComposer({
               surfaceTestID="chat-composer-attach-visual"
               uploading={uploading}
               disabled={controlsDisabled}
+              presentation={presentation}
               onPress={onPickAttachment}
             />
           </View>
@@ -229,7 +230,9 @@ export function ChatComposer({
               frameStyle={presentation === 'manuscript'
                 ? [styles.composerControlFrame, { marginRight: -manuscriptSendOutset }]
                 : styles.composerControlFrame}
-              surfaceStyle={[styles.sendBtn, !sending && !canSend && styles.sendBtnDisabled]}
+              surfaceStyle={presentation === 'manuscript'
+                ? styles.composerSecondaryControl
+                : [styles.sendBtn, !sending && !canSend && styles.sendBtnDisabled]}
               onPress={() => {
                 if (canSend && !sending) onSend();
               }}
@@ -242,9 +245,9 @@ export function ChatComposer({
                 />
               ) : (
                 <Ionicons
-                  name="send"
+                  name={presentation === 'manuscript' ? 'send-outline' : 'send'}
                   size={t.iconSize.standard}
-                  color={canSend ? t.colors.accentText : t.colors.textMuted}
+                  color={canSend ? (presentation === 'manuscript' ? t.colors.textPrimary : t.colors.accentText) : t.colors.textMuted}
                 />
               )}
             </CompactTouchTarget>

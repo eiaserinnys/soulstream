@@ -111,7 +111,16 @@ export function useChatRenderItems({
     previousItems.current = result;
     return result;
   }, [incomingReversedItems]);
-  const bottomFollowItemKey = bottomFollowTargetKey(presentedItems);
+  const bottomTargetKey = bottomFollowTargetKey(presentedItems);
+  const bottomTarget = presentedItems.find(item => item.key === bottomTargetKey);
+  const streamingText = presentation === 'manuscript'
+    && bottomTarget?.kind === 'event'
+    && bottomTarget.key.startsWith('stream-assistant')
+    ? (bottomTarget.event.data as Record<string, unknown> | undefined)?.text
+    : undefined;
+  const bottomFollowItemKey = typeof streamingText === 'string'
+    ? `${bottomTargetKey}:${streamingText.length}`
+    : bottomTargetKey;
 
   return { reversedItems, bottomFollowItemKey };
 }

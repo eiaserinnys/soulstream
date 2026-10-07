@@ -11,6 +11,8 @@ import { useChatRenderItems } from '../useChatRenderItems';
 
 const mockFlatListState = {
   props: null as Record<string, any> | null,
+  mounts: 0,
+  unmounts: 0,
   scrollToOffset: jest.fn(),
   recordInteraction: jest.fn(),
 };
@@ -19,6 +21,10 @@ const mockRenderOrder: string[] = [];
 jest.mock('react-native/Libraries/Lists/FlatList', () => {
   const ReactModule = jest.requireActual('react');
   const MockFlatList = ReactModule.forwardRef((props: any, ref: any) => {
+    ReactModule.useEffect(() => {
+      mockFlatListState.mounts += 1;
+      return () => { mockFlatListState.unmounts += 1; };
+    }, []);
     mockFlatListState.props = props;
     ReactModule.useImperativeHandle(ref, () => ({
       recordInteraction: mockFlatListState.recordInteraction,
@@ -59,8 +65,12 @@ jest.mock('../../events/TurnSummaryCaption', () => ({
 }));
 jest.mock('../TypingIndicator', () => ({ TypingIndicator: () => null }));
 jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
+jest.mock('../ChatNewMessageButton', () => ({ ChatNewMessageButton: () => null }));
 jest.mock('../../../theme', () => ({
-  useTokens: () => ({ colors: { accentTint: 'transparent', accent: 'blue' } }),
+  useTokens: () => ({
+    colors: { accentTint: 'transparent', accent: 'blue' },
+    spacing: { sm: 8 },
+  }),
 }));
 
 const styles = {
@@ -79,10 +89,14 @@ function Harness({
   events,
   sessionId = 'sess-a',
   streamingSlots,
+  presentation = 'default',
+  showNewMessage = false,
 }: {
   events: SessionEvent[];
   sessionId?: string;
   streamingSlots?: StreamingSlots;
+  presentation?: 'default' | 'manuscript';
+  showNewMessage?: boolean;
 }) {
   const flatListRef = useRef<FlatList<ChatRenderItem> | null>(null);
   const { reversedItems, bottomFollowItemKey } = useChatRenderItems({
@@ -117,6 +131,9 @@ function Harness({
       retryFromError={noop}
       mvcpEnabled
       onContentSizeChange={follow.onContentSizeChange}
+      presentation={presentation}
+      showNewMessage={showNewMessage}
+      onPressNewMessage={noop}
     />
   );
 }
@@ -125,6 +142,16 @@ describe('chat row render isolation', () => {
   const base = [ev('1', 'user_message', { text: '질문' }), ev('2', 'assistant_message', { text: '이전 답변' }),
     ev('3', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'exec_command' })];
   beforeEach(() => { mockRenderOrder.length = 0; });
+
+  it('keeps the manuscript FlatList mounted when the new-message button appears', () => {
+    mockFlatListState.mounts = 0;
+    mockFlatListState.unmounts = 0;
+    const view = render(<Harness events={base} presentation="manuscript" />);
+    expect(mockFlatListState.mounts).toBe(1);
+    view.rerender(<Harness events={base} presentation="manuscript" showNewMessage />);
+    expect(mockFlatListState.mounts).toBe(1);
+    expect(mockFlatListState.unmounts).toBe(0);
+  });
 
   it('text delta renders only its streaming row, retaining every history row', () => {
     const stream = (text: string) => ({ assistant: ev('live', 'assistant_message', { text, streamIdentity: 'live' }) });
