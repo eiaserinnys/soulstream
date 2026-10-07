@@ -1,5 +1,5 @@
 import {CardTransitionSettings} from './CardTransitionSettings';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,6 +34,7 @@ import { CardNotes } from './CardNotes';
 import { CardRequestView } from './CardRequestView';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { resolveTabletBottomSafeAreaPadding } from '../split/tabletShellInsets';
+import { ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';
 import { summarizeCardItems } from '../../lib/card-check-item-summary';
 
 type CardDetailTab = 'items' | 'comments' | 'sessions' | 'notes';
@@ -77,6 +78,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const statusAction = useCardTransition(api, cardId);
   const comments = useCardComments(api, cardId);
   const insets = useSafeAreaInsets();
+  const panelMinimumBottomPadding = useContext(ChatPaneMinimumBottomPaddingContext);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const tablet = inline || useDeviceType() !== 'phone';
   const [assignmentOpen, setAssignmentOpen] = useState(false);
@@ -135,7 +137,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const dockBottom = keyboardOverlap > 0
     ? t.uiSpacing.sm
     : tablet
-      ? resolveTabletBottomSafeAreaPadding(insets.bottom, t.tabletShell.outerInset) + t.uiSpacing.sm
+      ? panelMinimumBottomPadding ?? (resolveTabletBottomSafeAreaPadding(insets.bottom, t.tabletShell.outerInset) + t.uiSpacing.sm)
       : insets.bottom + t.uiSpacing.sm;
   const setTab = (next: CardDetailTab) => {
     setTabChoice({ cardId, value: next });

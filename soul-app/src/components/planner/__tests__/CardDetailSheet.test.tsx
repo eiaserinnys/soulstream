@@ -14,6 +14,8 @@ import { useSessionStore } from '../../../store/sessionStore';
 import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
 import { FolderSessionHistory } from '../FolderSessionHistory';
 import { useTokens } from '../../../theme';
+import { ChatPaneMinimumBottomPaddingContext } from '../../split/ChatPane';
+import { resolveTabletBottomSafeAreaPadding } from '../../split/tabletShellInsets';
 
 jest.mock('../../events/CopyableAssistantMarkdown', () => ({ CopyableAssistantMarkdown: () => null }));
 jest.mock('../PlannerMarkdownText', () => ({ PlannerMarkdownText: ({ markdown }: { markdown: string }) => require('react').createElement(require('react-native').Text, null, markdown) }));
@@ -111,6 +113,28 @@ test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴
   await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
   expect(screen.getByTestId('card-detail-back-icon').props.name).toBe('chevron-back');
   expect(api.getCard).toHaveBeenCalledWith(card.id);
+});
+
+test('카드 상세 커멘트 입력은 패널 하단 여백 전달값을 쓰고 기본 호출부는 기존 계산을 유지한다', async () => {
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, questions: [] }) };
+  const mainScreen = render(<CardDetailContent inline api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(mainScreen.getByText('원문')).toBeTruthy());
+
+  const tokens = renderHook(() => useTokens()).result.current;
+  const mainBottom = StyleSheet.flatten(mainScreen.getByTestId('card-detail-dock').props.style).bottom;
+  expect(mainBottom).toBe(resolveTabletBottomSafeAreaPadding(0, tokens.tabletShell.outerInset) + tokens.uiSpacing.sm);
+  mainScreen.unmount();
+
+  const pasSafeArea = 20;
+  const pasScreen = render(
+    <ChatPaneMinimumBottomPaddingContext.Provider value={pasSafeArea}>
+      <CardDetailContent inline api={api as any} cardId={card.id} onClose={jest.fn()} />
+    </ChatPaneMinimumBottomPaddingContext.Provider>,
+  );
+  await waitFor(() => expect(pasScreen.getByText('원문')).toBeTruthy());
+
+  const pasBottom = StyleSheet.flatten(pasScreen.getByTestId('card-detail-dock').props.style).bottom;
+  expect(pasBottom).toBe(pasSafeArea);
 });
 
 test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 접혀 있다', async () => {
