@@ -16,7 +16,7 @@ import {
   PersistenceHostRequestError,
   PersistenceHostTransport,
 } from "./persistence_host_clients.js";
-import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits } from "@soulstream/mcp-contract";
+import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod } from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
   "get",
@@ -104,6 +104,7 @@ export interface SessionDataHost {
     offset: number;
     folderId?: string | null;
     nodeId?: string | null;
+    period?: SessionReadPeriod;
   }): Promise<{ sessions: ListSessionSummaryRow[]; total: number }>;
   listRunningSessionsSummary(params: {
     limit: number;
@@ -115,15 +116,15 @@ export interface SessionDataHost {
     nodeId: string;
   }): Promise<{ sessions: UpstreamSessionDumpRow[]; total: number }>;
   countEvents(sessionId: string): Promise<number>;
-  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[]): Promise<SessionEventRow[]>;
+  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[], period?: SessionReadPeriod): Promise<SessionEventRow[]>;
   readOneEvent(sessionId: string, eventId: number): Promise<SessionEventDetailRow | null>;
   streamEventsRaw(sessionId: string, afterId?: number): Promise<Array<{ id: number; event_type: string; payload_text: string }>>;
   searchEvents(query: string, sessionIds: string[] | null, limit: number, eventTypes?: string[] | null, signal?: AbortSignal): Promise<SessionEventSearchRow[]>;
   searchEventsBySessionId(query: string, eventTypes: string[] | null, limit: number, signal?: AbortSignal): Promise<SessionEventSearchRow[]>;
   searchSessionHistory(params: SessionHistorySearchParams, signal?: AbortSignal): Promise<SessionHistorySearchResult>;
   getSessionSearchMetadata(sessionIds: string[]): Promise<Map<string, SessionSearchMetadata>>;
-  countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts>;
-  loadTurnSummaryRange(sessionId: string, fromTurnNumber: number, toTurnNumber: number | null, limit: number): Promise<SessionStoryTurnSummary[]>;
+  countTurnSummaries(sessionId: string, period?: SessionReadPeriod): Promise<SessionTurnSummaryCounts>;
+  loadTurnSummaryRange(sessionId: string, fromTurnNumber: number, toTurnNumber: number | null, limit: number, period?: SessionReadPeriod): Promise<SessionStoryTurnSummary[]>;
   searchSessionDigests(query: string, sessionIds: string[] | null, limit: number, includeHighlight: boolean, includeStory: boolean, signal?: AbortSignal): Promise<SessionDigestSearchMatch[]>;
   getSessionStory(sessionId: string): Promise<SessionStoryView>;
   getTurnExcerpt(sessionId: string, maxResponseChars?: number): Promise<SessionTurnExcerptResult>;
@@ -182,8 +183,10 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.interactive("event_count", [sessionId]);
   }
 
-  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[]): Promise<SessionEventRow[]> {
-    return this.interactive("event_read_page", [sessionId, afterId, limit, eventTypes]);
+  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[], period?: SessionReadPeriod): Promise<SessionEventRow[]> {
+    const args: unknown[] = [sessionId, afterId, limit, eventTypes];
+    if (period !== undefined) args.push(period);
+    return this.interactive("event_read_page", args);
   }
 
   readOneEvent(sessionId: string, eventId: number): Promise<SessionEventDetailRow | null> {
@@ -214,12 +217,16 @@ export class SessionDataHostClient implements SessionDataHost {
     return new Map(entries);
   }
 
-  countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
-    return this.background("turn_summary_count", [sessionId]);
+  countTurnSummaries(sessionId: string, period?: SessionReadPeriod): Promise<SessionTurnSummaryCounts> {
+    const args: unknown[] = [sessionId];
+    if (period !== undefined) args.push({ period });
+    return this.background("turn_summary_count", args);
   }
 
-  loadTurnSummaryRange(sessionId: string, fromTurnNumber: number, toTurnNumber: number | null, limit: number): Promise<SessionStoryTurnSummary[]> {
-    return this.background("turn_summary_range", [sessionId, fromTurnNumber, toTurnNumber, limit]);
+  loadTurnSummaryRange(sessionId: string, fromTurnNumber: number, toTurnNumber: number | null, limit: number, period?: SessionReadPeriod): Promise<SessionStoryTurnSummary[]> {
+    const args: unknown[] = [sessionId, fromTurnNumber, toTurnNumber, limit];
+    if (period !== undefined) args.push({ period });
+    return this.background("turn_summary_range", args);
   }
 
   searchSessionDigests(query: string, sessionIds: string[] | null, limit: number, includeHighlight: boolean, includeStory: boolean, signal?: AbortSignal): Promise<SessionDigestSearchMatch[]> {

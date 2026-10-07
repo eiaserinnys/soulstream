@@ -53,7 +53,7 @@ export function sessionReadAdapter(repositories: PersistenceHostRepositories) {
     listUserMessages: (...args: Parameters<typeof eventReads.listUserMessages>) => read("user_message_list", () => eventReads.listUserMessages(...args)),
     getSessionStory: (id: string) => read("story", async () => await storyReads.getSessionStory(id) as SessionStoryView),
     getSessionSearchMetadata: async (ids: string[]) => new Map(await read("story_search_metadata", () => storyReads.getSessionSearchMetadata(ids))),
-    countTurnSummaries: (id: string) => read("turn_summary_count", () => storyReads.countTurnSummaries(id)),
+    countTurnSummaries: (...args: Parameters<typeof storyReads.countTurnSummaries>) => read("turn_summary_count", () => storyReads.countTurnSummaries(...args)),
     loadTurnSummaryRange: (...args: Parameters<typeof storyReads.loadTurnSummaryRange>) => read("turn_summary_range", () => storyReads.loadTurnSummaryRange(...args)),
     loadTurnTranscript: (...args: Parameters<typeof storyReads.loadTurnTranscript>) => read("turn_transcript", () => storyReads.loadTurnTranscript(...args)),
     searchSessionHistory: (...args: Parameters<typeof historySearch.search>): Promise<SessionHistorySearchResult> => read("history_search", async () => await historySearch.search(...args) as unknown as SessionHistorySearchResult),

@@ -131,6 +131,75 @@ describe("SessionDataHostClient", () => {
       .toEqual(SESSION_DATA_READ_OPERATIONS);
   });
 
+  it("keeps period values inside the existing JSON host operations", async () => {
+    const requests: Array<{ url: string; args: unknown[] }> = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const body = JSON.parse(String(init?.body)) as { args: unknown[] };
+      requests.push({ url, args: body.args });
+      const operation = url.split("/").at(-1);
+      const value = operation === "list_summary"
+        ? { sessions: [], total: 0 }
+        : operation === "turn_summary_count"
+          ? { totalCount: 0, digestedCount: 0, undigestedCount: 0 }
+          : [];
+      return new Response(JSON.stringify(value), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+    const period = {
+      since: "2026-10-06T00:00:00.000Z",
+      until: "2026-10-07T00:00:00.000Z",
+    };
+
+    await client.listSessionsSummary({ limit: 10, offset: 0, period });
+    await client.readEvents("s1", 0, 10, undefined, period);
+    await client.countTurnSummaries("s1", period);
+    await client.loadTurnSummaryRange("s1", 1, null, 10, period);
+    await client.listSessionsSummary({ limit: 10, offset: 0 });
+    await client.readEvents("s1", 0, 10);
+    await client.countTurnSummaries("s1");
+    await client.loadTurnSummaryRange("s1", 1, null, 10);
+
+    expect(requests).toEqual([
+      {
+        url: "http://orchestrator.test/api/session-data/host/list_summary",
+        args: [{ limit: 10, offset: 0, period }],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/event_read_page",
+        args: ["s1", 0, 10, null, period],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/turn_summary_count",
+        args: ["s1", { period }],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/turn_summary_range",
+        args: ["s1", 1, null, 10, { period }],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/list_summary",
+        args: [{ limit: 10, offset: 0 }],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/event_read_page",
+        args: ["s1", 0, 10, null],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/turn_summary_count",
+        args: ["s1"],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/turn_summary_range",
+        args: ["s1", 1, null, 10],
+      },
+    ]);
+  });
+
   it("uses one host request for the complete resume context", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       session: null,
