@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, render } from '@testing-library/react-native';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
-import { TabNavigator } from '../TabNavigator';
+import { PhoneCardDetail, TabNavigator } from '../TabNavigator';
 import { getBottomTabCaptures, getNativeStackCaptures, resetNavigationCapture } from './navigationCaptureMock';
 const mockList = jest.fn();
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -47,7 +47,7 @@ test('정확한 가운데 슬롯만 기본 이동을 막고 같은 id로 scene�
   expect(mockList).toHaveBeenCalledTimes(1);
   expect(preventDefault).toHaveBeenCalledTimes(3);
 });
-test('Feed의 일반 Chat과 PAS 카드 상세 경로는 유지하고 PAS 선택은 전역 상세로 나가지 않는다', () => {
+test('iPhone PAS 카드는 기존 PhoneCardDetail stack 경로를 사용하고 PAS 대화를 유지한다', () => {
   resetNavigationCapture();
   render(<PersistentSessionProvider><Probe /><TabNavigator /></PersistentSessionProvider>);
   const tabs = getBottomTabCaptures()[0];
@@ -57,16 +57,19 @@ test('Feed의 일반 Chat과 PAS 카드 상세 경로는 유지하고 PAS 선택
   expect(feed.screens[2].options.gestureEnabled).toBe(false);
   const pas = getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'PersistentSession')!;
   expect(pas.screens.map(s => s.name)).toEqual(['PersistentSession', 'CardDetail']);
+  expect(pas.screens[1].component).toBe(PhoneCardDetail);
   expect((pas.navigatorProps?.screenOptions as any).contentStyle).toEqual(createSurfaceRoles(renderHook(() => useTokens()).result.current).canvas.tokenStyle);
   const navigation = { addListener: jest.fn(() => () => {}), getParent: jest.fn(), goBack: jest.fn(), navigate: jest.fn() };
   render(<PersistentSessionProvider><Probe />{React.createElement(pas.screens[0].component, { navigation })}</PersistentSessionProvider>);
-  act(() => { host.store.getState().open({ session_id: 'pas' } as any); host.store.getState().selectCard('card'); });
+  act(() => { host.store.getState().open({ session_id: 'pas' } as any); host.store.getState().toggleScene(); });
   const props = jest.mocked(PersistentSessionScreen).mock.calls.at(-1)![0];
-  expect(props).not.toHaveProperty('onOpenCard');
+  expect(props).toHaveProperty('onOpenPhoneCard');
   expect(props).not.toHaveProperty('onOpenSession');
-  expect(navigation.navigate).not.toHaveBeenCalled();
+  act(() => props.onOpenPhoneCard?.('card'));
+  expect(navigation.navigate).toHaveBeenCalledWith('CardDetail', { cardId: 'card' });
+  expect(host.store.getState()).toMatchObject({ scene: 'cards', selectedCardId: null, session: { session_id: 'pas' } });
   render(React.createElement(pas.screens[1].component, { route: { params: { cardId: 'card' } }, navigation }));
   jest.mocked(CardDetailContent).mock.calls.at(-1)![0].onClose();
   expect(navigation.goBack).toHaveBeenCalledTimes(1);
-  expect(host.store.getState()).toMatchObject({ scene: 'cards', selectedCardId: 'card', session: { session_id: 'pas' } });
+  expect(host.store.getState()).toMatchObject({ scene: 'cards', selectedCardId: null, session: { session_id: 'pas' } });
 });

@@ -21,10 +21,12 @@ import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 
 export interface PersistentSessionScreenProps {
   active?: boolean;
+  chatActive?: boolean;
+  onOpenPhoneCard?(cardId: string): void;
   onHome(): void;
 }
 
-export function PersistentSessionScreen({ active = true, onHome }: PersistentSessionScreenProps) {
+export function PersistentSessionScreen({ active = true, chatActive = active, onOpenPhoneCard, onHome }: PersistentSessionScreenProps) {
   const t = useTokens();
   const device = useDeviceType();
   const phone = device === 'phone';
@@ -34,6 +36,8 @@ export function PersistentSessionScreen({ active = true, onHome }: PersistentSes
   const session = usePersistentSessionScene(state => state.session);
   const scene = usePersistentSessionScene(state => state.scene);
   const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
+  const phoneCardsScene = phone && scene === 'cards';
+  const hidePhoneConversation = phoneCardsScene && !selectedCardId;
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const display = useChatStore(state => session?.session_id
@@ -112,12 +116,12 @@ export function PersistentSessionScreen({ active = true, onHome }: PersistentSes
         {action('options-outline', '영구 세션 설정', () => setSettingsOpen(true), 'persistent-session-settings')}
         {phone ? action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks') : null}
       </View>
-      <View ref={mainRef} testID="persistent-session-conversation" pointerEvents={phone && scene === 'cards' ? 'none' : 'auto'}
-        accessibilityElementsHidden={phone && scene === 'cards'} importantForAccessibility={phone && scene === 'cards' ? 'no-hide-descendants' : 'auto'}
+      <View ref={mainRef} testID="persistent-session-conversation" pointerEvents={phoneCardsScene ? 'none' : 'auto'}
+        accessibilityElementsHidden={phoneCardsScene} importantForAccessibility={phoneCardsScene ? 'no-hide-descendants' : 'auto'}
         style={{ position: 'absolute', top: headerHeight, bottom: 0, left: columnLeft, width: columnWidth,
-          opacity: phone && scene === 'cards' ? 0 : 1 }} onLayout={measureMain}>
+          opacity: hidePhoneConversation ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript"
-          active={active && scene === 'conversation'} minimumBottomPadding={phone ? 0 : insets.bottom}
+          active={chatActive} minimumBottomPadding={phone ? 0 : insets.bottom}
           onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
           }} />
@@ -156,7 +160,7 @@ export function PersistentSessionScreen({ active = true, onHome }: PersistentSes
         paddingHorizontal: phone ? t.foundation.pageInset : t.uiSpacing.sm,
         paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
         <PersistentSessionTaskList api={api} visible={!selectedCardId}
-          onOpenCard={cardId => host.store.getState().selectCard(cardId)} />
+          onOpenCard={cardId => phone && onOpenPhoneCard ? onOpenPhoneCard(cardId) : host.store.getState().selectCard(cardId)} />
       </View> : null}
       <PersistentSessionCardOverlay api={api} cardId={scene === 'cards' ? selectedCardId : null}
         sessionId={session?.session_id} onClose={() => host.store.getState().selectCard(null)} />

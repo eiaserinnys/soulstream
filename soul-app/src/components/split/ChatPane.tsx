@@ -15,8 +15,8 @@ import { resolveTabletBottomSafeAreaPadding } from './tabletShellInsets';
 /**
  * 우측 채팅 패널 — 상단 인라인 헤더(상태 도트 + 세션 이름) + ChatBody.
  */
-export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose }: {
-  active?: boolean; sessionId?: string | null; onClose?: () => void;
+export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose, ownsSessionConnection = true }: {
+  active?: boolean; sessionId?: string | null; onClose?: () => void; ownsSessionConnection?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -82,6 +82,7 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose 
         <ChatBody
           sessionId={sessionId ?? undefined}
           active={active}
+          ownsSessionConnection={ownsSessionConnection}
           minimumBottomPadding={minimumBottomPadding}
           focusEventId={independentSession ? undefined : focusEventId}
           storyOpenRequestId={independentSession ? undefined : storyOpenRequestId}

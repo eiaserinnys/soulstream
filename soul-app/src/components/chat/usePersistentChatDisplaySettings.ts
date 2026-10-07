@@ -7,6 +7,7 @@ export function usePersistentChatDisplaySettings(
   api: ApiClient | null,
   detailedNetworkActive: boolean,
   sessionId: string | undefined,
+  ownsSessionConnection = true,
 ) {
   const settings = useChatStore(state => sessionId
     ? state.persistentDisplaySettingsBySession[sessionId]
@@ -17,13 +18,15 @@ export function usePersistentChatDisplaySettings(
   const displaySettingsSessionRef = useRef(sessionId);
 
   useEffect(() => {
+    if (!ownsSessionConnection) return;
     const previousSessionId = displaySettingsSessionRef.current;
     if (previousSessionId !== sessionId) clearSettings(previousSessionId);
     displaySettingsSessionRef.current = sessionId;
     if (!sessionId || !api) clearSettings(sessionId);
-  }, [api, clearSettings, sessionId]);
+  }, [api, clearSettings, ownsSessionConnection, sessionId]);
 
   useEffect(() => {
+    if (!ownsSessionConnection) return;
     if (!sessionId || !api) {
       clearSettings(sessionId);
       return;
@@ -39,7 +42,7 @@ export function usePersistentChatDisplaySettings(
       if (active) finishLoad(sessionId, requestId, null);
     });
     return () => { active = false; };
-  }, [api, beginLoad, clearSettings, detailedNetworkActive, finishLoad, sessionId]);
+  }, [api, beginLoad, clearSettings, detailedNetworkActive, finishLoad, ownsSessionConnection, sessionId]);
 
   const current = settings?.settings;
   return {

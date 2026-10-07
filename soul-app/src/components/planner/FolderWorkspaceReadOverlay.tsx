@@ -51,20 +51,21 @@ export function CardDetailPane({ api, cardId, detailWidth, onClose, onOpenSessio
   </View>;
 }
 
-export function CardConversationPane({ active, sessionId, onClose, hideChat = false }: {
+export function CardConversationPane({ active, sessionId, onClose, hideChat = false, ownsSessionConnection = true }: {
   active: boolean;
   sessionId?: string | null;
   onClose?: () => void;
   hideChat?: boolean;
+  ownsSessionConnection?: boolean;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   return <View testID="task-workspace-chat-pane" style={styles.chatPane}>
-    {hideChat ? null : <ChatPane active={active} sessionId={sessionId} onClose={onClose} />}
+    {hideChat ? null : <ChatPane active={active} sessionId={sessionId} onClose={onClose} ownsSessionConnection={ownsSessionConnection} />}
   </View>;
 }
 
-export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose, onOpenSession, sessionId, onCloseChat, hideChat = false }: {
+export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose, onOpenSession, sessionId, onCloseChat, hideChat = false, ownsSessionConnection = true }: {
   api: ReturnType<typeof createApiClient> | null;
   cardId: string;
   active: boolean;
@@ -74,10 +75,11 @@ export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose,
   sessionId?: string | null;
   onCloseChat?: () => void;
   hideChat?: boolean;
+  ownsSessionConnection?: boolean;
 }) {
   return <>
     <CardDetailPane api={api} cardId={cardId} detailWidth={detailWidth} onClose={onClose} onOpenSession={onOpenSession} />
-    <CardConversationPane active={active} sessionId={sessionId} onClose={onCloseChat} hideChat={hideChat} />
+    <CardConversationPane active={active} sessionId={sessionId} onClose={onCloseChat} hideChat={hideChat} ownsSessionConnection={ownsSessionConnection} />
   </>;
 }
 

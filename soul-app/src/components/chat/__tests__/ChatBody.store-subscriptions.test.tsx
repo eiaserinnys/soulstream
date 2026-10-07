@@ -162,6 +162,8 @@ const originalMergeEvents = useChatStore.getState().mergeEvents;
 const originalSetStreamingEvent = useChatStore.getState().setStreamingEvent;
 const originalReplaceAssistantStreamingEvents =
   useChatStore.getState().replaceAssistantStreamingEvents;
+const originalClearStreamingEvents = useChatStore.getState().clearStreamingEvents;
+const originalClearStreamingEvent = useChatStore.getState().clearStreamingEvent;
 
 function fireAppState(state: 'active' | 'background' | 'inactive') {
   (AppState as { currentState: string }).currentState = state;
@@ -181,6 +183,8 @@ function resetStores() {
     mergeEvents: originalMergeEvents,
     setStreamingEvent: originalSetStreamingEvent,
     replaceAssistantStreamingEvents: originalReplaceAssistantStreamingEvents,
+    clearStreamingEvents: originalClearStreamingEvents,
+    clearStreamingEvent: originalClearStreamingEvent,
   });
   useSessionStore.setState({
     sessions: {
@@ -307,6 +311,21 @@ describe('ChatBody store subscription boundary', () => {
 
     expect(useChatStore.getState().persistentDisplaySettingsBySession[assignedSessionId]?.settings).toEqual(settings);
     view.unmount();
+  });
+
+  test('같은 세션의 보조 ChatBody는 SSE를 열지 않고 공유 streaming 상태를 정리하지 않는다', async () => {
+    const clearStreamingEvents = jest.fn(useChatStore.getState().clearStreamingEvents);
+    const clearStreamingEvent = jest.fn(useChatStore.getState().clearStreamingEvent);
+    useChatStore.setState({ clearStreamingEvents, clearStreamingEvent });
+
+    const view = render(<View><ChatBody sessionId={SID} active ownsSessionConnection={false} /></View>);
+    await act(async () => { await Promise.resolve(); });
+
+    expect((useSSEStream as jest.Mock).mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ enabled: false }));
+    expect(mockUseChatHistoryPagination.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ active: false }));
+    view.unmount();
+    expect(clearStreamingEvents).not.toHaveBeenCalled();
+    expect(clearStreamingEvent).not.toHaveBeenCalled();
   });
 
   test('세션 ID 없는 ChatBody가 담당 세션 ID를 받아도 PAS 표시 설정을 보존한다', async () => {

@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { CardDetailContent } from '../components/planner/CardDetailSheet';
+import { ScrollView, Text, View } from 'react-native';
 import { CardRow } from '../components/planner/CardRow';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
@@ -10,7 +9,7 @@ import { useTokens } from '../theme';
 import { ReviewPersistentFullscreen } from './ReviewPersistentFullscreen';
 import { ReviewPersistentButtons } from './ReviewPersistentButtons';
 
-const { summaryCard, realisticCard, twoImageCard, blankParagraphCard, sessionNamedCard, sessionNullLabelCard, longCard, noProgressCard, sparseCard } = persistentReviewCards;
+const { summaryCard } = persistentReviewCards;
 
 function CharacterSample({ label, width, height, motionEnabled, shown = true }: {
   label: string; width: number; height: number; motionEnabled: boolean; shown?: boolean;
@@ -38,30 +37,16 @@ function PersistentParts() {
   const t = useTokens();
   const query = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const sample = query.get('sample') ?? 'all';
-  const detailCase = query.get('case') ?? 'summary';
   const state = query.get('state');
   const previewWidth = Number(query.get('width')) || undefined;
-  const previewHeight = Number(query.get('height')) || undefined;
   const api = useMemo(() => createPersistentReviewApi(state), [state]);
-  const selectedCard = detailCase === 'realistic' ? realisticCard : detailCase === 'two-images' ? twoImageCard
-    : detailCase === 'blank-paragraphs' ? blankParagraphCard
-      : detailCase === 'session-named' ? sessionNamedCard : detailCase === 'session-null-label' ? sessionNullLabelCard
-    : detailCase === 'long' ? longCard : detailCase === 'no-progress' ? noProgressCard
-      : detailCase === 'sparse' ? sparseCard : summaryCard;
   const paper = { flex: 1, minHeight: 0, backgroundColor: t.persistentSession.paper } as const;
-  const detailPanel = { flex: 1, minHeight: 0, width: '100%' as const, alignSelf: 'stretch' as const,
-    backgroundColor: t.persistentSession.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: t.persistentSession.line,
-    borderRadius: t.foundation.radius.panel, overflow: 'hidden' as const };
-  const panelHeight = previewHeight ? { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' as const, height: previewHeight } : undefined;
   const preview = <View testID="persistent-review-paper" style={paper}>
     {sample === 'list' ? <View style={{ width: previewWidth, alignSelf: previewWidth ? 'center' : 'stretch', flex: 1 }}>
       <PersistentSessionTaskList api={api} onOpenCard={recordReviewOpen} />
     </View> : null}
     {sample === 'row' ? <View style={{ width: previewWidth, alignSelf: previewWidth ? 'center' : 'stretch', flex: 1, justifyContent: 'center' }}>
       <CardRow api={api} card={summaryCard} variant="summary" onOpen={() => recordReviewOpen(summaryCard.id)} />
-    </View> : null}
-    {sample === 'card' ? <View testID="persistent-review-card-panel" style={[detailPanel, previewWidth ? { width: previewWidth, alignSelf: 'center' } : undefined, panelHeight]}>
-      <CardDetailContent api={api} cardId={selectedCard.id} variant="readSummary" onOpenCard={() => recordReviewOpen(selectedCard.id)} onClose={() => {}} />
     </View> : null}
     {sample === 'all' ? <ScrollView testID="persistent-review-all" style={{ flex: 1 }} contentContainerStyle={{ padding: t.cardLayout.padding, gap: t.uiSpacing.xxl }}>
       <ReviewSection title="영구 세션 · 캐릭터 부품">
@@ -78,16 +63,11 @@ function PersistentParts() {
       <ReviewSection title="요약 행">
         <CardRow api={api} card={summaryCard} variant="summary" onOpen={() => recordReviewOpen(summaryCard.id)} />
       </ReviewSection>
-      <ReviewSection title="카드 읽기 요약">
-        <View style={detailPanel}>
-          <CardDetailContent api={api} cardId={summaryCard.id} variant="readSummary" onOpenCard={() => recordReviewOpen(summaryCard.id)} onClose={() => {}} />
-        </View>
-      </ReviewSection>
     </ScrollView> : null}
   </View>;
 
   if (sample !== 'all') return <View style={[paper, { padding: t.cardLayout.padding }]}>
-    <ReviewSection title={sample === 'list' ? '작업 목록' : sample === 'row' ? '요약 행' : '카드 읽기 요약'}>
+    <ReviewSection title={sample === 'list' ? '작업 목록' : '요약 행'}>
       <View style={{ flex: 1, minHeight: 0 }}>{preview}</View>
     </ReviewSection>
   </View>;

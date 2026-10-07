@@ -47,6 +47,7 @@ interface UseChatSseStreamOptions {
   api: ApiClient | null;
   sessionId: string | undefined;
   active: boolean;
+  ownsSessionConnection?: boolean;
   scopeGeneration: string;
   isCatchingUpRef: MutableRefObject<boolean>;
   historyLoadingRef: MutableRefObject<boolean>;
@@ -90,6 +91,7 @@ export function useChatSseStream({
   api,
   sessionId,
   active,
+  ownsSessionConnection = true,
   scopeGeneration,
   isCatchingUpRef,
   historyLoadingRef,
@@ -105,6 +107,8 @@ export function useChatSseStream({
   applyClaudeRuntimeEvent,
   streamFailureRef,
 }: UseChatSseStreamOptions): void {
+  const ownsSessionConnectionRef = useRef(ownsSessionConnection);
+  ownsSessionConnectionRef.current = ownsSessionConnection;
   const generationRef = useRef(0);
   const framePhaseRef = useRef<SessionSseFramePhase>('replay');
   const streamingDeltaBufferRef = useRef(createStreamingDeltaBuffer());
@@ -152,7 +156,7 @@ export function useChatSseStream({
     pendingCatchupQueueRef.current = [];
     isCatchingUpRef.current = true;
     resetRecoveryRefs();
-    if (sessionId) {
+    if (ownsSessionConnectionRef.current && sessionId) {
       clearStreamingEvent(sessionId, 'assistant');
       clearStreamingEvent(sessionId, 'thinking');
     }

@@ -22,17 +22,18 @@ jest.mock('../../planner/FolderWorkspaceReadOverlay', () => ({
     { testID: 'overlay-frame' },
     children,
   ),
-  CardDetailChatPanes: ({ hideChat, sessionId, active, onCloseChat }: any) => require('react').createElement(
+  CardDetailChatPanes: ({ hideChat, sessionId, active, onCloseChat, ownsSessionConnection }: any) => require('react').createElement(
     require('react-native').View,
     null,
     require('react').createElement(require('react-native').View, { testID: 'task-workspace-task-pane' }),
     require('react').createElement(require('react-native').View, { testID: 'task-workspace-chat-pane' },
-      hideChat ? null : require('react').createElement(require('../../split/ChatPane').ChatPane, { sessionId, active, onClose: onCloseChat })),
+      hideChat ? null : require('react').createElement(require('../../split/ChatPane').ChatPane,
+        { sessionId, active, onClose: onCloseChat, ownsSessionConnection })),
   ),
 }));
 
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 import { useCardStore } from '../../../store/cardStore';
 import { useUIStore } from '../../../store/uiStore';
 import { PersistentSessionCardOverlay } from '../PersistentSessionCardOverlay';
@@ -53,35 +54,29 @@ test('iPad 상세 패널은 담당 세션을 독립된 대화 pane에 전달한�
   expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
   expect(screen.getByTestId('overlay-chat-pane').props.sessionId).toBe('assigned-1');
   expect(screen.getByTestId('overlay-chat-pane').props.active).toBe(true);
+  expect(screen.getByTestId('overlay-chat-pane').props.ownsSessionConnection).toBe(true);
   expect(useUIStore.getState().activeSessionId).toBe('pas-1');
 });
 
-test('담당 세션이 PAS 자체면 대화 pane을 비운다', () => {
+test('담당이 PAS 자신이어도 대화 pane을 렌더하고 배경 ChatBody가 연결을 소유한다', () => {
   useCardStore.setState({ details: { 'card-1': { card: {
     id: 'card-1', assigneeKind: 'session', assigneeSessionId: 'pas-1',
   } } as any } });
   const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" onClose={jest.fn()} />);
 
   expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
-  expect(screen.getByTestId('task-workspace-chat-pane').children).toHaveLength(0);
-  expect(screen.queryByTestId('overlay-chat-pane')).toBeNull();
+  expect(screen.getByTestId('task-workspace-chat-pane').children).toHaveLength(1);
+  expect(screen.getByTestId('overlay-chat-pane').props.sessionId).toBe('pas-1');
+  expect(screen.getByTestId('overlay-chat-pane').props.active).toBe(true);
+  expect(screen.getByTestId('overlay-chat-pane').props.ownsSessionConnection).toBe(false);
 });
 
-test('iPhone은 기존 detail segmented control로 대화를 열고 닫기를 PAS 활성 세션에 반영하지 않는다', () => {
+test('iPhone에서는 태블릿 카드 패널 오버레이를 렌더하지 않는다', () => {
   mockDeviceType = 'phone';
-  const close = jest.fn();
-  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" onClose={close} />);
+  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" onClose={jest.fn()} />);
 
-  expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
-  expect(screen.getByTestId('overlay-chat-pane', { includeHiddenElements: true }).props.active).toBe(false);
-  fireEvent.press(screen.getByTestId('settings-segment-persistent-card-overlay-conversation'));
-  expect(screen.getByTestId('overlay-chat-pane', { includeHiddenElements: true }).props.sessionId).toBe('assigned-1');
-  expect(screen.getByTestId('overlay-chat-pane').props.active).toBe(true);
-  fireEvent.press(screen.getByTestId('settings-segment-persistent-card-overlay-card'));
-  expect(screen.getByTestId('overlay-chat-pane', { includeHiddenElements: true }).props.active).toBe(false);
-  fireEvent.press(screen.getByTestId('overlay-card-detail'));
-  expect(screen.getByTestId('overlay-chat-pane', { includeHiddenElements: true }).props.sessionId).toBe('selected-session');
-  expect(useUIStore.getState().activeSessionId).toBe('pas-1');
+  expect(screen.queryByTestId('overlay-frame')).toBeNull();
+  expect(screen.queryByTestId('overlay-chat-pane')).toBeNull();
 });
 
 test('담당 세션이 없는 카드는 기존 대화 빈 상태를 사용한다', () => {
