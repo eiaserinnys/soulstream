@@ -145,6 +145,8 @@ function Gallery() {
     const sample = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('sample') : null;
     const persistentContent = sample === 'n7-task-list'
       ? <ReviewPersistentTaskListN7 />
+      : sample === 'card-overlay'
+        ? <ReviewPersistentCardOverlay />
       : sample === 'turn-end'
         ? <ReviewTurnEndCaptions />
         : sample === 'agent-messages'
