@@ -26,6 +26,7 @@ import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
 import { useChatTypography } from "./chat/useChatTypography";
 import { SuggestionChip } from "./SuggestionChip";
 import { Button } from "./ui/button";
+import { DashboardIconCap } from "./DashboardIconCap";
 import { ChatInputComposer } from "./chat/ChatInputComposer";
 import { mergePendingTextIntoComposer, type PendingChatSendActions } from "./chat/pending-chat-send";
 import type { PendingChatSend } from "../stores/dashboard-store-types";
@@ -320,24 +321,40 @@ export function ChatInput({
   const composer = (
     <ChatInputComposer presentation={presentation}>
       {showInterrupt && (
-        <Button
-          data-slot={presentation === "manuscript" ? "chat-interrupt-button" : undefined}
-          variant="destructive-outline"
-          size="icon"
-          onClick={() => void interruptSession()}
-          disabled={interruptDisabled}
-          title="Stop running conversation"
-          aria-label="Stop running conversation"
-          className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"
-        >
-          {interrupting ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Square className="h-4 w-4 fill-current" aria-hidden="true" />
-          )}
-        </Button>
+        presentation === "manuscript" ? (
+          <DashboardIconCap
+            size="small"
+            appearance="bare"
+            label="Stop running conversation"
+            disabled={interruptDisabled}
+            onClick={() => void interruptSession()}
+            className="shrink-0 self-end text-foreground disabled:text-muted-foreground"
+          >
+            {interrupting ? (
+              <Loader2 className="size-5 animate-spin" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+            ) : (
+              <Square className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+            )}
+          </DashboardIconCap>
+        ) : (
+          <Button
+            variant="destructive-outline"
+            size="icon"
+            onClick={() => void interruptSession()}
+            disabled={interruptDisabled}
+            title="Stop running conversation"
+            aria-label="Stop running conversation"
+            className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"
+          >
+            {interrupting ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Square className="h-4 w-4 fill-current" aria-hidden="true" />
+            )}
+          </Button>
+        )
       )}
-      {effectiveFileUploadUrl && <PaperclipButton onClick={() => fileInputRef.current?.click()} />}
+      {effectiveFileUploadUrl && <PaperclipButton presentation={presentation} onClick={() => fileInputRef.current?.click()} />}
       <ChatInputEditor
         ref={textareaRef}
         text={text}
@@ -352,6 +369,7 @@ export function ChatInput({
         buttonVariant={mode.buttonVariant}
         disabled={isDisabled}
         textareaDisabled={textareaDisabled}
+        presentation={presentation}
         onPaste={event => {
           if (effectiveFileUploadUrl && !textareaDisabled && !sending) handleClipboardFiles(event, addFiles);
         }}

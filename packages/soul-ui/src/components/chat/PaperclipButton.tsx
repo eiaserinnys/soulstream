@@ -9,18 +9,23 @@ import { DashboardIconCap } from "../DashboardIconCap";
 interface PaperclipButtonProps {
   onClick: () => void;
   disabled?: boolean;
+  presentation?: "default" | "manuscript";
 }
 
-export function PaperclipButton({ onClick, disabled }: PaperclipButtonProps) {
+export function PaperclipButton({ onClick, disabled, presentation = "default" }: PaperclipButtonProps) {
   return (
     <DashboardIconCap
       size="small"
+      appearance={presentation === "manuscript" ? "bare" : "default"}
       label="Attach files"
       disabled={disabled}
       onClick={onClick}
       className="self-end"
     >
-      <Paperclip className="h-4 w-4" aria-hidden="true" />
+      <Paperclip className={presentation === "manuscript" ? "size-5" : "h-4 w-4"}
+        strokeWidth={presentation === "manuscript" ? 1.4 : undefined}
+        absoluteStrokeWidth={presentation === "manuscript"}
+        aria-hidden="true" />
     </DashboardIconCap>
   );
 }

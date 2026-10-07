@@ -19,7 +19,9 @@
 
 import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type RefObject } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { ArrowDown } from "lucide-react";
 import { useDashboardStore } from "../../stores/dashboard-store";
+import { DashboardIconCap } from "../DashboardIconCap";
 import { flattenTree } from "../../lib/flatten-tree";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
@@ -870,12 +872,24 @@ export function ChatView({
 
       {showNewMessage && !isFollowing && (
         <div className="relative">
-          <button
-            onClick={scrollToBottom}
-            className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {"\u2193"} New Messages
-          </button>
+          {presentation === "manuscript" ? (
+            <DashboardIconCap
+              appearance="bare"
+              label="새 메시지로 이동"
+              onClick={scrollToBottom}
+              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 text-muted-foreground"
+              style={{ backgroundColor: "var(--persistent-session-panel)" }}
+            >
+              <ArrowDown className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+            </DashboardIconCap>
+          ) : (
+            <button
+              onClick={scrollToBottom}
+              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {"\u2193"} New Messages
+            </button>
+          )}
         </div>
       )}
 

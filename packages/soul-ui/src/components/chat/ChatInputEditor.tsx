@@ -11,8 +11,10 @@ import { forwardRef, type KeyboardEvent, type ClipboardEventHandler } from "reac
 import { SendHorizontal } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { Button, type ButtonVariant } from "../ui/button";
+import { DashboardIconCap } from "../DashboardIconCap";
 
 interface ChatInputEditorProps {
+  presentation?: "default" | "manuscript";
   inputLabel?: string;
   onPaste?: ClipboardEventHandler<HTMLTextAreaElement>;
   text: string;
@@ -32,6 +34,7 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
   function ChatInputEditor(
     {
       text,
+      presentation = "default",
       inputLabel,
       onPaste,
       onChangeText,
@@ -84,17 +87,25 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
             )}
           />
         </div>
-        <ChatSendButton onSend={onSend} disabled={disabled} label={buttonLabel} variant={buttonVariant} />
+        <ChatSendButton onSend={onSend} disabled={disabled} label={buttonLabel} variant={buttonVariant} presentation={presentation} />
       </>
     );
   },
 );
 
 /** The chat send control, also used by card handoff. Size and icon stay canonical here. */
-export function ChatSendButton({ onSend, disabled, label, variant = "default", className }: {
+export function ChatSendButton({ onSend, disabled, label, variant = "default", presentation = "default", className }: {
  onSend(): void; disabled: boolean; label: string;
- variant?: Extract<ButtonVariant, "default" | "success" | "warning">; className?: string;
+ variant?: Extract<ButtonVariant, "default" | "success" | "warning">; presentation?: "default" | "manuscript"; className?: string;
 }) {
+ if (presentation === "manuscript") {
+  return <DashboardIconCap data-testid="send-button" data-button-variant={variant}
+   size="small" appearance="bare" onClick={onSend} disabled={disabled} label={label}
+   className={cn("shrink-0 self-end text-foreground disabled:text-muted-foreground", className)}>
+   <SendHorizontal className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+  </DashboardIconCap>;
+ }
+
  return <Button data-testid="send-button" onClick={onSend} disabled={disabled} size="icon"
   variant={variant} aria-label={label} title={label} data-button-variant={variant}
   className={cn("shrink-0 self-end rounded-full", className)}>

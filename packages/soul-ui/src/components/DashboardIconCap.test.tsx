@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardIconCap } from "./DashboardIconCap";
 
 const glass = vi.hoisted(() => ({
-  surface: vi.fn((_ref: { current: HTMLButtonElement | null }, _options: { enabled: boolean }) => true),
+  surface: vi.fn((_ref: { current: HTMLButtonElement | null }, options: { enabled: boolean }) => options.enabled),
   lens: vi.fn((_ref: { current: HTMLButtonElement | null }, _options: { scale: number; enabled: boolean }) => {}),
 }));
 vi.mock("./LiquidGlassProvider", () => ({ useGlassSurface: glass.surface }));
@@ -48,6 +48,26 @@ describe("DashboardIconCap", () => {
 
     button?.click();
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the bare appearance without activating glass or lens surfaces", () => {
+    flushSync(() => root.render(
+      <DashboardIconCap appearance="bare" size="small" label="새 메시지로 이동" disabled>
+        <span aria-hidden="true">↓</span>
+      </DashboardIconCap>,
+    ));
+
+    const button = container.querySelector<HTMLButtonElement>("button");
+    expect(button?.className).toContain("dashboard-icon-cap--bare");
+    expect(button?.className).toContain("dashboard-icon-cap--small");
+    expect(button?.className).not.toContain("glass-strong");
+    expect(button?.className).not.toContain("lg-rim");
+    expect(button?.getAttribute("data-appearance")).toBe("bare");
+    expect(button?.getAttribute("aria-label")).toBe("새 메시지로 이동");
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute("data-liquid-glass-webgl")).toBeNull();
+    expect(glass.surface.mock.lastCall?.[1]).toEqual({ enabled: false });
+    expect(glass.lens.mock.lastCall?.[1]).toEqual({ scale: 22, enabled: false });
   });
 
   it("connects an external object ref and the internal glass ref to the same button", () => {

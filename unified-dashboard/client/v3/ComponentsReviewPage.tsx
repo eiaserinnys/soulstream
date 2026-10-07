@@ -40,6 +40,7 @@ import { PersistentSessionScreenReviewSample } from './PersistentSessionScreenRe
 import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSessionPortraitToggleReviewSample";
+import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -290,6 +291,7 @@ export function ComponentsReviewPage() {
           <section id="components-controls" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>선택과 설정</h3></div>
             <div className="v3-components-samples">
+            <Sample name="DashboardIconCap" state="bare · 44/small 32 · hover/pressed/포커스/비활성"><DashboardIconCapBareReviewSample/></Sample>
             <Sample name="ProjectNavigationTree / FolderPicker" state="같은 폴더 이름 영역 · 로컬 선택">
               <div className="v3-nav-list"><ProjectNavigationTree folders={reviewFolders} selectedFolderId={folder.id}
                 isExpanded={id => expandedFolders.has(id)} onToggleExpanded={id => setExpandedFolders(current => {

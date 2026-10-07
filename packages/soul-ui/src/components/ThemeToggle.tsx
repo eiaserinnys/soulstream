@@ -6,12 +6,16 @@
  */
 
 import { useCallback } from "react";
+import { Moon, Sun } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import { cn } from "../lib/cn";
 import { DashboardIconCap } from "./DashboardIconCap";
 
 /** 컴팩트 테마 토글 — 헤더 우상단 배치용 */
-export function ThemeToggle({ variant = "default" }: { variant?: "default" | "chrome" }) {
+export function ThemeToggle({
+  variant = "default",
+  appearance = "default",
+}: { variant?: "default" | "chrome"; appearance?: "default" | "bare" }) {
   const [theme, setTheme] = useTheme();
 
   const toggle = useCallback(() => {
@@ -21,7 +25,7 @@ export function ThemeToggle({ variant = "default" }: { variant?: "default" | "ch
   const isDark = theme === "dark";
 
   if (variant === "chrome") {
-    return <ChromeThemeToggle isDark={isDark} onToggle={toggle} />;
+    return <ChromeThemeToggle isDark={isDark} onToggle={toggle} appearance={appearance} />;
   }
 
   return (
@@ -41,13 +45,22 @@ export function ThemeToggle({ variant = "default" }: { variant?: "default" | "ch
   );
 }
 
-function ChromeThemeToggle({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
+function ChromeThemeToggle({
+  isDark,
+  onToggle,
+  appearance,
+}: { isDark: boolean; onToggle: () => void; appearance: "default" | "bare" }) {
   return (
     <DashboardIconCap
       label={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
+      appearance={appearance}
       onClick={onToggle}
     >
-      <span aria-hidden="true" className="text-base leading-none">◐</span>
+      {appearance === "bare" ? (
+        isDark
+          ? <Sun className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+          : <Moon className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+      ) : <span aria-hidden="true" className="text-base leading-none">◐</span>}
     </DashboardIconCap>
   );
 }
