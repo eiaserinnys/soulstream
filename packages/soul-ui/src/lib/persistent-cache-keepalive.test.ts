@@ -63,13 +63,88 @@ describe("cache keepalive transcript projection", () => {
       "앞 사람 입력",
       "앞 사람 답",
       "턴 완료",
+      "새 세대",
       keepaliveText,
       "새 세대",
       "같은 글의 사람 답",
       "턴 완료",
     ]);
-    expect(visible.some((message) => message.contextReset)).toBe(true);
+    expect(visible.filter((message) => message.treeNodeType === "generation_started")).toHaveLength(2);
+    expect(visible.some((message) => message.content === "ok")).toBe(false);
     expect(visible.find((message) => message.treeNodeType === "complete" && message.sessionCostUsd === 0.05)?.sessionCostUsd).toBe(0.05);
     expect(visible.some((message) => message.persistentInstructionRecorded !== undefined)).toBe(false);
+  });
+
+  it("keeps a generation divider after the keepalive complete visible", () => {
+    const messages = projectPersistentTurnUsage(transcript([
+      { type: "user_message", input_id: "keepalive", text: keepaliveText, purpose: "cache_keepalive" },
+      { type: "assistant_message", content: "ok" },
+      { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.01 },
+      { type: "generation_started", context_reset: true },
+      { type: "user_message", input_id: "human", text: "사람 입력" },
+      { type: "assistant_message", content: "사람 답" },
+      { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.02 },
+    ] as SoulSSEEvent[]), true);
+
+    const visible = projectPersistentChatDisplayMessages(messages, {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+    });
+    expect(visible.map((message) => message.treeNodeType)).toContain("generation_started");
+    expect(visible.map((message) => message.content)).toContain("사람 입력");
+    expect(visible.map((message) => message.content)).toContain("사람 답");
+  });
+
+  it("keeps unanchored rows after complete but hides rows anchored to the keepalive input", () => {
+    const messages = projectPersistentTurnUsage(transcript([
+      { type: "user_message", input_id: "keepalive", text: keepaliveText, purpose: "cache_keepalive" },
+      { type: "assistant_message", content: "ok" },
+      { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.01 },
+      { type: "system_message", text: "unanchored after complete" },
+      {
+        type: "debug",
+        kind: "persistent_instruction_recorded",
+        input_id: "keepalive",
+        timestamp: 1700000000,
+        instructions: [{ id: "record-1", text: "hidden caption", source_turns: ["T1"], action: "added" }],
+        cap_reached: false,
+      },
+      {
+        type: "debug",
+        kind: "persistent_jev_candidates",
+        timestamp: 1700000001,
+        observation: {
+          input_id: "keepalive",
+          selected: [],
+          candidate_counts: { turn_summaries: 0, cards: 0, search_sessions: 0, recent_completed_sessions: 0 },
+          model: "jev-latest",
+          latency_ms: 20,
+          top_raw_score: 1.9,
+        },
+      },
+      { type: "user_message", input_id: "human", text: "사람 입력" },
+    ] as SoulSSEEvent[]), true);
+
+    const visible = projectPersistentChatDisplayMessages(messages, {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+    });
+    expect(visible.some((message) => message.content === "unanchored after complete")).toBe(true);
+    expect(visible.some((message) => message.treeNodeType === "persistent_jev_candidates")).toBe(false);
+    expect(visible.some((message) => message.persistentInstructionRecorded !== undefined)).toBe(false);
+  });
+
+  it("keeps a keepalive error row visible while hiding its input", () => {
+    const messages = projectPersistentTurnUsage(transcript([
+      { type: "user_message", input_id: "keepalive", text: keepaliveText, purpose: "cache_keepalive" },
+      { type: "error", error: "rate limited", is_error: true },
+    ] as SoulSSEEvent[]), true);
+
+    const visible = projectPersistentChatDisplayMessages(messages, {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+    });
+    expect(visible.some((message) => message.treeNodeType === "user_message")).toBe(false);
+    expect(visible.some((message) => message.treeNodeType === "error")).toBe(true);
   });
 });

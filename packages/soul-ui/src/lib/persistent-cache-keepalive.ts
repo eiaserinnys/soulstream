@@ -14,17 +14,33 @@ export function isCacheKeepaliveInput(value: unknown): boolean {
     || payload?.purpose === CACHE_KEEPALIVE_PURPOSE;
 }
 
-/** Removes each marked input and every row through the next model input. */
-export function projectCacheKeepaliveTurns<T extends Pick<ChatMessage, "treeNodeType" | "cacheKeepalive">>(
+/** Hides each marked turn through its terminal while preserving dividers and unrelated anchored rows. */
+export function projectCacheKeepaliveTurns<T extends Pick<ChatMessage, "treeNodeType" | "cacheKeepalive">
+  & Partial<Pick<ChatMessage, "inputId" | "preparedInputId">>>(
   messages: T[],
 ): T[] {
+  const hiddenInputIds = new Set<string>();
   let hidingKeepaliveTurn = false;
   return messages.filter((message) => {
     const isInput = message.treeNodeType === "user_message" || message.treeNodeType === "intervention";
     if (isInput) {
       hidingKeepaliveTurn = message.cacheKeepalive === true;
+      if (hidingKeepaliveTurn && message.inputId) hiddenInputIds.add(message.inputId);
       return !hidingKeepaliveTurn;
     }
-    return !hidingKeepaliveTurn;
+
+    if (message.treeNodeType === "generation_started") return true;
+    if (hidingKeepaliveTurn && message.treeNodeType === "complete") {
+      hidingKeepaliveTurn = false;
+      return false;
+    }
+    if (hidingKeepaliveTurn && message.treeNodeType === "error") {
+      hidingKeepaliveTurn = false;
+      return true;
+    }
+    if (hidingKeepaliveTurn) return false;
+
+    const anchorIds = [message.inputId, message.preparedInputId];
+    return !anchorIds.some((inputId) => inputId !== undefined && hiddenInputIds.has(inputId));
   });
 }
