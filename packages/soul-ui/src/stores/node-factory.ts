@@ -37,6 +37,7 @@ import type {
 import { formatRetryingErrorHistory } from "@shared/sse-events";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
+import { isCacheKeepaliveInput } from "../lib/persistent-cache-keepalive";
 import { isPersistentJevCandidatesDebugEvent } from "../lib/persistent-jev-candidates";
 import { isPersistentInstructionRecordedDebugEvent } from "../lib/persistent-instruction-recorded";
 import type { ProcessingContext } from "./processing-context";
@@ -132,6 +133,7 @@ export function createNodeFromEvent(
         agentInfo: agentInfoFromCi ?? agentInfoLegacy,
         callerInfo: ci,
         inputId: e.input_id,
+        cacheKeepalive: isCacheKeepaliveInput(e),
       });
     }
 
@@ -146,6 +148,7 @@ export function createNodeFromEvent(
       return makeNode(`generation-started-${eventId}`, "generation_started", "새 세대", {
         completed: true,
         timestamp: event.timestamp,
+        contextReset: event.context_reset,
       });
     }
 
@@ -192,6 +195,7 @@ export function createNodeFromEvent(
         agentInfo,
         callerInfo: ci,
         inputId: e.input_id,
+        cacheKeepalive: isCacheKeepaliveInput(e),
       });
     }
 

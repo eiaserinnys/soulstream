@@ -28,6 +28,7 @@ import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-c
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
 import { projectManuscriptAgentMessages } from "../../lib/manuscript-agent-message-projection";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
+import { projectCacheKeepaliveTurns } from "../../lib/persistent-cache-keepalive";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
@@ -54,7 +55,7 @@ import {
 } from "./ChatView.follow-helpers";
 import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
 import { useChatTypography } from "./useChatTypography";
-import { buildChatTimelineItems } from "./ChatView.thinking-indicator";
+import { buildChatTimelineItems, type ChatTimelineItem } from "./ChatView.thinking-indicator";
 import { ChatHistoryStatus } from "./ChatHistoryStatus";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import type { PendingChatSendActions } from "./pending-chat-send";
@@ -65,6 +66,10 @@ interface ChatViewProps {
   historyEnabled?: boolean;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
+}
+
+function isGenerationDivider(item: ChatTimelineItem): boolean {
+  return item.type === "single" && item.msg.treeNodeType === "generation_started";
 }
 
 function canNestedScrollerConsumeVerticalInput(
@@ -157,12 +162,13 @@ export function ChatView({
     [isManuscript, tree, treeVersion],
   );
   const transcriptMessages = useMemo(
-    () => isManuscript
-      ? projectPersistentTurnUsage(
+    () => {
+      if (!isManuscript) return messages;
+      const cacheKeepaliveFiltered = projectCacheKeepaliveTurns(
         projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
-        showTurnUsage,
-      )
-      : messages,
+      );
+      return projectPersistentTurnUsage(cacheKeepaliveFiltered, showTurnUsage);
+    },
     [isManuscript, messages, showTurnUsage],
   );
   const visibleMessages = useMemo(
@@ -570,6 +576,10 @@ export function ChatView({
       prevVisibleItemsRef.current,
       timelineItems,
     );
+    const newMessageItemsChanged = !areMessageGroupsRenderEqual(
+      prevVisibleItemsRef.current.filter((item) => !isGenerationDivider(item)),
+      timelineItems.filter((item) => !isGenerationDivider(item)),
+    );
     prevVisibleItemsRef.current = timelineItems;
     // 미로딩 anchor summary와 duplicate/reload는 treeVersion만 바꿀 수 있다.
     // 실제 렌더 행의 reference가 그대로면 follow 좌표와 banner를 건드리지 않는다.
@@ -600,7 +610,7 @@ export function ChatView({
       });
       return;
     }
-    if (!isFollowingRef.current && timelineItems.length > 0) {
+    if (!isFollowingRef.current && timelineItems.length > 0 && newMessageItemsChanged) {
       setShowNewMessage(true);
     }
   }, [

@@ -297,6 +297,11 @@ async function addLiveUserMessage(eventId: number): Promise<void> {
   await flushPassiveEffects();
 }
 
+async function addLiveEvent(event: SoulSSEEvent, eventId: number): Promise<void> {
+  flushSync(() => useDashboardStore.getState().processEvent(event, eventId));
+  await flushPassiveEffects();
+}
+
 function flushPassiveEffects(): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, 0);
@@ -466,6 +471,52 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(geometry.scrollTo).not.toHaveBeenCalled();
   });
 
+  it("does not show the new-message button for any event in a cache-keepalive turn", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    const geometry = configureScroller(container, {
+      scrollHeight: 800,
+      clientHeight: 400,
+      scrollTop: 400,
+    });
+    flushSync(() => {
+      geometry.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+      geometry.scroller.scrollTop = 250;
+      reportAtBottom(false);
+    });
+    await flushPassiveEffects();
+
+    const keepaliveEvents = [
+      {
+        type: "user_message",
+        input_id: "keepalive-1001",
+        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+        purpose: "cache_keepalive",
+      },
+      { type: "generation_started", context_reset: true },
+      { type: "assistant_message", text: "ok" },
+      { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.01, session_cost_usd: 0.04 },
+      {
+        type: "debug",
+        kind: "persistent_instruction_recorded",
+        input_id: "keepalive-1001",
+        timestamp: 1,
+        instructions: [{ id: "record-1001", text: "Keep notes concise", source_turns: ["T12"], action: "added" }],
+        cap_reached: false,
+      },
+    ] as unknown as SoulSSEEvent[];
+    for (const [index, event] of keepaliveEvents.entries()) {
+      await addLiveEvent(event, 1001 + index);
+      expect(container.querySelector('[aria-label="새 메시지로 이동"]')).toBeNull();
+    }
+
+    await addLiveUserMessage(1006);
+
+    expect(container.querySelector('[aria-label="새 메시지로 이동"]')).not.toBeNull();
+    expect(virtuosoMock.props?.followOutput).toBe(false);
+    expect(geometry.scrollTo).not.toHaveBeenCalled();
+  });
+
   it.each(["threshold", "returned-to-bottom"] as const)(
     "(라) 기본 모양은 %s 경로에서 기존처럼 새 메시지 버튼을 보인다",
     async (scenario) => {
@@ -586,6 +637,61 @@ describe("ChatView long-session initial bottom focus", () => {
     const error = virtuosoData().find(item => item.type === "single" && item.msg.treeNodeType === "error");
     expect(Boolean(complete?.msg.turnUsageCaption)).toBe(expected);
     expect(Boolean(error?.msg.turnUsageCaption)).toBe(expected);
+  });
+
+  it("keeps unanchored rows visible after a keepalive complete when manuscript usage is off", async () => {
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("sess-long", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      show_turn_usage: false,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      { eventId: 1, event: { type: "user_message", input_id: "keepalive", text: "keepalive input", purpose: "cache_keepalive", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 2, event: { type: "assistant_message", content: "ok", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 3, event: { type: "complete", result: "done", attachments: [], timestamp: 0 } as SoulSSEEvent },
+      { eventId: 4, event: { type: "system_message", text: "after keepalive", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 5, event: { type: "user_message", input_id: "human", text: "human input", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 6, event: { type: "assistant_message", content: "human answer", timestamp: 0 } as SoulSSEEvent },
+    ]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+
+    const visibleMessages = virtuosoData().flatMap((item: any) => (
+      item.type === "single" ? [item.msg] : []
+    ));
+    const visibleContent = visibleMessages.map((message: any) => message.content);
+    expect(visibleContent).toContain("after keepalive");
+    expect(visibleContent).toContain("human input");
+    expect(visibleContent).toContain("human answer");
+    expect(visibleContent).not.toContain("keepalive input");
+    expect(visibleContent).not.toContain("ok");
+  });
+
+  it("shows a human turn after a keepalive without a complete when manuscript usage is off", async () => {
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("sess-long", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      show_turn_usage: false,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      { eventId: 1, event: { type: "user_message", input_id: "keepalive", text: "keepalive input", purpose: "cache_keepalive", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 2, event: { type: "assistant_message", content: "ok", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 3, event: { type: "user_message", input_id: "human", text: "human input", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 4, event: { type: "assistant_message", content: "human answer", timestamp: 0 } as SoulSSEEvent },
+    ]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+
+    const visibleMessages = virtuosoData().flatMap((item: any) => (
+      item.type === "single" ? [item.msg] : []
+    ));
+    const visibleContent = visibleMessages.map((message: any) => message.content);
+    expect(visibleContent).toContain("human input");
+    expect(visibleContent).toContain("human answer");
+    expect(visibleContent).not.toContain("keepalive input");
+    expect(visibleContent).not.toContain("ok");
   });
 
   it.each(["manuscript", "default"] as const)("settles a single-pixel bottom gap in %s without changing the default tolerance", async presentation => {

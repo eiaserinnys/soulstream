@@ -96,6 +96,46 @@ describe("createNodeFromEvent", () => {
       expect(node!.children).toEqual([]);
     });
 
+    it.each([
+      [{ purpose: "cache_keepalive" }, true],
+      [{ payload: { purpose: "cache_keepalive" } }, true],
+      [{ purpose: "other" }, false],
+      [{}, false],
+    ])("marks only cache keepalive user inputs: %j", (marker, expected) => {
+      const node = createNodeFromEvent({
+        type: "user_message",
+        text: "same input text",
+        ...marker,
+      } as UserMessageEvent, 200);
+
+      expect((node as UserMessageNode).cacheKeepalive).toBe(expected);
+    });
+
+    it("marks cache keepalive intervention inputs from the server route", () => {
+      const node = createNodeFromEvent({
+        type: "intervention_sent",
+        text: "ok",
+        user: "scheduler",
+        purpose: "cache_keepalive",
+      } as InterventionSentEvent, 202);
+
+      expect((node as InterventionNode).cacheKeepalive).toBe(true);
+    });
+
+    it.each([
+      [{ context_reset: true }, true],
+      [{ context_reset: false }, false],
+      [{}, undefined],
+    ])("preserves the generation context reset flag: %j", (eventFields, expected) => {
+      const node = createNodeFromEvent({
+        type: "generation_started",
+        timestamp: 1700000000,
+        ...eventFields,
+      } as SoulSSEEvent, 201);
+
+      expect(node).toMatchObject({ type: "generation_started", contextReset: expected });
+    });
+
     it("should extract content from messages when text is absent (LLM session)", () => {
       const event: UserMessageEvent = {
         type: "user_message",

@@ -63,6 +63,8 @@ export interface ChatMessage {
     treeNodeId: string;
     content: string;
   };
+  cacheKeepalive?: boolean;
+  contextReset?: boolean;
   timestamp?: number;
   /** thinking 전용: 접기 토글에 표시할 내면 사고 텍스트 */
   thinkingContent?: string;
@@ -232,6 +234,8 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.summaryFinalResponseEventId === b.summaryFinalResponseEventId &&
     a.summaryParentEventId === b.summaryParentEventId
     && a.inputId === b.inputId
+    && a.cacheKeepalive === b.cacheKeepalive
+    && a.contextReset === b.contextReset
     && a.preparedInputId === b.preparedInputId
     && a.assignedCardCount === b.assignedCardCount
     && a.jevCandidates === b.jevCandidates
@@ -339,6 +343,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
         inputId: n.inputId,
+        cacheKeepalive: n.cacheKeepalive,
       };
     }
 
@@ -389,6 +394,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
         inputId: n.inputId,
+        cacheKeepalive: n.cacheKeepalive,
       };
     }
 
@@ -564,7 +570,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
 
     case "generation_started": {
       const n = node as GenerationStartedNode;
-      return { id: n.id, role: "system", content: n.content, timestamp: n.timestamp, treeNodeId: n.id, treeNodeType: n.type };
+      return { id: n.id, role: "system", content: n.content, timestamp: n.timestamp, treeNodeId: n.id, treeNodeType: n.type, contextReset: n.contextReset };
     }
 
     case "persistent_jev_candidates": {

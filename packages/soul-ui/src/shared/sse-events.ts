@@ -46,6 +46,8 @@ export interface InterventionSentEvent {
   type: "intervention_sent";
   user: string;
   text: string;
+  purpose?: unknown;
+  payload?: { purpose?: unknown };
   /** 준비된 모델 입력과 공개 입력 행을 정확히 결합하는 식별자. */
   input_id?: string;
   /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
@@ -116,6 +118,8 @@ export interface CallerInfo {
 /** 사용자가 보낸 초기 프롬프트 (세션 시작 시 대시보드가 생성) */
 export interface UserMessageEvent {
   type: "user_message";
+  purpose?: unknown;
+  payload?: { purpose?: unknown };
   /** 준비된 모델 입력과 공개 입력 행을 정확히 결합하는 식별자. */
   input_id?: string;
   /** Claude 세션: 프롬프트 전체 텍스트 */
