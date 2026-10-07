@@ -9,6 +9,7 @@ import {
 import type { SessionEvent } from '../../api/types';
 import type {
   ChatRenderItem,
+  PersistentInstructionRecordedCaption,
   TurnEndCaptionsRenderItem,
   TurnSummaryRenderItem,
   TurnUsageCaption,
@@ -25,7 +26,22 @@ export function projectPersistentTurnUsage(
   const pairsByTerminalId = new Map(
     pairTurnUsage(events).map((pair) => [String(pair.terminalId), pair]),
   );
+  const instructionsByCompleteId = new Map<string, PersistentInstructionRecordedCaption>();
+  for (const item of items) {
+    if (
+      item.kind === 'turn-end-captions'
+      && item.event.type === 'complete'
+      && item.persistentInstructionRecorded
+    ) instructionsByCompleteId.set(item.event.id, item.persistentInstructionRecorded);
+  }
   const manuscriptItems = items.flatMap((item): ChatRenderItem[] => {
+    if (
+      item.kind === 'turn-end-captions'
+      && item.event.type === 'complete'
+      && item.persistentInstructionRecorded
+      && !item.usage
+      && !item.summaries?.length
+    ) return [];
     if (item.kind === 'turn-summary' && isEmptyAssignedCardContextSnapshot(item)) return [];
     if ((item.kind === 'event' || item.kind === 'tool') && item.summaries) {
       const summaries = item.summaries.filter(
@@ -104,8 +120,9 @@ export function projectPersistentTurnUsage(
         ? makeTurnUsageCaption(pair?.contextUsage, item.event.data)
         : null;
       const summaries = summariesByCompleteIndex.get(index);
-      if (usage || summaries?.length) {
-        projected.push(makeTurnEndItem(item, usage, summaries));
+      const persistentInstructionRecorded = instructionsByCompleteId.get(item.event.id);
+      if (usage || summaries?.length || persistentInstructionRecorded) {
+        projected.push(makeTurnEndItem(item, usage, summaries, persistentInstructionRecorded));
       }
       continue;
     }
@@ -166,6 +183,7 @@ function makeTurnEndItem(
   item: Extract<ChatRenderItem, { kind: 'event' }>,
   usage: TurnUsageCaption | null,
   summaries: TurnSummaryRenderItem[] | undefined,
+  persistentInstructionRecorded?: PersistentInstructionRecordedCaption,
 ): TurnEndCaptionsRenderItem {
   return {
     kind: 'turn-end-captions',
@@ -173,6 +191,7 @@ function makeTurnEndItem(
     key: item.key,
     ...(usage ? { usage } : {}),
     ...(summaries?.length ? { summaries } : {}),
+    ...(persistentInstructionRecorded ? { persistentInstructionRecorded } : {}),
   };
 }
 

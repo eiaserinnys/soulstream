@@ -7,6 +7,7 @@ import {
 } from '../../store/chatStore';
 import { placeJevCandidateCaptions, placeTurnSummaries } from './turnSummaryProjection';
 import type { ManuscriptActivityRenderItem } from './manuscriptActivityProjection';
+import { placePersistentInstructionRecordedCaptions } from './persistentInstructionRecordedProjection';
 
 /** FlatList items: events, paired tools, turn captions, manuscript activity, and typing. */
 export type TurnSummaryRenderItem = {
@@ -47,6 +48,11 @@ export type TurnUsageCaption = {
   lines: string[];
 };
 
+export type PersistentInstructionRecordedCaption = {
+  instructions: Array<{ id: string; text: string; source_turns: string[] }>;
+  capReached: boolean;
+};
+
 export type TurnUsageRenderItem = TurnUsageCaption & {
   kind: 'turn-usage';
   event: SessionEvent;
@@ -60,6 +66,7 @@ export type TurnEndCaptionsRenderItem = {
   key: string;
   usage?: TurnUsageCaption;
   summaries?: TurnSummaryRenderItem[];
+  persistentInstructionRecorded?: PersistentInstructionRecordedCaption;
 };
 
 export type EventRenderItem = ChatEventRenderItem;
@@ -491,7 +498,8 @@ export function groupChatEvents(
   const withJevCandidateCaptions = displaySettings?.showJevCandidates === true
     ? placeJevCandidateCaptions(out, events)
     : out;
-  return placeTurnSummaries(withJevCandidateCaptions, events);
+  const withTurnSummaries = placeTurnSummaries(withJevCandidateCaptions, events);
+  return placePersistentInstructionRecordedCaptions(withTurnSummaries, events);
 }
 
 export function placePendingOptimistic(

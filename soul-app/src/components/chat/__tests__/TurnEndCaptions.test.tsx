@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { TurnEndCaptions } from '../TurnEndCaptions';
-import type { TurnSummaryRenderItem } from '../groupChatEvents';
+import type { PersistentInstructionRecordedCaption, TurnSummaryRenderItem } from '../groupChatEvents';
 import { DESIGN_SPACING } from '../../../theme';
 
 const usage = {
@@ -17,6 +17,14 @@ const summaries: TurnSummaryRenderItem[] = [{
   key: 'turn-summary-40',
   content: '요약 본문',
 }];
+const instructionRecorded: PersistentInstructionRecordedCaption = {
+  instructions: [{
+    id: 'instruction-1',
+    text: 'Keep decisions in the session note',
+    source_turns: ['T195', 'T210'],
+  }],
+  capReached: true,
+};
 
 function textOrder(tree: ReturnType<typeof render>): string[] {
   return tree.getByTestId('turn-end-captions')
@@ -68,4 +76,43 @@ test('turn-end heads align to their surface edge and expanded bodies use the sma
   fireEvent.press(view.getByRole('button', { name: '요약' }));
   expect(StyleSheet.flatten(view.getByTestId('turn-end-captions-bodies').props.style).gap)
     .toBe(DESIGN_SPACING.sm);
+});
+
+test('persistent instruction uses the existing independent collapsed head after usage and summary', () => {
+  const view = render(
+    <TurnEndCaptions
+      usage={usage}
+      summaries={summaries}
+      persistentInstructionRecorded={instructionRecorded}
+    />,
+  );
+
+  const recordedHead = view.getByRole('button', { name: '📌 지속 지시로 기록했습니다' });
+  expect(recordedHead.props.accessibilityState).toEqual({ expanded: false });
+  expect(view.queryByText('Keep decisions in the session note (T195, T210)')).toBeNull();
+
+  fireEvent.press(view.getByRole('button', { name: usage.title }));
+  fireEvent.press(view.getByRole('button', { name: '요약' }));
+  fireEvent.press(recordedHead);
+
+  expect(view.getByText('Keep decisions in the session note (T195, T210)')).toBeTruthy();
+  expect(view.getByText('상한(50)에 닿아 더 기록하지 못했습니다')).toBeTruthy();
+  const text = textOrder(view);
+  expect(text.indexOf(usage.lines[0])).toBeLessThan(text.indexOf('요약 본문'));
+  expect(text.indexOf('요약 본문')).toBeLessThan(text.indexOf('Keep decisions in the session note (T195, T210)'));
+  expect(text.indexOf('Keep decisions in the session note (T195, T210)'))
+    .toBeLessThan(text.indexOf('상한(50)에 닿아 더 기록하지 못했습니다'));
+});
+
+test('cap-only event has the dedicated folded title and expands to the cap explanation', () => {
+  const view = render(
+    <TurnEndCaptions persistentInstructionRecorded={{ instructions: [], capReached: true }} />,
+  );
+
+  const recordedHead = view.getByRole('button', { name: '📌 지속 지시 상한에 닿았습니다' });
+  expect(recordedHead.props.accessibilityState).toEqual({ expanded: false });
+  expect(view.queryByText('상한(50)에 닿아 더 기록하지 못했습니다')).toBeNull();
+
+  fireEvent.press(recordedHead);
+  expect(view.getByText('상한(50)에 닿아 더 기록하지 못했습니다')).toBeTruthy();
 });
