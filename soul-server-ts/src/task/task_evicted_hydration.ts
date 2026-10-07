@@ -132,6 +132,7 @@ export function hydrateEvictedTaskFromSessionRow(
   const generationState = resolveGenerationState(
     extractPersistentGeneration(metadata),
     row.claude_session_id,
+    { modelPreset: row.model_preset, reasoningEffort: storedReasoningEffort.effort },
   );
   const rolloverCycleFrom = claudeBackendRollover.phase === "pending"
     ? claudeBackendRollover.previousSessionId

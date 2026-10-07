@@ -67,6 +67,10 @@ interface PreBootstrapFrameBuffer {
   bytes: number;
 }
 
+// A rejected command has not acquired lifecycle ownership. Storage errors keep
+// their existing terminal-commit path and must not be classified as rejections.
+class RunnerExecutionPreparationError extends Error {}
+
 export class RunnerChildRuntime {
   private endpoint!: RunnerSocketEndpoint;
   private outbox!: RunnerSqliteEventOutbox;
@@ -304,6 +308,7 @@ export class RunnerChildRuntime {
   ): Promise<void> {
     let terminalError: { code: string; message: string } | undefined;
     let storageFailure = false;
+    let preparationRejected = false;
     try {
       await this.prepareExecution(command);
       for await (const frame of this.dispatcher.events(command.commandId)) {
@@ -325,6 +330,7 @@ export class RunnerChildRuntime {
       }
     } catch (error) {
       await this.dispatcher.interrupt().catch(() => false);
+      preparationRejected = error instanceof RunnerExecutionPreparationError;
       storageFailure = isSqliteFullError(error);
       terminalError = {
         code: storageFailure ? "runner_storage_full" : "execution_failed",
@@ -332,7 +338,7 @@ export class RunnerChildRuntime {
       };
     }
     try {
-      await this.finishLifecycle(command, terminalError);
+      if (!preparationRejected) await this.finishLifecycle(command, terminalError);
     } catch (error) {
       this.logger.error({ err: error }, "Runner terminal lifecycle commit failed");
       storageFailure = true;
@@ -473,13 +479,13 @@ export class RunnerChildRuntime {
     const rolloverFrom = command.params.backendSessionRolloverFrom;
     if (rolloverFrom !== undefined) {
       if (!requiresBackendSessionId(this.config.backend)) {
-        throw new Error("runner backend session rollover requires native session IDs");
+        throw new RunnerExecutionPreparationError("runner backend session rollover requires native session IDs");
       }
       if (command.params.resumeSessionId !== undefined) {
-        throw new Error("runner backend session rollover cannot also resume");
+        throw new RunnerExecutionPreparationError("runner backend session rollover cannot also resume");
       }
       if (bootstrap && bootstrap.payload.backend_session_id !== rolloverFrom) {
-        throw new Error("runner backend session rollover conflicts with durable bootstrap");
+        throw new RunnerExecutionPreparationError("runner backend session rollover conflicts with durable bootstrap");
       }
       this.pendingBackendSessionRolloverFrom = rolloverFrom;
       this.beginLifecycle(command.commandId);
@@ -491,7 +497,7 @@ export class RunnerChildRuntime {
         resumeSessionId !== undefined
         && bootstrap.payload.backend_session_id !== resumeSessionId
       ) {
-        throw new Error("runner execute resume session ID conflicts with durable bootstrap");
+        throw new RunnerExecutionPreparationError("runner execute resume session ID conflicts with durable bootstrap");
       }
       this.beginLifecycle(command.commandId);
       return;

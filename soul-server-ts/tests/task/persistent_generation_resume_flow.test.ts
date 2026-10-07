@@ -91,10 +91,9 @@ function productionSessionRow(): SessionRow {
   } as unknown as SessionRow;
 }
 
-function makeFixture() {
+function makeFixture(row = productionSessionRow()) {
   const repository = new MemoryDeliveryRepository();
   const persistenceDouble = makeEventPersistenceTestDouble();
-  const row = productionSessionRow();
   // Production reads the row through the orch host transport, which JSON-decodes
   // it and revives `*_at` strings. Reading it any other way skips that layer.
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(row), {
@@ -133,8 +132,8 @@ function makeFixture() {
     resolve: vi.fn((id: string) => ({
       id,
       label: id,
-      backend: "claude" as const,
-      model: "opus",
+      backend: id.startsWith("codex") ? "codex" as const : "claude" as const,
+      model: id.startsWith("codex") ? "gpt-6.1" : "opus",
       env: undefined,
       supported_efforts: ["low" as const, "medium" as const, "high" as const, "xhigh" as const],
       default_effort: "xhigh" as const,
@@ -166,12 +165,14 @@ function makeFixture() {
     { type: "assistant_message", content: "ok", timestamp: 1 } as SSEEventPayload,
     { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
   ];
+  const runnerFailure: { error?: Error } = {};
   const dispatcher = {
     dispatch: vi.fn(),
     executeFrames: vi.fn((params: EngineExecuteParams) => {
       executed.push(params);
       return (async function* () {
         for (const event of runnerEvents) yield engineEventFrame(event);
+        if (runnerFailure.error) throw runnerFailure.error;
       })();
     }),
     recoverFrames: vi.fn(),
@@ -252,6 +253,8 @@ function makeFixture() {
     contextBuilder,
     executed,
     dispatcher,
+    runnerEvents,
+    runnerFailure,
   };
 }
 
@@ -289,5 +292,106 @@ describe("persistent generation rollover through the production resume path", ()
     expect(fixture.executed).toHaveLength(1);
     expect(fixture.executed[0]).toMatchObject({ backendSessionRolloverFrom: OLD_NATIVE_ID });
     expect(fixture.executed[0]).not.toHaveProperty("resumeSessionId");
+  });
+});
+
+async function resume(fixture: ReturnType<typeof makeFixture>, text = "continue") {
+  const deliveryId = crypto.randomUUID();
+  await fixture.taskManager.addIntervention({
+    agentSessionId: SESSION_ID, text, user: "seosoyoung", source: "user_message",
+    deliveryId, deliveryIntent: "human_live_steer", completionId: `message:${deliveryId}`,
+    relationKey: `user_message:${SESSION_ID}:${deliveryId}`,
+    callerInfo: { source: "agent", agent_id: "seosoyoung" },
+  }, fixture.onResume);
+  const task = fixture.taskManager.getTask(SESSION_ID)!;
+  await task.executionPromise;
+  return task;
+}
+
+function rejectAtLimit(fixture: ReturnType<typeof makeFixture>, nativeChanged: boolean) {
+  fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
+    ...(nativeChanged ? [{ type: "session", session_id: "native-new" } as SSEEventPayload] : []),
+    { type: "credential_alert", status: "rejected", rate_limit_type: "seven_day", timestamp: 1 } as SSEEventPayload,
+    { type: "error", error_code: "claude_rate_limit_stop_failure", fatal: true,
+      message: "Claude foreground turn stopped after a rate-limit rejection.", timestamp: 2 } as SSEEventPayload,
+  );
+  fixture.runnerFailure.error = new Error("Claude foreground turn stopped after a rate-limit rejection.");
+}
+
+describe("persistent generation recovery after a rejected first turn", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("completes the rotated generation after a limit exception and resumes its new native ID", async () => {
+    const fixture = makeFixture();
+    rejectAtLimit(fixture, true);
+    const task = await resume(fixture);
+    expect(task.terminationReason).toBe("limit_hit");
+    expect(task.persistentGeneration).toMatchObject({ number: 2, backendSessionId: "native-new" });
+    expect(task.persistentGeneration?.pending).toBeUndefined();
+    expect(task.persistentGeneration?.firstCall).toBeUndefined();
+    expect(fixture.persistenceDouble.enqueueMetadataEffect).toHaveBeenCalledWith(
+      SESSION_ID, expect.objectContaining({ value: expect.objectContaining({ number: 2, pending: null }) }),
+      expect.objectContaining({ replaceExistingType: "persistent_generation", waitForAck: true }),
+    );
+    fixture.runnerFailure.error = undefined;
+    fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
+      { type: "complete", usage: {}, timestamp: 3 } as SSEEventPayload);
+    await resume(fixture, "after quota reset");
+    expect(fixture.executed[1]).toMatchObject({ resumeSessionId: "native-new" });
+    expect(fixture.executed[1]).not.toHaveProperty("backendSessionRolloverFrom");
+  });
+
+  it("retries the pending generation when the rejected turn has not changed native ID", async () => {
+    const fixture = makeFixture();
+    rejectAtLimit(fixture, false);
+    const task = await resume(fixture);
+    expect(task.persistentGeneration?.number).toBe(1);
+    expect(task.persistentGeneration?.pending?.applyingFrom).toBe(OLD_NATIVE_ID);
+    fixture.runnerFailure.error = undefined;
+    fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
+      { type: "session", session_id: "native-new" } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 3 } as SSEEventPayload);
+    await resume(fixture);
+    expect(fixture.executed[1]).toMatchObject({ backendSessionRolloverFrom: OLD_NATIVE_ID });
+    expect(task.persistentGeneration?.number).toBe(2);
+  });
+
+  it("reconciles an in-memory applying generation and preserves a later model request on the same input", async () => {
+    const fixture = makeFixture();
+    rejectAtLimit(fixture, false);
+    const task = await resume(fixture);
+    // Stored shape of bad1b464: the backend rotated before the failed turn,
+    // but generation completion was missed and a later setting request merged.
+    task.codexThreadId = "native-new";
+    task.modelPreset = "claude-sonnet";
+    task.reasoningEffort = "medium";
+    task.persistentGeneration!.pending = {
+      ...task.persistentGeneration!.pending!, reason: "model change",
+      targetModelPreset: "codex-6.1-sol", targetReasoningEffort: "high",
+      resetContext: true, keepInstructions: false,
+    };
+    fixture.runnerFailure.error = undefined;
+    fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
+      { type: "session", session_id: "native-third" } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 3 } as SSEEventPayload);
+    await resume(fixture);
+    const reconciled = fixture.persistenceDouble.enqueueMetadataEffect.mock.calls
+      .find((call) => (call[1].value as { number: number; pending?: { number: number } }).number === 2
+        && (call[1].value as { pending?: { number: number } }).pending?.number === 3);
+    expect(reconciled?.[1]).toMatchObject({ value: {
+      number: 2, backend_session_id: "native-new", pending: {
+        number: 3, reason: "model change", target_model_preset: "codex-6.1-sol",
+        target_reasoning_effort: "high", applying_from: null,
+        reset_context: true, keep_instructions: false,
+      },
+    } });
+    const pending = (reconciled?.[1].value as { pending: Record<string, unknown> }).pending;
+    expect(pending).not.toHaveProperty("previous_model_preset");
+    expect(pending).not.toHaveProperty("previous_backend");
+    expect(reconciled?.[2]).toMatchObject({ replaceExistingType: "persistent_generation", waitForAck: true });
+    expect(fixture.executed[1]).toMatchObject({ backendSessionRolloverFrom: "native-new", reasoningEffort: "high" });
+    expect(fixture.sessionMutations.setModelSelection).toHaveBeenLastCalledWith(
+      SESSION_ID, expect.objectContaining({ modelPreset: "codex-6.1-sol", reasoningEffort: "high" }), expect.any(String));
+    expect(task.persistentGeneration?.number).toBe(3);
   });
 });

@@ -1,6 +1,7 @@
 import type {
   ActiveGenerationRollover,
   PersistentGenerationState,
+  Task,
 } from "./task_models.js";
 
 export interface ResolvedGenerationState {
@@ -11,6 +12,7 @@ export interface ResolvedGenerationState {
 export function resolveGenerationState(
   state: PersistentGenerationState | undefined,
   currentNativeSessionId: string | null | undefined,
+  currentModel: Pick<Task, "modelPreset" | "reasoningEffort">,
 ): ResolvedGenerationState {
   const current = state ?? { number: 1 };
   const pending = current.pending;
@@ -22,11 +24,16 @@ export function resolveGenerationState(
   }
 
   if (currentNativeSessionId !== pending.applyingFrom) {
+    const targetChanged = pending.targetModelPreset !== currentModel.modelPreset
+      || pending.targetReasoningEffort !== currentModel.reasoningEffort;
+    const { applyingFrom: _from, previousModelPreset: _preset, previousBackend: _backend,
+      ...requested } = pending;
     return {
       persistentGeneration: {
         number: pending.number,
         ...(currentNativeSessionId ? { backendSessionId: currentNativeSessionId } : {}),
         ...(current.firstCall === undefined ? {} : { firstCall: current.firstCall }),
+        ...(targetChanged ? { pending: { ...requested, number: pending.number + 1 } } : {}),
       },
       activeGenerationRollover: undefined,
     };
