@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { Platform } from 'react-native';
+import { Modal, Platform, Text } from 'react-native';
 import { ApiHttpError } from '../../../api/clientCore';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -36,6 +36,9 @@ const api = {
   updatePersistentSession: jest.fn(),
   listModelPresets: jest.fn(),
   getTimeline: jest.fn(),
+  getPersistentSessionInstructions: jest.fn(),
+  createPersistentSessionInstruction: jest.fn(),
+  updatePersistentSessionInstruction: jest.fn(),
 };
 
 beforeEach(() => {
@@ -52,6 +55,7 @@ beforeEach(() => {
       weekly_headroom: { status: 'unavailable', headroom: null, remaining_percent: null, window_remaining_percent: null, resets_at: null, observed_at: '2026-10-06T01:00:00Z', quota_label: null } },
   ] });
   api.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
+  api.getPersistentSessionInstructions.mockResolvedValue({ instructions: [] });
   useSettingsStore.setState({ serverUrl: 'https://soul.test' });
   useChatStore.setState({ persistentDisplaySettings: null, persistentDisplaySettingsRequestId: 0 });
 });
@@ -69,6 +73,25 @@ test('shows the same account and model fields as the ordinary editor, including 
   expect(screen.getByText('대기 중인 변경')).toBeTruthy();
   expect(screen.getByText('다음 실행부터 모델 B')).toBeTruthy();
   expect(screen.getByText('기본 모델')).toBeTruthy();
+});
+
+test('loads the persistent instructions group in the history section', async () => {
+  api.getPersistentSessionInstructions.mockResolvedValueOnce({ instructions: [{
+    id: 'instruction-1', text: '요청한 범위부터 확인합니다.', source_turns: ['T195', 'T210'],
+    created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-06T00:00:00Z', origin: 'user',
+  }] });
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  expect(await screen.findByText('지속 지시')).toBeTruthy();
+  expect(await screen.findByText('요청한 범위부터 확인합니다.')).toBeTruthy();
+  expect(screen.getByText(/T195, T210/)).toBeTruthy();
+  expect(api.getPersistentSessionInstructions).toHaveBeenCalledWith('pas-1');
+  const order = screen.UNSAFE_getAllByType(Text)
+    .map((text) => text.props.children)
+    .filter((value) => value === '최근 기록' || value === '지속 지시');
+  expect(order.indexOf('최근 기록')).toBeLessThan(order.indexOf('지속 지시'));
 });
 
 test('saves a PAS display toggle as one immediate field and adopts the server response', async () => {
@@ -253,6 +276,9 @@ test('loads real monitoring data and distinguishes an empty timeline from a fail
     eventTypes: ['generation_started', 'complete', 'context_usage', 'error', 'user_message', 'intervention_sent'],
     limit: 100,
   });
+  expect(api.getTimeline).toHaveBeenCalledWith('pas-1', {
+    eventTypes: ['debug'], debugKinds: ['persistent_decision'], limit: 1,
+  });
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   expect(screen.getAllByText('기록')).toHaveLength(1);
   expect(await screen.findByText('기록 없음')).toBeTruthy();
@@ -283,7 +309,7 @@ test('retries a failed timeline read in the open monitoring section', async () =
   fireEvent.press(await screen.findByTestId('persistent-session-monitoring-retry'));
 
   expect(await screen.findByTestId('persistent-session-monitoring-empty')).toBeTruthy();
-  expect(calls).toBe(4);
+  expect(calls).toBe(6);
 });
 
 test('shows current monitoring values and pairs usage with the terminal event', async () => {
@@ -317,6 +343,110 @@ test('shows current monitoring values and pairs usage with the terminal event', 
   expect(screen.getByText('다음 실행부터 모델 B')).toBeTruthy();
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   expect(monitoring.getByText(/컨텍스트 25\.0% · 정가 \$0\.13/)).toBeTruthy();
+});
+
+test('requests only persistent decisions and shows the newest one returned', async () => {
+  api.getTimeline.mockImplementation(async (_id: string, query?: { eventTypes?: string[]; debugKinds?: string[] }) => {
+    if (query?.debugKinds) return { messages: [
+      { id: 22, parent_event_id: null, event_type: 'debug', payload: { kind: 'persistent_decision', action: 'new_action', reason: '가장 최근 판단입니다.' }, created_at: '2026-10-06T10:00:00Z' },
+      { id: 21, parent_event_id: null, event_type: 'debug', payload: { kind: 'persistent_decision', action: 'old_action', reason: '이전 판단입니다.' }, created_at: '2026-10-05T10:00:00Z' },
+      { id: 23, parent_event_id: null, event_type: 'debug', payload: { kind: 'other_debug', action: 'ignored', reason: '표시하지 않습니다.' }, created_at: '2026-10-06T11:00:00Z' },
+    ], next_cursor: null };
+    if (query?.eventTypes?.length === 1) return { messages: [], next_cursor: null };
+    return { messages: [], next_cursor: null };
+  });
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  const monitoring = within(screen.getByTestId('settings-section-persistent-session-monitoring'));
+  expect(await monitoring.findByText('마지막 판단')).toBeTruthy();
+  expect(monitoring.getByText(/new_action · 가장 최근 판단입니다\./)).toBeTruthy();
+  expect(monitoring.queryByText(/old_action|ignored|wrong_event|이전 판단입니다/)).toBeNull();
+  expect(api.getTimeline).toHaveBeenCalledWith('pas-1', {
+    eventTypes: ['debug'], debugKinds: ['persistent_decision'], limit: 1,
+  });
+});
+
+test('does not render a last-decision row when the timeline has no persistent decision', async () => {
+  api.getTimeline.mockImplementation(async (_id: string, query?: { eventTypes?: string[]; debugKinds?: string[] }) => ({
+    messages: query?.debugKinds ? [
+      { id: 30, parent_event_id: null, event_type: 'debug', payload: { kind: 'other_debug', action: 'ignored' }, created_at: '2026-10-06T12:00:00Z' },
+    ] : [], next_cursor: null,
+  }));
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  const monitoring = within(screen.getByTestId('settings-section-persistent-session-monitoring'));
+  await monitoring.findByTestId('persistent-session-monitoring-empty');
+  expect(monitoring.queryByText('마지막 판단')).toBeNull();
+});
+
+test('keeps normal monitoring rows when only the decision request fails', async () => {
+  let decisionRequests = 0;
+  api.getTimeline.mockImplementation(async (_id: string, query?: { eventTypes?: string[]; debugKinds?: string[] }) => {
+    if (query?.debugKinds) {
+      decisionRequests += 1;
+      if (decisionRequests === 1) throw new Error('debug query unsupported');
+      return { messages: [], next_cursor: null };
+    }
+    if (query?.eventTypes?.length === 1) return { messages: [
+      { id: 31, parent_event_id: null, event_type: 'generation_started', payload: { generation: 8 }, created_at: '2026-10-06T12:00:00Z' },
+    ], next_cursor: null };
+    return { messages: [], next_cursor: null };
+  });
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  const monitoring = within(screen.getByTestId('settings-section-persistent-session-monitoring'));
+  expect(await monitoring.findByText('현재 세대')).toBeTruthy();
+  expect(monitoring.getByText('8')).toBeTruthy();
+  expect(monitoring.queryByText('마지막 판단')).toBeNull();
+  expect(await monitoring.findByText('조회 실패')).toBeTruthy();
+  expect(monitoring.queryByTestId('persistent-session-monitoring-empty')).toBeNull();
+  const textOrder = monitoring.UNSAFE_getAllByType(Text).map((text) => text.props.children);
+  expect(textOrder.indexOf('조회 실패')).toBe(textOrder.indexOf('현재 세대') + 2);
+  expect(textOrder[textOrder.indexOf('조회 실패') + 1]).toBe('다시 시도');
+  fireEvent.press(monitoring.getByTestId('persistent-session-monitoring-retry'));
+  await waitFor(() => expect(decisionRequests).toBe(2));
+  expect(monitoring.getByText('현재 세대')).toBeTruthy();
+  expect(monitoring.getByText('8')).toBeTruthy();
+});
+
+test('native back cancels instruction editing before closing PAS settings', async () => {
+  api.getPersistentSessionInstructions.mockResolvedValueOnce({ instructions: [{
+    id: 'instruction-1', text: '요청한 범위부터 확인합니다.', source_turns: [],
+    created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-06T00:00:00Z', origin: 'user',
+  }] });
+  const onClose = jest.fn();
+  const screen = render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={onClose} />);
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+  fireEvent.press(await screen.findByTestId('persistent-instruction-open-instruction-1'));
+  expect(screen.getByTestId('persistent-instruction-edit-instruction-1')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('persistent-instruction-cancel-instruction-1'));
+  expect(screen.queryByTestId('persistent-instruction-edit-instruction-1')).toBeNull();
+  expect(screen.getByTestId('persistent-session-pas-settings-surface')).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('persistent-instruction-open-instruction-1'));
+  fireEvent.press(screen.getByTestId('persistent-session-pas-close'));
+  expect(screen.queryByTestId('persistent-instruction-edit-instruction-1')).toBeNull();
+  expect(screen.getByTestId('persistent-session-pas-settings-surface')).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('persistent-instruction-open-instruction-1'));
+
+  const requestClose = screen.UNSAFE_getByType(Modal).props.onRequestClose as () => void;
+  act(() => { requestClose(); });
+
+  await waitFor(() => expect(screen.queryByTestId('persistent-instruction-edit-instruction-1')).toBeNull());
+  expect(screen.getByTestId('persistent-session-pas-settings-surface')).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+  act(() => { requestClose(); });
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 test('does not pair context usage from a failed turn with a later completion', async () => {

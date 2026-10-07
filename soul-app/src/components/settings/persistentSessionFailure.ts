@@ -32,7 +32,7 @@ function parseBody(text: string): ErrorBody | null {
 }
 
 /** Reads the `{ error: { code, message } }` shape the persistent session routes answer with. */
-export function describePersistentFailure(cause: unknown, op: 'load' | 'save' | 'create' | 'release'): PersistentSessionFailure {
+export function describePersistentFailure(cause: unknown, op: 'load' | 'save' | 'create' | 'release' | 'instruction'): PersistentSessionFailure {
   const http = cause instanceof ApiHttpError ? cause : null;
   const body = http ? parseBody(http.body) : null;
   const code = typeof body?.error?.code === 'string' ? body.error.code : null;
@@ -40,7 +40,9 @@ export function describePersistentFailure(cause: unknown, op: 'load' | 'save' | 
   const createdSession = code === 'PERSISTENT_REGISTRATION_FAILED' && typeof created?.session_id === 'string'
     ? { session_id: created.session_id, display_name: typeof created.display_name === 'string' ? created.display_name : null }
     : null;
-  let text = (code && CODE_TEXT[code]) || safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
+  let text = code === 'INVALID_REQUEST' && op === 'instruction'
+    ? '지속 지시 내용을 확인해 주세요.'
+    : (code && CODE_TEXT[code]) || safeErrorDetail(cause instanceof Error ? cause.message : String(cause));
   // Rename, settings and the model switch are saved one after another, so a server-side failure can leave part of them saved.
   if (op === 'save' && http && http.status >= 500) text += ' 일부 변경이 저장됐을 수 있습니다. 다시 읽거나 저장해 주세요.';
   return { text, createdSession, responseLost: op === 'create' && !http };

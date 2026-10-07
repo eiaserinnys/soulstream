@@ -50,9 +50,9 @@ export function SettingsListHeader({ title, help, children }: { title: string; h
 }
 
 /** The whole row is one touch target: name, detail line and a disclosure mark. */
-export function SettingsListRow({ title, detail, onPress, testID }: { title: string; detail: string; onPress(): void; testID?: string }) {
+export function SettingsListRow({ title, detail, onPress, disabled = false, testID }: { title: string; detail: string; onPress(): void; disabled?: boolean; testID?: string }) {
   const styles = useSettingsFormStyles();
-  return <TouchableOpacity testID={testID} style={styles.listRow} onPress={onPress} accessibilityRole="button"><View style={styles.grow}><Text style={styles.body}>{title}</Text><Text style={styles.help}>{detail}</Text></View><Text style={styles.disclosure}>›</Text></TouchableOpacity>;
+  return <TouchableOpacity testID={testID} style={styles.listRow} onPress={onPress} disabled={disabled} accessibilityRole="button"><View style={styles.grow}><Text style={styles.body}>{title}</Text><Text style={styles.help}>{detail}</Text></View><Text style={styles.disclosure}>›</Text></TouchableOpacity>;
 }
 
 /** A value the user can read but not edit. */

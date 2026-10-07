@@ -1,4 +1,4 @@
-import type { ApiClient, PersistentSessionCreate, PersistentSessionCreateDefaults, PersistentSessionResource, PersistentSessionWrite, RecurringJobDto } from '../api/client';
+import type { ApiClient, PersistentSessionCreate, PersistentSessionCreateDefaults, PersistentSessionInstruction, PersistentSessionResource, PersistentSessionWrite, RecurringJobDto } from '../api/client';
 import type { SessionReviewPolicyPayload } from '../api/settingsEndpoints';
 import type { ProviderUsageSnapshot, ProviderQuota } from '../api/claudeAuthTypes';
 import { ApiHttpError } from '../api/clientCore';
@@ -33,6 +33,12 @@ const pasStore = new Map<string, PersistentSessionResource>([
   pasSession({ id: 'review-pas-2', name: '공개 예시 두 번째 영구 세션', agentId: 'public-other-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
   pasSession({ id: 'review-pas-3', name: '공개 예시 세 번째 영구 세션 이름이 길어지면 줄바꿈되거나 말줄임으로 끊깁니다', agentId: 'public-agent', preset: 'public-exhausted-model', current: 'public-model' }),
 ].map(item => [item.session_id, item]));
+const pasInstructions = new Map<string, PersistentSessionInstruction[]>([
+  ['review-pas-2', [
+    { id: 'review-instruction-1', text: '요청한 범위부터 확인하고 결과를 짧게 보고합니다.', source_turns: ['T195', 'T210'], created_at: '2026-10-01T08:00:00Z', updated_at: '2026-10-06T07:20:00Z', origin: 'user' },
+    { id: 'review-instruction-2', text: '중요한 설정 변경은 저장 후 다시 읽어 확인합니다.', source_turns: ['T202'], created_at: '2026-10-02T08:00:00Z', updated_at: '2026-10-05T08:15:00Z', origin: 'user' },
+  ]],
+]);
 // A session whose stored row has neither a node nor a profile (`persistent-owner-missing`): the server reads it but cannot act on it.
 const pasOwnerless: PersistentSessionResource = { ...pasSession({ id: 'review-pas-ownerless', name: '공개 예시 노드 없는 세션', agentId: 'unused', preset: 'public-model' }), node_id: null, agent_id: null, agent_name: null, folder_id: null };
 const pasCreateDefaults: PersistentSessionCreateDefaults = {
@@ -90,6 +96,28 @@ const persistentSessionFixtures = {
   },
 };
 export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFixtures,
+  getPersistentSessionInstructions: async (sessionId: string) => {
+    if (state() === 'pas-instructions-error') throw pasFailure(503, 'NODE_UNAVAILABLE', '지속 지시를 불러오지 못했습니다.');
+    if (state() === 'pas-instructions-empty') return { instructions: [] };
+    return { instructions: pasInstructions.get(sessionId) ?? [] };
+  },
+  createPersistentSessionInstruction: async (sessionId: string, text: string) => {
+    if (state() === 'pas-instructions-cap') throw pasFailure(409, 'INVALID_REQUEST', 'cap reached', { error: 'cap_reached' });
+    const instruction: PersistentSessionInstruction = {
+      id: `review-instruction-${Date.now()}`, text, source_turns: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), origin: 'user',
+    };
+    const current = pasInstructions.get(sessionId) ?? [];
+    pasInstructions.set(sessionId, [instruction, ...current]);
+    return { instruction };
+  },
+  updatePersistentSessionInstruction: async (sessionId: string, instructionId: string, input: { text?: string; status?: 'active' | 'removed' }) => {
+    const current = pasInstructions.get(sessionId) ?? [];
+    const found = current.find((item) => item.id === instructionId);
+    if (!found) throw pasFailure(404, 'INVALID_REQUEST', 'instruction not found');
+    const instruction = { ...found, ...(input.text === undefined ? {} : { text: input.text }), updated_at: new Date().toISOString() };
+    pasInstructions.set(sessionId, input.status === 'removed' ? current.filter((item) => item.id !== instructionId) : [instruction, ...current.filter((item) => item.id !== instructionId)]);
+    return { instruction: { ...instruction, ...(input.status === 'removed' ? { status: 'removed' } : {}) } };
+  },
   listModelPresets: async (nodeId: string) => {
     if (state() === 'persistent-targets-error') throw new Error('공개 예시 오류');
     const result = await dialogueApi.listModelPresets(nodeId);
@@ -117,12 +145,18 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
       })),
     };
   },
-  getTimeline: async (_sessionId: string, params?: { eventTypes?: string[]; before?: string }) => {
+  getTimeline: async (_sessionId: string, params?: { eventTypes?: string[]; debugKinds?: string[]; before?: string }) => {
     if (state() === 'pas-monitor-loading') return new Promise<never>(() => {});
     if (state() === 'pas-monitor-error') throw new Error('공개 예시 기록 조회 실패');
     if (state() === 'pas-monitor-empty') return { messages: [], next_cursor: null };
     const latestGeneration = { id: 118, parent_event_id: null, event_type: 'generation_started', payload: { generation: 7 }, created_at: '2026-10-06T01:12:00Z' };
     if (params?.eventTypes?.length === 1 && params.eventTypes[0] === 'generation_started') return { messages: [latestGeneration], next_cursor: null };
+    if (params?.eventTypes?.includes('debug') && params.debugKinds?.includes('persistent_decision')) {
+      if (state() === 'pas-monitor-decision') return { messages: [
+        { id: 122, parent_event_id: null, event_type: 'debug', payload: { kind: 'persistent_decision', trigger: 'turn_end', action: 'continue', rule: 'continue_active_session', reason: '현재 설정으로 다음 실행을 이어갑니다.', inputs_snapshot: {} }, created_at: '2026-10-06T01:20:00Z' },
+      ], next_cursor: null };
+      if (state() === 'pas-monitor-no-decision') return { messages: [], next_cursor: null };
+    }
     if (params?.before === 'public-older') return { messages: [
       { id: 117, parent_event_id: null, event_type: 'complete', payload: { usage: { input_tokens: 842, output_tokens: 126 }, turn_cost_usd: 0.02 }, created_at: '2026-10-05T22:46:00Z' },
       { id: 116, parent_event_id: null, event_type: 'context_usage', payload: { used_tokens: 842, max_tokens: 100000, percent: 0.8 }, created_at: '2026-10-05T22:45:00Z' },

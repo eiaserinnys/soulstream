@@ -1,5 +1,7 @@
 import type {
   PersistentSessionResource,
+  PersistentSessionInstruction,
+  PersistentSessionInstructionWrite,
   PersistentSessionSettingsPatch,
   PersistentSessionWrite,
 } from '../../api/persistentSessionEndpoints';
@@ -11,6 +13,30 @@ type PersistentSessionUpdater = {
     input: PersistentSessionWrite,
   ): Promise<{ session: PersistentSessionResource; model_change: 'none' | 'next_execution_start' }>;
 };
+
+type PersistentSessionInstructionApi = {
+  getPersistentSessionInstructions(sessionId: string): Promise<{ instructions: PersistentSessionInstruction[] }>;
+  createPersistentSessionInstruction(sessionId: string, text: string): Promise<{ instruction: PersistentSessionInstruction }>;
+  updatePersistentSessionInstruction(sessionId: string, instructionId: string, input: PersistentSessionInstructionWrite): Promise<{ instruction: PersistentSessionInstruction }>;
+};
+
+export const loadPersistentSessionInstructions = (
+  api: PersistentSessionInstructionApi,
+  sessionId: string,
+) => api.getPersistentSessionInstructions(sessionId);
+
+export const addPersistentSessionInstruction = (
+  api: PersistentSessionInstructionApi,
+  sessionId: string,
+  text: string,
+) => api.createPersistentSessionInstruction(sessionId, text);
+
+export const updatePersistentSessionInstruction = (
+  api: PersistentSessionInstructionApi,
+  sessionId: string,
+  instructionId: string,
+  input: PersistentSessionInstructionWrite,
+) => api.updatePersistentSessionInstruction(sessionId, instructionId, input);
 
 export async function savePersistentSessionSettings(
   api: PersistentSessionUpdater,

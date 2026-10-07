@@ -32,7 +32,10 @@ import {
   type PersistentSessionDisplayField,
   type PersistentSessionEditorSection,
 } from './PersistentSessionSettingsFields';
-import { persistentChatDisplaySettings, savePersistentSessionSettings } from './persistentSessionSettingsActions';
+import {
+  persistentChatDisplaySettings,
+  savePersistentSessionSettings,
+} from './persistentSessionSettingsActions';
 import { persistentSessionQuotaRows } from './PersistentSessionMonitoring';
 import { usePersistentSessionApiFactory } from './persistentSessionApi';
 

@@ -784,6 +784,30 @@ describe('client timeline history', () => {
     );
   });
 
+  it('requests and returns selected debug timeline events when explicitly requested', async () => {
+    const decision = {
+      id: 12,
+      parent_event_id: null,
+      event_type: 'debug',
+      payload: { kind: 'persistent_decision', trigger: 'keepalive', action: 'continue', rule: 'rule-1', reason: '계속 진행합니다.', inputs_snapshot: {} },
+      created_at: '2026-10-06T01:20:00Z',
+    };
+    const fetchMock = makeFetchMock({ messages: [decision], next_cursor: null });
+    const api = createApiClient(BASE);
+
+    await expect(api.getTimeline('sess-1', {
+      limit: 1,
+      eventTypes: ['debug'],
+      debugKinds: ['persistent_decision'],
+    })).resolves.toEqual({
+      messages: [decision], next_cursor: null,
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${BASE}/api/sessions/sess-1/timeline?limit=1&event_types=debug&debug_kinds=persistent_decision`,
+    );
+  });
+
   it('getMessages keeps the raw compatibility endpoint', async () => {
     const fetchMock = makeFetchMock({ messages: [], next_cursor: null });
     const api = createApiClient(BASE);
