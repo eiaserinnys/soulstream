@@ -187,6 +187,29 @@ describe("chat caption parts", () => {
     expect(container.textContent).toContain("상한(50)에 닿아 더 기록하지 못했습니다");
   });
 
+  it.each([
+    [true, "새 세대 · 문맥 초기화"],
+    [false, "새 세대"],
+    [undefined, "새 세대"],
+  ])("shows the context reset marker only when requested (%s)", (contextReset, label) => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const msg = {
+      id: "generation-1",
+      role: "system",
+      content: "새 세대",
+      treeNodeId: "generation-1",
+      treeNodeType: "generation_started",
+      ...(contextReset === undefined ? {} : { contextReset }),
+    } as ChatMessage;
+    act(() => root?.render(<SystemMessage msg={msg} />));
+
+    expect(container.textContent).toContain(label);
+    expect(container.textContent).not.toContain("문맥 초기화문맥 초기화");
+  });
+
   it("uses the turn-end caption group for manuscript complete rows", () => {
     container = document.createElement("div");
     document.body.appendChild(container);

@@ -13,7 +13,7 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
     return <ManuscriptAgentMessageGroup messages={msg.manuscriptAgentMessages} />;
   }
   const alignmentInset = presentation === "manuscript" ? "content" : "avatar";
-  if (msg.treeNodeType === "generation_started") return <LabeledDivider label="새 세대" alignmentInset={alignmentInset} />;
+  if (msg.treeNodeType === "generation_started") return <LabeledDivider label={msg.contextReset ? "새 세대 · 문맥 초기화" : "새 세대"} alignmentInset={alignmentInset} />;
   if (msg.treeNodeType === "persistent_jev_candidates") {
     const candidates = msg.jevCandidates ?? [];
     const lines = formatPersistentJevCandidates({ selected: candidates });

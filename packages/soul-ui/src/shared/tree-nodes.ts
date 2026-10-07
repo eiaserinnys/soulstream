@@ -56,6 +56,7 @@ export interface SessionNode extends BaseNode {
 export interface UserMessageNode extends BaseNode {
   type: "user_message";
   inputId?: string;
+  cacheKeepalive?: boolean;
   user: string;
   context?: ContextItem[];
   /** 에이전트가 발신한 경우 채워지는 메타데이터 (caller_info.source==="agent"에서 도출) */
@@ -97,6 +98,7 @@ export interface SessionNotificationNode extends BaseNode {
 export interface InterventionNode extends BaseNode {
   type: "intervention";
   inputId?: string;
+  cacheKeepalive?: boolean;
   user?: string;
   /**
    * F-9 fix(2026-05-08): 발신자가 agent인 경우 채워지는 메타데이터.
@@ -274,6 +276,7 @@ export interface AssignedCardContextNode extends BaseNode {
 
 export interface GenerationStartedNode extends BaseNode {
   type: "generation_started";
+  contextReset?: boolean;
 }
 
 export interface PersistentJevCandidatesNode extends BaseNode {

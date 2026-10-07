@@ -297,6 +297,11 @@ async function addLiveUserMessage(eventId: number): Promise<void> {
   await flushPassiveEffects();
 }
 
+async function addLiveEvent(event: SoulSSEEvent, eventId: number): Promise<void> {
+  flushSync(() => useDashboardStore.getState().processEvent(event, eventId));
+  await flushPassiveEffects();
+}
+
 function flushPassiveEffects(): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, 0);
@@ -462,6 +467,52 @@ describe("ChatView long-session initial bottom focus", () => {
     await addLiveUserMessage(1001);
 
     expect(container.querySelector('button[aria-label="새 메시지로 이동"]')).not.toBeNull();
+    expect(virtuosoMock.props?.followOutput).toBe(false);
+    expect(geometry.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("does not show the new-message button for any event in a cache-keepalive turn", async () => {
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    const geometry = configureScroller(container, {
+      scrollHeight: 800,
+      clientHeight: 400,
+      scrollTop: 400,
+    });
+    flushSync(() => {
+      geometry.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+      geometry.scroller.scrollTop = 250;
+      reportAtBottom(false);
+    });
+    await flushPassiveEffects();
+
+    const keepaliveEvents = [
+      {
+        type: "user_message",
+        input_id: "keepalive-1001",
+        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+        purpose: "cache_keepalive",
+      },
+      { type: "generation_started", context_reset: true },
+      { type: "assistant_message", text: "ok" },
+      { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.01, session_cost_usd: 0.04 },
+      {
+        type: "debug",
+        kind: "persistent_instruction_recorded",
+        input_id: "keepalive-1001",
+        timestamp: 1,
+        instructions: [{ id: "record-1001", text: "Keep notes concise", source_turns: ["T12"], action: "added" }],
+        cap_reached: false,
+      },
+    ] as unknown as SoulSSEEvent[];
+    for (const [index, event] of keepaliveEvents.entries()) {
+      await addLiveEvent(event, 1001 + index);
+      expect(container.querySelector('[aria-label="새 메시지로 이동"]')).toBeNull();
+    }
+
+    await addLiveUserMessage(1006);
+
+    expect(container.querySelector('[aria-label="새 메시지로 이동"]')).not.toBeNull();
     expect(virtuosoMock.props?.followOutput).toBe(false);
     expect(geometry.scrollTo).not.toHaveBeenCalled();
   });
