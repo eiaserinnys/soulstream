@@ -15,6 +15,7 @@
  */
 
 import type { EventTreeNode } from "@shared/types";
+import type { FlattenTreeCache } from "../../lib/flatten-tree";
 import { buildLlmHistory } from "./buildLlmHistory";
 import { extractErrorMessage } from "./submitErrors";
 
@@ -40,6 +41,7 @@ export interface SubmitLlmContinuationContext {
   /** R-4 (atom G-10): dashboard auth context user. caller_info dict를 build_browser_caller_info
    *  §9 대칭으로 body에 박는다. undefined면 body.caller_info 키 부재 (서버 측 system fallback). */
   caller?: SubmitLlmContinuationCaller;
+  flattenMessages?: FlattenTreeCache["flattenTree"];
 }
 
 export interface SubmitLlmContinuationResult {
@@ -76,9 +78,9 @@ function buildCallerInfoFromUser(
 export async function submitLlmContinuation(
   ctx: SubmitLlmContinuationContext,
 ): Promise<SubmitLlmContinuationResult> {
-  const { tree, text, provider, model, clientId, signal, caller } = ctx;
+  const { tree, text, provider, model, clientId, signal, caller, flattenMessages } = ctx;
 
-  const history = buildLlmHistory(tree);
+  const history = buildLlmHistory(tree, flattenMessages);
   const messages = [...history, { role: "user", content: text }];
 
   // R-4 (atom G-10): caller truthy → caller_info dict 첨부. falsy → 키 부재.

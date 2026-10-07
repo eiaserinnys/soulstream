@@ -150,7 +150,7 @@ export function ComponentsReviewPage() {
                 <div className="v3-run-list">{[reviewCard.title, reviewTitle].map((label, index) => <CardRowView key={label}
                   card={{ ...reviewCard, ...(index===0?{items:reviewCardItems,now:reviewNow}:{}), id: `components-card-${index}`, title: label }} assignee={reviewSession} detail={reviewDetail} onOpen={() => open("카드")}/>)}</div>
               </Sample>
-              <Sample name="작업 목록과 카드 읽기 요약" state="예시"><PersistentSessionTaskListReviewSample/></Sample>
+              <Sample name="작업 목록" state="예시"><PersistentSessionTaskListReviewSample/></Sample>
               <Sample name="CardRowView / RunRowFrame actions" state="같은 내용 · 막힘 / 검수 · 미리보기 유무 · small 캡">
                 {(["blocked", "review"] as const).map(status => <CardRowView key={status}
                   card={{...reviewCard, status, title: "상태별 같은 카드", request: "같은 미리보기", id: `compare-${status}`}}

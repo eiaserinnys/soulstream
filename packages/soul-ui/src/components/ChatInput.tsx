@@ -13,6 +13,7 @@ import { handleClipboardFiles } from "../lib/clipboard-files";
 import { useCallback, useRef, useEffect, useMemo, useState, type RefObject } from "react";
 import { Loader2, Square } from "lucide-react";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { useChatFlattenTree, useChatStore } from "../stores/chat-store-scope";
 import { FileAttachmentPreview } from "./FileAttachmentPreview";
 import { useFileUpload } from "../hooks/useFileUpload";
 import { buildLlmHistory } from "./chat/buildLlmHistory";
@@ -45,6 +46,7 @@ interface ChatInputProps {
   registerPendingSendActions?: (actions: PendingChatSendActions | null) => void;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
+  onSessionChange?: (sessionId: string) => void;
 }
 
 export function ChatInput({
@@ -53,12 +55,14 @@ export function ChatInput({
   registerPendingSendActions,
   presentation = "default",
   composerAnchorRef,
+  onSessionChange,
 }: ChatInputProps = {}) {
-  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
-  const tree = useDashboardStore((s) => s.tree);
-  const treeVersion = useDashboardStore((s) => s.treeVersion);
-  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const activeSessionKey = useChatStore((s) => s.activeSessionKey);
+  const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
+  const tree = useChatStore((s) => s.tree);
+  const treeVersion = useChatStore((s) => s.treeVersion);
+  const flattenMessages = useChatFlattenTree();
+  const setActiveSession = useChatStore((s) => s.setActiveSession);
   const setDraft = useDashboardStore((s) => s.setDraft);
   const clearDraft = useDashboardStore((s) => s.clearDraft);
   const setPendingChatSend = useDashboardStore((s) => s.setPendingChatSend);
@@ -68,7 +72,7 @@ export function ChatInput({
   // store-only selector — closure 외부 의존 0 (정본 하나).
   // primitive 반환이라 reference equality 안전.
   const lastSuggestion = useDashboardStore((s) =>
-    s.activeSessionKey ? (s.lastPromptSuggestions[s.activeSessionKey] ?? null) : null,
+    activeSessionKey ? (s.lastPromptSuggestions[activeSessionKey] ?? null) : null,
   );
 
   // 세션 상태 파생값
@@ -81,8 +85,8 @@ export function ChatInput({
   // LLM 대화 컨텍스트: 트리에서 user/assistant 메시지를 추출
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const llmMessages = useMemo(
-    () => (isLlm ? buildLlmHistory(tree) : []),
-    [isLlm, tree, treeVersion],
+    () => (isLlm ? buildLlmHistory(tree, flattenMessages) : []),
+    [isLlm, tree, treeVersion, flattenMessages],
   );
 
   const [text, setText] = useState("");
@@ -124,6 +128,7 @@ export function ChatInput({
   const { sending, error, reset, send, retry } = useChatInputSend({
     activeSessionKey,
     tree,
+    flattenMessages,
     isFinished,
     isLlmFinished,
     llmProvider: activeSessionSummary?.llmProvider,
@@ -139,7 +144,10 @@ export function ChatInput({
     getPendingChatSend: (sessionId) => useDashboardStore.getState().pendingChatSends[sessionId],
     setPendingChatSend,
     clearDraft,
-    setActiveSession,
+    setActiveSession: (sessionId) => {
+      setActiveSession(sessionId);
+      onSessionChange?.(sessionId);
+    },
     onBeforeSend: () => {
       composeEvents.submitted(activeSessionKey, textRef.current.length, composeMode);
       setText("");

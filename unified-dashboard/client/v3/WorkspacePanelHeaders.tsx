@@ -30,13 +30,15 @@ export function SessionPanelHeader({ session, emptyTitle = "선택된 세션 없
   const openMenu = useSessionMenu();
   return <header className="v3-panel-header v3-chat-header"
     onContextMenu={event=>{if(session)openMenu(session.agentSessionId,event);}}>
-    <div className="v3-chat-session-title"><strong>{session ? sessionPanelTitle(session) : emptyTitle}</strong></div>
+    <div className="v3-chat-title-row">
+      <div className="v3-chat-session-title"><strong>{session ? sessionPanelTitle(session) : emptyTitle}</strong></div>
+      {onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap> : null}
+    </div>
     <SessionModelPresetBadge session={session}/>
     <span className={`v3-chat-status v3-chat-status--${session?.status ?? "unknown"}`}>
       {session ? (STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown).label : STATUS_CONFIG.unknown.label}
     </span>
     {session ? <SessionStreamStatus active={streamActive} status={connectionStatus} reconnect={reconnect}/> : null}
     {session ? <SessionStoryDisclosure sessionId={session.agentSessionId}/> : null}
-    {onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}><X className="h-4 w-4" aria-hidden="true"/></DashboardIconCap> : null}
   </header>;
 }

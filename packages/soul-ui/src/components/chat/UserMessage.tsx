@@ -1,7 +1,7 @@
 import { cn } from "../../lib/cn";
 import { memo, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
 import { ContextBlock } from "./ContextBlock";
@@ -15,7 +15,7 @@ import {
 export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript" }) {
   // caller_info v1 (atom ed3a216d): 세션-수준 발신자 신원 avatar_url —
   // 메시지 단위 caller_info(msg.callerInfo) 부재 시 fallback. 4 source(browser/slack/agent/soul-app) 동일 entry.
-  const callerAvatarUrl = useDashboardStore((s) =>
+  const callerAvatarUrl = useChatStore((s) =>
     extractCallerAvatarUrl(s.activeSessionSummary?.metadata),
   );
 

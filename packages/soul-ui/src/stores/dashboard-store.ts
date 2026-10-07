@@ -19,7 +19,8 @@
  * - 본 파일은 슬라이스 합성 + reset + persist 설정만 담당
  */
 
-import { create } from "zustand";
+import { create, type StateCreator } from "zustand";
+import { createStore, type StoreApi } from "zustand/vanilla";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { SessionSummary } from "@shared/types";
 import { createProcessingContext } from "./processing-context";
@@ -37,6 +38,7 @@ import { createWallpaperSlice } from "./slices/wallpaper-slice";
 import { createLiquidGlassSlice } from "./slices/liquid-glass-slice";
 import { createChatTypographySlice } from "./slices/chat-typography-slice";
 import { createBoardLayoutSlice } from "./slices/board-layout-slice";
+import { createFlattenTreeCache, type FlattenTreeCache } from "../lib/flatten-tree";
 
 // === Re-exports for backward compatibility ===
 
@@ -52,6 +54,14 @@ export type {
   PendingChatSend,
   PendingChatSendAttachment,
 } from "./dashboard-store-types";
+
+type DashboardStore = DashboardState & DashboardActions;
+
+export interface ChatSessionStoreScope {
+  store: StoreApi<DashboardStore>;
+  flattenTree: FlattenTreeCache["flattenTree"];
+  clearFlattenTreeCache: () => void;
+}
 
 // === Unread Utility ===
 
@@ -69,6 +79,62 @@ export function getRawReadAcknowledgementEventId(session: SessionSummary): numbe
 /** Raw detail position deliberately remains independent of feed unread. */
 export function getRawDetailEventId(session: SessionSummary): number {
   return session.lastEventId ?? 0;
+}
+
+function createDashboardStateCreator(options: {
+  flattenCache?: FlattenTreeCache;
+  composerStore?: StoreApi<DashboardStore>;
+} = {}): StateCreator<DashboardStore> {
+  return (set, get, store) => {
+    const slices = {
+      ...createUISlice(set, get, store),
+      ...createCatalogSlice(set, get, store),
+      ...createSelectionSlice(set, get, store),
+      ...createDraftSlice(set, get, store),
+      ...createSessionSlice(options.flattenCache?.clear)(set, get, store),
+      ...createEventProcessingSlice({
+        flattenTree: options.flattenCache?.flattenTree,
+        composerStore: options.composerStore,
+      })(set, get, store),
+      ...createOptimisticSessionSlice(set, get, store),
+      ...createPromptSuggestionSlice(set, get, store),
+      ...createPendingChatSendSlice(set, get, store),
+      ...createWallpaperSlice(set, get, store),
+      ...createLiquidGlassSlice(set, get, store),
+      ...createChatTypographySlice(set, get, store),
+      ...createBoardLayoutSlice(set, get, store),
+    };
+
+    const initialStateSnapshot = Object.fromEntries(
+      Object.entries(slices).filter(([, value]) => typeof value !== "function"),
+    ) as unknown as DashboardState;
+
+    return {
+      ...slices,
+      reset: () => {
+        set({
+          ...initialStateSnapshot,
+          processingCtx: createProcessingContext(),
+          focusEventRequestId: get().focusEventRequestId + 1,
+        });
+      },
+    };
+  };
+}
+
+/** Creates an in-memory transcript store for a second ChatView instance. */
+export function createChatSessionStore(sessionId: string | null): ChatSessionStoreScope {
+  const flattenCache = createFlattenTreeCache();
+  const store = createStore<DashboardStore>()(createDashboardStateCreator({
+    flattenCache,
+    composerStore: useDashboardStore,
+  }));
+  if (sessionId !== null) store.getState().setActiveSession(sessionId);
+  return {
+    store,
+    flattenTree: flattenCache.flattenTree,
+    clearFlattenTreeCache: flattenCache.clear,
+  };
 }
 
 // === Store ===
@@ -103,41 +169,7 @@ function getDashboardPersistStorage(): PersistStorage {
 
 export const useDashboardStore = create<DashboardState & DashboardActions>()(
   persist(
-    (set, get, store) => {
-      const slices = {
-        ...createUISlice(set, get, store),
-        ...createCatalogSlice(set, get, store),
-        ...createSelectionSlice(set, get, store),
-        ...createDraftSlice(set, get, store),
-        ...createSessionSlice(set, get, store),
-        ...createEventProcessingSlice(set, get, store),
-        ...createOptimisticSessionSlice(set, get, store),
-        ...createPromptSuggestionSlice(set, get, store),
-        ...createPendingChatSendSlice(set, get, store),
-        ...createWallpaperSlice(set, get, store),
-        ...createLiquidGlassSlice(set, get, store),
-        ...createChatTypographySlice(set, get, store),
-        ...createBoardLayoutSlice(set, get, store),
-      };
-
-      // 초기 state 스냅샷 (모든 slice의 초기 필드 값) — reset의 정본.
-      // `Object.fromEntries`의 타입은 일반화되어 직접 캐스팅이 어려우므로 `unknown` 경유.
-      const initialStateSnapshot = Object.fromEntries(
-        Object.entries(slices).filter(([, v]) => typeof v !== "function"),
-      ) as unknown as DashboardState;
-
-      return {
-        ...slices,
-        reset: () => {
-          // processingCtx는 매번 새 인스턴스로 생성하여 객체 공유 방지
-          set({
-            ...initialStateSnapshot,
-            processingCtx: createProcessingContext(),
-            focusEventRequestId: get().focusEventRequestId + 1,
-          });
-        },
-      };
-    },
+    createDashboardStateCreator(),
     {
       name: "soul-dashboard-storage",
       storage: createJSONStorage(getDashboardPersistStorage),

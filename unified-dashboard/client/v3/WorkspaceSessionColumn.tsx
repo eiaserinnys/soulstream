@@ -3,7 +3,7 @@ import {
   DragHandle,
   useGlassSurface,
   type SessionProviderConnectionStatus, type SessionReviewAcknowledgeResult,
-  type SessionSummary,
+  type SessionSummary, type ChatSessionStoreScope,
 } from "@seosoyoung/soul-ui";
 import { V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 import { SessionPanelHeader } from "./WorkspacePanelHeaders";
@@ -16,6 +16,7 @@ export function WorkspaceSessionColumn({
   onResize, onResizeKeyDown, onClose, chatInputDisabled, fileUploadUrl,
   historyEnabled, sessionStreamActive, sessionConnectionStatus, reconnectSession,
   onAcknowledgedReview,separatorAria,
+  storeScope,onSessionChange,loadDisplaySettings,
 }: {
   activeSession: SessionSummary | undefined;
   chatClassName: string; chatTestId: string;
@@ -28,6 +29,9 @@ export function WorkspaceSessionColumn({
   sessionConnectionStatus: SessionProviderConnectionStatus;
   reconnectSession(): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
+  storeScope?: ChatSessionStoreScope;
+  onSessionChange?(sessionId: string): void;
+  loadDisplaySettings?: boolean;
   separatorAria?:Pick<AriaAttributes,"aria-valuenow"|"aria-valuemin"|"aria-valuemax"|"aria-valuetext">;
 }) {
   const chatSurfaceRef = useRef<HTMLElement>(null);
@@ -51,7 +55,7 @@ export function WorkspaceSessionColumn({
         connectionStatus={sessionConnectionStatus} reconnect={reconnectSession} onClose={onClose}/>
       {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview}/> : null}
       <div className="v3-chat-content">
-        {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :
+        {activeSession ? <PersistentSessionChatView sessionId={activeSession.agentSessionId} storeScope={storeScope} onSessionChange={onSessionChange} loadDisplaySettings={loadDisplaySettings} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}/> :
           <div className="v3-chat-empty"><span className="v3-emoji" aria-hidden="true">💬</span><strong>위임 관계에서 세션을 선택하세요.</strong><p>채팅은 보드와 문서 편집 중에도 이 자리에 유지됩니다.</p></div>}
       </div>
     </section>

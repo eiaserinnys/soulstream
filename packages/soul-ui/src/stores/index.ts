@@ -6,12 +6,15 @@
 export {
   useDashboardStore,
   isSessionUnread,
+  createChatSessionStore,
 } from "./dashboard-store";
+export { ChatStoreScopeProvider, useChatStore, useChatStoreApi, useChatFlattenTree } from "./chat-store-scope";
 export { useFolderCardStore } from "./folder-card-store";
 export { useCustomViewStore } from "./custom-view-store";
 export type {
   DashboardState,
   DashboardActions,
+  ChatSessionStoreScope,
   FolderSortMode,
 } from "./dashboard-store";
 

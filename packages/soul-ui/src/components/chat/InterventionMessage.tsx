@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { ContextBlock } from "./ContextBlock";
 import { MANUSCRIPT_USER_ROW_CLASS_NAME } from "./ChatManuscriptList";
@@ -20,7 +20,7 @@ import { computeInterventionDisplay } from "./InterventionMessage.helpers";
  */
 export const InterventionMessage = memo(function InterventionMessage({ msg, presentation = "default" }: { msg: ChatMessage; presentation?: "default" | "manuscript" }) {
   // 세션-수준 caller_info avatar_url — 메시지 단위 caller_info 부재 시 fallback.
-  const callerAvatarUrl = useDashboardStore((s) =>
+  const callerAvatarUrl = useChatStore((s) =>
     extractCallerAvatarUrl(s.activeSessionSummary?.metadata),
   );
 

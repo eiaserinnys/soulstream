@@ -1,13 +1,13 @@
 import { memo, useRef } from "react";
 import { ThinkingOrb } from "thinking-orbs";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { useGlassSurface } from "../LiquidGlassProvider";
 
 export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ presentation = "default" }: { presentation?: "default" | "manuscript" }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const webglActive = useGlassSurface(bubbleRef, { enabled: presentation !== "manuscript" });
-  const activeSession = useDashboardStore((state) => state.activeSessionSummary);
+  const activeSession = useChatStore((state) => state.activeSessionSummary);
 
   if (presentation === "manuscript") {
     return (

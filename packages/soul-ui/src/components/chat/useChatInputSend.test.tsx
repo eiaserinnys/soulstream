@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { submitIntervention } from "./submitIntervention";
 import { SubmitInterventionHttpError } from "./submitIntervention";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { createChatSessionStore, useDashboardStore } from "../../stores/dashboard-store";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import {
   useChatInputSend,
@@ -296,5 +296,30 @@ describe("useChatInputSend pending message", () => {
       attachmentPaths: ["/tmp/evidence.png"],
     });
     expect(useDashboardStore.getState().pendingChatSends["session-1"]?.status).toBe("sending");
+  });
+
+  it("sends a scoped transcript message to its own session while PAS stays active globally", async () => {
+    const overlay = createChatSessionStore("assigned-session");
+    useDashboardStore.getState().setActiveSession("pas-session");
+    args.activeSessionKey = overlay.store.getState().activeSessionKey;
+    vi.mocked(submitIntervention).mockResolvedValue({
+      ok: true,
+      delivered: true,
+      reason: null,
+      consumeWhen: null,
+    });
+    render();
+
+    await act(async () => {
+      await latest!.send("assigned message");
+    });
+
+    expect(vi.mocked(submitIntervention).mock.calls[0]?.[0]).toMatchObject({
+      sessionKey: "assigned-session",
+      text: "assigned message\n\n[첨부 파일 로컬 경로: /tmp/evidence.png]",
+    });
+    expect(useDashboardStore.getState().activeSessionKey).toBe("pas-session");
+    expect(useDashboardStore.getState().pendingChatSends["assigned-session"]?.status).toBe("sending");
+    expect(useDashboardStore.getState().pendingChatSends["pas-session"]).toBeUndefined();
   });
 });

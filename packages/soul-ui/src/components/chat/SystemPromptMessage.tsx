@@ -5,12 +5,12 @@ import {
   formatPromptTokenCount,
   systemPromptTokenScope,
 } from "../../lib/prompt-token-metrics";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useChatStore } from "../../stores/chat-store-scope";
 
 /** system_message 노드: 시스템 프롬프트 접기/펼치기 */
 export const SystemPromptMessage = memo(function SystemPromptMessage({ msg }: { msg: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
-  const backend = useDashboardStore((s) => s.activeSessionSummary?.backend);
+  const backend = useChatStore((s) => s.activeSessionSummary?.backend);
   const tokens = useMemo(() => estimatePromptTokens(msg.content), [msg.content]);
   const tokenScope = systemPromptTokenScope(backend);
   return (

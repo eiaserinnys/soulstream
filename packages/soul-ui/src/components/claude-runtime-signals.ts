@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { listClaudeBackgroundTasks } from "../lib/claude-runtime-actions";
-import { useDashboardStore } from "../stores/dashboard-store";
+import { useChatStore } from "../stores/chat-store-scope";
 import type {
   ClaudeRuntimeNotificationView,
   ClaudeRuntimeRemoteTriggerView,
@@ -86,7 +86,7 @@ export function resolveClaudeRuntimeSignals(
 }
 
 export function useClaudeRuntimeSignals(sessionId: string) {
-  const runtime = useDashboardStore((s) => s.claudeRuntime);
+  const runtime = useChatStore((s) => s.claudeRuntime);
   const fallback = useSyncExternalStore(
     subscribeFallback,
     () => getFallbackEntry(sessionId),

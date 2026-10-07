@@ -1,16 +1,49 @@
-import { afterEach, describe, expect, it } from "vitest";
+/** @vitest-environment jsdom */
+
+import { createElement } from "react";
+import { flushSync } from "react-dom";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../lib/claude-runtime-actions", () => ({
+  listClaudeBackgroundTasks: vi.fn().mockResolvedValue({
+    notifications: [],
+    remoteTriggers: [],
+    transcriptMirror: null,
+  }),
+}));
 
 import {
   resetClaudeRuntimeSignalsFallbackForTest,
   resolveClaudeRuntimeSignals,
   resolveClaudeRuntimeSignalsForSessionForTest,
   setClaudeRuntimeSignalsFallbackForTest,
+  useClaudeRuntimeSignals,
 } from "./claude-runtime-signals";
 import type { ClaudeRuntimeView } from "../stores/claude-runtime-state";
+import { ChatStoreScopeProvider } from "../stores/chat-store-scope";
+import { createChatSessionStore, useDashboardStore } from "../stores/dashboard-store";
+
+function RuntimeSignalsProbe({ sessionId }: { sessionId: string }) {
+  const { signals } = useClaudeRuntimeSignals(sessionId);
+  return createElement("output", null, JSON.stringify({
+    notifications: signals.notifications.map((item) => item.notificationId),
+    remoteTriggers: signals.remoteTriggers.map((item) => item.triggerId),
+    mirrorSessionId: signals.mirror?.sessionId ?? null,
+  }));
+}
 
 describe("resolveClaudeRuntimeSignals", () => {
+  let root: Root | undefined;
+  let container: HTMLDivElement | undefined;
+
   afterEach(() => {
+    if (root) flushSync(() => root?.unmount());
+    root = undefined;
+    container?.remove();
+    container = undefined;
     resetClaudeRuntimeSignalsFallbackForTest();
+    useDashboardStore.getState().reset();
   });
 
   it("selects sorted compact notifications, remote triggers, and mirror errors", () => {
@@ -71,5 +104,61 @@ describe("resolveClaudeRuntimeSignals", () => {
     expect(stripSignals).toEqual(panelSignals);
     expect(stripSignals.hasSignals).toBe(true);
     expect(stripSignals.mirror?.lastError).toBe("fallback mirror error");
+  });
+
+  it("uses the scoped Claude runtime and keeps the unscoped global default", () => {
+    useDashboardStore.getState().reset();
+    const scope = createChatSessionStore("assigned-session");
+    const runtimeFor = (sessionId: string): ClaudeRuntimeView => ({
+      updatedAt: 1,
+      tasks: {},
+      schedules: {},
+      notifications: {
+        notification: {
+          notificationId: `${sessionId}-notification`,
+          source: "system",
+          message: `${sessionId} notification`,
+          updatedAt: 1,
+        },
+      },
+      remoteTriggers: {
+        trigger: {
+          triggerId: `${sessionId}-trigger`,
+          source: "tool_use",
+          updatedAt: 1,
+        },
+      },
+      transcriptMirror: {
+        updatedAt: 1,
+        errorCount: 0,
+        sessionId,
+      },
+    });
+    useDashboardStore.setState({ claudeRuntime: runtimeFor("pas-session") });
+    scope.store.setState({ claudeRuntime: runtimeFor("assigned-session") });
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root?.render(createElement(
+      ChatStoreScopeProvider,
+      { scope },
+      createElement(RuntimeSignalsProbe, { sessionId: "assigned-session" }),
+    )));
+    const scopedText = container.textContent ?? "";
+    expect(scopedText).toContain("assigned-session-notification");
+    expect(scopedText).toContain("assigned-session-trigger");
+    expect(scopedText).toContain("assigned-session");
+    expect(scopedText).not.toContain("pas-session-notification");
+    expect(scopedText).not.toContain("pas-session-trigger");
+
+    flushSync(() => root?.render(
+      createElement(RuntimeSignalsProbe, { sessionId: "assigned-session" }),
+    ));
+    const defaultText = container.textContent ?? "";
+    expect(defaultText).toContain("pas-session-notification");
+    expect(defaultText).toContain("pas-session-trigger");
+    expect(defaultText).not.toContain("assigned-session-notification");
+    expect(defaultText).not.toContain("assigned-session-trigger");
   });
 });
