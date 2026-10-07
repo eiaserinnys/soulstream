@@ -8014,6 +8014,95 @@
     "name": "update_persistent_instruction"
   },
   {
+    "description": "영구 세션 설정을 저장한다. 기본 모델을 바꾸면 설정창과 같이 다음 실행에서 새 세대로 바뀐다. 문맥 초기화와 함께 바꾸려면 이어서 request_session_generation_rollover(reset_context=true)를 부른다. 표시 토글만 바꾸면 세대는 그대로다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "animate_character": {
+          "type": "boolean"
+        },
+        "default_model": {
+          "properties": {
+            "model_preset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "reasoning_effort": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "model_preset"
+          ],
+          "type": "object"
+        },
+        "fallback_model": {
+          "anyOf": [
+            {
+              "properties": {
+                "model_preset": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "reasoning_effort": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "model_preset"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "show_character": {
+          "type": "boolean"
+        },
+        "show_generation_separator": {
+          "type": "boolean"
+        },
+        "show_jev_candidates": {
+          "type": "boolean"
+        },
+        "show_turn_usage": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "name": "update_persistent_session_settings"
+  },
+  {
     "description": "반복 작업을 CAS version으로 수정하거나 일시정지·재개한다. 1회 작업의 실행 시각은 run_at으로 바꾼다.",
     "execution": {
       "taskSupport": "forbidden"

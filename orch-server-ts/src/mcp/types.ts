@@ -17,6 +17,7 @@ import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_prox
 import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 import type { CatalogDeltaFolderProvider } from "../runtime/catalog_delta_broadcaster.js";
+import type { PersistentSessionSettingsService } from "../session/persistent_session_settings_service.js";
 
 export interface McpCallContext {
   signal?: AbortSignal;
@@ -36,6 +37,7 @@ export interface McpHostOptions {
   sessionMessages?: SessionActionCommandRouteOptions;
   externalLlm?: { service?: import("../external_events/service.js").ExternalEventsService; getSession(id: string): Promise<unknown | null> };
   sessions?: SessionMcpDependencies;
+  persistentSessionSettings?: PersistentSessionSettingsService;
   authBearerToken: string;
   recurringJobs: RecurringJobHostRouteOptions;
   cardOrchestration: CardOrchestrationRouteOptions;

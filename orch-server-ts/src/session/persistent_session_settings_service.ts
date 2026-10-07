@@ -123,9 +123,13 @@ export class PersistentSessionSettingsService {
     return this.instructions.update(request, sessionId, instructionId, input);
   }
 
-  async update(request: CallerRequest, sessionId: string, input: unknown) {
+  async update(request: CallerRequest, sessionId: string, input: unknown, accessEmail?: string | null) {
     const body = parseUpdateBody(input);
-    await this.deps.access.requireSessionAccess({ request, sessionId });
+    await this.deps.access.requireSessionAccess({
+      request,
+      sessionId,
+      ...(accessEmail === undefined ? {} : { accessEmail }),
+    });
     const row = await this.requireRow(sessionId);
     if (row.session_type === "llm") {
       throw new PersistentSessionApiError(422, "INVALID_REQUEST", "LLM sessions cannot be persistent");
