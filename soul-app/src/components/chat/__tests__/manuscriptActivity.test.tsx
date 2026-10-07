@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { LIGHT_COLORS } from '../../../theme/colors';
 import type { SessionEvent } from '../../../api/types';
@@ -63,7 +63,9 @@ describe('ManuscriptActivitySegment', () => {
     expect(screen.getAllByTestId('tool-event-row-slot')).toHaveLength(2);
     expect(screen.getByText('Read')).toBeTruthy();
     expect(screen.getByText('Bash')).toBeTruthy();
-    expect(screen.getByText('실행 사이의 생각 행')).toBeTruthy();
+    const eventMenus = screen.getAllByTestId('event-context-menu-anchor');
+    expect(eventMenus).toHaveLength(3);
+    expect(within(eventMenus[1]).getByText('실행 사이의 생각 행')).toBeTruthy();
     expect(screen.queryByText('mcp__soulstream__Read')).toBeNull();
     expect(screen.queryByText('private preview')).toBeNull();
 

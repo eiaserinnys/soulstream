@@ -70,7 +70,9 @@ export function ManuscriptActivitySegment({ item, sessionId, api }: Props) {
               />
             </EventContextMenu>
           ) : (
-            <ThinkingEvent key={entry.key} event={entry.event} presentation="manuscript" />
+            <EventContextMenu key={entry.key} sessionId={sessionId} event={entry.event}>
+              <ThinkingEvent event={entry.event} presentation="manuscript" />
+            </EventContextMenu>
           ))}
         </View>
       ) : null}
