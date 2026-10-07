@@ -13,6 +13,7 @@ import {
 } from "../../src/auth/provider_usage_observation.js";
 import { decidePersistentGeneration } from "../../src/task/persistent_decision.js";
 import { buildPersistentDecisionInput } from "../../src/task/persistent_decision_input.js";
+import { DEFAULT_CONFIG } from "../../src/task/persistent_decision_config.js";
 
 const now = new Date("2026-10-06T00:00:00.000Z");
 
@@ -344,6 +345,140 @@ describe("buildPersistentDecisionInput", () => {
 
     expect(input.checkpoint_tokens_by_preset).toEqual({ "codex-6.1-sol": 28_000 });
     expect(readEvents).toHaveBeenCalledWith(task.agentSessionId, 0, task.lastEventId, ["metadata"]);
+  });
+
+  it("uses the latest non-reset measurement when a newer reset measurement exists", async () => {
+    const task = makeTask();
+    task.persistentGeneration = {
+      number: 3,
+      firstCall: {
+        generation: 3,
+        inputTokens: 4_000,
+        cachedInputTokens: 0,
+        modelPreset: "claude-opus",
+        model: "claude-opus-model",
+        measuredAt: now.toISOString(),
+        contextReset: true,
+      } as never,
+    };
+    const readEvents = vi.fn(async () => [
+      {
+        id: 17,
+        session_id: task.agentSessionId,
+        event_type: "metadata",
+        payload: {
+          metadata_type: "persistent_generation",
+          value: {
+            first_call: {
+              generation: 2,
+              model_preset: "claude-opus",
+              input_tokens: 72_000,
+              context_reset: false,
+            },
+          },
+        },
+        searchable_text: "",
+        created_at: new Date("2026-10-05T00:00:00.000Z"),
+      },
+      {
+        id: 18,
+        session_id: task.agentSessionId,
+        event_type: "metadata",
+        payload: {
+          metadata_type: "persistent_generation",
+          value: {
+            first_call: {
+              generation: 3,
+              model_preset: "claude-opus",
+              input_tokens: 4_000,
+              context_reset: true,
+            },
+          },
+        },
+        searchable_text: "",
+        created_at: new Date("2026-10-06T00:00:00.000Z"),
+      },
+    ]);
+    rememberProviderUsageObservation("claude", makeUsage(35, 20), now.toISOString());
+    rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+
+    expect(input.checkpoint_tokens_by_preset).toEqual({ "claude-opus": 72_000 });
+  });
+
+  it("uses the preset default when reset measurements are the only samples", async () => {
+    const task = makeTask();
+    task.persistentGeneration = {
+      number: 3,
+      firstCall: {
+        generation: 3,
+        inputTokens: 4_000,
+        cachedInputTokens: 0,
+        modelPreset: "claude-opus",
+        model: "claude-opus-model",
+        measuredAt: now.toISOString(),
+        contextReset: true,
+      } as never,
+    };
+    const readEvents = vi.fn(async () => [{
+      id: 18,
+      session_id: task.agentSessionId,
+      event_type: "metadata",
+      payload: {
+        metadata_type: "persistent_generation",
+        value: {
+          first_call: {
+            generation: 3,
+            model_preset: "claude-opus",
+            input_tokens: 4_000,
+            context_reset: true,
+          },
+        },
+      },
+      searchable_text: "",
+      created_at: now,
+    }]);
+    rememberProviderUsageObservation("claude", makeUsage(35, 20), now.toISOString());
+    rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+    const decision = decidePersistentGeneration(input, {
+      ...DEFAULT_CONFIG,
+      presets: {
+        ...DEFAULT_CONFIG.presets,
+        "claude-opus": {
+          ...DEFAULT_CONFIG.provider_defaults.claude,
+          checkpoint_default_tokens: 90_000,
+        },
+      },
+    });
+
+    expect(input.checkpoint_tokens_by_preset).toEqual({});
+    expect(decision.inputs_snapshot).toMatchObject({
+      checkpoint_tokens: 90_000,
+      checkpoint_source: "default",
+    });
   });
 
   it("defaults missing context and checkpoints, and refreshes stale provider observations once", async () => {

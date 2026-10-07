@@ -2142,6 +2142,88 @@ describe("generation checkpoint context", () => {
     expect(checkpoint).not.toContain("Removed preference.");
   });
 
+  it.each([
+    ["kept", true],
+    ["omitted", false],
+  ])("builds reset checkpoint state and %s stored instructions", async (_label, keepInstructions) => {
+    const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
+      story: {
+        highlight: null,
+        narrative: "reset-story-marker",
+        unfoldedTurnSummaries: [{
+          eventId: 12,
+          turnNumber: 12,
+          content: "reset-summary-marker",
+          turnStartEventId: 11,
+          finalResponseEventId: 12,
+          createdAt: new Date("2026-10-05T08:00:00.000Z"),
+        }],
+        narrativeThroughEventId: 12,
+        foldCount: 1,
+        updatedAt: new Date("2026-10-05T08:00:00.000Z"),
+      },
+      lastSummarizedFinalResponseEventId: null,
+      recent: {
+        records: [{
+          event_id: 13,
+          event_type: "user_message",
+          text: "reset-recent-marker",
+          created_at: "2026-10-05T08:10:00.000Z",
+        }],
+        omittedUnsummarized: 0,
+      },
+      childSessions: [],
+      childSessionTotal: 0,
+      totals: { events: 13, turnSummaries: 12 },
+    });
+    const getSupervisedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-10-05T08:00:00.000Z",
+      counts: { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 },
+      cards: [],
+      openQuestions: [],
+      openQuestionTotal: 0,
+    });
+    const builder = makeBuilder({
+      getGenerationCheckpointMaterial,
+      getSupervisedCardContext,
+    } as unknown as Partial<SessionDB>);
+    const instructionMetadata = {
+      type: "persistent_instructions",
+      value: [{
+        id: "stored-1",
+        text: "Stored reset instruction.",
+        source_turns: [],
+        source_event_ids: [],
+        created_at: "2026-10-01T00:00:00.000Z",
+        updated_at: "2026-10-05T00:00:00.000Z",
+        status: "active",
+        origin: "agent",
+      }],
+    };
+    const task = makeTask({
+      agentSessionId: ownSessionIdForContextTest,
+      metadata: [instructionMetadata],
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context reset",
+        requestedAt: "2026-10-05T09:00:00.000Z",
+        fromBackendSessionId: "native-old",
+        resetContext: true,
+        keepInstructions,
+      },
+    });
+
+    const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
+    const checkpoint = String(context.combinedContextItems.find((item) => item.key === "persistent_checkpoint")?.content);
+
+    expect(checkpoint).toContain("## 현재 상태");
+    expect(checkpoint.includes("Stored reset instruction.")).toBe(keepInstructions);
+    expect(checkpoint).not.toContain("reset-story-marker");
+    expect(checkpoint).not.toContain("reset-summary-marker");
+    expect(checkpoint).not.toContain("reset-recent-marker");
+    expect(task.metadata).toContain(instructionMetadata);
+  });
+
   it("writes numbered cards and sessions as #N lines in the first input of a new generation", async () => {
     const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
       story: {

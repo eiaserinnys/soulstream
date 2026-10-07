@@ -3512,6 +3512,7 @@
         "type": { "const": "generation_started" },
         "generation": { "type": "integer", "minimum": 1 },
         "reason": { "type": "string" },
+        "context_reset": { "type": "boolean" },
         "previous": {
           "type": "object",
           "required": ["model_preset", "backend"],

@@ -39,6 +39,8 @@ export function resolveGenerationState(
       reason: pending.reason,
       requestedAt: pending.requestedAt,
       fromBackendSessionId: pending.applyingFrom,
+      resetContext: pending.resetContext === true,
+      keepInstructions: pending.keepInstructions !== false,
       ...(pending.previousModelPreset === undefined
         ? {}
         : { previousModelPreset: pending.previousModelPreset }),

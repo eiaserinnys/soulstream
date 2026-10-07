@@ -4,6 +4,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../../src/agent_registry.js";
+import type { AgentProfile } from "../../src/agent_registry.js";
+import { buildPersistentCheckpoint } from "../../src/context/persistent_checkpoint.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import type { SessionDB, SessionRow } from "../../src/db/session_db.js";
@@ -11,6 +13,11 @@ import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildMcpServer } from "../../src/mcp/server.js";
 import { hydrateEvictedTaskFromSessionRow } from "../../src/task/task_evicted_hydration.js";
+import {
+  beginGenerationRolloverIfPending,
+  publishStarted,
+} from "../../src/task/persistent_generation_rollover.js";
+import { readPersistentInstructions } from "@soulstream/wire-schema/persistent-session-instructions";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";
 import type { Task } from "../../src/task/task_models.js";
 import { TaskManager } from "../../src/task/task_manager.js";
@@ -249,15 +256,28 @@ describe("request_session_generation_rollover MCP tool", () => {
       model: "claude-opus-4-6",
       metadata: [
         { type: "persistent_session", value: { enabled: true, updated_at: "old" } },
-        {
-          type: "persistent_generation",
+          {
+            type: "persistent_generation",
           value: {
             number: 1,
             backend_session_id: "native-current",
             started_at: "2026-10-01T09:00:00.000Z",
             first_call: firstCall,
             pending: null,
+            },
           },
+        {
+          type: "persistent_instructions",
+          value: [{
+            id: "standing-1",
+            text: "Keep the decision concise.",
+            source_turns: [],
+            source_event_ids: [],
+            created_at: "2026-10-01T09:00:00.000Z",
+            updated_at: "2026-10-05T09:00:00.000Z",
+            status: "active",
+            origin: "agent",
+          }],
         },
       ],
     });
@@ -331,6 +351,7 @@ describe("request_session_generation_rollover MCP tool", () => {
             session_id: sessionId,
             model_preset: "codex-balanced",
             reasoning_effort: "high",
+            reset_context: true,
           },
         });
 
@@ -352,6 +373,8 @@ describe("request_session_generation_rollover MCP tool", () => {
                 reason: "manual",
                 target_model_preset: "codex-balanced",
                 target_reasoning_effort: "high",
+                reset_context: true,
+                keep_instructions: true,
               }),
             }),
           }),
@@ -372,8 +395,108 @@ describe("request_session_generation_rollover MCP tool", () => {
             number: 2,
             targetModelPreset: "codex-balanced",
             targetReasoningEffort: "high",
+            resetContext: true,
+            keepInstructions: true,
           },
         });
+
+        const instructionsBeforeRollover = readPersistentInstructions(hydratedTask.metadata);
+        hydratedTask.interventionQueue.push({ text: "continue from checkpoint", user: "test" });
+        const active = beginGenerationRolloverIfPending(
+          hydratedTask,
+          {
+            id: "agent-1",
+            name: "Agent",
+            backend: "claude",
+            workspace_dir: "/test",
+          } satisfies AgentProfile,
+          modelCatalog,
+        );
+        expect(active).toMatchObject({ resetContext: true, keepInstructions: true });
+
+        const checkpoint = buildPersistentCheckpoint({
+          material: {
+            story: {
+              highlight: null,
+              narrative: "story-that-must-be-reset",
+              unfoldedTurnSummaries: [{
+                eventId: 12,
+                turnNumber: 12,
+                content: "summary-that-must-be-reset",
+                turnStartEventId: 11,
+                finalResponseEventId: 12,
+                createdAt: new Date("2026-10-05T08:00:00.000Z"),
+              }],
+              narrativeThroughEventId: 12,
+              foldCount: 1,
+              updatedAt: new Date("2026-10-05T08:00:00.000Z"),
+            },
+            lastSummarizedFinalResponseEventId: null,
+            recent: {
+              records: [{
+                event_id: 13,
+                event_type: "user_message",
+                text: "recent-that-must-be-reset",
+                created_at: "2026-10-05T08:10:00.000Z",
+              }],
+              omittedUnsummarized: 0,
+            },
+            childSessions: [],
+            childSessionTotal: 0,
+            totals: { events: 13, turnSummaries: 12 },
+          },
+          cards: {
+            capturedAt: "2026-10-05T08:00:00.000Z",
+            counts: { running: 1, blocked: 0, review: 0, queued: 0, todo: 0 },
+            cards: [{
+              id: "current-state-card",
+              title: "current-state-marker",
+              status: "running",
+              blockedKind: null,
+              assignee: { kind: "session", agentId: "agent-1", sessionId },
+            }],
+            openQuestions: [],
+            openQuestionTotal: 0,
+          },
+          standingInstructions: instructionsBeforeRollover
+            .filter((instruction) => instruction.status === "active")
+            .map((instruction) => `- ${instruction.text}`),
+          ownSessionId: sessionId,
+          resetContext: active?.resetContext,
+          keepInstructions: active?.keepInstructions,
+        });
+        expect(String(checkpoint.item.content)).toContain("current-state-marker");
+        expect(String(checkpoint.item.content)).toContain("Keep the decision concise.");
+        expect(String(checkpoint.item.content)).not.toContain("story-that-must-be-reset");
+        expect(String(checkpoint.item.content)).not.toContain("summary-that-must-be-reset");
+        expect(String(checkpoint.item.content)).not.toContain("recent-that-must-be-reset");
+
+        const enqueueEventAndWaitForSessionAck = vi.fn(async () => ({
+          record: {} as never,
+          eventId: 43,
+        }));
+        await publishStarted(hydratedTask, checkpoint.stats, {
+          enqueueEventAndWaitForSessionAck,
+        } as unknown as EventPersistence);
+        expect(enqueueEventAndWaitForSessionAck.mock.calls[0]?.[1]).toMatchObject({
+          type: "generation_started",
+          generation: 2,
+          context_reset: true,
+        });
+
+        const omitInstructions = await client.callTool({
+          name: "request_session_generation_rollover",
+          arguments: {
+            session_id: sessionId,
+            reset_context: true,
+            keep_instructions: false,
+          },
+        });
+        expect(omitInstructions.isError).not.toBe(true);
+        expect(hydrateEvictedTaskFromSessionRow(row, pino({ level: "silent" }))?.persistentGeneration?.pending)
+          .toMatchObject({ resetContext: true, keepInstructions: false });
+        expect(readPersistentInstructions(hydratedTask.metadata)).toEqual(instructionsBeforeRollover);
+        expect(readPersistentInstructions(row.metadata)).toEqual(instructionsBeforeRollover);
       } finally {
         await client.close();
         await server.close();

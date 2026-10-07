@@ -314,6 +314,10 @@ describe("TaskExecutor persistent decision wiring", () => {
       reasoningEffort: "high",
       reason: "auto:arrival.warm.over_budget",
     });
+    const started = runtime.persistenceDouble.enqueueEvent.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)
+      .find((event) => event.type === "generation_started");
+    expect(started?.context_reset).toBe(false);
     expect(backendAtEngineStart).toBe("codex");
     expect(contextBuilder.buildGenerationContext).toHaveBeenCalledOnce();
     expect(sessionMutations.setModelSelection).toHaveBeenCalledOnce();

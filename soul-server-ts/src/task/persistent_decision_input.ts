@@ -145,7 +145,11 @@ function collectCheckpointTokensByPreset(
     const firstCall = asRecord(value?.first_call);
     const preset = firstCall?.model_preset;
     const inputTokens = firstCall?.input_tokens;
-    if (typeof preset === "string" && typeof inputTokens === "number") {
+    if (
+      firstCall?.context_reset !== true
+      && typeof preset === "string"
+      && typeof inputTokens === "number"
+    ) {
       checkpoints[preset] = inputTokens;
       if (typeof firstCall?.generation === "number") {
         measuredGenerations.add(firstCall.generation);
@@ -153,7 +157,11 @@ function collectCheckpointTokensByPreset(
     }
   }
   const currentFirstCall = task.persistentGeneration?.firstCall;
-  if (currentFirstCall && !measuredGenerations.has(currentFirstCall.generation)) {
+  if (
+    currentFirstCall
+    && currentFirstCall.contextReset !== true
+    && !measuredGenerations.has(currentFirstCall.generation)
+  ) {
     checkpoints[currentFirstCall.modelPreset] = currentFirstCall.inputTokens;
   }
   return checkpoints;

@@ -277,6 +277,71 @@ describe("buildPersistentCheckpoint", () => {
     expect(stats.chars).toBe(text.length);
   });
 
+  it("resets prior conversation material while keeping current state and selected instructions", () => {
+    const material = makeMaterial({
+      story: {
+        highlight: null,
+        narrative: "reset-story-marker",
+        unfoldedTurnSummaries: [{
+          eventId: 12,
+          turnNumber: 12,
+          content: "reset-summary-marker",
+          turnStartEventId: 11,
+          finalResponseEventId: 12,
+          createdAt: new Date("2026-10-05T00:00:00.000Z"),
+        }],
+        narrativeThroughEventId: 12,
+        foldCount: 1,
+        updatedAt: new Date("2026-10-05T00:00:00.000Z"),
+      },
+      recent: {
+        records: [{
+          event_id: 13,
+          event_type: "user_message",
+          text: "reset-recent-marker",
+          created_at: "2026-10-05T00:00:00.000Z",
+        }],
+        omittedUnsummarized: 0,
+      },
+      totals: { events: 13, turnSummaries: 12 },
+    });
+    const { text, stats } = itemText({
+      material,
+      cards: makeCards(),
+      standingInstructions: ["reset-instruction-marker"],
+      ownSessionId,
+      resetContext: true,
+      keepInstructions: true,
+    } as Parameters<typeof buildPersistentCheckpoint>[0]);
+
+    expect(text).toContain("## 현재 상태");
+    expect(text).toContain("## 지속 지시\nreset-instruction-marker");
+    expect(text).not.toContain("reset-story-marker");
+    expect(text).not.toContain("reset-summary-marker");
+    expect(text).not.toContain("reset-recent-marker");
+    expect(stats.sections).toMatchObject({ story: 0, summaries: 0, recent: 0 });
+    expect(stats.summarizedThroughTurn).toBeNull();
+    expect(stats.recentFromEventId).toBeNull();
+    expect(stats.recentToEventId).toBeNull();
+  });
+
+  it("can omit stored instructions from a reset checkpoint without changing the input", () => {
+    const standingInstructions = ["stored-instruction-marker"];
+    const { text } = itemText({
+      material: makeMaterial(),
+      cards: makeCards(),
+      standingInstructions,
+      ownSessionId,
+      resetContext: true,
+      keepInstructions: false,
+    } as Parameters<typeof buildPersistentCheckpoint>[0]);
+
+    expect(text).toContain("## 현재 상태");
+    expect(text).not.toContain("## 지속 지시");
+    expect(text).not.toContain("stored-instruction-marker");
+    expect(standingInstructions).toEqual(["stored-instruction-marker"]);
+  });
+
   it("reserves room for the full unsummarized range and stays within the overall budget", () => {
     const records = [
       { event_id: 101, event_type: "user_message", text: "요약되지 않은 요청 ".repeat(80), created_at: "2026-10-05T00:00:01.000Z" },
