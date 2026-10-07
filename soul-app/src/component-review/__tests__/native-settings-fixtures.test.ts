@@ -75,3 +75,14 @@ test('serves persistent instruction review states and the server cap response', 
   setState('pas-instructions-cap');
   await expect(api.createPersistentSessionInstruction('review-pas-2', '추가 지시')).rejects.toMatchObject({ status: 409, body: JSON.stringify({ error: 'cap_reached' }) });
 });
+
+test('serves the present and absent last-decision monitoring review states', async () => {
+  setState('pas-monitor-decision');
+  const present = await api.getTimeline('review-pas-2', { eventTypes: ['debug'], debugKinds: ['persistent_decision'], limit: 1 });
+  expect(present.messages).toHaveLength(1);
+  expect(present.messages[0].payload.kind).toBe('persistent_decision');
+
+  setState('pas-monitor-no-decision');
+  const absent = await api.getTimeline('review-pas-2', { eventTypes: ['debug'], debugKinds: ['persistent_decision'], limit: 1 });
+  expect(absent.messages).toEqual([]);
+});

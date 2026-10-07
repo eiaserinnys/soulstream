@@ -107,16 +107,19 @@ export function createSessionEndpoints({
       ).then((r) => readJson(r, 'getMessages'));
     },
 
-    // 기본 채팅 UI용 semantic timeline. 서버가 progress/debug/text_delta 같은 비가시 이벤트를 제외한다.
+    // 기본 timeline은 비가시 이벤트를 제외하고, debugKinds가 있으면 서버가 고른 debug 이벤트를 더한다.
     getTimeline: (
       sessionId: string,
-      params?: { before?: string; limit?: number; signal?: AbortSignal; eventTypes?: string[] },
+      params?: { before?: string; limit?: number; signal?: AbortSignal; eventTypes?: string[]; debugKinds?: string[] },
     ): Promise<MessagesResponse> => {
-      const { signal, eventTypes, ...queryParams } = params ?? {};
-      const query = eventTypes === undefined
-        ? queryParams
-        : { ...queryParams, event_types: eventTypes.join(",") };
-      const qs = buildQuery(query);
+      const { signal, eventTypes, debugKinds, ...queryParams } = params ?? {};
+      const query = {
+        ...queryParams,
+        ...(eventTypes === undefined ? {} : { event_types: eventTypes.join(",") }),
+      };
+      const search = new URLSearchParams(buildQuery(query));
+      debugKinds?.forEach((kind) => search.append('debug_kinds', kind));
+      const qs = search.toString();
       return authFetch(
         `${base}/api/sessions/${sessionId}/timeline${qs ? `?${qs}` : ''}`,
         signal ? { signal } : undefined,

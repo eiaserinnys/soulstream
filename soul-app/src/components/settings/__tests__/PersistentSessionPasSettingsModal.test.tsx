@@ -272,6 +272,9 @@ test('loads real monitoring data and distinguishes an empty timeline from a fail
     eventTypes: ['generation_started', 'complete', 'context_usage', 'error', 'user_message', 'intervention_sent'],
     limit: 100,
   });
+  expect(api.getTimeline).toHaveBeenCalledWith('pas-1', {
+    eventTypes: ['debug'], debugKinds: ['persistent_decision'], limit: 1,
+  });
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   expect(screen.getAllByText('기록')).toHaveLength(1);
   expect(await screen.findByText('기록 없음')).toBeTruthy();
@@ -302,7 +305,7 @@ test('retries a failed timeline read in the open monitoring section', async () =
   fireEvent.press(await screen.findByTestId('persistent-session-monitoring-retry'));
 
   expect(await screen.findByTestId('persistent-session-monitoring-empty')).toBeTruthy();
-  expect(calls).toBe(4);
+  expect(calls).toBe(6);
 });
 
 test('shows current monitoring values and pairs usage with the terminal event', async () => {
@@ -336,6 +339,63 @@ test('shows current monitoring values and pairs usage with the terminal event', 
   expect(screen.getByText('다음 실행부터 모델 B')).toBeTruthy();
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   expect(monitoring.getByText(/컨텍스트 25\.0% · 정가 \$0\.13/)).toBeTruthy();
+});
+
+test('requests only persistent decisions and shows the newest one returned', async () => {
+  api.getTimeline.mockImplementation(async (_id: string, query?: { eventTypes?: string[]; debugKinds?: string[] }) => {
+    if (query?.debugKinds) return { messages: [
+      { id: 22, parent_event_id: null, event_type: 'debug', payload: { kind: 'persistent_decision', action: 'new_action', reason: '가장 최근 판단입니다.' }, created_at: '2026-10-06T10:00:00Z' },
+      { id: 21, parent_event_id: null, event_type: 'debug', payload: { kind: 'persistent_decision', action: 'old_action', reason: '이전 판단입니다.' }, created_at: '2026-10-05T10:00:00Z' },
+      { id: 23, parent_event_id: null, event_type: 'debug', payload: { kind: 'other_debug', action: 'ignored', reason: '표시하지 않습니다.' }, created_at: '2026-10-06T11:00:00Z' },
+    ], next_cursor: null };
+    if (query?.eventTypes?.length === 1) return { messages: [], next_cursor: null };
+    return { messages: [], next_cursor: null };
+  });
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  const monitoring = within(screen.getByTestId('settings-section-persistent-session-monitoring'));
+  expect(await monitoring.findByText('마지막 판단')).toBeTruthy();
+  expect(monitoring.getByText(/new_action · 가장 최근 판단입니다\./)).toBeTruthy();
+  expect(monitoring.queryByText(/old_action|ignored|wrong_event|이전 판단입니다/)).toBeNull();
+  expect(api.getTimeline).toHaveBeenCalledWith('pas-1', {
+    eventTypes: ['debug'], debugKinds: ['persistent_decision'], limit: 1,
+  });
+});
+
+test('does not render a last-decision row when the timeline has no persistent decision', async () => {
+  api.getTimeline.mockImplementation(async (_id: string, query?: { eventTypes?: string[]; debugKinds?: string[] }) => ({
+    messages: query?.debugKinds ? [
+      { id: 30, parent_event_id: null, event_type: 'debug', payload: { kind: 'other_debug', action: 'ignored' }, created_at: '2026-10-06T12:00:00Z' },
+    ] : [], next_cursor: null,
+  }));
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  const monitoring = within(screen.getByTestId('settings-section-persistent-session-monitoring'));
+  await monitoring.findByTestId('persistent-session-monitoring-empty');
+  expect(monitoring.queryByText('마지막 판단')).toBeNull();
+});
+
+test('keeps normal monitoring rows when only the decision request fails', async () => {
+  api.getTimeline.mockImplementation(async (_id: string, query?: { eventTypes?: string[]; debugKinds?: string[] }) => {
+    if (query?.debugKinds) throw new Error('debug query unsupported');
+    if (query?.eventTypes?.length === 1) return { messages: [
+      { id: 31, parent_event_id: null, event_type: 'generation_started', payload: { generation: 8 }, created_at: '2026-10-06T12:00:00Z' },
+    ], next_cursor: null };
+    return { messages: [], next_cursor: null };
+  });
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+
+  const monitoring = within(screen.getByTestId('settings-section-persistent-session-monitoring'));
+  expect(await monitoring.findByText('현재 세대')).toBeTruthy();
+  expect(monitoring.getByText('8')).toBeTruthy();
+  expect(monitoring.queryByText('마지막 판단')).toBeNull();
+  expect(monitoring.queryByText('조회 실패')).toBeNull();
 });
 
 test('does not pair context usage from a failed turn with a later completion', async () => {

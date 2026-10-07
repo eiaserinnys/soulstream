@@ -145,12 +145,18 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
       })),
     };
   },
-  getTimeline: async (_sessionId: string, params?: { eventTypes?: string[]; before?: string }) => {
+  getTimeline: async (_sessionId: string, params?: { eventTypes?: string[]; debugKinds?: string[]; before?: string }) => {
     if (state() === 'pas-monitor-loading') return new Promise<never>(() => {});
     if (state() === 'pas-monitor-error') throw new Error('공개 예시 기록 조회 실패');
     if (state() === 'pas-monitor-empty') return { messages: [], next_cursor: null };
     const latestGeneration = { id: 118, parent_event_id: null, event_type: 'generation_started', payload: { generation: 7 }, created_at: '2026-10-06T01:12:00Z' };
     if (params?.eventTypes?.length === 1 && params.eventTypes[0] === 'generation_started') return { messages: [latestGeneration], next_cursor: null };
+    if (params?.eventTypes?.includes('debug') && params.debugKinds?.includes('persistent_decision')) {
+      if (state() === 'pas-monitor-decision') return { messages: [
+        { id: 122, parent_event_id: null, event_type: 'debug', payload: { kind: 'persistent_decision', trigger: 'turn_end', action: 'continue', rule: 'continue_active_session', reason: '현재 설정으로 다음 실행을 이어갑니다.', inputs_snapshot: {} }, created_at: '2026-10-06T01:20:00Z' },
+      ], next_cursor: null };
+      if (state() === 'pas-monitor-no-decision') return { messages: [], next_cursor: null };
+    }
     if (params?.before === 'public-older') return { messages: [
       { id: 117, parent_event_id: null, event_type: 'complete', payload: { usage: { input_tokens: 842, output_tokens: 126 }, turn_cost_usd: 0.02 }, created_at: '2026-10-05T22:46:00Z' },
       { id: 116, parent_event_id: null, event_type: 'context_usage', payload: { used_tokens: 842, max_tokens: 100000, percent: 0.8 }, created_at: '2026-10-05T22:45:00Z' },
