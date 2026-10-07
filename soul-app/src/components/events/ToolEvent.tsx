@@ -93,7 +93,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
     : !result ? 'time-outline' : isError ? 'close-circle' : 'checkmark-circle';
   const statusLabel = !result ? '실행 중' : isError ? presentation === 'manuscript' ? '실패' : '오류' : '완료';
   const statusColor = presentation === 'manuscript'
-    ? t.colors.textSecondary
+    ? isError ? t.colors.errorText : t.colors.textSecondary
     : !result ? t.colors.warning : isError ? t.colors.error : t.colors.success;
 
   // 헤더 우측 한 줄 미리보기 — 공백/줄바꿈을 단일 공백으로 압축한 뒤 그대로 넘긴다.
@@ -124,7 +124,8 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
             color={statusColor}
           />
           <Text
-            style={[styles.name, !previewLine && styles.nameOnly]}
+            style={[styles.name, !previewLine && styles.nameOnly,
+              isError && presentation === 'manuscript' && styles.manuscriptError]}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
@@ -311,6 +312,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
           fontWeight: '600',
         },
     nameOnly: { maxWidth: '100%', flex: 1 },
+    manuscriptError: { color: c.errorText },
     preview: {
       flex: 1,
       minWidth: 0,

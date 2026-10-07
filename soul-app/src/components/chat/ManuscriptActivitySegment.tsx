@@ -70,9 +70,11 @@ export function ManuscriptActivitySegment({ item, sessionId, api }: Props) {
               />
             </EventContextMenu>
           ) : (
-            <EventContextMenu key={entry.key} sessionId={sessionId} event={entry.event}>
-              <ThinkingEvent event={entry.event} presentation="manuscript" />
-            </EventContextMenu>
+            <View key={entry.key} testID="manuscript-activity-thinking-inset" style={styles.thinkingInset}>
+              <EventContextMenu sessionId={sessionId} event={entry.event}>
+                <ThinkingEvent event={entry.event} presentation="manuscript" />
+              </EventContextMenu>
+            </View>
           ))}
         </View>
       ) : null}
@@ -87,6 +89,9 @@ function makeStyles(t: DesignTokens) {
       marginLeft: 0,
       marginRight: getChatRowHorizontalInset(t, 'manuscript'),
       marginVertical: sessionRoles.chat.messageGap / 2,
+    },
+    thinkingInset: {
+      paddingHorizontal: sessionRoles.chat.tool.paddingHorizontal,
     },
     header: {
       minHeight: t.hitTarget.min,

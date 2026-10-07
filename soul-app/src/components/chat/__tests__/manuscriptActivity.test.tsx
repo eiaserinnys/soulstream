@@ -1,7 +1,10 @@
-import { fireEvent, render, within } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
-import { LIGHT_COLORS } from '../../../theme/colors';
+import { DARK_PERSISTENT_SESSION_COLORS, LIGHT_COLORS } from '../../../theme/colors';
 import type { SessionEvent } from '../../../api/types';
+import { ReviewManuscriptActivity } from '../../../component-review/ReviewManuscriptActivity';
+import { ThinkingEvent } from '../../events/ThinkingEvent';
+import { useSettingsStore } from '../../../store/settingsStore';
 import type { ManuscriptActivityRenderItem } from '../manuscriptActivityProjection';
 import { ManuscriptActivitySegment } from '../ManuscriptActivitySegment';
 
@@ -63,9 +66,15 @@ describe('ManuscriptActivitySegment', () => {
     expect(screen.getAllByTestId('tool-event-row-slot')).toHaveLength(2);
     expect(screen.getByText('Read')).toBeTruthy();
     expect(screen.getByText('Bash')).toBeTruthy();
+    expect(screen.getAllByTestId('tool-event-state-icon')[0].props.color).toBe(LIGHT_COLORS.errorText);
+    expect(StyleSheet.flatten(screen.getByText('Read').props.style).color).toBe(LIGHT_COLORS.errorText);
     const eventMenus = screen.getAllByTestId('event-context-menu-anchor');
     expect(eventMenus).toHaveLength(3);
     expect(within(eventMenus[1]).getByText('실행 사이의 생각 행')).toBeTruthy();
+    const thoughtInset = screen.getByTestId('manuscript-activity-thinking-inset');
+    const toolHeader = screen.getAllByTestId('tool-event-header-visual')[0];
+    expect(StyleSheet.flatten(thoughtInset.props.style).paddingHorizontal)
+      .toBe(StyleSheet.flatten(toolHeader.props.style).paddingHorizontal);
     expect(screen.queryByText('mcp__soulstream__Read')).toBeNull();
     expect(screen.queryByText('private preview')).toBeNull();
 
@@ -77,6 +86,29 @@ describe('ManuscriptActivitySegment', () => {
     expect(screen.getByTestId('manuscript-activity-toggle').props.accessibilityState.expanded).toBe(true);
     fireEvent.press(screen.getByTestId('manuscript-activity-toggle'));
     expect(screen.queryByTestId('manuscript-activity-items')).toBeNull();
+  });
+
+  it('표본 원고형 열은 종이 바탕을 쓰고, 단독 생각 문단은 열 시작선을 유지한다', async () => {
+    const previousAppearance = useSettingsStore.getState().appearance;
+    await act(async () => {
+      useSettingsStore.setState({ appearance: 'dark' });
+    });
+    try {
+      const sample = render(<ReviewManuscriptActivity />);
+      const manuscriptColumn = sample.getByTestId('review-activity-manuscript-column');
+      expect(StyleSheet.flatten(manuscriptColumn.props.style).backgroundColor)
+        .toBe(DARK_PERSISTENT_SESSION_COLORS.paper);
+    } finally {
+      await act(async () => {
+        useSettingsStore.setState({ appearance: previousAppearance });
+      });
+    }
+
+    const standalone = render(<ThinkingEvent event={ev('solo', 'thinking_delta', { thinking: '단독 생각' })}
+      presentation="manuscript" />);
+    const standaloneText = StyleSheet.flatten(standalone.getByTestId('thinking-event-text').props.style);
+    expect(standaloneText.marginLeft).toBeUndefined();
+    expect(standaloneText.paddingHorizontal).toBeUndefined();
   });
 
   it('접힌 줄은 글자·아이콘만 두고 surface와 외곽선을 그리지 않는다', () => {

@@ -105,7 +105,8 @@ export function ReviewManuscriptActivity() {
           <ToolEvent start={events.runningStart} sessionId="review-activity" api={null} />
           <TypingIndicator />
         </View>
-        <View testID="review-activity-manuscript-column" style={{ width: columnWidth, gap: t.spacing.sm }}>
+        <View testID="review-activity-manuscript-column" style={{ width: columnWidth, gap: t.spacing.sm,
+          backgroundColor: t.persistentSession.paper }}>
           <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>원고형</Text>
           <ManuscriptActivitySegment item={manuscriptActivity} sessionId="review-activity" api={null} />
           <ManuscriptActivitySegment item={singleToolActivity} sessionId="review-activity" api={null} />
