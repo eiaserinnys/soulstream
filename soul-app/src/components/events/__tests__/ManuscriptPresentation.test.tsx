@@ -79,16 +79,21 @@ test('원고형은 대기·승인·오류·도구·생각·담당 카드·첨부
   const toolRow = tool.getByTestId('tool-event-row-slot');
   const toolSurface = tool.getByTestId('tool-event-wrapper');
   expect(StyleSheet.flatten(toolRow.props.style).marginRight).toBe(0);
-  expect(StyleSheet.flatten(toolSurface.props.style).backgroundColor).toBe(LIGHT_PERSISTENT_SESSION_COLORS.panel);
-  expect(StyleSheet.flatten(toolSurface.props.style).borderColor).toBe(LIGHT_PERSISTENT_SESSION_COLORS.line);
+  expect(StyleSheet.flatten(toolSurface.props.style).backgroundColor).toBeUndefined();
+  expect(StyleSheet.flatten(toolSurface.props.style).borderWidth).toBeUndefined();
 
   const thinking = render(<ThinkingEvent presentation="manuscript" event={{
     id: 'thinking', type: 'thinking_delta', data: { thinking: '생각 내용' },
   }} />);
-  const thinkingRow = thinking.UNSAFE_getAllByType(View)[0];
-  expect(StyleSheet.flatten(thinkingRow?.props.style).marginRight).toBe(0);
-  expect(StyleSheet.flatten(thinkingRow?.props.style).backgroundColor).toBe(LIGHT_PERSISTENT_SESSION_COLORS.panel);
-  expect(StyleSheet.flatten(thinkingRow?.props.style).borderColor).toBe(LIGHT_PERSISTENT_SESSION_COLORS.line);
+  const thinkingText = thinking.getByTestId('thinking-event-text');
+  const thinkingTextStyle = StyleSheet.flatten(thinkingText.props.style);
+  expect(thinking.getByText('생각 내용')).toBeTruthy();
+  expect(thinking.queryByText('생각 중...')).toBeNull();
+  expect(thinkingTextStyle).toMatchObject({
+    color: LIGHT_COLORS.textPrimary,
+  });
+  expect(thinkingTextStyle.lineHeight).toBe(thinkingTextStyle.fontSize * 1.6);
+  expect(thinking.UNSAFE_queryAllByType(View)).toHaveLength(0);
 
   const summary = render(<TurnSummaryCaption presentation="manuscript" content="담당 카드 기록" />);
   const summarySurface = summary.getByTestId('turn-summary-caption-bubble');
@@ -97,6 +102,16 @@ test('원고형은 대기·승인·오류·도구·생각·담당 카드·첨부
 
   const divider = render(<LabeledDivider label="새 세대" lineColor="#123456" />);
   expect(StyleSheet.flatten(divider.UNSAFE_getAllByType(View)[1].props.style).backgroundColor).toBe('#123456');
+});
+
+test('일반 채팅 Thinking 블록은 라벨과 개별 접힘을 유지한다', () => {
+  const thinking = render(<ThinkingEvent event={{
+    id: 'thinking-default', type: 'thinking_delta', data: { thinking: '일반 채팅 생각 내용' },
+  }} />);
+  expect(thinking.getByText('생각 중...')).toBeTruthy();
+  expect(thinking.queryByText('일반 채팅 생각 내용')).toBeNull();
+  fireEvent.press(thinking.getByText('생각 중...'));
+  expect(thinking.getByText('일반 채팅 생각 내용')).toBeTruthy();
 });
 
 test('원고형 입력의 줄 간격과 높이는 기본 입력을 유지하고 멀티라인 왼쪽 여백은 0이다', () => {

@@ -21,6 +21,7 @@ import { TurnSummaryCaption } from '../events/TurnSummaryCaption';
 import { TurnEndCaptions } from './TurnEndCaptions';
 import { AgentMessageGroup } from './AgentMessageGroup';
 import { TypingIndicator } from './TypingIndicator';
+import { ManuscriptActivitySegment } from './ManuscriptActivitySegment';
 import { HistoryFetchError } from './HistoryFetchError';
 import { useTokens } from '../../theme';
 import { CollapsibleCaption, CollapsibleCaptionLine } from './CollapsibleCaption';
@@ -99,7 +100,7 @@ export const ChatEventList = memo(function ChatEventList({
     const highlighted = item.key === highlightedItemKey
       || (item.kind === 'agent-message-group' && item.events.some((event) => event.key === highlightedItemKey));
     return (
-      <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' || item.kind === 'agent-message-group' ? session : undefined} sessionId={sessionId} api={api}
+      <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' || item.kind === 'agent-message-group' || item.kind === 'activity' ? session : undefined} sessionId={sessionId} api={api}
         onRetryPending={onRetryPending} onRestorePending={onRestorePending}
         selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
         activeSelection={activeSelection}
@@ -208,6 +209,11 @@ const ChatEventRow = memo(function ChatEventRow({
       </SearchFocusHighlight>
     );
   }
+  if (item.kind === 'activity') return (
+    <SearchFocusHighlight active={highlighted}>
+      <ManuscriptActivitySegment item={item} sessionId={sessionId} api={api} />
+    </SearchFocusHighlight>
+  );
   if (item.kind === 'turn-summary') {
     return (
       <SearchFocusHighlight active={highlighted}>

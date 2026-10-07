@@ -44,6 +44,7 @@ import { ReviewPersistent } from './ReviewPersistent';
 import { ReviewPersistentTaskListN7 } from './ReviewPersistentTaskListN7';
 import { ReviewTurnEndCaptions } from './ReviewTurnEndCaptions';
 import { ReviewAgentMessageGroup } from './ReviewAgentMessageGroup';
+import { ReviewManuscriptActivity } from './ReviewManuscriptActivity';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -214,7 +215,7 @@ export function ComponentReview() {
     width,
     height,
   );
-  const content = sample ? <ReviewDialoguePreview sample={sample} /> : <Gallery />;
+  const content = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('sample') === 'pas-activity' ? <ReviewManuscriptActivity /> : sample ? <ReviewDialoguePreview sample={sample} /> : <Gallery />;
   return <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>
     {safeAreaFixture ? <SafeAreaFrameContext.Provider value={safeAreaFixture.frame}>
       <SafeAreaInsetsContext.Provider value={safeAreaFixture.insets}>{content}</SafeAreaInsetsContext.Provider>
