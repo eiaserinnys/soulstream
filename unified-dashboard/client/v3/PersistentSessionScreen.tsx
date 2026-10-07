@@ -21,6 +21,9 @@ import { V3GlobalToolbar } from './V3GlobalToolbar';
 import { persistentSessionPortrait } from './PersistentSessionEntry';
 import { PersistentSessionTaskList } from './PersistentSessionTaskList';
 import { CardWorkspace } from './CardWorkspace';
+import { MobilePlannerTabs, useMobilePlannerMode } from './MobilePlannerTabs';
+import type { MobilePlannerTab } from './mobile-planner-state';
+import type { CardSessionSelection } from './CardSessionHistory';
 import { V3_CARD_GAP_PX, V3_PANEL_GAP_PX, V3_OUTER_INSET_PX } from './v3-layout-metrics';
 import './v3-dashboard-styles';
 import './persistent-session-screen.css';
@@ -52,6 +55,8 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const [configOpen, setConfigOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const mobileMode = useMobilePlannerMode();
+  const [mobileTab, setMobileTab] = useState<MobilePlannerTab>('today');
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [overlaySessionSelection, setOverlaySessionSelection] = useState<{ cardId: string; sessionId: string } | null>(null);
   const [resolvedOverlaySession, setResolvedOverlaySession] = useState<SessionSummary | null>(null);
@@ -132,18 +137,21 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const openTaskCard = useCallback((cardId: string) => {
     setResolvedOverlaySession(null);
     setOverlaySessionSelection(null);
+    setMobileTab('today');
     setSelectedCardId(cardId);
   }, []);
   const closeCardWorkspace = useCallback(() => {
     setSelectedCardId(null);
     setOverlaySessionSelection(null);
     setResolvedOverlaySession(null);
+    setMobileTab('today');
   }, []);
-  const selectOverlaySession = useCallback((summary: SessionSummary) => {
+  const selectOverlaySession = useCallback((summary: SessionSummary, selection?: CardSessionSelection) => {
     if (!selectedCardId) return;
     setOverlaySessionSelection({ cardId: selectedCardId, sessionId: summary.agentSessionId });
     setResolvedOverlaySession(summary);
-  }, [selectedCardId]);
+    if (selection?.source !== 'automatic' && mobileMode) setMobileTab('chat');
+  }, [mobileMode, selectedCardId]);
   const continueOverlaySession = useCallback((nextSessionId: string) => {
     if (!selectedCardId) return;
     setOverlaySessionSelection({ cardId: selectedCardId, sessionId: nextSessionId });
@@ -216,10 +224,11 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
         <div className="persistent-session-task-scroll" hidden={Boolean(selectedCardId)}><PersistentSessionTaskList onOpenCard={openTaskCard}/></div>
       </aside>}
       {selectedCardId && <CardWorkspace cardId={selectedCardId} initialSessionId={overlaySessionId} folders={folders ?? []} onClose={closeCardWorkspace} onOpenSession={selectOverlaySession}
-        mobileMode={false} mobileTab="cards" activeSession={overlayActiveSession} storeScope={overlaySessionId === sessionId ? undefined : overlayStoreScope ?? undefined} onSessionChange={continueOverlaySession}
+        mobileMode={mobileMode} mobileTab={mobileTab} activeSession={overlayActiveSession} storeScope={overlaySessionId === sessionId ? undefined : overlayStoreScope ?? undefined} onSessionChange={continueOverlaySession}
         chatInputDisabled={overlayChatInputDisabled} fileUploadUrl={!overlayChatInputDisabled && overlayNodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(overlayNodeId)}` : undefined}
         historyEnabled={Boolean(overlaySessionId && overlaySessionId !== sessionId && overlayStream.synchronizedSessionKey === overlaySessionId)} loadDisplaySettings={overlaySessionId !== sessionId}
         sessionStreamActive={Boolean(overlaySessionId && overlayStreamState.status === 'connected')} sessionConnectionStatus={overlayStreamState.status} reconnectSession={overlayStreamState.reconnect} onAcknowledgedReview={acknowledgeOverlayReview}/>}
+      {selectedCardId && mobileMode && <MobilePlannerTabs activeTab={mobileTab} onSelect={setMobileTab}/>}
     </>}
     {geometry?.body && geometry.lineLeftReach > 0 && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.lineLeftReach }}/>}
     {displaySettings && geometry?.body && <div data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen && !selectedCardId} assetBaseUrl="/characters/seosoyoung"/></div>}

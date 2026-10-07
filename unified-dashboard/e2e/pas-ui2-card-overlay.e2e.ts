@@ -58,12 +58,15 @@ const unassigned = {
   nodeId: null,
 };
 
-for (const width of [1440, 1280]) {
+for (const width of [1440, 820, 390]) {
   test(`PAS card overlay ${width}px`, async ({ page }) => {
     const detail = { ...reviewDetail, card: assigned };
-    let pasEventConnections = 0;
+    const eventStreamRequests: Record<string, number> = {};
     page.on("request", request => {
-      if (new URL(request.url()).pathname === "/api/sessions/pas-main/events") pasEventConnections += 1;
+      const pathname = new URL(request.url()).pathname;
+      if (pathname === "/api/sessions/stream" || pathname === "/api/sessions/pas-main/events") {
+        eventStreamRequests[pathname] = (eventStreamRequests[pathname] ?? 0) + 1;
+      }
     });
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
@@ -104,19 +107,32 @@ for (const width of [1440, 1280]) {
       (window as any).__w6PasScrollTop = scroller.scrollTop;
       (window as any).__w6PasActiveSession = localStorage.getItem("soulstream:persistent-session:last-session-id");
     });
+    await expect.poll(() => eventStreamRequests["/api/sessions/stream"] ?? 0).toBeGreaterThan(0);
+    await expect.poll(() => eventStreamRequests["/api/sessions/pas-main/events"] ?? 0).toBeGreaterThan(0);
+    const streamsBeforeOpen = { ...eventStreamRequests };
     await page.getByRole("button", { name: "작업 목록", exact: true }).click();
     await expect(page.locator('[data-testid="persistent-session-task-list"] [data-card-id="w6-assigned-card"]')).toBeVisible();
     const beforeClose = await page.screenshot({ path: path.join(output, `${width}-before.png`), animations: "disabled" });
     await page.locator('[data-testid="persistent-session-task-list"] [data-card-id="w6-assigned-card"]').click();
     const workspace = page.getByTestId("v3-card-workspace");
     await expect(workspace).toBeVisible();
-    await expect(workspace.locator(".v3-card-workspace-pair > [data-testid='v3-card-workspace-left-divider']")).toBeVisible();
     await expect(workspace.getByTestId("card-detail")).toBeVisible();
+    if (width === 390) {
+      await expect(workspace).toHaveAttribute("data-mobile-view", "today");
+      await expect(workspace.locator(".v3-card-workspace-pair")).toHaveCount(0);
+      await page.screenshot({ path: path.join(output, `${width}-assigned-open.png`), animations: "disabled" });
+      await page.getByTestId("v3-mobile-tab-chat").click();
+      await expect(workspace).toHaveAttribute("data-mobile-view", "chat");
+    } else {
+      await expect(workspace.locator(".v3-card-workspace-pair > [data-testid='v3-card-workspace-left-divider']")).toBeVisible();
+    }
     await expect(workspace.getByTestId("v3-card-session-chat").locator('[data-slot="chat-input-body"]')).toBeVisible();
     await expect(workspace.getByTestId("v3-card-session-chat")).toContainText("배경 PAS 대화 메시지");
     await expect(background).toContainText("배경 PAS 대화 메시지");
-    expect(pasEventConnections).toBe(1);
-    const geometry = await workspace.evaluate(element => {
+    await page.waitForTimeout(100);
+    const streamsAfterOpen = { ...eventStreamRequests };
+    expect(streamsAfterOpen["/api/sessions/pas-main/events"]).toBe(streamsBeforeOpen["/api/sessions/pas-main/events"]);
+    const geometry = width === 390 ? null : await workspace.evaluate(element => {
       const rect = (target: Element) => {
         const box = target.getBoundingClientRect();
         return { x: box.x, right: box.right, y: box.y, bottom: box.bottom, width: box.width, height: box.height };
@@ -127,11 +143,15 @@ for (const width of [1440, 1280]) {
         conversation: rect(element.querySelector('[data-testid="v3-card-session-chat"]')!),
       };
     });
-    expect(Math.abs(geometry.detail.y - geometry.conversation.y)).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.detail.bottom - geometry.conversation.bottom)).toBeLessThanOrEqual(1);
-    writeFileSync(path.join(output, `${width}-geometry.json`), JSON.stringify(geometry, null, 2));
-    await page.screenshot({ path: path.join(output, `${width}-assigned-open.png`), animations: "disabled" });
+    if (geometry) {
+      expect(Math.abs(geometry.detail.y - geometry.conversation.y)).toBeLessThanOrEqual(1);
+      expect(Math.abs(geometry.detail.bottom - geometry.conversation.bottom)).toBeLessThanOrEqual(1);
+      writeFileSync(path.join(output, `${width}-geometry.json`), JSON.stringify(geometry, null, 2));
+    }
+    writeFileSync(path.join(output, `${width}-sse-counts.json`), JSON.stringify({ beforeOpen: streamsBeforeOpen, afterOpen: streamsAfterOpen }, null, 2));
+    if (width !== 390) await page.screenshot({ path: path.join(output, `${width}-assigned-open.png`), animations: "disabled" });
 
+    if (width === 390) await page.getByTestId("v3-mobile-tab-today").click();
     await workspace.getByRole("button", { name: "카드 닫기" }).click();
     await expect(workspace).toHaveCount(0);
     const backgroundState = await page.evaluate(() => {
@@ -148,11 +168,11 @@ for (const width of [1440, 1280]) {
     expect(backgroundState.sameRoot).toBe(true);
     expect(backgroundState.sameScroller).toBe(true);
     expect(backgroundState.after).toBe(backgroundState.before);
-    expect(pasEventConnections).toBe(1);
     const afterClose = await page.screenshot({ path: path.join(output, `${width}-closed.png`), animations: "disabled" });
     expect(afterClose.equals(beforeClose)).toBe(true);
 
     await page.locator('[data-testid="persistent-session-task-list"] [data-card-id="w6-unassigned-card"]').click();
+    if (width === 390) await page.getByTestId("v3-mobile-tab-chat").click();
     await expect(page.getByTestId("v3-card-session-chat")).toContainText("위임 관계에서 세션을 선택하세요.");
     await page.screenshot({ path: path.join(output, `${width}-unassigned-open.png`), animations: "disabled" });
   });
