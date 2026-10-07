@@ -613,7 +613,6 @@
 .v3-panel-header ~ .v3-chat-content [data-slot="chat-root"],
 .v3-panel-header ~ .v3-chat-content [data-virtuoso-scroller="true"] { padding-top: 0; }
 @media (max-width: 759px) {
-  .v3-panel-header.v3-chat-header { padding-inline: var(--v3-space-6); }
   .v3-chat-header > div.v3-chat-title-row {
     display: flex;
     flex-basis: 100%;

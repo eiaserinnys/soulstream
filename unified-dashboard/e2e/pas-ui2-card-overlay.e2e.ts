@@ -4,18 +4,25 @@ import { expect, test, type Locator } from "@playwright/test";
 import { reviewCard, reviewDetail } from "../client/v3/components-review-fixtures";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
-const output = path.resolve("../../../.local/artifacts/20261008-w6-chat-header");
-async function capturePhoneHeader(chat: Locator, name: string, actionRight: number) {
+const output = path.resolve("../../../.local/artifacts/20261008-w6-chat-header-inset");
+async function capturePhoneHeader(chat: Locator, name: string) {
   const header = chat.locator('.v3-chat-header');
-  const close = await header.getByRole('button', { name: '채팅 닫기', exact: true }).boundingBox();
+  const closeButton = header.getByRole('button', { name: '채팅 닫기', exact: true });
+  const close = await closeButton.count() ? await closeButton.boundingBox() : null;
   const title = await header.locator('.v3-chat-session-title').boundingBox();
   const chip = await header.locator('span.v3-chat-status').boundingBox();
-  expect(close).not.toBeNull();
-  expect(Math.abs(close!.x + close!.width - actionRight)).toBeLessThanOrEqual(1);
-  expect(close!.y).toBeLessThan(chip!.y);
+  const composer = chat.locator('[data-slot="chat-input-composer"]');
+  await expect(composer).toBeVisible();
+  const input = await composer.boundingBox();
+  expect(Math.abs(title!.x - input!.x)).toBeLessThanOrEqual(2);
+  if (close) {
+    expect(Math.abs(close.x + close.width - input!.x - input!.width)).toBeLessThanOrEqual(2);
+    expect(close.y).toBeLessThan(chip!.y);
+  }
   expect(title!.y).toBeLessThan(chip!.y);
-  writeFileSync(path.join(output, `${name}-geometry.json`), JSON.stringify({ close, title, chip, actionRight }, null, 2));
+  writeFileSync(path.join(output, `${name}-geometry.json`), JSON.stringify({ close, title, chip, input }, null, 2));
   await header.screenshot({ path: path.join(output, `${name}-header.png`), animations: 'disabled' });
+  await chat.screenshot({ path: path.join(output, `${name}-chat.png`), animations: 'disabled' });
 }
 const settings = {
   default_model: { model_preset: null, reasoning_effort: null },
@@ -136,7 +143,6 @@ for (const width of [1440, 820, 390]) {
       await page.screenshot({ path: path.join(output, `${width}-assigned-open.png`), animations: "disabled" });
       await expect(page.getByRole("tablist", { name: "모바일 화면 탭" })).toHaveCount(0);
       await expect(workspace.getByTestId("v3-card-session-chat")).not.toBeVisible();
-      const action = await workspace.locator('.v3-folder-header-actions .dashboard-icon-cap').boundingBox();
       await workspace.getByRole("tab", { name: /^세션/ }).click();
       await page.screenshot({ path: path.join(output, `${width}-sessions.png`), animations: "disabled" });
       await workspace.getByRole("button", { name: /PAS 대화/ }).click();
@@ -145,7 +151,7 @@ for (const width of [1440, 820, 390]) {
       const bounds = await workspace.boundingBox();
       expect(bounds?.height).toBe(844);
       await page.screenshot({ path: path.join(output, `${width}-chat.png`), animations: "disabled" });
-      await capturePhoneHeader(workspace.getByTestId('v3-card-session-chat'), '390-pas', action!.x + action!.width);
+      await capturePhoneHeader(workspace.getByTestId('v3-card-session-chat'), '390-pas');
     } else {
       await expect(workspace.locator(".v3-card-workspace-pair > [data-testid='v3-card-workspace-left-divider']")).toBeVisible();
     }
@@ -235,13 +241,12 @@ test('main phone card session returns to the same detail', async ({ page }) => {
   await expect(detail).toBeVisible();
   mkdirSync(output, { recursive: true });
   await page.screenshot({ path: path.join(output, '390-main-card.png'), animations: 'disabled' });
-  const action = await workspace.locator('.v3-folder-header-actions .dashboard-icon-cap').boundingBox();
   await detail.getByRole('tab', { name: /^세션/ }).click();
   await detail.getByRole('button', { name: /시각 QA 순회/ }).click();
   await expect(chat).toBeVisible();
   await expect(detail).not.toBeVisible();
   await page.screenshot({ path: path.join(output, '390-main-chat.png'), animations: 'disabled' });
-  await capturePhoneHeader(chat, '390-main-card', action!.x + action!.width);
+  await capturePhoneHeader(chat, '390-main-card');
   await chat.getByRole('button', { name: '채팅 닫기', exact: true }).click();
   await expect(detail).toBeVisible();
   await expect(chat).not.toBeVisible();
@@ -250,13 +255,12 @@ test('main phone card session returns to the same detail', async ({ page }) => {
   await page.screenshot({ path: path.join(output, '390-main-returned-detail.png'), animations: 'disabled' });
   await detail.getByRole('button', { name: '카드 닫기', exact: true }).click();
   await expect(workspace).toHaveCount(0);
-  await page.getByTestId('v3-mobile-tab-projects').click();
-  await page.getByTestId('v3-mobile-project-list').getByRole('button', { name: '소울스트림', exact: true }).click();
-  await page.getByTestId('v3-child-folder-rb-alpha').click();
-  await page.locator('.v3-detail-pane .v3-run-open').filter({ hasText: '시각 QA 순회' }).click();
-  const folderHeader = page.locator('.v3-workspace .v3-chat-header');
-  await expect(folderHeader).toBeVisible();
-  await folderHeader.screenshot({ path: path.join(output, '390-main-folder-header.png'), animations: 'disabled' });
+  await page.goto('/?session=run-alpha-2');
+  await expect(page).not.toHaveURL(/session=/);
+  await page.getByTestId('v3-mobile-tab-chat').click();
+  await expect(page.locator('.v3-shell')).toHaveAttribute('data-mobile-tab', 'chat');
+  await expect(page.locator('.v3-workspace .v3-chat-header')).toBeInViewport();
+  await capturePhoneHeader(page.locator('.v3-workspace .v3-chat-pane'), '390-main-session');
   // The component review window uses this same CardWorkspace and callback props.
   await page.goto('/components');
   await page.getByTestId('card-board-sample').getByRole('button', { name: /카드 .* 열기/ }).first().click();
