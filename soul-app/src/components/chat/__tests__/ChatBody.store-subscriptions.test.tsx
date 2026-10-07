@@ -361,9 +361,9 @@ describe('ChatBody store subscription boundary', () => {
     fireEvent(anchor, 'layout', attachmentLayout);
     fireEvent(anchor, 'layout', expandedLayout);
     mockRenderChatComposer.mock.calls.at(-1)?.[0].onComposerBoxLayout(expandedBox, expandedRow);
-    expect(onComposerLayout).toHaveBeenNthCalledWith(1, singleLineLayout, { ...singleLineBox, y: 0 });
-    expect(onComposerLayout).toHaveBeenNthCalledWith(2, attachmentLayout, { ...singleLineBox, y: 54 });
-    expect(onComposerLayout).toHaveBeenLastCalledWith(expandedLayout, { ...expandedBox, y: 0 });
+    expect(onComposerLayout).toHaveBeenNthCalledWith(1, singleLineLayout.nativeEvent.layout, { ...singleLineBox, y: 0 });
+    expect(onComposerLayout).toHaveBeenNthCalledWith(2, attachmentLayout.nativeEvent.layout, { ...singleLineBox, y: 54 });
+    expect(onComposerLayout).toHaveBeenLastCalledWith(expandedLayout.nativeEvent.layout, { ...expandedBox, y: 0 });
   });
 
   test('기본 채팅은 history eventTypes를 생략하고 원고형만 정본 목록과 complete를 요청한다', async () => {

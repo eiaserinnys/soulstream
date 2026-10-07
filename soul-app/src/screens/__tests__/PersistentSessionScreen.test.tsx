@@ -68,7 +68,7 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');
   act(() => body.props.onComposerLayout(
-    { nativeEvent: { layout: { x: 0, y: 644, width: 480, height: 76 } } },
+    { x: 0, y: 644, width: 480, height: 76 },
     { x: 0, y: 20, width: 480, height: 56 },
   ));
   const before = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
@@ -111,7 +111,7 @@ test('입력 줄과 대기 첨부가 anchor 안에서 늘어나도 캐릭터 기
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');
   const reportLayout = (anchorY: number, boxY: number, boxHeight: number) => act(() => body.props.onComposerLayout(
-    { nativeEvent: { layout: { x: 0, y: anchorY, width: 480, height: boxY + boxHeight } } },
+    { x: 0, y: anchorY, width: 480, height: boxY + boxHeight },
     { x: 0, y: boxY, width: 480, height: boxHeight },
   ));
 
@@ -149,7 +149,7 @@ test.each([
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
-    { nativeEvent: { layout: { x: 0, y: 600, width: 480, height: 76 } } },
+    { x: 0, y: 600, width: 480, height: 76 },
     { x: 0, y: 20, width: 480, height: 56 },
   ));
 

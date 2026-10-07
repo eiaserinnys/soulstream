@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
+import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -119,9 +119,8 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
           opacity: phone && scene === 'cards' ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript"
           active={active && scene === 'conversation'} minimumBottomPadding={phone ? 0 : insets.bottom}
-          onComposerLayout={(event: LayoutChangeEvent, box: LayoutRectangle) => {
-            const layout = event.nativeEvent.layout;
-            if (layout.width > 0 && layout.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor: layout, box });
+          onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
+            if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
           }} />
       </View>
       {geometry ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',

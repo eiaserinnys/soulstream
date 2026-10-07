@@ -31,7 +31,7 @@ interface Props {
   minimumBottomPadding: number;
   requestBottomFollow(): void;
   presentation?: 'default' | 'manuscript';
-  onComposerLayout?: (event: LayoutChangeEvent, composerBox: LayoutRectangle) => void;
+  onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
 }
 
 const EMPTY_EVENTS: SessionEvent[] = [];
@@ -49,7 +49,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const composerAnchorLayout = useRef<LayoutChangeEvent | null>(null);
+  const composerAnchorLayout = useRef<LayoutRectangle | null>(null);
   const composerBoxLayout = useRef<LayoutRectangle | null>(null);
   const composerRowLayout = useRef<LayoutRectangle | null>(null);
   const reportComposerLayout = useCallback(() => {
@@ -57,11 +57,12 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     const row = composerRowLayout.current;
     const box = composerBoxLayout.current;
     if (anchor && row && box) {
-      onComposerLayout?.(anchor, { ...box, y: anchor.nativeEvent.layout.height - row.height + box.y });
+      onComposerLayout?.(anchor, { ...box, y: anchor.height - row.height + box.y });
     }
   }, [onComposerLayout]);
   const handleComposerAnchorLayout = useCallback((event: LayoutChangeEvent) => {
-    composerAnchorLayout.current = event;
+    const { x, y, width, height } = event.nativeEvent.layout;
+    composerAnchorLayout.current = { x, y, width, height };
     reportComposerLayout();
   }, [reportComposerLayout]);
   const handleComposerBoxLayout = useCallback((box: LayoutRectangle, row: LayoutRectangle) => {
