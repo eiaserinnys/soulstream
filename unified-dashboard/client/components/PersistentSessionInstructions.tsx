@@ -68,11 +68,11 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
   }, []);
 
   const startEditing = useCallback((instruction: PersistentInstruction) => {
-    if (pending) return;
+    if (loading || pending) return;
     clearFeedback();
     setEditingId(instruction.id);
     setEditText(instruction.text);
-  }, [clearFeedback, pending]);
+  }, [clearFeedback, loading, pending]);
 
   const cancelEditing = useCallback(() => {
     setEditingId(null);
@@ -80,7 +80,7 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
   }, []);
 
   const saveEdit = useCallback(async (instructionId: string) => {
-    if (pending) return;
+    if (loading || pending) return;
     const text = editText.trim();
     setPending(true);
     clearFeedback();
@@ -100,10 +100,10 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
     } finally {
       setPending(false);
     }
-  }, [api, cancelEditing, clearFeedback, editText, pending, sessionId]);
+  }, [api, cancelEditing, clearFeedback, editText, loading, pending, sessionId]);
 
   const remove = useCallback(async (instructionId: string) => {
-    if (pending) return;
+    if (loading || pending) return;
     setPending(true);
     clearFeedback();
     try {
@@ -115,12 +115,12 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
     } finally {
       setPending(false);
     }
-  }, [api, cancelEditing, clearFeedback, editingId, pending, sessionId]);
+  }, [api, cancelEditing, clearFeedback, editingId, loading, pending, sessionId]);
 
   const add = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = addText.trim();
-    if (pending || !text) return;
+    if (loading || pending || !text) return;
     setPending(true);
     clearFeedback();
     try {
@@ -136,7 +136,7 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
     } finally {
       setPending(false);
     }
-  }, [addText, api, clearFeedback, pending, sessionId]);
+  }, [addText, api, clearFeedback, loading, pending, sessionId]);
 
   const state = useMemo<PersistentSessionInstructionsViewState>(() => ({
     instructions,
@@ -187,6 +187,7 @@ export function PersistentSessionInstructionsView({ state, actions }: {
   state: PersistentSessionInstructionsViewState;
   actions: PersistentSessionInstructionsActions;
 }) {
+  const mutationDisabled = state.loading || state.pending;
   return <SettingsGroupBox title="지속 지시">
     <div data-testid="persistent-session-instructions" className="space-y-3">
       {state.loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
@@ -205,7 +206,7 @@ export function PersistentSessionInstructionsView({ state, actions }: {
                   aria-label="지속 지시 수정"
                   autoFocus
                   value={state.editText}
-                  disabled={state.pending}
+                  disabled={mutationDisabled}
                   nativeInput
                   onChange={(event) => actions.changeEditText(event.target.value)}
                   onKeyDown={(event) => actions.editKeyDown(event, instruction.id)}
@@ -217,11 +218,11 @@ export function PersistentSessionInstructionsView({ state, actions }: {
                   </div>
                   <div className="flex items-center gap-2">
                     {editing ? <>
-                      <Button type="button" size="sm" disabled={state.pending} onClick={() => actions.saveEdit(instruction.id)}>저장</Button>
-                      <Button type="button" size="sm" variant="outline" disabled={state.pending} onClick={actions.cancelEditing}>취소</Button>
+                      <Button type="button" size="sm" disabled={mutationDisabled} onClick={() => actions.saveEdit(instruction.id)}>저장</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={mutationDisabled} onClick={actions.cancelEditing}>취소</Button>
                     </> : <>
-                      <Button type="button" size="sm" variant="outline" disabled={state.pending} onClick={() => actions.startEditing(instruction)}>수정</Button>
-                      <Button type="button" size="sm" variant="outline" disabled={state.pending} onClick={() => actions.remove(instruction.id)}>삭제</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={mutationDisabled} onClick={() => actions.startEditing(instruction)}>수정</Button>
+                      <Button type="button" size="sm" variant="outline" disabled={mutationDisabled} onClick={() => actions.remove(instruction.id)}>삭제</Button>
                     </>}
                   </div>
                 </div>
@@ -235,11 +236,11 @@ export function PersistentSessionInstructionsView({ state, actions }: {
         <Input
           aria-label="새 지속 지시"
           value={state.addText}
-          disabled={state.pending}
+          disabled={mutationDisabled}
           nativeInput
           onChange={(event) => actions.changeAddText(event.target.value)}
         />
-        <Button type="submit" size="sm" disabled={state.pending || !state.addText.trim()}>추가</Button>
+        <Button type="submit" size="sm" disabled={mutationDisabled || !state.addText.trim()}>추가</Button>
       </form>
       {state.capReached ? <SettingsAlert>지속 지시 상한에 도달했습니다.</SettingsAlert> : null}
     </div>

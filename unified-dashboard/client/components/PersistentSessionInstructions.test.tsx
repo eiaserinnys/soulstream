@@ -113,6 +113,67 @@ it("shows one empty state and retries a failed instruction read", async () => {
   expect(container.textContent?.match(/지속 지시 없음/g)).toHaveLength(1);
 });
 
+it("waits for the initial list read before mutations and preserves later additions", async () => {
+  let resolveInitialRead!: (response: Response) => void;
+  let resolveNextRead!: (response: Response) => void;
+  const initialRead = new Promise<Response>((resolve) => { resolveInitialRead = resolve; });
+  const nextRead = new Promise<Response>((resolve) => { resolveNextRead = resolve; });
+  const calls: Array<{ method: string; sessionId: string }> = [];
+  const initial = makeInstruction("initial", "처음 읽은 지시", []);
+  const next = makeInstruction("next", "다음 세션 지시", []);
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    const sessionId = url.pathname.split("/").at(-2)!;
+    calls.push({ method, sessionId });
+    if (method === "GET") return sessionId === "first-pas" ? initialRead : nextRead;
+    if (method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { text: string };
+      return Response.json({ instruction: makeInstruction("added", body.text, []) }, { status: 201 });
+    }
+    return Response.json({ instruction: initial });
+  };
+
+  await act(async () => root.render(<PersistentSessionInstructions sessionId="first-pas" request={request} />));
+  await settle();
+
+  const addInput = container.querySelector<HTMLInputElement>('input[aria-label="새 지속 지시"]')!;
+  const addButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "추가")!;
+  const blockedDuringInitialRead = addInput.disabled && addButton.disabled;
+  await setInput(addInput, "조회 완료 뒤 추가할 지시");
+  click("추가");
+  await settle();
+  const postsBeforeInitialReadCompletes = calls.filter((call) => call.method === "POST").length;
+
+  await act(async () => { resolveInitialRead(Response.json({ instructions: [initial] })); });
+  await settle();
+  expect(blockedDuringInitialRead).toBe(true);
+  expect(postsBeforeInitialReadCompletes).toBe(0);
+  expect(rows().map((row) => row.textContent)).toEqual([expect.stringContaining("처음 읽은 지시")]);
+
+  await setInput(container.querySelector<HTMLInputElement>('input[aria-label="새 지속 지시"]')!, "조회 완료 뒤 추가할 지시");
+  click("추가");
+  await settle();
+  expect(rows().map((row) => row.textContent)).toEqual([
+    expect.stringContaining("조회 완료 뒤 추가할 지시"),
+    expect.stringContaining("처음 읽은 지시"),
+  ]);
+
+  await act(async () => root.render(<PersistentSessionInstructions sessionId="next-pas" request={request} />));
+  await settle();
+  const staleRowButtons = [...rows()[0]!.querySelectorAll<HTMLButtonElement>("button")];
+  const editButton = staleRowButtons.find((button) => button.textContent === "수정")!;
+  const deleteButton = staleRowButtons.find((button) => button.textContent === "삭제")!;
+  expect(editButton.disabled).toBe(true);
+  expect(deleteButton.disabled).toBe(true);
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="새 지속 지시"]')?.disabled).toBe(true);
+  expect([...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "추가")?.disabled).toBe(true);
+
+  await act(async () => { resolveNextRead(Response.json({ instructions: [next] })); });
+  await settle();
+  expect(rows().map((row) => row.textContent)).toEqual([expect.stringContaining("다음 세션 지시")]);
+});
+
 function makeInstruction(id: string, text: string, source_turns: string[]) {
   return {
     id,
