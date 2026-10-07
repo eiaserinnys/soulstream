@@ -79,7 +79,11 @@ export function PersistentSessionScreen({ active = true, chatActive = active, on
   }) : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
-    if (state.scene === 'cards') { state.swipe('right'); return true; }
+    if (state.scene === 'cards') {
+      if (state.selectedCardId) state.selectCard(null);
+      else state.swipe('right');
+      return true;
+    }
     return false;
   }, [host.store]);
   React.useEffect(() => {
