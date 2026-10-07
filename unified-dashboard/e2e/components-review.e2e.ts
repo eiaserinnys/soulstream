@@ -175,6 +175,67 @@ for (const width of [1440, 390]) {
   });
 }
 
+const w13CaptureRoot = path.resolve("../../../.local/artifacts");
+const w13Now = new Date().toISOString();
+const w13Stamp = `${w13Now.slice(0, 10).replaceAll("-", "")}-${w13Now.slice(11, 16).replace(":", "")}`;
+
+for (const width of [1440, 340]) {
+  test(`W13 manuscript activity sample ${width}`, async ({ page }) => {
+    await prepare(page, width);
+    await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ authEnabled: true, devModeEnabled: false }) }));
+    await page.route("**/api/auth/status", route => route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } }) }));
+    await page.goto("/components");
+
+    const activity = page.getByTestId("manuscript-activity-review-sample");
+    const defaultChat = page.getByTestId("persistent-manuscript-chat-review").getByTestId("default-review-column");
+    await activity.scrollIntoViewIfNeeded();
+    await expect(activity).toBeVisible();
+    await expect(activity.locator("[data-slot=manuscript-activity-toggle]")).toHaveCount(3);
+    await expect(activity.locator("[data-slot=manuscript-activity-toggle]").nth(0)).toHaveAttribute("aria-expanded", "true");
+    await expect(activity.locator("[data-slot=manuscript-activity-toggle]").nth(1)).toHaveAttribute("aria-expanded", "false");
+    await expect(activity).toContainText("도구 2회");
+    await expect(activity).toContainText("도구 1회");
+    await expect(activity).toContainText("실행 중");
+    await expect(activity).toContainText("실패 1");
+    await expect(activity).toContainText("생각 중입니다…");
+
+    const geometry = await activity.evaluate(element => {
+      const box = (selector: string) => {
+        const rect = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+        return { x: rect.x, right: rect.right, y: rect.y, width: rect.width, height: rect.height };
+      };
+      return {
+        viewportWidth: innerWidth,
+        activity: box("[data-slot=chat-activity-row]"),
+        thinking: box('[data-tree-node-id="review-thought-alone"]'),
+        indicator: box("[data-slot=chat-thinking-indicator]"),
+        dots: [...element.querySelectorAll<HTMLElement>("[data-slot=chat-thinking-dots] > span")]
+          .map(dot => ({ animation: getComputedStyle(dot).animationName, color: getComputedStyle(dot).backgroundColor })),
+      };
+    });
+    expect(Math.abs(geometry.activity.x - geometry.thinking.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.activity.x - geometry.indicator.x)).toBeLessThanOrEqual(1);
+    expect(geometry.dots).toHaveLength(3);
+    expect(geometry.dots.every(dot => dot.animation === "none")).toBe(true);
+
+    await page.evaluate(() => document.fonts.ready);
+    await activity.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-activity-${width}.png`), animations: "disabled" });
+    const defaultToolRow = defaultChat.locator('[data-tree-node-id="review-tool"]');
+    await expect(defaultToolRow).toBeVisible();
+    await defaultToolRow.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-default-after-${width}.png`), animations: "disabled" });
+    writeFileSync(path.join(w13CaptureRoot, `${w13Stamp}-w13-geometry-${width}.json`), JSON.stringify(geometry, null, 2));
+
+    const closedGroup = activity.locator("[data-slot=manuscript-activity-toggle]").nth(1);
+    await closedGroup.click();
+    await expect(closedGroup).toHaveAttribute("aria-expanded", "true");
+    const singleToolRow = closedGroup.locator("xpath=ancestor::*[@data-slot='chat-activity-row'][1]");
+    await expect(singleToolRow.locator("[data-slot=manuscript-tool-call-item]")).toHaveCount(1);
+    await expect(activity).not.toContainText("mcp__soulstream__");
+  });
+}
+
 test("components inherits the login boundary before authenticated entry", async ({ page }) => {
   await prepare(page, 390);
   await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",

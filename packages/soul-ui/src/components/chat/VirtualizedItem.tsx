@@ -93,6 +93,18 @@ function VirtualizedItemImpl({
       />
     );
   }
+  if (item.type === "activity-group") {
+    return (
+      <ToolCallGroup
+        messages={item.messages}
+        presentation="manuscript"
+        expanded={toolGroupExpanded}
+        onExpandedChange={toolGroupKey && onToolGroupExpandedChange
+          ? (expanded) => onToolGroupExpandedChange(toolGroupKey, expanded)
+          : undefined}
+      />
+    );
+  }
   return (
     <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} presentation={presentation} />
   );
@@ -136,6 +148,11 @@ export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemP
       if (a[i] !== b[i]) return false;
     }
     return true;
+  }
+  if (prev.item.type === "activity-group" && next.item.type === "activity-group") {
+    const a = prev.item.messages;
+    const b = next.item.messages;
+    return a.length === b.length && a.every((message, index) => message === b[index]);
   }
   if (prev.item.type === "summary-group" && next.item.type === "summary-group") {
     if (!arePropsEqual(

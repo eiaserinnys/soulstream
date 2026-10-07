@@ -38,6 +38,7 @@ describe("markdown surface mount inventory", () => {
     expect(inventoryMounts("MarkdownContent")).toEqual([
       "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
+      "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
       "unified-dashboard/client/v3/CardDetailPane.tsx",
       "unified-dashboard/client/v3/CardTimeline.tsx",
@@ -61,6 +62,7 @@ describe("markdown surface mount inventory", () => {
     ];
     const boundedSurfaces = [
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
+      "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
     ];
 

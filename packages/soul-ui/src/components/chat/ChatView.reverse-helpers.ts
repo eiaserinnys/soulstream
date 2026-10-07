@@ -33,7 +33,7 @@ export function messageOrGroupKey(item: ChatTimelineItem): string {
   if (item.type === "thinking-indicator") return "chat-thinking-indicator";
   if (item.type === "pending-message") return `pending-chat-send-${item.pending.id}`;
   if (item.type === "summary-group") return messageOrGroupKey(item.anchor);
-  return item.type === "tool-group"
+  return item.type === "tool-group" || item.type === "activity-group"
     ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
     : item.msg.treeNodeId;
 }
@@ -41,9 +41,12 @@ export function messageOrGroupKey(item: ChatTimelineItem): string {
 /** Expansion follows the first tool in a group even when later tools change its virtual row key. */
 export function toolGroupExpansionKey(
   sessionId: string,
-  item: Extract<ChatTimelineItem, { type: "tool-group" }>,
+  item: Extract<ChatTimelineItem, { type: "tool-group" | "activity-group" }>,
 ): string {
-  return `${sessionId}:${item.messages[0].treeNodeId}`;
+  const firstTool = item.type === "tool-group"
+    ? item.messages[0]
+    : item.messages.find((message) => message.role === "tool")!;
+  return `${sessionId}:${firstTool.treeNodeId}`;
 }
 
 /** Resolve non-rendered search events to a visible row in their transcript turn. */
@@ -61,7 +64,9 @@ export function resolveFocusEventId(
       return [item.anchor, ...item.summaries.map((msg) => ({ type: "single" as const, msg }))]
         .flatMap((nested) => nested.type === "single" ? [nested.msg] : nested.messages);
     }
-    return item.type === "tool-group" ? item.messages : [item.msg];
+    return item.type === "tool-group" || item.type === "activity-group"
+      ? item.messages
+      : [item.msg];
   });
   let assistantEventId: number | null = null;
   for (const message of messages) {
@@ -107,6 +112,14 @@ export function areMessageGroupsRenderEqual(
         item.messages.every(
           (message, messageIndex) =>
             message === nextItem.messages[messageIndex],
+        )
+      );
+    }
+    if (item.type === "activity-group" && nextItem.type === "activity-group") {
+      return (
+        item.messages.length === nextItem.messages.length &&
+        item.messages.every(
+          (message, messageIndex) => message === nextItem.messages[messageIndex],
         )
       );
     }
@@ -175,7 +188,7 @@ export const findFocusIndex = (
         focusEventId,
       ) >= 0;
     }
-    if (item.type === "tool-group") {
+    if (item.type === "tool-group" || item.type === "activity-group") {
       return item.messages.some(
         (m) =>
           m.eventId === focusEventId ||

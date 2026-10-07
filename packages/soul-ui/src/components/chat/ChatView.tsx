@@ -29,7 +29,7 @@ import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-c
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
-import { groupMessages } from "../../lib/grouping";
+import { groupManuscriptMessages, groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { ChatManuscriptList, ChatManuscriptFooter, manuscriptItemSpacingClass } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
@@ -178,7 +178,10 @@ export function ChatView({
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );
-  const grouped = useMemo(() => groupMessages(visibleMessages), [visibleMessages]);
+  const grouped = useMemo(
+    () => isManuscript ? groupManuscriptMessages(visibleMessages) : groupMessages(visibleMessages),
+    [isManuscript, visibleMessages],
+  );
   const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
     () => buildChatTimelineItems(grouped, visibleMessages, chatStatus, pendingChatSend),
@@ -792,7 +795,7 @@ export function ChatView({
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(index, item) => {
           const message = item.type === "single" ? item.msg : null;
-          const toolGroupKey = item.type === "tool-group" && activeSessionKey !== null
+          const toolGroupKey = (item.type === "tool-group" || item.type === "activity-group") && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)
             : undefined;
           const toolGroupExpanded = toolGroupKey !== undefined
