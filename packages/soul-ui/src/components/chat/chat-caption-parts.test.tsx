@@ -174,7 +174,7 @@ describe("chat caption parts", () => {
       treeNodeId: "record-1",
       treeNodeType: "persistent_instruction_recorded",
       persistentInstructionRecorded: {
-        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195, 210], action: "added" }],
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195", "T210"], action: "added" }],
         capReached: true,
       },
     } as unknown as ChatMessage;
@@ -201,7 +201,7 @@ describe("chat caption parts", () => {
       turnUsageCaption: { title: "사용량", completeText: "턴 완료" },
       turnSummaryCaption: { treeNodeId: "summary-1", content: "요약 내용" },
       persistentInstructionRecorded: {
-        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195"], action: "added" }],
         capReached: false,
       },
     } as unknown as ChatMessage;
@@ -226,7 +226,7 @@ describe("chat caption parts", () => {
       treeNodeId: "record-1",
       treeNodeType: "persistent_instruction_recorded",
       persistentInstructionRecorded: {
-        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195"], action: "added" }],
         capReached: false,
       },
     } as unknown as ChatMessage;
@@ -264,7 +264,7 @@ describe("chat caption parts", () => {
         usageCaption={{ title: "사용량", contextText: "컨텍스트", completeText: "턴 완료" }}
         summaryCaption={{ treeNodeId: "summary", content: "요약 내용" }}
         persistentInstructionCaption={{
-          instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+          instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195"], action: "added" }],
           capReached: false,
         }}
       />,

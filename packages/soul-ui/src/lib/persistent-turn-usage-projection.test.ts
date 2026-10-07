@@ -86,7 +86,7 @@ describe("projectPersistentTurnUsage", () => {
     const record = makeMessage("record-5", "persistent_instruction_recorded", {
       preparedInputId: "input-1",
       persistentInstructionRecorded: {
-        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195"], action: "added" }],
         capReached: false,
       },
     });

@@ -60,7 +60,7 @@ describe("createNodeFromEvent", () => {
       const event = {
         type: "debug",
         kind: "persistent_instruction_recorded",
-        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195, 210], action: "added" }],
+        instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195", "T210"], action: "added" }],
         cap_reached: true,
         input_id: "input-195",
         timestamp: 1700000123,

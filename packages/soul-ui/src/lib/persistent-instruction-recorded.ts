@@ -16,8 +16,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isPositiveTurn(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) > 0;
+function isSourceTurn(value: unknown): value is string {
+  return typeof value === "string" && /^T[0-9]+$/.test(value);
 }
 
 function isInstruction(value: unknown): value is PersistentInstructionRecordedInstruction {
@@ -27,7 +27,7 @@ function isInstruction(value: unknown): value is PersistentInstructionRecordedIn
     && typeof value.text === "string"
     && value.text.length > 0
     && Array.isArray(value.source_turns)
-    && value.source_turns.every(isPositiveTurn)
+    && value.source_turns.every(isSourceTurn)
     && (value.action === "added" || value.action === "updated");
 }
 
@@ -53,7 +53,7 @@ export function persistentInstructionRecordedTitle(record: PersistentInstruction
 
 export function formatPersistentInstructionRecorded(record: PersistentInstructionRecordedData): string[] {
   const lines = record.instructions.map((instruction) => {
-    const turns = instruction.source_turns.map((turn) => `T${turn}`).join(", ");
+    const turns = instruction.source_turns.join(", ");
     return turns ? `${instruction.text} (${turns})` : instruction.text;
   });
   if (record.capReached) lines.push("상한(50)에 닿아 더 기록하지 못했습니다");

@@ -285,7 +285,7 @@ export interface PersistentJevCandidatesNode extends BaseNode {
 export interface PersistentInstructionRecordedInstruction {
   id: string;
   text: string;
-  source_turns: number[];
+  source_turns: string[];
   action: "added" | "updated";
 }
 

@@ -355,12 +355,12 @@ describe("flattenTree", () => {
     const complete = makeComplete("complete-30", "complete");
     const record = makeRawEventNode("persistent_instruction_recorded" as EventTreeNode["type"], 40, {
       preparedInputId: "input-10",
-      instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: [195], action: "added" }],
+      instructions: [{ id: "instruction-1", text: "간결하게 답합니다.", source_turns: ["T195"], action: "added" }],
       capReached: false,
     });
     const unrelated = makeRawEventNode("persistent_instruction_recorded" as EventTreeNode["type"], 50, {
       preparedInputId: "missing-input",
-      instructions: [{ id: "instruction-2", text: "근거를 밝힙니다.", source_turns: [210], action: "updated" }],
+      instructions: [{ id: "instruction-2", text: "근거를 밝힙니다.", source_turns: ["T210"], action: "updated" }],
       capReached: false,
     });
 
@@ -372,7 +372,7 @@ describe("flattenTree", () => {
     expect(messages.at(-1)).toMatchObject({
       preparedInputId: "input-10",
       persistentInstructionRecorded: {
-        instructions: [{ id: "instruction-1", source_turns: [195] }],
+        instructions: [{ id: "instruction-1", source_turns: ["T195"] }],
         capReached: false,
       },
     });

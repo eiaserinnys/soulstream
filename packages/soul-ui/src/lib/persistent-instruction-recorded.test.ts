@@ -9,12 +9,12 @@ import {
 const instruction = {
   id: "instruction-1",
   text: "답변은 간결하게 작성합니다.",
-  source_turns: [195, 210],
+  source_turns: ["T195", "T210"],
   action: "updated" as const,
 };
 
 describe("persistent instruction recorded projection", () => {
-  it("accepts the event contract and rejects unrelated debug events", () => {
+  it("accepts server-shaped source turns and rejects numeric turns or unrelated debug events", () => {
     expect(isPersistentInstructionRecordedDebugEvent({
       type: "debug",
       kind: "persistent_instruction_recorded",
@@ -23,6 +23,13 @@ describe("persistent instruction recorded projection", () => {
       input_id: "input-195",
       timestamp: 1_700_000_000,
     })).toBe(true);
+    expect(isPersistentInstructionRecordedDebugEvent({
+      type: "debug",
+      kind: "persistent_instruction_recorded",
+      instructions: [{ ...instruction, source_turns: [195, 210] }],
+      cap_reached: false,
+      timestamp: 1_700_000_000,
+    })).toBe(false);
     expect(isPersistentInstructionRecordedDebugEvent({
       type: "debug",
       kind: "persistent_decision",
