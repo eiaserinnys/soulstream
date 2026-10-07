@@ -494,6 +494,9 @@
   flex-direction: column;
 }
 
+.v3-chat-header > .v3-chat-title-row { display: contents; }
+.v3-chat-title-row > .dashboard-icon-cap { order: 1; }
+
 .v3-chat-header small {
   overflow: hidden;
   color: var(--muted-foreground);
@@ -610,7 +613,14 @@
 .v3-panel-header ~ .v3-chat-content [data-slot="chat-root"],
 .v3-panel-header ~ .v3-chat-content [data-virtuoso-scroller="true"] { padding-top: 0; }
 @media (max-width: 759px) {
-  .v3-panel-header .v3-chat-session-title { flex-basis: 100%; }
+  .v3-panel-header.v3-chat-header { padding-inline: var(--v3-space-6); }
+  .v3-chat-header > div.v3-chat-title-row {
+    display: flex;
+    flex-basis: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: inherit;
+  }
 }
 
 /* A detail panel owns the outer inset of its header, scroll content and dock.
