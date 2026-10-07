@@ -23,7 +23,7 @@ import type { Session } from '../../../api/types';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useUIStore } from '../../../store/uiStore';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
-import { ChatPane } from '../ChatPane';
+import { ChatPane, ChatPaneMinimumBottomPaddingContext } from '../ChatPane';
 
 test.each([
   [1, 0],
@@ -107,4 +107,15 @@ test('명시한 빈 세션은 전역 선택 세션 대신 기존 빈 대화 상�
   expect(screen.getByText('채팅')).toBeTruthy();
   expect(screen.getByTestId('chat-body').props.sessionId).toBeUndefined();
   expect(useUIStore.getState().activeSessionId).toBe('pas-1');
+});
+
+test('패널이 전달한 하단 안전 영역 여백을 ChatBody에 그대로 전달한다', () => {
+  mockSafeAreaInsets = { ...mockSafeAreaInsets, bottom: 20 };
+  const screen = render(
+    <ChatPaneMinimumBottomPaddingContext.Provider value={20}>
+      <ChatPane active />
+    </ChatPaneMinimumBottomPaddingContext.Provider>,
+  );
+
+  expect(screen.getByTestId('chat-body').props.minimumBottomPadding).toBe(20);
 });

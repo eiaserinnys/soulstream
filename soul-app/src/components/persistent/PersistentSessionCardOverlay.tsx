@@ -6,10 +6,11 @@ import { useCardStore } from '../../store/cardStore';
 import { getCardDetailPaneWidth, getFolderWorkspaceOverlayWidth } from '../../lib/folder-workspace-layout';
 import { useDeviceType } from '../../theme';
 
-export function PersistentSessionCardOverlay({ api, cardId, sessionId, onClose }: {
+export function PersistentSessionCardOverlay({ api, cardId, sessionId, bottomSafeAreaInset, onClose }: {
   api: ApiClient | null;
   cardId: string | null;
   sessionId: string | undefined;
+  bottomSafeAreaInset: number;
   onClose(): void;
 }) {
   const phone = useDeviceType() === 'phone';
@@ -52,7 +53,8 @@ export function PersistentSessionCardOverlay({ api, cardId, sessionId, onClose }
 
   if (!renderedCardId || phone) return null;
   return <CardPanelOverlayFrame visible={cardId !== null} width={frameWidth} onClose={onClose}
-    onHidden={onHidden} testID="persistent-card-overlay" direction="row">
+    onHidden={onHidden} testID="persistent-card-overlay" direction="row"
+    chatPaneMinimumBottomPadding={bottomSafeAreaInset}>
     <CardDetailChatPanes api={api} cardId={renderedCardId} active detailWidth={detailWidth}
       onClose={onClose} onOpenSession={openSessionInOverlay} sessionId={chatSessionId} onCloseChat={closeChat}
       ownsSessionConnection={!sameSession} />

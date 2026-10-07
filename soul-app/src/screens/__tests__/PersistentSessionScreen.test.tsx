@@ -24,7 +24,7 @@ jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
 jest.mock('../../components/persistent/SwayCharacter', () => ({ SwayCharacter: () => null }));
 jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
   const { Pressable, View } = require('react-native');
-  return { PersistentSessionCardOverlay: ({ cardId, sessionId, onClose }: any) => cardId ? <View testID="persistent-card-overlay-mock" cardId={cardId} sessionId={sessionId}>
+  return { PersistentSessionCardOverlay: ({ cardId, sessionId, bottomSafeAreaInset, onClose }: any) => cardId ? <View testID="persistent-card-overlay-mock" cardId={cardId} sessionId={sessionId} bottomSafeAreaInset={bottomSafeAreaInset}>
     <Pressable testID="close-card-overlay" onPress={onClose} />
   </View> : null };
 });
@@ -58,6 +58,8 @@ test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입�
   expect(view.getByTestId('persistent-card-overlay-mock').props.cardId).toBe('card-1');
   expect(store.getState().selectedCardId).toBe('card-1');
   expect(view.getByTestId('persistent-card-overlay-mock').props).toEqual(expect.objectContaining({ cardId: 'card-1', sessionId: 'pas-1' }));
+  expect(view.getByTestId('persistent-card-overlay-mock').props.bottomSafeAreaInset)
+    .toBe(body.props.minimumBottomPadding);
   expect(body.props.active).toBe(true);
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 0, connected: true });
   expect(view.queryByTestId('persistent-summary-header')).toBeNull();

@@ -20,7 +20,7 @@ import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useCardStore } from '../../store/cardStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
-import { ChatPane } from '../split/ChatPane';
+import { ChatPane, ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';
 import { TabletPaneHeader } from '../split/TabletPaneHeader';
 import { AppGlassCard } from '../AppGlassCard';
 import { CardDetailContent } from './CardDetailSheet';
@@ -83,13 +83,14 @@ export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose,
   </>;
 }
 
-export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testID = 'task-workspace', direction = 'row', children }: {
+export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testID = 'task-workspace', direction = 'row', chatPaneMinimumBottomPadding, children }: {
   visible: boolean;
   width: number;
   onClose(): void;
   onHidden?: () => void;
   testID?: string;
   direction?: 'row' | 'column';
+  chatPaneMinimumBottomPadding?: number;
   children: React.ReactNode;
 }) {
   const t = useTokens();
@@ -119,7 +120,9 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
     <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, transform: [{ translateX }] }]}>
       <AppGlassCard role="glassSoft" testID={`${testID}-sheet-surface`}
         style={[styles.sheetSurface, direction === 'column' ? styles.sheetSurfaceColumn : null]}>
-        {children}
+        <ChatPaneMinimumBottomPaddingContext.Provider value={chatPaneMinimumBottomPadding}>
+          {children}
+        </ChatPaneMinimumBottomPaddingContext.Provider>
       </AppGlassCard>
     </Animated.View>
   </View>;

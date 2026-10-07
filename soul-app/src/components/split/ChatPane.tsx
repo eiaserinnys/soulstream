@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,9 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { TabletPaneHeader } from './TabletPaneHeader';
 import { resolveTabletBottomSafeAreaPadding } from './tabletShellInsets';
 
+/** A containing card panel may provide the bottom clearance it actually reserves. */
+export const ChatPaneMinimumBottomPaddingContext = createContext<number | undefined>(undefined);
+
 /**
  * 우측 채팅 패널 — 상단 인라인 헤더(상태 도트 + 세션 이름) + ChatBody.
  */
@@ -21,7 +24,8 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
-  const minimumBottomPadding = resolveTabletBottomSafeAreaPadding(
+  const panelMinimumBottomPadding = useContext(ChatPaneMinimumBottomPaddingContext);
+  const minimumBottomPadding = panelMinimumBottomPadding ?? resolveTabletBottomSafeAreaPadding(
     insets.bottom,
     t.tabletShell.outerInset,
   );

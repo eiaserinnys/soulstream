@@ -17,9 +17,9 @@ jest.mock('../../split/ChatPane', () => ({
   ),
 }));
 jest.mock('../../planner/FolderWorkspaceReadOverlay', () => ({
-  CardPanelOverlayFrame: ({ children }: any) => require('react').createElement(
+  CardPanelOverlayFrame: ({ children, chatPaneMinimumBottomPadding }: any) => require('react').createElement(
     require('react-native').View,
-    { testID: 'overlay-frame' },
+    { testID: 'overlay-frame', chatPaneMinimumBottomPadding },
     children,
   ),
   CardDetailChatPanes: ({ hideChat, sessionId, active, onCloseChat, ownsSessionConnection }: any) => require('react').createElement(
@@ -48,13 +48,14 @@ beforeEach(() => {
   useUIStore.setState({ activeSessionId: 'pas-1' });
 });
 
-test('iPad 상세 패널은 담당 세션을 독립된 대화 pane에 전달한다', () => {
-  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" onClose={jest.fn()} />);
+test('iPad 상세 패널은 담당 세션과 하단 안전 영역을 프레임에 전달한다', () => {
+  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" bottomSafeAreaInset={20} onClose={jest.fn()} />);
 
   expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
   expect(screen.getByTestId('overlay-chat-pane').props.sessionId).toBe('assigned-1');
   expect(screen.getByTestId('overlay-chat-pane').props.active).toBe(true);
   expect(screen.getByTestId('overlay-chat-pane').props.ownsSessionConnection).toBe(true);
+  expect(screen.getByTestId('overlay-frame').props.chatPaneMinimumBottomPadding).toBe(20);
   expect(useUIStore.getState().activeSessionId).toBe('pas-1');
 });
 
@@ -62,7 +63,7 @@ test('담당이 PAS 자신이어도 대화 pane을 렌더하고 배경 ChatBody�
   useCardStore.setState({ details: { 'card-1': { card: {
     id: 'card-1', assigneeKind: 'session', assigneeSessionId: 'pas-1',
   } } as any } });
-  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" onClose={jest.fn()} />);
+  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" bottomSafeAreaInset={20} onClose={jest.fn()} />);
 
   expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
   expect(screen.getByTestId('task-workspace-chat-pane').children).toHaveLength(1);
@@ -73,7 +74,7 @@ test('담당이 PAS 자신이어도 대화 pane을 렌더하고 배경 ChatBody�
 
 test('iPhone에서는 태블릿 카드 패널 오버레이를 렌더하지 않는다', () => {
   mockDeviceType = 'phone';
-  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" onClose={jest.fn()} />);
+  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" bottomSafeAreaInset={20} onClose={jest.fn()} />);
 
   expect(screen.queryByTestId('overlay-frame')).toBeNull();
   expect(screen.queryByTestId('overlay-chat-pane')).toBeNull();
@@ -83,7 +84,7 @@ test('담당 세션이 없는 카드는 기존 대화 빈 상태를 사용한다
   useCardStore.setState({ details: { 'card-1': { card: {
     id: 'card-1', assigneeKind: 'agent', assigneeSessionId: null,
   } } as any } });
-  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" onClose={jest.fn()} />);
+  const screen = render(<PersistentSessionCardOverlay api={api} cardId="card-1" sessionId="pas-1" bottomSafeAreaInset={20} onClose={jest.fn()} />);
 
   expect(screen.getByTestId('overlay-chat-pane').props.sessionId).toBeNull();
 });

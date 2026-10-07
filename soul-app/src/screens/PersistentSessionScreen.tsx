@@ -163,7 +163,8 @@ export function PersistentSessionScreen({ active = true, chatActive = active, on
           onOpenCard={cardId => phone && onOpenPhoneCard ? onOpenPhoneCard(cardId) : host.store.getState().selectCard(cardId)} />
       </View> : null}
       <PersistentSessionCardOverlay api={api} cardId={scene === 'cards' ? selectedCardId : null}
-        sessionId={session?.session_id} onClose={() => host.store.getState().selectCard(null)} />
+        sessionId={session?.session_id} bottomSafeAreaInset={insets.bottom}
+        onClose={() => host.store.getState().selectCard(null)} />
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
