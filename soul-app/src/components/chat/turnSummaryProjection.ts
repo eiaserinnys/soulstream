@@ -35,6 +35,20 @@ export function formatAssignedCardContextSnapshot(snapshot: Record<string,unknow
   ].filter(Boolean).join(' · ')).join('\n');
 }
 
+export function isEmptyAssignedCardContextSnapshot(
+  item: TurnSummaryRenderItem,
+): boolean {
+  const event = item.event;
+  if (event.type !== 'debug' || event.data?.kind !== 'assigned_card_context_snapshot') return false;
+  const capture = event.data.capture;
+  if (!capture || typeof capture !== 'object') return false;
+  const snapshot = (capture as Record<string, unknown>).snapshot;
+  if (!snapshot || typeof snapshot !== 'object') return false;
+  const cards = (snapshot as Record<string, unknown>).cards;
+  return Array.isArray(cards)
+    && cards.filter((card) => !!card && typeof card === 'object').length === 0;
+}
+
 function reportLabel(card: Record<string,unknown>, capturedAt: number): string {
   if (!Object.prototype.hasOwnProperty.call(card,'latestReportAt')) return '마지막 보고 시각 확인 불가';
   if (card.latestReportAt===null) return '보고 없음';

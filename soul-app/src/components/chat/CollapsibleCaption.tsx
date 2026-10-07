@@ -13,6 +13,32 @@ interface CollapsibleCaptionProps {
   alignmentInset?: 'avatar' | 'content';
 }
 
+interface CollapsibleCaptionHeaderProps {
+  title: string;
+  expandedTitle?: string;
+  expanded: boolean;
+  pressed?: boolean;
+  titleCanShrink?: boolean;
+  alignTrailingEdge?: boolean;
+  align?: 'start' | 'end';
+  alignmentInset?: 'avatar' | 'content';
+}
+
+interface CollapsibleCaptionBodyProps {
+  children: ReactNode;
+  align?: 'start' | 'end';
+  alignmentInset?: 'avatar' | 'content';
+}
+
+interface CollapsibleCaptionTriggerProps {
+  title: string;
+  expandedTitle?: string;
+  expanded: boolean;
+  onToggle(): void;
+  align?: 'start' | 'end';
+  alignmentInset?: 'avatar' | 'content';
+}
+
 const CaptionAlignContext = createContext<'start' | 'end'>('start');
 
 export function CollapsibleCaption({
@@ -43,24 +69,108 @@ export function CollapsibleCaption({
           surfaceStyle={styles.touchSurface}
         >
           <View style={styles.contentStack}>
-            <View style={[styles.titleRow, pressed && styles.titlePressed]}>
-              <Text
-                {...(expanded && expandedTitle !== undefined
-                  ? {}
-                  : { numberOfLines: 1 as const, ellipsizeMode: 'tail' as const })}
-                style={[styles.title, pressed && styles.titlePressedText]}
-              >
-                {expanded ? expandedTitle ?? title : title}
-              </Text>
-              <DisclosureIcon
-                expanded={expanded}
-                color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
-              />
-            </View>
-            {expanded ? <View style={styles.content}>{children}</View> : null}
+            <CollapsibleCaptionHeader
+              title={title}
+              expandedTitle={expandedTitle}
+              expanded={expanded}
+              pressed={pressed}
+              align={align}
+              alignmentInset={alignmentInset}
+            />
+            {expanded ? (
+              <CollapsibleCaptionBody align={align} alignmentInset={alignmentInset}>
+                {children}
+              </CollapsibleCaptionBody>
+            ) : null}
           </View>
         </CompactTouchTarget>
       </View>
+    </CaptionAlignContext.Provider>
+  );
+}
+
+export function CollapsibleCaptionHeader({
+  title,
+  expandedTitle,
+  expanded,
+  pressed = false,
+  titleCanShrink = true,
+  alignTrailingEdge = false,
+  align = 'start',
+  alignmentInset = 'avatar',
+}: CollapsibleCaptionHeaderProps) {
+  const t = useTokens();
+  const styles = useMemo(
+    () => makeStyles(t, align, alignmentInset, alignTrailingEdge),
+    [t, align, alignmentInset, alignTrailingEdge],
+  );
+  return (
+    <View style={[styles.titleRow, pressed && styles.titlePressed]}>
+      <Text
+        {...(expanded && expandedTitle !== undefined
+          ? {}
+          : { numberOfLines: 1 as const, ellipsizeMode: 'tail' as const })}
+        style={[styles.title, !titleCanShrink && styles.titleNoShrink, pressed && styles.titlePressedText]}
+      >
+        {expanded ? expandedTitle ?? title : title}
+      </Text>
+      <DisclosureIcon
+        expanded={expanded}
+        color={pressed ? t.colors.textSecondary : t.colors.textPlaceholder}
+      />
+    </View>
+  );
+}
+
+/** Interactive header only, for disclosures whose expanded content has its own controls. */
+export function CollapsibleCaptionTrigger({
+  title,
+  expandedTitle,
+  expanded,
+  onToggle,
+  align = 'start',
+  alignmentInset = 'avatar',
+}: CollapsibleCaptionTriggerProps) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <CompactTouchTarget
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ expanded }}
+      onPress={onToggle}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      activeOpacity={1}
+      frameStyle={styles.touchFrame}
+      surfaceStyle={styles.touchSurface}
+    >
+      <View style={styles.contentStack}>
+        <CollapsibleCaptionHeader
+          title={title}
+          expandedTitle={expandedTitle}
+          expanded={expanded}
+          pressed={pressed}
+          align={align}
+          alignmentInset={alignmentInset}
+        />
+      </View>
+    </CompactTouchTarget>
+  );
+}
+
+export function CollapsibleCaptionBody({
+  children,
+  align = 'start',
+  alignmentInset = 'avatar',
+}: CollapsibleCaptionBodyProps) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
+  return (
+    <CaptionAlignContext.Provider value={align}>
+      <View style={styles.content}>{children}</View>
     </CaptionAlignContext.Provider>
   );
 }
@@ -86,7 +196,12 @@ export function CollapsibleCaptionLine({
   );
 }
 
-function makeStyles(t: DesignTokens, align: 'start' | 'end', alignmentInset: 'avatar' | 'content') {
+function makeStyles(
+  t: DesignTokens,
+  align: 'start' | 'end',
+  alignmentInset: 'avatar' | 'content',
+  alignTrailingEdge = false,
+) {
   const endAligned = align === 'end';
   const bubbleMaxWidth = createSessionVisualRoles(t).chat.bubbleMaxWidth;
   const contentAligned = alignmentInset === 'content';
@@ -119,8 +234,9 @@ function makeStyles(t: DesignTokens, align: 'start' | 'end', alignmentInset: 'av
       maxWidth: '100%',
       minHeight: t.uiSpacing.xl,
       paddingHorizontal: t.uiSpacing.sm,
+      paddingRight: alignTrailingEdge ? 0 : t.uiSpacing.sm,
       marginLeft: endAligned ? 0 : -t.uiSpacing.sm,
-      marginRight: endAligned ? -t.uiSpacing.sm : 0,
+      marginRight: endAligned && !alignTrailingEdge ? -t.uiSpacing.sm : 0,
       borderRadius: t.foundation.radius.chip,
     },
     titlePressed: {
@@ -131,6 +247,9 @@ function makeStyles(t: DesignTokens, align: 'start' | 'end', alignmentInset: 'av
       color: t.colors.textPlaceholder,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
+    },
+    titleNoShrink: {
+      flexShrink: 0,
     },
     titlePressedText: {
       color: t.colors.textSecondary,

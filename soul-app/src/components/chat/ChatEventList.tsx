@@ -18,6 +18,8 @@ import {
 } from '../events/message-selection-model';
 import { ToolEvent } from '../events/ToolEvent';
 import { TurnSummaryCaption } from '../events/TurnSummaryCaption';
+import { TurnEndCaptions } from './TurnEndCaptions';
+import { AgentMessageGroup } from './AgentMessageGroup';
 import { TypingIndicator } from './TypingIndicator';
 import { HistoryFetchError } from './HistoryFetchError';
 import { useTokens } from '../../theme';
@@ -93,13 +95,18 @@ export const ChatEventList = memo(function ChatEventList({
     setActiveSelection({ eventKey, model });
   }, []);
   const extraData = useMemo(() => [activeSelection, highlightedItemKey], [activeSelection, highlightedItemKey]);
-  const renderItem = useCallback(({ item }: { item: ChatRenderItem }) => (
-    <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' ? session : undefined} sessionId={sessionId} api={api}
-      onRetryPending={onRetryPending} onRestorePending={onRestorePending}
-      selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
-      highlighted={item.key === highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
-      presentation={presentation} />
-  ), [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
+  const renderItem = useCallback(({ item }: { item: ChatRenderItem }) => {
+    const highlighted = item.key === highlightedItemKey
+      || (item.kind === 'agent-message-group' && item.events.some((event) => event.key === highlightedItemKey));
+    return (
+      <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' || item.kind === 'agent-message-group' ? session : undefined} sessionId={sessionId} api={api}
+        onRetryPending={onRetryPending} onRestorePending={onRestorePending}
+        selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
+        activeSelection={activeSelection}
+        highlighted={highlighted} highlightedItemKey={highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
+        presentation={presentation} />
+    );
+  }, [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
   return (
     <FlatList
@@ -160,7 +167,9 @@ interface RowProps {
   onRetryPending: Props['onRetryPending'];
   onRestorePending: Props['onRestorePending'];
   selection: MessageSelectionModel | null;
+  activeSelection: { eventKey: string; model: MessageSelectionModel } | null;
   highlighted: boolean;
+  highlightedItemKey: string | null;
   selectText(eventKey: string, model: MessageSelectionModel): void;
   closeSelection(): void;
   presentation: 'default' | 'manuscript';
@@ -168,15 +177,53 @@ interface RowProps {
 
 const ChatEventRow = memo(function ChatEventRow({
   item, session, sessionId, api, onRetryPending, onRestorePending,
-  selection, highlighted, selectText, closeSelection, presentation,
+  selection, activeSelection, highlighted, highlightedItemKey, selectText, closeSelection, presentation,
 }: RowProps) {
   const t = useTokens();
   if (item.kind === 'typing') return <TypingIndicator session={session}
     {...(presentation === 'manuscript' ? { presentation } : {})} />;
+  if (item.kind === 'agent-message-group') {
+    return (
+      <SearchFocusHighlight active={highlighted}>
+        <AgentMessageGroup count={item.events.length}>
+          {item.events.map((eventItem) => (
+            <ChatEventRow
+              key={eventItem.key}
+              item={eventItem}
+              session={session}
+              sessionId={sessionId}
+              api={api}
+              onRetryPending={onRetryPending}
+              onRestorePending={onRestorePending}
+              selection={activeSelection?.eventKey === eventItem.key ? activeSelection.model : null}
+              activeSelection={activeSelection}
+              highlighted={eventItem.key === highlightedItemKey}
+              highlightedItemKey={highlightedItemKey}
+              selectText={selectText}
+              closeSelection={closeSelection}
+              presentation={presentation}
+            />
+          ))}
+        </AgentMessageGroup>
+      </SearchFocusHighlight>
+    );
+  }
   if (item.kind === 'turn-summary') {
     return (
       <SearchFocusHighlight active={highlighted}>
         <TurnSummaryCaption content={item.content} presentation={presentation} />
+      </SearchFocusHighlight>
+    );
+  }
+  if (item.kind === 'turn-end-captions') {
+    const captions = <TurnEndCaptions usage={item.usage} summaries={item.summaries} />;
+    return (
+      <SearchFocusHighlight active={highlighted}>
+        {item.usage ? (
+          <EventContextMenu sessionId={sessionId} event={item.event}>
+            {captions}
+          </EventContextMenu>
+        ) : captions}
       </SearchFocusHighlight>
     );
   }

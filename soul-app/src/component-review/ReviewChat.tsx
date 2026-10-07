@@ -108,11 +108,22 @@ const persistentChatEvents: SessionEvent[] = [
   { id: '926', type: 'assistant_message', data: { text: '사용량이 없으면 아래 사용량 줄을 표시하지 않습니다.' } },
   { id: '927', type: 'complete', data: { result: '통계 없는 완료' } },
 ];
+const persistentTurnSummary: SessionEvent = {
+  id: '940',
+  type: 'turn_summary',
+  data: {
+    content: '관련 파일을 확인하고 필요한 수정과 검증을 마쳤습니다.',
+    final_response_event_id: 902,
+    parent_event_id: 902,
+  },
+};
 
 function ReviewPersistentChatProjection() {
   const t = useTokens();
   const { width, height } = useWindowDimensions();
   const columnWidth = getPersistentReviewColumnWidth(width);
+  const includeTurnSummary = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('turnSummary') === '1';
   const settings = useChatStore(state => {
     const current = state.persistentDisplaySettings;
     return current?.sessionId === 'review-pas-1' ? current.settings : null;
@@ -126,8 +137,8 @@ function ReviewPersistentChatProjection() {
     useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, [key]: value });
   };
   useEffect(() => {
-    initializePersistentReviewChat();
-  }, []);
+    initializePersistentReviewChat(includeTurnSummary);
+  }, [includeTurnSummary]);
   return <View testID="review-persistent-chat-projection" style={{ gap: t.spacing.md }}>
     <View>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>세대 구분선 표시</Text>
@@ -153,13 +164,15 @@ function getPersistentReviewColumnWidth(viewportWidth: number): number {
   const requestedWidth = typeof window === 'undefined'
     ? null
     : Number(new URLSearchParams(window.location.search).get('pasColumnWidth'));
-  if (requestedWidth === 350 || requestedWidth === 400 || requestedWidth === 480) return requestedWidth;
+  if (requestedWidth === 340 || requestedWidth === 350 || requestedWidth === 400 || requestedWidth === 480) return requestedWidth;
   return viewportWidth >= 768 ? 480 : 350;
 }
 
-function initializePersistentReviewChat() {
+function initializePersistentReviewChat(includeTurnSummary: boolean) {
   const store = useChatStore.getState();
-  store.mergeEvents('review-pas-1', persistentChatEvents);
+  store.mergeEvents('review-pas-1', includeTurnSummary
+    ? [...persistentChatEvents, persistentTurnSummary]
+    : persistentChatEvents);
   const requestId = store.beginPersistentDisplaySettingsLoad('review-pas-1');
   store.finishPersistentDisplaySettingsLoad('review-pas-1', requestId, {
     show_generation_separator: true,

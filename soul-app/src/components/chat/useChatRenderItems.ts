@@ -4,6 +4,7 @@ import type { StreamingSlots } from '../../store/chatStore';
 import type { PersistentDisplayProjectionSettings } from './groupChatEvents';
 import {
   groupChatEvents,
+  groupAgentUserUtterances,
   hasActiveStreamingAssistantText,
   placePendingOptimistic,
   streamingSlotRenderItems,
@@ -47,7 +48,10 @@ export function useChatRenderItems({
       const presented = presentation === 'manuscript'
         ? projectPersistentTurnUsage(grouped, events, showTurnUsage !== false)
         : grouped;
-      return placePendingOptimistic(presented, pendingOptimistic);
+      const placed = placePendingOptimistic(presented, pendingOptimistic);
+      return presentation === 'manuscript'
+        ? groupAgentUserUtterances(placed)
+        : placed;
     },
     [events, pendingOptimistic, persistentDisplaySettings, presentation, showTurnUsage, snapshotStreams],
   );
