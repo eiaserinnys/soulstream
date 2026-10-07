@@ -33,11 +33,14 @@ export function PersistentSessionInstructions({
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const mounted = useRef(true);
+  const handledCancelEditRequest = useRef(0);
   const locked = loading || busy;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
-    if (cancelEditRequest === 0 || !editingId) return;
+    if (cancelEditRequest <= handledCancelEditRequest.current) return;
+    handledCancelEditRequest.current = cancelEditRequest;
+    if (!editingId) return;
     setEditingId(null);
     setEditingText('');
     setMutationError(null);
