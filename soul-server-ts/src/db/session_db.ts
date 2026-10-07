@@ -138,11 +138,8 @@ export class SessionDB {
     return await this.requireSessionDataHost().getSessionSearchMetadata(sessionIds);
   }
 
-  async countTurnSummaries(sessionId: string, period?: SessionReadPeriod): Promise<SessionTurnSummaryCounts> {
-    const host = this.requireSessionDataHost();
-    return period === undefined
-      ? await host.countTurnSummaries(sessionId)
-      : await host.countTurnSummaries(sessionId, period);
+  async countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
+    return await this.requireSessionDataHost().countTurnSummaries(sessionId);
   }
 
   async loadTurnSummaryRange(

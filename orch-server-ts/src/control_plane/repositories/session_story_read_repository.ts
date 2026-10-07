@@ -101,49 +101,9 @@ export class SessionStoryReadRepository {
 
   async countTurnSummaries(
     sessionId: string,
-    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number; readonly period?: SessionReadPeriod } = {},
+    options: { readonly beforeEventId?: number; readonly signal?: AbortSignal; readonly deadlineAt?: number } = {},
   ): Promise<HostSessionTurnSummaryCounts> {
-    const run = (sql: LiveSearchSql) => options.period
-      ? sql<Array<{
-          total_count: number | string;
-          digested_count: number | string;
-          undigested_count: number | string;
-        }>>`
-          WITH input AS (
-            SELECT ${sessionId}::text AS session_id
-          ), watermark AS (
-            SELECT COALESCE(d.narrative_through_event_id, 0) AS event_id
-            FROM input
-            LEFT JOIN session_digests d ON d.session_id = input.session_id
-          ), selected AS (
-            SELECT e.id
-            FROM events e
-            JOIN input ON input.session_id = e.session_id
-            WHERE e.event_type = 'turn_summary'
-              AND (${options.beforeEventId ?? null}::bigint IS NULL OR e.id < ${options.beforeEventId ?? null})
-              AND (
-                (e.created_at >= ${options.period.since}::timestamptz
-                  AND e.created_at < ${options.period.until}::timestamptz)
-                OR EXISTS (
-                  SELECT 1 FROM events final_response
-                  WHERE final_response.session_id = e.session_id
-                    AND final_response.id::text = e.payload->>'final_response_event_id'
-                    AND final_response.created_at >= ${options.period.since}::timestamptz
-                    AND final_response.created_at < ${options.period.until}::timestamptz
-                )
-              )
-          )
-          SELECT
-            COUNT(*)::integer AS total_count,
-            COUNT(*) FILTER (
-              WHERE selected.id <= (SELECT event_id FROM watermark)
-            )::integer AS digested_count,
-            COUNT(*) FILTER (
-              WHERE selected.id > (SELECT event_id FROM watermark)
-            )::integer AS undigested_count
-          FROM selected
-        `
-      : sql<Array<{
+    const run = (sql: LiveSearchSql) => sql<Array<{
           total_count: number | string;
           digested_count: number | string;
           undigested_count: number | string;

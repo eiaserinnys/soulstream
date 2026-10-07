@@ -157,7 +157,6 @@ describe("SessionDataHostClient", () => {
 
     await client.listSessionsSummary({ limit: 10, offset: 0, period });
     await client.readEvents("s1", 0, 10, undefined, period);
-    await client.countTurnSummaries("s1", period);
     await client.loadTurnSummaryRange("s1", 1, null, 10, period);
     await client.listSessionsSummary({ limit: 10, offset: 0 });
     await client.readEvents("s1", 0, 10);
@@ -172,10 +171,6 @@ describe("SessionDataHostClient", () => {
       {
         url: "http://orchestrator.test/api/session-data/host/event_read_page",
         args: ["s1", 0, 10, null, period],
-      },
-      {
-        url: "http://orchestrator.test/api/session-data/host/turn_summary_count",
-        args: ["s1", { period }],
       },
       {
         url: "http://orchestrator.test/api/session-data/host/turn_summary_range",

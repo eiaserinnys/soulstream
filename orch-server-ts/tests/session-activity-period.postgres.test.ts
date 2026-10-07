@@ -112,11 +112,6 @@ describe("session activity period repositories", () => {
     expect(await events.countEvents("b-node-two")).toBe(9);
 
     const stories = new SessionStoryReadRepository(sql as never);
-    await expect(stories.countTurnSummaries("b-node-two", { period: PERIOD })).resolves.toEqual({
-      totalCount: 2,
-      digestedCount: 0,
-      undigestedCount: 2,
-    });
     const summaries = await stories.loadTurnSummaryRange("b-node-two", 1, null, 10, { period: PERIOD } as never);
     expect.soft(summaries.map((summary) => summary.turnNumber)).toEqual([2, 3]);
     expect.soft(summaries.map((summary) => summary.content)).toEqual(["첫 턴", "늦게 저장된 둘째 턴"]);

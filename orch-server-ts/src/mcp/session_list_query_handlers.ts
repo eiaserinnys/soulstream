@@ -71,6 +71,11 @@ export const sessionListQueryHandlers = {
             node_id: s.node_id,
           })),
           next_cursor: hasMore ? c + l : null,
+          ...(parsedPeriod.period === undefined ? {} : {
+            since: parsedPeriod.period.since,
+            until: parsedPeriod.period.until,
+            observed_at: new Date().toISOString(),
+          }),
         });
       };
       return await handler(args as SessionArgs<"list_sessions">);
@@ -126,10 +131,14 @@ export const sessionListQueryHandlers = {
           ...(nextCursor === null
             ? {}
             : {
-                notice:
-                  `${totalEvents}건 중 cursor ${cur}부터 ${events.length}건 표시. `
-                  + `cursor=${nextCursor}로 계속 조회하세요.`,
+                notice: parsedPeriod.period === undefined
+                  ? `${totalEvents}건 중 cursor ${cur}부터 ${events.length}건 표시. cursor=${nextCursor}로 계속 조회하세요.`
+                  : `${events.length}건 표시. cursor=${nextCursor}로 계속 조회하세요.`,
               }),
+          ...(parsedPeriod.period === undefined ? {} : {
+            since: parsedPeriod.period.since,
+            until: parsedPeriod.period.until,
+          }),
         });
         return consumptionBoundary.commit(
           "list_session_events",
@@ -160,12 +169,13 @@ export const sessionListQueryHandlers = {
       }: SessionArgs<"get_session_turn_summaries">) => {
         const parsedPeriod = parseSessionReadPeriod(since, until);
         if (parsedPeriod.error) return errorResult(parsedPeriod.error);
+        if (parsedPeriod.period !== undefined && mode !== "range") {
+          return errorResult("기간 조회는 range 모드에서만 지원합니다.");
+        }
         const session = await runtime.db.getSession(session_id);
         if (!session) return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
         if (mode === "count") {
-          const counts = parsedPeriod.period === undefined
-            ? await runtime.db.countTurnSummaries(session_id)
-            : await runtime.db.countTurnSummaries(session_id, { period: parsedPeriod.period });
+          const counts = await runtime.db.countTurnSummaries(session_id);
           const result = jsonResult({
             session_id,
             mode,
@@ -177,9 +187,7 @@ export const sessionListQueryHandlers = {
         }
         if (mode === "index") {
           if (turn_number === undefined) return errorResult("index 모드에는 turn_number가 필요합니다.");
-          const summaries = parsedPeriod.period === undefined
-            ? await runtime.db.loadTurnSummaryRange(session_id, turn_number, turn_number, 1)
-            : await runtime.db.loadTurnSummaryRange(session_id, turn_number, turn_number, 1, { period: parsedPeriod.period });
+          const summaries = await runtime.db.loadTurnSummaryRange(session_id, turn_number, turn_number, 1);
           const summary = summaries[0] ?? null;
           const result = jsonResult({
             session_id,
@@ -212,6 +220,10 @@ export const sessionListQueryHandlers = {
           summaries: summaries.map(serializeSessionStoryTurnSummary),
           has_more: hasMore,
           next_from_turn_number: hasMore ? fetched[pageLimit]?.turnNumber ?? null : null,
+          ...(parsedPeriod.period === undefined ? {} : {
+            since: parsedPeriod.period.since,
+            until: parsedPeriod.period.until,
+          }),
         });
         return consumptionBoundary.commit(
           "get_session_turn_summaries",

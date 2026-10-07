@@ -150,7 +150,7 @@ describe("list_sessions", () => {
     const listSessionsSummary = vi.fn(async () => ({ sessions: [], total: 0 }));
     const client = await createClient(makeRuntime({ db: { listSessionsSummary } }));
 
-    await client.callTool({
+    const result = await client.callTool({
       name: "list_sessions",
       arguments: {
         since: "2026-10-05T09:00:00+09:00",
@@ -164,6 +164,13 @@ describe("list_sessions", () => {
         until: "2026-10-06T00:00:00.000Z",
       },
     }));
+    expect(result.structuredContent).toMatchObject({
+      since: "2026-10-05T00:00:00.000Z",
+      until: "2026-10-06T00:00:00.000Z",
+      observed_at: expect.any(String),
+    });
+    expect(new Date(String(result.structuredContent?.observed_at)).toISOString())
+      .toBe(result.structuredContent?.observed_at);
   });
 
   it("requires both period boundaries before reading sessions", async () => {
@@ -227,12 +234,27 @@ describe("list_sessions", () => {
         { session_id: "s2", agent_id: null, node_id: "eias-linegames" },
       ],
     });
+    expect(result.structuredContent).not.toHaveProperty("since");
+    expect(result.structuredContent).not.toHaveProperty("observed_at");
   });
 });
 
 describe("list_session_events", () => {
   it("forwards a period while reporting the whole-session event count", async () => {
-    const readEvents = vi.fn(async () => []);
+    const readEvents = vi.fn(async () => [
+      {
+        id: 12,
+        event_type: "assistant_message",
+        payload: { text: "first" },
+        created_at: new Date("2026-10-06T01:00:00.000Z"),
+      },
+      {
+        id: 13,
+        event_type: "assistant_message",
+        payload: { text: "second" },
+        created_at: new Date("2026-10-06T02:00:00.000Z"),
+      },
+    ]);
     const countEvents = vi.fn(async () => 7);
     const client = await createClient(makeRuntime({
       db: {
@@ -246,17 +268,26 @@ describe("list_session_events", () => {
       name: "list_session_events",
       arguments: {
         session_id: "sess-1",
+        limit: 1,
         since: "2026-10-06T00:00:00Z",
         until: "2026-10-07T00:00:00Z",
       },
     });
 
-    expect(readEvents).toHaveBeenCalledWith("sess-1", 0, 21, undefined, {
+    expect(readEvents).toHaveBeenCalledWith("sess-1", 0, 2, undefined, {
       since: "2026-10-06T00:00:00.000Z",
       until: "2026-10-07T00:00:00.000Z",
     });
     expect(countEvents).toHaveBeenCalledWith("sess-1");
-    expect(result.structuredContent).toMatchObject({ session_id: "sess-1", total: 7, events: [] });
+    expect(result.structuredContent).toMatchObject({
+      session_id: "sess-1",
+      total: 7,
+      events: [{ id: 12 }],
+      since: "2026-10-06T00:00:00.000Z",
+      until: "2026-10-07T00:00:00.000Z",
+      next_cursor: 12,
+      notice: "1건 표시. cursor=12로 계속 조회하세요.",
+    });
   });
 
   it("marks truncated pages and gives the exact next cursor instruction", async () => {
@@ -289,6 +320,7 @@ describe("list_session_events", () => {
       next_cursor: 2,
       notice: "7건 중 cursor 0부터 2건 표시. cursor=2로 계속 조회하세요.",
     });
+    expect(result.structuredContent).not.toHaveProperty("since");
     expect(result.structuredContent?.events).toHaveLength(2);
   });
 });
@@ -693,16 +725,18 @@ describe("get_session_highlight", () => {
 });
 
 describe("get_session_turn_summaries", () => {
-  it("applies the period to count mode as well as summary rows", async () => {
+  it("rejects period filters for count and index modes", async () => {
     const countTurnSummaries = vi.fn(async () => ({ totalCount: 2, digestedCount: 0, undigestedCount: 2 }));
+    const loadTurnSummaryRange = vi.fn(async () => []);
     const client = await createClient(makeRuntime({
       db: {
         getSession: vi.fn(async () => ({ session_id: "sess-1" })),
         countTurnSummaries,
+        loadTurnSummaryRange,
       },
     }));
 
-    const result = await client.callTool({
+    const count = await client.callTool({
       name: "get_session_turn_summaries",
       arguments: {
         session_id: "sess-1",
@@ -711,14 +745,21 @@ describe("get_session_turn_summaries", () => {
         until: "2026-10-07T00:00:00Z",
       },
     });
-
-    expect(countTurnSummaries).toHaveBeenCalledWith("sess-1", {
-      period: {
-        since: "2026-10-06T00:00:00.000Z",
-        until: "2026-10-07T00:00:00.000Z",
+    const index = await client.callTool({
+      name: "get_session_turn_summaries",
+      arguments: {
+        session_id: "sess-1",
+        mode: "index",
+        turn_number: 1,
+        since: "2026-10-06T00:00:00Z",
+        until: "2026-10-07T00:00:00Z",
       },
     });
-    expect(result.structuredContent).toMatchObject({ total_count: 2, digested_count: 0, undigested_count: 2 });
+
+    expect(count.isError).toBe(true);
+    expect(index.isError).toBe(true);
+    expect(countTurnSummaries).not.toHaveBeenCalled();
+    expect(loadTurnSummaryRange).not.toHaveBeenCalled();
   });
 
   it("forwards the normalized period to range reads", async () => {
@@ -730,7 +771,7 @@ describe("get_session_turn_summaries", () => {
       },
     }));
 
-    await client.callTool({
+    const result = await client.callTool({
       name: "get_session_turn_summaries",
       arguments: {
         session_id: "sess-1",
@@ -747,6 +788,10 @@ describe("get_session_turn_summaries", () => {
         since: "2026-10-06T00:00:00.000Z",
         until: "2026-10-07T00:00:00.000Z",
       },
+    });
+    expect(result.structuredContent).toMatchObject({
+      since: "2026-10-06T00:00:00.000Z",
+      until: "2026-10-07T00:00:00.000Z",
     });
   });
 
@@ -778,14 +823,15 @@ describe("get_session_turn_summaries", () => {
         },
       ];
     });
+    const countTurnSummaries = vi.fn(async () => ({
+      totalCount: 4,
+      digestedCount: 3,
+      undigestedCount: 1,
+    }));
     const client = await createClient(makeRuntime({
       db: {
         getSession: vi.fn(async () => ({ session_id: "sess-1" })),
-        countTurnSummaries: vi.fn(async () => ({
-          totalCount: 4,
-          digestedCount: 3,
-          undigestedCount: 1,
-        })),
+        countTurnSummaries,
         loadTurnSummaryRange,
       },
     }));
@@ -819,6 +865,9 @@ describe("get_session_turn_summaries", () => {
       digested_count: 3,
       undigested_count: 1,
     });
+    expect(countTurnSummaries).toHaveBeenCalledWith("sess-1");
+    expect(loadTurnSummaryRange).toHaveBeenNthCalledWith(1, "sess-1", 9, 9, 1);
+    expect(loadTurnSummaryRange).toHaveBeenNthCalledWith(2, "sess-1", 2, null, 2);
     expect(missing.structuredContent).toEqual({
       session_id: "sess-1",
       mode: "index",

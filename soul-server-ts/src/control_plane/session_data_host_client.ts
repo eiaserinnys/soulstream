@@ -123,7 +123,7 @@ export interface SessionDataHost {
   searchEventsBySessionId(query: string, eventTypes: string[] | null, limit: number, signal?: AbortSignal): Promise<SessionEventSearchRow[]>;
   searchSessionHistory(params: SessionHistorySearchParams, signal?: AbortSignal): Promise<SessionHistorySearchResult>;
   getSessionSearchMetadata(sessionIds: string[]): Promise<Map<string, SessionSearchMetadata>>;
-  countTurnSummaries(sessionId: string, period?: SessionReadPeriod): Promise<SessionTurnSummaryCounts>;
+  countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts>;
   loadTurnSummaryRange(sessionId: string, fromTurnNumber: number, toTurnNumber: number | null, limit: number, period?: SessionReadPeriod): Promise<SessionStoryTurnSummary[]>;
   searchSessionDigests(query: string, sessionIds: string[] | null, limit: number, includeHighlight: boolean, includeStory: boolean, signal?: AbortSignal): Promise<SessionDigestSearchMatch[]>;
   getSessionStory(sessionId: string): Promise<SessionStoryView>;
@@ -217,10 +217,8 @@ export class SessionDataHostClient implements SessionDataHost {
     return new Map(entries);
   }
 
-  countTurnSummaries(sessionId: string, period?: SessionReadPeriod): Promise<SessionTurnSummaryCounts> {
-    const args: unknown[] = [sessionId];
-    if (period !== undefined) args.push({ period });
-    return this.background("turn_summary_count", args);
+  countTurnSummaries(sessionId: string): Promise<SessionTurnSummaryCounts> {
+    return this.background("turn_summary_count", [sessionId]);
   }
 
   loadTurnSummaryRange(sessionId: string, fromTurnNumber: number, toTurnNumber: number | null, limit: number, period?: SessionReadPeriod): Promise<SessionStoryTurnSummary[]> {
