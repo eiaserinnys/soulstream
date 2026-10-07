@@ -17,7 +17,7 @@ import type { PersistentSessionScene } from '../../store/persistentSessionScene'
 
 let store: StoreApi<PersistentSessionScene>;
 function Probe() { store = usePersistentSessionHost().store; return null; }
-test('Main은 유지된 채 PAS와 같은 스택의 카드 상세를 push하고 닫으면 같은 카드 panel로 복귀한다', () => {
+test('PAS 카드 선택은 기존 스택 안에 머물고 별도 카드 상세 경로는 그대로 동작한다', () => {
   resetNavigationCapture();
   render(<PersistentSessionProvider><Probe /><TabletNavigator /></PersistentSessionProvider>);
   const stack = getNativeStackCaptures()[0];
@@ -30,8 +30,9 @@ test('Main은 유지된 채 PAS와 같은 스택의 카드 상세를 push하고 
   render(<PersistentSessionProvider><Probe />{React.createElement(stack.screens[1].component, { navigation })}</PersistentSessionProvider>);
   act(() => { store.getState().open({ session_id: 'pas-1', persistent: true } as any); store.getState().selectCard('card-1'); });
   const props = jest.mocked(PersistentSessionScreen).mock.calls.at(-1)![0];
-  props.onOpenCard('card-1');
-  expect(navigation.navigate).toHaveBeenCalledWith('CardDetail', { cardId: 'card-1' });
+  expect(props).not.toHaveProperty('onOpenCard');
+  expect(props).not.toHaveProperty('onOpenSession');
+  expect(navigation.navigate).not.toHaveBeenCalled();
   render(<PersistentSessionProvider>{React.createElement(stack.screens[2].component, { route: { params: { cardId: 'card-1' } }, navigation })}</PersistentSessionProvider>);
   const cardProps = jest.mocked(CardDetailContent).mock.calls.at(-1)![0];
   expect(cardProps.cardId).toBe('card-1');

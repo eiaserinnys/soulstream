@@ -638,8 +638,8 @@ test('PAS 위에서 기본 카드 상세와 연결 세션 탭을 읽어도 활�
   const { useChatStore } = require('../../../store/chatStore');
   const { useUIStore } = require('../../../store/uiStore');
   useUIStore.setState({ activeSessionId: 'pas-preserved' });
-  useChatStore.setState({ persistentDisplaySettings: { sessionId: 'pas-preserved', requestId: 27,
-    settings: { show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true } } });
+  useChatStore.setState({ persistentDisplaySettingsBySession: { 'pas-preserved': { sessionId: 'pas-preserved', requestId: 27,
+    settings: { show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true } } } });
   const chatBefore = useChatStore.getState();
   const onOpenSession = jest.fn();
   const source = { ...detail, card: { ...card, assigneeKind: 'session' as const, assigneeSessionId: 's1' } };

@@ -45,6 +45,7 @@ import { ReviewPersistentTaskListN7 } from './ReviewPersistentTaskListN7';
 import { ReviewTurnEndCaptions } from './ReviewTurnEndCaptions';
 import { ReviewAgentMessageGroup } from './ReviewAgentMessageGroup';
 import { ReviewManuscriptActivity } from './ReviewManuscriptActivity';
+import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },

@@ -16,6 +16,8 @@ import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-titl
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+const mockOverlayChatMounted = jest.fn();
+const mockOverlayChatUnmounted = jest.fn();
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: () => mockWindowDimensions,
@@ -35,10 +37,17 @@ jest.mock('react-native-webview', () => ({
 jest.mock('../CardDetailSheet', () => ({ CardDetailContent: () => require('react').createElement(require('react-native').View, { testID: 'overlay-card-detail' }) }));
 
 jest.mock('../../split/ChatPane', () => ({
-  ChatPane: (props: unknown) => require('react').createElement(
-    require('react-native').View,
-    { testID: 'overlay-chat', ...(props as object) },
-  ),
+  ChatPane: (props: unknown) => {
+    const React = require('react');
+    React.useEffect(() => {
+      mockOverlayChatMounted();
+      return () => mockOverlayChatUnmounted();
+    }, []);
+    return React.createElement(
+      require('react-native').View,
+      { testID: 'overlay-chat', ...(props as object) },
+    );
+  },
 }));
 
 jest.mock('../../../lib/planner-folder-workspace', () => ({
@@ -62,6 +71,8 @@ jest.mock('../FolderSessionHistory', () => ({
 
 beforeEach(() => {
   mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+  mockOverlayChatMounted.mockClear();
+  mockOverlayChatUnmounted.mockClear();
   usePlannerStore.getState().resetForTest();
   useCardStore.setState({ rows: {}, details: {} });
   useSessionStore.setState({
@@ -301,6 +312,23 @@ test('카드 첫 열기는 소속 작업이 아닌 담당 대화를 기존 오�
   expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
   expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
   expect(useUIStore.getState().activeSessionId).toBe('owner');
+});
+
+test('카드 상세로 바꿔도 기존 오른쪽 ChatPane을 다시 마운트하지 않는다', async () => {
+  useCardStore.getState().putDetail(cardDetail('card-chat-stability', 'owner'));
+  useUIStore.getState().openSessionOverlay('session-only');
+  const screen = render(<FolderWorkspaceReadOverlay />);
+  expect(mockOverlayChatMounted).toHaveBeenCalledTimes(1);
+
+  await act(async () => {
+    useUIStore.getState().openCardOverlay('card-chat-stability');
+    await Promise.resolve();
+  });
+
+  expect(screen.getByTestId('overlay-card-detail')).toBeTruthy();
+  expect(screen.getByTestId('overlay-chat')).toBeTruthy();
+  expect(mockOverlayChatMounted).toHaveBeenCalledTimes(1);
+  expect(mockOverlayChatUnmounted).not.toHaveBeenCalled();
 });
 
 test('카드 담당 없으면 기존 대화를 유지하고 이후 갱신은 자동 선택하지 않는다', async () => {

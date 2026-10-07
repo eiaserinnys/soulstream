@@ -1,25 +1,40 @@
 import { useChatStore } from '../chatStore';
 
-test('같은 세션 재조회는 표시를 보존하고 요청 id가 지난 응답과 저장 이전 응답을 버린다', () => {
+test('표시 설정 조회와 정리는 세션별로 독립하고 같은 세션의 지난 응답은 무시한다', () => {
   useChatStore.getState().clearPersistentDisplaySettings();
   const state = useChatStore.getState();
-  const settings = { show_character: false, animate_character: true, show_turn_usage: false,
+  const pasSettings = { show_character: false, animate_character: true, show_turn_usage: false,
     show_generation_separator: true, show_jev_candidates: false };
-  const first = state.beginPersistentDisplaySettingsLoad('pas-1');
-  state.finishPersistentDisplaySettingsLoad('pas-1', first, settings);
-  const second = state.beginPersistentDisplaySettingsLoad('pas-1');
-  expect(second).toBe(first + 1);
-  expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual(settings);
-  state.finishPersistentDisplaySettingsLoad('pas-1', first, null);
-  expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual(settings);
-  state.applyPersistentDisplaySettings('pas-1', { ...settings, show_character: true });
-  state.finishPersistentDisplaySettingsLoad('pas-1', second, settings);
-  expect(useChatStore.getState().persistentDisplaySettings?.settings?.show_character).toBe(true);
-  const third = state.beginPersistentDisplaySettingsLoad('pas-2');
-  expect(useChatStore.getState().persistentDisplaySettings?.settings).toBeNull();
+  const assignedSettings = { show_character: true, animate_character: false, show_turn_usage: true,
+    show_generation_separator: false, show_jev_candidates: true };
+
+  const pasFirstRequest = state.beginPersistentDisplaySettingsLoad('pas-1');
+  state.finishPersistentDisplaySettingsLoad('pas-1', pasFirstRequest, pasSettings);
+  const pasReload = state.beginPersistentDisplaySettingsLoad('pas-1');
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings).toEqual(pasSettings);
+  state.finishPersistentDisplaySettingsLoad('pas-1', pasFirstRequest, null);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings).toEqual(pasSettings);
+
+  const assignedRequest = state.beginPersistentDisplaySettingsLoad('assigned-1');
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings).toEqual(pasSettings);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['assigned-1']?.settings).toBeNull();
+  state.finishPersistentDisplaySettingsLoad('assigned-1', assignedRequest, assignedSettings);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['assigned-1']?.settings).toEqual(assignedSettings);
+
+  state.applyPersistentDisplaySettings('pas-1', { ...pasSettings, show_character: true });
+  state.finishPersistentDisplaySettingsLoad('pas-1', pasReload, pasSettings);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings?.show_character).toBe(true);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['assigned-1']?.settings).toEqual(assignedSettings);
+
+  const assignedReload = state.beginPersistentDisplaySettingsLoad('assigned-1');
+  state.finishPersistentDisplaySettingsLoad('assigned-1', assignedRequest, null);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['assigned-1']?.settings).toEqual(assignedSettings);
   state.clearPersistentDisplaySettings('pas-1');
-  expect(useChatStore.getState().persistentDisplaySettings?.sessionId).toBe('pas-2');
-  state.clearPersistentDisplaySettings('pas-2');
-  state.finishPersistentDisplaySettingsLoad('pas-2', third, settings);
-  expect(useChatStore.getState().persistentDisplaySettings).toBeNull();
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']).toBeUndefined();
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['assigned-1']?.settings).toEqual(assignedSettings);
+  state.finishPersistentDisplaySettingsLoad('pas-1', pasReload, null);
+  state.clearPersistentDisplaySettings();
+  state.finishPersistentDisplaySettingsLoad('assigned-1', assignedReload, null);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession).toEqual({});
+
 });

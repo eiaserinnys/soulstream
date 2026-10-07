@@ -15,7 +15,9 @@ import { resolveTabletBottomSafeAreaPadding } from './tabletShellInsets';
 /**
  * 우측 채팅 패널 — 상단 인라인 헤더(상태 도트 + 세션 이름) + ChatBody.
  */
-export function ChatPane({ active = true }: { active?: boolean }) {
+export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose }: {
+  active?: boolean; sessionId?: string | null; onClose?: () => void;
+}) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
@@ -24,12 +26,14 @@ export function ChatPane({ active = true }: { active?: boolean }) {
     t.tabletShell.outerInset,
   );
 
-  const sessionId = useUIStore((s) => s.activeSessionId);
-  const focusEventId = useUIStore((s) => s.focusEventId);
-  const storyOpenRequestId = useUIStore((s) => s.storyOpenRequestId);
-  const clearFocusEventId = useUIStore((s) => s.clearFocusEventId);
+  const independentSession = sessionIdOverride !== undefined;
+  const activeSessionId = useUIStore((s) => independentSession ? null : s.activeSessionId);
+  const sessionId = sessionIdOverride === undefined ? activeSessionId : sessionIdOverride;
+  const focusEventId = useUIStore((s) => independentSession ? null : s.focusEventId);
+  const storyOpenRequestId = useUIStore((s) => independentSession ? null : s.storyOpenRequestId);
+  const clearFocusEventId = useUIStore((s) => independentSession ? undefined : s.clearFocusEventId);
   const clearStoryOpenRequestId = useUIStore(
-    (s) => s.clearStoryOpenRequestId,
+    (s) => independentSession ? undefined : s.clearStoryOpenRequestId,
   );
   const session = useSessionStore((s) =>
     sessionId ? s.sessions[sessionId] : undefined
@@ -52,7 +56,7 @@ export function ChatPane({ active = true }: { active?: boolean }) {
             <TouchableOpacity
               testID="tablet-chat-close"
               style={styles.closeButton}
-              onPress={() => useUIStore.getState().setActiveSessionId(null)}
+              onPress={onClose ?? (() => useUIStore.getState().setActiveSessionId(null))}
               accessibilityLabel="챗 닫기"
             >
               <Ionicons
@@ -79,8 +83,8 @@ export function ChatPane({ active = true }: { active?: boolean }) {
           sessionId={sessionId ?? undefined}
           active={active}
           minimumBottomPadding={minimumBottomPadding}
-          focusEventId={focusEventId}
-          storyOpenRequestId={storyOpenRequestId}
+          focusEventId={independentSession ? undefined : focusEventId}
+          storyOpenRequestId={independentSession ? undefined : storyOpenRequestId}
           onFocusEventHandled={clearFocusEventId}
           onStoryOpenRequestHandled={clearStoryOpenRequestId}
         />

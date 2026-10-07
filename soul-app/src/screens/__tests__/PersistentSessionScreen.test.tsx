@@ -15,9 +15,11 @@ jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
     style={{ display: visible ? 'flex' : 'none' }}><Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} /></View> };
 });
 jest.mock('../../components/persistent/SwayCharacter', () => ({ SwayCharacter: () => null }));
-jest.mock('../../components/planner/CardDetailSheet', () => {
+jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
   const { Pressable, View } = require('react-native');
-  return { CardDetailContent: ({ onOpenCard, onClose }: any) => <View><Pressable testID="open-card" onPress={onOpenCard} /><Pressable testID="summary-back" onPress={onClose} /></View> };
+  return { PersistentSessionCardOverlay: ({ cardId, sessionId, onClose }: any) => cardId ? <View testID="persistent-card-overlay-mock" cardId={cardId} sessionId={sessionId}>
+    <Pressable testID="close-card-overlay" onPress={onClose} />
+  </View> : null };
 });
 jest.mock('../../components/settings/PersistentSessionPasSettingsModal', () => ({ PersistentSessionPasSettingsModal: () => null }));
 jest.mock('../SettingsScreen', () => ({ SettingsScreen: () => null }));
@@ -33,19 +35,17 @@ import { useChatStore } from '../../store/chatStore';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
-test('카드를 여는 동안 ChatBody의 mount·id·입력을 유지하고 기존 상세에 같은 카드를 전달한다', () => {
-  const onOpenCard = jest.fn();
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={onOpenCard} /></PersistentSessionProvider>);
+test('카드 오버레이를 닫아도 PAS ChatBody의 mount·id·입력을 유지한다', () => {
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => store.getState().open({ session_id: 'pas-1', display_name: '관제', persistent: true } as any));
   fireEvent.changeText(view.getByTestId('persistent-draft'), '진행 중인 입력');
   fireEvent.press(view.getByTestId('persistent-session-tasks'));
-  expect(view.getByTestId('persistent-body-probe', { includeHiddenElements: true }).props.active).toBe(false);
+  expect(view.getByTestId('persistent-body-probe', { includeHiddenElements: true }).props.active).toBe(true);
   expect(view.getByTestId('persistent-body-probe', { includeHiddenElements: true }).props.sessionId).toBe('pas-1');
   fireEvent.press(view.getByTestId('choose-card'));
-  fireEvent.press(view.getByTestId('open-card'));
-  expect(onOpenCard).toHaveBeenCalledWith('card-1');
+  expect(view.getByTestId('persistent-card-overlay-mock').props.cardId).toBe('card-1');
   expect(store.getState().selectedCardId).toBe('card-1');
-  fireEvent.press(view.getByTestId('summary-back'));
+  fireEvent.press(view.getByTestId('close-card-overlay'));
   act(() => store.getState().swipe('right'));
   expect(view.getByTestId('persistent-body-probe').props.active).toBe(true);
   expect(view.getByTestId('persistent-draft').props.value).toBe('진행 중인 입력');
@@ -59,7 +59,7 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
     if (this.props.testID === 'persistent-session-screen') callback(0, 24, width, 796);
     else if (this.props.testID === 'persistent-session-conversation') callback((width - 480) / 2, 100, 480, 720);
   });
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => {
     store.getState().open({ session_id: 'pas-1', display_name: '관제', persistent: true } as any);
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
@@ -100,7 +100,7 @@ test('입력 줄과 대기 첨부가 anchor 안에서 늘어나도 캐릭터 기
     if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
     else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 720);
   });
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => {
     store.getState().open({ session_id: 'pas-baseline', display_name: '관제', persistent: true } as any);
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-baseline');
@@ -138,7 +138,7 @@ test.each([
     if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
     else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 720);
   });
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => {
     store.getState().open({ session_id: `pas-toggle-${shown}`, display_name: '관제', persistent: true } as any);
     const sessionId = `pas-toggle-${shown}`;
@@ -164,7 +164,7 @@ test('phone의 원고형 열은 공통 pageInset으로 본문과 입력의 가�
   const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
     if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
   });
-  const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const column = StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style);
   expect(column.left).toBe(20);
@@ -176,7 +176,7 @@ test('phone의 원고형 열은 공통 pageInset으로 본문과 입력의 가�
 
 test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 쓴다', () => {
   mockDevice = 'phone';
-  const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   for (const testID of [
     'persistent-session-home-visual',
     'persistent-session-appearance-visual',
@@ -192,9 +192,9 @@ test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 �
   view.unmount();
 });
 
-test('phone 카드 목록은 제목과 같은 가장자리·종이 바탕을 쓰고 요약에는 목록으로 버튼이 있다', () => {
+test('phone 카드 목록은 제목과 같은 가장자리·종이 바탕을 유지하고 카드를 오버레이로 연다', () => {
   mockDevice = 'phone';
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => { store.getState().open({ session_id: 'pas-1' } as any); store.getState().toggleScene(); });
   const panel = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
   const paper = StyleSheet.flatten(view.getByTestId('persistent-session-safe-area').props.style);
@@ -202,43 +202,40 @@ test('phone 카드 목록은 제목과 같은 가장자리·종이 바탕을 쓰
   expect(panel.paddingTop).toBeGreaterThan(0);
   expect(panel.backgroundColor).toBe(paper.backgroundColor);
   fireEvent.press(view.getByTestId('choose-card'));
-  const header = StyleSheet.flatten(view.getByTestId('persistent-summary-header').props.style);
-  expect(header.paddingHorizontal + (44 - 32) / 2).toBe(20);
-  fireEvent.press(view.getByLabelText('목록으로'));
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style)).toEqual(panel);
+  expect(view.getByTestId('persistent-card-overlay-mock').props.cardId).toBe('card-1');
+  fireEvent.press(view.getByTestId('close-card-overlay'));
   expect(store.getState().selectedCardId).toBeNull();
   view.unmount();
 });
 
-test.each([[1180, 820], [1194, 834], [820, 1180], [834, 1194]])('iPad %s×%s 목록의 초상 끝은 헤더 원 끝이며 요약 위치와 목록 복귀는 유지한다', (width, height) => {
+test.each([[1180, 820], [1194, 834], [820, 1180], [834, 1194]])('iPad %s×%s 목록 패널은 카드 오버레이 전후 같은 위치에 남는다', (width, height) => {
   mockDevice = height > width ? 'tabletPortrait' : 'tabletLandscape';
   const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width, height, scale: 1, fontScale: 1 });
   const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
     if (this.props.testID === 'persistent-session-screen') callback(0, 24, width, height - 24);
   });
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => { view.getByTestId('persistent-session-screen').props.onLayout(); store.getState().open({ session_id: 'pas-1' } as any); store.getState().toggleScene(); });
   const list = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
   expect(width - list.right - list.paddingHorizontal).toBe(width - 20);
   fireEvent.press(view.getByTestId('choose-card'));
-  const summary = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
-  expect(summary.right).toBe(height > width ? 20 : width - (width - 480) / 2 - 480 - 24 - 318);
-  const back = view.getByTestId('persistent-summary-back');
-  const wrapper = StyleSheet.flatten(view.getByTestId('persistent-summary-header').props.style);
-  expect(wrapper.paddingHorizontal + (48 - 32) / 2).toBe(20);
-  fireEvent.press(back);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style)).toEqual(list);
+  expect(view.getByTestId('persistent-card-overlay-mock').props.cardId).toBe('card-1');
+  fireEvent.press(view.getByTestId('close-card-overlay'));
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style).right).toBe(list.right);
   view.unmount(); measure.mockRestore(); dimensions.mockRestore();
 });
 
-test('카드 요약을 열어도 작업 목록을 숨긴 채 유지하고 목록 복귀 때 다시 보인다', () => {
+test('카드 오버레이가 열리면 작업 목록을 숨기고 닫으면 다시 보인다', () => {
   mockDevice = 'phone';
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenCard={jest.fn()} /></PersistentSessionProvider>);
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => { store.getState().open({ session_id: 'pas-1' } as any); store.getState().toggleScene(); });
   fireEvent.press(view.getByTestId('choose-card'));
 
   expect(StyleSheet.flatten(view.getByTestId('persistent-task-list-mock', { includeHiddenElements: true }).props.style).display).toBe('none');
-  expect(view.getByTestId('persistent-summary-header')).toBeTruthy();
-  fireEvent.press(view.getByTestId('persistent-summary-back'));
+  expect(view.getByTestId('persistent-card-overlay-mock')).toBeTruthy();
+  fireEvent.press(view.getByTestId('close-card-overlay'));
   expect(StyleSheet.flatten(view.getByTestId('persistent-task-list-mock').props.style).display).toBe('flex');
   view.unmount();
 });

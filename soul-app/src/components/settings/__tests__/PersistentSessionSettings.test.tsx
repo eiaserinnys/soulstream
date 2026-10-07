@@ -183,7 +183,7 @@ test('saves both chat display toggles and applies the response to the matching o
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
     settings: expect.objectContaining({ show_generation_separator: true, show_jev_candidates: true }),
   })));
-  await waitFor(() => expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+  await waitFor(() => expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings).toEqual({
     show_generation_separator: true,
     show_jev_candidates: true,
     show_character: true,
@@ -214,7 +214,7 @@ test('locks both display toggles while the first save is pending', async () => {
     finishSave({ session: resource({ settings: { ...resource().settings, show_generation_separator: true, show_jev_candidates: true } }), model_change: 'none' });
   });
   await waitFor(() => expect(screen.queryByTestId('persistent-session-editor')).toBeNull());
-  expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings).toEqual({
     show_generation_separator: true,
     show_jev_candidates: true,
     show_character: true,

@@ -8,7 +8,9 @@ export function usePersistentChatDisplaySettings(
   detailedNetworkActive: boolean,
   sessionId: string | undefined,
 ) {
-  const settings = useChatStore(state => state.persistentDisplaySettings);
+  const settings = useChatStore(state => sessionId
+    ? state.persistentDisplaySettingsBySession[sessionId]
+    : undefined);
   const beginLoad = useChatStore(state => state.beginPersistentDisplaySettingsLoad);
   const finishLoad = useChatStore(state => state.finishPersistentDisplaySettingsLoad);
   const clearSettings = useChatStore(state => state.clearPersistentDisplaySettings);
@@ -39,7 +41,7 @@ export function usePersistentChatDisplaySettings(
     return () => { active = false; };
   }, [api, beginLoad, clearSettings, detailedNetworkActive, finishLoad, sessionId]);
 
-  const current = settings?.sessionId === sessionId ? settings?.settings : undefined;
+  const current = settings?.settings;
   return {
     persistentDisplaySettings: current ? {
       showGenerationSeparator: current.show_generation_separator,

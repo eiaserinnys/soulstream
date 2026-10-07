@@ -33,9 +33,7 @@ function TabletMain({ navigation }: NativeStackScreenProps<TabletStackParamList,
 function TabletPersistentSession({ navigation }: NativeStackScreenProps<TabletStackParamList, 'PersistentSession'>) {
   const host = usePersistentSessionHost();
   return <PersistentSessionScreen active={useIsFocused()}
-    onHome={() => { host.store.getState().leave(); navigation.goBack(); }}
-    onOpenCard={cardId => navigation.navigate('CardDetail', { cardId })}
-    onOpenSession={sessionId => { host.store.getState().leave(); navigation.popTo('Main'); void openPlannerSessionWorkspace(sessionId); }} />;
+    onHome={() => { host.store.getState().leave(); navigation.goBack(); }} />;
 }
 
 function TabletCardDetail({ route, navigation }: NativeStackScreenProps<TabletStackParamList, 'CardDetail'>) {

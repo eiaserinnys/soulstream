@@ -7,7 +7,7 @@ import { calculatePersistentSessionLayout, type PersistentSessionRect } from '..
 import { createApiClient } from '../api/client';
 import { ChatBody } from '../components/chat/ChatBody';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
-import { CardDetailContent } from '../components/planner/CardDetailSheet';
+import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
 import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/persistentSessionFrame';
@@ -22,11 +22,9 @@ import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 export interface PersistentSessionScreenProps {
   active?: boolean;
   onHome(): void;
-  onOpenCard(cardId: string): void;
-  onOpenSession?(sessionId: string): void;
 }
 
-export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onOpenSession }: PersistentSessionScreenProps) {
+export function PersistentSessionScreen({ active = true, onHome }: PersistentSessionScreenProps) {
   const t = useTokens();
   const device = useDeviceType();
   const phone = device === 'phone';
@@ -38,8 +36,9 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
   const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  const display = useChatStore(state => state.persistentDisplaySettings && state.persistentDisplaySettings.sessionId === session?.session_id
-    ? state.persistentDisplaySettings.settings : null);
+  const display = useChatStore(state => session?.session_id
+    ? state.persistentDisplaySettingsBySession[session.session_id]?.settings ?? null
+    : null);
   const { handleAppearanceChange } = useDisplayPreferenceActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingCharacter, setSavingCharacter] = useState(false);
@@ -149,27 +148,18 @@ export function PersistentSessionScreen({ active = true, onHome, onOpenCard, onO
       {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
         top: headerHeight + (phone ? 0 : t.hitTarget.min),
         ...(phone ? { bottom: 0 } : { maxHeight: Math.max(0, (portrait && geometry ? geometry.lineY : app?.height ?? 0) - headerHeight - t.hitTarget.min - t.uiSpacing.md) }),
-        right: phone ? 0 : !selectedCardId ? t.foundation.pageInset - t.uiSpacing.sm : portrait ? t.foundation.pageInset : app ? app.width - columnLeft - columnWidth - t.uiSpacing.xl - (selectedCardId ? widths.detail : widths.tasks) : t.foundation.pageInset,
-        width: phone ? '100%' : selectedCardId ? widths.detail : widths.tasks,
-        backgroundColor: selectedCardId && !phone ? t.persistentSession.panel : t.persistentSession.paper,
+        right: phone ? 0 : t.foundation.pageInset - t.uiSpacing.sm,
+        width: phone ? '100%' : widths.tasks,
+        backgroundColor: t.persistentSession.paper,
         borderRadius: phone ? 0 : t.foundation.radius.card,
-        borderWidth: selectedCardId && !phone ? StyleSheet.hairlineWidth : 0, borderColor: t.persistentSession.line,
-        paddingHorizontal: selectedCardId ? 0 : phone ? t.foundation.pageInset : t.uiSpacing.sm,
-        paddingTop: phone && !selectedCardId ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
+        borderWidth: 0, borderColor: t.persistentSession.line,
+        paddingHorizontal: phone ? t.foundation.pageInset : t.uiSpacing.sm,
+        paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
         <PersistentSessionTaskList api={api} visible={!selectedCardId}
           onOpenCard={cardId => host.store.getState().selectCard(cardId)} />
-        {selectedCardId ? <>
-          <View testID="persistent-summary-header" style={{ paddingHorizontal: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2, alignItems: 'flex-start' }}>
-            <LiquidGlassButton iconOnly size="compact" variant="plain" accessibilityLabel="목록으로" testID="persistent-summary-back" surfaceTestID="persistent-summary-back-visual"
-              onPress={() => host.store.getState().selectCard(null)}>
-              <Ionicons name="chevron-back" size={t.iconSize.navigation} color={t.colors.textPrimary} />
-            </LiquidGlassButton>
-          </View>
-          <CardDetailContent key={selectedCardId} variant="readSummary" fitContent={!phone} api={api} cardId={selectedCardId}
-          onClose={() => host.store.getState().selectCard(null)} onOpenCard={() => onOpenCard(selectedCardId)} onOpenSession={onOpenSession} />
-          </>
-          : null}
       </View> : null}
+      <PersistentSessionCardOverlay api={api} cardId={scene === 'cards' ? selectedCardId : null}
+        sessionId={session?.session_id} onClose={() => host.store.getState().selectCard(null)} />
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>

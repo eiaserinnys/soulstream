@@ -47,7 +47,7 @@ test('정확한 가운데 슬롯만 기본 이동을 막고 같은 id로 scene�
   expect(mockList).toHaveBeenCalledTimes(1);
   expect(preventDefault).toHaveBeenCalledTimes(3);
 });
-test('Feed 스택에 일반 Chat이 있고 PAS 스택의 기존 카드 상세 goBack은 같은 요약으로 돌아간다', () => {
+test('Feed의 일반 Chat과 PAS 카드 상세 경로는 유지하고 PAS 선택은 전역 상세로 나가지 않는다', () => {
   resetNavigationCapture();
   render(<PersistentSessionProvider><Probe /><TabNavigator /></PersistentSessionProvider>);
   const tabs = getBottomTabCaptures()[0];
@@ -61,8 +61,10 @@ test('Feed 스택에 일반 Chat이 있고 PAS 스택의 기존 카드 상세 go
   const navigation = { addListener: jest.fn(() => () => {}), getParent: jest.fn(), goBack: jest.fn(), navigate: jest.fn() };
   render(<PersistentSessionProvider><Probe />{React.createElement(pas.screens[0].component, { navigation })}</PersistentSessionProvider>);
   act(() => { host.store.getState().open({ session_id: 'pas' } as any); host.store.getState().selectCard('card'); });
-  jest.mocked(PersistentSessionScreen).mock.calls.at(-1)![0].onOpenCard('card');
-  expect(navigation.navigate).toHaveBeenCalledWith('CardDetail', { cardId: 'card' });
+  const props = jest.mocked(PersistentSessionScreen).mock.calls.at(-1)![0];
+  expect(props).not.toHaveProperty('onOpenCard');
+  expect(props).not.toHaveProperty('onOpenSession');
+  expect(navigation.navigate).not.toHaveBeenCalled();
   render(React.createElement(pas.screens[1].component, { route: { params: { cardId: 'card' } }, navigation }));
   jest.mocked(CardDetailContent).mock.calls.at(-1)![0].onClose();
   expect(navigation.goBack).toHaveBeenCalledTimes(1);

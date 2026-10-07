@@ -6,7 +6,6 @@ import { GLASS_BUTTON_BORDER_WIDTH } from '../components/GlassSurface';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { usePersistentSessionHost, usePersistentSessionScene, PersistentSessionPortrait } from './PersistentSessionContext';
 import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
-import { openPhoneChat } from './phoneSessionNavigation';
 
 export function PhonePersistentSession({ navigation }: { navigation: any }) {
   const host = usePersistentSessionHost();
@@ -22,9 +21,7 @@ export function PhonePersistentSession({ navigation }: { navigation: any }) {
     if (state.scene === 'cards') state.swipe('right');
     else home();
   }), [host.store, home, navigation]));
-  return <PersistentSessionScreen active={focused} onHome={home}
-    onOpenCard={cardId => navigation.navigate('CardDetail', { cardId })}
-    onOpenSession={sessionId => { host.store.getState().leave(); openPhoneChat(navigation, sessionId); }} />;
+  return <PersistentSessionScreen active={focused} onHome={home} />;
 }
 
 export function PersistentPhoneTabIcon({ color, size, active }: { color: string; size: number; active: boolean }) {

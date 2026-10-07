@@ -150,6 +150,7 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
 import { useAuthStore } from '../../../store/authStore';
 import { useDraftStore } from '../../../store/draftStore';
+import { useUIStore } from '../../../store/uiStore';
 import { PERSISTENT_HISTORY_EVENT_TYPES } from '../../../api/persistentHistoryEventTypes';
 
 const realUseChatSendFlow = jest.requireActual('../useChatSendFlow').useChatSendFlow as
@@ -281,7 +282,7 @@ describe('ChatBody store subscription boundary', () => {
       show_jev_candidates: true, show_turn_usage: false,
     } } });
     const view = await renderSettled();
-    expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual({
       show_character: false, animate_character: false, show_generation_separator: true,
       show_jev_candidates: true, show_turn_usage: false,
     });
@@ -290,7 +291,38 @@ describe('ChatBody store subscription boundary', () => {
 
   test('일반 세션 초기 조회의 표시 설정은 null이다', async () => {
     const view = await renderSettled();
-    expect(useChatStore.getState().persistentDisplaySettings?.settings).toBeNull();
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toBeNull();
+    view.unmount();
+  });
+
+  test('세션 없는 빈 ChatBody는 다른 세션의 표시 설정을 지우지 않는다', async () => {
+    const assignedSessionId = 'assigned-overlay-session';
+    const settings = { show_character: true, animate_character: false, show_generation_separator: true,
+      show_jev_candidates: false, show_turn_usage: true };
+    const store = useChatStore.getState();
+    const requestId = store.beginPersistentDisplaySettingsLoad(assignedSessionId);
+    store.finishPersistentDisplaySettingsLoad(assignedSessionId, requestId, settings);
+    const view = render(<View><ChatBody sessionId={undefined} /></View>);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[assignedSessionId]?.settings).toEqual(settings);
+    view.unmount();
+  });
+
+  test('세션 ID 없는 ChatBody가 담당 세션 ID를 받아도 PAS 표시 설정을 보존한다', async () => {
+    const pasSessionId = 'pas-background-session';
+    const settings = { show_character: false, animate_character: true, show_generation_separator: true,
+      show_jev_candidates: false, show_turn_usage: true };
+    const store = useChatStore.getState();
+    const requestId = store.beginPersistentDisplaySettingsLoad(pasSessionId);
+    store.finishPersistentDisplaySettingsLoad(pasSessionId, requestId, settings);
+    const view = render(<View><ChatBody sessionId={undefined} /></View>);
+    await act(async () => { await Promise.resolve(); });
+
+    view.rerender(<View><ChatBody sessionId={SID} /></View>);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[pasSessionId]?.settings).toEqual(settings);
     view.unmount();
   });
 
@@ -301,20 +333,20 @@ describe('ChatBody store subscription boundary', () => {
     } } });
     const view = await renderSettled();
     fireEvent.changeText(view.getByTestId('chat-composer-input'), '작성 중인 문장');
-    const saved = useChatStore.getState().persistentDisplaySettings;
+    const saved = useChatStore.getState().persistentDisplaySettingsBySession[SID];
     view.rerender(<View><ChatBody sessionId={SID} active={false} /></View>);
-    expect(useChatStore.getState().persistentDisplaySettings).toEqual(saved);
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]).toEqual(saved);
     expect(mockApiClient.getPersistentSession).toHaveBeenCalledTimes(1);
     let resolveReload!: (value: unknown) => void;
     mockApiClient.getPersistentSession.mockReturnValueOnce(new Promise(resolve => { resolveReload = resolve; }));
     view.rerender(<View><ChatBody sessionId={SID} active /></View>);
-    expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual(saved?.settings);
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual(saved?.settings);
     await act(async () => { resolveReload({ session: { persistent: true, settings: {
       show_character: false, animate_character: true, show_generation_separator: false,
       show_jev_candidates: true, show_turn_usage: false,
     } } }); });
     expect(mockApiClient.getPersistentSession).toHaveBeenCalledTimes(2);
-    expect(useChatStore.getState().persistentDisplaySettings?.settings).toEqual({
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual({
       show_character: false, animate_character: true, show_generation_separator: false,
       show_jev_candidates: true, show_turn_usage: false,
     });
@@ -326,12 +358,12 @@ describe('ChatBody store subscription boundary', () => {
     mockApiClient.getPersistentSession.mockResolvedValue({ session: { persistent: true, settings: {} } });
     const view = await renderSettled();
     view.rerender(<View><ChatBody sessionId={OTHER_SID} active={false} /></View>);
-    expect(useChatStore.getState().persistentDisplaySettings).toBeNull();
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]).toBeUndefined();
     view.rerender(<View><ChatBody sessionId={OTHER_SID} active /></View>);
     await act(async () => { await Promise.resolve(); });
-    expect(useChatStore.getState().persistentDisplaySettings?.sessionId).toBe(OTHER_SID);
+    expect(useChatStore.getState().persistentDisplaySettingsBySession[OTHER_SID]?.sessionId).toBe(OTHER_SID);
     await act(async () => { useSettingsStore.setState({ serverUrl: '' }); });
-    expect(useChatStore.getState().persistentDisplaySettings).toBeNull();
+    expect(useChatStore.getState().persistentDisplaySettingsBySession).toEqual({});
     view.unmount();
   });
 
@@ -2180,6 +2212,35 @@ describe('ChatBody store subscription boundary', () => {
 
     expect(reopened.getByTestId('chat-composer-input').props.value).toBe('');
     reopened.unmount();
+  });
+
+  test('오버레이 담당 세션에 보낸 메시지는 PAS 전역 선택을 바꾸지 않고 담당 ID로 전달한다', async () => {
+    await preparePersistentChatDrafts();
+    const assignedSessionId = 'assigned-overlay-session';
+    useSessionStore.setState(state => ({ sessions: {
+      ...state.sessions,
+      [assignedSessionId]: {
+        agentSessionId: assignedSessionId,
+        nodeId: 'node-1',
+        displayName: '담당 세션',
+        status: 'idle',
+        createdAt: '2026-05-23T00:00:00Z',
+        updatedAt: '2026-05-23T00:00:00Z',
+      },
+    } }));
+    useUIStore.setState({ activeSessionId: 'pas-background-session' });
+    mockApiClient.intervene.mockResolvedValue({ delivered: true, outcome: 'delivered' });
+    mockUseChatSendFlow.mockImplementation(((options: any) => realUseChatSendFlow(options)) as any);
+
+    const view = render(<ChatBody sessionId={assignedSessionId} />);
+    await act(async () => { await Promise.resolve(); });
+    const message = '담당 세션에 전달할 내용';
+    fireEvent.changeText(view.getByTestId('chat-composer-input'), message);
+    await act(async () => { fireEvent.press(view.getByTestId('chat-send-button')); });
+
+    expect(mockApiClient.intervene).toHaveBeenCalledWith(assignedSessionId, message, undefined);
+    expect(useUIStore.getState().activeSessionId).toBe('pas-background-session');
+    view.unmount();
   });
 
   test('실패 말풍선의 되돌리기는 원문을 입력창과 영속 초안에 복원한다', async () => {
