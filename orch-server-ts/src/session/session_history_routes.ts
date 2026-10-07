@@ -13,7 +13,10 @@ import {
   type SessionHistoryInitialState,
   type SessionHistorySseFrame,
 } from "./session_history_initial_state.js";
-import { parseTimelineEventTypesQuery } from "./session_history_query.js";
+import {
+  parseTimelineDebugKindsQuery,
+  parseTimelineEventTypesQuery,
+} from "./session_history_query.js";
 import {
   SessionResourceAccessError,
   type SessionResourceAccessProvider,
@@ -122,6 +125,8 @@ export function registerSessionHistoryRoutes(
     if (!limit.ok) return sendInvalidQuery(reply, limit);
     const eventTypes = parseTimelineEventTypesQuery(queryValue(request.query, "event_types"));
     if (!eventTypes.ok) return sendInvalidQuery(reply, eventTypes);
+    const debugKinds = parseTimelineDebugKindsQuery(queryValues(request.query, "debug_kinds"));
+    if (!debugKinds.ok) return sendInvalidQuery(reply, debugKinds);
 
     if (!(await ensureSessionAccess(options, request, reply))) return;
     return service.readTimelinePage(
@@ -129,6 +134,7 @@ export function registerSessionHistoryRoutes(
       optionalStringQuery(request.query, "before"),
       limit.value,
       eventTypes.value,
+      debugKinds.value,
     );
   });
 
@@ -223,6 +229,14 @@ function queryValue(query: unknown, key: string): unknown {
   }
   const value = (query as Record<string, unknown>)[key];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function queryValues(query: unknown, key: string): unknown {
+  if (typeof query !== "object" || query === null || !(key in query)) {
+    return undefined;
+  }
+  const value = (query as Record<string, unknown>)[key];
+  return Array.isArray(value) ? value : [value];
 }
 
 function sendInvalidQuery(

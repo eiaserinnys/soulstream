@@ -2,9 +2,13 @@ import type {
   SessionHistoryProvider,
   SessionHistoryRawEvent,
   SessionHistoryReplayRange,
+  RequestedTimelineDebugKind,
   RequestedTimelineEventType,
 } from "../session/session_history_service.js";
-import { SESSION_TIMELINE_EVENT_TYPES } from "../session/session_history_service.js";
+import {
+  DEFAULT_TIMELINE_DEBUG_KINDS,
+  SESSION_TIMELINE_EVENT_TYPES,
+} from "../session/session_history_service.js";
 import { SessionStoryReadService } from "../session/session_story_read_service.js";
 import { SessionTurnSummaryReadService } from
   "../session/session_turn_summary_read_service.js";
@@ -104,6 +108,7 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     before: string | null,
     limit: number,
     requestedEventTypes?: readonly RequestedTimelineEventType[],
+    requestedDebugKinds?: readonly RequestedTimelineDebugKind[],
   ): Promise<[unknown[], string | null]> {
     const sql = await this.sqlResolver.resolveSql();
     const assistantRows = await sql`
@@ -122,7 +127,8 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
           ? [...requestedEventTypes, "complete"]
           : requestedEventTypes);
     const cursor = before === null ? null : decodeCursor(before);
-    const rows = await readTimelinePage(sql, sessionId, eventTypes, cursor, limit);
+    const debugKinds = requestedDebugKinds ?? DEFAULT_TIMELINE_DEBUG_KINDS;
+    const rows = await readTimelinePage(sql, sessionId, eventTypes, debugKinds, cursor, limit);
     const { pageRows, nextCursor } = pageRowsAndCursor(rows, limit);
     const withToolStarts = await addPairedToolStarts(sql, sessionId, pageRows);
     const messages = serializeTimelineRows(sortDesc(withToolStarts));
@@ -254,6 +260,7 @@ async function readTimelinePage(
   sql: LivePostgresSql,
   sessionId: string,
   eventTypes: readonly string[],
+  debugKinds: readonly string[],
   cursor: Cursor | null,
   limit: number,
 ): Promise<readonly Record<string, unknown>[]> {
@@ -263,7 +270,7 @@ async function readTimelinePage(
       FROM events
       WHERE session_id = ${sessionId}
         AND event_type = ANY(${eventTypes}::text[])
-        AND (event_type <> 'debug' OR payload->>'kind' IN ('assigned_card_context_snapshot', 'persistent_jev_candidates'))
+        AND (event_type <> 'debug' OR payload->>'kind' = ANY(${debugKinds}::text[]))
       ORDER BY created_at DESC, id DESC
       LIMIT ${limit + 1}
     `;
@@ -274,7 +281,7 @@ async function readTimelinePage(
       FROM events
       WHERE session_id = ${sessionId}
         AND event_type = ANY(${eventTypes}::text[])
-        AND (event_type <> 'debug' OR payload->>'kind' IN ('assigned_card_context_snapshot', 'persistent_jev_candidates'))
+        AND (event_type <> 'debug' OR payload->>'kind' = ANY(${debugKinds}::text[]))
         AND created_at < ${cursor.timestamp}
       ORDER BY created_at DESC, id DESC
       LIMIT ${limit + 1}
@@ -285,7 +292,7 @@ async function readTimelinePage(
     FROM events
     WHERE session_id = ${sessionId}
       AND event_type = ANY(${eventTypes}::text[])
-        AND (event_type <> 'debug' OR payload->>'kind' IN ('assigned_card_context_snapshot', 'persistent_jev_candidates'))
+        AND (event_type <> 'debug' OR payload->>'kind' = ANY(${debugKinds}::text[]))
       AND (
         created_at < ${cursor.timestamp}
         OR (created_at = ${cursor.timestamp} AND id < ${cursor.id})

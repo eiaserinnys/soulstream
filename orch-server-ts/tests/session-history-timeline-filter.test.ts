@@ -6,6 +6,7 @@ import {
   parseOrchServerConfig,
   type SessionHistoryProvider,
 } from "../src/index.js";
+import { parseTimelineDebugKindsQuery } from "../src/session/session_history_query.js";
 import { isRequestedTimelineEventType } from "../src/session/session_history_service.js";
 
 const config = parseOrchServerConfig({
@@ -47,6 +48,25 @@ describe("session timeline event_types filter", () => {
       null,
       50,
       ["user_message", "assistant_message"],
+    );
+    await app.close();
+  });
+
+  it("passes an explicitly requested debug_kinds array to timeline reads", async () => {
+    const { app, readTimeline } = createHarness();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/timeline?event_types=debug&debug_kinds=persistent_decision&debug_kinds=persistent_jev_candidates&limit=1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(readTimeline).toHaveBeenCalledWith(
+      "sess-1",
+      null,
+      1,
+      ["debug"],
+      ["persistent_decision", "persistent_jev_candidates"],
     );
     await app.close();
   });
@@ -97,5 +117,29 @@ describe("session timeline event_types filter", () => {
     }
     expect(readTimeline).not.toHaveBeenCalled();
     await app.close();
+  });
+
+  it("rejects empty and unknown debug_kinds before provider access", async () => {
+    const { app, readTimeline } = createHarness();
+
+    for (const query of ["debug_kinds=", "debug_kinds=future_kind"]) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/sessions/sess-1/timeline?${query}`,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: { code: "INVALID_QUERY", details: { field: "debug_kinds" } },
+      });
+    }
+    expect(readTimeline).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects an empty debug_kinds array", () => {
+    expect(parseTimelineDebugKindsQuery([])).toMatchObject({
+      ok: false,
+      field: "debug_kinds",
+    });
   });
 });
