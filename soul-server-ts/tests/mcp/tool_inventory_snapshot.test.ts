@@ -74,9 +74,12 @@ describe("advertised MCP tool inventory", () => {
     expect(internal.find(tool => tool.name === "create_agent_session")!.inputSchema.properties).toHaveProperty("worktree_id");
     expect(internal.find(tool => tool.name === "create_card")!.inputSchema.properties).toHaveProperty("run");
     expect(internal.find(tool => tool.name === "run_card")).toBeDefined();
+    expect(internal.find(tool => tool.name === "update_persistent_session_settings")).toMatchObject({
+      inputSchema: { properties: { session_id: expect.any(Object), default_model: expect.any(Object), show_turn_usage: expect.any(Object) } },
+    });
     for(const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"])
       expect(internal.find(tool=>tool.name===name)).toBeDefined();
-    expect(internal).toHaveLength(122);
+    expect(internal).toHaveLength(123);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });

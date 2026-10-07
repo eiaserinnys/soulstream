@@ -12,6 +12,7 @@ import { folderObjectTools } from "./folder_tools.js";
 import { pageTools } from "./page_tools.js";
 import { liveCardTools } from "./live_card_view_tools.js";
 import { skillTools } from "./skills_tools.js";
+import { persistentSessionSettingsTools } from "./persistent_session_settings_tools.js";
 
 /** Mirrors the MCP SDK tool annotations without importing the SDK. */
 export interface McpToolAnnotations {
@@ -37,6 +38,8 @@ export interface McpToolDefinition {
   config: McpToolConfig;
   /** "internal" tools need a caller session and are never listed to external callers. */
   audience: "all" | "internal";
+  /** Reject unknown top-level input keys when registering and executing this tool. */
+  strictInputSchema?: boolean;
   /** Input schema shown to and enforced for external callers when it differs from `config.inputSchema`. */
   externalInputSchema?: z.ZodRawShape;
   /** Forward timeout for the worker-to-orchestrator call when the default is too short. */
@@ -57,6 +60,7 @@ export const mcpTools = {
   ...liveCardTools,
   ...skillTools,
   ...sessionTools,
+  ...persistentSessionSettingsTools,
 } as const satisfies Record<string, McpToolDefinition>;
 
 export const mcpToolDefinitions = Object.values(mcpTools);

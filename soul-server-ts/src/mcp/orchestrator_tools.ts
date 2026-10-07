@@ -3,6 +3,7 @@ import { errorResult, errorResultFromError, type CallToolResult, type McpToolDef
 import { fetchOrchResponse, readOrchErrorEnvelope } from "../control_plane/persistence_host_transport.js";
 import { getCurrentMcpCallerSessionId } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
+import { z } from "zod";
 
 export type McpForwardContext = { callerInfo?: Record<string, unknown>; execution?: { registrationId: string; executionCommandId: string } };
 export type McpForwardPreprocessor = (args: Record<string, unknown>) =>
@@ -15,7 +16,7 @@ export function registerOrchestratorTools(
   preprocessors: Readonly<Record<string, McpForwardPreprocessor>> = {},
 ): void {
   for (const definition of definitions) {
-    server.registerTool(definition.name, definition.config, async (args, request) => {
+    const handler = async (args: Record<string, unknown>, request: { signal?: AbortSignal }) => {
       try {
         const extra = await preprocessors[definition.name]?.(args);
         if (extra && "content" in extra) return extra;
@@ -24,7 +25,15 @@ export function registerOrchestratorTools(
         return preprocessors[definition.name] ? errorResultFromError(error)
           : errorResult(error instanceof Error ? error.message : String(error));
       }
-    });
+    };
+    if ("strictInputSchema" in definition && definition.strictInputSchema) {
+      server.registerTool(definition.name, {
+        ...definition.config,
+        inputSchema: z.object(definition.config.inputSchema).strict(),
+      }, handler);
+    } else {
+      server.registerTool(definition.name, definition.config, handler);
+    }
   }
 }
 

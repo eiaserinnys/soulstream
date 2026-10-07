@@ -887,6 +887,16 @@ export function buildProductionRouteOptions(
   if (sessionAccessProvider === undefined) {
     throw new Error("session access provider is required for persistent session settings routes");
   }
+  const persistentSessionSettingsService = new PersistentSessionSettingsService({
+    reads: async () => (await persistenceRepositoryProvider()).sessionReads,
+    access: sessionAccessProvider,
+    catalog: providers.sessionCatalogRoutes.provider,
+    commands: providers.runtime.sessionActionCommandRoutes,
+    createSession: (request, body, logger) =>
+      executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger),
+    presets: providers.modelPresetAvailability,
+    profiles: providers.nodeAgentProfileRoutes.provider,
+  });
   return {
     config,
     corsAllowedOrigins,
@@ -911,6 +921,7 @@ export function buildProductionRouteOptions(
     ...(folderControlPlaneServiceProvider ? {
       mcpHostRoutes: {
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
+        persistentSessionSettings: persistentSessionSettingsService,
         authBearerToken: config.authBearerToken,
         ...(mcpSkills ? { skills: mcpSkills } : {}),
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail,
@@ -1015,16 +1026,7 @@ export function buildProductionRouteOptions(
         }),
     sessionCatalogRoutes: providers.sessionCatalogRoutes,
     persistentSessionRoutes: {
-      service: new PersistentSessionSettingsService({
-        reads: async () => (await persistenceRepositoryProvider()).sessionReads,
-        access: sessionAccessProvider,
-        catalog: providers.sessionCatalogRoutes.provider,
-        commands: providers.runtime.sessionActionCommandRoutes,
-        createSession: (request, body, logger) =>
-          executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger),
-        presets: providers.modelPresetAvailability,
-        profiles: providers.nodeAgentProfileRoutes.provider,
-      }),
+      service: persistentSessionSettingsService,
     },
     sessionCommandRoutes: providers.runtime.sessionCommandRoutes,
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,
