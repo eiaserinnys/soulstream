@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { Platform, Text } from 'react-native';
+import { Modal, Platform, Text } from 'react-native';
 import { ApiHttpError } from '../../../api/clientCore';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -406,10 +406,47 @@ test('keeps normal monitoring rows when only the decision request fails', async 
   expect(monitoring.queryByText('마지막 판단')).toBeNull();
   expect(await monitoring.findByText('조회 실패')).toBeTruthy();
   expect(monitoring.queryByTestId('persistent-session-monitoring-empty')).toBeNull();
+  const textOrder = monitoring.UNSAFE_getAllByType(Text).map((text) => text.props.children);
+  expect(textOrder.indexOf('조회 실패')).toBe(textOrder.indexOf('현재 세대') + 2);
+  expect(textOrder[textOrder.indexOf('조회 실패') + 1]).toBe('다시 시도');
   fireEvent.press(monitoring.getByTestId('persistent-session-monitoring-retry'));
   await waitFor(() => expect(decisionRequests).toBe(2));
   expect(monitoring.getByText('현재 세대')).toBeTruthy();
   expect(monitoring.getByText('8')).toBeTruthy();
+});
+
+test('native back cancels instruction editing before closing PAS settings', async () => {
+  api.getPersistentSessionInstructions.mockResolvedValueOnce({ instructions: [{
+    id: 'instruction-1', text: '요청한 범위부터 확인합니다.', source_turns: [],
+    created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-06T00:00:00Z', origin: 'user',
+  }] });
+  const onClose = jest.fn();
+  const screen = render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={onClose} />);
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+  fireEvent.press(await screen.findByTestId('persistent-instruction-open-instruction-1'));
+  expect(screen.getByTestId('persistent-instruction-edit-instruction-1')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('persistent-instruction-cancel-instruction-1'));
+  expect(screen.queryByTestId('persistent-instruction-edit-instruction-1')).toBeNull();
+  expect(screen.getByTestId('persistent-session-pas-settings-surface')).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('persistent-instruction-open-instruction-1'));
+  fireEvent.press(screen.getByTestId('persistent-session-pas-close'));
+  expect(screen.queryByTestId('persistent-instruction-edit-instruction-1')).toBeNull();
+  expect(screen.getByTestId('persistent-session-pas-settings-surface')).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('persistent-instruction-open-instruction-1'));
+
+  const requestClose = screen.UNSAFE_getByType(Modal).props.onRequestClose as () => void;
+  act(() => { requestClose(); });
+
+  await waitFor(() => expect(screen.queryByTestId('persistent-instruction-edit-instruction-1')).toBeNull());
+  expect(screen.getByTestId('persistent-session-pas-settings-surface')).toBeTruthy();
+  expect(onClose).not.toHaveBeenCalled();
+  act(() => { requestClose(); });
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 test('does not pair context usage from a failed turn with a later completion', async () => {

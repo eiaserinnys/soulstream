@@ -28,17 +28,27 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
   const styles = useMemo(() => makeStyles(t), [t]);
   const editorScroll = useRef<ScrollView>(null);
   const savePasRef = useRef<() => void>(() => undefined);
+  const instructionEditing = useRef(false);
+  const [cancelInstructionEditRequest, setCancelInstructionEditRequest] = useState(0);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const [section, setSection] = useState<Section>('account-model');
   const [dirty, setDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState({ disabled: true, busy: false });
   const onDirtyChange = useCallback((value: boolean) => setDirty(value), []);
+  const onInstructionEditingChange = useCallback((editing: boolean) => {
+    instructionEditing.current = editing;
+  }, []);
   const onPasSaveActionChange = useCallback((save: () => void, disabled: boolean, busy: boolean) => {
     savePasRef.current = save;
     setSaveStatus((current) => current.disabled === disabled && current.busy === busy ? current : { disabled, busy });
   }, []);
   const revealEditorError = useCallback(() => editorScroll.current?.scrollTo({ y: 0, animated: true }), []);
   const requestClose = useCallback(() => {
+    if (instructionEditing.current) {
+      instructionEditing.current = false;
+      setCancelInstructionEditRequest((value) => value + 1);
+      return;
+    }
     if (!dirty) { onClose(); return; }
     Alert.alert('저장하지 않은 변경', '계정과 모델의 변경을 저장하지 않고 닫을까요?', [
       { text: '계속 편집', style: 'cancel' },
@@ -103,7 +113,12 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
               serverUrl={serverUrl}
               sessionId={sessionId}
             />
-            <PersistentSessionInstructions serverUrl={serverUrl} sessionId={sessionId} />
+            <PersistentSessionInstructions
+              serverUrl={serverUrl}
+              sessionId={sessionId}
+              cancelEditRequest={cancelInstructionEditRequest}
+              onEditingChange={onInstructionEditingChange}
+            />
           </ScrollView>
         </View>
       </View>

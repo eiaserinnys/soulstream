@@ -11,7 +11,17 @@ import {
 import { describePersistentFailure } from './persistentSessionFailure';
 import { usePersistentSessionApiFactory } from './persistentSessionApi';
 
-export function PersistentSessionInstructions({ serverUrl, sessionId }: { serverUrl: string; sessionId: string }) {
+export function PersistentSessionInstructions({
+  serverUrl,
+  sessionId,
+  cancelEditRequest = 0,
+  onEditingChange,
+}: {
+  serverUrl: string;
+  sessionId: string;
+  cancelEditRequest?: number;
+  onEditingChange?(editing: boolean): void;
+}) {
   const createApi = usePersistentSessionApiFactory();
   const [instructions, setInstructions] = useState<PersistentSessionInstruction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +35,14 @@ export function PersistentSessionInstructions({ serverUrl, sessionId }: { server
   const mounted = useRef(true);
   const locked = loading || busy;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+
+  useEffect(() => {
+    if (cancelEditRequest === 0 || !editingId) return;
+    setEditingId(null);
+    setEditingText('');
+    setMutationError(null);
+    onEditingChange?.(false);
+  }, [cancelEditRequest, editingId, onEditingChange]);
 
   useEffect(() => {
     let active = true;
@@ -77,6 +95,7 @@ export function PersistentSessionInstructions({ serverUrl, sessionId }: { server
         setInstructions((current) => [result.instruction, ...current.filter((item) => item.id !== id)]);
       }
       setEditingId(null); setEditingText('');
+      onEditingChange?.(false);
     } catch (cause) { failMutation(cause); }
     finally { if (mounted.current) setBusy(false); }
   };
@@ -104,12 +123,14 @@ export function PersistentSessionInstructions({ serverUrl, sessionId }: { server
     onEditStart={(instruction) => {
       if (locked) return;
       setMutationError(null); setEditingId(instruction.id); setEditingText(instruction.text);
+      onEditingChange?.(true);
     }}
     onEditText={(value) => { if (!locked) setEditingText(value); }}
     onEditSave={() => void save()}
     onEditCancel={() => {
       if (locked) return;
       setEditingId(null); setEditingText(''); setMutationError(null);
+      onEditingChange?.(false);
     }}
     onDelete={(instruction) => void remove(instruction)}
     onAddText={(value) => {
