@@ -38,14 +38,14 @@ export function registerPersistentSessionTools(
   server.registerTool(
     "request_session_generation_rollover",
     {
-      description: "퍼시스턴트 세션의 다음 실행에서 새 모델 세션으로 교체하도록 요청한다.",
+      description: "퍼시스턴트 세션의 다음 실행에서 새 세대(새 모델 세션)로 교체하도록 요청한다. 기본은 이전 세대의 체크포인트를 이어 받는다. reset_context=true면 체크포인트를 현재 상태와 keep_instructions 설정에 따른 지속 지시만으로 다시 구성해 이전 대화 문맥을 비운다.",
       inputSchema: {
         session_id: z.string().min(1),
         model_preset: z.string().min(1).optional(),
         reasoning_effort: z.enum(MODEL_REASONING_EFFORTS).optional(),
         reason: z.string().optional(),
-        reset_context: z.boolean().optional(),
-        keep_instructions: z.boolean().optional(),
+        reset_context: z.boolean().optional().describe("true면 새 세대 체크포인트에서 이전 줄거리, 요약, 최근 원문을 제외한다. 현재 상태는 포함하며 지속 지시는 keep_instructions 값에 따른다. 기본 false."),
+        keep_instructions: z.boolean().optional().describe("reset_context=true일 때만 사용한다. false면 해당 세대 체크포인트에서 지속 지시를 빼며 저장된 지시는 삭제하지 않는다. 기본 true."),
       },
     },
     async ({ session_id, model_preset, reasoning_effort, reason, reset_context, keep_instructions }) => {
