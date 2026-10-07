@@ -29,6 +29,7 @@ export interface V3VisualQaRouteOptions {
   projectResolutionDelayMs?: number;
   projectResolutionMode?: "delayed" | "fail-once" | "unlinked";
   timelineEventCount?: number;
+  timelineContentByEventId?: Readonly<Record<number, string>>;
   liveEventText?: string;
   contextMenuParity?: boolean;
   contextChainPreview?: boolean;
@@ -452,7 +453,12 @@ async function delay(ms: number | undefined): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function timelinePage(sessionId: string, eventCount: number, before: string | null): Json {
+function timelinePage(
+  sessionId: string,
+  eventCount: number,
+  before: string | null,
+  contentByEventId?: Readonly<Record<number, string>>,
+): Json {
   const upper = before ? Number(before.replace("cursor-", "")) : eventCount;
   const lower = Math.max(1, upper - 99);
   return {
@@ -464,7 +470,7 @@ function timelinePage(sessionId: string, eventCount: number, before: string | nu
         event_type: "assistant_message",
         payload: {
           timestamp: id,
-          content: `히스토리 ${sessionId} #${id}`,
+          content: contentByEventId?.[id] ?? `히스토리 ${sessionId} #${id}`,
           tool_use_id: `${sessionId}-${id}`,
           _final_for_live_stream: true,
         },
@@ -792,6 +798,7 @@ export async function installV3VisualQaRoutes(
           decodeURIComponent(timelineMatch[1]),
           options.timelineEventCount,
           url.searchParams.get("before"),
+          options.timelineContentByEventId,
         ),
       );
     }

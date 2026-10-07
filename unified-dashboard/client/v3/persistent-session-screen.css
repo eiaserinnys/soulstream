@@ -11,15 +11,6 @@
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
-.persistent-session-screen .dashboard-icon-cap--bare.v3-pas-floating-cap {
-  background: var(--persistent-session-panel);
-}
-.persistent-session-screen .dashboard-icon-cap--bare.v3-pas-floating-cap:hover,
-.persistent-session-screen .dashboard-icon-cap--bare.v3-pas-floating-cap:active,
-.persistent-session-screen .dashboard-icon-cap--bare.v3-pas-floating-cap[data-pressed] {
-  background: var(--accent);
-  color: var(--foreground);
-}
 .persistent-session-screen .persistent-session-header {
   position: relative; inset: auto; height: var(--pas-header-height);
   display: flex; align-items: center; justify-content: space-between;
