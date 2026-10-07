@@ -461,7 +461,7 @@ describe("ChatView long-session initial bottom focus", () => {
 
     await addLiveUserMessage(1001);
 
-    expect(container.textContent).toContain("New Messages");
+    expect(container.querySelector('button[aria-label="새 메시지로 이동"]')).not.toBeNull();
     expect(virtuosoMock.props?.followOutput).toBe(false);
     expect(geometry.scrollTo).not.toHaveBeenCalled();
   });
@@ -505,11 +505,20 @@ describe("ChatView long-session initial bottom focus", () => {
     });
     await flushPassiveEffects();
 
-    flushSync(() => markOlderExploration(container));
-    flushSync(() => {
-      useDashboardStore.getState().processEvent(makeAssistantMessage(1001).event, 1001);
+    const geometry = configureScroller(container, {
+      scrollHeight: 800,
+      clientHeight: 400,
+      scrollTop: 400,
     });
+    flushSync(() => reportAtBottom(true));
     await flushPassiveEffects();
+    flushSync(() => {
+      geometry.scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+      geometry.scroller.scrollTop = 250;
+      reportAtBottom(false);
+    });
+    geometry.setScrollHeight(820);
+    await addLiveUserMessage(1001);
 
     const button = container.querySelector<HTMLButtonElement>('button[aria-label="새 메시지로 이동"]');
     expect(button?.getAttribute("data-slot")).toBe("dashboard-icon-cap");
