@@ -574,6 +574,7 @@ describe("ChatView long-session initial bottom focus", () => {
     const button = container.querySelector<HTMLButtonElement>('button[aria-label="새 메시지로 이동"]');
     expect(button?.getAttribute("data-slot")).toBe("dashboard-icon-cap");
     expect(button?.className).toContain("dashboard-icon-cap--bare");
+    expect(button?.className).toContain("v3-pas-floating-cap");
     expect(button?.textContent).toBe("");
     expect(button?.querySelector("svg")?.getAttribute("stroke-width")).toBeDefined();
 

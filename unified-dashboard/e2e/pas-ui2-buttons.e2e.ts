@@ -52,6 +52,9 @@ async function prepare(page: Page, width: number) {
   });
   await installV3VisualQaRoutes(page, {
     timelineEventCount: 80,
+    timelineContentByEventId: {
+      59: "이 긴 메시지는 새 메시지 버튼 뒤에 놓입니다. 글이 버튼 아래까지 이어져 rest·hover·pressed 바탕이 불투명한지 확인합니다. ".repeat(3).trim(),
+    },
     liveEventText: "새 메시지 버튼 검수",
   });
   await page.route("**/api/persistent-sessions**", async route => {
@@ -202,28 +205,69 @@ for (const width of [1440, 1280]) {
     const newMessagesStyle = await newMessages.evaluate(button => {
       const rect = button.getBoundingClientRect();
       const style = getComputedStyle(button);
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, background: style.backgroundColor, borderWidth: style.borderWidth, boxShadow: style.boxShadow };
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, background: style.backgroundColor, backgroundImage: style.backgroundImage, borderWidth: style.borderWidth, boxShadow: style.boxShadow };
     });
-    const panelColor = await screen.evaluate(element => {
+    const expectedColors = await screen.evaluate(element => {
       const probe = document.createElement("div");
-      probe.style.backgroundColor = "var(--persistent-session-panel)";
       element.appendChild(probe);
-      const color = getComputedStyle(probe).backgroundColor;
+      probe.style.backgroundColor = "var(--persistent-session-panel)";
+      const panel = getComputedStyle(probe).backgroundColor;
+      probe.style.backgroundColor = "";
+      probe.style.backgroundImage = "linear-gradient(var(--accent), var(--accent))";
+      const accentOverlay = getComputedStyle(probe).backgroundImage;
+      probe.style.backgroundImage = "";
+      probe.style.color = "var(--foreground)";
+      const foreground = getComputedStyle(probe).color;
       probe.remove();
-      return color;
+      return { panel, accentOverlay, foreground };
     });
     expect(newMessagesStyle.width).toBe(44);
     expect(newMessagesStyle.height).toBe(44);
-    expect(newMessagesStyle.background).toBe(panelColor);
+    expect(newMessagesStyle.background).toBe(expectedColors.panel);
+    expect(newMessagesStyle.backgroundImage).toBe("none");
     expect(newMessagesStyle.borderWidth).toBe("0px");
     expect(newMessagesStyle.boxShadow).toBe("none");
-    await capture(page, `pas-${width}-new-messages`);
+    await capture(page, `pas-${width}-new-messages-rest`);
     writeFileSync(path.join(output, `pas-${width}-new-messages-geometry.json`), JSON.stringify(newMessagesStyle, null, 2));
-    await newMessages.click();
+
+    const taskToggle = page.getByRole("button", { name: "작업 목록", exact: true });
+    await taskToggle.hover();
+    await expect.poll(() => taskToggle.evaluate(button => getComputedStyle(button).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+    await expect.poll(() => taskToggle.evaluate(button => getComputedStyle(button).color)).toBe(expectedColors.foreground);
+    const bareHoverStyle = await taskToggle.evaluate(button => {
+      const style = getComputedStyle(button);
+      return { color: style.color };
+    });
+
+    await newMessages.hover();
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).backgroundColor)).toBe(expectedColors.panel);
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).backgroundImage)).toBe(expectedColors.accentOverlay);
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).color)).toBe(bareHoverStyle.color);
+    const hoverStyle = await newMessages.evaluate(button => {
+      const style = getComputedStyle(button);
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, color: style.color };
+    });
+    expect(hoverStyle.background).toBe(expectedColors.panel);
+    expect(hoverStyle.backgroundImage).toBe(expectedColors.accentOverlay);
+    expect(hoverStyle.color).toBe(expectedColors.foreground);
+    await capture(page, `pas-${width}-new-messages-hover`);
+
+    await page.mouse.down();
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).backgroundColor)).toBe(hoverStyle.background);
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).backgroundImage)).toBe(hoverStyle.backgroundImage);
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).color)).toBe(hoverStyle.color);
+    const pressedStyle = await newMessages.evaluate(button => {
+      const style = getComputedStyle(button);
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, color: style.color };
+    });
+    expect(pressedStyle.background).toBe(expectedColors.panel);
+    expect(pressedStyle.backgroundImage).toBe(expectedColors.accentOverlay);
+    expect(pressedStyle.color).toBe(expectedColors.foreground);
+    await capture(page, `pas-${width}-new-messages-pressed`);
+    await page.mouse.up();
     await expect(newMessages).toHaveCount(0);
     await expect.poll(() => scroller.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThanOrEqual(2);
 
-    const taskToggle = page.getByRole("button", { name: "작업 목록", exact: true });
     await taskToggle.hover();
     const hoverBackground = await taskToggle.evaluate(button => getComputedStyle(button).backgroundColor);
     expect(hoverBackground).not.toBe("rgba(0, 0, 0, 0)");

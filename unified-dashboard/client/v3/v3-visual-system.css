@@ -451,3 +451,14 @@
 .project-purpose-dialog .project-context-disclosure fieldset > button { width:auto; }
 .project-purpose-dialog .project-context-disclosure > div { padding-bottom:var(--v3-space-5); }
 .project-purpose-dialog .project-context-disclosure summary > span:not([aria-hidden]) { font:var(--v3-type-body) var(--v3-font-family); color:var(--muted-foreground); overflow-wrap:anywhere; }
+
+.dashboard-icon-cap--bare.v3-pas-floating-cap {
+  background-color: var(--persistent-session-panel);
+}
+.dashboard-icon-cap--bare.v3-pas-floating-cap:hover,
+.dashboard-icon-cap--bare.v3-pas-floating-cap:active,
+.dashboard-icon-cap--bare.v3-pas-floating-cap[data-pressed] {
+  background-color: var(--persistent-session-panel);
+  background-image: linear-gradient(var(--accent), var(--accent));
+  color: var(--foreground);
+}
