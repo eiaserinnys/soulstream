@@ -40,7 +40,7 @@
 }
 @media (max-width: 767px) {
   .persistent-session-task-toggle { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--v3-space-5); }
-  .persistent-session-tasks { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--v3-space-5); left: var(--v3-space-5); width: auto; background: var(--persistent-session-paper); }
+  .persistent-session-tasks { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: 0; left: 0; width: auto; padding-inline: var(--v3-space-5); background: var(--persistent-session-paper); }
 }
 @media (min-width: 1101px) and (max-width: 1250px) {
   .persistent-session-screen { --pas-main-width: 480px; --pas-list-width: 240px; }
