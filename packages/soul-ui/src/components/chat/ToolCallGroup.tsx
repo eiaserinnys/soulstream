@@ -1,7 +1,8 @@
 import { memo, useState } from "react";
-import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Clock, Wrench, X } from "lucide-react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { cn } from "../../lib/cn";
+import { DisclosureActionIcon } from "../DisclosureActionIcon";
 import { useLazyLoadContent, useLazyLoadToolTrace } from "./hooks";
 import { ShowFullContentButton } from "./ShowFullContentButton";
 import { ThinkingMessage } from "./ThinkingMessage";
@@ -75,7 +76,7 @@ const ToolCallItem = memo(function ToolCallItem({
   );
 
   if (presentation === "manuscript") {
-    const rowStatus = msg.isError ? "실패" : isDone ? "완료" : "실행 중";
+    const StatusIcon = msg.isError ? X : isDone ? Check : Clock;
     return (
       <div data-slot="manuscript-tool-call-item" data-tree-node-id={msg.treeNodeId}>
         <button
@@ -88,10 +89,7 @@ const ToolCallItem = memo(function ToolCallItem({
             msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
           )}
         >
-          {expanded
-            ? <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
-            : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
-          <span className="shrink-0">{rowStatus}</span>
+          <StatusIcon className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="min-w-0 truncate text-left">{shortName}</span>
           {duration && <span className="shrink-0 text-muted-foreground">{duration}</span>}
         </button>
@@ -168,13 +166,11 @@ export const ToolCallGroup = memo(function ToolCallGroup({
             onClick={toggleExpanded}
             className="flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-muted-foreground hover:text-foreground"
           >
-            {expanded
-              ? <ChevronDown className="size-3.5 shrink-0" aria-hidden="true" />
-              : <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />}
             <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
             <span className="truncate font-medium">도구 {toolMessages.length}회</span>
             {hasRunningTool && <span className="shrink-0">실행 중</span>}
             {failureCount > 0 && <span className="shrink-0 chat-tone-danger-text">실패 {failureCount}</span>}
+            <DisclosureActionIcon expanded={expanded} className="size-3.5 shrink-0" />
           </button>
           {expanded && (
             <div data-slot="manuscript-activity-items" className="ml-5 mt-1 space-y-0.5">

@@ -130,20 +130,32 @@ describe("ToolCallGroup compact header", () => {
 
     const toggle = container.querySelector<HTMLButtonElement>("[data-slot='manuscript-activity-toggle']")!;
     const rows = container.querySelectorAll("[data-slot='manuscript-tool-call-item']");
-    const labels = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-slot='tool-call-item-toggle']"))
+    const itemToggles = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-slot='tool-call-item-toggle']"));
+    const labels = itemToggles
       .map((button) => button.textContent);
+    const headerIcons = Array.from(toggle.querySelectorAll("svg"));
 
     expect(toggle.textContent).toContain("도구 3회");
     expect(toggle.textContent).toContain("실행 중");
     expect(toggle.textContent).toContain("실패 1");
+    expect(headerIcons[0]?.classList.contains("lucide-wrench")).toBe(true);
+    expect(toggle.lastElementChild?.classList.contains("lucide-chevron-up")).toBe(true);
+    expect(toggle.lastElementChild?.classList.contains("size-3.5")).toBe(true);
     expect(container.querySelector("[data-slot='chat-tool-row']")).toBeNull();
     expect(rows).toHaveLength(3);
-    expect(labels[0]).toContain("완료");
     expect(labels[0]).toContain("Read");
     expect(labels[0]).toContain("(1.3s)");
     expect(labels[0]).not.toContain("mcp__soulstream__");
-    expect(labels[1]).toContain("실패");
-    expect(labels[2]).toContain("실행 중");
+    expect(labels[0]).not.toContain("완료");
+    expect(labels[1]).not.toContain("실패");
+    expect(labels[2]).not.toContain("실행 중");
+    expect(itemToggles[0].querySelector("svg.lucide-check")?.classList.contains("size-3.5")).toBe(true);
+    expect(itemToggles[1].querySelector("svg.lucide-x")?.classList.contains("size-3.5")).toBe(true);
+    expect(itemToggles[2].querySelector("svg.lucide-clock")?.classList.contains("size-3.5")).toBe(true);
+    expect(itemToggles[0].className).toContain("text-muted-foreground");
+    expect(itemToggles[1].className).toContain("chat-tone-danger-text");
+    expect(labels[1]).toContain("(2.5s)");
+    expect(labels[2]).not.toContain("(");
     expect(container.textContent).toContain("생각을 이어 갑니다.");
     expect(container.querySelector("[data-slot='chat-body']")?.className).toContain("text-base");
   });
