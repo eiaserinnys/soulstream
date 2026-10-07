@@ -103,6 +103,7 @@ export function ChatComposer({
   const inputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight, measuredHeight));
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
   const [stacked, setStacked] = React.useState(false);
+  const effectiveStacked = !isEmpty && stacked;
   const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
   const composerSurfaceStyle = presentation === 'manuscript'
     ? [styles.manuscriptComposerBox, {
@@ -136,15 +137,15 @@ export function ChatComposer({
       >
         <View
           testID="chat-composer-content-row"
-          style={[styles.composerContentRow, stacked && styles.composerContentRowStacked]}
+          style={[styles.composerContentRow, effectiveStacked && styles.composerContentRowStacked]}
         >
           <View
             testID="chat-composer-attach-slot"
             style={[
               styles.composerAttachmentSlot,
-              stacked && styles.composerAttachmentSlotStacked,
+              effectiveStacked && styles.composerAttachmentSlotStacked,
               ...(presentation === 'manuscript'
-                ? [stacked
+                ? [effectiveStacked
                   ? { left: -manuscriptAttachmentOutset }
                   : { marginLeft: -manuscriptAttachmentOutset }]
                 : []),
@@ -166,12 +167,12 @@ export function ChatComposer({
             onContentSizeChange={measurement.onContentSizeChange}
             testID="chat-composer-text-input"
             // Empty iOS inputs collapse immediately; text keeps native intrinsic growth.
-            style={[styles.composerTextInput, stacked ? styles.composerTextInputStacked : styles.composerTextInputRow, {
+            style={[styles.composerTextInput, effectiveStacked ? styles.composerTextInputStacked : styles.composerTextInputRow, {
               ...(Platform.OS === 'ios'
                 ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
                 : { height: inputHeight }),
               paddingVertical: inputPadding,
-              ...(presentation === 'manuscript' && stacked ? { paddingHorizontal: 0 } : {}),
+              ...(presentation === 'manuscript' && effectiveStacked ? { paddingHorizontal: 0 } : {}),
               ...(Platform.OS === 'web'
                 ? isEmpty
                   ? { whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }
@@ -205,7 +206,7 @@ export function ChatComposer({
             focusable={false}
             tabIndex={-1}
             disabled={disabled}
-            style={[styles.composerControlsSpacer, stacked && styles.composerControlsSpacerStacked]}
+            style={[styles.composerControlsSpacer, effectiveStacked && styles.composerControlsSpacerStacked]}
             onPress={() => {
               if (!disabled) measurement.ref.current?.focus();
             }}
@@ -214,7 +215,7 @@ export function ChatComposer({
             {interruptControls}
             <View
               testID="chat-composer-voice-slot"
-              style={stacked && voiceControls == null ? styles.voiceSlotStackedEmpty : styles.voiceSlot}
+              style={effectiveStacked && voiceControls == null ? styles.voiceSlotStackedEmpty : styles.voiceSlot}
             >
               {voiceControls}
             </View>

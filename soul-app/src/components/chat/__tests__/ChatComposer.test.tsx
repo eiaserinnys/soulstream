@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
@@ -253,6 +253,80 @@ describe('ChatComposer', () => {
     expect(interruptCount).toEqual({ mounted: 1, unmounted: 0 });
     expect(voiceCount).toEqual({ mounted: 1, unmounted: 0 });
   });
+
+  test.each(['default', 'manuscript'] as const)(
+    '%s clear commit restores the single-row layout before the stacked reset effect',
+    (presentation) => {
+      let contentHeight = 72;
+      jest.spyOn(inputMeasurement, 'useTextInputContentHeight').mockImplementation(() => ({
+        ref: { current: null as any },
+        contentHeight,
+        onContentSizeChange: undefined,
+      }));
+
+      const deferredEffects: Array<() => void> = [];
+      const originalUseLayoutEffect = React.useLayoutEffect;
+      let deferNextLayoutEffect = false;
+      jest.spyOn(React, 'useLayoutEffect').mockImplementation((effect, dependencies) => {
+        if (deferNextLayoutEffect) {
+          deferNextLayoutEffect = false;
+          originalUseLayoutEffect(() => {
+            deferredEffects.push(effect);
+          }, dependencies);
+          return;
+        }
+        originalUseLayoutEffect(effect, dependencies);
+      });
+
+      const props = {
+        onChangeInput: jest.fn(),
+        onPickAttachment: jest.fn(),
+        onSend: jest.fn(),
+        uploading: false,
+        sending: false,
+        voiceControls: null,
+        presentation,
+      };
+      const screen = render(<ChatComposer {...props} input="첫 줄\n둘째 줄" />);
+      const contentRow = () => screen.getByTestId('chat-composer-content-row');
+      expect(StyleSheet.flatten(contentRow().props.style).flexWrap).toBe('wrap');
+
+      contentHeight = 48;
+      deferNextLayoutEffect = true;
+      screen.rerender(<ChatComposer {...props} input="" />);
+
+      const rowStyle = StyleSheet.flatten(contentRow().props.style);
+      const field = screen.getByTestId('chat-composer-text-input');
+      const fieldStyle = StyleSheet.flatten(field.props.style);
+      const attachmentStyle = StyleSheet.flatten(screen.getByTestId('chat-composer-attach-slot').props.style);
+      const spacer = screen.UNSAFE_root.findByProps({ testID: 'chat-composer-controls-spacer' });
+      const voiceSlot = screen.UNSAFE_root.findByProps({ testID: 'chat-composer-voice-slot' });
+
+      expect(deferredEffects).toHaveLength(1);
+      expect(rowStyle.flexWrap).toBe('nowrap');
+      expect(fieldStyle.flex).toBe(1);
+      expect(fieldStyle.width).toBeUndefined();
+      expect(fieldStyle.height).toBe(Math.max(48, fieldStyle.minHeight));
+      expect(fieldStyle.paddingHorizontal).not.toBe(0);
+      expect(attachmentStyle.position).toBeUndefined();
+      if (presentation === 'manuscript') {
+        expect(attachmentStyle.marginLeft).toBeLessThan(0);
+      } else {
+        expect(attachmentStyle.marginLeft).toBeUndefined();
+      }
+      expect(StyleSheet.flatten(spacer.props.style).display).toBe('none');
+      expect(StyleSheet.flatten(voiceSlot.props.style).display).toBeUndefined();
+
+      act(() => {
+        deferredEffects[0]();
+      });
+      expect(StyleSheet.flatten(contentRow().props.style).flexWrap).toBe('nowrap');
+
+      screen.rerender(<ChatComposer {...props} input="다음 입력" />);
+      expect(StyleSheet.flatten(contentRow().props.style).flexWrap).toBe('nowrap');
+      expect(screen.getByTestId('chat-composer-send-button').props.accessibilityState.disabled).toBe(false);
+    },
+  );
 
   test('Android 콘텐츠 이벤트 수신 후 높이·정렬·스크롤 계산과 clear 계약', () => {
     jest.replaceProperty(Platform, 'OS', 'android');
