@@ -14,6 +14,7 @@ import { projectManuscriptActivity } from './manuscriptActivityProjection';
 import { replaceEqualDeep } from '../../lib/structural-sharing';
 import { bottomFollowTargetKey } from './bottomFollow';
 import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
+import { projectCacheKeepaliveTurns } from './cacheKeepaliveProjection';
 
 const TYPING_RENDER_ITEM: ChatRenderItem = {
   kind: 'typing',
@@ -43,32 +44,40 @@ export function useChatRenderItems({
   bottomFollowItemKey: string | null;
 } {
   const snapshotStreams = streamingSlots?.assistantSnapshotStreams;
+  const keepaliveProjection = useMemo(
+    () => projectCacheKeepaliveTurns(events, pendingOptimistic),
+    [events, pendingOptimistic],
+  );
+  const { displayEvents, suppressStreaming } = keepaliveProjection;
   const baseRenderItems = useMemo<ChatRenderItem[]>(
     () => {
-      const grouped = groupChatEvents(events, snapshotStreams, persistentDisplaySettings);
+      const grouped = groupChatEvents(displayEvents, snapshotStreams, persistentDisplaySettings);
       const presented = presentation === 'manuscript'
-        ? projectPersistentTurnUsage(grouped, events, showTurnUsage !== false)
+        ? projectPersistentTurnUsage(grouped, displayEvents, showTurnUsage !== false)
         : grouped;
       const placed = placePendingOptimistic(presented, pendingOptimistic);
       return presentation === 'manuscript'
         ? groupAgentUserUtterances(placed)
         : placed;
     },
-    [events, pendingOptimistic, persistentDisplaySettings, presentation, showTurnUsage, snapshotStreams],
+    [displayEvents, pendingOptimistic, persistentDisplaySettings, presentation, showTurnUsage, snapshotStreams],
   );
   const streamingRenderItems = useMemo(
-    () => streamingSlotRenderItems(streamingSlots),
-    [streamingSlots],
+    () => suppressStreaming ? [] : streamingSlotRenderItems(streamingSlots),
+    [streamingSlots, suppressStreaming],
   );
   const hasStreamingAssistant = Boolean(
-    streamingSlots?.assistant
-    || Object.keys(streamingSlots?.assistantByStream ?? {}).length > 0,
+    !suppressStreaming && (
+      streamingSlots?.assistant
+      || Object.keys(streamingSlots?.assistantByStream ?? {}).length > 0
+    ),
   );
   const hasHistoricalStreamingAssistantText = useMemo(
-    () => hasActiveStreamingAssistantText(events, snapshotStreams),
-    [events, snapshotStreams],
+    () => hasActiveStreamingAssistantText(displayEvents, snapshotStreams),
+    [displayEvents, snapshotStreams],
   );
   const bottomRenderItems = useMemo<ChatRenderItem[]>(() => {
+    if (suppressStreaming) return [];
     const items = streamingRenderItems;
     if (
       sessionStatus !== 'running' ||
@@ -82,6 +91,7 @@ export function useChatRenderItems({
     hasHistoricalStreamingAssistantText,
     hasStreamingAssistant,
     sessionStatus,
+    suppressStreaming,
     streamingRenderItems,
   ]);
   const chronologicalItems = useMemo(
