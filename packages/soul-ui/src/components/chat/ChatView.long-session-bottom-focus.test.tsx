@@ -639,6 +639,61 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(Boolean(error?.msg.turnUsageCaption)).toBe(expected);
   });
 
+  it("keeps unanchored rows visible after a keepalive complete when manuscript usage is off", async () => {
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("sess-long", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      show_turn_usage: false,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      { eventId: 1, event: { type: "user_message", input_id: "keepalive", text: "keepalive input", purpose: "cache_keepalive", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 2, event: { type: "assistant_message", content: "ok", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 3, event: { type: "complete", result: "done", attachments: [], timestamp: 0 } as SoulSSEEvent },
+      { eventId: 4, event: { type: "system_message", text: "after keepalive", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 5, event: { type: "user_message", input_id: "human", text: "human input", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 6, event: { type: "assistant_message", content: "human answer", timestamp: 0 } as SoulSSEEvent },
+    ]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+
+    const visibleMessages = virtuosoData().flatMap((item: any) => (
+      item.type === "single" ? [item.msg] : []
+    ));
+    const visibleContent = visibleMessages.map((message: any) => message.content);
+    expect(visibleContent).toContain("after keepalive");
+    expect(visibleContent).toContain("human input");
+    expect(visibleContent).toContain("human answer");
+    expect(visibleContent).not.toContain("keepalive input");
+    expect(visibleContent).not.toContain("ok");
+  });
+
+  it("shows a human turn after a keepalive without a complete when manuscript usage is off", async () => {
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("sess-long", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      show_turn_usage: false,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      { eventId: 1, event: { type: "user_message", input_id: "keepalive", text: "keepalive input", purpose: "cache_keepalive", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 2, event: { type: "assistant_message", content: "ok", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 3, event: { type: "user_message", input_id: "human", text: "human input", timestamp: 0 } as SoulSSEEvent },
+      { eventId: 4, event: { type: "assistant_message", content: "human answer", timestamp: 0 } as SoulSSEEvent },
+    ]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+
+    const visibleMessages = virtuosoData().flatMap((item: any) => (
+      item.type === "single" ? [item.msg] : []
+    ));
+    const visibleContent = visibleMessages.map((message: any) => message.content);
+    expect(visibleContent).toContain("human input");
+    expect(visibleContent).toContain("human answer");
+    expect(visibleContent).not.toContain("keepalive input");
+    expect(visibleContent).not.toContain("ok");
+  });
+
   it.each(["manuscript", "default"] as const)("settles a single-pixel bottom gap in %s without changing the default tolerance", async presentation => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(1)]);
     ({ container, root } = await renderChatView({ presentation }));

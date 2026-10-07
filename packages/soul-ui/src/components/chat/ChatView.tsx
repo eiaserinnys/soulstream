@@ -28,6 +28,7 @@ import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-c
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
 import { projectManuscriptAgentMessages } from "../../lib/manuscript-agent-message-projection";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
+import { projectCacheKeepaliveTurns } from "../../lib/persistent-cache-keepalive";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
@@ -161,12 +162,13 @@ export function ChatView({
     [isManuscript, tree, treeVersion],
   );
   const transcriptMessages = useMemo(
-    () => isManuscript
-      ? projectPersistentTurnUsage(
+    () => {
+      if (!isManuscript) return messages;
+      const cacheKeepaliveFiltered = projectCacheKeepaliveTurns(
         projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
-        showTurnUsage,
-      )
-      : messages,
+      );
+      return projectPersistentTurnUsage(cacheKeepaliveFiltered, showTurnUsage);
+    },
     [isManuscript, messages, showTurnUsage],
   );
   const visibleMessages = useMemo(
