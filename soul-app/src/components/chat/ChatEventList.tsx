@@ -164,19 +164,21 @@ export const ChatEventList = memo(function ChatEventList({
       }
     />
   );
-  if (presentation !== 'manuscript' || !showNewMessage || !onPressNewMessage) return list;
+  if (presentation !== 'manuscript') return list;
   return (
     <View style={{ flex: 1 }}>
       {list}
-      <View pointerEvents="box-none" style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: t.spacing.sm,
-        alignItems: 'center',
-      }}>
-        <ChatNewMessageButton onPress={onPressNewMessage} />
-      </View>
+      {showNewMessage && onPressNewMessage ? (
+        <View pointerEvents="box-none" style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: t.spacing.sm,
+          alignItems: 'center',
+        }}>
+          <ChatNewMessageButton onPress={onPressNewMessage} />
+        </View>
+      ) : null}
     </View>
   );
 });
