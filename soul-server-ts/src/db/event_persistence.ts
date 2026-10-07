@@ -63,6 +63,10 @@ export { sanitizeJsonText, sanitizeJsonValue, truncateJsonText };
 
 export type { EventSessionTransitionApplication } from "./event_transition_publisher.js";
 
+export interface EventSideEffectOptions {
+  isCacheKeepaliveTurn?: boolean;
+}
+
 /**
  * 이벤트 타입별 last_message preview 텍스트 추출 필드.
  * text_start/text_delta/text_end는 live transport 전용이고, complete/result는 turn
@@ -233,25 +237,28 @@ export class EventPersistence extends EventTransitionPublisher {
     sessionId: string,
     event: SSEEventPayload,
     task: Task,
+    options: EventSideEffectOptions = {},
   ): Promise<void> {
     const eventType = (event as { type: string }).type;
-    if (eventType === "text_start") {
-      task.lastAssistantText = "";
-    }
-    if (eventType === "text_delta") {
-      const text = (event as { text?: unknown }).text;
-      if (typeof text === "string") {
-        if ((event as { raw_event_type?: unknown }).raw_event_type === "item/agentMessage/delta") {
-          task.lastAssistantText = `${task.lastAssistantText ?? ""}${text}`;
-        } else {
-          task.lastAssistantText = text;
+    if (!options.isCacheKeepaliveTurn) {
+      if (eventType === "text_start") {
+        task.lastAssistantText = "";
+      }
+      if (eventType === "text_delta") {
+        const text = (event as { text?: unknown }).text;
+        if (typeof text === "string") {
+          if ((event as { raw_event_type?: unknown }).raw_event_type === "item/agentMessage/delta") {
+            task.lastAssistantText = `${task.lastAssistantText ?? ""}${text}`;
+          } else {
+            task.lastAssistantText = text;
+          }
         }
       }
-    }
-    if (eventType === "assistant_message") {
-      const content = (event as { content?: unknown }).content;
-      if (typeof content === "string") {
-        task.lastAssistantText = content;
+      if (eventType === "assistant_message") {
+        const content = (event as { content?: unknown }).content;
+        if (typeof content === "string") {
+          task.lastAssistantText = content;
+        }
       }
     }
     if (eventType === "progress") {
