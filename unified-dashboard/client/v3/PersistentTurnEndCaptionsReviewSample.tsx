@@ -15,7 +15,7 @@ const persistentInstructionCaption = {
   instructions: [{
     id: "review-instruction-1",
     text: "답변은 간결하게 작성합니다.",
-    source_turns: [195, 210],
+    source_turns: ["T195", "T210"],
     action: "added" as const,
   }],
   capReached: false,
