@@ -46,7 +46,7 @@ const modelAvailability: ModelPresetAvailability[] = [
 
 export function PersistentSessionSettingsReviewSample() {
   const [draft, setDraft] = useState(() => persistentSessionDetailsDraft(resource));
-  const monitorRequest = (result: "values" | "empty" | "loading" | "error"): typeof fetch => async (input) => {
+  const monitorRequest = (result: "values" | "empty" | "loading" | "error" | "decision" | "no-decision"): typeof fetch => async (input) => {
     const url = new URL(String(input), "https://sample.invalid");
     if (url.pathname.endsWith("/model-presets")) return Response.json({ model_presets: result === "values" ? modelAvailability : [] });
     if (result === "loading") return await new Promise<Response>(() => undefined);
@@ -59,6 +59,13 @@ export function PersistentSessionSettingsReviewSample() {
       { id: 102, event_type: "complete", payload: { usage: { input_tokens: 8900, output_tokens: 1200 }, turn_cost_usd: 0.31 }, created_at: "2026-10-06T02:30:00.000Z" },
       { id: 101, event_type: "context_usage", payload: { used_tokens: 124000, max_tokens: 1000000, percent: 12.4, estimated: false }, created_at: "2026-10-06T02:29:00.000Z" },
       { id: 100, event_type: "generation_started", payload: { generation: 6, reason: "weekly_headroom", current: { model: "gpt-6.1-sol-preview-2026-09-30-long" } }, created_at: "2026-10-06T02:00:00.000Z" },
+    ] : result === "decision" ? [
+      { id: 112, event_type: "debug", payload: { kind: "persistent_decision", trigger: "turn_end", action: "wait_until", target_preset: "sample-opus", rule: "weekly_headroom", reason: "다음 확인 시각까지 기다립니다.", inputs_snapshot: {} }, created_at: "2026-10-06T03:40:12.418Z" },
+      { id: 111, event_type: "debug", payload: { kind: "persistent_decision", trigger: "turn_end", action: "new_generation", target_preset: "sample-sol", rule: "weekly_headroom", reason: "사용 여유를 확인합니다.", inputs_snapshot: {} }, created_at: "2026-10-06T03:30:12.418Z" },
+      { id: 103, event_type: "generation_started", payload: { generation: 7, reason: "weekly_headroom", current: { model: "gpt-6.1-sol-preview-2026-09-30-long" } }, created_at: "2026-10-06T03:18:12.418Z" },
+    ] : result === "no-decision" ? [
+      { id: 103, event_type: "generation_started", payload: { generation: 7, reason: "weekly_headroom", current: { model: "gpt-6.1-sol-preview-2026-09-30-long" } }, created_at: "2026-10-06T03:18:12.418Z" },
+      { id: 102, event_type: "complete", payload: { usage: { input_tokens: 8900, output_tokens: 1200 }, turn_cost_usd: 0.31 }, created_at: "2026-10-06T02:30:00.000Z" },
     ] : [];
     const eventTypes = url.searchParams.get("event_types")?.split(",");
     const filtered = eventTypes ? messages.filter((message) => eventTypes.includes(message.event_type)) : messages;
@@ -84,6 +91,14 @@ export function PersistentSessionSettingsReviewSample() {
       <section aria-label="기록 없음">
         <h4 className="mb-2 text-sm font-medium">기록 없음</h4>
         <PersistentSessionMonitoring sessionId={resource.session_id} nodeId="sample-node" request={monitorRequest("empty")} />
+      </section>
+      <section aria-label="마지막 판단 있음">
+        <h4 className="mb-2 text-sm font-medium">마지막 판단 있음</h4>
+        <PersistentSessionMonitoring sessionId="components-pas-decision" nodeId="sample-node" request={monitorRequest("decision")} />
+      </section>
+      <section aria-label="마지막 판단 없음">
+        <h4 className="mb-2 text-sm font-medium">마지막 판단 없음</h4>
+        <PersistentSessionMonitoring sessionId="components-pas-no-decision" nodeId="sample-node" request={monitorRequest("no-decision")} />
       </section>
       <section aria-label="불러오는 중">
         <h4 className="mb-2 text-sm font-medium">불러오는 중</h4>

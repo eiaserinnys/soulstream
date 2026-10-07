@@ -27,7 +27,7 @@ type MonitoringState = {
   loadingMore: boolean;
 };
 
-const HISTORY_EVENT_TYPES = "generation_started,complete,context_usage,error,user_message,intervention_sent";
+const HISTORY_EVENT_TYPES = "generation_started,complete,context_usage,error,user_message,intervention_sent,debug";
 const DISPLAY_EVENT_TYPES = new Set(["generation_started", "complete", "context_usage"]);
 const PERCENT_FORMAT = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
 
@@ -152,6 +152,12 @@ export function PersistentSessionMonitoringView({
     () => displayHistoryEvents(history.events, generation, usageByTerminalId),
     [generation, history.events, usageByTerminalId],
   );
+  const latestDecision = useMemo(() => latestPersistentDecision(history.events), [history.events]);
+  const latestDecisionAction = latestDecision ? asString(latestDecision.payload.action) : null;
+  const latestDecisionReason = latestDecision ? asString(latestDecision.payload.reason) : null;
+  const latestDecisionText = latestDecision && latestDecisionAction && latestDecisionReason
+    ? `${displayTime(latestDecision.created_at)} · ${latestDecisionAction} · ${latestDecisionReason}`
+    : null;
   const generationText = generation
     ? typeof generation.payload.generation === "number"
       ? `세대 ${generation.payload.generation}`
@@ -167,6 +173,7 @@ export function PersistentSessionMonitoringView({
     </div> : null}
     {!isLoading && !hasError ? <>
       {hasAnyDisplayedRecord ? <SettingFieldWidget field={readField("generation", "현재 세대", generationText)} value={generationText} onChange={() => undefined} /> : <p className="text-sm text-muted-foreground">세대 기록 없음</p>}
+      {latestDecisionText ? <SettingFieldWidget field={readField("last-decision", "마지막 판단", latestDecisionText)} value={latestDecisionText} onChange={() => undefined} /> : null}
       {hasAnyDisplayedRecord || history.nextCursor ? <section className="space-y-2" aria-label="최근 기록">
         <h3 className="text-sm font-medium">최근 기록</h3>
         {visibleEvents.length > 0 ? <ol className="space-y-2" aria-label="최근 세션 기록">
@@ -277,6 +284,17 @@ function compareEventIds(a: string | number, b: string | number): number {
   const numberB = Number(b);
   if (Number.isFinite(numberA) && Number.isFinite(numberB)) return numberA - numberB;
   return String(a).localeCompare(String(b));
+}
+
+function latestPersistentDecision(events: readonly TimelineEvent[]): TimelineEvent | null {
+  return [...events]
+    .filter((event) => event.event_type === "debug" && event.payload.kind === "persistent_decision")
+    .sort((a, b) => {
+      const timeA = Date.parse(a.created_at);
+      const timeB = Date.parse(b.created_at);
+      if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) return timeB - timeA;
+      return compareEventIds(b.id, a.id);
+    })[0] ?? null;
 }
 
 function turnUsageByTerminalId(events: readonly TimelineEvent[]): Map<string, string> {

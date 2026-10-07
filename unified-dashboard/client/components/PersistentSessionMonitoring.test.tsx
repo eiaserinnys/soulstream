@@ -53,7 +53,7 @@ it("pairs failed turns by event id and deduplicates overlapping pages despite ti
   await settle();
 
   expect(calls).toContain("/api/sessions/sample-pas/timeline?event_types=generation_started&limit=1");
-  expect(calls).toContain("/api/sessions/sample-pas/timeline?event_types=generation_started%2Ccomplete%2Ccontext_usage%2Cerror%2Cuser_message%2Cintervention_sent&limit=100");
+  expect(calls).toContain("/api/sessions/sample-pas/timeline?event_types=generation_started%2Ccomplete%2Ccontext_usage%2Cerror%2Cuser_message%2Cintervention_sent%2Cdebug&limit=100");
   expect(container.textContent).toContain("세대 7");
   expect(container.textContent).toContain("컨텍스트 22.0% · 정가 $0.42");
   expect(container.textContent).toContain("정가 $0.62");
@@ -162,6 +162,57 @@ it("retries only the failed older page and preserves already loaded rows", async
   expect(calls.filter((query) => query.includes("before=older-page"))).toHaveLength(2);
   expect(calls.filter((query) => !query.includes("before=") && !query.includes("event_types=generation_started&"))).toHaveLength(1);
   expect(container.textContent).not.toContain("조회 실패");
+});
+
+it("requests debug events for monitoring and renders the newest persistent decision below the generation row", async () => {
+  const calls: URL[] = [];
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    calls.push(url);
+    if (url.pathname.includes("model-presets")) return Response.json({ model_presets: [] });
+    if (url.searchParams.get("event_types") === "generation_started") return Response.json({
+      messages: [{ id: 40, event_type: "generation_started", payload: { generation: 7 }, created_at: "2026-10-06T02:00:00.000Z" }],
+      next_cursor: null,
+    });
+    return Response.json({
+      messages: [
+        { id: 21, event_type: "debug", payload: { kind: "persistent_decision", trigger: "turn_end", action: "wait_until", rule: "newest", reason: "다음 확인 시각까지 기다립니다.", inputs_snapshot: {} }, created_at: "2026-10-06T03:00:00.000Z" },
+        { id: 22, event_type: "debug", payload: { kind: "persistent_decision", trigger: "turn_end", action: "new_generation", rule: "older", reason: "사용 여유를 확인합니다.", inputs_snapshot: {} }, created_at: "2026-10-06T02:00:00.000Z" },
+      ],
+      next_cursor: null,
+    });
+  };
+
+  await act(async () => root.render(<PersistentSessionMonitoring sessionId="decision-pas" nodeId="sample-node" request={request} />));
+  await settle();
+
+  expect(calls.some((url) => url.searchParams.get("event_types") === "generation_started,complete,context_usage,error,user_message,intervention_sent,debug")).toBe(true);
+  const rows = [...container.querySelectorAll<HTMLElement>("[data-testid=config-field-row]")];
+  const rowLabel = (row: HTMLElement) => row.querySelector("span")?.textContent;
+  const generationIndex = rows.findIndex((row) => rowLabel(row) === "현재 세대");
+  const decisionIndex = rows.findIndex((row) => rowLabel(row) === "마지막 판단");
+  expect(decisionIndex).toBe(generationIndex + 1);
+  expect(rows[decisionIndex]?.textContent).toContain(new Date("2026-10-06T03:00:00.000Z").toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }));
+  expect(rows[decisionIndex]?.textContent).toContain("wait_until");
+  expect(rows[decisionIndex]?.textContent).toContain("다음 확인 시각까지 기다립니다.");
+  expect(rows[decisionIndex]?.textContent).not.toContain("사용 여유를 확인합니다.");
+});
+
+it("does not render a last-decision row when monitoring history has no decision", async () => {
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname.includes("model-presets")) return Response.json({ model_presets: [] });
+    if (url.searchParams.get("event_types") === "generation_started") return Response.json({
+      messages: [{ id: 30, event_type: "generation_started", payload: { generation: 4 }, created_at: "2026-10-06T02:00:00.000Z" }],
+      next_cursor: null,
+    });
+    return Response.json({ messages: [], next_cursor: null });
+  };
+
+  await act(async () => root.render(<PersistentSessionMonitoring sessionId="no-decision-pas" nodeId="sample-node" request={request} />));
+  await settle();
+
+  expect([...container.querySelectorAll("[data-testid=config-field-row] span")].map((span) => span.textContent)).not.toContain("마지막 판단");
 });
 
 async function settle() {
