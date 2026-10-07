@@ -204,26 +204,59 @@ for (const width of [1440, 1280]) {
       const style = getComputedStyle(button);
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, background: style.backgroundColor, borderWidth: style.borderWidth, boxShadow: style.boxShadow };
     });
-    const panelColor = await screen.evaluate(element => {
+    const expectedColors = await screen.evaluate(element => {
       const probe = document.createElement("div");
-      probe.style.backgroundColor = "var(--persistent-session-panel)";
       element.appendChild(probe);
-      const color = getComputedStyle(probe).backgroundColor;
+      probe.style.backgroundColor = "var(--persistent-session-panel)";
+      const panel = getComputedStyle(probe).backgroundColor;
+      probe.style.backgroundColor = "";
+      probe.style.color = "var(--foreground)";
+      const foreground = getComputedStyle(probe).color;
       probe.remove();
-      return color;
+      return { panel, foreground };
     });
     expect(newMessagesStyle.width).toBe(44);
     expect(newMessagesStyle.height).toBe(44);
-    expect(newMessagesStyle.background).toBe(panelColor);
+    expect(newMessagesStyle.background).toBe(expectedColors.panel);
     expect(newMessagesStyle.borderWidth).toBe("0px");
     expect(newMessagesStyle.boxShadow).toBe("none");
-    await capture(page, `pas-${width}-new-messages`);
+    await capture(page, `pas-${width}-new-messages-rest`);
     writeFileSync(path.join(output, `pas-${width}-new-messages-geometry.json`), JSON.stringify(newMessagesStyle, null, 2));
-    await newMessages.click();
+
+    const taskToggle = page.getByRole("button", { name: "작업 목록", exact: true });
+    await taskToggle.hover();
+    await expect.poll(() => taskToggle.evaluate(button => getComputedStyle(button).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+    await expect.poll(() => taskToggle.evaluate(button => getComputedStyle(button).color)).toBe(expectedColors.foreground);
+    const bareHoverStyle = await taskToggle.evaluate(button => {
+      const style = getComputedStyle(button);
+      return { background: style.backgroundColor, color: style.color };
+    });
+
+    await newMessages.hover();
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).backgroundColor)).toBe(bareHoverStyle.background);
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).color)).toBe(bareHoverStyle.color);
+    const hoverStyle = await newMessages.evaluate(button => {
+      const style = getComputedStyle(button);
+      return { background: style.backgroundColor, color: style.color };
+    });
+    expect(hoverStyle.background).not.toBe(expectedColors.panel);
+    expect(hoverStyle.color).toBe(expectedColors.foreground);
+    await capture(page, `pas-${width}-new-messages-hover`);
+
+    await page.mouse.down();
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).backgroundColor)).toBe(hoverStyle.background);
+    await expect.poll(() => newMessages.evaluate(button => getComputedStyle(button).color)).toBe(hoverStyle.color);
+    const pressedStyle = await newMessages.evaluate(button => {
+      const style = getComputedStyle(button);
+      return { background: style.backgroundColor, color: style.color };
+    });
+    expect(pressedStyle.background).not.toBe(expectedColors.panel);
+    expect(pressedStyle.color).toBe(expectedColors.foreground);
+    await capture(page, `pas-${width}-new-messages-pressed`);
+    await page.mouse.up();
     await expect(newMessages).toHaveCount(0);
     await expect.poll(() => scroller.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThanOrEqual(2);
 
-    const taskToggle = page.getByRole("button", { name: "작업 목록", exact: true });
     await taskToggle.hover();
     const hoverBackground = await taskToggle.evaluate(button => getComputedStyle(button).backgroundColor);
     expect(hoverBackground).not.toBe("rgba(0, 0, 0, 0)");

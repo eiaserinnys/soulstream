@@ -877,8 +877,7 @@ export function ChatView({
               appearance="bare"
               label="새 메시지로 이동"
               onClick={scrollToBottom}
-              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 text-muted-foreground"
-              style={{ backgroundColor: "var(--persistent-session-panel)" }}
+              className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 text-muted-foreground v3-pas-floating-cap"
             >
               <ArrowDown className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
             </DashboardIconCap>
