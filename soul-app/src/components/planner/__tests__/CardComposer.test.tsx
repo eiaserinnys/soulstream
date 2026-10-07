@@ -224,7 +224,9 @@ test.each([false, true])('today=%s 입력은 ChatComposer를 쓰고 리턴은 �
   const contentRow = screen.getByTestId('chat-composer-content-row');
   expect(StyleSheet.flatten(contentRow.props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
   expect(React.Children.toArray(contentRow.props.children).map((child: any) => child.props.testID))
-    .toEqual(['chat-composer-attach-slot', 'chat-composer-text-input', 'chat-composer-controls-spacer', undefined]);
+    .toEqual(['chat-composer-attach-slot', 'chat-composer-input-row', 'chat-composer-controls-row']);
+  expect(screen.getByTestId('chat-composer-input-row').props.collapsable).toBe(false);
+  expect(screen.getByTestId('chat-composer-controls-row').props.collapsable).toBe(false);
   const input = screen.getByTestId('chat-composer-text-input');
   expect(input.props.multiline).toBe(true);
   expect(input.props.onSubmitEditing).toBeUndefined();
@@ -245,7 +247,8 @@ test('폴더 카드 입력은 원문과 구조화 첨부를 분리하고 성공 
   const screen = render(<CardComposer api={api as any} />);
   const contentRow = screen.getByTestId('chat-composer-content-row');
   expect(StyleSheet.flatten(contentRow.props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
-  expect(screen.queryByTestId('chat-composer-controls-row')).toBeNull();
+  expect(React.Children.toArray(contentRow.props.children).map((child: any) => child.props.testID))
+    .toEqual(['chat-composer-attach-slot', 'chat-composer-input-row', 'chat-composer-controls-row']);
   await act(async () => fireEvent.press(screen.getByLabelText('첨부 추가')));
   expect(api.uploadAttachment).toHaveBeenCalledWith('draft-upload-id', 'node-1', expect.objectContaining({ name: '사진.png' }));
   expect(screen.getByText('사진.png')).toBeTruthy();

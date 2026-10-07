@@ -68,8 +68,29 @@ export function makeStyles(t: DesignTokens) {
       columnGap: composer.controlGap,
     },
     composerContentRowStacked: {
-      flexWrap: 'wrap',
+      flexDirection: 'column',
+      alignItems: 'stretch',
       columnGap: 0,
+      rowGap: 0,
+    },
+    composerInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minWidth: 0,
+      flexGrow: 1,
+      flexShrink: 1,
+      flexBasis: 0,
+    },
+    composerInputRowStacked: {
+      flexGrow: 0,
+      flexShrink: 0,
+      flexBasis: 'auto',
+    },
+    composerControlsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexShrink: 0,
+      minHeight: composer.hitTarget,
     },
     composerAttachmentSlot: {},
     composerAttachmentSlotStacked: {
@@ -163,12 +184,7 @@ export function makeStyles(t: DesignTokens) {
       paddingVertical: sessionRoles.chat.composer.inputPaddingVertical,
       fontSize: t.chatFontSize.body,
       lineHeight: t.chatFontSize.body * t.lineHeightRatio,
-    },
-    composerTextInputRow: {
       flex: 1,
-    },
-    composerTextInputStacked: {
-      width: '100%',
     },
     voiceSlot: {
       minHeight: sessionRoles.chat.composer.hitTarget,

@@ -91,7 +91,8 @@ test.each([null, 'quota_exhausted'])('오늘 전송은 선택한 폴더·노드�
   await waitFor(() => expect(screen.getByText(/로젤린/)).toBeTruthy());
   const contentRow = screen.getByTestId('chat-composer-content-row');
   expect(StyleSheet.flatten(contentRow.props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
-  expect(screen.queryByTestId('chat-composer-controls-row')).toBeNull();
+  expect(React.Children.toArray(contentRow.props.children).map((child: any) => child.props.testID))
+    .toEqual(['chat-composer-attach-slot', 'chat-composer-input-row', 'chat-composer-controls-row']);
   fireEvent.changeText(screen.getByLabelText('세션 첫 메시지'), '  시작 메시지  ');
   await act(async () => fireEvent.press(screen.getByLabelText('세션 시작')));
   expect(api.createSession).toHaveBeenCalledWith(expect.objectContaining({ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol', prompt: '  시작 메시지  ' }));

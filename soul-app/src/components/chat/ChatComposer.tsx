@@ -137,6 +137,7 @@ export function ChatComposer({
       >
         <View
           testID="chat-composer-content-row"
+          collapsable={false}
           style={[styles.composerContentRow, effectiveStacked && styles.composerContentRowStacked]}
         >
           <View
@@ -160,97 +161,109 @@ export function ChatComposer({
               onPress={onPickAttachment}
             />
           </View>
-          <TextInput
-            ref={(input) => {
-              measurement.ref.current = input;
-              onInputRef?.(input);
-            }}
-            onContentSizeChange={measurement.onContentSizeChange}
-            testID="chat-composer-text-input"
-            // Empty iOS inputs collapse immediately; text keeps native intrinsic growth.
-            style={[styles.composerTextInput, effectiveStacked ? styles.composerTextInputStacked : styles.composerTextInputRow, {
-              ...(Platform.OS === 'ios'
-                ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
-                : { height: inputHeight }),
-              paddingVertical: inputPadding,
-              ...(presentation === 'manuscript' && effectiveStacked ? { paddingHorizontal: 0 } : {}),
-              ...(Platform.OS === 'web'
-                ? isEmpty
-                  ? { whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }
-                  : { whiteSpace: 'pre-wrap' }
-                : {}),
-            }]}
-            onLayout={Platform.OS === 'ios' ? (event) => {
-              // Once capped, content may change without another contentSize event.
-              setIOSAtMaxHeight(event.nativeEvent.layout.height >= styles.composerTextInput.maxHeight);
-            } : undefined}
-            value={input}
-            onChangeText={onChangeInput}
-            placeholder={presentation === 'manuscript' ? undefined : placeholder}
-            accessibilityLabel={presentation === 'manuscript'
-              ? inputAccessibilityLabel ?? '메시지'
-              : inputAccessibilityLabel}
-            placeholderTextColor={t.colors.textPlaceholder}
-            multiline
-            {...(Platform.OS === 'web' ? { rows: 1 } : {})}
-            scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
-            maxLength={4000}
-            autoCorrect={false}
-            spellCheck={false}
-            textAlignVertical={multilineExpanded ? 'top' : 'center'}
-            editable={!disabled}
-            accessibilityState={{ disabled }}
-          />
-          <Pressable
-            testID="chat-composer-controls-spacer"
-            accessible={false}
-            focusable={false}
-            tabIndex={-1}
-            disabled={disabled}
-            style={[styles.composerControlsSpacer, effectiveStacked && styles.composerControlsSpacerStacked]}
-            onPress={() => {
-              if (!disabled) measurement.ref.current?.focus();
-            }}
-          />
-          <View style={styles.composerRightControls}>
-            {interruptControls}
-            <View
-              testID="chat-composer-voice-slot"
-              style={effectiveStacked && voiceControls == null ? styles.voiceSlotStackedEmpty : styles.voiceSlot}
-            >
-              {voiceControls}
-            </View>
-            <CompactTouchTarget
-              testID="chat-composer-send-button"
-              surfaceTestID="chat-composer-send-visual"
-              accessibilityRole="button"
-              accessibilityLabel={sendAccessibilityLabel}
-              accessibilityState={{ disabled: !canSend || sending, busy: sending }}
-              disabled={!canSend || sending}
-              frameStyle={presentation === 'manuscript'
-                ? [styles.composerControlFrame, { marginRight: -manuscriptSendOutset }]
-                : styles.composerControlFrame}
-              surfaceStyle={presentation === 'manuscript'
-                ? styles.composerSecondaryControl
-                : [styles.sendBtn, !sending && !canSend && styles.sendBtnDisabled]}
-              onPress={() => {
-                if (canSend && !sending) onSend();
+          <View
+            testID="chat-composer-input-row"
+            collapsable={false}
+            style={[styles.composerInputRow, effectiveStacked && styles.composerInputRowStacked]}
+          >
+            <TextInput
+              ref={(input) => {
+                measurement.ref.current = input;
+                onInputRef?.(input);
               }}
-            >
-              {sending ? (
-                <ActivityIndicator
-                  testID="chat-composer-send-spinner"
-                  size="small"
-                  color={t.colors.accentText}
-                />
-              ) : (
-                <Ionicons
-                  name={presentation === 'manuscript' ? 'send-outline' : 'send'}
-                  size={t.iconSize.standard}
-                  color={canSend ? (presentation === 'manuscript' ? t.colors.textPrimary : t.colors.accentText) : t.colors.textMuted}
-                />
-              )}
-            </CompactTouchTarget>
+              onContentSizeChange={measurement.onContentSizeChange}
+              testID="chat-composer-text-input"
+              // Empty iOS inputs collapse immediately; text keeps native intrinsic growth.
+              style={[styles.composerTextInput, {
+                ...(Platform.OS === 'ios'
+                  ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
+                  : { height: inputHeight }),
+                paddingVertical: inputPadding,
+                ...(presentation === 'manuscript' && effectiveStacked ? { paddingHorizontal: 0 } : {}),
+                ...(Platform.OS === 'web'
+                  ? isEmpty
+                    ? { whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }
+                    : { whiteSpace: 'pre-wrap' }
+                  : {}),
+              }]}
+              onLayout={Platform.OS === 'ios' ? (event) => {
+                // Once capped, content may change without another contentSize event.
+                setIOSAtMaxHeight(event.nativeEvent.layout.height >= styles.composerTextInput.maxHeight);
+              } : undefined}
+              value={input}
+              onChangeText={onChangeInput}
+              placeholder={presentation === 'manuscript' ? undefined : placeholder}
+              accessibilityLabel={presentation === 'manuscript'
+                ? inputAccessibilityLabel ?? '메시지'
+                : inputAccessibilityLabel}
+              placeholderTextColor={t.colors.textPlaceholder}
+              multiline
+              {...(Platform.OS === 'web' ? { rows: 1 } : {})}
+              scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
+              maxLength={4000}
+              autoCorrect={false}
+              spellCheck={false}
+              textAlignVertical={multilineExpanded ? 'top' : 'center'}
+              editable={!disabled}
+              accessibilityState={{ disabled }}
+            />
+          </View>
+          <View
+            testID="chat-composer-controls-row"
+            collapsable={false}
+            style={styles.composerControlsRow}
+          >
+            <Pressable
+              testID="chat-composer-controls-spacer"
+              accessible={false}
+              focusable={false}
+              tabIndex={-1}
+              disabled={disabled}
+              style={[styles.composerControlsSpacer, effectiveStacked && styles.composerControlsSpacerStacked]}
+              onPress={() => {
+                if (!disabled) measurement.ref.current?.focus();
+              }}
+            />
+            <View style={styles.composerRightControls}>
+              {interruptControls}
+              <View
+                testID="chat-composer-voice-slot"
+                style={effectiveStacked && voiceControls == null ? styles.voiceSlotStackedEmpty : styles.voiceSlot}
+              >
+                {voiceControls}
+              </View>
+              <CompactTouchTarget
+                testID="chat-composer-send-button"
+                surfaceTestID="chat-composer-send-visual"
+                accessibilityRole="button"
+                accessibilityLabel={sendAccessibilityLabel}
+                accessibilityState={{ disabled: !canSend || sending, busy: sending }}
+                disabled={!canSend || sending}
+                frameStyle={presentation === 'manuscript'
+                  ? [styles.composerControlFrame, { marginRight: -manuscriptSendOutset }]
+                  : styles.composerControlFrame}
+                surfaceStyle={presentation === 'manuscript'
+                  ? styles.composerSecondaryControl
+                  : [styles.sendBtn, !sending && !canSend && styles.sendBtnDisabled]}
+                onPress={() => {
+                  if (canSend && !sending) onSend();
+                }}
+              >
+                {sending ? (
+                  <ActivityIndicator
+                    testID="chat-composer-send-spinner"
+                    size="small"
+                    color={t.colors.accentText}
+                  />
+                ) : (
+                  <Ionicons
+                    name={presentation === 'manuscript' ? 'send-outline' : 'send'}
+                    size={t.iconSize.standard}
+                    color={canSend ? (presentation === 'manuscript' ? t.colors.textPrimary : t.colors.accentText) : t.colors.textMuted}
+                  />
+                )}
+              </CompactTouchTarget>
+            </View>
           </View>
         </View>
       </ComposerSurface>
