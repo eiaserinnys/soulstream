@@ -1,0 +1,64 @@
+diff --git a/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js b/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js
+index 0fa5b41..bd572d0 100644
+--- a/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js
++++ b/node_modules/@react-native/virtualized-lists/Lists/ListMetricsAggregator.js
+@@ -167,37 +167,42 @@ export default class ListMetricsAggregator {
+       // check for invalid frames due to row re-ordering
+       return frame;
+     } else {
++      const {data, getItem, getItemCount, keyExtractor} = props;
++      const extractKey = keyExtractor ?? defaultKeyExtractor;
++      const cellKey = extractKey(getItem(data, index), index);
++      const length =
++        this._cellMetrics.get(cellKey)?.length ?? this._averageCellLength;
+       let offset;
++      let skippedLength = 0;
+ 
+-      const highestMeasuredCellIndex = this.getHighestMeasuredCellIndex();
+-      if (highestMeasuredCellIndex < index) {
+-        // If any of the cells before this one have been laid out already, we
+-        // should use that information in the estimations.
+-        // This is important because if the list has a header, the initial cell
+-        // will have a larger offset that we should take into account here.
+-        const highestMeasuredCellFrame = this.getCellMetrics(
+-          highestMeasuredCellIndex,
+-          props,
+-        );
+-        if (highestMeasuredCellFrame) {
++      // Cached lengths follow their keys; cached offsets are valid only at the
++      // index where the cell was measured.
++      for (let previousIndex = index - 1; previousIndex >= 0; previousIndex--) {
++        const previousFrame = this.getCellMetrics(previousIndex, props);
++        if (previousFrame) {
+           offset =
+-            highestMeasuredCellFrame.offset +
+-            highestMeasuredCellFrame.length +
+-            this._averageCellLength * (index - highestMeasuredCellIndex - 1);
++            previousFrame.offset + previousFrame.length + skippedLength;
++          break;
+         }
++
++        const previousKey = extractKey(
++          getItem(data, previousIndex),
++          previousIndex,
++        );
++        skippedLength +=
++          this._cellMetrics.get(previousKey)?.length ?? this._averageCellLength;
+       }
+ 
+       if (offset == null) {
+-        offset = this._averageCellLength * index;
++        offset = skippedLength;
+       }
+ 
+-      const {data, getItemCount} = props;
+       invariant(
+         index >= 0 && index < getItemCount(data),
+         'Tried to get frame for out of range index ' + index,
+       );
+       return {
+-        length: this._averageCellLength,
++        length,
+         offset,
+         index,
+         isMounted: false,
