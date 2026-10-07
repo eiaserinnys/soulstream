@@ -155,13 +155,13 @@ describe("card final UX",()=>{
   expect(html).not.toContain('class="v3-detail-section"');
  });
 
- it("shows a cached detail failure instead of presenting cached card data as a successful read",()=>{
+ it("shows cached summary detail while a background refresh has failed",()=>{
   seed();
   useCardStore.setState({errors:{c:"상세 조회 실패"}});
   const html=renderToStaticMarkup(<CardDetailPane variant="summary" cardId="c" folders={[]} onClose={vi.fn()} onOpenSession={vi.fn()} onOpenCard={vi.fn()}/>);
-  expect(html).toContain('role="alert"');
-  expect(html).toContain("상세 조회 실패");
-  expect(html).not.toContain("고정 원문");
+  expect(html).toContain('class="v3-detail-pane v3-card-detail v3-card-read-summary"');
+  expect(html).toContain("고정 원문");
+  expect(html).not.toContain("상세 조회 실패");
  });
 
  it("omits request, elapsed, and number when those fields have no data",()=>{

@@ -38,7 +38,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   if(onSampleChange)onSampleChange(update);
   else setLocalSample(current=>current?update(current):current);
  };
- const card=activeSample?.card??storedCard,detail=activeSample??storedDetail;
+ const detail=activeSample??storedDetail,card=activeSample?.card??storedCard,summaryCard=activeSample?.card??storedDetail?.card??storedCard;
  const catalog=useDashboardStore(s=>s.catalog);
  const {user}=useAuth();
  const scroll=useRef<HTMLDivElement>(null);
@@ -135,10 +135,10 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   catch {} finally {setPending(false);}
  };
  if(props.variant==="summary") {
-  if(error)return <CardReadSummaryState message={error} error onOpenCard={props.onOpenCard}/>;
-  if(!card)return <CardReadSummaryState message="카드를 불러오는 중…" onOpenCard={props.onOpenCard}/>;
-  const summaryAssigneeName=resolveCardAssigneeName(card,assignee);
-  return <CardReadSummary card={card} detail={detail} assigneeName={summaryAssigneeName} portrait={portrait}
+  if(error&&!detail)return <CardReadSummaryState message={error} error onOpenCard={props.onOpenCard}/>;
+  if(!detail||!summaryCard)return <CardReadSummaryState message="카드를 불러오는 중…" onOpenCard={props.onOpenCard}/>;
+  const summaryAssigneeName=resolveCardAssigneeName(summaryCard,assignee);
+  return <CardReadSummary card={summaryCard} detail={detail} assigneeName={summaryAssigneeName} portrait={portrait}
    onOpenCard={props.onOpenCard}/>;
  }
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;

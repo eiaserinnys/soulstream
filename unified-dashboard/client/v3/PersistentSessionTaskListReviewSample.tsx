@@ -17,7 +17,7 @@ const taskFixture: CardRow[] = ([
   assigneeSessionId: summaryAssignee.agentSessionId,
   number,
   status,
-  title: index === 0 ? reviewTitle : `카드 ${number}`,
+  title: number === 1024 ? reviewTitle : `카드 ${number}`,
   positionKey: String.fromCharCode(97 + index),
   queuePositionKey: String.fromCharCode(97 + index),
 }));
@@ -26,7 +26,7 @@ const requestedCard: CardRow = {
   ...reviewCard,
   id: "persistent-summary-requested",
   assigneeSessionId: summaryAssignee.agentSessionId,
-  number: 31,
+  number: 1024,
   title: reviewTitle,
   request: ("요청의 첫 문장과 다음 문장이 같은 읽기 요약 안에서 자연스럽게 이어집니다. 좁은 패널에서도 본문이 네 줄로 접히고 아래 경과와 카드 열기 동작이 계속 보이는지 확인합니다. ").repeat(4).slice(0,330),
   now: reviewNow,
@@ -38,6 +38,7 @@ const widthSamples: { width: 318 | 340 | 392; detail: CardDetail }[] = [
   { width: 340, detail: { ...reviewDetail, card: { ...requestedCard, id: "persistent-summary-340" }, nowHistory: reviewNowHistory } },
   { width: 392, detail: { ...reviewDetail, card: { ...requestedCard, id: "persistent-summary-392" }, nowHistory: reviewNowHistory } },
 ];
+const listWidths = [240, 264] as const;
 
 export function PersistentSessionTaskListReviewSample() {
   const catalog = useDashboardStore(state => state.catalog);
@@ -62,8 +63,10 @@ export function PersistentSessionTaskListReviewSample() {
   }, []);
 
   return <div className="v3-persistent-task-review" data-testid="persistent-task-review-sample">
-    <div className="v3-persistent-task-review-list">
-      <PersistentSessionTaskList cards={taskFixture} onOpenCard={() => {}}/>
+    <div className="v3-persistent-task-review-lists">
+      {listWidths.map(width=><div key={width} className="v3-persistent-task-review-list" style={{width}} data-list-width={width}>
+        <PersistentSessionTaskList cards={taskFixture} onOpenCard={() => {}}/>
+      </div>)}
     </div>
     <div className="v3-persistent-task-review-details">
       {widthSamples.map(({width,detail})=><div key={width} className="v3-persistent-task-review-detail" style={{width,height:width===318?704:width===340?900:784,maxWidth:"100%"}} data-detail-width={width}>

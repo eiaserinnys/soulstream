@@ -150,6 +150,18 @@ it("shows structured request attachments and opens the existing image viewer",as
  await act(()=>image.click());expect(document.querySelector('[role="dialog"] img')?.getAttribute('alt')).toBe('첨부 이미지.png');
 });
 
+it("uses cached summary detail immediately while refreshing it in the background",async()=>{
+ const cached={...detail,card:{...card,title:"캐시된 제목",request:"캐시된 요청",attachments:[],now:null,items:[]}};
+ const loadCard=vi.fn(()=>new Promise<CardDetail>(()=>{}));
+ useCardStore.setState({byId:{inherit:cached.card},details:{inherit:cached},errors:{inherit:"이전 요청 오류"},loadCard});
+ await act(()=>root.render(<CardDetailPane variant="summary" cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}} onOpenCard={()=>{}}/>));
+
+ expect(container.querySelector('.v3-card-read-summary-title')?.textContent).toBe("캐시된 제목");
+ expect(container.textContent).toContain("캐시된 요청");
+ expect(container.querySelector('[role="alert"]')).toBeNull();
+ expect(loadCard).toHaveBeenCalledOnce();
+});
+
 it("opens the existing full card through the summary callback without exposing mutations",async()=>{
  const summaryCard={...card,number:41,request:"요청 본문",attachments:[],now:null,items:[]};
  const summary:CardDetail={...detail,card:summaryCard,reports:[],questions:[],comments:[]};
