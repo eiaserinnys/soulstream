@@ -67,31 +67,7 @@ export class CardMutationCore {
     const idempotent = await this.resolveIdempotent(params.idempotencyKey, params);
     if (idempotent) return idempotent;
 
-    let operation!: FolderOperationRow;
-    let eventId: number | null = null;
-    await this.repo.transaction(async (sql) => {
-      await params.preflight?.(sql);
-      const opId = randomUUID();
-      eventId = await this.appendFolderEventIfPresent(
-        sql,
-        { ...params, operationId: opId },
-      );
-      await params.apply(sql, eventId);
-      operation = await this.repo.appendOperationTx(sql, {
-        id: opId,
-        folderId: params.folderId,
-        targetKind: params.targetKind,
-        targetId: params.targetId,
-        operationType: params.operationType,
-        actorKind: params.actor.actorKind ?? "agent",
-        actorSessionId: params.actor.actorSessionId,
-        actorEventId: eventId,
-        actorUserId: params.actor.actorUserId ?? null,
-        idempotencyKey: params.idempotencyKey,
-        payload: params.payload,
-        reason: params.reason,
-      });
-    });
+    const { operation, eventId } = await this.repo.transaction((sql) => this.mutateTx(sql, params));
 
     const result = {
       snapshot: await this.requireSnapshot(params.folderId),
@@ -100,6 +76,34 @@ export class CardMutationCore {
     };
     await this.broadcastMutation(params.actor.actorSessionId, result);
     return result;
+  }
+
+  async mutateTx(
+    sql: RepositorySql,
+    params: FolderMutateParams,
+  ): Promise<{ operation: FolderOperationRow; eventId: number | null }> {
+    await params.preflight?.(sql);
+    const operationId = randomUUID();
+    const eventId = await this.appendFolderEventIfPresent(
+      sql,
+      { ...params, operationId },
+    );
+    await params.apply(sql, eventId);
+    const operation = await this.repo.appendOperationTx(sql, {
+      id: operationId,
+      folderId: params.folderId,
+      targetKind: params.targetKind,
+      targetId: params.targetId,
+      operationType: params.operationType,
+      actorKind: params.actor.actorKind ?? "agent",
+      actorSessionId: params.actor.actorSessionId,
+      actorEventId: eventId,
+      actorUserId: params.actor.actorUserId ?? null,
+      idempotencyKey: params.idempotencyKey,
+      payload: params.payload,
+      reason: params.reason,
+    });
+    return { operation, eventId };
   }
 
   async mutateWithoutSession(
