@@ -24,8 +24,6 @@ import {
 } from "../src/turn-summary/openai_api_turn_summarizer.js";
 import { TurnSummaryProviderRouter } from
   "../src/turn-summary/turn_summary_provider_router.js";
-import * as turnSummaryPipelineModule from
-  "../src/turn-summary/turn_summary_pipeline.js";
 import {
   buildTurnSummaryPrompt,
   truncateCodepoints,
@@ -126,51 +124,6 @@ afterEach(() => {
 });
 
 describe("turn summary prompt", () => {
-  it("uses a strict-compatible PAS output schema", () => {
-    const schema = Reflect.get(
-      turnSummaryPipelineModule,
-      "PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA",
-    );
-    const objectSchemas: Record<string, unknown>[] = [];
-
-    const visit = (value: unknown): void => {
-      if (Array.isArray(value)) {
-        value.forEach(visit);
-        return;
-      }
-      if (value === null || typeof value !== "object") return;
-      const record = value as Record<string, unknown>;
-      if (record.type === "object") {
-        objectSchemas.push(record);
-        expect(record.additionalProperties).toBe(false);
-        const properties = record.properties as Record<string, unknown>;
-        const required = record.required as string[];
-        expect([...required].sort()).toEqual(Object.keys(properties).sort());
-      }
-      Object.values(record).forEach(visit);
-    };
-
-    visit(schema);
-    expect(objectSchemas.length).toBeGreaterThan(0);
-    const outputProperties = (schema as Record<string, unknown>)
-      .properties as Record<string, unknown>;
-    const standingInstructions = outputProperties.standing_instructions as
-      Record<string, unknown>;
-    const instructionSchema = standingInstructions.items as
-      Record<string, unknown>;
-    const instructionProperties = instructionSchema.properties as
-      Record<string, unknown>;
-    expect(instructionSchema.required).toContain("existing_id");
-    expect(instructionSchema.required).toContain("source_quote");
-    expect(instructionProperties.existing_id).toEqual({
-      type: ["string", "null"],
-    });
-    expect(instructionProperties.source_quote).toEqual({
-      type: "string",
-      minLength: 1,
-    });
-  });
-
   it("truncates on Unicode codepoint boundaries", () => {
     expect(truncateCodepoints("가😀나다", 3)).toBe("가😀나");
   });
@@ -190,29 +143,18 @@ describe("turn summary prompt", () => {
     expect(prompt).toContain("[에이전트 최종 응답]\n결과");
   });
 
-  it("adds persistent instruction context and the human-only extraction rule when requested", () => {
+  it("keeps the ordinary summary prompt separate from persistent extraction", () => {
     const prompt = buildTurnSummaryPrompt({
       userText: "앞으로 간결하게 답해 줘.",
       assistantText: "알겠습니다.",
       previousSummaries: [],
-    }, CONFIG, {
-      outputSchema: { type: "object" },
-      extractStandingInstructions: true,
-      persistentInstructions: [{ id: "instruction-1", text: "한국어로 답해 줘." }],
-    });
+    }, CONFIG);
 
-    expect(prompt).toContain("instruction-1");
-    expect(prompt).toContain("한국어로 답해 줘.");
-    expect(prompt).toContain("현재 사람 발화 자체가 반복 적용할 규칙이나 선호");
-    expect(prompt).toContain("에이전트 발언에서는 뽑지 않는다");
-    expect(prompt).toContain("existing_id");
-    expect(prompt).toContain("새 지시는 existing_id를 null로 반환한다");
-    expect(prompt).toContain("source_quote");
-    expect(prompt).toContain(
-      "source_quote에는 해당 의미를 담은 완전한 구절을 사용자가 입력한 그대로 복사한다",
-    );
-    expect(prompt).toContain("이전 요약, assistant 응답, 활성 목록은 새 지시의 근거로 쓰지 않는다");
-    expect(prompt).toContain("이 카드도 체크, 큰 문제 없으면 진행");
+    expect(prompt).toContain(CONFIG.instruction);
+    expect(prompt).toContain("[사용자 메시지]\n앞으로 간결하게 답해 줘.");
+    expect(prompt).toContain("[에이전트 최종 응답]\n알겠습니다.");
+    expect(prompt).not.toContain("standing_instructions");
+    expect(prompt).not.toContain("[현재 활성 지속 지시 목록]");
   });
 
   it("forwards optional summarizer output options through the provider router", async () => {
@@ -662,7 +604,7 @@ describe("Codex turn summary provider", () => {
           type: "item.completed",
           item: {
             type: "agent_message",
-            text: JSON.stringify({ summary: "요약", standing_instructions: [] }),
+            text: JSON.stringify({ summary: "요약" }),
           },
         }),
         stderr: "",

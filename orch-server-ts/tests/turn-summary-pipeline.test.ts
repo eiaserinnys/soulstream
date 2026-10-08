@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { parsePersistentInstructionsApplyPayload } from
   "@soulstream/wire-schema/persistent-session-instructions";
+import type { PersistentInstructionsApplyPayload } from
+  "@soulstream/wire-schema/persistent-session-instructions";
 
 import type { NodeRegistryEvent } from "../src/node/registry.js";
 import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
@@ -11,6 +13,10 @@ import {
   resolveTurnSummaryEligibility,
   TurnSummaryPipeline,
 } from "../src/turn-summary/turn_summary_pipeline.js";
+import type {
+  PersistentInstructionCandidate,
+  PersistentInstructionExtractor,
+} from "../src/turn-summary/persistent_instruction_extractor.js";
 import type { TurnSummaryConfig } from "../src/turn-summary/turn_summary_config.js";
 import type { TurnSummarizer } from "../src/turn-summary/turn_summarizer.js";
 import type { TurnSummaryStartEvidence } from
@@ -398,7 +404,7 @@ describe("TurnSummaryPipeline", () => {
     expect(repository.appendSummary).not.toHaveBeenCalled();
   });
 
-  it("summarizes PAS agent-origin turns but discards their extracted instructions", async () => {
+  it("summarizes PAS agent-origin turns without running persistent extraction", async () => {
     const repository = fakeRepository();
     repository.loadTurn.mockResolvedValue({
       sessionId: "session-a",
@@ -415,24 +421,18 @@ describe("TurnSummaryPipeline", () => {
       speaker: { kind: "agent", agentName: "로젤린" },
     });
     const summarize = vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        summary: "위임 결과 요약",
-        standing_instructions: [{
-          text: "항상 짧게 답하라",
-          confidence: 0.99,
-          existing_id: null,
-          source_quote: "위임 보고",
-        }],
-      }),
+      content: "위임 결과 요약",
       model: "gpt-5.6-luna",
       latencyMs: 1,
       attempts: 1,
     });
+    const extract = vi.fn();
     const instructionCommandSender = vi.fn();
     const pipeline = new TurnSummaryPipeline({
       repository,
       configService: { read: () => CONFIG },
       summarizer: { summarize },
+      persistentInstructionExtractor: { extract },
       eventHub: new RuntimeSessionEventHub(),
       instructionCommandSender,
       logger: { info: vi.fn(), warn: vi.fn() },
@@ -447,16 +447,13 @@ describe("TurnSummaryPipeline", () => {
     expect(summarize).toHaveBeenCalledWith(
       expect.objectContaining({ userText: "위임 보고" }),
       CONFIG,
-      expect.objectContaining({
-        outputSchema: expect.objectContaining({ type: "object" }),
-        extractStandingInstructions: false,
-      }),
     );
     expect(repository.appendSummary).toHaveBeenCalledWith(
       "session-a",
       expect.objectContaining({ content: "위임 결과 요약" }),
       "turn_summary:10:19",
     );
+    expect(extract).not.toHaveBeenCalled();
     expect(instructionCommandSender).not.toHaveBeenCalled();
   });
 
@@ -496,33 +493,22 @@ describe("TurnSummaryPipeline", () => {
     });
     repository.countTurnSummariesThrough.mockResolvedValue(5);
     const summarize = vi.fn().mockResolvedValue({
-      content: JSON.stringify({
-        summary: "간결한 설명 선호를 확인했다.",
-        standing_instructions: [
-          {
-            text: "앞으로 설명은 간결하게 써 줘.",
-            confidence: 0.92,
-            existing_id: "instruction-existing",
-            source_quote: "앞으로 설명은 간결하게 써 줘.",
-          },
-          {
-            text: "앞으로 응답은 한국어로 해 줘.",
-            confidence: 0.7,
-            existing_id: null,
-            source_quote: "앞으로 응답은 한국어로 해 줘.",
-          },
-          {
-            text: "낮은 신뢰도 항목",
-            confidence: 0.69,
-            existing_id: null,
-            source_quote: "앞으로 응답은 한국어로 해 줘.",
-          },
-        ],
-      }),
+      content: "간결한 설명 선호를 확인했다.",
       model: "gpt-5.6-luna",
       latencyMs: 1,
       attempts: 1,
     });
+    const extract = vi.fn().mockResolvedValue([
+      {
+        text: "앞으로 설명은 간결하게 써 줘.",
+        existingId: "instruction-existing",
+        sourceQuote: "앞으로 설명은 간결하게 써 줘.",
+      },
+      {
+        text: "앞으로 응답은 한국어로 해 줘.",
+        sourceQuote: "앞으로 응답은 한국어로 해 줘.",
+      },
+    ] satisfies readonly PersistentInstructionCandidate[]);
     const instructionCommandSender = vi.fn().mockResolvedValue({
       type: "persistent_session_instructions_applied",
     });
@@ -530,6 +516,7 @@ describe("TurnSummaryPipeline", () => {
       repository,
       configService: { read: () => CONFIG },
       summarizer: { summarize },
+      persistentInstructionExtractor: { extract },
       eventHub: new RuntimeSessionEventHub(),
       instructionCommandSender,
       logger: { info: vi.fn(), warn: vi.fn() },
@@ -555,15 +542,14 @@ describe("TurnSummaryPipeline", () => {
         userText: "앞으로 설명은 간결하게 써 줘. 앞으로 응답은 한국어로 해 줘.",
       }),
       CONFIG,
-      expect.objectContaining({
-        persistentInstructions: [{
-          id: "instruction-existing",
-          text: "앞으로 설명은 간결하게 써 줘.",
-        }],
-        extractStandingInstructions: true,
-        outputSchema: expect.objectContaining({ type: "object" }),
-      }),
     );
+    expect(extract).toHaveBeenCalledWith({
+      userText: "앞으로 설명은 간결하게 써 줘. 앞으로 응답은 한국어로 해 줘.",
+      activeInstructions: [{
+        id: "instruction-existing",
+        text: "앞으로 설명은 간결하게 써 줘.",
+      }],
+    }, CONFIG);
     const command = instructionCommandSender.mock.calls[0]?.[0];
     expect(parsePersistentInstructionsApplyPayload(command)).toMatchObject({
       ok: true,
@@ -589,10 +575,20 @@ describe("TurnSummaryPipeline", () => {
     });
   });
 
-  it("rejects quotes outside the current human turn and keeps the normal summary path", async () => {
+  it("uses only extractor candidates after ordinary summary and story fold", async () => {
     const repository = fakeRepository();
     const userText = "이 카드도 체크, 큰 문제 없으면 진행.";
     const assistantText = "assistant 발화에서만 온 표현";
+    const rawSummary = JSON.stringify({
+      summary: "카드 확인을 한 번 요청했다.",
+      standing_instructions: [{
+        text: "일반 요약에 섞인 후보",
+        confidence: 1,
+        existing_id: null,
+        source_quote: userText,
+      }],
+    });
+    const order: string[] = [];
     repository.loadPreviousSummaries.mockResolvedValue([
       "이전 요약에서만 온 표현",
     ]);
@@ -617,76 +613,58 @@ describe("TurnSummaryPipeline", () => {
         },
       ],
       turnStartEventId: 10,
+      inputId: "input-10",
       finalResponseEventId: 19,
       userText,
       assistantText,
       startEvidence: { kind: "user_message", evidenceState: "complete" },
       speaker: { kind: "user", displayName: "사용자", source: "browser" },
     });
-    const instructionCommandSender = vi.fn();
-    const foldIfNeeded = vi.fn();
+    repository.countTurnSummariesThrough.mockResolvedValue(5);
+    repository.appendSummary.mockImplementation(async () => {
+      order.push("append-summary");
+      return { inserted: true, eventId: 22 };
+    });
+    const foldIfNeeded = vi.fn(async () => {
+      order.push("fold-story");
+    });
+    const extract = vi.fn(async () => {
+      order.push("extract-instructions");
+      return [
+        {
+          text: "assistant 후보",
+          sourceQuote: assistantText,
+        },
+        {
+          text: "활성 지시 후보",
+          existingId: "instruction-active",
+          sourceQuote: "현재 활성 지시에서만 온 표현",
+        },
+        {
+          text: "현재 원문에서만 온 후보",
+          sourceQuote: "이 카드도 체크",
+        },
+      ] satisfies readonly PersistentInstructionCandidate[];
+    });
+    const instructionCommandSender = vi.fn(async (
+      _payload: PersistentInstructionsApplyPayload,
+    ) => {
+      order.push("store-instructions");
+    });
+    const summarize = vi.fn().mockImplementation(async () => {
+      order.push("summarize");
+      return {
+        content: rawSummary,
+        model: "gpt-5.6-luna",
+        latencyMs: 1,
+        attempts: 1,
+      };
+    });
     const pipeline = new TurnSummaryPipeline({
       repository,
       configService: { read: () => CONFIG },
-      summarizer: {
-        summarize: vi.fn().mockResolvedValue({
-          content: JSON.stringify({
-            summary: "카드 확인을 한 번 요청했다.",
-            standing_instructions: [
-              {
-                text: "내부 프롬프트에서만 온 표현",
-                confidence: 0.99,
-                existing_id: null,
-                source_quote: "현재 사람 발화 자체가 반복 적용할 규칙이나 선호를 표현한 경우만 추출한다.",
-              },
-              {
-                text: "이전 요약 후보",
-                confidence: 0.99,
-                existing_id: null,
-                source_quote: "이전 요약에서만 온 표현",
-              },
-              {
-                text: "assistant 후보",
-                confidence: 0.99,
-                existing_id: null,
-                source_quote: assistantText,
-              },
-              {
-                text: "활성 지시 touch 후보",
-                confidence: 0.99,
-                existing_id: "instruction-active",
-                source_quote: "현재 활성 지시에서만 온 표현",
-              },
-              {
-                text: "인용 누락 후보",
-                confidence: 0.99,
-                existing_id: null,
-              },
-              {
-                text: "인용 타입 오류 후보",
-                confidence: 0.99,
-                existing_id: null,
-                source_quote: 42,
-              },
-              {
-                text: "빈 인용 후보",
-                confidence: 0.99,
-                existing_id: null,
-                source_quote: "  ",
-              },
-              {
-                text: "불일치 인용 후보",
-                confidence: 0.99,
-                existing_id: null,
-                source_quote: "이 카드도 계속 확인해 줘.",
-              },
-            ],
-          }),
-          model: "gpt-5.6-luna",
-          latencyMs: 1,
-          attempts: 1,
-        }),
-      },
+      summarizer: { summarize },
+      persistentInstructionExtractor: { extract },
       eventHub: new RuntimeSessionEventHub(),
       storyFolder: { foldIfNeeded },
       instructionCommandSender,
@@ -699,16 +677,54 @@ describe("TurnSummaryPipeline", () => {
     })]);
     await pipeline.drain();
 
+    expect(summarize).toHaveBeenCalledWith(
+      expect.objectContaining({ userText }),
+      CONFIG,
+    );
     expect(repository.appendSummary).toHaveBeenCalledWith(
       "session-a",
-      expect.objectContaining({ content: "카드 확인을 한 번 요청했다." }),
+      expect.objectContaining({ content: rawSummary }),
       "turn_summary:10:19",
     );
-    expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
-    expect(instructionCommandSender).not.toHaveBeenCalled();
+    expect(extract).toHaveBeenCalledWith({
+      userText,
+      activeInstructions: [{
+        id: "instruction-active",
+        text: "현재 활성 지시에서만 온 표현",
+      }],
+    }, CONFIG);
+    expect(order).toEqual([
+      "summarize",
+      "append-summary",
+      "fold-story",
+      "extract-instructions",
+      "store-instructions",
+    ]);
+    expect(instructionCommandSender).toHaveBeenCalledTimes(1);
+    const command = instructionCommandSender.mock.calls[0]?.[0];
+    if (command === undefined) {
+      throw new Error("Expected the persistent instruction command");
+    }
+    expect(parsePersistentInstructionsApplyPayload(command)).toMatchObject({
+      ok: true,
+      value: {
+        origin: "extracted",
+        ops: [{
+          op: "add",
+          text: "현재 원문에서만 온 후보",
+          source_turns: ["T5"],
+          source_event_ids: [10],
+        }],
+      },
+    });
+    const firstOperation = command.ops[0];
+    if (firstOperation === undefined) {
+      throw new Error("Expected one persistent instruction operation");
+    }
+    expect(firstOperation).not.toHaveProperty("source_quote");
   });
 
-  it("uses the raw PAS response as the summary when structured parsing fails", async () => {
+  it("warns and keeps the summary and story when extraction fails", async () => {
     const repository = fakeRepository();
     repository.loadTurn.mockResolvedValue({
       sessionId: "session-a",
@@ -724,22 +740,27 @@ describe("TurnSummaryPipeline", () => {
       startEvidence: { kind: "user_message", evidenceState: "complete" },
       speaker: { kind: "user", displayName: "사용자", source: "browser" },
     });
-    const rawResponse = "모델이 JSON이 아닌 응답을 반환했다.";
+    const warn = vi.fn();
+    const foldIfNeeded = vi.fn();
     const instructionCommandSender = vi.fn();
     const pipeline = new TurnSummaryPipeline({
       repository,
       configService: { read: () => CONFIG },
       summarizer: {
         summarize: vi.fn().mockResolvedValue({
-          content: rawResponse,
+          content: "일반 요약은 저장되어야 한다.",
           model: "gpt-5.6-luna",
           latencyMs: 1,
           attempts: 1,
         }),
       },
+      persistentInstructionExtractor: {
+        extract: vi.fn().mockRejectedValue(new Error("private user text")),
+      },
       eventHub: new RuntimeSessionEventHub(),
+      storyFolder: { foldIfNeeded },
       instructionCommandSender,
-      logger: { info: vi.fn(), warn: vi.fn() },
+      logger: { info: vi.fn(), warn },
     });
 
     pipeline.accept([nodeEvent("node-a", "session-a", {
@@ -750,10 +771,142 @@ describe("TurnSummaryPipeline", () => {
 
     expect(repository.appendSummary).toHaveBeenCalledWith(
       "session-a",
-      expect.objectContaining({ content: rawResponse }),
+      expect.objectContaining({ content: "일반 요약은 저장되어야 한다." }),
       "turn_summary:10:19",
     );
-    expect(repository.countTurnSummariesThrough).not.toHaveBeenCalled();
+    expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-a",
+        stage: "extractor",
+        reason: "failed",
+      }),
+      "Persistent instruction extraction skipped",
+    );
+    expect(warn.mock.calls.flat().join(" ")).not.toContain("private user text");
+    expect(instructionCommandSender).not.toHaveBeenCalled();
+  });
+
+  it("warns and keeps the summary and story when instruction storage fails", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "session-a",
+      folderId: "allowed-folder",
+      metadata: [
+        { type: "caller_info", value: { source: "browser" } },
+        { type: "persistent_session", value: { enabled: true } },
+      ],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText: "앞으로 간결하게 답해 줘.",
+      assistantText: "알겠습니다.",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+      speaker: { kind: "user", displayName: "사용자", source: "browser" },
+    });
+    repository.countTurnSummariesThrough.mockResolvedValue(5);
+    const warn = vi.fn();
+    const foldIfNeeded = vi.fn();
+    const instructionCommandSender = vi.fn().mockRejectedValue(
+      new Error("private command payload"),
+    );
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: {
+        summarize: vi.fn().mockResolvedValue({
+          content: "일반 요약은 저장되어야 한다.",
+          model: "gpt-5.6-luna",
+          latencyMs: 1,
+          attempts: 1,
+        }),
+      },
+      persistentInstructionExtractor: {
+        extract: vi.fn().mockResolvedValue([{
+          text: "간결하게 답해 줘.",
+          sourceQuote: "앞으로 간결하게 답해 줘.",
+        }]),
+      },
+      eventHub: new RuntimeSessionEventHub(),
+      storyFolder: { foldIfNeeded },
+      instructionCommandSender,
+      logger: { info: vi.fn(), warn },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(repository.appendSummary).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({ content: "일반 요약은 저장되어야 한다." }),
+      "turn_summary:10:19",
+    );
+    expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-a",
+        stage: "instruction_store",
+        reason: "failed",
+      }),
+      "Persistent instruction extraction skipped",
+    );
+    expect(warn.mock.calls.flat().join(" ")).not.toContain("private command payload");
+  });
+
+  it("warns when the extractor is not wired without blocking summary and fold", async () => {
+    const repository = fakeRepository();
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "session-a",
+      folderId: "allowed-folder",
+      metadata: [
+        { type: "caller_info", value: { source: "browser" } },
+        { type: "persistent_session", value: { enabled: true } },
+      ],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText: "앞으로 간결하게 답해 줘.",
+      assistantText: "알겠습니다.",
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+      speaker: { kind: "user", displayName: "사용자", source: "browser" },
+    });
+    const warn = vi.fn();
+    const foldIfNeeded = vi.fn();
+    const instructionCommandSender = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: {
+        summarize: vi.fn().mockResolvedValue({
+          content: "일반 요약",
+          model: "gpt-5.6-luna",
+          latencyMs: 1,
+          attempts: 1,
+        }),
+      },
+      eventHub: new RuntimeSessionEventHub(),
+      storyFolder: { foldIfNeeded },
+      instructionCommandSender,
+      logger: { info: vi.fn(), warn },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(repository.appendSummary).toHaveBeenCalled();
+    expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-a",
+        stage: "extractor",
+        reason: "dependency_unavailable",
+      }),
+      "Persistent instruction extraction skipped",
+    );
     expect(instructionCommandSender).not.toHaveBeenCalled();
   });
 
@@ -780,19 +933,17 @@ describe("TurnSummaryPipeline", () => {
       configService: { read: () => CONFIG },
       summarizer: {
         summarize: vi.fn().mockResolvedValue({
-          content: JSON.stringify({
-            summary: "선호를 기록했다.",
-            standing_instructions: [{
-              text: "간결하게 답해 줘.",
-              confidence: 0.9,
-              existing_id: null,
-              source_quote: "앞으로 간결하게 답해 줘.",
-            }],
-          }),
+          content: "선호를 기록했다.",
           model: "gpt-5.6-luna",
           latencyMs: 1,
           attempts: 1,
         }),
+      },
+      persistentInstructionExtractor: {
+        extract: vi.fn().mockResolvedValue([{
+          text: "간결하게 답해 줘.",
+          sourceQuote: "앞으로 간결하게 답해 줘.",
+        }]),
       },
       eventHub: new RuntimeSessionEventHub(),
       instructionCommandSender,

@@ -21,6 +21,8 @@ import type {
 import { resolveCodexCliPath } from "./codex_cli_path.js";
 import { CodexExecTurnSummarizer } from
   "./codex_exec_turn_summarizer.js";
+import { createPersistentInstructionExtractor } from
+  "./persistent_instruction_extractor.js";
 import {
   TurnSummaryConfigService,
   type TurnSummaryLogger,
@@ -114,6 +116,11 @@ export function createLiveTurnSummaryPipeline(options: {
     generator: codexSummarizer,
     logger: options.logger,
   });
+  const persistentInstructionExtractor = createPersistentInstructionExtractor({
+    apiKey: options.config.typesafe_api_key,
+    generate: (prompt, config, generationOptions) =>
+      codexSummarizer.generate(prompt, config, generationOptions),
+  });
   const pipeline = new TurnSummaryPipeline({
     repository: new TurnSummaryRepository(options.sqlResolver, {
       resolveAgentName: ({ agentId, nodeId }) => {
@@ -131,6 +138,7 @@ export function createLiveTurnSummaryPipeline(options: {
     }),
     configService,
     summarizer,
+    persistentInstructionExtractor,
     eventHub: options.eventHub,
     instructionCommandSender: createPersistentInstructionCommandSender(options.commands),
     sessionBroadcaster: options.sessionBroadcaster,
