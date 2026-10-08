@@ -18,6 +18,7 @@ import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 import type { CatalogDeltaFolderProvider } from "../runtime/catalog_delta_broadcaster.js";
 import type { PersistentSessionSettingsService } from "../session/persistent_session_settings_service.js";
+import type { CardWorkDispatchService, DispatchWorkActor } from "../cards/card_work_dispatch_service.js";
 
 export interface McpCallContext {
   signal?: AbortSignal;
@@ -55,6 +56,7 @@ export interface McpHostOptions {
   skills?: { enabled: boolean; serverUrl: string; apiKey: string; nodeId: string; typesafeApiKey: string; httpClient: AtomHttpClient; logger?: Pick<FastifyBaseLogger, "warn"> };
   cards: CardRouteBodyOptions & { resolveAccess: () => FolderAccess | Promise<FolderAccess>;
     cardExecutionServiceProvider?: NonNullable<import("../folders/folder_routes.js").FolderRouteOptions["cardExecutionServiceProvider"]>;
+    workDispatchServiceProvider?: (authorizeFolder: (folderId: string, actor: DispatchWorkActor) => Promise<void>) => Promise<CardWorkDispatchService>;
     runConfirm?: { intervalMs: number; timeoutMs: number } };
   board: {
     host: BoardYjsHostProxyRouteOptions;
