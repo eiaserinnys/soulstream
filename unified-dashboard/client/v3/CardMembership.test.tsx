@@ -10,7 +10,7 @@ import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { reviewCard, reviewDetail } from "./components-review-fixtures";
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let element:HTMLDivElement,root:Root;
-beforeEach(()=>{vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});resetV3InvalidationForTest();useCardStore.getState().reset();element=document.createElement("div");document.body.append(element);root=createRoot(element);});
+beforeEach(()=>{vi.stubGlobal('ResizeObserver',class {observe(){}disconnect(){}});vi.stubGlobal("matchMedia",(query:string)=>({matches:false,media:query,onchange:null,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),dispatchEvent:vi.fn()}));resetV3InvalidationForTest();useCardStore.getState().reset();element=document.createElement("div");document.body.append(element);root=createRoot(element);});
 afterEach(async()=>{await act(()=>root.unmount());element.remove();vi.unstubAllGlobals();});
 const row=(id:string)=>({...reviewCard,id,status:"todo" as const});
 const response=(cards:typeof reviewCard[])=>new Response(JSON.stringify({cards}),{status:200});
