@@ -221,8 +221,10 @@ describe('GlassButton interaction contract', () => {
     expect(StyleSheet.flatten(button.props.style).backgroundColor).toBe(tokens.persistentSession.paper);
   });
 
-  test('plain compact 아이콘은 투명 원형 표면과 기존 hit frame을 유지하고 눌릴 때만 ghost 색을 쓴다', () => {
+  test('compact 아이콘은 hit frame과 눌림 상태를 유지하고 disabled 상태를 흐리게 표시한다', () => {
     const tokens = renderHook(() => useTokens()).result.current;
+    const enabledOnPress = jest.fn();
+    const disabledOnPress = jest.fn();
     const screen = render(
       <>
         <GlassButton
@@ -243,6 +245,27 @@ describe('GlassButton interaction contract', () => {
           onPress={() => undefined}
         >
           <Text>↑</Text>
+        </GlassButton>
+        <GlassButton
+          variant="secondary"
+          iconOnly
+          size="card"
+          frameStyle={{ opacity: 0.2 }}
+          testID="enabled-compact-button"
+          onPress={enabledOnPress}
+        >
+          <Text>다음</Text>
+        </GlassButton>
+        <GlassButton
+          variant="secondary"
+          iconOnly
+          size="card"
+          disabled
+          frameStyle={{ opacity: 0.2 }}
+          testID="disabled-compact-button"
+          onPress={disabledOnPress}
+        >
+          <Text>이전</Text>
         </GlassButton>
       </>,
     );
@@ -271,6 +294,17 @@ describe('GlassButton interaction contract', () => {
     fireEvent(button, 'pressOut');
     expect(StyleSheet.flatten(screen.getByTestId('plain-surface').props.style).backgroundColor)
       .toBe('transparent');
+
+    const enabledButton = screen.getByTestId('enabled-compact-button');
+    const disabledButton = screen.getByTestId('disabled-compact-button');
+    expect(StyleSheet.flatten(enabledButton.props.style).opacity).toBe(0.2);
+    expect(StyleSheet.flatten(disabledButton.props.style).opacity).toBe(0.55);
+    expect(disabledButton.props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(enabledButton);
+    expect(disabledButton.props.onPress).toBeUndefined();
+    expect(disabledButton.props.onStartShouldSetResponder()).toBe(false);
+    expect(enabledOnPress).toHaveBeenCalledTimes(1);
+    expect(disabledOnPress).not.toHaveBeenCalled();
   });
 
   test('paper 변형 눌림은 planner의 중립 눌림 색을 쓰고 기본 보조 버튼은 유지한다', () => {

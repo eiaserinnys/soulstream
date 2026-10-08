@@ -441,6 +441,17 @@ function ReviewChatPasImageSample() {
         }} />
       </View>
     </ReviewSection>
+    <ReviewSection title="사용자 첨부 세 장">
+      <View testID="review-pas-three-images">
+        <UserMessage presentation="manuscript" session={session} event={{
+          id: 'review-pas-user-three-images', type: 'user_message', data: {
+            text: '첨부 이미지 세 장을 확인해주세요.',
+            attachments: [pasImagePaths[0], pasImagePaths[1], pasImagePaths[0]],
+            node_id: 'eiaserinnys',
+          },
+        }} />
+      </View>
+    </ReviewSection>
     <ReviewSection title="외부 이미지 응답 실패">
       <View testID="review-pas-401-image">
         <ChatRefinedImageGallery
