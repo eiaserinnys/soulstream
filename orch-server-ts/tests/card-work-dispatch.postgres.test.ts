@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
-import { CardExecutionService } from "../src/cards/card_execution_service.js";
+import { CardExecutionService, readCardExecutionRegistration, type CardExecutionRequest } from "../src/cards/card_execution_service.js";
 import type { DispatchWorkInput } from "../src/cards/card_work_dispatch_service.js";
 import { CardWorkDispatchService } from "../src/cards/card_work_dispatch_service.js";
 import {
@@ -249,8 +249,13 @@ describe("card work dispatch transaction contracts", () => {
     const proof = { registrationId: "registration-exact", executionCommandId: "command-exact" };
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
       VALUES (${receipt.work.sessionId},'node-a','agent-a','initializing',${receipt.card.id},'work','model-a')`;
-    await h.sql`UPDATE card_execution_requests SET execution=${h.sql.json(proof)} WHERE id=${receipt.work.requestId}`;
     const eventId = await recordWorkReceipt(h, receipt.work.sessionId, "error", proof, "error_aborted");
+    const savedRequest = await h.sql`SELECT execution FROM card_execution_requests WHERE id=${receipt.work.requestId}`;
+    expect(savedRequest[0]!.execution).toBeNull();
+    const executionRequest = (await stack.sql<CardExecutionRequest[]>`
+      SELECT * FROM card_execution_requests WHERE id=${receipt.work.requestId}
+    `)[0]!;
+    expect(await readCardExecutionRegistration(stack.sql, executionRequest)).toEqual(proof);
     const canonical = {
       sessionId: receipt.work.sessionId,
       eventId,
@@ -268,6 +273,12 @@ describe("card work dispatch transaction contracts", () => {
     expect(runtime?.target_session_id).toBe("caller-session");
     expect(runtime?.payload.text).toContain("runtime");
     expect(runtime?.payload.text).toContain("실행이 종료됐습니다");
+
+    const mismatchedProof = await stack.sql.begin((tx) => relayCanonicalErrorTx(tx, {
+      ...canonical,
+      executionCommandId: "another-command",
+    }));
+    expect(mismatchedProof).toBeNull();
 
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,folder_id,model_preset)
       VALUES ('unrelated-fatal','node-a','agent-a','initializing','work','model-a')`;

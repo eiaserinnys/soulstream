@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { buildCanonicalDeliveryPayload, buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
+import { readCardExecutionRegistration, type CardExecutionRequest } from "./card_execution_service.js";
 import type { SessionDeliveryRow, SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
 import { registerSessionDelivery } from "../control_plane/repositories/session_delivery_relation_repository.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
@@ -34,11 +35,7 @@ type DispatchOperation = {
   idempotency_key: string | null;
 };
 
-type DispatchRequest = {
-  id: string;
-  card_id: string;
-  session_id: string;
-  execution: { registrationId?: string; executionCommandId?: string } | null;
+type DispatchRequest = CardExecutionRequest & {
   operation_id: string;
   card_id_from_operation: string;
   actor_session_id: string | null;
@@ -79,12 +76,8 @@ export async function recordConfirmedErrorTx(sql: RepositorySql, failure: Confir
     if (!related) return null;
   } else {
     if (operation.operation_type !== "create_card") return null;
-    const related = (await sql<Array<{
-      id: string;
-      session_id: string;
-      execution: { registrationId?: string; executionCommandId?: string } | null;
-    }>>`
-      SELECT id,session_id,execution FROM card_execution_requests
+    const related = (await sql<CardExecutionRequest[]>`
+      SELECT * FROM card_execution_requests
       WHERE id=${failure.workId} AND card_id=${failure.cardId}
         AND idempotency_key=${`dispatch-work-execution:${operation.id}`}
     `)[0];
@@ -93,9 +86,8 @@ export async function recordConfirmedErrorTx(sql: RepositorySql, failure: Confir
       const eventPrefix = `dispatch-work-error:runtime:${related.session_id}:`;
       const eventText = failure.failureId.startsWith(eventPrefix) ? failure.failureId.slice(eventPrefix.length) : "";
       const eventId = /^\d+$/.test(eventText) ? Number(eventText) : NaN;
-      const registrationId = related.execution?.registrationId;
-      const executionCommandId = related.execution?.executionCommandId;
-      if (!Number.isInteger(eventId) || eventId <= 0 || !registrationId || !executionCommandId
+      const registration = await readCardExecutionRegistration(sql, related);
+      if (!Number.isInteger(eventId) || eventId <= 0 || !registration?.registrationId || !registration.executionCommandId
         || failure.failureId !== canonicalWorkErrorRelationKey(related.session_id, eventId)) return null;
       const terminal = (await sql<{ session_id: string }[]>`
         SELECT session_id FROM sessions WHERE session_id=${related.session_id}
@@ -164,20 +156,24 @@ export async function relayCanonicalErrorTx(sql: RepositorySql, input: Canonical
   `)[0];
   if (!session) return null;
 
-  const matches = await sql<DispatchRequest[]>`
-    SELECT r.id,r.card_id,r.session_id,r.execution,
+  const candidates = await sql<DispatchRequest[]>`
+    SELECT r.*,
       op.id AS operation_id,op.target_id AS card_id_from_operation,op.actor_session_id
     FROM card_execution_requests r
     JOIN folder_operations op ON r.idempotency_key='dispatch-work-execution:'||op.id
     WHERE r.session_id=${input.sessionId}
-      AND r.execution->>'registrationId'=${input.registrationId}
-      AND r.execution->>'executionCommandId'=${input.executionCommandId}
       AND op.operation_type='create_card' AND op.target_kind='card' AND op.actor_kind='agent'
       AND op.actor_session_id IS NOT NULL
   `;
+  const matches: DispatchRequest[] = [];
+  for (const candidate of candidates) {
+    if (candidate.card_id !== candidate.card_id_from_operation) continue;
+    const registration = await readCardExecutionRegistration(sql, candidate);
+    if (registration?.registrationId === input.registrationId
+      && registration.executionCommandId === input.executionCommandId) matches.push(candidate);
+  }
   if (matches.length !== 1) return null;
   const match = matches[0]!;
-  if (match.card_id !== match.card_id_from_operation) return null;
   return await recordConfirmedErrorTx(sql, {
     operationId: match.operation_id,
     cardId: match.card_id,
