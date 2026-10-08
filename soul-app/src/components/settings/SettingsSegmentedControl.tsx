@@ -16,6 +16,7 @@ export function SettingsSegmentedControl<T extends string>({
   value,
   options,
   onChange,
+  disabled = false,
   wrap = false,
   variant = 'settings',
 }: {
@@ -23,6 +24,7 @@ export function SettingsSegmentedControl<T extends string>({
   value: T;
   options: readonly SettingsSegmentOption<T>[];
   onChange(value: T): void;
+  disabled?: boolean;
   wrap?: boolean;
   variant?: 'settings' | 'detail';
 }) {
@@ -40,9 +42,10 @@ export function SettingsSegmentedControl<T extends string>({
             testID={`settings-segment-${id}-${option.value}`}
             accessibilityRole="button"
             accessibilityLabel={option.label}
-            accessibilityState={{ selected }}
+            accessibilityState={{ selected, disabled }}
+            disabled={disabled}
             {...(Platform.OS === 'web' ? { 'aria-pressed': selected } : {})}
-            style={[variant === 'detail' ? styles.detailHitTarget : styles.hitTarget, wrap && styles.wrapHitTarget]}
+            style={[variant === 'detail' ? styles.detailHitTarget : styles.hitTarget, wrap && styles.wrapHitTarget, disabled && styles.disabled]}
             onFocus={() => setFocusedValue(option.value)}
             onBlur={() => setFocusedValue(null)}
             onPress={() => onChange(option.value)}
@@ -154,5 +157,6 @@ function makeStyles(t: DesignTokens) {
       color: t.colors.textPrimary,
       fontWeight: '700',
     },
+    disabled: { opacity: 0.45 },
   });
 }

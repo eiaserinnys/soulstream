@@ -1,7 +1,11 @@
 import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
-import type { PersistentSessionInstruction, PersistentSessionResource } from '../../api/persistentSessionEndpoints';
+import type {
+  PersistentSessionInstruction,
+  PersistentSessionResource,
+  PersistentTurnUsageMode,
+} from '../../api/persistentSessionEndpoints';
 import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
 import {
   SettingsFormGroup as Group,
@@ -15,6 +19,7 @@ import {
 } from './SettingsFormParts';
 import { SettingsOptionRow as OptionRow } from './SettingsOptionRow';
 import { SettingsSection } from './SettingsSection';
+import { SettingsSegmentedControl } from './SettingsSegmentedControl';
 import { useTokens } from '../../theme';
 
 export type PersistentSessionDisplayField =
@@ -22,12 +27,16 @@ export type PersistentSessionDisplayField =
   | 'animate_character'
   | 'show_generation_separator'
   | 'show_jev_candidates'
-  | 'show_turn_usage';
+  | 'turn_usage_mode';
 
-export type PersistentSessionDisplayValues = Record<PersistentSessionDisplayField, boolean>;
+export type PersistentSessionDisplayValues = Omit<Record<PersistentSessionDisplayField, boolean>, 'turn_usage_mode'> & {
+  turn_usage_mode: PersistentTurnUsageMode;
+};
+export type PersistentSessionDisplayValue = boolean | PersistentTurnUsageMode;
 export type PersistentSessionEditorSection = 'all' | 'account-model' | 'display';
 
 export function PersistentSessionInstructionsFields({
+  title = '지속 지시',
   instructions,
   loading,
   loadError,
@@ -45,6 +54,7 @@ export function PersistentSessionInstructionsFields({
   onAddText,
   onAdd,
 }: {
+  title?: string;
   instructions: PersistentSessionInstruction[];
   loading: boolean;
   loadError: boolean;
@@ -70,7 +80,7 @@ export function PersistentSessionInstructionsFields({
     formatDate(instruction.updated_at),
   ].filter(Boolean).join(' · ');
 
-  return <Group title="지속 지시">
+  return <Group title={title}>
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
     {loadError ? <View style={styles.block}>
       <Text accessibilityRole="alert" style={styles.error}>조회 실패</Text>
@@ -126,7 +136,7 @@ export function persistentSessionDisplayValues(session: PersistentSessionResourc
     animate_character: session.settings.animate_character !== false,
     show_generation_separator: session.settings.show_generation_separator === true,
     show_jev_candidates: session.settings.show_jev_candidates === true,
-    show_turn_usage: session.settings.show_turn_usage !== false,
+    turn_usage_mode: session.settings.turn_usage_mode,
   };
 }
 
@@ -183,7 +193,7 @@ export function PersistentSessionSettingsFields({
   display: PersistentSessionDisplayValues;
   displaySaving: boolean;
   displayStatus: 'saving' | 'error' | null;
-  onDisplayChange(field: PersistentSessionDisplayField, value: boolean): void;
+  onDisplayChange(field: PersistentSessionDisplayField, value: PersistentSessionDisplayValue): void;
   loadingTargets: boolean;
   targetsError: string | null;
   onRetryTargets(): void;
@@ -231,7 +241,7 @@ export function PersistentSessionSettingsFields({
       value={display.show_generation_separator}
       disabled={displaySaving}
       testID="persistent-show-generation-separator"
-      help="세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다."
+      help="표시를 꺼도 기록은 남습니다."
       onValueChange={(value) => onDisplayChange('show_generation_separator', value)}
     />
     <SettingsToggleRow
@@ -239,16 +249,23 @@ export function PersistentSessionSettingsFields({
       value={display.show_jev_candidates}
       disabled={displaySaving}
       testID="persistent-show-jev-candidates"
-      help="내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다."
+      help="내 입력 아래에 후보를 보여 줍니다."
       onValueChange={(value) => onDisplayChange('show_jev_candidates', value)}
     />
-    <SettingsToggleRow
-      label="턴 끝 사용량 표시"
-      value={display.show_turn_usage}
-      disabled={displaySaving}
-      testID="persistent-show-turn-usage"
-      onValueChange={(value) => onDisplayChange('show_turn_usage', value)}
-    />
+    <View style={{ gap: t.spacing.xs }}>
+      <Text style={styles.label}>턴 끝 사용량</Text>
+      <SettingsSegmentedControl<PersistentTurnUsageMode>
+        id="persistent-turn-usage"
+        value={display.turn_usage_mode}
+        disabled={displaySaving}
+        options={[
+          { value: 'collapsed', label: '접어서' },
+          { value: 'expanded', label: '펼쳐서' },
+          { value: 'hidden', label: '숨김' },
+        ]}
+        onChange={(value) => onDisplayChange('turn_usage_mode', value)}
+      />
+    </View>
   </>;
 
   if (section === 'account-model') {

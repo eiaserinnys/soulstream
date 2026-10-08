@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import type { SessionEvent } from '../../api/types';
+import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import type { StreamingSlots } from '../../store/chatStore';
 import type { PersistentDisplayProjectionSettings } from './groupChatEvents';
 import {
@@ -28,7 +29,7 @@ interface Args {
   sessionStatus: string | undefined;
   persistentDisplaySettings?: PersistentDisplayProjectionSettings;
   presentation?: 'default' | 'manuscript';
-  showTurnUsage?: boolean;
+  turnUsageMode?: PersistentTurnUsageMode;
 }
 
 export function useChatRenderItems({
@@ -38,7 +39,7 @@ export function useChatRenderItems({
   sessionStatus,
   persistentDisplaySettings,
   presentation = 'default',
-  showTurnUsage,
+  turnUsageMode = 'collapsed',
 }: Args): {
   reversedItems: ChatRenderItem[];
   bottomFollowItemKey: string | null;
@@ -53,14 +54,14 @@ export function useChatRenderItems({
     () => {
       const grouped = groupChatEvents(displayEvents, snapshotStreams, persistentDisplaySettings);
       const presented = presentation === 'manuscript'
-        ? projectPersistentTurnUsage(grouped, displayEvents, showTurnUsage !== false)
+        ? projectPersistentTurnUsage(grouped, displayEvents, turnUsageMode)
         : grouped;
       const placed = placePendingOptimistic(presented, pendingOptimistic);
       return presentation === 'manuscript'
         ? groupAgentUserUtterances(placed)
         : placed;
     },
-    [displayEvents, pendingOptimistic, persistentDisplaySettings, presentation, showTurnUsage, snapshotStreams],
+    [displayEvents, pendingOptimistic, persistentDisplaySettings, presentation, snapshotStreams, turnUsageMode],
   );
   const streamingRenderItems = useMemo(
     () => suppressStreaming ? [] : streamingSlotRenderItems(streamingSlots),

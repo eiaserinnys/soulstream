@@ -9,6 +9,8 @@ interface CollapsibleCaptionProps {
   expandedTitle?: string;
   children: ReactNode;
   initiallyCollapsed?: boolean;
+  expanded?: boolean;
+  onExpandedChange?(expanded: boolean): void;
   align?: 'start' | 'end';
   alignmentInset?: 'avatar' | 'content';
 }
@@ -46,13 +48,21 @@ export function CollapsibleCaption({
   expandedTitle,
   children,
   initiallyCollapsed = true,
+  expanded: controlledExpanded,
+  onExpandedChange,
   align = 'start',
   alignmentInset = 'avatar',
 }: CollapsibleCaptionProps) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t, align, alignmentInset), [t, align, alignmentInset]);
-  const [expanded, setExpanded] = useState(() => !initiallyCollapsed);
+  const [uncontrolledExpanded, setUncontrolledExpanded] = useState(() => !initiallyCollapsed);
+  const expanded = controlledExpanded ?? uncontrolledExpanded;
   const [pressed, setPressed] = useState(false);
+  const toggleExpanded = () => {
+    const next = !expanded;
+    if (controlledExpanded === undefined) setUncontrolledExpanded(next);
+    onExpandedChange?.(next);
+  };
 
   return (
     <CaptionAlignContext.Provider value={align}>
@@ -61,7 +71,7 @@ export function CollapsibleCaption({
           accessibilityRole="button"
           accessibilityLabel={title}
           accessibilityState={{ expanded }}
-          onPress={() => setExpanded((current) => !current)}
+          onPress={toggleExpanded}
           onPressIn={() => setPressed(true)}
           onPressOut={() => setPressed(false)}
           activeOpacity={1}

@@ -51,6 +51,6 @@ export function usePersistentChatDisplaySettings(
       showGenerationSeparator: current.show_generation_separator,
       showJevCandidates: current.show_jev_candidates,
     } : undefined,
-    showTurnUsage: current?.show_turn_usage !== false,
+    turnUsageMode: current?.turn_usage_mode ?? 'collapsed',
   };
 }

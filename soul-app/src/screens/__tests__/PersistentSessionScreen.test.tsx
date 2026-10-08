@@ -89,7 +89,7 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   act(() => {
     store.getState().open({ session_id: 'pas-1', display_name: '관제', persistent: true } as any);
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
-    useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-1', request, { show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true });
+    useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-1', request, { show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, turn_usage_mode: 'collapsed' });
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');
@@ -131,7 +131,7 @@ test('입력 줄과 대기 첨부가 anchor 안에서 늘어나도 캐릭터 기
     store.getState().open({ session_id: 'pas-baseline', display_name: '관제', persistent: true } as any);
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-baseline');
     useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-baseline', request, {
-      show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true,
+      show_character: true, animate_character: true, show_generation_separator: true, show_jev_candidates: true, turn_usage_mode: 'collapsed',
     });
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
@@ -170,7 +170,7 @@ test.each([
     const sessionId = `pas-toggle-${shown}`;
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
     useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
-      show_character: shown, animate_character: true, show_generation_separator: true, show_jev_candidates: true, show_turn_usage: true,
+      show_character: shown, animate_character: true, show_generation_separator: true, show_jev_candidates: true, turn_usage_mode: 'collapsed',
     });
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());

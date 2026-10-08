@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { CompactTouchTarget } from '../CompactTouchTarget';
+import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import { useTokens, type DesignTokens } from '../../theme';
 import type {
   PersistentInstructionRecordedCaption,
@@ -15,16 +16,18 @@ import {
 
 interface Props {
   usage?: TurnUsageCaption;
+  turnUsageMode?: PersistentTurnUsageMode;
   summaries?: TurnSummaryRenderItem[];
   persistentInstructionRecorded?: PersistentInstructionRecordedCaption;
 }
 
-export function TurnEndCaptions({ usage, summaries, persistentInstructionRecorded }: Props) {
+export function TurnEndCaptions({ usage, turnUsageMode = 'collapsed', summaries, persistentInstructionRecorded }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const [usageExpanded, setUsageExpanded] = useState(false);
+  const [usageExpanded, setUsageExpanded] = useState(turnUsageMode === 'expanded');
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [instructionRecordedExpanded, setInstructionRecordedExpanded] = useState(false);
+  useEffect(() => setUsageExpanded(turnUsageMode === 'expanded'), [turnUsageMode]);
   const hasRecordedInstructions = Boolean(
     persistentInstructionRecorded
     && (persistentInstructionRecorded.instructions.length > 0 || persistentInstructionRecorded.capReached),

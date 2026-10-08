@@ -336,6 +336,7 @@ export function GlassButton({
       {...(Platform.OS === 'web' && ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
       style={({ pressed }) => [
         styles.buttonInner,
+        ...(Platform.OS === 'web' ? [{ outlineStyle: 'solid' as const, outlineWidth: 0 }] : []),
         {
           minWidth: t.hitTarget.min,
           minHeight: t.hitTarget.min,

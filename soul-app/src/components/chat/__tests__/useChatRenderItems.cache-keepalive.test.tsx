@@ -73,7 +73,7 @@ function renderItems(events: SessionEvent[], streamingSlots?: StreamingSlots) {
     sessionStatus: 'completed',
     presentation: 'manuscript',
     persistentDisplaySettings: { showGenerationSeparator: true, showJevCandidates: false },
-    showTurnUsage: true,
+    turnUsageMode: 'collapsed',
   });
 }
 

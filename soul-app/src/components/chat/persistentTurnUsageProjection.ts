@@ -7,6 +7,7 @@ import {
   TURN_USAGE_SEPARATOR,
 } from '../../../../packages/soul-ui/src/lib/turn-usage-format';
 import type { SessionEvent } from '../../api/types';
+import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import type {
   ChatRenderItem,
   PersistentInstructionRecordedCaption,
@@ -21,7 +22,7 @@ type UsageData = Record<string, unknown>;
 export function projectPersistentTurnUsage(
   items: readonly ChatRenderItem[],
   events: readonly SessionEvent[],
-  showTurnUsage = true,
+  turnUsageMode: PersistentTurnUsageMode = 'collapsed',
 ): ChatRenderItem[] {
   const pairsByTerminalId = new Map(
     pairTurnUsage(events).map((pair) => [String(pair.terminalId), pair]),
@@ -97,7 +98,7 @@ export function projectPersistentTurnUsage(
   for (const [index, item] of manuscriptItems.entries()) {
     if (item.kind === 'turn-summary' && item.event.type === 'turn_summary') {
       if (!pairedSummaryKeys.has(item.key)) {
-        projected.push(makeSummaryOnlyTurnEnd(item));
+        projected.push(makeSummaryOnlyTurnEnd(item, turnUsageMode));
       }
       continue;
     }
@@ -106,7 +107,7 @@ export function projectPersistentTurnUsage(
       if (item.kind === 'tool' && item.summaries?.some((summary) => summary.event.type === 'turn_summary')) {
         const summaries = item.summaries.filter((summary) => summary.event.type !== 'turn_summary');
         projected.push({ ...item, summaries: summaries.length > 0 ? summaries : undefined });
-        appendFallbackSummaries(projected, fallbackSummariesByAnchorIndex.get(index));
+        appendFallbackSummaries(projected, fallbackSummariesByAnchorIndex.get(index), turnUsageMode);
         continue;
       }
       projected.push(item);
@@ -116,30 +117,36 @@ export function projectPersistentTurnUsage(
     if (item.event.type === 'context_usage') continue;
     if (item.event.type === 'complete') {
       const pair = pairsByTerminalId.get(item.event.id);
-      const usage = showTurnUsage
+      const usage = turnUsageMode !== 'hidden'
         ? makeTurnUsageCaption(pair?.contextUsage, item.event.data)
         : null;
       const summaries = summariesByCompleteIndex.get(index);
       const persistentInstructionRecorded = instructionsByCompleteId.get(item.event.id);
       if (usage || summaries?.length || persistentInstructionRecorded) {
-        projected.push(makeTurnEndItem(item, usage, summaries, persistentInstructionRecorded));
+        projected.push(makeTurnEndItem(item, usage, summaries, persistentInstructionRecorded, turnUsageMode));
       }
       continue;
     }
 
-    if (item.event.type === 'error' && showTurnUsage) {
+    if (item.event.type === 'error') {
       const pair = pairsByTerminalId.get(item.event.id);
-      const caption = pair?.contextUsage
+      const caption = turnUsageMode !== 'hidden' && pair?.contextUsage
         ? makeTurnUsageCaption(pair.contextUsage, null)
         : null;
-      projected.push(caption ? { ...item, turnUsageCaption: caption } : item);
-      continue;
+      if (caption) {
+        projected.push({ ...item, turnUsageCaption: caption, turnUsageMode });
+        continue;
+      }
+      if (turnUsageMode !== 'hidden') {
+        projected.push(item);
+        continue;
+      }
     }
 
     if (item.summaries?.some((summary) => summary.event.type === 'turn_summary')) {
       const summaries = item.summaries.filter((summary) => summary.event.type !== 'turn_summary');
       projected.push({ ...item, summaries: summaries.length > 0 ? summaries : undefined });
-      appendFallbackSummaries(projected, fallbackSummariesByAnchorIndex.get(index));
+      appendFallbackSummaries(projected, fallbackSummariesByAnchorIndex.get(index), turnUsageMode);
       continue;
     }
     projected.push(item);
@@ -184,22 +191,28 @@ function makeTurnEndItem(
   usage: TurnUsageCaption | null,
   summaries: TurnSummaryRenderItem[] | undefined,
   persistentInstructionRecorded?: PersistentInstructionRecordedCaption,
+  turnUsageMode: PersistentTurnUsageMode = 'collapsed',
 ): TurnEndCaptionsRenderItem {
   return {
     kind: 'turn-end-captions',
     event: item.event,
     key: item.key,
+    turnUsageMode,
     ...(usage ? { usage } : {}),
     ...(summaries?.length ? { summaries } : {}),
     ...(persistentInstructionRecorded ? { persistentInstructionRecorded } : {}),
   };
 }
 
-function makeSummaryOnlyTurnEnd(summary: TurnSummaryRenderItem): TurnEndCaptionsRenderItem {
+function makeSummaryOnlyTurnEnd(
+  summary: TurnSummaryRenderItem,
+  turnUsageMode: PersistentTurnUsageMode,
+): TurnEndCaptionsRenderItem {
   return {
     kind: 'turn-end-captions',
     event: summary.event,
     key: summary.key,
+    turnUsageMode,
     summaries: [summary],
   };
 }
@@ -207,6 +220,7 @@ function makeSummaryOnlyTurnEnd(summary: TurnSummaryRenderItem): TurnEndCaptions
 function appendFallbackSummaries(
   target: ChatRenderItem[],
   summaries: TurnSummaryRenderItem[] | undefined,
+  turnUsageMode: PersistentTurnUsageMode = 'collapsed',
 ) {
   if (!summaries?.length) return;
   const [first, ...rest] = summaries;
@@ -214,6 +228,7 @@ function appendFallbackSummaries(
     kind: 'turn-end-captions',
     event: first.event,
     key: first.key,
+    turnUsageMode,
     summaries: [first, ...rest],
   });
 }

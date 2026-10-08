@@ -17,13 +17,13 @@ import { useChatStore } from '../../../store/chatStore';
 
 const resource = (over: Record<string, unknown> = {}) => ({
   session_id: 'pas-1', display_name: '관제 세션', node_id: 'node-a', folder_id: 'folder-a', agent_id: 'agent-a', agent_name: '에이전트 A', persistent: true,
-  settings: { default_model: { model_preset: 'model-a', reasoning_effort: null } },
+  settings: { default_model: { model_preset: 'model-a', reasoning_effort: null }, turn_usage_mode: 'collapsed' },
   runtime: { current_model: { model_preset: 'model-a', reasoning_effort: null, model: 'model-a-real' }, pending: null },
   ...over,
 });
 const second = resource({ session_id: 'pas-2', display_name: '두 번째 세션' });
 const createDefaults = {
-  node_id: 'node-a', preferred_agent_id: 'agent-a', settings: { default_model: { model_preset: 'model-a', reasoning_effort: null } },
+  node_id: 'node-a', preferred_agent_id: 'agent-a', settings: { default_model: { model_preset: 'model-a', reasoning_effort: null }, turn_usage_mode: 'collapsed' },
   initial_instruction: '서버가 정한 첫 인사 문장', unavailable_reason: null,
 };
 const api = {
@@ -92,7 +92,7 @@ test('lists every registered session, edits name and model, saves from the foote
 });
 
 test('keeps the recorded reasoning effort when the model choice is unchanged', async () => {
-  api.getPersistentSession.mockResolvedValue({ session: resource({ settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'low' } } }) });
+  api.getPersistentSession.mockResolvedValue({ session: resource({ settings: { default_model: { model_preset: 'model-b', reasoning_effort: 'low' }, turn_usage_mode: 'collapsed' } }) });
   const screen = await openList();
   await openEditor(screen);
   await waitFor(() => expect(screen.getByLabelText('세션 이름').props.value).toBe('관제 세션'));
@@ -104,7 +104,7 @@ test('keeps the recorded reasoning effort when the model choice is unchanged', a
 });
 
 test('shows the pending change, and asks to save again when default and current models differ with nothing pending', async () => {
-  const differing = resource({ settings: { default_model: { model_preset: 'model-b', reasoning_effort: null } } });
+  const differing = resource({ settings: { default_model: { model_preset: 'model-b', reasoning_effort: null }, turn_usage_mode: 'collapsed' } });
   api.getPersistentSession.mockResolvedValue({ session: differing });
   let screen = await openList();
   await openEditor(screen);
@@ -144,17 +144,17 @@ test('saves only the changed chat display setting alongside other edits', async 
   }));
 });
 
-test('defaults the new display settings on and keeps explicit false values in the saved patch', async () => {
+test('defaults the new display settings on and saves hidden usage with the canonical mode', async () => {
   const screen = await openList();
   await openEditor(screen);
   await waitFor(() => expect(screen.getByTestId('persistent-animate-character')).toBeTruthy());
   expect(screen.getByTestId('persistent-show-character').props.value).toBe(true);
   expect(screen.getByTestId('persistent-animate-character').props.value).toBe(true);
-  expect(screen.getByTestId('persistent-show-turn-usage').props.value).toBe(true);
+  expect(screen.getByTestId('settings-segment-persistent-turn-usage-collapsed').props.accessibilityState.selected).toBe(true);
 
   fireEvent(screen.getByTestId('persistent-show-character'), 'valueChange', false);
   fireEvent(screen.getByTestId('persistent-animate-character'), 'valueChange', false);
-  fireEvent(screen.getByTestId('persistent-show-turn-usage'), 'valueChange', false);
+  fireEvent.press(screen.getByTestId('settings-segment-persistent-turn-usage-hidden'));
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
     display_name: '관제 세션',
@@ -162,7 +162,7 @@ test('defaults the new display settings on and keeps explicit false values in th
       default_model: { model_preset: 'model-a', reasoning_effort: null },
       show_character: false,
       animate_character: false,
-      show_turn_usage: false,
+      turn_usage_mode: 'hidden',
     },
   }));
 });
@@ -174,8 +174,8 @@ test('saves both chat display toggles and applies the response to the matching o
   const screen = await openList();
   await openEditor(screen);
   await waitFor(() => expect(screen.getByTestId('persistent-show-generation-separator')).toBeTruthy());
-  expect(screen.getByText('세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.')).toBeTruthy();
-  expect(screen.getByText('내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.')).toBeTruthy();
+  expect(screen.getByText('표시를 꺼도 기록은 남습니다.')).toBeTruthy();
+  expect(screen.getByText('내 입력 아래에 후보를 보여 줍니다.')).toBeTruthy();
   useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
   fireEvent(screen.getByTestId('persistent-show-generation-separator'), 'valueChange', true);
   fireEvent(screen.getByTestId('persistent-show-jev-candidates'), 'valueChange', true);
@@ -188,7 +188,7 @@ test('saves both chat display toggles and applies the response to the matching o
     show_jev_candidates: true,
     show_character: true,
     animate_character: true,
-    show_turn_usage: true,
+    turn_usage_mode: 'collapsed',
   }));
 });
 
@@ -206,6 +206,7 @@ test('locks both display toggles while the first save is pending', async () => {
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledTimes(1));
   expect(screen.getByTestId('persistent-show-generation-separator').props.disabled).toBe(true);
   expect(screen.getByTestId('persistent-show-jev-candidates').props.disabled).toBe(true);
+  expect(screen.getByTestId('settings-segment-persistent-turn-usage-collapsed').props.accessibilityState.disabled).toBe(true);
   expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
     settings: expect.objectContaining({ show_generation_separator: true, show_jev_candidates: true }),
   }));
@@ -219,7 +220,7 @@ test('locks both display toggles while the first save is pending', async () => {
     show_jev_candidates: true,
     show_character: true,
     animate_character: true,
-    show_turn_usage: true,
+    turn_usage_mode: 'collapsed',
   });
 });
 

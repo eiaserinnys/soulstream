@@ -8,7 +8,7 @@ import {
   type PersistentSessionResource,
 } from '../../api/client';
 import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
-import type { PersistentSessionSettingsPatch } from '../../api/persistentSessionEndpoints';
+import type { PersistentSessionSettingsPatch, PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import { useSessionStore } from '../../store/sessionStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens } from '../../theme';
@@ -30,6 +30,7 @@ import {
   PersistentSessionSettingsFields,
   persistentSessionDisplayValues,
   type PersistentSessionDisplayField,
+  type PersistentSessionDisplayValue,
   type PersistentSessionEditorSection,
 } from './PersistentSessionSettingsFields';
 import {
@@ -99,15 +100,15 @@ export function PersistentSessionsList({
   );
 }
 
-type Draft = { name: string; agentId: string; modelPreset: string; folderId: string; firstMessage: string; showCharacter: boolean; animateCharacter: boolean; showGenerationSeparator: boolean; showJevCandidates: boolean; showTurnUsage: boolean };
-const emptyDraft = (): Draft => ({ name: '', agentId: '', modelPreset: '', folderId: '', firstMessage: '', showCharacter: true, animateCharacter: true, showGenerationSeparator: false, showJevCandidates: false, showTurnUsage: true });
+type Draft = { name: string; agentId: string; modelPreset: string; folderId: string; firstMessage: string; showCharacter: boolean; animateCharacter: boolean; showGenerationSeparator: boolean; showJevCandidates: boolean; turnUsageMode: PersistentTurnUsageMode };
+const emptyDraft = (): Draft => ({ name: '', agentId: '', modelPreset: '', folderId: '', firstMessage: '', showCharacter: true, animateCharacter: true, showGenerationSeparator: false, showJevCandidates: false, turnUsageMode: 'collapsed' });
 const draftFromSession = (session: PersistentSessionResource): Draft => ({
   ...emptyDraft(), name: session.display_name ?? '', agentId: session.agent_id ?? '', modelPreset: session.settings.default_model.model_preset ?? '',
   showCharacter: session.settings.show_character !== false,
   animateCharacter: session.settings.animate_character !== false,
   showGenerationSeparator: session.settings.show_generation_separator === true,
   showJevCandidates: session.settings.show_jev_candidates === true,
-  showTurnUsage: session.settings.show_turn_usage !== false,
+  turnUsageMode: session.settings.turn_usage_mode,
 });
 const sameModel = (a: PersistentSessionModel, b: PersistentSessionModel) =>
   a.model_preset === b.model_preset && (a.reasoning_effort ?? null) === (b.reasoning_effort ?? null);
@@ -287,7 +288,7 @@ export function PersistentSessionEditor({
         if (draft.showJevCandidates !== baseline.showJevCandidates) {
           settings.show_jev_candidates = draft.showJevCandidates;
         }
-        if (draft.showTurnUsage !== baseline.showTurnUsage) settings.show_turn_usage = draft.showTurnUsage;
+        if (draft.turnUsageMode !== baseline.turnUsageMode) settings.turn_usage_mode = draft.turnUsageMode;
         saved = await savePersistentSessionSettings(api, session.session_id, settings, name);
       }
       else if (registration) await api.updatePersistentSession(registration.sessionId, { display_name: name, enabled: true, settings: { default_model: defaultModel } });
@@ -349,15 +350,22 @@ export function PersistentSessionEditor({
     : null;
   const sessionDisplay = session ? persistentSessionDisplayValues(session) : null;
   const quotaRows = session ? persistentSessionQuotaRows(session, presets) : [];
-  const displayChange = (field: PersistentSessionDisplayField, value: boolean) => {
+  const displayChange = (field: PersistentSessionDisplayField, value: PersistentSessionDisplayValue) => {
     const draftField: Record<PersistentSessionDisplayField, keyof Draft> = {
       show_character: 'showCharacter', animate_character: 'animateCharacter',
-      show_generation_separator: 'showGenerationSeparator', show_jev_candidates: 'showJevCandidates', show_turn_usage: 'showTurnUsage',
+      show_generation_separator: 'showGenerationSeparator', show_jev_candidates: 'showJevCandidates', turn_usage_mode: 'turnUsageMode',
     };
-    if (mode !== 'pas') { update({ [draftField[field]]: value }); return; }
+    if (mode !== 'pas') {
+      if (field === 'turn_usage_mode') update({ turnUsageMode: value as PersistentTurnUsageMode });
+      else update({ [draftField[field]]: value as boolean });
+      return;
+    }
     if (!session || saving) return;
     setSaving(true); setDisplaySaving(true); setError(null); setDisplayError(null);
-    void savePersistentSessionSettings(createApi(serverUrl), session.session_id, { [field]: value })
+    const settings: PersistentSessionSettingsPatch = field === 'turn_usage_mode'
+      ? { turn_usage_mode: value as PersistentTurnUsageMode }
+      : { [field]: value as boolean };
+    void savePersistentSessionSettings(createApi(serverUrl), session.session_id, settings)
       .then((saved) => {
         if (saved.persistent) useChatStore.getState().applyPersistentDisplaySettings(session.session_id, persistentChatDisplaySettings(saved));
         if (!mounted.current) return;
@@ -369,7 +377,7 @@ export function PersistentSessionEditor({
           animateCharacter: next.animateCharacter,
           showGenerationSeparator: next.showGenerationSeparator,
           showJevCandidates: next.showJevCandidates,
-          showTurnUsage: next.showTurnUsage,
+          turnUsageMode: next.turnUsageMode,
         }));
         setBaseline((current) => ({
           ...current,
@@ -377,7 +385,7 @@ export function PersistentSessionEditor({
           animateCharacter: next.animateCharacter,
           showGenerationSeparator: next.showGenerationSeparator,
           showJevCandidates: next.showJevCandidates,
-          showTurnUsage: next.showTurnUsage,
+          turnUsageMode: next.turnUsageMode,
         }));
       })
       .catch(() => {
@@ -411,7 +419,7 @@ export function PersistentSessionEditor({
         animate_character: draft.animateCharacter,
         show_generation_separator: draft.showGenerationSeparator,
         show_jev_candidates: draft.showJevCandidates,
-        show_turn_usage: draft.showTurnUsage,
+        turn_usage_mode: draft.turnUsageMode,
       }}
       displaySaving={saving}
       displayStatus={displaySaving ? 'saving' : displayError ? 'error' : null}

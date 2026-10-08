@@ -25,6 +25,7 @@ import { EventRenderer } from '../components/events/EventRenderer';
 import { ToolEvent } from '../components/events/ToolEvent';
 import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
+import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
@@ -129,11 +130,16 @@ function ReviewPersistentChatProjection() {
   });
   const showGenerationSeparator = settings?.show_generation_separator === true;
   const showJevCandidates = settings?.show_jev_candidates === true;
-  const showTurnUsage = settings?.show_turn_usage !== false;
-  const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates' | 'show_turn_usage', value: boolean) => {
+  const turnUsageMode = settings?.turn_usage_mode ?? 'collapsed';
+  const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates', value: boolean) => {
     const current = useChatStore.getState().persistentDisplaySettingsBySession['review-pas-1'];
     if (!current?.settings) return;
     useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, [key]: value });
+  };
+  const updateTurnUsageMode = (value: PersistentTurnUsageMode) => {
+    const current = useChatStore.getState().persistentDisplaySettingsBySession['review-pas-1'];
+    if (!current?.settings) return;
+    useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, turn_usage_mode: value });
   };
   useEffect(() => {
     initializePersistentReviewChat(includeTurnSummary);
@@ -169,8 +175,17 @@ function ReviewPersistentChatProjection() {
       <Switch accessibilityLabel="검수 창 세대 구분선 표시" testID="review-persistent-generation-toggle" value={showGenerationSeparator} onValueChange={value => updateDisplaySetting('show_generation_separator', value)} />
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>Jev 후보 표시</Text>
       <Switch accessibilityLabel="검수 창 Jev 후보 표시" testID="review-persistent-jev-toggle" value={showJevCandidates} onValueChange={value => updateDisplaySetting('show_jev_candidates', value)} />
-      <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>턴 끝 사용량 표시</Text>
-      <Switch accessibilityLabel="검수 창 턴 끝 사용량 표시" testID="review-persistent-turn-usage-toggle" value={showTurnUsage} onValueChange={value => updateDisplaySetting('show_turn_usage', value)} />
+      <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>턴 끝 사용량</Text>
+      <SettingsSegmentedControl<PersistentTurnUsageMode>
+        id="review-persistent-turn-usage"
+        value={turnUsageMode}
+        options={[
+          { value: 'collapsed', label: '접어서' },
+          { value: 'expanded', label: '펼쳐서' },
+          { value: 'hidden', label: '숨김' },
+        ]}
+        onChange={updateTurnUsageMode}
+      />
     </View>
     <ScrollView
       testID="review-persistent-chat-columns"
@@ -201,7 +216,7 @@ function initializePersistentReviewChat(includeTurnSummary: boolean) {
   store.finishPersistentDisplaySettingsLoad('review-pas-1', requestId, {
     show_generation_separator: true,
     show_jev_candidates: true,
-    show_turn_usage: true,
+    turn_usage_mode: 'collapsed',
   });
 }
 

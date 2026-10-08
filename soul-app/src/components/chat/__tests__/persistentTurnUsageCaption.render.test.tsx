@@ -20,11 +20,9 @@ jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
 const noop = () => {};
 const styles = { list: {}, listContent: {} } as ChatBodyStyles;
 
-function renderCompletion(data: Record<string, unknown>) {
-  const events: SessionEvent[] = [{ id: '1', type: 'complete', data }];
-  const items = projectPersistentTurnUsage(groupChatEvents(events), events);
-  return render(
-    <ChatEventList
+function chatList(events: SessionEvent[], mode: 'collapsed' | 'expanded' | 'hidden') {
+  const items = projectPersistentTurnUsage(groupChatEvents(events), events, mode as never);
+  return <ChatEventList
       flatListRef={createRef<FlatList<ChatRenderItem> | null>()}
       items={items}
       session={undefined}
@@ -42,8 +40,11 @@ function renderCompletion(data: Record<string, unknown>) {
       mvcpEnabled={false}
       onContentSizeChange={noop}
       presentation="manuscript"
-    />,
-  );
+    />;
+}
+
+function renderCompletion(data: Record<string, unknown>, mode: 'collapsed' | 'expanded' | 'hidden' = 'collapsed') {
+  return render(chatList([{ id: '1', type: 'complete', data }], mode));
 }
 
 test.each([
@@ -72,4 +73,55 @@ test.each([
 
   expect(screen.queryByText(title)).toBeNull();
   expect(screen.getAllByText(expanded)).toHaveLength(1);
+});
+
+test('error usage follows mode updates without remounting the error row', () => {
+  const events: SessionEvent[] = [
+    { id: '10', type: 'context_usage', data: { used_tokens: 41_500, max_tokens: 100_000, percent: 41.5 } },
+    { id: '11', type: 'error', data: { message: '오류 본문 유지' } },
+  ];
+  const screen = render(chatList(events, 'collapsed'));
+  const usageHead = screen.getByRole('button', { name: '컨텍스트 41.5%' });
+  expect(usageHead.props.accessibilityState.expanded).toBe(false);
+
+  screen.rerender(chatList(events, 'expanded'));
+  expect(screen.getByRole('button', { name: '컨텍스트 41.5%' }).props.accessibilityState.expanded).toBe(true);
+
+  screen.rerender(chatList(events, 'collapsed'));
+  expect(screen.getByRole('button', { name: '컨텍스트 41.5%' }).props.accessibilityState.expanded).toBe(false);
+});
+
+test('preserves summary and instruction expansion across usage mode changes', () => {
+  const events: SessionEvent[] = [
+    { id: '1', type: 'user_message', data: { input_id: 'input-1', text: '기억할 내용' } },
+    { id: '2', type: 'assistant_message', data: { text: '기록했습니다.' } },
+    { id: '3', type: 'complete', data: { turn_cost_usd: 0.5 } },
+    { id: '4', type: 'turn_summary', data: {
+      content: '요약 본문', final_response_event_id: 2, parent_event_id: 2,
+    } },
+    { id: '5', type: 'debug', data: {
+      kind: 'persistent_instruction_recorded', input_id: 'input-1', cap_reached: false,
+      instructions: [{ id: 'i1', text: '기억할 내용', source_turns: ['T1'], action: 'updated' }],
+    } },
+  ];
+  const screen = render(chatList(events, 'expanded'));
+  const assertOtherCaptionsExpanded = () => {
+    expect(screen.getByRole('button', { name: '요약' }).props.accessibilityState.expanded).toBe(true);
+    expect(screen.getByRole('button', { name: '📌 지속 지시로 기록했습니다' }).props.accessibilityState.expanded).toBe(true);
+    expect(screen.getByText('요약 본문')).toBeTruthy();
+    expect(screen.getByText('기억할 내용 (T1)')).toBeTruthy();
+  };
+
+  expect(screen.getByRole('button', { name: '정가 $0.50' }).props.accessibilityState.expanded).toBe(true);
+  fireEvent.press(screen.getByRole('button', { name: '요약' }));
+  fireEvent.press(screen.getByRole('button', { name: '📌 지속 지시로 기록했습니다' }));
+  assertOtherCaptionsExpanded();
+
+  screen.rerender(chatList(events, 'hidden'));
+  expect(screen.queryByRole('button', { name: '정가 $0.50' })).toBeNull();
+  assertOtherCaptionsExpanded();
+
+  screen.rerender(chatList(events, 'collapsed'));
+  expect(screen.getByRole('button', { name: '정가 $0.50' }).props.accessibilityState.expanded).toBe(false);
+  assertOtherCaptionsExpanded();
 });

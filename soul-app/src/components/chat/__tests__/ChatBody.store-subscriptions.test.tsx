@@ -283,12 +283,12 @@ describe('ChatBody store subscription boundary', () => {
   test('PAS 초기 조회는 저장 응답과 같은 다섯 표시 키를 전달한다', async () => {
     mockApiClient.getPersistentSession.mockResolvedValue({ session: { persistent: true, settings: {
       show_character: false, animate_character: false, show_generation_separator: true,
-      show_jev_candidates: true, show_turn_usage: false,
+      show_jev_candidates: true, turn_usage_mode: 'hidden',
     } } });
     const view = await renderSettled();
     expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual({
       show_character: false, animate_character: false, show_generation_separator: true,
-      show_jev_candidates: true, show_turn_usage: false,
+      show_jev_candidates: true, turn_usage_mode: 'hidden',
     });
     view.unmount();
   });
@@ -302,7 +302,7 @@ describe('ChatBody store subscription boundary', () => {
   test('세션 없는 빈 ChatBody는 다른 세션의 표시 설정을 지우지 않는다', async () => {
     const assignedSessionId = 'assigned-overlay-session';
     const settings = { show_character: true, animate_character: false, show_generation_separator: true,
-      show_jev_candidates: false, show_turn_usage: true };
+      show_jev_candidates: false, turn_usage_mode: 'collapsed' as const };
     const store = useChatStore.getState();
     const requestId = store.beginPersistentDisplaySettingsLoad(assignedSessionId);
     store.finishPersistentDisplaySettingsLoad(assignedSessionId, requestId, settings);
@@ -331,7 +331,7 @@ describe('ChatBody store subscription boundary', () => {
   test('세션 ID 없는 ChatBody가 담당 세션 ID를 받아도 PAS 표시 설정을 보존한다', async () => {
     const pasSessionId = 'pas-background-session';
     const settings = { show_character: false, animate_character: true, show_generation_separator: true,
-      show_jev_candidates: false, show_turn_usage: true };
+      show_jev_candidates: false, turn_usage_mode: 'collapsed' as const };
     const store = useChatStore.getState();
     const requestId = store.beginPersistentDisplaySettingsLoad(pasSessionId);
     store.finishPersistentDisplaySettingsLoad(pasSessionId, requestId, settings);
@@ -348,7 +348,7 @@ describe('ChatBody store subscription boundary', () => {
   test('비활성 중 표시 설정과 입력 초안을 보존하고 재활성 때 다시 조회한다', async () => {
     mockApiClient.getPersistentSession.mockResolvedValue({ session: { persistent: true, settings: {
       show_character: true, animate_character: false, show_generation_separator: true,
-      show_jev_candidates: false, show_turn_usage: true,
+      show_jev_candidates: false, turn_usage_mode: 'collapsed',
     } } });
     const view = await renderSettled();
     fireEvent.changeText(view.getByTestId('chat-composer-input'), '작성 중인 문장');
@@ -362,12 +362,12 @@ describe('ChatBody store subscription boundary', () => {
     expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual(saved?.settings);
     await act(async () => { resolveReload({ session: { persistent: true, settings: {
       show_character: false, animate_character: true, show_generation_separator: false,
-      show_jev_candidates: true, show_turn_usage: false,
+      show_jev_candidates: true, turn_usage_mode: 'hidden',
     } } }); });
     expect(mockApiClient.getPersistentSession).toHaveBeenCalledTimes(2);
     expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual({
       show_character: false, animate_character: true, show_generation_separator: false,
-      show_jev_candidates: true, show_turn_usage: false,
+      show_jev_candidates: true, turn_usage_mode: 'hidden',
     });
     expect(view.getByTestId('chat-composer-input').props.value).toBe('작성 중인 문장');
     view.unmount();

@@ -22,6 +22,7 @@ const session = (overrides: Record<string, unknown> = {}) => ({
     animate_character: false,
     show_generation_separator: true,
     show_jev_candidates: false,
+    turn_usage_mode: 'collapsed',
     show_turn_usage: true,
   },
   runtime: {
@@ -45,7 +46,7 @@ beforeEach(() => {
   jest.mocked(createApiClient).mockReturnValue(api as never);
   Object.values(api).forEach((fn) => fn.mockReset());
   api.getPersistentSession.mockResolvedValue({ session: session() });
-  api.updatePersistentSession.mockImplementation(async (_id: string, input: { settings?: Record<string, boolean> }) => ({
+  api.updatePersistentSession.mockImplementation(async (_id: string, input: { settings?: Record<string, unknown> }) => ({
     session: session({ settings: { ...session().settings, ...input.settings } }), model_change: 'none',
   }));
   api.listModelPresets.mockResolvedValue({ model_presets: [
@@ -60,12 +61,16 @@ beforeEach(() => {
   useChatStore.setState({ persistentDisplaySettingsBySession: {}, persistentDisplaySettingsRequestId: 0 });
 });
 
-const open = () => render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={jest.fn()} />);
+const renderModal = () => render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={jest.fn()} />);
+const open = (section = 'account-model') => {
+  const screen = renderModal();
+  if (section !== 'instructions') fireEvent.press(screen.getByTestId(`settings-segment-pas-settings-${section}`));
+  return screen;
+};
 
 test('shows the same account and model fields as the ordinary editor, including current, pending, and default', async () => {
   const screen = open();
   await screen.findByTestId('persistent-session-pas-editor');
-  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-account-model'));
 
   expect(await screen.findByLabelText('세션 이름')).toBeTruthy();
   expect(screen.getAllByText('계정과 모델')).toHaveLength(1);
@@ -75,23 +80,30 @@ test('shows the same account and model fields as the ordinary editor, including 
   expect(screen.getByText('기본 모델')).toBeTruthy();
 });
 
-test('loads the persistent instructions group in the history section', async () => {
+test('opens on persistent instructions as the first section and keeps them across section changes', async () => {
   api.getPersistentSessionInstructions.mockResolvedValueOnce({ instructions: [{
     id: 'instruction-1', text: '요청한 범위부터 확인합니다.', source_turns: ['T195', 'T210'],
     created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-06T00:00:00Z', origin: 'user',
   }] });
-  const screen = open();
-  await screen.findByTestId('persistent-session-pas-editor');
-  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+  const screen = renderModal();
 
-  expect(await screen.findByText('지속 지시')).toBeTruthy();
+  await screen.findByText('요청한 범위부터 확인합니다.');
   expect(await screen.findByText('요청한 범위부터 확인합니다.')).toBeTruthy();
   expect(screen.getByText(/T195, T210/)).toBeTruthy();
   expect(api.getPersistentSessionInstructions).toHaveBeenCalledWith('pas-1');
+  expect(screen.getAllByText('지속 지시')).toHaveLength(1);
+  expect(screen.getByTestId('settings-segment-pas-settings-instructions').props.accessibilityState.selected).toBe(true);
+  expect(screen.getByTestId('settings-segment-pas-settings-account-model')).toBeTruthy();
+  expect(screen.getByTestId('settings-segment-pas-settings-display')).toBeTruthy();
+  expect(screen.getByTestId('settings-segment-pas-settings-history')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-instructions'));
+  expect(screen.getByText('요청한 범위부터 확인합니다.')).toBeTruthy();
   const order = screen.UNSAFE_getAllByType(Text)
     .map((text) => text.props.children)
     .filter((value) => value === '최근 기록' || value === '지속 지시');
-  expect(order.indexOf('최근 기록')).toBeLessThan(order.indexOf('지속 지시'));
+  expect(order.indexOf('지속 지시')).toBeLessThan(order.indexOf('최근 기록'));
 });
 
 test('saves a PAS display toggle as one immediate field and adopts the server response', async () => {
@@ -107,6 +119,38 @@ test('saves a PAS display toggle as one immediate field and adopts the server re
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', { settings: { show_character: false } }));
   await waitFor(() => expect(screen.getByTestId('persistent-show-character').props.value).toBe(false));
   expect(screen.queryByText('실행 노드')).toBeNull();
+});
+
+test('persists the canonical usage mode and updates the selected value only after ACK', async () => {
+  const requestId = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
+  useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-1', requestId, {
+    show_generation_separator: true, show_jev_candidates: false,
+    show_character: true, animate_character: false, turn_usage_mode: 'collapsed',
+  });
+  let resolveUpdate!: (result: { session: ReturnType<typeof session>; model_change: 'none' }) => void;
+  api.updatePersistentSession.mockReturnValueOnce(new Promise((resolve) => { resolveUpdate = resolve; }));
+  const screen = open();
+  await screen.findByTestId('persistent-session-pas-editor');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-display'));
+
+  const collapsed = await screen.findByTestId('settings-segment-persistent-turn-usage-collapsed');
+  const expanded = screen.getByTestId('settings-segment-persistent-turn-usage-expanded');
+  expect(collapsed.props.accessibilityState.selected).toBe(true);
+  fireEvent.press(expanded);
+
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
+    settings: { turn_usage_mode: 'expanded' },
+  }));
+  expect(expanded.props.accessibilityState.disabled).toBe(true);
+  expect(collapsed.props.accessibilityState.selected).toBe(true);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings?.turn_usage_mode).toBe('collapsed');
+
+  await act(async () => {
+    resolveUpdate({ session: session({ settings: { ...session().settings, turn_usage_mode: 'expanded' } }), model_change: 'none' });
+  });
+
+  await waitFor(() => expect(screen.getByTestId('settings-segment-persistent-turn-usage-expanded').props.accessibilityState.selected).toBe(true));
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings?.turn_usage_mode).toBe('expanded');
 });
 
 test('keeps unsaved account edits when an immediate display update succeeds', async () => {
@@ -186,7 +230,7 @@ test('applies a successful display update to the open chat after the settings mo
       show_jev_candidates: false,
       show_character: true,
       animate_character: false,
-      show_turn_usage: true,
+      turn_usage_mode: 'collapsed',
     });
   });
   fireEvent(screen.getByTestId('persistent-show-character'), 'valueChange', false);
@@ -196,8 +240,10 @@ test('applies a successful display update to the open chat after the settings mo
     'persistent-animate-character',
     'persistent-show-generation-separator',
     'persistent-show-jev-candidates',
-    'persistent-show-turn-usage',
   ]) expect(screen.getByTestId(testID).props.disabled).toBe(true);
+  for (const mode of ['collapsed', 'expanded', 'hidden']) {
+    expect(screen.getByTestId(`settings-segment-persistent-turn-usage-${mode}`).props.accessibilityState.disabled).toBe(true);
+  }
 
   screen.unmount();
   await act(async () => {
@@ -212,7 +258,7 @@ test('applies a successful display update to the open chat after the settings mo
       show_jev_candidates: false,
       show_character: false,
       animate_character: false,
-      show_turn_usage: true,
+      turn_usage_mode: 'collapsed',
     },
   });
 });
@@ -422,8 +468,6 @@ test('native back cancels instruction editing before closing PAS settings', asyn
   }] });
   const onClose = jest.fn();
   const screen = render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={onClose} />);
-  await screen.findByTestId('persistent-session-pas-editor');
-  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   fireEvent.press(await screen.findByTestId('persistent-instruction-open-instruction-1'));
   expect(screen.getByTestId('persistent-instruction-edit-instruction-1')).toBeTruthy();
   fireEvent.press(screen.getByTestId('persistent-instruction-cancel-instruction-1'));
