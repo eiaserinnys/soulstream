@@ -126,6 +126,10 @@ export interface UserMessageEvent {
   text?: string;
   /** Claude 세션: 사용자 ID */
   user?: string;
+  /** 기존 durable user_message에 포함될 수 있는 구조화 첨부 경로. */
+  attachments?: string[];
+  /** 첨부 파일이 저장된 세션 노드. 과거/외부 이벤트에 있을 때만 보존한다. */
+  node_id?: string;
   /** Claude 세션: 구조화된 맥락 항목 배열 (Phase 2에서 렌더링) */
   context?: ContextItem[];
   /** LLM 세션: OpenAI 형식 메시지 배열 (정본) */

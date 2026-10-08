@@ -56,6 +56,10 @@ export interface SessionNode extends BaseNode {
 export interface UserMessageNode extends BaseNode {
   type: "user_message";
   inputId?: string;
+  /** user_message event의 기존 구조화 첨부 경로. */
+  attachmentPaths?: string[];
+  /** 첨부 원본의 노드 ID. 이벤트에 실제 값이 있을 때만 보존한다. */
+  attachmentNodeId?: string;
   cacheKeepalive?: boolean;
   user: string;
   context?: ContextItem[];

@@ -62,6 +62,90 @@ describe("ChatMessageItem presentation", () => {
     expect(manuscriptHtml).toContain("text-muted-foreground");
   });
 
+  it("keeps structured image attachments manuscript-only and after the user text", () => {
+    const msg = makeMessage("user", "structured-images", {
+      content: "원문 텍스트입니다.",
+      attachmentPaths: ["/incoming/first.png", "/incoming/notes.txt", "/incoming/second.webp"],
+      attachmentNodeId: "eiaserinnys",
+    });
+    const defaultHtml = renderToStaticMarkup(createElement(ChatMessageItem, { msg }));
+    const manuscriptHtml = renderToStaticMarkup(createElement(ChatMessageItem, { msg, presentation: "manuscript" }));
+
+    expect(defaultHtml).not.toContain('data-chat-image-run="attachments"');
+    expect(manuscriptHtml.indexOf("원문 텍스트입니다.")).toBeLessThan(
+      manuscriptHtml.indexOf('data-chat-image-run="attachments"'),
+    );
+    expect(manuscriptHtml).toContain('data-chat-image-count="2"');
+    expect(manuscriptHtml).toContain("nodeId=eiaserinnys&amp;path=%2Fincoming%2Ffirst.png");
+    expect(manuscriptHtml).toContain("nodeId=eiaserinnys&amp;path=%2Fincoming%2Fsecond.webp");
+    expect(manuscriptHtml).not.toContain("notes.txt");
+  });
+
+  it("opens the message gallery at the clicked image, navigates, and restores focus without moving scroll", () => {
+    const msg = makeMessage("assistant", "gallery", {
+      content: "첫 설명입니다.\n\n![첫 이미지](/first.png)\n\n사이 설명입니다.\n\n![둘째 이미지](/second.png)",
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => root?.render(createElement(ChatMessageItem, { msg, presentation: "manuscript" })));
+
+    const body = host.querySelector<HTMLElement>('[data-slot="chat-body"]')!;
+    body.scrollTop = 73;
+    const triggers = host.querySelectorAll<HTMLImageElement>('[data-chat-image-index] img[role="button"]');
+    const trigger = triggers[1]!;
+    act(() => trigger.click());
+
+    let dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
+    expect(dialog.textContent).toContain("2/2");
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="다음 이미지"]')?.disabled).toBe(true);
+    act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')!.click());
+    dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
+    expect(dialog.textContent).toContain("1/2");
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')?.disabled).toBe(true);
+
+    act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+
+    expect(document.activeElement).toBe(trigger);
+    expect(body.scrollTop).toBe(73);
+    expect(document.body.querySelector('[data-slot="dialog-popup"]')).toBeNull();
+  });
+
+  it("hides viewer navigation for one image", () => {
+    const msg = makeMessage("assistant", "single-image", {
+      content: "![단일 이미지](/single.png)",
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => root?.render(createElement(ChatMessageItem, { msg, presentation: "manuscript" })));
+
+    const trigger = host.querySelector<HTMLImageElement>('[data-chat-image-index] img[role="button"]')!;
+    act(() => trigger.click());
+    const dialog = document.body.querySelector('[data-slot="dialog-popup"]')!;
+
+    expect(dialog.querySelector('[aria-label="이전 이미지"]')).toBeNull();
+    expect(dialog.querySelector('[aria-label="다음 이미지"]')).toBeNull();
+    expect(dialog.querySelector('.chat-image-viewer-count')).toBeNull();
+  });
+
+  it("shows a small image failure status while keeping the message text", () => {
+    const msg = makeMessage("assistant", "failed-image", {
+      content: "설명은 남아 있습니다.\n\n![열 수 없는 이미지](/missing.png)",
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => root?.render(createElement(ChatMessageItem, { msg, presentation: "manuscript" })));
+
+    const image = host.querySelector<HTMLImageElement>('img[src="/missing.png"]')!;
+    act(() => image.dispatchEvent(new Event("error")));
+
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지를 불러오지 못했습니다.");
+    expect(host.textContent).toContain("설명은 남아 있습니다.");
+    expect(host.querySelector('img[src="/missing.png"]')).toBeNull();
+  });
+
   it("renders manuscript complete usage collapsed with its details hidden below the header", () => {
     const msg = makeMessage("system", "complete-18", {
       treeNodeType: "complete",

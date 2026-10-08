@@ -15,6 +15,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { MarkdownContent } from "./MarkdownContent";
+import { MarkdownImage } from "./MarkdownImage";
 
 const render = (markdown: string): string =>
   renderToStaticMarkup(
@@ -105,5 +106,53 @@ describe("MarkdownContent — remark-breaks plugin", () => {
     expect(compact).toContain("overflow-auto max-h-24");
     expect(chat).not.toContain('data-markdown-code-layout="document"');
     expect(compact).not.toContain('data-markdown-code-layout="document"');
+  });
+
+  test("manuscript maps only root standalone direct image rows into message runs", () => {
+    const markdown = [
+      "앞 설명",
+      "![첫 이미지](/api/attachments/files?path=%2Ffirst.png)",
+      "![둘째 이미지](//images.test/second.png)",
+      "중간 설명",
+      "![셋째 이미지](/third.png)",
+      "![참조 이미지][ref]",
+      "[ref]: /reference.png",
+      "> ![인용 이미지](/quoted.png)",
+      "```markdown",
+      "![펜스 예시](/fenced.png)",
+      "```",
+    ].join("\n\n");
+    const chatImages = { role: "assistant" };
+    const html = renderMarkdownContent(markdown, {
+      chatImages,
+    } as unknown as Partial<Parameters<typeof MarkdownContent>[0]>);
+
+    expect(html.match(/data-chat-image-run=/g)).toHaveLength(2);
+    expect(html).toContain('data-chat-image-count="2"');
+    expect(html).toContain('data-chat-image-count="1"');
+    expect(html).toContain('src="//images.test/second.png"');
+    expect(html).toContain("중간 설명");
+    expect(html).toContain('src="/reference.png"');
+    expect(html).toContain('src="/quoted.png"');
+    expect(html).not.toContain('src="/fenced.png"');
+  });
+
+  test("default markdown image keeps its existing noninteractive renderer", () => {
+    const html = renderMarkdownContent("![이미지](/image.png)");
+
+    expect(html).toContain('src="/image.png"');
+    expect(html).not.toContain('role="button"');
+    expect(html).not.toContain("data-chat-image-run=");
+  });
+
+  test("card evidence keeps its existing registered image variant", () => {
+    const html = renderToStaticMarkup(createElement(MarkdownImage, {
+      src: "/evidence.png",
+      alt: "증거",
+      variant: "card-evidence",
+    }));
+
+    expect(html).toContain("v3-card-evidence-image");
+    expect(html).not.toContain("chat-image-refined");
   });
 });
