@@ -69,6 +69,12 @@ function itemText(input: Parameters<typeof buildPersistentCheckpoint>[0], budget
   return { text: String(result.item.content), stats: result.stats };
 }
 
+function makeStandingInstructions(): string[] {
+  return Array.from({ length: 36 }, (_, index) => index === 35
+    ? "카드 이름 인용 규칙: 카드 제목은 원문 그대로 「」로 감싸 정확히 인용한다."
+    : `지속 규칙 ${index + 1}: 주어진 정보의 순서를 유지하고 중요한 조건을 빠뜨리지 않는다. 구체적인 근거를 함께 살피고 정확한 표현을 사용한다. 실행 전에 관련 범위를 확인하고 필요 없는 내용을 덧붙이지 않는다.`);
+}
+
 describe("buildPersistentCheckpoint", () => {
   it("writes complete card and session IDs through the identifier formatter", () => {
     const childId = "8a13f280-86be-4bd5-a2e4-9199f82aa63c";
@@ -264,7 +270,7 @@ describe("buildPersistentCheckpoint", () => {
       },
       totals: { events: 16, turnSummaries: 5 },
     });
-    const budget = { ...PERSISTENT_CHECKPOINT_BUDGET, summaryTokens: 70, totalTokens: 2_000 };
+    const budget = { ...PERSISTENT_CHECKPOINT_BUDGET, summaryTokens: 70, totalTokens: 2_000, recentMinimumTokens: 300 };
     const { text, stats } = itemText({ material, cards: makeCards(), standingInstructions: [], ownSessionId }, budget);
 
     expect(text).not.toContain("지속 지시");
@@ -275,6 +281,98 @@ describe("buildPersistentCheckpoint", () => {
     expect(stats.sections.state).toBeLessThanOrEqual(PERSISTENT_CHECKPOINT_BUDGET.stateTokens);
     expect(stats.estimatedTokens).toBe(estimateClaudeTextTokens(text));
     expect(stats.chars).toBe(text.length);
+  });
+
+  it("preserves all active instructions when their text exceeds the former instruction limit", () => {
+    const instructions = makeStandingInstructions();
+    const instructionTokens = estimateClaudeTextTokens(instructions.join("\n"));
+    const { text } = itemText({
+      material: makeMaterial(),
+      cards: makeCards(),
+      standingInstructions: instructions,
+      ownSessionId,
+    });
+
+    expect(instructionTokens).toBeGreaterThan(2_500);
+    expect(instructionTokens).toBeLessThan(PERSISTENT_CHECKPOINT_BUDGET.totalTokens);
+    expect(text).toContain(`## 지속 지시\n${instructions.join("\n")}`);
+    expect(text).not.toContain("persistent_checkpoint_instructions truncated");
+  });
+
+  it("keeps full instructions and bounds complete conversation sections together", () => {
+    const instructions = makeStandingInstructions();
+    const summaries = Array.from({ length: 4 }, (_, index) => ({
+      eventId: 200 + index,
+      turnNumber: 20 + index,
+      content: `요약 ${index + 1} ${"이전 대화의 핵심 내용과 실행 결과를 보존한다. ".repeat(150)}`,
+      turnStartEventId: 190 + index,
+      finalResponseEventId: 200 + index,
+      createdAt: new Date("2026-10-05T00:00:00.000Z"),
+    }));
+    const material = makeMaterial({
+      story: {
+        ...makeMaterial().story,
+        narrative: "줄거리에서 확인된 목표와 결정을 보존한다. ".repeat(1_200),
+        unfoldedTurnSummaries: summaries,
+      },
+      lastSummarizedFinalResponseEventId: 199,
+      recent: {
+        records: [
+          { event_id: 201, event_type: "user_message", text: "최근 요청의 조건과 범위를 확인한다. ".repeat(1_000), created_at: "2026-10-05T00:00:01.000Z" },
+          { event_id: 202, event_type: "assistant_message", text: "최근 응답의 근거와 다음 행동을 기록한다. ".repeat(1_000), created_at: "2026-10-05T00:00:02.000Z" },
+        ],
+        omittedUnsummarized: 12,
+      },
+      totals: { events: 202, turnSummaries: 24 },
+    });
+    const { text, stats } = itemText({ material, cards: makeCards(), standingInstructions: instructions, ownSessionId });
+
+    expect(text).toContain("카드 이름 인용 규칙: 카드 제목은 원문 그대로 「」로 감싸 정확히 인용한다.");
+    expect(text).toContain("## 대화 줄거리");
+    expect(text).toContain("## 미접힘 턴 요약");
+    expect(text).toContain("## 최근 원문");
+    expect(stats.sections.story).toBeGreaterThan(0);
+    expect(stats.sections.story).toBeLessThanOrEqual(PERSISTENT_CHECKPOINT_BUDGET.narrativeTokens);
+    expect(stats.sections.summaries).toBeGreaterThan(0);
+    expect(stats.sections.summaries).toBeLessThanOrEqual(PERSISTENT_CHECKPOINT_BUDGET.summaryTokens);
+    expect(stats.sections.recent).toBeGreaterThan(0);
+    expect(stats.estimatedTokens).toBeLessThanOrEqual(PERSISTENT_CHECKPOINT_BUDGET.totalTokens);
+  });
+
+  it("does not exceed a narrow remainder to fit recent text or its omission marker", () => {
+    const base = itemText({
+      material: makeMaterial(),
+      cards: makeCards(),
+      standingInstructions: [],
+      ownSessionId,
+    });
+    const recentMaterial = makeMaterial({
+      story: { ...makeMaterial().story, narrative: "conversation marker" },
+      recent: {
+        records: [{
+          event_id: 301,
+          event_type: "user_message",
+          text: "큰 최근 요청 ".repeat(1_000),
+          created_at: "2026-10-05T00:00:00.000Z",
+        }],
+        omittedUnsummarized: 3,
+      },
+    });
+    const budget = {
+      ...PERSISTENT_CHECKPOINT_BUDGET,
+      totalTokens: base.stats.estimatedTokens + 5,
+      recentMinimumTokens: 4_000,
+    };
+    const { text, stats } = itemText({
+      material: recentMaterial,
+      cards: makeCards(),
+      standingInstructions: [],
+      ownSessionId,
+    }, budget);
+
+    expect(stats.estimatedTokens).toBeLessThanOrEqual(budget.totalTokens);
+    expect(text).not.toContain("conversation marker");
+    expect(text).not.toContain("## 최근 원문");
   });
 
   it("resets prior conversation material while keeping current state and selected instructions", () => {

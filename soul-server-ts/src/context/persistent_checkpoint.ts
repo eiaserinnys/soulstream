@@ -12,7 +12,6 @@ export type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, Supe
 export interface PersistentCheckpointBudget {
   totalTokens: number;
   stateTokens: number;
-  instructionsTokens: number;
   narrativeTokens: number;
   summaryTokens: number;
   recentMinimumTokens: number;
@@ -41,7 +40,6 @@ export interface PersistentCheckpointStats {
 export const PERSISTENT_CHECKPOINT_BUDGET: PersistentCheckpointBudget = {
   totalTokens: 20_000,
   stateTokens: 1_500,
-  instructionsTokens: 2_500,
   narrativeTokens: 2_500,
   summaryTokens: 5_000,
   recentMinimumTokens: 4_000,
@@ -80,30 +78,55 @@ export function buildPersistentCheckpoint(
   const state = buildStateSection(input.material, input.cards, input.ownSessionId, budget);
   const instructions = input.keepInstructions === false
     ? ""
-    : buildInstructionsSection(input.standingInstructions, budget.instructionsTokens);
-  const story = resetContext
-    ? ""
-    : buildStorySection(input.material.story.narrative, budget.narrativeTokens);
-  const summaries = resetContext
-    ? ""
-    : buildSummarySection(input.material, budget.summaryTokens);
-  const fixedSections = [state, instructions, story, summaries].filter(Boolean);
-  const fixedText = joinSections(fixedSections);
-  const recent = resetContext
-    ? { text: "", records: [] as GenerationCheckpointMaterial["recent"]["records"] }
-    : buildRecentSection(
-        input.material,
-        Math.max(
-          budget.recentMinimumTokens,
-          budget.totalTokens - estimateClaudeTextTokens(`${CHECKPOINT_HEAD}\n\n${fixedText}`),
-        ),
-        budget.totalTokens,
-        fixedText,
-        budget.recentMinimumTokens,
-      );
+    : buildInstructionsSection(input.standingInstructions);
+  const requiredText = joinSections([
+    ...(resetContext ? [] : [CHECKPOINT_HEAD]),
+    state,
+    instructions,
+  ]);
+  const requiredTokens = estimateClaudeTextTokens(requiredText);
+  let story = "";
+  let summaries = "";
+  let recent = { text: "", records: [] as GenerationCheckpointMaterial["recent"]["records"] };
+  if (!resetContext && requiredTokens <= budget.totalTokens) {
+    const remainingTokens = budget.totalTokens - requiredTokens;
+    const reserveRecentTokens = input.material.recent.records.length > 0
+      ? Math.min(budget.recentMinimumTokens, remainingTokens)
+      : 0;
+    story = buildStorySection(
+      input.material.story.narrative,
+      Math.min(
+        budget.narrativeTokens,
+        Math.max(0, remainingTokens - reserveRecentTokens - estimateClaudeTextTokens("\n\n")),
+      ),
+    );
+    const prefixWithStory = joinSections([requiredText, story]);
+    const remainingAfterStory = Math.max(
+      0,
+      budget.totalTokens - estimateClaudeTextTokens(prefixWithStory) - reserveRecentTokens,
+    );
+    summaries = buildSummarySection(
+      input.material,
+      Math.min(
+        budget.summaryTokens,
+        Math.max(0, remainingAfterStory - estimateClaudeTextTokens("\n\n")),
+      ),
+    );
+    const prefixBeforeRecent = joinSections([prefixWithStory, summaries]);
+    recent = buildRecentSection(
+      input.material,
+      Math.max(0, budget.totalTokens - estimateClaudeTextTokens(prefixBeforeRecent)),
+      budget.totalTokens,
+      prefixBeforeRecent,
+      budget.recentMinimumTokens,
+    );
+  }
   const text = joinSections([
     ...(resetContext ? [] : [CHECKPOINT_HEAD]),
-    ...fixedSections,
+    state,
+    instructions,
+    story,
+    summaries,
     recent.text,
   ]);
   const stats: PersistentCheckpointStats = {
@@ -295,21 +318,22 @@ function formatAssignee(
   return "미지정";
 }
 
-function buildInstructionsSection(instructions: string[], tokenLimit: number): string {
+function buildInstructionsSection(instructions: string[]): string {
   const text = instructions.map((instruction) => instruction.trim()).filter(Boolean).join("\n");
   if (!text) return "";
-  return joinLines([
-    "## 지속 지시",
-    truncateClaudeTextToEstimatedTokens(text, tokenLimit, "persistent_checkpoint_instructions"),
-  ]);
+  return joinLines(["## 지속 지시", text]);
 }
 
 function buildStorySection(narrative: string | null, tokenLimit: number): string {
   if (!narrative?.trim()) return "";
-  return joinLines([
-    "## 대화 줄거리",
-    truncateClaudeTextToEstimatedTokens(narrative, tokenLimit, "persistent_checkpoint_story"),
-  ]);
+  const heading = "## 대화 줄거리";
+  const section = joinLines([heading, narrative]);
+  if (estimateClaudeTextTokens(section) <= tokenLimit) return section;
+  const bodyTokenLimit = Math.max(0, tokenLimit - estimateClaudeTextTokens(`${heading}\n`));
+  const body = truncateClaudeTextToEstimatedTokens(narrative, bodyTokenLimit, "persistent_checkpoint_story");
+  if (!body) return "";
+  const truncatedSection = joinLines([heading, body]);
+  return estimateClaudeTextTokens(truncatedSection) <= tokenLimit ? truncatedSection : "";
 }
 
 function buildSummarySection(material: GenerationCheckpointMaterial, tokenLimit: number): string {
@@ -328,7 +352,8 @@ function buildSummarySection(material: GenerationCheckpointMaterial, tokenLimit:
   }
   const omitted = summaries.length - kept.length;
   const marker = omitted > 0 ? summaryOmission(material.story.unfoldedTurnSummaries, omitted) : "";
-  return joinLines([heading, ...(marker ? [marker] : []), ...kept]);
+  const section = joinLines([heading, ...(marker ? [marker] : []), ...kept]);
+  return estimateClaudeTextTokens(section) <= tokenLimit ? section : "";
 }
 
 function summaryOmission(
@@ -346,7 +371,7 @@ function buildRecentSection(
   material: GenerationCheckpointMaterial,
   recentTokenLimit: number,
   totalTokenLimit: number,
-  fixedText: string,
+  prefixText: string,
   recentMinimumTokens: number,
 ): { text: string; records: GenerationCheckpointMaterial["recent"]["records"] } {
   const anchor = material.lastSummarizedFinalResponseEventId;
@@ -368,11 +393,17 @@ function buildRecentSection(
   while (
     records.length > 0
     && (estimateClaudeTextTokens(text) > recentTokenLimit
-      || estimateClaudeTextTokens(joinSections([CHECKPOINT_HEAD, fixedText, text])) > totalTokenLimit)
+      || estimateClaudeTextTokens(joinSections([prefixText, text])) > totalTokenLimit)
   ) {
     const oldest = records.shift();
     if (oldest) dropped.push(oldest);
     text = formatRecentSection(records, dropped, material.recent.omittedUnsummarized);
+  }
+  if (
+    estimateClaudeTextTokens(text) > recentTokenLimit
+    || estimateClaudeTextTokens(joinSections([prefixText, text])) > totalTokenLimit
+  ) {
+    return { text: "", records: [] };
   }
   return { text, records };
 }
