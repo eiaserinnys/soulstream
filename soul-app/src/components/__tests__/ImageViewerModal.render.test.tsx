@@ -28,6 +28,7 @@ test('full-screen image modal owns its safe area outside the header and scrollin
 test('chat refined viewer closes from its backdrop while inner controls stay inside', async () => {
   const onClose = jest.fn();
   const sources = [{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }];
+  const t = renderHook(() => useTokens()).result.current;
   const screen = render(<ImageViewerModal
     variant="chatRefined"
     sources={sources}
@@ -48,7 +49,6 @@ test('chat refined viewer closes from its backdrop while inner controls stay ins
   }>[];
   expect(backdrop.type).toBe(Pressable);
   expect(backdrop.props.testID).toBe('chat-image-viewer-backdrop');
-  const t = renderHook(() => useTokens()).result.current;
   expect(StyleSheet.flatten(backdrop.props.style)).toMatchObject({
     position: 'absolute', top: 0, right: 0, bottom: 0, left: 0,
     minWidth: t.hitTarget.min, minHeight: t.hitTarget.min,
