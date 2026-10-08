@@ -12,11 +12,13 @@ describe("v3 model preset chat header coverage", () => {
     const sessionColumn = source("./WorkspaceSessionColumn.tsx");
     const sharedHeaders = source("./WorkspacePanelHeaders.tsx");
     const boardChatColumn = taskBoardWorkspace.match(/<WorkspaceSessionColumn\b([\s\S]*?)\/>/)?.[1] ?? "";
+    const taskWorkspaceHeaders = taskWorkspace.match(/<SessionPanelHeader\b[^>]*\/>/g) ?? [];
+    const sessionColumnHeaders = sessionColumn.match(/<SessionPanelHeader\b[^>]*\/>/g) ?? [];
 
-    expect(taskWorkspace.match(/<SessionPanelHeader\b/g))
-      .toHaveLength(2);
-    expect(sessionColumn.match(/<SessionPanelHeader\b/g))
-      .toHaveLength(1);
+    expect(taskWorkspaceHeaders).toHaveLength(2);
+    for (const header of taskWorkspaceHeaders) expect(header).toContain("session={activeSession}");
+    expect(sessionColumnHeaders).toHaveLength(1);
+    expect(sessionColumnHeaders[0]).toContain("session={activeSession}");
     expect(boardChatColumn).toContain("activeSession={activeSession}");
     expect(sharedHeaders).toContain("sessionPanelTitle(session)");
     expect(sharedHeaders.match(/<SessionModelPresetBadge session=\{session\}\/>/g))

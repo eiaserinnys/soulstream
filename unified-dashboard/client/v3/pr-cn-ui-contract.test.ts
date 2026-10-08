@@ -9,10 +9,14 @@ describe("PR-CN planner polish contract", () => {
     const toolbar = read("./V3GlobalToolbar.tsx");
     const views = read("./PlannerViews.tsx");
     const navigation = read("./V3Navigation.tsx");
+    const morningRitualAction = views.match(/<DashboardIconCap\b[^>]*label="아침 정리"[^>]*>/)?.[0] ?? "";
 
     expect(toolbar).not.toContain("onOpenRitual");
     expect(toolbar).not.toContain("onOpenNewTask");
-    expect(views).toContain('label="아침 정리"');
+    expect(morningRitualAction).toContain('label="아침 정리"');
+    expect(morningRitualAction).toContain("onClick={onOpenRitual}");
+    expect(views).toContain("<CardInbox folders={folders} />");
+    expect(views).toContain("<CardHandoff folders={folders} />");
     expect(navigation).toMatch(/label="새 폴더"[\s\S]*?onClick=\{\(\) => \{ setProjectDialog\(\{ mode: "create", parentFolderId: null, parentName: null \}\); setError\(null\); \}\}/);
     expect(navigation).toContain("target={projectDialog}");
     expect(navigation).toContain("onCreateIdentity={onCreateProject}");
