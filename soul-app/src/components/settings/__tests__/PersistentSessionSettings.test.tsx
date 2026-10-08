@@ -174,8 +174,8 @@ test('saves both chat display toggles and applies the response to the matching o
   const screen = await openList();
   await openEditor(screen);
   await waitFor(() => expect(screen.getByTestId('persistent-show-generation-separator')).toBeTruthy());
-  expect(screen.getByText('세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.')).toBeTruthy();
-  expect(screen.getByText('내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다.')).toBeTruthy();
+  expect(screen.getByText('표시를 꺼도 기록은 남습니다.')).toBeTruthy();
+  expect(screen.getByText('내 입력 아래에 후보를 보여 줍니다.')).toBeTruthy();
   useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
   fireEvent(screen.getByTestId('persistent-show-generation-separator'), 'valueChange', true);
   fireEvent(screen.getByTestId('persistent-show-jev-candidates'), 'valueChange', true);
