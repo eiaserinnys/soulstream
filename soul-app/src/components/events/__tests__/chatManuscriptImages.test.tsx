@@ -4,6 +4,7 @@ import { Image } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AssistantMessage } from '../AssistantMessage';
 import { UserMessage } from '../UserMessage';
+import { ChatRefinedImageGallery } from '../../AttachmentImage';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 
@@ -105,4 +106,42 @@ test('원고형 사용자 메시지는 이미지 첨부만 본문 뒤에 원래 
   expect(firstViewedUri).toContain('path=%2Fincoming%2Ffirst.png');
   fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
   expect(screen.getByTestId('chat-image-viewer-image').props.source.uri).toContain('path=%2Fincoming%2Fsecond.webp');
+});
+
+test('세 장 gallery는 두 열을 유지하고 원래 viewer 전체 순서로 연다', async () => {
+  const viewerImages = [1, 2, 3, 4].map((index) => ({
+    source: { uri: `https://chat.test/${index}.png` },
+    filename: `${index}.png`,
+  }));
+  const screen = render(<SafeAreaProvider><ChatRefinedImageGallery
+    images={viewerImages.slice(1)}
+    viewerImages={viewerImages}
+    startIndex={1}
+    role="assistant"
+    testID="three-image-gallery"
+  /></SafeAreaProvider>);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  const firstRow = screen.getByTestId('three-image-gallery-row-0');
+  const lastRow = screen.getByTestId('three-image-gallery-row-1');
+  const firstCells = React.Children.toArray(firstRow.props.children) as React.ReactElement<{ style?: object }>[];
+  const lastCells = React.Children.toArray(lastRow.props.children) as React.ReactElement<{ style?: object }>[];
+  expect(firstCells).toHaveLength(2);
+  expect(lastCells).toHaveLength(2);
+  expect(firstCells.map((cell) => cell.props.style)).toEqual([
+    { flexGrow: 1, flexBasis: 0, flexShrink: 1, minWidth: 0 },
+    { flexGrow: 1, flexBasis: 0, flexShrink: 1, minWidth: 0 },
+  ]);
+  expect(lastCells.map((cell) => cell.props.style)).toEqual([
+    { flexGrow: 1, flexBasis: 0, flexShrink: 1, minWidth: 0 },
+    { flexGrow: 1, flexBasis: 0, flexShrink: 1, minWidth: 0 },
+  ]);
+  expect(screen.getByTestId('three-image-gallery-image-2')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('three-image-gallery-image-2'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('4 / 4');
+  expect(screen.getByTestId('chat-image-viewer-image').props.source.uri).toBe(viewerImages[3].source.uri);
 });

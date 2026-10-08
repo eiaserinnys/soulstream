@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import React, { useState } from 'react';
-import { Image, Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ImageSourcePropType, type ImageURISource } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ImageSourcePropType, type ImageURISource } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { MODAL_BACKDROP_COLOR } from '../theme/surfaceRoles';
@@ -65,7 +65,16 @@ function ChatRefinedImageViewerModal(props: {
   const { sources, initialIndex, onClose } = props;
   return <Modal visible transparent presentationStyle="overFullScreen" onRequestClose={onClose}>
     <SafeAreaProvider>
-      <ChatRefinedImageViewerContent {...props} />
+      <View testID="chat-image-viewer-viewport" style={{ flex: 1 }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="이미지 미리보기 닫기"
+          testID="chat-image-viewer-backdrop"
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+        <ChatRefinedImageViewerContent {...props} />
+      </View>
     </SafeAreaProvider>
   </Modal>;
 }
@@ -94,7 +103,7 @@ function ChatRefinedImageViewerContent({ sources, initialIndex, onClose, filenam
     if (nextIndex >= 0 && nextIndex < sources.length) setCurrentIndex(nextIndex);
   };
 
-  return <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={{
+  return <SafeAreaView testID="chat-image-viewer-content" pointerEvents="box-none" edges={['top', 'bottom', 'left', 'right']} style={{
       flex: 1,
       backgroundColor: MODAL_BACKDROP_COLOR,
       justifyContent: 'center',

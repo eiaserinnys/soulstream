@@ -55,7 +55,12 @@ export function useChatImageMetadata(
   }, [requestIdentity, serverUrl]);
 
   const metadata = loadedMetadata.requestIdentity === requestIdentity ? loadedMetadata.items : [];
-  return images.map((image, index) => ({ ...image, ...metadata[index] }));
+  return images.map((image, index) => ({
+    ...image,
+    filename: image.filename || metadata[index]?.filename || '',
+    mimeType: image.mimeType ?? metadata[index]?.mimeType,
+    byteSize: image.byteSize ?? metadata[index]?.byteSize,
+  }));
 }
 
 export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, mimeType, byteSize, chatImageRole = 'assistant', filenames, alts, mimeTypes, byteSizes }: {
@@ -105,6 +110,31 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
   const maxWidth = role === 'user'
     ? phone ? attachment.phoneUserMaxWidth : attachment.userMaxWidth
     : phone ? attachment.phoneAssistantMaxWidth : attachment.assistantMaxWidth;
+  const cellStyle = images.length > 1
+    ? { flexGrow: 1 as const, flexBasis: 0 as const, flexShrink: 1 as const, minWidth: 0 }
+    : { width: '100%' as const };
+  const renderImage = (image: ChatRefinedGalleryItem, index: number) => <View
+    key={`${image.source.uri}-${index}`}
+    style={cellStyle}
+  >
+    <AttachmentImage
+      source={image.source}
+      sources={sources}
+      index={startIndex + index}
+      variant="chatRefined"
+      chatImageRole={role}
+      filename={image.filename}
+      alt={image.alt}
+      mimeType={image.mimeType}
+      byteSize={image.byteSize}
+      filenames={viewerImages.map((entry) => entry.filename)}
+      alts={viewerImages.map((entry) => entry.alt ?? '')}
+      mimeTypes={viewerImages.map((entry) => entry.mimeType)}
+      byteSizes={viewerImages.map((entry) => entry.byteSize)}
+      accessibilityLabel={`${image.filename} 크게 보기`}
+      testID={`${testID}-image-${index}`}
+    />
+  </View>;
   return <View
     testID={testID}
     accessibilityLabel={`이미지 ${images.length}개`}
@@ -112,35 +142,25 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
       width: '100%',
       maxWidth,
       alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
-      flexDirection: images.length > 1 ? 'row' : 'column',
-      flexWrap: 'wrap',
+      flexDirection: 'column',
       gap: attachment.gridGap,
       marginTop: role === 'user' ? -t.uiSpacing.sm : t.spacing.lg,
       marginBottom: role === 'user' ? t.spacing.lg : t.uiSpacing.md,
     }}
   >
-    {images.map((image, index) => <View
-      key={`${image.source.uri}-${index}`}
-      style={images.length > 1 ? { flexGrow: 1, flexBasis: 0, flexShrink: 1, minWidth: 0 } : { width: '100%' }}
-    >
-      <AttachmentImage
-        source={image.source}
-        sources={sources}
-        index={startIndex + index}
-        variant="chatRefined"
-        chatImageRole={role}
-        filename={image.filename}
-        alt={image.alt}
-        mimeType={image.mimeType}
-        byteSize={image.byteSize}
-        filenames={viewerImages.map((entry) => entry.filename)}
-        alts={viewerImages.map((entry) => entry.alt ?? '')}
-        mimeTypes={viewerImages.map((entry) => entry.mimeType)}
-        byteSizes={viewerImages.map((entry) => entry.byteSize)}
-        accessibilityLabel={`${image.filename} 크게 보기`}
-        testID={`${testID}-image-${index}`}
-      />
-    </View>)}
+    {images.length > 1
+      ? Array.from({ length: Math.ceil(images.length / 2) }, (_, rowIndex) => {
+          const rowImages = images.slice(rowIndex * 2, rowIndex * 2 + 2);
+          return <View
+            key={`row-${rowIndex}`}
+            testID={`${testID}-row-${rowIndex}`}
+            style={{ width: '100%', flexDirection: 'row', gap: attachment.gridGap }}
+          >
+            {rowImages.map((image, columnIndex) => renderImage(image, rowIndex * 2 + columnIndex))}
+            {rowImages.length === 1 ? <View pointerEvents="none" accessible={false} style={cellStyle} /> : null}
+          </View>;
+        })
+      : images.map(renderImage)}
   </View>;
 }
 

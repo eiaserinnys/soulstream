@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Modal, StyleSheet } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { useTokens } from '../../theme';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +22,48 @@ test('full-screen image modal owns its safe area outside the header and scrollin
   expect(modal.props.children.props.children.type).toBe(SafeAreaView);
   expect(modal.props).toMatchObject({ transparent: true, presentationStyle: 'overFullScreen', onRequestClose: onClose });
   fireEvent.press(screen.getByLabelText('이미지 닫기'));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('chat refined viewer closes from its backdrop while inner controls stay inside', () => {
+  const onClose = jest.fn();
+  const sources = [{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }];
+  const screen = render(<ImageViewerModal
+    variant="chatRefined"
+    sources={sources}
+    initialIndex={0}
+    onClose={onClose}
+    filenames={['one.png', 'two.png']}
+  />);
+  const modal = screen.UNSAFE_getByType(Modal);
+  expect(modal.props).toMatchObject({ transparent: true, presentationStyle: 'overFullScreen', onRequestClose: onClose });
+  expect(modal.props.children.type).toBe(SafeAreaProvider);
+
+  const viewport = screen.getByTestId('chat-image-viewer-viewport');
+  const [backdrop, content] = React.Children.toArray(viewport.props.children) as React.ReactElement<{
+    testID?: string;
+    style?: StyleProp<ViewStyle>;
+    onPress?: () => void;
+    variant?: string;
+  }>[];
+  expect(backdrop.type).toBe(Pressable);
+  expect(backdrop.props.testID).toBe('chat-image-viewer-backdrop');
+  expect(StyleSheet.flatten(backdrop.props.style)).toMatchObject({ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 });
+  expect(backdrop.props.onPress).toBe(onClose);
+  expect(content.props.variant).toBe('chatRefined');
+  expect(screen.UNSAFE_getByType(SafeAreaView).props).toMatchObject({
+    pointerEvents: 'box-none',
+    edges: ['top', 'bottom', 'left', 'right'],
+  });
+
+  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 2');
+  expect(onClose).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByTestId('chat-image-viewer-image'));
+  fireEvent.press(screen.getByTestId('chat-image-viewer-surface'));
+  expect(onClose).not.toHaveBeenCalled();
+
+  fireEvent.press(screen.getByTestId('chat-image-viewer-backdrop'));
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
@@ -116,7 +158,9 @@ test('원고형 첨부는 실제 종횡비를 유지하고 같은 메시지의 �
   const modal = screen.UNSAFE_getByType(Modal);
   expect(modal.props.children.type).toBe(SafeAreaProvider);
   const modalProviderChild = modal.props.children.props.children;
-  expect(modalProviderChild.type.name).toBe('ChatRefinedImageViewerContent');
+  expect(modalProviderChild.type).toBe(View);
+  const modalChildren = React.Children.toArray(modalProviderChild.props.children) as React.ReactElement<{ variant?: string }>[];
+  expect(modalChildren[1].props.variant).toBe('chatRefined');
   expect(screen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual(['top', 'bottom', 'left', 'right']);
   expect(screen.getByTestId('chat-image-viewer-image').props.source).toBe(sources[0]);
   expect(screen.getByTestId('chat-image-viewer-previous').props.accessibilityState.disabled).toBe(true);
