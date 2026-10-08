@@ -178,13 +178,71 @@ describe("persistent instruction routes", () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it("removes explicitly listed sources with a deletion-only PUT", async () => {
+    const item: Instruction = {
+      ...newer,
+      source_turns: ["T10"],
+      source_event_ids: [10],
+    };
+    harness.results = [{ status: "ok", item }];
+
+    const response = await harness.app.inject({
+      method: "PUT",
+      url: "/api/persistent-sessions/pas-1/instructions/instruction-new",
+      payload: { remove_source_turns: ["T11"], remove_source_event_ids: [12] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ instruction: item });
+    expect(harness.routeExisting).toHaveBeenCalledWith({
+      type: "apply_persistent_session_instructions",
+      agentSessionId: "pas-1",
+      origin: "user",
+      ops: [{
+        op: "update",
+        id: "instruction-new",
+        remove_source_turns: ["T11"],
+        remove_source_event_ids: [12],
+      }],
+    }, { timeoutMs: 5_000 });
+
+    const emptyRemoval = await harness.app.inject({
+      method: "PUT",
+      url: "/api/persistent-sessions/pas-1/instructions/instruction-new",
+      payload: { remove_source_turns: [], remove_source_event_ids: [] },
+    });
+    expect(emptyRemoval.statusCode).toBe(200);
+    expect(harness.sent[1]?.ops).toEqual([{
+      op: "update",
+      id: "instruction-new",
+      remove_source_turns: [],
+      remove_source_event_ids: [],
+    }]);
+  });
+
   it("rejects empty update bodies, blank text, and unknown PUT keys with 400", async () => {
     const base = "/api/persistent-sessions/pas-1/instructions/instruction-new";
     const empty = await harness.app.inject({ method: "PUT", url: base, payload: {} });
     const blank = await harness.app.inject({ method: "PUT", url: base, payload: { text: "  " } });
     const unknown = await harness.app.inject({ method: "PUT", url: base, payload: { status: "removed", extra: true } });
+    const invalidTurn = await harness.app.inject({
+      method: "PUT",
+      url: base,
+      payload: { remove_source_turns: ["not-a-turn"] },
+    });
+    const invalidEventId = await harness.app.inject({
+      method: "PUT",
+      url: base,
+      payload: { remove_source_event_ids: [1.5] },
+    });
 
-    expect([empty.statusCode, blank.statusCode, unknown.statusCode]).toEqual([400, 400, 400]);
+    expect([
+      empty.statusCode,
+      blank.statusCode,
+      unknown.statusCode,
+      invalidTurn.statusCode,
+      invalidEventId.statusCode,
+    ]).toEqual([400, 400, 400, 400, 400]);
     expect(harness.routeExisting).not.toHaveBeenCalled();
   });
 

@@ -62,4 +62,49 @@ describe("persistent session instruction wire schema", () => {
       unexpected: true,
     }).ok).toBe(false);
   });
+
+  it("accepts source-removal-only updates and validates both removal arrays", () => {
+    const parseUpdate = (op: unknown) => parsePersistentInstructionsApplyPayload({
+      session_id: "session-1",
+      origin: "agent",
+      ops: [op],
+    });
+
+    expect(parseUpdate({
+      op: "update",
+      id: "instruction-1",
+      remove_source_turns: ["T195"],
+      remove_source_event_ids: [42],
+    })).toEqual({
+      ok: true,
+      value: {
+        session_id: "session-1",
+        origin: "agent",
+        ops: [{
+          op: "update",
+          id: "instruction-1",
+          remove_source_turns: ["T195"],
+          remove_source_event_ids: [42],
+        }],
+      },
+    });
+
+    expect(parseUpdate({
+      op: "update",
+      id: "instruction-1",
+      remove_source_turns: [],
+      remove_source_event_ids: [],
+    }).ok).toBe(true);
+    expect(parseUpdate({ op: "update", id: "instruction-1" }).ok).toBe(false);
+    expect(parseUpdate({
+      op: "update",
+      id: "instruction-1",
+      remove_source_turns: ["not-a-turn"],
+    }).ok).toBe(false);
+    expect(parseUpdate({
+      op: "update",
+      id: "instruction-1",
+      remove_source_event_ids: [1.5],
+    }).ok).toBe(false);
+  });
 });

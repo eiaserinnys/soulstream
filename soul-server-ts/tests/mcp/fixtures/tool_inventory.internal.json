@@ -2217,6 +2217,62 @@
     "name": "delete_worktree_branch"
   },
   {
+    "description": "요청 키로 중복 접수를 억제합니다. 새 작업은 title, 기존 카드 후속은 card_id 중 하나를 지정하세요. request에 원문을, brief에 맥락과 완료 기준을 적습니다. 접수 오류는 호출자에게 반환됩니다. 결과 보고가 필요하면 request에 담당 세션이 기존 메시지로 보고하도록 적으세요.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "model_preset": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "request": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "request",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "dispatch_work"
+  },
+  {
     "description": "세션의 전체 이벤트 히스토리를 JSONL 파일로 저장. default dir /tmp/soulstream_sessions/.",
     "execution": {
       "taskSupport": "forbidden"
@@ -2390,7 +2446,7 @@
     "name": "get_backlinks"
   },
   {
-    "description": "카드의 요청, 확인 항목, 상황판, 커멘트, 보고, 질문과 세션을 읽습니다. 노트는 최근 20건이며 앞선 노트는 list_card_notes로 읽습니다.",
+    "description": "기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2403,6 +2459,47 @@
         "card_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "cursors": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "include": {
+          "items": {
+            "enum": [
+              "request",
+              "brief",
+              "attachments",
+              "comments",
+              "notes",
+              "reports",
+              "sessions",
+              "now_history",
+              "questions_history"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "since": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "text_limit": {
+          "maximum": 4000,
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "required": [
@@ -2872,19 +2969,31 @@
     "name": "list_card_notes"
   },
   {
-    "description": "폴더와 상태로 카드를 조회하고 folder_id가 없으면 모든 폴더를 조회한다.",
+    "description": "폴더와 상태별 카드 요약을 기본 20건 반환합니다. nextCursor가 있으면 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "all": {
+          "type": "boolean"
+        },
         "caller_session_id": {
+          "type": "string"
+        },
+        "cursor": {
+          "minLength": 1,
           "type": "string"
         },
         "folder_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "limit": {
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
         },
         "status": {
           "enum": [
@@ -8004,7 +8113,7 @@
     "name": "update_markdown_document"
   },
   {
-    "description": "저장된 지속 지시의 문장이나 상태를 바꾼다.",
+    "description": "저장된 지속 지시의 문장이나 상태를 바꾸거나 연결된 출처를 지정해 삭제한다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -8014,6 +8123,21 @@
         "instruction_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "remove_source_event_ids": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "remove_source_turns": {
+          "items": {
+            "pattern": "^T\\d+$",
+            "type": "string"
+          },
+          "type": "array"
         },
         "session_id": {
           "minLength": 1,
