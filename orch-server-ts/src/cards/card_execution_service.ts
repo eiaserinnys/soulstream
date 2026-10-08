@@ -29,7 +29,10 @@ export class CardExecutionService {
   async execute(params:CardMutationParams & {expectedVersion:number;idempotencyKey:string}) {
     const current=await this.options.cards.getCard(params.cardId);
     if(!current) throw failure("카드를 찾을 수 없습니다.",404);
-    const row=await this.options.sql.begin(async sql=>{
+    const row=await this.options.sql.begin(sql=>this.reserveTx(sql,params));
+    return this.startReserved(row.id,params);
+  }
+  async reserveTx(sql:RepositorySql,params:CardMutationParams & {expectedVersion:number;idempotencyKey:string}):Promise<CardExecutionRequest> {
       const card=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${params.cardId} FOR UPDATE`)[0]!;
       const existing=(await sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE idempotency_key=${params.idempotencyKey} OR keys ? ${params.idempotencyKey} LIMIT 1`)[0];
       const payload={cardId:params.cardId,expectedVersion:params.expectedVersion};
@@ -64,13 +67,16 @@ export class CardExecutionService {
       const mode=automatic ? "observe" : owner ? "resume" : "create";
       return (await sql<CardExecutionRequest[]>`INSERT INTO card_execution_requests(id,idempotency_key,keys,card_id,session_id,mode,target,previous_status,baseline_event_id,actor_user_id)
         VALUES(${randomUUID()},${params.idempotencyKey},${sql.json({[params.idempotencyKey]:payload})},${card.id},${sessionId},${mode},${sql.json(selected)},${card.status},${mode==='observe'?0:Number(owner?.last_event_id ?? 0)},${params.actorUserId ?? null}) RETURNING *`)[0]!;
-    });
-    if(row.state==='failed') throw failure(`${row.error} 같은 담당 세션에서 다시 시작하려면 다시 실행하세요.`,422);
+  }
+  async startReserved(requestId:string,actor:FolderActorParams) {
+    const row=(await this.options.sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE id=${requestId}`)[0];
+    if(!row) throw failure("실행 요청을 찾을 수 없습니다.",404);
+    if(row.state==='failed') throw failure(row.error ?? "실행 실패",422);
     if(row.state==='succeeded') return this.response(row);
     let work=this.inFlight.get(row.id);
-    if(!work){work=this.sendAndObserve(row,params);this.inFlight.set(row.id,work);}
+    if(!work){work=this.sendAndObserve(row,actor);this.inFlight.set(row.id,work);}
     try{await work;}finally{if(this.inFlight.get(row.id)===work)this.inFlight.delete(row.id);}
-    return this.observe(params.cardId,row.id,params);
+    return this.observe(row.card_id,row.id,actor);
   }
   async observe(cardId:string,requestId:string,actor:FolderActorParams) {
     const key=cardId+":"+requestId;

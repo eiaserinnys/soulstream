@@ -5,6 +5,7 @@ import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./c
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardExecutionService } from "../src/cards/card_execution_service.js";
+import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
 
 describe("user card execution transport",()=>{
   let h:PagePostgresHarness,cards:CardControlPlaneService;
@@ -90,7 +91,34 @@ describe("user card execution transport",()=>{
   it("confirmed failure preserves request/settings/status",async()=>{
     const f=await fixture("reject");await expect(f.service.execute(input(f.cardId,"rejected"))).rejects.toThrow("노드 거부");
     expect((await cards.getCard(f.cardId))!.card).toMatchObject({status:"todo",request:"원문 그대로",node_id:"node",model_preset:"model"});
+    const failed=(await h.sql`SELECT id,state,error FROM card_execution_requests WHERE card_id=${f.cardId}`)[0]!;
+    await expect(f.service.startReserved(failed.id,actor)).rejects.toMatchObject({statusCode:422});
+    expect(await h.sql`SELECT state,error FROM card_execution_requests WHERE id=${failed.id}`).toEqual([{state:"failed",error:failed.error}]);
   });
+  it("reserves in an external transaction before starting the fixed request",async()=>{
+    const made=await cards.createCard({actorKind:"user",actorSessionId:null,folderId:"work",title:"예약",request:"외부 트랜잭션",assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"});
+    const cardId=made.operation.target_id;
+    let signalLaunch!:()=>void;
+    let releaseLaunch!:()=>void;
+    const launchStarted=new Promise<void>(resolve=>{signalLaunch=resolve;});
+    const launchGate=new Promise<void>(resolve=>{releaseLaunch=resolve;});
+    const launch=vi.fn(async()=>{signalLaunch();await launchGate;});
+    const service=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+      validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
+      launch,ensure:async()=>({state:"started" as const,execution:{registrationId:"unused",executionCommandId:"unused"}})});
+    const params=input(cardId,"external-reservation");
+    const reserved=await h.sql.begin(sql=>service.reserveTx(sql as unknown as RepositorySql,params));
+
+    expect(launch).not.toHaveBeenCalled();
+    const started=service.startReserved(reserved.id,actor);
+    await launchStarted;
+    expect(await h.sql`SELECT state,sent FROM card_execution_requests WHERE id=${reserved.id}`)
+      .toEqual([{state:"pending",sent:true}]);
+    releaseLaunch();
+    const response=await started;
+    expect(response.execution).toMatchObject({requestId:reserved.id,sessionId:reserved.session_id,state:"pending"});
+    expect(launch).toHaveBeenCalledTimes(1);
+  },60_000);
   it('a created session with failed startup retries that same owner',async()=>{
     const f=await fixture('pending');const first=await f.service.execute(input(f.cardId,'startup-failure'));
     await h.sql`UPDATE sessions SET status='error' WHERE session_id=${first.execution.sessionId}`;
