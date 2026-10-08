@@ -78,14 +78,26 @@ describe("page MCP execution", () => {
 });
 
 const attachments = [{ nodeId: "node", path: "/incoming/upload/image.png", name: "image.png", mimeType: "image/png" }];
-function cardHarness() {
+function cardHarness(
+  folders = [{ id: "folder-1" }, { id: "folder-2" }],
+  access = { restricted: false, allowedFolderIds: [] as string[] },
+) {
   const card = { id: "card-1", folder_id: "folder-1", title: "카드", status: "running", version: 3, attachments };
   const detail = { card, reports: [{ title: "보고" }], questions: [], comments: [{ body: "지시 요점", kind: "spoken" }], sessions: [],notes:[],nowHistory:[] };
+  const readResult = { card: { id: "card-1", number: 1, title: "카드", status: "running", version: 3,
+    items: [{ id: 1, title: "저장 결과", state: "done", result: "현재 결과", evidence: [{ type: "link", url: "https://example.test/evidence", label: "근거" }] }] },
+    questions: { items: [{ id: "question-1", text: "미답 질문", answer: null }], nextCursor: null, truncated: false },
+    available: { request: true, brief: true, attachments: true, comments: 1, notes: 1, reports: 1, sessions: 1, now_history: 0 },
+    changeToken: "change-token" };
   const mutation = { snapshot: { folder: { id: "folder-1" }, cards: [card] },
     operation: { id: "op-1", target_kind: "card", target_id: "card-1" } };
   const createdMutation = { ...mutation, snapshot: { ...mutation.snapshot, cards: [{ ...card, status: "todo" }] } };
+  const mcpRead = {
+    listCards: vi.fn().mockResolvedValue({ cards: [], nextCursor: null, truncated: false }),
+    getCard: vi.fn().mockResolvedValue(readResult),
+  };
   const service = {
-    getCard: vi.fn().mockResolvedValue(detail), listCards: vi.fn().mockResolvedValue([card]),
+    mcpRead, getCard: vi.fn().mockResolvedValue(detail), listCards: vi.fn().mockResolvedValue([card]),
     projectCards: vi.fn(async rows => rows), createCard: vi.fn().mockResolvedValue(createdMutation),
     patchCard: vi.fn().mockResolvedValue(mutation), addReport: vi.fn().mockResolvedValue(mutation),
     addComment: vi.fn().mockResolvedValue({ body: "그대로 보존" }), setCardStatus: vi.fn().mockResolvedValue(mutation),
@@ -101,10 +113,10 @@ function cardHarness() {
     observe: vi.fn(async () => ({ card: { ...card, status: "running" }, execution: { requestId: "execution-1", sessionId: "spawned-session", state: "started" } })) };
   const cardExecutionServiceProvider = vi.fn(async () => executor);
   const options = { cards: { cardServiceProvider: provider,
-    provider: { listFolders: async () => [{ id: "folder-1" }, { id: "folder-2" }] },
+    provider: { listFolders: async () => folders },
     cardExecutionServiceProvider, runConfirm: { intervalMs: 1, timeoutMs: 100 },
-    resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) } } as unknown as McpHostOptions;
-  return { card, createdMutation, service, provider, executor, cardExecutionServiceProvider, options };
+    resolveAccess: () => access } } as unknown as McpHostOptions;
+  return { card, createdMutation, service, mcpRead, provider, executor, cardExecutionServiceProvider, options };
 }
 describe("card MCP execution", () => {
   it("calls every card service with agent actor, CAS and camelCase input", async () => {
@@ -134,16 +146,39 @@ describe("card MCP execution", () => {
     ] as const) {
       const result = await call(h.options, name, { caller_session_id: "session-1", ...input });
       expect(result.isError, name).not.toBe(true);
-      const spy = h.service[method];
-      if (typeof expected === "string") expect(spy).toHaveBeenLastCalledWith(expected);
-      else expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ ...expected,
+      if (name === "list_cards") {
+        expect(h.mcpRead.listCards).toHaveBeenLastCalledWith(expected, null);
+      } else if (name === "get_card") {
+        expect(h.mcpRead.getCard).toHaveBeenLastCalledWith(expected, {}, null);
+      } else {
+        const spy = h.service[method];
+        if (typeof expected === "string") expect(spy).toHaveBeenLastCalledWith(expected);
+        else expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ ...expected,
         ...(name === "list_cards" ? {} : { actorKind: "agent", actorSessionId: "session-1", idempotencyKey: expect.any(String) }) }));
+      }
       if (name === "get_card") {
-        expect(JSON.stringify(result)).toContain("지시 요점");
-        expect(JSON.stringify(result)).toContain(JSON.stringify(attachments));
+        expect(JSON.stringify(result)).toContain("현재 결과");
+        expect(JSON.stringify(result)).toContain("미답 질문");
+        expect(JSON.stringify(result)).not.toContain("지시 요점");
+        expect(JSON.stringify(result)).not.toContain("원문");
       }
       if (name === "ask_card_question") expect(JSON.stringify(result)).toContain("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     }
+  });
+  it("forwards only R1 read fields and includes allowed descendant folders", async () => {
+    const h = cardHarness([{ id: "folder-1" }, { id: "child-1", parentFolderId: "folder-1" }, { id: "folder-2" }],
+      { restricted: true, allowedFolderIds: ["folder-1"] });
+    await call(h.options, "list_cards", { folder_id: "child-1", status: "running", limit: 7, cursor: "list-cursor", all: false,
+      caller_session_id: "untrusted-session" });
+    expect(h.mcpRead.listCards).toHaveBeenCalledWith({ folder_id: "child-1", status: "running", limit: 7, cursor: "list-cursor", all: false },
+      ["folder-1", "child-1"]);
+
+    await call(h.options, "get_card", { card_id: "card-1", caller_session_id: "untrusted-session",
+      include: ["request", "notes"], limit: 4, text_limit: 600, cursors: { notes: "section-cursor" } });
+    expect(h.mcpRead.getCard).toHaveBeenCalledWith("card-1", {
+      include: ["request", "notes"], limit: 4, text_limit: 600, cursors: { notes: "section-cursor" },
+    }, ["folder-1", "child-1"]);
+    expect(h.service.getCard).not.toHaveBeenCalled();
   });
   it("returns compact card mutation and item results without echoing saved content", async () => {
     const h = cardHarness();

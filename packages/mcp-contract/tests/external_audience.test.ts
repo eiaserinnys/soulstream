@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { z } from "zod";
 import { mcpToolDefinitions, type McpToolDefinition } from "../src/index.ts";
 import { cardTools } from "../src/card_tools.ts";
 
@@ -27,6 +28,20 @@ test("external LLMs can run cards with the shared card execution contract", () =
   assert.equal(cardTools.run_card.audience, "all");
   assert.equal("externalInputSchema" in cardTools.create_card, false);
   assert.equal("run" in cardTools.create_card.config.inputSchema, true);
+});
+test("card reads expose the bounded small-result and paging contract", () => {
+  const get = z.object(cardTools.get_card.config.inputSchema).strict();
+  assert.equal(get.safeParse({ card_id: "card-1", caller_session_id: "session-1",
+    include: ["request", "brief", "attachments", "comments", "notes", "reports", "sessions", "now_history", "questions_history"],
+    limit: 50, text_limit: 4000, cursors: { notes: "next" }, since: "token" }).success, true);
+  assert.equal(get.safeParse({ card_id: "card-1", limit: 51 }).success, false);
+  assert.equal(get.safeParse({ card_id: "card-1", text_limit: 4001 }).success, false);
+  assert.equal(get.safeParse({ card_id: "card-1", include: ["operation"] }).success, false);
+
+  const list = z.object(cardTools.list_cards.config.inputSchema).strict();
+  assert.equal(list.safeParse({ folder_id: "folder-1", status: "running", caller_session_id: "session-1",
+    limit: 50, cursor: "next", all: false }).success, true);
+  assert.equal(list.safeParse({ limit: 51 }).success, false);
 });
 test("invariant detects each forbidden class even with an explicit false hint", () => {
   for (const definition of [
