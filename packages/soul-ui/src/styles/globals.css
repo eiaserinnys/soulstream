@@ -1316,6 +1316,14 @@ pre[data-markdown-code-layout="document"] {
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--muted-foreground);
 }
+.chat-image-frame {
+  display: block;
+  min-width: 0;
+}
+.chat-image-frame > .chat-image-status {
+  display: block;
+  margin-block-start: var(--v3-space-1);
+}
 .chat-image-viewer-header {
   gap: var(--chat-attachment-filename-gap);
   min-width: 0;

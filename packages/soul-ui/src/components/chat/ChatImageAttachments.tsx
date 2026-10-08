@@ -95,7 +95,7 @@ function formatBytes(bytes: number): string {
 
 function imageMetaText(mimeType?: string, bytes?: number): string | undefined {
   const parts = [mimeType, bytes !== undefined ? formatBytes(bytes) : undefined].filter(Boolean);
-  return parts.length ? parts.join(" · ") : undefined;
+  return parts.length ? parts.join(" ") : undefined;
 }
 
 function ChatImageThumbnail({
@@ -131,6 +131,7 @@ function ChatImageThumbnail({
           variant="chatRefined"
           className="chat-image-thumbnail-image"
           onOpen={(_src, _alt, trigger) => onOpen(galleryIndex, trigger)}
+          onLoad={src => setFailedSource(current => current === src ? null : current)}
           onError={src => setFailedSource(src)}
         />
       )}
@@ -228,6 +229,7 @@ export function ChatImageViewer({
               variant="chatRefined"
               loading="eager"
               className="chat-image-viewer-image"
+              onLoad={src => setFailedSource(current => current === src ? null : current)}
               onError={src => setFailedSource(src)}
             />
           )}

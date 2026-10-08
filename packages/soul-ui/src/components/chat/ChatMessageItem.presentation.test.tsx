@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../../lib/flatten-tree";
+import { MarkdownImage } from "../MarkdownImage";
 import { ChatMessageItem } from "./ChatMessageItem";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 
@@ -129,6 +130,37 @@ describe("ChatMessageItem presentation", () => {
     expect(dialog.querySelector('.chat-image-viewer-count')).toBeNull();
   });
 
+  it("chatRefined shows pending until real load or error and reports both callbacks", () => {
+    const events: string[] = [];
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const renderImage = (src: string) => createElement(MarkdownImage, {
+      src,
+      alt: "검수 이미지",
+      variant: "chatRefined",
+      className: "chat-image-thumbnail-image",
+      onLoad: loadedSrc => events.push(`load:${loadedSrc}`),
+      onError: failedSrc => events.push(`error:${failedSrc}`),
+    });
+
+    act(() => root?.render(renderImage("/slow.png")));
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지 불러오는 중…");
+    const slowImage = host.querySelector<HTMLImageElement>('img[src="/slow.png"]')!;
+    expect(slowImage.classList.contains("chat-image-thumbnail-image")).toBe(true);
+
+    act(() => slowImage.dispatchEvent(new Event("load")));
+    expect(host.querySelector(".chat-image-status")).toBeNull();
+    expect(events).toEqual(["load:/slow.png"]);
+
+    act(() => root?.render(renderImage("/failed.png")));
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지 불러오는 중…");
+    const failedImage = host.querySelector<HTMLImageElement>('img[src="/failed.png"]')!;
+    act(() => failedImage.dispatchEvent(new Event("error")));
+    expect(host.querySelector(".chat-image-status")).toBeNull();
+    expect(events).toEqual(["load:/slow.png", "error:/failed.png"]);
+  });
+
   it("shows a small image failure status while keeping the message text", () => {
     const msg = makeMessage("assistant", "failed-image", {
       content: "설명은 남아 있습니다.\n\n![열 수 없는 이미지](/missing.png)",
@@ -139,6 +171,7 @@ describe("ChatMessageItem presentation", () => {
     act(() => root?.render(createElement(ChatMessageItem, { msg, presentation: "manuscript" })));
 
     const image = host.querySelector<HTMLImageElement>('img[src="/missing.png"]')!;
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지 불러오는 중…");
     act(() => image.dispatchEvent(new Event("error")));
 
     expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지를 불러오지 못했습니다.");
