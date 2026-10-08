@@ -92,6 +92,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
       <View style={styles.selector}>
         <SettingsSegmentedControl<Section>
           id="pas-settings"
+          wrap
           value={section}
           options={SECTIONS}
           onChange={setSection}
