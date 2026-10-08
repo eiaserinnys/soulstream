@@ -159,7 +159,7 @@ describe('projectPersistentTurnUsage', () => {
       event('2', 'assistant_message', { text: '기록했습니다.' }),
       event('3', 'complete', { usage: { input_tokens: 5, output_tokens: 2 }, turn_cost_usd: 0.1 }),
       event('4', 'turn_summary', { content: '요약', final_response_event_id: 2, parent_event_id: 2 }),
-      event('5', 'debug', { kind: 'persistent_instruction_recorded', input_id: 'input-1', instructions: [{
+      event('5', 'debug', { kind: 'persistent_instruction_recorded', input_id: 'input-1', cap_reached: false, instructions: [{
         id: 'instruction-1', text: '기억할 내용', source_turns: ['T1'], action: 'updated',
       }] }),
     ];

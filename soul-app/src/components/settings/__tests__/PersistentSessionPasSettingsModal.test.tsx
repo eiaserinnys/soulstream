@@ -121,6 +121,11 @@ test('saves a PAS display toggle as one immediate field and adopts the server re
 });
 
 test('persists the canonical usage mode and updates the selected value only after ACK', async () => {
+  const requestId = useChatStore.getState().beginPersistentDisplaySettingsLoad('pas-1');
+  useChatStore.getState().finishPersistentDisplaySettingsLoad('pas-1', requestId, {
+    show_generation_separator: true, show_jev_candidates: false,
+    show_character: true, animate_character: false, turn_usage_mode: 'collapsed',
+  });
   let resolveUpdate!: (result: { session: ReturnType<typeof session>; model_change: 'none' }) => void;
   api.updatePersistentSession.mockReturnValueOnce(new Promise((resolve) => { resolveUpdate = resolve; }));
   const screen = open();
@@ -137,6 +142,7 @@ test('persists the canonical usage mode and updates the selected value only afte
   }));
   expect(expanded.props.accessibilityState.disabled).toBe(true);
   expect(collapsed.props.accessibilityState.selected).toBe(true);
+  expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings?.turn_usage_mode).toBe('collapsed');
 
   await act(async () => {
     resolveUpdate({ session: session({ settings: { ...session().settings, turn_usage_mode: 'expanded' } }), model_change: 'none' });
@@ -233,8 +239,10 @@ test('applies a successful display update to the open chat after the settings mo
     'persistent-animate-character',
     'persistent-show-generation-separator',
     'persistent-show-jev-candidates',
-    'persistent-show-turn-usage',
   ]) expect(screen.getByTestId(testID).props.disabled).toBe(true);
+  for (const mode of ['collapsed', 'expanded', 'hidden']) {
+    expect(screen.getByTestId(`settings-segment-persistent-turn-usage-${mode}`).props.accessibilityState.disabled).toBe(true);
+  }
 
   screen.unmount();
   await act(async () => {
@@ -459,8 +467,6 @@ test('native back cancels instruction editing before closing PAS settings', asyn
   }] });
   const onClose = jest.fn();
   const screen = render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={onClose} />);
-  await screen.findByTestId('persistent-session-pas-editor');
-  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   fireEvent.press(await screen.findByTestId('persistent-instruction-open-instruction-1'));
   expect(screen.getByTestId('persistent-instruction-edit-instruction-1')).toBeTruthy();
   fireEvent.press(screen.getByTestId('persistent-instruction-cancel-instruction-1'));

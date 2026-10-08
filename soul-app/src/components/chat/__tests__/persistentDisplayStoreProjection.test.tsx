@@ -77,6 +77,7 @@ test('store raw Jev record waits for history input, deduplicates replay, and fol
   act(() => useChatStore.getState().applyPersistentDisplaySettings(SESSION_ID, {
     show_generation_separator: true,
     show_jev_candidates: false,
+    turn_usage_mode: 'collapsed',
   }));
   items = [...result.current.reversedItems].reverse();
   expect(items.map(item => item.kind)).toEqual(['event', 'turn-summary']);
@@ -85,6 +86,7 @@ test('store raw Jev record waits for history input, deduplicates replay, and fol
   act(() => useChatStore.getState().applyPersistentDisplaySettings(SESSION_ID, {
     show_generation_separator: true,
     show_jev_candidates: true,
+    turn_usage_mode: 'collapsed',
   }));
   items = [...result.current.reversedItems].reverse();
   expect(items.map(item => item.kind)).toEqual(['event', 'jev-candidates', 'turn-summary']);
