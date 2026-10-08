@@ -25,7 +25,7 @@ test('full-screen image modal owns its safe area outside the header and scrollin
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
-test('chat refined viewer closes from its backdrop while inner controls stay inside', () => {
+test('chat refined viewer closes from its backdrop while inner controls stay inside', async () => {
   const onClose = jest.fn();
   const sources = [{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }];
   const screen = render(<ImageViewerModal
@@ -48,7 +48,11 @@ test('chat refined viewer closes from its backdrop while inner controls stay ins
   }>[];
   expect(backdrop.type).toBe(Pressable);
   expect(backdrop.props.testID).toBe('chat-image-viewer-backdrop');
-  expect(StyleSheet.flatten(backdrop.props.style)).toMatchObject({ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 });
+  const t = renderHook(() => useTokens()).result.current;
+  expect(StyleSheet.flatten(backdrop.props.style)).toMatchObject({
+    position: 'absolute', top: 0, right: 0, bottom: 0, left: 0,
+    minWidth: t.hitTarget.min, minHeight: t.hitTarget.min,
+  });
   expect(backdrop.props.onPress).toBe(onClose);
   expect(content.props.variant).toBe('chatRefined');
   expect(screen.UNSAFE_getByType(SafeAreaView).props).toMatchObject({
@@ -57,7 +61,7 @@ test('chat refined viewer closes from its backdrop while inner controls stay ins
   });
 
   fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
-  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 2');
+  await waitFor(() => expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 2'));
   expect(onClose).not.toHaveBeenCalled();
   fireEvent.press(screen.getByTestId('chat-image-viewer-image'));
   fireEvent.press(screen.getByTestId('chat-image-viewer-surface'));
@@ -102,7 +106,7 @@ test('원본 비율 확인 전에는 작은 로딩 상태를 쓰고 측정 실�
 
   expect(screen.getByTestId('chat-image-loading')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('loading-chat-image').props.style)).toMatchObject({
-    minHeight: t.foundation.minHeight.secondary,
+    minHeight: t.hitTarget.min,
   });
   expect(StyleSheet.flatten(screen.getByTestId('loading-chat-image').props.style).aspectRatio).toBeUndefined();
   expect(screen.UNSAFE_queryByType(Image)).toBeNull();
@@ -120,7 +124,7 @@ test('원본 비율 확인 전에는 작은 로딩 상태를 쓰고 측정 실�
   /></SafeAreaProvider>);
   await waitFor(() => expect(failed.getByText('이미지를 불러오지 못했습니다.')).toBeTruthy());
   expect(StyleSheet.flatten(failed.getByTestId('failed-chat-image').props.style)).toMatchObject({
-    minHeight: t.foundation.minHeight.secondary,
+    minHeight: t.hitTarget.min,
   });
   expect(failed.UNSAFE_queryByType(Image)).toBeNull();
 });

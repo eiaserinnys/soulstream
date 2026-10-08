@@ -253,7 +253,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       style={{
         width: '100%',
         aspectRatio: currentInfo.aspectRatio ?? undefined,
-        minHeight: currentInfo.aspectRatio === null ? t.foundation.minHeight.secondary : undefined,
+        minHeight: t.hitTarget.min,
         borderRadius: attachment.radius,
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: attachment.border,

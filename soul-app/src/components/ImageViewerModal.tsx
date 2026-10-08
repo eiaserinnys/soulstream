@@ -63,6 +63,7 @@ function ChatRefinedImageViewerModal(props: {
   metadataLabels?: readonly string[];
 }) {
   const { sources, initialIndex, onClose } = props;
+  const t = useTokens();
   return <Modal visible transparent presentationStyle="overFullScreen" onRequestClose={onClose}>
     <SafeAreaProvider>
       <View testID="chat-image-viewer-viewport" style={{ flex: 1 }}>
@@ -70,7 +71,7 @@ function ChatRefinedImageViewerModal(props: {
           accessibilityRole="button"
           accessibilityLabel="이미지 미리보기 닫기"
           testID="chat-image-viewer-backdrop"
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }]}
           onPress={onClose}
         />
         <ChatRefinedImageViewerContent {...props} />

@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { Image, StyleSheet, View } from 'react-native';
 import { AssistantMessage } from '../AssistantMessage';
 import { UserMessage } from '../UserMessage';
@@ -14,6 +14,9 @@ import { LabeledDivider } from '../../chat/LabeledDivider';
 import { message } from '../../../component-review/fixtures';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { DARK_COLORS, LIGHT_COLORS, LIGHT_PERSISTENT_SESSION_COLORS } from '../../../theme/colors';
+import * as attachmentImageSize from '../../../lib/attachment-image-size';
+
+afterEach(() => jest.restoreAllMocks());
 
 test('원고형은 기존 메시지 부품에서 말풍선을 없애고 기본 채팅은 말풍선을 유지한다', () => {
   const event = message('user_message', '내가 보낸 요청입니다.');
@@ -149,15 +152,17 @@ test('원고형 전송 실패와 선택 작업은 종이 위에서 읽히는 색
   expect(StyleSheet.flatten(assistantSelection.getByText('완료').props.style).color).toBe(LIGHT_COLORS.textPrimary);
 });
 
-test.each(['normal', 'intervention'] as const)('원고형 %s 발언은 글과 함께 있는 첨부를 오른쪽 끝에 놓는다', variant => {
+test.each(['normal', 'intervention'] as const)('원고형 %s 발언은 글과 함께 있는 첨부를 오른쪽 끝에 놓는다', async variant => {
   useSettingsStore.setState({ serverUrl: 'https://chat.test' });
+  jest.spyOn(attachmentImageSize, 'getAttachmentImageSize').mockResolvedValue({ width: 390, height: 844 });
   const screen = render(<UserMessage presentation="manuscript" variant={variant}
     session={{ nodeId: 'node-1' }}
     event={{ id: 'attached', type: 'user_message', data: {
       text: '첨부 두 장이 달린 조금 긴 내 발언입니다.', attachments: ['/files/one.png', '/files/two.png'],
     } }} />);
-  const list = screen.UNSAFE_getAllByType(View)[2];
-  expect(StyleSheet.flatten(list?.props.style).alignItems).toBe('flex-end');
+  await act(async () => { await Promise.resolve(); });
+  const gallery = screen.getByTestId('user-chat-image-gallery');
+  expect(StyleSheet.flatten(gallery.props.style).alignSelf).toBe('flex-end');
 });
 
 test('원고형 입력 밑줄과 조작부는 열 가장자리에 맞추고 기본 입력 여백은 유지한다', () => {
@@ -180,16 +185,18 @@ test('원고형 입력 밑줄과 조작부는 열 가장자리에 맞추고 기�
   expect(sendFrame.marginRight).toBeLessThan(0);
 });
 
-test('원고형 사용자 메시지의 첨부도 기존 이미지 뷰어를 연다', () => {
+test('원고형 사용자 메시지의 이미지를 chat refined 뷰어에서 연다', async () => {
   useSettingsStore.setState({ serverUrl: 'https://chat.test' });
+  jest.spyOn(attachmentImageSize, 'getAttachmentImageSize').mockResolvedValue({ width: 390, height: 844 });
   const screen = render(<UserMessage
     presentation="manuscript"
     session={{ nodeId: 'node-1' }}
     event={{ id: 'attached', type: 'user_message', data: { text: '첨부 확인', attachments: ['/files/image.png'] } }}
   />);
 
-  fireEvent.press(screen.getByLabelText('첨부 이미지 1'));
-  expect(screen.getByTestId('image-viewer-pages').props.pagingEnabled).toBe(true);
-  fireEvent.press(screen.getByLabelText('이미지 닫기'));
-  expect(screen.queryByTestId('image-viewer-pages')).toBeNull();
+  await act(async () => { await Promise.resolve(); });
+  fireEvent.press(screen.getByLabelText('image.png 크게 보기'));
+  expect(screen.getByTestId('chat-image-viewer-viewport')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('chat-image-viewer-close'));
+  expect(screen.queryByTestId('chat-image-viewer-viewport')).toBeNull();
 });

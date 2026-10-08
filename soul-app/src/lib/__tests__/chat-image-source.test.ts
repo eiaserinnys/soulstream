@@ -3,6 +3,8 @@ import { Image } from 'react-native';
 import { getAttachmentImageSize as getNativeAttachmentImageSize } from '../attachment-image-size.native';
 import { getAttachmentImageSize as getWebAttachmentImageSize } from '../attachment-image-size.web';
 
+afterEach(() => jest.restoreAllMocks());
+
 const serverUrl = 'https://soulstream.eiaserinnys.me';
 const jwt = 'test-jwt';
 
@@ -32,7 +34,6 @@ test('native size lookup receives the same URI and headers as its image source',
 
   await expect(getNativeAttachmentImageSize(source)).resolves.toEqual({ width: 390, height: 844 });
   expect(getSizeWithHeaders).toHaveBeenCalledWith(source.uri, source.headers);
-  getSizeWithHeaders.mockRestore();
 });
 
 test('native size lookup uses getSizeWithHeaders with an empty header map when the source has no headers', async () => {
@@ -42,15 +43,29 @@ test('native size lookup uses getSizeWithHeaders with an empty header map when t
 
   await expect(getNativeAttachmentImageSize(source)).resolves.toEqual({ width: 390, height: 844 });
   expect(getSizeWithHeaders).toHaveBeenCalledWith(source.uri, {});
-  getSizeWithHeaders.mockRestore();
 });
 
-test('web size lookup uses Image.getSize with the original URI', async () => {
+test('web size lookup resolves callback dimensions when Image.getSize returns undefined', async () => {
   const source = chatImageSource('/api/attachments/files?path=%2Fimage.png', serverUrl, jwt, 'web');
   const getSize = jest.spyOn(Image, 'getSize');
-  getSize.mockImplementation(() => Promise.resolve({ width: 390, height: 844 }));
+  getSize.mockImplementation((_uri, success) => {
+    success(390, 844);
+    return undefined;
+  });
 
   await expect(getWebAttachmentImageSize(source)).resolves.toEqual({ width: 390, height: 844 });
-  expect(getSize).toHaveBeenCalledWith(source.uri);
-  getSize.mockRestore();
+  expect(getSize).toHaveBeenCalledWith(source.uri, expect.any(Function), expect.any(Function));
+});
+
+test('web size lookup rejects when the callback reports a request failure', async () => {
+  const source = chatImageSource('/api/attachments/files?path=%2Fimage.png', serverUrl, jwt, 'web');
+  const failure = new Error('unauthorized');
+  const getSize = jest.spyOn(Image, 'getSize');
+  getSize.mockImplementation((_uri, _success, onFailure) => {
+    onFailure?.(failure);
+    return undefined;
+  });
+
+  await expect(getWebAttachmentImageSize(source)).rejects.toBe(failure);
+  expect(getSize).toHaveBeenCalledWith(source.uri, expect.any(Function), expect.any(Function));
 });
