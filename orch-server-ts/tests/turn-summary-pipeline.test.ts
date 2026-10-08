@@ -421,6 +421,7 @@ describe("TurnSummaryPipeline", () => {
           text: "항상 짧게 답하라",
           confidence: 0.99,
           existing_id: null,
+          source_quote: "위임 보고",
         }],
       }),
       model: "gpt-5.6-luna",
@@ -484,7 +485,7 @@ describe("TurnSummaryPipeline", () => {
       turnStartEventId: 10,
       inputId: "input-10",
       finalResponseEventId: 19,
-      userText: "앞으로 설명은 간결하게 써 줘.",
+      userText: "앞으로 설명은 간결하게 써 줘. 앞으로 응답은 한국어로 해 줘.",
       assistantText: "알겠습니다.",
       startEvidence: { kind: "user_message", evidenceState: "complete" },
       speaker: {
@@ -502,13 +503,20 @@ describe("TurnSummaryPipeline", () => {
             text: "앞으로 설명은 간결하게 써 줘.",
             confidence: 0.92,
             existing_id: "instruction-existing",
+            source_quote: "앞으로 설명은 간결하게 써 줘.",
           },
           {
             text: "앞으로 응답은 한국어로 해 줘.",
             confidence: 0.7,
             existing_id: null,
+            source_quote: "앞으로 응답은 한국어로 해 줘.",
           },
-          { text: "낮은 신뢰도 항목", confidence: 0.69, existing_id: null },
+          {
+            text: "낮은 신뢰도 항목",
+            confidence: 0.69,
+            existing_id: null,
+            source_quote: "앞으로 응답은 한국어로 해 줘.",
+          },
         ],
       }),
       model: "gpt-5.6-luna",
@@ -543,7 +551,9 @@ describe("TurnSummaryPipeline", () => {
       "turn_summary:10:19",
     );
     expect(summarize).toHaveBeenCalledWith(
-      expect.objectContaining({ userText: "앞으로 설명은 간결하게 써 줘." }),
+      expect.objectContaining({
+        userText: "앞으로 설명은 간결하게 써 줘. 앞으로 응답은 한국어로 해 줘.",
+      }),
       CONFIG,
       expect.objectContaining({
         persistentInstructions: [{
@@ -577,6 +587,125 @@ describe("TurnSummaryPipeline", () => {
         ],
       },
     });
+  });
+
+  it("rejects quotes outside the current human turn and keeps the normal summary path", async () => {
+    const repository = fakeRepository();
+    const userText = "이 카드도 체크, 큰 문제 없으면 진행.";
+    const assistantText = "assistant 발화에서만 온 표현";
+    repository.loadPreviousSummaries.mockResolvedValue([
+      "이전 요약에서만 온 표현",
+    ]);
+    repository.loadTurn.mockResolvedValue({
+      sessionId: "session-a",
+      folderId: "allowed-folder",
+      metadata: [
+        { type: "caller_info", value: { source: "browser" } },
+        { type: "persistent_session", value: { enabled: true } },
+        {
+          type: "persistent_instructions",
+          value: [{
+            id: "instruction-active",
+            text: "현재 활성 지시에서만 온 표현",
+            source_turns: [],
+            source_event_ids: [],
+            created_at: "2026-10-01T00:00:00.000Z",
+            updated_at: "2026-10-01T00:00:00.000Z",
+            status: "active",
+            origin: "user",
+          }],
+        },
+      ],
+      turnStartEventId: 10,
+      finalResponseEventId: 19,
+      userText,
+      assistantText,
+      startEvidence: { kind: "user_message", evidenceState: "complete" },
+      speaker: { kind: "user", displayName: "사용자", source: "browser" },
+    });
+    const instructionCommandSender = vi.fn();
+    const foldIfNeeded = vi.fn();
+    const pipeline = new TurnSummaryPipeline({
+      repository,
+      configService: { read: () => CONFIG },
+      summarizer: {
+        summarize: vi.fn().mockResolvedValue({
+          content: JSON.stringify({
+            summary: "카드 확인을 한 번 요청했다.",
+            standing_instructions: [
+              {
+                text: "내부 프롬프트에서만 온 표현",
+                confidence: 0.99,
+                existing_id: null,
+                source_quote: "현재 사람 발화 자체가 반복 적용할 규칙이나 선호를 표현한 경우만 추출한다.",
+              },
+              {
+                text: "이전 요약 후보",
+                confidence: 0.99,
+                existing_id: null,
+                source_quote: "이전 요약에서만 온 표현",
+              },
+              {
+                text: "assistant 후보",
+                confidence: 0.99,
+                existing_id: null,
+                source_quote: assistantText,
+              },
+              {
+                text: "활성 지시 touch 후보",
+                confidence: 0.99,
+                existing_id: "instruction-active",
+                source_quote: "현재 활성 지시에서만 온 표현",
+              },
+              {
+                text: "인용 누락 후보",
+                confidence: 0.99,
+                existing_id: null,
+              },
+              {
+                text: "인용 타입 오류 후보",
+                confidence: 0.99,
+                existing_id: null,
+                source_quote: 42,
+              },
+              {
+                text: "빈 인용 후보",
+                confidence: 0.99,
+                existing_id: null,
+                source_quote: "  ",
+              },
+              {
+                text: "불일치 인용 후보",
+                confidence: 0.99,
+                existing_id: null,
+                source_quote: "이 카드도 계속 확인해 줘.",
+              },
+            ],
+          }),
+          model: "gpt-5.6-luna",
+          latencyMs: 1,
+          attempts: 1,
+        }),
+      },
+      eventHub: new RuntimeSessionEventHub(),
+      storyFolder: { foldIfNeeded },
+      instructionCommandSender,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+
+    pipeline.accept([nodeEvent("node-a", "session-a", {
+      type: "complete",
+      _event_id: 20,
+    })]);
+    await pipeline.drain();
+
+    expect(repository.appendSummary).toHaveBeenCalledWith(
+      "session-a",
+      expect.objectContaining({ content: "카드 확인을 한 번 요청했다." }),
+      "turn_summary:10:19",
+    );
+    expect(foldIfNeeded).toHaveBeenCalledWith("session-a");
+    expect(instructionCommandSender).not.toHaveBeenCalled();
   });
 
   it("uses the raw PAS response as the summary when structured parsing fails", async () => {
@@ -657,6 +786,7 @@ describe("TurnSummaryPipeline", () => {
               text: "간결하게 답해 줘.",
               confidence: 0.9,
               existing_id: null,
+              source_quote: "앞으로 간결하게 답해 줘.",
             }],
           }),
           model: "gpt-5.6-luna",

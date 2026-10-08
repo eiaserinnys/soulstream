@@ -161,8 +161,13 @@ describe("turn summary prompt", () => {
     const instructionProperties = instructionSchema.properties as
       Record<string, unknown>;
     expect(instructionSchema.required).toContain("existing_id");
+    expect(instructionSchema.required).toContain("source_quote");
     expect(instructionProperties.existing_id).toEqual({
       type: ["string", "null"],
+    });
+    expect(instructionProperties.source_quote).toEqual({
+      type: "string",
+      minLength: 1,
     });
   });
 
@@ -198,10 +203,16 @@ describe("turn summary prompt", () => {
 
     expect(prompt).toContain("instruction-1");
     expect(prompt).toContain("한국어로 답해 줘.");
-    expect(prompt).toContain("앞으로 계속 적용되는 규칙이나 선호");
+    expect(prompt).toContain("현재 사람 발화 자체가 반복 적용할 규칙이나 선호");
     expect(prompt).toContain("에이전트 발언에서는 뽑지 않는다");
     expect(prompt).toContain("existing_id");
     expect(prompt).toContain("새 지시는 existing_id를 null로 반환한다");
+    expect(prompt).toContain("source_quote");
+    expect(prompt).toContain(
+      "source_quote에는 해당 의미를 담은 완전한 구절을 사용자가 입력한 그대로 복사한다",
+    );
+    expect(prompt).toContain("이전 요약, assistant 응답, 활성 목록은 새 지시의 근거로 쓰지 않는다");
+    expect(prompt).toContain("이 카드도 체크, 큰 문제 없으면 진행");
   });
 
   it("forwards optional summarizer output options through the provider router", async () => {

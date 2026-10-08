@@ -60,11 +60,12 @@ export const PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["text", "confidence", "existing_id"],
+        required: ["text", "confidence", "existing_id", "source_quote"],
         properties: {
           text: { type: "string", minLength: 1 },
           confidence: { type: "number" },
           existing_id: { type: ["string", "null"] },
+          source_quote: { type: "string", minLength: 1 },
         },
       },
     },
@@ -77,6 +78,7 @@ type StructuredTurnSummary = {
     readonly text: string;
     readonly confidence: number;
     readonly existingId?: string;
+    readonly sourceQuote: string;
   }[];
 };
 
@@ -310,7 +312,10 @@ export class TurnSummaryPipeline {
     structured: StructuredTurnSummary,
   ): Promise<void> {
     const extracted = structured.standingInstructions.filter(
-      (instruction) => instruction.confidence >= 0.7,
+      (instruction) =>
+        instruction.confidence >= 0.7 &&
+        instruction.sourceQuote.trim().length > 0 &&
+        turn.userText.includes(instruction.sourceQuote),
     );
     if (extracted.length === 0) return;
     if (this.deps.instructionCommandSender === undefined) {
@@ -519,11 +524,17 @@ function parseStructuredTurnSummary(
     text: string;
     confidence: number;
     existingId?: string;
+    sourceQuote: string;
   }> = [];
   for (const rawInstruction of value.standing_instructions) {
     if (
       !isRecord(rawInstruction) ||
-      hasUnknownKeys(rawInstruction, ["text", "confidence", "existing_id"]) ||
+      hasUnknownKeys(rawInstruction, [
+        "text",
+        "confidence",
+        "existing_id",
+        "source_quote",
+      ]) ||
       typeof rawInstruction.text !== "string" ||
       rawInstruction.text.trim().length === 0 ||
       typeof rawInstruction.confidence !== "number" ||
@@ -534,12 +545,19 @@ function parseStructuredTurnSummary(
     ) {
       return null;
     }
+    if (
+      typeof rawInstruction.source_quote !== "string" ||
+      rawInstruction.source_quote.trim().length === 0
+    ) {
+      continue;
+    }
     standingInstructions.push({
       text: rawInstruction.text.trim(),
       confidence: rawInstruction.confidence,
       ...(typeof rawInstruction.existing_id !== "string"
         ? {}
         : { existingId: rawInstruction.existing_id }),
+      sourceQuote: rawInstruction.source_quote,
     });
   }
   return { summary: value.summary, standingInstructions };
