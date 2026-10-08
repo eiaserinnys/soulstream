@@ -1587,6 +1587,7 @@
             "show_generation_separator": { "type": "boolean" },
             "show_character": { "type": "boolean" },
             "show_jev_candidates": { "type": "boolean" },
+            "turn_usage_mode": { "type": "string", "enum": ["collapsed", "expanded", "hidden"] },
             "show_turn_usage": { "type": "boolean" },
             "animate_character": { "type": "boolean" }
           }

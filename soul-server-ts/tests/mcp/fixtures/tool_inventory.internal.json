@@ -8121,6 +8121,14 @@
         },
         "show_turn_usage": {
           "type": "boolean"
+        },
+        "turn_usage_mode": {
+          "enum": [
+            "collapsed",
+            "expanded",
+            "hidden"
+          ],
+          "type": "string"
         }
       },
       "required": [

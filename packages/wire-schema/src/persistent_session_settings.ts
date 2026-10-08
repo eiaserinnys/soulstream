@@ -7,6 +7,9 @@
 
 export const PERSISTENT_SETTINGS_METADATA_TYPE = "persistent_settings";
 
+export const PERSISTENT_TURN_USAGE_MODES = ["collapsed", "expanded", "hidden"] as const;
+export type PersistentTurnUsageMode = (typeof PERSISTENT_TURN_USAGE_MODES)[number];
+
 export type PersistentModelSelection = {
   model_preset: string;
   /** null = 추론 수준을 지정하지 않음(백엔드 기본). */
@@ -20,6 +23,8 @@ export type PersistentSessionSettings = {
   show_character: boolean;
   /** 채팅 창의 Jev 후보 줄을 보일지 여부. */
   show_jev_candidates: boolean;
+  turn_usage_mode: PersistentTurnUsageMode;
+  /** 호환 응답·metadata 키. 정본은 turn_usage_mode다. */
   show_turn_usage: boolean;
   animate_character: boolean;
 };
@@ -38,6 +43,7 @@ export const PERSISTENT_SETTINGS_DEFAULTS = {
   show_generation_separator: true,
   show_character: true,
   show_jev_candidates: true,
+  turn_usage_mode: "collapsed",
   show_turn_usage: true,
   animate_character: true,
 } as const satisfies Omit<PersistentSessionSettings, "default_model">;
@@ -55,6 +61,7 @@ const SETTINGS_KEYS = [
   "show_generation_separator",
   "show_character",
   "show_jev_candidates",
+  "turn_usage_mode",
   "show_turn_usage",
   "animate_character",
 ] as const;
@@ -80,6 +87,12 @@ export function parsePersistentSettingsPatch(input: unknown): ParseResult<Persis
       patch.fallback_model = parsed.value;
     }
   }
+  if (input.turn_usage_mode !== undefined) {
+    if (!isPersistentTurnUsageMode(input.turn_usage_mode)) {
+      return { ok: false, message: "settings.turn_usage_mode must be collapsed, expanded, or hidden" };
+    }
+    patch.turn_usage_mode = input.turn_usage_mode;
+  }
   for (const key of [
     "show_generation_separator",
     "show_character",
@@ -102,6 +115,9 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
   const record = isRecord(value) ? value : {};
   const defaultModel = parseModelSelection(record.default_model, "default_model");
   const fallbackModel = parseModelSelection(record.fallback_model, "fallback_model");
+  const turnUsageMode = isPersistentTurnUsageMode(record.turn_usage_mode)
+    ? record.turn_usage_mode
+    : record.show_turn_usage === false ? "hidden" : "collapsed";
   return {
     default_model: defaultModel.ok ? defaultModel.value : null,
     fallback_model: fallbackModel.ok ? fallbackModel.value : null,
@@ -115,9 +131,8 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
     show_jev_candidates: typeof record.show_jev_candidates === "boolean"
       ? record.show_jev_candidates
       : PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
-    show_turn_usage: typeof record.show_turn_usage === "boolean"
-      ? record.show_turn_usage
-      : PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
+    turn_usage_mode: turnUsageMode,
+    show_turn_usage: turnUsageMode !== "hidden",
     animate_character: typeof record.animate_character === "boolean"
       ? record.animate_character
       : PERSISTENT_SETTINGS_DEFAULTS.animate_character,
@@ -127,7 +142,10 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
 export function buildPersistentSettingsMetadataEntry(
   settings: PersistentSessionSettings,
 ): Record<string, unknown> {
-  return { type: PERSISTENT_SETTINGS_METADATA_TYPE, value: settings };
+  return {
+    type: PERSISTENT_SETTINGS_METADATA_TYPE,
+    value: { ...settings, show_turn_usage: settings.turn_usage_mode !== "hidden" },
+  };
 }
 
 /** `persistent_session` 표시가 켜져 있는가. 항목이 없거나 깨졌으면 false. */
@@ -177,4 +195,9 @@ function lastEntryValue(metadata: unknown, type: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPersistentTurnUsageMode(value: unknown): value is PersistentTurnUsageMode {
+  return typeof value === "string"
+    && (PERSISTENT_TURN_USAGE_MODES as readonly string[]).includes(value);
 }

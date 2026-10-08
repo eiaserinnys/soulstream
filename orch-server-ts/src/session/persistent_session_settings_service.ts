@@ -350,6 +350,7 @@ export class PersistentSessionSettingsService {
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
         show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
+        turn_usage_mode: PERSISTENT_SETTINGS_DEFAULTS.turn_usage_mode,
         show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
         animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
       },

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PERSISTENT_TURN_USAGE_MODES } from "@soulstream/wire-schema/persistent-session-settings";
 import type { McpToolDefinition } from "./tool_definitions.js";
 
 const modelSelection = z.object({
@@ -12,6 +13,7 @@ const settingFields = {
   show_generation_separator: z.boolean().optional(),
   show_character: z.boolean().optional(),
   show_jev_candidates: z.boolean().optional(),
+  turn_usage_mode: z.enum(PERSISTENT_TURN_USAGE_MODES).optional(),
   show_turn_usage: z.boolean().optional(),
   animate_character: z.boolean().optional(),
 };
