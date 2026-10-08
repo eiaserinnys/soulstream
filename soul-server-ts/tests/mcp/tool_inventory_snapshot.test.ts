@@ -75,7 +75,14 @@ describe("advertised MCP tool inventory", () => {
     expect(internal.find(tool => tool.name === "create_card")!.inputSchema.properties).toHaveProperty("run");
     expect(internal.find(tool => tool.name === "run_card")).toBeDefined();
     expect(internal.find(tool => tool.name === "update_persistent_session_settings")).toMatchObject({
-      inputSchema: { properties: { session_id: expect.any(Object), default_model: expect.any(Object), show_turn_usage: expect.any(Object) } },
+      inputSchema: {
+        properties: {
+          session_id: expect.any(Object),
+          default_model: expect.any(Object),
+          show_turn_usage: expect.any(Object),
+          turn_usage_mode: expect.any(Object),
+        },
+      },
     });
     expect(internal.find(tool => tool.name === "request_session_generation_rollover")!).toMatchObject({
       description: "퍼시스턴트 세션의 다음 실행에서 새 세대(새 모델 세션)로 교체하도록 요청한다. 기본은 이전 세대의 체크포인트를 이어 받는다. reset_context=true면 체크포인트를 현재 상태와 keep_instructions 설정에 따른 지속 지시만으로 다시 구성해 이전 대화 문맥을 비운다.",

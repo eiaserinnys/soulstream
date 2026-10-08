@@ -179,6 +179,7 @@ export class PersistentSessionControl {
       show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
       show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
       show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
+      turn_usage_mode: PERSISTENT_SETTINGS_DEFAULTS.turn_usage_mode,
       show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
       animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
     };
@@ -188,13 +189,18 @@ export class PersistentSessionControl {
     if (defaultModel === null) {
       throw new PersistentSessionControlError("INVALID_REQUEST", "A default model is required to save persistent settings");
     }
+    const turnUsageMode = patch.turn_usage_mode
+      ?? (patch.show_turn_usage === undefined
+        ? base.turn_usage_mode
+        : patch.show_turn_usage ? "collapsed" : "hidden");
     return {
       default_model: defaultModel,
       fallback_model: patch.fallback_model !== undefined ? patch.fallback_model : base.fallback_model,
       show_generation_separator: patch.show_generation_separator ?? base.show_generation_separator,
       show_character: patch.show_character ?? base.show_character,
       show_jev_candidates: patch.show_jev_candidates ?? base.show_jev_candidates,
-      show_turn_usage: patch.show_turn_usage ?? base.show_turn_usage,
+      turn_usage_mode: turnUsageMode,
+      show_turn_usage: turnUsageMode !== "hidden",
       animate_character: patch.animate_character ?? base.animate_character,
     };
   }

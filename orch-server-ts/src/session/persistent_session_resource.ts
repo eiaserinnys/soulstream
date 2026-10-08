@@ -3,6 +3,7 @@ import {
   readPersistentEnabled,
   readPersistentPendingTarget,
   readStoredPersistentSettings,
+  type PersistentTurnUsageMode,
   type PersistentPendingTarget,
 } from "@soulstream/wire-schema/persistent-session-settings";
 
@@ -18,6 +19,7 @@ export type PersistentSettingsView = {
   show_generation_separator: boolean;
   show_character: boolean;
   show_jev_candidates: boolean;
+  turn_usage_mode: PersistentTurnUsageMode;
   show_turn_usage: boolean;
   animate_character: boolean;
 };
@@ -64,6 +66,7 @@ export function buildPersistentSessionResource(
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
         show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
+        turn_usage_mode: PERSISTENT_SETTINGS_DEFAULTS.turn_usage_mode,
         show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
         animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
       }
@@ -73,6 +76,7 @@ export function buildPersistentSessionResource(
         show_generation_separator: stored.show_generation_separator,
         show_character: stored.show_character,
         show_jev_candidates: stored.show_jev_candidates,
+        turn_usage_mode: stored.turn_usage_mode,
         show_turn_usage: stored.show_turn_usage,
         animate_character: stored.animate_character,
       };

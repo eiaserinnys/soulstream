@@ -91,6 +91,19 @@ describePostgres("PAS settings API on PostgreSQL", () => {
   }
 
   const persistentOn = { type: "persistent_session", value: { enabled: true, updated_at: "2026-09-01T00:00:00Z" } };
+  const persistentInstructions = {
+    type: "persistent_instructions",
+    value: [{
+      id: "instruction-1",
+      text: "keep this instruction",
+      source_turns: ["turn-1"],
+      source_event_ids: [4],
+      created_at: "2026-10-08T00:00:00.000Z",
+      updated_at: "2026-10-08T00:00:00.000Z",
+      status: "active",
+      origin: "user",
+    }],
+  };
   const metadataOf = async (id: string) =>
     (await sql<Array<{ metadata: Array<{ type: string; value: Json }> }>>`SELECT metadata FROM sessions WHERE session_id = ${id}`)[0]!.metadata;
 
@@ -100,6 +113,7 @@ describePostgres("PAS settings API on PostgreSQL", () => {
       metadata: [
         { type: "caller_info", value: { source: "agent", agent_id: "seosoyoung" } },
         persistentOn,
+        persistentInstructions,
         { type: "persistent_generation", value: {
           number: 3, backend_session_id: "native-3", started_at: "2026-09-02T00:00:00Z",
           first_call: { generation: 3, input_tokens: 1000, cached_input_tokens: 900, model_preset: "claude-opus",
@@ -180,6 +194,41 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     const rereadUsage = await call("GET", "/api/persistent-sessions/pas-edit");
     expect(rereadUsage.body.session!.settings)
       .toMatchObject({ show_turn_usage: false, animate_character: false });
+
+    const legacyTrue = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_turn_usage: true } });
+    expect(legacyTrue.status).toBe(200);
+    expect(legacyTrue.body.session).toMatchObject({ settings: { turn_usage_mode: "collapsed", show_turn_usage: true } });
+
+    for (const turnUsageMode of ["collapsed", "expanded", "hidden"] as const) {
+      const savedMode = await call("PUT", "/api/persistent-sessions/pas-edit", {
+        settings: { turn_usage_mode: turnUsageMode, show_turn_usage: false },
+      });
+      const expectedShowTurnUsage = turnUsageMode !== "hidden";
+      expect(savedMode.status).toBe(200);
+      expect(savedMode.body.session).toMatchObject({
+        settings: { turn_usage_mode: turnUsageMode, show_turn_usage: expectedShowTurnUsage },
+      });
+
+      const storedSettings = (await metadataOf("pas-edit")).find((entry) => entry.type === "persistent_settings")!.value;
+      expect(storedSettings).toMatchObject({
+        turn_usage_mode: turnUsageMode,
+        show_turn_usage: expectedShowTurnUsage,
+      });
+      const roundTrip = await call("GET", "/api/persistent-sessions/pas-edit");
+      expect(roundTrip.body.session!.settings).toMatchObject({
+        turn_usage_mode: turnUsageMode,
+        show_turn_usage: expectedShowTurnUsage,
+      });
+
+      if (turnUsageMode === "expanded") {
+        const partial = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_character: false } });
+        expect(partial.body.session).toMatchObject({
+          settings: { turn_usage_mode: "expanded", show_turn_usage: true, show_character: false },
+        });
+      }
+    }
+    expect(await metadataOf("pas-edit")).toEqual(expect.arrayContaining([persistentInstructions]));
+
     const unknownSetting = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { future_setting: true } });
     expect(unknownSetting.status).toBe(422);
   });
@@ -237,7 +286,7 @@ describePostgres("PAS settings API on PostgreSQL", () => {
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
         fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true,
-        show_turn_usage: true, animate_character: true,
+        show_turn_usage: true, turn_usage_mode: "collapsed", animate_character: true,
       },
     });
     // The saved entry predates show_jev_candidates and the new fields: all read as true without being rewritten.
@@ -248,11 +297,13 @@ describePostgres("PAS settings API on PostgreSQL", () => {
         show_generation_separator: false,
         show_jev_candidates: true,
         show_turn_usage: true,
+        turn_usage_mode: "collapsed",
         animate_character: true,
       },
     });
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_jev_candidates");
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_turn_usage");
+    expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("turn_usage_mode");
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("animate_character");
     expect(list.body.create_defaults).toEqual({
       node_id: NODE_ID,
@@ -264,6 +315,7 @@ describePostgres("PAS settings API on PostgreSQL", () => {
         show_character: true,
         show_jev_candidates: true,
         show_turn_usage: true,
+        turn_usage_mode: "collapsed",
         animate_character: true,
       },
       initial_instruction: "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.",

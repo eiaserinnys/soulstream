@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { parsePersistentSettingsPatch, readStoredPersistentSettings } from "@soulstream/wire-schema/persistent-session-settings";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -355,6 +356,34 @@ describe("PersistentSessionControl", () => {
 describe("PersistentSessionControl.applySettings", () => {
   const sonnet = { model_preset: "codex-preset", reasoning_effort: "high" };
 
+  it("reads canonical usage modes before legacy booleans without mutating metadata", () => {
+    const cases = [
+      [{ show_turn_usage: true }, "collapsed", true],
+      [{ show_turn_usage: false }, "hidden", false],
+      [{}, "collapsed", true],
+      [{ turn_usage_mode: "expanded", show_turn_usage: false }, "expanded", true],
+    ] as const;
+
+    for (const [value, turnUsageMode, showTurnUsage] of cases) {
+      const metadata = [{ type: "persistent_settings", value }];
+      const before = structuredClone(metadata);
+
+      expect(readStoredPersistentSettings(metadata)).toMatchObject({
+        turn_usage_mode: turnUsageMode,
+        show_turn_usage: showTurnUsage,
+      });
+      expect(metadata).toEqual(before);
+    }
+  });
+
+  it("parses the canonical usage mode enum while retaining legacy boolean patches", () => {
+    expect(parsePersistentSettingsPatch({ turn_usage_mode: "expanded", show_turn_usage: false })).toEqual({
+      ok: true,
+      value: { turn_usage_mode: "expanded", show_turn_usage: false },
+    });
+    expect(parsePersistentSettingsPatch({ turn_usage_mode: "full" })).toMatchObject({ ok: false });
+  });
+
   it("returns the real generation number when the marker is switched", async () => {
     const task = makeRolloverTask({ persistentGeneration: { number: 4, firstCall } } as Partial<Task>);
     const { control } = makeRolloverControl(task);
@@ -399,6 +428,7 @@ describe("PersistentSessionControl.applySettings", () => {
           show_generation_separator: true,
           show_character: false,
           show_jev_candidates: true,
+          turn_usage_mode: "hidden",
           show_turn_usage: false,
           animate_character: false,
         },
@@ -462,6 +492,49 @@ describe("PersistentSessionControl.applySettings", () => {
       show_generation_separator: true,
       default_model: { model_preset: "claude-preset", reasoning_effort: "medium" },
     });
+  });
+
+  it("stores the three usage modes, prioritizes mode over the legacy boolean, and preserves instructions", async () => {
+    const persistentInstructions = {
+      type: "persistent_instructions",
+      value: [{
+        id: "instruction-1",
+        text: "keep this instruction",
+        source_turns: ["turn-1"],
+        source_event_ids: [4],
+        created_at: "2026-10-08T00:00:00.000Z",
+        updated_at: "2026-10-08T00:00:00.000Z",
+        status: "active",
+        origin: "user",
+      }],
+    };
+    const task = makeRolloverTask({
+      metadata: [
+        { type: "persistent_session", value: { enabled: true } },
+        persistentInstructions,
+      ],
+    });
+    const { control, persistedEntries } = makeRolloverControl(task);
+
+    for (const turnUsageMode of ["collapsed", "expanded", "hidden"] as const) {
+      await control.applySettings(task.agentSessionId, {
+        settings: { turn_usage_mode: turnUsageMode, show_turn_usage: false },
+      });
+      const saved = persistedEntries.filter((entry) => entry.type === "persistent_settings").at(-1)?.value;
+      expect(saved).toMatchObject({
+        turn_usage_mode: turnUsageMode,
+        show_turn_usage: turnUsageMode !== "hidden",
+      });
+    }
+
+    await control.applySettings(task.agentSessionId, { settings: { show_turn_usage: true } });
+    const legacyTrue = persistedEntries.filter((entry) => entry.type === "persistent_settings").at(-1)?.value;
+    expect(legacyTrue).toMatchObject({ turn_usage_mode: "collapsed", show_turn_usage: true });
+
+    await control.applySettings(task.agentSessionId, { settings: { show_character: false } });
+    const partial = persistedEntries.filter((entry) => entry.type === "persistent_settings").at(-1)?.value;
+    expect(partial).toMatchObject({ turn_usage_mode: "collapsed", show_turn_usage: true, show_character: false });
+    expect(task.metadata).toEqual(expect.arrayContaining([persistentInstructions]));
   });
 
   it("only clears the marker when disabling and keeps settings", async () => {

@@ -2114,6 +2114,7 @@ export interface SetPersistentSessionSettings {
     show_generation_separator?: boolean;
     show_character?: boolean;
     show_jev_candidates?: boolean;
+    turn_usage_mode?: "collapsed" | "expanded" | "hidden";
     show_turn_usage?: boolean;
     animate_character?: boolean;
   };

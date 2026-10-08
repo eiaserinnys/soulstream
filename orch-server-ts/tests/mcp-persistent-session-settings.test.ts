@@ -5,14 +5,19 @@ import { SessionResourceAccessError } from "../src/session/session_resource_acce
 import { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import { describe, expect, it, vi } from "vitest";
 import type { CallToolResult } from "@soulstream/mcp-contract";
-import { buildPersistentSettingsMetadataEntry, readStoredPersistentSettings } from "@soulstream/wire-schema/persistent-session-settings";
+import {
+  buildPersistentSettingsMetadataEntry,
+  readStoredPersistentSettings,
+  type PersistentSessionSettings,
+} from "@soulstream/wire-schema/persistent-session-settings";
 
-const currentSettings = {
+const currentSettings: PersistentSessionSettings = {
   default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
   fallback_model: null,
   show_generation_separator: true,
   show_character: true,
   show_jev_candidates: true,
+  turn_usage_mode: "collapsed",
   show_turn_usage: true,
   animate_character: true,
 };
@@ -63,7 +68,17 @@ function setup() {
           const row = rows.get(String(payload.agentSessionId))!;
           const previous = readStoredPersistentSettings(row.metadata)!;
           const patch = (payload.settings ?? {}) as Record<string, unknown>;
-          const next = { ...previous, ...patch } as typeof currentSettings;
+          const turnUsageMode = typeof patch.turn_usage_mode === "string"
+            ? patch.turn_usage_mode
+            : patch.show_turn_usage === undefined
+              ? previous.turn_usage_mode
+              : patch.show_turn_usage ? "collapsed" : "hidden";
+          const next = {
+            ...previous,
+            ...patch,
+            turn_usage_mode: turnUsageMode,
+            show_turn_usage: turnUsageMode !== "hidden",
+          } as PersistentSessionSettings;
           row.metadata = [
             ...(row.metadata as Array<Record<string, unknown>>).filter(entry => entry.type !== "persistent_settings"),
             buildPersistentSettingsMetadataEntry(next),
@@ -146,7 +161,23 @@ describe("update_persistent_session_settings MCP tool", () => {
     expect(h.commandPayloads[0]).toMatchObject({ settings: { show_turn_usage: false } });
     expect(h.commandPayloads[0]!.settings).not.toHaveProperty("default_model");
     expect(h.modelChanges).toEqual(["none"]);
-    expect(result.structuredContent).toMatchObject({ settings: { show_turn_usage: false } });
+    expect(result.structuredContent).toMatchObject({
+      settings: { turn_usage_mode: "hidden", show_turn_usage: false },
+    });
+  });
+
+  it("accepts the canonical usage mode through the MCP settings contract", async () => {
+    const h = setup();
+    h.rows.set("mcp-session", h.makeRow("mcp-session"));
+
+    const result = await h.call({ session_id: "mcp-session", turn_usage_mode: "expanded" });
+
+    expect(result.isError).not.toBe(true);
+    expect(h.commandPayloads[0]).toMatchObject({ settings: { turn_usage_mode: "expanded" } });
+    expect(h.commandPayloads[0]!.settings).not.toHaveProperty("show_turn_usage");
+    expect(result.structuredContent).toMatchObject({
+      settings: { turn_usage_mode: "expanded", show_turn_usage: true },
+    });
   });
 
   it("rejects unknown fields, invalid settings, missing/nonpersistent sessions, and unauthorized callers", async () => {
