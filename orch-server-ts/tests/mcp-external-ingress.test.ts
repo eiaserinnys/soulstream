@@ -134,15 +134,18 @@ describe("orchestrator dedicated external MCP ingress", () => {
   });
   describe("card number references", () => {
     const folderRow = { id: "folder-a" };
-    const detail = { card: { id: "card-uuid-412", folder_id: "folder-a", number: 412, title: "퍼시스턴트 에이전트 세션" },
-      reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] };
     function cardOptions(access = { restricted: false, allowedFolderIds: [] as string[] }) {
       // A card in folder-a. The fake mirrors the real service contract: refs in, one result per ref, access decided by allowFolder.
       const resolveReferences = vi.fn(async (refs: string[], allowFolder: (folderId: string) => boolean) => refs.map(ref => allowFolder("folder-a")
         ? { ref, kind: "card" as const, id: "card-uuid-412", title: "퍼시스턴트 에이전트 세션" }
         : { ref, error: "#412 번호의 카드가 없습니다." }));
-      const getCard = vi.fn(async (id: string) => id === "card-uuid-412" ? detail : null);
-      const options = { cards: { cardServiceProvider: async () => ({ resolveReferences, getCard }),
+      const getCard = vi.fn(async (id: string) => id === "card-uuid-412" ? {
+        card: { id: "card-uuid-412", number: 412, title: "퍼시스턴트 에이전트 세션", status: "todo" },
+        questions: { items: [], nextCursor: null, truncated: false },
+        available: { request: false, brief: false, attachments: false, comments: 0, notes: 0, reports: 0, sessions: 0, now_history: 0 },
+        changeToken: "change-token",
+      } : null);
+      const options = { cards: { cardServiceProvider: async () => ({ resolveReferences, mcpRead: { getCard, listCards: vi.fn() } }),
         provider: { listFolders: async () => [folderRow, { id: "folder-b" }], listSessionAssignments: () => ({}) },
         resolveAccess: () => access } } as unknown as McpHostOptions;
       return { options, resolveReferences, getCard };
@@ -157,7 +160,7 @@ describe("orchestrator dedicated external MCP ingress", () => {
         resolved_references: ["번호 참조 #412 → 카드 「퍼시스턴트 에이전트 세션」"],
       });
       expect(result.structuredContent).toMatchObject({ card: { id: "card-uuid-412", number: 412 } });
-      expect(getCard).toHaveBeenCalledWith("card-uuid-412");
+      expect(getCard).toHaveBeenCalledWith("card-uuid-412", {}, null);
       expect(resolveReferences).toHaveBeenCalledTimes(1);
       expect(resolveReferences.mock.calls[0]![0]).toEqual(["#412"]);
     });

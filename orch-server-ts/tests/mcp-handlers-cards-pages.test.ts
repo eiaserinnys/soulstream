@@ -79,7 +79,7 @@ describe("page MCP execution", () => {
 
 const attachments = [{ nodeId: "node", path: "/incoming/upload/image.png", name: "image.png", mimeType: "image/png" }];
 function cardHarness(
-  folders = [{ id: "folder-1" }, { id: "folder-2" }],
+  folders: { id: string; parentFolderId?: string | null }[] = [{ id: "folder-1" }, { id: "folder-2" }],
   access = { restricted: false, allowedFolderIds: [] as string[] },
 ) {
   const card = { id: "card-1", folder_id: "folder-1", title: "카드", status: "running", version: 3, attachments };
@@ -126,7 +126,7 @@ describe("card MCP execution", () => {
         assignee: { kind: "agent", agent_id: "roselin" }, node_id: "node", model_preset: "sol" }, "createCard",
         { folderId: "folder-1", title: "제목", request: "원문", attachments, queue: true,
           assignee: { kind: "agent", agentId: "roselin" }, nodeId: "node", modelPreset: "sol" }],
-      ["list_cards", { folder_id: "folder-1", status: "running" }, "listCards", { folderId: "folder-1", status: "running" }],
+      ["list_cards", { folder_id: "folder-1", status: "running" }, "listCards", { folder_id: "folder-1", status: "running" }],
       ["get_card", { card_id: "card-1" }, "getCard", "card-1"],
       ["update_card_brief", { card_id: "card-1", brief: "경과" }, "patchCard", { brief: "경과", expectedVersion: 3 }],
       ["add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>결과</p>" }, "addReport",
@@ -154,7 +154,7 @@ describe("card MCP execution", () => {
         const spy = h.service[method];
         if (typeof expected === "string") expect(spy).toHaveBeenLastCalledWith(expected);
         else expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ ...expected,
-        ...(name === "list_cards" ? {} : { actorKind: "agent", actorSessionId: "session-1", idempotencyKey: expect.any(String) }) }));
+          actorKind: "agent", actorSessionId: "session-1", idempotencyKey: expect.any(String) }));
       }
       if (name === "get_card") {
         expect(JSON.stringify(result)).toContain("현재 결과");

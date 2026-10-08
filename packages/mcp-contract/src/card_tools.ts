@@ -18,11 +18,15 @@ export const cardTools = {
     inputSchema: scope,
   }, audience: "all" },
   list_cards: { name: "list_cards", config: {
-    description: "폴더와 상태로 카드를 조회하고 folder_id가 없으면 모든 폴더를 조회한다.",
-    inputSchema: { folder_id: id.optional(), status: z.enum(CARD_STATUSES).optional(), caller_session_id: callerSessionIdSchema },
+    description: "폴더와 상태별 카드 요약을 기본 20건 반환합니다. nextCursor가 있으면 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
+    inputSchema: { folder_id: id.optional(), status: z.enum(CARD_STATUSES).optional(), caller_session_id: callerSessionIdSchema,
+      limit: z.number().int().min(1).max(50).optional(), cursor: id.optional(), all: z.boolean().optional() },
   }, audience: "all" },
   get_card: { name: "get_card", config: {
-    description: "카드의 요청, 확인 항목, 상황판, 커멘트, 보고, 질문과 세션을 읽습니다. 노트는 최근 20건이며 앞선 노트는 list_card_notes로 읽습니다.", inputSchema: scope,
+    description: "기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
+    inputSchema: { ...scope, include: z.array(z.enum(["request", "brief", "attachments", "comments", "notes", "reports", "sessions", "now_history", "questions_history"])).optional(),
+      limit: z.number().int().min(1).max(50).optional(), text_limit: z.number().int().min(1).max(4000).optional(),
+      cursors: z.record(z.string(), id).optional(), since: id.optional() },
   }, audience: "all" },
   update_card_brief: { name: "update_card_brief", config: {
     description: "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다.", inputSchema: { ...scope, brief: z.string() },

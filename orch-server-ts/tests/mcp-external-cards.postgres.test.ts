@@ -19,6 +19,7 @@ describe("external MCP card writes", () => {
   let dispatcher: CardDispatcher;
   const messages = vi.fn(async (..._args: unknown[]) => {}), notify = vi.fn(async () => {}), warnings = vi.fn();
   const context = { principal: "external" as const, callerSessionId: null, nodeId: "orch" };
+  let access = { restricted: false, allowedFolderIds: [] as string[] };
   beforeAll(async () => {
     h = await createPagePostgresHarness();
     await prepareCardWorkSchema(h);
@@ -34,7 +35,7 @@ describe("external MCP card writes", () => {
       authBearerToken: "token", folders: undefined as never, cards: {
         cardServiceProvider: async () => cards,
         provider: { listFolders: async () => [{ id: "a" }, { id: "b" }], listSessionAssignments: () => ({}) },
-        resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }),
+        resolveAccess: () => access,
       } };
   }, 60_000);
   afterAll(async () => { await dispatcher?.drain(); await h?.cleanup(); });
@@ -42,9 +43,12 @@ describe("external MCP card writes", () => {
     await dispatcher.drain();
     await h.sql`TRUNCATE folders,sessions,folder_operations RESTART IDENTITY CASCADE`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('a','A'),('b','B')`;
+    access = { restricted: false, allowedFolderIds: [] };
     await h.sql`INSERT INTO sessions(session_id,node_id,status) VALUES ('owner','node','running')`;
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
       VALUES ('card','a','a0','대상','원문','todo','session','owner')`;
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
+      VALUES ('card-b','b','a0','다른 폴더','다른 원문','todo','session','owner')`;
     messages.mockClear(); notify.mockClear(); warnings.mockClear();
   });
   async function call(tool: string, args: object) {
@@ -52,6 +56,93 @@ describe("external MCP card writes", () => {
     await dispatcher.drain();
     return result;
   }
+  it("returns compact current state by default and restores only selected source pages", async () => {
+    await h.sql`UPDATE cards SET brief='인계 요약',
+      attachments='[{"nodeId":"node","path":"/incoming/file.txt","name":"file.txt","mimeType":"text/plain"}]'::jsonb,
+      items='[{"id":1,"title":"결과 항목","state":"done","result":"저장 결과","evidence":[{"type":"link","url":"https://example.test/evidence","label":"근거"}],"rev":1,"confirmed":null,"fixOpen":0,"reopened":null}]'::jsonb
+      WHERE id='card'`;
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,created_at) VALUES
+      ('read-comment','card','user','spoken','사용자 발언','2026-10-08T10:00:00Z'),
+      ('read-note-older','card','agent','note','이전 작업 기록','2026-10-08T09:00:00Z'),
+      ('read-note-newer','card','agent','note','최신 작업 기록','2026-10-08T10:00:00Z')`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body) VALUES('read-report','card','작업 보고','markdown','보고 전문')`;
+    await h.sql`INSERT INTO card_questions(id,card_id,text,options) VALUES('read-question','card','미답 질문',NULL)`;
+
+    const compact = await call("get_card", { card_id: "card", caller_session_id: "forged-session" });
+    expect(compact.isError).not.toBe(true);
+    expect(compact.structuredContent).toMatchObject({
+      card: { id: "card", items: [{ title: "결과 항목", result: "저장 결과", evidence: [{ label: "근거" }] }] },
+      questions: { items: [{ id: "read-question", text: "미답 질문", answer: null }], nextCursor: null, truncated: false },
+      available: { request: true, brief: true, attachments: true, comments: 1, notes: 2, reports: 1 },
+      changeToken: expect.any(String),
+    });
+    const compactText = JSON.stringify(compact.structuredContent);
+    for (const omitted of ["원문", "인계 요약", "file.txt", "사용자 발언", "작업 기록", "보고 전문"])
+      expect(compactText).not.toContain(omitted);
+
+    const fullPages = await call("get_card", { card_id: "card", caller_session_id: "forged-session",
+      include: ["request", "brief", "attachments", "comments", "notes", "reports"], limit: 1 });
+    expect(fullPages.isError).not.toBe(true);
+    const sections = (fullPages.structuredContent as { sections: Record<string, { text?: string; items?: Record<string, unknown>[]; nextCursor?: string | null; truncated?: boolean }> }).sections;
+    expect(sections.request?.text).toBe("원문");
+    expect(sections.brief?.text).toBe("인계 요약");
+    expect(sections.attachments?.items).toEqual([expect.objectContaining({ name: "file.txt" })]);
+    expect(sections.comments?.items).toEqual([expect.objectContaining({ body: "사용자 발언" })]);
+    expect(sections.notes?.items).toEqual([expect.objectContaining({ body: "최신 작업 기록" })]);
+    expect(sections.notes?.truncated).toBe(true);
+    expect(sections.notes?.nextCursor).toEqual(expect.any(String));
+    expect(sections.reports?.items).toEqual([expect.objectContaining({ body: "보고 전문" })]);
+
+    const olderNotes = await call("get_card", { card_id: "card", include: ["notes"], limit: 1,
+      cursors: { notes: sections.notes!.nextCursor! } });
+    expect((olderNotes.structuredContent as { sections: { notes: { items: { body: string }[]; truncated: boolean } } }).sections.notes)
+      .toMatchObject({ items: [{ body: "이전 작업 기록" }], truncated: false });
+  });
+  it("uses change tokens to return unchanged or replacement pages", async () => {
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body) VALUES('initial-note','card','agent','note','기존 기록')`;
+    const initial = await call("get_card", { card_id: "card" });
+    const token = (initial.structuredContent as { changeToken: string }).changeToken;
+
+    const unchanged = await call("get_card", { card_id: "card", since: token });
+    expect(unchanged.structuredContent).toMatchObject({ id: "card", unchanged: true, changeToken: token });
+    expect(unchanged.structuredContent).not.toHaveProperty("questions");
+
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body) VALUES('updated-note','card','agent','note','새 기록')`;
+    const changed = await call("get_card", { card_id: "card", since: token, include: ["notes"] });
+    expect(changed.structuredContent).toMatchObject({ unchanged: false, changed: expect.arrayContaining(["notes"]),
+      sections: { notes: { items: expect.arrayContaining([expect.objectContaining({ body: "새 기록" }),
+        expect.objectContaining({ body: "기존 기록" })]), replace: true } } });
+  });
+  it("pages list_cards by its bounded default and applies folder access before reads", async () => {
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
+      SELECT 'bulk-'||n::text,'a',lpad(n::text,3,'0'),'카드 '||n::text,'원문','todo','session','owner'
+      FROM generate_series(1,20) AS n`;
+    access = { restricted: true, allowedFolderIds: ["a"] };
+
+    const first = await call("list_cards", {});
+    expect(first.isError).not.toBe(true);
+    const page = first.structuredContent as { cards: { id: string }[]; nextCursor: string | null; truncated: boolean };
+    expect(page.cards).toHaveLength(20);
+    expect(page.truncated).toBe(true);
+    expect(page.nextCursor).toEqual(expect.any(String));
+    expect(page.cards.every(card => card.id !== "card-b")).toBe(true);
+
+    const second = await call("list_cards", { cursor: page.nextCursor! });
+    expect(second.isError).not.toBe(true);
+    expect(second.structuredContent).toMatchObject({ cards: [expect.objectContaining({ id: "card" })], nextCursor: null, truncated: false });
+
+    const all = await call("list_cards", { all: true });
+    expect(all.isError).not.toBe(true);
+    expect((all.structuredContent as { cards: { id: string }[]; truncated: boolean }).cards).toHaveLength(21);
+    expect((all.structuredContent as { cards: { id: string }[] }).cards.some(card => card.id === "card-b")).toBe(false);
+
+    const forbiddenList = await call("list_cards", { folder_id: "b" });
+    expect(forbiddenList.isError).toBe(true);
+    expect(forbiddenList.content[0]?.text).toContain("Folder access denied");
+    const forbiddenRead = await call("get_card", { card_id: "card-b" });
+    expect(forbiddenRead.isError).toBe(true);
+    expect(forbiddenRead.content[0]?.text).toContain("Folder access denied");
+  });
   it("lists exactly the eight external writes while retaining internal work start", () => {
     const writes = ["create_card", "update_card_brief", "add_card_report", "add_card_comment", "set_card_status",
       "request_card_review", "ask_card_question", "move_card"] as const;
