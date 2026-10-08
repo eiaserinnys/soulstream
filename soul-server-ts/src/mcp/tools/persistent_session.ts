@@ -124,20 +124,34 @@ export function registerPersistentSessionTools(
   server.registerTool(
     "update_persistent_instruction",
     {
-      description: "저장된 지속 지시의 문장이나 상태를 바꾼다.",
+      description: "저장된 지속 지시의 문장이나 상태를 바꾸거나 연결된 출처를 지정해 삭제한다.",
       inputSchema: {
         session_id: z.string().min(1),
         instruction_id: z.string().min(1),
         text: z.string().trim().min(1).optional(),
         status: z.enum(["active", "removed"]).optional(),
+        remove_source_turns: z.array(z.string().regex(/^T\d+$/)).optional(),
+        remove_source_event_ids: z.array(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)).optional(),
       },
     },
-    async ({ session_id, instruction_id, text, status }) => {
-      if (text === undefined && status === undefined) return errorResult("text 또는 status가 필요합니다.");
+    async ({ session_id, instruction_id, text, status, remove_source_turns, remove_source_event_ids }) => {
+      if (text === undefined
+        && status === undefined
+        && remove_source_turns === undefined
+        && remove_source_event_ids === undefined) {
+        return errorResult("text, status 또는 출처 삭제 항목이 필요합니다.");
+      }
       try {
         const result = await runtime.taskManager.persistentSessions.applyPersistentInstructions(session_id, {
           origin: "agent",
-          ops: [{ op: "update", id: instruction_id, ...(text === undefined ? {} : { text }), ...(status === undefined ? {} : { status }) }],
+          ops: [{
+            op: "update",
+            id: instruction_id,
+            ...(text === undefined ? {} : { text }),
+            ...(status === undefined ? {} : { status }),
+            ...(remove_source_turns === undefined ? {} : { remove_source_turns }),
+            ...(remove_source_event_ids === undefined ? {} : { remove_source_event_ids }),
+          }],
         });
         const outcome = result.results[0]!;
         if (outcome.status === "not_found") {

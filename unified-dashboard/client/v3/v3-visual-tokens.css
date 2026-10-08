@@ -1,0 +1,50 @@
+.v3-shell,
+.v3-surface,
+.approved-dialog,
+.project-purpose-dialog {
+  --v3-space-1: var(--v3-card-gap);
+  --v3-space-2: 8px;
+  --v3-space-3: 12px;
+  --v3-space-4: 16px;
+  --v3-space-5: 20px;
+  --v3-space-6: 24px;
+  --v3-space-7: 28px;
+  --v3-space-8: 32px;
+  --v3-card-max-width: 640px;
+  --v3-type-page: 680 21px/28px;
+  --v3-type-section: 650 16px/24px;
+  --v3-type-card: 600 16px/23px;
+  --v3-type-side-title: 600 14px/20px;
+  --v3-type-body: 450 14px/22px;
+  --v3-type-meta: 500 12px/18px;
+  --v3-type-badge: 600 11px/16px;
+  --v3-font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --v3-text-primary: var(--foreground);
+  --v3-text-secondary: color-mix(in srgb, var(--foreground) 72%, transparent);
+  --v3-text-tertiary: color-mix(in srgb, var(--foreground) 58%, transparent);
+  --v3-text-disabled: color-mix(in srgb, var(--foreground) 40%, transparent);
+  --v3-accent: var(--info);
+  --v3-live: var(--success);
+  --v3-favorite: var(--warning);
+  --v3-error: var(--destructive);
+  --v3-complete: var(--info);
+  --v3-progress-complete: var(--success);
+  --v3-task-state-column: 156px;
+  --v3-action-size: 44px;
+  --v3-session-avatar-size: 28px;
+  --v3-session-meta-column: 64px;
+  --v3-tree-toggle-column: 16px;
+  --v3-tree-drag-column: 12px;
+  --v3-tree-icon-column: 18px;
+  --v3-tree-indent-step: 20px;
+  --v3-detail-nav-column: 72px;
+  --v3-control-height: 56px;
+  --v3-glass-panel: color-mix(in srgb, var(--background) 16%, transparent);
+  --v3-glass-detail: color-mix(in srgb, var(--background) 24%, transparent);
+  --v3-glass-card: color-mix(in srgb, var(--background) 34%, transparent);
+  --v3-glass-dense: var(--control-surface);
+  --v3-stroke-default: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --v3-stroke-hover: color-mix(in srgb, var(--v3-accent) 48%, var(--v3-stroke-default));
+  --v3-stroke-selected: color-mix(in srgb, var(--v3-accent) 72%, transparent);
+  font-family: var(--v3-font-family);
+}

@@ -107,7 +107,7 @@ describe("v3 live invalidation plane", () => {
       daily: 2,
       project: 2,
       starred: 2,
-      runHistory: 1,
+      runHistory: 2,
       pageDetail: 0,
     });
 
@@ -116,7 +116,7 @@ describe("v3 live invalidation plane", () => {
       daily: 3,
       project: 3,
       starred: 3,
-      runHistory: 2,
+      runHistory: 3,
       pageDetail: 0,
     });
 
@@ -125,7 +125,7 @@ describe("v3 live invalidation plane", () => {
       daily: 3,
       project: 3,
       starred: 4,
-      runHistory: 2,
+      runHistory: 3,
       pageDetail: 0,
     });
   });

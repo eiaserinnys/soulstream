@@ -25,8 +25,9 @@ it("opens the complete card dialog from the general list",async()=>{
  const dialog=document.querySelector('[role="dialog"]')!;
  expect(dialog).not.toBeNull();
  expect(dialog.querySelector('[data-slot="dialog-title"]')?.textContent).toBe("새 카드");
- for(const label of ["카드 제목","요청 원문","노드 선택","에이전트 선택","모델 선택"])
+ for(const label of ["카드 제목","요청 원문","노드 선택","에이전트 선택","모델"])
   expect(dialog.querySelector(`[aria-label="${label}"]`),label).not.toBeNull();
+ expect(dialog.querySelector('[data-slot="select-trigger"][aria-label="모델"]')).not.toBeNull();
  expect(dialog.querySelector('input[type="file"]')).not.toBeNull();
  expect(dialog.querySelector('[data-slot="dialog-header"]')).not.toBeNull();
  expect(dialog.querySelector('[data-slot="dialog-footer"]')).not.toBeNull();

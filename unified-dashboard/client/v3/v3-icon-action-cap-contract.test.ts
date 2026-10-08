@@ -43,24 +43,72 @@ describe("v3 icon action cap contract", () => {
   it.each([
     ["./FolderCardSection.tsx", ["카드 추가"]],
     ["../../../packages/soul-ui/src/folder-status/FolderCompletionAction.tsx", ["actionLabel"]],
-    ["./PlannerFolderCard.tsx", ["별표"]],
     ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "폴더 보드 열기"]],
     ["./FolderTodayToggle.tsx", ["todayPlannerMenuLabel"]],
     ["./FolderDescriptionPanel.tsx", ["편집"]],
-    ["./FolderInlineBoard.tsx", ["마크다운 추가", "펼치기", "이름 수정"]],
-    ["./FolderSessionHistory.tsx", ["새 세션", "이전 세션 더 보기"]],
+    ["./FolderInlineBoard.tsx", ["마크다운 추가", "마크다운 이름 변경 저장", "마크다운 이름 변경 취소"]],
+    ["./FolderSessionHistory.tsx", ["새 세션"]],
     ["./FolderBoardPane.tsx", ["폴더 상세로 돌아가기", "폴더 보드 닫기"]],
-    ["./FolderWorkspace.tsx", ["폴더 창 닫기", "채팅 닫기"]],
-    ["./FolderBoardWorkspace.tsx", ["문서 편집기 높이 축소"]],
+    ["./FolderWorkspace.tsx", ["폴더 창 닫기"]],
     ["./PlannerViews.tsx", ["아침 정리"]],
     ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
     ["./V3Navigation.tsx", ["별표 폴더 더 보기", "새 폴더"]],
-    ["./V3SessionPanel.tsx", ["확인 처리"]],
     ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
   ] as const)("%s uses the shared icon cap for its chrome actions", (path, labels) => {
     const source = read(path);
     expect(source).toContain("DashboardIconCap");
     for (const label of labels) expect(source).toContain(label);
+  });
+
+  it("keeps inline markdown expand and rename actions at their shared owner", () => {
+    const board = read("./FolderInlineBoard.tsx");
+    const inlineCard = read("./InlineMarkdownCard.tsx");
+
+    expect(board).toMatch(/<InlineMarkdownCard key=\{item\.id\} title=\{title\} expanded=\{expanded\}[\s\S]*?onToggle=\{\(\) => setExpandedId\(expanded \? null : item\.id\)\}[\s\S]*?onRename=\{\(\) => beginRename\(item\)\}/);
+    expect(inlineCard).toContain("DashboardIconCap");
+    expect(inlineCard).toContain('label={`${title} ${expanded ? "접기" : "펼치기"}`}');
+    expect(inlineCard).toContain('label={`${title} 이름 수정`}');
+    expect(inlineCard).toContain("aria-expanded={expanded} onClick={onToggle}");
+    expect(inlineCard).toContain("onClick={onRename}");
+  });
+
+  it("replaces manual run-history pagination with the shared auto-loader retry", () => {
+    const history = read("./FolderSessionHistory.tsx");
+    const loader = read("./RunHistoryAutoLoader.tsx");
+
+    expect(history).toMatch(/<RunHistoryAutoLoader hasMore=\{runHistoryHasMore\} loading=\{runHistoryLoading\}[\s\S]*?failed=\{runHistoryFailed\} onLoadMore=\{onLoadMoreRuns\}/);
+    expect(loader).toContain('<DashboardIconCap label="다시 시도" onClick={() => { void onLoadMore(); }}>');
+  });
+
+  it("keeps chat close on the shared session header only when its owner passes onClose", () => {
+    const workspace = read("./FolderWorkspace.tsx");
+    const headers = read("./WorkspacePanelHeaders.tsx");
+
+    expect(workspace).toMatch(/<SessionPanelHeader session=\{activeSession\}[\s\S]*?onClose=\{onCloseWorkspace\}\/>/);
+    expect(workspace.match(/<SessionPanelHeader\b/g)).toHaveLength(2);
+    expect(workspace.match(/<SessionPanelHeader\b[^>]*onClose=/g)).toHaveLength(1);
+    expect(headers).toContain('{onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}');
+  });
+
+  it("forwards the document overlay height toggle to its shared cap", () => {
+    const workspace = read("./FolderBoardWorkspace.tsx");
+    const overlay = read("./FolderDocumentOverlay.tsx");
+
+    expect(workspace).toMatch(/<FolderDocumentOverlay\b[^>]*expanded=\{overlayExpanded\}[^>]*onToggleExpanded=\{\(\) => setOverlayExpanded\(current=>!current\)\}/);
+    expect(overlay).toContain('label={expanded ? "문서 편집기 높이 축소" : "문서 편집기 높이 확장"}');
+    expect(overlay).toContain("aria-pressed={expanded}");
+    expect(overlay).toContain("onClick={onToggleExpanded}");
+  });
+
+  it("forwards review acknowledgement through the shared row action owner", () => {
+    const panel = read("./V3SessionPanel.tsx");
+    const richRow = read("./RichSessionRow.tsx");
+    const rowFrame = read("./RunRowFrame.tsx");
+    const reviewRow = panel.match(/<RichSessionRow\b[\s\S]*?\/>/)?.[0] ?? "";
+
+    expect(reviewRow).toContain('actions={review ? [{kind:"acknowledge",label:`${sessionPanelTitle(session)} 확인 처리`,pending,onAction:()=>{void onAcknowledge(session);}}] : undefined}');
+    expect(richRow).toMatch(/<RunRowFrame[\s\S]*?actions=\{actions\}/);
+    expect(rowFrame).toMatch(/actions!\.map\(action=><DashboardIconCap[\s\S]*?label=\{action\.label\}[\s\S]*?disabled=\{disabled\|\|action\.disabled\|\|action\.pending\}[\s\S]*?onClick=\{event=>\{event\.stopPropagation\(\);action\.onAction\(event\);\}\}/);
   });
 
   it("keeps planner header actions compact without inflating title rows", () => {
@@ -69,7 +117,13 @@ describe("v3 icon action cap contract", () => {
   });
 
   it("keeps star and today controls as pressed-state toggles", () => {
-    expect(read("./PlannerFolderCard.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{folderStar\.starred\}/);
+    const folderCard = read("./PlannerFolderCard.tsx");
+    const rowFrame = read("./RunRowFrame.tsx");
+
+    expect(folderCard).toMatch(/<RunRowFrame[\s\S]*?actions=\{\[/);
+    expect(folderCard).toContain('kind:"star"');
+    expect(folderCard).toContain("pressed:folderStar.starred,pending:folderStar.pending,onAction:()=>{void folderStar.toggle();}");
+    expect(rowFrame).toMatch(/actions!\.map\(action=><DashboardIconCap[\s\S]*?label=\{action\.label\}[\s\S]*?disabled=\{disabled\|\|action\.disabled\|\|action\.pending\}[\s\S]*?aria-pressed=\{action\.kind==="star"\?action\.pressed:undefined\}[\s\S]*?action\.onAction\(event\)/);
     expect(read("./FolderTodayToggle.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{inToday\}/);
   });
 

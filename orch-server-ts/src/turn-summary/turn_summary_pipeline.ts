@@ -26,6 +26,10 @@ import type {
   TurnSummarizer,
   TurnSummaryResult,
 } from "./turn_summarizer.js";
+import type {
+  PersistentInstructionCandidate,
+  PersistentInstructionExtractor,
+} from "./persistent_instruction_extractor.js";
 import { TurnSummaryProviderUnavailableError } from
   "./turn_summary_provider_router.js";
 import type { TurnSummaryStartEvidence } from
@@ -49,37 +53,6 @@ type TurnSummarySkipReason =
   | "already_summarized"
   | "session_not_summarizable";
 
-export const PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["summary", "standing_instructions"],
-  properties: {
-    summary: { type: "string" },
-    standing_instructions: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["text", "confidence", "existing_id"],
-        properties: {
-          text: { type: "string", minLength: 1 },
-          confidence: { type: "number" },
-          existing_id: { type: ["string", "null"] },
-        },
-      },
-    },
-  },
-} as const;
-
-type StructuredTurnSummary = {
-  readonly summary: string;
-  readonly standingInstructions: readonly {
-    readonly text: string;
-    readonly confidence: number;
-    readonly existingId?: string;
-  }[];
-};
-
 export class TurnSummaryPipeline {
   private readonly tails = new Map<string, Promise<void>>();
   private readonly nowEpochSeconds: () => number;
@@ -88,6 +61,7 @@ export class TurnSummaryPipeline {
     readonly repository: TurnSummaryRepositoryPort;
     readonly configService: Pick<TurnSummaryConfigService, "read">;
     readonly summarizer: TurnSummarizer;
+    readonly persistentInstructionExtractor?: PersistentInstructionExtractor;
     readonly eventHub: Pick<RuntimeSessionEventHub, "publish">;
     readonly sessionBroadcaster?: Pick<
       InMemorySseReplayBroadcaster<SessionStreamEvent>,
@@ -197,39 +171,18 @@ export class TurnSummaryPipeline {
         config.historyLimit,
       );
     const persistentSession = readPersistentEnabled(turn.metadata);
-    const extractStandingInstructions =
+    const shouldExtractInstructions =
       persistentSession && turn.speaker?.kind === "user";
-    const activeInstructions = persistentSession
-      ? readPersistentInstructions(turn.metadata)
-        .filter((instruction) => instruction.status === "active")
-        .map(({ id, text }) => ({ id, text }))
-      : [];
     const summaryInput = {
       userText: turn.userText,
       assistantText: turn.assistantText,
       previousSummaries,
       ...(turn.speaker === undefined ? {} : { speaker: turn.speaker }),
     };
-    const summaryOptions = persistentSession
-      ? {
-        outputSchema: PERSISTENT_INSTRUCTION_OUTPUT_SCHEMA,
-        extractStandingInstructions,
-        persistentInstructions: activeInstructions,
-      }
-      : undefined;
-    const result = summaryOptions === undefined
-      ? await this.deps.summarizer.summarize(summaryInput, config)
-      : await this.deps.summarizer.summarize(
-        summaryInput,
-        config,
-        summaryOptions,
-      );
-    const structured = summaryOptions === undefined
-      ? null
-      : parseStructuredTurnSummary(result.content);
-    const summaryResult = structured === null
-      ? result
-      : { ...result, content: structured.summary };
+    const summaryResult = await this.deps.summarizer.summarize(
+      summaryInput,
+      config,
+    );
     if (!await this.deps.repository.isSessionSummarizable(job.sessionId)) {
       this.debugSkip(job, "session_not_summarizable", {
         phase: "after_summarization",
@@ -292,25 +245,86 @@ export class TurnSummaryPipeline {
       },
       "Turn summary stored",
     );
-    if (extractStandingInstructions && structured !== null) {
-      await this.storeExtractedInstructions(
+    await this.deps.storyFolder?.foldIfNeeded(job.sessionId);
+    if (shouldExtractInstructions) {
+      await this.extractPersistentInstructions(
         job.sessionId,
         turn,
         persisted.eventId,
-        structured,
+        config,
       );
     }
-    await this.deps.storyFolder?.foldIfNeeded(job.sessionId);
+  }
+
+  private async extractPersistentInstructions(
+    sessionId: string,
+    turn: TurnSummaryTurn,
+    summaryEventId: number,
+    config: TurnSummaryConfig,
+  ): Promise<void> {
+    const extractor = this.deps.persistentInstructionExtractor;
+    if (extractor === undefined) {
+      this.deps.logger.warn(
+        {
+          sessionId,
+          stage: "extractor",
+          reason: "dependency_unavailable",
+        },
+        "Persistent instruction extraction skipped",
+      );
+      return;
+    }
+
+    let candidates: readonly PersistentInstructionCandidate[];
+    try {
+      const activeInstructions = readPersistentInstructions(turn.metadata)
+        .filter((instruction) => instruction.status === "active")
+        .map(({ id, text }) => ({ id, text }));
+      candidates = await extractor.extract({
+        userText: turn.userText,
+        activeInstructions,
+      }, config);
+    } catch {
+      this.deps.logger.warn(
+        {
+          sessionId,
+          stage: "extractor",
+          reason: "failed",
+        },
+        "Persistent instruction extraction skipped",
+      );
+      return;
+    }
+
+    try {
+      await this.storeExtractedInstructions(
+        sessionId,
+        turn,
+        summaryEventId,
+        candidates,
+      );
+    } catch {
+      this.deps.logger.warn(
+        {
+          sessionId,
+          stage: "instruction_store",
+          reason: "failed",
+        },
+        "Persistent instruction extraction skipped",
+      );
+    }
   }
 
   private async storeExtractedInstructions(
     sessionId: string,
     turn: TurnSummaryTurn,
     summaryEventId: number,
-    structured: StructuredTurnSummary,
+    candidates: readonly PersistentInstructionCandidate[],
   ): Promise<void> {
-    const extracted = structured.standingInstructions.filter(
-      (instruction) => instruction.confidence >= 0.7,
+    const extracted = candidates.filter(
+      (instruction) =>
+        instruction.sourceQuote.trim().length > 0 &&
+        turn.userText.includes(instruction.sourceQuote),
     );
     if (extracted.length === 0) return;
     if (this.deps.instructionCommandSender === undefined) {
@@ -497,54 +511,6 @@ export function isCacheKeepaliveTurn(
   return turn.inputPurpose === "cache_keepalive";
 }
 
-function parseStructuredTurnSummary(
-  content: string,
-): StructuredTurnSummary | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(content) as unknown;
-  } catch {
-    return null;
-  }
-  if (!isRecord(value) || hasUnknownKeys(value, ["summary", "standing_instructions"])) {
-    return null;
-  }
-  if (
-    typeof value.summary !== "string" ||
-    !Array.isArray(value.standing_instructions)
-  ) {
-    return null;
-  }
-  const standingInstructions: Array<{
-    text: string;
-    confidence: number;
-    existingId?: string;
-  }> = [];
-  for (const rawInstruction of value.standing_instructions) {
-    if (
-      !isRecord(rawInstruction) ||
-      hasUnknownKeys(rawInstruction, ["text", "confidence", "existing_id"]) ||
-      typeof rawInstruction.text !== "string" ||
-      rawInstruction.text.trim().length === 0 ||
-      typeof rawInstruction.confidence !== "number" ||
-      !Number.isFinite(rawInstruction.confidence) ||
-      !Object.hasOwn(rawInstruction, "existing_id") ||
-      (rawInstruction.existing_id !== null &&
-        typeof rawInstruction.existing_id !== "string")
-    ) {
-      return null;
-    }
-    standingInstructions.push({
-      text: rawInstruction.text.trim(),
-      confidence: rawInstruction.confidence,
-      ...(typeof rawInstruction.existing_id !== "string"
-        ? {}
-        : { existingId: rawInstruction.existing_id }),
-    });
-  }
-  return { summary: value.summary, standingInstructions };
-}
-
 function startEvidenceLogFields(
   evidence: TurnSummaryStartEvidence,
 ): Record<string, unknown> {
@@ -641,11 +607,4 @@ function recordValue(value: unknown): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function hasUnknownKeys(
-  value: Record<string, unknown>,
-  allowed: readonly string[],
-): boolean {
-  return Object.keys(value).some((key) => !allowed.includes(key));
 }

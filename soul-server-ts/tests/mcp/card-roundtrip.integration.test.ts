@@ -135,6 +135,11 @@ describe("card orchestrator MCP roundtrip", () => {
     await seed(); const next = await call(name, input, requestContext);
     expect(next.isError === true).toBe(fails);
     expect(serializeResult(name, next)).toMatchSnapshot();
+    if (_label === "get success") {
+      const changeToken = next.structuredContent?.changeToken;
+      expect(typeof changeToken).toBe("string");
+      expect(changeToken).not.toBe("");
+    }
     if (_label === "create success") expect((await h.sql`SELECT * FROM cards WHERE title='새 카드'`)[0]).toMatchObject({ assignee_kind: "agent", assignee_agent_id: "roselin", node_id: "test-node", model_preset: "sol" });
     if (_label === "create duplicate assignee") expect(JSON.stringify(next)).toContain("card-1");
     if (name === "ask_card_question" && !fails) expect(next.structuredContent).toHaveProperty("guidance", "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
@@ -170,13 +175,19 @@ describe("card orchestrator MCP roundtrip", () => {
     expect(notes.structuredContent).toMatchObject({notes:[{id:note.structuredContent?.id,kind:"note",body:"화면 주소와 구현 기록"}],nextCursor:null});
     const review=await call("request_card_review",{card_id:"card-1",ask:"가입과 수정 화면을 확인해 주세요"},context);
     expect(review.isError).not.toBe(true);
-    const detail=await call("get_card",{card_id:"card-1"},context);
+    const detail=await call("get_card",{card_id:"card-1",include:["comments","reports","notes","now_history"]},context);
     expect(detail.isError).not.toBe(true);
     expect(detail.structuredContent).toMatchObject({
       card:{items:[{id:1,display:"reported"},{id:2,display:"fix",fixOpen:1}],now:{text:"수정 화면 확인을 기다립니다",turn:"user"}},
-      comments:[expect.objectContaining({id:"seed-comment"}),expect.objectContaining({itemId:2,body:"안내 문구를 고쳐 주세요"})],
-      reports:[expect.objectContaining({title:"기존 보고"})],notes:[expect.objectContaining({kind:"note",body:"화면 주소와 구현 기록"})],
-      nowHistory:[expect.objectContaining({text:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"})],
+      sections:{
+        comments:{items:expect.arrayContaining([
+          expect.objectContaining({id:"seed-comment"}),expect.objectContaining({itemId:2,body:"안내 문구를 고쳐 주세요"}),
+        ]),nextCursor:null,truncated:false},
+        reports:{items:[expect.objectContaining({title:"기존 보고"})],nextCursor:null,truncated:false},
+        notes:{items:[expect.objectContaining({kind:"note",body:"화면 주소와 구현 기록"})],nextCursor:null,truncated:false},
+        now_history:{items:[expect.objectContaining({text:"수정 화면 확인을 기다립니다",turn:"user",ask:"수정 화면을 확인해 주세요"})],
+          nextCursor:null,truncated:false},
+      },
     });
   });
   it("translates number references through the real central lookup and leaves full IDs unchanged", async () => {
@@ -279,6 +290,7 @@ const randomIdPaths: Record<string, readonly string[]> = {
   // card_mutation_core.ts:74 audit UUID; FolderService:76,118 per-call idempotency UUID.
   // card_control_plane_service.ts:45 card UUID, repeated by serializeCardMutation in operation.targetId.
   create_card: ["card.id", "operation.targetId", "operation.id", "operation.idempotencyKey"],
+  get_card: ["changeToken"],
   update_card_brief: ["operation.id", "operation.idempotencyKey"],
   // Reports/questions UUIDs (card_control_plane_service.ts:109,137) are stored but absent from mutation result.
   add_card_report: ["operation.id", "operation.idempotencyKey"],

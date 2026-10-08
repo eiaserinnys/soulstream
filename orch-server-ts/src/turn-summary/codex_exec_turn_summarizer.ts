@@ -53,7 +53,7 @@ export class CodexExecTurnSummarizer implements TurnSummarizer {
     options: TurnSummaryOptions = {},
   ): Promise<TurnSummaryResult> {
     return await this.generate(
-      buildTurnSummaryPrompt(input, config, options),
+      buildTurnSummaryPrompt(input, config),
       config,
       options,
     );

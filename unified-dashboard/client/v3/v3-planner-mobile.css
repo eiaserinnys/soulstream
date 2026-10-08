@@ -1,33 +1,4 @@
 @media (max-width: 760px) {
-  .v3-shell {
-    display: block;
-    height: 100dvh;
-    padding-bottom: 58px;
-  }
-
-  .v3-navigation,
-  .v3-navigation-resize {
-    display: none;
-  }
-
-  .v3-main {
-    height: calc(100dvh - 58px);
-    overflow: hidden;
-  }
-
-  .v3-shell[data-mobile-tab="chat"] .v3-main {
-    display: none;
-  }
-
-  .v3-planner {
-    width: calc(100% - 28px);
-    min-height: 0;
-    height: calc(100dvh - 146px);
-    margin: 72px auto 12px;
-    border-radius: 20px;
-    padding: 12px 0 0;
-  }
-
   .v3-planner-scroll {
     padding: 0 14px 76px;
   }

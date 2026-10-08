@@ -31,7 +31,13 @@ describe("v3 task document board unification", () => {
   it("expands inline markdown to its content while preserving the board scroll owner", () => {
     const css = read("./v3-context-menus.css");
     const boardCss = read("./v3-folder-board.css");
+    const inlineBoard = read("./FolderInlineBoard.tsx");
+    const editorCss = read("./v3-folder-workspace.css");
+    const editor = read("./FolderDescriptionPanel.tsx");
     const inlineMarkdownRule = css.match(/\.v3-inline-markdown\s*\{([^}]*)\}/)?.[1] ?? "";
+    const sharedSurfaceRule = editorCss.match(/\.v3-description-preview,\s*\.v3-description-editor\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
+    const actionsRule = editorCss.match(/\.v3-description-actions\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
+    const textareaRule = editorCss.match(/\.v3-description-editor textarea\s*\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
 
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*gap:\s*var\(--v3-space-1\)/);
     expect(css).toMatch(/\.v3-inline-board-rename-actions[\s\S]*padding-inline:\s*var\(--v3-space-1\)/);
@@ -42,18 +48,21 @@ describe("v3 task document board unification", () => {
     expect(boardCss).toMatch(
       /\.v3-folder-board-resource-content\s*\{[^}]*overflow:\s*auto;/s,
     );
-    expect(css).toMatch(
-      /\.v3-description-editor\[data-editor-variant="inline"\]\s+textarea\s*\{[\s\S]*?min-height:\s*0;/,
-    );
-    expect(css).toMatch(
-      /\.v3-description-editor\[data-editor-variant="inline"\]\s*\{[\s\S]*?padding:\s*0;/,
-    );
-    expect(css).toMatch(
-      /\.v3-description-editor\[data-editor-variant="inline"\]\s*\{[\s\S]*?transition:\s*none;/,
-    );
-    expect(css).toMatch(
-      /\.v3-description-editor\[data-editor-variant="inline"\]\s*>\s*div\s*\{[\s\S]*?position:\s*absolute;/,
-    );
+    expect(sharedSurfaceRule).toMatch(/display:\s*grid/);
+    expect(sharedSurfaceRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+    expect(sharedSurfaceRule).toMatch(/gap:\s*var\(--v3-space-2\)/);
+    expect(sharedSurfaceRule).toMatch(/padding:\s*var\(--v3-space-3\)/);
+    expect(actionsRule).toMatch(/display:\s*flex/);
+    expect(actionsRule).toMatch(/gap:\s*var\(--v3-space-1\)/);
+    expect(textareaRule).toMatch(/min-height:\s*calc\(var\(--spacing\)\s*\*\s*8\)/);
+    expect(textareaRule).toMatch(/max-height:\s*min\(calc\(var\(--v3-control-height\)\s*\*\s*6\),\s*50dvh\)/);
+    expect(textareaRule).toMatch(/resize:\s*none/);
+    expect(textareaRule).toMatch(/overflow-y:\s*auto/);
+    expect(editorCss).toMatch(/\.v3-description-editor textarea::\-webkit-scrollbar\s*\{[^}]*display:\s*none;/);
+    expect(`${editorCss}\n${css}`).not.toMatch(/\.v3-description-editor\[data-editor-variant="inline"\]/);
+    expect(editor).toContain("useTextareaAutoHeight(editorRef, draft, chatFontSize, editing)");
+    expect(editor).toMatch(/<textarea\b[\s\S]*?\brows=\{1\}/);
+    expect(inlineBoard).toMatch(/<FolderDescriptionPanel[\s\S]*?variant="inline"/);
   });
 
   it("expands every fenced code block in explicit document surfaces only", () => {

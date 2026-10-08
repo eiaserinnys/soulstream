@@ -40,7 +40,7 @@ describe("markdown surface mount inventory", () => {
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
-      "unified-dashboard/client/v3/CardDetailPane.tsx",
+      "unified-dashboard/client/v3/CardNotes.tsx",
       "unified-dashboard/client/v3/CardTimeline.tsx",
       "unified-dashboard/client/v3/FolderBoardResourcePane.tsx",
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
@@ -49,13 +49,14 @@ describe("markdown surface mount inventory", () => {
 
   it("enumerates every shared MarkdownDocumentPanel surface", () => {
     expect(inventoryMounts("MarkdownDocumentPanel")).toEqual([
+      "unified-dashboard/client/v3/DialoguesOverlaySamples.tsx",
       "unified-dashboard/client/v3/FolderBoardWorkspace.tsx",
     ]);
   });
 
   it("makes document code expansion explicit without changing chat or compact feeds", () => {
     const documentSurfaces = [
-      "unified-dashboard/client/v3/CardDetailPane.tsx",
+      "unified-dashboard/client/v3/CardNotes.tsx",
       "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
       "unified-dashboard/client/v3/FolderBoardResourcePane.tsx",
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
@@ -65,6 +66,12 @@ describe("markdown surface mount inventory", () => {
       "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
     ];
+    const cardDetailPane = readSource("unified-dashboard/client/v3/CardDetailPane.tsx");
+    const cardNotes = readSource("unified-dashboard/client/v3/CardNotes.tsx");
+
+    expect(cardDetailPane).toContain("<CardNotes");
+    expect(cardNotes).toContain('<MarkdownContent content={brief} codeBlockLayout="document" onImageClick={onImageClick}/>');
+    expect(cardNotes).toContain("<MarkdownContent content={note.body} onImageClick={onImageClick}/>");
 
     for (const file of documentSurfaces) {
       expect(readSource(file), file).toContain('codeBlockLayout="document"');
@@ -76,6 +83,7 @@ describe("markdown surface mount inventory", () => {
 
   it("enumerates every FolderDescriptionPanel wrapper surface", () => {
     const mounts = [
+      "unified-dashboard/client/v3/ComponentsReviewPage.tsx",
       "unified-dashboard/client/v3/DailyMemo.tsx",
       "unified-dashboard/client/v3/FolderDetailPane.tsx",
       "unified-dashboard/client/v3/FolderInlineBoard.tsx",
@@ -86,6 +94,7 @@ describe("markdown surface mount inventory", () => {
       file,
       countMounts("FolderDescriptionPanel", file),
     ]))).toEqual({
+      "unified-dashboard/client/v3/ComponentsReviewPage.tsx": 5,
       "unified-dashboard/client/v3/DailyMemo.tsx": 1,
       "unified-dashboard/client/v3/ProjectContextEditor.tsx": 2,
       "unified-dashboard/client/v3/FolderDetailPane.tsx": 1,

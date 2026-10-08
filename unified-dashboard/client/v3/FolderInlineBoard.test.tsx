@@ -177,17 +177,30 @@ describe("FolderInlineBoard document context menu", () => {
       .find((item) => item.textContent?.trim() === "다른 폴더로 이동");
     expect(moveAction).not.toBeUndefined();
     flushSync(() => moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    const findTargetAction = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
-      .find((button) => button.textContent?.includes("옮길 폴더"));
+    const targets = document.body.querySelector<HTMLElement>('[data-testid="v3-run-move-targets"]');
+    expect(targets).not.toBeNull();
+    const findTab = (name: string) => Array.from(targets!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find((button) => button.textContent?.trim() === name);
+    await vi.waitFor(() => expect(findTab("전체")).not.toBeUndefined());
+    expect(findTab("별표")?.getAttribute("aria-selected")).toBe("true");
+    expect(targets!.querySelector('button[aria-label="옮길 폴더"]')).toBeNull();
+    flushSync(() => findTab("전체")!.click());
+    expect(findTab("전체")?.getAttribute("aria-selected")).toBe("true");
+    const findTargetAction = () => targets!.querySelector<HTMLButtonElement>('button[aria-label="옮길 폴더"]');
     await vi.waitFor(() => expect(findTargetAction()).not.toBeUndefined());
     const targetAction = findTargetAction();
     const findConfirmAction = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent?.trim() === "이동");
+    expect(targetAction?.disabled).toBe(false);
     expect(findConfirmAction()).not.toBeUndefined();
     flushSync(() => {
       targetAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await vi.waitFor(() => expect(findConfirmAction()?.disabled).toBe(false));
+    expect(container.querySelector(".v3-inline-board-row")).not.toBeNull();
+    expect(fetchMock.mock.calls.some(([input, init]) => (
+      String(input).endsWith("/folder") && init?.method === "PATCH"
+    ))).toBe(false);
     const confirmAction = findConfirmAction();
     flushSync(() => confirmAction!.click());
     for (let attempt = 0; attempt < 5 && container.querySelector(".v3-inline-board-row"); attempt += 1) {

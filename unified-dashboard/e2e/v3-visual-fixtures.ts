@@ -50,6 +50,8 @@ export interface V3VisualQaRouteOptions {
   onPlannerTodayRequest?: (requestNumber: number) => void;
   onPlannerProjectRequest?: (requestNumber: number) => void;
   onRunHistoryRequest?: (requestNumber: number) => void;
+  abortUnknownApiRoutes?: boolean;
+  onUnknownApiRequest?: (method: string, path: string) => void;
 }
 
 function page(
@@ -1225,6 +1227,10 @@ export async function installV3VisualQaRoutes(
       });
     }
 
+    if (options.abortUnknownApiRoutes) {
+      options.onUnknownApiRequest?.(request.method(), path);
+      return route.abort();
+    }
     return fulfillJson(route, { ok: true });
   });
 }

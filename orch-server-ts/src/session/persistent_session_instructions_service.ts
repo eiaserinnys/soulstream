@@ -125,12 +125,14 @@ function parseInstructionUpdateBody(
   input: unknown,
 ): PersistentInstructionsApplyPayload {
   const body = requireObjectBody(input);
-  rejectInstructionUnknownKeys(body, ["text", "status"]);
+  rejectInstructionUnknownKeys(body, ["text", "status", "remove_source_turns", "remove_source_event_ids"]);
   return parseInstructionPayload(sessionId, {
     op: "update",
     id: instructionId,
     ...(body.text === undefined ? {} : { text: body.text }),
     ...(body.status === undefined ? {} : { status: body.status }),
+    ...(body.remove_source_turns === undefined ? {} : { remove_source_turns: body.remove_source_turns }),
+    ...(body.remove_source_event_ids === undefined ? {} : { remove_source_event_ids: body.remove_source_event_ids }),
   });
 }
 

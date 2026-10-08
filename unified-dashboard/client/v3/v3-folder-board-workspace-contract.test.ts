@@ -26,6 +26,8 @@ describe("task board r3 workspace contract", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
     const overlay = read("./FolderDocumentOverlay.tsx");
     const resources = read("./FolderBoardResourcePane.tsx");
+    const sessionColumn = read("./WorkspaceSessionColumn.tsx");
+    const persistentChat = read("./PersistentSessionChatView.tsx");
 
     expect(workspace).toContain('data-testid="v3-folder-board-resources"');
     expect(workspace).toContain('data-testid="v3-folder-board-canvas"');
@@ -34,7 +36,12 @@ describe("task board r3 workspace contract", () => {
     expect(overlay).toContain('data-testid="v3-folder-board-document-overlay"');
     expect(workspace).toContain("<MarkdownDocumentPanel");
     expect(workspace).toContain("<WorkspaceSessionColumn");
-    expect(read("./WorkspaceSessionColumn.tsx")).toContain("<ChatView");
+    expect(workspace).toMatch(/<WorkspaceSessionColumn\s+activeSession=\{activeSession\}/);
+    expect(sessionColumn).toMatch(/\{activeSession \? <PersistentSessionChatView/);
+    expect(sessionColumn).toContain("sessionId={activeSession.agentSessionId} storeScope={storeScope}");
+    expect(sessionColumn).toContain("onSessionChange={onSessionChange} loadDisplaySettings={loadDisplaySettings}");
+    expect(sessionColumn).toContain("chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}");
+    expect(persistentChat).toContain("return <ChatView {...props} storeScope={storeScope} />;");
     expect(resources).toContain("<FolderCardSection");
     expect(resources).toContain("<RichSessionRow");
     expect(resources).toContain("<MarkdownContent");
@@ -47,6 +54,8 @@ describe("task board r3 workspace contract", () => {
     const workspace = read("./FolderBoardWorkspace.tsx");
     const board = read("./FolderBoardPane.tsx");
     const resources = read("./FolderBoardResourcePane.tsx");
+    const sessionColumn = read("./WorkspaceSessionColumn.tsx");
+    const persistentChat = read("./PersistentSessionChatView.tsx");
 
     expect(workspace).toContain("openFolderWorkspaceResource");
     expect(workspace).toContain("onOpenMarkdownDocument=");
@@ -56,7 +65,9 @@ describe("task board r3 workspace contract", () => {
     expect(resources).toContain("onActiveTabChange(tab.id)");
     expect(resources).toContain("onOpenDocument(activeTab.documentId)");
     expect(workspace).toContain("<WorkspaceSessionColumn");
-    expect(read("./WorkspaceSessionColumn.tsx")).toContain("<ChatView");
+    expect(workspace).toMatch(/<WorkspaceSessionColumn\s+activeSession=\{activeSession\}/);
+    expect(sessionColumn).toContain("sessionId={activeSession.agentSessionId} storeScope={storeScope}");
+    expect(persistentChat).toContain("return <ChatView {...props} storeScope={storeScope} />;");
     expect(workspace).not.toContain("<RightPanel");
   });
 

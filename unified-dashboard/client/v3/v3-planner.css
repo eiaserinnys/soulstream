@@ -3,11 +3,11 @@
   z-index: 1;
   display: grid;
   grid-template-columns:
-    calc(var(--v3-navigation-width, 264px) + 22px)
+    calc(var(--v3-navigation-width, 264px) + var(--v3-main-columns-outer-margin))
     var(--v3-panel-gap, 8px)
     minmax(0, 1fr)
     var(--v3-panel-gap, 8px)
-    calc(var(--v3-session-panel-width, 300px) + 22px);
+    calc(var(--v3-session-panel-width, 300px) + var(--v3-main-columns-outer-margin));
   height: 100dvh;
   overflow: hidden;
   color: var(--foreground);
@@ -47,7 +47,7 @@
   width: var(--v3-navigation-width, 264px);
   flex-direction: column;
   overflow: hidden;
-  margin: 76px 0 22px 22px;
+  margin: 76px 0 var(--v3-main-columns-outer-margin) var(--v3-main-columns-outer-margin);
   border-radius: 24px;
   padding: 16px;
 }
@@ -213,12 +213,22 @@
   display: flex;
   width: 100%;
   min-height: 0;
-  height: calc(100dvh - 98px);
+  height: calc(100dvh - 76px - var(--v3-main-columns-outer-margin));
   flex-direction: column;
   overflow: hidden;
-  margin: 76px 0 22px;
+  margin: 76px 0 var(--v3-main-columns-outer-margin);
   border-radius: 24px;
   padding: 20px 0 0;
+}
+
+.v3-session-panel {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: var(--v3-session-panel-width, 300px);
+  margin: 76px var(--v3-main-columns-outer-margin) var(--v3-main-columns-outer-margin) 0;
+  overflow: hidden;
+  border-radius: 24px;
 }
 
 .v3-planner-scroll {
@@ -423,4 +433,42 @@
 
 .v3-mobile-tabs {
   display: none;
+}
+
+@media (max-width: 1180px) {
+  .v3-session-panel,
+  .v3-session-panel-resize {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .v3-shell {
+    display: block;
+    height: 100dvh;
+    padding-bottom: 58px;
+  }
+
+  .v3-navigation,
+  .v3-navigation-resize {
+    display: none;
+  }
+
+  .v3-main {
+    height: calc(100dvh - 58px);
+    overflow: hidden;
+  }
+
+  .v3-shell[data-mobile-tab="chat"] .v3-main {
+    display: none;
+  }
+
+  .v3-planner {
+    width: calc(100% - 28px);
+    min-height: 0;
+    height: calc(100dvh - 146px);
+    margin: 72px auto 12px;
+    border-radius: 20px;
+    padding: 12px 0 0;
+  }
 }
