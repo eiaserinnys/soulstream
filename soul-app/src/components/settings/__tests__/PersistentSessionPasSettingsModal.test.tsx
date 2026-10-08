@@ -91,6 +91,7 @@ test('opens on persistent instructions as the first section and keeps them acros
   expect(await screen.findByText('요청한 범위부터 확인합니다.')).toBeTruthy();
   expect(screen.getByText(/T195, T210/)).toBeTruthy();
   expect(api.getPersistentSessionInstructions).toHaveBeenCalledWith('pas-1');
+  expect(screen.getAllByText('지속 지시')).toHaveLength(1);
   expect(screen.getByTestId('settings-segment-pas-settings-instructions').props.accessibilityState.selected).toBe(true);
   expect(screen.getByTestId('settings-segment-pas-settings-account-model')).toBeTruthy();
   expect(screen.getByTestId('settings-segment-pas-settings-display')).toBeTruthy();

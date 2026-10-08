@@ -20,7 +20,7 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 }));
 
 import React from 'react';
-import { AccessibilityInfo, StyleSheet, Text } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, Text } from 'react-native';
 import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import {
   DARK_COLORS,
@@ -164,6 +164,36 @@ describe('GlassButton interaction contract', () => {
       });
     },
   );
+
+  test('web plain focus는 UA 외곽선 없이 테마 피드백과 버튼 동작을 유지한다', () => {
+    const originalOS = Platform.OS;
+    Platform.OS = 'web';
+    try {
+      const onPress = jest.fn();
+      const screen = render(
+        <GlassButton variant="plain" testID="button" onPress={onPress}>
+          <Text>닫기</Text>
+        </GlassButton>,
+      );
+      const button = screen.getByTestId('button');
+      const normal = StyleSheet.flatten(button.props.style);
+      const primitive = createPrimitiveRoles(phoneTokens()).buttonSecondary;
+      expect(normal).toMatchObject({ outlineStyle: 'solid', outlineWidth: 0, backgroundColor: 'transparent' });
+
+      fireEvent(button, 'focus');
+      const focused = StyleSheet.flatten(button.props.style);
+      expect(focused.backgroundColor).toBe(primitive.pressedColor);
+      for (const key of ['minWidth', 'minHeight', 'paddingHorizontal', 'paddingVertical', 'borderRadius'] as const) {
+        expect(focused[key]).toBe(normal[key]);
+      }
+      fireEvent.press(button);
+      expect(onPress).toHaveBeenCalledTimes(1);
+      fireEvent(button, 'blur');
+      expect(StyleSheet.flatten(button.props.style).backgroundColor).toBe('transparent');
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
 
   test('disabled button은 focus affordance를 활성화하지 않는다', () => {
     const screen = render(

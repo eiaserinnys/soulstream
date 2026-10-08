@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { AppModalSurface } from '../AppModalSurface';
@@ -74,15 +74,15 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
     >
       <View style={styles.header}>
         <Text accessibilityRole="header" style={styles.title}>영구 세션</Text>
-        <TouchableOpacity
+        <GlassButton
+          variant="plain"
           testID="persistent-session-pas-close"
           accessibilityRole="button"
           accessibilityLabel="설정 닫기"
           onPress={requestClose}
-          style={styles.headerAction}
         >
           <Text style={styles.actionText}>닫기</Text>
-        </TouchableOpacity>
+        </GlassButton>
       </View>
       <View style={styles.selector}>
         <SettingsSegmentedControl<Section>
@@ -96,6 +96,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
         <View style={[styles.pane, section !== 'instructions' && styles.hidden]}>
           <ScrollView testID="persistent-session-pas-instructions-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
             <PersistentSessionInstructions
+              title=""
               serverUrl={serverUrl}
               sessionId={sessionId}
               cancelEditRequest={cancelInstructionEditRequest}
@@ -154,7 +155,6 @@ function makeStyles(t: DesignTokens) {
       gap: t.spacing.sm,
     },
     title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary },
-    headerAction: { minHeight: t.hitTarget.min, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs },
     actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' },
     primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
     selector: { paddingHorizontal: t.foundation.pageInset, paddingBottom: t.spacing.sm },

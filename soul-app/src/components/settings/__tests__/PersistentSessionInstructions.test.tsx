@@ -55,6 +55,7 @@ test('loads instruction rows, edits, adds and removes them through the API actio
   const { screen, api } = setup();
 
   expect(await screen.findByTestId('persistent-instruction-instruction-1')).toBeTruthy();
+  expect(screen.getByText('지속 지시')).toBeTruthy();
   expect(screen.getByText(/T195, T210/)).toBeTruthy();
   expect(screen.queryByText('지속 지시 없음')).toBeNull();
 

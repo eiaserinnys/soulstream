@@ -14,11 +14,13 @@ import { usePersistentSessionApiFactory } from './persistentSessionApi';
 export function PersistentSessionInstructions({
   serverUrl,
   sessionId,
+  title,
   cancelEditRequest = 0,
   onEditingChange,
 }: {
   serverUrl: string;
   sessionId: string;
+  title?: string;
   cancelEditRequest?: number;
   onEditingChange?(editing: boolean): void;
 }) {
@@ -114,6 +116,7 @@ export function PersistentSessionInstructions({
   };
 
   return <PersistentSessionInstructionsFields
+    title={title}
     instructions={instructions}
     loading={loading}
     loadError={loadError}

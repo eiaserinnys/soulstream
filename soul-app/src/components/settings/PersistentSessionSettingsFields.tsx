@@ -36,6 +36,7 @@ export type PersistentSessionDisplayValue = boolean | PersistentTurnUsageMode;
 export type PersistentSessionEditorSection = 'all' | 'account-model' | 'display';
 
 export function PersistentSessionInstructionsFields({
+  title = '지속 지시',
   instructions,
   loading,
   loadError,
@@ -53,6 +54,7 @@ export function PersistentSessionInstructionsFields({
   onAddText,
   onAdd,
 }: {
+  title?: string;
   instructions: PersistentSessionInstruction[];
   loading: boolean;
   loadError: boolean;
@@ -78,7 +80,7 @@ export function PersistentSessionInstructionsFields({
     formatDate(instruction.updated_at),
   ].filter(Boolean).join(' · ');
 
-  return <Group title="지속 지시">
+  return <Group title={title}>
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
     {loadError ? <View style={styles.block}>
       <Text accessibilityRole="alert" style={styles.error}>조회 실패</Text>
@@ -239,7 +241,7 @@ export function PersistentSessionSettingsFields({
       value={display.show_generation_separator}
       disabled={displaySaving}
       testID="persistent-show-generation-separator"
-      help="세대가 바뀐 자리에 구분선을 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다."
+      help="표시를 꺼도 기록은 남습니다."
       onValueChange={(value) => onDisplayChange('show_generation_separator', value)}
     />
     <SettingsToggleRow
@@ -247,7 +249,7 @@ export function PersistentSessionSettingsFields({
       value={display.show_jev_candidates}
       disabled={displaySaving}
       testID="persistent-show-jev-candidates"
-      help="내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다. 끄면 화면에서만 숨기고 기록은 남습니다."
+      help="내 입력 아래에 후보를 보여 줍니다."
       onValueChange={(value) => onDisplayChange('show_jev_candidates', value)}
     />
     <View style={{ gap: t.spacing.xs }}>
