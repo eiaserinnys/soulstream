@@ -26,9 +26,25 @@ describe("v3 right session panel policy", () => {
   });
 
   it("hides the right panel on the existing mobile breakpoint", () => {
-    const styles = read("./v3-session-panel.css");
-    expect(styles).toContain("@media (max-width: 760px)");
-    expect(styles).toMatch(/\.v3-session-panel,[\s\S]*display:\s*none/);
+    const styles = read("./v3-planner.css");
+    const panelBreakpoint = styles.match(/@media \(max-width: 1180px\) \{([\s\S]*?)^\}/m);
+    const mobileBreakpoint = styles.match(/@media \(max-width: 760px\) \{([\s\S]*?)^\}/m);
+
+    expect(panelBreakpoint).not.toBeNull();
+    expect(mobileBreakpoint).not.toBeNull();
+
+    const panelRule = panelBreakpoint?.[1].match(
+      /\.v3-session-panel,\s*\.v3-session-panel-resize\s*\{([^}]*)\}/,
+    );
+    expect(panelRule).not.toBeNull();
+    expect(panelRule?.[1]).toMatch(/\bdisplay:\s*none\s*;/);
+
+    expect(mobileBreakpoint?.[1]).toMatch(
+      /\.v3-navigation,\s*\.v3-navigation-resize\s*\{\s*display:\s*none\s*;/,
+    );
+    expect(mobileBreakpoint?.[1]).toMatch(/\.v3-shell\s*\{[^}]*display:\s*block;[^}]*height:\s*100dvh;/s);
+    expect(mobileBreakpoint?.[1]).toMatch(/\.v3-main\s*\{[^}]*height:\s*calc\(100dvh\s*-\s*58px\)/s);
+    expect(mobileBreakpoint?.[1]).not.toMatch(/\.v3-session-panel(?:-resize)?\s*\{/);
   });
 
   it("routes global search selection through the canonical session panel opener", () => {
