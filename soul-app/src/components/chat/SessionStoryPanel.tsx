@@ -78,12 +78,7 @@ export function SessionStoryPanel({
     try {
       const response = await api.getSessionStory(sessionId);
       if (requestGeneration.current !== generation) return;
-      if (mode === 'settings') {
-        setStory(projectSettingsSessionStory(response, isDevelopmentBuild));
-        setLoadState('ready');
-        return;
-      }
-      const nextStory = projectSessionStory(response, isDevelopmentBuild);
+      const nextStory = projectSessionStory(response, isDevelopmentBuild, mode);
       if (!nextStory) {
         setExpanded(false);
         setLoadState('hidden');
@@ -174,7 +169,7 @@ export function SessionStoryPanel({
             </GlassButton>
           </View>
         ) : null}
-        {loadState === 'ready' && story ? <SettingsStoryContent story={story} styles={styles} /> : null}
+        {loadState === 'ready' && story ? <StoryContent story={story} styles={styles} mode="settings" /> : null}
       </View>
     );
   }
@@ -205,27 +200,7 @@ export function SessionStoryPanel({
             contentContainerStyle={styles.content}
             nestedScrollEnabled
           >
-            <View style={styles.section}>
-              <Text style={styles.label}>하이라이트</Text>
-              <Text testID="session-story-copy" style={styles.highlight}>
-              {story.highlight ?? ''}
-              </Text>
-            </View>
-            <View style={styles.section}>
-              <Text style={styles.label}>줄거리</Text>
-              <Text testID="session-story-copy" style={styles.copy}>
-              {story.narrative ?? ''}
-              </Text>
-              {story.unfoldedContents.map((content, index) => (
-                <Text
-                  key={`${index}-${content}`}
-                  testID="session-story-copy"
-                  style={styles.copy}
-                >
-                  {content}
-                </Text>
-              ))}
-            </View>
+            <StoryContent story={story} styles={styles} mode="disclosure" />
           </ScrollView>
         ) : null
       ) : null}
@@ -233,76 +208,76 @@ export function SessionStoryPanel({
   );
 }
 
-function SettingsStoryContent({ story, styles }: {
+function StoryContent({ story, styles, mode }: {
   story: SessionStoryPresentation;
   styles: ReturnType<typeof makeStyles>;
+  mode: 'disclosure' | 'settings';
 }) {
   const highlight = story.highlight?.trim() ?? '';
   const narrative = story.narrative?.trim() ?? '';
   const unfoldedContents = story.unfoldedContents.filter((content) => content.trim());
-  if (!highlight && !narrative && unfoldedContents.length === 0) {
+  const settings = mode === 'settings';
+  if (settings && !highlight && !narrative && unfoldedContents.length === 0) {
     return <Text testID="session-story-empty" style={styles.settingsEmpty}>아직 정리된 스토리가 없습니다.</Text>;
   }
-  return (
-    <View testID="session-story-settings-content" style={styles.settingsContent}>
-      {highlight ? <View style={styles.settingsSection}>
-        <Text style={styles.settingsLabel}>하이라이트</Text>
-        <Text testID="session-story-copy" style={styles.settingsCopy}>{highlight}</Text>
+
+  const content = (
+    <>
+      {highlight ? <View style={settings ? styles.settingsSection : styles.section}>
+        <Text style={settings ? styles.settingsLabel : styles.label}>하이라이트</Text>
+        <Text testID="session-story-copy" style={settings ? styles.settingsCopy : styles.highlight}>{highlight}</Text>
       </View> : null}
-      {narrative || unfoldedContents.length ? <View style={styles.settingsSection}>
-        <Text style={styles.settingsLabel}>줄거리</Text>
-        {narrative ? <Text testID="session-story-copy" style={styles.settingsCopy}>{narrative}</Text> : null}
-        {unfoldedContents.map((content, index) => <Text key={`${index}-${content}`} testID="session-story-copy" style={styles.settingsCopy}>{content}</Text>)}
+      {narrative || unfoldedContents.length ? <View style={settings ? styles.settingsSection : styles.section}>
+        <Text style={settings ? styles.settingsLabel : styles.label}>줄거리</Text>
+        {narrative ? <Text testID="session-story-copy" style={settings ? styles.settingsCopy : styles.copy}>{narrative}</Text> : null}
+        {unfoldedContents.map((content, index) => <Text key={`${index}-${content}`} testID="session-story-copy" style={settings ? styles.settingsCopy : styles.copy}>{content}</Text>)}
       </View> : null}
-    </View>
+    </>
   );
+
+  return settings ? (
+    <View testID="session-story-settings-content" style={styles.settingsContent}>{content}</View>
+  ) : content;
 }
 
 export function projectSessionStory(
   response: SessionStoryResponse | null,
   strict: boolean,
+  mode: 'disclosure' | 'settings' = 'disclosure',
 ): SessionStoryPresentation | null {
-  if (response === null) return null;
-  if (response.highlight === null || response.narrative === null) return null;
-  if (
-    typeof response.highlight !== 'string'
-    || typeof response.narrative !== 'string'
-  ) {
-    if (strict) {
-      throw new Error('[SessionStoryPanel] highlight/narrative wire shape is invalid');
-    }
-    return null;
+  if (response === null) {
+    return mode === 'settings'
+      ? { highlight: null, narrative: null, unfoldedContents: [] }
+      : null;
   }
 
-  const highlight = response.highlight.trim();
-  const narrative = response.narrative.trim();
-  if (!highlight || !narrative) return null;
+  let highlight: string | null;
+  let narrative: string | null;
+  if (mode === 'disclosure') {
+    if (response.highlight === null || response.narrative === null) return null;
+    if (
+      typeof response.highlight !== 'string'
+      || typeof response.narrative !== 'string'
+    ) {
+      if (strict) {
+        throw new Error('[SessionStoryPanel] highlight/narrative wire shape is invalid');
+      }
+      return null;
+    }
+    highlight = response.highlight.trim();
+    narrative = response.narrative.trim();
+    if (!highlight || !narrative) return null;
+  } else {
+    const readText = (value: unknown, field: string) => {
+      if (value === null) return null;
+      if (typeof value === 'string') return value.trim() || null;
+      if (strict) throw new Error(`[SessionStoryPanel] ${field} wire shape is invalid`);
+      return null;
+    };
+    highlight = readText(response.highlight, 'highlight');
+    narrative = readText(response.narrative, 'narrative');
+  }
 
-  const unfoldedContents = Array.isArray(response.unfolded_turn_summaries)
-    ? response.unfolded_turn_summaries.flatMap((summary) => {
-        const content = typeof summary?.content === 'string'
-          ? summary.content.trim()
-          : '';
-        return content ? [content] : [];
-      })
-    : [];
-
-  return { highlight, narrative, unfoldedContents };
-}
-
-function projectSettingsSessionStory(
-  response: SessionStoryResponse | null,
-  strict: boolean,
-): SessionStoryPresentation {
-  if (response === null) return { highlight: null, narrative: null, unfoldedContents: [] };
-  const readText = (value: unknown, field: string) => {
-    if (value === null) return null;
-    if (typeof value === 'string') return value.trim() || null;
-    if (strict) throw new Error(`[SessionStoryPanel] ${field} wire shape is invalid`);
-    return null;
-  };
-  const highlight = readText(response.highlight, 'highlight');
-  const narrative = readText(response.narrative, 'narrative');
   const unfoldedContents = Array.isArray(response.unfolded_turn_summaries)
     ? response.unfolded_turn_summaries.flatMap((summary) => {
         const content = typeof summary?.content === 'string' ? summary.content.trim() : '';
