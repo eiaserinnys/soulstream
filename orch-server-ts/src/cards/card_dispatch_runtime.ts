@@ -1,10 +1,12 @@
-import { CardExecutionService } from "./card_execution_service.js";
+import { CardExecutionService, confirmedCommandFailure } from "./card_execution_service.js";
+import { PendingNodeCommandRejectedError } from "../node/pending_commands.js";
 import { buildCardPrompt } from "./card_prompt.js";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { resolveCardSessionTarget } from "./card_session_target.js";
 import { sendCardChangeOnce } from "./card_change_delivery.js";
 import { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
-import type { SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
+import type { SessionDeliveryRow, SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
+import { sessionDeliveryInterventionPayload } from "../session/session_delivery_intervention_payload.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
 import type { SessionCommandRouter } from "../session/session_command_router.js";
@@ -34,6 +36,9 @@ import {
 import { strictOrchestrationUsage } from "./orchestration_usage.js";
 import type { UsageSummarySnapshot } from "../usage/usage_summary_service.js";
 import type { OrchestrationCandidate } from "@soulstream/wire-schema/card-orchestration";
+import { CardWorkDispatchService, type DispatchWorkActor } from "./card_work_dispatch_service.js";
+import { canonicalWorkErrorDeliveryId, recordConfirmedErrorTx } from "./card_work_error_delivery.js";
+import type { RepositorySql } from "./control_plane/card_types.js";
 export async function createCardDispatchRuntime(options: {
   sqlResolver: LiveDbSqlResolver;
   router: SessionCommandRouter;
@@ -287,6 +292,63 @@ export async function createCardDispatchRuntime(options: {
       decisionEnded: (id) => coordinator.decisionEnded(id),
     },
   });
+  const sendWorkDelivery = async (row: SessionDeliveryRow): Promise<void> => {
+    const parsed = sessionDeliveryInterventionPayload(row);
+    if (!parsed.ok) throw new Error(parsed.message);
+    const sql = await resolveSql() as unknown as DeliverySqlClient;
+    const repository = new SessionDeliveryRepository(sql);
+    const send = async (payload: typeof parsed.value) => {
+      const routed = await options.router.routeExistingSessionPendingCommand(payload);
+      const response = await options.bridge.sendPendingCommand(routed);
+      if (response.status === "error" || response.type === "error") {
+        throw new PendingNodeCommandRejectedError({
+          commandType: routed.command.commandType,
+          requestId: routed.command.requestId,
+          message: String(response.message ?? response.code ?? "Node rejected delivery"),
+          response,
+        });
+      }
+      return response;
+    };
+    try {
+      await sendCardChangeOnce(repository, parsed.value, send, row);
+    } catch (error) {
+      const current = await repository.get(row.delivery_id);
+      if (isAcceptedDelivery(current)) return;
+      if (row.source === "card_change" && row.producer_kind === null && row.producer_id) {
+        const confirmed = confirmedCommandFailure(error, row.delivery_id);
+        if (confirmed) {
+          const errorDelivery = await (await resolveSql()).begin(async transaction => {
+            const operation = (await transaction<Array<{
+              id: string;
+              target_kind: string;
+              target_id: string;
+              operation_type: string;
+              actor_kind: string;
+              actor_session_id: string | null;
+              idempotency_key: string | null;
+            }>>`SELECT id,target_kind,target_id,operation_type,actor_kind,actor_session_id,idempotency_key
+              FROM folder_operations WHERE id=${row.producer_id}`)[0];
+            if (!operation || operation.target_kind !== "card" || operation.operation_type !== "add_card_comment"
+              || operation.actor_kind !== "agent" || !operation.actor_session_id) return null;
+            return await recordConfirmedErrorTx(transaction as unknown as RepositorySql, {
+              operationId: operation.id,
+              cardId: operation.target_id,
+              workId: row.delivery_id,
+              stage: "delivery",
+              message: confirmed.message,
+              failureId: confirmed.failureId,
+            });
+          });
+          if (errorDelivery) {
+            void sendWorkDelivery(errorDelivery).catch(sendError =>
+              options.warn(`Confirmed card error delivery failed for ${errorDelivery.delivery_id}: ${errorMessage(sendError)}`));
+          }
+        }
+      }
+      throw error;
+    }
+  };
   const executionService=new CardExecutionService({sql:await resolveSql(),cards:await serviceProvider(),
     validate:async card=>{
       try{
@@ -314,15 +376,82 @@ export async function createCardDispatchRuntime(options: {
         text:`카드 「${detail.card.title}」를 이어서 수행하세요.`,delivery_id:`card-execution:${input.requestId}`,
         attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:{source:input.callerSource}});
       const result=await options.bridge.sendPendingCommand(routed);
-      if(result.status==='error' || result.type==='error')throw Object.assign(new Error(String(result.message??result.code)),{code:"NODE_REJECTED"});
+      if(result.status==='error' || result.type==='error')throw new PendingNodeCommandRejectedError({
+        commandType:routed.command.commandType,requestId:routed.command.requestId,
+        message:String(result.message??result.code??"Node rejected ensure_session_running"),response:result,
+      });
       if(!result.execution || !['started','already_running'].includes(String(result.state)))throw new Error("실행 등록 결과를 확인하지 못했습니다.");
       return result as unknown as {state:"started"|"already_running";execution:import("./card_work_lifecycle.js").CardWorkExecution};
     },
+    onConfirmedFailureTx: async (sql, request, failure) => {
+      const executionKeyPrefix = "dispatch-work-execution:";
+      if (!request.idempotency_key.startsWith(executionKeyPrefix)) return null;
+      const operationId = request.idempotency_key.slice(executionKeyPrefix.length);
+      if (!operationId) return null;
+      const operation = (await sql<Array<{
+        id: string;
+        target_kind: string;
+        target_id: string;
+        operation_type: string;
+        actor_kind: string;
+        actor_session_id: string | null;
+        idempotency_key: string | null;
+      }>>`SELECT id,target_kind,target_id,operation_type,actor_kind,actor_session_id,idempotency_key
+        FROM folder_operations WHERE id=${operationId}`)[0];
+      const stage = request.mode === "create" ? "launch" : request.mode === "resume" ? "restart" : null;
+      if (!stage || !operation || request.idempotency_key !== `${executionKeyPrefix}${operation.id}`
+        || operation.target_kind !== "card" || operation.target_id !== request.card_id
+        || operation.operation_type !== "create_card" || operation.actor_kind !== "agent"
+        || !operation.actor_session_id) return null;
+      return await recordConfirmedErrorTx(sql as unknown as RepositorySql, {
+        operationId: operation.id,
+        cardId: request.card_id,
+        workId: request.id,
+        stage,
+        message: failure.message,
+        failureId: failure.failureId,
+      });
+    },
+    onConfirmedFailureCommitted: row => {
+      void sendWorkDelivery(row).catch(error =>
+        options.warn(`Confirmed card error delivery failed for ${row.delivery_id}: ${errorMessage(error)}`));
+    },
   });
+  const workDispatchServiceProvider = async (authorizeFolder: (folderId: string, actor: DispatchWorkActor) => Promise<void>) =>
+    new CardWorkDispatchService({
+      sql: await resolveSql(),
+      cards: await serviceProvider(),
+      execution: executionService,
+      authorizeFolder,
+      sendDelivery: sendWorkDelivery,
+      emitCardUpdated: async (cardId, folderId) => {
+        options.broadcaster.append({ type: "card_updated", cardId, folderId });
+      },
+      warn: options.warn,
+    });
+  const kickPendingWorkForNode = async (nodeId: string): Promise<void> => {
+    const service = await workDispatchServiceProvider(async () => {
+      throw new Error("Automated work recovery cannot authorize a new dispatch");
+    });
+    await service.kickPendingForNode(nodeId);
+  };
+  const kickCanonicalWorkError = async (sessionId: string, eventId: number): Promise<void> => {
+    try {
+      const deliveryId = canonicalWorkErrorDeliveryId(sessionId, eventId);
+      const row = await new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient).get(deliveryId);
+      if (row) await sendWorkDelivery(row);
+    } catch (error) {
+      options.warn(`Canonical card error delivery failed for ${sessionId}/${eventId}: ${errorMessage(error)}`);
+    }
+  };
   return {
     dispatcher,
     serviceProvider,
     executionServiceProvider:async()=>executionService,
+    workDispatchServiceProvider,
+    sendWorkDelivery,
+    kickPendingWorkForNode,
+    kickCanonicalWorkError,
     authorizeWorker:(input:Parameters<CardOrchestrationRepository["authorizeWorker"]>[0])=>orchestrationRepository.authorizeWorker(input),
     authorizeDecision: (
       input: Parameters<CardOrchestrationRepository["authorize"]>[0],
@@ -354,4 +483,12 @@ export async function createCardDispatchRuntime(options: {
       },
     },
   };
+}
+
+function isAcceptedDelivery(row: SessionDeliveryRow | null): boolean {
+  return !!row && (row.state === "queued" || row.state === "delivered" || row.aggregate_state === "consumed");
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

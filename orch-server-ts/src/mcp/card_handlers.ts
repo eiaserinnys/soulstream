@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
-import { errorResultFromError, jsonResult, readOrchErrorEnvelopeText, type CallToolResult, type cardTools } from "@soulstream/mcp-contract";
-import { readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "../cards/card_route_body.js";
+import { callWithReferenceTranslation, errorResultFromError, jsonResult, readOrchErrorEnvelopeText, type CallToolResult, type cardTools } from "@soulstream/mcp-contract";
+import { allowed, readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "../cards/card_route_body.js";
+import type { DispatchWorkInput } from "../cards/card_work_dispatch_service.js";
 import type { CardMcpGetInput, CardMcpListInput } from "../cards/card_mcp_read.js";
-import { filterFolders, normalizeAccess } from "../folders/folder_route_access.js";
+import { filterFolders, isFolderAllowed, normalizeAccess } from "../folders/folder_route_access.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { CardOperation } from "../cards/card_operations.js";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
@@ -57,6 +58,46 @@ export const cardHandlers = {
     if (a.mode === "reply") matchingHeader(a, c);
     return compactComment(await appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, mode:a.mode,itemId:a.item_id }));
   }),
+  dispatch_work: (o, a, c) => {
+    requireInternal(c);
+    matchingHeader(a, c);
+    const hasCard = typeof a.card_id === "string";
+    const hasTitle = typeof a.title === "string";
+    if (hasCard === hasTitle) return run(async () => { throw new Error("card_id 또는 title 중 하나만 지정해야 합니다."); });
+    return callWithReferenceTranslation(a, refs => resolveDispatchReferences(o.cards, refs), translated =>
+      run(async () => {
+        if (!c.callerSessionId?.trim()) throw Object.assign(new Error("인증된 호출 세션이 필요합니다."), { statusCode: 403 });
+        if (!o.cards.workDispatchServiceProvider) throw Object.assign(new Error("Work dispatch unavailable"), { statusCode: 503 });
+        const actor = { actorKind: "agent" as const, actorSessionId: c.callerSessionId };
+        const authorizeFolder = async (folderId: string, suppliedActor: import("../cards/card_work_dispatch_service.js").DispatchWorkActor) => {
+          if (suppliedActor.actorKind !== "agent" || suppliedActor.actorSessionId !== c.callerSessionId)
+            throw Object.assign(new Error("Authenticated dispatch actor mismatch"), { statusCode: 403 });
+          await allowed(o.cards, o.cards.resolveAccess, folderId);
+        };
+        if (hasCard && ["folder_id", "agent_id", "model_preset", "node_id"].some(key => translated[key] !== undefined))
+          throw new Error("folder_id, agent_id, model_preset, node_id는 새 카드 생성에만 지정할 수 있습니다.");
+        const service = await o.cards.workDispatchServiceProvider(authorizeFolder);
+        const input: DispatchWorkInput = hasCard
+          ? { kind: "followup", cardId: String(translated.card_id), request: String(translated.request),
+              ...(typeof translated.brief === "string" ? { brief: translated.brief } : {}),
+              idempotencyKey: String(translated.idempotency_key) }
+          : { kind: "create", title: String(translated.title), request: String(translated.request),
+              ...(typeof translated.brief === "string" ? { brief: translated.brief } : {}),
+              ...(typeof translated.folder_id === "string" ? { folderId: translated.folder_id } : {}),
+              ...(typeof translated.agent_id === "string" ? { agentId: translated.agent_id } : {}),
+              ...(typeof translated.model_preset === "string" ? { modelPreset: translated.model_preset } : {}),
+              ...(typeof translated.node_id === "string" ? { nodeId: translated.node_id } : {}),
+              idempotencyKey: String(translated.idempotency_key) };
+        const receipt = await service.accept(input, actor);
+        void service.kick(receipt);
+        return {
+          accepted: true,
+          idempotent: receipt.idempotent,
+          card: receipt.card,
+          ...(receipt.work.kind === "execution" ? { request_id: receipt.work.requestId } : { delivery_id: receipt.work.deliveryId }),
+        };
+      }));
+  },
   set_card_status: (o, a, c) => run(async () => {
     matchingHeader(a, c);
     return compactMutation(await mutation(o.cards, "set_card_status", String(a.card_id), {
@@ -146,6 +187,13 @@ async function mcpAllowedFolderIds(options: Options): Promise<readonly string[] 
   const [access, folders] = await Promise.all([options.resolveAccess!(), options.provider.listFolders()]);
   const normalized = normalizeAccess(access);
   return normalized.restricted ? filterFolders(normalized, folders).map(folder => folder.id) : null;
+}
+async function resolveDispatchReferences(options: Options, refs: string[]) {
+  const [service, access, folders] = await Promise.all([
+    options.cardServiceProvider!(), options.resolveAccess!(), options.provider.listFolders(),
+  ]);
+  const normalized = normalizeAccess(access);
+  return service.resolveReferences(refs, folderId => isFolderAllowed(normalized, folders, folderId));
 }
 async function append(options: Options, operation: CardOperation, args: Args, context: McpCallContext, body: Args,
   cas = false, project: MutationProjector = compactMutation) {

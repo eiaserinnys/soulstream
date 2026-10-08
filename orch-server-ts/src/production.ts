@@ -38,6 +38,7 @@ import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
 import {
   EventIngressRepository,
   LiveEventIngressSqlProvider,
+  type EventSessionEffectApplier,
 } from "./node/event_ingress_repository.js";
 import { FileEventIngressDeadLetterStore } from "./node/event_ingress_dead_letter_store.js";
 import { applyEventSessionEffect } from "./node/event_session_effect_applier.js";
@@ -88,6 +89,8 @@ import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import { createCardOrchestrationAccess } from "./cards/card_orchestration_access.js";
 import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
+import { relayCanonicalErrorTx } from "./cards/card_work_error_delivery.js";
+import type { RepositorySql } from "./cards/control_plane/card_types.js";
 import type { CardDispatcher } from "./cards/card_dispatcher.js";
 import { createScheduleRepositoryProvider } from "./schedule/schedule_host_runtime.js";
 import { createFolderControlPlaneServiceProvider } from "./folders/folder_control_plane_runtime.js";
@@ -108,7 +111,8 @@ import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
 import { SessionBoardMoveService } from "./session/session_board_move_service.js";
-import { intervenePayload } from "./session/session_action_command_payloads.js";
+import { sessionDeliveryInterventionPayload } from
+  "./session/session_delivery_intervention_payload.js";
 import { PersistentSessionSettingsService } from "./session/persistent_session_settings_service.js";
 import { executeCreateSessionRoute } from "./session/session_command_routes.js";
 import {
@@ -262,9 +266,11 @@ export async function createLiveProductionApplication(
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
+  let cardDispatchRuntime: Awaited<ReturnType<typeof createCardDispatchRuntime>> | undefined;
+  const applyCardWorkErrorEffect = createCardWorkErrorSessionEffectApplier();
   const eventIngressRepository = new EventIngressRepository(
     new LiveEventIngressSqlProvider(sqlResolver),
-    applyEventSessionEffect,
+    applyCardWorkErrorEffect,
     new FileEventIngressDeadLetterStore(resolve(
       dirname(fileURLToPath(import.meta.url)),
       "..",
@@ -273,6 +279,10 @@ export async function createLiveProductionApplication(
     )),
     {},
     applyEventFeedProjection,
+  );
+  const eventIngressCommitter = createCardWorkErrorIngressCommitter(
+    eventIngressRepository,
+    async (sessionId, eventId) => await cardDispatchRuntime?.kickCanonicalWorkError(sessionId, eventId),
   );
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const boardProjectionHost = createBoardProjectionHost(sqlResolver, boardYjsRepository);
@@ -300,15 +310,24 @@ export async function createLiveProductionApplication(
     registry,
     repository: dbCatalogRepository,
     logError: (error, message) => context.warn(`${message}: ${String(error)}`),
-    onNodeReady: async (nodeId, connectionId) =>
-      await replayPendingImmediateDeliveriesForNode({
-        nodeId,
-        connectionId,
-        deliveries: (await persistenceRepositoryProvider()).deliveries,
-        sessionRouter: runtimeServices.sessionRouter,
-        sessionBridge: runtimeServices.sessionBridge,
-        warn: context.warn,
-      }),
+    onNodeReady: async (nodeId, connectionId) => {
+      try {
+        await replayPendingImmediateDeliveriesForNode({
+          nodeId,
+          connectionId,
+          deliveries: (await persistenceRepositoryProvider()).deliveries,
+          sessionRouter: runtimeServices.sessionRouter,
+          sessionBridge: runtimeServices.sessionBridge,
+          warn: context.warn,
+        });
+      } finally {
+        try {
+          await cardDispatchRuntime?.kickPendingWorkForNode(nodeId);
+        } catch (error) {
+          context.warn(warningMessage(`pending card work recovery failed for ${nodeId}`, error));
+        }
+      }
+    },
   });
   let logPushNotification: ((event: PushNotificationLogEvent) => void) | undefined;
   const pushNotifier = new PushNotifier({
@@ -365,7 +384,7 @@ export async function createLiveProductionApplication(
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
-    eventIngress: eventIngressRepository,
+    eventIngress: eventIngressCommitter,
     releaseActivationReceipts: new ReleaseActivationReceiptRepository(sqlResolver),
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
     findRescuableSessionOwnerNodeId:
@@ -552,7 +571,7 @@ export async function createLiveProductionApplication(
     listFolders: async () => providers.folderRoutes.provider.listFolders(),
     findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
   });
-  const cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
+  cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
     availability:providers.modelPresetAvailability,notifier:pushNotifier,admin:providers.adminUsersRoutes.provider,
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
     usageSnapshot: () => usageSummaryService.getSummary(),
@@ -641,6 +660,7 @@ export async function createLiveProductionApplication(
         nodeId: config.skill_catalog_node_id, typesafeApiKey: config.typesafe_api_key, httpClient: providers.atomRoutes.httpClient },
       cardDispatchRuntime.executionServiceProvider,
       lifecycle,
+      cardDispatchRuntime.workDispatchServiceProvider,
     ),
     persistentContextRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -732,6 +752,11 @@ export async function createLiveProductionApplication(
             error,
           ));
         }
+        try {
+          await cardDispatchRuntime?.kickPendingWorkForNode(node.nodeId);
+        } catch (error) {
+          context.warn(warningMessage(`pending card work recovery failed for ${node.nodeId}`, error));
+        }
       }
     },
     onDeliveryRecoveryError: (error) => {
@@ -799,30 +824,7 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
   );
   for (const row of claimed) {
     try {
-      if (row.target_session_id === null || row.completion_id === null) {
-        throw new Error(`Delivery ${row.delivery_id} has incomplete identity`);
-      }
-      const parsed = intervenePayload(row.target_session_id, {
-        text: row.payload.text,
-        user: row.payload.user,
-        caller_info: row.payload.caller_info,
-        ...(row.payload.attachment_paths === null
-          ? {}
-          : { attachment_paths: row.payload.attachment_paths }),
-        ...(row.payload.context === null
-          ? {}
-          : { context_items: row.payload.context }),
-        delivery_id: row.delivery_id,
-        delivery_intent: row.intent,
-        source: row.source,
-        completion_id: row.completion_id,
-        relation_key: row.relation_key,
-        producer_terminal_revision: row.producer_terminal_revision,
-        parent_delivery_id: row.parent_delivery_id,
-        caller_turn_id: row.caller_turn_id,
-        created_at: row.created_at.toISOString(),
-        delivery_attempt_token: attemptToken,
-      });
+      const parsed = sessionDeliveryInterventionPayload(row, attemptToken);
       if (!parsed.ok) throw new Error(parsed.message);
       const routed = await input.sessionRouter
         .routeExistingSessionPendingCommand(parsed.value);
@@ -852,6 +854,62 @@ export async function replayPendingImmediateDeliveriesForNode(input: {
   }
 }
 
+export function createCardWorkErrorSessionEffectApplier(
+  applyEffect: EventSessionEffectApplier = applyEventSessionEffect,
+): EventSessionEffectApplier {
+  return async (sql, input) => {
+    const effect = input.effect;
+    if (effect.kind !== "terminal_transition" || effect.status !== "error"
+      || effect.termination_reason !== "error_aborted") return await applyEffect(sql, input);
+    const owner = (await sql<Array<{
+      execution_command_id: string | null;
+      execution_registration_id: string | null;
+    }>>`SELECT execution_command_id,execution_registration_id
+      FROM sessions WHERE session_id=${input.envelope.session_id}`)[0];
+    const application = await applyEffect(sql, input);
+    const canonical = application.canonicalSession;
+    if (application.applied && canonical?.status === "error"
+      && canonical.termination_reason === "error_aborted"
+      && canonical.termination_event_id === input.eventId) {
+      await relayCanonicalErrorTx(sql as unknown as RepositorySql, {
+        sessionId: input.envelope.session_id,
+        eventId: input.eventId,
+        executionCommandId: owner?.execution_command_id ?? "",
+        registrationId: owner?.execution_registration_id ?? "",
+        applied: application.applied,
+        status: canonical.status,
+        terminationReason: canonical.termination_reason,
+        message: canonical.termination_detail ?? effect.termination_detail ?? "",
+      });
+    }
+    return application;
+  };
+}
+
+export function createCardWorkErrorIngressCommitter(
+  repository: Pick<EventIngressRepository, "commitBatch">,
+  kickCanonicalWorkError: (sessionId: string, eventId: number) => Promise<void>,
+) {
+  return {
+    async commitBatch(nodeId: string, batch: import("./node/event_ingress_types.js").EventAppendBatch) {
+      const results = await repository.commitBatch(nodeId, batch);
+      for (const result of results) {
+        if (result.outcome === "dead_lettered") continue;
+        const effect = result.envelope.session_effect;
+        const canonical = result.sessionEffectApplication?.canonicalSession;
+        if (effect?.kind === "terminal_transition" && effect.status === "error"
+          && effect.termination_reason === "error_aborted"
+          && result.sessionEffectApplication?.applied === true
+          && canonical?.status === "error" && canonical.termination_reason === "error_aborted"
+          && canonical.termination_event_id === result.eventId) {
+          void kickCanonicalWorkError(result.envelope.session_id, result.eventId);
+        }
+      }
+      return results;
+    },
+  };
+}
+
 function warningMessage(message: string, error: unknown): string {
   if (error instanceof Error && error.message) return `${message}: ${error.message}`;
   return error === undefined ? message : `${message}: ${String(error)}`;
@@ -879,6 +937,7 @@ export function buildProductionRouteOptions(
   mcpSkills?: McpHostOptions["skills"],
   cardExecutionServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["cardExecutionServiceProvider"],
   lifecycle?: OrchestratorLifecycle,
+  workDispatchServiceProvider?: NonNullable<McpHostOptions["cards"]["workDispatchServiceProvider"]>,
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
@@ -925,7 +984,8 @@ export function buildProductionRouteOptions(
         authBearerToken: config.authBearerToken,
         ...(mcpSkills ? { skills: mcpSkills } : {}),
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail,
-          ...(cardExecutionServiceProvider ? { cardExecutionServiceProvider } : {}) },
+          ...(cardExecutionServiceProvider ? { cardExecutionServiceProvider } : {}),
+          ...(workDispatchServiceProvider ? { workDispatchServiceProvider } : {}) },
         cluster: {
           nodes: providers.runtime.nodeSnapshotRoutes,
           nodeAgentProfiles: providers.nodeAgentProfileRoutes,
