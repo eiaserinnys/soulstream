@@ -148,7 +148,7 @@ export async function captureDialogState(
     if (mode === "first") lazyGate = await installLazyDashboardAssetGate(session.page);
     await session.page.route("**/api/health", async (route) => {
       const status = healthy ? 200 : 503;
-      const body = { healthy, ready: healthy, draining: false, build_id: "qa-fixture" };
+      const body = { healthy, ready: healthy, draining: false, build_id: "dev" };
       healthResponses.push({ status, healthy: body.healthy, ready: body.ready });
       await route.fulfill({
         status,
