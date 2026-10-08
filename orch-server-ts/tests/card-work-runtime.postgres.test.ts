@@ -51,6 +51,7 @@ describe("card work runtime and internal MCP integration", () => {
   beforeAll(async () => {
     h = await createPagePostgresHarness();
     await prepareCardWorkSchema(h);
+    await h.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/088_claude_background_task_generations.sql", import.meta.url), "utf8"));
     await h.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/116_card_execution_requests.sql", import.meta.url), "utf8"));
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/113_card_orchestration.sql", import.meta.url), "utf8"));
