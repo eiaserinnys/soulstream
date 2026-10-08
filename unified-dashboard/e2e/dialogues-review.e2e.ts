@@ -1,4 +1,4 @@
-import { expect, test, type FrameLocator, type Page } from "@playwright/test";
+import { expect, test, type FrameLocator, type Locator, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
@@ -188,6 +188,7 @@ test("compact controls and top-aligned rail on phone", async ({page}) => {
 });
 
 const persistentSettingsOutput = path.resolve("../../../.local/artifacts/persistent-session-settings-237-correction");
+const persistentStoryOutput = path.resolve("../../../.local/artifacts/pas-247-dialogues-story-review");
 test("persistent session settings corrections in the real dialogue sample", async ({page}) => {
   mkdirSync(persistentSettingsOutput, {recursive:true});
   const state = await prepare(page, 1440, "light");
@@ -304,4 +305,84 @@ test("persistent session settings corrections in the real dialogue sample", asyn
   await expect(firstRow.getByRole("alert")).toHaveCount(0);
   expect(state.errors).toEqual([]);
   writeFileSync(path.join(persistentSettingsOutput, "browser-state.json"), JSON.stringify({errors:state.errors, writes:state.writes}, null, 2));
+});
+
+test("PAS session story settings states in the real dialogue sample", async ({page}) => {
+  mkdirSync(persistentStoryOutput, {recursive:true});
+  const state = await prepare(page, 1440, "light");
+  const openStory = async (width: number, storyState: string) => {
+    await page.setViewportSize({width, height:1000});
+    await page.goto(`/dialogues?sample=persistent-settings-window&persistentStoryState=${storyState}`);
+    await expect(page.getByTestId("dialogue-sample")).toBeVisible();
+    const dialog = page.getByTestId("persistent-session-settings-dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("navigation", {name:"설정 카테고리"}).getByRole("button", {name:"세션 스토리"}).click();
+    await expect(dialog.getByTestId("session-story-settings-content")).toBeVisible();
+    await expect(dialog.getByTestId("session-story-trigger")).toHaveCount(0);
+    return dialog;
+  };
+  const closeAndConfirmReturn = async (dialog: Locator) => {
+    await dialog.getByRole("button", {name:"설정 닫기"}).click();
+    await expect(page.locator(".v3-dialogue-sample-closed")).toBeVisible();
+    await expect(page.getByRole("button", {name:"다시 열기"})).toBeVisible();
+  };
+
+  for (const width of [1440, 390]) {
+    const dialog = await openStory(width, "full");
+    const story = dialog.getByTestId("session-story-settings-content");
+    await expect(dialog.getByTestId("session-story-trigger")).toHaveCount(0);
+    await expect(story.locator(".session-story-settings-label").first()).toHaveText("하이라이트");
+    await expect(story.locator(".session-story-settings-copy").last()).toContainText("스토리 구간 36: 대화의 전개와 결정된 내용을 설정 탭에서 확인합니다.");
+    const detailScroll = dialog.locator(".config-detail-scroll");
+    const scroll = await detailScroll.evaluate((element) => ({
+      contractClass:element.classList.contains("v3-session-panel-scroll"),
+      overflowY:getComputedStyle(element).overflowY,
+      scrollHeight:element.scrollHeight,
+      clientHeight:element.clientHeight,
+      storyInsideScroller:element.querySelector(":scope > .session-story-settings-content") !== null,
+    }));
+    expect(scroll.contractClass).toBe(true);
+    expect(scroll.overflowY).toBe("auto");
+    expect(scroll.storyInsideScroller).toBe(true);
+    await dialog.screenshot({path:path.join(persistentStoryOutput, `story-full-${width}.png`), animations:"disabled"});
+    if (width === 390) {
+      expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+      const scrollTop = await detailScroll.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        return element.scrollTop;
+      });
+      expect(scrollTop).toBeGreaterThan(0);
+      await dialog.screenshot({path:path.join(persistentStoryOutput, "story-full-390-scrolled.png"), animations:"disabled"});
+    }
+    if (width === 390) await closeAndConfirmReturn(dialog);
+  }
+
+  const partial = await openStory(390, "summaries-only");
+  await expect(partial.getByTestId("session-story-settings-content").locator(".session-story-settings-label")).toHaveText("줄거리");
+  await expect(partial.locator("[data-turn-number='4']")).toContainText("사용자가 정한 방향");
+  await partial.screenshot({path:path.join(persistentStoryOutput, "story-partial-390.png"), animations:"disabled"});
+
+  const empty = await openStory(390, "empty");
+  await expect(empty.getByText("아직 정리된 스토리가 없습니다.", {exact:true})).toBeVisible();
+  await empty.screenshot({path:path.join(persistentStoryOutput, "story-empty-390.png"), animations:"disabled"});
+
+  const loading = await openStory(390, "loading");
+  await expect(loading.getByRole("status")).toContainText("스토리를 불러오는 중입니다.");
+  await loading.getByRole("navigation", {name:"설정 카테고리"}).getByRole("button", {name:"기록"}).click();
+  await expect(loading.getByTestId("persistent-session-monitoring")).toBeVisible();
+
+  const failure = await openStory(390, "failure");
+  await expect(failure.getByRole("alert")).toContainText("스토리를 불러오지 못했습니다.");
+  await expect(failure.getByTestId("session-story-retry")).toBeVisible();
+  await failure.screenshot({path:path.join(persistentStoryOutput, "story-failure-390.png"), animations:"disabled"});
+
+  const retry = await openStory(390, "retry");
+  await expect(retry.getByRole("alert")).toContainText("스토리를 불러오지 못했습니다.");
+  await retry.getByTestId("session-story-retry").click();
+  await expect(retry.locator(".session-story-settings-copy").last()).toContainText("스토리 구간 36: 대화의 전개와 결정된 내용을 설정 탭에서 확인합니다.");
+  await retry.screenshot({path:path.join(persistentStoryOutput, "story-retry-390.png"), animations:"disabled"});
+
+  expect(state.errors).toEqual([]);
+  expect(state.writes).toEqual([]);
+  writeFileSync(path.join(persistentStoryOutput, "browser-state.json"), JSON.stringify({errors:state.errors, writes:state.writes}, null, 2));
 });

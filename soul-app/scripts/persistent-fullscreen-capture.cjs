@@ -72,10 +72,8 @@ async function runPersistentFullscreenCaptures({ browser, base, prefix, output, 
     await page.screenshot({ path: path.join(output, `${scenario.name}-settings.png`) });
     await page.getByLabel('설정 닫기', { exact: true }).click();
     await page.getByTestId('persistent-session-character-seat').waitFor();
-    await page.getByTestId('persistent-session-home').click();
-    await page.getByTestId('tablet-persistent-entry').waitFor();
     result.viewports.push({ ...scenario, body, line, conversation, panel });
-    result.interactions.push(`${scenario.name}: 실제 입구·카드 열기·같은 요약 복귀·홈 pop`);
+    result.interactions.push(`${scenario.name}: 실제 입구·카드 열기·같은 요약 복귀`);
     await context.close();
   }
   await runPhoneCaptures({ browser, base, prefix, output, result });
@@ -128,8 +126,20 @@ async function runSettingsCaptures(env) {
     { name: 'ipad-l-light', width: 1180, height: 820, theme: 'light' },
     { name: 'ipad-p-dark', width: 820, height: 1180, theme: 'dark' },
   ]) {
+    const storyState = {
+      'iphone-light': 'pas-story-long',
+      'iphone-dark': 'pas-story-partial',
+      'ipad-l-light': 'pas-story-empty',
+      'ipad-p-dark': 'pas-story-error',
+    }[scenario.name];
     const { context, page } = await fixturePage(env, scenario.name, { width: scenario.width, height: scenario.height },
-      `sample=screen&theme=${scenario.theme}&safeArea=fixture`);
+      `sample=screen&theme=${scenario.theme}&safeArea=fixture&state=${storyState}`);
+    const pas = page.getByTestId('persistent-session-screen');
+    const input = pas.getByTestId('chat-composer-text-input');
+    const draft = `스토리 설정 복귀 뒤에도 남길 초안 ${scenario.name}`;
+    await input.fill(draft);
+    await pas.getByTestId('chat-composer-attach-button').click();
+    await pas.getByTestId('chat-attachment-remove-0').waitFor();
     await page.getByTestId('persistent-session-settings').click();
     await page.getByText('표시와 모션', { exact: true }).click();
     // AppModalSurface's existing fade must settle before comparing its surface.
@@ -138,9 +148,41 @@ async function runSettingsCaptures(env) {
     const surface = await page.getByTestId('persistent-session-pas-settings-surface').evaluate(element => ({
       background: getComputedStyle(element).backgroundColor, box: element.getBoundingClientRect().toJSON(),
     }));
+    const storyTab = page.getByText('세션 스토리', { exact: true });
+    const storyTabBox = await storyTab.boundingBox();
+    assert.ok(storyTabBox, '세션 스토리 탭 터치 영역');
+    await page.touchscreen.tap(storyTabBox.x + storyTabBox.width / 2, storyTabBox.y + storyTabBox.height / 2);
+    await page.getByTestId('session-story-panel').waitFor();
+    if (storyState === 'pas-story-long') {
+      const scroll = page.getByTestId('persistent-session-pas-story-scroll');
+      const before = await scroll.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight }));
+      assert.ok(before.content > before.height, '세션 스토리 설정 페이지가 콘텐츠를 스크롤함');
+      await page.screenshot({ path: path.join(env.output, `${scenario.name}-story-settings.png`) });
+      await scroll.evaluate(element => { element.scrollTop = element.scrollHeight; });
+      const after = await scroll.evaluate(element => element.scrollTop);
+      assert.ok(after > 0, '세션 스토리 설정 스크롤 위치가 이동함');
+      await page.screenshot({ path: path.join(env.output, `${scenario.name}-story-settings-scrolled.png`) });
+    } else if (storyState === 'pas-story-partial') {
+      await page.getByText('요약만 남은 공개 예시 스토리입니다.', { exact: true }).waitFor();
+    } else if (storyState === 'pas-story-empty') {
+      await page.getByText('아직 정리된 스토리가 없습니다.', { exact: true }).waitFor();
+    } else {
+      const retry = page.getByTestId('session-story-retry');
+      await retry.waitFor();
+      await retry.click();
+      await retry.waitFor();
+    }
+    if (storyState !== 'pas-story-long') await page.screenshot({ path: path.join(env.output, `${scenario.name}-story-settings.png`) });
     env.result.viewports.push({ ...scenario, surface });
-    await page.getByLabel('설정 닫기', { exact: true }).click();
+    env.result.interactions.push(`${scenario.name}: PAS 설정 스토리 ${storyState}`);
+    const close = page.getByLabel('설정 닫기', { exact: true });
+    const closeBox = await close.boundingBox();
+    assert.ok(closeBox, '설정 닫기 터치 영역');
+    assert.ok(closeBox.y >= 0 && closeBox.y + closeBox.height <= scenario.height, '설정 닫기 버튼이 화면 안전 영역 안에 있음');
+    await page.touchscreen.tap(closeBox.x + closeBox.width / 2, closeBox.y + closeBox.height / 2);
     await page.getByTestId('persistent-session-screen').waitFor();
+    assert.equal(await input.inputValue(), draft, '스토리 설정 왕복 뒤 대화 초안 유지');
+    await pas.getByTestId('chat-attachment-remove-0').waitFor();
     await context.close();
   }
 }
@@ -220,13 +262,13 @@ async function runPhoneCaptures(env) {
     await page.screenshot({ path: path.join(output, `${name}-settings.png`) });
     await page.getByLabel('설정 닫기', { exact: true }).click();
     assert.equal(await input.inputValue(), '카드 상세에서도 보존할 초안');
-    await page.getByTestId('persistent-session-home').click();
+    await page.getByTestId('phone-tab-DailyTab').click();
     await page.getByTestId('phone-tab-DailyTab').waitFor();
     await page.getByTestId('phone-tab-PersistentTab').click();
     await input.waitFor();
     assert.equal(await page.getByTestId('persistent-phone-tab-list').count(), 0, '다른 탭 입구는 대화로 복귀');
     result.viewports.push({ name, tabs, header, composer });
-    result.interactions.push(`${name}: 중앙 슬롯·좌우 밀기·상세→목록→대화·동일 초안/첨부·설정 복귀·홈 입구`);
+    result.interactions.push(`${name}: 중앙 슬롯·좌우 밀기·상세→목록→대화·동일 초안/첨부·설정 복귀·하단 탭 이동`);
     await context.close();
   }
 }

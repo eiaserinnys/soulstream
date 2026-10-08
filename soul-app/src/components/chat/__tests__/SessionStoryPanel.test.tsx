@@ -165,6 +165,44 @@ test('api가 없으면 패널을 표시하지 않는다', () => {
   expect(screen.queryByTestId('session-story-panel')).toBeNull();
 });
 
+test('설정 모드는 자동으로 불러오고 요약만 있는 부분 스토리를 표시한다', async () => {
+  const partialStory = {
+    ...story,
+    highlight: null,
+    narrative: null,
+    unfolded_turn_summaries: [story.unfolded_turn_summaries[0]!],
+  };
+  const getSessionStory = jest.fn().mockResolvedValue(partialStory);
+  const screen = render(
+    <SessionStoryPanel sessionId="session-1" api={makeApi(getSessionStory)} mode="settings" />,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText('API 계약을 확정했다.')).toBeTruthy();
+  });
+  expect(getSessionStory).toHaveBeenCalledWith('session-1');
+  expect(screen.getByTestId('session-story-settings-content')).toBeTruthy();
+  expect(screen.queryByTestId('session-story-toggle')).toBeNull();
+  expect(screen.queryByTestId('session-story-scroll')).toBeNull();
+});
+
+test('설정 스토리의 조회 실패는 다시 시도할 수 있고 빈 상태로 끝난다', async () => {
+  const getSessionStory = jest.fn()
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce(null);
+  const screen = render(
+    <SessionStoryPanel sessionId="session-1" api={makeApi(getSessionStory)} mode="settings" />,
+  );
+
+  expect(screen.getByTestId('session-story-loading')).toBeTruthy();
+  const retry = await screen.findByTestId('session-story-retry');
+  fireEvent.press(retry);
+  await waitFor(() => {
+    expect(screen.getByText('아직 정리된 스토리가 없습니다.')).toBeTruthy();
+  });
+  expect(getSessionStory).toHaveBeenCalledTimes(2);
+});
+
 test('예상하지 못한 digest 필드 타입은 개발에서 드러내고 프로덕션 투영에서는 숨긴다', () => {
   const malformed = {
     ...story,

@@ -11,12 +11,15 @@ import { PersistentSessionEditor } from './PersistentSessionViews';
 import { PersistentSessionMonitoring } from './PersistentSessionMonitoring';
 import { settingsPanelPage } from './SettingsFormParts';
 import { SettingsSegmentedControl } from './SettingsSegmentedControl';
+import { SessionStoryPanel } from '../chat/SessionStoryPanel';
+import { usePersistentSessionApiFactory } from './persistentSessionApi';
 
 const SECTIONS = [
   { value: 'instructions', label: '지속 지시' },
   { value: 'account-model', label: '계정과 모델' },
   { value: 'display', label: '표시와 모션' },
   { value: 'history', label: '기록' },
+  { value: 'story', label: '세션 스토리' },
 ] as const;
 type Section = typeof SECTIONS[number]['value'];
 
@@ -32,6 +35,8 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
   const instructionEditing = useRef(false);
   const [cancelInstructionEditRequest, setCancelInstructionEditRequest] = useState(0);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
+  const createApi = usePersistentSessionApiFactory();
+  const storyApi = useMemo(() => serverUrl ? createApi(serverUrl) : null, [createApi, serverUrl]);
   const [section, setSection] = useState<Section>('instructions');
   const [dirty, setDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState({ disabled: true, busy: false });
@@ -104,7 +109,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
             />
           </ScrollView>
         </View>
-        <View style={[styles.pane, section === 'instructions' || section === 'history' ? styles.hidden : null]}>
+        <View style={[styles.pane, section === 'instructions' || section === 'history' || section === 'story' ? styles.hidden : null]}>
           <ScrollView ref={editorScroll} testID="persistent-session-pas-settings-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
             <PersistentSessionEditor
               mode="pas"
@@ -126,6 +131,11 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
               sessionId={sessionId}
             />
           </ScrollView>
+        </View>
+        <View style={[styles.pane, section !== 'story' && styles.hidden]}>
+          {section === 'story' ? <ScrollView testID="persistent-session-pas-story-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
+            <SessionStoryPanel sessionId={sessionId} api={storyApi} mode="settings" />
+          </ScrollView> : null}
         </View>
       </View>
       {section === 'account-model' ? <View testID="persistent-session-pas-settings-footer" style={styles.footer}>

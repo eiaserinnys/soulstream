@@ -402,6 +402,21 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(chatInputMock.props?.composerAnchorRef).toBe(composerAnchorRef);
   });
 
+  it("keeps runtime strips by default and omits them when the caller hides session auxiliaries", async () => {
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    expect(container.querySelector('[data-testid="runtime-strips"]')).not.toBeNull();
+
+    flushSync(() => {
+      root?.render(createElement(
+        ChatView as unknown as ComponentType<Record<string, unknown>>,
+        { presentation: "manuscript", showRuntimeStrips: false },
+      ));
+    });
+    await flushPassiveEffects();
+    expect(container.querySelector('[data-testid="runtime-strips"]')).toBeNull();
+    expect(container.querySelector('[data-testid="chat-input"]')).not.toBeNull();
+  });
+
   it("(가) 원고형은 atBottom 안에서 위쪽 휠 뒤 새 메시지가 오면 하단을 유지한다", async () => {
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000)]);
     ({ container, root } = await renderChatView({ presentation: "manuscript" }));

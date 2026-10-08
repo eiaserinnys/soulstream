@@ -54,6 +54,8 @@ interface Props {
   onStoryOpenRequestHandled?: () => void;
   /** 같은 채팅 부품을 원고형으로 표시한다. 기본 채팅은 기존 모양을 유지한다. */
   presentation?: 'default' | 'manuscript';
+  /** 세션 스토리와 런타임 보조 띠를 표시한다. 일반 대화의 기본값은 유지한다. */
+  showSessionAuxiliary?: boolean;
   /** 입력 줄과 대기 첨부를 감싼 묶음의 ChatBody 기준 배치. */
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
 }
@@ -92,6 +94,7 @@ export function ChatBody({
   onFocusEventHandled,
   onStoryOpenRequestHandled,
   presentation = 'default',
+  showSessionAuxiliary = true,
   onComposerLayout,
 }: Props) {
   const t = useTokens();
@@ -445,13 +448,13 @@ export function ChatBody({
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <SessionStoryPanel
+      {showSessionAuxiliary ? <SessionStoryPanel
         presentation={presentation}
         sessionId={sessionId}
         api={api}
         openRequestId={storyOpenRequestId}
         onOpenRequestHandled={onStoryOpenRequestHandled}
-      />
+      /> : null}
 
       {focusEventId != null && reachedTop && focusEventIndex < 0 ? (
         <Text accessibilityRole="alert" style={styles.errorText}>
@@ -485,7 +488,7 @@ export function ChatBody({
         onPressNewMessage={requestBottomFollow}
       />
 
-      <ChatRuntimeStrips sessionId={sessionId} api={ownsSessionConnection ? api : null} presentation={presentation} />
+      {showSessionAuxiliary ? <ChatRuntimeStrips sessionId={sessionId} api={ownsSessionConnection ? api : null} presentation={presentation} /> : null}
 
       <ChatInputComposer
         key={sessionId}

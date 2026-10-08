@@ -211,6 +211,7 @@ export function ChatComposer({
           <View
             testID="chat-composer-controls-row"
             collapsable={false}
+            pointerEvents={effectiveStacked ? 'box-none' : undefined}
             style={styles.composerControlsRow}
           >
             <Pressable

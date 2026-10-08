@@ -204,7 +204,6 @@ test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 �
   mockDevice = 'phone';
   const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   for (const testID of [
-    'persistent-session-home-visual',
     'persistent-session-appearance-visual',
     'persistent-session-settings-visual',
     'persistent-session-tasks-visual',
@@ -215,6 +214,20 @@ test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 �
     expect(style.borderColor).toBeUndefined();
     expect(style.borderRadius).toBeGreaterThan(0);
   }
+  view.unmount();
+});
+
+test.each(['phone', 'tabletLandscape'])('%s PAS 대화는 에이전트 이름만 표시하고 홈과 부가 영역을 빼 둔다', (device) => {
+  mockDevice = device;
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => store.getState().open({ session_id: 'pas-minimal', display_name: '세션 제목', agent_name: '로젤린', persistent: true } as any));
+
+  const header = view.getByTestId('persistent-session-header');
+  expect(view.getByText('로젤린')).toBeTruthy();
+  expect(header).toBeTruthy();
+  expect(view.queryByTestId('persistent-session-home')).toBeNull();
+  expect(view.getByTestId('persistent-body-probe').props.showSessionAuxiliary).toBe(false);
+  expect(view.queryByText('세션 제목')).toBeNull();
   view.unmount();
 });
 

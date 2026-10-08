@@ -38,6 +38,7 @@ const api = {
   listModelPresets: jest.fn(),
   getTimeline: jest.fn(),
   getPersistentSessionInstructions: jest.fn(),
+  getSessionStory: jest.fn(),
   createPersistentSessionInstruction: jest.fn(),
   updatePersistentSessionInstruction: jest.fn(),
 };
@@ -57,6 +58,14 @@ beforeEach(() => {
   ] });
   api.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
   api.getPersistentSessionInstructions.mockResolvedValue({ instructions: [] });
+  api.getSessionStory.mockResolvedValue({
+    highlight: '설정 탭에서 읽는 스토리입니다.',
+    narrative: null,
+    unfolded_turn_summaries: [],
+    narrative_through_event_id: null,
+    fold_count: 0,
+    updated_at: null,
+  });
   useSettingsStore.setState({ serverUrl: 'https://soul.test' });
   useChatStore.setState({ persistentDisplaySettingsBySession: {}, persistentDisplaySettingsRequestId: 0 });
 });
@@ -97,6 +106,13 @@ test('opens on persistent instructions as the first section and keeps them acros
   expect(screen.getByTestId('settings-segment-pas-settings-display')).toBeTruthy();
   expect(screen.getByTestId('settings-segment-pas-settings-history')).toBeTruthy();
 
+  fireEvent.changeText(screen.getByTestId('persistent-instruction-add-input'), '탭 이동 뒤에도 남을 초안');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-story'));
+  expect(await screen.findByText('설정 탭에서 읽는 스토리입니다.')).toBeTruthy();
+  expect(api.getSessionStory).toHaveBeenCalledWith('pas-1');
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-instructions'));
+  expect(screen.getByTestId('persistent-instruction-add-input').props.value).toBe('탭 이동 뒤에도 남을 초안');
+
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-history'));
   fireEvent.press(screen.getByTestId('settings-segment-pas-settings-instructions'));
   expect(screen.getByText('요청한 범위부터 확인합니다.')).toBeTruthy();
@@ -104,6 +120,19 @@ test('opens on persistent instructions as the first section and keeps them acros
     .map((text) => text.props.children)
     .filter((value) => value === '최근 기록' || value === '지속 지시');
   expect(order.indexOf('지속 지시')).toBeLessThan(order.indexOf('최근 기록'));
+});
+
+test('hides the mounted account editor behind story settings and retains its draft', async () => {
+  const screen = open();
+  const name = await screen.findByLabelText('세션 이름');
+  fireEvent.changeText(name, '계정 탭에 남긴 초안');
+
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-story'));
+  expect(await screen.findByText('설정 탭에서 읽는 스토리입니다.')).toBeTruthy();
+  expect(screen.queryByLabelText('세션 이름')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('settings-segment-pas-settings-account-model'));
+  expect(screen.getByLabelText('세션 이름').props.value).toBe('계정 탭에 남긴 초안');
 });
 
 test('saves a PAS display toggle as one immediate field and adopts the server response', async () => {

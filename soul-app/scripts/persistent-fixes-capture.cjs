@@ -85,16 +85,6 @@ async function runPersistentFixCaptures(env) {
     await shot(env, page, s.name + '-toggle-off');
     await page.getByTestId('persistent-session-character-toggle').click();
     await page.getByTestId('persistent-session-character-seat').waitFor();
-    await page.getByTestId('persistent-session-home').click();
-    await page.getByTestId('tablet-persistent-entry').waitFor();
-    record.homeEntry = await circle(page, 'tablet-persistent-entry');
-    record.homePeer = await metrics(page.getByLabel('보드 확대', { exact: true }));
-    record.homeGap = record.homeEntry.x - (record.homePeer.x + record.homePeer.width);
-    assert.equal(record.homeEntry.width, 48, 'R9 standard circle');
-    assert.equal(record.homePeer.width, 48, 'R9 peer standard circle');
-    assert.equal(record.homeGap, 8, 'R9 peer gap');
-    assert.equal(center(record.homeEntry), center(record.homePeer), 'R9 vertical center');
-    await shot(env, page, s.name + '-home-entry');
     env.result.viewports.push(record);
     await context.close();
   }
@@ -165,7 +155,7 @@ async function runPersistentFixCaptures(env) {
     await page.getByTestId('card-read-summary-open').waitFor();
     assert.equal(await page.getByTestId('persistent-summary-back').isVisible(), true);
     await shot(env, page, name + '-return-summary');
-    await page.getByTestId('persistent-session-home').click();
+    await page.getByTestId('phone-tab-DailyTab').click();
     await page.evaluate(() => {
       window.__entrySheets = 0;
       window.__entryObserver = new MutationObserver(() => { if (document.querySelector('[data-testid="persistent-entry-sheet"]')) window.__entrySheets++; });
