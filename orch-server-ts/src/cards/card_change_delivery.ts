@@ -9,19 +9,11 @@ export async function sendCardChangeOnce(
   repository: Pick<SessionDeliveryRepository, "register" | "claim" | "get">,
   payload: InterveneNodeCommandPayload,
   send: (payload: InterveneNodeCommandPayload) => Promise<Record<string, unknown>>,
+  registeredRow?: SessionDeliveryRow,
 ): Promise<void> {
   const id = payload.delivery_id!;
-  const canonical = buildCanonicalDeliveryPayload({
-    text: payload.text, user: payload.user, source: payload.source!,
-    relationKey: payload.relation_key!, completionId: payload.completion_id!,
-    callerInfo: payload.caller_info,
-  });
-  const registered = await repository.register({
-    deliveryId: id, targetSessionId: payload.agentSessionId,
-    relationKey: payload.relation_key!, completionId: payload.completion_id!,
-    intent: "durable_next_turn", source: "card_change",
-    payload: canonical.payload, payloadHash: canonical.payloadHash,
-  });
+  if(registeredRow&&registeredRow.delivery_id!==id)throw new Error(`Card delivery identity mismatch: ${id}`);
+  const registered=registeredRow?{row:registeredRow,conflict:false}:await register(repository,payload,id);
   if (registered.conflict) throw new Error(`Card delivery identity conflict: ${id}`);
   if (accepted(registered.row)) return;
   // This pending-only CAS closes the lookup→send race. The receiving ledger checks
@@ -39,6 +31,24 @@ export async function sendCardChangeOnce(
     || !accepted(await repository.get(id))) {
     throw new Error(`Card delivery acceptance unconfirmed: ${id} (${String(response.outcome)})`);
   }
+}
+
+async function register(
+  repository:Pick<SessionDeliveryRepository,"register">,
+  payload:InterveneNodeCommandPayload,
+  id:string,
+){
+  const canonical = buildCanonicalDeliveryPayload({
+    text: payload.text, user: payload.user, source: payload.source!,
+    relationKey: payload.relation_key!, completionId: payload.completion_id!,
+    callerInfo: payload.caller_info,
+  });
+  return await repository.register({
+    deliveryId: id, targetSessionId: payload.agentSessionId,
+    relationKey: payload.relation_key!, completionId: payload.completion_id!,
+    intent: "durable_next_turn", source: "card_change",
+    payload: canonical.payload, payloadHash: canonical.payloadHash,
+  });
 }
 
 function accepted(row: SessionDeliveryRow | null): boolean {

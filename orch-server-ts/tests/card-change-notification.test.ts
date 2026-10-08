@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildCardChangeNotification } from "../src/cards/card_change_notification.js";
+import { sendCardChangeOnce } from "../src/cards/card_change_delivery.js";
 import type { CardMutationChange } from "../src/cards/card_control_plane_service.js";
+import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { InterveneNodeCommandPayload } from "../src/session/session_action_command_payloads.js";
 const change = (overrides: Record<string,unknown> = {}) => ({
   previousStatus:"queued",previousAssigneeSessionId:"owner",committedCard:{id:"card",title:"작업",status:"running",assignee_session_id:"owner"},
   result:{operation:{id:"op",target_id:"card",operation_type:"set_card_status",actor_kind:"user",actor_session_id:null,payload_json:{status:"running"}},snapshot:{cards:[]}},...overrides,
@@ -40,5 +43,50 @@ describe("committed card reference notifications",()=>{
     expect(buildCardChangeNotification(c,{author_kind:"user",body:"보완 요청",delivered_at:null})).toMatchObject({sessionId:"owner",text:expect.stringContaining("보완 요청")});
     c.result.operation.operation_type="set_card_status";
     expect(buildCardChangeNotification(c)).toBeNull();
+  });
+});
+
+describe("card change delivery reuse",()=>{
+  const payload={type:"intervene",agentSessionId:"owner",text:"카드 변경",user:"caller",delivery_id:"delivery-1",source:"card_change",relation_key:"relation-1",completion_id:"completion-1"} as unknown as InterveneNodeCommandPayload;
+  const row=(overrides:Record<string,unknown>={})=>({delivery_id:"delivery-1",state:"pending",aggregate_state:"pending",...overrides}) as SessionDeliveryRow;
+  it("keeps the existing three-argument register path",async()=>{
+    const registered=row();
+    const repository={
+      register:vi.fn(async()=>({row:registered,inserted:true,conflict:false})),
+      claim:vi.fn(async()=>row({state:"claimed"})),
+      get:vi.fn(async()=>row({state:"queued",aggregate_state:"pending"})),
+    };
+    const send=vi.fn(async()=>({outcome:"queued"}));
+    await sendCardChangeOnce(repository,payload,send);
+    expect(repository.register).toHaveBeenCalledTimes(1);
+    expect(repository.claim).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("reuses the exact registered row without registering again",async()=>{
+    const registered=row();
+    const repository={
+      register:vi.fn(),
+      claim:vi.fn(async()=>row({state:"claimed"})),
+      get:vi.fn(async()=>row({state:"queued",aggregate_state:"pending"})),
+    };
+    const send=vi.fn(async()=>({outcome:"queued"}));
+    await sendCardChangeOnce(repository,payload,send,registered);
+    expect(repository.register).not.toHaveBeenCalled();
+    expect(repository.claim).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("does not re-claim an already queued registered row",async()=>{
+    const repository={register:vi.fn(),claim:vi.fn(),get:vi.fn()};
+    const send=vi.fn();
+    await sendCardChangeOnce(repository,payload,send,row({state:"queued"}));
+    expect(repository.register).not.toHaveBeenCalled();
+    expect(repository.claim).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it("rejects a registered row from another delivery identity",async()=>{
+    const repository={register:vi.fn(),claim:vi.fn(),get:vi.fn()};
+    await expect(sendCardChangeOnce(repository,payload,vi.fn(),row({delivery_id:"different-delivery"})))
+      .rejects.toThrow("Card delivery identity mismatch");
+    expect(repository.register).not.toHaveBeenCalled();expect(repository.claim).not.toHaveBeenCalled();
   });
 });

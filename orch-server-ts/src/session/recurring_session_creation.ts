@@ -40,6 +40,7 @@ export class RecurringSessionCreateError extends Error {
     readonly code: "INVALID_STABLE_SESSION_ID" | "NODE_REJECTED",
     message: string,
     readonly dispatchPhase: "before_send" | "after_send",
+    readonly response?: NodeCommandResponse,
   ) {
     super(message);
     this.name = "RecurringSessionCreateError";
@@ -91,6 +92,7 @@ export async function createRecurringSession(
         "NODE_REJECTED",
         responseMessage(response, "Node rejected create_session."),
         "after_send",
+        response,
       );
     }
     if (typeof response.agentSessionId === "string" && response.agentSessionId !== input.sessionId) {
@@ -112,6 +114,7 @@ export async function createRecurringSession(
         "NODE_REJECTED",
         responseMessage(error.response, "Node rejected create_session."),
         "after_send",
+        error.response,
       );
     }
     if (isUncertainCreateFailure(error)) {
