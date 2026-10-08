@@ -1,4 +1,4 @@
-import type { ModelSelection, PersistentCreateDefaults, PersistentSession } from "../lib/persistent-sessions";
+import type { ModelSelection, PersistentCreateDefaults, PersistentInstruction, PersistentSession } from "../lib/persistent-sessions";
 
 const defaultEffort: Record<string, string | null> = { "sample-sol": "high", "sample-opus": null };
 const modelName: Record<string, string> = { "sample-sol": "sample-sol-model", "sample-opus": "sample-opus-model" };
@@ -11,6 +11,7 @@ const modelName: Record<string, string> = { "sample-sol": "sample-sol-model", "s
  * scenario: normal | load-error(첫 목록 조회 실패) | registration-failure(첫 추가의 등록 단계 실패)
  *   | node-unknown(소유 노드를 모르는 기존 세션이 하나 더 있음) | create-lost(첫 추가의 응답을 잃음: 세션은 일반 세션으로 만들어졌다)
  *   | display-save-failure(표시 설정 저장 실패) | display-save-delayed(표시 설정 저장 지연)
+ *   | instruction-save-failure(첫 지시 수정 저장 실패)
  */
 const sameModel = (a: ModelSelection, b: ModelSelection) =>
   a.model_preset === b.model_preset && (a.reasoning_effort ?? null) === (b.reasoning_effort ?? null);
@@ -43,6 +44,16 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
   const first = build("sample-pas-1", "서소영 관제", "roselin", "로젤린", "sample-opus", "sample-sol");
   first.runtime.pending = { target_model_preset: "sample-opus", target_reasoning_effort: null };
   const sessions: PersistentSession[] = [first, build("sample-pas-2", "리뷰 관제", "roselin", "로젤린", "sample-sol", "sample-sol")];
+  type FixtureInstruction = PersistentInstruction & { status?: "removed" };
+  const instructions = new Map<string, FixtureInstruction[]>([[first.session_id, [{
+    id: "sample-instruction-1",
+    text: "결정에 필요한 근거만 간결하게 알려 줍니다.",
+    source_turns: ["T195"],
+    created_at: "2026-10-06T10:00:00.000Z",
+    updated_at: "2026-10-06T11:00:00.000Z",
+    origin: "agent",
+  }]]]);
+  let instructionCounter = 0;
   if (scenario === "node-unknown") {
     const legacy = build("sample-pas-legacy", "옛 영구 세션", null, null, "sample-sol", "sample-sol");
     legacy.node_id = null;
@@ -59,6 +70,7 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
   let registrationFailed = false;
   let createLost = false;
   let displaySaveFailed = false;
+  let instructionSaveFailed = false;
   let created = 0;
   const reply = (value: unknown, status = 200) => Response.json(value, { status });
   const fail = (status: number, code: string, text: string, extra: Record<string, unknown> = {}) =>
@@ -105,6 +117,41 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
     }
     const session = sessions.find((item) => item.session_id === id);
     if (!session) return fail(404, "SESSION_NOT_FOUND", "예시 세션을 찾을 수 없습니다.");
+    const instructionCollectionPath = `/api/persistent-sessions/${encodeURIComponent(id)}/instructions`;
+    if (path === instructionCollectionPath && method === "GET") {
+      const active = (instructions.get(id) ?? []).filter((instruction) => instruction.status !== "removed");
+      return reply({ instructions: structuredClone(active) });
+    }
+    if (path === instructionCollectionPath && method === "POST") {
+      const instruction: FixtureInstruction = {
+        id: `sample-instruction-${++instructionCounter + 1}`,
+        text: String(body.text ?? ""),
+        source_turns: [],
+        created_at: "2026-10-08T00:00:00.000Z",
+        updated_at: "2026-10-08T00:00:00.000Z",
+        origin: "user",
+      };
+      instructions.set(id, [instruction, ...(instructions.get(id) ?? [])]);
+      return reply({ instruction: structuredClone(instruction) }, 201);
+    }
+    if (path.startsWith(`${instructionCollectionPath}/`) && method === "PUT") {
+      const instructionId = decodeURIComponent(path.slice(instructionCollectionPath.length + 1));
+      const current = (instructions.get(id) ?? []).find((instruction) => instruction.id === instructionId);
+      if (!current) return fail(404, "INSTRUCTION_NOT_FOUND", "예시 지속 지시를 찾을 수 없습니다.");
+      if (scenario === "instruction-save-failure" && typeof body.text === "string" && !instructionSaveFailed) {
+        instructionSaveFailed = true;
+        return fail(503, "NODE_UNAVAILABLE", "예시: 지속 지시를 저장하지 못했습니다.");
+      }
+      if (body.status === "removed") {
+        current.status = "removed";
+        return reply({ instruction: structuredClone(current) });
+      }
+      if (typeof body.text === "string") {
+        current.text = body.text;
+        current.updated_at = "2026-10-08T00:00:00.000Z";
+      }
+      return reply({ instruction: structuredClone(current) });
+    }
     if (method === "GET") return reply({ session: structuredClone(session) });
     if (method === "PUT") {
       const displaySettings = body.settings as Record<string, unknown> | undefined;

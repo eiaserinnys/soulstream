@@ -267,7 +267,7 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
     setAdding(false);
   };
 
-  return <div data-testid="persistent-session-instructions" className="persistent-instructions-pas space-y-6">
+  return <div data-testid="persistent-session-instructions" className="persistent-instructions-pas">
     <p className="persistent-instructions-description">이 세션에 계속 적용됩니다.</p>
     {state.loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
     {!state.loading && state.loadError ? <div className="space-y-2">
@@ -291,6 +291,7 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
                 onChange={(event) => actions.changeEditText(event.target.value)}
                 onKeyDown={(event) => actions.editKeyDown(event, instruction.id)}
               /> : <p className="persistent-instructions-pas-text">{instruction.text}</p>}
+              {editing && state.error ? <SettingsAlert>{state.error}</SettingsAlert> : null}
               <div className="persistent-instructions-pas-source">
                 {sourceTurns.length > 0 ? <span>{sourceTurns.join(", ")}</span> : instruction.origin === "user" ? <span>직접 추가</span> : null}
               </div>
@@ -308,7 +309,7 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
         </li>;
       })}
     </ol> : null}
-    {state.error ? <SettingsAlert>{state.error}</SettingsAlert> : null}
+    {state.error && state.editingId === null ? <SettingsAlert>{state.error}</SettingsAlert> : null}
     {state.capReached ? <SettingsAlert>지속 지시 상한에 도달했습니다.</SettingsAlert> : null}
     {!adding ? <Button type="button" size="sm" variant="outline" disabled={mutationDisabled || state.editingId !== null} onClick={() => { actions.changeAddText(state.addText); setAdding(true); }}>지시 추가</Button> : <form className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2" onSubmit={(event) => { void submitAdd(event); }}>
       <Input

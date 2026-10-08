@@ -48,6 +48,7 @@ export const SystemMessage = memo(function SystemMessage({ msg, presentation = "
     title={usageCaption.title}
     expandedTitle={usageCaption.contextText ?? usageCaption.completeText ?? usageCaption.title}
     wrapExpandedTitle
+    expandedByDefault={usageCaption.expandedByDefault}
     alignmentInset="content"
   >
     {usageCaption.contextText && usageCaption.completeText

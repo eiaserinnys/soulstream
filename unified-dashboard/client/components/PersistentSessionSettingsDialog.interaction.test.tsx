@@ -420,6 +420,71 @@ it("saves the usage display mode after acknowledgement and keeps the old selecti
   expect(useDashboardStore.getState().persistentSessionDisplaySettings?.turnUsageMode).toBe("expanded");
 });
 
+it("keeps the target identity accessible and displays the read-only agent value without repeated explanation", async () => {
+  const resource = makeSession();
+  const request: typeof fetch = async (input) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname === "/api/persistent-sessions/sample-pas") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [] });
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await settle();
+
+  const description = document.querySelector<HTMLElement>('[data-slot="dialog-description"]');
+  expect(description?.classList.contains("sr-only")).toBe(true);
+  expect(description?.textContent).toContain("검수 세션");
+  expect(description?.textContent).toContain("로젤린");
+  click("계정과 모델");
+  const accountRows = [...document.body.querySelectorAll<HTMLElement>("[data-testid=config-field-row]")];
+  const agentRow = accountRows.find((row) => row.textContent?.includes("에이전트"));
+  expect(agentRow?.querySelector('[data-testid="config-field-value"]')?.textContent).toBe("로젤린");
+  expect(agentRow?.querySelector("input")).toBeNull();
+  expect(agentRow?.textContent).not.toContain("만든 뒤에는 바꿀 수 없습니다.");
+  expect(document.body.textContent).not.toContain("만든 뒤에는 바꿀 수 없습니다.");
+});
+
+it("shows a failed instruction edit beside its retained draft and save controls", async () => {
+  const resource = makeSession();
+  const instruction = {
+    id: "instruction-edit-failure",
+    text: "저장에 실패할 지시",
+    source_turns: ["T195"],
+    created_at: "2026-10-06T10:00:00.000Z",
+    updated_at: "2026-10-06T11:00:00.000Z",
+    origin: "agent",
+  };
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && method === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions" && method === "GET") return Response.json({ instructions: [instruction] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/nodes/sample-node/model-presets") return Response.json({ model_presets: [] });
+    if (url.pathname === `/api/persistent-sessions/sample-pas/instructions/${instruction.id}` && method === "PUT") {
+      return Response.json({ error: { code: "NODE_UNAVAILABLE", message: "예시 편집 저장 실패" } }, { status: 503 });
+    }
+    throw new Error(`Unexpected request: ${method} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await settle();
+  const row = document.querySelector<HTMLElement>('[data-testid="persistent-instruction-row"]')!;
+  click("수정");
+  const input = row.querySelector<HTMLInputElement>('[aria-label="지속 지시 수정"]')!;
+  await setInput(input, "저장 재시도할 편집 초안");
+  click("저장");
+  await settle();
+
+  expect(row.querySelector('[role="alert"]')?.textContent).toContain("저장 실패: 예시 편집 저장 실패");
+  expect(row.querySelector<HTMLInputElement>('[aria-label="지속 지시 수정"]')?.value).toBe("저장 재시도할 편집 초안");
+  expect([...row.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "저장")).toBe(true);
+  expect(document.body.querySelectorAll('[role="alert"]')).toHaveLength(1);
+});
+
 async function settle() {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }

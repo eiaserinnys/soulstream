@@ -1,5 +1,5 @@
 import "./config/config-layout.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   Button,
   Dialog,
@@ -22,6 +22,7 @@ import {
 } from "./PersistentSessionDetails";
 import { usePersistentSessionMonitoring, PersistentSessionMonitoringView } from "./PersistentSessionMonitoring";
 import { PersistentSessionInstructionsView, usePersistentSessionInstructions } from "./PersistentSessionInstructions";
+import { V3_CARD_GAP_PX } from "../v3/v3-layout-metrics";
 
 const categories: ConfigCategoryNavItem[] = [
   { name: "instructions", label: "지속 지시" },
@@ -84,10 +85,12 @@ export function PersistentSessionSettingsDialog({
   const activeLabel = categories.find((category) => category.name === selectedSection)?.label ?? categories[0]!.label;
 
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogPopup className="approved-dialog config-dialog persistent-session-settings-popup max-w-5xl" closeProps={{ "aria-label": "설정 닫기" }} data-testid="persistent-session-settings-dialog">
+    <DialogPopup className="approved-dialog config-dialog persistent-session-settings-popup max-w-5xl" closeProps={{ "aria-label": "설정 닫기" }} data-testid="persistent-session-settings-dialog" style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
       <DialogHeader>
         <DialogTitle>설정</DialogTitle>
-        <DialogDescription>{resource?.display_name ?? null}</DialogDescription>
+        <DialogDescription className="sr-only">
+          {resource ? `설정 대상: ${resource.display_name} · ${resource.agent_name ?? resource.agent_id ?? "에이전트 정보 없음"}` : null}
+        </DialogDescription>
       </DialogHeader>
       <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
         {resource ? <div className="config-layout" data-layout="pas">

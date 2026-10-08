@@ -258,7 +258,14 @@ export function PersistentSessionDetails({
     <div>
       {showsAccount ? <>
         {nameField}
-        <SettingFieldWidget field={textField("agent", "에이전트", agentLabel(resource), true, "만든 뒤에는 바꿀 수 없습니다.")} value={agentLabel(resource)} onChange={() => undefined} />
+        <SettingFieldWidget
+          field={{
+            ...textField("agent", "에이전트", agentLabel(resource), true, section === "account" ? "" : "만든 뒤에는 바꿀 수 없습니다."),
+            read_only_display: section === "account",
+          }}
+          value={agentLabel(resource)}
+          onChange={() => undefined}
+        />
         <SettingFieldWidget field={{ ...textField("current_model", "현재 실행 모델", currentModel, true), read_only_display: section === "account" }} value={currentModel} onChange={() => undefined} />
         <SettingFieldWidget field={{ ...textField("pending", "대기 중인 변경", pendingValue, true, resaveNeeded ? "기본 모델 변경 요청이 없습니다. 다시 저장해 주세요." : ""), read_only_display: section === "account" }} value={pendingValue} onChange={() => undefined} />
       </> : null}

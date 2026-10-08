@@ -450,4 +450,53 @@ describe("chat caption parts", () => {
     expect(container.querySelectorAll('[data-slot="turn-end-captions"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-tree-node-id="summary-1"]')).toHaveLength(2);
   });
+
+  it("applies changed usage defaults to an error caption while preserving manual toggles until then", () => {
+    const testContainer = document.createElement("div");
+    container = testContainer;
+    document.body.appendChild(testContainer);
+    root = createRoot(testContainer);
+    const base: ChatMessage = {
+      id: "error-1",
+      role: "system",
+      content: "요청을 처리하지 못했습니다.",
+      treeNodeId: "error-1",
+      treeNodeType: "error",
+      isError: true,
+    };
+    const render = (expandedByDefault?: boolean) => root?.render(
+      <SystemMessage
+        msg={{
+          ...base,
+          turnUsageCaption: expandedByDefault === undefined ? undefined : {
+            title: "턴 사용량",
+            contextText: "컨텍스트 63%",
+            completeText: "턴 완료",
+            expandedByDefault,
+          },
+        }}
+        presentation="manuscript"
+      />,
+    );
+
+    act(() => render(true));
+    const firstButton = testContainer.querySelector("button");
+    expect(firstButton?.getAttribute("aria-expanded")).toBe("true");
+    expect(testContainer.textContent).toContain("턴 완료");
+    act(() => firstButton?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(firstButton?.getAttribute("aria-expanded")).toBe("false");
+
+    act(() => render(true));
+    expect(testContainer.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+    act(() => render(false));
+    expect(testContainer.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+    act(() => testContainer.querySelector("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(testContainer.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+
+    act(() => render(false));
+    expect(testContainer.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+    act(() => render(undefined));
+    expect(testContainer.querySelector('[data-slot="collapsible-caption"]')).toBeNull();
+    expect(testContainer.textContent).toContain("요청을 처리하지 못했습니다.");
+  });
 });

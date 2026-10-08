@@ -86,4 +86,25 @@ describe("persistent sessions review fixture", () => {
     const legacy = json.sessions.find((item: any) => item.session_id === "sample-pas-legacy");
     expect(legacy).toMatchObject({ node_id: null, agent_id: null, agent_name: null });
   });
+
+  it("serves instruction reads and mutations with the persistent instruction response wrappers", async () => {
+    const handler = make();
+    const initial = await call(handler, "/api/persistent-sessions/sample-pas-1/instructions", "GET");
+    expect(initial.json.instructions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "sample-instruction-1", source_turns: ["T195"], origin: "agent" }),
+    ]));
+
+    const added = await call(handler, "/api/persistent-sessions/sample-pas-1/instructions", "POST", { text: "직접 추가한 지시" });
+    expect(added.status).toBe(201);
+    expect(added.json.instruction).toMatchObject({ text: "직접 추가한 지시", source_turns: [], origin: "user" });
+
+    const id = added.json.instruction.id;
+    const updated = await call(handler, `/api/persistent-sessions/sample-pas-1/instructions/${id}`, "PUT", { text: "수정한 지시" });
+    expect(updated.json.instruction).toMatchObject({ id, text: "수정한 지시", origin: "user" });
+
+    const removed = await call(handler, `/api/persistent-sessions/sample-pas-1/instructions/${id}`, "PUT", { status: "removed" });
+    expect(removed.json.instruction).toMatchObject({ id, status: "removed" });
+    const active = await call(handler, "/api/persistent-sessions/sample-pas-1/instructions", "GET");
+    expect(active.json.instructions.some((item: { id: string }) => item.id === id)).toBe(false);
+  });
 });

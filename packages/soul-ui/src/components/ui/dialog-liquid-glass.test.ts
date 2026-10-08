@@ -35,7 +35,9 @@ describe("dialog liquid glass surfaces", () => {
 
     expect(source).toContain("max-h-[calc(100dvh-2rem)]");
     expect(source).toContain("overflow-hidden");
-    expect(source).toContain("min-h-0 flex-auto overflow-y-auto");
+    expect(source).toContain("scrollable = true");
+    expect(source).toContain("min-h-0 flex-auto overscroll-contain rounded-[inherit] outline-none");
+    expect(source).toContain('scrollable ? "overflow-y-auto" : "overflow-hidden"');
     expect(source).toContain('data-slot="dialog-panel-scroll"');
     expect(source).toContain("flex shrink-0 flex-col");
     expect(source).toContain("가상 키보드를 제외한 가시 영역 높이");
