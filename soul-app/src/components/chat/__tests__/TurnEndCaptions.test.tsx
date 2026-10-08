@@ -5,6 +5,11 @@ import { TurnEndCaptions } from '../TurnEndCaptions';
 import type { PersistentInstructionRecordedCaption, TurnSummaryRenderItem } from '../groupChatEvents';
 import { DESIGN_SPACING } from '../../../theme';
 
+type TurnUsageMode = 'collapsed' | 'expanded' | 'hidden';
+const TurnEndCaptionsWithMode = TurnEndCaptions as unknown as React.ComponentType<
+  React.ComponentProps<typeof TurnEndCaptions> & { turnUsageMode?: TurnUsageMode }
+>;
+
 const usage = {
   title: '컨텍스트 약 63.0% · 정가 $0.62',
   expandedTitle: '컨텍스트 약 630,000 / 1,000,000 (63.0%)',
@@ -59,6 +64,24 @@ test('starts collapsed, each head toggles only its own body, and expanded bodies
   expect(view.getByText(usage.lines[0])).toBeTruthy();
   const text = textOrder(view);
   expect(text.indexOf(usage.lines[0])).toBeLessThan(text.indexOf('요약 본문'));
+});
+
+test('applies mode changes to usage without resetting summary expansion or a later manual toggle', () => {
+  const view = render(<TurnEndCaptionsWithMode usage={usage} summaries={summaries} turnUsageMode="collapsed" />);
+  fireEvent.press(view.getByRole('button', { name: '요약' }));
+
+  view.rerender(<TurnEndCaptionsWithMode usage={usage} summaries={summaries} turnUsageMode="expanded" />);
+  expect(view.getByRole('button', { name: usage.title }).props.accessibilityState.expanded).toBe(true);
+  expect(view.getByRole('button', { name: '요약' }).props.accessibilityState.expanded).toBe(true);
+
+  fireEvent.press(view.getByRole('button', { name: usage.title }));
+  view.rerender(<TurnEndCaptionsWithMode usage={usage} summaries={summaries} turnUsageMode="expanded" />);
+  expect(view.getByRole('button', { name: usage.title }).props.accessibilityState.expanded).toBe(false);
+  expect(view.getByRole('button', { name: '요약' }).props.accessibilityState.expanded).toBe(true);
+
+  view.rerender(<TurnEndCaptionsWithMode usage={usage} summaries={summaries} turnUsageMode="collapsed" />);
+  expect(view.getByRole('button', { name: usage.title }).props.accessibilityState.expanded).toBe(false);
+  expect(view.getByRole('button', { name: '요약' }).props.accessibilityState.expanded).toBe(true);
 });
 
 test('turn-end heads align to their surface edge and expanded bodies use the small UI gap', () => {

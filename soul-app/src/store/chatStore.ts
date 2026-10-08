@@ -7,6 +7,7 @@ import type {
   ClaudeRuntimeTasksResponse,
   SessionEvent,
 } from '../api/types';
+import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
 import { mergeAppendOnlyStreamingDelta } from '../lib/streamingDeltaEvent';
 import { subscribeAuthScope } from '../lib/auth-scope';
 import {
@@ -46,7 +47,7 @@ export type PersistentChatDisplaySettings = {
   show_jev_candidates: boolean;
   show_character?: boolean;
   animate_character?: boolean;
-  show_turn_usage?: boolean;
+  turn_usage_mode: PersistentTurnUsageMode;
 };
 
 type PersistentDisplaySettingsState = {

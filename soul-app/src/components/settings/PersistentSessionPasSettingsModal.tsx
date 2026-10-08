@@ -13,6 +13,7 @@ import { settingsPanelPage } from './SettingsFormParts';
 import { SettingsSegmentedControl } from './SettingsSegmentedControl';
 
 const SECTIONS = [
+  { value: 'instructions', label: '지속 지시' },
   { value: 'account-model', label: '계정과 모델' },
   { value: 'display', label: '표시와 모션' },
   { value: 'history', label: '기록' },
@@ -31,7 +32,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
   const instructionEditing = useRef(false);
   const [cancelInstructionEditRequest, setCancelInstructionEditRequest] = useState(0);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
-  const [section, setSection] = useState<Section>('account-model');
+  const [section, setSection] = useState<Section>('instructions');
   const [dirty, setDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState({ disabled: true, busy: false });
   const onDirtyChange = useCallback((value: boolean) => setDirty(value), []);
@@ -92,7 +93,17 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
         />
       </View>
       <View style={styles.body}>
-        <View style={[styles.pane, section === 'history' && styles.hidden]}>
+        <View style={[styles.pane, section !== 'instructions' && styles.hidden]}>
+          <ScrollView testID="persistent-session-pas-instructions-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
+            <PersistentSessionInstructions
+              serverUrl={serverUrl}
+              sessionId={sessionId}
+              cancelEditRequest={cancelInstructionEditRequest}
+              onEditingChange={onInstructionEditingChange}
+            />
+          </ScrollView>
+        </View>
+        <View style={[styles.pane, section === 'instructions' || section === 'history' ? styles.hidden : null]}>
           <ScrollView ref={editorScroll} testID="persistent-session-pas-settings-scroll" {...settingsPanelPage(t, false)} showsVerticalScrollIndicator={false}>
             <PersistentSessionEditor
               mode="pas"
@@ -112,12 +123,6 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
             <PersistentSessionMonitoring
               serverUrl={serverUrl}
               sessionId={sessionId}
-            />
-            <PersistentSessionInstructions
-              serverUrl={serverUrl}
-              sessionId={sessionId}
-              cancelEditRequest={cancelInstructionEditRequest}
-              onEditingChange={onInstructionEditingChange}
             />
           </ScrollView>
         </View>

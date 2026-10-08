@@ -89,6 +89,7 @@ export function initializeReview() {
     state.finishPersistentDisplaySettingsLoad('review-pas-1', requestId, {
       show_generation_separator: true,
       show_jev_candidates: true,
+      turn_usage_mode: 'collapsed',
     });
   }
   if (nativeSettings || persistent) {

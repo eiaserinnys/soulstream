@@ -20,11 +20,9 @@ jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
 const noop = () => {};
 const styles = { list: {}, listContent: {} } as ChatBodyStyles;
 
-function renderCompletion(data: Record<string, unknown>) {
-  const events: SessionEvent[] = [{ id: '1', type: 'complete', data }];
-  const items = projectPersistentTurnUsage(groupChatEvents(events), events);
-  return render(
-    <ChatEventList
+function chatList(events: SessionEvent[], mode: 'collapsed' | 'expanded' | 'hidden') {
+  const items = projectPersistentTurnUsage(groupChatEvents(events), events, mode as never);
+  return <ChatEventList
       flatListRef={createRef<FlatList<ChatRenderItem> | null>()}
       items={items}
       session={undefined}
@@ -42,8 +40,11 @@ function renderCompletion(data: Record<string, unknown>) {
       mvcpEnabled={false}
       onContentSizeChange={noop}
       presentation="manuscript"
-    />,
-  );
+    />;
+}
+
+function renderCompletion(data: Record<string, unknown>, mode: 'collapsed' | 'expanded' | 'hidden' = 'collapsed') {
+  return render(chatList([{ id: '1', type: 'complete', data }], mode));
 }
 
 test.each([
@@ -72,4 +73,20 @@ test.each([
 
   expect(screen.queryByText(title)).toBeNull();
   expect(screen.getAllByText(expanded)).toHaveLength(1);
+});
+
+test('error usage follows mode updates without remounting the error row', () => {
+  const events: SessionEvent[] = [
+    { id: '10', type: 'context_usage', data: { used_tokens: 41_500, max_tokens: 100_000, percent: 41.5 } },
+    { id: '11', type: 'error', data: { message: '오류 본문 유지' } },
+  ];
+  const screen = render(chatList(events, 'collapsed'));
+  const usageHead = screen.getByRole('button', { name: '컨텍스트 41.5%' });
+  expect(usageHead.props.accessibilityState.expanded).toBe(false);
+
+  screen.rerender(chatList(events, 'expanded'));
+  expect(screen.getByRole('button', { name: '컨텍스트 41.5%' }).props.accessibilityState.expanded).toBe(true);
+
+  screen.rerender(chatList(events, 'collapsed'));
+  expect(screen.getByRole('button', { name: '컨텍스트 41.5%' }).props.accessibilityState.expanded).toBe(false);
 });

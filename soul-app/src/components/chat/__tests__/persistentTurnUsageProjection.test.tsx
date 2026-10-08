@@ -8,8 +8,8 @@ function event(id: string, type: string, data: Record<string, unknown> = {}): Se
   return { id, type: type as SessionEvent['type'], data };
 }
 
-function project(events: SessionEvent[], showTurnUsage = true) {
-  return projectPersistentTurnUsage(groupChatEvents(events), events, showTurnUsage);
+function project(events: SessionEvent[], mode: 'collapsed' | 'expanded' | 'hidden' = 'collapsed') {
+  return projectPersistentTurnUsage(groupChatEvents(events), events, mode as never);
 }
 
 function turnEndItems(items: ReturnType<typeof project>) {
@@ -99,6 +99,28 @@ describe('projectPersistentTurnUsage', () => {
     expect(items.some((item) => item.kind === 'event' && item.event.id === '22')).toBe(false);
   });
 
+  test.each(['collapsed', 'expanded'] as const)('passes the %s mode to error captions', (mode) => {
+    const events = [
+      event('50', 'context_usage', { used_tokens: 41_500, max_tokens: 100_000, percent: 41.5 }),
+      event('51', 'error', { message: '오류 본문 유지' }),
+    ];
+
+    const error = project(events, mode).find((item) => item.key === 'evt-51');
+
+    expect(error).toMatchObject({ kind: 'event', turnUsageMode: mode, turnUsageCaption: expect.any(Object) });
+  });
+
+  test('hidden mode keeps the error event body without a usage caption', () => {
+    const events = [
+      event('52', 'context_usage', { used_tokens: 41_500, max_tokens: 100_000, percent: 41.5 }),
+      event('53', 'error', { message: '오류 본문 유지' }),
+    ];
+
+    const error = project(events, 'hidden').find((item) => item.key === 'evt-53');
+    expect(error).toMatchObject({ key: 'evt-53', kind: 'event' });
+    expect(error?.kind === 'event' ? error.turnUsageCaption : null).toBeUndefined();
+  });
+
   test('setting off removes only usage rows while retaining errors and other events', () => {
     const errorEvent = event('33', 'error', { message: '오류는 남습니다.' });
     const events = [
@@ -109,13 +131,52 @@ describe('projectPersistentTurnUsage', () => {
       event('34', 'context_usage', { used_tokens: 20, max_tokens: 100, percent: 20 }),
     ];
 
-    const items = project(events, false);
+    const items = project(events, 'hidden');
 
     expect(items.map((item) => item.key)).toEqual(['evt-30', 'evt-33']);
     expect(items.find((item) => item.key === 'evt-33')).toMatchObject({
       kind: 'event', event: errorEvent,
     });
     expect(items.some((item) => item.kind === 'turn-end-captions')).toBe(false);
+  });
+
+  test.each([
+    ['collapsed', 'collapsed'],
+    ['expanded', 'expanded'],
+  ] as const)('passes the %s mode to completion captions', (mode, expectedMode) => {
+    const items = project([
+      event('41', 'complete', { usage: { input_tokens: 5, output_tokens: 2 }, turn_cost_usd: 0.1 }),
+    ], mode);
+
+    expect(turnEndItems(items)).toEqual([
+      expect.objectContaining({ key: 'evt-41', turnUsageMode: expectedMode, usage: expect.any(Object) }),
+    ]);
+  });
+
+  test('hidden mode keeps a completion row when a persistent instruction was recorded', () => {
+    const events = [
+      event('1', 'user_message', { input_id: 'input-1', text: '기억할 내용' }),
+      event('2', 'assistant_message', { text: '기록했습니다.' }),
+      event('3', 'complete', { usage: { input_tokens: 5, output_tokens: 2 }, turn_cost_usd: 0.1 }),
+      event('4', 'turn_summary', { content: '요약', final_response_event_id: 2, parent_event_id: 2 }),
+      event('5', 'debug', { kind: 'persistent_instruction_recorded', input_id: 'input-1', instructions: [{
+        id: 'instruction-1', text: '기억할 내용', source_turns: ['T1'], action: 'updated',
+      }] }),
+    ];
+
+    const items = project(events, 'hidden');
+
+    expect(turnEndItems(items)).toEqual([
+      expect.objectContaining({
+        key: 'evt-3',
+        turnUsageMode: 'hidden',
+        summaries: [expect.objectContaining({ content: '요약' })],
+        persistentInstructionRecorded: expect.objectContaining({
+          instructions: [expect.objectContaining({ text: '기억할 내용' })],
+        }),
+      }),
+    ]);
+    expect(turnEndItems(items)[0]?.usage).toBeUndefined();
   });
 
   test('moves a turn summary to the first complete after its final response', () => {
@@ -196,7 +257,7 @@ describe('projectPersistentTurnUsage', () => {
       event('40', 'turn_summary', { content: '턴 요약 본문', final_response_event_id: 2, parent_event_id: 2 }),
     ];
 
-    const items = project(events, false);
+    const items = project(events, 'hidden');
 
     expect(items.map((item) => item.key)).toEqual(['evt-2', 'evt-3']);
     expect(turnEndItems(items)).toEqual([

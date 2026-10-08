@@ -1,4 +1,7 @@
 import type { ApiRequestContext } from './clientCore';
+import type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
+
+export type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
 
 /** A model choice as the server stores it. The preset is null only when nothing valid was recorded. */
 export interface PersistentSessionModel {
@@ -14,6 +17,8 @@ export interface PersistentSessionSettings {
   show_character?: boolean;
   show_jev_candidates?: boolean;
   animate_character?: boolean;
+  turn_usage_mode: PersistentTurnUsageMode;
+  /** Compatibility response derived from turn_usage_mode. */
   show_turn_usage?: boolean;
 }
 
@@ -50,7 +55,7 @@ export interface PersistentSessionSettingsPatch {
   show_character?: boolean;
   show_jev_candidates?: boolean;
   animate_character?: boolean;
-  show_turn_usage?: boolean;
+  turn_usage_mode?: PersistentTurnUsageMode;
 }
 
 /** Model fields used when changing the default model. */

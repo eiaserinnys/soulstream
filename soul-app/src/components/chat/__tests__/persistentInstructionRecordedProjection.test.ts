@@ -118,4 +118,33 @@ describe('persistent instruction recorded turn-end projection', () => {
     expect(caption?.kind === 'turn-end-captions' ? caption.persistentInstructionRecorded : undefined)
       .toEqual({ instructions: [], capReached: true });
   });
+
+  it('keeps the recorded instruction and summary when usage is hidden', () => {
+    const events = [
+      ev('1', 'user_message', { input_id: 'input-1' }),
+      ev('2', 'assistant_message', { text: 'I will remember it' }),
+      ev('3', 'complete', { turn_cost_usd: 0.5 }),
+      ev('4', 'turn_summary', {
+        content: 'The instruction was recorded',
+        final_response_event_id: 2,
+        parent_event_id: 2,
+      }),
+      recorded('input-1', [instruction]),
+    ];
+
+    const turnEnds = projectPersistentTurnUsage(groupChatEvents(events), events, 'hidden' as never)
+      .filter((item) => item.kind === 'turn-end-captions');
+
+    expect(turnEnds).toHaveLength(1);
+    expect(turnEnds[0]).toMatchObject({
+      key: 'evt-3',
+      summaries: [expect.objectContaining({ content: 'The instruction was recorded' })],
+      persistentInstructionRecorded: expect.objectContaining({ instructions: [expect.objectContaining({
+        id: instruction.id,
+        text: instruction.text,
+        source_turns: instruction.source_turns,
+      })] }),
+    });
+    expect(turnEnds[0]?.usage).toBeUndefined();
+  });
 });

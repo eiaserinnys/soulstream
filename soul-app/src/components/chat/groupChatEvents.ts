@@ -1,5 +1,6 @@
 import type { SessionEvent, SessionEventType } from '../../api/types';
 import type { HistoricalMessage } from '../../api/client';
+import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import {
   getOptimisticAfterEventId,
   type StreamingSlotKind,
@@ -24,6 +25,7 @@ export type ChatEventRenderItem = {
   key: string;
   summaries?: TurnSummaryRenderItem[];
   turnUsageCaption?: TurnUsageCaption;
+  turnUsageMode?: PersistentTurnUsageMode;
 };
 
 export type ChatToolRenderItem = {
@@ -65,6 +67,7 @@ export type TurnEndCaptionsRenderItem = {
   event: SessionEvent;
   key: string;
   usage?: TurnUsageCaption;
+  turnUsageMode?: PersistentTurnUsageMode;
   summaries?: TurnSummaryRenderItem[];
   persistentInstructionRecorded?: PersistentInstructionRecordedCaption;
 };

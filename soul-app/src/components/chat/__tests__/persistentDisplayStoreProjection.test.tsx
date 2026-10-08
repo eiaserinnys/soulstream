@@ -30,6 +30,7 @@ test('store raw Jev record waits for history input, deduplicates replay, and fol
   store.finishPersistentDisplaySettingsLoad(SESSION_ID, requestId, {
     show_generation_separator: true,
     show_jev_candidates: true,
+    turn_usage_mode: 'collapsed',
   });
   const candidate = persistentJevCandidatesFixture('42', 'input-40', { selectedCount: 2 });
   const assignedContext: SessionEvent = {

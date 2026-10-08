@@ -56,6 +56,6 @@ export function persistentChatDisplaySettings(session: PersistentSessionResource
     show_jev_candidates: session.settings.show_jev_candidates === true,
     show_character: session.settings.show_character !== false,
     animate_character: session.settings.animate_character !== false,
-    show_turn_usage: session.settings.show_turn_usage !== false,
+    turn_usage_mode: session.settings.turn_usage_mode,
   };
 }

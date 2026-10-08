@@ -184,7 +184,7 @@ export function ChatBody({
     () => (serverUrl ? createApiClient(serverUrl, { authScope }) : null),
     [authScope, serverUrl]
   );
-  const { persistentDisplaySettings, showTurnUsage } = usePersistentChatDisplaySettings(
+  const { persistentDisplaySettings, turnUsageMode } = usePersistentChatDisplaySettings(
     api, detailedNetworkActive, sessionId, ownsSessionConnection,
   );
   useEnsureSessionCached(ownsSessionConnection ? api : null, sessionId);
@@ -331,7 +331,7 @@ export function ChatBody({
     sessionStatus: session?.status,
     persistentDisplaySettings,
     presentation,
-    showTurnUsage,
+    turnUsageMode,
   });
   const focusEventIndex = focusEventId == null ? -1 : reversedItems.findIndex((item) => renderItemContainsEventId(item, focusEventId));
 

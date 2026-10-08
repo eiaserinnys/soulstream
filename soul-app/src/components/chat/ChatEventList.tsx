@@ -8,6 +8,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import type { ToolTraceResponse } from '../../api/client';
+import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import type { ChatBodyStyles } from './ChatBody.styles';
 import type { ChatRenderItem } from './groupChatEvents';
 import { EventContextMenu } from '../events/EventContextMenu';
@@ -247,6 +248,7 @@ const ChatEventRow = memo(function ChatEventRow({
   if (item.kind === 'turn-end-captions') {
     const captions = <TurnEndCaptions
       usage={item.usage}
+      turnUsageMode={item.turnUsageMode}
       summaries={item.summaries}
       persistentInstructionRecorded={item.persistentInstructionRecorded}
     />;
@@ -359,6 +361,7 @@ const ChatEventRow = memo(function ChatEventRow({
             title={item.turnUsageCaption.title}
             expandedTitle={item.turnUsageCaption.expandedTitle}
             lines={item.turnUsageCaption.lines}
+            turnUsageMode={item.turnUsageMode}
             presentation={presentation}
           />
           : null}
@@ -379,18 +382,24 @@ function TurnUsageCaptionRow({
   title,
   expandedTitle,
   lines,
+  turnUsageMode = 'collapsed',
   presentation,
 }: {
   title: string;
   expandedTitle?: string;
   lines: string[];
+  turnUsageMode?: PersistentTurnUsageMode;
   presentation: 'default' | 'manuscript';
 }) {
+  const [expanded, setExpanded] = useState(turnUsageMode === 'expanded');
+  useEffect(() => setExpanded(turnUsageMode === 'expanded'), [turnUsageMode]);
+
   return (
     <CollapsibleCaption
       title={title}
       {...(expandedTitle !== undefined ? { expandedTitle } : {})}
-      initiallyCollapsed
+      expanded={expanded}
+      onExpandedChange={setExpanded}
       alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
     >
       {lines.map((line, index) => (

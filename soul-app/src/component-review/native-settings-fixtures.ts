@@ -21,7 +21,7 @@ const state = () => new URLSearchParams(window.location.search).get('state');
 // The store keeps every session the way the server does: GET answers for released and plain sessions too, the list shows persistent ones only.
 type PasInit = { id: string; name: string; agentId: string; preset: string; effort?: string | null; current?: string; currentEffort?: string | null; pending?: { preset: string; effort: string | null } | null; folderId?: string; persistent?: boolean };
 const pasAgentNames: Record<string, string> = { 'public-agent': '공개 예시 에이전트', 'public-other-agent': '다른 예시 에이전트' };
-const pasSettings = (preset: string, effort: string | null) => ({ default_model: { model_preset: preset, reasoning_effort: effort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, show_turn_usage: true });
+const pasSettings = (preset: string, effort: string | null) => ({ default_model: { model_preset: preset, reasoning_effort: effort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, turn_usage_mode: 'collapsed' as const, show_turn_usage: true });
 const pasSession = (init: PasInit): PersistentSessionResource => ({
   session_id: init.id, display_name: init.name, node_id: 'public-node', folder_id: init.folderId ?? 'public-project', agent_id: init.agentId, agent_name: pasAgentNames[init.agentId] ?? init.agentId,
   persistent: init.persistent ?? true, settings: pasSettings(init.preset, init.effort ?? null),
@@ -77,7 +77,9 @@ const persistentSessionFixtures = {
     const alreadyRunning = running.model_preset === target.model_preset && sameEffort(running.reasoning_effort, target.reasoning_effort);
     const alreadyPending = Boolean(pending) && pending!.target_model_preset === target.model_preset && sameEffort(pending!.target_reasoning_effort, target.reasoning_effort);
     const changed = !alreadyRunning && !alreadyPending;
-    const saved: PersistentSessionResource = { ...base, display_name, persistent: true, settings: { ...base.settings, ...patch, default_model: target },
+    const settings = { ...base.settings, ...patch, default_model: target };
+    if (patch?.turn_usage_mode !== undefined) settings.show_turn_usage = patch.turn_usage_mode !== 'hidden';
+    const saved: PersistentSessionResource = { ...base, display_name, persistent: true, settings,
       runtime: { ...base.runtime, pending: changed ? { target_model_preset: target.model_preset, target_reasoning_effort: target.reasoning_effort } : pending } };
     pasStore.set(id, saved);
     return { session: saved, model_change: changed ? 'next_execution_start' as const : 'none' as const };
