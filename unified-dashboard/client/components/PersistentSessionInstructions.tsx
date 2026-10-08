@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Button, Input } from "@seosoyoung/soul-ui";
+import "./PersistentSessionInstructions.css";
 
 import {
   createPersistentSessionsApi,
@@ -311,7 +312,7 @@ function PersistentSessionInstructionsPasView({ state, actions }: {
     </ol> : null}
     {state.error && state.editingId === null ? <SettingsAlert>{state.error}</SettingsAlert> : null}
     {state.capReached ? <SettingsAlert>지속 지시 상한에 도달했습니다.</SettingsAlert> : null}
-    {!adding ? <Button type="button" size="sm" variant="outline" disabled={mutationDisabled || state.editingId !== null} onClick={() => { actions.changeAddText(state.addText); setAdding(true); }}>지시 추가</Button> : <form className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2" onSubmit={(event) => { void submitAdd(event); }}>
+    {!adding ? <Button type="button" size="sm" variant="outline" className="self-start" disabled={mutationDisabled || state.editingId !== null} onClick={() => { actions.changeAddText(state.addText); setAdding(true); }}>지시 추가</Button> : <form className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2" onSubmit={(event) => { void submitAdd(event); }}>
       <Input
         aria-label="새 지속 지시"
         autoFocus

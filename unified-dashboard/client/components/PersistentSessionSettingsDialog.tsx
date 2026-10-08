@@ -89,7 +89,7 @@ export function PersistentSessionSettingsDialog({
       <DialogHeader>
         <DialogTitle>설정</DialogTitle>
         <DialogDescription className="sr-only">
-          {resource ? `설정 대상: ${resource.display_name} · ${resource.agent_name ?? resource.agent_id ?? "에이전트 정보 없음"}` : null}
+          {resource ? `설정 대상: ${resource.display_name}, ${resource.agent_name ?? resource.agent_id ?? "에이전트 정보 없음"}` : null}
         </DialogDescription>
       </DialogHeader>
       <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
