@@ -1,4 +1,5 @@
 import type { CardMutationChange } from "./card_control_plane_service.js";
+import type { CardMutationResult } from "./control_plane/card_types.js";
 import type { CardItemState } from "./card_item_rules.js";
 
 export type CardChangeDelivery = { deliveryId:string; actorKind:string; actorSessionId:string | null };
@@ -7,8 +8,12 @@ export const cardStatusLabels:Record<string,string>={todo:"할 일",queued:"대�
 const cardItemStateLabels:Record<CardItemState,string>={todo:"아직",doing:"하는 중",done:"끝남",dropped:"뺌"};
 const cardCommentInstruction="수정 지시면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행한다. 질문이면 답 커멘트만 남긴다.";
 
+type CardChangeNotificationChange = Omit<CardMutationChange,"result"> & {
+  result: Pick<CardMutationResult,"operation" | "idempotent">;
+};
+
 /** Uses transaction-captured state, rather than a newer read or the comment's spoken author projection. */
-export function buildCardChangeNotification(change:CardMutationChange,comment?:Record<string,unknown>,fallbackSessionId?:string | null,
+export function buildCardChangeNotification(change:CardChangeNotificationChange,comment?:Record<string,unknown>,fallbackSessionId?:string | null,
   details?:CardCommentNotificationDetails) {
   if (change.result.operation.operation_type === "execute_card" || change.result.idempotent || !change.committedCard) return null;
   const {result,committedCard:card,previousStatus,previousAssigneeSessionId}=change;
