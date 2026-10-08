@@ -13,6 +13,8 @@ describe("agent/node/model assignment mount inventory", () => {
       .sort();
 
     expect(mounts).toEqual([
+      "CardCreateDialog.tsx",
+      "CardMenu.tsx",
       "FolderDefaultAssignment.tsx",
       "ProjectContextFormFields.tsx",
       "SessionSuccessionModal.tsx",

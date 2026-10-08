@@ -6,12 +6,17 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 describe("v3 aesthetic policy", () => {
   it("uses the shared liquid glass card for session and inline board cards", () => {
     const sessions = read("./RichSessionRow.tsx");
+    const rowFrame = read("./RunRowFrame.tsx");
     const board = read("./FolderInlineBoard.tsx");
+    const inlineCard = read("./InlineMarkdownCard.tsx");
 
-    expect(sessions).toContain("LiquidGlassCard");
-    expect(sessions).toContain("webglSurface");
+    expect(sessions).toContain("<RunRowFrame");
+    expect(rowFrame).toContain('surface="glass"');
+    expect(rowFrame).toContain('return <LiquidGlassCard webglSurface={surface==="glass"}');
     expect(board).toContain("LiquidGlassCard");
     expect(board).toContain("webglSurface");
+    expect(board).toContain("<InlineMarkdownCard");
+    expect(inlineCard).toMatch(/<LiquidGlassCard[\s\S]*?webglSurface/);
     expect(board).not.toContain('<article key={item.id} className="v3-inline-board-item"');
   });
 

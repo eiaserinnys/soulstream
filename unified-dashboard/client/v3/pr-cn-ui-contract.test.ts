@@ -13,7 +13,10 @@ describe("PR-CN planner polish contract", () => {
     expect(toolbar).not.toContain("onOpenRitual");
     expect(toolbar).not.toContain("onOpenNewTask");
     expect(views).toContain('label="아침 정리"');
-    expect(views).toContain('label="새 폴더"');
+    expect(navigation).toMatch(/label="새 폴더"[\s\S]*?onClick=\{\(\) => \{ setProjectDialog\(\{ mode: "create", parentFolderId: null, parentName: null \}\); setError\(null\); \}\}/);
+    expect(navigation).toContain("target={projectDialog}");
+    expect(navigation).toContain("onCreateIdentity={onCreateProject}");
+    expect(layout).toContain('createLabel="새 폴더"');
     expect(views).not.toContain("역대 폴더");
     expect(layout).toContain("folderSessions.state?.items.map");
     expect(layout).toContain("onOpenRitual={() => setRitualOpen(true)}");
@@ -28,7 +31,7 @@ describe("PR-CN planner polish contract", () => {
 
     expect(memo).not.toContain('className="v3-memo-label"');
     expect(memo).toContain('ariaLabel={index === 0 ? "오늘 메모"');
-    expect(views).toContain('className="v3-planner-column"');
+    expect(views).toContain('<div className="v3-planner-column v3-planner-column--daily">');
   });
 
   it("removes session-only guidance and reuses the attachment submission contract", () => {
