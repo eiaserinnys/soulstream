@@ -46,7 +46,7 @@ export function ManuscriptAgentMessageGroupView({
           align="end"
           alignmentInset="content"
           onToggle={onToggle}
-          className="w-full"
+          className="w-full motion-safe:active:scale-100"
         />
         <CollapsibleCaptionBody id={bodyId} expanded={expanded} align="start" className="mt-0.5 w-full">
           <div data-slot="manuscript-agent-message-group-items">

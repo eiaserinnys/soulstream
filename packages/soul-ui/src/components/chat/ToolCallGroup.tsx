@@ -177,7 +177,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
             align="end"
             alignmentInset="content"
             onToggle={toggleExpanded}
-            className="w-full"
+            className="w-full motion-safe:active:scale-100"
             data-slot="manuscript-activity-toggle"
           />
           {expanded && (
