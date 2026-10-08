@@ -86,7 +86,7 @@ export class CardMcpReadRepository {
     return this.sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
       const access = (await transaction<{ folder_id: string }[]>`SELECT folder_id FROM cards WHERE id=${cardId}`)[0];
-      if (!access) throw httpError(404, "Card not found");
+      if (!access) throw httpError(404, "Card not found", "CARD_NOT_FOUND");
       if (SYSTEM_FOLDER_IDS.includes(access.folder_id as (typeof SYSTEM_FOLDER_IDS)[number]))
         throw httpError(404, "Card not found");
       if (allowedFolderIds !== null && !allowedFolderIds.includes(access.folder_id))
