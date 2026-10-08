@@ -36,7 +36,12 @@ describe("v3 session language", () => {
     expect(contextForm).toContain("ProjectAtomFields");
     expect(contextForm).toContain("ProjectSessionDefaultsFields");
     expect(succession).toContain("보드 문서");
-    expect(succession).toContain("atom 노드");
+    expect(succession).toContain("<ProjectAtomFields request={atomRequest} value={atomDraft}");
+    expect(succession).toMatch(/<ProjectAtomFields request=\{atomRequest\} value=\{atomDraft\} disabled=\{pending\} supportsLimit=\{false\}[\s\S]*?selectorOpen=\{atomOpen\} onSelectorOpenChange=\{setAtomOpen\} onSelectorStatusChange=\{setAtomStatus\} onChange=\{setAtomDraft\}/);
+    expect(succession).toContain("<strong>추가 참고 자료</strong>");
+    expect(succession).toMatch(/setAtomDraft\(\{ \.\.\.atomValue \}\); setAtomStatus\("loading"\); setAtomOpen\(true\);/);
+    expect(succession).toMatch(/atomNode: atomNodeId \? \{ nodeId: atomNodeId, title: atomNodeTitle, depth: atomValue\.depth, titlesOnly: atomValue\.titlesOnly, mode: atomValue\.mode \} : null/);
+    expect(succession).toMatch(/contextItems: contextSelection\.contextItems\.length > 0\s*\?\s*contextSelection\.contextItems\s*:\s*undefined/);
     expect(succession).not.toContain("추가 지침");
     expect(succession).toContain("초기 지시");
     expect(succession).not.toContain("기본 지침");

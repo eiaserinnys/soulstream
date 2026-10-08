@@ -94,11 +94,19 @@ describe("v3 modal shell contract", () => {
 
   it("orders the new-session sections and exposes the bounded document preview", () => {
     const source = read("./SessionSuccessionModal.tsx");
-    const sectionLabels = ["노드 / 에이전트", "컨텍스트", "초기 지시"];
+    const initialInstruction = source.indexOf('aria-label="초기 지시"');
+    const executionEnvironment = source.indexOf('<CreationDisclosure title="실행 환경"');
+    const materials = source.indexOf('<CreationDisclosure title="함께 전달할 자료"');
 
-    expect(sectionLabels.map((label) => source.indexOf(label))).toEqual(
-      [...sectionLabels].map((label) => source.indexOf(label)).sort((left, right) => left - right),
-    );
+    expect(initialInstruction).toBeGreaterThanOrEqual(0);
+    expect(executionEnvironment).toBeGreaterThanOrEqual(0);
+    expect(materials).toBeGreaterThanOrEqual(0);
+    expect(initialInstruction).toBeLessThan(executionEnvironment);
+    expect(executionEnvironment).toBeLessThan(materials);
+    expect(source).toMatch(/<CreationDisclosure title="실행 환경"[\s\S]*?<AgentNodeAssignmentFields/);
+    expect(source).toMatch(/<CreationDisclosure title="함께 전달할 자료"[\s\S]*?<strong>보드 문서<\/strong>/);
+    expect(source).toContain("<ProjectAtomFields request={atomRequest} value={atomDraft}");
+    expect(source).toMatch(/<strong>추가 참고 자료<\/strong>[\s\S]*?setAtomDraft\(\{ \.\.\.atomValue \}\)/);
     expect(source).not.toContain("추가 지침");
     expect(source).not.toContain("기본 지침");
     expect(source).not.toContain("실행 에이전트");
