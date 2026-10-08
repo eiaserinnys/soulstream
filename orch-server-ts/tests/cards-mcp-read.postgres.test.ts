@@ -354,53 +354,26 @@ describe("Card MCP read storage contract", () => {
     expect((await reader.getCard("read-token", { since: beforeNow.changeToken }, null)).card.now.text).toBe("새 상황");
   });
 
-  it("reads exact operation metadata and rejects malformed, mismatched, or unauthorized references", async () => {
+  it("rejects malformed, mismatched, or unauthorized card references", async () => {
     await seedCard({ id: "read-security", folderId: "pas-a" });
     await seedCard({ id: "read-other", folderId: "pas-b" });
-    await h.sql.unsafe(
-      "INSERT INTO folder_operations(id,folder_id,target_kind,target_id,operation_type,payload_json,created_at) VALUES " +
-      "('security-op-old','pas-a','card','read-security','report_card_item',jsonb_build_object('item_id',1,'summary','옛 요약','verification',jsonb_build_object('checked',jsonb_build_array('저장됨'),'unchecked','[]'::jsonb)),'2026-10-08 06:00:00.000001+00')," +
-      "('security-op-new','pas-a','card','read-security','answer_card_question',jsonb_build_object('question_id','q1','answer','원문 응답 금지'),'2026-10-08 06:00:00.000002+00')," +
-      "('security-op-wrong-target','pas-a','card','read-other','report_card_item','{}'::jsonb,'2026-10-08 06:00:00.000003+00')",
-    );
     await h.sql.unsafe(
       "INSERT INTO card_comments(id,card_id,author_kind,kind,body,created_at) VALUES " +
       "('security-note-old','read-security','agent','note','이전 노트','2026-10-08 06:00:00.000001+00')," +
       "('security-note-new','read-security','agent','note','최근 노트','2026-10-08 06:00:00.000002+00')",
     );
 
-    const exact = await reader.getCard("read-security", { operation_id: "security-op-old" }, ["pas-a"]);
-    expect(exact.operation).toMatchObject({
-      id: "security-op-old",
-      operationType: "report_card_item",
-      itemId: 1,
-      reportId: null,
-      questionId: null,
-      verification: { checked: ["저장됨"], unchecked: [] },
-      summary: "옛 요약",
-    });
-    expect(JSON.stringify(exact)).not.toContain("원문 응답 금지");
-    await h.sql`UPDATE folder_operations SET payload_json=payload_json ||
-      ${h.sql.json({ summary: "변경된 요약", verification: { checked: ["저장됨", "확인됨"], unchecked: [] } })}
-      WHERE id='security-op-old'`;
-    const metadataChange = await reader.getCard("read-security", { since: exact.changeToken }, ["pas-a"]);
-    expect(metadataChange.changed).toEqual(["operation"]);
-    expect(metadataChange).not.toHaveProperty("operation");
-    expect((await reader.getCard("read-security", { operation_id: "security-op-old" }, ["pas-a"])).operation).toMatchObject({
-      summary: "변경된 요약", verification: { checked: ["저장됨", "확인됨"], unchecked: [] },
-    });
-    for (const input of [{}, { include: ["notes"] as const }, { since: exact.changeToken }]) {
+    const current = await reader.getCard("read-security", {}, ["pas-a"]);
+    for (const input of [{}, { include: ["notes"] as const }, { since: current.changeToken }]) {
       await expect(reader.getCard("read-security", input as CardMcpGetInput, ["pas-b"]))
         .rejects.toMatchObject({ statusCode: 403, code: "FOLDER_ACCESS_DENIED" });
     }
     await expect(reader.listCards({ folder_id: "pas-a", all: true }, ["pas-b"]))
       .rejects.toMatchObject({ statusCode: 403 });
-    await expect(reader.getCard("read-other", { since: exact.changeToken }, ["pas-b"]))
+    await expect(reader.getCard("read-other", { since: current.changeToken }, ["pas-b"]))
       .rejects.toMatchObject({ statusCode: 400 });
     await expect(reader.getCard("read-security", { text_limit: 4001 }, ["pas-a"]))
       .rejects.toMatchObject({ statusCode: 400 });
-    await expect(reader.getCard("read-security", { operation_id: "security-op-wrong-target" }, ["pas-a"]))
-      .rejects.toMatchObject({ statusCode: 404 });
     await expect(reader.getCard("missing-card", {}, null)).rejects.toMatchObject({ statusCode: 404 });
     await expect(reader.getCard("read-other", {}, ["pas-a"])).rejects.toMatchObject({
       statusCode: 403, code: "FOLDER_ACCESS_DENIED",
@@ -414,9 +387,9 @@ describe("Card MCP read storage contract", () => {
     expect(cursor).toEqual(expect.any(String));
     await expect(reader.getCard("read-other", { include: ["notes"], cursors: { notes: cursor } }, ["pas-b"]))
       .rejects.toMatchObject({ statusCode: 400 });
-    await expect(reader.getCard("read-security", { since: "bad", operation_id: "security-op-old" }, ["pas-a"]))
+    await expect(reader.getCard("read-security", { since: current.changeToken, cursors: { notes: cursor }, include: ["notes"] }, ["pas-a"]))
       .rejects.toMatchObject({ statusCode: 400 });
-    await expect(reader.getCard("read-security", { operation_id: "security-op-old" }, []))
+    await expect(reader.getCard("read-security", {}, []))
       .rejects.toMatchObject({ statusCode: 403, code: "FOLDER_ACCESS_DENIED" });
     await expect(reader.getCard("read-security", { include: ["notes"], all: true } as never, ["pas-a"]))
       .rejects.toMatchObject({ statusCode: 400 });

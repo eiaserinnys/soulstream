@@ -43,17 +43,6 @@ export type CardMcpSectionPage =
   | { kind: "text"; text: string; nextOffset: number | null; truncated: boolean }
   | { kind: "items"; items: Record<string, unknown>[]; next: { timestamp: string; id: string } | { offset: number } | null; truncated: boolean };
 
-export interface CardMcpOperationRow extends Record<string, unknown> {
-  id: string;
-  operation_type: string;
-  created_at: Date;
-  item_id: number | null;
-  report_id: string | null;
-  question_id: string | null;
-  verification: unknown;
-  summary: string | null;
-}
-
 interface RecordCursorRow extends Record<string, unknown> { cursor_time: string; cursor_id: string }
 const SYSTEM_FOLDER_IDS = ["claude", "llm"] as const;
 
@@ -215,16 +204,6 @@ export class CardMcpReadRepository {
     `);
   }
 
-  async readOperation(sql: RepositorySql, cardId: string, operationId: string): Promise<CardMcpOperationRow | null> {
-    return (await sql<CardMcpOperationRow[]>`
-      SELECT id,operation_type,created_at,NULLIF(payload_json->>'item_id','')::int AS item_id,
-        payload_json->>'report_id' AS report_id,payload_json->>'question_id' AS question_id,
-        payload_json->'verification' AS verification,payload_json->>'summary' AS summary
-      FROM folder_operations
-      WHERE target_kind='card' AND target_id=${cardId} AND id=${operationId}
-    `)[0] ?? null;
-  }
-
   private async readCurrent(sql: RepositorySql, cardId: string): Promise<CardMcpCurrent> {
     const row = (await sql<{
       id: string; number: number | null; folder_id: string; title: string; status: string; archived: boolean; version: number;
@@ -234,7 +213,7 @@ export class CardMcpReadRepository {
       comments_count: number; notes_count: number; reports_count: number; sessions_count: number; now_history_count: number;
       fp_card: string; fp_request: string; fp_brief: string; fp_attachments: string; fp_questions: string;
       fp_questions_history: string; fp_comments: string; fp_notes: string; fp_reports: string; fp_sessions: string;
-      fp_now_history: string; fp_operation: string;
+      fp_now_history: string;
     }[]>`
       SELECT c.id,c.number,c.folder_id,c.title,c.status,c.archived,c.version,
         c.assignee_kind,c.assignee_agent_id,c.assignee_session_id,c.assignee_user_id,c.now,c.items,c.blocked_kind,c.blocked_detail,
@@ -277,11 +256,7 @@ export class CardMcpReadRepository {
           ORDER BY s.session_id COLLATE "C")::text FROM sessions s WHERE s.card_id=c.id),'[]')) AS fp_sessions,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',o.id,'text',o.payload_json->'text',
           'turn',o.payload_json->'turn','ask',o.payload_json->'ask','at',o.created_at) ORDER BY o.id COLLATE "C")::text
-          FROM folder_operations o WHERE o.target_kind='card' AND o.target_id=c.id AND o.operation_type='update_card_now'),'[]')) AS fp_now_history,
-        md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',o.id,'operation_type',o.operation_type,'created_at',o.created_at,
-          'item_id',o.payload_json->'item_id','report_id',o.payload_json->'report_id','question_id',o.payload_json->'question_id',
-          'verification',o.payload_json->'verification','summary',o.payload_json->'summary') ORDER BY o.id COLLATE "C")::text
-          FROM folder_operations o WHERE o.target_kind='card' AND o.target_id=c.id),'[]')) AS fp_operation
+          FROM folder_operations o WHERE o.target_kind='card' AND o.target_id=c.id AND o.operation_type='update_card_now'),'[]')) AS fp_now_history
       FROM cards c WHERE c.id=${cardId}
     `)[0];
     if (!row) throw httpError(404, "Card not found");
@@ -302,7 +277,7 @@ export class CardMcpReadRepository {
         card: row.fp_card, request: row.fp_request, brief: row.fp_brief, attachments: row.fp_attachments,
         questions: row.fp_questions, questions_history: row.fp_questions_history, comments: row.fp_comments,
         notes: row.fp_notes, reports: row.fp_reports, sessions: row.fp_sessions,
-        now_history: row.fp_now_history, operation: row.fp_operation,
+        now_history: row.fp_now_history,
       },
     };
   }

@@ -13,7 +13,7 @@ import type { SqlClient } from "./control_plane/card_types.js";
 const CARD_STATUSES = ["todo", "queued", "blocked", "running", "review", "done", "cancelled"] as const;
 const TOKEN_FINGERPRINT_KINDS = [
   "card", "request", "brief", "attachments", "questions", "questions_history",
-  "comments", "notes", "reports", "sessions", "now_history", "operation",
+  "comments", "notes", "reports", "sessions", "now_history",
 ] as const;
 const fingerprintKinds = new Set<string>(TOKEN_FINGERPRINT_KINDS);
 const offsetCursorKinds = new Set<string>(["request", "brief", "attachments"]);
@@ -32,7 +32,6 @@ const getInputSchema = z.object({
   text_limit: z.number().int().min(1).max(4000).optional(),
   cursors: z.record(z.string(), z.string().min(1)).optional(),
   since: z.string().min(1).optional(),
-  operation_id: z.string().min(1).optional(),
 }).strict();
 
 export type CardMcpListInput = z.infer<typeof listInputSchema>;
@@ -246,10 +245,8 @@ export class CardMcpReadService {
     const include = parsed.include ?? [];
     const selected = new Set(include);
     if (selected.size !== include.length) invalid("include contains duplicate sections");
-    if (parsed.since !== undefined && (parsed.cursors !== undefined || parsed.operation_id !== undefined))
-      invalid("since cannot be combined with cursors or operation_id");
-    if (parsed.operation_id !== undefined && parsed.cursors !== undefined)
-      invalid("operation_id cannot be combined with cursors");
+    if (parsed.since !== undefined && parsed.cursors !== undefined)
+      invalid("since cannot be combined with cursors");
     for (const kind of Object.keys(parsed.cursors ?? {})) {
       if (kind !== "questions" && !selected.has(kind as CardMcpReadKind))
         invalid("A cursor was provided for a section that was not selected");
@@ -305,20 +302,6 @@ export class CardMcpReadService {
       }
       if (Object.keys(sectionResults).length > 0) result.sections = sectionResults;
 
-      if (parsed.operation_id !== undefined) {
-        const operation = await this.repository.readOperation(sql, cardId, parsed.operation_id);
-        if (!operation) throw httpError(404, "Card operation not found");
-        result.operation = serializeCardRow({
-          id: operation.id,
-          operation_type: operation.operation_type,
-          created_at: operation.created_at,
-          item_id: operation.item_id ?? null,
-          report_id: operation.report_id ?? null,
-          question_id: operation.question_id ?? null,
-          verification: operation.verification ?? null,
-          summary: operation.summary ?? null,
-        });
-      }
       return result;
     });
   }
