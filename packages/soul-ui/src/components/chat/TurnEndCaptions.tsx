@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   CollapsibleCaptionBody,
   CollapsibleCaptionHeader,
@@ -12,6 +12,7 @@ interface TurnUsageCaption {
   title: string;
   contextText?: string;
   completeText?: string;
+  expandedByDefault?: boolean;
 }
 
 interface TurnSummaryCaption {
@@ -30,12 +31,16 @@ export function TurnEndCaptions({
   summaryCaption?: TurnSummaryCaption;
   persistentInstructionCaption?: PersistentInstructionRecordedData;
 }) {
-  const [usageExpanded, setUsageExpanded] = useState(false);
+  const [usageExpanded, setUsageExpanded] = useState(usageCaption?.expandedByDefault ?? false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [instructionExpanded, setInstructionExpanded] = useState(false);
   const usageBodyId = useId();
   const summaryBodyId = useId();
   const instructionBodyId = useId();
+
+  useEffect(() => {
+    setUsageExpanded(usageCaption?.expandedByDefault ?? false);
+  }, [usageCaption?.expandedByDefault]);
 
   if (!usageCaption && !summaryCaption && !persistentInstructionCaption) return null;
   const instructionLines = persistentInstructionCaption

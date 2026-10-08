@@ -23,6 +23,7 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
     show_character: true,
     show_jev_candidates: true,
     animate_character: true,
+    turn_usage_mode: "collapsed" as const,
     show_turn_usage: true,
   });
   const build = (id: string, name: string, agentId: string | null, agentName: string | null, preset: string, current: string, effort: string | null = defaultEffort[preset] ?? null): PersistentSession => ({
@@ -107,7 +108,7 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
     if (method === "GET") return reply({ session: structuredClone(session) });
     if (method === "PUT") {
       const displaySettings = body.settings as Record<string, unknown> | undefined;
-      if (displaySettings && Object.keys(displaySettings).some((key) => ["show_character", "animate_character", "show_generation_separator", "show_jev_candidates", "show_turn_usage"].includes(key))) {
+      if (displaySettings && Object.keys(displaySettings).some((key) => ["show_character", "animate_character", "show_generation_separator", "show_jev_candidates", "turn_usage_mode", "show_turn_usage"].includes(key))) {
         if (scenario === "display-save-failure" && !displaySaveFailed) {
           displaySaveFailed = true;
           return fail(503, "NODE_UNAVAILABLE", "예시: 표시 설정을 저장하지 못했습니다.");
@@ -118,10 +119,18 @@ export function createPersistentSessionsFixture({ scenario = "normal", nodeId, f
       if (body.enabled === true) session.persistent = true;
       else if (!session.persistent) return fail(409, "NOT_PERSISTENT", "이미 영구 세션이 아닙니다. 목록을 다시 읽습니다.");
       if (typeof body.display_name === "string") session.display_name = body.display_name;
-      for (const key of ["show_character", "animate_character", "show_generation_separator", "show_jev_candidates", "show_turn_usage"] as const) {
+      for (const key of ["show_character", "animate_character", "show_generation_separator", "show_jev_candidates"] as const) {
         const value = body.settings?.[key];
         if (typeof value === "boolean") session.settings[key] = value;
       }
+      const requestedTurnUsageMode = body.settings?.turn_usage_mode;
+      const legacyTurnUsageVisible = body.settings?.show_turn_usage;
+      if (requestedTurnUsageMode === "collapsed" || requestedTurnUsageMode === "expanded" || requestedTurnUsageMode === "hidden") {
+        session.settings.turn_usage_mode = requestedTurnUsageMode;
+      } else if (typeof legacyTurnUsageVisible === "boolean") {
+        session.settings.turn_usage_mode = legacyTurnUsageVisible ? "collapsed" : "hidden";
+      }
+      session.settings.show_turn_usage = session.settings.turn_usage_mode !== "hidden";
       let change: "none" | "next_execution_start" = "none";
       const requested = body.settings?.default_model as { model_preset: string; reasoning_effort: string | null } | undefined;
       if (requested) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Button, type ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import { Button, type ModelPresetAvailability, type PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 
 import { HttpResponseError } from "../lib/http-response-error";
 import {
@@ -14,7 +14,7 @@ import { PersistentSessionAvailability } from "./PersistentSessionMonitoring";
 import { SettingFieldWidget, type SettingField } from "./config/SettingFieldWidget";
 import { SettingsAlert, SettingsGroupBox } from "./config/SettingsListDetail";
 
-export type PersistentSessionDetailsSection = "all" | "account" | "display" | "record";
+export type PersistentSessionDetailsSection = "all" | "instructions" | "account" | "display" | "record";
 
 export type PersistentSessionDetailsDraft = {
   displayName: string;
@@ -23,18 +23,18 @@ export type PersistentSessionDetailsDraft = {
   animateCharacter: boolean;
   showGenerationSeparator: boolean;
   showJevCandidates: boolean;
-  showTurnUsage: boolean;
+  turnUsageMode: PersistentTurnUsageMode;
 };
 
 export type PersistentSessionDetailsField = keyof PersistentSessionDetailsDraft;
-type DisplayField = Exclude<PersistentSessionDetailsField, "displayName" | "modelPreset">;
+type DisplayField = Exclude<PersistentSessionDetailsField, "displayName" | "modelPreset" | "turnUsageMode">;
+type ImmediateDisplayField = DisplayField | "turnUsageMode";
 
 const DISPLAY_SETTING: Record<DisplayField, keyof PersistentSession["settings"]> = {
   showCharacter: "show_character",
   animateCharacter: "animate_character",
   showGenerationSeparator: "show_generation_separator",
   showJevCandidates: "show_jev_candidates",
-  showTurnUsage: "show_turn_usage",
 };
 
 const PARTIAL_SAVE_NOTE = "일부 변경이 저장됐을 수 있습니다. 다시 읽거나 저장해 주세요.";
@@ -47,7 +47,7 @@ export function persistentSessionDetailsDraft(session: PersistentSession): Persi
     animateCharacter: session.settings.animate_character,
     showGenerationSeparator: session.settings.show_generation_separator,
     showJevCandidates: session.settings.show_jev_candidates,
-    showTurnUsage: session.settings.show_turn_usage,
+    turnUsageMode: session.settings.turn_usage_mode,
   };
 }
 
@@ -70,7 +70,7 @@ export function usePersistentSessionDetailsController({
     ? persistentSessionDetailsDraft(resource)
     : draftState.draft;
   const [pending, setPending] = useState(false);
-  const [savingDisplayField, setSavingDisplayField] = useState<DisplayField | null>(null);
+  const [savingDisplayField, setSavingDisplayField] = useState<ImmediateDisplayField | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorScope, setErrorScope] = useState<"account" | "display" | null>(null);
 
@@ -99,14 +99,14 @@ export function usePersistentSessionDetailsController({
       : `${text} ${PARTIAL_SAVE_NOTE}`;
   };
 
-  const saveDisplayField = useCallback(async (field: DisplayField, value: boolean) => {
+  const saveDisplayField = useCallback(async (field: ImmediateDisplayField, value: boolean | PersistentTurnUsageMode) => {
     if (!resource || !resource.node_id || pending) return;
     setPending(true);
     setSavingDisplayField(field);
     setError(null);
     setErrorScope(null);
     try {
-      const key = DISPLAY_SETTING[field];
+      const key = field === "turnUsageMode" ? "turn_usage_mode" : DISPLAY_SETTING[field];
       const { session } = await api.update(resource.session_id, { settings: { [key]: value } });
       setDraftState((current) => {
         const next = persistentSessionDetailsDraft(session);
@@ -129,8 +129,8 @@ export function usePersistentSessionDetailsController({
     value: PersistentSessionDetailsDraft[K],
     options: { saveImmediately?: boolean } = {},
   ) => {
-    if (options.saveImmediately && field in DISPLAY_SETTING) {
-      void saveDisplayField(field as DisplayField, value as boolean);
+    if (options.saveImmediately && (field in DISPLAY_SETTING || field === "turnUsageMode")) {
+      void saveDisplayField(field as ImmediateDisplayField, value as boolean | PersistentTurnUsageMode);
       return;
     }
     setDraftState((current) => {
@@ -165,6 +165,7 @@ export function usePersistentSessionDetailsController({
         settings[key] = draft[field];
       }
     }
+    if (draft.turnUsageMode !== resource.settings.turn_usage_mode) settings.turn_usage_mode = draft.turnUsageMode;
     setPending(true);
     setError(null);
     setErrorScope(null);
@@ -198,7 +199,6 @@ export function PersistentSessionDetails({
   modelPresetCatalog,
   weeklyAvailability = [],
   monitoring,
-  instructions,
   onFieldChange,
   onSave,
   onModelError,
@@ -206,7 +206,7 @@ export function PersistentSessionDetails({
   resource: PersistentSession;
   draft: PersistentSessionDetailsDraft;
   pending: boolean;
-  savingDisplayField?: DisplayField | null;
+  savingDisplayField?: ImmediateDisplayField | null;
   error: string | null;
   errorScope?: "account" | "display" | null;
   section?: PersistentSessionDetailsSection;
@@ -214,7 +214,6 @@ export function PersistentSessionDetails({
   modelPresetCatalog?: NodeModelPresetCatalog;
   weeklyAvailability?: readonly ModelPresetAvailability[];
   monitoring?: ReactNode;
-  instructions?: ReactNode;
   onFieldChange<K extends PersistentSessionDetailsField>(field: K, value: PersistentSessionDetailsDraft[K], options?: { saveImmediately?: boolean }): void;
   onSave(): void;
   onModelError?(message: string): void;
@@ -234,7 +233,7 @@ export function PersistentSessionDetails({
       && !(next && sameModel({ model_preset: next.target_model_preset, reasoning_effort: next.target_reasoning_effort }, saved));
   })();
 
-  if (showsRecord) return <div className="space-y-4">{monitoring}{instructions}</div>;
+  if (showsRecord) return <div className="space-y-4">{monitoring}</div>;
 
   const nameField = <SettingFieldWidget
     field={textField("display_name", "세션 이름", draft.displayName, nodeUnknown)}
@@ -268,7 +267,7 @@ export function PersistentSessionDetails({
         <DisplayToggle field="animateCharacter" label="캐릭터 움직임" value={draft.animateCharacter} resourceValue={resource.settings.animate_character} pending={pending} saving={pending && savingDisplayField === "animateCharacter"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
         <DisplayToggle field="showGenerationSeparator" label="세대 구분선 표시" value={draft.showGenerationSeparator} resourceValue={resource.settings.show_generation_separator} pending={pending} saving={pending && savingDisplayField === "showGenerationSeparator"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
         <DisplayToggle field="showJevCandidates" label="Jev 후보 표시" value={draft.showJevCandidates} resourceValue={resource.settings.show_jev_candidates} pending={pending} saving={pending && savingDisplayField === "showJevCandidates"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
-        <DisplayToggle field="showTurnUsage" label="턴 끝 사용량 표시" value={draft.showTurnUsage} resourceValue={resource.settings.show_turn_usage} pending={pending} saving={pending && savingDisplayField === "showTurnUsage"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
+        <TurnUsageModeField value={draft.turnUsageMode} resourceValue={resource.settings.turn_usage_mode} pending={pending} saving={pending && savingDisplayField === "turnUsageMode"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
       </> : null}
     </div>
     {showsAccount ? <PersistentSessionAvailability resource={resource} presets={weeklyAvailability} /> : null}
@@ -314,6 +313,40 @@ function DisplayToggle({
   />;
 }
 
+function TurnUsageModeField({ value, resourceValue, pending, saving, immediate, disabled, onChange }: {
+  value: PersistentTurnUsageMode;
+  resourceValue: PersistentTurnUsageMode;
+  pending: boolean;
+  saving: boolean;
+  immediate: boolean;
+  disabled: boolean;
+  onChange<K extends PersistentSessionDetailsField>(field: K, value: PersistentSessionDetailsDraft[K], options?: { saveImmediately?: boolean }): void;
+}) {
+  const selectedMode = immediate ? resourceValue : value;
+  const modes: Array<{ value: PersistentTurnUsageMode; label: string }> = [
+    { value: "collapsed", label: "접어서" },
+    { value: "expanded", label: "펼쳐서" },
+    { value: "hidden", label: "숨김" },
+  ];
+  return <SettingFieldWidget
+    field={textField("turn_usage_mode", "턴 끝 사용량", selectedMode, disabled)}
+    value={selectedMode}
+    onChange={() => undefined}
+    controlSlot={<div className="flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="턴 끝 사용량">
+      {modes.map((mode) => <Button
+        key={mode.value}
+        type="button"
+        size="sm"
+        variant={selectedMode === mode.value ? "default" : "outline"}
+        aria-pressed={selectedMode === mode.value}
+        disabled={disabled || pending}
+        onClick={() => onChange("turnUsageMode", mode.value, { saveImmediately: immediate })}
+      >{mode.label}</Button>)}
+    </div>}
+    statusSlot={saving ? <span role="status" className="text-xs text-muted-foreground">저장 중…</span> : undefined}
+  />;
+}
+
 function textField(key: string, label: string, value: string, readOnly: boolean, description = ""): SettingField {
   return { key, field_name: key, label, description, value, value_type: "str", sensitive: false, hot_reloadable: true, read_only: readOnly };
 }
@@ -345,5 +378,5 @@ function sameModel(a: ModelSelection, b: ModelSelection) {
 function errorMessage(value: unknown) { return value instanceof Error ? value.message : String(value); }
 
 function emptyDetailsDraft(): PersistentSessionDetailsDraft {
-  return { displayName: "", modelPreset: "", showCharacter: true, animateCharacter: true, showGenerationSeparator: true, showJevCandidates: true, showTurnUsage: true };
+  return { displayName: "", modelPreset: "", showCharacter: true, animateCharacter: true, showGenerationSeparator: true, showJevCandidates: true, turnUsageMode: "collapsed" };
 }

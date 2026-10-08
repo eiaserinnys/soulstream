@@ -50,6 +50,29 @@
 .config-dialog .persistent-settings-read-only-value { min-width:0; overflow-wrap:anywhere; white-space:normal; color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); }
 .config-dialog .config-detail .persistent-session-quota-rows [data-testid="config-field-row"]:last-child { border-bottom:0; }
 .config-dialog :is(.config-category-item,.config-back,.config-advanced > summary):focus-visible { outline:none; box-shadow:0 0 0 var(--spacing) var(--ring); border-radius:var(--radius-lg); }
+
+.config-dialog.persistent-session-settings-popup > [data-slot="dialog-panel-scroll"] { overflow:hidden; }
+.config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { flex:1 1 auto; min-height:0; min-width:0; }
+.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] { flex:1 1 auto; min-height:0; overflow:hidden; }
+.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] > .config-category-nav,
+.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] > .config-detail { min-height:0; }
+.config-dialog .config-category-nav[data-variant="pas"] { overflow:hidden; }
+.config-dialog .config-pas-category-list { min-width:0; }
+.config-dialog .config-category-nav[data-variant="pas"] .config-category-item { justify-content:flex-start; }
+.config-dialog .config-category-nav[data-variant="pas"] .config-category-chevron { display:none; }
+.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail { display:flex; flex-direction:column; overflow:hidden; }
+.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail-heading { flex:none; }
+.config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.config-dialog .config-pas-category-list { display:flex; flex-direction:column; gap:var(--v3-space-2); }
+.config-dialog .persistent-instructions-pas { font:var(--v3-type-body) var(--v3-font-family); }
+.config-dialog .persistent-instructions-description { color:var(--muted-foreground); margin:0; }
+.config-dialog .persistent-instructions-pas-list { list-style:none; margin:0; padding:0; }
+.config-dialog .persistent-instructions-pas-list > li + li { margin-top:var(--v3-space-6); }
+.config-dialog .persistent-instructions-pas-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:var(--v3-space-4); }
+.config-dialog .persistent-instructions-pas-text { margin:0; color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); white-space:pre-wrap; overflow-wrap:anywhere; }
+.config-dialog .persistent-instructions-pas-source { color:var(--muted-foreground); font:var(--v3-type-meta) var(--v3-font-family); }
+.config-dialog .persistent-instructions-pas-source:empty { display:none; }
+.config-dialog .persistent-instructions-pas [role="status"] { color:var(--muted-foreground); font:var(--v3-type-meta) var(--v3-font-family); }
 @media (max-width:40rem) {
  .config-dialog { height:calc(100dvh - var(--v3-space-8)); }
  .config-dialog .config-layout { display:block; }
@@ -60,4 +83,14 @@
  .config-dialog .config-layout[data-mobile-index="false"] .config-category-nav { display:none; }
  .config-dialog .config-back { display:flex; align-items:center; gap:var(--v3-space-2); color:var(--primary); font:var(--v3-type-body) var(--v3-font-family); min-height:var(--v3-action-size); margin-bottom:var(--v3-space-3); }
  .config-dialog .config-save-state, .config-dialog .config-discard > div { width:100%; }
+}
+
+@media (max-width:40rem) {
+ .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+ .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-category-nav { min-width:0; padding:var(--v3-space-3) var(--v3-space-6); border-right:0; border-bottom:1px solid var(--border); background:transparent; }
+ .config-dialog.persistent-session-settings-popup .config-pas-category-list { flex-direction:row; width:100%; overflow-x:auto; scrollbar-width:none; }
+ .config-dialog.persistent-session-settings-popup .config-pas-category-list::-webkit-scrollbar { display:none; }
+ .config-dialog.persistent-session-settings-popup .config-category-nav[data-variant="pas"] .config-category-item { width:auto; min-width:max-content; min-height:var(--v3-control-height); }
+ .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail { padding:var(--v3-space-4) var(--v3-space-6); }
+ .config-dialog .persistent-instructions-pas-row { grid-template-columns:minmax(0,1fr) auto; gap:var(--v3-space-3); }
 }

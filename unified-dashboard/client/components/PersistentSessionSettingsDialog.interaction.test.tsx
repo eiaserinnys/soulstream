@@ -52,9 +52,10 @@ it("saves one display field immediately and publishes only the returned settings
   await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
   await settle();
   expect(calls.some((call) => call.path === "/api/persistent-sessions/sample-pas/instructions" && call.method === "GET")).toBe(true);
+  click("지속 지시");
   click("표시와 모션");
   expect([...document.body.querySelectorAll<HTMLButtonElement>("[role=switch]")].map((control) => control.getAttribute("aria-label"))).toEqual([
-    "캐릭터 표시", "캐릭터 움직임", "세대 구분선 표시", "Jev 후보 표시", "턴 끝 사용량 표시",
+    "캐릭터 표시", "캐릭터 움직임", "세대 구분선 표시", "Jev 후보 표시",
   ]);
   const switchControl = switchFor("캐릭터 표시");
   expect(switchControl?.getAttribute("aria-checked")).toBe("true");
@@ -112,7 +113,6 @@ it.each([
   ["캐릭터 움직임", "animate_character", "animateCharacter"],
   ["세대 구분선 표시", "show_generation_separator", "showGenerationSeparator"],
   ["Jev 후보 표시", "show_jev_candidates", "showJevCandidates"],
-  ["턴 끝 사용량 표시", "show_turn_usage", "showTurnUsage"],
 ] as const)("preserves drafts and the immediately saved %s through account save", async (label, key, storeKey) => {
   let resource = makeSession();
   const calls: Array<{ path: string; method: string; body: unknown }> = [];
@@ -257,7 +257,7 @@ it("keeps the settings dialog open when Escape cancels instruction editing and c
 
   await act(async () => root.render(<DismissiblePersistentSessionSettingsDialog request={request} onClose={onClose} />));
   await settle();
-  click("기록");
+  click("지속 지시");
   click("수정");
 
   const editInput = document.querySelector<HTMLInputElement>('input[aria-label="지속 지시 수정"]')!;
@@ -272,6 +272,152 @@ it("keeps the settings dialog open when Escape cancels instruction editing and c
   await settle();
   expect(onClose).toHaveBeenCalledTimes(1);
   expect(document.querySelector('[data-testid="persistent-session-settings-dialog"]')).toBeNull();
+});
+
+it("opens in the instructions section and preserves its draft while sections change", async () => {
+  const resource = makeSession();
+  const instruction = {
+    id: "instruction-1",
+    text: "간결하게 답합니다.",
+    source_turns: ["T195"],
+    created_at: "2026-10-06T10:00:00.000Z",
+    updated_at: "2026-10-06T11:00:00.000Z",
+    origin: "user",
+  };
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [instruction] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await settle();
+
+  expect([...document.body.querySelectorAll<HTMLButtonElement>("[data-testid=config-category-nav] button")].map((button) => button.textContent?.trim())).toEqual([
+    "지속 지시", "계정과 모델", "표시와 모션", "기록",
+  ]);
+  expect(document.querySelector('[aria-label="지속 지시"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("이 세션에 계속 적용됩니다.");
+  expect(document.body.textContent).toContain("T195");
+  expect(document.body.textContent).not.toContain("2026.");
+  expect(document.querySelector('[aria-label="새 지속 지시"]')).toBeNull();
+
+  click("지시 추가");
+  const addInput = document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!;
+  await setInput(addInput, "섹션을 바꿔도 남는 초안");
+  click("계정과 모델");
+  click("지속 지시");
+  expect(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')?.value).toBe("섹션을 바꿔도 남는 초안");
+});
+
+it("cancels an instruction draft without a request and closes a failed submission with its text retained", async () => {
+  const resource = makeSession();
+  const calls: Array<{ method: string; path: string; body: unknown }> = [];
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+    calls.push({ method, path: url.pathname, body });
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && method === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions" && method === "GET") return Response.json({ instructions: [] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions" && method === "POST") return Response.json({ error: { message: "예시 저장 실패" } }, { status: 503 });
+    throw new Error(`Unexpected request: ${method} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await settle();
+  click("지시 추가");
+  await setInput(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!, "취소할 초안");
+  click("취소");
+  expect(document.querySelector('[aria-label="새 지속 지시"]')).toBeNull();
+  expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
+
+  click("지시 추가");
+  const addInput = document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!;
+  await setInput(addInput, "실패해도 남을 초안");
+  click("추가");
+  await settle();
+  expect(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')?.value).toBe("실패해도 남을 초안");
+  expect(document.body.textContent).toContain("추가 실패: 예시 저장 실패");
+  expect(calls.filter((call) => call.method === "POST").map((call) => call.body)).toEqual([{ text: "실패해도 남을 초안" }]);
+});
+
+it("closes the add form only after the instruction is acknowledged", async () => {
+  const resource = makeSession();
+  let release!: () => void;
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && method === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions" && method === "GET") return Response.json({ instructions: [] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions" && method === "POST") return await new Promise<Response>((resolve) => {
+      release = () => resolve(Response.json({ instruction: {
+        id: "instruction-created",
+        text: "저장 확인 뒤 닫힐 지시",
+        source_turns: [],
+        created_at: "2026-10-08T00:00:00.000Z",
+        updated_at: "2026-10-08T00:00:00.000Z",
+        origin: "user",
+      } }));
+    });
+    throw new Error(`Unexpected request: ${method} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await settle();
+  click("지시 추가");
+  await setInput(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!, "저장 확인 뒤 닫힐 지시");
+  click("추가");
+  await settle();
+  expect(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')?.value).toBe("저장 확인 뒤 닫힐 지시");
+
+  await act(async () => release());
+  await settle();
+  expect(document.querySelector('[aria-label="새 지속 지시"]')).toBeNull();
+  expect(document.body.textContent).toContain("저장 확인 뒤 닫힐 지시");
+});
+
+it("saves the usage display mode after acknowledgement and keeps the old selection on failure", async () => {
+  let resource = makeSession();
+  const calls: Array<{ method: string; body: unknown }> = [];
+  let release!: () => void;
+  const request: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "https://sample.invalid");
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+    if (url.pathname === "/api/persistent-sessions/sample-pas" && method === "GET") return Response.json({ session: resource });
+    if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [] });
+    if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (method === "PUT") {
+      calls.push({ method, body });
+      return await new Promise<Response>((resolve) => {
+        release = () => {
+          resource = { ...resource, settings: { ...resource.settings, turn_usage_mode: body.settings.turn_usage_mode, show_turn_usage: body.settings.turn_usage_mode !== "hidden" } };
+          resolve(Response.json({ session: resource, model_change: "none" }));
+        };
+      });
+    }
+    throw new Error(`Unexpected request: ${method} ${url.pathname}`);
+  };
+
+  await act(async () => root.render(<PersistentSessionSettingsDialog sessionId="sample-pas" nodeId="sample-node" request={request} onClose={vi.fn()} modelPresetCatalog={modelPresetCatalog} />));
+  await settle();
+  click("표시와 모션");
+  const row = [...document.body.querySelectorAll<HTMLElement>("[data-testid=config-field-row]")].find((item) => item.textContent?.includes("턴 끝 사용량"))!;
+  const buttons = [...row.querySelectorAll<HTMLButtonElement>("button")];
+  expect(buttons.map((button) => button.textContent?.trim())).toEqual(["접어서", "펼쳐서", "숨김"]);
+  expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
+  act(() => buttons[1]?.click());
+  expect(calls).toEqual([{ method: "PUT", body: { settings: { turn_usage_mode: "expanded" } } }]);
+  expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
+  await act(async () => release());
+  await settle();
+  expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
+  expect(useDashboardStore.getState().persistentSessionDisplaySettings?.turnUsageMode).toBe("expanded");
 });
 
 async function settle() {
@@ -351,6 +497,7 @@ function makeSession(): PersistentSession {
     show_character: true,
     animate_character: true,
     show_jev_candidates: true,
+    turn_usage_mode: "collapsed",
     show_turn_usage: true,
   },
   runtime: {

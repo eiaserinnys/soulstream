@@ -6,7 +6,7 @@
  * read_only disabled, hot_reloadable 인디케이터를 제공한다.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { cn, Input } from "@seosoyoung/soul-ui";
 import { Eye, EyeOff, RotateCcw } from "lucide-react";
 
@@ -158,6 +158,8 @@ export function SettingFieldWidget({
   className,
   interactionBlocked = false,
   saving,
+  controlSlot,
+  statusSlot,
 }: {
   field: SettingField;
   value: string;
@@ -166,6 +168,8 @@ export function SettingFieldWidget({
   interactionBlocked?: boolean;
   /** PAS callers pass false while idle to keep the status slot and row geometry stable. */
   saving?: boolean;
+  controlSlot?: ReactNode;
+  statusSlot?: ReactNode;
 }) {
   return (
     <div
@@ -193,10 +197,11 @@ export function SettingFieldWidget({
           {field.description}
         </p>
       </div>
-      {saving === undefined ? <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} /> : <div className="relative min-w-0">
+      {controlSlot ?? (saving === undefined ? <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} /> : <div className="relative min-w-0">
         <FieldInput field={field} value={value} onChange={onChange} interactionBlocked={interactionBlocked} />
         {saving ? <span role="status" className="pointer-events-none absolute inset-y-0 right-0 flex items-center text-xs text-muted-foreground">저장 중…</span> : null}
-      </div>}
+      </div>)}
+      {statusSlot ? <div className="col-start-1 sm:col-start-2">{statusSlot}</div> : null}
     </div>
   );
 }

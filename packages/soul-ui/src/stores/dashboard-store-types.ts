@@ -25,6 +25,7 @@ import type { WallpaperMode, WallpaperSettings } from "../lib/wallpaper-settings
 import type { LiquidGlassSettings } from "../lib/glass-settings";
 import type { ChatFontSize } from "../lib/chat-typography";
 import type { ChatFocusTarget } from "../shared/search-focus";
+import type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";
 
 export interface NewSessionDefaults {
   folderId?: string | null;
@@ -91,7 +92,7 @@ export interface DashboardState {
     showJevCandidates: boolean;
     showCharacter: boolean;
     animateCharacter: boolean;
-    showTurnUsage: boolean;
+    turnUsageMode: PersistentTurnUsageMode;
   } | null;
   /** 뷰 모드 — URL 해시에서 파생. */
   viewMode: DashboardViewMode;
@@ -267,7 +268,7 @@ export interface DashboardActions {
     show_jev_candidates: boolean;
     show_character: boolean;
     animate_character: boolean;
-    show_turn_usage: boolean;
+    turn_usage_mode: PersistentTurnUsageMode;
   } | null) => void;
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;

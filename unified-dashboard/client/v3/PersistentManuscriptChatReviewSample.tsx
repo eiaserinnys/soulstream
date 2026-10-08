@@ -5,6 +5,7 @@ import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTy
 import { getSessionResetState } from "@seosoyoung/soul-ui/stores/slices/_session-reset";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { SoulSSEEvent } from "@seosoyoung/soul-ui/shared/types";
+import type { PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 
 const REVIEW_SESSION = "components-review-manuscript";
 
@@ -76,7 +77,7 @@ const messages: ChatMessage[] = [
  * Maps keep other sessions' changes; preferences are never snapshotted. */
 function ManuscriptColumn() {
   const [ready, setReady] = useState(false);
-  const [showTurnUsage, setShowTurnUsage] = useState(true);
+  const [turnUsageMode, setTurnUsageMode] = useState<PersistentTurnUsageMode>("collapsed");
   useLayoutEffect(() => {
     const store = useDashboardStore.getState();
     const saved = Object.fromEntries(
@@ -95,7 +96,7 @@ function ManuscriptColumn() {
       show_jev_candidates: true,
       show_character: true,
       animate_character: true,
-      show_turn_usage: true,
+      turn_usage_mode: "collapsed",
     });
     const events = [
       { type: "assistant_message", content: "첫 줄부터 흐리지 않고 읽을 수 있습니다.\n\n대화 글자는 운영의 설정을 따릅니다." },
@@ -188,19 +189,18 @@ function ManuscriptColumn() {
       <button onClick={() => showPending(null)}>원고형</button>
       <button onClick={() => showPending("sending")}>전송 중</button>
       <button onClick={() => showPending("failed")}>전송 실패</button>
-      <button onClick={() => {
-        const show = !showTurnUsage;
-        setShowTurnUsage(show);
+      {(["collapsed", "expanded", "hidden"] as const).map((mode) => <button key={mode} aria-pressed={turnUsageMode === mode} onClick={() => {
+        setTurnUsageMode(mode);
         useDashboardStore.getState().setPersistentSessionDisplaySettings(REVIEW_SESSION, {
           show_generation_separator: true,
           show_jev_candidates: true,
           show_character: true,
           animate_character: true,
-          show_turn_usage: show,
+          turn_usage_mode: mode,
         });
       }}>
-        {showTurnUsage ? "사용량 줄 끄기" : "사용량 줄 켜기"}
-      </button>
+        {mode === "collapsed" ? "접어서" : mode === "expanded" ? "펼쳐서" : "숨김"}
+      </button>)}
     </div>
     <div className="h-screen min-h-0" data-testid="manuscript-review-column">
       {ready && <ChatView presentation="manuscript" historyEnabled={false} fileUploadUrl="/api/attachments/sessions" />}

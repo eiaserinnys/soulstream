@@ -181,8 +181,9 @@ function DialogDescription({
 function DialogPanel({
   className,
   scrollFade = true,
+  scrollable = true,
   ...props
-}: React.ComponentProps<"div"> & { scrollFade?: boolean }) {
+}: React.ComponentProps<"div"> & { scrollFade?: boolean; scrollable?: boolean }) {
   const syncScrollFade = (element: HTMLDivElement) => {
     if (!scrollFade) return;
     const fadeSize = Number.parseFloat(
@@ -205,7 +206,8 @@ function DialogPanel({
   return (
     <div
       className={cn(
-        "min-h-0 flex-auto overflow-y-auto overscroll-contain rounded-[inherit] outline-none",
+        "min-h-0 flex-auto overscroll-contain rounded-[inherit] outline-none",
+        scrollable ? "overflow-y-auto" : "overflow-hidden",
         scrollFade &&
           "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] [--fade-size:1.5rem] [--scroll-area-overflow-y-start:0px] [--scroll-area-overflow-y-end:0px]",
       )}

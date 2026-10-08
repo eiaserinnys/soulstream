@@ -11,7 +11,7 @@ describe("persistent sessions review fixture", () => {
   const save = (handler: ReturnType<typeof make>, id: string, preset: string, effort: string | null) =>
     call(handler, `/api/persistent-sessions/${id}`, "PUT", { settings: { default_model: { model_preset: preset, reasoning_effort: effort } } });
 
-  it("returns all seven settings keys in the list and its create defaults", async () => {
+  it("returns the canonical usage mode and its legacy projection in the list and create defaults", async () => {
     const { json } = await call(make(), "/api/persistent-sessions", "GET");
     expect(Object.keys(json.sessions[0].settings).sort()).toEqual([
       "animate_character",
@@ -21,12 +21,21 @@ describe("persistent sessions review fixture", () => {
       "show_generation_separator",
       "show_jev_candidates",
       "show_turn_usage",
+      "turn_usage_mode",
     ]);
     expect(json.sessions[0].settings.animate_character).toBe(true);
     expect(json.sessions[0].settings.show_turn_usage).toBe(true);
+    expect(json.sessions[0].settings.turn_usage_mode).toBe("collapsed");
     expect(json.create_defaults.settings.animate_character).toBe(true);
     expect(json.create_defaults.settings.show_turn_usage).toBe(true);
+    expect(json.create_defaults.settings.turn_usage_mode).toBe("collapsed");
     expect(json.create_defaults.settings.show_jev_candidates).toBe(true);
+  });
+
+  it("saves only the canonical usage mode and returns the derived legacy visibility", async () => {
+    const response = await call(make(), "/api/persistent-sessions/sample-pas-1", "PUT", { settings: { turn_usage_mode: "hidden" } });
+    expect(response.json.session.settings.turn_usage_mode).toBe("hidden");
+    expect(response.json.session.settings.show_turn_usage).toBe(false);
   });
 
   it("keeps the recorded effort for the same preset and uses the preset default for a new one", async () => {

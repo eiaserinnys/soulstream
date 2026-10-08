@@ -58,6 +58,7 @@ export interface ChatMessage {
     title: string;
     contextText?: string;
     completeText?: string;
+    expandedByDefault?: boolean;
   };
   turnSummaryCaption?: {
     treeNodeId: string;

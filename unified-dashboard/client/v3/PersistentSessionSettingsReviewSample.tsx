@@ -20,6 +20,7 @@ const resource: PersistentSession = {
     show_character: true,
     animate_character: true,
     show_jev_candidates: true,
+    turn_usage_mode: "collapsed",
     show_turn_usage: true,
   },
   runtime: {

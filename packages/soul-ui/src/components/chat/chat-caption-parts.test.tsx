@@ -150,6 +150,42 @@ describe("chat caption parts", () => {
     expect(bodies[1]?.className).toContain("mt-2");
   });
 
+  it("updates the usage disclosure default when its mode changes and keeps summary state independent", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const renderCaptions = (expandedByDefault: boolean, title = "사용량") => root?.render(
+      <TurnEndCaptions
+        usageCaption={{ title, expandedByDefault, completeText: "턴 완료" }}
+        summaryCaption={{ treeNodeId: "summary", content: "요약" }}
+      />,
+    );
+    act(() => renderCaptions(false));
+    const headers = container.querySelectorAll("button");
+    act(() => {
+      headers[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      headers[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(headers[0]?.getAttribute("aria-expanded")).toBe("true");
+    expect(headers[1]?.getAttribute("aria-expanded")).toBe("true");
+
+    act(() => renderCaptions(true));
+    const updatedHeaders = container.querySelectorAll("button");
+    expect(updatedHeaders[0]?.getAttribute("aria-expanded")).toBe("true");
+    expect(updatedHeaders[1]?.getAttribute("aria-expanded")).toBe("true");
+    act(() => updatedHeaders[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(updatedHeaders[0]?.getAttribute("aria-expanded")).toBe("false");
+    act(() => renderCaptions(true, "사용량 변경"));
+    expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+
+    act(() => renderCaptions(false));
+    expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+    act(() => renderCaptions(true));
+    expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelectorAll("button")[1]?.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("keeps the summary-only body at the default caption spacing", () => {
     container = document.createElement("div");
     document.body.appendChild(container);

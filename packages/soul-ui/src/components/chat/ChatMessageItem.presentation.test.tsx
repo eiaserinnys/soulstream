@@ -150,7 +150,7 @@ describe("ChatMessageItem presentation", () => {
       ...(context ? [makeMessage("system", "context", { treeNodeType: "context_usage", contextUsageData: context })] : []),
       makeMessage("system", "complete", { treeNodeType: "complete", ...completeData }),
     ];
-    const [msg] = projectPersistentTurnUsage(messages, true);
+    const [msg] = projectPersistentTurnUsage(messages, "collapsed");
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);

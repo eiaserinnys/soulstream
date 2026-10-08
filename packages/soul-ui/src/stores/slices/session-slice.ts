@@ -103,7 +103,7 @@ export function createSessionSlice(
       showJevCandidates: settings.show_jev_candidates,
       showCharacter: settings.show_character,
       animateCharacter: settings.animate_character,
-      showTurnUsage: settings.show_turn_usage,
+      turnUsageMode: settings.turn_usage_mode,
     } : null });
   },
 

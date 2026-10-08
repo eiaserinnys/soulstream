@@ -17,3 +17,4 @@ export * from "./board-workspace";
 export * from "./folder-status";
 export * from "./page";
 export * from "./pending-mutation-registry";
+export type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";

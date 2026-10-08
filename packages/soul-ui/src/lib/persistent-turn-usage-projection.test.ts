@@ -30,7 +30,7 @@ describe("projectPersistentTurnUsage", () => {
       sessionCostUsd: 1.4,
     });
 
-    const result = projectPersistentTurnUsage([assistant, context, complete], true);
+    const result = projectPersistentTurnUsage([assistant, context, complete], "collapsed");
 
     expect(result.map((message) => message.id)).toEqual(["assistant-1", "complete-3"]);
     expect(result[0]).toBe(assistant);
@@ -38,6 +38,7 @@ describe("projectPersistentTurnUsage", () => {
       title: "컨텍스트 약 63.0% · 정가 $1.40",
       contextText: "컨텍스트 약 6,300 / 10,000 (63.0%)",
       completeText: "턴 완료 · 입력 1,200 · 출력 340 · 정가 $1.40 (세션 $1.40)",
+      expandedByDefault: false,
     });
   });
 
@@ -47,22 +48,24 @@ describe("projectPersistentTurnUsage", () => {
       usage: { input_tokens: 8, output_tokens: 2 },
     });
 
-    const result = projectPersistentTurnUsage([priceOnly, tokenOnly], true);
+    const result = projectPersistentTurnUsage([priceOnly, tokenOnly], "collapsed");
 
     expect(result[0]?.turnUsageCaption).toEqual({
       title: "정가 $2.40",
       completeText: "턴 완료 · 정가 $2.40",
+      expandedByDefault: false,
     });
     expect(result[1]?.turnUsageCaption).toEqual({
       title: "입력 8 · 출력 2",
       completeText: "턴 완료 · 입력 8 · 출력 2",
+      expandedByDefault: false,
     });
   });
 
   it("omits a complete row when no usage, price, or context value is visible", () => {
     const emptyComplete = makeMessage("complete-1", "complete");
 
-    expect(projectPersistentTurnUsage([emptyComplete], true)).toEqual([]);
+    expect(projectPersistentTurnUsage([emptyComplete], "collapsed")).toEqual([]);
   });
 
   it("preserves a summary-bearing complete when usage is disabled or unavailable", () => {
@@ -70,8 +73,8 @@ describe("projectPersistentTurnUsage", () => {
       turnSummaryCaption: { treeNodeId: "summary-1", content: "응답 내용을 요약했습니다." },
     });
 
-    expect(projectPersistentTurnUsage([complete], false)).toEqual([complete]);
-    expect(projectPersistentTurnUsage([complete], true)).toEqual([complete]);
+    expect(projectPersistentTurnUsage([complete], "hidden")).toEqual([complete]);
+    expect(projectPersistentTurnUsage([complete], "collapsed")).toEqual([complete]);
   });
 
   it("joins an anchored record to the existing complete caption without changing usage or summary", () => {
@@ -91,13 +94,14 @@ describe("projectPersistentTurnUsage", () => {
       },
     });
 
-    const result = projectPersistentTurnUsage([user, assistant, complete, record], true);
+    const result = projectPersistentTurnUsage([user, assistant, complete, record], "collapsed");
 
     expect(result.map((message) => message.id)).toEqual(["user-1", "assistant-2", "complete-3"]);
     expect(result[2]?.turnUsageCaption).toEqual({
       title: "정가 $1.40",
       contextText: undefined,
       completeText: "턴 완료 · 입력 1,200 · 출력 340 · 정가 $1.40 (세션 $1.40)",
+      expandedByDefault: false,
     });
     expect(result[2]?.turnSummaryCaption).toEqual({ treeNodeId: "summary-4", content: "기존 요약" });
     expect(result[2]?.persistentInstructionRecorded?.instructions[0]?.text).toBe("간결하게 답합니다.");
@@ -110,7 +114,7 @@ describe("projectPersistentTurnUsage", () => {
     const result = projectPersistentTurnUsage([
       complete,
       makeMessage("record-2", "persistent_instruction_recorded", { persistentInstructionRecorded: record }),
-    ], false);
+    ], "hidden");
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       id: "complete-1",
@@ -133,13 +137,14 @@ describe("projectPersistentTurnUsage", () => {
       }),
       error,
       contextOnly,
-    ], true);
+    ], "collapsed");
 
     expect(result.map((message) => message.id)).toEqual(["error-2"]);
     expect(result[0]?.content).toBe("실패");
     expect(result[0]?.turnUsageCaption).toEqual({
       title: "컨텍스트 50.0%",
       contextText: "컨텍스트 500 / 1,000 (50.0%)",
+      expandedByDefault: false,
     });
   });
 
@@ -153,7 +158,7 @@ describe("projectPersistentTurnUsage", () => {
         contextUsageData: { usedTokens: 900, maxTokens: 1_000, percent: 90 },
       }),
       makeMessage("complete-4", "complete", { turnCostUsd: 2 }),
-    ], true);
+    ], "collapsed");
 
     expect(result.map((message) => message.turnUsageCaption?.title)).toEqual([
       "컨텍스트 10.0% · 정가 $1.00",
@@ -172,10 +177,32 @@ describe("projectPersistentTurnUsage", () => {
       }),
       makeMessage("complete-3", "complete", { turnCostUsd: 1 }),
       error,
-    ], false);
+    ], "hidden");
 
     expect(result).toEqual([user, error]);
     expect(result[1]?.isError).toBe(true);
     expect(result[1]?.turnUsageCaption).toBeUndefined();
+  });
+
+  it("defaults usage disclosures open in expanded mode and preserves other captions when hidden", () => {
+    const complete = makeMessage("complete-1", "complete", {
+      turnCostUsd: 1.2,
+      turnSummaryCaption: { treeNodeId: "summary-1", content: "요약" },
+      persistentInstructionRecorded: { instructions: [], capReached: false },
+    });
+    const expanded = projectPersistentTurnUsage([complete], "expanded");
+    expect(expanded[0]?.turnUsageCaption?.expandedByDefault).toBe(true);
+    expect(expanded[0]?.turnSummaryCaption).toEqual(complete.turnSummaryCaption);
+    expect(expanded[0]?.persistentInstructionRecorded).toEqual(complete.persistentInstructionRecorded);
+
+    const hidden = projectPersistentTurnUsage([
+      complete,
+      makeMessage("error-2", "error", { content: "실패", isError: true }),
+    ], "hidden");
+    expect(hidden.map((message) => message.id)).toEqual(["complete-1", "error-2"]);
+    expect(hidden[0]?.turnUsageCaption).toBeUndefined();
+    expect(hidden[0]?.turnSummaryCaption).toEqual(complete.turnSummaryCaption);
+    expect(hidden[0]?.persistentInstructionRecorded).toEqual(complete.persistentInstructionRecorded);
+    expect(hidden[1]).toMatchObject({ content: "실패", isError: true });
   });
 });

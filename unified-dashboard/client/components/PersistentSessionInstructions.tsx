@@ -29,7 +29,7 @@ export type PersistentSessionInstructionsActions = {
   saveEdit(instructionId: string): void;
   remove(instructionId: string): void;
   changeAddText(value: string): void;
-  add(event: FormEvent<HTMLFormElement>): void;
+  add(event: FormEvent<HTMLFormElement>): Promise<boolean>;
   editKeyDown(event: KeyboardEvent<HTMLInputElement>, instructionId: string): void;
 };
 
@@ -120,19 +120,21 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
   const add = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = addText.trim();
-    if (loading || pending || !text) return;
+    if (loading || pending || !text) return false;
     setPending(true);
     clearFeedback();
     try {
       const { instruction } = await api.addInstruction(sessionId, text);
       setInstructions((current) => [instruction, ...current]);
       setAddText("");
+      return true;
     } catch (caught) {
       if (caught instanceof PersistentSessionError && caught.code === "cap_reached") {
         setCapReached(true);
       } else {
         setError(`추가 실패: ${errorMessage(caught)}`);
       }
+      return false;
     } finally {
       setPending(false);
     }
@@ -158,7 +160,7 @@ export function usePersistentSessionInstructions({ sessionId, api }: {
     saveEdit: (instructionId) => { void saveEdit(instructionId); },
     remove: (instructionId) => { void remove(instructionId); },
     changeAddText: (value) => { setAddText(value); clearFeedback(); },
-    add: (event) => { void add(event); },
+    add: (event) => add(event),
     editKeyDown: (event, instructionId) => {
       if (event.nativeEvent.isComposing) return;
       if (event.key === "Enter") {
@@ -184,10 +186,12 @@ export function PersistentSessionInstructions({ sessionId, request = fetch }: {
   return <PersistentSessionInstructionsView state={state} actions={actions} />;
 }
 
-export function PersistentSessionInstructionsView({ state, actions }: {
+export function PersistentSessionInstructionsView({ state, actions, variant = "default" }: {
   state: PersistentSessionInstructionsViewState;
   actions: PersistentSessionInstructionsActions;
+  variant?: "default" | "pas";
 }) {
+  if (variant === "pas") return <PersistentSessionInstructionsPasView state={state} actions={actions} />;
   const mutationDisabled = state.loading || state.pending;
   return <SettingsGroupBox title="지속 지시">
     <div data-testid="persistent-session-instructions" className="space-y-3">
@@ -233,7 +237,7 @@ export function PersistentSessionInstructionsView({ state, actions }: {
         })}
       </ol> : null}
       {state.error ? <SettingsAlert>{state.error}</SettingsAlert> : null}
-      <form className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2" onSubmit={actions.add}>
+      <form className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2" onSubmit={(event) => { void actions.add(event); }}>
         <Input
           aria-label="새 지속 지시"
           value={state.addText}
@@ -246,6 +250,85 @@ export function PersistentSessionInstructionsView({ state, actions }: {
       {state.capReached ? <SettingsAlert>지속 지시 상한에 도달했습니다.</SettingsAlert> : null}
     </div>
   </SettingsGroupBox>;
+}
+
+function PersistentSessionInstructionsPasView({ state, actions }: {
+  state: PersistentSessionInstructionsViewState;
+  actions: PersistentSessionInstructionsActions;
+}) {
+  const [adding, setAdding] = useState(false);
+  const mutationDisabled = state.loading || state.pending;
+  const submitAdd = async (event: FormEvent<HTMLFormElement>) => {
+    const saved = await actions.add(event);
+    if (saved) setAdding(false);
+  };
+  const cancelAdd = () => {
+    actions.changeAddText("");
+    setAdding(false);
+  };
+
+  return <div data-testid="persistent-session-instructions" className="persistent-instructions-pas space-y-6">
+    <p className="persistent-instructions-description">이 세션에 계속 적용됩니다.</p>
+    {state.loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}
+    {!state.loading && state.loadError ? <div className="space-y-2">
+      <SettingsAlert>조회 실패: {state.loadError}</SettingsAlert>
+      <Button type="button" size="sm" variant="outline" onClick={actions.retry}>다시 시도</Button>
+    </div> : null}
+    {!state.loading && !state.loadError && state.instructions.length === 0 ? <p className="text-sm text-muted-foreground">지속 지시 없음</p> : null}
+    {state.instructions.length > 0 ? <ol className="persistent-instructions-pas-list" aria-label="지속 지시 목록">
+      {state.instructions.map((instruction) => {
+        const editing = state.editingId === instruction.id;
+        const sourceTurns = instruction.source_turns ?? [];
+        return <li key={instruction.id} data-testid="persistent-instruction-row">
+          <div className="persistent-instructions-pas-row">
+            <div className="min-w-0 space-y-2">
+              {editing ? <Input
+                aria-label="지속 지시 수정"
+                autoFocus
+                value={state.editText}
+                disabled={mutationDisabled}
+                nativeInput
+                onChange={(event) => actions.changeEditText(event.target.value)}
+                onKeyDown={(event) => actions.editKeyDown(event, instruction.id)}
+              /> : <p className="persistent-instructions-pas-text">{instruction.text}</p>}
+              <div className="persistent-instructions-pas-source">
+                {sourceTurns.length > 0 ? <span>{sourceTurns.join(", ")}</span> : instruction.origin === "user" ? <span>직접 추가</span> : null}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {editing ? <>
+                <Button type="button" size="sm" disabled={mutationDisabled} onClick={() => actions.saveEdit(instruction.id)}>저장</Button>
+                <Button type="button" size="sm" variant="outline" disabled={mutationDisabled} onClick={actions.cancelEditing}>취소</Button>
+              </> : <>
+                <Button type="button" size="sm" variant="outline" disabled={mutationDisabled || adding} onClick={() => actions.startEditing(instruction)}>수정</Button>
+                <Button type="button" size="sm" variant="outline" disabled={mutationDisabled || adding} onClick={() => actions.remove(instruction.id)}>삭제</Button>
+              </>}
+            </div>
+          </div>
+        </li>;
+      })}
+    </ol> : null}
+    {state.error ? <SettingsAlert>{state.error}</SettingsAlert> : null}
+    {state.capReached ? <SettingsAlert>지속 지시 상한에 도달했습니다.</SettingsAlert> : null}
+    {!adding ? <Button type="button" size="sm" variant="outline" disabled={mutationDisabled || state.editingId !== null} onClick={() => { actions.changeAddText(state.addText); setAdding(true); }}>지시 추가</Button> : <form className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2" onSubmit={(event) => { void submitAdd(event); }}>
+      <Input
+        aria-label="새 지속 지시"
+        autoFocus
+        value={state.addText}
+        disabled={mutationDisabled}
+        nativeInput
+        onChange={(event) => actions.changeAddText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.key !== "Escape") return;
+          event.preventDefault();
+          event.stopPropagation();
+          cancelAdd();
+        }}
+      />
+      <Button type="submit" size="sm" disabled={mutationDisabled || !state.addText.trim()}>추가</Button>
+      <Button type="button" size="sm" variant="outline" disabled={mutationDisabled} onClick={cancelAdd}>취소</Button>
+    </form>}
+  </div>;
 }
 
 function errorMessage(value: unknown) {
