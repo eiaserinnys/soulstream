@@ -3,6 +3,7 @@
  */
 
 import "./globals.css";
+import "./v3/v3-visual-system.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

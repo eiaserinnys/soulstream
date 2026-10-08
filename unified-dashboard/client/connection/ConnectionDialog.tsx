@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import "../v3/v3-visual-system.css";
+import "../v3/v3-visual-tokens.css";
 import { WifiOff, LoaderCircle, RefreshCw } from "lucide-react";
 import {
   Dialog,
