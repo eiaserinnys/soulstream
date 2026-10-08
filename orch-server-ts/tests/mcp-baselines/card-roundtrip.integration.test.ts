@@ -88,6 +88,8 @@ describe("card orchestrator MCP roundtrip", () => {
 
 // Paths are relative to both parsed content JSON and structuredContent; seed IDs are never masked.
 const randomIdPaths: Record<string, readonly string[]> = {
+  // changeToken fingerprints include seeded record timestamps and are intentionally opaque.
+  get_card: ["changeToken"],
   // card_mutation_core.ts:74 audit UUID; FolderService:76,118 per-call idempotency UUID.
   // card_control_plane_service.ts:45 card UUID, repeated by serializeCardMutation in operation.targetId.
   create_card: ["card.id", "operation.targetId", "operation.id", "operation.idempotencyKey"],

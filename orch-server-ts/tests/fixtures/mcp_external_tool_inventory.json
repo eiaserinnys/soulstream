@@ -1022,7 +1022,7 @@
     "name": "get_backlinks"
   },
   {
-    "description": "카드의 요청, 확인 항목, 상황판, 커멘트, 보고, 질문과 세션을 읽습니다. 노트는 최근 20건이며 앞선 노트는 list_card_notes로 읽습니다.",
+    "description": "기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1033,6 +1033,47 @@
           "type": "string"
         },
         "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "include": {
+          "items": {
+            "enum": [
+              "request",
+              "brief",
+              "attachments",
+              "comments",
+              "notes",
+              "reports",
+              "sessions",
+              "now_history",
+              "questions_history"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "text_limit": {
+          "maximum": 4000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cursors": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "since": {
           "minLength": 1,
           "type": "string"
         }
@@ -1393,7 +1434,7 @@
     "name": "get_session_turn_summaries"
   },
   {
-    "description": "폴더와 상태로 카드를 조회하고 folder_id가 없으면 모든 폴더를 조회한다.",
+    "description": "폴더와 상태별 카드 요약을 기본 20건 반환합니다. nextCursor가 있으면 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1406,6 +1447,18 @@
         "folder_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "limit": {
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cursor": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "all": {
+          "type": "boolean"
         },
         "status": {
           "enum": [

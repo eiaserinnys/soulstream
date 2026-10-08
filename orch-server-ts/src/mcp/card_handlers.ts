@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { errorResultFromError, jsonResult, readOrchErrorEnvelopeText, type CallToolResult, type cardTools } from "@soulstream/mcp-contract";
-import { listCardRouteBody, readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "../cards/card_route_body.js";
+import { readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "../cards/card_route_body.js";
+import type { CardMcpGetInput, CardMcpListInput } from "../cards/card_mcp_read.js";
+import { filterFolders, normalizeAccess } from "../folders/folder_route_access.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { CardOperation } from "../cards/card_operations.js";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
@@ -39,13 +41,16 @@ export const cardHandlers = {
     matchingHeader(a, c);
     return compactExecution(await runCard(o.cards, String(a.card_id), agent(a, c, true), c.signal));
   }),
-  list_cards: (o, a) => run(() => request(() => listCardRouteBody(o.cards,
-    { folderId: a.folder_id, status: a.status }, o.cards.resolveAccess))),
-  get_card: (o, a) => run(async () => {
-    const detail=await read(o.cards,String(a.card_id)) as Record<string,unknown>;
-    const notes=Array.isArray(detail.notes)?detail.notes.slice(-20):[];
-    return {...detail,notes};
-  }),
+  list_cards: (o, a) => run(() => request(async () => {
+    const service = await o.cards.cardServiceProvider!();
+    const allowedFolderIds = await mcpAllowedFolderIds(o.cards);
+    return service.mcpRead.listCards(listReadInput(a), allowedFolderIds);
+  })),
+  get_card: (o, a) => run(() => request(async () => {
+    const service = await o.cards.cardServiceProvider!();
+    const allowedFolderIds = await mcpAllowedFolderIds(o.cards);
+    return service.mcpRead.getCard(String(a.card_id), getReadInput(a), allowedFolderIds);
+  })),
   update_card_brief: (o, a, c) => append(o.cards, "update_card", a, c, { brief: a.brief }, true),
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
   add_card_comment: (o, a, c) => run(async () => {
@@ -118,6 +123,30 @@ function agent(args: Args, context: McpCallContext, headerFirst = false) {
   return { actorKind: "agent" as const, actorSessionId };
 }
 type MutationProjector = (result: Args) => Args;
+function listReadInput(args: Args): CardMcpListInput {
+  const input: CardMcpListInput = {};
+  if (typeof args.folder_id === "string") input.folder_id = args.folder_id;
+  if (typeof args.status === "string") input.status = args.status as NonNullable<CardMcpListInput["status"]>;
+  if (typeof args.limit === "number") input.limit = args.limit;
+  if (typeof args.cursor === "string") input.cursor = args.cursor;
+  if (typeof args.all === "boolean") input.all = args.all;
+  return input;
+}
+function getReadInput(args: Args): CardMcpGetInput {
+  const input: CardMcpGetInput = {};
+  if (Array.isArray(args.include)) input.include = args.include as NonNullable<CardMcpGetInput["include"]>;
+  if (typeof args.limit === "number") input.limit = args.limit;
+  if (typeof args.text_limit === "number") input.text_limit = args.text_limit;
+  if (args.cursors !== null && typeof args.cursors === "object" && !Array.isArray(args.cursors))
+    input.cursors = args.cursors as NonNullable<CardMcpGetInput["cursors"]>;
+  if (typeof args.since === "string") input.since = args.since;
+  return input;
+}
+async function mcpAllowedFolderIds(options: Options): Promise<readonly string[] | null> {
+  const [access, folders] = await Promise.all([options.resolveAccess!(), options.provider.listFolders()]);
+  const normalized = normalizeAccess(access);
+  return normalized.restricted ? filterFolders(normalized, folders).map(folder => folder.id) : null;
+}
 async function append(options: Options, operation: CardOperation, args: Args, context: McpCallContext, body: Args,
   cas = false, project: MutationProjector = compactMutation) {
   return run(async () => project(await appendMutation(options, operation, args, agent(args, context), body, cas)));
