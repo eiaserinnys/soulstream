@@ -45,7 +45,7 @@ export function PersistentAgentMessageGroupReviewSample() {
   return <div className="space-y-2" data-testid="persistent-agent-message-group-review">
     <div data-testid="agent-message-group-collapsed">
       <p className="v3-components-label">접힘</p>
-      <ManuscriptAgentMessageGroup messages={messages} />
+      <ManuscriptAgentMessageGroup messages={messages.slice(0, 1)} />
     </div>
     <div data-testid="agent-message-group-expanded">
       <p className="v3-components-label">펼침</p>

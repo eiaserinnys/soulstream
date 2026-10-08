@@ -18,12 +18,14 @@ export interface CollapsibleCaptionProps {
 interface CollapsibleCaptionHeaderProps {
   id: string;
   expanded: boolean;
-  title: string;
+  title: ReactNode;
   expandedTitle?: string;
   wrapExpandedTitle?: boolean;
   align: "start" | "end";
   alignmentInset: "avatar" | "content";
   onToggle: () => void;
+  className?: string;
+  "data-slot"?: string;
 }
 
 export function CollapsibleCaptionHeader({
@@ -35,6 +37,8 @@ export function CollapsibleCaptionHeader({
   align,
   alignmentInset,
   onToggle,
+  className,
+  "data-slot": dataSlot,
 }: CollapsibleCaptionHeaderProps) {
   const contentAligned = alignmentInset === "content";
   const wrapTitle = expanded && wrapExpandedTitle && expandedTitle !== undefined;
@@ -44,7 +48,11 @@ export function CollapsibleCaptionHeader({
     <Button
       aria-controls={id}
       aria-expanded={expanded}
-      className={`${contentAligned ? (align === "end" ? "-me-px justify-end !pe-0" : "-ms-px justify-start !ps-0") : (align === "end" ? "-me-2 justify-end !pe-2" : "-ms-2 justify-start")} ${wrapTitle ? "max-w-full !h-auto min-h-6" : "max-w-full h-6 sm:h-6"} gap-2 !text-xs !font-medium text-muted-foreground`}
+      className={cn(
+        `${contentAligned ? (align === "end" ? "-me-px justify-end !pe-0" : "-ms-px justify-start !ps-0") : (align === "end" ? "-me-2 justify-end !pe-2" : "-ms-2 justify-start")} ${wrapTitle ? "max-w-full !h-auto min-h-6" : "max-w-full h-6 sm:h-6"} gap-2 !text-xs !font-medium text-muted-foreground`,
+        className,
+      )}
+      {...(dataSlot !== undefined ? { "data-slot": dataSlot } : {})}
       onClick={onToggle}
       size="xs"
       variant="ghost"

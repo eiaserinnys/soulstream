@@ -38,16 +38,17 @@ export function ManuscriptAgentMessageGroupView({
       data-tree-node-id={firstMessage?.treeNodeId}
     >
       <span className="w-8 shrink-0" />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex flex-1 flex-col items-end">
         <CollapsibleCaptionHeader
           id={bodyId}
           expanded={expanded}
           title={`다른 세션 메시지 ${messages.length}건`}
-          align="start"
+          align="end"
           alignmentInset="content"
           onToggle={onToggle}
+          className="w-full"
         />
-        <CollapsibleCaptionBody id={bodyId} expanded={expanded} align="start">
+        <CollapsibleCaptionBody id={bodyId} expanded={expanded} align="start" className="mt-0.5 w-full">
           <div data-slot="manuscript-agent-message-group-items">
             {messages.map((message, index) => (
               <div

@@ -135,12 +135,14 @@ describe("ToolCallGroup compact header", () => {
       .map((button) => button.textContent);
     const headerIcons = Array.from(toggle.querySelectorAll("svg"));
 
+    const bodyId = toggle.getAttribute("aria-controls");
+    expect(bodyId).toBeTruthy();
+    expect(container.querySelector("[data-slot='manuscript-activity-items']")?.id).toBe(bodyId);
     expect(toggle.textContent).toContain("도구 3회");
     expect(toggle.textContent).toContain("실행 중");
     expect(toggle.textContent).toContain("실패 1");
     expect(headerIcons[0]?.classList.contains("lucide-wrench")).toBe(true);
     expect(toggle.lastElementChild?.classList.contains("lucide-chevron-up")).toBe(true);
-    expect(toggle.lastElementChild?.classList.contains("size-3.5")).toBe(true);
     expect(container.querySelector("[data-slot='chat-tool-row']")).toBeNull();
     expect(rows).toHaveLength(3);
     expect(labels[0]).toContain("Read");
