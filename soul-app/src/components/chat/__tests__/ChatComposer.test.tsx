@@ -272,6 +272,7 @@ describe('ChatComposer', () => {
     expect(StyleSheet.flatten(controlsRow().props.style)).toMatchObject({
       flexDirection: 'row', alignItems: 'center', flexShrink: 0, minHeight: 44,
     });
+    expect(controlsRow().props.pointerEvents).toBeUndefined();
     const inputRowInstance = inputRow().instance;
     const controlsRowInstance = controlsRow().instance;
     expect(StyleSheet.flatten(textInput().props.style)).toMatchObject({ flex: 1 });
@@ -293,6 +294,7 @@ describe('ChatComposer', () => {
     });
     expect(StyleSheet.flatten(textInput().props.style)).toMatchObject({ flex: 1 });
     expect(StyleSheet.flatten(textInput().props.style).width).toBeUndefined();
+    expect(controlsRow().props.pointerEvents).toBe('box-none');
     expect(inputRow().instance).toBe(inputRowInstance);
     expect(controlsRow().instance).toBe(controlsRowInstance);
     const attachIcon = screen.getByTestId('chat-composer-attach-visual').props.children as React.ReactElement<any>;

@@ -6,13 +6,18 @@ import {
   fetchSessionStory,
   type SessionStory,
 } from "../shared/session-story-api";
+import { Button } from "./ui/button";
 
 export function SessionStoryDisclosure({
   className,
   sessionId,
+  mode = "disclosure",
+  request = globalThis.fetch,
 }: {
   className?: string;
   sessionId: string;
+  mode?: "disclosure" | "settings";
+  request?: typeof fetch;
 }) {
   const panelId = useId();
   const requestRef = useRef<AbortController | null>(null);
@@ -31,7 +36,7 @@ export function SessionStoryDisclosure({
     try {
       const nextStory = await fetchSessionStory(
         sessionId,
-        globalThis.fetch,
+        request,
         controller.signal,
       );
       if (!controller.signal.aborted) setStory(nextStory);
@@ -40,17 +45,21 @@ export function SessionStoryDisclosure({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [sessionId]);
+  }, [request, sessionId]);
 
   useEffect(() => {
     requestRef.current?.abort();
     requestRef.current = null;
-    setOpen(false);
+    setOpen(mode === "settings");
     setStory(null);
     setLoading(false);
     setError(false);
     return () => requestRef.current?.abort();
-  }, [sessionId]);
+  }, [mode, sessionId]);
+
+  useEffect(() => {
+    if (mode === "settings") void loadStory();
+  }, [loadStory, mode]);
 
   const toggle = () => {
     if (open) {
@@ -62,6 +71,35 @@ export function SessionStoryDisclosure({
     setOpen(true);
     void loadStory();
   };
+
+  if (mode === "settings") {
+    return (
+      <div
+        className={cn("session-story-settings-content", className)}
+        data-testid="session-story-settings-content"
+        id={panelId}
+      >
+        {loading ? <LoadingState /> : null}
+        {!loading && error ? (
+          <div className="session-story-settings-error" role="alert">
+            <p>스토리를 불러오지 못했습니다.</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="session-story-retry"
+              onClick={() => void loadStory()}
+            >
+              다시 시도
+            </Button>
+          </div>
+        ) : null}
+        {!loading && !error && story ? (
+          <StoryContent panelId={panelId} story={story} mode="settings" />
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <span className={cn("relative inline-flex shrink-0", className)}>
@@ -99,7 +137,7 @@ export function SessionStoryDisclosure({
             </p>
           ) : null}
           {!loading && !error && story ? (
-            <StoryContent panelId={panelId} story={story} />
+            <StoryContent panelId={panelId} story={story} mode="disclosure" />
           ) : null}
         </div>
       ) : null}
@@ -122,9 +160,11 @@ function LoadingState() {
 function StoryContent({
   panelId,
   story,
+  mode,
 }: {
   panelId: string;
   story: SessionStory;
+  mode: "disclosure" | "settings";
 }) {
   const highlightId = `${panelId}-highlight`;
   const narrativeId = `${panelId}-narrative`;
@@ -135,42 +175,42 @@ function StoryContent({
 
   if (empty) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className={mode === "settings" ? "session-story-settings-empty" : "text-sm text-muted-foreground"}>
         아직 정리된 스토리가 없습니다.
       </p>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className={mode === "settings" ? "session-story-settings-groups" : "space-y-4"}>
       {highlight ? (
-        <section aria-labelledby={highlightId}>
+        <section aria-labelledby={highlightId} className={mode === "settings" ? "session-story-settings-section" : undefined}>
           <h3
             id={highlightId}
-            className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            className={mode === "settings" ? "session-story-settings-label" : "mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"}
           >
             하이라이트
           </h3>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+          <p className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap text-sm leading-relaxed text-foreground"}>
             {highlight}
           </p>
         </section>
       ) : null}
 
       {narrative || summaries.length > 0 ? (
-        <section aria-labelledby={narrativeId}>
+        <section aria-labelledby={narrativeId} className={mode === "settings" ? "session-story-settings-section" : undefined}>
           <h3
             id={narrativeId}
-            className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            className={mode === "settings" ? "session-story-settings-label" : "mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"}
           >
             줄거리
           </h3>
-          <div className="space-y-2 text-sm leading-relaxed text-foreground">
-            {narrative ? <p className="whitespace-pre-wrap">{narrative}</p> : null}
+          <div className={mode === "settings" ? "session-story-settings-copies" : "space-y-2 text-sm leading-relaxed text-foreground"}>
+            {narrative ? <p className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap"}>{narrative}</p> : null}
             {summaries.map((summary) => (
               <p
                 key={summary.event_id}
-                className="whitespace-pre-wrap"
+                className={mode === "settings" ? "session-story-settings-copy" : "whitespace-pre-wrap"}
                 data-turn-number={summary.turn_number}
               >
                 {summary.content}

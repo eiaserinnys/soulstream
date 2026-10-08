@@ -67,6 +67,14 @@ jest.mock('../ChatEventList', () => {
   };
 });
 
+jest.mock('../ChatRuntimeStrips', () => ({
+  ChatRuntimeStrips: () => require('react').createElement(require('react-native').View, { testID: 'chat-runtime-strips' }),
+}));
+
+jest.mock('../SessionStoryPanel', () => ({
+  SessionStoryPanel: () => require('react').createElement(require('react-native').View, { testID: 'session-story-panel' }),
+}));
+
 jest.mock('../ChatComposer', () => {
   const React = require('react');
   const { Pressable, TextInput, View } = require('react-native');
@@ -290,6 +298,18 @@ describe('ChatBody store subscription boundary', () => {
       show_character: false, animate_character: false, show_generation_separator: true,
       show_jev_candidates: true, turn_usage_mode: 'hidden',
     });
+    view.unmount();
+  });
+
+  test('session auxiliary visibility defaults on and PAS can omit both story and runtime strips', async () => {
+    const view = await renderSettled();
+    expect(view.getByTestId('session-story-panel')).toBeTruthy();
+    expect(view.getByTestId('chat-runtime-strips')).toBeTruthy();
+
+    view.rerender(<View><ChatBody sessionId={SID} showSessionAuxiliary={false} /></View>);
+    expect(view.queryByTestId('session-story-panel')).toBeNull();
+    expect(view.queryByTestId('chat-runtime-strips')).toBeNull();
+    expect(view.getByTestId('chat-composer-input')).toBeTruthy();
     view.unmount();
   });
 

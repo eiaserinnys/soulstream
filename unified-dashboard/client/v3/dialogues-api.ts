@@ -1,6 +1,7 @@
 import type { ConfigModalApi } from "../components/ConfigModal";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
+import type { SessionStory } from "@seosoyoung/soul-ui";
 import type { RecurringJob, RecurringJobRun } from "../lib/recurring-jobs";
 import type { AssignmentData } from "./AgentNodeAssignmentFields";
 import { reviewFolder, reviewFolders } from "./components-review-fixtures";
@@ -20,6 +21,35 @@ const persistentSettingsModelPresets = [
   { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
     weekly_headroom: { status: "ok", headroom: -56.6, remaining_percent: 21, window_remaining_percent: 77.6, resets_at: null, observed_at: "2026-10-06T02:01:00.000Z", quota_label: "7일" } },
 ];
+const persistentSettingsStory: SessionStory = {
+  highlight: "설정 탭에서 확인하는 세션의 주요 결정입니다.",
+  narrative: Array.from({ length: 36 }, (_, index) =>
+    `스토리 구간 ${index + 1}: 대화의 전개와 결정된 내용을 설정 탭에서 확인합니다.`,
+  ).join("\n\n"),
+  unfolded_turn_summaries: [],
+  narrative_through_event_id: 180,
+  fold_count: 3,
+  updated_at: "2026-10-08T00:00:00.000Z",
+};
+const persistentSettingsSummariesOnly: SessionStory = {
+  highlight: null,
+  narrative: null,
+  unfolded_turn_summaries: [
+    { event_id: 82, turn_number: 4, content: "첫 번째 요약에는 사용자가 정한 방향이 남아 있습니다.", turn_start_event_id: 77, final_response_event_id: 82, created_at: "2026-10-07T10:00:00.000Z" },
+    { event_id: 91, turn_number: 5, content: "다음 요약에는 확인된 후속 결정이 남아 있습니다.", turn_start_event_id: 83, final_response_event_id: 91, created_at: "2026-10-07T11:00:00.000Z" },
+  ],
+  narrative_through_event_id: null,
+  fold_count: 0,
+  updated_at: "2026-10-07T11:00:00.000Z",
+};
+const persistentSettingsEmptyStory: SessionStory = {
+  highlight: null,
+  narrative: null,
+  unfolded_turn_summaries: [],
+  narrative_through_event_id: null,
+  fold_count: 0,
+  updated_at: null,
+};
 export const dialoguesFolders = reviewFolders.map((folder) => ({ ...folder, projectPageId: folder.id }));
 export const dialoguesAssignment: AssignmentData = {
   nodes: [{ nodeId: "sample-node", status: "connected" }],
@@ -217,6 +247,8 @@ export function createDialoguesApi() {
     nodeId: "sample-node",
     folderId: dialoguesFolders[0]!.id,
   });
+  const persistentStoryState = new URLSearchParams(window.location.search).get("persistentStoryState") ?? "full";
+  let persistentStoryRequestCount = 0;
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
     const path = url.pathname;
@@ -226,6 +258,32 @@ export function createDialoguesApi() {
     if (method !== "GET") record(`${method} ${path}`);
     if (path.startsWith('/api/owned-agents')) return ownedAgents(input, init);
     if (path.startsWith("/api/persistent-sessions")) return persistentSessions(input, init);
+    if (method === "GET" && /^\/api\/sessions\/[^/]+\/story$/.test(path) && sample?.startsWith("persistent-settings-window")) {
+      persistentStoryRequestCount += 1;
+      if (persistentStoryState === "loading") {
+        const signal = init?.signal;
+        return await new Promise<Response>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")), { once: true });
+        });
+      }
+      // React StrictMode replays the initial loading effect; both initial attempts fail before the explicit retry succeeds.
+      if (persistentStoryState === "failure" || (persistentStoryState === "retry" && persistentStoryRequestCount <= 2)) {
+        return new Response(JSON.stringify({ error: "sample story unavailable" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const story = persistentStoryState === "empty"
+        ? persistentSettingsEmptyStory
+        : persistentStoryState === "summaries-only"
+          ? persistentSettingsSummariesOnly
+          : persistentSettingsStory;
+      return new Response(JSON.stringify(story), { headers: { "content-type": "application/json" } });
+    }
     let value: unknown;
     if (path === "/cogito/briefs") value = {status:"ok",node_count:1,nodes:[{node_id:"sample-node",status:"ok",data:{status:"ok"}}]};
     else if (path.startsWith("/api/nodes/") && path.endsWith("/model-presets")) value = { model_presets: persistentSettingsModelPresets };

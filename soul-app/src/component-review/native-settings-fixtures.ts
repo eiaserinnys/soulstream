@@ -98,6 +98,31 @@ const persistentSessionFixtures = {
   },
 };
 export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFixtures,
+  getSessionStory: async (sessionId: string) => {
+    if (state() === 'pas-story-error') throw new Error('공개 예시 스토리 조회 실패');
+    if (state() === 'pas-story-empty') return null;
+    if (state() === 'pas-story-long') return {
+      highlight: '요청한 범위를 확인하고 짧게 보고합니다.',
+      narrative: Array.from({ length: 24 }, (_, index) => `[T${index + 1}] 공개 예시 스토리의 ${index + 1}번째 구간입니다.`).join('\n\n'),
+      unfolded_turn_summaries: [{ event_id: 50, turn_number: 5, content: '최근 대화 요약을 펼쳐 읽습니다.', turn_start_event_id: 45,
+        final_response_event_id: 49, created_at: '2026-10-06T01:00:00Z' }],
+      narrative_through_event_id: 44, fold_count: 1, updated_at: '2026-10-06T01:00:00Z',
+    };
+    if (state() === 'pas-story-partial') return {
+      highlight: null, narrative: null,
+      unfolded_turn_summaries: [{ event_id: 50, turn_number: 5, content: '요약만 남은 공개 예시 스토리입니다.', turn_start_event_id: 45,
+        final_response_event_id: 49, created_at: '2026-10-06T01:00:00Z' }],
+      narrative_through_event_id: null, fold_count: 0, updated_at: null,
+    };
+    if (!sessionId.startsWith('review-pas-')) return null;
+    return {
+      highlight: '요청한 범위를 확인하고 짧게 보고합니다.',
+      narrative: '[T1-T4] 공개 예시 스토리가 접혀 있습니다.',
+      unfolded_turn_summaries: [{ event_id: 50, turn_number: 5, content: '최근 대화 요약을 펼쳐 읽습니다.',
+        turn_start_event_id: 45, final_response_event_id: 49, created_at: '2026-10-06T01:00:00Z' }],
+      narrative_through_event_id: 44, fold_count: 1, updated_at: '2026-10-06T01:00:00Z',
+    };
+  },
   getPersistentSessionInstructions: async (sessionId: string) => {
     if (state() === 'pas-instructions-error') throw pasFailure(503, 'NODE_UNAVAILABLE', '지속 지시를 불러오지 못했습니다.');
     if (state() === 'pas-instructions-empty') return { instructions: [] };

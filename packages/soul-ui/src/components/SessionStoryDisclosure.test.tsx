@@ -94,6 +94,70 @@ describe("SessionStoryDisclosure", () => {
     });
   });
 
+  it("loads partial and summaries-only story content automatically in settings mode", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      highlight: null,
+      narrative: null,
+      unfolded_turn_summaries: [{
+        event_id: 50,
+        turn_number: 5,
+        content: "최근 턴 요약만 남아 있습니다.",
+        turn_start_event_id: 45,
+        final_response_event_id: 49,
+        created_at: "2026-07-30T17:00:00.000Z",
+      }],
+      narrative_through_event_id: null,
+      fold_count: 0,
+      updated_at: null,
+    }));
+
+    await act(async () => {
+      root.render(createElement(SessionStoryDisclosure, {
+        sessionId: "sess/1",
+        mode: "settings",
+      } as never));
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("최근 턴 요약만 남아 있습니다.");
+    });
+    expect(container.querySelector('[data-testid="session-story-trigger"]')).toBeNull();
+    expect(container.querySelector('[data-testid="session-story-settings-content"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="session-story-settings-content"]')?.className).not.toContain("overflow-y-auto");
+  });
+
+  it("shows loading, retries a settings error, and renders an empty story", async () => {
+    let reject!: (error: Error) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((_resolve, rejectRequest) => { reject = rejectRequest; }))
+      .mockResolvedValueOnce(jsonResponse({
+      highlight: null,
+      narrative: null,
+      unfolded_turn_summaries: [],
+      narrative_through_event_id: null,
+      fold_count: 0,
+      updated_at: null,
+      }));
+
+    await act(async () => {
+      root.render(createElement(SessionStoryDisclosure, {
+        sessionId: "sess/1",
+        mode: "settings",
+      } as never));
+    });
+    expect(container.textContent).toContain("스토리를 불러오는 중입니다.");
+    await act(async () => reject(new Error("offline")));
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("다시 시도");
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button[data-testid='session-story-retry']")?.click();
+    });
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("아직 정리된 스토리가 없습니다.");
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   function storyButton(): HTMLButtonElement {
     const button = container.querySelector<HTMLButtonElement>(
       '[data-testid="session-story-trigger"]',

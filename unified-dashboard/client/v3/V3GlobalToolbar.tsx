@@ -13,13 +13,16 @@ import { PersistentSessionEntry } from './PersistentSessionEntry';
 export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
-  variant = 'default', sessionName, onOpenHome, headerRef,
+  variant = 'default', sessionName, agentName, agentOnly = false, showHome = true, onOpenHome, headerRef,
   appearance = 'default',
 }: {
   onOpenConfig(): void;
   onOpenSearch?(): void;
   variant?: 'default' | 'minimal';
   sessionName?: string;
+  agentName?: string | null;
+  agentOnly?: boolean;
+  showHome?: boolean;
   onOpenHome?(): void;
   headerRef?: RefObject<HTMLElement | null>;
   appearance?: "default" | "bare";
@@ -42,13 +45,15 @@ export function V3GlobalToolbar({
   }, [onOpenSearch, variant]);
 
   if (variant === 'minimal') return <header ref={headerRef} className="persistent-session-header" data-testid="v3-global-toolbar">
-    <div className="persistent-session-brand"><span>소울스트림</span><strong>{sessionName}</strong></div>
+    <div className="persistent-session-brand" data-agent-only={agentOnly}>
+      {agentOnly ? <strong>{agentName}</strong> : <><span>소울스트림</span><strong>{sessionName}</strong></>}
+    </div>
     <div className="dashboard-toolbar-actions">
-      <DashboardIconCap label="홈" appearance={appearance} onClick={onOpenHome}>
+      {showHome ? <DashboardIconCap label="홈" appearance={appearance} onClick={onOpenHome}>
         {appearance === "bare"
           ? <House className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
           : <span aria-hidden="true" className="text-base leading-none">⌂</span>}
-      </DashboardIconCap>
+      </DashboardIconCap> : null}
       <ThemeToggle variant="chrome" appearance={appearance}/>
       <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig}/>
     </div>

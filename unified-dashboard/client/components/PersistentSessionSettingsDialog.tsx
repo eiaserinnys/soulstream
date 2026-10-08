@@ -8,6 +8,7 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  SessionStoryDisclosure,
   useDashboardStore,
 } from "@seosoyoung/soul-ui";
 
@@ -29,7 +30,9 @@ const categories: ConfigCategoryNavItem[] = [
   { name: "account", label: "계정과 모델" },
   { name: "display", label: "표시와 모션" },
   { name: "record", label: "기록" },
+  { name: "story", label: "세션 스토리" },
 ];
+type PersistentSessionSettingsSection = PersistentSessionDetailsSection | "story";
 
 export function PersistentSessionSettingsDialog({
   sessionId,
@@ -51,7 +54,7 @@ export function PersistentSessionSettingsDialog({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
-  const [selectedSection, setSelectedSection] = useState<PersistentSessionDetailsSection>("instructions");
+  const [selectedSection, setSelectedSection] = useState<PersistentSessionSettingsSection>("instructions");
   const setPersistentSessionDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const monitoring = usePersistentSessionMonitoring({ sessionId, nodeId, request });
   const instructions = usePersistentSessionInstructions({ sessionId, api });
@@ -98,12 +101,12 @@ export function PersistentSessionSettingsDialog({
             categories={categories}
             activeCategory={selectedSection}
             variant="pas"
-            onSelect={(name) => setSelectedSection(name as PersistentSessionDetailsSection)}
+            onSelect={(name) => setSelectedSection(name as PersistentSessionSettingsSection)}
           />
           <section className="config-detail" aria-label={activeLabel}>
             <header className="config-detail-heading"><h2>{activeLabel}</h2></header>
             <div className="config-detail-scroll v3-session-panel-scroll">
-              <div hidden={selectedSection === "instructions"}>
+              <div hidden={selectedSection === "instructions" || selectedSection === "story"}>
                 <PersistentSessionDetails
                   resource={resource}
                   draft={details.draft}
@@ -111,7 +114,7 @@ export function PersistentSessionSettingsDialog({
                   savingDisplayField={details.savingDisplayField}
                   error={details.error}
                   errorScope={details.errorScope}
-                  section={selectedSection === "instructions" ? "account" : selectedSection}
+                  section={selectedSection === "display" || selectedSection === "record" ? selectedSection : "account"}
                   immediateDisplaySave
                   modelPresetCatalog={modelPresetCatalog}
                   weeklyAvailability={monitoring.modelPresets}
@@ -125,6 +128,7 @@ export function PersistentSessionSettingsDialog({
               <div hidden={selectedSection !== "instructions"}>
                 <PersistentSessionInstructionsView variant="pas" state={instructions.state} actions={instructions.actions} />
               </div>
+              {selectedSection === "story" ? <SessionStoryDisclosure sessionId={sessionId} mode="settings" request={request} /> : null}
             </div>
           </section>
         </div> : <div className="config-detail">

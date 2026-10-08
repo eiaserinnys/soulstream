@@ -64,6 +64,7 @@ export interface ChatViewProps {
   chatInputDisabled?: boolean;
   fileUploadUrl?: string;
   historyEnabled?: boolean;
+  showRuntimeStrips?: boolean;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
   /** Optional in-memory session scope for a second, independent transcript. */
@@ -117,6 +118,7 @@ function ChatViewContent({
   chatInputDisabled = false,
   fileUploadUrl,
   historyEnabled = true,
+  showRuntimeStrips = true,
   presentation = "default",
   composerAnchorRef,
   onSessionChange,
@@ -932,7 +934,7 @@ function ChatViewContent({
         </button>
       </div>}
 
-      <ChatRuntimeCompactStrips sessionId={activeSessionKey} />
+      {showRuntimeStrips ? <ChatRuntimeCompactStrips sessionId={activeSessionKey} /> : null}
 
       <ChatInput
         presentation={presentation}

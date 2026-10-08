@@ -284,11 +284,16 @@ it("opens in the instructions section and preserves its draft while sections cha
     updated_at: "2026-10-06T11:00:00.000Z",
     origin: "user",
   };
+  let storyRequests = 0;
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
     if (url.pathname === "/api/persistent-sessions/sample-pas" && (init?.method ?? "GET") === "GET") return Response.json({ session: resource });
     if (url.pathname === "/api/persistent-sessions/sample-pas/instructions") return Response.json({ instructions: [instruction] });
     if (url.pathname === "/api/sessions/sample-pas/timeline") return Response.json({ messages: [], next_cursor: null });
+    if (url.pathname === "/api/sessions/sample-pas/story") {
+      storyRequests += 1;
+      return Response.json({ highlight: null, narrative: "부분 줄거리", unfolded_turn_summaries: [], narrative_through_event_id: null, fold_count: 0, updated_at: null });
+    }
     throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url.pathname}`);
   };
 
@@ -296,7 +301,7 @@ it("opens in the instructions section and preserves its draft while sections cha
   await settle();
 
   expect([...document.body.querySelectorAll<HTMLButtonElement>("[data-testid=config-category-nav] button")].map((button) => button.textContent?.trim())).toEqual([
-    "지속 지시", "계정과 모델", "표시와 모션", "기록",
+    "지속 지시", "계정과 모델", "표시와 모션", "기록", "세션 스토리",
   ]);
   expect(document.querySelector('[aria-label="지속 지시"]')).not.toBeNull();
   expect(document.body.textContent).toContain("이 세션에 계속 적용됩니다.");
@@ -308,6 +313,12 @@ it("opens in the instructions section and preserves its draft while sections cha
   const addInput = document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')!;
   await setInput(addInput, "섹션을 바꿔도 남는 초안");
   click("계정과 모델");
+  click("지속 지시");
+  expect(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')?.value).toBe("섹션을 바꿔도 남는 초안");
+  click("세션 스토리");
+  await settle();
+  expect(storyRequests).toBe(1);
+  expect(document.body.textContent).toContain("부분 줄거리");
   click("지속 지시");
   expect(document.querySelector<HTMLInputElement>('[aria-label="새 지속 지시"]')?.value).toBe("섹션을 바꿔도 남는 초안");
 });

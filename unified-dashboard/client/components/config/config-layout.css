@@ -67,6 +67,15 @@
 .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail[aria-label="지속 지시"] .config-detail-heading { margin-bottom:0; padding-bottom:var(--v3-space-1); }
 .config-dialog.persistent-session-settings-popup .config-layout[data-layout="pas"] .config-detail[aria-label="지속 지시"] .config-detail-heading h2 { margin:0; }
 .config-dialog .config-pas-category-list { display:flex; flex-direction:column; gap:var(--v3-space-2); }
+.config-dialog .session-story-settings-content { display:flex; flex-direction:column; gap:var(--v3-space-6); }
+.config-dialog .session-story-settings-groups { display:flex; flex-direction:column; gap:var(--v3-space-6); }
+.config-dialog .session-story-settings-section { display:flex; flex-direction:column; gap:var(--v3-space-2); }
+.config-dialog .session-story-settings-copies { display:flex; flex-direction:column; gap:var(--v3-space-2); }
+.config-dialog .session-story-settings-label { margin:0; color:var(--muted-foreground); font:var(--v3-type-meta) var(--v3-font-family); font-weight:600; }
+.config-dialog .session-story-settings-copy { margin:0; color:var(--foreground); font:var(--v3-type-body) var(--v3-font-family); white-space:pre-wrap; }
+.config-dialog .session-story-settings-empty { margin:0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
+.config-dialog .session-story-settings-error { display:flex; flex-direction:column; align-items:flex-start; gap:var(--v3-space-2); }
+.config-dialog .session-story-settings-error > p { margin:0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
 @media (max-width:40rem) {
  .config-dialog { height:calc(100dvh - var(--v3-space-8)); }
  .config-dialog .config-layout { display:block; }
