@@ -12,7 +12,7 @@ import { SystemEvent } from '../components/events/SystemEvent';
 import { TurnSummaryCaption } from '../components/events/TurnSummaryCaption';
 import { CollapsibleCaption, CollapsibleCaptionLine } from '../components/chat/CollapsibleCaption';
 import { LabeledDivider } from '../components/chat/LabeledDivider';
-import { AttachmentImage } from '../components/AttachmentImage';
+import { AttachmentImage, ChatRefinedImageGallery } from '../components/AttachmentImage';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { GlassButton } from '../components/GlassSurface';
 import { message, sessions } from './fixtures';
@@ -253,8 +253,12 @@ export function ReviewChat() {
   const [selection, setSelection] = useState(false);
   const [failure, setFailure] = useState(true);
   const [attachment, setAttachment] = useState(false);
+  const sample = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('sample')
+    : null;
   const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
+  if (sample === 'pas-images') return <ReviewChatPasImageSample />;
   return <>
     <ReviewSection title="PAS 대화 목록 · 기본 / 원고형">
       <ReviewPersistentChatProjection />
@@ -389,6 +393,64 @@ export function ReviewChat() {
       </ScrollView>
     </ReviewSection>
   </>;
+}
+
+const pasImagePaths = [
+  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.069Z-pas247-preview-iphone-light-story-settings-0d5b93a9cf014a8d9a9c76a4d203d60e.png',
+  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.585Z-pas247-preview-iphone-light-story-settings-fe37869a1a9841dc92f8db2ff4186d61.png',
+];
+
+function ReviewChatPasImageSample() {
+  const t = useTokens();
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://soulstream.eiaserinnys.me';
+  const attachmentUrl = (path: string) => `${origin}/api/attachments/files?${new URLSearchParams({ nodeId: 'eiaserinnys', path })}`;
+  const assistantText = [
+    '링크만 붙였군요. 비교 이미지를 바로 보여드리겠습니다.',
+    '',
+    '기존 배치',
+    '',
+    `![기존 폰 배치](${attachmentUrl(pasImagePaths[0])})`,
+    '',
+    '변경 시안: ‘세션 스토리’ 버튼을 둘째 줄로 옮깁니다.',
+    '',
+    `![폰 변경 시안](${attachmentUrl(pasImagePaths[1])})`,
+  ].join('\n');
+  const session = { ...sessions[0], nodeId: 'eiaserinnys' };
+  return <ScrollView testID="review-pas-chat-images" style={{ flex: 1, backgroundColor: t.colors.background }}
+    contentContainerStyle={{ padding: t.foundation.pageInset, gap: t.spacing.lg }} showsVerticalScrollIndicator={false}>
+    <ReviewSection title="응답 · event 8309">
+      <View testID="review-pas-event8309">
+        <AssistantMessage presentation="manuscript" session={session} event={{
+          id: '8309', type: 'assistant_message', data: { text: assistantText },
+        }} />
+      </View>
+    </ReviewSection>
+    <ReviewSection title="사용자 첨부 · 원문 순서">
+      <View testID="review-pas-structured-user-images">
+        <UserMessage presentation="manuscript" session={session} event={{
+          id: 'review-pas-user-images', type: 'user_message', data: {
+            text: '첨부한 두 화면을 확인해주세요.', attachments: pasImagePaths, node_id: 'eiaserinnys',
+          },
+        }} />
+      </View>
+      <View testID="review-pas-single-image">
+        <UserMessage presentation="manuscript" session={session} event={{
+          id: 'review-pas-user-single-image', type: 'user_message', data: {
+            text: '이 화면 하나만 확인해주세요.', attachments: [pasImagePaths[0]], node_id: 'eiaserinnys',
+          },
+        }} />
+      </View>
+    </ReviewSection>
+    <ReviewSection title="외부 이미지 응답 실패">
+      <View testID="review-pas-401-image">
+        <ChatRefinedImageGallery
+          testID="review-pas-401-gallery"
+          role="assistant"
+          images={[{ source: { uri: 'https://httpbin.org/status/401' }, filename: '401.png', alt: '인증되지 않은 외부 이미지' }]}
+        />
+      </View>
+    </ReviewSection>
+  </ScrollView>;
 }
 
 function ReviewMessagePresentation({

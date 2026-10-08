@@ -87,6 +87,16 @@ test.each([
     bubblePaddingHorizontal: 16,
     bubblePaddingVertical: 14,
     bubbleMaxWidth: '86%',
+    attachment: {
+      assistantMaxWidth: 360,
+      userMaxWidth: 320,
+      phoneAssistantMaxWidth: '100%',
+      phoneUserMaxWidth: '88%',
+      radius: 10,
+      filenameGap: 6,
+      gridGap: 12,
+      metadata: { fontSize: 13, lineHeight: 18 },
+    },
     tool: {
       visualMinHeight: 40,
       fontSize: 13,

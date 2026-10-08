@@ -10,7 +10,14 @@ import {
   pickFallbackChar,
   pickUserAvatarUri,
 } from './userAvatarHelpers';
-import { AttachmentImage } from '../AttachmentImage';
+import {
+  AttachmentImage,
+  ChatRefinedImageGallery,
+  getChatAttachmentFilename,
+  isChatImageAttachmentPath,
+  useChatImageMetadata,
+} from '../AttachmentImage';
+import { chatImageSource } from '../../lib/chat-image-source';
 import { MessageTextSelectionView } from './MessageTextSelectionView';
 import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticStatus } from '../../store/chatStore';
@@ -110,15 +117,34 @@ export function UserMessage({
   const caller = useMemo(() => extractMessageCaller(event), [event]);
 
   const content = extractUserText(event);
-  const attachments = extractAttachments(event);
-  // 빈 말풍선 방지 — 본문 텍스트와 첨부 둘 다 없으면 렌더 생략.
-  if (!content && !children && attachments.length === 0) return null;
+  const attachments = useMemo(() => extractAttachments(event), [event]);
 
   // Phase 2: 첨부 다운로드는 *세션의 node_id*로 cross-node 라우팅 (resolveAttachmentNodeId).
   // 둘 다 없으면 첨부 미표시 — graceful (design-principles §8 실패 격리).
   const nodeId = resolveAttachmentNodeId(session, event);
-  const attachmentSources = attachments.map((path) => buildAttachmentUri(serverUrl, nodeId, path))
-    .filter((uri): uri is string => uri !== null).map((uri) => ({ uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }));
+  const attachmentEntries = useMemo(() => attachments.map((path) => ({
+    path,
+    uri: buildAttachmentUri(serverUrl, nodeId, path),
+  })).filter((entry): entry is { path: string; uri: string } => entry.uri !== null), [attachments, nodeId, serverUrl]);
+  const attachmentSources = attachmentEntries.map(({ uri }) => ({
+    uri,
+    ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}),
+  }));
+  const manuscriptImageItems = useMemo(() => presentation === 'manuscript'
+    ? attachmentEntries.filter(({ path }) => isChatImageAttachmentPath(path)).map(({ uri }) => ({
+        source: chatImageSource(uri, serverUrl, jwt),
+        filename: getChatAttachmentFilename(uri),
+      }))
+    : [], [attachmentEntries, jwt, presentation, serverUrl]);
+  const manuscriptImagesWithMetadata = useChatImageMetadata(manuscriptImageItems, serverUrl ?? '');
+  // 빈 말풍선 방지 — 본문 텍스트와 첨부 둘 다 없으면 렌더 생략.
+  if (!content && !children && attachments.length === 0) return null;
+  const beforeTextSources = presentation === 'manuscript'
+    ? attachmentEntries.filter(({ path }) => !isChatImageAttachmentPath(path)).map(({ uri }) => ({
+        uri,
+        ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}),
+      }))
+    : attachmentSources;
 
   const bubbleStyle = presentation === 'manuscript'
     ? styles.manuscriptBubble
@@ -151,11 +177,11 @@ export function UserMessage({
       >
         {messageKind}
         {children}
-        {attachments.length > 0 && (
+        {beforeTextSources.length > 0 && (
           <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
             ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
-            {attachmentSources.map((source, idx) => <AttachmentImage key={`${idx}-${source.uri}`}
-              source={source} sources={attachmentSources} index={idx} accessibilityLabel={`첨부 이미지 ${idx + 1}`} />)}
+            {beforeTextSources.map((source, idx) => <AttachmentImage key={`${idx}-${source.uri}`}
+              source={source} sources={beforeTextSources} index={idx} accessibilityLabel={`첨부 이미지 ${idx + 1}`} />)}
           </View>
         )}
         {children == null && content ? (
@@ -179,6 +205,11 @@ export function UserMessage({
             </Text>
           )
         ) : null}
+        {manuscriptImageItems.length > 0 ? <ChatRefinedImageGallery
+          role="user"
+          images={manuscriptImagesWithMetadata}
+          testID="user-chat-image-gallery"
+        /> : null}
         {pendingStatus === 'sending' ? (
           <Text testID="pending-message-status" style={[styles.pendingMeta, textStyle]}>
             보내는 중
