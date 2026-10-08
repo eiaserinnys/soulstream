@@ -428,6 +428,7 @@ describe("PersistentSessionControl.applySettings", () => {
           show_generation_separator: true,
           show_character: false,
           show_jev_candidates: true,
+          turn_usage_mode: "hidden",
           show_turn_usage: false,
           animate_character: false,
         },
