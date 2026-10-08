@@ -52,6 +52,17 @@ describe("card work runtime and internal MCP integration", () => {
     h = await createPagePostgresHarness();
     await prepareCardWorkSchema(h);
     await h.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/088_claude_background_task_generations.sql", import.meta.url), "utf8"));
+    await h.sql`ALTER TABLE sessions ADD COLUMN termination_detail TEXT,
+      ADD COLUMN last_assistant_text TEXT, ADD COLUMN worktree_id TEXT`;
+    const canonicalSchema = await readFile(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8");
+    for (const functionName of ["session_record_execution_registration", "session_apply_terminal_transition"]) {
+      const startMarker = `CREATE OR REPLACE FUNCTION ${functionName}(`;
+      const start = canonicalSchema.indexOf(startMarker);
+      const endMarker = "\n$$;";
+      const end = canonicalSchema.indexOf(endMarker, start);
+      if (start < 0 || end < 0) throw new Error(`Canonical schema is missing ${functionName}`);
+      await h.sql.unsafe(canonicalSchema.slice(start, end + endMarker.length));
+    }
     await h.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/116_card_execution_requests.sql", import.meta.url), "utf8"));
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql.unsafe(await readFile(new URL("../../packages/db-schema/sql/migrations/113_card_orchestration.sql", import.meta.url), "utf8"));
