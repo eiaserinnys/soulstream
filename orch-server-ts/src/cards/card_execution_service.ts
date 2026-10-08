@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError } from "../node/pending_commands.js";
+import { PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError, type NodeCommandResponse } from "../node/pending_commands.js";
 import { NodeCommandTransportError } from "../session/session_command_transport.js";
+import { SessionCommandRouteError } from "../session/session_command_router.js";
+import { RecurringSessionCreateError } from "../session/recurring_session_creation.js";
+import { ModelPresetAvailabilityError } from "../model/model_preset_availability.js";
 import type { CardControlPlaneService, CardMutationParams } from "./card_control_plane_service.js";
 import type { CardRow, SqlClient, RepositorySql, FolderActorParams } from "./control_plane/card_types.js";
 import { CardVersionConflict } from "./control_plane/card_models.js";
 import type { CardWorkExecution } from "./card_work_lifecycle.js";
+import type { SessionDeliveryRow } from "../control_plane/control_plane_types.js";
 
 export type ExecutionTarget = {nodeId:string;agentId:string;modelPreset:string|null;folderId?:string};
 export interface CardExecutionRequest extends Record<string,unknown> {
@@ -13,12 +17,58 @@ export interface CardExecutionRequest extends Record<string,unknown> {
   state:"pending"|"succeeded"|"failed";sent:boolean;baseline_event_id:number;
   execution:CardWorkExecution|null;result_state:"started"|"already_running"|null;error:string|null;
 }
+export type ConfirmedCommandFailure={
+  failureId:string;
+  message:string;
+  evidence:{kind:"error_ack";response:NodeCommandResponse}|{kind:"before_send";code:string};
+};
+
+export async function readCardExecutionRegistration(sql:RepositorySql,row:CardExecutionRequest):Promise<CardWorkExecution|null>{
+  const saved=(await sql`SELECT execution FROM card_execution_requests WHERE id=${row.id}`)[0]?.execution;
+  if(saved)return saved as CardWorkExecution;
+  const receipt=(await sql<{proof:{registration_id:string;execution_command_id:string}|null}[]>`SELECT effect_application->'canonical_execution_registration' AS proof FROM event_ingress_receipts
+    WHERE session_id=${row.session_id} AND event_id>${row.baseline_event_id} AND effect_application->>'applied'='true'
+    AND effect_application->'canonical_execution_registration'->>'registration_id' IS NOT NULL ORDER BY event_id LIMIT 1`)[0]?.proof;
+  if(receipt)return {registrationId:String(receipt.registration_id),executionCommandId:String(receipt.execution_command_id)};
+  const owner=(await sql`SELECT execution_registration_id,execution_command_id,last_event_id FROM sessions WHERE session_id=${row.session_id}`)[0];
+  return owner?.execution_registration_id && Number(owner.last_event_id)>row.baseline_event_id ? {registrationId:String(owner.execution_registration_id),executionCommandId:String(owner.execution_command_id)}:null;
+}
+
+export function confirmedCommandFailure(error:unknown,workId:string):ConfirmedCommandFailure|null{
+  // Keep the existing card path's terminal "Task already exists" policy for
+  // direct consumers of this shared classifier as well.
+  if(error instanceof Error&&error.message.includes('Task already exists'))return null;
+  if(error instanceof PendingNodeCommandRejectedError&&error.response&&isErrorAck(error.response))
+    return errorAckFailure(error.message,error.response,workId);
+  if(error instanceof RecurringSessionCreateError){
+    if(error.response&&isErrorAck(error.response))return errorAckFailure(error.message,error.response,workId);
+    if(error.dispatchPhase==="before_send")return beforeSendFailure(workId,error.message,error.code);
+    return null;
+  }
+  if(error instanceof SessionCommandRouteError)return beforeSendFailure(workId,error.message,error.code);
+  if(error instanceof ModelPresetAvailabilityError)return beforeSendFailure(workId,error.message,error.code);
+  if(error instanceof NodeCommandTransportError&&(
+    error.code==="TRANSPORT_MISSING"||error.code==="TRANSPORT_STALE"||error.code==="TRANSPORT_JSON_FAILED"))
+    return beforeSendFailure(workId,error.message,error.code);
+  return null;
+}
+
+function errorAckFailure(message:string,response:NodeCommandResponse,workId:string):ConfirmedCommandFailure{
+  const code=typeof response.code==="string"&&response.code.length>0?response.code:"error_ack";
+  return {failureId:`${workId}:error_ack:${code}`,message,evidence:{kind:"error_ack",response}};
+}
+function beforeSendFailure(workId:string,message:string,code:string):ConfirmedCommandFailure{
+  return {failureId:`${workId}:before_send:${code}`,message,evidence:{kind:"before_send",code}};
+}
+function isErrorAck(response:NodeCommandResponse):boolean{return response.type==="error"||response.status==="error";}
 export type ExecutionInput = {sessionId:string;requestId:string;cardId:string;target:ExecutionTarget;callerSource:"browser"|"system"};
 export interface CardExecutionOptions {
   sql:SqlClient;cards:CardControlPlaneService;
   validate(card:CardRow):Promise<ExecutionTarget>;
   launch(input:ExecutionInput):Promise<unknown>;
   ensure(input:ExecutionInput):Promise<{state:"started"|"already_running";execution:CardWorkExecution}>;
+  onConfirmedFailureTx?(sql:RepositorySql,request:CardExecutionRequest,failure:ConfirmedCommandFailure):Promise<SessionDeliveryRow|null>;
+  onConfirmedFailureCommitted?(row:SessionDeliveryRow):void;
 }
 
 /** The card lock owns reservation; no network operation runs inside its transaction. */
@@ -139,9 +189,24 @@ export class CardExecutionService {
       // Transport uncertainty remains observable under the same fixed identity.
       if(error instanceof PendingNodeCommandTimeoutError || (error instanceof PendingNodeCommandRejectedError && !error.response)
         || (error instanceof NodeCommandTransportError && error.code==='TRANSPORT_SEND_FAILED'))return;
+      const confirmed=confirmedCommandFailure(error,row.id);
       const owner=(await this.options.sql`SELECT card_id FROM sessions WHERE session_id=${row.session_id}`)[0];
       if(owner?.card_id===row.card_id) await this.options.cards.recordExecution({...actor,cardId:row.card_id,sessionId:row.session_id,requestId:row.id,idempotencyKey:`card-execution-link:${row.id}`});
-      await this.fail(row,text);
+      if(confirmed){
+        const result=await this.options.sql.begin(async sql=>{
+          const locked=(await sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE id=${row.id} FOR UPDATE`)[0];
+          if(!locked)return {proof:false,delivery:null as SessionDeliveryRow|null};
+          const registration=await this.registration(locked,sql);
+          if(registration)return {proof:true,delivery:null as SessionDeliveryRow|null};
+          const failed=(await sql<CardExecutionRequest[]>`UPDATE card_execution_requests SET state='failed',error=${text},updated_at=NOW() WHERE id=${row.id} RETURNING *`)[0]!;
+          const delivery=this.options.onConfirmedFailureTx
+            ? await this.options.onConfirmedFailureTx(sql,failed,confirmed)
+            : null;
+          return {proof:false,delivery};
+        });
+        if(result.proof)return;
+        if(result.delivery)this.options.onConfirmedFailureCommitted?.(result.delivery);
+      }else await this.fail(row,text);
       throw failure(`${text} 다시 실행하면 같은 담당 세션을 사용합니다.`,422);
     }
   }
@@ -159,15 +224,8 @@ export class CardExecutionService {
     if(owner&&['error','interrupted'].includes(String(owner.status)))return {proof:null,error:'자동 배정 실행 시작에 실패했습니다. 진행 중을 다시 선택하세요.'};
     return {proof:null};
   }
-  private async registration(row:CardExecutionRequest):Promise<CardWorkExecution|null> {
-    const saved=(await this.options.sql`SELECT execution FROM card_execution_requests WHERE id=${row.id}`)[0]?.execution;
-    if(saved)return saved as CardWorkExecution;
-    const receipt=(await this.options.sql<{proof:{registration_id:string;execution_command_id:string}|null}[]>`SELECT effect_application->'canonical_execution_registration' AS proof FROM event_ingress_receipts
-      WHERE session_id=${row.session_id} AND event_id>${row.baseline_event_id} AND effect_application->>'applied'='true'
-      AND effect_application->'canonical_execution_registration'->>'registration_id' IS NOT NULL ORDER BY event_id LIMIT 1`)[0]?.proof;
-    if(receipt)return {registrationId:String(receipt.registration_id),executionCommandId:String(receipt.execution_command_id)};
-    const owner=(await this.options.sql`SELECT execution_registration_id,execution_command_id,last_event_id FROM sessions WHERE session_id=${row.session_id}`)[0];
-    return owner?.execution_registration_id && Number(owner.last_event_id)>row.baseline_event_id ? {registrationId:String(owner.execution_registration_id),executionCommandId:String(owner.execution_command_id)}:null;
+  private async registration(row:CardExecutionRequest,sql:RepositorySql=this.options.sql):Promise<CardWorkExecution|null> {
+    return readCardExecutionRegistration(sql,row);
   }
   private async fail(row:CardExecutionRequest,error:string){await this.options.sql`UPDATE card_execution_requests SET state='failed',error=${error},updated_at=NOW() WHERE id=${row.id}`;}
   private async response(row:CardExecutionRequest){return {card:(await this.options.cards.getCard(row.card_id))!.card,execution:{requestId:row.id,sessionId:row.session_id,state:row.state==='succeeded'?row.result_state??'started':'pending'}};}

@@ -4,8 +4,11 @@ import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page
 import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
-import { CardExecutionService } from "../src/cards/card_execution_service.js";
+import { CardExecutionService, confirmedCommandFailure, readCardExecutionRegistration, type CardExecutionOptions, type CardExecutionRequest } from "../src/cards/card_execution_service.js";
 import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
+import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import { PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError } from "../src/node/pending_commands.js";
+import { NodeCommandTransportError } from "../src/session/session_command_transport.js";
 
 describe("user card execution transport",()=>{
   let h:PagePostgresHarness,cards:CardControlPlaneService;
@@ -18,18 +21,21 @@ describe("user card execution transport",()=>{
     cards=new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
   },60000);
   afterAll(async()=>h?.cleanup());
-  async function fixture(mode:"ok"|"pending"|"reject"="ok",owner=false){
+  type FailureHooks=Pick<CardExecutionOptions,"onConfirmedFailureTx"|"onConfirmedFailureCommitted">;
+  async function fixture(mode:"ok"|"pending"|"reject"|"ack"|"ack-proof"="ok",owner=false,hooks:Partial<FailureHooks>={}){
     const made=await cards.createCard({actorKind:"user",actorSessionId:null,folderId:"work",title:"요청",request:"원문 그대로",assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"});
     const cardId=made.operation.target_id;
     const proof={registrationId:`reg-${cardId}`,executionCommandId:`cmd-${cardId}`};
     const launch=vi.fn(async(input:any)=>{
       if(mode==="reject") throw Object.assign(new Error("노드 거부"),{code:"NODE_REJECTED"});
+      if(mode==="ack") throw new PendingNodeCommandRejectedError({commandType:"create_session",requestId:"transport-request",message:"노드 거부",response:{type:"error",status:"error",code:"CREATE_REJECTED",requestId:"transport-request",message:"노드 거부"}});
       await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${input.sessionId},'node','profile','initializing',${cardId},'model')`;
-      if(mode==="ok") await recordWorkReceipt(h,input.sessionId,"running",proof);
+      if(mode==="ok"||mode==="ack-proof") await recordWorkReceipt(h,input.sessionId,"running",proof);
+      if(mode==="ack-proof") throw new PendingNodeCommandRejectedError({commandType:"create_session",requestId:"transport-request",message:"late node rejection",response:{type:"error",code:"CREATE_REJECTED",requestId:"transport-request"}});
     });
     const ensure=vi.fn(async(input:any)=>{await recordWorkReceipt(h,input.sessionId,"running",proof);return {state:"started" as const,execution:proof};});
     if(owner){const id=`owner-${cardId}`;await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${id},'node','profile','completed',${cardId},'owner-model')`;await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${id} WHERE id=${cardId}`;}
-    const service=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,validate:async(card)=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),launch,ensure});
+    const service=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,validate:async(card)=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),launch,ensure,...hooks});
     return {service,cardId,launch,ensure,proof};
   }
   const actor={actorKind:"user" as const,actorSessionId:null,actorUserId:"user"};
@@ -84,6 +90,8 @@ describe("user card execution transport",()=>{
   it("GET reconciles a quickly completed execution from its registration receipt without resuming",async()=>{
     const f=await fixture("pending");const result=await f.service.execute(input(f.cardId,"lost"));
     await recordWorkReceipt(h,result.execution.sessionId,"running",f.proof);
+    const request=(await h.sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE id=${result.execution.requestId}`)[0]!;
+    expect(await readCardExecutionRegistration(createBoardYjsSqlAdapter(h.liveSql),request)).toEqual(f.proof);
     await recordWorkReceipt(h,result.execution.sessionId,"completed",null);
     const checked=await f.service.observe(f.cardId,result.execution.requestId,actor);
     expect(checked.execution.state).toBe("started");expect(f.ensure).not.toHaveBeenCalled();expect(f.launch).toHaveBeenCalledTimes(1);
@@ -94,6 +102,77 @@ describe("user card execution transport",()=>{
     const failed=(await h.sql`SELECT id,state,error FROM card_execution_requests WHERE card_id=${f.cardId}`)[0]!;
     await expect(f.service.startReserved(failed.id,actor)).rejects.toMatchObject({statusCode:422});
     expect(await h.sql`SELECT state,error FROM card_execution_requests WHERE id=${failed.id}`).toEqual([{state:"failed",error:failed.error}]);
+  });
+  it("classifies only fixed typed failure evidence and keeps a stable ACK identity",()=>{
+    const response={type:"error",status:"error",code:"CREATE_REJECTED",requestId:"transport-a",message:"rejected"};
+    const first=confirmedCommandFailure(new PendingNodeCommandRejectedError({commandType:"create_session",requestId:"pending-a",message:"rejected",response}),"work-1");
+    const second=confirmedCommandFailure(new PendingNodeCommandRejectedError({commandType:"create_session",requestId:"pending-b",message:"rejected",response:{...response,requestId:"transport-b"}}),"work-1");
+    expect(first).toEqual({failureId:"work-1:error_ack:CREATE_REJECTED",message:"rejected",evidence:{kind:"error_ack",response}});
+    expect(second?.failureId).toBe(first?.failureId);
+    const noCode=confirmedCommandFailure(new PendingNodeCommandRejectedError({commandType:"create_session",requestId:"pending-c",message:"rejected",response:{type:"error",requestId:"transport-c"}}),"work-1");
+    expect(noCode?.failureId).toBe("work-1:error_ack:error_ack");
+    expect(confirmedCommandFailure(new PendingNodeCommandRejectedError({commandType:"create_session",requestId:"pending-existing",message:"Task already exists: session-1",response:{type:"error",code:"CREATE_REJECTED"}}),"work-1")).toBeNull();
+    expect(confirmedCommandFailure(new NodeCommandTransportError({code:"TRANSPORT_MISSING",nodeId:"node",connectionId:"connection",message:"missing"}),"work-1"))
+      .toMatchObject({failureId:"work-1:before_send:TRANSPORT_MISSING",evidence:{kind:"before_send",code:"TRANSPORT_MISSING"}});
+    expect(confirmedCommandFailure(new PendingNodeCommandTimeoutError({commandType:"create_session",requestId:"pending-d",timeoutMs:1000}),"work-1")).toBeNull();
+    expect(confirmedCommandFailure(new Error("unknown"),"work-1")).toBeNull();
+  });
+  it("persists a confirmed failure delivery in the failure transaction and calls the port after commit",async()=>{
+    let resolveCommitted!:(value:{requestState:string;deliveryState:string})=>void;
+    const committed=new Promise<{requestState:string;deliveryState:string}>(resolve=>{resolveCommitted=resolve;});
+    let deliveryId="";
+    const hooks:FailureHooks={
+      onConfirmedFailureTx:async(sql,request,failure)=>{
+        deliveryId=failure.failureId;
+        expect(request.state).toBe("failed");
+        expect((await sql<{state:string}[]>`SELECT state FROM card_execution_requests WHERE id=${request.id}`)[0]?.state).toBe("failed");
+        const rows=await sql<Record<string,unknown>[]>`INSERT INTO session_deliveries(delivery_id,relation_key,intent,source,producer_kind,producer_id,payload_hash,payload,state,aggregate_state)
+          VALUES(${failure.failureId},${failure.failureId},'durable_next_turn','card_error','card_execution',${request.id},${"a".repeat(64)},${sql.json({failure})},'pending','pending') RETURNING *`;
+        return rows[0] as unknown as SessionDeliveryRow;
+      },
+      onConfirmedFailureCommitted:row=>{void h.peerSql<{requestState:string;deliveryState:string}[]>`SELECT request.state AS "requestState",delivery.state AS "deliveryState" FROM card_execution_requests request JOIN session_deliveries delivery ON delivery.delivery_id=${row.delivery_id}
+        WHERE request.id=${row.producer_id}`
+        .then(rows=>resolveCommitted(rows[0]!));},
+    };
+    const f=await fixture("ack",false,hooks);
+    await expect(f.service.execute(input(f.cardId,"confirmed-ack"))).rejects.toMatchObject({statusCode:422});
+    await expect(committed).resolves.toEqual({requestState:"failed",deliveryState:"pending"});
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE card_id=${f.cardId}`).toEqual([{state:"failed"}]);
+    expect(deliveryId).toBeTruthy();
+    expect(await h.sql`SELECT delivery_id,source,producer_id FROM session_deliveries WHERE delivery_id=${deliveryId}`)
+      .toEqual([{delivery_id:deliveryId,source:"card_error",producer_id:expect.any(String)}]);
+  });
+  it("rolls back request failure when the same-transaction delivery callback fails",async()=>{
+    let deliveryId="";
+    const onConfirmedFailureCommitted=vi.fn();
+    const hooks:FailureHooks={
+      onConfirmedFailureTx:async(sql,request,failure)=>{
+        deliveryId=failure.failureId;
+        await sql`INSERT INTO session_deliveries(delivery_id,relation_key,intent,source,payload_hash,payload,state,aggregate_state)
+          VALUES(${failure.failureId},${failure.failureId},'durable_next_turn','card_error',${"b".repeat(64)},${sql.json({requestId:request.id})},'pending','pending')`;
+        throw new Error("delivery insert callback failed");
+      },
+      onConfirmedFailureCommitted,
+    };
+    const f=await fixture("ack",false,hooks);
+    await expect(f.service.execute(input(f.cardId,"callback-rollback"))).rejects.toThrow("delivery insert callback failed");
+    const row=(await h.sql`SELECT id,state,sent FROM card_execution_requests WHERE card_id=${f.cardId}`)[0]!;
+    expect(row).toMatchObject({state:"pending",sent:true});
+    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE delivery_id=${deliveryId}`).toHaveLength(0);
+    expect(onConfirmedFailureCommitted).not.toHaveBeenCalled();
+  });
+  it("lets a registration proof win over an ACK and keeps callbacks off normal failures",async()=>{
+    const onConfirmedFailureTx=vi.fn(async()=>null);
+    const onConfirmedFailureCommitted=vi.fn();
+    const hooks={onConfirmedFailureTx,onConfirmedFailureCommitted};
+    const f=await fixture("ack-proof",false,hooks);
+    const result=await f.service.execute(input(f.cardId,"proof-wins"));
+    expect(result.execution.state).toBe("started");
+    expect(onConfirmedFailureTx).not.toHaveBeenCalled();expect(onConfirmedFailureCommitted).not.toHaveBeenCalled();
+
+    const ordinary=await fixture("reject",false,hooks);
+    await expect(ordinary.service.execute(input(ordinary.cardId,"generic-error"))).rejects.toThrow("노드 거부");
+    expect(onConfirmedFailureTx).not.toHaveBeenCalled();expect(onConfirmedFailureCommitted).not.toHaveBeenCalled();
   });
   it("reserves in an external transaction before starting the fixed request",async()=>{
     const made=await cards.createCard({actorKind:"user",actorSessionId:null,folderId:"work",title:"예약",request:"외부 트랜잭션",assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"});

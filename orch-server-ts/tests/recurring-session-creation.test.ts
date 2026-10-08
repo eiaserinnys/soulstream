@@ -170,12 +170,13 @@ describe("recurring session creation", () => {
       command: { requestId: "request-1" },
       modelPresetId: "preset-a",
     };
+    const response={ type: "error", message: "Node rejected create_session." };
     const sendPendingCommand = vi.fn(async () => {
       throw new PendingNodeCommandRejectedError({
         commandType: "create_session",
         requestId: "request-1",
         message: "Node rejected create_session.",
-        response: { type: "error", message: "Node rejected create_session." },
+        response,
       });
     });
 
@@ -185,7 +186,16 @@ describe("recurring session creation", () => {
     }, input())).rejects.toMatchObject({
       code: "NODE_REJECTED",
       dispatchPhase: "after_send",
+      response,
     });
+  });
+
+  it("preserves the raw error acknowledgement returned by the bridge",async()=>{
+    const response={type:"session_rejected",status:"error",code:"CREATE_REJECTED",requestId:"transport-ack",detail:{reason:"policy"}};
+    await expect(createRecurringSession({
+      router:{createSession:vi.fn(()=>({node:{nodeId:"node-a"},command:{requestId:"routed-request"},modelPresetId:"preset-a"}))} as unknown as SessionCommandRouter,
+      bridge:{sendPendingCommand:vi.fn(async()=>response)} as unknown as SessionCommandTransportBridge,
+    },input())).rejects.toMatchObject({code:"NODE_REJECTED",dispatchPhase:"after_send",response});
   });
 
   it("keeps a definitely pre-send transport failure terminal", async () => {
