@@ -254,11 +254,9 @@ const ChatEventRow = memo(function ChatEventRow({
     />;
     return (
       <SearchFocusHighlight active={highlighted}>
-        {item.usage ? (
-          <EventContextMenu sessionId={sessionId} event={item.event}>
-            {captions}
-          </EventContextMenu>
-        ) : captions}
+        <EventContextMenu sessionId={sessionId} event={item.event}>
+          {captions}
+        </EventContextMenu>
       </SearchFocusHighlight>
     );
   }
