@@ -1,9 +1,10 @@
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentProfile } from "../../src/agent_registry.js";
+import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import { SessionDataHostError } from "../../src/control_plane/session_data_host_client.js";
-import type { ExecutionContextBuilder, PreparedContext } from "../../src/context/context_builder.js";
+import { ExecutionContextBuilder, type ExecutionContextBuilder as ExecutionContextBuilderPort, type PreparedContext } from "../../src/context/context_builder.js";
+import type { SessionDB } from "../../src/db/session_db.js";
 import {
   CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
   CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
@@ -98,7 +99,7 @@ function makeSubject(options: {
   };
   const logger = { warn: vi.fn() } as unknown as Logger;
   const builder = new TaskTurnInputBuilder({
-    contextBuilder: contextBuilder as unknown as ExecutionContextBuilder,
+    contextBuilder: contextBuilder as unknown as ExecutionContextBuilderPort,
     initialMessagePublisher: initialMessagePublisher as unknown as TaskInitialMessagePublisherPort,
     logger,
   });
@@ -232,6 +233,102 @@ describe("TaskTurnInputBuilder", () => {
     });
     expect(task.interventionQueue).toEqual([]);
     expect(task.needsFullContextReinjection).toBe(false);
+  });
+
+  it.each([claudeAgent, codexAgent])("carries the built checkpoint instructions into the prepared %s generation input", async (agent) => {
+    const scopedAgent = { ...agent, context_scope: "minimal" } as AgentProfile;
+    const standingInstructions = Array.from({ length: 36 }, (_, index) => ({
+      id: `instruction-${index + 1}`,
+      text: index === 35
+        ? "카드 이름 인용 규칙: 카드 제목은 원문 그대로 「」로 감싸 정확히 인용한다."
+        : `지속 규칙 ${index + 1}: 주어진 정보의 순서를 유지하고 중요한 조건을 빠뜨리지 않는다. 구체적인 근거를 함께 살피고 정확한 표현을 사용한다. 실행 전에 관련 범위를 확인하고 필요 없는 내용을 덧붙이지 않는다.`,
+      source_turns: [`T${index + 1}`],
+      source_event_ids: [],
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      status: "active",
+      origin: "user",
+    }));
+    const db = {
+      getResumeContext: vi.fn().mockResolvedValue({
+        session: null,
+        folderSessions: { sessions: [], total: 0 },
+        runningSessions: { sessions: [], total: 0 },
+        predecessor: null,
+      }),
+      getGenerationCheckpointMaterial: vi.fn().mockResolvedValue({
+        story: {
+          highlight: null,
+          narrative: "",
+          unfoldedTurnSummaries: [],
+          narrativeThroughEventId: null,
+          foldCount: 0,
+          updatedAt: null,
+        },
+        lastSummarizedFinalResponseEventId: null,
+        recent: { records: [], omittedUnsummarized: 0 },
+        childSessions: [],
+        childSessionTotal: 0,
+        totals: { events: 0, turnSummaries: 0 },
+      }),
+      getSupervisedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-05T00:00:00.000Z",
+        counts: { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 },
+        cards: [],
+        openQuestions: [],
+        openQuestionTotal: 0,
+      }),
+      getSession: vi.fn().mockResolvedValue(null),
+      getFolderById: vi.fn().mockResolvedValue(null),
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-05T00:00:00.000Z",
+        total: 0,
+        omitted: 0,
+        cards: [],
+      }),
+    } as unknown as SessionDB;
+    const logger = { warn: vi.fn() } as unknown as Logger;
+    const contextBuilder = new ExecutionContextBuilder(
+      db,
+      new AgentRegistry([scopedAgent]),
+      { nodeId: "test-node", atom: { enabled: false, serverUrl: "", apiKey: "" } },
+      logger,
+    );
+    const builder = new TaskTurnInputBuilder({
+      contextBuilder,
+      initialMessagePublisher: { publishInitialMessages: vi.fn().mockResolvedValue(undefined) },
+      logger,
+    });
+    const task = makeTask({
+      profileId: scopedAgent.id,
+      modelPresetBackend: scopedAgent.backend,
+      systemPrompt: "generation system prompt",
+      metadata: [{ type: "persistent_instructions", value: standingInstructions }] as never,
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        fromBackendSessionId: "native-old",
+        previousBackend: scopedAgent.backend,
+        previousModelPreset: scopedAgent.id,
+      },
+      interventionQueue: [{ text: "계속 진행", user: "사용자" }],
+    });
+
+    const input = await builder.prepareInitialTurnInput(task, scopedAgent);
+
+    for (const instruction of standingInstructions) {
+      expect(input.prompt).toContain(instruction.text);
+    }
+    expect(input.prompt).not.toContain("persistent_checkpoint_instructions truncated");
+    expect(input.generationCheckpointStats?.estimatedTokens).toBeLessThanOrEqual(20_000);
+    if (scopedAgent.backend === "claude") {
+      expect(input.systemPrompt).toBe("generation system prompt");
+      expect(input.prompt).not.toContain("generation system prompt");
+    } else {
+      expect(input.systemPrompt).toBeUndefined();
+      expect(input.prompt).toContain("generation system prompt");
+    }
   });
 
   it("fails input assembly for an applying generation with an empty queue and preserves the request", async () => {
@@ -393,7 +490,7 @@ describe("TaskTurnInputBuilder", () => {
       }),
     };
     const builder = new TaskTurnInputBuilder({
-      contextBuilder: contextBuilder as unknown as ExecutionContextBuilder,
+      contextBuilder: contextBuilder as unknown as ExecutionContextBuilderPort,
       initialMessagePublisher,
       logger,
     });
