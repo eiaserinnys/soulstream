@@ -441,7 +441,6 @@ CREATE TABLE cards (
     assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
     assignee_agent_id    TEXT,
     assignee_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    report_target_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     assignee_user_id     TEXT,
     status               TEXT NOT NULL DEFAULT 'todo'
                            CHECK (status IN ('todo','queued','blocked','running','review','done','cancelled')),

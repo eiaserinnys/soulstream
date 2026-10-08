@@ -11,7 +11,7 @@ import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExec
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
-import { CardMutationCore, type CardOperationTxObserver } from "./control_plane/card_mutation_core.js";
+import { CardMutationCore } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
 import {
@@ -41,10 +41,9 @@ export class CardControlPlaneService {
   private readonly repo: CardRepository;
   private readonly core: CardMutationCore;
   constructor(private readonly repoSql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort,
-    private readonly onMutation?: (change:CardMutationChange)=>void,
-    operationTxObserver?: CardOperationTxObserver) {
+    private readonly onMutation?: (change:CardMutationChange)=>void) {
     this.repo=new CardRepository(repoSql);
-    this.core=new CardMutationCore(db,this.repo,broadcaster,operationTxObserver);
+    this.core=new CardMutationCore(db,this.repo,broadcaster);
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
   getSupervisedCardContext(params: { sessionId: string; folderIds: string[] | null; cardLimit: number; questionLimit: number }): Promise<SupervisedCardSnapshot> {

@@ -52,11 +52,6 @@ export interface SessionlessFolderMutateParams {
   idempotencyKey?: string | null;
 }
 
-export type CardOperationTxObserver = (
-  sql: RepositorySql,
-  operation: FolderOperationRow,
-) => Promise<void>;
-
 type FolderEventParams = Omit<FolderMutateParams, "preflight" | "apply"> & {
   operationId: string;
 };
@@ -66,7 +61,6 @@ export class CardMutationCore {
     private readonly db: FolderDbPort,
     private readonly repo: CardRepository,
     private readonly broadcaster?: FolderBroadcasterPort,
-    private readonly operationTxObserver?: CardOperationTxObserver,
   ) {}
 
   async mutate(params: FolderMutateParams): Promise<CardMutationResult> {
@@ -97,9 +91,6 @@ export class CardMutationCore {
         payload: params.payload,
         reason: params.reason,
       });
-      if (operation.target_kind === "card") {
-        await this.operationTxObserver?.(sql, operation);
-      }
     });
 
     const result = {
@@ -135,9 +126,6 @@ export class CardMutationCore {
         payload: params.payload,
         reason: params.reason,
       });
-      if (operation.target_kind === "card") {
-        await this.operationTxObserver?.(sql, operation);
-      }
     });
     return {
       snapshot: await this.requireSnapshot(params.folderId),

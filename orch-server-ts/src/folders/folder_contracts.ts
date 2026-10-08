@@ -3,8 +3,7 @@ import { getCardItemDisplay, type CardItem } from "../cards/card_item_rules.js";
 
 /** Row keys change at the boundary. Opaque JSON content is preserved. */
 export function serializeCardRow(row: Record<string, unknown>): Record<string, unknown> {
-  // Keep the stored report target internal until its public contract is introduced.
-  const serialized=Object.fromEntries(Object.entries(row).filter(([key])=>key !== "report_target_session_id").map(([key,value])=>[
+  const serialized=Object.fromEntries(Object.entries(row).map(([key,value])=>[
     key.replace(/_([a-z])/g,(_match,letter:string)=>letter.toUpperCase()),value instanceof Date ? value.toISOString() : value,
   ]));
   if (Array.isArray(row.items)) {

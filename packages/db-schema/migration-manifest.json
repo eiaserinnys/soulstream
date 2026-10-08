@@ -492,10 +492,6 @@
     {
       "id": "121_card_check_items.sql",
       "sha256": "c6b2fa76369db6cbce0cde3c773624baf5aea8df1fa3f460faa9f3651d399c38"
-    },
-    {
-      "id": "122_card_report_target_session.sql",
-      "sha256": "df73380c6ee170ef7a38fb45b95f4b04d89694f4e61d4ef710fa0ff69125cc76"
     }
   ]
 }
