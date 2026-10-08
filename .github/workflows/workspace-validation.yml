@@ -50,6 +50,9 @@ jobs:
           - name: soul-ui tests
             package: packages/soul-ui
             kind: unit
+          - name: unified-dashboard tests
+            package: unified-dashboard
+            kind: unit
           - name: page-model tests
             package: packages/page-model
             kind: unit
@@ -93,6 +96,9 @@ jobs:
               --exclude '**/*.postgres.integration.test.ts'
           elif [[ "${{ matrix.package }}" == "packages/soul-ui" ]]; then
             corepack pnpm --dir packages/soul-ui exec vitest run \
+              --config vitest.config.ts --minWorkers=1 --maxWorkers=2
+          elif [[ "${{ matrix.package }}" == "unified-dashboard" ]]; then
+            corepack pnpm --dir unified-dashboard exec vitest run \
               --config vitest.config.ts --minWorkers=1 --maxWorkers=2
           else
             corepack pnpm --dir packages/page-model exec vitest run \
