@@ -142,15 +142,15 @@ describe("card work update projection", () => {
       expect(update.items.map((item) => item.id)).toEqual(expectedItems);
   });
 
-  it("projects user or outside attention and leaves progress or unrelated operations quiet", () => {
-    expect(projectCardWorkUpdate(makeOperation("update_card_now", {}), makeCard({ now: {
-      text: "사용자 결정 필요", turn: "user", ask: "계속할까요?", updatedAt: "2026-10-08T06:00:00.000Z", sessionId: null,
-    } }))).toMatchObject({ kind: "attention" });
-    expect(projectCardWorkUpdate(makeOperation("update_card_now", {}), makeCard({ now: {
-      text: "외부 응답 대기", turn: "outside", ask: null, updatedAt: "2026-10-08T06:00:00.000Z", sessionId: null,
-    } }))).toMatchObject({ kind: "attention" });
-    for (const turn of ["agent", null] as const) {
-      const now = turn === null ? null : { text: "진행 중", turn, ask: null, updatedAt: "2026-10-08T06:00:00.000Z", sessionId: "agent-1" };
+  it("keeps now updates quiet and leaves progress or unrelated operations quiet", () => {
+    for (const turn of ["user", "outside", "agent", null] as const) {
+      const now = turn === null ? null : {
+        text: turn === "user" ? "사용자 결정 필요" : turn === "outside" ? "외부 응답 대기" : "진행 중",
+        turn,
+        ask: turn === "user" ? "계속할까요?" : null,
+        updatedAt: "2026-10-08T06:00:00.000Z",
+        sessionId: turn === "agent" ? "agent-1" : null,
+      };
       expect(projectCardWorkUpdate(makeOperation("update_card_now", {}), makeCard({ now }))).toBeNull();
     }
     expect(projectCardWorkUpdate(makeOperation("report_card_item", { item_id: 1, state: "doing" }), makeCard({ items: [makeItem({ state: "doing" })] }))).toBeNull();

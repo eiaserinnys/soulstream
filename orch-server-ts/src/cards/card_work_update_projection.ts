@@ -55,7 +55,6 @@ export type CardWorkUpdate = CardWorkUpdateBase & (
   | { kind: "blocked"; blocked: { kind: CardRow["blocked_kind"]; detail: string | null } }
   | { kind: "review" | "done" | "cancelled"; items: CardWorkItemProjection[] }
   | { kind: "reply"; reply: { id: string; body: string } }
-  | { kind: "attention" }
 );
 
 type CardWorkOperationPayload = {
@@ -178,8 +177,6 @@ export function projectCardWorkUpdate(
       const id = matchingRowId("add_card_comment reply", payload.comment_id, records.reply?.id);
       return { ...base(), kind: "reply", reply: { id, body: records.reply!.body } };
     }
-    case "update_card_now":
-      return card.now?.turn === "user" || card.now?.turn === "outside" ? { ...base(), kind: "attention" } : null;
     default:
       return null;
   }
