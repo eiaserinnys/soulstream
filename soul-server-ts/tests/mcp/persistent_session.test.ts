@@ -163,6 +163,74 @@ describe("set_session_persistent MCP tool", () => {
         });
         expect(removed.content[0]).toMatchObject({ text: expect.stringMatching(/^Keep replies concise\./) });
 
+        const sourceRule = await taskManager.persistentSessions.applyPersistentInstructions(sessionId, {
+          origin: "agent",
+          ops: [{
+            op: "add",
+            text: "Preserve this instruction.",
+            source_turns: ["T10", "T11", "T12"],
+            source_event_ids: [101, 102, 103],
+          }],
+        });
+        const sourceInstruction = sourceRule.results[0]?.item;
+        expect(sourceInstruction).toBeDefined();
+
+        const sourcesRemoved = await client.callTool({
+          name: "update_persistent_instruction",
+          arguments: {
+            session_id: sessionId,
+            instruction_id: sourceInstruction!.id,
+            remove_source_turns: ["T11"],
+            remove_source_event_ids: [103],
+          },
+        });
+        expect(sourcesRemoved.structuredContent).toMatchObject({
+          status: "ok",
+          instruction: {
+            id: sourceInstruction!.id,
+            text: "Preserve this instruction.",
+            source_turns: ["T10", "T12"],
+            source_event_ids: [101, 102],
+            created_at: sourceInstruction!.created_at,
+            status: "active",
+            origin: "agent",
+          },
+        });
+        expect(readPersistentInstructions(row.metadata).find((item) => item.id === sourceInstruction!.id))
+          .toMatchObject({ source_turns: ["T10", "T12"], source_event_ids: [101, 102] });
+
+        const emptyRemoval = await client.callTool({
+          name: "update_persistent_instruction",
+          arguments: {
+            session_id: sessionId,
+            instruction_id: sourceInstruction!.id,
+            remove_source_turns: [],
+            remove_source_event_ids: [],
+          },
+        });
+        expect(emptyRemoval.structuredContent).toMatchObject({
+          status: "ok",
+          instruction: { source_turns: ["T10", "T12"], source_event_ids: [101, 102] },
+        });
+
+        const metadataBeforeRejectedUpdate = row.metadata;
+        const missingUpdate = await client.callTool({
+          name: "update_persistent_instruction",
+          arguments: { session_id: sessionId, instruction_id: sourceInstruction!.id },
+        });
+        const invalidSources = await client.callTool({
+          name: "update_persistent_instruction",
+          arguments: {
+            session_id: sessionId,
+            instruction_id: sourceInstruction!.id,
+            remove_source_turns: ["not-a-turn"],
+            remove_source_event_ids: [1.5],
+          },
+        });
+        expect(missingUpdate.isError).toBe(true);
+        expect(invalidSources.isError).toBe(true);
+        expect(row.metadata).toBe(metadataBeforeRejectedUpdate);
+
         const hydratedTask = hydrateEvictedTaskFromSessionRow(row, pino({ level: "silent" }));
         expect(hydratedTask?.persistent).toBe(true);
 
