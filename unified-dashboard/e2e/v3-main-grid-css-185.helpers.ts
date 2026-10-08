@@ -1,3 +1,5 @@
+// Kept together beyond 500 lines: this QA module owns the existing grid measurements
+// and their connection-boundary evidence; the scoped repair changes this helper only.
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -181,10 +183,25 @@ export async function captureDialogState(
       expect(initialState).toMatchObject({ cardHomePresent: true, plannerPresent: true });
     }
 
-    const measurement = await measureDialog(session.page);
+    await waitForDialogOpen(session.page);
+    const beforeCapture = {
+      measurement: await measureDialog(session.page),
+      openState: await inspectDialogOpenState(session.page),
+      entryState: await inspectInitialDialogState(session.page),
+    };
+    const open = { connected: true, open: true, starting: false, ending: false, opacity: "1" };
+    expect(beforeCapture.openState).toEqual([{ ...open, scale: "1" }, { ...open, scale: "none" }]);
     expect(session.unknownApiRequests).toEqual([]);
-    const imagePath = testInfo.outputPath("connection-" + mode + "-" + label + "-" + viewport.name + ".png");
-    await capture(session.page, imagePath);
+    const outputName = "connection-" + mode + "-" + label + "-" + viewport.name + "-animations-allow";
+    const imagePath = testInfo.outputPath(outputName + ".png");
+    const screenshotOptions = { animations: "allow", fullPage: true, timeout: 5_000 } as const;
+    await mkdir(dirname(imagePath), { recursive: true });
+    await session.page.screenshot({ path: imagePath, ...screenshotOptions });
+    const afterCapture = {
+      measurement: await measureDialog(session.page),
+      openState: await inspectDialogOpenState(session.page),
+      entryState: await inspectInitialDialogState(session.page),
+    };
     const result = {
       label,
       origin: session.origin,
@@ -199,15 +216,69 @@ export async function captureDialogState(
       initialState,
       lazyGatePaths: lazyGate?.intercepted ?? [],
       lazyGateExpired: lazyGate?.expired() ?? false,
-      measurement,
+      measurement: beforeCapture.measurement,
+      beforeCapture,
+      afterCapture,
+      screenshotOptions,
       screenshot: imagePath,
     };
-    await writeJson(testInfo.outputPath("connection-" + mode + "-" + label + "-" + viewport.name + ".json"), result);
+    await writeJson(testInfo.outputPath(outputName + ".json"), result);
+    expect(afterCapture).toEqual(beforeCapture);
+    expect(session.unknownApiRequests).toEqual([]);
+    expect(healthResponses.at(-1)).toEqual({ status: 503, healthy: false, ready: false });
+    if (mode === "first") {
+      expect(healthResponses.every((response) => response.status === 503)).toBe(true);
+      expect(afterCapture.entryState).toEqual({ cardHomePresent: false, plannerPresent: false, lazyDashboardAssetsLoaded: [] });
+      expect(lazyGate!.expired()).toBe(false);
+    } else {
+      expect(afterCapture.entryState).toMatchObject({ cardHomePresent: true, plannerPresent: true });
+    }
     return result;
   } finally {
     lazyGate?.release();
     await session.context.close();
   }
+}
+
+export async function waitForDialogOpen(page: Page, timeout = 3_000): Promise<void> {
+  const deadline = Date.now() + timeout;
+  const ready = await page.waitForFunction(() => {
+    if (document.fonts.status !== "loaded") return false;
+    const elements = [document.querySelector('[data-slot="dialog-popup"]'), document.querySelector('[data-slot="dialog-backdrop"]')];
+    return elements.every((element) => {
+      if (!element) return false;
+      const style = getComputedStyle(element);
+      // Own finite transitions only: the descendant LoaderCircle spins indefinitely.
+      const transitioning = element.getAnimations().some((animation) =>
+        Number.isFinite(animation.effect?.getComputedTiming().endTime)
+        && (animation.pending || animation.playState === "running"));
+      return element.isConnected && element.hasAttribute("data-open")
+        && !element.hasAttribute("data-starting-style") && !element.hasAttribute("data-ending-style")
+        && style.opacity === "1" && (style.scale === "1" || style.scale === "none") && !transitioning;
+    });
+  }, null, { timeout });
+  await ready.dispose();
+  await page.evaluate(async (remaining) => {
+    let timer: ReturnType<typeof setTimeout>;
+    try {
+      await Promise.race([
+        document.fonts.ready.then(() => new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())))),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Dialog readiness timed out")), remaining); }),
+      ]);
+    } finally { clearTimeout(timer!); }
+  }, Math.max(1, deadline - Date.now()));
+}
+
+export async function inspectDialogOpenState(page: Page) {
+  return page.evaluate(() => ['[data-slot="dialog-popup"]', '[data-slot="dialog-backdrop"]'].map((selector) => {
+    const element = document.querySelector(selector);
+    if (!element) return null;
+    const style = getComputedStyle(element);
+    return { connected: element.isConnected, open: element.hasAttribute("data-open"),
+      starting: element.hasAttribute("data-starting-style"), ending: element.hasAttribute("data-ending-style"),
+      opacity: style.opacity, scale: style.scale };
+  }));
 }
 
 export async function installLazyDashboardAssetGate(page: Page) {
