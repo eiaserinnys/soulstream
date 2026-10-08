@@ -65,7 +65,6 @@ export interface CardRow extends CardAssigneeFields {
   blocked_detail: string | null;
   node_id: string | null;
   model_preset: string | null;
-  report_target_session_id: string | null;
   status: CardStatus;
   archived: boolean;
   version: number;
