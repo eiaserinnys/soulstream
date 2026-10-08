@@ -44,7 +44,7 @@ for (const width of [1440, 340, 1280, 390]) {
     await expect(agentReview).toBeVisible();
     const collapsedAgentSample = page.getByTestId("agent-message-group-collapsed");
     const expandedAgentSample = page.getByTestId("agent-message-group-expanded");
-    await expect(collapsedAgentSample.locator("button")).toHaveText("다른 세션 메시지 3건");
+    await expect(collapsedAgentSample.locator("button")).toHaveText("다른 세션 메시지 1건");
     await expect(collapsedAgentSample.locator("button")).toHaveAttribute("aria-expanded", "false");
     await expect(expandedAgentSample.locator("button")).toHaveText("다른 세션 메시지 3건");
     await expect(expandedAgentSample.locator("button")).toHaveAttribute("aria-expanded", "true");

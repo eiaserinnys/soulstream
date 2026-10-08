@@ -12,12 +12,14 @@ export const ChatThinkingIndicator = memo(function ChatThinkingIndicator({ prese
   if (presentation === "manuscript") {
     return (
       <div className="flex items-center gap-2 py-1.5 text-muted-foreground" data-slot="chat-thinking-indicator">
-        <span className="flex items-center gap-1" data-slot="chat-thinking-dots" aria-hidden="true">
-          <span className="size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
-          <span className="size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
-          <span className="size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none" />
-        </span>
-        <span className="text-xs leading-none">생각 중입니다…</span>
+        <ThinkingOrb
+          state="working"
+          size={20}
+          theme="auto"
+          aria-label="생각 중입니다"
+          data-thinking-orb-state="working"
+        />
+        <span aria-hidden="true" className="text-xs leading-none text-muted-foreground">생각 중입니다…</span>
       </div>
     );
   }

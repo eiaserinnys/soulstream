@@ -179,9 +179,10 @@ const w13CaptureRoot = path.resolve("../../../.local/artifacts");
 const w13Now = new Date().toISOString();
 const w13Stamp = `${w13Now.slice(0, 10).replaceAll("-", "")}-${w13Now.slice(11, 16).replace(":", "")}`;
 
-for (const width of [1440, 340]) {
+for (const width of [1440, 390]) {
   test(`W13 manuscript activity sample ${width}`, async ({ page }) => {
     await prepare(page, width);
+    await page.emulateMedia({ colorScheme: "dark", reducedMotion: width === 390 ? "reduce" : "no-preference" });
     await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",
       body: JSON.stringify({ authEnabled: true, devModeEnabled: false }) }));
     await page.route("**/api/auth/status", route => route.fulfill({ contentType: "application/json",
@@ -201,6 +202,31 @@ for (const width of [1440, 340]) {
     await expect(activity).toContainText("실패 1");
     await expect(activity).toContainText("생각 중입니다…");
 
+    const indicator = activity.locator("[data-slot=chat-thinking-indicator]");
+    const orb = indicator.locator('canvas[data-thinking-orb-state="working"]');
+    await expect(orb).toHaveCount(1);
+    await expect(orb).toHaveAttribute("aria-label", "생각 중입니다");
+    const readOrbFrame = () => orb.evaluate(canvas => {
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("working orb canvas has no 2D context");
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let paintedPixels = 0;
+      let signature = 2166136261;
+      for (let index = 0; index < pixels.length; index += 1) {
+        if (index % 4 === 3 && pixels[index] > 0) paintedPixels += 1;
+        signature = Math.imul(signature ^ pixels[index], 16777619) >>> 0;
+      }
+      return { width: canvas.width, height: canvas.height, paintedPixels, signature };
+    });
+    await expect.poll(async () => (await readOrbFrame()).paintedPixels).toBeGreaterThan(0);
+    const frameBefore = await readOrbFrame();
+    await page.clock.runFor(200);
+    const frameAfter = await readOrbFrame();
+    expect(frameBefore.width).toBeGreaterThan(0);
+    expect(frameBefore.height).toBeGreaterThan(0);
+    if (width === 390) expect(frameAfter.signature).toBe(frameBefore.signature);
+    else expect(frameAfter.signature).not.toBe(frameBefore.signature);
+
     const geometry = await activity.evaluate(element => {
       const box = (selector: string) => {
         const rect = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
@@ -209,16 +235,17 @@ for (const width of [1440, 340]) {
       return {
         viewportWidth: innerWidth,
         activity: box("[data-slot=chat-activity-row]"),
+        activityToggle: box("[data-slot=manuscript-activity-toggle]"),
         thinking: box('[data-tree-node-id="review-thought-alone"]'),
         indicator: box("[data-slot=chat-thinking-indicator]"),
-        dots: [...element.querySelectorAll<HTMLElement>("[data-slot=chat-thinking-dots] > span")]
-          .map(dot => ({ animation: getComputedStyle(dot).animationName, color: getComputedStyle(dot).backgroundColor })),
+        orb: box('canvas[data-thinking-orb-state="working"]'),
       };
     });
     expect(Math.abs(geometry.activity.x - geometry.thinking.x)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.activity.x - geometry.indicator.x)).toBeLessThanOrEqual(1);
-    expect(geometry.dots).toHaveLength(3);
-    expect(geometry.dots.every(dot => dot.animation === "none")).toBe(true);
+    expect(Math.abs(geometry.activityToggle.right - geometry.activity.right)).toBeLessThanOrEqual(1);
+    expect(geometry.orb.width).toBe(20);
+    expect(geometry.orb.height).toBe(20);
 
     await page.evaluate(() => document.fonts.ready);
     await activity.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-activity-${width}.png`), animations: "disabled" });
@@ -232,7 +259,28 @@ for (const width of [1440, 340]) {
     await expect(closedGroup).toHaveAttribute("aria-expanded", "true");
     const singleToolRow = closedGroup.locator("xpath=ancestor::*[@data-slot='chat-activity-row'][1]");
     await expect(singleToolRow.locator("[data-slot=manuscript-tool-call-item]")).toHaveCount(1);
+    await singleToolRow.locator("[data-slot=tool-call-item-toggle]").click();
+    await expect(singleToolRow.locator("[data-slot=chat-tool-body]")).toContainText("읽기 완료");
     await expect(activity).not.toContainText("mcp__soulstream__");
+
+    const agentReview = page.getByTestId("persistent-agent-message-group-review");
+    await agentReview.scrollIntoViewIfNeeded();
+    const collapsedAgent = page.getByTestId("agent-message-group-collapsed");
+    const agentHeader = collapsedAgent.locator("button");
+    await expect(agentHeader).toHaveText("다른 세션 메시지 1건");
+    const agentGeometry = await collapsedAgent.evaluate(element => {
+      const row = element.querySelector<HTMLElement>('[data-slot="manuscript-agent-message-group"]')!;
+      const button = row.querySelector<HTMLButtonElement>("button")!;
+      return { rowRight: row.getBoundingClientRect().right, buttonRight: button.getBoundingClientRect().right };
+    });
+    expect(Math.abs(agentGeometry.rowRight - agentGeometry.buttonRight)).toBeLessThanOrEqual(1);
+    await collapsedAgent.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-agent-collapsed-${width}.png`), animations: "disabled" });
+    const agentHeaderBox = await agentHeader.boundingBox();
+    if (!agentHeaderBox) throw new Error("collapsed agent header has no layout box");
+    await agentHeader.click({ position: { x: 4, y: agentHeaderBox.height / 2 } });
+    await expect(agentHeader).toHaveAttribute("aria-expanded", "true");
+    await expect(collapsedAgent.locator('[data-slot="chat-body"]')).toHaveCount(1);
+    await collapsedAgent.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-agent-expanded-${width}.png`), animations: "disabled" });
   });
 }
 

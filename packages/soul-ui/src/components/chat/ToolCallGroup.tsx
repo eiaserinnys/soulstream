@@ -1,11 +1,11 @@
-import { memo, useState } from "react";
+import { memo, useId, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Clock, Wrench, X } from "lucide-react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { cn } from "../../lib/cn";
-import { DisclosureActionIcon } from "../DisclosureActionIcon";
 import { useLazyLoadContent, useLazyLoadToolTrace } from "./hooks";
 import { ShowFullContentButton } from "./ShowFullContentButton";
 import { ThinkingMessage } from "./ThinkingMessage";
+import { CollapsibleCaptionHeader } from "./CollapsibleCaption";
 
 /** 그룹 내 개별 tool call 항목 (truncation lazy load 포함) */
 const ToolCallItem = memo(function ToolCallItem({
@@ -135,6 +135,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
+  const activityBodyId = useId();
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
   const toggleExpanded = () => {
@@ -162,21 +163,25 @@ export const ToolCallGroup = memo(function ToolCallGroup({
     return (
       <div className="flex py-1" data-slot="chat-activity-row" data-tree-node-id={toolMessages[0]?.treeNodeId}>
         <div className="w-full min-w-0">
-          <button
-            type="button"
-            aria-expanded={expanded}
+          <CollapsibleCaptionHeader
+            id={activityBodyId}
+            expanded={expanded}
+            title={
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 truncate font-medium">도구 {toolMessages.length}회</span>
+                {hasRunningTool && <span className="shrink-0">실행 중</span>}
+                {failureCount > 0 && <span className="shrink-0 chat-tone-danger-text">실패 {failureCount}</span>}
+              </span>
+            }
+            align="end"
+            alignmentInset="content"
+            onToggle={toggleExpanded}
+            className="w-full motion-safe:active:scale-100"
             data-slot="manuscript-activity-toggle"
-            onClick={toggleExpanded}
-            className="flex h-6 w-full min-w-0 items-center gap-1.5 overflow-hidden text-muted-foreground hover:text-foreground"
-          >
-            <Wrench className="size-3.5 shrink-0" aria-hidden="true" />
-            <span className="truncate font-medium">도구 {toolMessages.length}회</span>
-            {hasRunningTool && <span className="shrink-0">실행 중</span>}
-            {failureCount > 0 && <span className="shrink-0 chat-tone-danger-text">실패 {failureCount}</span>}
-            <DisclosureActionIcon expanded={expanded} className="size-3.5 shrink-0" />
-          </button>
+          />
           {expanded && (
-            <div data-slot="manuscript-activity-items" className="ml-5 mt-1 space-y-0.5">
+            <div id={activityBodyId} data-slot="manuscript-activity-items" className="ml-5 mt-1 space-y-0.5">
               {messages.map((msg) => msg.role === "tool"
                 ? <ToolCallItem key={msg.id} msg={msg} presentation="manuscript" />
                 : <ThinkingMessage key={msg.id} msg={msg} presentation="manuscript" />)}
