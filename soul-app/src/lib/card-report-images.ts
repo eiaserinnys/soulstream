@@ -1,9 +1,10 @@
+import { parseStandaloneImageLine } from '../../../packages/soul-ui/src/lib/standalone-image-line';
+
 export type CardReportSegment =
   | { kind: 'markdown'; markdown: string }
   | { kind: 'image'; alt: string; url: string };
 
 // Card reports use standalone image lines. This is deliberately not a Markdown parser.
-const IMAGE_LINE = /^ {0,3}!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\s)]+)(?:[ \t]+"[^"]*")?\)[ \t]*$/;
 const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 
 export function segmentCardReportImages(markdown: string): CardReportSegment[] {
@@ -26,10 +27,10 @@ export function segmentCardReportImages(markdown: string): CardReportSegment[] {
       text.push(line);
       continue;
     }
-    const image = IMAGE_LINE.exec(line);
+    const image = parseStandaloneImageLine(line);
     if (image) {
       flush();
-      segments.push({ kind: 'image', alt: image[1], url: image[2] });
+      segments.push({ kind: 'image', alt: image.alt, url: image.url });
     } else text.push(line);
   }
   flush();

@@ -1,4 +1,19 @@
 import { segmentCardReportImages } from '../card-report-images';
+import { parseStandaloneImageLine } from '../../../../packages/soul-ui/src/lib/standalone-image-line';
+
+test.each([
+  ['![첫 사진](/api/attachments/files?path=%2Ffirst.png)', { alt: '첫 사진', url: '/api/attachments/files?path=%2Ffirst.png' }],
+  ['   ![둘째](https://images.test/second.png "원본")  ', { alt: '둘째', url: 'https://images.test/second.png' }],
+  ['![빈 대체 텍스트](/image.png)', { alt: '빈 대체 텍스트', url: '/image.png' }],
+  ['문장 안의 ![이미지](/image.png)', null],
+  ['![참조 이미지][photo]', null],
+  ['![프로토콜 상대 URL](//images.test/image.png)', { alt: '프로토콜 상대 URL', url: '//images.test/image.png' }],
+  ['![상대 경로](images/image.png)', null],
+  ['    ![코드 예시](/image.png)', null],
+  ['<img src="/image.png">', null],
+])('standalone image matcher: %s', (line, expected) => {
+  expect(parseStandaloneImageLine(line)).toEqual(expected);
+});
 
 test('독립 이미지와 사이의 글을 순서대로 보존한다', () => {
   const segments = segmentCardReportImages('앞 문단\n\n![첫 사진](/first.png)\n\n사이 문단\n\n![둘째](https://other.test/second.png "설명")\n\n끝 문단');
