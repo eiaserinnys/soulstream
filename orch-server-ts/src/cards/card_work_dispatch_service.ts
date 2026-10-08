@@ -165,61 +165,65 @@ export class CardWorkDispatchService {
   }
 
   async kick(receipt: AcceptedWork): Promise<void> {
-    if (receipt.work.kind === "execution") {
-      const operation = await this.readDispatchOperation(receipt.operationId, receipt.card.id, "create_card");
-      const request = (await this.options.sql<CardExecutionRequest[]>`
-        SELECT * FROM card_execution_requests WHERE id=${receipt.work.requestId}
-      `)[0];
-      if (!request || request.card_id !== receipt.card.id || request.session_id !== receipt.work.sessionId
-        || request.idempotency_key !== `dispatch-work-execution:${operation.id}`) {
-        throw failure("Saved execution reservation does not match receipt", 409);
+    try {
+      if (receipt.work.kind === "execution") {
+        const operation = await this.readDispatchOperation(receipt.operationId, receipt.card.id, "create_card");
+        const request = (await this.options.sql<CardExecutionRequest[]>`
+          SELECT * FROM card_execution_requests WHERE id=${receipt.work.requestId}
+        `)[0];
+        if (!request || request.card_id !== receipt.card.id || request.session_id !== receipt.work.sessionId
+          || request.idempotency_key !== `dispatch-work-execution:${operation.id}`) {
+          throw failure("Saved execution reservation does not match receipt", 409);
+        }
+        if (request.state !== "pending") return;
+        if (operation.actor_kind !== "agent" || !operation.actor_session_id) throw failure("Saved dispatch actor is unavailable", 409);
+        await this.options.execution.startReserved(request.id, {
+          actorKind: "agent",
+          actorSessionId: operation.actor_session_id,
+          actorUserId: operation.actor_user_id,
+        });
+        return;
       }
-      if (request.state !== "pending") return;
-      if (operation.actor_kind !== "agent" || !operation.actor_session_id) throw failure("Saved dispatch actor is unavailable", 409);
-      await this.options.execution.startReserved(request.id, {
-        actorKind: "agent",
-        actorSessionId: operation.actor_session_id,
-        actorUserId: operation.actor_user_id,
-      });
-      return;
-    }
 
-    const operation = await this.readDispatchOperation(receipt.operationId, receipt.card.id, "add_card_comment");
-    const commentId = stringField(operation.payload_json.comment_id);
-    if (!commentId) throw failure("Saved followup comment is unavailable", 409);
-    const delivery = (await this.options.sql<DeliveryQueryRow[]>`
-      SELECT * FROM session_deliveries
-      WHERE delivery_id=${receipt.work.deliveryId} AND producer_id=${operation.id}
-        AND source='card_change' AND target_session_id=${receipt.work.sessionId}
-    `)[0];
-    if (!delivery) throw failure("Saved followup delivery is unavailable", 409);
-    await this.options.sendDelivery(delivery);
-    const current = (await this.options.sql<DeliveryQueryRow[]>`
-      SELECT * FROM session_deliveries WHERE delivery_id=${delivery.delivery_id}
-    `)[0];
-    if (isAccepted(current)) await this.options.cards.markCommentDelivered(receipt.card.id, commentId);
+      const operation = await this.readDispatchOperation(receipt.operationId, receipt.card.id, "add_card_comment");
+      const commentId = stringField(operation.payload_json.comment_id);
+      if (!commentId) throw failure("Saved followup comment is unavailable", 409);
+      const delivery = (await this.options.sql<DeliveryQueryRow[]>`
+        SELECT * FROM session_deliveries
+        WHERE delivery_id=${receipt.work.deliveryId} AND producer_id=${operation.id}
+          AND source='card_change' AND target_session_id=${receipt.work.sessionId}
+      `)[0];
+      if (!delivery) throw failure("Saved followup delivery is unavailable", 409);
+      await this.options.sendDelivery(delivery);
+      const current = (await this.options.sql<DeliveryQueryRow[]>`
+        SELECT * FROM session_deliveries WHERE delivery_id=${delivery.delivery_id}
+      `)[0];
+      if (isAccepted(current)) await this.options.cards.markCommentDelivered(receipt.card.id, commentId);
+    } catch (error) {
+      this.options.warn(`Accepted card work kick failed for ${receipt.operationId}: ${errorMessage(error)}`);
+    }
   }
 
   async kickPendingForNode(nodeId: string): Promise<void> {
-    const rows = await this.options.sql<Array<{
-      operation_id: string;
-      card_id: string;
-      number: number | null;
-      request_id: string;
-      session_id: string;
-    }>>`
-      SELECT op.id AS operation_id,c.id AS card_id,c.number,r.id AS request_id,r.session_id
-      FROM card_execution_requests r
-      JOIN folder_operations op ON r.idempotency_key='dispatch-work-execution:'||op.id
-      JOIN cards c ON c.id=r.card_id
-      WHERE r.state='pending' AND r.target->>'nodeId'=${nodeId}
-        AND op.operation_type='create_card' AND op.actor_kind='agent'
-        AND op.actor_session_id IS NOT NULL
-        AND op.idempotency_key LIKE 'dispatch-work:'||op.actor_session_id||':%'
-      ORDER BY r.created_at,r.id
-    `;
-    for (const row of rows) {
-      try {
+    try {
+      const rows = await this.options.sql<Array<{
+        operation_id: string;
+        card_id: string;
+        number: number | null;
+        request_id: string;
+        session_id: string;
+      }>>`
+        SELECT op.id AS operation_id,c.id AS card_id,c.number,r.id AS request_id,r.session_id
+        FROM card_execution_requests r
+        JOIN folder_operations op ON r.idempotency_key='dispatch-work-execution:'||op.id
+        JOIN cards c ON c.id=r.card_id
+        WHERE r.state='pending' AND r.target->>'nodeId'=${nodeId}
+          AND op.operation_type='create_card' AND op.actor_kind='agent'
+          AND op.actor_session_id IS NOT NULL
+          AND op.idempotency_key LIKE 'dispatch-work:'||op.actor_session_id||':%'
+        ORDER BY r.created_at,r.id
+      `;
+      for (const row of rows) {
         await this.kick({
           accepted: true,
           idempotent: true,
@@ -227,9 +231,9 @@ export class CardWorkDispatchService {
           card: { id: row.card_id, number: row.number },
           work: { kind: "execution", requestId: row.request_id, sessionId: row.session_id },
         });
-      } catch (error) {
-        this.options.warn(`Pending card work kick failed for ${row.request_id}: ${errorMessage(error)}`);
       }
+    } catch (error) {
+      this.options.warn(`Pending card work scan failed for node ${nodeId}: ${errorMessage(error)}`);
     }
   }
 

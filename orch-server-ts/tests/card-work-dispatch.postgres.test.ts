@@ -150,6 +150,20 @@ describe("card work dispatch transaction contracts", () => {
     await h.sql`UPDATE sessions SET folder_id='work' WHERE session_id='caller-session'`;
   }, 60000);
 
+  it("warns and resolves when post-accept launch throws without creating an error delivery", async () => {
+    const stack = createStack();
+    const execution = {
+      reserveTx: stack.execution.reserveTx.bind(stack.execution),
+      startReserved: vi.fn(async () => { throw new Error("ordinary launch failure"); }),
+    };
+    const service = new CardWorkDispatchService({ ...stack.optionsForService, execution });
+    const receipt = await service.accept(createInput("kick-ordinary-failure"), actor);
+
+    await expect(service.kick(receipt)).resolves.toBeUndefined();
+    expect(stack.optionsForService.warn).toHaveBeenCalledWith(expect.stringContaining("ordinary launch failure"));
+    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_id=${receipt.operationId} AND producer_kind='card_work_error'`).toHaveLength(0);
+  }, 60000);
+
   it("stores a spoken followup and its saved delivery atomically, then replays and marks only an accepted delivery", async () => {
     const stack = createStack();
     const made = await stack.cards.createCard({
@@ -183,7 +197,7 @@ describe("card work dispatch transaction contracts", () => {
     expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_id=${receipt.operationId} AND producer_kind IS NULL`).toHaveLength(1);
     expect(stack.optionsForService.emitCardUpdated).toHaveBeenCalledTimes(1);
 
-    const deliveryError = await h.sql.begin((tx) => recordConfirmedErrorTx(tx, {
+    const deliveryError = await stack.sql.begin((tx) => recordConfirmedErrorTx(tx, {
       operationId: receipt.operationId,
       cardId,
       workId: receipt.work.kind === "delivery" ? receipt.work.deliveryId : "",
