@@ -101,6 +101,81 @@ describe("PersistentSessionControl persistent instructions", () => {
     expect(missing.results[0]).toEqual({ status: "not_found" });
   });
 
+  it("removes only listed sources and preserves the instruction fields", async () => {
+    const instruction = {
+      ...makeInstruction("agent-rule"),
+      text: "Keep this instruction.",
+      source_turns: ["T10", "T11", "T12"],
+      source_event_ids: [101, 102, 103],
+      created_at: "2026-10-06T12:00:00.000Z",
+      updated_at: "2026-10-06T12:00:00.000Z",
+    };
+    const untouched = {
+      ...makeInstruction("user-rule"),
+      origin: "user",
+      source_turns: ["T20"],
+      source_event_ids: [201],
+    };
+    const { control, task, enqueueMetadataEffect } = makeControl([{
+      type: "persistent_instructions",
+      value: [instruction, untouched],
+    }]);
+
+    const result = await control.applyPersistentInstructions("session-instructions", {
+      origin: "agent",
+      ops: [{
+        op: "update",
+        id: instruction.id,
+        remove_source_turns: ["T11"],
+        remove_source_event_ids: [103],
+      }],
+    });
+
+    expect(result.results[0]?.status).toBe("ok");
+    expect(result.results[0]?.item).toMatchObject({
+      id: instruction.id,
+      text: instruction.text,
+      source_turns: ["T10", "T12"],
+      source_event_ids: [101, 102],
+      created_at: instruction.created_at,
+      status: "active",
+      origin: "agent",
+    });
+    expect(result.results[0]?.item?.updated_at).not.toBe(instruction.updated_at);
+
+    const stored = task.metadata?.find((entry) => entry.type === "persistent_instructions")?.value;
+    expect(stored).toEqual([result.results[0]?.item, untouched]);
+    expect(enqueueMetadataEffect).toHaveBeenCalledWith(
+      "session-instructions",
+      { type: "persistent_instructions", value: [result.results[0]?.item, untouched] },
+      { replaceExistingType: "persistent_instructions", waitForAck: true },
+    );
+
+    const repeated = await control.applyPersistentInstructions("session-instructions", {
+      origin: "agent",
+      ops: [{
+        op: "update",
+        id: instruction.id,
+        remove_source_turns: ["T11"],
+        remove_source_event_ids: [103],
+      }],
+    });
+    expect(repeated.results[0]?.item).toMatchObject({
+      source_turns: ["T10", "T12"],
+      source_event_ids: [101, 102],
+    });
+
+    const missing = await control.applyPersistentInstructions("session-instructions", {
+      origin: "agent",
+      ops: [{
+        op: "update",
+        id: "missing",
+        remove_source_turns: ["T11"],
+      }],
+    });
+    expect(missing.results[0]).toEqual({ status: "not_found" });
+  });
+
   it("publishes one anchored debug event for extracted changes, never agent or user edits", async () => {
     const { control, events } = makeControl();
     const extracted = await control.applyPersistentInstructions("session-instructions", {

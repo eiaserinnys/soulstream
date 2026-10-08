@@ -18,7 +18,14 @@ export interface PersistentInstruction {
 
 export type PersistentInstructionOp =
   | { op: "add"; text: string; source_turns?: string[]; source_event_ids?: number[] }
-  | { op: "update"; id: string; text?: string; status?: PersistentInstructionStatus }
+  | {
+      op: "update";
+      id: string;
+      text?: string;
+      status?: PersistentInstructionStatus;
+      remove_source_turns?: string[];
+      remove_source_event_ids?: number[];
+    }
   | { op: "touch"; id: string; source_turns: string[]; source_event_ids: number[] };
 
 export interface PersistentInstructionsApplyPayload {
@@ -157,11 +164,31 @@ function parseInstructionOp(
     return { ok: true, value: { op: "add", text: text.value, source_turns: turns.value, source_event_ids: eventIds.value } };
   }
   if (input.op === "update") {
-    const unknownKey = firstUnknownKey(input, ["op", "id", "text", "status"]);
+    const unknownKey = firstUnknownKey(input, [
+      "op",
+      "id",
+      "text",
+      "status",
+      "remove_source_turns",
+      "remove_source_event_ids",
+    ]);
     if (unknownKey) return invalid(`${label}.${unknownKey} is not supported`);
     const id = nonEmptyString(input.id, `${label}.id`);
     if (!id.ok) return id;
-    if (input.text === undefined && input.status === undefined) return invalid(`${label} requires text or status`);
+    const removeSourceTurns = input.remove_source_turns === undefined
+      ? undefined
+      : parseTurns(input.remove_source_turns, `${label}.remove_source_turns`);
+    if (removeSourceTurns !== undefined && !removeSourceTurns.ok) return removeSourceTurns;
+    const removeSourceEventIds = input.remove_source_event_ids === undefined
+      ? undefined
+      : parseEventIds(input.remove_source_event_ids, `${label}.remove_source_event_ids`);
+    if (removeSourceEventIds !== undefined && !removeSourceEventIds.ok) return removeSourceEventIds;
+    if (input.text === undefined
+      && input.status === undefined
+      && removeSourceTurns === undefined
+      && removeSourceEventIds === undefined) {
+      return invalid(`${label} requires text, status, or source removal`);
+    }
     let text: string | undefined;
     if (input.text !== undefined) {
       const parsed = nonEmptyString(input.text, `${label}.text`);
@@ -176,6 +203,8 @@ function parseInstructionOp(
         id: id.value,
         ...(text === undefined ? {} : { text }),
         ...(input.status === undefined ? {} : { status: input.status }),
+        ...(removeSourceTurns === undefined ? {} : { remove_source_turns: removeSourceTurns.value }),
+        ...(removeSourceEventIds === undefined ? {} : { remove_source_event_ids: removeSourceEventIds.value }),
       },
     };
   }

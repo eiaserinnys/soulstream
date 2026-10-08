@@ -115,6 +115,12 @@ export class PersistentSessionInstructionControl {
         ...current,
         ...(op.text === undefined ? {} : { text: op.text.trim() }),
         ...(op.status === undefined ? {} : { status: op.status }),
+        ...(op.remove_source_turns === undefined
+          ? {}
+          : { source_turns: current.source_turns.filter((turn) => !op.remove_source_turns!.includes(turn)) }),
+        ...(op.remove_source_event_ids === undefined
+          ? {}
+          : { source_event_ids: current.source_event_ids.filter((eventId) => !op.remove_source_event_ids!.includes(eventId)) }),
         updated_at: updatedAt,
       };
       instructions[index] = item;

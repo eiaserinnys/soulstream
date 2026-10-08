@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX } from "./v3-layout-metrics";
+import { V3_MAIN_COLUMNS_OUTER_MARGIN_PX } from "./v3-main-columns";
 import { useNodes } from "../hooks/useNodes";
 import { ConfigModal } from "../components/ConfigModal";
 import { V3SearchModal } from "./V3SearchModal";
@@ -511,6 +512,7 @@ function V3DashboardContent() {
     "--v3-card-gap": `${V3_CARD_GAP_PX}px`,
     "--v3-panel-gap": `${V3_PANEL_GAP_PX}px`,
     "--v3-outer-inset": `${V3_OUTER_INSET_PX}px`,
+    "--v3-main-columns-outer-margin": `${V3_MAIN_COLUMNS_OUTER_MARGIN_PX}px`,
     "--v3-content-max-width": `${V3_CONTENT_MAX_WIDTH_PX}px`,
     "--v3-navigation-width": `${navigationWidth}px`,
     "--v3-session-panel-width": `${sessionPanelWidth}px`,

@@ -5,8 +5,10 @@ const stylesEntry = readFileSync(new URL("./v3-dashboard-styles.ts", import.meta
 const css = readFileSync(new URL("./v3-selection-policy.css", import.meta.url), "utf8");
 
 describe("v3 text selection policy", () => {
-  it("loads the semantic selection layer after the visual system", () => {
-    expect(stylesEntry.trim().endsWith('import "./v3-selection-policy.css";')).toBe(true);
+  it("loads the semantic selection layer before the final dialog rules", () => {
+    const selectionIndex = stylesEntry.indexOf('import "./v3-selection-policy.css";');
+    expect(selectionIndex).toBeGreaterThan(stylesEntry.indexOf('import "./v3-layer-contract.css";'));
+    expect(selectionIndex).toBeLessThan(stylesEntry.indexOf('import "./v3-dialog-hierarchy.css";'));
   });
 
   it("blocks chrome selection from one root and restores user content", () => {
