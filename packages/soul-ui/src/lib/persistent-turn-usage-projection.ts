@@ -1,5 +1,6 @@
 import { pairTurnUsage } from "./persistent-turn-usage";
 import type { ChatMessage } from "./flatten-tree";
+import type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";
 import { formatContextUsageText, formatTurnCompleteStats, formatTurnUsageCaptionTitle, TURN_COMPLETE_LABEL, TURN_USAGE_SEPARATOR } from "./turn-usage-format";
 
 function mergePersistentInstructionRecordedCaptions(messages: ChatMessage[]): ChatMessage[] {
@@ -29,7 +30,7 @@ function mergePersistentInstructionRecordedCaptions(messages: ChatMessage[]): Ch
 /** Adds PAS usage captions while leaving default transcript messages untouched. */
 export function projectPersistentTurnUsage(
   messages: ChatMessage[],
-  showTurnUsage: boolean,
+  turnUsageMode: PersistentTurnUsageMode,
 ): ChatMessage[] {
   const captionedMessages = mergePersistentInstructionRecordedCaptions(messages);
   const sourceMessages = captionedMessages.filter((message) => (
@@ -52,7 +53,7 @@ export function projectPersistentTurnUsage(
 
   const captions = new Map<string, NonNullable<ChatMessage["turnUsageCaption"]>>();
   for (const pair of pairs) {
-    if (pair.terminalType === "complete" && showTurnUsage) {
+    if (pair.terminalType === "complete" && turnUsageMode !== "hidden") {
       const contextMessage = pair.contextUsage;
       const context = contextMessage?.contextUsageData;
       const complete = pair.complete;
@@ -76,9 +77,10 @@ export function projectPersistentTurnUsage(
           title,
           contextText,
           completeText,
+          expandedByDefault: turnUsageMode === "expanded",
         });
       }
-    } else if (pair.terminalType === "error" && showTurnUsage) {
+    } else if (pair.terminalType === "error" && turnUsageMode !== "hidden") {
       const context = pair.contextUsage?.contextUsageData;
       if (!context) continue;
       const contextText = formatContextUsageText(context);
@@ -87,7 +89,7 @@ export function projectPersistentTurnUsage(
         estimated: context.estimated,
       }) ?? contextText;
       if (title && contextText) {
-        captions.set(String(pair.terminalId), { title, contextText });
+        captions.set(String(pair.terminalId), { title, contextText, expandedByDefault: turnUsageMode === "expanded" });
       }
     }
   }
@@ -95,7 +97,7 @@ export function projectPersistentTurnUsage(
   return captionedMessages.flatMap((message) => {
     if (message.treeNodeType === "context_usage") return [];
     if (message.treeNodeType === "complete") {
-      if (!showTurnUsage) return message.turnSummaryCaption || message.persistentInstructionRecorded ? [message] : [];
+      if (turnUsageMode === "hidden") return message.turnSummaryCaption || message.persistentInstructionRecorded ? [message] : [];
       const caption = captions.get(String(message.eventId ?? message.id));
       if (caption) return [{ ...message, turnUsageCaption: caption }];
       return message.turnSummaryCaption || message.persistentInstructionRecorded ? [message] : [];

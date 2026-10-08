@@ -603,16 +603,16 @@ describe("ChatView long-session initial bottom focus", () => {
   });
 
   it.each([
-    ["manuscript", false, true, 1],
-    ["manuscript", true, false, 1],
-    ["default", false, true, 2],
-  ] as const)("preserves the existing row coordinate after %s history prepend (usage %s, context %s)", async (presentation, showTurnUsage, withContext, addedRows) => {
+    ["manuscript", "hidden", true, 1],
+    ["manuscript", "collapsed", false, 1],
+    ["default", "hidden", true, 2],
+  ] as const)("preserves the existing row coordinate after %s history prepend (usage %s, context %s)", async (presentation, turnUsageMode, withContext, addedRows) => {
     useDashboardStore.getState().setPersistentSessionDisplaySettings("sess-long", {
       show_generation_separator: true,
       show_jev_candidates: true,
       show_character: true,
       animate_character: true,
-      show_turn_usage: showTurnUsage,
+      turn_usage_mode: turnUsageMode,
     });
     useDashboardStore.getState().processHistoryEvents([makeUserMessage(1000), makeAssistantMessage(1001)]);
     ({ container, root } = await renderChatView({ presentation }));
@@ -639,9 +639,9 @@ describe("ChatView long-session initial bottom focus", () => {
 
   it.each([
     ["unloaded", null, true],
-    ["other session", { sessionId: "other", showTurnUsage: false }, true],
+    ["other session", { sessionId: "other", turnUsageMode: "hidden" }, true],
     ["missing key", { sessionId: "sess-long" }, true],
-    ["explicit false", { sessionId: "sess-long", showTurnUsage: false }, false],
+    ["hidden", { sessionId: "sess-long", turnUsageMode: "hidden" }, false],
   ] as const)("defaults manuscript usage to on for %s", async (_label, settings, expected) => {
     useDashboardStore.setState({ persistentSessionDisplaySettings: settings as any });
     useDashboardStore.getState().processHistoryEvents([
@@ -665,7 +665,7 @@ describe("ChatView long-session initial bottom focus", () => {
       show_jev_candidates: true,
       show_character: true,
       animate_character: true,
-      show_turn_usage: false,
+      turn_usage_mode: "hidden",
     });
     useDashboardStore.getState().processHistoryEvents([
       { eventId: 1, event: { type: "user_message", input_id: "keepalive", text: "keepalive input", purpose: "cache_keepalive", timestamp: 0 } as SoulSSEEvent },
@@ -694,7 +694,7 @@ describe("ChatView long-session initial bottom focus", () => {
       show_jev_candidates: true,
       show_character: true,
       animate_character: true,
-      show_turn_usage: false,
+      turn_usage_mode: "hidden",
     });
     useDashboardStore.getState().processHistoryEvents([
       { eventId: 1, event: { type: "user_message", input_id: "keepalive", text: "keepalive input", purpose: "cache_keepalive", timestamp: 0 } as SoulSSEEvent },

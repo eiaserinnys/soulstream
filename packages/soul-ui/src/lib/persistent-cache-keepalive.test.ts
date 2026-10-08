@@ -46,7 +46,7 @@ describe("cache keepalive transcript projection", () => {
       { type: "assistant_message", content: "같은 글의 사람 답" },
       { type: "complete", result: "done", attachments: [], session_cost_usd: 0.05, turn_cost_usd: 0.01 },
     ] as SoulSSEEvent[]);
-    const messages = projectPersistentTurnUsage(flattened, true);
+    const messages = projectPersistentTurnUsage(flattened, "collapsed");
 
     const keepaliveComplete = messages.find((message) =>
       message.treeNodeType === "complete" && message.sessionCostUsd === 0.04,
@@ -84,7 +84,7 @@ describe("cache keepalive transcript projection", () => {
       { type: "user_message", input_id: "human", text: "사람 입력" },
       { type: "assistant_message", content: "사람 답" },
       { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.02 },
-    ] as SoulSSEEvent[]), true);
+    ] as SoulSSEEvent[]), "collapsed");
 
     const visible = projectPersistentChatDisplayMessages(messages, {
       show_generation_separator: true,
@@ -123,7 +123,7 @@ describe("cache keepalive transcript projection", () => {
         },
       },
       { type: "user_message", input_id: "human", text: "사람 입력" },
-    ] as SoulSSEEvent[]), true);
+    ] as SoulSSEEvent[]), "collapsed");
 
     const visible = projectPersistentChatDisplayMessages(messages, {
       show_generation_separator: true,
@@ -138,7 +138,7 @@ describe("cache keepalive transcript projection", () => {
     const messages = projectPersistentTurnUsage(transcript([
       { type: "user_message", input_id: "keepalive", text: keepaliveText, purpose: "cache_keepalive" },
       { type: "error", error: "rate limited", is_error: true },
-    ] as SoulSSEEvent[]), true);
+    ] as SoulSSEEvent[]), "collapsed");
 
     const visible = projectPersistentChatDisplayMessages(messages, {
       show_generation_separator: true,

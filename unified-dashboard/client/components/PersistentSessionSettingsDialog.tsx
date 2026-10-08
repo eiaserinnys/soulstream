@@ -1,5 +1,5 @@
 import "./config/config-layout.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   Button,
   Dialog,
@@ -22,8 +22,10 @@ import {
 } from "./PersistentSessionDetails";
 import { usePersistentSessionMonitoring, PersistentSessionMonitoringView } from "./PersistentSessionMonitoring";
 import { PersistentSessionInstructionsView, usePersistentSessionInstructions } from "./PersistentSessionInstructions";
+import { V3_CARD_GAP_PX } from "../v3/v3-layout-metrics";
 
 const categories: ConfigCategoryNavItem[] = [
+  { name: "instructions", label: "지속 지시" },
   { name: "account", label: "계정과 모델" },
   { name: "display", label: "표시와 모션" },
   { name: "record", label: "기록" },
@@ -49,8 +51,7 @@ export function PersistentSessionSettingsDialog({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
-  const [selectedSection, setSelectedSection] = useState<PersistentSessionDetailsSection>("account");
-  const [mobileIndex, setMobileIndex] = useState(true);
+  const [selectedSection, setSelectedSection] = useState<PersistentSessionDetailsSection>("instructions");
   const setPersistentSessionDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const monitoring = usePersistentSessionMonitoring({ sessionId, nodeId, request });
   const instructions = usePersistentSessionInstructions({ sessionId, api });
@@ -84,40 +85,47 @@ export function PersistentSessionSettingsDialog({
   const activeLabel = categories.find((category) => category.name === selectedSection)?.label ?? categories[0]!.label;
 
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogPopup className="approved-dialog config-dialog persistent-session-settings-popup max-w-5xl" closeProps={{ "aria-label": "영구 세션 설정 닫기" }} data-testid="persistent-session-settings-dialog">
+    <DialogPopup className="approved-dialog config-dialog persistent-session-settings-popup max-w-5xl" closeProps={{ "aria-label": "설정 닫기" }} data-testid="persistent-session-settings-dialog" style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
       <DialogHeader>
-        <DialogTitle>영구 세션 설정</DialogTitle>
-        <DialogDescription>{resource?.display_name ?? null}</DialogDescription>
+        <DialogTitle>설정</DialogTitle>
+        <DialogDescription className="sr-only">
+          {resource ? `설정 대상: ${resource.display_name}, ${resource.agent_name ?? resource.agent_id ?? "에이전트 정보 없음"}` : null}
+        </DialogDescription>
       </DialogHeader>
-      <DialogPanel className="config-dialog-panel">
-        {resource ? <div className="config-layout" data-mobile-index={mobileIndex}>
+      <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
+        {resource ? <div className="config-layout" data-layout="pas">
           <ConfigCategoryNav
             categories={categories}
             activeCategory={selectedSection}
-            showGroupLabels={false}
-            onSelect={(name) => { setSelectedSection(name as PersistentSessionDetailsSection); setMobileIndex(false); }}
+            variant="pas"
+            onSelect={(name) => setSelectedSection(name as PersistentSessionDetailsSection)}
           />
           <section className="config-detail" aria-label={activeLabel}>
-            <button type="button" className="config-back" onClick={() => setMobileIndex(true)}>설정 항목</button>
             <header className="config-detail-heading"><h2>{activeLabel}</h2></header>
-            <PersistentSessionDetails
-              resource={resource}
-              draft={details.draft}
-              pending={details.pending}
-              savingDisplayField={details.savingDisplayField}
-              error={details.error}
-              errorScope={details.errorScope}
-              section={selectedSection}
-              immediateDisplaySave
-              modelPresetCatalog={modelPresetCatalog}
-              weeklyAvailability={monitoring.modelPresets}
-              monitoring={<PersistentSessionMonitoringView state={monitoring} />}
-              instructions={<PersistentSessionInstructionsView state={instructions.state} actions={instructions.actions} />}
-              onFieldChange={details.onFieldChange}
-              onSave={() => { void details.save(); }}
-              onModelError={setModelError}
-            />
-            {modelError && selectedSection === "account" ? <SettingsAlert>{modelError}</SettingsAlert> : null}
+            <div className="config-detail-scroll v3-session-panel-scroll">
+              <div hidden={selectedSection === "instructions"}>
+                <PersistentSessionDetails
+                  resource={resource}
+                  draft={details.draft}
+                  pending={details.pending}
+                  savingDisplayField={details.savingDisplayField}
+                  error={details.error}
+                  errorScope={details.errorScope}
+                  section={selectedSection === "instructions" ? "account" : selectedSection}
+                  immediateDisplaySave
+                  modelPresetCatalog={modelPresetCatalog}
+                  weeklyAvailability={monitoring.modelPresets}
+                  monitoring={<PersistentSessionMonitoringView state={monitoring} />}
+                  onFieldChange={details.onFieldChange}
+                  onSave={() => { void details.save(); }}
+                  onModelError={setModelError}
+                />
+                {modelError && selectedSection === "account" ? <SettingsAlert>{modelError}</SettingsAlert> : null}
+              </div>
+              <div hidden={selectedSection !== "instructions"}>
+                <PersistentSessionInstructionsView variant="pas" state={instructions.state} actions={instructions.actions} />
+              </div>
+            </div>
           </section>
         </div> : <div className="config-detail">
           {loading ? <p className="text-sm text-muted-foreground">불러오는 중…</p> : null}

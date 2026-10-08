@@ -32,7 +32,7 @@ const noActions: PersistentSessionInstructionsActions = {
   saveEdit: () => undefined,
   remove: () => undefined,
   changeAddText: () => undefined,
-  add: () => undefined,
+  add: async () => false,
   editKeyDown: () => undefined,
 };
 
@@ -40,19 +40,19 @@ export function PersistentSessionInstructionsReviewSample() {
   return <div className="grid gap-4">
     <section aria-label="빈 목록">
       <h4 className="mb-2 text-sm font-medium">빈 목록</h4>
-      <PersistentSessionInstructionsView state={state({ instructions: [] })} actions={noActions} />
+      <PersistentSessionInstructionsView variant="pas" state={state({ instructions: [] })} actions={noActions} />
     </section>
     <section aria-label="항목 여럿">
       <h4 className="mb-2 text-sm font-medium">항목 여럿</h4>
-      <PersistentSessionInstructionsView state={state({ instructions })} actions={noActions} />
+      <PersistentSessionInstructionsView variant="pas" state={state({ instructions })} actions={noActions} />
     </section>
     <section aria-label="편집 중">
       <h4 className="mb-2 text-sm font-medium">편집 중</h4>
-      <PersistentSessionInstructionsView state={state({ instructions, editingId: instructions[0]!.id, editText: "현재 수정 중인 지시" })} actions={noActions} />
+      <PersistentSessionInstructionsView variant="pas" state={state({ instructions, editingId: instructions[0]!.id, editText: "현재 수정 중인 지시" })} actions={noActions} />
     </section>
     <section aria-label="상한 안내">
       <h4 className="mb-2 text-sm font-medium">상한 안내</h4>
-      <PersistentSessionInstructionsView state={state({ instructions: instructions.slice(0, 1), capReached: true })} actions={noActions} />
+      <PersistentSessionInstructionsView variant="pas" state={state({ instructions: instructions.slice(0, 1), capReached: true })} actions={noActions} />
     </section>
   </div>;
 }

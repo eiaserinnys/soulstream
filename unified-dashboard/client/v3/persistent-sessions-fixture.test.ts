@@ -11,7 +11,7 @@ describe("persistent sessions review fixture", () => {
   const save = (handler: ReturnType<typeof make>, id: string, preset: string, effort: string | null) =>
     call(handler, `/api/persistent-sessions/${id}`, "PUT", { settings: { default_model: { model_preset: preset, reasoning_effort: effort } } });
 
-  it("returns all seven settings keys in the list and its create defaults", async () => {
+  it("returns the canonical usage mode and its legacy projection in the list and create defaults", async () => {
     const { json } = await call(make(), "/api/persistent-sessions", "GET");
     expect(Object.keys(json.sessions[0].settings).sort()).toEqual([
       "animate_character",
@@ -21,12 +21,21 @@ describe("persistent sessions review fixture", () => {
       "show_generation_separator",
       "show_jev_candidates",
       "show_turn_usage",
+      "turn_usage_mode",
     ]);
     expect(json.sessions[0].settings.animate_character).toBe(true);
     expect(json.sessions[0].settings.show_turn_usage).toBe(true);
+    expect(json.sessions[0].settings.turn_usage_mode).toBe("collapsed");
     expect(json.create_defaults.settings.animate_character).toBe(true);
     expect(json.create_defaults.settings.show_turn_usage).toBe(true);
+    expect(json.create_defaults.settings.turn_usage_mode).toBe("collapsed");
     expect(json.create_defaults.settings.show_jev_candidates).toBe(true);
+  });
+
+  it("saves only the canonical usage mode and returns the derived legacy visibility", async () => {
+    const response = await call(make(), "/api/persistent-sessions/sample-pas-1", "PUT", { settings: { turn_usage_mode: "hidden" } });
+    expect(response.json.session.settings.turn_usage_mode).toBe("hidden");
+    expect(response.json.session.settings.show_turn_usage).toBe(false);
   });
 
   it("keeps the recorded effort for the same preset and uses the preset default for a new one", async () => {
@@ -76,5 +85,26 @@ describe("persistent sessions review fixture", () => {
     const { json } = await call(make("node-unknown"), "/api/persistent-sessions", "GET");
     const legacy = json.sessions.find((item: any) => item.session_id === "sample-pas-legacy");
     expect(legacy).toMatchObject({ node_id: null, agent_id: null, agent_name: null });
+  });
+
+  it("serves instruction reads and mutations with the persistent instruction response wrappers", async () => {
+    const handler = make();
+    const initial = await call(handler, "/api/persistent-sessions/sample-pas-1/instructions", "GET");
+    expect(initial.json.instructions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "sample-instruction-1", source_turns: ["T195"], origin: "agent" }),
+    ]));
+
+    const added = await call(handler, "/api/persistent-sessions/sample-pas-1/instructions", "POST", { text: "직접 추가한 지시" });
+    expect(added.status).toBe(201);
+    expect(added.json.instruction).toMatchObject({ text: "직접 추가한 지시", source_turns: [], origin: "user" });
+
+    const id = added.json.instruction.id;
+    const updated = await call(handler, `/api/persistent-sessions/sample-pas-1/instructions/${id}`, "PUT", { text: "수정한 지시" });
+    expect(updated.json.instruction).toMatchObject({ id, text: "수정한 지시", origin: "user" });
+
+    const removed = await call(handler, `/api/persistent-sessions/sample-pas-1/instructions/${id}`, "PUT", { status: "removed" });
+    expect(removed.json.instruction).toMatchObject({ id, status: "removed" });
+    const active = await call(handler, "/api/persistent-sessions/sample-pas-1/instructions", "GET");
+    expect(active.json.instructions.some((item: { id: string }) => item.id === id)).toBe(false);
   });
 });

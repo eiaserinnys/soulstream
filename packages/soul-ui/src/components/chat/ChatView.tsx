@@ -166,9 +166,9 @@ function ChatViewContent({
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const isManuscript = presentation === "manuscript";
-  const showTurnUsage = persistentSessionDisplaySettings?.sessionId === activeSessionKey
-    ? persistentSessionDisplaySettings.showTurnUsage ?? true
-    : true;
+  const turnUsageMode = persistentSessionDisplaySettings?.sessionId === activeSessionKey
+    ? persistentSessionDisplaySettings.turnUsageMode ?? "collapsed"
+    : "collapsed";
   const messages = useMemo(
     () => isManuscript
       ? flattenMessages(tree, { includePersistentTurnUsage: true })
@@ -181,9 +181,9 @@ function ChatViewContent({
       const cacheKeepaliveFiltered = projectCacheKeepaliveTurns(
         projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
       );
-      return projectPersistentTurnUsage(cacheKeepaliveFiltered, showTurnUsage);
+      return projectPersistentTurnUsage(cacheKeepaliveFiltered, turnUsageMode);
     },
-    [isManuscript, messages, showTurnUsage],
+    [isManuscript, messages, turnUsageMode],
   );
   const visibleMessages = useMemo(
     () => {

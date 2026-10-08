@@ -1,4 +1,4 @@
-import type { AgentInfo } from "@seosoyoung/soul-ui";
+import type { AgentInfo, PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 
 import { HttpResponseError } from "./http-response-error";
 
@@ -11,6 +11,8 @@ export type PersistentSettings = {
   show_character: boolean;
   show_jev_candidates: boolean;
   animate_character: boolean;
+  turn_usage_mode: PersistentTurnUsageMode;
+  /** Legacy projection returned by the server for older clients. */
   show_turn_usage: boolean;
 };
 
@@ -52,7 +54,7 @@ export type PersistentDisplaySettingsWrite = Pick<
   | "show_character"
   | "animate_character"
   | "show_jev_candidates"
-  | "show_turn_usage"
+  | "turn_usage_mode"
 >;
 
 export type PersistentSessionWrite = {

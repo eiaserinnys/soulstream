@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { DisclosureActionIcon } from "../DisclosureActionIcon";
 import { Button } from "../ui/button";
 import { cn } from "../../lib/cn";
@@ -11,6 +11,7 @@ export interface CollapsibleCaptionProps {
   expandedTitle?: string;
   wrapExpandedTitle?: boolean;
   initiallyCollapsed?: boolean;
+  expandedByDefault?: boolean;
   align?: "start" | "end";
   alignmentInset?: "avatar" | "content";
 }
@@ -81,12 +82,17 @@ export function CollapsibleCaption({
   expandedTitle,
   wrapExpandedTitle = false,
   initiallyCollapsed = true,
+  expandedByDefault,
   align = "start",
   alignmentInset = "avatar",
 }: CollapsibleCaptionProps) {
-  const [expanded, setExpanded] = useState(() => !initiallyCollapsed);
+  const [expanded, setExpanded] = useState(() => expandedByDefault ?? !initiallyCollapsed);
   const contentAligned = alignmentInset === "content";
   const contentId = useId();
+
+  useEffect(() => {
+    if (expandedByDefault !== undefined) setExpanded(expandedByDefault);
+  }, [expandedByDefault]);
 
   return (
     <div

@@ -157,12 +157,12 @@ describe("PersistentSessionsTab", () => {
     expect(document.body.textContent).not.toContain("화면에서만 숨기고 기록은 남습니다");
   });
 
-  it("keeps the new display flags on by default and persists explicit false values", async () => {
+  it("saves the usage mode with the account draft and retains the canonical setting", async () => {
     const { request, calls } = server();
     await renderTab(request);
     await waitFor(() => expect(buttonContaining("리뷰 관제")).toBeDefined());
     flushSync(() => buttonContaining("리뷰 관제")?.click());
-    await waitFor(() => expect(document.body.textContent).toContain("턴 끝 사용량 표시"));
+    await waitFor(() => expect(document.body.textContent).toContain("턴 끝 사용량"));
 
     const toggleFor = (label: string) => {
       const row = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
@@ -171,15 +171,18 @@ describe("PersistentSessionsTab", () => {
     };
     const character = toggleFor("캐릭터 표시");
     const motion = toggleFor("캐릭터 움직임");
-    const usage = toggleFor("턴 끝 사용량 표시");
     expect(character?.getAttribute("aria-checked")).toBe("true");
     expect(motion?.getAttribute("aria-checked")).toBe("true");
-    expect(usage?.getAttribute("aria-checked")).toBe("true");
+    const usageRow = Array.from(document.querySelectorAll<HTMLElement>("[data-testid=config-field-row]"))
+      .find((element) => element.textContent?.includes("턴 끝 사용량"));
+    const modeButtons = [...(usageRow?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+    expect(modeButtons.map((button) => button.textContent)).toEqual(["접어서", "펼쳐서", "숨김"]);
+    expect(modeButtons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
 
     setInput(nameInput(), "토글 중에도 남는 이름");
     flushSync(() => character?.click());
     flushSync(() => motion?.click());
-    flushSync(() => usage?.click());
+    flushSync(() => modeButtons[2]?.click());
     expect(calls.filter((call) => call.method === "PUT")).toHaveLength(0);
     clickButton("변경 저장");
     await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(1));
@@ -189,7 +192,7 @@ describe("PersistentSessionsTab", () => {
         default_model: { model_preset: "preset-a", reasoning_effort: "high" },
         show_character: false,
         animate_character: false,
-        show_turn_usage: false,
+        turn_usage_mode: "hidden",
       },
     });
   });
@@ -432,7 +435,7 @@ function session({ session_id, display_name, defaultModel = "preset-a", currentM
 }) {
   return {
     session_id, display_name, node_id, folder_id: "folder-a", agent_id, agent_name, persistent: true,
-    settings: { default_model: { model_preset: defaultModel, reasoning_effort: defaultEffort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, show_turn_usage: true },
+    settings: { default_model: { model_preset: defaultModel, reasoning_effort: defaultEffort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, turn_usage_mode: "collapsed", show_turn_usage: true },
     runtime: { current_model: { model_preset: currentModel, reasoning_effort: currentEffort, model: `${currentModel}-model` }, pending },
   };
 }
@@ -461,7 +464,7 @@ function server(options: ServerOptions = {}) {
           preferred_agent_id: options.defaults?.preferred_agent_id ?? null,
           settings: {
             default_model: { model_preset: options.defaults && "model_preset" in options.defaults ? options.defaults.model_preset : "preset-a", reasoning_effort: null },
-            fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, show_turn_usage: true,
+            fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, turn_usage_mode: "collapsed", show_turn_usage: true,
           },
           initial_instruction: BLANK_MESSAGE,
           unavailable_reason: null,
@@ -491,6 +494,11 @@ function server(options: ServerOptions = {}) {
       if (typeof body?.settings?.animate_character === "boolean") saved.settings.animate_character = body.settings.animate_character;
       if (typeof body?.settings?.show_jev_candidates === "boolean") saved.settings.show_jev_candidates = body.settings.show_jev_candidates;
       if (typeof body?.settings?.show_turn_usage === "boolean") saved.settings.show_turn_usage = body.settings.show_turn_usage;
+      const requestedTurnUsageMode = body?.settings?.turn_usage_mode;
+      if (requestedTurnUsageMode === "collapsed" || requestedTurnUsageMode === "expanded" || requestedTurnUsageMode === "hidden") {
+        saved.settings.turn_usage_mode = requestedTurnUsageMode;
+        saved.settings.show_turn_usage = requestedTurnUsageMode !== "hidden";
+      }
       let change = "none";
       if (requested) {
         saved.settings.default_model = { model_preset: requested.model_preset, reasoning_effort: requested.reasoning_effort ?? "high" };

@@ -34,11 +34,11 @@ describe("manuscript review isolation", () => {
         (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "전송 실패")!).click();
       });
       expect(useDashboardStore.getState().pendingChatSends["components-review-manuscript"]?.status).toBe("failed");
-      act(() => (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "사용량 줄 끄기")!).click());
-      expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showTurnUsage).toBe(false);
+      act(() => (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "숨김")!).click());
+      expect(useDashboardStore.getState().persistentSessionDisplaySettings?.turnUsageMode).toBe("hidden");
       expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showJevCandidates).toBe(true);
-      act(() => (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "사용량 줄 켜기")!).click());
-      expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showTurnUsage).toBe(true);
+      act(() => (Array.from(host.querySelectorAll("button")).find(button => button.textContent === "펼쳐서")!).click());
+      expect(useDashboardStore.getState().persistentSessionDisplaySettings?.turnUsageMode).toBe("expanded");
       act(() => root.unmount());
       const restored = useDashboardStore.getState();
       expect(restored.activeSessionKey).toBe("previous");

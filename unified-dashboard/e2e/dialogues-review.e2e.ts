@@ -5,14 +5,14 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 import { webDialogueGroups } from "../client/v3/dialogues-gallery-groups";
 
 const output = path.resolve("../../../.local/artifacts/20261003-dialogues-horizontal-web");
-async function prepare(page: Page, width: number) {
+async function prepare(page: Page, width: number, colorScheme: "dark" | "light" = "dark") {
   mkdirSync(output, {recursive:true});
   await page.setViewportSize({width, height:1000});
-  await page.emulateMedia({colorScheme:"dark", reducedMotion:"reduce"});
-  await page.addInitScript(() => {
-    localStorage.setItem("soul-dashboard-theme", "dark");
+  await page.emulateMedia({colorScheme, reducedMotion:"reduce"});
+  await page.addInitScript((theme) => {
+    localStorage.setItem("soul-dashboard-theme", theme);
     localStorage.setItem("ls.webglGlass", "0");
-  });
+  }, colorScheme);
   await installV3VisualQaRoutes(page);
   const errors: string[] = [], writes: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -185,4 +185,123 @@ test("compact controls and top-aligned rail on phone", async ({page}) => {
   await page.screenshot({path:path.join(output,"gallery-compact-second-390.png"),animations:"disabled"});
   expect(state.errors).toEqual([]); expect(state.writes).toEqual([]);
   writeFileSync(path.join(output,"compact-390.json"),JSON.stringify({first,second,...state},null,2));
+});
+
+const persistentSettingsOutput = path.resolve("../../../.local/artifacts/persistent-session-settings-237-correction");
+test("persistent session settings corrections in the real dialogue sample", async ({page}) => {
+  mkdirSync(persistentSettingsOutput, {recursive:true});
+  const state = await prepare(page, 1440, "light");
+  const sampleUrl = "/dialogues?sample=persistent-settings-window&persistentState=instruction-save-failure";
+  const openSettings = async (width: number) => {
+    await page.setViewportSize({width, height:1000});
+    await page.goto(sampleUrl);
+    await expect(page.getByTestId("dialogue-sample")).toBeVisible();
+    const dialog = page.getByTestId("persistent-session-settings-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator(".persistent-instructions-pas-text")).toHaveText("결정에 필요한 근거만 간결하게 알려 줍니다.");
+    return dialog;
+  };
+
+  for (const width of [1440, 390]) {
+    const dialog = await openSettings(width);
+    const heading = dialog.locator(".config-detail-heading h2");
+    const description = dialog.locator(".persistent-instructions-description");
+    const instruction = dialog.locator(".persistent-instructions-pas-text").first();
+    const geometry = await Promise.all([heading, description, instruction].map((node) => node.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {x:rect.x, right:rect.right, y:rect.y, bottom:rect.bottom};
+    })));
+    expect(Math.max(...geometry.map((rect) => rect.x)) - Math.min(...geometry.map((rect) => rect.x))).toBeLessThanOrEqual(1);
+    const spacing = await dialog.evaluate((element) => {
+      const title = element.querySelector(".config-detail-heading h2")!;
+      const titleFrame = title.parentElement!;
+      const description = element.querySelector(".persistent-instructions-description")!;
+      const firstInstruction = element.querySelector(".persistent-instructions-pas-text")!;
+      const instructions = element.querySelector(".persistent-instructions-pas")!;
+      const titleRect = title.getBoundingClientRect();
+      const descriptionRect = description.getBoundingClientRect();
+      const instructionRect = firstInstruction.getBoundingClientRect();
+      const styles = getComputedStyle(element);
+      return {
+        titleToDescription: descriptionRect.y - titleRect.bottom,
+        titleBottomMargin: Number.parseFloat(getComputedStyle(title).marginBottom),
+        titleFrameBottomMargin: Number.parseFloat(getComputedStyle(titleFrame).marginBottom),
+        titleFramePaddingBottom: Number.parseFloat(getComputedStyle(titleFrame).paddingBottom),
+        cardGapToken: Number.parseFloat(styles.getPropertyValue("--v3-card-gap")),
+        descriptionToInstruction: instructionRect.y - descriptionRect.bottom,
+        instructionsRowGap: Number.parseFloat(getComputedStyle(instructions).rowGap),
+        instructionsSpace4Token: Number.parseFloat(styles.getPropertyValue("--v3-space-4")),
+      };
+    });
+    expect(spacing.titleToDescription).toBe(spacing.titleFramePaddingBottom);
+    expect(spacing.titleFramePaddingBottom).toBe(spacing.cardGapToken);
+    expect(spacing.titleBottomMargin).toBe(0);
+    expect(spacing.titleFrameBottomMargin).toBe(0);
+    expect(spacing.descriptionToInstruction).toBe(spacing.instructionsRowGap);
+    expect(spacing.instructionsRowGap).toBe(spacing.instructionsSpace4Token);
+    const accessibleIdentity = await dialog.locator(".sr-only").allTextContents();
+    expect(accessibleIdentity.join(" ")).toContain("설정 대상: 서소영 관제 · 로젤린");
+    await expect(dialog.getByText("서소영 관제", {exact:true})).toHaveCount(0);
+    await expect(dialog.getByText("만든 뒤에는 바꿀 수 없습니다.", {exact:true})).toHaveCount(0);
+    await dialog.screenshot({path:path.join(persistentSettingsOutput, `instructions-${width}.png`), animations:"disabled"});
+    writeFileSync(path.join(persistentSettingsOutput, `instructions-${width}.json`), JSON.stringify({width, geometry, spacing, accessibleIdentity}, null, 2));
+
+    const nav = dialog.getByRole("navigation", {name:"설정 카테고리"});
+    await nav.getByRole("button", {name:"계정과 모델"}).click();
+    await expect(dialog.locator(".persistent-session-quota-rows [data-testid='config-field-row']").first()).toBeVisible();
+    const profileRow = dialog.locator("[data-testid='config-field-row']").filter({hasText:"에이전트"});
+    await expect(profileRow).toHaveCount(1);
+    await expect(profileRow.getByTestId("config-field-value")).toHaveText("로젤린");
+    await expect(profileRow).not.toContainText("만든 뒤에는 바꿀 수 없습니다.");
+    const detailScroll = dialog.locator(".config-detail-scroll");
+    const scrollStyle = await detailScroll.evaluate((element) => ({
+      contractClass:element.classList.contains("v3-session-panel-scroll"),
+      overflowY:getComputedStyle(element).overflowY,
+      scrollbarWidth:getComputedStyle(element).scrollbarWidth,
+      padding:getComputedStyle(element).padding,
+      scrollHeight:element.scrollHeight,
+      clientHeight:element.clientHeight,
+    }));
+    expect(scrollStyle.contractClass).toBe(true);
+    expect(scrollStyle.overflowY).toBe("auto");
+    expect(scrollStyle.scrollbarWidth).toBe("thin");
+    expect(scrollStyle.padding).toBe("0px");
+    if (width === 390) {
+      expect(scrollStyle.scrollHeight).toBeGreaterThan(scrollStyle.clientHeight);
+      const scrollTop = await detailScroll.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        return element.scrollTop;
+      });
+      expect(scrollTop).toBeGreaterThan(0);
+      await detailScroll.evaluate((element) => { element.scrollTop = 0; });
+    }
+    await dialog.screenshot({path:path.join(persistentSettingsOutput, `account-${width}.png`), animations:"disabled"});
+
+    await nav.getByRole("button", {name:"기록"}).click();
+    const history = dialog.getByTestId("persistent-session-monitoring");
+    await expect(history.getByTestId("persistent-session-history-row").first()).toBeVisible();
+    await dialog.screenshot({path:path.join(persistentSettingsOutput, `record-${width}.png`), animations:"disabled"});
+  }
+
+  const dialog = await openSettings(1440);
+  const firstRow = dialog.getByTestId("persistent-instruction-row").first();
+  await firstRow.getByRole("button", {name:"수정", exact:true}).click();
+  const edit = firstRow.getByLabel("지속 지시 수정");
+  await edit.fill("실패 뒤에도 입력과 저장 재시도를 유지합니다.");
+  await firstRow.getByRole("button", {name:"저장", exact:true}).click();
+  await expect(firstRow.getByRole("alert")).toContainText("저장 실패");
+  await expect(firstRow.getByLabel("지속 지시 수정")).toHaveValue("실패 뒤에도 입력과 저장 재시도를 유지합니다.");
+  await expect(firstRow.getByRole("button", {name:"저장", exact:true})).toBeVisible();
+  const inlinePlacement = await firstRow.evaluate((row) => {
+    const alert = row.querySelector('[role="alert"]');
+    const content = row.querySelector(".persistent-instructions-pas-row > div");
+    return Boolean(alert && content?.contains(alert));
+  });
+  expect(inlinePlacement).toBe(true);
+  await dialog.screenshot({path:path.join(persistentSettingsOutput, "instruction-save-error-1440.png"), animations:"disabled"});
+  await firstRow.getByRole("button", {name:"저장", exact:true}).click();
+  await expect(firstRow.locator(".persistent-instructions-pas-text")).toHaveText("실패 뒤에도 입력과 저장 재시도를 유지합니다.");
+  await expect(firstRow.getByRole("alert")).toHaveCount(0);
+  expect(state.errors).toEqual([]);
+  writeFileSync(path.join(persistentSettingsOutput, "browser-state.json"), JSON.stringify({errors:state.errors, writes:state.writes}, null, 2));
 });

@@ -94,7 +94,7 @@ describe("persistent session display settings", () => {
       show_jev_candidates: true,
       show_character: false,
       animate_character: false,
-      show_turn_usage: false,
+      turn_usage_mode: "hidden",
     });
 
     expect(useDashboardStore.getState().persistentSessionDisplaySettings).toEqual({
@@ -103,7 +103,7 @@ describe("persistent session display settings", () => {
       showJevCandidates: true,
       showCharacter: false,
       animateCharacter: false,
-      showTurnUsage: false,
+      turnUsageMode: "hidden",
     });
   });
 });
@@ -2190,7 +2190,7 @@ describe("dashboard-store", () => {
         show_jev_candidates: true,
         show_character: true,
         animate_character: true,
-        show_turn_usage: true,
+        turn_usage_mode: "collapsed",
       });
       const hidden = projectPersistentChatDisplayMessages(afterRepeat, { show_generation_separator: false, show_jev_candidates: false });
       expect(hidden).toHaveLength(1);
@@ -2199,7 +2199,7 @@ describe("dashboard-store", () => {
         show_jev_candidates: true,
         show_character: true,
         animate_character: true,
-        show_turn_usage: true,
+        turn_usage_mode: "collapsed",
       });
       const restored = projectPersistentChatDisplayMessages(afterRepeat, { show_generation_separator: true, show_jev_candidates: true });
       expect(restored[1]).toBe(candidate);
