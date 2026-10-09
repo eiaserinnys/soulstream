@@ -12,8 +12,11 @@ import {
   EnrichedMarkdownText,
   type MarkdownStyle,
 } from 'react-native-enriched-markdown';
-import { DESIGN_HIT_TARGET, useTokens } from '../../theme';
-import { segmentMarkdownBlockquotes } from './blockquoteCopyModel';
+import { chatImageSource } from '../../lib/chat-image-source';
+import { segmentCardReportImages, type CardReportSegment } from '../../lib/card-report-images';
+import { ChatRefinedImageGallery, getChatAttachmentFilename, useChatImageMetadata } from '../AttachmentImage';
+import { createSessionVisualRoles, DESIGN_HIT_TARGET, useTokens } from '../../theme';
+import { segmentMarkdownBlockquotes, type MarkdownBlockSegment } from './blockquoteCopyModel';
 
 const COPY_FEEDBACK_MS = 1600;
 const COPY_ICON_SIZE = 16;
@@ -23,20 +26,37 @@ interface Props {
   markdown: string;
   markdownStyle: MarkdownStyle;
   onLinkPress?: (event: { url: string }) => void;
+  presentation?: 'default' | 'manuscript';
+  serverUrl?: string;
+  jwt?: string | null;
 }
 
 export function CopyableAssistantMarkdown({
   markdown,
   markdownStyle,
   onLinkPress,
+  presentation = 'default',
+  serverUrl = '',
+  jwt = null,
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(), []);
   const segments = useMemo(
-    () => segmentMarkdownBlockquotes(markdown),
-    [markdown],
+    () => presentation === 'manuscript' && serverUrl
+      ? parseAssistantMarkdownImages(markdown)
+      : segmentMarkdownBlockquotes(markdown),
+    [markdown, presentation, serverUrl],
   );
+  const galleryImages = useMemo(() => segments.flatMap((segment) => (
+    segment.kind === 'images' ? segment.images.map((image) => ({
+      source: chatImageSource(image.url, serverUrl, jwt),
+      filename: getChatAttachmentFilename(image.url),
+      alt: image.alt,
+    })) : []
+  )), [segments, serverUrl, jwt]);
+  const galleryImagesWithMetadata = useChatImageMetadata(galleryImages, serverUrl);
   let quoteIndex = 0;
+  let imageIndex = 0;
 
   return (
     <>
@@ -58,6 +78,19 @@ export function CopyableAssistantMarkdown({
           );
         }
 
+        if (segment.kind === 'images') {
+          const startIndex = imageIndex;
+          imageIndex += segment.images.length;
+          return <ChatRefinedImageGallery
+            key={`images-${segmentIndex}`}
+            testID={`assistant-image-gallery-${segmentIndex}`}
+            role="assistant"
+            images={galleryImagesWithMetadata.slice(startIndex, imageIndex)}
+            viewerImages={galleryImagesWithMetadata}
+            startIndex={startIndex}
+          />;
+        }
+
         if (!segment.markdown.trim()) return null;
         return (
           <EnrichedMarkdownText
@@ -73,6 +106,51 @@ export function CopyableAssistantMarkdown({
       })}
     </>
   );
+}
+
+export type AssistantMarkdownImagePart =
+  | MarkdownBlockSegment
+  | { kind: 'images'; images: Array<{ alt: string; url: string }> };
+
+/** Split only standalone image rows in ordinary assistant Markdown segments. */
+export function parseAssistantMarkdownImages(markdown: string): AssistantMarkdownImagePart[] {
+  const parts: AssistantMarkdownImagePart[] = [];
+  for (const block of segmentMarkdownBlockquotes(markdown)) {
+    if (block.kind === 'blockquote') {
+      parts.push(block);
+      continue;
+    }
+    appendMarkdownImageRuns(parts, segmentCardReportImages(block.markdown));
+  }
+  return parts;
+}
+
+function appendMarkdownImageRuns(
+  target: AssistantMarkdownImagePart[],
+  segments: CardReportSegment[],
+) {
+  let images: Array<{ alt: string; url: string }> = [];
+  let whitespace = '';
+  const flushImages = (appendWhitespace: boolean) => {
+    if (images.length > 0) target.push({ kind: 'images', images });
+    images = [];
+    if (appendWhitespace && whitespace) target.push({ kind: 'markdown', markdown: whitespace });
+    whitespace = '';
+  };
+
+  for (const segment of segments) {
+    if (segment.kind === 'image') {
+      images.push({ alt: segment.alt, url: segment.url });
+      continue;
+    }
+    if (images.length > 0 && !segment.markdown.trim()) {
+      whitespace += segment.markdown;
+      continue;
+    }
+    flushImages(true);
+    if (segment.markdown) target.push(segment);
+  }
+  flushImages(false);
 }
 
 function CopyableBlockquote({

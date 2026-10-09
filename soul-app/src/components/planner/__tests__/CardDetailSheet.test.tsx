@@ -45,7 +45,7 @@ jest.mock('../FolderSessionHistory', () => {
 });
 jest.mock('../../AttachmentImage', () => {
   const actual = jest.requireActual('../../AttachmentImage');
-  return { AttachmentImage: (props: unknown) => { mockRenders.images++; return require('react').createElement(actual.AttachmentImage, props); } };
+  return { ...actual, AttachmentImage: (props: unknown) => { mockRenders.images++; return require('react').createElement(actual.AttachmentImage, props); } };
 });
 jest.mock('../../events/UserMessage', () => {
   const actual = jest.requireActual('../../events/UserMessage');

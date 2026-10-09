@@ -20,7 +20,7 @@ jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
 }));
 
 import React from 'react';
-import { AccessibilityInfo, Platform, StyleSheet, Text } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import {
   DARK_COLORS,
@@ -31,7 +31,7 @@ import { createPrimitiveRoles } from '../../theme/surfacePrimitives';
 import { createPlannerVisualRoles } from '../../theme/plannerVisualRoles';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens } from '../../theme';
-import { GlassButton, resolveGlassButtonBackground, resolvePaperButtonBackground } from '../GlassSurface';
+import { GlassButton, GLASS_BUTTON_BORDER_WIDTH, resolveGlassButtonBackground, resolvePaperButtonBackground } from '../GlassSurface';
 
 describe('GlassButton interaction contract', () => {
   beforeEach(() => {
@@ -209,6 +209,76 @@ describe('GlassButton interaction contract', () => {
     });
   });
 
+  test.each([
+    ['secondary', 'card'],
+    ['secondary', 'compact'],
+    ['primary', 'card'],
+    ['paper', 'card'],
+    ['plain', 'card'],
+    ['plain', 'compact'],
+  ] as const)('web %s %s 아이콘은 공통 focus 표현과 hit frame을 유지한다', (variant, size) => {
+    const originalOS = Platform.OS;
+    Platform.OS = 'web';
+    try {
+      const tokens = renderHook(() => useTokens()).result.current;
+      const primitive = createPrimitiveRoles(tokens)[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
+      const onPress = jest.fn();
+      const buttonElement = (disabled = false) => (
+        <GlassButton variant={variant} size={size} iconOnly disabled={disabled}
+          testID="button" surfaceTestID="surface" onPress={onPress}
+          borderRadius={tokens.foundation.radius.round}
+          frameStyle={{ opacity: 0.2, outlineStyle: 'dashed', outlineWidth: 3 }}
+          style={{ opacity: 0.8 }}>
+          <Text>닫기</Text>
+        </GlassButton>
+      );
+      const screen = render(buttonElement());
+      const frame = () => StyleSheet.flatten(screen.getByTestId('button').props.style);
+      const surface = () => StyleSheet.flatten(screen.getByTestId('surface').props.style);
+      const normalFrame = frame();
+      const normalSurface = surface();
+      const visualSize = size === 'compact' ? tokens.foundation.iconFrame.compact : tokens.avatarSize.session;
+      const focusedSurface = variant === 'plain'
+        ? { backgroundColor: primitive.pressedColor }
+        : { borderWidth: variant === 'paper' ? StyleSheet.hairlineWidth : GLASS_BUTTON_BORDER_WIDTH, borderColor: primitive.focusedColor };
+      expect(normalFrame).toMatchObject({
+        minWidth: Math.max(tokens.hitTarget.min, createPrimitiveRoles(tokens).iconFrame.minHeight),
+        minHeight: Math.max(tokens.hitTarget.min, createPrimitiveRoles(tokens).iconFrame.minHeight),
+        alignItems: 'center', justifyContent: 'center', opacity: 0.2,
+        outlineStyle: 'solid', outlineWidth: 0,
+      });
+      expect(normalSurface).toMatchObject({
+        width: visualSize, height: visualSize, borderRadius: tokens.foundation.radius.round,
+        alignItems: 'center', justifyContent: 'center', opacity: 0.8,
+      });
+      fireEvent(screen.getByTestId('button'), 'focus');
+      expect(surface()).toMatchObject(focusedSurface);
+      expect(frame()).toEqual(normalFrame);
+      const { borderWidth, borderColor, backgroundColor, ...normalLayout } = normalSurface;
+      const { borderWidth: focusedWidth, borderColor: focusedColor, backgroundColor: focusedBackground, ...focusedLayout } = surface();
+      expect(focusedLayout).toEqual(normalLayout);
+      if (variant !== 'plain') expect(focusedBackground).toBe(backgroundColor);
+      fireEvent.press(screen.getByTestId('button'));
+      expect(onPress).toHaveBeenCalledTimes(1);
+      fireEvent(screen.getByTestId('button'), 'blur');
+      expect(surface()).toEqual(normalSurface);
+
+      fireEvent(screen.getByTestId('button'), 'focus');
+      expect(surface()).toMatchObject(focusedSurface);
+      screen.rerender(buttonElement(true));
+      expect(surface()).toEqual(normalSurface);
+      const disabledFrame = variant === 'plain' ? frame()
+        : StyleSheet.flatten(screen.UNSAFE_getByType(TouchableOpacity).props.style);
+      expect(disabledFrame).toMatchObject({ ...normalFrame, opacity: 0.55 });
+      expect(screen.getByTestId('button').props.accessibilityState.disabled).toBe(true);
+      fireEvent(screen.getByTestId('button'), 'blur');
+      fireEvent(screen.getByTestId('button'), 'focus');
+      expect(surface()).toEqual(normalSurface);
+    } finally {
+      Platform.OS = originalOS;
+    }
+  });
+
   test('paper 변형은 persistent 종이 표면과 선 테두리를 쓴다', () => {
     const tokens = renderHook(() => useTokens()).result.current;
     const screen = render(<GlassButton variant="paper" testID="paper-button" surfaceTestID="paper-surface" onPress={() => undefined}>
@@ -221,8 +291,10 @@ describe('GlassButton interaction contract', () => {
     expect(StyleSheet.flatten(button.props.style).backgroundColor).toBe(tokens.persistentSession.paper);
   });
 
-  test('plain compact 아이콘은 투명 원형 표면과 기존 hit frame을 유지하고 눌릴 때만 ghost 색을 쓴다', () => {
+  test('compact 아이콘은 hit frame과 눌림 상태를 유지하고 disabled 상태를 흐리게 표시한다', () => {
     const tokens = renderHook(() => useTokens()).result.current;
+    const enabledOnPress = jest.fn();
+    const disabledOnPress = jest.fn();
     const screen = render(
       <>
         <GlassButton
@@ -243,6 +315,27 @@ describe('GlassButton interaction contract', () => {
           onPress={() => undefined}
         >
           <Text>↑</Text>
+        </GlassButton>
+        <GlassButton
+          variant="secondary"
+          iconOnly
+          size="card"
+          frameStyle={{ opacity: 0.2 }}
+          testID="enabled-compact-button"
+          onPress={enabledOnPress}
+        >
+          <Text>다음</Text>
+        </GlassButton>
+        <GlassButton
+          variant="secondary"
+          iconOnly
+          size="card"
+          disabled
+          frameStyle={{ opacity: 0.2 }}
+          testID="disabled-compact-button"
+          onPress={disabledOnPress}
+        >
+          <Text>이전</Text>
         </GlassButton>
       </>,
     );
@@ -271,6 +364,19 @@ describe('GlassButton interaction contract', () => {
     fireEvent(button, 'pressOut');
     expect(StyleSheet.flatten(screen.getByTestId('plain-surface').props.style).backgroundColor)
       .toBe('transparent');
+
+    const enabledButton = screen.getByTestId('enabled-compact-button');
+    const disabledButton = screen.getByTestId('disabled-compact-button');
+    expect(StyleSheet.flatten(enabledButton.props.style).opacity).toBe(0.2);
+    expect(StyleSheet.flatten(disabledButton.props.style).opacity).toBe(0.55);
+    expect(StyleSheet.flatten(enabledButton.props.style).outlineStyle).toBeUndefined();
+    expect(StyleSheet.flatten(enabledButton.props.style).outlineWidth).toBeUndefined();
+    expect(disabledButton.props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(enabledButton);
+    expect(disabledButton.props.onPress).toBeUndefined();
+    expect(disabledButton.props.onStartShouldSetResponder()).toBe(false);
+    expect(enabledOnPress).toHaveBeenCalledTimes(1);
+    expect(disabledOnPress).not.toHaveBeenCalled();
   });
 
   test('paper 변형 눌림은 planner의 중립 눌림 색을 쓰고 기본 보조 버튼은 유지한다', () => {

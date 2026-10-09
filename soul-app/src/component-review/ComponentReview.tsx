@@ -79,10 +79,13 @@ export function initializeReview() {
   const settingsSection = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
   const nativeSettings = settingsSection === 'nativeSettings' || settingsSection === 'pasSettings';
   const persistent = settingsSection === 'persistent';
+  const reviewParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const pasImageSample = settingsSection === 'chat' && reviewParams?.get('sample') === 'pas-images';
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasImageSample ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
     const state = useChatStore.getState();
     const requestId = state.beginPersistentDisplaySettingsLoad('review-pas-1');
@@ -229,13 +232,18 @@ export function ComponentReview() {
 
 function getNativeSettingsSafeAreaFixture(search: string, width: number, height: number): { frame: Rect; insets: EdgeInsets } | null {
   const params = new URLSearchParams(search);
-  if (params.get('safeArea') !== 'fixture') return null;
+  const pasImageSample = params.get('section') === 'chat' && params.get('sample') === 'pas-images';
+  if (params.get('safeArea') !== 'fixture' && !pasImageSample) return null;
   const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent';
-  if (!cardChecks && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
+  if (!pasImageSample && !cardChecks && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 
   return {
     frame: { x: 0, y: 0, width, height },
-    insets: cardChecks
+    insets: pasImageSample
+      ? width >= 768
+        ? { top: 24, right: 0, bottom: 20, left: 0 }
+        : { top: 47, right: 0, bottom: 34, left: 0 }
+      : cardChecks
       ? width >= 768
         ? { top: 24, right: 0, bottom: 20, left: 0 }
         : { top: 47, right: 0, bottom: 34, left: 0 }

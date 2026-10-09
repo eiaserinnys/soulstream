@@ -157,6 +157,9 @@ export function AssistantMessage({
             markdown={renderedText}
             markdownStyle={markdownStyle}
             onLinkPress={openAssistantLink}
+            presentation={presentation}
+            serverUrl={serverUrl}
+            jwt={jwt}
           />
         ))}
         {tokenInfo ? (

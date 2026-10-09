@@ -22,6 +22,7 @@ export interface CompactTouchTargetProps
  */
 export function CompactTouchTarget({
   children,
+  disabled,
   frameStyle,
   surfaceStyle,
   surfaceTestID,
@@ -32,7 +33,8 @@ export function CompactTouchTarget({
   return (
     <TouchableOpacity
       {...touchableProps}
-      style={[frameStyle, styles.frame]}
+      disabled={disabled}
+      style={[frameStyle, styles.frame, disabled ? styles.disabled : undefined]}
     >
       <View testID={surfaceTestID} style={[styles.surface, surfaceStyle]}>
         {children}
@@ -49,6 +51,9 @@ function makeStyles(t: DesignTokens) {
       minHeight: Math.max(t.hitTarget.min, primitive.minHeight),
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    disabled: {
+      opacity: 0.55,
     },
     surface: {
       alignItems: 'center',
