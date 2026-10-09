@@ -318,7 +318,8 @@ export function GlassButton({
   const iconBoundaryStyle: ViewStyle | undefined = iconOnly
     ? { width: t.hitTarget.min, height: t.hitTarget.min }
     : undefined;
-
+  const compactFrameStyle = [frameStyle, Platform.OS === 'web' ? { outlineStyle: 'solid' as const, outlineWidth: 0 } : undefined];
+  const compactFocusStyle = focused && !disabled ? { borderWidth: GLASS_BUTTON_BORDER_WIDTH, borderColor: buttonPrimitive.focusedColor } : undefined;
   const renderButton = (nativePressFeedback: boolean) => (
     <Pressable
       testID={testID}
@@ -361,7 +362,6 @@ export function GlassButton({
       {children}
     </Pressable>
   );
-
   if (plain && iconOnly && size !== 'standard') {
     const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
     return (
@@ -387,7 +387,7 @@ export function GlassButton({
           alignItems: 'center',
           justifyContent: 'center',
           opacity: disabled ? 0.55 : 1,
-        }, frameStyle]}
+        }, compactFrameStyle, disabled ? { opacity: 0.55 } : undefined]}
       >
         <View
           testID={surfaceTestID}
@@ -407,31 +407,30 @@ export function GlassButton({
       </Pressable>
     );
   }
-
   if (paper) {
     const paperSurfaceStyle: ViewStyle = { overflow: 'hidden', backgroundColor: t.persistentSession.paper,
       borderWidth: StyleSheet.hairlineWidth, borderColor: focused && !disabled ? buttonPrimitive.focusedColor : t.persistentSession.line,
       borderRadius: resolvedRadius };
     if (iconOnly && size !== 'standard') {
       const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
-      return <CompactTouchTarget testID={testID} frameStyle={frameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+      return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+        onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
         accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
         <View testID={surfaceTestID} style={[style, paperSurfaceStyle, { width: visualSize, height: visualSize, alignItems: 'center', justifyContent: 'center' }]}>{children}</View>
       </CompactTouchTarget>;
     }
     return <View testID={surfaceTestID} style={[paperSurfaceStyle, style]}>{renderButton(false)}</View>;
   }
-
   if (plain) return <View style={style}>{renderButton(false)}</View>;
-
   if (iconOnly && size !== 'standard') {
     const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
     const visualStyle: ViewStyle = { width: visualSize, height: visualSize, borderRadius: resolvedRadius,
       alignItems: 'center', justifyContent: 'center' };
-    return <CompactTouchTarget testID={testID} frameStyle={frameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+    return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
+      onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
       accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
-      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }]}>{children}</View>
-        : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle]}>{children}</GlassSurfaceImpl>}
+      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }, compactFocusStyle]}>{children}</View>
+        : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle, compactFocusStyle]}>{children}</GlassSurfaceImpl>}
     </CompactTouchTarget>;
   }
 
