@@ -129,6 +129,8 @@ export function createNodeFromEvent(
       return makeNode(`user-msg-${eventId}`, "user_message", content, {
         completed: true,
         user: e.user ?? e.client_id ?? "llm-proxy",
+        ...(e.attachments !== undefined ? { attachmentPaths: e.attachments } : {}),
+        ...(e.node_id !== undefined ? { attachmentNodeId: e.node_id } : {}),
         context: e.context,
         agentInfo: agentInfoFromCi ?? agentInfoLegacy,
         callerInfo: ci,

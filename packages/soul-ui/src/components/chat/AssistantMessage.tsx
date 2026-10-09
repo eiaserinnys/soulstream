@@ -69,7 +69,13 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
           </div>
         ) : (
           <div data-slot="chat-body" className={cn("text-base text-foreground", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "break-words leading-snug")}>
-            {children ?? <MarkdownContent content={msg.content} enableBlockquoteCopy />}
+          {children ?? (
+            <MarkdownContent
+              content={msg.content}
+              enableBlockquoteCopy
+              chatImages={manuscript ? { role: "assistant" } : undefined}
+            />
+          )}
           </div>
         )}
       </div>

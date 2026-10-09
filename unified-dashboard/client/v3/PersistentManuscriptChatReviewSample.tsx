@@ -8,6 +8,11 @@ import type { SoulSSEEvent } from "@seosoyoung/soul-ui/shared/types";
 import type { PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 
 const REVIEW_SESSION = "components-review-manuscript";
+const PAS_8309_IMAGE_URLS = [
+  "https://soulstream.eiaserinnys.me/api/attachments/files?nodeId=eiaserinnys&path=%2Fhome%2Feias%2Fmigration%2Fnetcup-core-bootstrap%2Fprod-state%2Fincoming%2F60668e34-f8b1-4e53-9a8e-c5ff304337e1%2F2026-10-08T15-42-19.069Z-pas247-preview-iphone-light-story-settings-0d5b93a9cf014a8d9a9c76a4d203d60e.png",
+  "https://soulstream.eiaserinnys.me/api/attachments/files?nodeId=eiaserinnys&path=%2Fhome%2Feias%2Fmigration%2Fnetcup-core-bootstrap%2Fprod-state%2Fincoming%2F60668e34-f8b1-4e53-9a8e-c5ff304337e1%2F2026-10-08T15-42-19.585Z-pas247-preview-iphone-light-story-settings-fe37869a1a9841dc92f8db2ff4186d61.png",
+];
+const PAS_8309_ATTACHMENT_PATHS = PAS_8309_IMAGE_URLS.map(url => decodeURIComponent(new URL(url).searchParams.get("path")!));
 
 function makeMessage(role: ChatMessage["role"], id: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -89,6 +94,7 @@ function ManuscriptColumn() {
     store.setActiveSession(REVIEW_SESSION);
     store.setActiveSessionSummary({
       agentSessionId: REVIEW_SESSION, status: "completed", sessionType: "claude", eventCount: 10,
+      nodeId: "eiaserinnys",
       createdAt: "2026-10-06T00:00:00Z", updatedAt: "2026-10-06T00:00:00Z",
     });
     store.setPersistentSessionDisplaySettings(REVIEW_SESSION, {
@@ -113,6 +119,17 @@ function ManuscriptColumn() {
       { type: "complete", result: "연속 첫 번째 턴", usage: { input_tokens: 900, output_tokens: 30 }, turn_cost_usd: 1.1 },
       { type: "complete", result: "연속 두 번째 턴", usage: { input_tokens: 40, output_tokens: 20 }, turn_cost_usd: 0.2 },
       { type: "intervention_sent", user: "User", text: "실행 중 보낸 발언도 같은 여백을 유지합니다." },
+      {
+        type: "assistant_message",
+        content: `첫 번째 iPhone PAS 시안입니다.\n\n![PAS 설정 시안 1](${PAS_8309_IMAGE_URLS[0]})\n\n설정 화면에서 항목을 선택한 뒤의 시안입니다.\n\n![PAS 설정 시안 2](${PAS_8309_IMAGE_URLS[1]})`,
+      },
+      {
+        type: "user_message",
+        user: "User",
+        text: "구조화 이미지 첨부입니다.\n\n${PAS_8309_ATTACHMENT_PATHS[0]}\n${PAS_8309_ATTACHMENT_PATHS[1]}\n/notes/review.txt",
+        attachments: [...PAS_8309_ATTACHMENT_PATHS, "/notes/review.txt"],
+        node_id: "eiaserinnys",
+      },
       { type: "user_message", user: "User", text: "첨부 이미지와 파일 링크입니다.\n\n- 첫째 메모\n- 둘째 메모\n\n```ts\nconst manuscript = true;\n```\n\n| 항목 | 값 |\n| --- | --- |\n| 모양 | 원고형 |\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf](https://example.com/review-note.pdf)" },
       { type: "assistant_message", content: "마지막 문장 아래에도 여유가 있습니다." },
       { type: "context_usage", used_tokens: 645_367, max_tokens: 1_024_000, percent: 63, estimated: true },

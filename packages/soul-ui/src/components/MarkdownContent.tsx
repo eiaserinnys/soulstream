@@ -6,7 +6,7 @@
  * @tailwindcss/typography (prose)를 사용하지 않고 커스텀 컴포넌트로 스타일링합니다.
  */
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type HTMLAttributes } from "react";
 import { Check, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -15,6 +15,15 @@ import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownImage } from "./MarkdownImage";
+import { ChatImageAttachments, ChatImageViewer } from "./chat/ChatImageAttachments";
+import {
+  buildStructuredChatImageItems,
+  chatImageMetadataKey,
+  createChatMarkdownImageModel,
+  createChatMarkdownImageRemarkPlugin,
+  type ChatImageMetadata,
+  type ChatImageRole,
+} from "../lib/chat-markdown-images";
 
 interface MarkdownContentProps {
   onImageClick?(src:string,alt:string):void;
@@ -23,6 +32,11 @@ interface MarkdownContentProps {
   linkTone?: "default" | "onUserBubble";
   enableBlockquoteCopy?: boolean;
   codeBlockLayout?: "bounded" | "document";
+  chatImages?: {
+    role: ChatImageRole;
+    attachmentPaths?: readonly string[];
+    nodeId?: string;
+  };
 }
 
 const defaultAnchorClass = "text-accent-blue hover:underline";
@@ -318,7 +332,46 @@ export function MarkdownContent({
   linkTone = "default",
   enableBlockquoteCopy = false,
   codeBlockLayout = "bounded",
+  chatImages,
 }: MarkdownContentProps) {
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [metadataByImage, setMetadataByImage] = useState<Record<string, ChatImageMetadata>>({});
+  const viewerTriggerRef = useRef<HTMLElement | null>(null);
+  const viewerWasOpenRef = useRef(false);
+  const attachments = useMemo(
+    () => buildStructuredChatImageItems(chatImages?.attachmentPaths, chatImages?.nodeId),
+    [chatImages?.attachmentPaths, chatImages?.nodeId],
+  );
+  const imageModel = useMemo(
+    () => chatImages ? createChatMarkdownImageModel(chatImages.role, attachments) : null,
+    [attachments, chatImages?.role],
+  );
+  const openViewer = useCallback((index: number, trigger: HTMLElement) => {
+    viewerTriggerRef.current = trigger;
+    setViewerIndex(index);
+  }, []);
+  const onViewerOpenChange = useCallback((open: boolean) => {
+    if (!open) setViewerIndex(null);
+  }, []);
+  const onViewerIndexChange = useCallback((index: number) => setViewerIndex(index), []);
+  const onImageMetadata = useCallback((key: string, metadata: ChatImageMetadata) => {
+    setMetadataByImage(current => current[key] ? current : { ...current, [key]: metadata });
+  }, []);
+
+  useEffect(() => {
+    if (viewerWasOpenRef.current && viewerIndex === null) {
+      const trigger = viewerTriggerRef.current;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    }
+    viewerWasOpenRef.current = viewerIndex !== null;
+  }, [viewerIndex]);
+
+  const remarkPlugins = useMemo(
+    () => imageModel
+      ? [remarkGfm, remarkBreaks, createChatMarkdownImageRemarkPlugin(imageModel)]
+      : [remarkGfm, remarkBreaks],
+    [imageModel],
+  );
   const selectedComponents = useMemo(() => {
     const baseComponents = linkTone === "onUserBubble"
       ? compact
@@ -331,18 +384,61 @@ export function MarkdownContent({
       ? { ...baseComponents, pre: documentCodeBlock }
       : baseComponents;
     const imageComponents = onImageClick ? { ...layoutComponents, img: ({src,alt}: {src?:string;alt?:string}) => <MarkdownImage src={src} alt={alt??""} onOpen={onImageClick}/> } : layoutComponents;
-    return enableBlockquoteCopy
-      ? { ...imageComponents, blockquote: createCopyableBlockquote(compact) }
-      : imageComponents;
-  }, [codeBlockLayout, compact, enableBlockquoteCopy, linkTone, onImageClick]);
+    const chatComponents = imageModel ? {
+      ...imageComponents,
+      div: ({ children, node, ...props }: HTMLAttributes<HTMLDivElement> & { node?: unknown }) => {
+        void node;
+        const runIdValue = (props as Record<string, unknown>)["data-chat-image-run"];
+        const runId = typeof runIdValue === "string" ? runIdValue : undefined;
+        const run = runId ? imageModel.runs.get(runId) : undefined;
+        if (run) {
+          return (
+            <ChatImageAttachments
+              gallery={imageModel.gallery}
+              galleryIndexes={run.galleryIndexes}
+              role={imageModel.role}
+              runId={run.id}
+              metadataByImage={metadataByImage}
+              onMetadata={onImageMetadata}
+              onOpen={openViewer}
+            />
+          );
+        }
+        return <div {...props}>{children}</div>;
+      },
+    } : imageComponents;
+    const blockquoteComponents = enableBlockquoteCopy
+      ? { ...chatComponents, blockquote: createCopyableBlockquote(compact) }
+      : chatComponents;
+    return blockquoteComponents;
+  }, [codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer]);
 
-  return (
+  const markdown = (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkBreaks]}
+      remarkPlugins={remarkPlugins}
       rehypePlugins={[rehypeHighlight]}
       components={selectedComponents}
     >
       {content}
     </ReactMarkdown>
+  );
+
+  if (!imageModel) return markdown;
+
+  const viewerCanOpen = viewerIndex !== null && imageModel.gallery[viewerIndex] !== undefined;
+
+  return (
+    <>
+      {markdown}
+      {viewerCanOpen && (
+        <ChatImageViewer
+          gallery={imageModel.gallery}
+          index={viewerIndex!}
+          metadataByImage={metadataByImage}
+          onOpenChange={onViewerOpenChange}
+          onIndexChange={onViewerIndexChange}
+        />
+      )}
+    </>
   );
 }

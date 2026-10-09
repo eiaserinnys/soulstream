@@ -117,6 +117,10 @@ export interface ChatMessage {
   approvalMessage?: string;
   /** user_message 전용: 구조화된 맥락 항목 배열 */
   contextItems?: ContextItem[];
+  /** user_message 전용: 기존 이벤트가 보낸 구조화 첨부 경로. */
+  attachmentPaths?: string[];
+  /** user_message 전용: 첨부 원본의 노드 ID. */
+  attachmentNodeId?: string;
   /** user_message 전용: 에이전트 발신자 메타데이터 (caller_info.source==="agent"에서 도출) */
   agentInfo?: {
     source: "agent";
@@ -364,6 +368,8 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         treeNodeId: n.id,
         treeNodeType: n.type,
         contextItems: n.context,
+        attachmentPaths: n.attachmentPaths,
+        attachmentNodeId: n.attachmentNodeId,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
         inputId: n.inputId,

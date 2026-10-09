@@ -1242,6 +1242,146 @@ pre[data-markdown-code-layout="document"] {
   --glass-saturate: 160%;
 }
 
+:root {
+  --chat-attachment-assistant-max-width: 360px;
+  --chat-attachment-user-max-width: 320px;
+  --chat-attachment-phone-assistant-max-width: 100%;
+  --chat-attachment-phone-user-max-width: 88%;
+  --chat-attachment-radius: 10px;
+  --chat-attachment-filename-gap: 6px;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --chat-attachment-assistant-max-width: var(--chat-attachment-phone-assistant-max-width);
+    --chat-attachment-user-max-width: var(--chat-attachment-phone-user-max-width);
+  }
+}
+
+.chat-image-run {
+  width: 100%;
+  margin-block-start: var(--v3-space-3);
+}
+.chat-image-run[data-chat-image-role="assistant"] {
+  max-width: var(--chat-attachment-assistant-max-width);
+  margin-inline-end: auto;
+}
+.chat-image-run[data-chat-image-role="user"] {
+  max-width: var(--chat-attachment-user-max-width);
+  margin-inline-start: auto;
+}
+.chat-image-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--v3-space-3);
+}
+.chat-image-run[data-chat-image-count]:not([data-chat-image-count="1"]) .chat-image-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.chat-image-card {
+  min-width: 0;
+  margin: 0;
+}
+.chat-image-refined.chat-image-thumbnail-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  border-radius: var(--chat-attachment-radius);
+  cursor: zoom-in;
+}
+.chat-image-caption {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--chat-attachment-filename-gap);
+  margin-block-start: var(--chat-attachment-filename-gap);
+  font: var(--v3-type-meta) var(--v3-font-family);
+  color: var(--muted-foreground);
+}
+.chat-image-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-image-metadata,
+.chat-image-viewer-metadata,
+.chat-image-viewer-count {
+  font: var(--v3-type-meta) var(--v3-font-family);
+  color: var(--muted-foreground);
+}
+.chat-image-status {
+  display: inline-block;
+  font: var(--v3-type-meta) var(--v3-font-family);
+  color: var(--muted-foreground);
+}
+.chat-image-frame {
+  display: block;
+  min-width: 0;
+}
+.chat-image-frame > .chat-image-status {
+  display: block;
+  margin-block-start: var(--v3-space-1);
+}
+.chat-image-viewer-header {
+  gap: var(--chat-attachment-filename-gap);
+  min-width: 0;
+}
+.chat-image-viewer-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-image-viewer-popup[data-slot="dialog-popup"] {
+  height: 100%;
+}
+.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  place-items: stretch;
+}
+.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  min-width: 0;
+}
+.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame > .chat-image-viewer-image {
+  display: block;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  place-self: center;
+  border-radius: var(--chat-attachment-radius);
+  object-fit: contain;
+}
+.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame > .chat-image-status,
+.chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-status {
+  min-width: 0;
+  max-width: 100%;
+  place-self: center;
+}
+.chat-image-viewer-footer {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--v3-space-3);
+}
+
 /* Approved dialog content only; the shared DialogPopup owns its glass frame,
    header/footer insets, focus treatment and responsive button sizes. */
 .approved-dialog .dialog-selection-context { display:flex; align-items:center; gap:calc(var(--spacing) * 2); margin-bottom:calc(var(--spacing) * 4); padding:calc(var(--spacing) * 3); border:1px solid var(--border); border-radius:var(--radius-lg); color:var(--muted-foreground); font-size:var(--font-size-sm); overflow-wrap:anywhere; }
