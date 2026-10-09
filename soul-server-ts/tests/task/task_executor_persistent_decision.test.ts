@@ -185,6 +185,7 @@ function makeRuntime(task: Task, events: Array<{
       _terminalEventId: number,
       _runOnceAt: Date,
       _now: Date,
+      _prompt?: string,
     ): Promise<SoulstreamSchedule | null> => null),
   };
   return {
@@ -338,6 +339,136 @@ describe("TaskExecutor persistent decision wiring", () => {
     });
     expect(runtime.scheduleService.deleteCacheKeepaliveSchedules).toHaveBeenCalledOnce();
     expect(runtime.scheduleService.scheduleCacheKeepalive).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      scenario: "warm",
+      contextTokens: 159_263,
+      idleMs: 60_000,
+      expectedRule: "arrival.warm.over_budget",
+    },
+    {
+      scenario: "cold",
+      contextTokens: 55_175,
+      idleMs: 3_600_000,
+      expectedRule: "arrival.cold.over_ratio",
+    },
+  ])("runs the PAS $scenario arrival on Codex when Sonnet weekly quota is exhausted", async ({
+    contextTokens,
+    idleMs,
+    expectedRule,
+  }) => {
+    const task = makeTask();
+    task.claudeContextUsage = { usedTokens: contextTokens, maxTokens: 200_000 };
+    task.metadata = [{
+      type: "persistent_settings",
+      value: {
+        default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+        fallback_model: { model_preset: "claude-sonnet", reasoning_effort: "high" },
+      },
+    }];
+    task.interventionQueue.push({ text: "continue", user: "Alice" });
+    const now = Date.now();
+    const runtime = makeRuntime(task, [
+      {
+        id: 1,
+        session_id: task.agentSessionId,
+        event_type: "complete",
+        payload: {},
+        searchable_text: "",
+        created_at: new Date(now - idleMs),
+      },
+      {
+        id: 2,
+        session_id: task.agentSessionId,
+        event_type: "context_usage",
+        payload: { used_tokens: contextTokens, estimated: false },
+        searchable_text: "",
+        created_at: new Date(now - 60_000),
+      },
+    ]);
+
+    const claudeUsage = makeUsage();
+    claudeUsage.weeklyUsedPercent = 100;
+    claudeUsage.shortUsedPercent = 0;
+    claudeUsage.weeklyResetAt = now / 1_000 + (37.9381 / 100) * 7 * 24 * 60 * 60;
+    const codexUsage = makeUsage("168h");
+    codexUsage.weeklyUsedPercent = 96;
+    codexUsage.shortUsedPercent = null;
+    codexUsage.shortWindowMinutes = null;
+    codexUsage.shortResetAt = null;
+    codexUsage.weeklyResetAt = now / 1_000 + ((4 + 65.7858) / 100) * 7 * 24 * 60 * 60;
+    rememberProviderUsageObservation("claude", claudeUsage);
+    rememberProviderUsageObservation("codex", codexUsage);
+
+    const codexEngine = {
+      ...makeEngine([
+        { type: "session", session_id: "native-codex" } as SSEEventPayload,
+        {
+          type: "complete",
+          usage: {},
+          timestamp: Date.now() / 1_000,
+          first_call: { input_tokens: 40_000, cached_input_tokens: 0 },
+        } as unknown as SSEEventPayload,
+      ]),
+      backendId: "codex",
+    };
+    const claudeEngine = {
+      ...makeEngine([{
+        type: "complete",
+        usage: {},
+        timestamp: Date.now() / 1_000,
+        first_call: { input_tokens: 40_000, cached_input_tokens: 0 },
+      } as unknown as SSEEventPayload]),
+      backendId: "claude",
+    };
+    const codexExecute = vi.spyOn(codexEngine, "execute");
+    const claudeExecute = vi.spyOn(claudeEngine, "execute");
+    const requestedBackends: Array<string | undefined> = [];
+    const persistentSessions = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
+    const contextBuilder = makeContextBuilder();
+    const sessionMutations = { setModelSelection: vi.fn(async () => undefined) };
+    const executor = taskExecutor(
+      task,
+      runtime,
+      (_profile, backend) => {
+        requestedBackends.push(backend);
+        return backend === "claude" ? claudeEngine : codexEngine;
+      },
+      contextBuilder,
+      sessionMutations,
+    );
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(persistentSessions).toHaveBeenCalledWith(task.agentSessionId, {
+      modelPreset: "codex-6.1-sol",
+      reasoningEffort: "high",
+      reason: `auto:${expectedRule}`,
+    });
+    expect(task.modelPreset).toBe("codex-6.1-sol");
+    expect(task.modelPresetBackend).toBe("codex");
+    expect(task.model).toBe("codex-6.1-sol-model");
+    expect(requestedBackends).toContain("codex");
+    expect(requestedBackends).not.toContain("claude");
+    expect(codexExecute).toHaveBeenCalledWith(expect.objectContaining({ model: "codex-6.1-sol-model" }));
+    expect(claudeExecute).not.toHaveBeenCalled();
+    expect(runtime.scheduleService.scheduleResumeAfterLimit).not.toHaveBeenCalled();
+    expect(runtime.persistenceDouble.enqueueEvent.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)).toContainEqual(
+        expect.objectContaining({
+          kind: "persistent_decision",
+          trigger: "arrival",
+          action: "new_generation",
+          rule: expectedRule,
+          target_preset: "codex-6.1-sol",
+        }),
+      );
+    expect(contextBuilder.buildGenerationContext).toHaveBeenCalledOnce();
+    expect(sessionMutations.setModelSelection).toHaveBeenCalledOnce();
   });
 
   it("records continue at arrival without creating a pending generation", async () => {
@@ -630,6 +761,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       task.terminalEventId,
       new Date((decision?.inputs_snapshot as Record<string, unknown>).now as string),
       expect.any(Date),
+      "사용 가능한 대체 모델로 이전 지시와 미완료 작업을 이어서 진행해주세요.",
     );
     expect((runtime.scheduleService.scheduleResumeAfterLimit.mock.calls[0]?.[2] as Date).getTime())
       .toBeGreaterThanOrEqual(startedAt);
@@ -668,7 +800,8 @@ describe("TaskExecutor persistent decision wiring", () => {
       vi.fn(),
       logger,
     );
-    await scheduleDispatcher.runOnce(new Date(decisionNow.getTime() + 1_000));
+    const dispatchedAt = new Date(decisionNow.getTime() + 1_000);
+    await scheduleDispatcher.runOnce(dispatchedAt);
 
     expect(resumeScheduleRuntime.db.hasContinuousLimitWindow).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -679,16 +812,32 @@ describe("TaskExecutor persistent decision wiring", () => {
     );
     expect(addIntervention).toHaveBeenCalledWith(expect.objectContaining({
       agentSessionId: task.agentSessionId,
-      text: "[Scheduled wakeup]\n\n리밋 해제 시각이 지났습니다. 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+      text: "[Scheduled wakeup]\n\n사용 가능한 대체 모델로 이전 지시와 미완료 작업을 이어서 진행해주세요.",
     }), expect.any(Function));
+    expect(resumeScheduleRuntime.db.finishScheduleDispatch).toHaveBeenCalledWith(expect.objectContaining({
+      scheduleId: `resume-after-limit:${task.agentSessionId}:${task.terminalEventId}:0`,
+      claimToken: "resume-claim",
+      recurring: false,
+      nextRunAt: null,
+      firedAt: dispatchedAt,
+    }));
+    expect(resumeScheduleRuntime.getSchedule()).toMatchObject({
+      status: "completed",
+      nextRunAt: null,
+      lastFiredAt: dispatchedAt.toISOString(),
+    });
   });
 
   it("waits until the event reset and preserves nonpersistent limit behavior", async () => {
     const task = makeTask();
-    const resetAt = "2026-10-06T13:00:00.000Z";
+    const resetAt = new Date(Date.now() + 60_000).toISOString();
     const depleted = makeUsage("168h");
     depleted.shortUsedPercent = 95;
     const runtime = makeRuntime(task, []);
+    const resumeScheduleRuntime = makeResumeScheduleRuntime(runtime.persistenceDouble.persistence);
+    runtime.scheduleService.scheduleResumeAfterLimit.mockImplementation((...args) =>
+      resumeScheduleRuntime.service.scheduleResumeAfterLimit(...args),
+    );
     rememberProviderUsageObservation("claude", makeUsage());
     rememberProviderUsageObservation("codex", depleted);
     const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
@@ -705,6 +854,14 @@ describe("TaskExecutor persistent decision wiring", () => {
       new Date(resetAt),
       expect.any(Date),
     );
+    expect(runtime.scheduleService.scheduleResumeAfterLimit.mock.calls[0]).toHaveLength(4);
+    expect((runtime.scheduleService.scheduleResumeAfterLimit.mock.calls[0]?.[2] as Date).getTime())
+      .toBeGreaterThan(Date.now());
+    expect(resumeScheduleRuntime.getSchedule()).toMatchObject({
+      prompt: "리밋 해제 시각이 지났습니다. 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+      runOnceAt: resetAt,
+      nextRunAt: resetAt,
+    });
     expect(runtime.persistenceDouble.enqueueEvent.mock.calls
       .map((call) => call[1] as Record<string, unknown>)).toContainEqual(
         expect.objectContaining({ trigger: "limit_hit", action: "wait_until", rule: "limit_hit.wait" }),

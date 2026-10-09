@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../../lib/flatten-tree";
+import { MarkdownImage } from "../MarkdownImage";
 import { ChatMessageItem } from "./ChatMessageItem";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 
@@ -60,6 +61,122 @@ describe("ChatMessageItem presentation", () => {
     expect(userHtml).not.toContain("whitespace-pre-wrap");
     expect(manuscriptHtml).toContain("animate-caret-blink");
     expect(manuscriptHtml).toContain("text-muted-foreground");
+  });
+
+  it("keeps structured image attachments manuscript-only and after the user text", () => {
+    const msg = makeMessage("user", "structured-images", {
+      content: "원문 텍스트입니다.",
+      attachmentPaths: ["/incoming/first.png", "/incoming/notes.txt", "/incoming/second.webp"],
+      attachmentNodeId: "eiaserinnys",
+    });
+    const defaultHtml = renderToStaticMarkup(createElement(ChatMessageItem, { msg }));
+    const manuscriptHtml = renderToStaticMarkup(createElement(ChatMessageItem, { msg, presentation: "manuscript" }));
+
+    expect(defaultHtml).not.toContain('data-chat-image-run="attachments"');
+    expect(manuscriptHtml.indexOf("원문 텍스트입니다.")).toBeLessThan(
+      manuscriptHtml.indexOf('data-chat-image-run="attachments"'),
+    );
+    expect(manuscriptHtml).toContain('data-chat-image-count="2"');
+    expect(manuscriptHtml).toContain("nodeId=eiaserinnys&amp;path=%2Fincoming%2Ffirst.png");
+    expect(manuscriptHtml).toContain("nodeId=eiaserinnys&amp;path=%2Fincoming%2Fsecond.webp");
+    expect(manuscriptHtml).not.toContain("notes.txt");
+  });
+
+  it("opens the message gallery at the clicked image, navigates, and restores focus without moving scroll", () => {
+    const msg = makeMessage("assistant", "gallery", {
+      content: "첫 설명입니다.\n\n![첫 이미지](/first.png)\n\n사이 설명입니다.\n\n![둘째 이미지](/second.png)",
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => root?.render(createElement(ChatMessageItem, { msg, presentation: "manuscript" })));
+
+    const body = host.querySelector<HTMLElement>('[data-slot="chat-body"]')!;
+    body.scrollTop = 73;
+    const triggers = host.querySelectorAll<HTMLImageElement>('[data-chat-image-index] img[role="button"]');
+    const trigger = triggers[1]!;
+    act(() => trigger.click());
+
+    let dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
+    expect(dialog.textContent).toContain("2/2");
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="다음 이미지"]')?.disabled).toBe(true);
+    act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')!.click());
+    dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
+    expect(dialog.textContent).toContain("1/2");
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')?.disabled).toBe(true);
+
+    act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+
+    expect(document.activeElement).toBe(trigger);
+    expect(body.scrollTop).toBe(73);
+    expect(document.body.querySelector('[data-slot="dialog-popup"]')).toBeNull();
+  });
+
+  it("hides viewer navigation for one image", () => {
+    const msg = makeMessage("assistant", "single-image", {
+      content: "![단일 이미지](/single.png)",
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => root?.render(createElement(ChatMessageItem, { msg, presentation: "manuscript" })));
+
+    const trigger = host.querySelector<HTMLImageElement>('[data-chat-image-index] img[role="button"]')!;
+    act(() => trigger.click());
+    const dialog = document.body.querySelector('[data-slot="dialog-popup"]')!;
+
+    expect(dialog.querySelector('[aria-label="이전 이미지"]')).toBeNull();
+    expect(dialog.querySelector('[aria-label="다음 이미지"]')).toBeNull();
+    expect(dialog.querySelector('.chat-image-viewer-count')).toBeNull();
+  });
+
+  it("chatRefined shows pending until real load or error and reports both callbacks", () => {
+    const events: string[] = [];
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const renderImage = (src: string) => createElement(MarkdownImage, {
+      src,
+      alt: "검수 이미지",
+      variant: "chatRefined",
+      className: "chat-image-thumbnail-image",
+      onLoad: loadedSrc => events.push(`load:${loadedSrc}`),
+      onError: failedSrc => events.push(`error:${failedSrc}`),
+    });
+
+    act(() => root?.render(renderImage("/slow.png")));
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지 불러오는 중…");
+    const slowImage = host.querySelector<HTMLImageElement>('img[src="/slow.png"]')!;
+    expect(slowImage.classList.contains("chat-image-thumbnail-image")).toBe(true);
+
+    act(() => slowImage.dispatchEvent(new Event("load")));
+    expect(host.querySelector(".chat-image-status")).toBeNull();
+    expect(events).toEqual(["load:/slow.png"]);
+
+    act(() => root?.render(renderImage("/failed.png")));
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지 불러오는 중…");
+    const failedImage = host.querySelector<HTMLImageElement>('img[src="/failed.png"]')!;
+    act(() => failedImage.dispatchEvent(new Event("error")));
+    expect(host.querySelector(".chat-image-status")).toBeNull();
+    expect(events).toEqual(["load:/slow.png", "error:/failed.png"]);
+  });
+
+  it("shows a small image failure status while keeping the message text", () => {
+    const msg = makeMessage("assistant", "failed-image", {
+      content: "설명은 남아 있습니다.\n\n![열 수 없는 이미지](/missing.png)",
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => root?.render(createElement(ChatMessageItem, { msg, presentation: "manuscript" })));
+
+    const image = host.querySelector<HTMLImageElement>('img[src="/missing.png"]')!;
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지 불러오는 중…");
+    act(() => image.dispatchEvent(new Event("error")));
+
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지를 불러오지 못했습니다.");
+    expect(host.textContent).toContain("설명은 남아 있습니다.");
+    expect(host.querySelector('img[src="/missing.png"]')).toBeNull();
   });
 
   it("renders manuscript complete usage collapsed with its details hidden below the header", () => {

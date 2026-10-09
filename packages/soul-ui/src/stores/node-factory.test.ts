@@ -96,6 +96,21 @@ describe("createNodeFromEvent", () => {
       expect(node!.children).toEqual([]);
     });
 
+    it("preserves existing user_message attachments and node_id for the view", () => {
+      const event = {
+        type: "user_message",
+        user: "alice",
+        text: "첨부 이미지",
+        attachments: ["/incoming/first.png", "/incoming/readme.txt"],
+        node_id: "eiaserinnys",
+      } as unknown as UserMessageEvent;
+
+      const node = createNodeFromEvent(event, 201) as UserMessageNode;
+
+      expect(node.attachmentPaths).toEqual(["/incoming/first.png", "/incoming/readme.txt"]);
+      expect(node.attachmentNodeId).toBe("eiaserinnys");
+    });
+
     it.each([
       [{ purpose: "cache_keepalive" }, true],
       [{ payload: { purpose: "cache_keepalive" } }, true],

@@ -335,8 +335,18 @@ function selectPreset(
     return { targetPreset: input.current_preset, rule: "preset.stale_keep_current" };
   }
 
-  if (afterShortFloor.length === 1) {
-    return { targetPreset: afterShortFloor[0]!, rule: "preset.single" };
+  const afterWeeklyFloor = afterShortFloor.filter((preset) => {
+    const account = accountForPreset(input, preset);
+    return isStaleForValue(input, account, account?.weekly_remaining_percent, config)
+      || account!.weekly_remaining_percent! > 0;
+  });
+
+  if (afterWeeklyFloor.length === 0) {
+    return { targetPreset: input.current_preset, rule: "preset.weekly_floor_all" };
+  }
+
+  if (afterWeeklyFloor.length === 1) {
+    return { targetPreset: afterWeeklyFloor[0]!, rule: "preset.single" };
   }
 
   const defaultAccount = accountForPreset(input, input.default_model)!;

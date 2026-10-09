@@ -140,6 +140,32 @@ describe("SoulstreamScheduleService", () => {
     expect(persistence.enqueueEvent).toHaveBeenCalledOnce();
   });
 
+  it("stores an explicit ResumeAfterLimit prompt without changing the stable schedule contract", async () => {
+    const db = makeDb();
+    const { service } = makeService(db);
+    const runAt = new Date("2026-01-01T00:05:00.000Z");
+    const now = new Date("2026-01-01T00:00:00.000Z");
+
+    await service.scheduleResumeAfterLimit(
+      "sess-1",
+      33,
+      runAt,
+      now,
+      "사용 가능한 대체 모델로 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+    );
+
+    expect(db.createScheduleIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
+      scheduleId: "resume-after-limit:sess-1:33:0",
+      sessionId: "sess-1",
+      prompt: "사용 가능한 대체 모델로 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:33",
+      runOnceAt: runAt,
+      nextRunAt: runAt,
+      createdAt: now,
+    }));
+  });
+
   it("stores CronCreate in the same durable model and advances recurring schedules from now", async () => {
     const db = makeDb();
     const { service } = makeService(db);

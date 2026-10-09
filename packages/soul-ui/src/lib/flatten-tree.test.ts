@@ -921,6 +921,22 @@ describe("flattenTree", () => {
     const msgs = flattenTree(tree);
     expect(msgs[0].callerInfo).toBeUndefined();
   });
+
+  it("user_message structured attachment paths and source node survive flattening", () => {
+    const node = {
+      ...makeUserMessage("u2", "첨부 이미지"),
+      attachmentPaths: ["/incoming/first.png", "/incoming/readme.txt"],
+      attachmentNodeId: "eiaserinnys",
+    } as UserMessageNode;
+    const tree = makeSession([node]);
+
+    const [message] = flattenTree(tree);
+
+    expect((message as unknown as { attachmentPaths?: string[] }).attachmentPaths)
+      .toEqual(["/incoming/first.png", "/incoming/readme.txt"]);
+    expect((message as unknown as { attachmentNodeId?: string }).attachmentNodeId)
+      .toBe("eiaserinnys");
+  });
 });
 
 // === Identity 보존 캐시 ===

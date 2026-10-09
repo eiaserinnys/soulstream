@@ -18,6 +18,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
   const callerAvatarUrl = useChatStore((s) =>
     extractCallerAvatarUrl(s.activeSessionSummary?.metadata),
   );
+  const sessionNodeId = useChatStore((s) => s.activeSessionSummary?.nodeId);
 
   const isLlm = llmContext?.isLlm ?? false;
   const isAgent = !!msg.agentInfo;
@@ -69,7 +70,18 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
           )}
         </div>)}
         <div data-slot="chat-body" className={cn("chat-message-selectable text-base", manuscript ? "text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "break-words leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white")}>
-          {children ?? <MarkdownContent content={msg.content} linkTone={manuscript ? undefined : "onUserBubble"} enableBlockquoteCopy />}
+          {children ?? (
+            <MarkdownContent
+              content={msg.content}
+              linkTone={manuscript ? undefined : "onUserBubble"}
+              enableBlockquoteCopy
+              chatImages={manuscript ? {
+                role: "user",
+                attachmentPaths: msg.attachmentPaths,
+                nodeId: sessionNodeId ?? msg.attachmentNodeId,
+              } : undefined}
+            />
+          )}
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />
