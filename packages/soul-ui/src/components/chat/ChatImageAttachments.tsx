@@ -219,7 +219,7 @@ export function ChatImageViewer({
           <DialogTitle className="chat-image-viewer-title">{filename ?? "이미지"}</DialogTitle>
           {meta && <p className="chat-image-viewer-metadata">{meta}</p>}
         </DialogHeader>
-        <DialogPanel scrollFade={false} className="chat-image-viewer-panel">
+        <DialogPanel scrollFade={false} scrollable={false} className="chat-image-viewer-panel">
           {failedSource === image.src ? (
             <span className="chat-image-status" role="status">이미지를 불러오지 못했습니다.</span>
           ) : (
