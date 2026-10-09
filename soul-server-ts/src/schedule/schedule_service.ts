@@ -253,12 +253,13 @@ export class SoulstreamScheduleService {
     terminalEventId: number,
     runOnceAt: Date,
     now = new Date(),
+    prompt = RESUME_AFTER_LIMIT_PROMPT,
   ): Promise<SoulstreamSchedule | null> {
     const schedule = await this.db.createScheduleIfAbsent({
       scheduleId: stableScheduleId(sessionId, terminalEventId, 0),
       sessionId,
       kind: "wakeup",
-      prompt: RESUME_AFTER_LIMIT_PROMPT,
+      prompt,
       sourceTool: RESUME_AFTER_LIMIT_SOURCE_TOOL,
       toolUseId: resumeAfterLimitToolUseId(terminalEventId),
       timezone: "UTC",

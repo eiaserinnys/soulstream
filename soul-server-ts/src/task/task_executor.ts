@@ -727,12 +727,15 @@ export class TaskExecutor {
         ? new Date(decision.wake_at)
         : undefined;
     if (scheduleAt && task.terminalEventId !== undefined) {
-      await runtime.scheduleService.scheduleResumeAfterLimit(
-        task.agentSessionId,
-        task.terminalEventId,
-        scheduleAt,
-        now,
-      );
+      const scheduleArgs = [task.agentSessionId, task.terminalEventId, scheduleAt, now] as const;
+      if (decision.action === "new_generation") {
+        await runtime.scheduleService.scheduleResumeAfterLimit(
+          ...scheduleArgs,
+          "사용 가능한 대체 모델로 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+        );
+      } else {
+        await runtime.scheduleService.scheduleResumeAfterLimit(...scheduleArgs);
+      }
     }
   }
 
