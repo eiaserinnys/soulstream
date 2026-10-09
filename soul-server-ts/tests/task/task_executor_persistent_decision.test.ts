@@ -341,9 +341,26 @@ describe("TaskExecutor persistent decision wiring", () => {
     expect(runtime.scheduleService.scheduleCacheKeepalive).not.toHaveBeenCalled();
   });
 
-  it("runs the PAS warm arrival on Codex when Sonnet weekly quota is exhausted", async () => {
+  it.each([
+    {
+      scenario: "warm",
+      contextTokens: 159_263,
+      idleMs: 60_000,
+      expectedRule: "arrival.warm.over_budget",
+    },
+    {
+      scenario: "cold",
+      contextTokens: 55_175,
+      idleMs: 3_600_000,
+      expectedRule: "arrival.cold.over_ratio",
+    },
+  ])("runs the PAS $scenario arrival on Codex when Sonnet weekly quota is exhausted", async ({
+    contextTokens,
+    idleMs,
+    expectedRule,
+  }) => {
     const task = makeTask();
-    task.claudeContextUsage = { usedTokens: 159_263, maxTokens: 200_000 };
+    task.claudeContextUsage = { usedTokens: contextTokens, maxTokens: 200_000 };
     task.metadata = [{
       type: "persistent_settings",
       value: {
@@ -360,13 +377,13 @@ describe("TaskExecutor persistent decision wiring", () => {
         event_type: "complete",
         payload: {},
         searchable_text: "",
-        created_at: new Date(now - 60_000),
+        created_at: new Date(now - idleMs),
       },
       {
         id: 2,
         session_id: task.agentSessionId,
         event_type: "context_usage",
-        payload: { used_tokens: 159_263, estimated: false },
+        payload: { used_tokens: contextTokens, estimated: false },
         searchable_text: "",
         created_at: new Date(now - 60_000),
       },
@@ -430,7 +447,7 @@ describe("TaskExecutor persistent decision wiring", () => {
     expect(persistentSessions).toHaveBeenCalledWith(task.agentSessionId, {
       modelPreset: "codex-6.1-sol",
       reasoningEffort: "high",
-      reason: "auto:arrival.warm.over_budget",
+      reason: `auto:${expectedRule}`,
     });
     expect(task.modelPreset).toBe("codex-6.1-sol");
     expect(task.modelPresetBackend).toBe("codex");
@@ -440,6 +457,16 @@ describe("TaskExecutor persistent decision wiring", () => {
     expect(codexExecute).toHaveBeenCalledWith(expect.objectContaining({ model: "codex-6.1-sol-model" }));
     expect(claudeExecute).not.toHaveBeenCalled();
     expect(runtime.scheduleService.scheduleResumeAfterLimit).not.toHaveBeenCalled();
+    expect(runtime.persistenceDouble.enqueueEvent.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)).toContainEqual(
+        expect.objectContaining({
+          kind: "persistent_decision",
+          trigger: "arrival",
+          action: "new_generation",
+          rule: expectedRule,
+          target_preset: "codex-6.1-sol",
+        }),
+      );
     expect(contextBuilder.buildGenerationContext).toHaveBeenCalledOnce();
     expect(sessionMutations.setModelSelection).toHaveBeenCalledOnce();
   });
@@ -773,7 +800,8 @@ describe("TaskExecutor persistent decision wiring", () => {
       vi.fn(),
       logger,
     );
-    await scheduleDispatcher.runOnce(new Date(decisionNow.getTime() + 1_000));
+    const dispatchedAt = new Date(decisionNow.getTime() + 1_000);
+    await scheduleDispatcher.runOnce(dispatchedAt);
 
     expect(resumeScheduleRuntime.db.hasContinuousLimitWindow).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -786,14 +814,30 @@ describe("TaskExecutor persistent decision wiring", () => {
       agentSessionId: task.agentSessionId,
       text: "[Scheduled wakeup]\n\n사용 가능한 대체 모델로 이전 지시와 미완료 작업을 이어서 진행해주세요.",
     }), expect.any(Function));
+    expect(resumeScheduleRuntime.db.finishScheduleDispatch).toHaveBeenCalledWith(expect.objectContaining({
+      scheduleId: `resume-after-limit:${task.agentSessionId}:${task.terminalEventId}:0`,
+      claimToken: "resume-claim",
+      recurring: false,
+      nextRunAt: null,
+      firedAt: dispatchedAt,
+    }));
+    expect(resumeScheduleRuntime.getSchedule()).toMatchObject({
+      status: "completed",
+      nextRunAt: null,
+      lastFiredAt: dispatchedAt.toISOString(),
+    });
   });
 
   it("waits until the event reset and preserves nonpersistent limit behavior", async () => {
     const task = makeTask();
-    const resetAt = "2026-10-06T13:00:00.000Z";
+    const resetAt = new Date(Date.now() + 60_000).toISOString();
     const depleted = makeUsage("168h");
     depleted.shortUsedPercent = 95;
     const runtime = makeRuntime(task, []);
+    const resumeScheduleRuntime = makeResumeScheduleRuntime(runtime.persistenceDouble.persistence);
+    runtime.scheduleService.scheduleResumeAfterLimit.mockImplementation((...args) =>
+      resumeScheduleRuntime.service.scheduleResumeAfterLimit(...args),
+    );
     rememberProviderUsageObservation("claude", makeUsage());
     rememberProviderUsageObservation("codex", depleted);
     const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
@@ -811,6 +855,13 @@ describe("TaskExecutor persistent decision wiring", () => {
       expect.any(Date),
     );
     expect(runtime.scheduleService.scheduleResumeAfterLimit.mock.calls[0]).toHaveLength(4);
+    expect((runtime.scheduleService.scheduleResumeAfterLimit.mock.calls[0]?.[2] as Date).getTime())
+      .toBeGreaterThan(Date.now());
+    expect(resumeScheduleRuntime.getSchedule()).toMatchObject({
+      prompt: "리밋 해제 시각이 지났습니다. 이전 지시와 미완료 작업을 이어서 진행해주세요.",
+      runOnceAt: resetAt,
+      nextRunAt: resetAt,
+    });
     expect(runtime.persistenceDouble.enqueueEvent.mock.calls
       .map((call) => call[1] as Record<string, unknown>)).toContainEqual(
         expect.objectContaining({ trigger: "limit_hit", action: "wait_until", rule: "limit_hit.wait" }),
