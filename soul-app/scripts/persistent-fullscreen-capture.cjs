@@ -80,7 +80,8 @@ async function runPersistentFullscreenCaptures({ browser, base, prefix, output, 
   await runEntryCaptures({ browser, base, prefix, output, result });
 }
 
-module.exports = { runPersistentFullscreenCaptures, runPhoneCaptures, runEntryCaptures, runSettingsCaptures, runHistoryCapture, fixturePage, swipe };
+module.exports = { runPersistentFullscreenCaptures, runPhoneCaptures, runEntryCaptures, runSettingsCaptures, runHistoryCapture,
+  fixturePage, swipe, selectPersistentHomeScenarios };
 
 async function runHistoryCapture(env) {
   const { context, page } = await fixturePage(env, 'history', { width: 390, height: 844 }, 'sample=screen&history=long&safeArea=fixture');
@@ -274,6 +275,11 @@ async function runPhoneCaptures(env) {
 }
 async function runEntryCaptures(env) {
   const { output, result } = env;
+  if (env.persistentHome) {
+    const selected = selectPersistentHomeScenarios(env.persistentHomeScenario);
+    for (const scenario of selected) await runPersistentHomeScenario(env, scenario);
+    return;
+  }
   for (const scenario of [
     { name: 'entry-zero', query: 'sample=entry&count=0', manual: true, expected: 'settings-section-persistent-editor-groups' },
     { name: 'entry-one', query: 'sample=entry&count=1', manual: true, expected: 'persistent-session-screen' },
@@ -300,6 +306,138 @@ async function runEntryCaptures(env) {
       assert.equal(await page.getByTestId('persistent-session-character-toggle').count(), 0);
     }
     result.interactions.push(scenario.name);
+    await context.close();
+  }
+}
+
+function selectPersistentHomeScenarios(name) {
+  const scenarios = [
+    { name: 'ipad-landscape-light', role: 'tablet', viewport: { width: 1180, height: 820 }, theme: 'light' },
+    { name: 'ipad-portrait-dark', role: 'tablet', viewport: { width: 820, height: 1180 }, theme: 'dark' },
+    { name: 'iphone-light', role: 'phone', viewport: { width: 390, height: 844 }, theme: 'light' },
+    { name: 'ipad-narrow-dark', role: 'phone', viewport: { width: 600, height: 900 }, theme: 'dark' },
+  ];
+  const selected = name ? scenarios.filter(scenario => scenario.name === name) : scenarios;
+  assert.ok(selected.length > 0, `persistent-home 시나리오를 찾을 수 없습니다: ${name}`);
+  return selected;
+}
+
+async function runPersistentHomeScenario(env, scenario) {
+  const { context, page } = await fixturePage(env, scenario.name, scenario.viewport,
+    `sample=entry&count=1&safeArea=fixture&theme=${scenario.theme}`);
+  const shot = part => page.screenshot({ path: path.join(env.output, `${scenario.name}-${part}.png`) });
+  const touch = async testID => {
+    const target = page.getByTestId(testID);
+    await target.waitFor({ state: 'visible' });
+    const box = await target.boundingBox();
+    assert.ok(box && box.width > 0 && box.height > 0, `${testID} 터치 영역`);
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  const measure = async testID => page.getByTestId(testID).evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom };
+  });
+  const measurePas = async () => ({
+    screen: await measure('persistent-session-screen'),
+    header: await measure('persistent-session-header'),
+    conversation: await measure('persistent-session-conversation'),
+    composer: await measure('chat-composer-text-input'),
+  });
+  const assertSameFrame = (before, after, name) => {
+    for (const part of ['screen', 'header', 'conversation', 'composer']) {
+      for (const edge of ['x', 'y', 'width', 'height']) {
+        assert.ok(Math.abs(before[part][edge] - after[part][edge]) <= 1,
+          `${name} 재진입 ${part}.${edge}: ${before[part][edge]} → ${after[part][edge]}`);
+      }
+    }
+  };
+
+  try {
+    const phoneTabs = page.getByTestId(/^phone-tab-/);
+    const safeArea = scenario.role === 'tablet' ? { top: 24, bottom: 20 } : { top: 47, bottom: 34 };
+    if (scenario.role === 'tablet') {
+      const entry = page.getByTestId('tablet-persistent-entry');
+      await entry.waitFor({ state: 'visible' });
+      assert.equal(await phoneTabs.count(), 0, 'tablet 탐색에는 phone 탭이 없음');
+      await shot('main-entry');
+      await touch('tablet-persistent-entry');
+
+      const pas = page.getByTestId('persistent-session-screen');
+      await pas.waitFor({ state: 'visible' });
+      await page.getByText('로젤린', { exact: true }).waitFor();
+      assert.equal(await page.getByTestId('persistent-session-home').count(), 1, 'tablet PAS Home 표시');
+      assert.equal(await phoneTabs.count(), 0, 'tablet PAS에 phone 탭 없음');
+      const actionIds = ['persistent-session-home', 'persistent-session-appearance', 'persistent-session-settings'];
+      const actionBoxes = [];
+      const actionSurfaces = [];
+      for (const id of actionIds) {
+        const box = await page.getByTestId(id).boundingBox();
+        assert.ok(box, `${id} 버튼 프레임`);
+        actionBoxes.push({ x: box.x, y: box.y, width: box.width, height: box.height, right: box.x + box.width });
+        actionSurfaces.push(await page.getByTestId(`${id}-visual`).evaluate(element => {
+          const style = getComputedStyle(element);
+          const box = element.getBoundingClientRect();
+          return { width: box.width, height: box.height, borderRadius: style.borderRadius,
+            borderWidth: style.borderWidth, backgroundColor: style.backgroundColor };
+        }));
+      }
+      for (let index = 1; index < actionBoxes.length; index += 1) {
+        assert.ok(Math.abs(actionBoxes[index].height - actionBoxes[0].height) <= 1, '헤더 액션 높이 일치');
+        assert.ok(Math.abs(actionBoxes[index].y - actionBoxes[0].y) <= 1, '헤더 액션 기준선 일치');
+        assert.deepEqual(actionSurfaces[index], actionSurfaces[0], '헤더 액션의 기존 원형 표면 계약');
+      }
+      const gaps = [actionBoxes[1].x - actionBoxes[0].right, actionBoxes[2].x - actionBoxes[1].right];
+      assert.ok(Math.abs(gaps[0] - gaps[1]) <= 1, 'Home·밝기·설정 간격 일치');
+      const beforeHome = await measurePas();
+      assert.ok(beforeHome.header.y >= safeArea.top, 'tablet 헤더가 비영 상단 안전 영역 아래에 있음');
+      assert.ok(beforeHome.composer.bottom <= scenario.viewport.height - safeArea.bottom + 1,
+        'tablet 입력이 비영 하단 안전 영역 위에 있음');
+      await shot('pas');
+
+      await touch('persistent-session-home');
+      await pas.waitFor({ state: 'hidden' });
+      await page.getByTestId('tablet-persistent-entry').waitFor({ state: 'visible' });
+      await shot('home-return');
+      await touch('tablet-persistent-entry');
+      await pas.waitFor({ state: 'visible' });
+      await page.getByText('로젤린', { exact: true }).waitFor();
+      const afterHome = await measurePas();
+      assertSameFrame(beforeHome, afterHome, scenario.name);
+      await shot('reentry');
+      result.viewports.push({ ...scenario, safeArea, beforeHome, afterHome, actionBoxes, actionSurfaces, gaps });
+      result.interactions.push(`${scenario.name}: Main 입구 터치 → PAS Home → Main 복귀 → 같은 입구 재진입`);
+    } else {
+      await page.getByTestId('phone-tab-DailyTab').waitFor({ state: 'visible' });
+      const tabs = await phoneTabs.evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')));
+      assert.deepEqual(tabs, ['phone-tab-DailyTab', 'phone-tab-FolderTab', 'phone-tab-PersistentTab', 'phone-tab-FeedTab', 'phone-tab-SettingsTab']);
+      await shot('daily-entry');
+      await touch('phone-tab-PersistentTab');
+
+      const pas = page.getByTestId('persistent-session-screen');
+      await pas.waitFor({ state: 'visible' });
+      await page.getByText('로젤린', { exact: true }).waitFor();
+      assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 상단 Home 없음');
+      const beforeHome = await measurePas();
+      assert.ok(beforeHome.header.y >= safeArea.top, 'phone 헤더가 비영 상단 안전 영역 아래에 있음');
+      assert.ok(beforeHome.composer.bottom <= scenario.viewport.height - safeArea.bottom + 1,
+        'phone 입력이 비영 하단 안전 영역 위에 있음');
+      await shot('pas');
+
+      await touch('phone-tab-DailyTab');
+      await page.getByTestId('phone-tab-DailyTab').waitFor({ state: 'visible' });
+      await pas.waitFor({ state: 'hidden' });
+      await shot('daily-return');
+      await touch('phone-tab-PersistentTab');
+      await pas.waitFor({ state: 'visible' });
+      await page.getByText('로젤린', { exact: true }).waitFor();
+      assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 재진입에도 상단 Home 없음');
+      const afterHome = await measurePas();
+      assertSameFrame(beforeHome, afterHome, scenario.name);
+      await shot('reentry');
+      result.viewports.push({ ...scenario, safeArea, beforeHome, afterHome, tabs });
+      result.interactions.push(`${scenario.name}: PersistentTab → DailyTab → PersistentTab 왕복, 상단 Home 없음`);
+    }
+  } finally {
     await context.close();
   }
 }

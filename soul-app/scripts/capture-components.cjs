@@ -6,8 +6,9 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { once } = require('node:events');
 
-const [playwrightPath, evidencePath, tabletSize, captureMode] = process.argv.slice(2);
+const [playwrightPath, evidencePath, tabletSize, captureMode, captureScenario] = process.argv.slice(2);
 if (!playwrightPath || !evidencePath) throw new Error('Playwright path와 증거 경로가 필요합니다.');
+if (captureScenario && captureMode !== 'persistent-home') throw new Error('시나리오 선택은 persistent-home 모드에서만 사용할 수 있습니다.');
 const { chromium, devices } = require(path.resolve(playwrightPath));
 const output = path.resolve(evidencePath);
 const root = process.env.COMPONENT_REVIEW_BUNDLE ? path.resolve(process.env.COMPONENT_REVIEW_BUNDLE)
@@ -1030,6 +1031,9 @@ async function runPersistentTaskCaptures(browser, base) {
       await require('./persistent-fullscreen-capture.cjs').runSettingsCaptures({ browser, base, prefix, output, result });
     } else if (captureMode === 'persistent-entry') {
       await require('./persistent-fullscreen-capture.cjs').runEntryCaptures({ browser, base, prefix, output, result });
+    } else if (captureMode === 'persistent-home') {
+      await require('./persistent-fullscreen-capture.cjs').runEntryCaptures({ browser, base, prefix, output, result,
+        persistentHome: true, persistentHomeScenario: captureScenario });
     } else if (captureMode === 'persistent-baseline') {
       await require('./persistent-baseline-capture.cjs').runPersistentBaselineCaptures({ browser, base, prefix, root, output, result });
     } else if (captureMode === 'card-checks' || captureMode === 'card-trim') {
