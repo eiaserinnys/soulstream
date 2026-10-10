@@ -40,5 +40,6 @@ test('PAS 카드 선택은 기존 스택 안에 머물고 별도 카드 상세 �
   expect(navigation.goBack).toHaveBeenCalledTimes(1);
   expect(store.getState()).toMatchObject({ scene: 'cards', selectedCardId: 'card-1', session: { session_id: 'pas-1' } });
   props.onHome();
+  expect(store.getState().visible).toBe(false);
   expect(navigation.goBack).toHaveBeenCalledTimes(2);
 });
