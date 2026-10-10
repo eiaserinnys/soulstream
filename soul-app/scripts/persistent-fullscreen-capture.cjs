@@ -334,7 +334,7 @@ async function runPersistentHomeScenario(env, scenario) {
     assert.ok(box && box.width > 0 && box.height > 0, `${testID} 터치 영역`);
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
   };
-  const measure = async testID => page.getByTestId(testID).evaluate(element => {
+  const measure = async (testID, scope = page) => scope.getByTestId(testID).evaluate(element => {
     const box = element.getBoundingClientRect();
     return { x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom };
   });
@@ -342,7 +342,7 @@ async function runPersistentHomeScenario(env, scenario) {
     screen: await measure('persistent-session-screen'),
     header: await measure('persistent-session-header'),
     conversation: await measure('persistent-session-conversation'),
-    composer: await measure('chat-composer-text-input'),
+    composer: await measure('chat-composer-text-input', page.getByTestId('persistent-session-screen')),
   });
   const assertSameFrame = (before, after, name) => {
     for (const part of ['screen', 'header', 'conversation', 'composer']) {
