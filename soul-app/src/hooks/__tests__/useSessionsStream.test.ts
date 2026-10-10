@@ -204,6 +204,90 @@ test('in-flight updates are coalesced into one lookup and the latest display sta
   expect(useSessionStore.getState().feedSessionIds).toContain('pending');
 });
 
+test('an omitted cached running row is reconciled from REST without becoming a feed candidate', async () => {
+  const sessionId = 'running-311';
+  const includedId = 'snapshot-running';
+  const completedId = 'cached-completed';
+  let resolveResponse!: (response: Response) => void;
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+  useSessionStore.getState().mergeSessions([
+    session(sessionId, { status: 'running', lastEventId: 311 }) as any,
+    session(includedId, { status: 'running' }) as any,
+    session(completedId, { status: 'completed' }) as any,
+  ]);
+  renderHook(() => useSessionsStream());
+
+  emit('stream_meta', { instance_id: 'node-a', latest_id: 272 });
+  emit('session_list', {
+    folders: [],
+    sessions: [session(includedId, { status: 'running', reviewState: 'not_required' })],
+    total: 1,
+    hasMore: false,
+    nextCursor: null,
+  });
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const requested = new URL(fetchMock.mock.calls[0][0]);
+  expect(requested.searchParams.getAll('session_id')).toEqual([sessionId]);
+  expect(useSessionStore.getState().sessions[sessionId].status).toBe('running');
+
+  await act(async () => {
+    resolveResponse(jsonResponse({ sessions: [session(sessionId, {
+      status: 'completed',
+      lastEventId: 314,
+    })] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(useSessionStore.getState().sessions[sessionId]).toMatchObject({
+    status: 'completed',
+    lastEventId: 314,
+  });
+  expect(useSessionStore.getState().feedMembership[sessionId]).toBeUndefined();
+  expect(useSessionStore.getState().feedSessionIds).not.toContain(sessionId);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+test('a newer live running update survives an older snapshot hydration response', async () => {
+  const sessionId = 'running-311';
+  let resolveResponse!: (response: Response) => void;
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+  useSessionStore.getState().mergeSessions([
+    session(sessionId, { status: 'running', lastEventId: 311 }) as any,
+  ]);
+  renderHook(() => useSessionsStream());
+
+  emit('stream_meta', { instance_id: 'node-a', latest_id: 272 });
+  emit('session_list', {
+    folders: [], sessions: [], total: 0, hasMore: false, nextCursor: null,
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+
+  emit('session_updated', {
+    agent_session_id: sessionId,
+    status: 'running',
+    last_event_id: 315,
+  }, '315');
+
+  await act(async () => {
+    resolveResponse(jsonResponse({ sessions: [session(sessionId, {
+      status: 'completed',
+      lastEventId: 314,
+    })] }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(useSessionStore.getState().sessions[sessionId]).toMatchObject({
+    status: 'running',
+    lastEventId: 315,
+  });
+  expect(useSessionStore.getState().feedMembership[sessionId]).toBe('candidate');
+  expect(useSessionStore.getState().feedSessionIds).toContain(sessionId);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 test.each([false, true])(
   'an in-flight completion patch wins over the hydrated running row (cached=%s)',
   async (cached) => {
