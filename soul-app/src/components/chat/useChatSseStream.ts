@@ -272,7 +272,7 @@ export function useChatSseStream({
       });
 
     if (acceptedType === 'session_ended') {
-      const ended = toSessionEndedReconciliation(acceptedData);
+      const ended = toSessionEndedReconciliation(acceptedData, acceptedEid);
       if (ended) {
         useSessionStore.getState().reconcileSessionEnded(sessionId, ended);
       }

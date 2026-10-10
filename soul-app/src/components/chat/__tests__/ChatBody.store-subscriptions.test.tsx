@@ -2037,7 +2037,10 @@ describe('ChatBody store subscription boundary', () => {
   });
 
   test('result 이벤트는 /api/sessions/stream 갱신 없이 세션 status를 바꾸지 않는다', async () => {
-    useSessionStore.getState().updateSession(SID, { status: 'running' });
+    useSessionStore.getState().upsertSession({
+      agentSessionId: SID, nodeId: 'node-1', displayName: 'Test session', status: 'running',
+      createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
+    });
     await renderSettled();
     const sse = latestSseOptions();
 
@@ -2051,8 +2054,10 @@ describe('ChatBody store subscription boundary', () => {
   });
 
   test('session_ended는 더 새로운 종료 상태와 종료 메타를 세션에 조정한다', async () => {
-    useSessionStore.getState().updateSession(SID, {
+    useSessionStore.getState().upsertSession({
+      agentSessionId: SID, nodeId: 'node-1', displayName: 'Test session',
       status: 'running',
+      createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
       lastEventId: 300,
     });
     await renderSettled();
@@ -2077,9 +2082,49 @@ describe('ChatBody store subscription boundary', () => {
     });
   });
 
-  test('session_ended 뒤 더 새로운 session_updated running 신호가 다시 이긴다', async () => {
-    useSessionStore.getState().updateSession(SID, {
+  test('payload _event_id가 없는 session_ended replay도 SSE id로 상태와 생각 중 표시를 조정한다', async () => {
+    useSessionStore.getState().upsertSession({
+      agentSessionId: SID,
+      nodeId: 'node-1',
+      displayName: 'Test session',
       status: 'running',
+      createdAt: '2026-05-23T00:00:00Z',
+      updatedAt: '2026-05-23T00:00:00Z',
+      lastEventId: 300,
+    });
+    const view = render(<View><ChatBody sessionId={SID} /></View>);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const visibleItems = () => mockRenderChatEventList.mock.calls.at(-1)?.[0].items ?? [];
+    expect(visibleItems()).toContainEqual(expect.objectContaining({ kind: 'typing' }));
+    const sse = latestSseOptions();
+
+    act(() => {
+      sse.onOpen?.();
+      sse.onEvent('history_sync', { is_live: true, last_event_id: 300 }, '');
+      sse.onEvent('session_ended', {
+        status: 'completed',
+        termination_reason: 'completed_ok',
+        termination_detail: null,
+      }, '301');
+    });
+
+    expect(useSessionStore.getState().sessions[SID]).toMatchObject({
+      status: 'completed',
+      terminationReason: 'completed_ok',
+      terminationDetail: null,
+      lastEventId: 301,
+    });
+    expect(visibleItems()).not.toContainEqual(expect.objectContaining({ kind: 'typing' }));
+    view.unmount();
+  });
+
+  test('session_ended 뒤 더 새로운 session_updated running 신호가 다시 이긴다', async () => {
+    useSessionStore.getState().upsertSession({
+      agentSessionId: SID, nodeId: 'node-1', displayName: 'Test session',
+      status: 'running',
+      createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
       lastEventId: 400,
     });
     await renderSettled();
@@ -2114,9 +2159,11 @@ describe('ChatBody store subscription boundary', () => {
   });
 
   test('낡은 session_ended는 더 새로운 running 상태를 덮어쓰지 않는다', async () => {
-    useSessionStore.getState().updateSession(SID, {
+    useSessionStore.getState().upsertSession({
+      agentSessionId: SID, nodeId: 'node-1', displayName: 'Test session',
       status: 'running',
       terminationReason: 'running_transition',
+      createdAt: '2026-05-23T00:00:00Z', updatedAt: '2026-05-23T00:00:00Z',
       lastEventId: 502,
     });
     await renderSettled();

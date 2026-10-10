@@ -285,11 +285,12 @@ export function applySessionUpdated(
 /** chat SSE session_ended payload를 guarded store action 입력으로 정규화한다. */
 export function toSessionEndedReconciliation(
   raw: unknown,
+  eventId: string,
 ): SessionEndedReconciliation | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const record = raw as Record<string, unknown>;
   const status = pick<string>(record, 'status');
-  const lastEventId = normalizeEventId(record._event_id);
+  const lastEventId = normalizeEventId(eventId);
   if (!status || lastEventId === undefined || lastEventId === 0) return null;
 
   const result: SessionEndedReconciliation = { status, lastEventId };
