@@ -30,6 +30,7 @@ export function createSessionVisualRoles(t: DesignTokens) {
         userMaxWidth: 320,
         phoneAssistantMaxWidth: '100%' as const,
         phoneUserMaxWidth: '88%' as const,
+        thumbnailFrameSize: { width: 200, height: 200 },
         radius: 10,
         filenameGap: 6,
         gridGap: t.uiSpacing.md,

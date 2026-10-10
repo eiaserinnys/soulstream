@@ -94,7 +94,7 @@ test('캡션은 해당 이미지 페이지 아래에만 나타나고 기본 첨�
   });
 });
 
-test('원본 비율 확인 전에는 작은 로딩 상태를 쓰고 측정 실패도 작은 오류로 접는다', async () => {
+test('썸네일은 측정 전후 정사각 프레임을 유지하고 실패는 작은 오류로 접는다', async () => {
   let resolveSize!: (size: { width: number; height: number }) => void;
   const source = { uri: 'https://chat.test/one.png', headers: { Authorization: 'Bearer image-test-token' } };
   const getSizeWithHeaders = jest.spyOn(Image, 'getSizeWithHeaders');
@@ -107,16 +107,19 @@ test('원본 비율 확인 전에는 작은 로딩 상태를 쓰고 측정 실�
   expect(screen.getByTestId('chat-image-loading')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('loading-chat-image').props.style)).toMatchObject({
     minHeight: t.hitTarget.min,
+    width: '100%',
+    maxWidth: 200,
+    aspectRatio: 1,
   });
-  expect(StyleSheet.flatten(screen.getByTestId('loading-chat-image').props.style).aspectRatio).toBeUndefined();
   expect(screen.UNSAFE_queryByType(Image)).toBeNull();
 
   await act(async () => {
     resolveSize({ width: 390, height: 844 });
     await Promise.resolve();
   });
-  expect(StyleSheet.flatten(screen.getByTestId('loading-chat-image').props.style).aspectRatio).toBe(390 / 844);
+  expect(StyleSheet.flatten(screen.getByTestId('loading-chat-image').props.style).aspectRatio).toBe(1);
   expect(screen.UNSAFE_getByType(Image).props.source).toBe(source);
+  expect(screen.UNSAFE_getByType(Image).props.resizeMode).toBe('contain');
 
   getSizeWithHeaders.mockImplementation(() => Promise.reject(new Error('unauthorized')));
   const failed = render(<SafeAreaProvider><AttachmentImage
@@ -125,11 +128,14 @@ test('원본 비율 확인 전에는 작은 로딩 상태를 쓰고 측정 실�
   await waitFor(() => expect(failed.getByText('이미지를 불러오지 못했습니다.')).toBeTruthy());
   expect(StyleSheet.flatten(failed.getByTestId('failed-chat-image').props.style)).toMatchObject({
     minHeight: t.hitTarget.min,
+    width: '100%',
+    maxWidth: 200,
+    aspectRatio: 1,
   });
   expect(failed.UNSAFE_queryByType(Image)).toBeNull();
 });
 
-test('원고형 첨부는 실제 종횡비를 유지하고 같은 메시지의 이전·다음·닫기를 제공한다', async () => {
+test('원고형 썸네일은 200 정사각 상한을 쓰고 같은 메시지의 이전·다음·닫기를 제공한다', async () => {
   const sources = [
     { uri: 'https://chat.test/one.png', headers: { Authorization: 'Bearer image-test-token' } },
     { uri: 'https://chat.test/two.png', headers: { Authorization: 'Bearer image-test-token' } },
@@ -156,7 +162,11 @@ test('원고형 첨부는 실제 종횡비를 유지하고 같은 메시지의 �
   });
 
   await waitFor(() => expect(getSizeWithHeaders).toHaveBeenCalledWith(sources[0].uri, sources[0].headers));
-  expect(StyleSheet.flatten(screen.getByTestId('chat-image-thumb').props.style).aspectRatio).toBe(390 / 844);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-thumb').props.style)).toMatchObject({
+    width: '100%',
+    maxWidth: 200,
+    aspectRatio: 1,
+  });
 
   fireEvent.press(screen.getByTestId('chat-image-thumb'));
   const modal = screen.UNSAFE_getByType(Modal);
@@ -167,6 +177,7 @@ test('원고형 첨부는 실제 종횡비를 유지하고 같은 메시지의 �
   expect(modalChildren[1].props.variant).toBe('chatRefined');
   expect(screen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual(['top', 'bottom', 'left', 'right']);
   expect(screen.getByTestId('chat-image-viewer-image').props.source).toBe(sources[0]);
+  expect(screen.getByTestId('chat-image-viewer-image').props.resizeMode).toBe('contain');
   expect(screen.getByTestId('chat-image-viewer-previous').props.accessibilityState.disabled).toBe(true);
   expect(screen.getByTestId('chat-image-viewer-next').props.accessibilityState.disabled).toBe(false);
   fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
