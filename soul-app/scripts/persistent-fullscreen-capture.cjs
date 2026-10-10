@@ -323,6 +323,7 @@ function selectPersistentHomeScenarios(name) {
 }
 
 async function runPersistentHomeScenario(env, scenario) {
+  const { result } = env;
   const { context, page } = await fixturePage(env, scenario.name, scenario.viewport,
     `sample=entry&count=1&safeArea=fixture&theme=${scenario.theme}`);
   const shot = part => page.screenshot({ path: path.join(env.output, `${scenario.name}-${part}.png`) });
