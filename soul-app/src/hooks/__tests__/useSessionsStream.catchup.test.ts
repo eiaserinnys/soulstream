@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react-native';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { Session } from '../../api/types';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSessionsStream } from '../useSessionsStream';
@@ -39,6 +39,17 @@ function session(id: string, index: number): Session {
     updatedAt: '2026-10-02T00:00:00Z',
     folderId: 'visible',
   };
+}
+
+function jsonResponse(body: unknown): Response {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+  } as Response;
 }
 
 function pageRows(start: number): Session[] {
@@ -99,11 +110,14 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('복귀 session_list는 60행 후보를 첫 30행으로 바꾸고 상세 cache를 보존한다', () => {
+test('복귀 session_list는 60행 후보를 첫 30행으로 바꾸고 상세 cache를 보존한다', async () => {
   const hook = renderHook(() => useSessionsStream());
   emit('stream_meta', { instance_id: 'node-a', latest_id: 100 });
-  emit('session_list', snapshotPayload(pageRows(0)));
-  addSecondPage(pageRows(30));
+  const firstPage = pageRows(0);
+  const secondPage = pageRows(30);
+  emit('session_list', snapshotPayload(firstPage));
+  addSecondPage(secondPage);
+  expect(useSessionStore.getState().feedSessionIds).toHaveLength(60);
   const detail = {
     agentSessionId: 'detail-only',
     displayName: '열린 상세',
@@ -114,19 +128,64 @@ test('복귀 session_list는 60행 후보를 첫 30행으로 바꾸고 상세 ca
   useSessionStore.getState().mergeSessions([detail]);
   expect(useSessionStore.getState().feedMembership).toHaveProperty('page-59');
 
+  const cachedRows = [...firstPage, ...secondPage];
+  const fetchMock = global.fetch as jest.Mock;
+  const responsePromises: Promise<Response>[] = [];
+  fetchMock.mockImplementation((input) => {
+    const requestedIds = new URL(String(input)).searchParams.getAll('session_id');
+    const rows = requestedIds.flatMap((id) => {
+      const row = cachedRows.find((candidate) => candidate.agentSessionId === id);
+      return row ? [row] : [];
+    });
+    const response = Promise.resolve(jsonResponse({ sessions: rows }));
+    responsePromises.push(response);
+    return response;
+  });
+
   const refreshedRows = pageRows(100);
+  const snapshotIds = new Set(refreshedRows.map((row) => row.agentSessionId));
   emit('stream_meta', { instance_id: 'node-b', latest_id: 700 });
   emit('session_list', snapshotPayload(refreshedRows));
 
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+  await act(async () => {
+    await Promise.all(responsePromises);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const requestedIds = fetchMock.mock.calls.flatMap(([input]) => (
+    new URL(String(input)).searchParams.getAll('session_id')
+  ));
+  const expectedOmittedRunningIds = cachedRows
+    .filter((row) => row.status === 'running' && !snapshotIds.has(row.agentSessionId))
+    .map((row) => row.agentSessionId);
+  const completedCachedIds = new Set([
+    ...cachedRows.filter((row) => row.status === 'completed').map((row) => row.agentSessionId),
+    detail.agentSessionId,
+  ]);
+  expect(expectedOmittedRunningIds).toEqual([
+    'page-0', 'page-1', 'page-2', 'page-3', 'page-4', 'page-5', 'page-6',
+  ]);
+  expect(requestedIds).toEqual(expectedOmittedRunningIds);
+  expect(requestedIds.some((id) => snapshotIds.has(id))).toBe(false);
+  expect(requestedIds.some((id) => completedCachedIds.has(id))).toBe(false);
+
   const store = useSessionStore.getState();
   expect(store.feedSessionIds).toHaveLength(30);
+  expect(store.feedSessionIds).toEqual(
+    [...refreshedRows].reverse().map((row) => row.agentSessionId),
+  );
   expect(Object.values(store.feedMembership)).toHaveLength(30);
   expect(store.feedMembership['page-59']).toBeUndefined();
   expect(store.feedMembership['page-100']).toBe('candidate');
-  expect(store.sessions['page-59']).toBeDefined();
+  expect(store.sessions['page-0'].status).toBe('running');
+  expect(store.feedMembership['page-0']).toBeUndefined();
+  expect(store.sessions['page-59']).toMatchObject({
+    displayName: 'Session page-59',
+    status: 'completed',
+  });
   expect(store.sessions['detail-only']).toBe(detail);
   expect(store.feedPage).toMatchObject({ hasMore: true, nextCursor: '30', status: 'idle' });
-  expect(global.fetch).not.toHaveBeenCalled();
   hook.unmount();
 });
 
