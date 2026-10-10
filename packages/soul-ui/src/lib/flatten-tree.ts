@@ -140,6 +140,10 @@ export interface ChatMessage {
   eventId?: number;
   /** session_notification 전용 exactly-once 식별자. */
   deliveryId?: string;
+  /** session_notification 전용 전달 의도. */
+  deliveryIntent?: SessionNotificationNode["deliveryIntent"];
+  /** session_notification 전용 발신 경로. */
+  source?: string;
   /** session_notification 전용 전달 결과. */
   deliveryDisposition?: "queued" | "auto_resume";
   /** turn_summary 전용: 실제 렌더 행에 결합할 우선·대체 anchor. */
@@ -403,6 +407,8 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         treeNodeId: n.id,
         treeNodeType: n.type,
         deliveryId: n.deliveryId,
+        deliveryIntent: n.deliveryIntent,
+        source: n.source,
         deliveryDisposition: n.disposition,
       };
     }

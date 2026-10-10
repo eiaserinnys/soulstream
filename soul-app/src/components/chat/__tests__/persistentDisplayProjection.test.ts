@@ -1,6 +1,9 @@
+import { renderHook } from '@testing-library/react-native';
 import { groupChatEvents } from '../groupChatEvents';
 import type { SessionEvent } from '../../../api/types';
 import { persistentJevCandidatesFixture } from '../../../component-review/persistentJevCandidatesFixture';
+import { persistentChatEvents } from '../../../component-review/ReviewChat';
+import { useChatRenderItems } from '../useChatRenderItems';
 
 const enabled = {
   showGenerationSeparator: true,
@@ -108,4 +111,43 @@ test('places generation dividers in event order and omits them without leaving p
     .toEqual(['assistant_message', 'generation_started', 'assistant_message']);
   expect(groupChatEvents(events, undefined, { ...enabled, showGenerationSeparator: false }))
     .toHaveLength(2);
+});
+
+test('ReviewChat raw delivery fixtures remain visible by default and are filtered only in manuscript', () => {
+  const renderItems = (presentation: 'default' | 'manuscript') => useChatRenderItems({
+    events: persistentChatEvents,
+    pendingOptimistic: undefined,
+    streamingSlots: undefined,
+    sessionStatus: 'completed',
+    presentation,
+  });
+  const defaultResult = renderHook(() => renderItems('default'));
+  const manuscriptResult = renderHook(() => renderItems('manuscript'));
+  const defaultRows = [...defaultResult.result.current.reversedItems].reverse()
+    .filter(item => item.kind === 'event');
+  const manuscriptRows = [...manuscriptResult.result.current.reversedItems].reverse()
+    .filter(item => item.kind === 'event');
+  const defaultById = new Map(defaultRows.map(item => [item.event.id, item.event]));
+  const manuscriptById = new Map(manuscriptRows.map(item => [item.event.id, item.event]));
+
+  expect(defaultById.get('930')).toMatchObject({
+    type: 'session_notification',
+    data: { delivery_intent: 'completion_notification', disposition: 'queued' },
+  });
+  expect(defaultById.get('931')).toMatchObject({
+    type: 'session_notification',
+    data: { delivery_intent: 'runtime_followup', disposition: 'auto_resume' },
+  });
+  expect(defaultById.get('932')?.data.caller_info).toMatchObject({ source: 'agent' });
+  expect(defaultById.get('933')?.data).toMatchObject({
+    caller_info: { source: 'browser' },
+    attachments: [expect.any(String)],
+  });
+  expect(defaultById.get('934')?.data.text).toBe('PAS 응답: 첨부 이미지를 확인했습니다.');
+
+  expect(manuscriptById.has('930')).toBe(false);
+  expect(manuscriptById.has('931')).toBe(false);
+  expect(manuscriptById.has('932')).toBe(false);
+  expect(manuscriptById.get('933')).toBe(defaultById.get('933'));
+  expect(manuscriptById.get('934')).toBe(defaultById.get('934'));
 });

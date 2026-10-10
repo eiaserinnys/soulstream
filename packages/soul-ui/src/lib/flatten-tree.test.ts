@@ -210,6 +210,8 @@ describe("flattenTree", () => {
     expect(message.role).toBe("notification");
     expect(message.content).toBe("완료 결과");
     expect(message.deliveryId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(message.deliveryIntent).toBe("completion_notification");
+    expect(message.source).toBe("completion_notifier");
     expect(message.deliveryDisposition).toBe("auto_resume");
   });
 

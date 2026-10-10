@@ -1,9 +1,9 @@
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { ChatView, useDashboardStore } from "@seosoyoung/soul-ui";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { getSessionResetState } from "@seosoyoung/soul-ui/stores/slices/_session-reset";
-import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
+import { flattenTree, type ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { SoulSSEEvent } from "@seosoyoung/soul-ui/shared/types";
 import type { PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
 
@@ -17,6 +17,11 @@ const PAS_251_LANDSCAPE_ATTACHMENT_PATHS = [
   "/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-12.820Z-IMG_0168-f8f7698dacb14f55a405e3fcb0a5e4ae.jpg",
   "/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-16.935Z-IMG_0169-7b8810c416494cfbba4f1b62c8a5520f.jpg",
 ];
+const PAS_REVIEW_COMPLETION_DELIVERY_ID = "00000000-0000-4000-8000-000000002251";
+const PAS_REVIEW_FOLLOWUP_DELIVERY_ID = "00000000-0000-4000-8000-000000002252";
+const PAS_REVIEW_AGENT_INPUT_ID = "pas251-projection-agent-report";
+const PAS_REVIEW_HUMAN_INPUT_ID = "pas251-projection-human-image";
+const PAS_REVIEW_ASSISTANT_RESPONSE = "PAS 응답: 첨부 이미지를 확인했습니다.";
 
 function makeMessage(role: ChatMessage["role"], id: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -179,6 +184,46 @@ function ManuscriptColumn() {
       { type: "intervention_sent", user: "Soulstream", text: "시스템 개입은 지금처럼 보입니다.", caller_info: { source: "system", display_name: "Soulstream" } },
       { type: "intervention_sent", user: "roselin", text: "마지막 agent 묶음의 첫 메시지입니다.", caller_info: { source: "agent", agent_node: "eiaserinnys", agent_id: "roselin", agent_name: "로젤린" } },
       { type: "user_message", text: "마지막 agent 묶음의 두 번째 메시지입니다.", caller_info: { source: "agent", agent_node: "eiaserinnys", agent_id: "roselin", agent_name: "로젤린" } },
+      {
+        type: "session_notification",
+        delivery_id: PAS_REVIEW_COMPLETION_DELIVERY_ID,
+        delivery_intent: "completion_notification",
+        source: "review-sample-producer",
+        text: "PAS 완료 알림입니다.",
+        disposition: "queued",
+        timestamp: 0,
+      },
+      {
+        type: "session_notification",
+        delivery_id: PAS_REVIEW_FOLLOWUP_DELIVERY_ID,
+        delivery_intent: "runtime_followup",
+        source: "review-sample-producer",
+        text: "PAS 런타임 후속 알림입니다.",
+        disposition: "auto_resume",
+        timestamp: 0,
+      },
+      {
+        type: "user_message",
+        input_id: PAS_REVIEW_AGENT_INPUT_ID,
+        user: "review-agent",
+        text: "위임 에이전트 검수 보고입니다.",
+        caller_info: {
+          source: "agent",
+          agent_node: "eiaserinnys",
+          agent_id: "review-agent",
+          agent_name: "검수 에이전트",
+        },
+      },
+      {
+        type: "user_message",
+        input_id: PAS_REVIEW_HUMAN_INPUT_ID,
+        user: "User",
+        text: "첨부 이미지를 확인해주세요.",
+        attachments: [PAS_8309_ATTACHMENT_PATHS[0]],
+        node_id: "eiaserinnys",
+        caller_info: { source: "browser", display_name: "디렉터님" },
+      },
+      { type: "assistant_message", content: PAS_REVIEW_ASSISTANT_RESPONSE },
     ] as SoulSSEEvent[];
     store.processEvents(events.map((event, index) => ({ event, eventId: index + 1 })));
     setReady(true);
@@ -231,10 +276,21 @@ function ManuscriptColumn() {
 
 export function PersistentManuscriptChatReviewSample() {
   const { chatTypographyStyle } = useChatTypography();
+  const tree = useDashboardStore(state => state.tree);
+  const rawReviewMessages = useMemo(
+    () => flattenTree(tree).filter(message =>
+      message.deliveryId === PAS_REVIEW_COMPLETION_DELIVERY_ID
+      || message.deliveryId === PAS_REVIEW_FOLLOWUP_DELIVERY_ID
+      || message.inputId === PAS_REVIEW_AGENT_INPUT_ID
+      || message.inputId === PAS_REVIEW_HUMAN_INPUT_ID
+      || message.content === PAS_REVIEW_ASSISTANT_RESPONSE),
+    [tree],
+  );
   return <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
     <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
       <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
       {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
+      {rawReviewMessages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId={REVIEW_SESSION} />)}
     </div>
     <ManuscriptColumn />
   </div>;

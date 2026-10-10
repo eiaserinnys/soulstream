@@ -84,7 +84,7 @@ export function initializeReview() {
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasImageSample ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || chat ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
     const state = useChatStore.getState();

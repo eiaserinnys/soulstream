@@ -1,38 +1,19 @@
 import type { ChatMessage } from "./flatten-tree";
 
-function isAgentMessage(message: ChatMessage): boolean {
-  return (message.role === "user" || message.role === "intervention")
-    && message.callerInfo?.source === "agent";
+function isAgentReport(message: ChatMessage): boolean {
+  if (message.role !== "user" && message.role !== "intervention") return false;
+
+  if (message.callerInfo) return message.callerInfo.source === "agent";
+  return message.role === "user" && message.agentInfo?.source === "agent";
 }
 
-/** Groups visible consecutive agent-originated user rows for the manuscript only. */
-export function projectManuscriptAgentMessages(messages: ChatMessage[]): ChatMessage[] {
-  const projected: ChatMessage[] = [];
-  let pending: ChatMessage[] = [];
+function isAutomaticDeliveryNotice(message: ChatMessage): boolean {
+  return message.role === "notification"
+    && (message.deliveryIntent === "completion_notification"
+      || message.deliveryIntent === "runtime_followup");
+}
 
-  const flush = () => {
-    if (pending.length === 0) return;
-    const first = pending[0]!;
-    projected.push({
-      id: `manuscript-agent-group-${first.id}`,
-      role: "system",
-      content: "",
-      treeNodeId: first.treeNodeId,
-      treeNodeType: "manuscript_agent_message_group",
-      eventId: first.eventId,
-      manuscriptAgentMessages: pending,
-    });
-    pending = [];
-  };
-
-  for (const message of messages) {
-    if (isAgentMessage(message)) {
-      pending.push(message);
-    } else {
-      flush();
-      projected.push(message);
-    }
-  }
-  flush();
-  return projected;
+/** Removes internal delivery notices and agent reports from PAS manuscript rows. */
+export function projectManuscriptMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.filter(message => !isAutomaticDeliveryNotice(message) && !isAgentReport(message));
 }

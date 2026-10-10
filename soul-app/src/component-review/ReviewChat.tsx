@@ -52,7 +52,13 @@ const pas251LandscapeImagePaths = [
   '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-16.935Z-IMG_0169-7b8810c416494cfbba4f1b62c8a5520f.jpg',
 ];
 
-const persistentChatEvents: SessionEvent[] = [
+const PAS_REVIEW_COMPLETION_DELIVERY_ID = '00000000-0000-4000-8000-000000002251';
+const PAS_REVIEW_FOLLOWUP_DELIVERY_ID = '00000000-0000-4000-8000-000000002252';
+const PAS_REVIEW_AGENT_INPUT_ID = 'pas251-projection-agent-report';
+const PAS_REVIEW_HUMAN_INPUT_ID = 'pas251-projection-human-image';
+const PAS_REVIEW_ASSISTANT_RESPONSE = 'PAS 응답: 첨부 이미지를 확인했습니다.';
+
+export const persistentChatEvents: SessionEvent[] = [
   { id: '900', type: 'assistant_message', data: { text: '앞 답변입니다. 다음 세대를 준비합니다.' } },
   { id: '901', type: 'generation_started', data: { generation: 2 } },
   { id: '902', type: 'assistant_message', data: { text: '다음 세대의 첫 답변입니다.' } },
@@ -126,6 +132,38 @@ const persistentChatEvents: SessionEvent[] = [
   { id: '929', type: 'assistant_message', data: {
     text: '![정사각 썸네일](https://soulstream.eiaserinnys.me/icon-192.png)',
   } },
+  { id: '930', type: 'session_notification', data: {
+    delivery_id: PAS_REVIEW_COMPLETION_DELIVERY_ID,
+    delivery_intent: 'completion_notification',
+    source: 'review-sample-producer',
+    text: 'PAS 완료 알림입니다.',
+    disposition: 'queued',
+  } },
+  { id: '931', type: 'session_notification', data: {
+    delivery_id: PAS_REVIEW_FOLLOWUP_DELIVERY_ID,
+    delivery_intent: 'runtime_followup',
+    source: 'review-sample-producer',
+    text: 'PAS 런타임 후속 알림입니다.',
+    disposition: 'auto_resume',
+  } },
+  { id: '932', type: 'user_message', data: {
+    input_id: PAS_REVIEW_AGENT_INPUT_ID,
+    text: '위임 에이전트 검수 보고입니다.',
+    caller_info: {
+      source: 'agent',
+      agent_node: 'eiaserinnys',
+      agent_id: 'review-agent',
+      agent_name: '검수 에이전트',
+    },
+  } },
+  { id: '933', type: 'user_message', data: {
+    input_id: PAS_REVIEW_HUMAN_INPUT_ID,
+    text: '첨부 이미지를 확인해주세요.',
+    attachments: [pasImagePaths[0]],
+    node_id: 'eiaserinnys',
+    caller_info: { source: 'browser', display_name: '디렉터님' },
+  } },
+  { id: '934', type: 'assistant_message', data: { text: PAS_REVIEW_ASSISTANT_RESPONSE } },
 ];
 const persistentTurnSummary: SessionEvent = {
   id: '940',
