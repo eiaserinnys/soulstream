@@ -96,44 +96,30 @@ export interface PersistentDisplayProjectionSettings {
   showJevCandidates: boolean;
 }
 
-function isAgentUserUtterance(event: SessionEvent): boolean {
+function shouldHideManuscriptEvent(event: SessionEvent): boolean {
   const data = event.data as Record<string, unknown> | undefined;
+
+  if (event.type === 'session_notification') {
+    return data?.delivery_intent === 'completion_notification'
+      || data?.delivery_intent === 'runtime_followup';
+  }
+
   const callerInfo = data?.caller_info;
   const userUtterance = event.type === 'user_message'
     || event.type === 'intervention_sent'
     || (event.type === 'realtime_transcript' && data?.role === 'user');
-  return userUtterance
-    && callerInfo !== null
-    && typeof callerInfo === 'object'
-    && (callerInfo as Record<string, unknown>).source === 'agent';
+
+  if (!userUtterance) return false;
+  if (callerInfo !== null && callerInfo !== undefined) {
+    return typeof callerInfo === 'object'
+      && (callerInfo as Record<string, unknown>).source === 'agent';
+  }
+  return event.type === 'user_message' && data?.source === 'agent';
 }
 
-/** Fold consecutive agent-authored user utterance rows without changing other presentations. */
-export function groupAgentUserUtterances(items: ChatRenderItem[]): ChatRenderItem[] {
-  const out: ChatRenderItem[] = [];
-  let pending: EventRenderItem[] = [];
-
-  const flush = () => {
-    if (pending.length === 0) return;
-    out.push({
-      kind: 'agent-message-group',
-      events: pending,
-      key: `agent-message-group-${pending[0].key}`,
-    });
-    pending = [];
-  };
-
-  for (const item of items) {
-    if (item.kind === 'event' && isAgentUserUtterance(item.event)) {
-      pending.push(item);
-      continue;
-    }
-    flush();
-    out.push(item);
-  }
-
-  flush();
-  return out;
+/** Removes PAS-only delivery notices and delegated-agent input rows. */
+export function projectManuscriptMessages(items: ChatRenderItem[]): ChatRenderItem[] {
+  return items.filter(item => item.kind !== 'event' || !shouldHideManuscriptEvent(item.event));
 }
 
 function streamingIdentity(event: SessionEvent): string | null {

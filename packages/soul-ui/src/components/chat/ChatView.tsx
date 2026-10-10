@@ -26,7 +26,7 @@ import { ChatStoreScopeProvider, useChatFlattenTree, useChatStore, useChatStoreA
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
-import { projectManuscriptAgentMessages } from "../../lib/manuscript-agent-message-projection";
+import { projectManuscriptMessages } from "../../lib/manuscript-agent-message-projection";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { projectCacheKeepaliveTurns } from "../../lib/persistent-cache-keepalive";
 import { ChatInput } from "../ChatInput";
@@ -198,7 +198,7 @@ function ChatViewContent({
           }
           : null,
       );
-      return isManuscript ? projectManuscriptAgentMessages(visible) : visible;
+      return isManuscript ? projectManuscriptMessages(visible) : visible;
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );

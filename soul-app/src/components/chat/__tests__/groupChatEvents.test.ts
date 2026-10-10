@@ -2,6 +2,7 @@ import {
   groupChatEvents,
   hasActiveStreamingAssistantText,
   placePendingOptimistic,
+  projectManuscriptMessages,
   streamingSlotRenderItems,
   toSessionEvent,
 } from '../groupChatEvents';
@@ -28,6 +29,98 @@ describe('groupChatEvents', () => {
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual({ kind: 'event', event: events[0], key: 'evt-1' });
     expect(result[1]).toEqual({ kind: 'event', event: events[1], key: 'evt-2' });
+  });
+
+  it('PAS 투영은 자동 알림과 위임 보고만 숨기고 나머지 행과 순서·참조를 보존한다', () => {
+    const queuedCompletion = ev('notice-queued', 'session_notification', {
+      delivery_intent: 'completion_notification',
+      disposition: 'queued',
+      source: 'future_completion_producer',
+    });
+    const resumedFollowup = ev('notice-resumed', 'session_notification', {
+      delivery_intent: 'runtime_followup',
+      disposition: 'auto_resume',
+      source: 'future_runtime_producer',
+    });
+    const agentUser = ev('agent-user', 'user_message', {
+      text: '위임 보고',
+      caller_info: { source: 'agent' },
+    });
+    const agentIntervention = ev('agent-intervention', 'intervention_sent', {
+      text: '위임 전달',
+      caller_info: { source: 'agent' },
+    });
+    const agentRealtimeUser = ev('agent-realtime-user', 'realtime_transcript', {
+      role: 'user',
+      caller_info: { source: 'agent' },
+    });
+    const legacyAgentUser = ev('legacy-agent-user', 'user_message', {
+      text: '레거시 보고',
+      source: 'agent',
+    });
+    const personAttachments = ['/image.png'];
+    const callerInfoWins = ev('person', 'user_message', {
+      text: '사람 입력',
+      source: 'agent',
+      caller_info: { source: 'browser' },
+      attachments: personAttachments,
+    });
+    const legacyIntervention = ev('legacy-intervention', 'intervention_sent', {
+      text: '사람 개입',
+      source: 'agent',
+    });
+    const unmarkedInput = ev('unmarked-input', 'user_message', { text: '표식 없는 입력' });
+    const unrelatedNotice = ev('unrelated-notice', 'session_notification', {
+      text: '일반 안내',
+      source: 'future_notice_source',
+    });
+    const assistant = ev('assistant', 'assistant_message', { text: '답변' });
+    const error = ev('error', 'error', { message: '오류' });
+    const question = ev('question', 'input_request', { questions: [] });
+    const events = [
+      queuedCompletion,
+      agentUser,
+      callerInfoWins,
+      agentIntervention,
+      resumedFollowup,
+      legacyAgentUser,
+      legacyIntervention,
+      agentRealtimeUser,
+      unmarkedInput,
+      unrelatedNotice,
+      assistant,
+      error,
+      question,
+    ];
+    const eventItems = events.map((event) => ({
+      kind: 'event' as const,
+      event,
+      key: `evt-${event.id}`,
+    }));
+    const toolItem = groupChatEvents([
+      ev('tool-start', 'tool_start', { tool_use_id: 'tool-1' }),
+    ])[0]!;
+
+    const projected = projectManuscriptMessages([...eventItems, toolItem]);
+
+    expect(projected.filter((item) => item.kind === 'event').map((item) =>
+      item.kind === 'event' ? item.event.id : item.kind,
+    )).toEqual([
+      'person',
+      'legacy-intervention',
+      'unmarked-input',
+      'unrelated-notice',
+      'assistant',
+      'error',
+      'question',
+    ]);
+    const personItem = projected.find((item) => item.kind === 'event' && item.event.id === 'person');
+    expect(personItem).toBe(eventItems[2]);
+    if (personItem?.kind === 'event') {
+      expect(personItem.event.data.attachments).toBe(personAttachments);
+    }
+    expect(projected.at(-1)).toBe(toolItem);
+    expect(projected.some((item) => item.kind === 'agent-message-group')).toBe(false);
   });
 
   it('result는 숨기고 context_usage와 complete는 남긴다', () => {
