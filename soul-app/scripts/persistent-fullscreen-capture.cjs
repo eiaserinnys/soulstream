@@ -365,7 +365,7 @@ async function runPersistentHomeScenario(env, scenario) {
 
       const pas = page.getByTestId('persistent-session-screen');
       await pas.waitFor({ state: 'visible' });
-      await page.getByTestId('persistent-session-header').getByText('로젤린', { exact: true }).waitFor();
+      await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       assert.equal(await page.getByTestId('persistent-session-home').count(), 1, 'tablet PAS Home 표시');
       assert.equal(await phoneTabs.count(), 0, 'tablet PAS에 phone 탭 없음');
       const actionIds = ['persistent-session-home', 'persistent-session-appearance', 'persistent-session-settings'];
@@ -401,7 +401,7 @@ async function runPersistentHomeScenario(env, scenario) {
       await shot('home-return');
       await touch('tablet-persistent-entry');
       await pas.waitFor({ state: 'visible' });
-      await page.getByTestId('persistent-session-header').getByText('로젤린', { exact: true }).waitFor();
+      await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       const afterHome = await measurePas();
       assertSameFrame(beforeHome, afterHome, scenario.name);
       await shot('reentry');
@@ -416,7 +416,7 @@ async function runPersistentHomeScenario(env, scenario) {
 
       const pas = page.getByTestId('persistent-session-screen');
       await pas.waitFor({ state: 'visible' });
-      await page.getByTestId('persistent-session-header').getByText('로젤린', { exact: true }).waitFor();
+      await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 상단 Home 없음');
       const beforeHome = await measurePas();
       assert.ok(beforeHome.header.y >= safeArea.top, 'phone 헤더가 비영 상단 안전 영역 아래에 있음');
@@ -430,7 +430,7 @@ async function runPersistentHomeScenario(env, scenario) {
       await shot('daily-return');
       await touch('phone-tab-PersistentTab');
       await pas.waitFor({ state: 'visible' });
-      await page.getByTestId('persistent-session-header').getByText('로젤린', { exact: true }).waitFor();
+      await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 재진입에도 상단 Home 없음');
       const afterHome = await measurePas();
       assertSameFrame(beforeHome, afterHome, scenario.name);
