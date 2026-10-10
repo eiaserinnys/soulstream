@@ -257,7 +257,9 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       accessibilityHint={currentInfo.failed ? '이미지를 불러오지 못했습니다.' : undefined}
       accessibilityState={{ expanded: open }}
       style={{
-        ...frameStyle,
+        width: '100%',
+        maxWidth: attachment.thumbnailFrameSize.width,
+        alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
         aspectRatio: 1,
         minHeight: t.hitTarget.min,
         borderRadius: attachment.radius,
