@@ -37,6 +37,7 @@ type PendingAttentionDelta = {
 
 type InFlightSession = {
   controller: AbortController;
+  feedEvent: boolean;
   pendingUpdates: Partial<Session>;
   pendingAttention: PendingAttentionDelta[];
 };
@@ -185,17 +186,20 @@ export function useSessionsStream() {
     sessionId: string,
     updates: Partial<Session>,
     attention: PendingAttentionDelta | null,
+    feedEvent: boolean,
   ) => {
     if (!api || !isCurrentScope()) return;
     const current = inFlightSessionsRef.current.get(sessionId);
     if (current) {
       current.pendingUpdates = { ...current.pendingUpdates, ...updates };
+      current.feedEvent ||= feedEvent;
       if (attention) current.pendingAttention.push(attention);
       return;
     }
 
     const pending: InFlightSession = {
       controller: new AbortController(),
+      feedEvent,
       pendingUpdates: updates,
       pendingAttention: attention ? [attention] : [],
     };
@@ -210,7 +214,7 @@ export function useSessionsStream() {
         const row = rows.find((candidate) => candidate.agentSessionId === sessionId);
         if (!row) return;
         const store = useSessionStore.getState();
-        store.upsertSession(row, { feedEvent: true });
+        store.upsertSession(row, pending.feedEvent ? { feedEvent: true } : undefined);
         const latestStore = useSessionStore.getState();
         if (Object.keys(pending.pendingUpdates).length > 0) {
           latestStore.updateSession(sessionId, pending.pendingUpdates);
@@ -255,13 +259,18 @@ export function useSessionsStream() {
     }
 
     if (inFlightSessionsRef.current.has(sessionId)) {
-      hydrateSession(sessionId, updates, attention);
+      hydrateSession(
+        sessionId,
+        updates,
+        attention,
+        patchNeedsFeedHydration(sessionId, updates, attention),
+      );
       return;
     }
 
     if (membership !== undefined) return;
     if (patchNeedsFeedHydration(sessionId, updates, attention)) {
-      hydrateSession(sessionId, updates, attention);
+      hydrateSession(sessionId, updates, attention, true);
     }
   }, [hydrateSession]);
 
@@ -309,11 +318,17 @@ export function useSessionsStream() {
         const meta = streamMetaRef.current;
         if (!meta) throw new Error('session_list arrived without stream_meta');
         const snapshot = readSessionList(data);
+        const snapshotSessionIds = new Set(snapshot.sessions.map((session) => session.agentSessionId));
         abortAllHydrations();
         useSessionStore.getState().applyFeedSnapshot(snapshot);
         usePlannerStore.getState().invalidate('replay');
         lastEventIdRef.current = meta.latestId;
         instanceIdRef.current = meta.instanceId;
+        for (const [sessionId, session] of Object.entries(useSessionStore.getState().sessions)) {
+          if (session.status === 'running' && !snapshotSessionIds.has(sessionId)) {
+            hydrateSession(sessionId, {}, null, false);
+          }
+        }
         break;
       }
       case 'card_updated':
@@ -326,7 +341,7 @@ export function useSessionsStream() {
     }
     const plannerSource = plannerSourceForStreamEvent(type);
     if (plannerSource) usePlannerStore.getState().invalidate(plannerSource);
-  }, [abortAllHydrations, abortHydration, api, applySessionUpdated, isCurrentScope]);
+  }, [abortAllHydrations, abortHydration, api, applySessionUpdated, hydrateSession, isCurrentScope]);
 
   const eventTypes = useMemo(
     () => CATALOG_STREAM_EVENTS.filter((type) => type !== 'replay_gap'),

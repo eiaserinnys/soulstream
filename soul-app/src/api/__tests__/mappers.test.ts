@@ -481,13 +481,24 @@ describe('applySessionUpdated — SSE delta → Partial<Session>', () => {
 });
 
 describe('toSessionEndedReconciliation', () => {
-  test('payload _event_id와 종료 메타를 guarded store 입력으로 정규화한다', () => {
+  test('명시된 SSE id와 종료 메타를 guarded store 입력으로 정규화한다', () => {
+    expect(toSessionEndedReconciliation({
+      status: 'completed',
+      termination_reason: 'completed_ok',
+      termination_detail: null,
+    }, '42')).toEqual({
+      status: 'completed',
+      terminationReason: 'completed_ok',
+      terminationDetail: null,
+      lastEventId: 42,
+    });
+
     expect(toSessionEndedReconciliation({
       status: 'completed',
       termination_reason: 'completed_ok',
       termination_detail: null,
       _event_id: 42,
-    })).toEqual({
+    }, '42')).toEqual({
       status: 'completed',
       terminationReason: 'completed_ok',
       terminationDetail: null,
@@ -495,9 +506,10 @@ describe('toSessionEndedReconciliation', () => {
     });
   });
 
-  test('순서 좌표가 없는 session_ended는 상태 조정 신호로 쓰지 않는다', () => {
-    expect(toSessionEndedReconciliation({ status: 'completed' })).toBeNull();
-    expect(toSessionEndedReconciliation({ status: 'completed', _event_id: 0 }))
+  test('SSE 순서 좌표가 없거나 status가 없는 session_ended는 조정 신호로 쓰지 않는다', () => {
+    expect(toSessionEndedReconciliation({ status: 'completed' }, '')).toBeNull();
+    expect(toSessionEndedReconciliation({ status: 'completed' }, '0')).toBeNull();
+    expect(toSessionEndedReconciliation({ _event_id: 42 }, '42'))
       .toBeNull();
   });
 });
