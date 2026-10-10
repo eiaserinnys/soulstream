@@ -130,6 +130,7 @@ function ChatImageThumbnail({
           ariaLabel={filename ? `이미지 확대: ${filename}` : "이미지 확대"}
           variant="chatRefined"
           className="chat-image-thumbnail-image"
+          frameClassName="chat-image-thumbnail-frame"
           onOpen={(_src, _alt, trigger) => onOpen(galleryIndex, trigger)}
           onLoad={src => setFailedSource(current => current === src ? null : current)}
           onError={src => setFailedSource(src)}

@@ -56,6 +56,13 @@ test('PAS event 8309 keeps both images at their prose positions and opens one tw
 
   expect(screen.getByTestId('assistant-markdown-0').props.markdown).toContain('기존 배치');
   expect(screen.getByTestId('assistant-image-gallery-1-image-0')).toBeTruthy();
+  expect(screen.getByTestId('assistant-image-gallery-1-image-0').props.style).toMatchObject({
+    width: '100%',
+    maxWidth: 200,
+    aspectRatio: 1,
+    alignSelf: 'flex-start',
+  });
+  expect(screen.UNSAFE_getAllByType(Image).every((image) => image.props.resizeMode === 'contain')).toBe(true);
   expect(screen.getByTestId('assistant-markdown-2').props.markdown).toContain('변경 시안');
   expect(screen.getByTestId('assistant-image-gallery-3-image-0')).toBeTruthy();
 
@@ -100,15 +107,51 @@ test('원고형 사용자 메시지는 이미지 첨부만 본문 뒤에 원래 
   expect(imageGalleryIndex).toBeGreaterThan(textIndex);
   expect(screen.getByTestId('user-chat-image-gallery-image-0')).toBeTruthy();
   expect(screen.getByTestId('user-chat-image-gallery-image-1')).toBeTruthy();
+  expect(screen.getByTestId('user-chat-image-gallery-image-0').props.style).toMatchObject({
+    width: '100%',
+    maxWidth: 200,
+    aspectRatio: 1,
+    alignSelf: 'flex-end',
+  });
 
   fireEvent.press(screen.getByTestId('user-chat-image-gallery-image-0'));
   const firstViewedUri = screen.getByTestId('chat-image-viewer-image').props.source.uri;
   expect(firstViewedUri).toContain('path=%2Fincoming%2Ffirst.png');
   fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
   expect(screen.getByTestId('chat-image-viewer-image').props.source.uri).toContain('path=%2Fincoming%2Fsecond.webp');
+
+  const singleUser = render(<SafeAreaProvider><UserMessage
+    presentation="manuscript"
+    session={{ nodeId: 'eiaserinnys' }}
+    event={{ id: 'single-image', type: 'user_message', data: {
+      text: '첨부 이미지 하나입니다.',
+      attachments: ['/incoming/single.png'],
+    } }}
+  /></SafeAreaProvider>);
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  expect(singleUser.getByTestId('user-chat-image-gallery-image-0').props.style).toMatchObject({
+    width: '100%',
+    maxWidth: 200,
+    aspectRatio: 1,
+    alignSelf: 'flex-end',
+  });
+  expect(singleUser.getByText('single.png').props.style).toMatchObject({
+    width: '100%',
+    maxWidth: 200,
+    alignSelf: 'flex-end',
+    textAlign: 'right',
+  });
 });
 
 test('세 장 gallery는 두 열을 유지하고 원래 viewer 전체 순서로 연다', async () => {
+  jest.spyOn(Image, 'getSizeWithHeaders').mockImplementation((uri) => Promise.resolve(
+    uri.endsWith('/2.png') ? { width: 900, height: 480 }
+      : uri.endsWith('/3.png') ? { width: 300, height: 300 }
+        : { width: 390, height: 844 },
+  ));
   const viewerImages = [1, 2, 3, 4].map((index) => ({
     source: { uri: `https://chat.test/${index}.png` },
     filename: `${index}.png`,
@@ -139,6 +182,15 @@ test('세 장 gallery는 두 열을 유지하고 원래 viewer 전체 순서로 
     { flexGrow: 1, flexBasis: 0, flexShrink: 1, minWidth: 0 },
     { flexGrow: 1, flexBasis: 0, flexShrink: 1, minWidth: 0 },
   ]);
+  for (const index of [0, 1, 2]) {
+    expect(screen.getByTestId('three-image-gallery-image-' + index).props.style).toMatchObject({
+      width: '100%',
+      maxWidth: 200,
+      aspectRatio: 1,
+      alignSelf: 'flex-start',
+    });
+  }
+  expect(screen.UNSAFE_getAllByType(Image).every((image) => image.props.resizeMode === 'contain')).toBe(true);
   expect(screen.getByTestId('three-image-gallery-image-2')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('three-image-gallery-image-2'));

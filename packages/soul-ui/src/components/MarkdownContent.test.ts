@@ -11,6 +11,7 @@
 import { describe, test, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -154,5 +155,23 @@ describe("MarkdownContent — remark-breaks plugin", () => {
 
     expect(html).toContain("v3-card-evidence-image");
     expect(html).not.toContain("chat-image-refined");
+  });
+
+  test("chat thumbnails use a bounded square frame, contain the source, and align user captions", () => {
+    const html = renderToStaticMarkup(createElement(MarkdownImage, {
+      src: "/thumbnail.png",
+      alt: "대화 이미지",
+      variant: "chatRefined",
+      className: "chat-image-thumbnail-image",
+      frameClassName: "chat-image-thumbnail-frame",
+    }));
+    const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf8");
+
+    expect(html).toContain('class="chat-image-frame chat-image-thumbnail-frame"');
+    expect(css).toMatch(/--chat-attachment-thumbnail-max-size:\s*200px;/);
+    expect(css).toMatch(/\.chat-image-card\s*\{[^}]*width:\s*min\(100%,\s*var\(--chat-attachment-thumbnail-max-size\)\)[^}]*\}/s);
+    expect(css).toMatch(/\.chat-image-thumbnail-frame\s*\{[^}]*width:\s*100%;[^}]*aspect-ratio:\s*1\s*\/\s*1[^}]*\}/s);
+    expect(css).toMatch(/\.chat-image-refined\.chat-image-thumbnail-image\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*contain[^}]*\}/s);
+    expect(css).toMatch(/\.chat-image-run\[data-chat-image-role="user"\]\s+\.chat-image-caption\s*\{[^}]*text-align:\s*right[^}]*\}/s);
   });
 });

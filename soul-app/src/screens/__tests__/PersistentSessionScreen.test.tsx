@@ -215,17 +215,44 @@ test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 �
     expect(style.borderRadius).toBeGreaterThan(0);
   }
   view.unmount();
+
+  mockDevice = 'tabletLandscape';
+  const tabletView = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  for (const testID of [
+    'persistent-session-home-visual',
+    'persistent-session-appearance-visual',
+    'persistent-session-settings-visual',
+  ]) {
+    const style = StyleSheet.flatten(tabletView.getByTestId(testID).props.style);
+    expect(style.backgroundColor).toBe('transparent');
+    expect(style.borderWidth).toBeUndefined();
+    expect(style.borderColor).toBeUndefined();
+    expect(style.borderRadius).toBeGreaterThan(0);
+  }
+  tabletView.unmount();
 });
 
-test.each(['phone', 'tabletLandscape'])('%s PAS 대화는 에이전트 이름만 표시하고 홈과 부가 영역을 빼 둔다', (device) => {
+test.each([
+  ['phone', false],
+  ['tabletLandscape', true],
+  ['tabletPortrait', true],
+] as const)('%s PAS 대화는 에이전트 이름과 하단 탐색에 맞는 Home만 표시한다', (device, showsHome) => {
   mockDevice = device;
-  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  const onHome = jest.fn();
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={onHome} /></PersistentSessionProvider>);
   act(() => store.getState().open({ session_id: 'pas-minimal', display_name: '세션 제목', agent_name: '로젤린', persistent: true } as any));
 
   const header = view.getByTestId('persistent-session-header');
   expect(view.getByText('로젤린')).toBeTruthy();
   expect(header).toBeTruthy();
-  expect(view.queryByTestId('persistent-session-home')).toBeNull();
+  if (showsHome) {
+    const home = view.getByLabelText('홈으로 돌아가기');
+    expect(home.props.testID).toBe('persistent-session-home');
+    fireEvent.press(home);
+    expect(onHome).toHaveBeenCalledTimes(1);
+  } else {
+    expect(view.queryByTestId('persistent-session-home')).toBeNull();
+  }
   expect(view.getByTestId('persistent-body-probe').props.showSessionAuxiliary).toBe(false);
   expect(view.queryByText('세션 제목')).toBeNull();
   view.unmount();
