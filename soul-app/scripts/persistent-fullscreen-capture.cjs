@@ -408,7 +408,16 @@ async function runPersistentHomeScenario(env, scenario) {
       result.viewports.push({ ...scenario, safeArea, beforeHome, afterHome, actionBoxes, actionSurfaces, gaps });
       result.interactions.push(`${scenario.name}: Main 입구 터치 → PAS Home → Main 복귀 → 같은 입구 재진입`);
     } else {
-      await page.getByTestId('phone-tab-DailyTab').waitFor({ state: 'visible' });
+      const dailyTab = page.getByTestId('phone-tab-DailyTab');
+      const persistentTab = page.getByTestId('phone-tab-PersistentTab');
+      // Tab Screen wraps NativeStack Screen; the outer aria-hidden owner tracks tab focus.
+      const dailyRoute = page.getByTestId('card-home-screen')
+        .locator('xpath=ancestor::*[@aria-hidden and not(ancestor::*[@aria-hidden])]');
+      const persistentRoute = page.getByTestId('persistent-session-screen')
+        .locator('xpath=ancestor::*[@aria-hidden and not(ancestor::*[@aria-hidden])]');
+      await dailyTab.and(page.locator('[aria-selected="true"]')).waitFor();
+      await persistentTab.and(page.locator('[aria-selected="false"]')).waitFor();
+      await dailyRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
       const tabs = await phoneTabs.evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')));
       assert.deepEqual(tabs, ['phone-tab-DailyTab', 'phone-tab-FolderTab', 'phone-tab-PersistentTab', 'phone-tab-FeedTab', 'phone-tab-SettingsTab']);
       await shot('daily-entry');
@@ -416,6 +425,10 @@ async function runPersistentHomeScenario(env, scenario) {
 
       const pas = page.getByTestId('persistent-session-screen');
       await pas.waitFor({ state: 'visible' });
+      await persistentTab.and(page.locator('[aria-selected="true"]')).waitFor();
+      await dailyTab.and(page.locator('[aria-selected="false"]')).waitFor();
+      await persistentRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
+      await dailyRoute.and(page.locator('[aria-hidden="true"]')).waitFor({ state: 'attached' });
       await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 상단 Home 없음');
       const beforeHome = await measurePas();
@@ -425,11 +438,17 @@ async function runPersistentHomeScenario(env, scenario) {
       await shot('pas');
 
       await touch('phone-tab-DailyTab');
-      await page.getByTestId('phone-tab-DailyTab').waitFor({ state: 'visible' });
-      await pas.waitFor({ state: 'hidden' });
+      await dailyTab.and(page.locator('[aria-selected="true"]')).waitFor();
+      await persistentTab.and(page.locator('[aria-selected="false"]')).waitFor();
+      await dailyRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
+      await persistentRoute.and(page.locator('[aria-hidden="true"]')).waitFor({ state: 'attached' });
       await shot('daily-return');
       await touch('phone-tab-PersistentTab');
       await pas.waitFor({ state: 'visible' });
+      await persistentTab.and(page.locator('[aria-selected="true"]')).waitFor();
+      await dailyTab.and(page.locator('[aria-selected="false"]')).waitFor();
+      await persistentRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
+      await dailyRoute.and(page.locator('[aria-hidden="true"]')).waitFor({ state: 'attached' });
       await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 재진입에도 상단 Home 없음');
       const afterHome = await measurePas();
@@ -438,6 +457,24 @@ async function runPersistentHomeScenario(env, scenario) {
       result.viewports.push({ ...scenario, safeArea, beforeHome, afterHome, tabs });
       result.interactions.push(`${scenario.name}: PersistentTab → DailyTab → PersistentTab 왕복, 상단 Home 없음`);
     }
+  } catch (error) {
+    if (scenario.role === 'phone') {
+      result.errors.push({ name: scenario.name, message: error.message });
+      result.viewports.push({ ...scenario, failed: true,
+        tabs: await page.getByTestId(/^phone-tab-/).evaluateAll(elements => elements.map(element => ({
+          id: element.getAttribute('data-testid'), selected: element.getAttribute('aria-selected'),
+        }))),
+        surfaces: await page.getByTestId(/^(card-home-screen|persistent-session-screen)$/).evaluateAll(elements => elements.map(element => {
+          const ancestors = [];
+          for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+            if (parent.hasAttribute('aria-hidden')) ancestors.push(parent.getAttribute('aria-hidden'));
+          }
+          return { id: element.getAttribute('data-testid'), ariaHiddenAncestors: ancestors };
+        })),
+      });
+      await shot('failure');
+    }
+    throw error;
   } finally {
     await context.close();
   }
