@@ -410,14 +410,12 @@ async function runPersistentHomeScenario(env, scenario) {
     } else {
       const dailyTab = page.getByTestId('phone-tab-DailyTab');
       const persistentTab = page.getByTestId('phone-tab-PersistentTab');
-      // Tab Screen wraps NativeStack Screen; the outer aria-hidden owner tracks tab focus.
-      const dailyRoute = page.getByTestId('card-home-screen')
-        .locator('xpath=ancestor::*[@aria-hidden and not(ancestor::*[@aria-hidden])]');
-      const persistentRoute = page.getByTestId('persistent-session-screen')
-        .locator('xpath=ancestor::*[@aria-hidden and not(ancestor::*[@aria-hidden])]');
+      // RN web omits aria-hidden=false; check each surface against hidden ancestors instead.
+      const dailyRoute = page.getByTestId('card-home-screen');
+      const persistentRoute = page.getByTestId('persistent-session-screen');
       await dailyTab.and(page.locator('[aria-selected="true"]')).waitFor();
       await persistentTab.and(page.locator('[aria-selected="false"]')).waitFor();
-      await dailyRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
+      await dailyRoute.locator('xpath=self::*[not(ancestor-or-self::*[@aria-hidden="true"])]').waitFor();
       const tabs = await phoneTabs.evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')));
       assert.deepEqual(tabs, ['phone-tab-DailyTab', 'phone-tab-FolderTab', 'phone-tab-PersistentTab', 'phone-tab-FeedTab', 'phone-tab-SettingsTab']);
       await shot('daily-entry');
@@ -427,8 +425,8 @@ async function runPersistentHomeScenario(env, scenario) {
       await pas.waitFor({ state: 'visible' });
       await persistentTab.and(page.locator('[aria-selected="true"]')).waitFor();
       await dailyTab.and(page.locator('[aria-selected="false"]')).waitFor();
-      await persistentRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
-      await dailyRoute.and(page.locator('[aria-hidden="true"]')).waitFor({ state: 'attached' });
+      await persistentRoute.locator('xpath=self::*[not(ancestor-or-self::*[@aria-hidden="true"])]').waitFor();
+      await dailyRoute.locator('xpath=self::*[ancestor-or-self::*[@aria-hidden="true"]]').waitFor({ state: 'attached' });
       await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 상단 Home 없음');
       const beforeHome = await measurePas();
@@ -440,15 +438,15 @@ async function runPersistentHomeScenario(env, scenario) {
       await touch('phone-tab-DailyTab');
       await dailyTab.and(page.locator('[aria-selected="true"]')).waitFor();
       await persistentTab.and(page.locator('[aria-selected="false"]')).waitFor();
-      await dailyRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
-      await persistentRoute.and(page.locator('[aria-hidden="true"]')).waitFor({ state: 'attached' });
+      await dailyRoute.locator('xpath=self::*[not(ancestor-or-self::*[@aria-hidden="true"])]').waitFor();
+      await persistentRoute.locator('xpath=self::*[ancestor-or-self::*[@aria-hidden="true"]]').waitFor({ state: 'attached' });
       await shot('daily-return');
       await touch('phone-tab-PersistentTab');
       await pas.waitFor({ state: 'visible' });
       await persistentTab.and(page.locator('[aria-selected="true"]')).waitFor();
       await dailyTab.and(page.locator('[aria-selected="false"]')).waitFor();
-      await persistentRoute.and(page.locator('[aria-hidden="false"]')).waitFor();
-      await dailyRoute.and(page.locator('[aria-hidden="true"]')).waitFor({ state: 'attached' });
+      await persistentRoute.locator('xpath=self::*[not(ancestor-or-self::*[@aria-hidden="true"])]').waitFor();
+      await dailyRoute.locator('xpath=self::*[ancestor-or-self::*[@aria-hidden="true"]]').waitFor({ state: 'attached' });
       await page.getByTestId('persistent-session-header').getByText('공개 예시 에이전트', { exact: true }).waitFor();
       assert.equal(await page.getByTestId('persistent-session-home').count(), 0, 'phone PAS 재진입에도 상단 Home 없음');
       const afterHome = await measurePas();
