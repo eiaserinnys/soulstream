@@ -1339,16 +1339,16 @@ pre[data-markdown-code-layout="document"] {
   overflow: hidden;
   border-radius: var(--chat-attachment-radius);
 }
+.chat-image-frame > .chat-image-status {
+  display: block;
+  margin-block-start: var(--v3-space-1);
+}
 .chat-image-thumbnail-frame > .chat-image-status {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
   margin: 0;
-}
-.chat-image-frame > .chat-image-status {
-  display: block;
-  margin-block-start: var(--v3-space-1);
 }
 .chat-image-viewer-header {
   gap: var(--chat-attachment-filename-gap);
