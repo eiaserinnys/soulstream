@@ -33,16 +33,8 @@ function chronological(items: ReturnType<typeof renderItems>['reversedItems']) {
   return [...items].reverse();
 }
 
-function groups(items: ReturnType<typeof chronological>) {
-  return items.filter(item => (item.kind as string) === 'agent-message-group') as Array<{
-    kind: 'agent-message-group';
-    key: string;
-    events: Array<{ event: SessionEvent; key: string }>;
-  }>;
-}
-
 describe('manuscript agent message groups', () => {
-  test('three consecutive agent user messages and interventions become one collapsed row', () => {
+  test('consecutive agent user messages and interventions disappear', () => {
     const input = [
       event('1', 'user_message', 'agent'),
       event('2', 'intervention_sent', 'agent'),
@@ -52,12 +44,13 @@ describe('manuscript agent message groups', () => {
     const { result } = renderHook(() => renderItems(input));
     const items = chronological(result.current.reversedItems);
 
-    expect(items).toHaveLength(1);
-    expect(groups(items)[0].events.map(row => row.event.id)).toEqual(['1', '2', '3']);
-    expect(findChatRenderItemKeyForEvent(items, 2)).toBe(groups(items)[0].key);
+    expect(items).toEqual([]);
+    expect([1, 2, 3].map(id => findChatRenderItemKeyForEvent(items, id))).toEqual([
+      null, null, null,
+    ]);
   });
 
-  test('a visible person or system row splits agent groups and remains visible', () => {
+  test('visible person and system rows remain while agent messages disappear', () => {
     const input = [
       event('1', 'user_message', 'agent'),
       event('2', 'user_message', 'browser'),
@@ -69,19 +62,19 @@ describe('manuscript agent message groups', () => {
     const { result } = renderHook(() => renderItems(input));
     const items = chronological(result.current.reversedItems);
 
-    expect(items.map(item => item.kind)).toEqual([
-      'agent-message-group', 'event', 'agent-message-group', 'event', 'agent-message-group',
+    expect(items.map(item => item.kind)).toEqual(['event', 'event']);
+    expect(items).toMatchObject([
+      { kind: 'event', event: { id: '2', type: 'user_message' } },
+      { kind: 'event', event: { id: '4', type: 'system' } },
     ]);
-    expect(groups(items).map(group => group.events.length)).toEqual([1, 1, 1]);
-    expect(items[1]).toMatchObject({ kind: 'event', event: { id: '2', type: 'user_message' } });
-    expect(items[3]).toMatchObject({ kind: 'event', event: { id: '4', type: 'system' } });
   });
 
-  test('a late agent message extends the last group with the same row key', () => {
+  test('a late agent message leaves the remaining rows and keys unchanged', () => {
     const firstPage = [
       event('1', 'user_message', 'agent'),
       event('2', 'user_message', 'browser'),
       event('3', 'user_message', 'agent'),
+      event('4', 'system', 'agent'),
     ];
     const { result, rerender } = renderHook<
       ReturnType<typeof renderItems>,
@@ -90,13 +83,32 @@ describe('manuscript agent message groups', () => {
       ({ events }) => renderItems(events),
       { initialProps: { events: firstPage } },
     );
-    const firstLastGroup = groups(chronological(result.current.reversedItems))[1];
+    const firstItems = chronological(result.current.reversedItems);
+    const firstRows = firstItems.map(item => ({
+      kind: item.kind,
+      eventId: item.kind === 'event' ? item.event.id : null,
+      key: item.key,
+    }));
 
-    act(() => rerender({ events: [...firstPage, event('4', 'intervention_sent', 'agent')] }));
+    act(() => rerender({ events: [...firstPage, event('5', 'intervention_sent', 'agent')] }));
 
-    const nextGroups = groups(chronological(result.current.reversedItems));
-    expect(nextGroups[1].key).toBe(firstLastGroup.key);
-    expect(nextGroups[1].events.map(row => row.event.id)).toEqual(['3', '4']);
+    const nextItems = chronological(result.current.reversedItems);
+    const nextRows = nextItems.map(item => ({
+      kind: item.kind,
+      eventId: item.kind === 'event' ? item.event.id : null,
+      key: item.key,
+    }));
+    expect(firstRows).toMatchObject([
+      { kind: 'event', eventId: '2' },
+      { kind: 'event', eventId: '4' },
+    ]);
+    expect(nextRows).toEqual(firstRows);
+    expect(findChatRenderItemKeyForEvent(nextItems, 2)).toBe(
+      findChatRenderItemKeyForEvent(firstItems, 2),
+    );
+    expect(findChatRenderItemKeyForEvent(nextItems, 4)).toBe(
+      findChatRenderItemKeyForEvent(firstItems, 4),
+    );
   });
 
   test('default chat keeps the existing event rows without grouping', () => {
