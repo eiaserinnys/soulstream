@@ -44,11 +44,13 @@ test('표시 전용 옵션은 빈 문단만 접고 기존 이미지 썸네일과
   const defaults = render(<CardRequestView request={request} />);
   expect(defaults.getByText(`첫 문단\n\n\n둘째 문단`).props.children).toBe(`첫 문단\n\n\n둘째 문단`);
   expect(StyleSheet.flatten(defaults.getByTestId('card-request-image-0').props.style)).toMatchObject({ width: 200, height: 200 });
+  expect(defaults.getByTestId('card-request-image-0').props.resizeMode).toBe('cover');
   defaults.unmount();
 
   const summary = render(<CardRequestView request={request} collapseBlankLines attachmentImageVariant="cardCheckItem" />);
   expect(summary.getByText('첫 문단\n둘째 문단').props.children).toBe('첫 문단\n둘째 문단');
   expect(StyleSheet.flatten(summary.getByTestId('card-request-image-0').props.style)).toMatchObject({ width: 104, height: 60 });
+  expect(summary.getByTestId('card-request-image-0').props.resizeMode).toBe('cover');
   fireEvent.press(summary.getByTestId('card-request-image-0'));
   expect(within(summary.getByTestId('image-viewer-pages')).UNSAFE_getByType(Image).props.source.uri).toBe(image);
 });

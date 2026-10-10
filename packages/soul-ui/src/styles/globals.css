@@ -1247,6 +1247,7 @@ pre[data-markdown-code-layout="document"] {
   --chat-attachment-user-max-width: 320px;
   --chat-attachment-phone-assistant-max-width: 100%;
   --chat-attachment-phone-user-max-width: 88%;
+  --chat-attachment-thumbnail-max-size: 200px;
   --chat-attachment-radius: 10px;
   --chat-attachment-filename-gap: 6px;
 }
@@ -1279,17 +1280,25 @@ pre[data-markdown-code-layout="document"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .chat-image-card {
+  width: min(100%, var(--chat-attachment-thumbnail-max-size));
   min-width: 0;
   margin: 0;
 }
+.chat-image-run[data-chat-image-role="assistant"] .chat-image-card {
+  margin-inline-end: auto;
+}
+.chat-image-run[data-chat-image-role="user"] .chat-image-card {
+  margin-inline-start: auto;
+}
 .chat-image-refined.chat-image-thumbnail-image {
   display: block;
-  width: auto;
+  width: 100%;
   max-width: 100%;
-  height: auto;
+  height: 100%;
   margin: 0;
   border-radius: var(--chat-attachment-radius);
   cursor: zoom-in;
+  object-fit: contain;
 }
 .chat-image-caption {
   display: flex;
@@ -1299,6 +1308,9 @@ pre[data-markdown-code-layout="document"] {
   margin-block-start: var(--chat-attachment-filename-gap);
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--muted-foreground);
+}
+.chat-image-run[data-chat-image-role="user"] .chat-image-caption {
+  text-align: right;
 }
 .chat-image-filename {
   overflow: hidden;
@@ -1319,6 +1331,20 @@ pre[data-markdown-code-layout="document"] {
 .chat-image-frame {
   display: block;
   min-width: 0;
+}
+.chat-image-thumbnail-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: var(--chat-attachment-radius);
+}
+.chat-image-thumbnail-frame > .chat-image-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
 }
 .chat-image-frame > .chat-image-status {
   display: block;

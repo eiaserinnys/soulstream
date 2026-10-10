@@ -78,6 +78,7 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   byteSizes?: readonly (number | undefined)[];
 }) {
   const t = useTokens();
+  const attachment = createSessionVisualRoles(t).chat.attachment;
   const [open, setOpen] = useState(false);
   if (variant === 'chatRefined') {
     return <ChatRefinedAttachment source={source} sources={sources} index={index} testID={testID}
@@ -85,7 +86,7 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
       mimeType={mimeType} byteSize={byteSize} filenames={filenames} alts={alts}
       mimeTypes={mimeTypes} byteSizes={byteSizes} />;
   }
-  const dimensions = variant === 'cardCheckItem' ? { width: 104, height: 60 } : { width: 200, height: 200 };
+  const dimensions = variant === 'cardCheckItem' ? { width: 104, height: 60 } : attachment.thumbnailFrameSize;
   return <>
     <TouchableWithoutFeedback onPress={() => setOpen(true)} accessibilityRole="button">
       <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border }}
@@ -229,6 +230,11 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
 
   const handleError = () => setImageInfo({ uri, headersKey, aspectRatio: null, failed: true });
   const metadataLabel = formatChatImageMetadata(mimeType, byteSize);
+  const frameStyle = {
+    width: '100%' as const,
+    maxWidth: attachment.thumbnailFrameSize.width,
+    alignSelf: role === 'user' ? 'flex-end' as const : 'flex-start' as const,
+  };
   const closeViewer = () => {
     setOpen(false);
     requestAnimationFrame(() => {
@@ -251,8 +257,8 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       accessibilityHint={currentInfo.failed ? '이미지를 불러오지 못했습니다.' : undefined}
       accessibilityState={{ expanded: open }}
       style={{
-        width: '100%',
-        aspectRatio: currentInfo.aspectRatio ?? undefined,
+        ...frameStyle,
+        aspectRatio: 1,
         minHeight: t.hitTarget.min,
         borderRadius: attachment.radius,
         borderWidth: StyleSheet.hairlineWidth,
@@ -277,12 +283,14 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
     </Pressable>
     {filename ? <Text numberOfLines={1} ellipsizeMode="tail" style={{
       ...attachment.metadata,
+      ...frameStyle,
       color: attachment.textMuted,
       marginTop: attachment.filenameGap,
       textAlign: role === 'user' ? 'right' : 'left',
     }}>{filename}</Text> : null}
     {metadataLabel ? <Text numberOfLines={1} ellipsizeMode="tail" style={{
       ...attachment.metadata,
+      ...frameStyle,
       color: attachment.textMuted,
       marginTop: t.uiSpacing.xs,
       textAlign: role === 'user' ? 'right' : 'left',

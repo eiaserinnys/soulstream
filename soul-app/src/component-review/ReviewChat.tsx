@@ -43,6 +43,15 @@ const assignedCardPreview = formatAssignedCardContextSnapshot({
   }],
 });
 
+const pasImagePaths = [
+  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.069Z-pas247-preview-iphone-light-story-settings-0d5b93a9cf014a8d9a9c76a4d203d60e.png',
+  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.585Z-pas247-preview-iphone-light-story-settings-fe37869a1a9841dc92f8db2ff4186d61.png',
+];
+const pas251LandscapeImagePaths = [
+  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-12.820Z-IMG_0168-f8f7698dacb14f55a405e3fcb0a5e4ae.jpg',
+  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-16.935Z-IMG_0169-7b8810c416494cfbba4f1b62c8a5520f.jpg',
+];
+
 const persistentChatEvents: SessionEvent[] = [
   { id: '900', type: 'assistant_message', data: { text: '앞 답변입니다. 다음 세대를 준비합니다.' } },
   { id: '901', type: 'generation_started', data: { generation: 2 } },
@@ -108,6 +117,15 @@ const persistentChatEvents: SessionEvent[] = [
   { id: '925', type: 'user_message', data: { input_id: 'public-input-8', text: '사용량이 없는 완료 기록도 확인합니다.' } },
   { id: '926', type: 'assistant_message', data: { text: '사용량이 없으면 아래 사용량 줄을 표시하지 않습니다.' } },
   { id: '927', type: 'complete', data: { result: '통계 없는 완료' } },
+  { id: '928', type: 'user_message', data: {
+    input_id: 'thumbnail-review',
+    text: '세로와 가로 원본 세 장입니다.',
+    attachments: [pasImagePaths[0], ...pas251LandscapeImagePaths],
+    node_id: 'eiaserinnys',
+  } },
+  { id: '929', type: 'assistant_message', data: {
+    text: '![정사각 썸네일](https://soulstream.eiaserinnys.me/icon-192.png)',
+  } },
 ];
 const persistentTurnSummary: SessionEvent = {
   id: '940',
@@ -395,11 +413,6 @@ export function ReviewChat() {
   </>;
 }
 
-const pasImagePaths = [
-  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.069Z-pas247-preview-iphone-light-story-settings-0d5b93a9cf014a8d9a9c76a4d203d60e.png',
-  '/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/60668e34-f8b1-4e53-9a8e-c5ff304337e1/2026-10-08T15-42-19.585Z-pas247-preview-iphone-light-story-settings-fe37869a1a9841dc92f8db2ff4186d61.png',
-];
-
 function ReviewChatPasImageSample() {
   const t = useTokens();
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://soulstream.eiaserinnys.me';
@@ -414,6 +427,8 @@ function ReviewChatPasImageSample() {
     '변경 시안: ‘세션 스토리’ 버튼을 둘째 줄로 옮깁니다.',
     '',
     `![폰 변경 시안](${attachmentUrl(pasImagePaths[1])})`,
+    '',
+    `![정사각 앱 아이콘](${origin}/icon-192.png)`,
   ].join('\n');
   const session = { ...sessions[0], nodeId: 'eiaserinnys' };
   return <ScrollView testID="review-pas-chat-images" style={{ flex: 1, backgroundColor: t.colors.background }}
@@ -446,7 +461,7 @@ function ReviewChatPasImageSample() {
         <UserMessage presentation="manuscript" session={session} event={{
           id: 'review-pas-user-three-images', type: 'user_message', data: {
             text: '첨부 이미지 세 장을 확인해주세요.',
-            attachments: [pasImagePaths[0], pasImagePaths[1], pasImagePaths[0]],
+            attachments: [pasImagePaths[0], ...pas251LandscapeImagePaths],
             node_id: 'eiaserinnys',
           },
         }} />

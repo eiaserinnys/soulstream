@@ -13,6 +13,10 @@ const PAS_8309_IMAGE_URLS = [
   "https://soulstream.eiaserinnys.me/api/attachments/files?nodeId=eiaserinnys&path=%2Fhome%2Feias%2Fmigration%2Fnetcup-core-bootstrap%2Fprod-state%2Fincoming%2F60668e34-f8b1-4e53-9a8e-c5ff304337e1%2F2026-10-08T15-42-19.585Z-pas247-preview-iphone-light-story-settings-fe37869a1a9841dc92f8db2ff4186d61.png",
 ];
 const PAS_8309_ATTACHMENT_PATHS = PAS_8309_IMAGE_URLS.map(url => decodeURIComponent(new URL(url).searchParams.get("path")!));
+const PAS_251_LANDSCAPE_ATTACHMENT_PATHS = [
+  "/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-12.820Z-IMG_0168-f8f7698dacb14f55a405e3fcb0a5e4ae.jpg",
+  "/home/eias/migration/netcup-core-bootstrap/prod-state/incoming/8617c9ee-401d-4916-a781-3a5bdc89c20a/2026-10-10T08-09-16.935Z-IMG_0169-7b8810c416494cfbba4f1b62c8a5520f.jpg",
+];
 
 function makeMessage(role: ChatMessage["role"], id: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -126,8 +130,8 @@ function ManuscriptColumn() {
       {
         type: "user_message",
         user: "User",
-        text: "구조화 이미지 첨부입니다.\n\n${PAS_8309_ATTACHMENT_PATHS[0]}\n${PAS_8309_ATTACHMENT_PATHS[1]}\n/notes/review.txt",
-        attachments: [...PAS_8309_ATTACHMENT_PATHS, "/notes/review.txt"],
+        text: "구조화 이미지 첨부입니다.\n\n${PAS_8309_ATTACHMENT_PATHS[0]}\n${PAS_251_LANDSCAPE_ATTACHMENT_PATHS[0]}\n${PAS_251_LANDSCAPE_ATTACHMENT_PATHS[1]}\n/notes/review.txt",
+        attachments: [PAS_8309_ATTACHMENT_PATHS[0], ...PAS_251_LANDSCAPE_ATTACHMENT_PATHS, "/notes/review.txt"],
         node_id: "eiaserinnys",
       },
       { type: "user_message", user: "User", text: "첨부 이미지와 파일 링크입니다.\n\n- 첫째 메모\n- 둘째 메모\n\n```ts\nconst manuscript = true;\n```\n\n| 항목 | 값 |\n| --- | --- |\n| 모양 | 원고형 |\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf](https://example.com/review-note.pdf)" },

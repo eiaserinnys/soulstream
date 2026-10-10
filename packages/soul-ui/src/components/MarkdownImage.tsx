@@ -10,6 +10,7 @@ export function MarkdownImage({
   onError,
   variant = "default",
   className,
+  frameClassName,
   loading = "lazy",
 }: {
   src?: string;
@@ -20,6 +21,7 @@ export function MarkdownImage({
   onError?(src: string): void;
   variant?: "default" | "card-evidence" | "chatRefined";
   className?: string;
+  frameClassName?: string;
   loading?: "eager" | "lazy";
 }) {
   const [loadState, setLoadState] = useState<{
@@ -80,7 +82,7 @@ export function MarkdownImage({
   if (!isChatRefined) return image;
 
   return (
-    <div className="chat-image-frame">
+    <div className={["chat-image-frame", frameClassName ?? ""].filter(Boolean).join(" ")}>
       {image}
       {loadStatus === "loading" && (
         <span className="chat-image-status" role="status">이미지 불러오는 중…</span>

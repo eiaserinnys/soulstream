@@ -92,6 +92,7 @@ test.each([
       userMaxWidth: 320,
       phoneAssistantMaxWidth: '100%',
       phoneUserMaxWidth: '88%',
+      thumbnailFrameSize: { width: 200, height: 200 },
       radius: 10,
       filenameGap: 6,
       gridGap: 12,
