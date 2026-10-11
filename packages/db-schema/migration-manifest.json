@@ -492,6 +492,10 @@
     {
       "id": "121_card_check_items.sql",
       "sha256": "c6b2fa76369db6cbce0cde3c773624baf5aea8df1fa3f460faa9f3651d399c38"
+    },
+    {
+      "id": "122_attachment_storage_contract.sql",
+      "sha256": "6fe5d6f20f87c1506394d7f18ae2327c11f3187d9dd2c55eee9c77cf93da2332"
     }
   ]
 }
