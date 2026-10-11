@@ -7,6 +7,77 @@ export interface SessionReadPeriod {
   readonly until: string;
 }
 
+export type PersistentSessionHistoryInputKind = "human" | "agent" | "system" | "unknown";
+
+export interface PersistentSessionHistorySender {
+  readonly display_name: string | null;
+  readonly user_id: string | null;
+  readonly agent_id: string | null;
+  readonly agent_name: string | null;
+  readonly agent_node: string | null;
+}
+
+export interface PersistentSessionHistoryModelInfo {
+  readonly model_preset: string | null;
+  readonly backend: string | null;
+  readonly model: string | null;
+}
+
+interface PersistentSessionHistoryEntryBase {
+  readonly event_id: number;
+  readonly created_at: string;
+  readonly created_at_kst: string;
+  readonly text: string;
+  readonly text_chars: number;
+  readonly truncated: boolean;
+  readonly generation: number | null;
+}
+
+export type PersistentSessionHistoryEntry =
+  | (PersistentSessionHistoryEntryBase & {
+      readonly event_type: "user_message" | "intervention_sent";
+      readonly kind: PersistentSessionHistoryInputKind;
+      readonly input_id: string | null;
+      readonly source: string | null;
+      readonly sender: PersistentSessionHistorySender;
+      readonly purpose: string | null;
+      readonly attachment_ids: string[];
+      readonly attachments: string[];
+      readonly attachment_count: number;
+      readonly node_id?: string;
+    })
+  | (PersistentSessionHistoryEntryBase & {
+      readonly event_type: "assistant_message";
+      readonly kind: "assistant";
+      readonly parent_event_id?: string | number;
+    })
+  | (PersistentSessionHistoryEntryBase & {
+      readonly event_type: "session_notification";
+      readonly kind: "system";
+      readonly source: string | null;
+      readonly delivery_id: string | null;
+      readonly delivery_intent: string | null;
+    })
+  | (PersistentSessionHistoryEntryBase & {
+      readonly event_type: "generation_started";
+      readonly kind: "generation";
+      readonly reason: string | null;
+      readonly previous: PersistentSessionHistoryModelInfo | null;
+      readonly current: PersistentSessionHistoryModelInfo | null;
+      readonly context_reset: boolean | null;
+    });
+
+export interface PersistentSessionHistoryResult {
+  readonly session_id: string;
+  readonly display_name: string | null;
+  readonly since: string;
+  readonly until: string;
+  readonly time_zone: "Asia/Seoul";
+  readonly entries: PersistentSessionHistoryEntry[];
+  readonly returned_count: number;
+  readonly next_cursor: number | null;
+}
+
 export const sessionTools = {
   list_sessions: { name: "list_sessions", audience: "all", config: {
       description:
@@ -62,6 +133,21 @@ export const sessionTools = {
         sources: z.array(z.string().min(1)).min(1).describe("caller_info.source 값 목록. 주면 이 값의 메시지만 돌려준다").optional(),
         cursor: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(200).default(100),
+        max_text_chars: z.number().int().min(100).max(20000).default(2000),
+      },
+    } },
+  list_persistent_session_history: { name: "list_persistent_session_history", audience: "internal", strictInputSchema: true, config: {
+      title: "List PAS conversation history",
+      description:
+        "지정한 기간의 영구 세션 대화를 시간순으로 읽는다. 입력과 최종 응답, 알림, 세대 경계를 반환하고 입력의 첨부 ID와 저장된 레거시 경로 문자열도 포함한다. 주입 컨텍스트는 제외한다. "
+        + "잘린 본문은 event_id로 get_session_event를 조회해 text 또는 content만 확인한다.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        session_id: z.string().min(1).optional(),
+        since: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시작 시각. 포함."),
+        until: z.string().min(1).describe("오프셋이 명시된 ISO 8601 끝 시각. 제외."),
+        cursor: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(100).default(20),
         max_text_chars: z.number().int().min(100).max(20000).default(2000),
       },
     } },
