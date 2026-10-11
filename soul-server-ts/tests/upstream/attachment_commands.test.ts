@@ -4,6 +4,7 @@ import {
   AttachmentError,
   FileNotFoundError,
   type AttachmentStore,
+  type ImportSessionFileParams,
 } from "../../src/attachments/file_manager.js";
 import {
   AttachmentCommandError,
@@ -75,6 +76,79 @@ describe("attachment command boundary", () => {
     });
   });
 
+  it("accepts empty base64 as a zero-byte upload and builds the result ACK", async () => {
+    const store = createStore();
+    const commands = new AttachmentCommands(store);
+
+    await expect(commands.upload({
+      requestId: "up-empty",
+      sessionId: "sess-empty",
+      filename: "empty.txt",
+      contentType: "text/plain",
+      contentB64: "",
+    })).resolves.toEqual({
+      type: "upload_attachment_result",
+      requestId: "up-empty",
+      path: "/tmp/incoming/sess-empty/empty.txt",
+      filename: "empty.txt",
+      size: 0,
+      content_type: "text/plain",
+    });
+    expect(store.saveFileForSession).toHaveBeenCalledWith({
+      sessionId: "sess-empty",
+      filename: "empty.txt",
+      content: Buffer.alloc(0),
+      contentType: "text/plain",
+    });
+  });
+
+  it.each([
+    { name: "missing", fields: {} },
+    { name: "undefined", fields: { contentB64: undefined } },
+    { name: "null", fields: { contentB64: null } },
+    { name: "number", fields: { contentB64: 1 } },
+    { name: "object", fields: { contentB64: {} } },
+  ])("rejects $name upload content before calling the store", async ({ fields }) => {
+    const store = createStore();
+    const commands = new AttachmentCommands(store);
+
+    await expect(commands.upload({
+      requestId: "up-invalid-content",
+      sessionId: "sess-1",
+      ...fields,
+    } as never)).rejects.toEqual(new AttachmentCommandError("INVALID_REQUEST: content_b64 누락"));
+    expect(store.saveFileForSession).not.toHaveBeenCalled();
+  });
+
+  it("imports a zero-size attachment and forwards the input unchanged", async () => {
+    const importFileFromUrl = vi.fn(async (params: ImportSessionFileParams) => ({
+      path: `/tmp/incoming/${params.sessionId}/${params.filename}`,
+      filename: params.filename,
+      size: 0,
+      content_type: params.contentType ?? "application/octet-stream",
+    }));
+    const store = { ...createStore(), importFileFromUrl };
+    const commands = new AttachmentCommands(store);
+    const params = {
+      requestId: "import-empty",
+      uploadId: "upload-empty",
+      sessionId: "sess-empty",
+      filename: "empty.bin",
+      expectedSize: 0,
+      downloadUrl: "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/object",
+    };
+
+    await expect(commands.importFromUrl(params)).resolves.toEqual({
+      type: "upload_attachment_result",
+      requestId: "import-empty",
+      path: "/tmp/incoming/sess-empty/empty.bin",
+      filename: "empty.bin",
+      size: 0,
+      content_type: "application/octet-stream",
+    });
+    expect(importFileFromUrl).toHaveBeenCalledWith(params);
+  });
+
   it("normalizes upload validation and AttachmentStore errors", async () => {
     const commands = new AttachmentCommands(createStore());
 
@@ -92,7 +166,7 @@ describe("attachment command boundary", () => {
 
     const store = createStore({
       saveFileForSession: vi.fn(async () => {
-        throw new AttachmentError("보안상 허용되지 않는 파일 형식입니다: .env");
+        throw new AttachmentError("파일이 너무 큽니다 (101MB > 100MB)");
       }),
     });
     const failingCommands = new AttachmentCommands(store);
@@ -101,11 +175,11 @@ describe("attachment command boundary", () => {
       failingCommands.upload({
         requestId: "up-denied",
         sessionId: "sess-1",
-        filename: ".env",
+        filename: "large.bin",
         contentB64: Buffer.from("secret").toString("base64"),
       }),
     ).rejects.toEqual(
-      new AttachmentCommandError("INVALID_REQUEST: 보안상 허용되지 않는 파일 형식입니다: .env"),
+      new AttachmentCommandError("INVALID_REQUEST: 파일이 너무 큽니다 (101MB > 100MB)"),
     );
   });
 
@@ -197,6 +271,19 @@ describe("attachment command boundary", () => {
     ).rejects.toEqual(
       new AttachmentCommandError("INVALID_REQUEST: chunk_index 순서가 맞지 않습니다 (2 != 1)"),
     );
+  });
+
+  it("continues to reject an empty chunk without calling the store", async () => {
+    const store = createStore();
+    const commands = new AttachmentCommands(store);
+
+    await expect(commands.appendUploadChunk({
+      requestId: "chunk-empty",
+      uploadId: "up-1",
+      chunkIndex: 0,
+      contentB64: "",
+    })).rejects.toEqual(new AttachmentCommandError("INVALID_REQUEST: content_b64 누락"));
+    expect(store.appendFileUploadChunk).not.toHaveBeenCalled();
   });
 
   it("finishes and aborts chunked uploads", async () => {
