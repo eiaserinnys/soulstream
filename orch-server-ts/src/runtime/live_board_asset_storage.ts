@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-
+import { Readable } from "node:stream";
 export type LiveBoardAssetUploadPart = {
   readonly partNumber: number;
   readonly uploadUrl: string;
@@ -54,6 +54,21 @@ export type AttachmentR2Storage = LiveBoardAssetStorage & {
 };
 
 export type R2ObjectStorage = AttachmentR2Storage & {
+  createMultipartPartUrls(input: {
+    readonly storageKey: string;
+    readonly uploadId: string;
+    readonly byteSize: number;
+    readonly partSize: number;
+    readonly expiresSeconds: number;
+  }): LiveBoardAssetMultipartUpload;
+  putObject(input: {
+    readonly storageKey: string;
+    readonly mimeType: string;
+    readonly byteSize: number;
+    readonly checksumSha256: string;
+    readonly body: Uint8Array | AsyncIterable<Uint8Array>;
+    readonly signal?: AbortSignal;
+  }): Promise<void>;
   openObject(input: {
     readonly storageKey: string;
     readonly method?: "GET" | "HEAD";
@@ -61,6 +76,20 @@ export type R2ObjectStorage = AttachmentR2Storage & {
     readonly signal?: AbortSignal;
   }): Promise<Response>;
 };
+
+export class R2StorageRequestError extends Error {
+  constructor(readonly operation: string, readonly status: number) {
+    super(`R2 ${operation} failed with status ${status}`);
+    this.name = "R2StorageRequestError";
+  }
+}
+
+export class R2ObjectIntegrityError extends Error {
+  constructor(readonly reason: "size" | "checksum") {
+    super(`R2 object ${reason} mismatch`);
+    this.name = "R2ObjectIntegrityError";
+  }
+}
 
 export type R2BoardAssetStorageConfig = {
   readonly accessKeyId: string;
@@ -107,23 +136,38 @@ export function createR2BoardAssetStorage(
       });
       await assertR2Ok(response, "create multipart upload");
       const uploadId = uploadIdFromXml(await response.text());
-      const partCount = Math.max(1, Math.ceil(input.byteSize / input.partSize));
-      return {
+      return createMultipartPartUrls(config, {
+        ...input,
         uploadId,
-        partSize: input.partSize,
-        parts: Array.from({ length: partCount }, (_, index) => {
-          const partNumber = index + 1;
-          return {
-            partNumber,
-            uploadUrl: presign(config, {
-              method: "PUT",
-              storageKey: input.storageKey,
-              query: { partNumber: String(partNumber), uploadId },
-              expiresSeconds: input.expiresSeconds,
-            }),
-          };
-        }),
-      };
+      });
+    },
+    createMultipartPartUrls(input) {
+      return createMultipartPartUrls(config, input);
+    },
+    async putObject(input) {
+      const checksumSha256 = normalizeChecksum(input.checksumSha256);
+      let body: string | Uint8Array | Readable;
+      let duplex: "half" | undefined;
+      if (input.body instanceof Uint8Array) {
+        if (input.body.byteLength !== input.byteSize) throw new R2ObjectIntegrityError("size");
+        if (sha256Bytes(input.body) !== checksumSha256) throw new R2ObjectIntegrityError("checksum");
+        body = Buffer.from(input.body);
+      } else {
+        body = Readable.from(validateUploadBody(input.body, input.byteSize, checksumSha256));
+        duplex = "half";
+      }
+      await assertR2Ok(await signedFetch(config, {
+        method: "PUT",
+        storageKey: input.storageKey,
+        headers: {
+          "content-type": input.mimeType,
+          "content-length": String(input.byteSize),
+        },
+        body,
+        payloadSha256: checksumSha256,
+        duplex,
+        signal: input.signal,
+      }), "put object");
     },
     async completeMultipartUpload(input) {
       const body = completeMultipartXml(input.parts);
@@ -175,7 +219,9 @@ type SignInput = {
   readonly storageKey: string;
   readonly query?: Readonly<Record<string, string>>;
   readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: string;
+  readonly body?: string | Uint8Array | Readable;
+  readonly payloadSha256?: string;
+  readonly duplex?: "half";
   readonly signal?: AbortSignal;
 };
 
@@ -225,7 +271,14 @@ async function signedFetch(
   const date = amzDate.slice(0, 8);
   const url = objectUrl(config, input.storageKey);
   url.search = canonicalQuery(input.query ?? {});
-  const payloadHash = sha256Hex(input.body ?? "");
+  const payloadHash = input.payloadSha256 ?? (input.body === undefined
+    ? sha256Hex("")
+    : typeof input.body === "string"
+      ? sha256Hex(input.body)
+      : input.body instanceof Uint8Array
+        ? sha256Bytes(input.body)
+        : null);
+  if (payloadHash === null) throw new Error("R2 streamed requests require a known payload SHA-256");
   const headers = canonicalHeaderMap(url, {
     ...input.headers,
     "x-amz-content-sha256": payloadHash,
@@ -250,14 +303,74 @@ async function signedFetch(
     `SignedHeaders=${signedHeaders}`,
     `Signature=${signature}`,
   ].join(", ");
-  return fetch(url, {
+  const request: RequestInit & { duplex?: "half" } = {
     method: input.method,
     headers: { ...headers, authorization },
-    body: input.method === "HEAD" ? undefined : input.body,
     redirect: "error",
     signal: input.signal,
-  });
+  };
+  if (input.method !== "HEAD" && input.body !== undefined) {
+    request.body = input.body as unknown as NonNullable<RequestInit["body"]>;
+  }
+  if (input.duplex !== undefined) request.duplex = input.duplex;
+  return fetch(url, request);
 }
+
+function createMultipartPartUrls(
+  config: R2BoardAssetStorageConfig,
+  input: {
+    readonly storageKey: string;
+    readonly uploadId: string;
+    readonly byteSize: number;
+    readonly partSize: number;
+    readonly expiresSeconds: number;
+  },
+): LiveBoardAssetMultipartUpload {
+  const partCount = Math.max(1, Math.ceil(input.byteSize / input.partSize));
+  return {
+    uploadId: input.uploadId,
+    partSize: input.partSize,
+    parts: Array.from({ length: partCount }, (_, index) => {
+      const partNumber = index + 1;
+      return {
+        partNumber,
+        uploadUrl: presign(config, {
+          method: "PUT",
+          storageKey: input.storageKey,
+          query: { partNumber: String(partNumber), uploadId: input.uploadId },
+          expiresSeconds: input.expiresSeconds,
+        }),
+      };
+    }),
+  };
+}
+
+async function* validateUploadBody(
+  body: AsyncIterable<Uint8Array>,
+  expectedByteSize: number,
+  expectedChecksum: string,
+): AsyncGenerator<Uint8Array> {
+  const hash = createHash("sha256");
+  let byteSize = 0;
+  for await (const chunk of body) {
+    if (!(chunk instanceof Uint8Array)) throw new R2ObjectIntegrityError("size");
+    if (chunk.byteLength === 0) continue;
+    byteSize += chunk.byteLength;
+    if (byteSize > expectedByteSize) throw new R2ObjectIntegrityError("size");
+    hash.update(chunk);
+    yield chunk;
+  }
+  if (byteSize !== expectedByteSize) throw new R2ObjectIntegrityError("size");
+  if (hash.digest("hex") !== expectedChecksum) throw new R2ObjectIntegrityError("checksum");
+}
+
+function normalizeChecksum(value: string): string {
+  const normalized = value.toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(normalized)) throw new R2ObjectIntegrityError("checksum");
+  return normalized;
+}
+
+const sha256Bytes = (value: Uint8Array): string => createHash("sha256").update(value).digest("hex");
 
 function objectUrl(config: R2BoardAssetStorageConfig, storageKey: string): URL {
   const url = new URL(config.endpoint);
@@ -344,7 +457,7 @@ function formatAmzDate(date: Date): string {
 
 async function assertR2Ok(response: Response, operation: string): Promise<void> {
   if (response.ok) return;
-  throw new Error(`R2 ${operation} failed with ${response.status}`);
+  throw new R2StorageRequestError(operation, response.status);
 }
 
 function uploadIdFromXml(xml: string): string {
