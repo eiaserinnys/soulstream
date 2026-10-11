@@ -528,6 +528,31 @@ export async function createLiveProductionApplication(
       resolveAttachmentStorage: () => createR2StorageResolver(
         async () => await sqlResolver.resolveSql() as unknown as SqlClient,
       ).resolveBinding("attachment"),
+      resolveReadStorage: () => createR2StorageResolver(
+        async () => await sqlResolver.resolveSql() as unknown as SqlClient,
+      ).resolveBinding("attachment"),
+      readPageAttachmentEvidence: async (pageId, attachmentId) => {
+        if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
+        const page = await pageYjsService.getBrowserPage(pageId);
+        const hasStoredRef = page.blocks.some((block) => {
+          const properties = block.properties;
+          if (
+            properties.attachment_id === attachmentId ||
+            properties.assetId === attachmentId
+          ) return true;
+          return Array.isArray(properties.attachment_refs) &&
+            properties.attachment_refs.some((reference) =>
+              typeof reference === "object" && reference !== null &&
+              !Array.isArray(reference) &&
+              (reference as Record<string, unknown>).attachment_id === attachmentId
+            );
+        });
+        return {
+          scope: { type: "page", id: pageId },
+          folderId: null,
+          hasStoredRef,
+        };
+      },
     });
   } catch (error) {
     await dbCatalogRepository.close();

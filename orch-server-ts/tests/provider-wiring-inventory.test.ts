@@ -71,6 +71,11 @@ describe("live provider wiring inventory", () => {
         dependencies: ["auth", "db"],
       },
       {
+        path: "attachmentRoutes.assetRead",
+        status: "implemented",
+        dependencies: ["auth", "db", "r2", "runtime"],
+      },
+      {
         path: "attachmentRoutes.transport",
         status: "implemented",
         dependencies: ["runtime", "websocket"],

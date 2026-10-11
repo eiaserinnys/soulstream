@@ -41,6 +41,8 @@ import {
   createLiveBoardAssetRouteProvider,
 } from "./live_board_asset_route_provider.js";
 import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
+import { createLiveAttachmentReadRepository } from "./live_attachment_read_repository.js";
+import type { AttachmentReadRepository } from "../attachments/attachment_read_service.js";
 import type { LiveBoardAssetStorage } from "./live_board_asset_storage.js";
 import { createLiveMarkdownDocumentRouteProvider } from "./live_markdown_document_route_provider.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
@@ -81,6 +83,7 @@ export type LiveDbCatalogRepository = {
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
   readonly boardAssetRouteProvider: BoardAssetRouteProvider;
+  readonly attachmentReadRepository: AttachmentReadRepository;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
@@ -412,6 +415,7 @@ export function createLiveDbCatalogRepository(
     folderRouteProvider: folderProvider,
     folderCountsProvider: folderProvider,
     boardAssetRouteProvider: boardAssetProvider,
+    attachmentReadRepository: createLiveAttachmentReadRepository(sqlResolver),
     boardItemRouteProvider: boardItemProvider,
     markdownDocumentRouteProvider: createLiveMarkdownDocumentRouteProvider(
       sqlResolver,

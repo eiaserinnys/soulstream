@@ -1,4 +1,16 @@
 import { Buffer } from "node:buffer";
+import {
+  bindAttachmentReadAbortSignal,
+  readOptionalAttachmentContext,
+  registerAttachmentReadRoutes,
+  sendAttachmentReadError,
+  sendAttachmentReadResponse,
+  attachmentReadRouteAuthRequirements,
+  type AttachmentReadRouteOptions,
+} from "./attachment_read_routes.js";
+import {
+  normalizeAttachmentLegacyPath,
+} from "./attachment_read_service.js";
 import { registerMultipartAttachmentRoutes, multipartAttachmentRouteAuthRequirements, type MultipartAttachmentOptions } from "./multipart_attachment_routes.js";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -99,6 +111,7 @@ export type AttachmentTransport = {
 };
 
 export type AttachmentRouteOptions = {
+  assetRead?: AttachmentReadRouteOptions;
   multipart?: MultipartAttachmentOptions;
   provider: AttachmentRouteProvider;
   accessProvider: AttachmentAccessProvider;
@@ -140,6 +153,7 @@ type Validation<T> =
 
 export const attachmentRouteAuthRequirements = {
   ...multipartAttachmentRouteAuthRequirements,
+  ...attachmentReadRouteAuthRequirements,
   "POST /api/attachments/sessions": true,
   "DELETE /api/attachments/sessions/:session_id": true,
   "GET /api/attachments/files": true,
@@ -151,6 +165,7 @@ export function registerAttachmentRoutes(
 ): void {
   registerMultipartFormParser(app);
   if (options.multipart) registerMultipartAttachmentRoutes(app, options.multipart);
+  if (options.assetRead) registerAttachmentReadRoutes(app, options.assetRead);
 
   app.post<{ Params: UploadParams }>("/api/attachments/sessions", async (request, reply) => {
     const nodeId = requiredQueryString(request, "nodeId");
@@ -217,6 +232,42 @@ export function registerAttachmentRoutes(
     if (!nodeId.ok) return validationError(reply, nodeId);
     const path = requiredQueryString(request, "path");
     if (!path.ok) return validationError(reply, path);
+
+    if (options.assetRead) {
+      const context = readOptionalAttachmentContext(request);
+      if (!context.ok) return reply.code(400).send({ detail: context.error });
+      const download = readDownloadQuery(request);
+      if (!download.ok) return reply.code(400).send({ detail: download.error });
+      const controller = bindAttachmentReadAbortSignal(request, reply);
+      try {
+        const result = await options.assetRead.service.legacy(
+          () => options.assetRead!.resolveActor(request),
+          nodeId.value,
+          normalizeAttachmentLegacyPath(path.value),
+          context.context,
+          {
+            method: request.method === "HEAD" ? "HEAD" : "GET",
+            ...(request.method === "GET" && typeof request.headers.range === "string"
+              ? { range: request.headers.range }
+              : {}),
+            signal: controller.abort.signal,
+            ...(download.value ? { download: true } : {}),
+          },
+        );
+        if (result.kind === "response") {
+          reply.header("Cache-Control", "private, no-store");
+          reply.header("Vary", appendVary(reply.getHeader("Vary"), "Cookie", "Authorization"));
+          return sendAttachmentReadResponse(reply, result.response, controller);
+        }
+        controller.cleanup();
+      } catch (error) {
+        controller.cleanup();
+        reply.header("Cache-Control", "private, no-store");
+        reply.header("Vary", appendVary(reply.getHeader("Vary"), "Cookie", "Authorization"));
+        return sendAttachmentReadError(reply, error);
+      }
+    }
+
     const node = await resolveNode(options.provider, nodeId.value);
     if (!node.ok) return attachmentError(reply, node.error);
 
@@ -491,6 +542,23 @@ function parentName(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
   const parts = trimmed.split(/[\\/]+/);
   return parts.length >= 2 ? parts[parts.length - 2] ?? "" : "";
+}
+
+function readDownloadQuery(
+  request: FastifyRequest,
+): { ok: true; value: boolean } | { ok: false; error: string } {
+  const query = request.query;
+  const value = isPlainObject(query) ? query.download : undefined;
+  if (value === undefined || value === "false") return { ok: true, value: false };
+  if (value === "true") return { ok: true, value: true };
+  return { ok: false, error: "download must be true or false" };
+}
+
+function appendVary(existing: number | string | string[] | undefined, ...values: string[]): string {
+  const normalized = Array.isArray(existing) ? existing.join(",") : String(existing ?? "");
+  const items = new Set(normalized.split(",").map((item) => item.trim()).filter(Boolean));
+  for (const value of values) items.add(value);
+  return [...items].join(", ");
 }
 
 /**
