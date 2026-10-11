@@ -65,6 +65,20 @@ test('포스트잇 mount는 상세를 읽지 않고 카드 탭은 기존 상세�
   expect(onOpen).toHaveBeenCalledTimes(1);
 });
 
+test.each([
+  { number: 284, expectedTitle: '#284 카드 제목', expectedLabel: '#284 카드 제목 카드 상세' },
+  { number: null, expectedTitle: '카드 제목', expectedLabel: '카드 제목 카드 상세' },
+  { number: undefined, expectedTitle: '카드 제목', expectedLabel: '카드 제목 카드 상세' },
+])('포스트잇 제목과 상세 접근성 라벨에 번호를 표시한다 ($number)', ({ number, expectedTitle, expectedLabel }) => {
+  const card = cardFixture({ number, title: '카드 제목' });
+  const onOpen = jest.fn();
+  const screen = render(<PostItCard api={null} card={card} onOpen={onOpen} />);
+  expect(screen.getByTestId('postit-title-card-1').props.children).toBe(expectedTitle);
+  expect(screen.getByTestId('postit-title-card-1').props.numberOfLines).toBe(2);
+  fireEvent.press(screen.getByLabelText(expectedLabel));
+  expect(onOpen).toHaveBeenCalledTimes(1);
+});
+
 test('상태 칩은 담당 상세와 분리된 선택 버튼이고 우하단 메뉴 버튼은 없다', async () => {
   const card = cardFixture({ status: 'todo' });
   const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }) };

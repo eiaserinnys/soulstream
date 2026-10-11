@@ -24,6 +24,25 @@ it("uses the complete original body and reserves the same footer for empty cards
   expect(empty).toContain("v3-postit-footer");
 });
 
+it("prefixes the card number in the title and open label while leaving numberless titles unchanged", () => {
+  const title = "짧은 제목";
+  for (const variant of ["default", "compact"] as const) {
+    const numbered = renderToStaticMarkup(createElement(PostItCardView, {
+      card: { ...reviewCard, title, number: 284 }, activity: null, onOpen() {}, variant,
+    }));
+    expect(numbered).toContain('title="#284 짧은 제목">#284 짧은 제목</span>');
+    expect(numbered).toContain('aria-label="카드 #284 짧은 제목 열기"');
+
+    for (const number of [null, undefined]) {
+      const numberless = renderToStaticMarkup(createElement(PostItCardView, {
+        card: { ...reviewCard, title, number }, activity: null, onOpen() {}, variant,
+      }));
+      expect(numberless).toContain('title="짧은 제목">짧은 제목</span>');
+      expect(numberless).toContain('aria-label="카드 짧은 제목 열기"');
+    }
+  }
+});
+
 it("keeps deterministic corksheet rotations within the five approved angles", () => {
   expect(["a", "b", "c", "d", "e"].map(postItRotation).sort()).toEqual([-0.4, -0.8, 0, 0.4, 0.8].sort());
   expect(postItRotation(reviewCard.id)).toBe(postItRotation(reviewCard.id));
