@@ -3481,6 +3481,60 @@
     "name": "list_persistent_instructions"
   },
   {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "지정한 기간의 영구 세션 대화를 시간순으로 읽는다. 입력과 최종 응답, 알림, 세대 경계만 반환하고 첨부 세부 정보와 주입 컨텍스트는 제외한다. 잘린 본문은 event_id로 get_session_event를 조회해 text 또는 content만 확인한다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_text_chars": {
+          "default": 2000,
+          "maximum": 20000,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "since": {
+          "description": "오프셋이 명시된 ISO 8601 시작 시각. 포함.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "until": {
+          "description": "오프셋이 명시된 ISO 8601 끝 시각. 제외.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "since",
+        "until"
+      ],
+      "type": "object"
+    },
+    "name": "list_persistent_session_history",
+    "title": "List PAS conversation history"
+  },
+  {
     "description": "반복 작업의 실행 이력과 연결된 Soulstream session_id를 조회한다.",
     "execution": {
       "taskSupport": "forbidden"
