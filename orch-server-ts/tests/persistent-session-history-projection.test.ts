@@ -37,7 +37,7 @@ describe("projectPersistentSessionHistoryEntry", () => {
     expect(entry).toMatchObject({ event_type: "user_message", kind, source, text: "hello" });
   });
 
-  it("uses caller_info as the sender source and returns attachment count without payload details", () => {
+  it("uses caller_info and deduplicates canonical IDs and legacy attachment paths", () => {
     const entry = projectPersistentSessionHistoryEntry(row("user_message", {
       text: "image",
       input_id: "input-1",
@@ -53,7 +53,9 @@ describe("projectPersistentSessionHistoryEntry", () => {
       },
       source: "agent",
       agent_id: "legacy-agent",
-      attachments: ["private/path-a", "private/path-b"],
+      attachment_ids: ["attachment-1", "attachment-2", "attachment-1", "", 17],
+      attachments: ["/legacy/path-a", "/legacy/path-a", "/legacy/path-b", { path: "/hidden/object-path" }, ""],
+      node_id: "source-worker",
       context: [{ text: "private context" }],
     }), 2000);
 
@@ -65,10 +67,13 @@ describe("projectPersistentSessionHistoryEntry", () => {
         agent_name: "Agent", agent_node: "node-1",
       },
       purpose: "cache_keepalive",
+      attachment_ids: ["attachment-1", "attachment-2"],
+      attachments: ["/legacy/path-a", "/legacy/path-b"],
       attachment_count: 2,
+      node_id: "source-worker",
     });
     expect(JSON.stringify(entry)).not.toContain("private@example.com");
-    expect(JSON.stringify(entry)).not.toContain("private/path");
+    expect(JSON.stringify(entry)).not.toContain("/hidden/object-path");
     expect(JSON.stringify(entry)).not.toContain("private context");
   });
 
@@ -87,18 +92,32 @@ describe("projectPersistentSessionHistoryEntry", () => {
     });
   });
 
-  it("keeps attachment-only messages and counts code points when truncating", () => {
+  it("keeps legacy-only attachment paths and rejects history objects", () => {
     const attachmentOnly = projectPersistentSessionHistoryEntry(row("user_message", {
-      attachments: ["private/image"],
+      attachments: ["/legacy/only", "/legacy/only", { id: "must-not-infer" }, ""],
       caller_info: {},
     }), 100);
-    expect(attachmentOnly).toMatchObject({ kind: "unknown", text: "", text_chars: 0, truncated: false, attachment_count: 1 });
+    expect(attachmentOnly).toMatchObject({
+      kind: "unknown", text: "", text_chars: 0, truncated: false,
+      attachment_ids: [], attachments: ["/legacy/only"], attachment_count: 1,
+    });
+    expect(attachmentOnly).not.toHaveProperty("node_id");
+    expect(JSON.stringify(attachmentOnly)).not.toContain("must-not-infer");
+  });
 
+  it("keeps attachment-only messages and does not truncate attachment fields with text", () => {
     const truncated = projectPersistentSessionHistoryEntry(row("intervention_sent", {
       text: "A🧭BC",
       caller_info: { source: "agent" },
+      attachment_ids: ["attachment-id"],
+      attachments: ["/very/long/legacy/path"],
+      node_id: "worker-original",
     }), 3);
-    expect(truncated).toMatchObject({ kind: "agent", text: "A🧭B", text_chars: 4, truncated: true });
+    expect(truncated).toMatchObject({
+      kind: "agent", text: "A🧭B", text_chars: 4, truncated: true,
+      attachment_ids: ["attachment-id"], attachments: ["/very/long/legacy/path"],
+      attachment_count: 1, node_id: "worker-original",
+    });
   });
 
   it("keeps durable assistant messages distinct and preserves parent_event_id", () => {
