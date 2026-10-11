@@ -9,6 +9,7 @@ const SAFE_INLINE_RASTER_MIME_TYPES = new Set([
   "image/webp",
   "image/avif",
 ]);
+const MIME_TOKEN = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
 
 export type ParsedAttachmentRange = {
   readonly start: number;
@@ -64,10 +65,13 @@ export function responseHeaders(
     readonly lastModified?: string | null;
   },
 ): Headers {
-  const mimeType = responseMimeType(asset.mimeType);
-  const inline = !download && (SAFE_INLINE_RASTER_MIME_TYPES.has(mimeType) || mimeType === "text/plain");
+  const baseMimeType = normalizedMimeType(asset.mimeType);
+  const contentType = responseMimeType(asset.mimeType);
+  const inline = !download && (
+    SAFE_INLINE_RASTER_MIME_TYPES.has(baseMimeType) || baseMimeType === "text/plain"
+  );
   const headers = new Headers({
-    "Content-Type": mimeType,
+    "Content-Type": contentType,
     "Content-Length": String(input.contentLength),
     "Content-Disposition": `${inline ? "inline" : "attachment"}; ${contentDispositionFilename(asset.originalName)}`,
     "X-Content-Type-Options": "nosniff",
@@ -90,10 +94,13 @@ export function safeHeader(value: string | null): string | null {
 }
 
 function responseMimeType(value: string): string {
-  const normalized = normalizedMimeType(value);
-  return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(normalized)
-    ? normalized
-    : "application/octet-stream";
+  const mimeType = value.trim();
+  if (/[\u0000-\u001f\u007f]/.test(value)) return "application/octet-stream";
+  const parameter = `(?:${MIME_TOKEN}|"(?:[\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e]|\\\\[\\x20-\\x7e])*?")`;
+  const pattern = new RegExp(
+    `^${MIME_TOKEN}/${MIME_TOKEN}(?: *; *${MIME_TOKEN} *= *${parameter})*$`,
+  );
+  return pattern.test(mimeType) ? mimeType : "application/octet-stream";
 }
 
 function contentDispositionFilename(value: string): string {

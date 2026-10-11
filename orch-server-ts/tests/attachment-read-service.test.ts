@@ -6,6 +6,7 @@ import {
   type AttachmentAssetRow,
   type AttachmentReadRepository,
 } from "../src/attachments/attachment_read_service.js";
+import { responseHeaders } from "../src/attachments/attachment_read_http.js";
 
 const committedAsset: AttachmentAssetRow = {
   id: "attachment-a",
@@ -68,6 +69,32 @@ function makeService(input: {
 }
 
 describe("attachment read service", () => {
+  it("preserves safe MIME parameters for inline and download responses", () => {
+    const asset = {
+      originalName: "notes.txt",
+      mimeType: "text/plain; charset=iso-8859-1",
+    };
+
+    const inline = responseHeaders(asset, false, { contentLength: 12 });
+    const download = responseHeaders(asset, true, { contentLength: 12 });
+
+    expect(inline.get("content-type")).toBe("text/plain; charset=iso-8859-1");
+    expect(inline.get("content-disposition")).toMatch(/^inline;/);
+    expect(download.get("content-type")).toBe("text/plain; charset=iso-8859-1");
+    expect(download.get("content-disposition")).toMatch(/^attachment;/);
+  });
+
+  it("rejects MIME parameter header injection and keeps risky MIME as an attachment", () => {
+    const headers = responseHeaders({
+      originalName: "page.html",
+      mimeType: "text/html; charset=utf-8\r\nX-Injected: yes",
+    }, false, { contentLength: 12 });
+
+    expect(headers.get("content-type")).toBe("application/octet-stream");
+    expect(headers.get("content-disposition")).toMatch(/^attachment;/);
+    expect(headers.get("x-injected")).toBeNull();
+  });
+
   it("returns pending metadata only to the matching owner without resolving storage", async () => {
     const pending = { ...committedAsset, uploadStatus: "pending" as const };
     const { service, resolveReadStorage } = makeService({ asset: pending });
