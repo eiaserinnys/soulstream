@@ -3712,7 +3712,7 @@
     "name": "list_sessions"
   },
   {
-    "description": "기간 안의 user_message 이벤트를 여러 세션에 걸쳐 시간순으로 조회한다. 본문과 발신 정보만 돌려주고 주입 컨텍스트는 뺀다. sources를 생략하면 에이전트와 시스템 발신, 발신 정보가 없는 메시지를 뺀다. 잘린 본문의 전문은 get_session_event로 본다.",
+    "description": "기간 안의 user_message 이벤트를 여러 세션에 걸쳐 시간순으로 조회한다. 본문과 발신 정보, 첨부 ID와 저장된 레거시 경로 문자열을 돌려주며, 본문이 없어도 유효한 첨부가 있으면 포함한다. 주입 컨텍스트는 뺀다. sources를 생략하면 에이전트와 시스템 발신, 발신 정보가 없는 메시지를 뺀다. 잘린 본문의 전문은 get_session_event로 본다.",
     "execution": {
       "taskSupport": "forbidden"
     },
