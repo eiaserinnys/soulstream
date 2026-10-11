@@ -3484,7 +3484,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "지정한 기간의 영구 세션 대화를 시간순으로 읽는다. 입력과 최종 응답, 알림, 세대 경계만 반환하고 첨부 세부 정보와 주입 컨텍스트는 제외한다. 잘린 본문은 event_id로 get_session_event를 조회해 text 또는 content만 확인한다.",
+    "description": "지정한 기간의 영구 세션 대화를 시간순으로 읽는다. 입력과 최종 응답, 알림, 세대 경계를 반환하고 입력의 첨부 ID와 저장된 레거시 경로 문자열도 포함한다. 주입 컨텍스트는 제외한다. 잘린 본문은 event_id로 get_session_event를 조회해 text 또는 content만 확인한다.",
     "execution": {
       "taskSupport": "forbidden"
     },

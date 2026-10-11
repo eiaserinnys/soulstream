@@ -127,12 +127,13 @@ describe("list_persistent_session_history MCP access", () => {
         kind: "human",
         text: "visible 🧭",
         source: "browser",
+        attachment_ids: [],
+        attachments: ["private/path"],
         attachment_count: 1,
         generation: 2,
       }],
     });
     expect(JSON.stringify(result.structuredContent)).not.toContain("private@example.com");
-    expect(JSON.stringify(result.structuredContent)).not.toContain("private/path");
     expect(JSON.stringify(result.structuredContent)).not.toContain("private context");
   });
 
