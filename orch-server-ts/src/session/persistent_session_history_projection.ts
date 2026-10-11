@@ -5,6 +5,7 @@ import type {
   PersistentSessionHistorySender,
 } from "@soulstream/mcp-contract";
 import type { PersistentSessionHistoryRow } from "../control_plane/repositories/persistent_session_history_query.js";
+import { projectInputAttachments } from "./attachment_history_projection.js";
 
 const SYSTEM_SOURCES = new Set(["api", "channel_observer", "execute-proxy", "llm", "system"]);
 
@@ -25,8 +26,7 @@ export function projectPersistentSessionHistoryEntry(
     case "user_message":
     case "intervention_sent": {
       const source = preferString(callerInfo, payload, "source");
-      const attachmentIds = uniqueNonEmptyStrings(payload.attachment_ids);
-      const attachments = uniqueNonEmptyStrings(payload.attachments);
+      const attachments = projectInputAttachments(payload);
       const nodeId = stringValue(payload.node_id);
       return {
         ...common,
@@ -37,9 +37,7 @@ export function projectPersistentSessionHistoryEntry(
         source,
         sender: projectSender(callerInfo, payload),
         purpose: stringValue(payload.purpose),
-        attachment_ids: attachmentIds,
-        attachments,
-        attachment_count: attachmentIds.length > 0 ? attachmentIds.length : attachments.length,
+        ...attachments,
         ...(nodeId === null ? {} : { node_id: nodeId }),
       };
     }
@@ -113,16 +111,6 @@ function projectSender(
 function parentEventIdValue(value: unknown): string | number | null {
   if (typeof value === "string") return value;
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function uniqueNonEmptyStrings(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const unique = new Set<string>();
-  for (const item of value) {
-    const candidate = stringValue(item);
-    if (candidate !== null) unique.add(candidate);
-  }
-  return [...unique];
 }
 
 function toKstIso(value: Date): string {
