@@ -13,6 +13,8 @@ type SqlCall = {
   values: unknown[];
 };
 
+const endpoint = "https://" + "a".repeat(32) + ".r2.cloudflarestorage.com";
+
 describe("live DB board asset route provider", () => {
   it("reuses folder and board item providers for access helpers", async () => {
     const harness = createSqlHarness((text) => {
@@ -57,7 +59,7 @@ describe("live DB board asset route provider", () => {
     const harness = createSqlHarness((text, values) => {
       if (text.includes("FROM system_settings")) {
         expect(values[0]).toBe("board_r2");
-        return [{ value: { endpoint: `https://${"a".repeat(32)}.r2.cloudflarestorage.com`, bucket: "private-board", accessKeyId, secretAccessKey: "db-secret" }, version: 1 }];
+        return [{ value: { endpoint, bucket: "private-board", accessKeyId, secretAccessKey: "db-secret" }, version: 1 }];
       }
       if (text.includes("file_assets") && (text.includes("SELECT *") || text.includes("RETURNING"))) return [fileAssetRow()];
       if (text.includes("INSERT INTO board_items")) return [boardItemRow({ item_type: "asset", metadata: { storageKey: "file" } })];
@@ -66,6 +68,9 @@ describe("live DB board asset route provider", () => {
     const provider = createProvider(harness);
     const upload = await provider.initFileAsset({ folderId: "folder-a", name: "photo.png", mimeType: "image/png", byteSize: 1234 }) as { uploadUrl: string };
     expect(upload.uploadUrl).toContain("db-access%2F");
+    const insert = harness.calls.find((call) => call.text.includes("INSERT INTO file_assets"));
+    expect(insert?.text).toContain("storage_purpose, storage_endpoint, storage_bucket");
+    expect(insert?.values.slice(-2)).toEqual([endpoint, "private-board"]);
     accessKeyId = "rotated-db-access";
     const fetchMock = vi.fn(async (_url: URL, _init: RequestInit) => new Response(null, { headers: { "content-length": "1234", "content-type": "image/png" } }));
     vi.stubGlobal("fetch", fetchMock);
@@ -130,6 +135,10 @@ describe("live DB board asset route provider", () => {
       expect.stringContaining("SELECT COALESCE(SUM(byte_size), 0)::BIGINT AS total"),
       expect.stringContaining("INSERT INTO file_assets"),
     ]);
+    expect(harness.calls[0]?.text).toContain("storage_purpose = 'board'");
+    expect(harness.calls[1]?.text).toContain("storage_purpose = 'board'");
+    expect(harness.calls[2]?.text).toContain("storage_purpose, storage_endpoint, storage_bucket");
+    expect(harness.calls[2]?.text).toContain("'board'");
     expect(harness.calls[0]?.values[0]).toEqual(new Date("2026-07-09T00:00:00.000Z"));
     expect(harness.calls[2]?.values).toEqual([
       "asset-1",
@@ -137,6 +146,8 @@ describe("live DB board asset route provider", () => {
       " unsafe/name.png ",
       "image/png",
       1234,
+      null,
+      null,
       null,
     ]);
   });
@@ -191,7 +202,7 @@ describe("live DB board asset route provider", () => {
       partSize: 5 * 1024 * 1024,
       expiresSeconds: 900,
     });
-    expect(harness.calls[2]?.values.at(-1)).toBe("upload-1");
+    expect(harness.calls[2]?.values[5]).toBe("upload-1");
   });
 
   it("rejects size and daily quota before allocating storage", async () => {
@@ -318,6 +329,10 @@ describe("live DB board asset route provider", () => {
       480,
       null,
     ]);
+    expect(harness.calls.find((call) => call.text.includes("SELECT * FROM file_assets WHERE id"))?.text)
+      .toContain("storage_purpose = 'board'");
+    expect(harness.calls.find((call) => call.text.includes("UPDATE file_assets"))?.text)
+      .toContain("file_assets.storage_purpose = 'board'");
     expect(harness.calls.find((call) => call.text.includes("INSERT INTO board_items"))?.values).toEqual([
       "asset:asset-1",
       "folder-a",
@@ -336,12 +351,36 @@ describe("live DB board asset route provider", () => {
       }),
     ]);
   });
+  it("does not commit an attachment-purpose ID as a board asset", async () => {
+    const storage = createStorage();
+    const harness = createSqlHarness((text) => {
+      if (text.includes("SELECT * FROM file_assets WHERE id")) return [];
+      return [];
+    });
+    const provider = createProvider(harness, { storage });
+
+    await expect(
+      provider.commitFileAsset({
+        folderId: "folder-a",
+        assetId: "attachment-1",
+        x: 0,
+        y: 0,
+        parts: [],
+      }),
+    ).rejects.toThrow("file asset not found: attachment-1");
+
+    expect(harness.calls[0]?.text).toContain("storage_purpose = 'board'");
+    expect(harness.calls.some((call) => call.text.includes("UPDATE file_assets"))).toBe(false);
+    expect(harness.calls.some((call) => call.text.includes("INSERT INTO board_items"))).toBe(false);
+    expect(storage.headObject).not.toHaveBeenCalled();
+  });
 });
 
 function createProvider(
   harness: ReturnType<typeof createSqlHarness>,
   options: {
     storage?: LiveBoardAssetStorage | null;
+    storageLocation?: { readonly endpoint: string; readonly bucket: string } | null;
     assetIdGenerator?: () => string;
   } = {},
 ): BoardAssetRouteProvider {
@@ -370,6 +409,7 @@ function createProvider(
       }),
     },
     storage: options.storage,
+    storageLocation: options.storageLocation,
     assetIdGenerator: options.assetIdGenerator,
     now: () => new Date("2026-07-10T00:00:00.000Z"),
   });
