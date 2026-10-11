@@ -94,8 +94,16 @@ export class PersistentSessionSettingsService {
     };
   }
 
-  async get(request: CallerRequest, sessionId: string): Promise<{ session: PersistentSessionResource }> {
-    await this.deps.access.requireSessionAccess({ request, sessionId });
+  async get(
+    request: CallerRequest,
+    sessionId: string,
+    accessEmail?: string | null,
+  ): Promise<{ session: PersistentSessionResource }> {
+    await this.deps.access.requireSessionAccess({
+      request,
+      sessionId,
+      ...(accessEmail === undefined ? {} : { accessEmail }),
+    });
     return { session: await this.resource(await this.requireRow(sessionId)) };
   }
 

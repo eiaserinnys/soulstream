@@ -1,6 +1,11 @@
 import type { SqlClient } from "../control_plane_types.js";
 import type { SessionReadPeriod } from "@soulstream/mcp-contract";
 import {
+  readPersistentSessionHistory,
+  type PersistentSessionHistoryPage,
+  type PersistentSessionHistoryQuery,
+} from "./persistent_session_history_query.js";
+import {
   type LiveSearchDbConnectionFactory,
   type LiveSearchPendingQuery,
   type LiveSearchQueryRunner,
@@ -79,6 +84,12 @@ export class EventReadRepository {
       SELECT event_count(${sessionId}) AS event_count
     `;
     return Number(rows[0]?.event_count ?? 0);
+  }
+
+  readPersistentSessionHistory(
+    query: PersistentSessionHistoryQuery,
+  ): Promise<PersistentSessionHistoryPage> {
+    return readPersistentSessionHistory(this.sql, query);
   }
 
   async readEvents(
