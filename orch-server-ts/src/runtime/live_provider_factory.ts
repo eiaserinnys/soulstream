@@ -3,6 +3,8 @@ import type { AtomRouteOptions } from "../atom/atom_routes.js";
 import { createLiveMultipartAttachmentOptions } from "./live_multipart_attachment_provider.js";
 import type { MultipartAttachmentOptions } from "../attachments/multipart_attachment_routes.js";
 import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js";
+import { createLiveAttachmentReadOptions } from "./live_attachment_read_provider.js";
+import type { CreateLiveAttachmentReadOptions } from "./live_attachment_read_provider.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
 import {
@@ -116,7 +118,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly atomRoutes: AtomRouteOptions;
   readonly attachmentRoutes: Pick<
     AttachmentRouteOptions,
-    "provider" | "accessProvider" | "transport" | "multipart"
+    "provider" | "accessProvider" | "transport" | "multipart" | "assetRead"
   >;
   readonly authRoutes: Pick<
     AuthRouteOptions,
@@ -170,6 +172,8 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
   readonly resolveAttachmentStorage?: MultipartAttachmentOptions["resolveStorage"];
+  readonly resolveReadStorage?: CreateLiveAttachmentReadOptions["resolveReadStorage"];
+  readonly readPageAttachmentEvidence?: CreateLiveAttachmentReadOptions["readPageAttachmentEvidence"];
 };
 
 export function createLiveOrchestratorProviderBundle(
@@ -281,6 +285,19 @@ export function createLiveOrchestratorProviderBundle(
     },
     attachmentRoutes: {
       ...attachmentProviders,
+      ...(options.resolveReadStorage && options.readPageAttachmentEvidence
+        ? {
+            assetRead: createLiveAttachmentReadOptions({
+              repository: options.dependencies.dbCatalogRepository.attachmentReadRepository,
+              resolveEmail: authenticatedUserResolvers.resolveEmail,
+              resolveReadStorage: options.resolveReadStorage,
+              readPageAttachmentEvidence: options.readPageAttachmentEvidence,
+              dashboardAccessProvider,
+              sessionResourceAccessProvider,
+              folderProvider: options.dependencies.dbCatalogRepository.folderRouteProvider,
+            }),
+          }
+        : {}),
       ...(options.resolveAttachmentStorage ? { multipart: createLiveMultipartAttachmentOptions({
         resolveStorage: options.resolveAttachmentStorage, configProvider: options.dependencies.configProvider,
         resolveEmail: authenticatedUserResolvers.resolveEmail,

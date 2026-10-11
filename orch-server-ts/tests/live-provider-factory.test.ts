@@ -98,6 +98,36 @@ describe("live provider factory boundary", () => {
     });
   });
 
+  it("wires the authenticated attachment reader only when read dependencies are supplied", async () => {
+    const dependencies = createLiveDependencies();
+    const runtimeServices = createRuntimeServices(dependencies);
+    const resolveReadStorage = vi.fn(async () => ({
+      storage: { openObject: vi.fn() },
+      identity: "test",
+      location: { endpoint: "https://r2.example.test", bucket: "attachments" },
+    }));
+    const bundle = createLiveOrchestratorProviderBundle({
+      dependencies,
+      runtimeServices,
+      usageSummaryRoutes: createUsageSummaryRoutes(),
+      uiEventRepository: createInertUiEventRepository(),
+      resolveReadStorage,
+      readPageAttachmentEvidence: vi.fn(async () => null),
+    });
+    const reader = bundle.attachmentRoutes.assetRead;
+    expect(reader).toBeDefined();
+    const token = await bundle.authRoutes.jwt.issueToken({
+      email: "attachment@example.com",
+      name: "Attachment User",
+    });
+    const actor = await reader!.resolveActor({
+      headers: { cookie: `soul_dashboard_auth=${token}` },
+    } as unknown as FastifyRequest);
+    await expect(reader!.service.metadata(actor, "attachment-test", { type: "owner" }))
+      .resolves.toMatchObject({ upload_status: "committed" });
+    expect(resolveReadStorage).not.toHaveBeenCalled();
+  });
+
   it("returns implemented runtime and config route providers when the inventory is fully implemented", async () => {
     const dependencies = createLiveDependencies();
     const runtimeServices = createRuntimeServices(dependencies);
@@ -595,6 +625,29 @@ function createLiveDependencies(): LiveProviderDependencies {
         getCatalogSnapshot: vi.fn(async () => ({ boardItems: [] })),
         initFileAsset: vi.fn(async () => ({ assetId: "asset-live" })),
         commitFileAsset: vi.fn(async () => ({ asset: {}, boardItem: {} })),
+      },
+      attachmentReadRepository: {
+        getAsset: vi.fn(async (id: string) => id === "attachment-test" ? {
+          id,
+          storageKey: "private/object",
+          storagePurpose: "attachment",
+          storageEndpoint: "https://r2.example.test",
+          storageBucket: "attachments",
+          ownerKind: "user_email",
+          ownerKey: "attachment@example.com",
+          registrationScope: null,
+          sourceSessionId: null,
+          originalName: "readme.txt",
+          mimeType: "text/plain",
+          byteSize: 4,
+          width: null,
+          height: null,
+          checksumSha256: null,
+          uploadStatus: "committed" as const,
+        } : null),
+        getLegacyAlias: vi.fn(async () => null),
+        getSqlScopeEvidence: vi.fn(async () => null),
+        listLegacyCandidateScopes: vi.fn(async () => []),
       },
       boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never,
       sessionCatalogProvider: {
