@@ -10,6 +10,7 @@ import {
   AttachmentCommandError,
   AttachmentCommands,
 } from "../../src/upstream/attachment_commands.js";
+import { createAttachmentCommandFamily } from "../../src/upstream/attachment_command_family.js";
 
 function createStore(overrides: Partial<AttachmentStore> = {}): AttachmentStore {
   return {
@@ -147,6 +148,81 @@ describe("attachment command boundary", () => {
       content_type: "application/octet-stream",
     });
     expect(importFileFromUrl).toHaveBeenCalledWith(params);
+  });
+
+  it("forwards an empty upload through the attachment command family and sends its ACK", async () => {
+    const ack = {
+      type: "upload_attachment_result",
+      requestId: "family-up-empty",
+      path: "/tmp/incoming/sess-family-empty/empty.txt",
+      filename: "empty.txt",
+      size: 0,
+      content_type: "text/plain",
+    };
+    const upload = vi.fn(async () => ack);
+    const send = vi.fn(async () => undefined);
+    const family = createAttachmentCommandFamily({
+      send,
+      attachmentCommands: { upload } as unknown as AttachmentCommands,
+    });
+
+    await family.upload_attachment({
+      type: "upload_attachment",
+      request_id: "family-up-empty",
+      session_id: "sess-family-empty",
+      filename: "empty.txt",
+      content_type: "text/plain",
+      content_b64: "",
+    });
+
+    expect(upload).toHaveBeenCalledWith({
+      requestId: "family-up-empty",
+      sessionId: "sess-family-empty",
+      filename: "empty.txt",
+      contentType: "text/plain",
+      contentB64: "",
+    });
+    expect(send).toHaveBeenCalledWith(ack);
+  });
+
+  it("forwards a zero-size URL import through the attachment command family and sends its ACK", async () => {
+    const ack = {
+      type: "upload_attachment_result",
+      requestId: "family-import-empty",
+      path: "/tmp/incoming/sess-family-empty/empty.bin",
+      filename: "empty.bin",
+      size: 0,
+      content_type: "application/octet-stream",
+    };
+    const importFromUrl = vi.fn(async () => ack);
+    const send = vi.fn(async () => undefined);
+    const family = createAttachmentCommandFamily({
+      send,
+      attachmentCommands: { importFromUrl } as unknown as AttachmentCommands,
+    });
+
+    await family.import_attachment_from_url({
+      type: "import_attachment_from_url",
+      request_id: "family-import-empty",
+      upload_id: "upload-family-empty",
+      session_id: "sess-family-empty",
+      filename: "empty.bin",
+      expected_size: 0,
+      download_url:
+        "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/object",
+    });
+
+    expect(importFromUrl).toHaveBeenCalledWith({
+      requestId: "family-import-empty",
+      uploadId: "upload-family-empty",
+      sessionId: "sess-family-empty",
+      filename: "empty.bin",
+      contentType: undefined,
+      expectedSize: 0,
+      downloadUrl:
+        "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/bucket/object",
+    });
+    expect(send).toHaveBeenCalledWith(ack);
   });
 
   it("normalizes upload validation and AttachmentStore errors", async () => {
