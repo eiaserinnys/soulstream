@@ -57,6 +57,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
     ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait` : null) : null;
   const name = assigned ? assignee?.agentName ?? agentId ?? card.assigneeUserId ?? "담당 세션" : "담당 없음";
   const tone = card.status === "blocked" && card.blockedKind === "question" ? "question" : card.status;
+  const displayTitle = card.number == null ? card.title : `#${card.number} ${card.title}`;
   const itemSummary=summarizeCardItems(card.items,pendingConfirmations);
   const hasItems=Boolean(card.items?.length);
   const nowText=card.now?.text;
@@ -66,7 +67,7 @@ export function PostItCardView({ card, activity, assignee, onOpen, statusControl
     onSelect:()=>statusHandle.current?.request(status as CardStatus),
   })):[];
   return <>
-    <Paper id={card.id} title={card.title} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
+    <Paper id={card.id} title={displayTitle} status={card.status} color={card.color} fontSize={fontSize} variant={variant}
       activity={activity?{kind:activity.kind,text:cardActivityPreview(activity)}:null}
       summary={hasItems?<span className="v3-postit-summary"><CardProgressSummary summary={itemSummary} showReviewCount/></span>:undefined} nowText={nowText} turnText={turnText} turnLabel={card.now?.turn==="user"&&itemSummary.toReviewCount>0?`볼 것 ${itemSummary.toReviewCount}`:undefined}
       assigneeName={name} onOpen={onOpen} error={error}

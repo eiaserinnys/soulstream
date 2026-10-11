@@ -7,7 +7,7 @@ import {
   type BoardAssetRouteProvider,
 } from "../board/board_asset_routes.js";
 import type { BoardItemRecord, BoardItemRouteProvider } from "../board/board_item_routes.js";
-import { createR2StorageResolver } from "./r2_storage_resolver.js";
+import { createR2StorageResolver, type R2StorageLocation } from "./r2_storage_resolver.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
@@ -20,6 +20,7 @@ export type CreateLiveBoardAssetRouteProviderOptions = {
   readonly folderProvider: LiveFolderProvider;
   readonly boardItemProvider: BoardItemRouteProvider;
   readonly storage?: LiveBoardAssetStorage | null;
+  readonly storageLocation?: R2StorageLocation | null;
 
   readonly assetIdGenerator?: () => string;
   readonly now?: () => Date;
@@ -61,7 +62,7 @@ export function createLiveBoardAssetRouteProvider(
     listFolders: options.folderProvider.listFolders,
     getCatalogSnapshot: options.boardItemProvider.getCatalogSnapshot,
     async initFileAsset(input) {
-      const storage = await resolveStorage(options);
+      const { storage, location } = await resolveStorage(options);
       validateInitSize(input);
       const sql = await options.sqlResolver.resolveSql();
       await markStalePendingFileAssets(sql, now());
@@ -81,7 +82,7 @@ export function createLiveBoardAssetRouteProvider(
           partSize: MULTIPART_PART_SIZE_BYTES,
           expiresSeconds: PUT_URL_TTL_SECONDS,
         });
-        const asset = await createPendingAsset(sql, input, assetId, storageKey, multipart.uploadId);
+        const asset = await createPendingAsset(sql, input, assetId, storageKey, multipart.uploadId, location);
         return {
           assetId,
           asset,
@@ -93,7 +94,7 @@ export function createLiveBoardAssetRouteProvider(
         };
       }
 
-      const asset = await createPendingAsset(sql, input, assetId, storageKey, null);
+      const asset = await createPendingAsset(sql, input, assetId, storageKey, null, location);
       return {
         assetId,
         asset,
@@ -108,7 +109,7 @@ export function createLiveBoardAssetRouteProvider(
       };
     },
     async commitFileAsset(input) {
-      const storage = await resolveStorage(options);
+      const { storage } = await resolveStorage(options);
       const sql = await options.sqlResolver.resolveSql();
       const asset = await getFileAsset(sql, input.assetId);
       if (asset === null) throw new Error(`file asset not found: ${input.assetId}`);
@@ -125,16 +126,18 @@ export function createLiveBoardAssetRouteProvider(
 
 async function resolveStorage(
   options: CreateLiveBoardAssetRouteProviderOptions,
-): Promise<LiveBoardAssetStorage> {
+): Promise<{ readonly storage: LiveBoardAssetStorage; readonly location: R2StorageLocation | null }> {
   if (options.storage !== undefined) {
-    if (options.storage !== null) return options.storage;
+    if (options.storage !== null) {
+      return { storage: options.storage, location: options.storageLocation ?? null };
+    }
     throw storageUnavailable();
   }
-  const storage = await createR2StorageResolver(async () =>
+  const binding = await createR2StorageResolver(async () =>
     await options.sqlResolver.resolveSql() as unknown as SqlClient,
-  ).resolve("board");
-  if (storage === null) throw storageUnavailable();
-  return storage;
+  ).resolveBinding("board");
+  if (binding === null) throw storageUnavailable();
+  return { storage: binding.storage, location: binding.location };
 }
 
 function storageUnavailable(): BoardAssetRouteError {
@@ -162,6 +165,7 @@ async function markStalePendingFileAssets(
     WHERE upload_status = 'pending'
       AND garbage_collected_at IS NULL
       AND created_at < ${staleBefore}
+      AND storage_purpose = 'board'
   `;
 }
 
@@ -174,6 +178,7 @@ async function assertDailyQuota(
     FROM file_assets
     WHERE created_at >= date_trunc('day', NOW())
       AND garbage_collected_at IS NULL
+      AND storage_purpose = 'board'
   `;
   const total = numberValue(rows[0]?.total) ?? 0;
   if (total + byteSize > DAILY_LIMIT_BYTES) {
@@ -187,13 +192,16 @@ async function createPendingAsset(
   assetId: string,
   storageKey: string,
   uploadId: string | null,
+  location: R2StorageLocation | null,
 ): Promise<FileAssetRecord> {
   const rows = await sql`
     INSERT INTO file_assets (
-      id, storage_key, original_name, mime_type, byte_size, multipart_upload_id
+      id, storage_key, original_name, mime_type, byte_size, multipart_upload_id,
+      storage_purpose, storage_endpoint, storage_bucket
     )
     VALUES (
-      ${assetId}, ${storageKey}, ${input.name}, ${input.mimeType}, ${input.byteSize}, ${uploadId}
+      ${assetId}, ${storageKey}, ${input.name}, ${input.mimeType}, ${input.byteSize}, ${uploadId},
+      'board', ${location?.endpoint ?? null}, ${location?.bucket ?? null}
     )
     RETURNING *
   `;
@@ -206,6 +214,7 @@ async function getFileAsset(
 ): Promise<FileAssetRecord | null> {
   const rows = await sql`
     SELECT * FROM file_assets WHERE id = ${assetId}
+      AND storage_purpose = 'board'
   `;
   return fileAssetFromRow(rows[0]);
 }
@@ -259,6 +268,7 @@ async function commitAssetTransaction(
           updated_at = NOW()
       FROM commit_input
       WHERE file_assets.id = commit_input.asset_id
+        AND file_assets.storage_purpose = 'board'
         AND garbage_collected_at IS NULL
       RETURNING file_assets.*
     `;

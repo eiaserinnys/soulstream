@@ -4,6 +4,11 @@ import { readR2Settings, type R2Purpose } from "../system/r2_settings.js";
 import { createR2BoardAssetStorage, checkR2Bucket } from "./live_board_asset_storage.js";
 
 export type R2CheckResult = { status: "ok" | "not_configured" | "access_failed"; message: string };
+export type R2StorageLocation = {
+  readonly endpoint: string;
+  readonly bucket: string;
+};
+
 export function createR2StorageResolver(resolveSql: () => Promise<SqlClient>) {
   async function resolve(purpose: R2Purpose) {
     return (await resolveBinding(purpose))?.storage ?? null;
@@ -14,7 +19,11 @@ export function createR2StorageResolver(resolveSql: () => Promise<SqlClient>) {
     const identity = createHash("sha256").update(JSON.stringify([
       purpose, settings.version, settings.endpoint, settings.bucket, settings.accessKeyId,
     ])).digest("hex");
-    return { storage: createR2BoardAssetStorage(settings), identity };
+    return {
+      storage: createR2BoardAssetStorage(settings),
+      identity,
+      location: { endpoint: settings.endpoint, bucket: settings.bucket },
+    };
   }
   async function check(purpose: R2Purpose): Promise<R2CheckResult> {
     const settings = await readR2Settings(await resolveSql(), purpose);

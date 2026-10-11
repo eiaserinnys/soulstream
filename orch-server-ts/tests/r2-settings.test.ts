@@ -66,6 +66,50 @@ describe("central R2 settings", () => {
     const authorization = new Headers(fetchMock.mock.calls[0]![1].headers).get("authorization");
     expect(authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=access\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/);
   });
+  it.each([200, 206, 404, 416])("returns raw GET response status %i and signs Range", async status => {
+    const response = new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("payload")); },
+    }), { status, headers: { "content-range": "bytes 0-6/100" } });
+    const fetchMock = vi.fn(async (_url: URL, _init: RequestInit) => response);
+    vi.stubGlobal("fetch", fetchMock);
+    const signal = new AbortController().signal;
+    const storage = createR2BoardAssetStorage(fields);
+
+    const result = await storage.openObject({
+      storageKey: "folder-a/photo.png",
+      range: "bytes=0-6",
+      signal,
+    });
+
+    expect(result).toBe(response);
+    expect(result.status).toBe(status);
+    expect(result.headers.get("content-range")).toBe("bytes 0-6/100");
+    expect(result.bodyUsed).toBe(false);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url.pathname).toBe("/private-files/folder-a/photo.png");
+    expect(init).toMatchObject({ method: "GET", redirect: "error", signal });
+    expect(init.body).toBeUndefined();
+    const headers = new Headers(init.headers);
+    expect(headers.get("range")).toBe("bytes=0-6");
+    expect(headers.get("authorization")).toMatch(
+      /^AWS4-HMAC-SHA256 Credential=access\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/,
+    );
+  });
+  it("defaults openObject to GET and sends HEAD without a body", async () => {
+    const getResponse = new Response("payload");
+    const headResponse = new Response(null);
+    const fetchMock = vi.fn(async (_url: URL, init: RequestInit) =>
+      init.method === "HEAD" ? headResponse : getResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = createR2BoardAssetStorage(fields);
+
+    await expect(storage.openObject({ storageKey: "file" })).resolves.toBe(getResponse);
+    await expect(storage.openObject({ storageKey: "file", method: "HEAD" })).resolves.toBe(headResponse);
+
+    expect(fetchMock.mock.calls.map(([, init]) => init.method)).toEqual(["GET", "HEAD"]);
+    expect(fetchMock.mock.calls[1]![1].body).toBeUndefined();
+    expect(headResponse.body).toBeNull();
+  });
   it("keeps board and attachment independent and retains, replaces, deletes secrets with CAS", async () => {
     const { sql } = database();
     let saved = await updateR2Settings(sql, "board", { ...fields, expectedVersion: 1, updatedBy: "admin@example.com" });
@@ -90,6 +134,9 @@ describe("central R2 settings", () => {
     expect(await resolver.resolve("attachment")).toBeNull();
     expect(await resolver.check("attachment")).toMatchObject({ status: "not_configured" });
     await updateR2Settings(sql, "board", { ...fields, expectedVersion: 1, updatedBy: "admin@example.com" });
+    const binding = await resolver.resolveBinding("board");
+    expect(binding).toMatchObject({ location: { endpoint, bucket: fields.bucket } });
+    expect(JSON.stringify(binding?.location)).not.toContain(fields.secretAccessKey);
     const first = await resolver.resolve("board");
     expect(await first!.createPresignedPutUrl({ storageKey: "file", mimeType: "image/png", expiresSeconds: 60 })).toContain("access%2F");
     await updateR2Settings(sql, "board", { ...fields, accessKeyId: "new-access", expectedVersion: 2, updatedBy: "admin@example.com" });

@@ -6,12 +6,14 @@ import { applyToolContentPolicy } from "./session_content_policy.js";
 import { SessionConsumptionBoundary } from "./session_consumption_boundary.js";
 import { sessionReadAdapter, type McpSessionReadAdapter, type McpSessionRow } from "./session_read_adapter.js";
 import { sessionListQueryHandlers } from "./session_list_query_handlers.js";
+import { persistentSessionHistoryHandlers } from "./persistent_session_history_handlers.js";
 import { parseOffsetTimestamp, serializeDate } from "./session_query_values.js";
 import type { McpToolHandler } from "./types.js";
 type SessionArgs<N extends keyof typeof sessionTools> = z.infer<z.ZodObject<typeof sessionTools[N]["config"]["inputSchema"]>>;
 
 export const sessionQueryHandlers = {
   ...sessionListQueryHandlers,
+  ...persistentSessionHistoryHandlers,
   get_session_event: async (options, args, context) => {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
@@ -84,9 +86,14 @@ export const sessionQueryHandlers = {
           session_title: r.session_title,
           node_id: r.node_id,
           agent_id: r.agent_id,
+          input_id: r.input_id,
+          purpose: r.purpose,
           text: r.text,
           text_chars: r.text_chars,
           truncated: r.text_chars > maxChars,
+          attachment_ids: r.attachment_ids,
+          attachments: r.attachments,
+          attachment_count: r.attachment_count,
         })),
         next_cursor: c + l < total ? c + l : null,
       });

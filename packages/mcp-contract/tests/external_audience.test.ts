@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { z } from "zod";
 import { mcpToolDefinitions, type McpToolDefinition } from "../src/index.ts";
 import { cardTools } from "../src/card_tools.ts";
+import { sessionTools } from "../src/session_tools.ts";
 
 const mutations = new Set(["update_agent_profile", "set_agent_mcp_profile", "rollback_agents_config",
   "apply_remote_agent_profile_update", "rollback_remote_agents_config", "set_agent_atom_contexts", "set_folder_system_prompt"]);
@@ -17,6 +18,22 @@ function assertPublicTools(definitions: readonly McpToolDefinition[]) {
 test("audience all never exposes delete, configuration or destructive tools", () => assertPublicTools(mcpToolDefinitions));
 test("card assignee handoff is internal-only", () => {
   assert.equal(cardTools.transfer_card_assignee.audience, "internal");
+});
+test("PAS period history is a strict internal read-only tool", () => {
+  const definition = sessionTools.list_persistent_session_history;
+  assert.equal(definition.audience, "internal");
+  assert.equal(definition.strictInputSchema, true);
+  assert.equal(definition.config.annotations?.readOnlyHint, true);
+  assert.equal(mcpToolDefinitions.some((tool) => tool.name === definition.name && tool.audience === "all"), false);
+
+  const input = z.object(definition.config.inputSchema).strict();
+  assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00" }).success, true);
+  assert.equal(input.safeParse({ session_id: "pas-1", since: "2026-10-05T00:00:00+09:00",
+    until: "2026-10-06T00:00:00+09:00", email: "someone@example.com" }).success, false);
+  assert.equal(input.safeParse({ session_id: "pas-1", since: "2026-10-05T00:00:00+09:00",
+    until: "2026-10-06T00:00:00+09:00", caller_session_id: "forged" }).success, false);
+  assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00", limit: 101 }).success, false);
+  assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00", max_text_chars: 99 }).success, false);
 });
 test("card check item tools are internal-only while existing review and comment tools remain public", () => {
   for (const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"] as const)

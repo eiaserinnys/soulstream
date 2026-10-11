@@ -609,6 +609,15 @@ ALTER TABLE markdown_documents
 CREATE TABLE IF NOT EXISTS file_assets (
     id                   TEXT PRIMARY KEY,
     storage_key          TEXT NOT NULL UNIQUE,
+    storage_purpose      TEXT NOT NULL DEFAULT 'board' CHECK (storage_purpose IN ('board', 'attachment')),
+    storage_endpoint     TEXT,
+    storage_bucket       TEXT,
+    owner_kind           TEXT CHECK (owner_kind IN ('user_email', 'agent_session')),
+    owner_key            TEXT,
+    registration_scope   JSONB,
+    source_node_id       TEXT,
+    source_session_id    TEXT,
+    output_command_id    TEXT,
     original_name        TEXT NOT NULL,
     mime_type            TEXT NOT NULL,
     byte_size            BIGINT NOT NULL CHECK (byte_size >= 0),
@@ -621,6 +630,20 @@ CREATE TABLE IF NOT EXISTS file_assets (
     garbage_collected_at TIMESTAMPTZ,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS attachment_legacy_aliases (
+    node_id         TEXT NOT NULL,
+    normalized_path TEXT NOT NULL,
+    asset_id        TEXT REFERENCES file_assets(id) ON DELETE RESTRICT,
+    original_path   TEXT NOT NULL,
+    availability    TEXT NOT NULL CHECK (availability IN ('resolved', 'missing')),
+    checked_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (node_id, normalized_path),
+    CHECK (
+        (availability = 'resolved' AND asset_id IS NOT NULL)
+        OR (availability = 'missing' AND asset_id IS NULL)
+    )
 );
 
 CREATE TABLE IF NOT EXISTS board_items (
@@ -3397,6 +3420,7 @@ CREATE TABLE IF NOT EXISTS cards (
     title                TEXT NOT NULL,
     request              TEXT NOT NULL DEFAULT '',
     attachments          JSONB NOT NULL DEFAULT '[]'::jsonb,
+    attachment_refs      JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(attachment_refs) = 'array'),
     items                JSONB NOT NULL DEFAULT '[]'::jsonb,
     now                  JSONB,
     brief                TEXT NOT NULL DEFAULT '',
@@ -3446,6 +3470,7 @@ CREATE TABLE IF NOT EXISTS card_reports (
     title TEXT NOT NULL,
     format TEXT NOT NULL CHECK (format IN ('markdown','html')),
     body TEXT NOT NULL,
+    attachment_refs JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(attachment_refs) = 'array'),
     session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -3470,6 +3495,7 @@ CREATE TABLE IF NOT EXISTS card_comments (
     session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','spoken','note')),
     body TEXT NOT NULL,
+    attachment_refs JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(attachment_refs) = 'array'),
     item_id INTEGER,
     delivered_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

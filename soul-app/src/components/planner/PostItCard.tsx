@@ -95,6 +95,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
     : card.assigneeKind ? resolveSessionAgentLabel(identity) : '담당 미지정';
   const { transition, pending } = useCardTransition(api, card.id);
   const activity = card.latestActivity;
+  const displayTitle = card.number == null ? card.title : `#${card.number} ${card.title}`;
   const body = activity ? postItActivityText(activity) : card.request || '아직 지시나 보고가 없습니다.';
   const itemSummary = summarizeCardItems(card.items, pendingItemConfirmations);
   const askPreview = cardAskPreview(itemSummary.needsReview, card.now?.ask);
@@ -162,10 +163,10 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
       <AppGlassCard role="canvas" cornerRadius={roles.radius}>
         <View testID={`postit-card-${card.id}`} style={{ width: roles.width, height: roles.height, flexShrink: 0,
           backgroundColor: roles.paper, borderRadius: roles.radius, transform: [{ rotate: `${postItRotation(card.id)}deg` }] }}>
-          <Pressable ref={openTarget} testID={`postit-open-${card.id}`} onPress={open} accessibilityLabel={`${card.title} 카드 상세`}
+          <Pressable ref={openTarget} testID={`postit-open-${card.id}`} onPress={open} accessibilityLabel={`${displayTitle} 카드 상세`}
             {...directHoldProps}
             style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingBottom: roles.padding + roles.footerHeight + roles.gap }}>
-            <Text testID={`postit-title-${card.id}`} style={roles.title} numberOfLines={2}>{card.title}</Text>
+            <Text testID={`postit-title-${card.id}`} style={roles.title} numberOfLines={2}>{displayTitle}</Text>
             <View testID={`postit-body-area-${card.id}`} style={{ marginTop: roles.gap, flex: 1, minHeight: 0, overflow: 'hidden' }}
               onLayout={(event) => setBodyLines(Math.max(1, Math.floor(event.nativeEvent.layout.height / roles.body.lineHeight)))}>
               {itemSummary.total ? <View testID={`postit-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs }}>
