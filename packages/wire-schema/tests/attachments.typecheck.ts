@@ -32,7 +32,7 @@ const unresolvedLegacyProjection: AttachmentProjection = {
   kind: "legacy",
   node_id: "node-1",
   path: "legacy/image.png",
-  name: null,
+  name: "image.png",
   mime_type: null,
   byte_size: null,
   availability: "unresolved",

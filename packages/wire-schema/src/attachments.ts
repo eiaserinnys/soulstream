@@ -36,7 +36,7 @@ export type AttachmentProjection =
       kind: "legacy";
       node_id: string;
       path: string;
-      name: string | null;
+      name: string;
       mime_type: string | null;
       byte_size: number | null;
       availability: "unresolved" | "missing";
