@@ -66,15 +66,6 @@ export interface AttachmentStore {
 }
 
 const MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024;
-const DANGEROUS_EXTENSIONS = new Set([
-  ".env",
-  ".pem",
-  ".key",
-  ".crt",
-  ".p12",
-  ".pfx",
-  ".jks",
-]);
 
 const CONTENT_TYPES: Record<string, string> = {
   ".gif": "image/gif",
@@ -123,7 +114,7 @@ export class FileAttachmentStore implements AttachmentStore {
 
   async saveFileForSession(params: SaveSessionFileParams): Promise<SavedAttachment> {
     const safeOriginalName = sanitizeOriginalFilename(params.filename);
-    this.validateFile(safeOriginalName, params.content.length);
+    this.validateFile(params.content.length);
 
     const sessionDir = this.sessionDir(params.sessionId);
     this.diagnostics.info("saveFileForSession.enter", { sessionId: params.sessionId, filename: safeOriginalName, size: params.content.length, sessionDir });
@@ -151,8 +142,8 @@ export class FileAttachmentStore implements AttachmentStore {
     validateR2DownloadUrl(params.downloadUrl);
     const uploadId = sanitizeUploadId(params.uploadId);
     const originalName = sanitizeOriginalFilename(params.filename);
-    this.validateFile(originalName, params.expectedSize, MAX_IMPORTED_ATTACHMENT_SIZE);
-    if (!Number.isSafeInteger(params.expectedSize) || params.expectedSize <= 0) {
+    this.validateFile(params.expectedSize, MAX_IMPORTED_ATTACHMENT_SIZE);
+    if (!Number.isSafeInteger(params.expectedSize) || params.expectedSize < 0) {
       throw new AttachmentError("첨부 크기가 올바르지 않습니다");
     }
     const sessionDir = this.sessionDir(params.sessionId);
@@ -180,9 +171,9 @@ export class FileAttachmentStore implements AttachmentStore {
       this.diagnostics.info("beginFileUpload.uploadOperation.enter", { uploadId: safeUploadId, sessionId: params.sessionId, pendingUploadsSize: this.pendingUploads.size });
       const safeOriginalName = sanitizeOriginalFilename(params.filename);
       if (params.expectedSize !== undefined) {
-        this.validateFile(safeOriginalName, params.expectedSize);
+        this.validateFile(params.expectedSize);
       } else {
-        this.validateFile(safeOriginalName, 0);
+        this.validateFile(0);
       }
 
       if (this.pendingUploads.has(safeUploadId)) {
@@ -233,7 +224,7 @@ export class FileAttachmentStore implements AttachmentStore {
         }
         const nextSize = state.size + params.chunk.length;
         try {
-          this.validateFile(state.filename, nextSize);
+          this.validateFile(nextSize);
           await appendFile(state.tempPath, params.chunk);
           this.diagnostics.info("appendFileUploadChunk.appended", { uploadId: state.uploadId, chunkIndex: params.chunkIndex, bytesAppended: params.chunk.length, tempPath: state.tempPath, tempStat: await this.diagnostics.statPath(state.tempPath) });
         } catch (err) {
@@ -398,7 +389,7 @@ export class FileAttachmentStore implements AttachmentStore {
     };
   }
 
-  private validateFile(filename: string, size: number, maximum = MAX_ATTACHMENT_SIZE): void {
+  private validateFile(size: number, maximum = MAX_ATTACHMENT_SIZE): void {
     if (!Number.isFinite(size) || !Number.isInteger(size) || size < 0) {
       throw new AttachmentError("파일 크기가 잘못되었습니다");
     }
@@ -406,10 +397,6 @@ export class FileAttachmentStore implements AttachmentStore {
       throw new AttachmentError(
         `파일이 너무 큽니다 (${Math.floor(size / 1024 / 1024)}MB > ${Math.floor(maximum / 1024 / 1024)}MB)`,
       );
-    }
-    const suffix = path.extname(filename).toLowerCase();
-    if (DANGEROUS_EXTENSIONS.has(suffix)) {
-      throw new AttachmentError(`보안상 허용되지 않는 파일 형식입니다: ${suffix}`);
     }
   }
 

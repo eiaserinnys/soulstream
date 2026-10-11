@@ -129,7 +129,7 @@ export class AttachmentCommands {
   }
 
   async upload(params: UploadAttachmentParams): Promise<UploadAttachmentAck> {
-    if (!params.contentB64) {
+    if (typeof params.contentB64 !== "string") {
       throw new AttachmentCommandError("INVALID_REQUEST: content_b64 누락");
     }
     if (!params.sessionId) {

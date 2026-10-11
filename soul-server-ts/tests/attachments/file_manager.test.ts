@@ -53,6 +53,33 @@ describe("FileAttachmentStore", () => {
     expect(saved.content_type).toBe("image/png");
   });
 
+  it.each([
+    { filename: "config.env", contentType: "application/octet-stream" },
+    { filename: "private.pem", contentType: "application/octet-stream" },
+    { filename: "key.key", contentType: "application/octet-stream" },
+    { filename: "cert.crt", contentType: "application/octet-stream" },
+    { filename: "store.p12", contentType: "application/octet-stream" },
+    { filename: "archive.pfx", contentType: "application/octet-stream" },
+    { filename: "store.jks", contentType: "application/octet-stream" },
+    { filename: "report.txt", contentType: "text/plain" },
+    { filename: ".env", contentType: "application/octet-stream" },
+  ])("stores opaque attachment filename $filename", async ({ filename, contentType }) => {
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+    const content = Buffer.from("opaque source bytes");
+
+    const saved = await store.saveFileForSession({
+      sessionId: "sess-opaque",
+      filename,
+      content,
+    });
+
+    expect(saved.filename).toContain(filename);
+    expect(saved.size).toBe(content.length);
+    expect(saved.content_type).toBe(contentType);
+    await expect(readFile(saved.path)).resolves.toEqual(content);
+  });
+
   it("does not overwrite same-timestamp same-name attachments", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
@@ -92,6 +119,21 @@ describe("FileAttachmentStore", () => {
       isPathUnderBase(base, "D:\\soulstream\\.local\\incoming\\..\\outside", win32),
     ).toBe(false);
     expect(isPathUnderBase(base, "D:\\evil", win32)).toBe(false);
+  });
+
+  it("rejects session traversal and reads outside the attachment base", async () => {
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    await expect(
+      store.saveFileForSession({
+        sessionId: "../outside",
+        filename: "escape.txt",
+        content: Buffer.from("outside"),
+      }),
+    ).rejects.toThrow("session_id가 첨부 디렉토리 밖을 가리킵니다");
+    await expect(store.downloadAttachment(join(dir, "..", "outside", "secret.txt")))
+      .rejects.toThrow("path가 첨부 디렉토리 하위가 아닙니다");
   });
 
   it("builds Windows-safe final filenames for legacy and streaming attachment flows", async () => {
@@ -174,7 +216,7 @@ describe("FileAttachmentStore", () => {
     await store.beginFileUpload({
       uploadId: "upload-a",
       sessionId: "sess-stream",
-      filename: "report.txt",
+      filename: "private.pem",
       expectedSize: 11,
       contentType: "text/plain",
     });
@@ -195,12 +237,59 @@ describe("FileAttachmentStore", () => {
     const saved = await store.finishFileUpload({ uploadId: "upload-a" });
 
     expect(saved).toMatchObject({
-      filename: "2026-06-01T00-45-30.123Z-report-upload-a.txt",
+      filename: "2026-06-01T00-45-30.123Z-private-upload-a.pem",
       size: 11,
       content_type: "text/plain",
     });
     await expect(readFile(saved.path, "utf8")).resolves.toBe("hello world");
     await expect(readdir(join(dir, "sess-stream"))).resolves.toEqual([saved.filename]);
+  });
+
+  it("stores empty original and zero-chunk attachments", async () => {
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    const original = await store.saveFileForSession({
+      sessionId: "sess-empty",
+      filename: "empty.txt",
+      content: Buffer.alloc(0),
+      contentType: "text/plain",
+    });
+    expect(original).toMatchObject({ size: 0, content_type: "text/plain" });
+    await expect(readFile(original.path)).resolves.toEqual(Buffer.alloc(0));
+
+    await store.beginFileUpload({
+      uploadId: "empty-upload",
+      sessionId: "sess-empty",
+      filename: "empty.txt",
+      expectedSize: 0,
+      contentType: "text/plain",
+    });
+    const streamed = await store.finishFileUpload({ uploadId: "empty-upload" });
+
+    expect(streamed).toMatchObject({ size: 0, content_type: "text/plain" });
+    await expect(readFile(streamed.path)).resolves.toEqual(Buffer.alloc(0));
+  });
+
+  it("removes a zero-size upload when a chunk adds bytes", async () => {
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    await store.beginFileUpload({
+      uploadId: "empty-mismatch",
+      sessionId: "sess-empty-mismatch",
+      filename: "empty.txt",
+      expectedSize: 0,
+    });
+    await store.appendFileUploadChunk({
+      uploadId: "empty-mismatch",
+      chunkIndex: 0,
+      chunk: Buffer.from("x"),
+    });
+
+    await expect(store.finishFileUpload({ uploadId: "empty-mismatch" }))
+      .rejects.toThrow("업로드 크기가 예상과 다릅니다 (1 != 0)");
+    await expect(readdir(join(dir, "sess-empty-mismatch"))).resolves.toEqual([]);
   });
 
   it("does not remove active streaming temp files during session cleanup", async () => {
