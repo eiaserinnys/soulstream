@@ -259,6 +259,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       style={{
         width: '100%',
         maxWidth: attachment.thumbnailFrameSize.width,
+        maxHeight: attachment.thumbnailFrameSize.height,
         alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
         aspectRatio: 1,
         minHeight: t.hitTarget.min,

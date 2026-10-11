@@ -478,6 +478,15 @@ function ReviewChatPasImageSample() {
         }} />
       </View>
     </ReviewSection>
+    <ReviewSection title="응답 · 원본 가로 이미지">
+      <View testID="review-pas-original-landscape">
+        <AssistantMessage presentation="manuscript" session={session} event={{
+          id: 'review-pas-original-landscape', type: 'assistant_message', data: {
+            text: '원본 이미지를 응답 위치에 표시합니다.\n\n![원본 가로 이미지](https://pub-236dc9dc170e487faec4c8b5e2d084c6.r2.dev/pages/the-superposition/work/2026-10-11/quantum-aircraft-entanglement-v1/aircraft-entanglement-alice-canon.png)',
+          },
+        }} />
+      </View>
+    </ReviewSection>
     <ReviewSection title="사용자 첨부 · 원문 순서">
       <View testID="review-pas-structured-user-images">
         <UserMessage presentation="manuscript" session={session} event={{

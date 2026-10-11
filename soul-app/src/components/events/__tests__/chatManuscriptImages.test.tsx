@@ -59,6 +59,7 @@ test('PAS event 8309 keeps both images at their prose positions and opens one tw
   expect(screen.getByTestId('assistant-image-gallery-1-image-0').props.style).toMatchObject({
     width: '100%',
     maxWidth: 200,
+    maxHeight: 200,
     aspectRatio: 1,
     alignSelf: 'flex-start',
   });
@@ -110,6 +111,7 @@ test('원고형 사용자 메시지는 이미지 첨부만 본문 뒤에 원래 
   expect(screen.getByTestId('user-chat-image-gallery-image-0').props.style).toMatchObject({
     width: '100%',
     maxWidth: 200,
+    maxHeight: 200,
     aspectRatio: 1,
     alignSelf: 'flex-end',
   });
@@ -186,6 +188,7 @@ test('세 장 gallery는 두 열을 유지하고 원래 viewer 전체 순서로 
     expect(screen.getByTestId('three-image-gallery-image-' + index).props.style).toMatchObject({
       width: '100%',
       maxWidth: 200,
+      maxHeight: 200,
       aspectRatio: 1,
       alignSelf: 'flex-start',
     });
