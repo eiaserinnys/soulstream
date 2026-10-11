@@ -13,7 +13,8 @@ export function PostItCardSamples({onOpen}:{onOpen(label:string):void}) {
   const cards=statusesToShow.map((status,index)=>({
     ...reviewCard,id:`postit-sample-${index}`,status:statuses[`postit-sample-${index}`]??status,
     color:colors[`postit-sample-${index}`]??CARD_COLOR_KEYS[index % CARD_COLOR_KEYS.length],
-    title:index===0||index===3?reviewTitle:`포스트잇 ${status}`,blockedKind:status==="blocked"?"question" as const:null,
+    title:index===0?"포스트잇 짧은 제목":index===3?reviewTitle:`포스트잇 ${status}`,
+    number:index===0?284:index===3?285:undefined,blockedKind:status==="blocked"?"question" as const:null,
     assigneeKind:index===1?null:reviewCard.assigneeKind,
     latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
       body:"같은 카드 원문을 라벨 없이 표시합니다. 긴 제목과 본문이 있어도 푸터 위치와 카드 크기는 유지됩니다. ".repeat(4),createdAt:reviewCard.createdAt},
