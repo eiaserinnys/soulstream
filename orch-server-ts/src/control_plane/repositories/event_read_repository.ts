@@ -1,5 +1,6 @@
 import type { SqlClient } from "../control_plane_types.js";
 import type { SessionReadPeriod } from "@soulstream/mcp-contract";
+import { projectInputAttachments } from "../../session/attachment_history_projection.js";
 import {
   readPersistentSessionHistory,
   type PersistentSessionHistoryPage,
@@ -58,10 +59,25 @@ export interface UserMessageRow {
   session_title: string | null;
   node_id: string | null;
   agent_id: string | null;
+  input_id: string | null;
+  purpose: string | null;
   text: string;
   /** 자르기 전 글자(코드포인트) 수 */
   text_chars: number;
+  attachment_ids: string[];
+  attachments: string[];
+  attachment_count: number;
 }
+
+type UserMessageSqlRow = Omit<
+  UserMessageRow,
+  "event_id" | "text_chars" | "attachment_ids" | "attachments" | "attachment_count"
+> & {
+  event_id: number | string;
+  text_chars: number | string;
+  attachment_ids: unknown;
+  attachments: unknown;
+};
 
 export class EventSearchDeadlineError extends Error {
   readonly statusCode = 504;
@@ -126,7 +142,7 @@ export class EventReadRepository {
     return rows.map(normalizeEvent);
   }
 
-  /** 기간 안의 user_message를 세션을 가로질러 created_at 순으로 읽는다. payload 전체가 아니라 본문과 발신 필드만 뽑는다. */
+  /** 기간 안의 user_message를 세션을 가로질러 created_at 순으로 읽는다. payload 전체가 아니라 본문, 발신, 첨부 필드만 뽑는다. */
   async listUserMessages(query: UserMessageQuery): Promise<{ rows: UserMessageRow[]; total: number }> {
     const excluded = [...query.excludedSources];
     // 기간 후보는 idx_events_event_type_cover만으로 좁히고(created_at은 INCLUDE 컬럼이라 힙을 읽지 않는다),
@@ -141,7 +157,31 @@ export class EventReadRepository {
         SELECT p.session_id, p.id, p.created_at, e.payload
         FROM picked p
         JOIN events e ON e.session_id = p.session_id AND e.id = p.id
-        WHERE coalesce(e.payload->>'text', '') <> ''
+        WHERE (
+            coalesce(e.payload->>'text', '') <> ''
+            OR EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(e.payload->'attachment_ids') = 'array'
+                  THEN e.payload->'attachment_ids'
+                  ELSE '[]'::jsonb
+                END
+              ) AS attachment(value)
+              WHERE jsonb_typeof(attachment.value) = 'string'
+                AND attachment.value #>> '{}' <> ''
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(e.payload->'attachments') = 'array'
+                  THEN e.payload->'attachments'
+                  ELSE '[]'::jsonb
+                END
+              ) AS attachment(value)
+              WHERE jsonb_typeof(attachment.value) = 'string'
+                AND attachment.value #>> '{}' <> ''
+            )
+          )
           AND CASE
             WHEN ${query.sources as unknown as string[] | null}::text[] IS NOT NULL
               THEN e.payload->'caller_info'->>'source' = ANY(${query.sources as unknown as string[] | null}::text[])
@@ -153,7 +193,7 @@ export class EventReadRepository {
     const totals = await this.sql<Array<{ total: string | number }>>`
       ${matched} SELECT count(*) AS total FROM matched
     `;
-    const rows = await this.sql<UserMessageRow[]>`
+    const rawRows = await this.sql<UserMessageSqlRow[]>`
       ${matched}
       SELECT
         m.session_id,
@@ -164,21 +204,31 @@ export class EventReadRepository {
         m.payload->'caller_info'->>'user_id' AS user_id,
         m.payload->'caller_info'->>'display_name' AS display_name,
         s.display_name AS session_title,
-        s.node_id,
+        CASE
+          WHEN jsonb_typeof(m.payload->'node_id') = 'string' AND m.payload->>'node_id' <> ''
+            THEN m.payload->>'node_id'
+          ELSE s.node_id
+        END AS node_id,
         s.agent_id,
-        left(m.payload->>'text', ${query.maxTextChars}) AS text,
-        char_length(m.payload->>'text') AS text_chars
+        CASE WHEN jsonb_typeof(m.payload->'input_id') = 'string' THEN m.payload->>'input_id' END AS input_id,
+        CASE WHEN jsonb_typeof(m.payload->'purpose') = 'string' THEN m.payload->>'purpose' END AS purpose,
+        left(coalesce(m.payload->>'text', ''), ${query.maxTextChars}) AS text,
+        char_length(coalesce(m.payload->>'text', '')) AS text_chars,
+        m.payload->'attachment_ids' AS attachment_ids,
+        m.payload->'attachments' AS attachments
       FROM matched m
       LEFT JOIN sessions s ON s.session_id = m.session_id
       ORDER BY m.created_at, m.session_id, m.id
       LIMIT ${query.limit} OFFSET ${query.offset}
     `;
+    const rows: UserMessageRow[] = rawRows.map(({ attachment_ids, attachments, ...row }) => ({
+      ...row,
+      ...projectInputAttachments({ attachment_ids, attachments }),
+      event_id: Number(row.event_id),
+      text_chars: Number(row.text_chars),
+    }));
     return {
-      rows: rows.map((row) => ({
-        ...row,
-        event_id: Number(row.event_id),
-        text_chars: Number(row.text_chars),
-      })),
+      rows,
       total: Number(totals[0]?.total ?? 0),
     };
   }

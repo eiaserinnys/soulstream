@@ -54,7 +54,7 @@ describe("projectPersistentSessionHistoryEntry", () => {
       source: "agent",
       agent_id: "legacy-agent",
       attachment_ids: ["attachment-1", "attachment-2", "attachment-1", "", 17],
-      attachments: ["/legacy/path-a", "/legacy/path-a", "/legacy/path-b", { path: "/hidden/object-path" }, ""],
+      attachments: ["/legacy/path-a", "/legacy/path-a", "/legacy/path-b", { path: "/hidden/object-path" }, "", " "],
       node_id: "source-worker",
       context: [{ text: "private context" }],
     }), 2000);
@@ -68,7 +68,7 @@ describe("projectPersistentSessionHistoryEntry", () => {
       },
       purpose: "cache_keepalive",
       attachment_ids: ["attachment-1", "attachment-2"],
-      attachments: ["/legacy/path-a", "/legacy/path-b"],
+      attachments: ["/legacy/path-a", "/legacy/path-b", " "],
       attachment_count: 2,
       node_id: "source-worker",
     });
