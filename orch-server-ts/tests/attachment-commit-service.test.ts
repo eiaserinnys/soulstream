@@ -105,11 +105,10 @@ function createHarness(initialRow: OwnedAttachmentUpload | null = null) {
     insertLegacyAlias: vi.fn(async () => null),
   };
   const binding = { storage, identity: "binding-v1", location };
-  const resolveAttachmentBinding = vi.fn(async () => binding);
+  const resolveAttachmentBinding = vi.fn(async (): Promise<typeof binding | null> => binding);
   const service = createOwnedAttachmentCommitService({
     repository,
     resolveAttachmentBinding,
-    uploadIdGenerator: () => "attachment-b",
     now: () => new Date(now),
   });
   return { service, repository, storage, binding, resolveAttachmentBinding, events, body, get row() { return currentRow; }, set row(value) { currentRow = value; } };
@@ -174,6 +173,34 @@ describe("owned attachment commit service", () => {
     });
     expect(h.storage.putObject).not.toHaveBeenCalled();
     expect(h.storage.openObject).not.toHaveBeenCalled();
+  });
+
+  it("verifies and commits an identical object after conditional PUT reports it already exists", async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    const h = createHarness();
+    h.storage.putObject.mockRejectedValueOnce(new R2StorageRequestError("put object", 412));
+
+    await expect(h.service.putSmall({ spec: spec(), body: bytes })).resolves.toMatchObject({
+      attachmentId: "attachment-a",
+      checksumSha256: sha256(bytes),
+    });
+
+    expect(h.storage.openObject).toHaveBeenCalledOnce();
+    expect(h.repository.commitVerified).toHaveBeenCalledOnce();
+  });
+
+  it("preserves an existing different object after conditional PUT reports a conflict", async () => {
+    const h = createHarness();
+    h.storage.putObject.mockRejectedValueOnce(new R2StorageRequestError("put object", 412));
+    h.storage.openObject.mockResolvedValueOnce(new Response(new Uint8Array([3, 2, 1]), {
+      status: 200,
+      headers: { "content-length": "3" },
+    }));
+
+    await expect(h.service.putSmall({ spec: spec(), body: new Uint8Array([1, 2, 3]) }))
+      .rejects.toMatchObject({ statusCode: 409 });
+
+    expect(h.repository.commitVerified).not.toHaveBeenCalled();
   });
 
   it("rejects an ID already owned by a different caller", async () => {
@@ -337,6 +364,17 @@ describe("owned attachment commit service", () => {
     h.resolveAttachmentBinding
       .mockResolvedValueOnce(h.binding)
       .mockResolvedValueOnce({ ...h.binding, identity: "binding-v2" });
+
+    await expect(h.service.putSmall({ spec: spec(), body: new Uint8Array([1, 2, 3]) }))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(h.repository.commitVerified).not.toHaveBeenCalled();
+  });
+
+  it("reports a conflict when the attachment binding disappears after the verified GET", async () => {
+    const h = createHarness();
+    h.resolveAttachmentBinding
+      .mockResolvedValueOnce(h.binding)
+      .mockResolvedValueOnce(null);
 
     await expect(h.service.putSmall({ spec: spec(), body: new Uint8Array([1, 2, 3]) }))
       .rejects.toMatchObject({ statusCode: 409 });

@@ -162,6 +162,7 @@ export function createR2BoardAssetStorage(
         headers: {
           "content-type": input.mimeType,
           "content-length": String(input.byteSize),
+          "if-none-match": "*",
         },
         body,
         payloadSha256: checksumSha256,
@@ -224,7 +225,6 @@ type SignInput = {
   readonly duplex?: "half";
   readonly signal?: AbortSignal;
 };
-
 type PresignInput = SignInput & {
   readonly expiresSeconds: number;
 };

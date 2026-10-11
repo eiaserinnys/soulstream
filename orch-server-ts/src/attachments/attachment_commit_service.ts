@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type {
   LiveBoardAssetCompletedPart,
   LiveBoardAssetMultipartUpload,
@@ -46,7 +46,6 @@ export function createOwnedAttachmentCommitService(
   options: CreateOwnedAttachmentCommitServiceOptions,
 ): OwnedAttachmentCommitService {
   const now = options.now ?? (() => new Date());
-  const uploadIdGenerator = options.uploadIdGenerator ?? randomUUID;
 
   return {
     async putSmall(input) {
@@ -67,6 +66,7 @@ export function createOwnedAttachmentCommitService(
       }
       if (existing.multipartUploadId !== null) throw conflict(prepared.spec.attachmentId);
 
+      let objectAlreadyPresent = false;
       try {
         await binding.storage.putObject({
           storageKey,
@@ -77,7 +77,11 @@ export function createOwnedAttachmentCommitService(
           signal: input.signal,
         });
       } catch (error) {
-        throw mapStorageError(error, prepared.spec.attachmentId);
+        if (error instanceof R2StorageRequestError && error.operation === "put object" && error.status === 412) {
+          objectAlreadyPresent = true;
+        } else {
+          throw mapStorageError(error, prepared.spec.attachmentId);
+        }
       }
 
       let verified: VerifiedObject;
@@ -89,9 +93,12 @@ export function createOwnedAttachmentCommitService(
           signal: input.signal,
         });
       } catch (error) {
+        if (objectAlreadyPresent && error instanceof R2ObjectIntegrityError) throw conflict(prepared.spec.attachmentId);
         throw mapStorageError(error, prepared.spec.attachmentId);
       }
-      if (verified.checksumSha256 !== sourceChecksum) throw checksumMismatch(prepared.spec.attachmentId);
+      if (verified.checksumSha256 !== sourceChecksum) {
+        throw objectAlreadyPresent ? conflict(prepared.spec.attachmentId) : checksumMismatch(prepared.spec.attachmentId);
+      }
       await assertBindingUnchanged(options, binding, prepared.spec.attachmentId);
       return commitVerified(options.repository, existing, prepared.spec.owner, verified);
     },
@@ -400,8 +407,8 @@ async function assertBindingUnchanged(
   expected: AttachmentStorageBinding,
   attachmentId: string,
 ): Promise<void> {
-  const current = await requireAttachmentBinding(options);
-  if (current.identity !== expected.identity
+  const current = await options.resolveAttachmentBinding();
+  if (current === null || current.identity !== expected.identity
     || current.location.endpoint !== expected.location.endpoint
     || current.location.bucket !== expected.location.bucket) {
     throw conflict(attachmentId);

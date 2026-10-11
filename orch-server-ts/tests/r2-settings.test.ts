@@ -68,8 +68,9 @@ describe("R2 object upload signing", () => {
       expect(request.body).toEqual(Buffer.from(bytes));
       expect(request.headers["content-length"]).toBe(String(bytes.length));
       expect(request.headers["content-type"]).toBe("application/octet-stream");
+      expect(request.headers["if-none-match"]).toBe("*");
       expect(request.headers["x-amz-content-sha256"]).toBe(checksumSha256);
-      expect(request.headers.authorization).toContain("SignedHeaders=content-length;content-type;host;x-amz-content-sha256;x-amz-date");
+      expect(request.headers.authorization).toContain("SignedHeaders=content-length;content-type;host;if-none-match;x-amz-content-sha256;x-amz-date");
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

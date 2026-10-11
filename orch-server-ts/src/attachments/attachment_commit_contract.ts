@@ -160,7 +160,6 @@ export type AttachmentStorageBinding = NonNullable<
 export type CreateOwnedAttachmentCommitServiceOptions = {
   readonly repository: AttachmentCommitRepository;
   readonly resolveAttachmentBinding: () => Promise<AttachmentStorageBinding | null>;
-  readonly uploadIdGenerator?: () => string;
   readonly now?: () => Date;
 };
 
