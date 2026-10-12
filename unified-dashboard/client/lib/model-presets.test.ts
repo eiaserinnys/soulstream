@@ -24,6 +24,30 @@ describe("model preset presentation", () => {
     expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
     expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
   });
+
+  it("shows and blocks an actually rejected model while keeping a 0% model selectable", () => {
+    const rejected = {
+      ...availablePreset,
+      id: "preset-rejected",
+      available: false,
+      reason: "limit_rejected",
+      reason_label: "5시간 한도 거부 중",
+      resets_at: "2030-01-02T03:04:00.000Z",
+    };
+    const exhausted = {
+      ...availablePreset,
+      id: "preset-exhausted",
+      reason: "quota_exhausted",
+      reason_label: "7일 사용량 제한",
+      resets_at: "2030-01-02T03:04:00.000Z",
+    };
+
+    expect(modelPresetOptionLabel(rejected, () => "12:20"))
+      .toBe("프리셋 A (5시간 한도 거부 중) · 12:20 해제");
+    expect(modelPresetSelectionState(rejected.id, [rejected], true).valid).toBe(false);
+    expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
+    expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

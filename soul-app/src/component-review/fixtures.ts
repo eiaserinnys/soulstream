@@ -255,6 +255,8 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
         reason: null, reason_label: null, resets_at: null, usage_warning: false },
       { id: 'public-exhausted-model', label: '사용량 소진 예시 모델', backend: 'codex', available: true,
         reason: 'quota_exhausted', reason_label: '7일 사용량 제한', resets_at: null, usage_warning: false },
+      { id: 'public-rejected-model', label: '거부 중 예시 모델', backend: 'codex', available: false,
+        reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: '2030-01-02T03:04:00.000Z', usage_warning: false },
       { id: 'public-unavailable-model', label: '사용 불가 예시 모델', backend: 'codex', available: false,
         reason: 'limit', reason_label: '공개 예시: 사용량 한도', resets_at: null, usage_warning: false },
     ] }),

@@ -103,10 +103,17 @@ test.each([null, 'quota_exhausted'])('오늘 전송은 선택한 폴더·노드�
 test.each([null, 'quota_exhausted'])('실행 시트는 세 목록을 독립 선택하고 노드 변경 시 같은 에이전트를 유지한다: %s', async reason => {
   const api = { listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-1' }, { nodeId: 'node-2' }] }),
     listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'roselin', name: '로젤린', default_preset: 'sol' }, { id: 'other', name: '다른 에이전트', default_preset: 'luna' }] }),
-    listModelPresets: jest.fn().mockImplementation((id) => Promise.resolve({ model_presets: [{ id: 'sol', label: 'Sol', available: true, reason }, { id: id === 'node-1' ? 'luna' : 'other-model', label: id === 'node-1' ? 'Luna' : '다른 모델', available: true, reason }] })) };
+    listModelPresets: jest.fn().mockImplementation((id) => Promise.resolve({ model_presets: [
+      { id: 'sol', label: 'Sol', available: true, reason },
+      { id: id === 'node-1' ? 'luna' : 'other-model', label: id === 'node-1' ? 'Luna' : '다른 모델', available: true, reason },
+      { id: 'rejected', label: '거부 중 모델', available: false, reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: '2030-01-02T03:04:00.000Z' },
+    ] })) };
   const save = jest.fn();
   const screen = render(<ExecutionSelectionSheet api={api as any} value={{ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol' }} onSave={save} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByLabelText('모델 Luna')).toBeTruthy());
+  expect(await screen.findByText(/^5시간 한도 거부 중 · \d{2}:\d{2} 해제$/)).toBeTruthy();
+  expect(screen.getByLabelText('모델 거부 중 모델').props.accessibilityState.disabled).toBe(true);
+  expect(screen.getByLabelText('모델 Sol').props.accessibilityState.disabled).toBe(false);
   for (const section of ['execution-agents', 'execution-nodes', 'execution-models']) expect(screen.getByTestId(section)).toBeTruthy();
   for (const id of ['execution-agent-roselin', 'execution-node-node-1', 'execution-model-sol']) {
     expect(StyleSheet.flatten(screen.getByTestId(`${id}-visual`).props.style).height).toBe(32);

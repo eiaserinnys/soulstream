@@ -4,6 +4,7 @@ import {
   buildModelPresetActionSheet,
   buildNodeActionSheet,
   formatModelPresetLabel,
+  formatModelPresetUnavailableReason,
   resolveAgentActionSheetSelection,
   resolveFolderActionSheetSelection,
   resolveModelPresetActionSheetSelection,
@@ -186,6 +187,30 @@ describe('newSessionSelection', () => {
       .toEqual({ cancelled: true });
     expect(resolveModelPresetActionSheetSelection(0, presets, sheet.cancelButtonIndex))
       .toEqual({ cancelled: false, modelPresetId: null });
+  });
+
+  test('거부 중 사유에는 해제 시각을 붙이고 action sheet label 형식은 유지한다', () => {
+    const preset = {
+      id: 'rejected',
+      label: '거부 중 모델',
+      backend: 'codex',
+      available: false,
+      reason: 'limit_rejected',
+      reason_label: '5시간 한도 거부 중',
+      resets_at: '2030-01-02T03:04:00.000Z',
+      usage_warning: false,
+    };
+    const unavailableReason = formatModelPresetUnavailableReason(preset);
+
+    expect(unavailableReason).toMatch(/^5시간 한도 거부 중 · \d{2}:\d{2} 해제$/);
+    expect(formatModelPresetLabel(preset, false)).toBe(
+      `거부 중 모델 (5시간 한도 거부 중)${unavailableReason!.slice('5시간 한도 거부 중'.length)}`,
+    );
+    expect(formatModelPresetLabel({
+      ...preset,
+      available: true,
+      reason: 'quota_exhausted',
+    }, false)).toBe('거부 중 모델');
   });
 
   test('선택 preset이 노드에 없으면 대체하지 않고 다시 선택하도록 표시한다', () => {

@@ -5,6 +5,7 @@ import type { CardAssignment } from '../../api/cardTypes';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useNewSessionSelection } from '../sheets/useNewSessionSelection';
+import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
 import { useTokens } from '../../theme';
 import { AppModalSurface } from '../AppModalSurface';
 import { GlassButton } from '../GlassSurface';
@@ -40,7 +41,7 @@ export function ExecutionSelectionSheet({ api, value, onSave, onClose }: {
       <View testID="execution-models" style={styles.section}><PlannerSectionHeader title="모델" />
         <GroupedGlassSheet>{selection.modelPresets.map((model) => <GroupedGlassRow compact testID={`execution-model-${model.id}`} key={model.id} accessibilityLabel={`모델 ${model.label}`} selected={selection.effectiveModelPresetId === model.id}
           disabled={!model.available} style={styles.padded} onPress={() => selection.setSelectedModelPresetId(model.id)}><Text style={[styles.body, model.reason === 'quota_exhausted' && { color: t.colors.errorText }]}>{model.label}</Text>
-          {!model.available && model.reason_label ? <Text style={styles.meta}>{model.reason_label}</Text> : null}</GroupedGlassRow>)}</GroupedGlassSheet>
+          {!model.available && model.reason_label ? <Text style={styles.meta}>{formatModelPresetUnavailableReason(model)}</Text> : null}</GroupedGlassRow>)}</GroupedGlassSheet>
       </View>
       <View style={styles.actions}><GlassButton onPress={onClose}><Text style={styles.body}>닫기</Text></GlassButton>
         <GlassButton accessibilityLabel="실행 대상 확인" disabled={!selection.agentId || !selection.effectiveNodeId || selection.modelPresetSelectionInvalid}

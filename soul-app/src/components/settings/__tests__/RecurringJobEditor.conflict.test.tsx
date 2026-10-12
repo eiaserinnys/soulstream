@@ -17,6 +17,30 @@ const job = {
   created_at: '2026-09-21T00:00:00.000Z', updated_at: '2026-09-21T00:00:00.000Z',
 };
 
+test('shows a rejected model reset time and preserves it when saving another job field', async () => {
+  const rejectedJob = { ...job, model_preset: 'rejected-model' };
+  const api = {
+    listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-a' }] }),
+    listRecurringJobs: jest.fn().mockResolvedValue({ jobs: [rejectedJob] }),
+    listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'agent-a', name: '에이전트 A' }] }),
+    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [{
+      id: 'rejected-model', label: '거부 중 모델', backend: 'codex', available: false,
+      reason: 'limit_rejected', reason_label: '5시간 한도 거부 중',
+      resets_at: '2030-01-02T03:04:00.000Z', usage_warning: false,
+    }] }),
+    updateRecurringJob: jest.fn().mockResolvedValue({ job: { ...rejectedJob, name: '이름 변경' } }),
+  };
+  jest.mocked(createApiClient).mockReturnValue(api as any);
+  const screen = render(<RecurringJobEditor serverUrl="https://soul.test" jobId="job-1" onDone={jest.fn()} onOpenHistory={jest.fn()}/>);
+  await waitFor(() => expect(screen.getByLabelText('작업 이름').props.value).toBe(job.name));
+  expect(await screen.findByText(/^5시간 한도 거부 중 · \d{2}:\d{2} 해제$/)).toBeTruthy();
+  fireEvent.changeText(screen.getByLabelText('작업 이름'), '이름 변경');
+  fireEvent.press(screen.getByText('저장'));
+  await waitFor(() => expect(api.updateRecurringJob).toHaveBeenCalledWith(
+    'job-1', expect.objectContaining({ name: '이름 변경', model_preset: 'rejected-model' }),
+  ));
+});
+
 test('version conflict reloads the durable version while preserving the mobile draft', async () => {
   const api = {
     listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-a' }] }),

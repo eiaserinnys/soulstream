@@ -208,9 +208,15 @@ export function formatModelPresetLabel(
   includeUsageWarning = true,
 ): string {
   if (preset.reason === 'quota_exhausted') return preset.label;
+  const unavailableReason = preset.reason === 'limit_rejected'
+    ? formatModelPresetUnavailableReason(preset)
+    : null;
   const availability = !preset.available && preset.reason_label
     ? `${preset.label} (${preset.reason_label})`
     : preset.label;
+  if (unavailableReason && preset.reason_label) {
+    return `${availability}${unavailableReason.slice(preset.reason_label.length)}`;
+  }
   const resetTime = preset.resets_at
     ? formatLocalResetTime(preset.resets_at)
     : null;
@@ -219,6 +225,19 @@ export function formatModelPresetLabel(
     return `${availability} (사용량 확인 지연)`;
   }
   return availability;
+}
+
+export function formatModelPresetUnavailableReason(
+  preset: ModelPresetAvailability,
+): string | null {
+  if (!preset.reason_label) return null;
+  if (preset.reason !== 'limit_rejected') return preset.reason_label;
+  const resetTime = preset.resets_at
+    ? formatLocalResetTime(preset.resets_at)
+    : null;
+  return resetTime
+    ? `${preset.reason_label} · ${resetTime} 해제`
+    : preset.reason_label;
 }
 
 function formatLocalResetTime(value: string): string | null {
