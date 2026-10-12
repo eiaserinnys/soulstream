@@ -37,6 +37,7 @@ describe("markdown surface mount inventory", () => {
   it("enumerates every shared MarkdownContent surface", () => {
     expect(inventoryMounts("MarkdownContent")).toEqual([
       "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
+      "packages/soul-ui/src/components/chat-ui/ChatUiMessage.tsx",
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
@@ -64,6 +65,7 @@ describe("markdown surface mount inventory", () => {
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ];
     const boundedSurfaces = [
+      "packages/soul-ui/src/components/chat-ui/ChatUiMessage.tsx",
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
