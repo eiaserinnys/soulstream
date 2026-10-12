@@ -69,6 +69,7 @@ export function CardItemCheckbox(props: CardItemCheckboxProps) {
     justifyContent: 'center' as const,
   };
   const labelStyle = {
+    flexShrink: 1,
     fontSize: t.chatFontSize.body,
     lineHeight: t.chatFontSize.body * t.lineHeightRatio,
     color: t.colors.textPrimary,
