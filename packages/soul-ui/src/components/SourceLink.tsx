@@ -3,7 +3,7 @@ import { cn } from "../lib/cn";
 import { useInternalLinkClick } from "./InternalLinkProvider";
 
 const sourceLinkClassName =
-  "inline-block w-fit rounded-lg text-accent-blue hover:underline outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
+  "inline-block w-fit max-w-full rounded-lg text-accent-blue hover:underline outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 export function SourceLink({
   className,

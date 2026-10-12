@@ -23,6 +23,9 @@ const PAS_REVIEW_AGENT_INPUT_ID = "pas251-projection-agent-report";
 const PAS_REVIEW_HUMAN_INPUT_ID = "pas251-projection-human-image";
 const PAS_REVIEW_ASSISTANT_RESPONSE = "PAS 응답: 첨부 이미지를 확인했습니다.";
 
+export const DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full max-w-[520px] bg-background";
+export const MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden";
+
 function makeMessage(role: ChatMessage["role"], id: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id,
@@ -250,7 +253,7 @@ function ManuscriptColumn() {
       mode: "resume", reason: "전달을 확인하지 못했습니다",
     } : null);
   };
-  return <div className="w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden">
+  return <div className={MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME}>
     <div className="flex flex-wrap gap-2 pb-3 text-xs text-muted-foreground">
       <button onClick={() => showPending(null)}>원고형</button>
       <button onClick={() => showPending("sending")}>전송 중</button>
@@ -287,7 +290,7 @@ export function PersistentManuscriptChatReviewSample() {
     [tree],
   );
   return <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
-    <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
+    <div className={DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME} style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
       <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
       {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
       {rawReviewMessages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId={REVIEW_SESSION} />)}

@@ -46,9 +46,10 @@ export const AssistantMessage = memo(function AssistantMessage({
   const hasPortrait = isLlm ? false : !!agentPortraitUrl;
   const bubbleClassName = manuscript
     ? "w-full min-w-0 text-foreground"
-    : contentLayout === "structured"
-      ? "w-full min-w-0 rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"
-      : "max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]";
+    : cn(
+      contentLayout === "structured" ? "w-full min-w-0 max-w-[86%]" : "max-w-[86%]",
+      "rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]",
+    );
 
   // 토큰 사용량 (assistant_message 노드에 usage가 있을 때 인라인 표시)
   const tokenInfo = msg.usage

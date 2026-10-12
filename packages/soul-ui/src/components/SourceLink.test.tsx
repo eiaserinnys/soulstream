@@ -36,10 +36,11 @@ describe("SourceLink", () => {
     expect(anchor.hasAttribute("node")).toBe(false);
     expect(anchor.className).toContain("inline-block");
     expect(anchor.className).toContain("w-fit");
+    expect(anchor.className).toContain("max-w-full");
     expect(anchor.className).toContain("outline-none");
     expect(anchor.className).toContain("focus-visible:ring-2");
     expect(anchor.className).toContain("focus-visible:ring-offset-1");
-    expect(anchor.className).not.toContain("w-full");
+    expect(anchor.classList.contains("w-full")).toBe(false);
   });
 
   it("routes internal source clicks through useInternalLinkClick", async () => {

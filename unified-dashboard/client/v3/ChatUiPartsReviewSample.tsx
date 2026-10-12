@@ -8,7 +8,9 @@ import { ChatInputAccessories } from "@seosoyoung/soul-ui/components/chat/ChatIn
 import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
+import { useTextareaAutoHeight } from "@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
+import { DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME, MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME } from "./PersistentManuscriptChatReviewSample";
 
 function assistantMessage(id: string, content: string): ChatMessage {
   return {
@@ -40,7 +42,7 @@ export function ChatUiMessageReviewSample() {
 
   return (
     <div className="space-y-4">
-      <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle}>
+      <div className={DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME} style={chatTypographyStyle}>
         <div className="space-y-2">
           <AssistantMessage
             msg={assistantMessage("chat-ui-text", "일반 채팅의 기존 말풍선 폭입니다.")}
@@ -54,19 +56,23 @@ export function ChatUiMessageReviewSample() {
           </AssistantMessage>
         </div>
       </div>
-      <div className="space-y-2">
-        <AssistantMessage
-          msg={assistantMessage("chat-ui-pas-text", "PAS 원고형의 기존 폭입니다.")}
-          presentation="manuscript"
-          contentLayout="text"
-        />
-        <AssistantMessage
-          msg={assistantMessage("chat-ui-pas-structured", "")}
-          presentation="manuscript"
-          contentLayout="structured"
-        >
-          <StructuredReply />
-        </AssistantMessage>
+      <div className={MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME}>
+        <div data-slot="chat-root" data-chat-presentation="manuscript" style={chatTypographyStyle}>
+          <div className="space-y-2">
+            <AssistantMessage
+              msg={assistantMessage("chat-ui-pas-text", "PAS 원고형의 기존 폭입니다.")}
+              presentation="manuscript"
+              contentLayout="text"
+            />
+            <AssistantMessage
+              msg={assistantMessage("chat-ui-pas-structured", "")}
+              presentation="manuscript"
+              contentLayout="structured"
+            >
+              <StructuredReply />
+            </AssistantMessage>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -75,12 +81,14 @@ export function ChatUiMessageReviewSample() {
 export function ChatInputAccessoriesReviewSample() {
   const [draft, setDraft] = useState("기존 채팅 초안");
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const { chatFontSize, chatTypographyStyle } = useChatTypography();
+  useTextareaAutoHeight(editorRef, draft, chatFontSize);
   const file = useMemo(
     () => new File(["검수 샘플"], "very-long-attachment-name-for-narrow-screen.pdf", { type: "application/pdf" }),
     [],
   );
   const attachments = (
-    <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
+    <div className="flex min-w-0 gap-2 overflow-x-auto">
       <FileAttachmentPreview file={file} status="done" onRemove={() => {}} />
     </div>
   );
@@ -91,7 +99,7 @@ export function ChatInputAccessoriesReviewSample() {
   );
 
   return (
-    <div className="w-full min-w-0 space-y-2">
+    <div className={DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME} style={chatTypographyStyle}>
       <ChatInputAccessories attachments={attachments} action={undoButton} />
       <ChatInputAccessories action={undoButton} />
       <ChatInputComposer>

@@ -11,6 +11,10 @@ describe("ChatInputAccessories", () => {
     }));
 
     expect(html).toContain('data-slot="chat-input-accessories"');
+    const row = html.match(/<div(?=[^>]*data-slot="chat-input-accessories")[^>]*>/)?.[0];
+    const rowClass = row?.match(/\bclass="([^"]*)"/)?.[1];
+    expect(rowClass).toContain("mb-2");
+    expect(rowClass).not.toContain("pb-2");
     expect(html).toContain('data-slot="chat-input-accessories-attachments"');
     expect(html).toContain("min-w-0 flex-1");
     expect(html).toContain('data-slot="chat-input-accessories-action"');

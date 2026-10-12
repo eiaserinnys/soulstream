@@ -34,12 +34,12 @@ describe("AssistantMessage content layout", () => {
     expect(className).not.toContain("w-full");
   });
 
-  it("lets structured replies fill the existing normal-chat width", () => {
+  it("lets structured replies fill the existing width while retaining the text bubble cap", () => {
     const className = renderBubble({ contentLayout: "structured" });
 
     expect(className).toContain("w-full");
     expect(className).toContain("min-w-0");
-    expect(className).not.toContain("max-w-[86%]");
+    expect(className).toContain("max-w-[86%]");
   });
 
   it("leaves manuscript width unchanged for structured replies", () => {

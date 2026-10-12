@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+/** Owns the gap after this row; attachment content does not add bottom spacing. */
 export function ChatInputAccessories({
   attachments,
   action,
@@ -8,7 +9,7 @@ export function ChatInputAccessories({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex w-full min-w-0 items-center gap-2" data-slot="chat-input-accessories">
+    <div className="mb-2 flex w-full min-w-0 items-center gap-2" data-slot="chat-input-accessories">
       <div className="min-w-0 flex-1" data-slot="chat-input-accessories-attachments">
         {attachments}
       </div>
