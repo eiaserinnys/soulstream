@@ -381,10 +381,12 @@ export async function createLiveProductionApplication(
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
   let recurringJobScheduler: RecurringJobScheduler | undefined;
   let cardDispatcher: CardDispatcher | undefined;
+  let usageSummaryService: UsageSummaryService | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
     eventIngress: eventIngressCommitter,
+    onCommittedProviderEvent: (input) => usageSummaryService!.observeProviderExecution(input),
     releaseActivationReceipts: new ReleaseActivationReceiptRepository(sqlResolver),
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
     findRescuableSessionOwnerNodeId:
@@ -511,7 +513,7 @@ export async function createLiveProductionApplication(
     configProvider,
     systemPortraitAssets: createSystemPortraitAssets(),
   };
-  const usageSummaryService = new UsageSummaryService({
+  usageSummaryService = new UsageSummaryService({
     registry: runtimeServices.registry,
     bridge: runtimeServices.sessionBridge,
     pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,

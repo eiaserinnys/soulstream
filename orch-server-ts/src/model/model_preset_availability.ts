@@ -7,6 +7,10 @@ import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
 } from "../usage/usage_summary_service.js";
+import type {
+  ProviderLimitProvider,
+  ProviderLimitRejection,
+} from "../usage/provider_limit_rejection.js";
 import {
   resolveWeeklyHeadroom,
   type WeeklyHeadroom,
@@ -35,6 +39,7 @@ export type ModelPresetAvailability = {
     | "env_unresolved"
     | "not_authenticated"
     | "quota_exhausted"
+    | "limit_rejected"
     | null;
   readonly reason_label: string | null;
   readonly resets_at: string | null;
@@ -54,6 +59,7 @@ export type ModelPresetAvailabilityRegistry = {
 
 export type ModelPresetUsageSummary = {
   getSummary(): UsageSummarySnapshot;
+  getLimitRejection(nodeId: string, provider: ProviderLimitProvider): ProviderLimitRejection | null;
 };
 
 export class ModelPresetAvailabilityError extends Error {
@@ -83,9 +89,15 @@ export class ModelPresetAvailabilityService {
     const node = this.registry.getConnectedNode(nodeId);
     if (!node) return undefined;
     const summary = this.usageSummary.getSummary();
-    return staticPresets(node).map((preset) =>
-      resolvePresetAvailability(nodeId, preset, summary, this.now()),
-    );
+    return staticPresets(node).map((preset) => resolvePresetAvailability(
+      nodeId,
+      preset,
+      summary,
+      this.now(),
+      preset.usage_provider === null
+        ? null
+        : this.usageSummary.getLimitRejection(nodeId, preset.usage_provider),
+    ));
   }
 
   /** Validated node advertisement, independent of permissive manual usage fallback. */
@@ -113,17 +125,29 @@ export class ModelPresetAvailabilityService {
       preset,
       this.usageSummary.getSummary(),
       this.now(),
+      preset.usage_provider === null
+        ? null
+        : this.usageSummary.getLimitRejection(nodeId, preset.usage_provider),
     );
   }
 
-  requireAvailable(nodeId: string, presetId: string): ModelPresetAvailability {
+  requireAvailable(
+    nodeId: string,
+    presetId: string,
+    options?: { allowLimitRejected?: boolean },
+  ): ModelPresetAvailability {
     const availability = this.resolveForNode(nodeId, presetId);
-    if (availability.available) return availability;
+    if (availability.available || (
+      options?.allowLimitRejected === true && availability.reason === "limit_rejected"
+    )) return availability;
+    const message = availability.reason === "limit_rejected"
+      ? `Model preset '${presetId}' is unavailable on node ${nodeId}: ${availability.reason_label} (resets_at: ${availability.resets_at})`
+      : `Model preset '${presetId}' is unavailable on node ${nodeId}: ${
+          availability.reason_label ?? availability.reason ?? "unavailable"
+        }`;
     throw new ModelPresetAvailabilityError(
       "MODEL_PRESET_UNAVAILABLE",
-      `Model preset '${presetId}' is unavailable on node ${nodeId}: ${
-        availability.reason_label ?? availability.reason ?? "unavailable"
-      }`,
+      message,
     );
   }
 }
@@ -133,6 +157,7 @@ export function resolvePresetAvailability(
   preset: StaticModelPreset,
   summary: UsageSummarySnapshot,
   now: Date,
+  rejection: ProviderLimitRejection | null = null,
 ): ModelPresetAvailability {
   const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
   const provider = preset.usage_provider === null
@@ -162,13 +187,10 @@ export function resolvePresetAvailability(
   }
   if (preset.usage_provider === null) return availablePreset(base, false);
 
-  if (!nodeUsage || nodeUsage.stale || provider === null) {
-    return availablePreset(base, true);
-  }
-  if (provider.status === "error") {
-    return availablePreset(base, true);
-  }
-  if (provider.status === "not_configured") {
+  const freshProvider = nodeUsage !== undefined && !nodeUsage.stale
+    ? provider
+    : null;
+  if (freshProvider?.status === "not_configured") {
     return {
       ...base,
       available: false,
@@ -177,6 +199,24 @@ export function resolvePresetAvailability(
       resets_at: null,
       usage_warning: false,
     };
+  }
+
+  if (rejection !== null && Date.parse(rejection.rejectedUntil) > now.getTime()) {
+    return {
+      ...base,
+      available: false,
+      reason: "limit_rejected",
+      reason_label: rejectionReasonLabel(rejection.rateLimitType),
+      resets_at: rejection.rejectedUntil,
+      usage_warning: false,
+    };
+  }
+
+  if (!nodeUsage || nodeUsage.stale || provider === null) {
+    return availablePreset(base, true);
+  }
+  if (provider.status === "error") {
+    return availablePreset(base, true);
   }
 
   const nowEpochSeconds = now.getTime() / 1_000;
@@ -199,6 +239,14 @@ export function resolvePresetAvailability(
         : new Date(exhausted.resetAt * 1_000).toISOString(),
     usage_warning: false,
   };
+}
+
+function rejectionReasonLabel(rateLimitType: string | null): string {
+  if (rateLimitType === "five_hour") return "5시간 한도 거부 중";
+  if (rateLimitType === "seven_day" || rateLimitType?.startsWith("seven_day_")) {
+    return "7일 한도 거부 중";
+  }
+  return "한도 거부 중";
 }
 
 function publicPreset(
