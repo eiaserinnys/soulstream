@@ -127,12 +127,18 @@ describe("provider limit rejection memory", () => {
 
   it("does not treat generic Codex complete or unsuccessful Claude result as success", () => {
     const memory = new Map(rejections);
+    observe(memory, errorEvent("node-a", "codex_usage_limit_exceeded", {
+      rejectedUntil: reset,
+      rateLimitType: null,
+      observedAt: "2026-10-12T02:00:00.000Z",
+    }));
     observe(memory, errorEvent("node-a", "claude_rate_limit_stop_failure", {
       rejectedUntil: reset,
       rateLimitType: null,
       observedAt: "2026-10-12T02:00:00.000Z",
     }));
     observe(memory, successEvent("node-a", "complete", { type: "complete" }, "2026-10-12T02:01:00.000Z"));
+    expect(get(memory, "node-a", "codex")).not.toBeNull();
     observe(memory, successEvent("node-a", "result", { type: "result", success: false }, "2026-10-12T02:02:00.000Z"));
     expect(get(memory, "node-c", "claude")).not.toBeNull();
 
