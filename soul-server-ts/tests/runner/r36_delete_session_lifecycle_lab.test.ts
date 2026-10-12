@@ -165,6 +165,10 @@ describe("R36 delete_session lifecycle lab", () => {
           unacknowledgedIpcFrameCount: 1,
           pendingInterventionCount: 0,
         }),
+        probeRetention: async (candidate) => ({
+          registration: candidate,
+          localRetentionReason: null,
+        }),
         removeDirectory: async (path) => {
           const sessionId = path.slice("/state/".length);
           removed.push(sessionId);

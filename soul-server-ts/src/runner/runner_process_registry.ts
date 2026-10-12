@@ -61,6 +61,18 @@ export interface RunnerDurableInspection {
   pendingInterventionCount: number;
 }
 
+export type RunnerSessionGcRetentionReason =
+  | "incomplete_bootstrap"
+  | "final_ack_pending"
+  | "durable_replay_pending";
+
+export interface RunnerDurableRetentionProbe {
+  registration: RunnerRegistration;
+  localRetentionReason: RunnerSessionGcRetentionReason | null;
+}
+
+export { probeRunnerDurableRetention } from "./runner_durable_retention_probe.js";
+
 export type RunnerRecoveryDisposition =
   | "wait_for_bootstrap"
   | "adopt_prebootstrap"

@@ -9,6 +9,7 @@ import {
   type ProcessLockOwner,
   type ProcessOwnershipLockDependencies,
 } from "./runner_process_lock.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 const KERNEL_LOCK_SCHEMA_VERSION = 2;
 const KERNEL_LOCK_KIND = "kernel-endpoint";
@@ -29,6 +30,11 @@ export type RunnerWriterLockState =
   | { kind: "held"; owner: ProcessLockOwner }
   | { kind: "unavailable" };
 
+export interface RunnerWriterLockObservationContext {
+  phaseObservation: RunnerPhaseObservation;
+  sessionId: string;
+}
+
 export class RunnerWriterLock {
   private released = false;
 
@@ -41,21 +47,38 @@ export class RunnerWriterLock {
   static async acquire(
     path: string,
     deps: ProcessOwnershipLockDependencies = defaultProcessOwnershipLockDependencies(),
+    observationContext?: RunnerWriterLockObservationContext,
   ): Promise<RunnerWriterLock> {
-    const kernelLock = await RunnerKernelLock.tryAcquire(path);
+    const runPhase = <T>(phase: string, action: () => Promise<T>): Promise<T> =>
+      observationContext
+        ? observationContext.phaseObservation.runAsync(
+          phase,
+          { sessionId: observationContext.sessionId },
+          action,
+        )
+        : action();
+    const kernelLock = await runPhase("mutationKernelAcquire", async () =>
+      await RunnerKernelLock.tryAcquire(path));
     if (!kernelLock) throw new Error(`runner writer lock already held: ${path}`);
     try {
-      const residue = await inspectUnlockedRecord(path, deps);
-      if (residue.kind === "held") {
-        throw new Error(`runner writer lock already held: ${path}`);
-      }
-      if (residue.kind === "unavailable") {
-        throw new Error(`runner writer lock ownership unavailable: ${path}`);
-      }
-      const owner = await deps.currentOwner();
-      await rm(path, { force: true });
-      await rm(runnerWriterBootstrapPath(path), { force: true });
-      await publishCompleteRecord(path, `${JSON.stringify(kernelRecord(owner))}\n`);
+      const owner = await runPhase("mutationOwnerPreparation", async () => {
+        const residue = await inspectUnlockedRecord(path, deps);
+        if (residue.kind === "held") {
+          throw new Error(`runner writer lock already held: ${path}`);
+        }
+        if (residue.kind === "unavailable") {
+          throw new Error(`runner writer lock ownership unavailable: ${path}`);
+        }
+        const currentOwner = await deps.currentOwner();
+        await rm(path, { force: true });
+        await rm(runnerWriterBootstrapPath(path), { force: true });
+        return currentOwner;
+      });
+      await runPhase("mutationOwnerPublish", async () => await publishCompleteRecord(
+        path,
+        `${JSON.stringify(kernelRecord(owner))}\n`,
+        observationContext,
+      ));
       return new RunnerWriterLock(path, owner, kernelLock);
     } catch (error) {
       await kernelLock.release();
@@ -207,12 +230,24 @@ function sameOwner(left: ProcessLockOwner, right: ProcessLockOwner): boolean {
     && processStartIdentitiesMatch(left.startIdentity, right.startIdentity);
 }
 
-async function publishCompleteRecord(path: string, contents: string): Promise<void> {
+async function publishCompleteRecord(
+  path: string,
+  contents: string,
+  observationContext?: RunnerWriterLockObservationContext,
+): Promise<void> {
   const temporaryPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
   const handle = await open(temporaryPath, "wx", 0o600);
   try {
     await handle.writeFile(contents);
-    await handle.sync();
+    if (observationContext) {
+      await observationContext.phaseObservation.runAsync(
+        "mutationOwnerSync",
+        { sessionId: observationContext.sessionId },
+        async () => await handle.sync(),
+      );
+    } else {
+      await handle.sync();
+    }
   } finally {
     await handle.close();
   }

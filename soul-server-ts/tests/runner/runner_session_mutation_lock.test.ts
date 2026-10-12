@@ -80,9 +80,19 @@ describe("withRunnerSessionMutationLock observation", () => {
     expect(observationState.started).toEqual([
       "mutationQueueWait",
       "mutationAcquire",
+      "mutationParentMkdir",
+      "mutationKernelAcquire",
+      "mutationOwnerPreparation",
+      "mutationOwnerPublish",
+      "mutationOwnerSync",
       "mutationQueueWait",
       "mutationRelease",
       "mutationAcquire",
+      "mutationParentMkdir",
+      "mutationKernelAcquire",
+      "mutationOwnerPreparation",
+      "mutationOwnerPublish",
+      "mutationOwnerSync",
       "mutationRelease",
     ]);
     expect(observationState.finished).toHaveLength(observationState.started.length);
@@ -122,6 +132,11 @@ describe("withRunnerSessionMutationLock observation", () => {
     expect(observationState.started).toEqual([
       "mutationQueueWait",
       "mutationAcquire",
+      "mutationParentMkdir",
+      "mutationKernelAcquire",
+      "mutationOwnerPreparation",
+      "mutationOwnerPublish",
+      "mutationOwnerSync",
       "mutationRelease",
     ]);
     expect(observationState.finished).toHaveLength(observationState.started.length);
@@ -161,7 +176,12 @@ describe("withRunnerSessionMutationLock observation", () => {
     }
 
     expect(operation).not.toHaveBeenCalled();
-    expect(observationState.started).toEqual(["mutationQueueWait", "mutationAcquire"]);
+    expect(observationState.started).toEqual([
+      "mutationQueueWait",
+      "mutationAcquire",
+      "mutationParentMkdir",
+      "mutationKernelAcquire",
+    ]);
     expect(observationState.finished).toHaveLength(observationState.started.length);
   });
 });

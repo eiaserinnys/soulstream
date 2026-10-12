@@ -89,6 +89,9 @@ describe("RunnerSessionGarbageCollector", () => {
         retained: 0,
         retainedByReason: {},
         retainedSessions: [],
+        retentionProbeDecisions: { full_inspection_required: 1 },
+        durableInspectionCount: 1,
+        mutationLockCallbackEntries: 1,
         unreadableRegistrations: 0,
         startedAtMs: NOW,
         durationMs: 1,
@@ -160,6 +163,114 @@ describe("RunnerSessionGarbageCollector", () => {
       retained: [{ sessionId: "retained", reason: "final_ack_pending" }],
     });
     expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
+  it("retains metadata-proven blockers without running the full inspector", async () => {
+    const subject = makeSubject({
+      probeRetention: async (item) => ({
+        registration: item,
+        localRetentionReason: "final_ack_pending",
+      }),
+    });
+    const session = registration({ sessionId: "metadata-pending" });
+
+    await expect(subject.collector.collect(scan([session]))).resolves.toEqual({
+      removed: [],
+      retained: [{ sessionId: "metadata-pending", reason: "final_ack_pending" }],
+    });
+    expect(subject.inspect).not.toHaveBeenCalled();
+    expect(subject.logger.info).toHaveBeenLastCalledWith(expect.objectContaining({
+      retentionProbeDecisions: { final_ack_pending: 1 },
+      durableInspectionCount: 0,
+      mutationLockCallbackEntries: 1,
+    }), "runner session GC sweep completed");
+  });
+
+  it("runs the full inspector before the existing central-deletion bypass", async () => {
+    const events: string[] = [];
+    const centralSessionExists = vi.fn(async () => {
+      events.push("central");
+      return false;
+    });
+    const subject = makeSubject({
+      pendingSessions: new Set(["deleted-pending"]),
+      probeRetention: async (item) => ({
+        registration: item,
+        localRetentionReason: "final_ack_pending",
+      }),
+    });
+    const inspect = subject.inspect.getMockImplementation()!;
+    subject.inspect.mockImplementation(async (...args) => {
+      events.push("inspect");
+      return await inspect(...args);
+    });
+    const session = registration({
+      sessionId: "deleted-pending",
+      pid: null,
+      pidAlive: false,
+      pidStartIdentity: null,
+      retiredAt: "2026-08-10T00:00:00.000Z",
+    });
+
+    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+      .resolves.toEqual({ removed: ["deleted-pending"], retained: [] });
+    expect(subject.inspect).toHaveBeenCalledTimes(1);
+    expect(centralSessionExists).toHaveBeenCalledTimes(2);
+    expect(events).toEqual(["central", "inspect", "central"]);
+    expect(subject.removeDirectory).toHaveBeenCalledWith("/state/deleted-pending");
+  });
+
+  it("retains a metadata blocker if the central session reappears before deletion", async () => {
+    const centralSessionExists = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const subject = makeSubject({
+      probeRetention: async (item) => ({
+        registration: item,
+        localRetentionReason: "final_ack_pending",
+      }),
+    });
+    const session = registration({
+      sessionId: "reappeared-pending",
+      pid: null,
+      pidAlive: false,
+      pidStartIdentity: null,
+      retiredAt: "2026-08-10T00:00:00.000Z",
+    });
+
+    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+      .resolves.toEqual({
+        removed: [],
+        retained: [{ sessionId: "reappeared-pending", reason: "central_session_present" }],
+      });
+    expect(subject.inspect).toHaveBeenCalledTimes(1);
+    expect(centralSessionExists).toHaveBeenCalledTimes(2);
+    expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
+  it("keeps metadata-proven blockers when the central session exists", async () => {
+    const centralSessionExists = vi.fn(async () => true);
+    const subject = makeSubject({
+      probeRetention: async (item) => ({
+        registration: item,
+        localRetentionReason: "durable_replay_pending",
+      }),
+    });
+    const session = registration({
+      sessionId: "central-present",
+      pid: null,
+      pidAlive: false,
+      pidStartIdentity: null,
+      retiredAt: "2026-08-10T00:00:00.000Z",
+    });
+
+    await expect(subject.collector.collect(scan([session]), { centralSessionExists }))
+      .resolves.toEqual({
+        removed: [],
+        retained: [{ sessionId: "central-present", reason: "durable_replay_pending" }],
+      });
+    expect(centralSessionExists).toHaveBeenCalledTimes(1);
+    expect(subject.inspect).not.toHaveBeenCalled();
   });
 
   it("retains live, recent, and missing-pid evidence fail-closed", async () => {
@@ -252,6 +363,7 @@ describe("RunnerSessionGarbageCollector", () => {
 
     expect(phases).toEqual([
       "freshRegistration",
+      "durableRetentionProbe",
       "durableInspection",
       "freshRegistration",
       "removeDirectory",
@@ -279,6 +391,7 @@ describe("RunnerSessionGarbageCollector", () => {
       "mutationAcquire",
       "mutationRelease",
       "freshRegistration",
+      "durableRetentionProbe",
       "durableInspection",
       "centralSessionLookup",
       "removeDirectory",
@@ -363,6 +476,12 @@ function makeSubject(options: {
   pendingInterventionSessions?: Set<string>;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   refresh?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
+  probeRetention?: (
+    registration: RunnerRegistration,
+  ) => Promise<{
+    registration: RunnerRegistration;
+    localRetentionReason: "incomplete_bootstrap" | "final_ack_pending" | "durable_replay_pending" | null;
+  }>;
   monotonicNow?: () => number;
   withMutationLock?: RunnerSessionGarbageCollectorDependencies["withMutationLock"];
 } = {}) {
@@ -372,30 +491,36 @@ function makeSubject(options: {
     _path: string,
     operation: () => Promise<T>,
   ) => await operation()));
+  const probeRetention = vi.fn(options.probeRetention ?? (async (item) => ({
+    registration: item,
+    localRetentionReason: null,
+  })));
+  const inspect = vi.fn(async (item) => {
+    const hydrated = await (options.hydrate ?? (async (candidate) => candidate))(item);
+    const hasBootstrap = hydrated.bootstrap !== null;
+    return {
+      registration: hydrated,
+      acknowledgedThrough: hasBootstrap
+        ? options.pendingSessions?.has(item.config.sessionId) ? 2 : 3
+        : null,
+      latestDurableSourceSeq: hasBootstrap ? 3 : null,
+      incompleteDurableWork: options.pendingSessions?.has(item.config.sessionId) ?? false,
+      durableRecordCount: options.durableRecordSessions?.has(item.config.sessionId)
+        ? 1
+        : hydrated.bootstrap === null ? 0 : 3,
+      unacknowledgedIpcFrameCount: options.unacknowledgedIpcSessions
+        ?.has(item.config.sessionId) ? 1 : 0,
+      pendingInterventionCount: options.pendingInterventionSessions
+        ?.has(item.config.sessionId) ? 1 : 0,
+    };
+  });
   const deps = {
     now: () => NOW,
     monotonicNow: options.monotonicNow ?? (() => monotonicTime++),
     withMutationLock,
     refresh: options.refresh ?? (async (item: RunnerRegistration) => item),
-    inspect: async (item) => {
-      const hydrated = await (options.hydrate ?? (async (candidate) => candidate))(item);
-      const hasBootstrap = hydrated.bootstrap !== null;
-      return {
-        registration: hydrated,
-        acknowledgedThrough: hasBootstrap
-          ? options.pendingSessions?.has(item.config.sessionId) ? 2 : 3
-          : null,
-        latestDurableSourceSeq: hasBootstrap ? 3 : null,
-        incompleteDurableWork: options.pendingSessions?.has(item.config.sessionId) ?? false,
-        durableRecordCount: options.durableRecordSessions?.has(item.config.sessionId)
-          ? 1
-          : hydrated.bootstrap === null ? 0 : 3,
-        unacknowledgedIpcFrameCount: options.unacknowledgedIpcSessions
-          ?.has(item.config.sessionId) ? 1 : 0,
-        pendingInterventionCount: options.pendingInterventionSessions
-          ?.has(item.config.sessionId) ? 1 : 0,
-      };
-    },
+    probeRetention,
+    inspect,
     removeDirectory,
   } as RunnerSessionGarbageCollectorDependencies;
   const logger = { info: vi.fn(), warn: vi.fn() };
@@ -408,6 +533,8 @@ function makeSubject(options: {
     ),
     removeDirectory,
     withMutationLock,
+    probeRetention,
+    inspect,
     logger,
   };
 }
