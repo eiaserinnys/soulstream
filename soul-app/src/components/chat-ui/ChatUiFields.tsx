@@ -40,15 +40,21 @@ export function ChatUiNumberInput({ fieldKey, label, accessibilityLabel = label,
   fieldKey: string; label: string; accessibilityLabel?: string; controller: ChatUiController; presentation: 'default' | 'manuscript';
 }) {
   const value = controller.state.values[fieldKey] as number;
-  const [draft, setDraft] = useState(String(value));
+  const [editor, setEditor] = useState(() => ({
+    sessionId: controller.sessionId, resetEpoch: controller.resetEpoch, draft: String(value),
+  }));
+  // Replace the draft before children commit on a session switch or reset.
+  if (editor.sessionId !== controller.sessionId || editor.resetEpoch !== controller.resetEpoch) {
+    setEditor({ sessionId: controller.sessionId, resetEpoch: controller.resetEpoch, draft: String(value) });
+  }
+  const setDraft = (draft: string) => setEditor(current => current.draft === draft ? current : { ...current, draft });
   const editorId = useId();
   // Typing updates the common state without replacing this editor's draft.
   // Outside controls sync the registered editor even when the value is unchanged.
-  useEffect(() => { setDraft(String(value)); }, [controller.sessionId, controller.resetEpoch]);
   useEffect(() => controller.registerNumberEditor(editorId, fieldKey, next => setDraft(String(next))),
     [controller.registerNumberEditor, editorId, fieldKey]);
   const commit = () => setDraft(String(value));
-  return <SettingsInput variant="chat" presentation={presentation} label={label} accessibilityLabel={accessibilityLabel} value={draft}
+  return <SettingsInput variant="chat" presentation={presentation} label={label} accessibilityLabel={accessibilityLabel} value={editor.draft}
     keyboardType="decimal-pad" inputMode="decimal"
     onChangeText={text => {
       setDraft(text);
