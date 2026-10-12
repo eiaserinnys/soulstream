@@ -181,9 +181,9 @@ async function captureDocument(page: Page, name: string, screenshot = true) {
 test("document reader keeps its frame across states and captures the proposed layout", async ({page}) => {
   // One bounded capture pass covers the requested screens, states and viewport sizes.
   test.setTimeout(240_000);
-  const short = "# 문서 읽기 개선 보고서\n\n채팅에 인용한 문서를 현재 화면에서 읽도록 정리했습니다. 닫으면 보고 있던 대화로 돌아갑니다.\n\n짧은 보고도 불러오는 중과 같은 틀을 유지해 내용이 도착할 때 화면이 움직이지 않습니다.\n\n- 문서 읽기 전용 보기\n- 화면 안에서 본문 스크롤\n- 닫은 뒤 대화로 복귀";
-  const normal = short + "\n\n## 확인 결과\n\n대시보드와 영구 세션 화면에서 같은 문서 보기와 상태 표시를 사용합니다. 넓은 화면에서는 읽기에 적당한 폭을 유지하고 높이를 확보했습니다.\n\n본문은 제목 아래에서 시작합니다. 문서가 길어지면 다이얼로그 안에서 끝까지 내려 읽을 수 있습니다.\n\n| 화면 | 확인 항목 | 결과 |\n| --- | --- | --- |\n| 대시보드 | 문서 읽기 | 확인 |\n| 영구 세션 | 대화 복귀 | 확인 |\n| 좁은 화면 | 본문 스크롤 | 확인 |\n\n```ts\nconst documentId = 'report-314';\nopenDocument(documentId);\n```";
-  const long = normal + "\n\n" + Array.from({length:40}, (_, i) => `### 확인 기록 ${i+1}\n\n실제 채팅의 문서 링크를 눌러 본문을 읽었습니다. 긴 내용을 끝까지 내려도 닫기 버튼은 머리에 남고 뒤의 대화는 그대로 유지됩니다. 같은 문서 보기의 폭과 높이를 각 화면에서 비교했습니다.`).join("\n\n") + "\n\n마지막 줄 확인";
+  const short = "# 주간 운영 점검 보고\n\n이번 주 예약 작업 여섯 건은 모두 제시간에 끝났습니다. 실패로 남은 작업은 없습니다.\n\n백업은 매일 새벽에 남았고, 디스크 사용량은 지난주보다 조금 늘었습니다.\n\n- 예약 작업 여섯 건 정상 종료\n- 백업 일곱 건 확인\n- 조치가 필요한 경고 없음";
+  const normal = short + "\n\n## 서비스 상태\n\n세 노드 모두 한 주 동안 중단 없이 응답했습니다. 수요일 오후에 응답이 잠시 느려졌지만 재시작 없이 회복됐습니다.\n\n다음 주에는 로그 보관 기간을 정리하고 오래된 작업 폴더를 비울 예정입니다.\n\n| 노드 | 가동 시간 | 비고 |\n| --- | --- | --- |\n| 서버 | 7일 | 이상 없음 |\n| 작업용 PC | 7일 | 수요일 지연 |\n| 보조 환경 | 6일 | 정기 재시작 1회 |\n\n```bash\ndf -h /home\ndu -sh ~/workspace/.local\n```";
+  const long = normal + "\n\n" + Array.from({length:40}, (_, i) => `### 점검 기록 ${i+1}\n\n예약 작업의 시작과 종료 시각을 확인했습니다. 실패나 재시도는 없었고 남은 디스크 공간도 기준 안에 있습니다. 특이 사항이 생기면 이 문서에 이어서 적습니다.`).join("\n\n") + "\n\n이상으로 이번 주 점검 기록을 마칩니다.";
   const names = ['short', 'normal', 'long', 'title', 'loading', 'missing', 'failure'] as const;
   const links = names.map(name => `[시안 ${name}](/api/markdown-documents/proposal-${name})`).join('\n\n');
   await prepare(page,1440,{1:messageMarkdown+'\n\n'+links});
@@ -192,8 +192,8 @@ test("document reader keeps its frame across states and captures the proposed la
     const name = route.request().url().split('proposal-').at(-1)!;
     if (name === 'loading') await new Promise<void>(resolve => {release=resolve;});
     if (name === 'missing' || name === 'failure') return route.fulfill({status:name==='missing'?404:500,json:{error:'fixture'}});
-    const title = name === 'title' ? (page.viewportSize()!.width<500 ? '문서읽기화면의긴제목과상태배치를확인하는최종검수보고서' : '채팅 내부 문서 읽기 화면의 크기와 상태 배치, 제목 줄바꿈을 확인한 최종 검수 보고서와 영구 세션 및 대시보드의 긴 문서 스크롤 결과') : '문서 읽기 개선 보고서';
-    await route.fulfill({json:{id:'proposal-'+name,title,body:name==='long'?long:name==='short'?short:name==='title'?normal.replace(/^# 문서 읽기 개선 보고서\n\n/, ''):normal,version:1}});
+    const title = name === 'title' ? (page.viewportSize()!.width<500 ? '10월 둘째 주 운영 점검과 예약 작업 실행 결과를 정리한 주간 보고' : '10월 둘째 주 운영 점검과 예약 작업 실행 결과, 노드별 가동 시간과 디스크 사용량을 함께 정리한 주간 보고') : '주간 운영 점검 보고';
+    await route.fulfill({json:{id:'proposal-'+name,title,body:name==='long'?long:name==='short'?short:name==='title'?normal.replace(/^# 주간 운영 점검 보고\n\n/, ''):normal,version:1}});
   });
   const dialog = page.getByTestId('internal-document-dialog');
   const measurements: Awaited<ReturnType<typeof captureDocument>>[] = [];
@@ -233,7 +233,7 @@ test("document reader keeps its frame across states and captures the proposed la
       if(state==='short') expect(geometry.first!.y-geometry.panel.y).toBe(20);
       if(state==='long') {
         const panel=dialog.locator('[data-slot="dialog-panel-scroll"]'); await panel.hover(); await page.mouse.wheel(0,30000);
-        await expect(dialog.getByText('마지막 줄 확인',{exact:true})).toBeInViewport();
+        await expect(dialog.getByText('이상으로 이번 주 점검 기록을 마칩니다.',{exact:true})).toBeInViewport();
         const end=await captureDocument(page,name+'-end',scenario.width===390&&scenario.screen==='pas');
         expect(end.panel.bottom-end.last!.bottom).toBe(40);
       }
@@ -243,6 +243,55 @@ test("document reader keeps its frame across states and captures the proposed la
   }
   const states=measurements.filter(item=>item.statusStyle);
   for(const geometry of states) expect(geometry.statusStyle).toEqual(states[0].statusStyle);
+});
+
+test("document reader scrolls with native keys from the focused body", async ({page}) => {
+  await prepare(page,1440); await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
+  const link=page.getByRole('link',{name:'긴 문서',exact:true}), dialog=page.getByTestId('internal-document-dialog');
+  const body=dialog.getByRole('region',{name:'문서 본문'}), scroll=dialog.locator('[data-slot="dialog-panel-scroll"]');
+  const observations: unknown[]=[];
+  for(const mode of ['keyboard','mouse','body click']) {
+    if(mode==='keyboard') { await link.focus(); await link.press('Enter'); } else await link.click();
+    await expect(dialog.locator('.v3-folder-board-document-copy')).toBeVisible();
+    if(mode==='body click') await dialog.locator('.v3-folder-board-document-copy p').first().click();
+    await expect(body).toBeFocused();
+    expect(await body.evaluate(element=>element.matches(':focus-visible'))).toBe(mode==='keyboard');
+    observations.push({mode,focusVisible:await body.evaluate(element=>element.matches(':focus-visible')),frameShadow:await dialog.evaluate(element=>getComputedStyle(element).boxShadow)});
+    for(const key of ['PageDown','Space','ArrowDown']) {
+      await page.keyboard.press('Home'); await expect.poll(()=>scroll.evaluate(element=>element.scrollTop)).toBe(0);
+      await page.keyboard.press(key); await expect.poll(()=>scroll.evaluate(element=>element.scrollTop)).toBeGreaterThan(0);
+      observations.push({mode,key,top:await scroll.evaluate(element=>element.scrollTop)});
+    }
+    await page.keyboard.press('End'); await expect(dialog.getByText('마지막 줄 확인',{exact:true})).toBeInViewport();
+    await page.keyboard.press('Home'); await expect.poll(()=>scroll.evaluate(element=>element.scrollTop)).toBe(0);
+    if(mode==='keyboard') await page.screenshot({path:path.join(output,'keyboard-focus-frame.png'),animations:'disabled'});
+    await page.keyboard.press('Escape'); await expect(dialog).toBeHidden(); await expect(link).toBeFocused();
+  }
+  await page.getByRole('link',{name:'문서 링크',exact:true}).focus(); await page.keyboard.press('Enter');
+  await expect(body).toBeFocused(); await expect(dialog.getByRole('link',{name:'같은 문서',exact:true})).toBeVisible();
+  for(const name of ['같은 문서','다른 문서','본문 이미지','본문 카드']) { await page.keyboard.press('Tab'); await expect(dialog.getByRole('link',{name,exact:true})).toBeFocused(); }
+  await page.keyboard.press('Tab'); await expect(dialog.getByRole('button',{name:'문서 닫기'})).toBeFocused();
+  await page.keyboard.press('Tab'); await expect(body).toBeFocused();
+  await writeFile(path.join(output,'keyboard-scroll.json'),JSON.stringify(observations,null,2));
+});
+
+test("document reader retains content throughout close and Escape", async ({page}) => {
+  await prepare(page,1440); await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
+  for(const method of ['close','Escape']) {
+    const dialog=await openDocumentFromChat(page);
+    await page.evaluate(()=>{
+      const state={done:false,frames:[] as {title:string|null;body:boolean;loading:boolean}[]}; Object.assign(window,{readerClosing:state});
+      const popup=document.querySelector('[data-testid="internal-document-dialog"]')!;
+      const record=()=>{if(popup.isConnected) state.frames.push({title:popup.querySelector('[data-slot="dialog-title"]')!.textContent,body:!!popup.querySelector('.v3-folder-board-document-copy'),loading:!!popup.querySelector('.v3-board-load-state')});};
+      const observer=new MutationObserver(record); observer.observe(popup,{subtree:true,childList:true,characterData:true,attributes:true}); record();
+      const frame=()=>{if(!popup.isConnected){observer.disconnect();state.done=true;return;} record();requestAnimationFrame(frame);}; requestAnimationFrame(frame);
+    });
+    if(method==='close') await dialog.getByRole('button',{name:'문서 닫기'}).click(); else await page.keyboard.press('Escape');
+    await page.waitForFunction(()=> (window as unknown as {readerClosing:{done:boolean}}).readerClosing.done);
+    const state=await page.evaluate(()=> (window as unknown as {readerClosing:{frames:{title:string;body:boolean;loading:boolean}[]}}).readerClosing);
+    expect(state.frames.every(frame=>!frame.loading&&frame.body&&frame.title==='내부 링크 문서')).toBe(true);
+    await writeFile(path.join(output,`closing-${method}.json`),JSON.stringify(state,null,2));
+  }
 });
 
 for (const screen of ["v3", "pas"] as const) for (const width of [1440, 1024]) {
