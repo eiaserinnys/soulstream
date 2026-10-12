@@ -6,6 +6,7 @@ import type {
   RunnerReleaseDescriptor,
   RunnerReleaseMaterializer,
 } from "./runner_release_materializer.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import {
   ProcessOwnershipDirectoryLock,
   defaultProcessOwnershipLockDependencies,
@@ -82,14 +83,21 @@ export class RunnerReleasePool {
     await this.materializer.remove(release);
   }
 
-  async withReleaseLock<T>(releaseId: string, operation: () => Promise<T>): Promise<T> {
+  async withReleaseLock<T>(
+    releaseId: string,
+    operation: () => Promise<T>,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<T> {
     assertOpaqueReleaseId(releaseId);
-    const lock = await ProcessOwnershipDirectoryLock.acquire({
-      path: join(this.releasesDirectory, ".locks", releaseId),
-      timeoutMs: this.lockTimeoutMs,
-      heldMessage: `runner release lock timed out: ${releaseId}`,
-      deps: this.deps,
-    });
+    const acquire = () => ProcessOwnershipDirectoryLock.acquire({
+        path: join(this.releasesDirectory, ".locks", releaseId),
+        timeoutMs: this.lockTimeoutMs,
+        heldMessage: `runner release lock timed out: ${releaseId}`,
+        deps: this.deps,
+      });
+    const lock = phaseObservation
+      ? await phaseObservation.runAsync("releaseLock", { label: releaseId }, acquire)
+      : await acquire();
     try {
       return await operation();
     } finally {
@@ -97,11 +105,19 @@ export class RunnerReleasePool {
     }
   }
 
-  async withReleaseLocks<T>(releaseIds: string[], operation: () => Promise<T>): Promise<T> {
+  async withReleaseLocks<T>(
+    releaseIds: string[],
+    operation: () => Promise<T>,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<T> {
     const ordered = [...new Set(releaseIds)].sort();
     const acquire = async (index: number): Promise<T> => {
       if (index >= ordered.length) return await operation();
-      return await this.withReleaseLock(ordered[index]!, async () => await acquire(index + 1));
+      return await this.withReleaseLock(
+        ordered[index]!,
+        async () => await acquire(index + 1),
+        phaseObservation,
+      );
     };
     return await acquire(0);
   }

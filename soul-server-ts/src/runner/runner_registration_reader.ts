@@ -52,7 +52,13 @@ export async function readRunnerRegistrationSummary(
   try {
     config = await readRunnerChildConfig(configPath);
   } catch (error) {
-    throw await annotateRegistrationError(directory, error, undefined, "config");
+    throw await annotateRegistrationError(
+      directory,
+      error,
+      undefined,
+      "config",
+      options.phaseObservation,
+    );
   }
   let configStat: Stats;
   try {
@@ -96,12 +102,19 @@ export async function readRunnerRegistrationSummary(
     const hostDatabasePath = runnerHostStatePath(config.paths.databasePath);
     hostDatabaseStat = await statIfExists(hostDatabasePath);
     hostDatabaseWalStat = await statIfExists(`${hostDatabasePath}-wal`);
-    lifecycle = await readAuthoritativeRunnerLifecycle(config.paths.databasePath, options);
+    lifecycle = await readAuthoritativeRunnerLifecycle(config.paths.databasePath, {
+      ...options,
+      sessionId: config.sessionId,
+    });
     if (lifecycle && lifecycle.session_id !== config.sessionId) {
       throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
     }
     closedTailState = lifecycle?.execution_state === "closed"
-      ? readClosedRunnerTailState(config.paths.databasePath, config.sessionId)
+      ? readClosedRunnerTailState(
+        config.paths.databasePath,
+        config.sessionId,
+        options.phaseObservation,
+      )
       : undefined;
   } catch (error) {
     throw await annotateRegistrationError(
@@ -221,8 +234,11 @@ async function annotateRegistrationError(
   error: unknown,
   known?: { sessionId: string; codeSha?: string },
   stage?: RegistrationStage,
+  phaseObservation?: AuthoritativeRunnerLifecycleOptions["phaseObservation"],
 ): Promise<Error> {
-  const recovered = known ?? await recoverRunnerDirectoryIdentity(directory) ?? undefined;
+  const recovered = known
+    ?? await recoverRunnerDirectoryIdentity(directory, phaseObservation)
+    ?? undefined;
   const normalized = (error instanceof Error ? error : new Error(String(error))) as Error & {
     runnerSessionId?: string;
     runnerCodeSha?: string;

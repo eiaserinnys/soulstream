@@ -9,12 +9,19 @@ import {
   type RunnerRegistrationScan,
 } from "./runner_process_registry.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export interface RunnerSessionGarbageCollectorDependencies {
   now(): number;
   withMutationLock<T>(sessionDirectory: string, operation: () => Promise<T>): Promise<T>;
-  refresh(registration: RunnerRegistration): Promise<RunnerRegistration>;
-  inspect(registration: RunnerRegistration): ReturnType<typeof inspectRunnerDurableState>;
+  refresh(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<RunnerRegistration>;
+  inspect(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): ReturnType<typeof inspectRunnerDurableState>;
   removeDirectory(path: string): Promise<void>;
 }
 
@@ -43,8 +50,36 @@ export class RunnerSessionGarbageCollector {
   async collect(
     scan: RunnerRegistrationScan,
     policy?: RunnerSessionGarbageCollectionPolicy,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<RunnerSessionGcResult> {
+    try {
+      return await this.collectSweep(scan, policy, phaseObservation);
+    } catch (error) {
+      const failure = phaseObservation?.failureFor(error);
+      try {
+        this.logger.warn({
+          err: error,
+          ...(failure ? { failurePhase: failure.phase, failureElapsedMs: failure.elapsedMs } : {}),
+          ...(phaseObservation ? {
+            phaseDurationsMs: phaseObservation.phaseDurationsMs(),
+            database: phaseObservation.databaseSummary(),
+            databaseAndPhaseDurationsOverlap: true,
+          } : {}),
+        }, "runner session GC sweep failed");
+      } catch {
+        // Preserve the original collection failure if reporting also fails.
+      }
+      throw error;
+    }
+  }
+
+  private async collectSweep(
+    scan: RunnerRegistrationScan,
+    policy?: RunnerSessionGarbageCollectionPolicy,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<RunnerSessionGcResult> {
     const result: RunnerSessionGcResult = { removed: [], retained: [] };
+    let lastFailure: unknown;
     for (const registration of scan.registrations) {
       const candidateReason = terminalCandidateReason(
         registration,
@@ -63,7 +98,12 @@ export class RunnerSessionGarbageCollector {
               this.stateDirectory,
               registration.config.paths.sessionDirectory,
             );
-            const fresh = await this.deps.refresh(registration);
+            const refresh = () => this.deps.refresh(registration, phaseObservation);
+            const fresh = phaseObservation
+              ? await phaseObservation.runAsync("freshRegistration", {
+                sessionId: registration.config.sessionId,
+              }, refresh)
+              : await refresh();
             const freshReason = terminalCandidateReason(
               fresh,
               this.deps.now(),
@@ -73,7 +113,12 @@ export class RunnerSessionGarbageCollector {
               result.retained.push({ sessionId: registration.config.sessionId, reason: freshReason });
               return;
             }
-            const inspection = await this.deps.inspect(fresh);
+            const inspect = () => this.deps.inspect(fresh, phaseObservation);
+            const inspection = phaseObservation
+              ? await phaseObservation.runAsync("durableInspection", {
+                sessionId: registration.config.sessionId,
+              }, inspect)
+              : await inspect();
             const hydrated = inspection.registration;
             if (!sameRegistrationGeneration(fresh, hydrated)) {
               result.retained.push({
@@ -135,7 +180,12 @@ export class RunnerSessionGarbageCollector {
                 }
               }
             }
-            const latest = await this.deps.refresh(hydrated);
+            const refreshLatest = () => this.deps.refresh(hydrated, phaseObservation);
+            const latest = phaseObservation
+              ? await phaseObservation.runAsync("freshRegistration", {
+                sessionId: registration.config.sessionId,
+              }, refreshLatest)
+              : await refreshLatest();
             if (!sameRegistrationGeneration(hydrated, latest)) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
@@ -183,6 +233,7 @@ export class RunnerSessionGarbageCollector {
               "removed expired terminal runner session state",
             );
           } catch (error) {
+            lastFailure = error;
             result.retained.push({
               sessionId: registration.config.sessionId,
               reason: "evidence_unreadable",
@@ -204,6 +255,18 @@ export class RunnerSessionGarbageCollector {
         retainedByReason: countRetainedReasons(result.retained),
         retainedSessions: result.retained,
         unreadableRegistrations: scan.errors.length,
+        ...(phaseObservation ? {
+          phaseDurationsMs: phaseObservation.phaseDurationsMs(),
+          database: phaseObservation.databaseSummary(),
+          databaseAndPhaseDurationsOverlap: true,
+          ...(lastFailure !== undefined
+            && phaseObservation.failureFor(lastFailure)
+            ? {
+              failurePhase: phaseObservation.failureFor(lastFailure)!.phase,
+              failureElapsedMs: phaseObservation.failureFor(lastFailure)!.elapsedMs,
+            }
+            : {}),
+        } : {}),
       },
       "runner session GC sweep completed",
     );
@@ -269,8 +332,9 @@ function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
   return {
     now: Date.now,
     withMutationLock: withRunnerSessionMutationLock,
-    refresh: async (registration) => await readRunnerRegistrationForDeletion(
+    refresh: async (registration, phaseObservation) => await readRunnerRegistrationForDeletion(
       registration.config.paths.sessionDirectory,
+      phaseObservation,
     ),
     inspect: inspectRunnerDurableState,
     removeDirectory: async (path) => await rm(path, { recursive: true }),

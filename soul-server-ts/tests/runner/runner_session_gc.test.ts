@@ -8,6 +8,7 @@ import type {
   RunnerRegistration,
   RunnerRegistrationScan,
 } from "../../src/runner/runner_process_registry.js";
+import { createRunnerPhaseObservation } from "../../src/runner/runner_phase_observation.js";
 
 const NOW = Date.parse("2026-08-12T00:00:00.000Z");
 const RETENTION_MS = 86_400_000;
@@ -226,6 +227,38 @@ describe("RunnerSessionGarbageCollector", () => {
     });
     expect(refreshed).toHaveBeenCalledTimes(2);
     expect(subject.removeDirectory).not.toHaveBeenCalled();
+  });
+
+  it("observes fresh registration, durable inspection, and final refresh in order", async () => {
+    const candidate = registration({ sessionId: "observed" });
+    const phases: string[] = [];
+    let now = 10;
+    const subject = makeSubject();
+    const observation = createRunnerPhaseObservation({
+      nodeId: "node-a",
+      scopeId: "session-gc-1",
+      operation: "runner.recovery.sessionGc",
+      logger: subject.logger as never,
+      monotonicNow: () => now++,
+      beginRunnerOperation: (context) => {
+        phases.push(context.phase ?? "missing");
+        return () => {};
+      },
+    });
+
+    await subject.collector.collect(scan([candidate]), undefined, observation);
+
+    expect(phases).toEqual([
+      "freshRegistration",
+      "durableInspection",
+      "freshRegistration",
+    ]);
+    expect(subject.logger.info).toHaveBeenLastCalledWith(expect.objectContaining({
+      phaseDurationsMs: expect.objectContaining({
+        freshRegistration: expect.any(Number),
+        durableInspection: expect.any(Number),
+      }),
+    }), "runner session GC sweep completed");
   });
 });
 

@@ -28,6 +28,10 @@ export interface RunnerOperationContext {
   commandId: string;
   operation: string;
   startedAtMonoMs?: number;
+  nodeId?: string;
+  scanId?: string;
+  phase?: string;
+  databasePath?: string;
 }
 
 interface ObservedSqliteTransaction extends RunnerSqliteTransactionEvent {

@@ -516,6 +516,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const strandedTask = task("session-a");
     strandedTask.runner = abandonedRunner();
     const subject = makeSubject([stranded], RECOVERY_NOW_MS, [], {
+      nodeStallMonitor: { beginRunnerOperation: vi.fn(() => vi.fn()) } as never,
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
       } as never,
@@ -530,6 +531,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
   });
 
@@ -551,6 +557,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -577,6 +588,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       undefined,
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -592,6 +608,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -615,6 +636,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -649,6 +675,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
   });
 
@@ -701,6 +732,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      undefined,
     );
     expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
       recoverRegisteredRunner.mock.invocationCallOrder[1]!,
@@ -906,6 +938,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      undefined,
     );
   });
 
@@ -921,6 +954,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      undefined,
     );
     expect(subject.markRunnerFailure).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -953,6 +987,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).toHaveBeenCalledWith(
       expect.anything(),
@@ -976,6 +1015,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).toHaveBeenCalledWith(
       expect.anything(),
@@ -1007,6 +1051,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).toHaveBeenCalledOnce();
 
@@ -1048,6 +1097,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
     expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
@@ -1299,6 +1353,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     finishRecovery();
     await subject.coordinator.stop();
@@ -1405,6 +1464,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.markReaped).not.toHaveBeenCalled();
@@ -1432,6 +1496,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.markReaped).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -1453,6 +1522,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.markRunnerFailure).not.toHaveBeenCalled();
     expect(subject.task.runnerTerminalFact).toBe("reaped");
@@ -1644,10 +1718,15 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       latestDurableSourceSeq: 2,
       acknowledgedThrough: 2,
     };
-    const monotonicNow = vi.fn()
-      .mockReturnValueOnce(100)
-      .mockReturnValueOnce(112.5);
-    const subject = makeSubject([closed], Date.now(), [], { monotonicNow });
+    let now = 100;
+    const monotonicNow = () => now;
+    const subject = makeSubject([closed], Date.now(), [], {
+      monotonicNow,
+      scan: async () => {
+        now = 112.5;
+        return { registrations: [closed], errors: [] };
+      },
+    });
 
     await subject.coordinator.scanOnce();
 
@@ -1871,6 +1950,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2198,6 +2282,79 @@ describe("RunnerRecoveryCoordinator GC cadence", () => {
     await subject.coordinator.scanOnce();
 
     expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
+  });
+});
+
+describe("RunnerRecoveryCoordinator phase observation", () => {
+  it("records scan phase durations and clears watchdog context after each phase", async () => {
+    let now = 100;
+    let activeOperations = 0;
+    const contexts: Array<{ phase?: string; scanId?: string; nodeId?: string }> = [];
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      monotonicNow: () => now,
+      nodeStallMonitor: {
+        beginRunnerOperation: (context) => {
+          contexts.push(context);
+          activeOperations += 1;
+          return () => { activeOperations -= 1; };
+        },
+      },
+      scan: async (_stateDirectory, options) => {
+        now += 7;
+        options?.phaseObservation?.runSync("dbRead", {
+          sessionId: "session-a",
+          databasePath: "/runner/session-a/runner.sqlite",
+          label: "test scan read",
+        }, () => {});
+        return { registrations: [], errors: [] };
+      },
+    });
+
+    await subject.coordinator.scanOnce();
+
+    expect(contexts.map(({ phase }) => phase)).toEqual([
+      "gcWait",
+      "registration",
+      "dbRead",
+      "unreadable",
+      "hydration",
+      "recoveryReady",
+    ]);
+    expect(contexts.every(({ nodeId, scanId }) => nodeId === "node-a" && Boolean(scanId)))
+      .toBe(true);
+    expect(activeOperations).toBe(0);
+    expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({
+      nodeId: "node-a",
+      phaseDurationsMs: expect.objectContaining({ registration: 7 }),
+      database: expect.objectContaining({ counts: { dbOpen: 0, dbRead: 1 } }),
+    }), "runner recovery scan completed");
+  });
+
+  it("records a failed phase and finishes its watchdog context without replacing the error", async () => {
+    let now = 200;
+    let activeOperations = 0;
+    const expectedError = new Error("registry failed");
+    const subject = makeSubject([], RECOVERY_NOW_MS, [], {
+      monotonicNow: () => now,
+      nodeStallMonitor: {
+        beginRunnerOperation: () => {
+          activeOperations += 1;
+          return () => { activeOperations -= 1; };
+        },
+      },
+      scan: async () => {
+        now += 9;
+        throw expectedError;
+      },
+    });
+
+    await expect(subject.coordinator.scanOnce()).rejects.toBe(expectedError);
+
+    expect(activeOperations).toBe(0);
+    expect(subject.logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      failurePhase: "registration",
+      failureElapsedMs: 9,
+    }), "runner recovery scan phase failed");
   });
 });
 

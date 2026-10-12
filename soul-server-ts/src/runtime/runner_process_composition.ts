@@ -19,6 +19,8 @@ import { RunnerStateHostLock } from "../runner/runner_state_host_lock.js";
 import { RunnerSessionGarbageCollector } from "../runner/runner_session_gc.js";
 import { ClosedRunnerTailDrainer } from "../runner/closed_runner_tail_drainer.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
+import type { NodeStallMonitor } from "./node_stall_monitor.js";
+import { createRunnerPhaseObservation } from "../runner/runner_phase_observation.js";
 
 export interface RunnerProcessComposition {
   runtimeFactory: RunnerProcessRuntimeFactory;
@@ -103,6 +105,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     execution: ExecutionRegistration,
   ) => Promise<number>;
   logger: Logger;
+  nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
   if (!options.runnerProcessFactory) return undefined;
   if (!options.closedTailDrainer) {
@@ -121,6 +124,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     taskExecutor: options.taskExecutor,
     closedTailDrainer: options.closedTailDrainer,
     logger: options.logger,
+    ...(options.nodeStallMonitor ? { nodeStallMonitor: options.nodeStallMonitor } : {}),
     ...(options.terminalizeClaudeBackgroundTasks
       ? {
         terminalizeClaudeBackgroundTasks:
@@ -141,7 +145,8 @@ export function composeRunnerReconciliationReporter(
   env: Env,
   runnerProcessFactory: RunnerProcessRuntimeFactory | undefined,
   coordinator: RunnerRecoveryCoordinator | undefined,
-  logger: Pick<Logger, "info">,
+  logger: Pick<Logger, "info" | "warn">,
+  nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">,
 ): Partial<RunnerReconciliationReporter> {
   if (!runnerProcessFactory) return {};
   const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
@@ -149,13 +154,64 @@ export function composeRunnerReconciliationReporter(
     throw new Error("runner inventory requires state directory and recovery coordinator");
   }
   const cache = new RunnerRegistrationScanCache();
+  let inventorySequence = 0;
   return {
-    listLiveRunnerSessionIds: async () => await listLiveRunnerSessionIds({
-      stateDirectory,
-      cache,
-      leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
-      logger,
-    }),
+    listLiveRunnerSessionIds: async () => {
+      const scopeId = `${env.SOULSTREAM_NODE_ID}:live-inventory:${++inventorySequence}`;
+      const observation = createRunnerPhaseObservation({
+        nodeId: env.SOULSTREAM_NODE_ID,
+        scopeId,
+        operation: "runner.upstream.liveInventory",
+        logger,
+        ...(nodeStallMonitor
+          ? { beginRunnerOperation: nodeStallMonitor.beginRunnerOperation.bind(nodeStallMonitor) }
+          : {}),
+      });
+      try {
+        const sessionIds = await observation.runAsync("liveInventory", {}, async () =>
+          await listLiveRunnerSessionIds({
+            stateDirectory,
+            cache,
+            leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+            logger,
+            phaseObservation: observation,
+          }));
+        try {
+          logger.info({
+            nodeId: env.SOULSTREAM_NODE_ID,
+            scanId: scopeId,
+            phaseDurationsMs: observation.phaseDurationsMs(),
+            database: observation.databaseSummary(),
+            databaseAndPhaseDurationsOverlap: true,
+          }, "runner upstream live inventory completed");
+        } catch (error) {
+          try {
+            logger.warn({ err: error }, "runner phase observation failed");
+          } catch {
+            // Telemetry must not change the inventory result.
+          }
+        }
+        return sessionIds;
+      } catch (error) {
+        const failure = observation.failureFor(error);
+        try {
+          logger.warn({
+            nodeId: env.SOULSTREAM_NODE_ID,
+            scanId: scopeId,
+            ...(failure ? {
+              failurePhase: failure.phase,
+              failureElapsedMs: failure.elapsedMs,
+            } : {}),
+            phaseDurationsMs: observation.phaseDurationsMs(),
+            database: observation.databaseSummary(),
+            databaseAndPhaseDurationsOverlap: true,
+          }, "runner upstream live inventory failed");
+        } catch {
+          // Preserve the original inventory failure if reporting also fails.
+        }
+        throw error;
+      }
+    },
     waitForRunnerReconciliation: async () => await coordinator.scanOnce(),
   };
 }

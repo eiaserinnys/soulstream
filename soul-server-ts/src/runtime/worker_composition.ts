@@ -321,6 +321,9 @@ export async function composeWorkerRuntime(
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,
+    ...(params.nodeStallMonitor
+      ? { nodeStallMonitor: params.nodeStallMonitor }
+      : {}),
     ...(claudeRuntime.backgroundLifecycle
       ? {
         terminalizeClaudeBackgroundTasks: (sessionId, execution) =>

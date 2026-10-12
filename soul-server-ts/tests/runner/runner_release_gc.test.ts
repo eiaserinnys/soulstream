@@ -13,6 +13,7 @@ import type {
   RunnerReleaseMaterializer,
 } from "../../src/runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
+import { createRunnerPhaseObservation } from "../../src/runner/runner_phase_observation.js";
 import {
   scanRunnerRegistrations,
   type RunnerRegistration,
@@ -171,6 +172,42 @@ describe("RunnerReleaseGarbageCollector", () => {
       });
     expect(subject.scan).toHaveBeenCalledOnce();
     expect(subject.materializer.remove).not.toHaveBeenCalled();
+  });
+
+  it("reports release GC phases in lock, fresh inventory, then durable inspection order", async () => {
+    const subject = await makeSubject([registration()], false);
+    const phases: string[] = [];
+    let now = 10;
+    const observation = createRunnerPhaseObservation({
+      nodeId: "node-a",
+      scopeId: "release-gc-1",
+      operation: "runner.recovery.releaseGc",
+      logger: subject.logger as never,
+      monotonicNow: () => now++,
+      beginRunnerOperation: (context) => {
+        phases.push(context.phase ?? "missing");
+        return () => {};
+      },
+    });
+
+    await subject.collector.collect(undefined, observation);
+
+    expect(phases).toEqual([
+      "enumerateAndVerify",
+      "releaseLock",
+      "registry",
+      "durableInspection",
+    ]);
+    expect(subject.scan).toHaveBeenCalledOnce();
+    expect(subject.inspect).toHaveBeenCalledOnce();
+    expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({
+      phaseDurationsMs: expect.objectContaining({
+        enumerateAndVerify: expect.any(Number),
+        releaseLock: expect.any(Number),
+        registry: expect.any(Number),
+        durableInspection: expect.any(Number),
+      }),
+    }), "runner release GC sweep completed");
   });
 });
 

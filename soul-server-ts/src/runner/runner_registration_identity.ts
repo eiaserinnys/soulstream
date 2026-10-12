@@ -7,6 +7,7 @@ import { processStartIdentitiesMatch } from "./runner_process_lock.js";
 import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
 import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 const RUNNER_IDENTITY_FILE = "runner-identity.json";
 
@@ -202,6 +203,7 @@ export async function waitForChildRunnerRegistrationIdentity(
 
 export async function recoverRunnerDirectoryIdentity(
   sessionDirectory: string,
+  phaseObservation?: RunnerPhaseObservation,
 ): Promise<RecoveredRunnerIdentity | null> {
   try {
     const sidecar = await readRunnerRegistrationIdentity(sessionDirectory);
@@ -210,35 +212,55 @@ export async function recoverRunnerDirectoryIdentity(
     // A corrupt sidecar is not trusted. SQLite remains an independent identity source.
   }
   try {
-    return readRunnerSqliteIdentity(join(sessionDirectory, "runner.sqlite"));
+    return readRunnerSqliteIdentity(
+      join(sessionDirectory, "runner.sqlite"),
+      phaseObservation,
+    );
   } catch {
     return null;
   }
 }
 
-function readRunnerSqliteIdentity(databasePath: string): RecoveredRunnerIdentity | null {
-  const database = openRunnerSqliteReadOnlyDatabase(databasePath);
-  try {
-    const bootstrapRow = database.prepare(`
-      SELECT *
-      FROM runner_event_outbox
-      WHERE record_kind = 'bootstrap'
-    `).get() as unknown as RunnerEventOutboxRow | undefined;
-    if (bootstrapRow) {
-      const bootstrap = runnerRowToBootstrap(bootstrapRow);
-      return {
-        sessionId: bootstrap.session_id,
-        codeSha: bootstrap.payload.code_sha,
-      };
+function readRunnerSqliteIdentity(
+  databasePath: string,
+  phaseObservation?: RunnerPhaseObservation,
+): RecoveredRunnerIdentity | null {
+  const database = openRunnerSqliteReadOnlyDatabase(databasePath, phaseObservation
+    ? {
+      phaseObservation,
+      databasePath,
+      label: "runner registration identity open",
     }
-    const prebootstrap = database.prepare(`
-      SELECT session_id
-      FROM runner_prebootstrap_lifecycle
-      WHERE singleton = 1
-    `).get() as { session_id: unknown } | undefined;
-    return prebootstrap
-      ? { sessionId: requiredString(prebootstrap.session_id, "runner SQLite session id") }
-      : null;
+    : undefined);
+  try {
+    const read = () => {
+      const bootstrapRow = database.prepare(`
+        SELECT *
+        FROM runner_event_outbox
+        WHERE record_kind = 'bootstrap'
+      `).get() as unknown as RunnerEventOutboxRow | undefined;
+      if (bootstrapRow) {
+        const bootstrap = runnerRowToBootstrap(bootstrapRow);
+        return {
+          sessionId: bootstrap.session_id,
+          codeSha: bootstrap.payload.code_sha,
+        };
+      }
+      const prebootstrap = database.prepare(`
+        SELECT session_id
+        FROM runner_prebootstrap_lifecycle
+        WHERE singleton = 1
+      `).get() as { session_id: unknown } | undefined;
+      return prebootstrap
+        ? { sessionId: requiredString(prebootstrap.session_id, "runner SQLite session id") }
+        : null;
+    };
+    return phaseObservation
+      ? phaseObservation.runSync("dbRead", {
+        databasePath,
+        label: "runner registration identity",
+      }, read)
+      : read();
   } finally {
     database.close();
   }

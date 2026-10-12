@@ -11,6 +11,7 @@ import {
   openRunnerSqliteReadOnlyDatabase,
   withRunnerSqliteTransactionSync,
 } from "./runner_sqlite_connection.js";
+import type { RunnerDatabaseObservationContext } from "./runner_phase_observation.js";
 
 const RUNNER_HOST_STATE_SCHEMA_VERSION = 2;
 
@@ -69,8 +70,11 @@ export class RunnerHostStateStore {
     private readonly database: DatabaseSync,
   ) {}
 
-  static open(path: string): RunnerHostStateStore {
-    const database = openRunnerSqliteDatabase(path);
+  static open(
+    path: string,
+    observation?: RunnerDatabaseObservationContext,
+  ): RunnerHostStateStore {
+    const database = openRunnerSqliteDatabase(path, {}, observation);
     try {
       ensureRunnerSqliteWal(database);
       database.exec("PRAGMA synchronous = FULL");
@@ -385,20 +389,30 @@ export function readRunnerHostAcknowledgedThrough(
   path: string,
   streamId: string,
   sessionId: string,
+  observation?: RunnerDatabaseObservationContext,
 ): number | null {
   if (!existsSync(path)) return null;
-  const database = openRunnerSqliteReadOnlyDatabase(path);
+  const database = openRunnerSqliteReadOnlyDatabase(path, observation);
   try {
-    const row = database.prepare(`
-      SELECT stream_id, session_id, acknowledged_through, checkpoint_hash
-      FROM runner_event_ack_checkpoint WHERE stream_id = ?
-    `).get(streamId) as CheckpointRow | undefined;
-    if (!row) return null;
-    if (row.session_id !== sessionId) {
-      throw new Error("runner host checkpoint stream is owned by another session");
-    }
-    assertCheckpointHash(row);
-    return row.acknowledged_through;
+    const read = () => {
+      const row = database.prepare(`
+        SELECT stream_id, session_id, acknowledged_through, checkpoint_hash
+        FROM runner_event_ack_checkpoint WHERE stream_id = ?
+      `).get(streamId) as CheckpointRow | undefined;
+      if (!row) return null;
+      if (row.session_id !== sessionId) {
+        throw new Error("runner host checkpoint stream is owned by another session");
+      }
+      assertCheckpointHash(row);
+      return row.acknowledged_through;
+    };
+    return observation
+      ? observation.phaseObservation.runSync("dbRead", {
+        sessionId,
+        databasePath: path,
+        label: observation.label ?? "runner host ACK",
+      }, read)
+      : read();
   } finally {
     database.close();
   }

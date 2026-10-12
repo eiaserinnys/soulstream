@@ -20,6 +20,7 @@ import {
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import {
   applyInterventionCommandFrame,
   closeCommandFrame,
@@ -137,6 +138,7 @@ export interface RunnerProcessDispatcherOptions {
     NodeStallMonitor,
     "beginRunnerOperation" | "sqliteTransactionObserver"
   >;
+  phaseObservation?: RunnerPhaseObservation;
   handleHostCall(
     call: RunnerHostCall,
     registerPostResponse: (continuation: () => Promise<void>) => void,
@@ -563,11 +565,19 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       try {
         this.stoppedRunnerWriter = await RunnerSqliteEventOutbox.open(paths.databasePath, {
           sessionId: this.spawnInput.sessionId,
+          ...(this.options.phaseObservation
+            ? { phaseObservation: this.options.phaseObservation }
+            : {}),
         });
         this.outbox = await RunnerParentOutbox.open(
           paths.databasePath,
           this.spawnInput.sessionId,
-          { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
+          {
+            onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack),
+            ...(this.options.phaseObservation
+              ? { phaseObservation: this.options.phaseObservation }
+              : {}),
+          },
         );
       } catch (error) {
         try {
@@ -594,7 +604,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       this.outbox = await (this.options.openParentOutbox ?? RunnerParentOutbox.open)(
         spawned.paths.databasePath,
         this.spawnInput.sessionId,
-        { onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack) },
+        {
+          onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack),
+          ...(this.options.phaseObservation
+            ? { phaseObservation: this.options.phaseObservation }
+            : {}),
+        },
       );
       this.hostCallIdempotency = new RunnerHostCallIdempotency(this.outbox);
       await this.connect(spawned.paths.socketPath, !spawned.adopted);
