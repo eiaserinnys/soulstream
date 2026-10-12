@@ -17,6 +17,7 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapRecord,
 } from "./sqlite_event_outbox.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export class RunnerParentOutbox implements EventOutboxPumpStore {
   private bootstrap: RunnerBootstrapRecord | null = null;
@@ -26,6 +27,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     private readonly host: RunnerHostStateStore,
     private readonly sessionId: string,
     private readonly onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>,
+    private readonly phaseObservation?: RunnerPhaseObservation,
   ) {}
 
   static async open(
@@ -33,16 +35,24 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     sessionId: string,
     options: {
       onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
+      phaseObservation?: RunnerPhaseObservation;
     } = {},
   ): Promise<RunnerParentOutbox> {
-    const runner = await RunnerSqliteEventOutbox.openReadOnly(runnerDatabasePath, { sessionId });
+    const runner = await RunnerSqliteEventOutbox.openReadOnly(runnerDatabasePath, {
+      sessionId,
+      ...(options.phaseObservation ? { phaseObservation: options.phaseObservation } : {}),
+    });
     try {
-      const host = RunnerHostStateStore.open(runnerHostStatePath(runnerDatabasePath));
+      const hostPath = runnerHostStatePath(runnerDatabasePath);
+      const host = RunnerHostStateStore.open(hostPath, options.phaseObservation
+        ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
+        : undefined);
       const outbox = new RunnerParentOutbox(
         runner,
         host,
         sessionId,
         options.onCheckpointAdvanced,
+        options.phaseObservation,
       );
       await outbox.readBootstrap();
       return outbox;
@@ -57,19 +67,27 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     sessionId: string,
     options: {
       onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
+      phaseObservation?: RunnerPhaseObservation;
     } = {},
   ): Promise<RunnerParentOutbox> {
     const runner = await RunnerSqliteEventOutbox.openReadOnlyTail(
       runnerDatabasePath,
-      { sessionId },
+      {
+        sessionId,
+        ...(options.phaseObservation ? { phaseObservation: options.phaseObservation } : {}),
+      },
     );
     try {
-      const host = RunnerHostStateStore.open(runnerHostStatePath(runnerDatabasePath));
+      const hostPath = runnerHostStatePath(runnerDatabasePath);
+      const host = RunnerHostStateStore.open(hostPath, options.phaseObservation
+        ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
+        : undefined);
       const outbox = new RunnerParentOutbox(
         runner,
         host,
         sessionId,
         options.onCheckpointAdvanced,
+        options.phaseObservation,
       );
       await outbox.readBootstrap();
       return outbox;
@@ -151,7 +169,14 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {
     const acknowledgedThrough = await this.readAcknowledgedThrough();
     if (acknowledgedThrough === null) return null;
-    return await this.runner.readLatestPendingRecordAfter(acknowledgedThrough);
+    const read = async () => await this.runner.readLatestPendingRecordAfter(acknowledgedThrough);
+    return this.phaseObservation
+      ? await this.phaseObservation.runAsync("dbRead", {
+        sessionId: this.sessionId,
+        databasePath: this.runner.databasePath,
+        label: "runner parent pending record",
+      }, read)
+      : await read();
   }
 
   async readPendingIpcFrames(): Promise<Array<{
@@ -256,10 +281,14 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   private requireAcknowledgedThrough(): number {
-    const acknowledgedThrough = this.host.readAcknowledgedThrough(
-      this.streamId,
-      this.sessionId,
-    );
+    const read = () => this.host.readAcknowledgedThrough(this.streamId, this.sessionId);
+    const acknowledgedThrough = this.phaseObservation
+      ? this.phaseObservation.runSync("dbRead", {
+        sessionId: this.sessionId,
+        databasePath: runnerHostStatePath(this.runner.databasePath),
+        label: "runner parent host ACK",
+      }, read)
+      : read();
     if (acknowledgedThrough === null) {
       throw new Error("runner parent ACK checkpoint is unavailable before bootstrap");
     }

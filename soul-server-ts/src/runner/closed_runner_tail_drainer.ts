@@ -10,6 +10,7 @@ import {
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { RunnerParentOutbox } from "./runner_parent_outbox.js";
 import type { RunnerRegistration } from "./runner_process_registry.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export interface ClosedRunnerTailOutbox extends EventOutboxPumpStore {
   readLatestPendingRecord(): Promise<EventOutboxRecord | null>;
@@ -19,7 +20,11 @@ export interface ClosedRunnerTailOutbox extends EventOutboxPumpStore {
 interface ClosedRunnerTailDrainerOptions {
   pumpMux: Pick<EventOutboxPumpMux, "register">;
   logger: Pick<Logger, "error" | "info" | "warn">;
-  openOutbox?: (databasePath: string, sessionId: string) => Promise<ClosedRunnerTailOutbox>;
+  openOutbox?: (
+    databasePath: string,
+    sessionId: string,
+    phaseObservation?: RunnerPhaseObservation,
+  ) => Promise<ClosedRunnerTailOutbox>;
   monotonicNow?: () => number;
 }
 
@@ -27,7 +32,10 @@ interface ClosedRunnerTailDrainerOptions {
 export class ClosedRunnerTailDrainer {
   constructor(private readonly options: ClosedRunnerTailDrainerOptions) {}
 
-  async drain(registration: RunnerRegistration): Promise<void> {
+  async drain(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<void> {
     const startedAt = (this.options.monotonicNow ?? (() => performance.now()))();
     let outcome: "acknowledged" | "fully_acknowledged" | "failed" = "failed";
     let outbox: ClosedRunnerTailOutbox | undefined;
@@ -35,12 +43,23 @@ export class ClosedRunnerTailDrainer {
     try {
       const openOutbox = this.options.openOutbox ?? (
         registration.closedTailState?.status === "requires_drain"
-          ? RunnerParentOutbox.openClosedTail
-          : RunnerParentOutbox.open
+          ? (databasePath: string, sessionId: string, observation?: RunnerPhaseObservation) =>
+            RunnerParentOutbox.openClosedTail(
+              databasePath,
+              sessionId,
+              observation ? { phaseObservation: observation } : {},
+            )
+          : (databasePath: string, sessionId: string, observation?: RunnerPhaseObservation) =>
+            RunnerParentOutbox.open(
+              databasePath,
+              sessionId,
+              observation ? { phaseObservation: observation } : {},
+            )
       );
       outbox = await openOutbox(
         registration.config.paths.databasePath,
         registration.config.sessionId,
+        phaseObservation,
       );
       const tail = await outbox.readLatestPendingRecord();
       if (!tail) {

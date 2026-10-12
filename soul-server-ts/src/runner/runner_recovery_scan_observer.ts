@@ -4,6 +4,16 @@ import {
   isTerminalRunnerExecutionState,
   type RunnerRegistration,
 } from "./runner_process_registry.js";
+import type { RunnerDatabaseObservationSummary } from "./runner_phase_observation.js";
+
+export interface RunnerRecoveryScanObservationSummary {
+  nodeId: string;
+  scanId: string;
+  phaseDurationsMs: Record<string, number>;
+  database?: RunnerDatabaseObservationSummary;
+  databaseAndPhaseDurationsOverlap: true;
+  nestedGcTimingOverlapsReleaseGc?: true;
+}
 
 export function closedRunnerTailRequiresDrain(registration: RunnerRegistration): boolean {
   const status = registration.closedTailState?.status;
@@ -15,6 +25,7 @@ export function logRunnerRecoveryScan(
   registrations: RunnerRegistration[],
   startedAt: number,
   finishedAt: number,
+  observation?: RunnerRecoveryScanObservationSummary,
 ): void {
   const closed = registrations.filter(
     (registration) => registration.lifecycle?.execution_state === "closed",
@@ -31,5 +42,15 @@ export function logRunnerRecoveryScan(
     closedRegistrations: closed.length,
     closedTailDrains,
     closedTailSkips: closed.length - closedTailDrains,
+    ...(observation ? {
+      nodeId: observation.nodeId,
+      scanId: observation.scanId,
+      phaseDurationsMs: observation.phaseDurationsMs,
+      ...(observation.database ? { database: observation.database } : {}),
+      databaseAndPhaseDurationsOverlap: observation.databaseAndPhaseDurationsOverlap,
+      ...(observation.nestedGcTimingOverlapsReleaseGc
+        ? { nestedGcTimingOverlapsReleaseGc: true }
+        : {}),
+    } : {}),
   }, "runner recovery scan completed");
 }

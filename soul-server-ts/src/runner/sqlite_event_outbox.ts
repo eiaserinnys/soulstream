@@ -85,6 +85,7 @@ import {
   type RunnerSqliteTransactionObserver,
 } from "./runner_sqlite_connection.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
   from "./sqlite_event_outbox_schema.js";
@@ -94,6 +95,7 @@ type SqliteDatabase = InstanceType<typeof import("node:sqlite").DatabaseSync>;
 export interface RunnerSqliteEventOutboxOptions {
   sessionId?: string;
   transactionObserver?: RunnerSqliteTransactionObserver;
+  phaseObservation?: RunnerPhaseObservation;
 }
 
 export interface RunnerPendingDurableEvidence {
@@ -148,12 +150,25 @@ export class RunnerSqliteEventOutbox {
     options: RunnerSqliteEventOutboxOptions = {},
   ): Promise<RunnerSqliteEventOutbox> {
     await assertExistingRunnerDatabase(databasePath);
-    const database = openRunnerSqliteReadOnlyDatabase(databasePath);
+    const databaseObservation = options.phaseObservation
+      ? {
+        phaseObservation: options.phaseObservation,
+        ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+        label: "runner outbox recovery open",
+      }
+      : undefined;
+    const database = openRunnerSqliteReadOnlyDatabase(databasePath, databaseObservation);
     try {
       requireRunnerSqliteWal(database);
       const version = readUserVersion(database);
       assertRunnerReadOnlySchema(database, version);
-      const recovered = recover(database);
+      const recovered = options.phaseObservation
+        ? options.phaseObservation.runSync("dbRead", {
+          ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+          databasePath,
+          label: "runner outbox snapshot recovery",
+        }, () => recover(database))
+        : recover(database);
       const registrationId = await readOutboxRegistrationId(databasePath, recovered.bootstrap);
       return new RunnerSqliteEventOutbox(
         database,
@@ -175,12 +190,25 @@ export class RunnerSqliteEventOutbox {
     options: RunnerSqliteEventOutboxOptions = {},
   ): Promise<RunnerSqliteEventOutbox> {
     await assertExistingRunnerDatabase(databasePath);
-    const database = openRunnerSqliteReadOnlyDatabase(databasePath);
+    const databaseObservation = options.phaseObservation
+      ? {
+        phaseObservation: options.phaseObservation,
+        ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+        label: "runner outbox tail open",
+      }
+      : undefined;
+    const database = openRunnerSqliteReadOnlyDatabase(databasePath, databaseObservation);
     try {
       requireRunnerSqliteWal(database);
       const version = readUserVersion(database);
       assertRunnerReadOnlySchema(database, version);
-      const recovered = recoverTail(database);
+      const recovered = options.phaseObservation
+        ? options.phaseObservation.runSync("dbRead", {
+          ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+          databasePath,
+          label: "runner outbox tail recovery",
+        }, () => recoverTail(database))
+        : recoverTail(database);
       const registrationId = await readOutboxRegistrationId(databasePath, recovered.bootstrap);
       return new RunnerSqliteEventOutbox(
         database,
@@ -346,7 +374,14 @@ export class RunnerSqliteEventOutbox {
 
   async readBootstrap(): Promise<RunnerBootstrapRecord | null> {
     this.requireOpen();
-    const bootstrap = this.refreshBootstrap();
+    const read = () => this.refreshBootstrap();
+    const bootstrap = this.options.phaseObservation
+      ? this.options.phaseObservation.runSync("dbRead", {
+        ...(this.options.sessionId ? { sessionId: this.options.sessionId } : {}),
+        databasePath: this.databasePath,
+        label: "runner outbox bootstrap",
+      }, read)
+      : read();
     return bootstrap === null ? null : structuredClone(bootstrap);
   }
 

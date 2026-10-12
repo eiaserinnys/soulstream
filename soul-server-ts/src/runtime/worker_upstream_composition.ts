@@ -93,6 +93,7 @@ export function composeWorkerUpstreamAdapter({
         runnerProcess?.runtimeFactory,
         runnerRecoveryCoordinator,
         logger,
+        worker.nodeStallMonitor,
       ),
       ...(agentProfileSource ? { agentProfileSource } : {}),
       ...(decisionRunner ? { decisionRunner } : {}),

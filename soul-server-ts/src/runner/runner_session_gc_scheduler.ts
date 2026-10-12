@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { scanRunnerRegistrations } from "./runner_process_registry.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1_000;
 
@@ -12,6 +13,7 @@ export class RunnerSessionGarbageCollectionScheduler {
     collector?: Pick<RunnerSessionGarbageCollector, "collect">;
     logger: Pick<Logger, "error">;
     now: () => number;
+    phaseObservationFactory?: () => RunnerPhaseObservation;
   }) {}
 
   get inFlight(): Promise<void> | undefined {
@@ -31,7 +33,11 @@ export class RunnerSessionGarbageCollectionScheduler {
     const now = this.options.now();
     if (now < this.nextCollectionAtMs) return;
     this.nextCollectionAtMs = now + SWEEP_INTERVAL_MS;
-    return this.options.collector!.collect(scan).then(() => undefined);
+    return this.options.collector!.collect(
+      scan,
+      undefined,
+      this.options.phaseObservationFactory?.(),
+    ).then(() => undefined);
   }
 
   private track(work: Promise<void>): void {
