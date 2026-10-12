@@ -117,7 +117,24 @@ export async function listTurnUsage(
 ): Promise<{ rows: TurnUsageRow[]; total: number }> {
   const ctes = createTurnUsageCtes(sql, query);
   const rawRows = await sql<TurnUsageListSqlRow[]>`
-    ${ctes}
+    ${ctes}, page AS MATERIALIZED (
+      SELECT t.*, count(*) OVER ()::bigint AS total_count
+      FROM turn_rows t
+      ORDER BY t.at, t.session_id, t.event_id
+      LIMIT ${query.limit} OFFSET ${query.cursor}
+    ), page_bounds AS MATERIALIZED (
+      SELECT p.*,
+        CASE WHEN p.kind = 'no_usage' THEN coalesce(p.next_user_id, (
+          SELECT next_user.id
+          FROM events next_user
+          WHERE next_user.session_id = p.session_id
+            AND next_user.event_type = 'user_message'
+            AND next_user.id > p.event_id
+          ORDER BY next_user.id ASC
+          LIMIT 1
+        )) END AS turn_next_user_id
+      FROM page p
+    )
     SELECT
       t.session_id,
       t.event_id,
@@ -153,7 +170,7 @@ export async function listTurnUsage(
         WHERE ended.session_id = t.session_id
           AND ended.event_type = 'session_ended'
           AND ended.id > t.event_id
-          AND (t.next_user_id IS NULL OR ended.id < t.next_user_id)
+          AND (t.turn_next_user_id IS NULL OR ended.id < t.turn_next_user_id)
         ORDER BY ended.id DESC
         LIMIT 1
       ) END AS ended,
@@ -163,13 +180,12 @@ export async function listTurnUsage(
         WHERE tool.session_id = t.session_id
           AND tool.event_type = 'tool_start'
           AND tool.id > t.event_id
-          AND (t.next_user_id IS NULL OR tool.id < t.next_user_id)
+          AND (t.turn_next_user_id IS NULL OR tool.id < t.turn_next_user_id)
       ) END AS tool_calls,
-      count(*) OVER ()::bigint AS total_count
-    FROM turn_rows t
+      t.total_count
+    FROM page_bounds t
     LEFT JOIN sessions s ON s.session_id = t.session_id
     ORDER BY t.at, t.session_id, t.event_id
-    LIMIT ${query.limit} OFFSET ${query.cursor}
   `;
 
   let total = asNumber(rawRows[0]?.total_count) ?? 0;

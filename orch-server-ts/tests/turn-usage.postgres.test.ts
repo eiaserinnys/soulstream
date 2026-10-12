@@ -208,4 +208,31 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
     expect(rows.find((row) => row.session_id === "s-codex")).toMatchObject({ turns: 3, turns_without_usage: 0 });
     expect(rows.find((row) => row.session_id === "s-next")).toMatchObject({ turns: 1, turns_without_usage: 1 });
   });
+
+  it("bounds no-usage enrichment at the next user message outside the selected period", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-resumed', '재개 세션', 'node-e', 'agent-e', 'resume-preset', ${at("01:30:00.000")})`;
+    await put("s-resumed", 1, "user_message", at("01:30:00.000"), { text: "closed turn" });
+    await put("s-resumed", 2, "session_ended", at("01:30:01.000"), { termination_reason: "limit_hit" });
+    await put("s-resumed", 3, "user_message", at("02:00:01.000"), { text: "next turn" });
+    await put("s-resumed", 4, "tool_start", at("02:00:02.000"), { tool_name: "read_file" });
+    await put("s-resumed", 5, "session_ended", at("02:00:03.000"), { termination_reason: "completed" });
+
+    const { rows, total } = await listTurnUsage({
+      sessionId: "s-resumed",
+      since: SINCE,
+      until: UNTIL,
+      cursor: 0,
+      limit: 100,
+    });
+
+    expect(total).toBe(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      event_id: 1,
+      kind: "no_usage",
+      ended: "limit_hit",
+      tool_calls: 0,
+    });
+  });
 });
