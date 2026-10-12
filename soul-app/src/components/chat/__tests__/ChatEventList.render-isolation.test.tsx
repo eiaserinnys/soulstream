@@ -65,6 +65,9 @@ jest.mock('../../events/TurnSummaryCaption', () => ({
 }));
 jest.mock('../TypingIndicator', () => ({ TypingIndicator: () => null }));
 jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
+jest.mock('../../../hooks/useOpenContentLink', () => ({
+  useOpenContentLink: () => jest.fn(),
+}));
 jest.mock('../ChatNewMessageButton', () => ({ ChatNewMessageButton: () => null }));
 jest.mock('../LabeledDivider', () => {
   const ReactModule = jest.requireActual('react');
