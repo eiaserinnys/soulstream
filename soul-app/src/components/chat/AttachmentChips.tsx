@@ -17,6 +17,7 @@ interface Props {
   disabled?: boolean;
   presentation?: 'default' | 'manuscript';
   containerStyle?: StyleProp<ViewStyle>;
+  attachmentTouchFrameStyle?: StyleProp<ViewStyle>;
 }
 
 export function AttachmentChips({
@@ -28,6 +29,7 @@ export function AttachmentChips({
   disabled = false,
   presentation = 'default',
   containerStyle,
+  attachmentTouchFrameStyle,
 }: Props) {
   const t = useTokens();
   if (attachments.length === 0) return null;
@@ -37,7 +39,7 @@ export function AttachmentChips({
       ? [styles.attachmentRow, { paddingHorizontal: getChatRowHorizontalInset(t, presentation) }]
       : styles.attachmentRow)}>
       {attachments.map((attachment, idx) => (
-        <View key={`${attachment.path}-${idx}`} style={styles.attachmentTouchFrame}>
+        <View key={`${attachment.path}-${idx}`} style={[styles.attachmentTouchFrame, attachmentTouchFrameStyle]}>
           <View style={presentation === 'manuscript'
             ? [styles.attachmentChip, {
                 backgroundColor: t.persistentSession.paper,

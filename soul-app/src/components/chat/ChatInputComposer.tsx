@@ -368,6 +368,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
               attachments={attachments}
               styles={styles}
               containerStyle={[styles.attachmentRow, { paddingHorizontal: 0, paddingTop: 0 }]}
+              attachmentTouchFrameStyle={showGeneratedUndo ? { maxWidth: '100%' } : undefined}
               textSecondaryColor={t.colors.textSecondary}
               textMutedColor={t.colors.textMuted}
               onRemove={removeAttachment}
