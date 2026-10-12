@@ -62,6 +62,12 @@ export function CardItemCheckbox(props: CardItemCheckboxProps) {
     justifyContent: 'flex-start' as const,
     gap: t.spacing.sm,
   };
+  const chatCheckSlot = {
+    width: t.hitTarget.min,
+    height: t.hitTarget.min,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  };
   const labelStyle = {
     fontSize: t.chatFontSize.body,
     lineHeight: t.chatFontSize.body * t.lineHeightRatio,
@@ -78,12 +84,18 @@ export function CardItemCheckbox(props: CardItemCheckboxProps) {
       disabled={disabled}
       onPress={onPress}
       {...(chat ? { onFocus: () => setFocused(true), onBlur: () => setFocused(false) } : {})}
-      frameStyle={chat && Platform.OS === 'web' ? { flexShrink: 0, outlineStyle: 'solid', outlineWidth: 0 } : { flexShrink: 0 }}
+      frameStyle={chat ? {
+        flexShrink: 0,
+        alignSelf: 'flex-start',
+        ...(Platform.OS === 'web' ? { outlineStyle: 'solid', outlineWidth: 0 } : {}),
+      } : { flexShrink: 0 }}
       surfaceStyle={chat ? chatRow : square}
     >
       {chat ? <>
-        <View testID={testID ? `${testID}-visual` : undefined} style={chatSquare}>
-          {checked ? <Ionicons testID={testID ? `${testID}-checkmark` : undefined} name="checkmark" size={t.foundation.typography.label.fontSize} color={t.colors.accentText} /> : null}
+        <View style={chatCheckSlot}>
+          <View testID={testID ? `${testID}-visual` : undefined} style={chatSquare}>
+            {checked ? <Ionicons testID={testID ? `${testID}-checkmark` : undefined} name="checkmark" size={t.foundation.typography.label.fontSize} color={t.colors.accentText} /> : null}
+          </View>
         </View>
         <Text style={labelStyle}>{title}</Text>
       </> : checked ? <Ionicons testID={testID ? `${testID}-checkmark` : undefined} name="checkmark" size={t.foundation.typography.label.fontSize} color={t.colors.accentText} /> : null}

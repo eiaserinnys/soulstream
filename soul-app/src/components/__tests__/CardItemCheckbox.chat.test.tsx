@@ -5,6 +5,20 @@ import { CardItemCheckbox } from '../CardItemCheckbox';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
+test.each(['ios', 'web'] as const)('채팅 체크 줄은 %s에서 왼쪽 내용 폭을 유지한다', platform => {
+  const originalPlatform = Platform.OS;
+  (Platform as any).OS = platform;
+  try {
+    const screen = render(<CardItemCheckbox variant="chat" label="연간 결제" checked testID="chat-check" onPress={jest.fn()} />);
+    const frame = StyleSheet.flatten(screen.getByTestId('chat-check').props.style);
+    expect(frame).toMatchObject({ alignSelf: 'flex-start', flexShrink: 0 });
+    expect(frame.flexGrow).toBeUndefined();
+    expect(frame.width).toBeUndefined();
+  } finally {
+    (Platform as any).OS = originalPlatform;
+  }
+});
+
 test('채팅 체크 줄은 이름과 checked 상태를 한 요소로 묶고 라벨·Space를 한 번 토글한다', () => {
   const onPress = jest.fn();
   const originalPlatform = Platform.OS;
