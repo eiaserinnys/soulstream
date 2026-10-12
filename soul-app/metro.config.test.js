@@ -101,6 +101,16 @@ function resolveMetroRequest(metroConfig, originModulePath, moduleName) {
 }
 
 describe('Metro resolver compatibility', () => {
+  it.each([
+    ['../components/events/EventContextMenu', 'events/EventContextMenu.tsx', 'fixture-chat-ui-menu.tsx'],
+    ['../components/chat-ui/ChatUiNodes', 'chat-ui/ChatUiNodes.tsx', 'fixture-chat-ui-nodes.tsx'],
+  ])('review wrapper %s imports its real owner even if Expo has cached the replacement', (request, source, wrapper) => {
+    const replacement = path.join(appRoot, 'src/component-review', wrapper);
+    const resolveRequest = jest.fn(() => ({ type: 'sourceFile', filePath: replacement }));
+    expect(reviewConfig.resolver.resolveRequest({ originModulePath: replacement, resolveRequest }, request, 'web'))
+      .toEqual({ type: 'sourceFile', filePath: path.join(appRoot, 'src/components', source) });
+    expect(resolveRequest).not.toHaveBeenCalled();
+  });
   it('maps react-native-webrtc legacy event-target-shim subpath to the public root', () => {
     const resolved = { type: 'sourceFile', filePath: '/event-target-shim/index.js' };
     const resolveRequest = jest.fn(() => resolved);

@@ -38,6 +38,8 @@ interface Props {
   requestBottomFollow(): void;
   presentation?: 'default' | 'manuscript';
   generatedNotice?: React.ReactNode;
+  /** Runs when submitting clears the composer, before the API result. */
+  onComposerClearedForSend?: () => void;
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
 }
 
@@ -52,7 +54,7 @@ const ChatVoiceControls = memo(function ChatVoiceControls(props: Omit<React.Comp
 
 export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>(function ChatInputComposer({
   sessionId, sessionStatus, nodeId, backend, api, detailedNetworkActive, appForeground, minimumBottomPadding, requestBottomFollow,
-  presentation = 'default', generatedNotice, onComposerLayout,
+  presentation = 'default', generatedNotice, onComposerClearedForSend, onComposerLayout,
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -153,7 +155,8 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     setGeneratedUndo(null);
     setGeneratedSelection(undefined);
     inputDraft.clear();
-  }, [inputDraft.clear]);
+    onComposerClearedForSend?.();
+  }, [inputDraft.clear, onComposerClearedForSend]);
 
   const handleInputChange = useCallback((value: string) => {
     const previous = inputRef.current;
@@ -355,7 +358,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }, [sessionId, api, clearAttachments]);
   const showGeneratedNotice = generatedNotice !== undefined && generatedNotice !== null;
   const showGeneratedUndo = generatedUndo !== null && input === generatedUndo.after;
-  const showComposerAuxiliaryRow = attachments.length > 0 || showGeneratedNotice || showGeneratedUndo;
+  const showComposerAuxiliaryRow = attachments.length > 0 || showGeneratedUndo;
   const generatedUndoButton = showGeneratedUndo ? (
     <GlassButton
       testID="chat-composer-generated-undo-button"
@@ -400,10 +403,16 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
             />
           </View>
         ) : null}
-        {showGeneratedNotice ? (
-          <View style={styles.generatedNoticeSlot}>{generatedNotice}</View>
-        ) : null}
         {attachments.length === 0 ? generatedUndoButton : null}
+      </View>
+    ) : null}
+    {showGeneratedNotice ? (
+      <View testID="chat-composer-generated-notice-row" style={[
+        styles.generatedNoticeRow,
+        { paddingHorizontal: getChatRowHorizontalInset(t, presentation),
+          ...(presentation === 'manuscript' ? { paddingTop: t.spacing.lg } : {}) },
+      ]}>
+        <View style={styles.generatedNoticeSlot}>{generatedNotice}</View>
       </View>
     ) : null}
 

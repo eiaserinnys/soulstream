@@ -28,6 +28,8 @@ import { useTokens } from '../../theme';
 import { ChatNewMessageButton } from './ChatNewMessageButton';
 import { CollapsibleCaption, CollapsibleCaptionLine } from './CollapsibleCaption';
 import { LabeledDivider } from './LabeledDivider';
+import { ChatUiEventContextMenu } from '../chat-ui/ChatUiEventContextMenu';
+import { readChatUiPublication } from '../chat-ui/chatUiPublication';
 
 // FlatList onEndReachedThreshold 시맨틱: remainingLength / viewportLength.
 // 1.0 = 끝까지 한 화면 분량이 남았을 때 미리 페치 트리거. inverted 모드에서는 위쪽(과거)
@@ -325,16 +327,19 @@ const ChatEventRow = memo(function ChatEventRow({
       </SearchFocusHighlight>
     );
   }
+  const publication = item.event.type === 'assistant_message' ? readChatUiPublication(item.event.data) : null;
+  const hasChatUiText = publication?.kind === 'rich' || publication?.kind === 'unsupported';
+  const MessageMenu = hasChatUiText ? ChatUiEventContextMenu : EventContextMenu;
   const selectionModel = createMessageSelectionModel(item.event);
   const selectionActive =
     selection !== null;
   return (
     <SearchFocusHighlight active={highlighted}>
       <>
-        <EventContextMenu
+        <MessageMenu
           sessionId={sessionId}
           event={item.event}
-          onSelectText={selectionModel
+          onSelectText={hasChatUiText || selectionModel
             ? (model) => selectText(item.key, model)
             : undefined}
           selectionActive={selectionActive}
@@ -353,7 +358,7 @@ const ChatEventRow = memo(function ChatEventRow({
             }
             onSelectionDone={closeSelection}
           />
-        </EventContextMenu>
+        </MessageMenu>
         {item.turnUsageCaption
           ? <TurnUsageCaptionRow
             title={item.turnUsageCaption.title}

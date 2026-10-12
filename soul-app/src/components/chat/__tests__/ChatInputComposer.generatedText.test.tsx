@@ -160,11 +160,16 @@ describe('ChatInputComposer generated text handle', () => {
 
     expect(screen.field().props.value).toBe('첫 글');
     const row = screen.getByTestId('chat-composer-generated-row');
-    expect(row.findByProps({ testID: 'generated-notice-fixture' })).toBeTruthy();
+    expect(row.findAllByProps({ testID: 'generated-notice-fixture' })).toHaveLength(0);
+    const noticeRow = screen.getByTestId('chat-composer-generated-notice-row');
+    expect(noticeRow.findByProps({ testID: 'generated-notice-fixture' })).toBeTruthy();
     expect(row.findByProps({ testID: 'chat-composer-generated-undo-button' })).toBeTruthy();
     let parent = row.parent;
     while (parent && parent.props.testID !== 'chat-composer-anchor') parent = parent.parent;
     expect(parent).toBeTruthy();
+    let noticeParent = noticeRow.parent;
+    while (noticeParent && noticeParent.props.testID !== 'chat-composer-anchor') noticeParent = noticeParent.parent;
+    expect(noticeParent).toBeTruthy();
   });
 
   test('attachments and generated undo share one auxiliary row', () => {
