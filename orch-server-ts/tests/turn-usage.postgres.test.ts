@@ -235,4 +235,28 @@ describe("EventReadRepository turn usage reads (real Postgres)", () => {
       tool_calls: 0,
     });
   });
+
+  it("omits Claude input totals when usage contains no numeric input fields", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id, model_preset, created_at)
+      VALUES ('s-missing-input', '입력 없음', 'node-f', 'agent-f', 'claude-preset', ${at("01:40:00.000")})`;
+    await put("s-missing-input", 1, "user_message", at("01:40:00.000"), { text: "empty usage" });
+    await put("s-missing-input", 2, "complete", at("01:40:01.000"), { usage: {} });
+    await put("s-missing-input", 3, "user_message", at("01:41:00.000"), { text: "output only" });
+    await put("s-missing-input", 4, "complete", at("01:41:01.000"), { usage: { output_tokens: 4 } });
+
+    const { rows, total } = await listTurnUsage({
+      sessionId: "s-missing-input",
+      since: SINCE,
+      until: UNTIL,
+      cursor: 0,
+      limit: 100,
+    });
+
+    expect(total).toBe(2);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ event_id: 2, kind: "complete" });
+    expect(rows[0]).not.toHaveProperty("input_tokens");
+    expect(rows[1]).toMatchObject({ event_id: 4, kind: "complete", output_tokens: 4 });
+    expect(rows[1]).not.toHaveProperty("input_tokens");
+  });
 });

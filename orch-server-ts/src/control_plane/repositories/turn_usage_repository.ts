@@ -260,21 +260,18 @@ export async function summarizeTurnUsage(
       FROM turn_rows
       GROUP BY session_id
     ) grouped
+    LEFT JOIN (
+      SELECT DISTINCT ON (session_id) session_id, model
+      FROM usage_rec
+      WHERE model IS NOT NULL
+      ORDER BY session_id, created_at, id
+    ) model USING (session_id)
+    LEFT JOIN (
+      SELECT DISTINCT ON (session_id) session_id, first_call_input_tokens
+      FROM usage_rec
+      ORDER BY session_id, created_at, id
+    ) first_usage USING (session_id)
     LEFT JOIN sessions s ON s.session_id = grouped.session_id
-    LEFT JOIN LATERAL (
-      SELECT usage_rec.model
-      FROM usage_rec
-      WHERE usage_rec.session_id = grouped.session_id AND usage_rec.model IS NOT NULL
-      ORDER BY usage_rec.created_at, usage_rec.id
-      LIMIT 1
-    ) model ON true
-    LEFT JOIN LATERAL (
-      SELECT usage_rec.first_call_input_tokens
-      FROM usage_rec
-      WHERE usage_rec.session_id = grouped.session_id
-      ORDER BY usage_rec.created_at, usage_rec.id
-      LIMIT 1
-    ) first_usage ON true
     LEFT JOIN LATERAL (
       SELECT CASE WHEN jsonb_typeof(manifest.payload->'total_chars') = 'number'
         THEN (manifest.payload->>'total_chars')::numeric END AS injection_chars
@@ -415,13 +412,18 @@ function normalizedInputTokens(sql: SqlClient) {
   const hasInvalidValue = claudeFields.map((field) =>
     sql`(usage ? ${field} AND jsonb_typeof(usage->${field}) <> 'number')`
   );
+  const hasNumericValue = claudeFields.map((field) =>
+    sql`jsonb_typeof(usage->${field}) = 'number'`
+  );
   const fieldValues = claudeFields.map((field) =>
     sql`coalesce(${numberField(sql, "usage", field)}, 0)`
   );
   return sql`
     CASE WHEN usage ? 'cached_input_tokens' THEN ${codexValue}
       WHEN ${hasInvalidValue[0]} OR ${hasInvalidValue[1]} OR ${hasInvalidValue[2]} THEN NULL
-      ELSE ${fieldValues[0]} + ${fieldValues[1]} + ${fieldValues[2]}
+      WHEN ${hasNumericValue[0]} OR ${hasNumericValue[1]} OR ${hasNumericValue[2]}
+        THEN ${fieldValues[0]} + ${fieldValues[1]} + ${fieldValues[2]}
+      ELSE NULL
     END
   `;
 }
