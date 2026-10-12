@@ -29,6 +29,10 @@ function withTextPayload(event: SessionEvent, text: string): SessionEvent {
   };
 }
 
+export function isAssistantUiPublication(type: string, data: unknown): boolean {
+  return type === 'assistant_message' && asRecord(asRecord(data)?.ui) !== null;
+}
+
 export function appendOnlyStreamingKey(event: SessionEvent): string | null {
   const data = asRecord(event.data);
   if (!data) return null;

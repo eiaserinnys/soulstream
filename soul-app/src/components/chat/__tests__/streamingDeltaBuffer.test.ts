@@ -311,6 +311,15 @@ describe('streamingSlotTransitionForEvent', () => {
     });
   });
 
+  it('UI 발행본은 assistant와 thinking slot을 건드리지 않는다', () => {
+    expect(streamingSlotTransitionForEvent('assistant_message', {
+      ui: { schema_version: 1, document: {} },
+    })).toEqual({
+      finalize: [],
+      clear: [],
+    });
+  });
+
   it('tool/input/complete 같은 구조 이벤트는 pending slot을 먼저 finalize한다', () => {
     expect(streamingSlotTransitionForEvent('tool_start', {})).toEqual({
       finalize: ['assistant', 'thinking'],
