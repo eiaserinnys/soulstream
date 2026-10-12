@@ -3,7 +3,7 @@ import { useChatUiFeedback } from "../chat-ui/ChatUiControllerProvider";
 
 /** The editor's actual start, including its existing controls, owns this inset. */
 export function ChatInputFeedback({ textareaRef }: { textareaRef: RefObject<HTMLTextAreaElement | null> }) {
-  const feedback = useChatUiFeedback();
+  const { feedback, open } = useChatUiFeedback();
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const [inset, setInset] = useState(0);
   useLayoutEffect(() => {
@@ -15,6 +15,6 @@ export function ChatInputFeedback({ textareaRef }: { textareaRef: RefObject<HTML
     const observer = new ResizeObserver(align);
     observer.observe(editor); observer.observe(parent);
     return () => observer.disconnect();
-  }, [feedback, textareaRef]);
-  return feedback ? <p ref={noticeRef} role="status" className="chat-ui-meta mt-2 mb-0" style={{ paddingInlineStart: inset }}>{feedback}</p> : null;
+  }, [open, textareaRef]);
+  return open ? <p ref={noticeRef} role="status" className="chat-ui-meta mt-2 mb-0 h-[1lh] overflow-hidden whitespace-nowrap" style={{ paddingInlineStart: inset }}>{feedback}</p> : null;
 }

@@ -97,14 +97,54 @@ for (const pas of [false, true]) for (const width of [1440, 360]) {
     await root.getByRole("button", { name: "초기화", exact: true }).click();
     await expect(notice).toHaveText("기본값으로 돌아갔어");
     await root.getByRole("checkbox", { name: pas ? "결과 알림" : "연간 결제 (20% 할인)", exact: true }).click();
-    await expect(notice).toHaveCount(0);
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveText("");
     if (!pas && width === 1440) {
       await root.getByTestId("send-button").click();
       await expect.poll(() => h.sends.length).toBe(1);
       expect(JSON.stringify(h.sends[0])).toContain("/fixture/메모.pdf");
       await expect(draft).toHaveValue("");
+      await expect(notice).toHaveCount(0);
       await expect(root.getByText("검수 메모와 긴 파일 이름.pdf", { exact: true })).toHaveCount(0);
     }
+    expect(h.errors).toEqual([]);
+  });
+}
+
+for (const pas of [false, true]) {
+  test(`opened feedback preserves same-coordinate checkbox and slider targets ${pas ? "PAS" : "column"}`, async ({ page }) => {
+    const h = await installChatUiRoutes(page);
+    const root = await openChatUi(page, pas);
+    const scroller = root.locator('[data-virtuoso-scroller="true"]');
+    await scroller.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await root.getByRole("button", { name: "초기화", exact: true }).click();
+    const notice = root.locator('[data-testid="chat-input"] [role="status"]');
+    await expect(notice).toHaveText("기본값으로 돌아갔어");
+    const checkbox = root.getByRole("checkbox", { name: "연간 결제 (20% 할인)", exact: true });
+    const slider = root.getByRole("slider", { name: "인원수", exact: true });
+    const cr = (await checkbox.boundingBox())!, sr = (await root.locator('[data-slot="slider-track"]').boundingBox())!;
+    const thumb = (await root.locator('[data-slot="slider-thumb"]').boundingBox())!;
+    const noticeHeight = (await notice.boundingBox())!.height;
+    const point = { x: cr.x + cr.width / 2, y: cr.y + cr.height / 2 };
+    await page.mouse.click(point.x, point.y); await expect(checkbox).toBeChecked();
+    await expect(notice).toHaveText("");
+    await page.mouse.click(point.x, point.y); await expect(checkbox).not.toBeChecked();
+    expect(await checkbox.boundingBox()).toEqual(cr);
+    expect((await notice.boundingBox())!.height).toBe(noticeHeight);
+    await capture(page, `${pas ? "pas" : "general"}-feedback-empty-line`);
+    // 9 keeps this approved document's conditional 10+ person hint closed.
+    // Opening that new content intentionally changes the row's natural height.
+    const thumbX = thumb.x + thumb.width / 2, thumbY = thumb.y + thumb.height / 2;
+    await page.mouse.move(thumbX, thumbY); await page.mouse.down();
+    await page.mouse.move(thumbX + (sr.width - thumb.width) / 49, thumbY);
+    await page.mouse.up();
+    await expect(slider).toHaveAttribute("aria-valuenow", "9");
+    expect(await checkbox.boundingBox()).toEqual(cr);
+    expect((await notice.boundingBox())!.height).toBe(noticeHeight);
+    await root.locator('textarea[data-slot="chat-input-body"]').fill("새 안내 수명 검증");
+    await root.getByTestId("send-button").click();
+    await expect.poll(() => h.sends.length).toBe(1);
+    await expect(notice).toHaveCount(0);
     expect(h.errors).toEqual([]);
   });
 }

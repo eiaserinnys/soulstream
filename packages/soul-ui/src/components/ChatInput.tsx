@@ -32,6 +32,7 @@ import { ChatInputComposer } from "./chat/ChatInputComposer";
 import { ChatInputAccessories } from "./chat/ChatInputAccessories";
 import { ChatInputFeedback } from "./chat/ChatInputFeedback";
 import { useGeneratedTextActions } from "./chat/useGeneratedTextActions";
+import { useCloseChatUiFeedback } from "./chat-ui/ChatUiControllerProvider";
 import type { RegisterGeneratedTextActions } from "./chat-ui/chat-ui-composer";
 import { mergePendingTextIntoComposer, type PendingChatSendActions } from "./chat/pending-chat-send";
 import type { PendingChatSend } from "../stores/dashboard-store-types";
@@ -63,6 +64,7 @@ export function ChatInput({
   composerAnchorRef,
   onSessionChange,
 }: ChatInputProps = {}) {
+  const closeChatUiFeedback = useCloseChatUiFeedback();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
   const tree = useChatStore((s) => s.tree);
@@ -156,6 +158,7 @@ export function ChatInput({
     },
     onBeforeSend: () => {
       clearGeneratedUndo();
+      closeChatUiFeedback?.();
       composeEvents.submitted(activeSessionKey, textRef.current.length, composeMode);
       setText("");
       textRef.current = "";
@@ -171,6 +174,7 @@ export function ChatInput({
       if (activeSessionKey) setDraft(activeSessionKey, failedText);
     },
     onRetry: (sessionId, pending) => {
+      if (sessionId === activeSessionKey) closeChatUiFeedback?.();
       composeEvents.submitted(sessionId, pending.text.length, pending.mode);
     },
   });
