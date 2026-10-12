@@ -19,10 +19,16 @@ const FeedbackLifecycleContext = createContext<(() => void) | null>(null);
 /** The scope owns memory; virtualized message rows only borrow their entries. */
 type ScopeProps = PropsWithChildren<{ sessionId: string; appendGeneratedText?: ChatUiComposerHandle['appendGeneratedText'] }>;
 function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProps) {
-  const states = useRef(new Map<string, ChatUiState>()).current;
+  const [scope, setScope] = useState(() => ({ sessionId, states: new Map<string, ChatUiState>() }));
+  const { states } = scope;
   const composer = useRef<ChatUiComposerHandle | null>(null);
   const [, setVersion] = useState(0);
   const [{ text: feedback, open: feedbackOpen }, setFeedback] = useState({ text: '', open: false });
+  // Reset this owner before rendering its children; their component lifetimes stay intact.
+  if (scope.sessionId !== sessionId) {
+    setScope({ sessionId, states: new Map<string, ChatUiState>() });
+    setFeedback({ text: '', open: false });
+  }
   const notify = useCallback((text: string) => setFeedback(previous => ({ text, open: previous.open || !!text })), []);
   const closeFeedback = useCallback(() => setFeedback({ text: '', open: false }), []);
   const update = useCallback((key: string, state: ChatUiState) => {
@@ -47,7 +53,7 @@ function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProp
 }
 
 export function ChatUiControllerProvider({ sessionId, appendGeneratedText, children }: ScopeProps) {
-  return <ControllerScope key={sessionId} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>{children}</ControllerScope>;
+  return <ControllerScope sessionId={sessionId} appendGeneratedText={appendGeneratedText}>{children}</ControllerScope>;
 }
 
 /** Ordinary composers can also mount outside a chat UI scope. */

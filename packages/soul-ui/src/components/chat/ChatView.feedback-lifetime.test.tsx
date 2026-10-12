@@ -26,16 +26,16 @@ vi.mock("../../providers/AuthProvider", () => ({ useAuth: () => ({ isAuthenticat
 vi.mock("./submitIntervention", async original => ({
   ...(await original<typeof import("./submitIntervention")>()), submitIntervention: vi.fn(),
 }));
-vi.mock("../../hooks/useFileUpload", () => ({ useFileUpload: () => ({
-  files: [], isUploading: false, isReady: true, addFiles: vi.fn(), removeFile: vi.fn(), resetLocal: vi.fn(),
-  restoreUploadedFiles: vi.fn(), uploadedPaths: [],
-}) }));
+vi.mock("../../hooks/uploadSessionFile", () => ({ uploadSessionFile: vi.fn().mockResolvedValue("/fixture/note.txt") }));
 vi.mock("../LiquidGlassProvider", () => ({ useGlassSurface: () => false }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function FeedbackTrigger() {
   const controller = useChatUiController("fixture", "fixture", documentFixture);
-  return <button onClick={() => controller.act({ type: "reset" }, "reset")}>안내 열기</button>;
+  return <><output data-testid="ui-value">{controller.state.values.seats}</output>
+    <button onClick={() => controller.act({ type: "reset" }, "reset")}>안내 열기</button>
+    <button onClick={() => controller.set("seats", 12)}>값 변경</button>
+    <button onClick={() => controller.act({ type: "compose" }, "compose")}>초안에 추가</button></>;
 }
 let host: HTMLDivElement, root: Root;
 let overlay: ReturnType<typeof createChatSessionStore>;
@@ -52,8 +52,8 @@ async function type(name: string, value: string) {
 }
 async function mount() {
   await act(async () => root.render(<>
-    <section data-pane="main"><ChatView historyEnabled={false} showRuntimeStrips={false} /></section>
-    <section data-pane="overlay"><ChatView storeScope={overlay} presentation="manuscript" historyEnabled={false} showRuntimeStrips={false} /></section>
+    <section data-pane="main"><ChatView fileUploadUrl="/fixture/upload" historyEnabled={false} showRuntimeStrips={false} /></section>
+    <section data-pane="overlay"><ChatView fileUploadUrl="/fixture/upload" storeScope={overlay} presentation="manuscript" historyEnabled={false} showRuntimeStrips={false} /></section>
   </>));
 }
 beforeEach(async () => {
@@ -68,6 +68,42 @@ beforeEach(async () => {
   await mount();
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); useDashboardStore.getState().reset(); vi.unstubAllGlobals(); });
+
+it("keeps ChatInput mounted across A/B/A, resetting only UI values, feedback and undo while the existing draft/upload/mode effects run", async () => {
+  const editor = pane("main").querySelector<HTMLTextAreaElement>("textarea")!;
+  const mode = pane("main").querySelector('[data-slot="chat-input-mode"]')!.getAttribute("title");
+  await type("main", "A 초안");
+  await act(async () => {
+    const input = pane("main").querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [new File(["note"], "초안 첨부.txt")] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(pane("main").textContent).toContain("초안 첨부.txt");
+  await click("main", "안내 열기"); await click("main", "값 변경"); await click("main", "초안에 추가");
+  expect(editor.value).toBe("A 초안\n\n질문: 12명");
+  expect(notice("main")).not.toBeNull();
+  expect(button("main", "되돌리기")).toBeTruthy();
+  const draftA = editor.value;
+  const switchTo = async (id: string) => act(async () => {
+    useDashboardStore.getState().setActiveSession(id);
+    useDashboardStore.getState().processEvent({ type: "assistant_message", content: "기존 답", timestamp: 1 }, 1);
+  });
+  await switchTo("session-b");
+  expect(pane("main").querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("");
+  expect(pane("main").querySelector('[data-testid="ui-value"]')?.textContent).toBe("8");
+  expect(notice("main")).toBeNull(); expect(button("main", "되돌리기")).toBeUndefined();
+  expect(pane("main").textContent).not.toContain("초안 첨부.txt");
+  await click("main", "초안에 추가"); expect(editor.value).toBe("질문: 8명");
+  await switchTo("main-session");
+  expect(pane("main").querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe(draftA);
+  expect(pane("main").querySelector('[data-testid="ui-value"]')?.textContent).toBe("8");
+  expect(notice("main")).toBeNull(); expect(button("main", "되돌리기")).toBeUndefined();
+  expect(pane("main").textContent).not.toContain("초안 첨부.txt");
+  expect(pane("main").querySelector('[data-slot="chat-input-mode"]')!.getAttribute("title")).toBe(mode);
+  await click("main", "초안에 추가"); expect(editor.value).toBe(draftA + "\n\n질문: 8명");
+});
 
 it("closes a same-session pending retry immediately, and a later failure leaves a newly opened line intact", async () => {
   const pending: PendingChatSend = { id: "retry-a", status: "failed", text: "다시 전송", messageText: "다시 전송", attachmentPaths: [], attachments: [], mode: "intervention", reason: "실패" };

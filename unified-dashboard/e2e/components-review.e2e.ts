@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
+import { waitForStableLayout } from "./layout-stability";
 
 const output = path.resolve("../../../.local/artifacts/20261001-components-full-page");
 const phase = process.env.COMPONENTS_REVIEW_PHASE;
@@ -108,7 +109,9 @@ for (const width of [1440, 390]) {
     await review.getByRole("button", { name: "샘플 별표", exact: true }).click();
     await expect(review.getByRole("button", { name: "샘플 별표", exact: true })).toHaveAttribute("aria-pressed", "true");
 
-    const geometry = async () => review.evaluate(el => {
+    const geometry = async () => {
+      await waitForStableLayout(review, [".v3-run-row", "[data-slot=chat-input-body]", "[data-testid=send-button]"]);
+      return review.evaluate(el => {
       const box = (node: Element | null) => {
         if (!node) return null;
         const r = node.getBoundingClientRect(), s = getComputedStyle(node);
@@ -119,12 +122,13 @@ for (const width of [1440, 390]) {
       };
       return { page: box(el), header: box(el.querySelector("header")),
         firstCap: box(el.querySelector("header .dashboard-icon-cap")), lastCap: box(el.querySelector("header .v3-folder-header-actions")),
-        sections: [...el.querySelectorAll(".v3-detail-section")].map(section => ({ section: box(section), head: box(section.querySelector(".v3-detail-section-head")) })),
+        sections: [...el.querySelectorAll('section[id^="components-"] > .v3-detail-section-head')].map(head => ({ section: box(head.parentElement), head: box(head) })),
         rows: [...el.querySelectorAll(".v3-run-row")].map(row => ({ self: box(row), open: box(row.querySelector(".v3-run-open")),
           avatar: box(row.querySelector(".v3-run-avatar")), copy: box(row.querySelector(".v3-run-copy")), trailing: box(row.querySelector(".v3-run-trailing")) })),
         input: box(el.querySelector("[data-slot=chat-input-body]")), send: box(el.querySelector("[data-testid=send-button]")),
         chip: box(el.querySelector(".v3-card-handoff-chip")), composer: box(el.querySelector("[data-slot=chat-input-composer]")) };
-    });
+      });
+    };
     const initial = await geometry();
     for (const row of initial.rows) {
       const sum = row.self!.bt + row.self!.bb + row.open!.pt + row.open!.pb
@@ -228,6 +232,7 @@ for (const width of [1440, 390]) {
     if (width === 390) expect(frameAfter.signature).toBe(frameBefore.signature);
     else expect(frameAfter.signature).not.toBe(frameBefore.signature);
 
+    await waitForStableLayout(activity, ["[data-slot=chat-activity-row]", "[data-slot=chat-thinking-indicator]"]);
     const geometry = await activity.evaluate(element => {
       const box = (selector: string) => {
         const rect = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();

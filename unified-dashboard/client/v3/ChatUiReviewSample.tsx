@@ -75,7 +75,7 @@ export function ChatUiReviewSample({ presentation }: { presentation: 'default' |
   return <div className="chat-ui-review" data-testid={`chat-ui-review-${presentation}`} style={chatTypographyStyle}>
     <div className="chat-ui-review-controls" aria-label="검수 문서" >{examples.map(([value, label]) => <Button key={value} variant="outline" aria-pressed={value === example} onClick={() => setExample(value)}>{label}</Button>)}</div>
     <div className="chat-ui-review-controls" aria-label="글 대체 상태">{modes.map(([value, label]) => <Button key={value} variant="outline" aria-pressed={value === mode} onClick={() => setMode(value)}>{label}</Button>)}</div>
-    <ChatStoreScopeProvider scope={scope}><ChatUiControllerProvider key={sessionId} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
+    <ChatStoreScopeProvider scope={scope}><ChatUiControllerProvider sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
       <div className={manuscript ? MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME : `v3-chat-surface ${DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME}`}>
         <div data-slot="chat-root" data-chat-presentation={manuscript ? 'manuscript' : undefined} className="chat-ui-review-transcript">
           <div className="chat-ui-review-messages">{messages.map(msg => msg.role === 'user'

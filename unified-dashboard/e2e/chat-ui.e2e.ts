@@ -2,6 +2,7 @@ import { expect, test, type Page, type Locator } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { composeText } from "@soulstream/chat-ui";
+import { waitForStableLayout } from "./layout-stability";
 import { installChatUiRoutes, openChatUi, chatUiSession, type ChatUiExample } from "./chat-ui-fixtures";
 
 const output = path.resolve("../../../.local/artifacts/pas-web-w4");
@@ -64,6 +65,7 @@ for (const pas of [false, true]) for (const width of [1440, 360]) {
     await expect(root.getByText("검수 메모와 긴 파일 이름.pdf", { exact: true })).toBeVisible();
     expect(await root.getByTestId("send-button").getAttribute("data-button-variant")).toBe(mode);
     await expect(root.getByRole("button", { name: "되돌리기", exact: true })).toBeVisible();
+    await waitForStableLayout(root, ['[data-slot="chat-input-accessories"]', 'textarea[data-slot="chat-input-body"]']);
     const geometry = await root.evaluate(node => {
       const editor = node.querySelector('textarea')!, row = node.querySelector('[data-slot="chat-input-accessories"]')!;
       const undo = row.querySelector('[data-slot="chat-input-accessories-action"] button')!, composer = node.querySelector('[data-slot="chat-input-composer"]')!;
@@ -88,6 +90,7 @@ for (const pas of [false, true]) for (const width of [1440, 360]) {
     await root.getByRole("button", { name: "복사", exact: true }).click();
     const notice = root.locator('[data-testid="chat-input"] [role="status"]');
     await expect(notice).toHaveText("현재 값 복사됨");
+    await waitForStableLayout(root, ['[data-testid="chat-input"] [role="status"]', 'textarea[data-slot="chat-input-body"]']);
     const noticeGeometry = await notice.evaluate(el => {
       const editor = el.parentElement!.querySelector('textarea')!, er = editor.getBoundingClientRect(), nr = el.getBoundingClientRect();
       return { textStart: nr.x + parseFloat(getComputedStyle(el).paddingInlineStart), editorStart: er.x, top: nr.top, editorBottom: er.bottom, font: getComputedStyle(el).fontSize };
@@ -126,6 +129,7 @@ for (const pas of [false, true]) {
     await expect(notice).toHaveText("기본값으로 돌아갔어");
     const checkbox = root.getByRole("checkbox", { name: "연간 결제 (20% 할인)", exact: true });
     const slider = root.getByRole("slider", { name: "인원수", exact: true });
+    await waitForStableLayout(root, ['[role="checkbox"]', '[data-slot="slider-track"]', '[data-slot="slider-thumb"]', '[data-testid="chat-input"] [role="status"]']);
     const cr = (await checkbox.boundingBox())!, sr = (await root.locator('[data-slot="slider-track"]').boundingBox())!;
     const thumb = (await root.locator('[data-slot="slider-thumb"]').boundingBox())!;
     const noticeHeight = (await notice.boundingBox())!.height;
@@ -201,6 +205,7 @@ test("PAS gallery choices, entity focus, sources, upload in progress, questions 
   await root.getByRole("button", { name: "자료 상세", exact: true }).focus();
   await page.keyboard.press("Shift+Tab"); await page.keyboard.press("Tab");
   await expect(root.getByRole("button", { name: "자료 상세", exact: true })).toBeFocused();
+  await waitForStableLayout(root, [".chat-ui-entity"]);
   const focus = await root.getByRole("button", { name: "자료 상세", exact: true }).evaluate(el => {
     const r = el.getBoundingClientRect();
     return { element: { left: r.left, right: r.right }, focusVisible: el.matches(':focus-visible'), ring: getComputedStyle(el).boxShadow,

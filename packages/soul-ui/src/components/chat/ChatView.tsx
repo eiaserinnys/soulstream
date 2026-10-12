@@ -735,7 +735,7 @@ function ChatViewContent({
   }
 
   return (
-    <ChatUiControllerProvider key={activeSessionKey} sessionId={activeSessionKey} appendGeneratedText={appendGeneratedText}>
+    <ChatUiControllerProvider sessionId={activeSessionKey} appendGeneratedText={appendGeneratedText}>
     <div
       data-slot="chat-root"
       data-chat-font-size={chatFontSize}
