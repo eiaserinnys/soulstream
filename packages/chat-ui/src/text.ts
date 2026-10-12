@@ -137,6 +137,15 @@ function isVisible(node: Node, evaluateExpression: (expr: Expr) => Value): boole
   return result.type !== "boolean" || result.value;
 }
 
+export function isNodeVisible(
+  doc: NormalizedChatUiDocumentV1,
+  state: ChatUiState,
+  node: Node,
+): boolean {
+  const context = createEvaluationContext(doc, state);
+  return isVisible(node, context.evaluateExpression);
+}
+
 function renderNode(
   doc: NormalizedChatUiDocumentV1,
   state: ChatUiState,
@@ -219,11 +228,15 @@ function collectCitationSources(nodes: Node[], sources = new Set<string>()): Set
   return sources;
 }
 
-function renderUnreferencedSources(doc: NormalizedChatUiDocumentV1): string {
+export function unreferencedSourceKeys(doc: NormalizedChatUiDocumentV1): string[] {
   const citedSources = collectCitationSources(doc.body);
-  const entries = Object.keys(doc.sources)
+  return Object.keys(doc.sources)
     .sort()
-    .filter((key) => !citedSources.has(key))
+    .filter((key) => !citedSources.has(key));
+}
+
+function renderUnreferencedSources(doc: NormalizedChatUiDocumentV1): string {
+  const entries = unreferencedSourceKeys(doc)
     .map((key) => {
       const source = doc.sources[key]!;
       return source.type === "assumption"
