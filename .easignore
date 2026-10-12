@@ -18,6 +18,7 @@
 !/packages/soul-ui/src/lib/persistent-turn-usage.ts
 !/packages/soul-ui/src/lib/persistent-session-layout.ts
 !/packages/soul-ui/src/lib/standalone-image-line.ts
+!/packages/soul-ui/src/lib/internal-link.ts
 !/packages/wire-schema
 /packages/wire-schema/*
 !/packages/wire-schema/src
