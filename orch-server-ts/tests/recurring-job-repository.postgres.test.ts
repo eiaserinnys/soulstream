@@ -83,6 +83,41 @@ describe("SqlRecurringJobRepository PostgreSQL integration", () => {
     await harness.cleanup();
   });
 
+  it("lists jobs across owners with the existing archive order and resolves archived owners", async () => {
+    await repository.createJob(job({
+      jobId: "owner-a-job",
+      ownerEmail: "owner-a@example.com",
+      createdIdempotencyKey: "owner-a-job-create",
+      nextRunAt: "2026-09-22T00:00:00.000Z",
+    }));
+    await repository.createJob(job({
+      jobId: "owner-b-job",
+      ownerEmail: "owner-b@example.com",
+      createdIdempotencyKey: "owner-b-job-create",
+      nextRunAt: "2026-09-23T00:00:00.000Z",
+    }));
+    await repository.createJob(job({
+      jobId: "archived-owner-b-job",
+      ownerEmail: "owner-b@example.com",
+      createdIdempotencyKey: "archived-owner-b-job-create",
+      enabled: false,
+      archivedAt: "2026-09-21T12:00:00.000Z",
+      nextRunAt: null,
+    }));
+
+    expect((await repository.listAllJobs()).map((candidate) => candidate.jobId)).toEqual([
+      "owner-a-job",
+      "owner-b-job",
+    ]);
+    expect((await repository.listAllJobs(true)).map((candidate) => candidate.jobId)).toEqual([
+      "owner-a-job",
+      "owner-b-job",
+      "archived-owner-b-job",
+    ]);
+    expect(await repository.findJobOwnerEmail("archived-owner-b-job")).toBe("owner-b@example.com");
+    expect(await repository.findJobOwnerEmail("missing-job")).toBeNull();
+  });
+
   it("enforces the migration's active-run partial unique index and run-state CAS", async () => {
     await repository.createJob(job());
     const first = await repository.createManualRun(run({ runId: "run-first", sessionId: "session-first" }));

@@ -18,6 +18,27 @@ const actor: RecurringJobActor = {
 };
 
 describe("RecurringJobService", () => {
+  it("provides all-owner reads while preserving the existing archive filter", async () => {
+    const repository = memoryRepository();
+    const service = new RecurringJobService({
+      repository,
+      now: () => new Date("2026-09-21T00:00:00.000Z"),
+      newId: sequentialIds(),
+    });
+    const ownerB = { ...actor, ownerEmail: "owner-b@example.com", actorId: "owner-b-session" };
+    const first = await service.create(actor, { ...createInput(), idempotencyKey: "owner-a" });
+    const second = await service.create(ownerB, { ...createInput(), idempotencyKey: "owner-b" });
+    await service.archive(ownerB, second.jobId, second.version);
+
+    expect((await service.listAllOwners()).map((candidate) => candidate.jobId)).toEqual([first.jobId]);
+    expect((await service.listAllOwners(true)).map((candidate) => candidate.jobId)).toEqual([
+      first.jobId,
+      second.jobId,
+    ]);
+    expect(await service.ownerEmailOf(second.jobId)).toBe("owner-b@example.com");
+    expect(await service.ownerEmailOf("missing-job")).toBeNull();
+  });
+
   it("cancels queued automatic work on pause but permits a manual run", async () => {
     const repository = memoryRepository();
     let current = new Date("2026-09-21T00:00:00.000Z");
@@ -787,6 +808,12 @@ function memoryRepository(): RecurringJobRepository & {
     async listJobsForOwner(ownerEmail, includeArchived = false) {
       return [...jobs.values()].filter((job) =>
         job.ownerEmail === ownerEmail && (includeArchived || job.archivedAt === null));
+    },
+    async listAllJobs(includeArchived = false) {
+      return [...jobs.values()].filter((job) => includeArchived || job.archivedAt === null);
+    },
+    async findJobOwnerEmail(jobId) {
+      return jobs.get(jobId)?.ownerEmail ?? null;
     },
     async createJob(job) { jobs.set(job.jobId, job); return job; },
     async findJobByCreateIdempotency(ownerEmail, key) {

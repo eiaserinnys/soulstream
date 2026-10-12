@@ -129,6 +129,8 @@ export class RecurringJobError extends Error {
 export interface RecurringJobRepository {
   findJobForOwner(jobId: string, ownerEmail: string, includeArchived?: boolean): Promise<RecurringJob | null>;
   listJobsForOwner(ownerEmail: string, includeArchived?: boolean): Promise<RecurringJob[]>;
+  findJobOwnerEmail(jobId: string): Promise<string | null>;
+  listAllJobs(includeArchived?: boolean): Promise<RecurringJob[]>;
   createJob(input: RecurringJob): Promise<RecurringJob>;
   findJobByCreateIdempotency(ownerEmail: string, idempotencyKey: string): Promise<RecurringJob | null>;
   updateJob(input: RecurringJob, expectedVersion: number): Promise<RecurringJob | RecurringJobConflict>;
