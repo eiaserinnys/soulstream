@@ -38,7 +38,8 @@ interface Props {
   requestBottomFollow(): void;
   presentation?: 'default' | 'manuscript';
   generatedNotice?: React.ReactNode;
-  onMessageSent?: () => void;
+  /** Runs when submitting clears the composer, before the API result. */
+  onComposerClearedForSend?: () => void;
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
 }
 
@@ -53,7 +54,7 @@ const ChatVoiceControls = memo(function ChatVoiceControls(props: Omit<React.Comp
 
 export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>(function ChatInputComposer({
   sessionId, sessionStatus, nodeId, backend, api, detailedNetworkActive, appForeground, minimumBottomPadding, requestBottomFollow,
-  presentation = 'default', generatedNotice, onMessageSent, onComposerLayout,
+  presentation = 'default', generatedNotice, onComposerClearedForSend, onComposerLayout,
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -154,8 +155,8 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     setGeneratedUndo(null);
     setGeneratedSelection(undefined);
     inputDraft.clear();
-    onMessageSent?.();
-  }, [inputDraft.clear, onMessageSent]);
+    onComposerClearedForSend?.();
+  }, [inputDraft.clear, onComposerClearedForSend]);
 
   const handleInputChange = useCallback((value: string) => {
     const previous = inputRef.current;

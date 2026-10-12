@@ -103,6 +103,24 @@ test.each(['default', 'manuscript'] as const)('real %s body appends into the dra
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
   expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
 });
+test('submit clearing closes the notice line before the response and keeps it closed on failure', async () => {
+  let rejectRequest!: (error: Error) => void;
+  mockApi.intervene.mockImplementationOnce(() => new Promise((_, reject) => { rejectRequest = reject; }));
+  const screen = await open();
+  fireEvent.press(screen.getByLabelText('초기화'));
+  expect(screen.getByTestId('chat-composer-generated-notice-row')).toBeTruthy();
+  const input = () => screen.getByTestId('chat-composer-text-input');
+  fireEvent.changeText(input(), '전송 실패 예시');
+  await act(async () => { fireEvent.press(screen.getByTestId('chat-composer-send-button')); });
+  expect(mockApi.intervene).toHaveBeenCalled();
+  expect(useChatStore.getState().pendingOptimisticBySession.one.pendingStatus).toBe('sending');
+  expect(input().props.value).toBe('');
+  expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+  await act(async () => { rejectRequest(new Error('공개 예시 요청 실패')); });
+  expect(useChatStore.getState().pendingOptimisticBySession.one.pendingStatus).toBe('failed');
+  expect(input().props.value).toBe('');
+  expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+});
 test('an opened notice line resets when the session changes', async () => {
   const screen = await open();
   fireEvent.press(screen.getByLabelText('초기화'));
