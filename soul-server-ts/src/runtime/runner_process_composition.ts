@@ -11,6 +11,7 @@ import {
 } from "../runner/runner_process_runtime_factory.js";
 import { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
 import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
+import { RunnerRegistrationScanCache } from "../runner/runner_registration_scan_cache.js";
 import { RunnerReleaseGarbageCollector } from "../runner/runner_release_gc.js";
 import { BuildArtifactReleaseMaterializer } from "../runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../runner/runner_release_pool.js";
@@ -147,9 +148,11 @@ export function composeRunnerReconciliationReporter(
   if (!stateDirectory || !coordinator) {
     throw new Error("runner inventory requires state directory and recovery coordinator");
   }
+  const cache = new RunnerRegistrationScanCache();
   return {
     listLiveRunnerSessionIds: async () => await listLiveRunnerSessionIds({
       stateDirectory,
+      cache,
       leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
       logger,
     }),

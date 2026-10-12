@@ -22,6 +22,7 @@ import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import type { ProcessIdentity } from "./runner_process_lock.js";
 import { isRunnerRegistrationDirectoryName } from "./runner_process_paths.js";
 import { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
+import type { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
 
 export { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 
@@ -83,6 +84,7 @@ export interface LiveRunnerSessionIdsOptions {
   stateDirectory: string;
   leaseTimeoutMs: number;
   scan?: typeof scanRunnerRegistrations;
+  cache?: RunnerRegistrationScanCache;
   now?: () => number;
   onScanError?: (failure: RunnerRegistrationScan["errors"][number]) => void;
   logger?: Pick<Logger, "info">;
@@ -91,6 +93,7 @@ export interface LiveRunnerSessionIdsOptions {
 export async function scanRunnerRegistrations(
   stateDirectory: string,
   options: {
+    cache?: RunnerRegistrationScanCache;
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
   } & AuthoritativeRunnerLifecycleOptions = {},
@@ -102,18 +105,25 @@ export async function scanRunnerRegistrations(
     entries = await readdir(stateDirectory, { withFileTypes: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      options.cache?.prune(new Set());
       return { registrations, errors };
     }
     throw error;
   }
+  options.cache?.prune(new Set(entries
+    .filter((entry) => entry.isDirectory() && isRunnerRegistrationDirectoryName(entry.name))
+    .map((entry) => resolve(stateDirectory, entry.name))));
   for (const entry of entries) {
     if (!entry.isDirectory() || !isRunnerRegistrationDirectoryName(entry.name)) continue;
     const directory = resolve(stateDirectory, entry.name);
     try {
-      registrations.push(await readRunnerRegistrationSummary(directory, {
-        ...options,
-        verifyProcessIdentity: options.verifyProcessIdentity ?? true,
-      }));
+      const readFresh = async () => await readRunnerRegistrationSummary(directory, {
+          ...options,
+          verifyProcessIdentity: options.verifyProcessIdentity ?? true,
+        });
+      registrations.push(options.cache
+        ? await options.cache.read(directory, readFresh)
+        : await readFresh());
     } catch (error) {
       const normalized = asError(error);
       const stage = (normalized as Error & { runnerRegistrationStage?: string })
@@ -184,7 +194,9 @@ export function classifyRunnerRegistration(
 export async function listLiveRunnerSessionIds(
   options: LiveRunnerSessionIdsOptions,
 ): Promise<string[]> {
-  const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory);
+  const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory, {
+    ...(options.cache ? { cache: options.cache } : {}),
+  });
   const errors: RunnerRegistrationScan["errors"] = [];
   const disappearedDirectories: string[] = [];
   for (const failure of result.errors) {
