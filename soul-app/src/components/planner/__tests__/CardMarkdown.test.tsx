@@ -36,6 +36,7 @@ test('보고 폭 계약은 접기와 펼치기에서 같고 질문과 에이전�
     comments: [{ id: 'comment', cardId: card.id, authorKind: 'agent', authorId: 'roselin', sessionId: null, kind: 'comment', body: '짧은 커멘트', createdAt: '2026-10-01T00:03:00Z' }],
   }} onChooseAnswer={() => {}} />);
   const bubbleStyle = () => StyleSheet.flatten(within(screen.getByTestId('card-fold-report-width')).getByTestId('assistant-message-bubble').props.style);
+  for (const message of screen.UNSAFE_getAllByType(AssistantMessage)) expect(message.props.rowInset).toBe('none');
   const collapsed = bubbleStyle();
   expect(collapsed).toMatchObject({ flexGrow: 1, flexShrink: 1, maxWidth: '86%' });
   const neighbors = () => screen.getAllByTestId('assistant-message-bubble').filter((_, index) => index !== 1).map(bubble => StyleSheet.flatten(bubble.props.style));

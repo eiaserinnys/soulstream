@@ -22,7 +22,7 @@ jest.mock('expo-web-browser', () => ({
 }));
 
 import { render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as ContentLinkHook from '../../../hooks/useOpenContentLink';
 import {
@@ -216,4 +216,21 @@ describe('AssistantMessage selection entry', () => {
     expect(getByTestId('assistant-streaming-text').props.children).toBe('chunk');
     expect(queryByTestId('assistant-markdown')).toBeNull();
   });
+});
+
+
+test('structured children inherit the ordinary row inset; timeline callers explicitly opt out', () => {
+  const event = ev('assistant_message', { text: '같은 줄' });
+  const screen = render(<AssistantMessage event={event} />);
+  const row = () => {
+    let node = screen.getByTestId('assistant-message-bubble').parent;
+    while (node && StyleSheet.flatten(node.props.style)?.marginHorizontal === undefined) node = node.parent;
+    return StyleSheet.flatten(node!.props.style);
+  };
+  const ordinary = row().marginHorizontal;
+  expect(ordinary).toBeGreaterThan(0);
+  screen.rerender(<AssistantMessage event={event}><Text>구조화 내용</Text></AssistantMessage>);
+  expect(row().marginHorizontal).toBe(ordinary);
+  screen.rerender(<AssistantMessage event={event} rowInset="none"><Text>타임라인 내용</Text></AssistantMessage>);
+  expect(row().marginHorizontal).toBe(0);
 });

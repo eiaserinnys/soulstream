@@ -23,7 +23,12 @@ import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 interface Props {
   bubbleWidth?: 'content' | 'fill';
+  /** 바깥 줄 여백을 소유한 타임라인만 none을 지정한다. */
+  rowInset?: 'default' | 'none';
   messageKind?: React.ReactNode;
+  /** 표시 전용 글 대체. 저장 이벤트와 메뉴 연결은 호출자가 소유한다. */
+  textOverride?: string;
+  notice?: React.ReactNode;
   children?: React.ReactNode;
   event: SessionEvent;
   /** 좌측 에이전트 아바타에 사용할 세션 메타. 없으면 아바타 미표시. */
@@ -50,7 +55,10 @@ export function AssistantMessage({
   event,
   session,
   bubbleWidth = 'content',
+  rowInset = 'default',
   messageKind,
+  textOverride,
+  notice,
   children,
   selectionModel,
   onSelectionDone,
@@ -73,7 +81,7 @@ export function AssistantMessage({
   // 단일 \n을 GFM hard break로 변환 — 라이브러리가 md4cFlags hard-break를
   // JS로 노출하지 않아 컴포넌트 내부 렌더 직전 사전처리로 동등 효과를 낸다.
   // useMemo는 React Hooks rules에 따라 early-return *위*에 배치한다.
-  const text = extractText(event);
+  const text = textOverride ?? extractText(event);
   const renderedText = useMemo(
     () => normalizeMarkdownBreaks(text),
     [text],
@@ -87,7 +95,7 @@ export function AssistantMessage({
       '[AssistantMessage] rendering streaming assistant text with plain Text fallback',
     );
   }, [renderAsPlainStreamingText]);
-  if (!renderedText && !children) return null;
+  if (!renderedText && !children && !notice) return null;
 
   const { uri: avatarUri, useBearer } = pickUserAvatarUri(
     caller,
@@ -105,7 +113,7 @@ export function AssistantMessage({
   return (
     <View style={presentation === 'manuscript'
       ? styles.manuscriptRow
-      : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
+      : rowInset === 'none' ? [styles.row, { marginHorizontal: 0 }] : styles.row}>
       {presentation === 'manuscript' ? null : avatarUri ? (
         <Image
           source={{
@@ -130,6 +138,7 @@ export function AssistantMessage({
           (빌드 13부터 정본 — 자체 LinkSheet/WebView는 Google OAuth 정책으로 Gmail 차단되어 폐기.)
         */}
         {messageKind}
+        {notice}
         {children ?? (selectionModel && onSelectionDone ? (
           <MessageTextSelectionView
             model={selectionModel}

@@ -49,6 +49,7 @@ import { ReviewManuscriptActivity } from './ReviewManuscriptActivity';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { ReviewContentLinkDocument } from './ReviewContentLinkDocument';
 import { ReviewChatUiPrimitives } from './ReviewChatUiPrimitives';
+import { ReviewChatUi } from './ReviewChatUi';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -66,6 +67,7 @@ const sections = [
   { value: 'cardHome', label: '카드 홈' },
   { value: 'cardChecks', label: '카드 확인 항목' },
   { value: 'chatUi', label: '채팅 입력 부품' },
+  { value: 'chatUiRenderer', label: '채팅 UI 응답' },
   {value:'folderWorkspace',label:'폴더 카드'},
   { value: 'folderTabs', label: '폴더 탭' },
   { value: 'entryShell', label: '앱 홈 조합' },
@@ -172,6 +174,7 @@ function Gallery() {
     </View>;
   }
   if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;
+  if (section === 'chatUiRenderer') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewChatUi /></View>;
   if (section === 'chatUi') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewChatUiPrimitives /></View>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
   if (section === 'cardColors') return <ReviewCardColors />;
@@ -253,7 +256,7 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
   if (params.get('safeArea') !== 'fixture' && !pasImageSample && !contentLinkSample && !chatUiComposerSample) return null;
   const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent'
     || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
-    || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi';
+    || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi' || params.get('section') === 'chatUiRenderer';
   const fullHeightSample = cardChecks || chatUiComposerSample;
   if (!pasImageSample && !fullHeightSample && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 
