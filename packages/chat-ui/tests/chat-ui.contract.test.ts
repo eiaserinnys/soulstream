@@ -600,4 +600,31 @@ describe("@soulstream/chat-ui 계약", () => {
     expect(tooManyNodes.ok).toBe(false);
     expect(tooManyComputed.ok).toBe(false);
   });
+
+  it("17. 인용되지 않은 출처를 키 순서대로 맨 끝 출처 줄에 모은다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      sources: {
+        b_link: { type: "external_link", label: "자료 링크", url: "https://example.test/data" },
+        cited: { type: "assumption", label: "본문 근거" },
+        a_note: { type: "assumption", label: "가정 출처" },
+      },
+      body: [{ id: "citation", kind: "citation", source: "cited" }],
+    });
+    const reordered = validDocument({
+      schema_version: 1,
+      sources: {
+        a_note: { type: "assumption", label: "가정 출처" },
+        cited: { type: "assumption", label: "본문 근거" },
+        b_link: { type: "external_link", label: "자료 링크", url: "https://example.test/data" },
+      },
+      body: [{ id: "citation", kind: "citation", source: "cited" }],
+    });
+
+    expect(renderText(doc)).toBe([
+      "출처: 본문 근거",
+      "출처: 가정 출처; [자료 링크](https://example.test/data)",
+    ].join("\n\n"));
+    expect(renderText(reordered)).toBe(renderText(doc));
+  });
 });

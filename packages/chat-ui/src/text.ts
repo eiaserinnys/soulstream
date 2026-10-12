@@ -205,6 +205,28 @@ function renderChildren(
   return blocks.join("\n\n");
 }
 
+function collectCitationSources(nodes: Node[], sources = new Set<string>()): Set<string> {
+  for (const node of nodes) {
+    if (node.kind === "citation") sources.add(node.source);
+    if (node.kind === "group") collectCitationSources(node.children, sources);
+  }
+  return sources;
+}
+
+function renderUnreferencedSources(doc: NormalizedChatUiDocumentV1): string {
+  const citedSources = collectCitationSources(doc.body);
+  const entries = Object.keys(doc.sources)
+    .sort()
+    .filter((key) => !citedSources.has(key))
+    .map((key) => {
+      const source = doc.sources[key]!;
+      return source.type === "assumption"
+        ? source.label
+        : `[${source.label}](${source.url})`;
+    });
+  return entries.length ? `출처: ${entries.join("; ")}` : "";
+}
+
 export function renderText(
   doc: NormalizedChatUiDocumentV1,
   state?: ChatUiState,
@@ -216,6 +238,8 @@ export function renderText(
   const body = renderChildren(doc, currentState, doc.body, context.evaluateExpression);
   if (body) blocks.push(body);
   if (doc.assumptions.length) blocks.push(`가정: ${doc.assumptions.join("; ")}`);
+  const unreferencedSources = renderUnreferencedSources(doc);
+  if (unreferencedSources) blocks.push(unreferencedSources);
   return blocks.join("\n\n");
 }
 

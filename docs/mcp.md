@@ -106,6 +106,10 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | `search_sessions(query, top_k=10, folder_id)` | Search past sessions by meaning, ranked by relevance; includes `created_at` and `updated_at` ISO timestamps; use `search_session_history` for exact event text |
 | `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 event search with actual turn count and saved summary/story/highlight presence metadata; use `search_sessions` first for session-level search |
 
+### Chat UI publication
+
+`publish_chat_ui(publication_key, document)` is an internal-only tool for a currently executing, registered agent session. It validates the document and publishes one durable `assistant_message` containing both readable fallback text and the `ui` payload. Repeating the same key and document in the same session is idempotent; publish changed content with a new key. Validation errors include the failing path and reason. Until clients render the `ui` payload, the readable text is what appears in chat. Published screens cannot be edited, and their local interactions do not call the model.
+
 ### Session management
 
 | Tool | Description |

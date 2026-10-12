@@ -102,3 +102,14 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 | 새 PAS 생성·기존 PAS 기본 모델 저장 | `session/persistent_session_settings_service.ts`의 `normalizeNewDefaultModel`·`normalizeDefaultModel`; 반복 작업 설정은 `recurring-jobs/target_validator.ts` | 새 PAS 생성은 일반 생성처럼 확인한다. 기존 PAS 기본 모델 변경과 반복 작업 생성·수정은 `limit_rejected`만 저장할 수 있으며 환경·인증·권한 검사는 유지한다. |
 | 한도 거부 기억 갱신 | 인증된 노드의 `node/event_ingress_controller.ts`가 `commitBatch` 뒤 fresh 이벤트를 `usage/usage_summary_service.ts:observeProviderExecution`으로 전달 | 중복 receipt와 dead letter는 건너뛴다. `error_code`가 `claude_rate_limit_stop_failure` 또는 `codex_usage_limit_exceeded`인 durable 오류만 기록한다. |
 | 기억 해제와 수명 | `usage/provider_limit_rejection.ts` → `ModelPresetAvailabilityService` | 같은 프로바이더 계정의 Claude `result.success === true` 또는 Codex `complete`의 `raw_event_type=turn/completed`, `status=completed`가 거부 이벤트보다 나중이면 해제한다. `resets_at` 도달도 조회 시 해제된 것으로 판정한다. 기억은 orch 메모리에만 있어 재시작하면 사라진다. |
+
+## 내부 MCP의 채팅 UI 발행
+
+| 단계 | 파일:심볼 | 이 단계가 소유한 사실 |
+| --- | --- | --- |
+| 1. 노드 전용 도구 등록 | `soul-server-ts/src/mcp/tools/chat_ui.ts`, `src/mcp/server.ts` | `publish_chat_ui`는 soul-server가 직접 등록한다. 공유 `mcpToolDefinitions`에는 없으므로 orch 외부 ingress에 노출되지 않는다. |
+| 2. 실행 세션 확인과 문서 검증 | `soul-server-ts/src/mcp/tools/chat_ui.ts`, `src/mcp/tools/card_tools.ts` | 호출자 세션은 내부 MCP 요청 컨텍스트에서 얻고, 현재 task의 실행 등록이 있는 경우만 허용한다. 문서는 `@soulstream/chat-ui` 계약으로 검증하고 실패 경로와 이유를 반환한다. |
+| 3. 이벤트 정규화 | `soul-server-ts/src/mcp/tools/chat_ui.ts` | 세션·publication key·정규 문서로 안정된 UI ID와 hash를 만들고, 일반 답변의 종료·스트리밍 필드 없이 `assistant_message`의 `content`와 `ui`를 allowlist로 구성한다. |
+| 4. 내구 저장과 ACK | `soul-server-ts/src/runtime/worker_composition.ts`, `src/db/event_persistence.ts:EventPersistence.enqueueEventAndWaitForSessionAck`, `src/upstream/event_outbox_pump.ts` | 현재 실행 등록 ID를 outbox에 전달한다. `_dedupe_key`는 semantic dedupe key로 옮기고 payload에서 제거하며, ACK 시간 초과면 기존 outbox 재전송에 맡긴다. |
+| 5. 저장과 이력 반환 | `orch-server-ts/src/node/event_ingress_repository.ts`, `src/control_plane/repositories/event_read_repository.ts` | event payload 전체를 저장하고, persistent history에서 `ui` 필드를 그대로 반환한다. |
+| 6. 현재 화면 동작 | `packages/soul-ui/src/components/chat/AssistantMessage.tsx`, `soul-app/src/components/events/EventRenderer.tsx` | 아직 `ui` 렌더러는 없다. 두 클라이언트는 같은 이벤트의 `content` fallback을 표시한다. 렌더러 전달과 조작 UI는 별도 구현 범위다. |

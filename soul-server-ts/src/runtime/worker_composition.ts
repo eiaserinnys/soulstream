@@ -376,6 +376,17 @@ export async function composeWorkerRuntime(
     catalogService,
     logger,
     orch: orchProxyConfig,
+    chatUiPublisher: {
+      publish: async (sessionId, event, registrationId) => {
+        const { eventId } = await persistence.enqueueEventAndWaitForSessionAck(
+          sessionId,
+          event,
+          undefined,
+          registrationId,
+        );
+        return { eventId };
+      },
+    },
     ...(worktreeService ? { worktreeService } : {}),
   };
   const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);

@@ -526,6 +526,15 @@ export interface SSEEventUserMessage {
  */
 export interface SSEEventAssistantMessage {
   type: "assistant_message";
+  ui?: {
+    schema_version: 1;
+    ui_id: string;
+    hash: string;
+    revision: 1;
+    document: {
+      [k: string]: unknown;
+    };
+  };
   [k: string]: unknown;
 }
 /**
