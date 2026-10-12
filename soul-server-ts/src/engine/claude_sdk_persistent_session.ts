@@ -1,5 +1,3 @@
-// Size exception: the usage carry hooks preserve this owner's Result control
-// flow; usage aggregation itself lives in claude_sdk_usage_carry.ts.
 import type { Query as ClaudeSdkQuery, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
@@ -29,7 +27,6 @@ import {
   describeResultProvenance,
   handlePersistentTurnInactivity,
   isExpectedInterruptDiagnostic,
-  isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
   makeStaleInterruptReceiptLogger,
   provableTurnResultOwner,
@@ -310,11 +307,7 @@ export class ClaudeSdkPersistentSession {
         },
         "Fenced the first interrupted-owner Result before accepting the intervention Result",
       );
-      for (const event of expectedInterruptDiagnostic ? terminalEvents : this.usageCarry.applyTo(terminalEvents)) {
-        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) {
-          if (event.type === "result") this.usageCarry.absorb(terminalEvents);
-          continue;
-        }
+      for (const event of this.usageCarry.emittable(terminalEvents, expectedInterruptDiagnostic)) {
         markPostResultDrainEvent(event);
         await this.emitDetached(event);
       }
@@ -349,10 +342,7 @@ export class ClaudeSdkPersistentSession {
     }
     if (deferForegroundResultForInjectedInput({
       phase, active, runtime: this.runtime, message, logger: this.logger,
-    })) {
-      this.usageCarry.absorb(terminalEvents);
-      return;
-    }
+    })) { this.usageCarry.absorb(terminalEvents); return; }
 
     this.runtime.observeResult({
       userMessageUuid: active.uuid,
@@ -370,11 +360,7 @@ export class ClaudeSdkPersistentSession {
       const expectedInterruptDiagnostic =
         this.interventionFence === active
         && terminalEvents.some(isExpectedInterruptDiagnostic);
-      for (const event of expectedInterruptDiagnostic ? terminalEvents : this.usageCarry.applyTo(terminalEvents)) {
-        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) {
-          if (event.type === "result") this.usageCarry.absorb(terminalEvents);
-          continue;
-        }
+      for (const event of this.usageCarry.emittable(terminalEvents, expectedInterruptDiagnostic)) {
         if (active) {
           active.output.push(event);
         } else {

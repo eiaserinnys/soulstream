@@ -11,6 +11,36 @@ function result(usage: unknown, turnCostUsd: number): ClaudeClientEvent {
 }
 
 describe("Claude withheld Result usage carry", () => {
+  it("filters expected interrupt terminals into the carry and applies it on the next emitted Result", () => {
+    const carry = new ClaudeSdkUsageCarry();
+    const interrupted: ClaudeClientEvent = {
+      ...result({ input_tokens: 10, output_tokens: 2 }, 0.000001), success: false,
+    };
+    const context: ClaudeClientEvent = {
+      type: "context_usage", usedTokens: 12, maxTokens: 100, percent: 12,
+    };
+    const diagnostic: ClaudeClientEvent = {
+      type: "error", message: "interrupted", fatal: false, errorCode: "error_during_execution",
+    };
+    const otherError: ClaudeClientEvent = { type: "error", message: "other diagnostic", fatal: true };
+
+    expect(carry.emittable([interrupted, context, diagnostic, otherError], true))
+      .toEqual([context, otherError]);
+    const events: ClaudeClientEvent[] = [
+      result({ input_tokens: 20, output_tokens: 3 }, 0.000002), context,
+      { type: "complete", usage: { input_tokens: 20, output_tokens: 3 }, turnCostUsd: 0.000002 },
+    ];
+    const emitted = carry.emittable(events, false);
+    expect(emitted.map(event => event.type)).toEqual(["result", "context_usage", "complete"]);
+    expect(emitted[1]).toBe(context);
+    for (const event of [emitted[0], emitted[2]]) {
+      expect(event).toMatchObject({
+        usage: { input_tokens: 30, output_tokens: 5 }, turnCostUsd: 0.000003,
+      });
+    }
+    expect(carry.emittable(events, false)).toBe(events);
+  });
+
   it("sums nested counters, keeps the latest nonnumeric values, and leaves exact Results intact", () => {
     const carry = new ClaudeSdkUsageCarry();
     const first = { ...result({

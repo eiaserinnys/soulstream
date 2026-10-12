@@ -1,5 +1,6 @@
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { copyClaudeSdkEventMetadata } from "./claude_sdk_event_metadata.js";
+import { isExpectedInterruptTerminalEvent } from "./claude_sdk_persistent_session_support.js";
 
 type ResultEvent = Extract<ClaudeClientEvent, { type: "result" }>;
 type CarriedUsage = Pick<ResultEvent, "usage" | "turnCostUsd" | "firstCall" | "model">;
@@ -48,6 +49,17 @@ export class ClaudeSdkUsageCarry {
       firstCall: this.carried?.firstCall ?? result.firstCall,
       model: result.model,
     };
+  }
+
+  emittable(terminalEvents: ClaudeClientEvent[], expectedInterruptDiagnostic: boolean): ClaudeClientEvent[] {
+    if (!expectedInterruptDiagnostic) return this.applyTo(terminalEvents);
+    const events = terminalEvents.filter(event =>
+      !isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic));
+    if (terminalEvents.some(event => event.type === "result"
+      && isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic))) {
+      this.absorb(terminalEvents);
+    }
+    return events;
   }
 
   applyTo(terminalEvents: ClaudeClientEvent[]): ClaudeClientEvent[] {
