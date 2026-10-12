@@ -394,11 +394,11 @@ describe("TaskExecutor persistent decision wiring", () => {
     claudeUsage.shortUsedPercent = 0;
     claudeUsage.weeklyResetAt = now / 1_000 + (37.9381 / 100) * 7 * 24 * 60 * 60;
     const codexUsage = makeUsage("168h");
-    codexUsage.weeklyUsedPercent = 96;
+    codexUsage.weeklyUsedPercent = 86;
     codexUsage.shortUsedPercent = null;
     codexUsage.shortWindowMinutes = null;
     codexUsage.shortResetAt = null;
-    codexUsage.weeklyResetAt = now / 1_000 + ((4 + 65.7858) / 100) * 7 * 24 * 60 * 60;
+    codexUsage.weeklyResetAt = now / 1_000 + ((14 + 65.7858) / 100) * 7 * 24 * 60 * 60;
     rememberProviderUsageObservation("claude", claudeUsage);
     rememberProviderUsageObservation("codex", codexUsage);
 
