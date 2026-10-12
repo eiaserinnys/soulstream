@@ -209,6 +209,10 @@ test("starts linked documents expanded and retains the existing collapse control
   await expect(overlay).toHaveClass(/is-expanded/);
   await overlay.getByTestId("v3-folder-board-document-overlay-expand").click();
   await expect(overlay).not.toHaveClass(/is-expanded/);
+  await overlay.getByTestId("v3-folder-board-document-overlay-close").click();
+  await expect(overlay).toHaveCount(0);
+  const reopened = await openDocumentFromChat(page);
+  await expect(reopened).toHaveClass(/is-expanded/);
 });
 
 test("opens an image attachment in the existing image viewer and closes it with Escape", async ({ page }) => {

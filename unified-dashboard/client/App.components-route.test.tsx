@@ -4,6 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "./App";
 vi.mock('./v3/use-persistent-session-startup',()=>({usePersistentSessionStartup:()=>null}));
+// Route tests isolate screen selection; provider behavior is covered separately.
+vi.mock("./v3/DashboardInternalLinks", () => ({
+  DashboardInternalLinks: ({ children }: { children: import("react").ReactNode }) => children,
+}));
 
 vi.mock("./v3/V3DashboardLayout", () => ({
   V3DashboardLayout: () => <div data-testid="dashboard" />,

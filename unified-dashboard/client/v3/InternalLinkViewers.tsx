@@ -27,6 +27,9 @@ export function InternalLinkViewers({ onDocumentDeleted }: { onDocumentDeleted?:
   const catalogFolders = useDashboardStore((state) => state.catalog?.folders);
   const folders = catalogFolders ?? EMPTY_FOLDERS;
   const [expanded, setExpanded] = useState(true);
+  useEffect(() => {
+    setExpanded(true);
+  }, [selectedDocument?.id]);
   const openers = useMemo(() => ({
     document: (target: InternalLinkTarget) => target.kind === "document"
       ? openDocument(target.documentId)
