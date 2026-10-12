@@ -106,17 +106,17 @@ test.each([null, 'quota_exhausted'])('실행 시트는 세 목록을 독립 선�
     listModelPresets: jest.fn().mockImplementation((id) => Promise.resolve({ model_presets: [
       { id: 'sol', label: 'Sol', available: true, reason },
       { id: id === 'node-1' ? 'luna' : 'other-model', label: id === 'node-1' ? 'Luna' : '다른 모델', available: true, reason },
-      { id: 'rejected', label: '거부 중 모델', available: false, reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: '2030-01-02T03:04:00.000Z' },
+      { id: 'rejected', label: '거부 중 모델', available: false, reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: new Date(2030, 0, 2, 3, 4).toISOString() },
     ] })) };
   const save = jest.fn();
   const screen = render(<ExecutionSelectionSheet api={api as any} value={{ folderId: 'folder-1', nodeId: 'node-1', agentId: 'roselin', modelPreset: 'sol' }} onSave={save} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByLabelText('모델 Luna')).toBeTruthy());
-  expect(await screen.findByText(/^5시간 한도 거부 중 · \d{2}:\d{2} 해제$/)).toBeTruthy();
+  expect(await screen.findByText('5시간 한도 거부 중 · 1/2 03:04 해제')).toBeTruthy();
   expect(screen.getByLabelText('모델 거부 중 모델').props.accessibilityState.disabled).toBe(true);
   expect(screen.getByLabelText('모델 Sol').props.accessibilityState.disabled).toBe(false);
   for (const section of ['execution-agents', 'execution-nodes', 'execution-models']) expect(screen.getByTestId(section)).toBeTruthy();
   for (const id of ['execution-agent-roselin', 'execution-node-node-1', 'execution-model-sol']) {
-    expect(StyleSheet.flatten(screen.getByTestId(`${id}-visual`).props.style).height).toBe(32);
+    expect(StyleSheet.flatten(screen.getByTestId(`${id}-visual`).props.style).minHeight).toBe(32);
     expect(StyleSheet.flatten(screen.getByTestId(id).props.style).minHeight).toBeGreaterThanOrEqual(44);
   }
   fireEvent.press(screen.getByLabelText('에이전트 다른 에이전트'));

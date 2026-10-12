@@ -1,9 +1,10 @@
-import { expect, test } from "@playwright/test";
+// Kept as one suite beyond 500 lines: the U3 specification requires the existing and new quota contracts in this file.
+import { expect, test, type Page } from "@playwright/test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
-const output = path.resolve("../../../.local/artifacts/20261012-limit-rejected-display-308-fix3");
+const output = path.resolve("../../../.local/artifacts/20261012-limit-rejected-display-308-fix4");
 mkdirSync(output, { recursive: true });
 const rejectedTodayResetAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 const preset = { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex",
@@ -483,4 +484,129 @@ test("component review shows the default and saved rejected handoff states", asy
   const picker = page.locator(".v3-card-execution-picker");
   await expect(picker.getByRole("button", { name: "확인", exact: true })).toBeDisabled();
   await sample.screenshot({ path: path.join(output, "component-review-saved-rejected-1440.png"), animations: "disabled" });
+});
+
+async function stableHandoff(page: Page, rejected = false) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(modelPreset => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
+    localStorage.setItem("cards-p1-handoff", JSON.stringify({
+      folderId: "folder-amber", nodeId: "eiaserinnys", agentId: "roselin_codex", modelPreset,
+    }));
+  }, rejected ? rejectedPreset.id : preset.id);
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true, successionPickerRuns: true });
+  await page.route("**/api/nodes/*/agents", async route => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await route.fulfill({ json: { agents: [
+      { id: "roselin_codex", name: "로젤린", backend: "codex", default_preset: preset.id, portraitUrl: null },
+      { id: "other", name: "다른 에이전트", backend: "codex", default_preset: preset.id, portraitUrl: null },
+    ] } });
+  });
+  await page.route("**/api/nodes/*/model-presets", async route => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await route.fulfill({ json: { model_presets: [preset, rejectedPreset, normalPreset] } });
+  });
+  await page.goto("/");
+  const composer = page.locator(".v3-card-handoff");
+  const execution = composer.getByRole("button", { name: "실행 조합 선택", exact: true });
+  await expect(execution).toContainText("로젤린");
+  await expect(execution).toContainText(rejected ? rejectedPreset.label : preset.label);
+  await composer.getByRole("textbox", { name: "세션 첫 메시지" }).fill("안정성 확인");
+  const send = composer.getByRole("button", { name: "세션 시작", exact: true });
+  if (rejected) await expect(send).toBeDisabled();
+  else await expect(send).toBeEnabled();
+  return { composer, execution, picker: page.locator(".v3-card-execution-picker") };
+}
+
+async function startHandoffTrace(page: Page) {
+  await page.evaluate(() => {
+    const records: Record<string, unknown>[] = [];
+    const sample = () => {
+      const chip = document.querySelector(".v3-card-handoff-execution")!;
+      const input = document.querySelector('.v3-card-handoff textarea')!;
+      const send = document.querySelector<HTMLButtonElement>('.v3-card-handoff button[aria-label="세션 시작"]')!;
+      records.push({ time: performance.now(), notice: !!document.querySelector(".v3-card-handoff-error"),
+        invalid: chip.hasAttribute("data-invalid"), y: input.getBoundingClientRect().y,
+        label: chip.textContent, enabled: !send.disabled });
+    };
+    let frame = 0;
+    const loop = () => { sample(); frame = requestAnimationFrame(loop); };
+    const observer = new MutationObserver(sample);
+    observer.observe(document.querySelector(".v3-card-handoff")!.parentElement!.parentElement!,
+      { childList: true, subtree: true, attributes: true, characterData: true });
+    loop();
+    (window as any).stopHandoffTrace = () => { cancelAnimationFrame(frame); observer.disconnect(); sample(); return records; };
+  });
+}
+
+async function finishHandoffTrace(page: Page, name: string, changedLabel?: string) {
+  const records = await page.evaluate(() => (window as any).stopHandoffTrace()) as Record<string, unknown>[];
+  writeFileSync(path.join(output, `${name}.json`), JSON.stringify(records, null, 2));
+  expect(records.length).toBeGreaterThan(10);
+  const { time: _time, ...baseline } = records[0];
+  // Every observed frame/mutation must preserve all five user-facing fields.
+  for (const { time: _sampleTime, ...state } of records) {
+    const { label, ...fields } = state;
+    const { label: originalLabel, ...expected } = baseline;
+    expect(fields).toEqual(expected);
+    expect(changedLabel ? [originalLabel, changedLabel] : [originalLabel]).toContain(label);
+  }
+}
+
+for (const rejected of [true, false]) test(`handoff stays stable through delayed picker remounts rejected=${rejected}`, async ({ page }) => {
+  const { execution, picker, composer } = await stableHandoff(page, rejected);
+  if (rejected) await expect(page.locator(".v3-card-handoff-error")).toContainText(rejectedPreset.reason_label);
+  await startHandoffTrace(page);
+  for (let index = 0; index < 3; index++) {
+    await execution.click();
+    await expect(picker.getByRole("button", { name: preset.label, exact: true })).toBeVisible();
+    if (index === 1) await page.keyboard.press("Escape");
+    else await picker.getByRole("button", { name: "취소", exact: true }).click();
+    await expect(picker).toBeHidden();
+    // Include the delayed responses and closing animation in the observation interval.
+    await page.waitForTimeout(500);
+  }
+  await finishHandoffTrace(page, `handoff-stability-${rejected ? "rejected" : "normal"}`);
+  if (!rejected) {
+    await execution.click();
+    await picker.getByRole("button", { name: normalPreset.label, exact: true }).click();
+    const changedLabel = (await execution.textContent())!.replace(preset.label, normalPreset.label);
+    await startHandoffTrace(page);
+    await picker.getByRole("button", { name: "확인", exact: true }).click();
+    await expect(execution).toContainText(normalPreset.label);
+    await expect(composer.getByRole("button", { name: "세션 시작", exact: true })).toBeEnabled();
+    await page.waitForTimeout(500);
+    await finishHandoffTrace(page, "handoff-stability-after-confirm", changedLabel);
+  }
+});
+
+test("execution popup initially focuses itself then tabs through columns and actions", async ({ page }) => {
+  const { execution, picker } = await stableHandoff(page);
+  await execution.focus();
+  await execution.press("Enter");
+  await expect(picker).toBeFocused();
+  await page.screenshot({ path: path.join(output, "keyboard-open-1440.png"), animations: "disabled" });
+  const order: string[] = [];
+  const labels = ["로젤린", "다른 에이전트", "eiaserinnys", "qa-node", preset.label, normalPreset.label, "취소", "확인"];
+  for (const label of labels) {
+    await page.keyboard.press("Tab");
+    await expect(picker.getByRole("button", { name: label })).toBeFocused();
+    order.push(await page.evaluate(() => document.activeElement?.textContent ?? ""));
+  }
+  writeFileSync(path.join(output, "keyboard-focus.json"), JSON.stringify({ initial: "popup", order }, null, 2));
+});
+
+test("choosing another agent preserves the draft node until confirmation", async ({ page }) => {
+  const { execution, picker } = await stableHandoff(page);
+  await execution.click();
+  const nodeB = picker.getByRole("button", { name: "qa-node", exact: true });
+  await nodeB.click();
+  await picker.getByRole("button", { name: "다른 에이전트" }).click();
+  await expect(nodeB).toHaveAttribute("aria-pressed", "true");
+  await expect(execution).toContainText("eiaserinnys");
+  await expect(picker.getByRole("button", { name: "확인", exact: true })).toBeEnabled();
+  await page.screenshot({ path: path.join(output, "draft-node-b-after-agent-1440.png"), animations: "disabled" });
+  await picker.getByRole("button", { name: "확인", exact: true }).click();
+  await expect(execution).toContainText("다른 에이전트 · qa-node");
 });

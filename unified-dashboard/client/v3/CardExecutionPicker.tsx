@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, ProfileAvatar, type AgentInfo, type ModelPresetAvailability } from "@seosoyoung/soul-ui";
+import { Button, ProfileAvatar, type AgentInfo } from "@seosoyoung/soul-ui";
 import type { CardAssignment } from "@seosoyoung/soul-ui/cards/card-types";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useNodeModelPresetCatalog, type NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalog";
@@ -10,10 +10,9 @@ import {
 } from "../lib/model-presets";
 
 // Same node/agents endpoint and preset catalog as SessionSuccessionModal.
-export function CardExecutionPicker({selection,onChange,onAgentInfoChange,onModelPresetInfoChange,onValidityChange,onUnavailableMessageChange,onError,disabled,open,onClose}: {
+export function useCardExecutionPicker({selection,onChange,onError,disabled,open,onClose}: {
  selection:CardAssignment;onChange(selection:CardAssignment):void;
- onAgentInfoChange(agent:AgentInfo|null):void;onModelPresetInfoChange(model:ModelPresetAvailability|null):void;
- onValidityChange(valid:boolean):void;onUnavailableMessageChange(message:string|null):void;onError(message:string):void;disabled:boolean;
+ onError(message:string):void;disabled:boolean;
  open:boolean;onClose():void;
 }) {
  const nodes=useOrchestratorStore(s=>s.nodes);
@@ -34,9 +33,9 @@ export function CardExecutionPicker({selection,onChange,onAgentInfoChange,onMode
   return ()=>{active=false;};
  },[connected]);
  const agents=useMemo(()=>{
-  const ordered=[selection.nodeId,...connected.map(node=>node.nodeId).filter(id=>id!==selection.nodeId)];
+  const ordered=[draftSelection.nodeId,...connected.map(node=>node.nodeId).filter(id=>id!==draftSelection.nodeId)];
   return [...new Map(ordered.flatMap(id=>(byNode[id]??[]).map(agent=>[agent.id,{agent,nodeId:id}] as const)).reverse()).values()].reverse();
- },[byNode,connected,selection.nodeId]);
+ },[byNode,connected,draftSelection.nodeId]);
  const selectedAgent=byNode[selection.nodeId]?.find(agent=>agent.id===selection.agentId)??null;
  const catalog=useNodeModelPresetCatalog(selection.nodeId,onError);
  const model=catalog.nodeId===selection.nodeId ? catalog.presets.find(preset=>preset.id===selection.modelPreset)??null:null;
@@ -59,13 +58,14 @@ export function CardExecutionPicker({selection,onChange,onAgentInfoChange,onMode
   const reason=modelPresetUnavailableReason(selectedPreset);
   return reason?`${selectedPreset.label} · ${reason}`:selectedPreset.label;
  },[catalog.nodeId,catalog.presets,catalog.status,selection.modelPreset,selection.nodeId]);
- useEffect(()=>onAgentInfoChange(selectedAgent),[selectedAgent,onAgentInfoChange]);
- useEffect(()=>onModelPresetInfoChange(model),[model,onModelPresetInfoChange]);
- useEffect(()=>onValidityChange(Boolean(selection.nodeId&&selectedAgent&&catalog.nodeId===selection.nodeId&&catalog.status==="ready"&&(!selection.modelPreset||model?.available))),[catalog.nodeId,catalog.status,model,selection.modelPreset,selection.nodeId,selectedAgent,onValidityChange]);
- useEffect(()=>onUnavailableMessageChange(unavailableMessage),[unavailableMessage,onUnavailableMessageChange]);
- return <CardExecutionPickerView selection={draftSelection} onChange={setDraftSelection}
-  onCancel={onClose} onConfirm={()=>{if(disabled||!canConfirm)return;onChange(draftSelection);onClose();}}
-  canConfirm={canConfirm} disabled={disabled} connected={connected} agents={agents} byNode={byNode} catalog={pickerCatalog}/>;
+ const valid=Boolean(selection.nodeId&&selectedAgent&&catalog.nodeId===selection.nodeId
+  &&catalog.status==="ready"&&(!selection.modelPreset||model?.available));
+ return {
+  agent:selectedAgent,model,valid,unavailableMessage,
+  view:{selection:draftSelection,onChange:setDraftSelection,onCancel:onClose,
+   onConfirm:()=>{if(disabled||!canConfirm)return;onChange(draftSelection);onClose();},
+   canConfirm,disabled,connected,agents,byNode,catalog:pickerCatalog},
+ };
 }
 
 /** Shared picker markup; the review sample supplies a local catalog. */

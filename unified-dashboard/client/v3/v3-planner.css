@@ -61,23 +61,27 @@
 }
 
 .v3-navigation-scroll,
-.v3-session-panel-scroll {
+.v3-session-panel-scroll,
+.v3-card-execution-body > .v3-card-execution-columns {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--glass-border) 86%, var(--foreground)) transparent;
 }
 
 .v3-navigation-scroll::-webkit-scrollbar,
-.v3-session-panel-scroll::-webkit-scrollbar {
+.v3-session-panel-scroll::-webkit-scrollbar,
+.v3-card-execution-body > .v3-card-execution-columns::-webkit-scrollbar {
   width: 6px;
 }
 
 .v3-navigation-scroll::-webkit-scrollbar-track,
-.v3-session-panel-scroll::-webkit-scrollbar-track {
+.v3-session-panel-scroll::-webkit-scrollbar-track,
+.v3-card-execution-body > .v3-card-execution-columns::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .v3-navigation-scroll::-webkit-scrollbar-thumb,
-.v3-session-panel-scroll::-webkit-scrollbar-thumb {
+.v3-session-panel-scroll::-webkit-scrollbar-thumb,
+.v3-card-execution-body > .v3-card-execution-columns::-webkit-scrollbar-thumb {
   border: 1px solid transparent;
   border-radius: 999px;
   background: color-mix(in srgb, var(--glass-border) 86%, var(--foreground));
@@ -85,7 +89,8 @@
 }
 
 .v3-navigation-scroll::-webkit-scrollbar-thumb:hover,
-.v3-session-panel-scroll::-webkit-scrollbar-thumb:hover {
+.v3-session-panel-scroll::-webkit-scrollbar-thumb:hover,
+.v3-card-execution-body > .v3-card-execution-columns::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
   background-clip: padding-box;
 }

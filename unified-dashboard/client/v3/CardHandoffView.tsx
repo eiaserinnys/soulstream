@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useRef, type ComponentProps, type ReactNode } from "react";
 import { Popover, PopoverTrigger, PopoverPopup } from "@seosoyoung/soul-ui";
 import { CardComposer } from "./CardComposer";
 import "./v3-cards.css";
@@ -11,6 +11,7 @@ export function CardHandoffView({composer,folderLabel,executionLabel,folderOpen,
  executionOpen:boolean;onExecutionOpenChange(open:boolean):void;executionInvalid?:boolean;
  folderPicker:ReactNode;executionPicker:ReactNode;error?:string|null;
 }) {
+ const executionPopup=useRef<HTMLDivElement>(null);
  return <><div>
   <div className="v3-card-handoff">
    <div className="v3-card-handoff-controls">
@@ -19,7 +20,7 @@ export function CardHandoffView({composer,folderLabel,executionLabel,folderOpen,
     </PopoverTrigger><PopoverPopup side="top" align="start" sideOffset={8} className="v3-shell v3-card-folder-picker">{folderPicker}</PopoverPopup></Popover>
     <Popover open={executionOpen} onOpenChange={onExecutionOpenChange}><PopoverTrigger type="button" className="v3-card-handoff-chip control-surface v3-card-handoff-execution rounded-full" data-invalid={executionInvalid?"true":undefined} disabled={composer.pending} aria-label="실행 조합 선택">
      <span>{executionLabel}</span><span aria-hidden="true">▾</span>
-    </PopoverTrigger><PopoverPopup keepMounted side="top" align="start" sideOffset={8} className="v3-shell v3-card-execution-picker">{executionPicker}</PopoverPopup></Popover>
+    </PopoverTrigger><PopoverPopup keepMounted ref={executionPopup} initialFocus={executionPopup} side="top" align="start" sideOffset={8} className="v3-shell v3-card-execution-picker">{executionPicker}</PopoverPopup></Popover>
    </div>
    <CardComposer {...composer} embedded/>
   </div>
