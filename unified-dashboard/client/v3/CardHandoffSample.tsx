@@ -16,7 +16,7 @@ const agents:AgentInfo[]=[
 const catalog:NodeModelPresetCatalog={nodeId,status:"ready",presets:[
  {id:"sol",label:"Sol",backend:"codex",available:true,reason:null,reason_label:null,resets_at:null,usage_warning:false},
  {id:"exhausted-sol",label:"Sol (사용량 소진 예시)",backend:"codex",available:true,reason:"quota_exhausted",reason_label:"7일 사용량 제한",resets_at:null,usage_warning:false},
- {id:"rejected-sol",label:"Sol (거부 중 예시)",backend:"codex",available:false,reason:"limit_rejected",reason_label:"5시간 한도 거부 중",resets_at:"2030-01-02T03:04:00.000Z",usage_warning:false},
+ {id:"rejected-opus",label:"Claude - Opus",backend:"claude",available:false,reason:"limit_rejected",reason_label:"5시간 한도 거부 중",resets_at:"2030-01-02T03:04:00.000Z",usage_warning:false},
 ]};
 
 /** Actual handoff/picker layout with local callbacks and no operational writes. */

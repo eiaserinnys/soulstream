@@ -3,16 +3,18 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
-const output = path.resolve("../../../.local/artifacts/20261012-1211-limit-rejected-display-308");
+const output = path.resolve("../../../.local/artifacts/20261012-limit-rejected-display-308-followup");
 mkdirSync(output, { recursive: true });
 const preset = { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex",
   available: true, reason: "quota_exhausted", reason_label: "7일 사용량 제한",
   resets_at: "2030-01-02T03:04:00.000Z", usage_warning: false };
-const rejectedPreset = { id: "codex-6.1-sol-rejected", label: "Codex - 6.1 Sol 거부 중 예시", backend: "codex",
+const rejectedPreset = { id: "claude-opus-rejected", label: "Claude - Opus", backend: "claude",
   available: false, reason: "limit_rejected", reason_label: "5시간 한도 거부 중",
   resets_at: "2030-01-02T03:04:00.000Z", usage_warning: false };
-const normalPreset = { id: "codex-6.1-sol-normal", label: "Codex - 6.1 Sol 사용 가능 예시", backend: "codex",
+const normalPreset = { id: "codex-5.6-sol", label: "Codex - 5.6 Sol", backend: "codex",
   available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false };
+const unavailablePreset = { id: "codex-6-astra-unavailable", label: "Codex - 6 Astra", backend: "codex",
+  available: false, reason: "not_authenticated", reason_label: "미인증", resets_at: null, usage_warning: false };
 
 for (const width of [1440, 390]) for (const explicit of [true, false]) {
   test(`zero quota selection and submission ${width} explicit=${explicit}`, async ({ page }) => {
@@ -28,14 +30,18 @@ for (const width of [1440, 390]) for (const explicit of [true, false]) {
       agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex",
         default_preset: preset.id, portraitUrl: null }] } }));
     await page.route("**/api/nodes/*/model-presets", route => route.fulfill({ json: {
-      model_presets: [preset, rejectedPreset, normalPreset, { ...preset, id: "no-auth", label: "인증 필요 모델",
-        available: false, reason: "not_authenticated", reason_label: "미인증", resets_at: null }] } }));
+      model_presets: [preset, rejectedPreset, normalPreset, unavailablePreset] } }));
     await page.goto("/");
+    await expect(page.locator(".v3-shell[data-mobile-tab]")).toBeVisible({ timeout: 30_000 });
     if (width < 760) {
       await page.getByTestId("v3-mobile-tab-projects").click();
-      await page.getByTestId("v3-mobile-project-list").getByRole("button", { name: "소울스트림", exact: true }).press("Enter");
+      const project = page.getByTestId("v3-mobile-project-list").getByRole("button", { name: "소울스트림", exact: true });
+      await expect(project).toBeVisible();
+      await project.click();
     } else {
-      await page.getByRole("button", { name: "소울스트림", exact: true }).first().press("Enter");
+      const project = page.getByTestId("v3-all-projects").getByRole("button", { name: "소울스트림", exact: true });
+      await expect(project).toBeVisible();
+      await project.click();
     }
     await page.getByRole("button", { name: "새 세션", exact: true }).press("Enter");
     const modal = page.locator(".v3-succession-modal");
@@ -54,10 +60,17 @@ for (const width of [1440, 390]) for (const explicit of [true, false]) {
     await expect(rejected).toContainText(/\d{2}:\d{2} 해제/);
     await expect(page.locator('[data-slot="select-item"]').filter({ hasText: normalPreset.label }))
       .not.toHaveAttribute("data-disabled");
+    await expect(page.locator('[data-slot="select-item"]').filter({ hasText: unavailablePreset.label }))
+      .toHaveAttribute("data-disabled");
     const name = exhausted.getByText(preset.label, { exact: true });
     const dangerColor = await name.evaluate(el => getComputedStyle(el).color);
     expect(dangerColor).not.toBe(await exhausted.evaluate(el => getComputedStyle(el).color));
-    await expect(page.locator('[data-slot="select-item"]').filter({ hasText: "인증 필요 모델" })).toHaveAttribute("data-disabled");
+    if (explicit) {
+      await page.screenshot({ path: path.join(output, `web-options-${width}.png`), animations: "disabled" });
+      if (width === 1440) {
+        await rejected.screenshot({ path: path.join(output, "web-rejected-row-zoom-1440.png"), animations: "disabled" });
+      }
+    }
     await page.screenshot({ path: path.join(output, `options-${width}-${explicit}.png`), animations: "disabled" });
     if (explicit) await exhausted.click(); else await page.keyboard.press("Escape");
     await expect(model).toContainText(preset.label);
@@ -96,6 +109,7 @@ test("app production execution picker rendered through React Native Web", async 
   const color = await name.evaluate(el => getComputedStyle(el).color);
   expect(color).not.toBe(await page.getByText("사용 가능한 예시 모델", { exact: true }).evaluate(el => getComputedStyle(el).color));
   await page.screenshot({ path: path.join(output, "app-rnweb-options-390.png") });
+  await page.getByTestId("execution-models").screenshot({ path: path.join(output, "app-rnweb-model-section-390.png") });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: path.join(output, "app-rnweb-options-1440.png") });
   await page.setViewportSize({ width: 390, height: 900 });
@@ -130,11 +144,15 @@ test("main handoff keeps the exhausted model selected and submits it", async ({ 
   } }));
   await page.goto("/");
   const composer = page.locator(".v3-card-handoff");
-  await composer.getByRole("button", { name: "실행 조합 선택", exact: true }).press("Enter");
+  const execution = composer.getByRole("button", { name: "실행 조합 선택", exact: true });
+  await expect(composer).toBeVisible();
+  await expect(execution).toBeVisible();
+  await execution.click();
   const rejected = page.locator(".v3-card-execution-picker").getByRole("button").filter({ hasText: rejectedPreset.label });
   await expect(rejected).toBeDisabled();
   await expect(rejected).toContainText("5시간 한도 거부 중");
   await expect(rejected).toContainText(/\d{2}:\d{2} 해제/);
+  await expect(rejected).toHaveAttribute("title", /5시간 한도 거부 중.*\d{2}:\d{2} 해제/);
   const option = page.locator(".v3-card-execution-picker").getByRole("button", { name: preset.label, exact: true });
   await expect(option).toBeEnabled();
   await option.click();
