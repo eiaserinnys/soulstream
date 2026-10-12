@@ -156,10 +156,21 @@ export function makeStyles(t: DesignTokens) {
       paddingTop: t.spacing.xs,
     },
     generatedNoticeSlot: { flex: 1, minWidth: 0 },
+    generatedAttachmentRows: {
+      flexDirection: 'column',
+      flexWrap: 'nowrap',
+      gap: t.spacing.sm,
+      minWidth: 0,
+    },
+    generatedAttachmentActionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: t.spacing.sm,
+      minWidth: 0,
+    },
     generatedAttachmentSlot: {
       flex: 1,
       minWidth: 0,
-      minHeight: Math.max(t.hitTarget.min, t.foundation.minHeight.secondary),
       justifyContent: 'center',
     },
     attachmentTouchFrame: {

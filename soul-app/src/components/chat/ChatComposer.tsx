@@ -20,6 +20,8 @@ import { createSessionVisualRoles, useTokens } from '../../theme';
 import { ADD_GLYPH_INSET_RATIO, makeStyles } from './ChatBody.styles';
 import { AttachmentPickerButton } from './AttachmentPickerButton';
 
+export const CHAT_COMPOSER_MAX_LENGTH = 4000;
+
 interface Props {
   placeholder?: string;
   inputAccessibilityLabel?: string;
@@ -216,7 +218,7 @@ export function ChatComposer({
               multiline
               {...(Platform.OS === 'web' ? { rows: 1 } : {})}
               scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
-              maxLength={4000}
+              maxLength={CHAT_COMPOSER_MAX_LENGTH}
               autoCorrect={false}
               spellCheck={false}
               textAlignVertical={multilineExpanded ? 'top' : 'center'}

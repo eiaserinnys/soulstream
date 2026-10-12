@@ -11,7 +11,7 @@ import { createUiUsageFlowId, recordUiUsageEvent } from '../../lib/ui-usage-even
 import { useTokens } from '../../theme';
 import { getChatRowHorizontalInset, makeStyles } from './ChatBody.styles';
 import { CHAT_SEND_ERROR_MESSAGES, useChatSendFlow, type ChatSendUsageEvent } from './useChatSendFlow';
-import { ChatComposer } from './ChatComposer';
+import { CHAT_COMPOSER_MAX_LENGTH, ChatComposer } from './ChatComposer';
 import { AttachmentChips } from './AttachmentChips';
 import { ChatInterruptButton } from './ChatInterruptButton';
 import { RealtimeVoiceControls } from './RealtimeVoiceControls';
@@ -276,7 +276,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
 
     const before = inputRef.current;
     const after = before ? `${before}\n\n${text}` : text;
-    if (after.length > 4000) return { ok: false, reason: 'too_long' };
+    if (after.length > CHAT_COMPOSER_MAX_LENGTH) return { ok: false, reason: 'too_long' };
 
     handleInputChange(after);
     setGeneratedUndo({ before, after });
@@ -356,19 +356,43 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   const showGeneratedNotice = generatedNotice !== undefined && generatedNotice !== null;
   const showGeneratedUndo = generatedUndo !== null && input === generatedUndo.after;
   const showComposerAuxiliaryRow = attachments.length > 0 || showGeneratedNotice || showGeneratedUndo;
+  const generatedUndoButton = showGeneratedUndo ? (
+    <GlassButton
+      testID="chat-composer-generated-undo-button"
+      accessibilityLabel="되돌리기"
+      size="compact"
+      variant={presentation === 'manuscript' ? 'paper' : 'secondary'}
+      style={attachments.length === 0 ? { marginLeft: 'auto', flexShrink: 0 } : undefined}
+      onPress={undoGeneratedText}
+    >
+      <Text style={{ fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio, color: t.colors.textPrimary }}>
+        되돌리기
+      </Text>
+    </GlassButton>
+  ) : null;
   const attachmentsAndComposer = <>
     {showComposerAuxiliaryRow ? (
       <View
         testID="chat-composer-generated-row"
-        style={[styles.generatedTextRow, { paddingHorizontal: getChatRowHorizontalInset(t, presentation) }]}
+        style={[
+          styles.generatedTextRow,
+          {
+            paddingHorizontal: getChatRowHorizontalInset(t, presentation),
+            ...(presentation === 'manuscript' ? { paddingBottom: t.spacing.sm } : {}),
+          },
+        ]}
       >
         {attachments.length > 0 ? (
           <View style={styles.generatedAttachmentSlot}>
             <AttachmentChips
               attachments={attachments}
               styles={styles}
-              containerStyle={[styles.attachmentRow, { paddingHorizontal: 0, paddingTop: 0 }]}
+              containerStyle={[styles.attachmentRow, {
+                paddingHorizontal: 0,
+                paddingTop: 0,
+              }]}
               attachmentTouchFrameStyle={showGeneratedUndo ? { maxWidth: '100%' } : undefined}
+              trailingAccessory={generatedUndoButton}
               textSecondaryColor={t.colors.textSecondary}
               textMutedColor={t.colors.textMuted}
               onRemove={removeAttachment}
@@ -380,18 +404,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
         {showGeneratedNotice ? (
           <View style={styles.generatedNoticeSlot}>{generatedNotice}</View>
         ) : null}
-        {showGeneratedUndo ? (
-          <GlassButton
-            testID="chat-composer-generated-undo-button"
-            accessibilityLabel="되돌리기"
-            size="compact"
-            variant={presentation === 'manuscript' ? 'paper' : 'secondary'}
-            style={{ marginLeft: 'auto' }}
-            onPress={undoGeneratedText}
-          >
-            되돌리기
-          </GlassButton>
-        ) : null}
+        {attachments.length === 0 ? generatedUndoButton : null}
       </View>
     ) : null}
 

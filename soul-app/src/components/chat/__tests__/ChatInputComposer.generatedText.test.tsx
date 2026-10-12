@@ -1,5 +1,5 @@
 import React, { createRef } from 'react';
-import { Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import type { Session } from '../../../api/types';
@@ -135,6 +135,23 @@ describe('ChatInputComposer generated text handle', () => {
     fireEvent.changeText(screen.field(), `${before}\n\n붙인 글!`);
     expect(screen.field().props.value).toBe(`${before}\n\n붙인 글!`);
     expect(screen.queryByTestId('chat-composer-generated-undo-button')).toBeNull();
+  });
+
+  test('generated undo label is rendered inside a Text component', () => {
+    const screen = renderComposer();
+    act(() => { screen.ref.current!.appendGeneratedText(screen.props.sessionId, '붙인 글'); });
+
+    expect(screen.getByTestId('chat-composer-generated-undo-button').findByType(Text).props.children).toBe('되돌리기');
+  });
+
+  test('attachment-only auxiliary row does not add a minimum height', () => {
+    mockAttachments = [{ path: '/review/file', name: '검수 파일.pdf' }];
+    const screen = renderComposer();
+    const row = screen.getByTestId('chat-composer-generated-row');
+    const attachmentSlot = row.children[0];
+    if (typeof attachmentSlot === 'string') throw new Error('첨부 보조 슬롯이 View여야 합니다.');
+
+    expect(StyleSheet.flatten(attachmentSlot.props.style).minHeight).toBeUndefined();
   });
 
   test('an empty draft gets only generated text; the notice slot and undo row stay inside the measured anchor', () => {
