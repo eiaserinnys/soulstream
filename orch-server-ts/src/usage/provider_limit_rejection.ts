@@ -33,13 +33,10 @@ export function observeProviderExecution(input: {
     if (resetMs !== null && observedMs !== null && resetMs > nowMs) {
       const key = accountKey(input.event.nodeId, provider, input.sharedAccountGroups);
       const current = input.memory.get(key);
-      const currentResetMs = current === undefined ? null : parseTimestamp(current.rejectedUntil);
       const currentObservedMs = current === undefined ? null : parseTimestamp(current.observedAt);
       if (
-        currentResetMs === null
-        || currentResetMs <= nowMs
-        || currentObservedMs === null
-        || observedMs > currentObservedMs
+        current === undefined
+        || (currentObservedMs !== null && observedMs > currentObservedMs)
       ) {
         input.memory.set(key, {
           rejectedUntil: new Date(resetMs).toISOString(),

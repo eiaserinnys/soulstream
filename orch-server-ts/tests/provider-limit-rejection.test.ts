@@ -104,6 +104,27 @@ describe("provider limit rejection memory", () => {
     expect(get(memory, "node-b", "codex")).toBeNull();
   });
 
+  it("does not restore an expired rejection from an older committed event", () => {
+    const memory = new Map(rejections);
+    observeProviderExecution({
+      memory,
+      sharedAccountGroups: groups,
+      event: errorEvent("node-a", "codex_usage_limit_exceeded", {
+        rejectedUntil: "2026-10-12T03:00:00.000Z",
+        rateLimitType: "five_hour",
+        observedAt: "2026-10-12T02:59:00.000Z",
+      }),
+      now: new Date("2026-10-12T02:59:30.000Z"),
+    });
+    observe(memory, errorEvent("node-a", "codex_usage_limit_exceeded", {
+      rejectedUntil: reset,
+      rateLimitType: "seven_day",
+      observedAt: "2026-10-12T02:58:00.000Z",
+    }));
+
+    expect(get(memory, "node-a", "codex")).toBeNull();
+  });
+
   it("does not treat generic Codex complete or unsuccessful Claude result as success", () => {
     const memory = new Map(rejections);
     observe(memory, errorEvent("node-a", "claude_rate_limit_stop_failure", {
