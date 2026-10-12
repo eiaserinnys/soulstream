@@ -1,5 +1,5 @@
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Alert, Text, View, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
+import { Alert, Platform, Text, View, type LayoutChangeEvent, type LayoutRectangle, type TextInput } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { Session, SessionEvent } from '../../api/types';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
@@ -9,16 +9,22 @@ import { useChatStore } from '../../store/chatStore';
 import { isSessionOnDisconnectedNode } from '../../lib/session-node-projection';
 import { createUiUsageFlowId, recordUiUsageEvent } from '../../lib/ui-usage-events';
 import { useTokens } from '../../theme';
-import { makeStyles } from './ChatBody.styles';
+import { getChatRowHorizontalInset, makeStyles } from './ChatBody.styles';
 import { CHAT_SEND_ERROR_MESSAGES, useChatSendFlow, type ChatSendUsageEvent } from './useChatSendFlow';
-import { ChatComposer } from './ChatComposer';
+import { CHAT_COMPOSER_MAX_LENGTH, ChatComposer } from './ChatComposer';
 import { AttachmentChips } from './AttachmentChips';
 import { ChatInterruptButton } from './ChatInterruptButton';
 import { RealtimeVoiceControls } from './RealtimeVoiceControls';
+import { GlassButton } from '../GlassSurface';
+
+export type AppendGeneratedTextResult =
+  | { ok: true }
+  | { ok: false; reason: 'wrong_session' | 'not_ready' | 'sending' | 'disabled' | 'too_long' };
 
 export interface ChatInputComposerHandle {
   retryPending(eventId: string): void;
   restorePending(eventId: string): void;
+  appendGeneratedText(sessionId: string, text: string): AppendGeneratedTextResult;
 }
 interface Props {
   sessionId: string;
@@ -31,6 +37,7 @@ interface Props {
   minimumBottomPadding: number;
   requestBottomFollow(): void;
   presentation?: 'default' | 'manuscript';
+  generatedNotice?: React.ReactNode;
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
 }
 
@@ -45,7 +52,7 @@ const ChatVoiceControls = memo(function ChatVoiceControls(props: Omit<React.Comp
 
 export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>(function ChatInputComposer({
   sessionId, sessionStatus, nodeId, backend, api, detailedNetworkActive, appForeground, minimumBottomPadding, requestBottomFollow,
-  presentation = 'default', onComposerLayout,
+  presentation = 'default', generatedNotice, onComposerLayout,
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -78,6 +85,9 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     ready: nodesReady, connectedNodeIds,
   }) : false);
   const input = inputDraft.value;
+  const textInputRef = useRef<TextInput | null>(null);
+  const [generatedUndo, setGeneratedUndo] = useState<{ before: string; after: string } | null>(null);
+  const [generatedSelection, setGeneratedSelection] = useState<{ start: number; end: number } | undefined>();
   const [interrupting, setInterrupting] = useState(false);
   const interruptReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionStatusRef = useRef(sessionStatus);
@@ -140,11 +150,17 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   const clearComposerInput = useCallback(() => {
     inputRef.current = '';
     composeFlowRef.current = null;
+    setGeneratedUndo(null);
+    setGeneratedSelection(undefined);
     inputDraft.clear();
   }, [inputDraft.clear]);
 
   const handleInputChange = useCallback((value: string) => {
     const previous = inputRef.current;
+    if (previous !== value) {
+      setGeneratedUndo(null);
+      setGeneratedSelection(undefined);
+    }
     if (!previous && value && sessionId) {
       const flowId = createUiUsageFlowId();
       if (flowId) {
@@ -239,10 +255,53 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     onUsageEvent: handleSendUsage,
   });
 
+  const focusInputAtSelection = useCallback((selection: { start: number; end: number }) => {
+    setGeneratedSelection(selection);
+    requestAnimationFrame(() => {
+      const textInput = textInputRef.current;
+      textInput?.focus();
+      if (Platform.OS === 'web') {
+        const webInput = textInput as unknown as { setSelectionRange?: (start: number, end: number) => void } | null;
+        webInput?.setSelectionRange?.(selection.start, selection.end);
+      }
+    });
+  }, []);
+
+  const appendGeneratedText = useCallback((targetSessionId: string, text: string): AppendGeneratedTextResult => {
+    if (targetSessionId !== sessionId) return { ok: false, reason: 'wrong_session' };
+    if (!inputDraft.ready) return { ok: false, reason: 'not_ready' };
+    if (sending) return { ok: false, reason: 'sending' };
+    if (inputDisabled) return { ok: false, reason: 'disabled' };
+    if (!text) return { ok: true };
+
+    const before = inputRef.current;
+    const after = before ? `${before}\n\n${text}` : text;
+    if (after.length > CHAT_COMPOSER_MAX_LENGTH) return { ok: false, reason: 'too_long' };
+
+    handleInputChange(after);
+    setGeneratedUndo({ before, after });
+    focusInputAtSelection({ start: after.length, end: after.length });
+    return { ok: true };
+  }, [focusInputAtSelection, handleInputChange, inputDisabled, inputDraft.ready, sending, sessionId]);
+
+  const undoGeneratedText = useCallback(() => {
+    const undo = generatedUndo;
+    if (!undo || inputRef.current !== undo.after) return;
+    handleInputChange(undo.before);
+    setGeneratedUndo(null);
+    focusInputAtSelection({ start: undo.before.length, end: undo.before.length });
+  }, [focusInputAtSelection, generatedUndo, handleInputChange]);
+
+  const handleGeneratedSelectionChange = useCallback(() => {
+    setGeneratedSelection(undefined);
+  }, []);
+
   const handleRestorePending = useCallback((eventId: string) => {
     const restored = restorePendingOptimistic(eventId, inputRef.current);
     if (!restored) return;
     inputRef.current = restored.inputText;
+    setGeneratedUndo(null);
+    setGeneratedSelection(undefined);
     inputDraft.setValue(restored.inputText);
     if (!composeFlowRef.current && sessionId) {
       const flowId = createUiUsageFlowId();
@@ -288,25 +347,73 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   useImperativeHandle(ref, () => ({
     retryPending: eventId => { void retryPendingOptimistic(eventId); },
     restorePending: handleRestorePending,
-  }), [retryPendingOptimistic, handleRestorePending]);
+    appendGeneratedText,
+  }), [appendGeneratedText, retryPendingOptimistic, handleRestorePending]);
   useEffect(() => {
     composeFlowRef.current = null;
     clearAttachments();
   }, [sessionId, api, clearAttachments]);
+  const showGeneratedNotice = generatedNotice !== undefined && generatedNotice !== null;
+  const showGeneratedUndo = generatedUndo !== null && input === generatedUndo.after;
+  const showComposerAuxiliaryRow = attachments.length > 0 || showGeneratedNotice || showGeneratedUndo;
+  const generatedUndoButton = showGeneratedUndo ? (
+    <GlassButton
+      testID="chat-composer-generated-undo-button"
+      accessibilityLabel="되돌리기"
+      size="compact"
+      variant={presentation === 'manuscript' ? 'paper' : 'secondary'}
+      style={attachments.length === 0 ? { marginLeft: 'auto', flexShrink: 0 } : undefined}
+      onPress={undoGeneratedText}
+    >
+      <Text style={{ fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio, color: t.colors.textPrimary }}>
+        되돌리기
+      </Text>
+    </GlassButton>
+  ) : null;
   const attachmentsAndComposer = <>
-    <AttachmentChips
-      attachments={attachments}
-      styles={styles}
-      textSecondaryColor={t.colors.textSecondary}
-      textMutedColor={t.colors.textMuted}
-      onRemove={removeAttachment}
-      disabled={inputDisabled}
-      {...(presentation === 'manuscript' ? { presentation } : {})}
-    />
+    {showComposerAuxiliaryRow ? (
+      <View
+        testID="chat-composer-generated-row"
+        style={[
+          styles.generatedTextRow,
+          {
+            paddingHorizontal: getChatRowHorizontalInset(t, presentation),
+            ...(presentation === 'manuscript' ? { paddingBottom: t.spacing.sm } : {}),
+          },
+        ]}
+      >
+        {attachments.length > 0 ? (
+          <View style={styles.generatedAttachmentSlot}>
+            <AttachmentChips
+              attachments={attachments}
+              styles={styles}
+              containerStyle={[styles.attachmentRow, {
+                paddingHorizontal: 0,
+                paddingTop: 0,
+              }]}
+              trailingAccessory={generatedUndoButton}
+              textSecondaryColor={t.colors.textSecondary}
+              textMutedColor={t.colors.textMuted}
+              onRemove={removeAttachment}
+              disabled={inputDisabled}
+              {...(presentation === 'manuscript' ? { presentation } : {})}
+            />
+          </View>
+        ) : null}
+        {showGeneratedNotice ? (
+          <View style={styles.generatedNoticeSlot}>{generatedNotice}</View>
+        ) : null}
+        {attachments.length === 0 ? generatedUndoButton : null}
+      </View>
+    ) : null}
 
     <ChatComposer
       input={input}
       onChangeInput={handleInputChange}
+      onInputRef={(textInput) => { textInputRef.current = textInput; }}
+      focusAccent
+      selection={generatedSelection}
+      onSelectionChange={handleGeneratedSelectionChange}
       onPickAttachment={pickAttachment}
       onSend={() => handleSend(input, clearComposerInput, composeFlowRef.current?.flowId ?? null)}
       uploading={uploading}
