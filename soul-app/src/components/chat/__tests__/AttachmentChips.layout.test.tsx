@@ -8,7 +8,7 @@ import { makeStyles } from '../ChatBody.styles';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
-test('undo keeps earlier chips in the wrapping row and the last chip shrinks without growing', () => {
+test('undo centers the wrapping row while the last chip shrinks without growing', () => {
   const tokens = renderHook(() => useTokens()).result.current;
   const styles = makeStyles(tokens);
   const screen = render(<AttachmentChips
@@ -20,7 +20,9 @@ test('undo keeps earlier chips in the wrapping row and the last chip shrinks wit
     StyleSheet.flatten(view.props.style)?.position === 'relative'
   ));
   const root = screen.UNSAFE_getAllByType(View)[0];
-  expect(StyleSheet.flatten(root.props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap' });
+  expect(StyleSheet.flatten(root.props.style)).toMatchObject({
+    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
+  });
   for (const frame of frames.slice(0, -1)) {
     expect(frame.parent!.parent).toBe(root);
     expect(StyleSheet.flatten(frame.props.style).maxWidth).toBe('70%');
@@ -43,4 +45,5 @@ test('attachment-only callers retain the existing frame and row styles', () => {
   const frame = screen.UNSAFE_getByType(CompactTouchTarget).parent!;
   expect(StyleSheet.flatten(frame.props.style)).toEqual(styles.attachmentTouchFrame);
   expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style)).toEqual(styles.attachmentRow);
+  expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style).alignItems).toBeUndefined();
 });

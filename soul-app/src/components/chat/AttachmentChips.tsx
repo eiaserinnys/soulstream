@@ -17,7 +17,6 @@ interface Props {
   disabled?: boolean;
   presentation?: 'default' | 'manuscript';
   containerStyle?: StyleProp<ViewStyle>;
-  attachmentTouchFrameStyle?: StyleProp<ViewStyle>;
   trailingAccessory?: React.ReactNode;
 }
 
@@ -30,7 +29,6 @@ export function AttachmentChips({
   disabled = false,
   presentation = 'default',
   containerStyle,
-  attachmentTouchFrameStyle,
   trailingAccessory,
 }: Props) {
   const t = useTokens();
@@ -39,7 +37,7 @@ export function AttachmentChips({
   const renderAttachment = (
     attachment: ChatAttachment,
     idx: number,
-    frameStyle = attachmentTouchFrameStyle,
+    frameStyle?: StyleProp<ViewStyle>,
   ) => (
     <View key={`${attachment.path}-${idx}`} style={[styles.attachmentTouchFrame, frameStyle]}>
       <View style={presentation === 'manuscript'
@@ -78,15 +76,14 @@ export function AttachmentChips({
     : styles.attachmentRow);
 
   return (
-    <View style={baseContainerStyle}>
+    <View style={hasTrailingAccessory ? [baseContainerStyle, { alignItems: 'center' }] : baseContainerStyle}>
       {hasTrailingAccessory ? (
         <>
           {attachments.slice(0, -1).map((attachment, idx) => renderAttachment(attachment, idx))}
           <View style={styles.generatedAttachmentActionRow}>
-            {renderAttachment(attachments[attachments.length - 1], attachments.length - 1, [
-              attachmentTouchFrameStyle,
+            {renderAttachment(attachments[attachments.length - 1], attachments.length - 1,
               { flexShrink: 1, minWidth: 0, maxWidth: '100%' },
-            ])}
+            )}
             <View style={{ marginLeft: 'auto', flexShrink: 0 }}>{trailingAccessory}</View>
           </View>
         </>
