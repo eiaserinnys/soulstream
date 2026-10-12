@@ -94,6 +94,8 @@ export interface ChatMessage {
   model?: string;
   /** assistant_message 전용: LLM 프로바이더 */
   provider?: string;
+  /** assistant_message 전용: published chat UI envelope */
+  ui?: unknown;
   /** 콘텐츠가 truncate 되었는지 여부 (큰 toolResult/thinking) */
   isTruncated?: boolean;
   /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
@@ -223,6 +225,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.treeNodeType === b.treeNodeType &&
     a.model === b.model &&
     a.provider === b.provider &&
+    a.ui === b.ui &&
     a.isTruncated === b.isTruncated &&
     a.fullContentEventId === b.fullContentEventId &&
     a.questions === b.questions &&
@@ -574,6 +577,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         usage: n.usage,
         model: n.model,
         provider: n.provider,
+        ui: n.ui,
         treeNodeId: n.id,
         treeNodeType: n.type,
       };

@@ -254,6 +254,7 @@ export interface ToolApprovalNodeDef extends BaseNode {
 /** LLM 프록시 어시스턴트 응답 노드 */
 export interface AssistantMessageNode extends BaseNode {
   type: "assistant_message";
+  ui?: unknown;
   model?: string;
   provider?: string;
   usage?: { input_tokens: number; output_tokens: number };
