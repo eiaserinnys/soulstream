@@ -22,6 +22,30 @@ describe("durable session owner", () => {
     expect(await resolve("dot")).toMatchObject({ ownerEmail: user.email, callerInfo: { source: "external-llm", agent_id: "dot" } });
     expect(await resolve("forged")).toBeNull(); expect(await resolve("loop")).toBeNull();
   });
+  it("accepts registered owners on system callers and ignores missing or unregistered emails", async () => {
+    const resolve = resolver({
+      owned: { metadata: [{ type: "caller_info", value: { source: "system", email: user.email } }] },
+      missing: { metadata: [{ type: "caller_info", value: { source: "system" } }] },
+      unregistered: { metadata: [{ type: "caller_info", value: { source: "system", email: "unknown@example.test" } }] },
+    });
+    expect(await resolve("owned")).toMatchObject({ ownerEmail: user.email, callerInfo: { source: "system" } });
+    expect(await resolve("missing")).toBeNull();
+    expect(await resolve("unregistered")).toBeNull();
+  });
+  it("resolves a browser card execution from its persisted execution-user lookup", async () => {
+    const resolve = createSessionOwnerResolver({
+      getSession: async id => id === "browser-execution"
+        ? { metadata: [{ type: "caller_info", value: { source: "browser" } }] }
+        : null,
+      findUserByEmail: async email => email === user.email ? user : null,
+      findExternalAgent: async () => null,
+      findCardExecutionUser: async sessionId => sessionId === "browser-execution" ? user.email : null,
+    });
+    expect(await resolve("browser-execution")).toEqual({
+      ownerEmail: user.email,
+      callerInfo: { source: "browser", email: user.email },
+    });
+  });
   it("keeps actual agent identity while attaching verified human and external ownership", async () => {
     const sender = { source: "agent", agent_id: "roselin", user_id: "roselin", agent_name: "로젤린",
       display_name: "로젤린", avatar_url: "/portrait", agent_node: "node", email: "unverified" };

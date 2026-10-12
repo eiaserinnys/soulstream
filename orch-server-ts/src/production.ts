@@ -89,6 +89,8 @@ import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import { createCardOrchestrationAccess } from "./cards/card_orchestration_access.js";
 import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
+import { CardDispatchRepository } from "./cards/card_dispatch_repository.js";
+import { BoardYjsSqlResolver } from "./board-yjs/board_yjs_sql.js";
 import { relayCanonicalErrorTx } from "./cards/card_work_error_delivery.js";
 import type { RepositorySql } from "./cards/control_plane/card_types.js";
 import type { CardDispatcher } from "./cards/card_dispatcher.js";
@@ -586,10 +588,13 @@ export async function createLiveProductionApplication(
   const ownedAgentRepository = new SqlOwnedAgentRepository(sqlResolver);
   const ownedAgentService = new OwnedAgentService(ownedAgentRepository,
     dbCatalogRepository.adminUsersRepository.findUserByEmail, config.mcp_external_ingress_bearer_token);
+  const cardExecutionOwnerResolver = new BoardYjsSqlResolver(sqlResolver);
+  const cardExecutionOwnerRepository = new CardDispatchRepository(() => cardExecutionOwnerResolver.resolveSql());
   const resolveSessionOwner = createSessionOwnerResolver({
     getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
     findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
     findExternalAgent: ownedAgentService.findAgent,
+    findCardExecutionUser: id => cardExecutionOwnerRepository.cardExecutionActorUser(id),
   });
   const orchestrationAccess = createCardOrchestrationAccess({
     getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
@@ -601,6 +606,8 @@ export async function createLiveProductionApplication(
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
     usageSnapshot: () => usageSummaryService.getSummary(),
     validateFolder: orchestrationAccess.validateFolder,
+    resolveSessionOwner,
+    findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
     ensureSystemFolder: async input => {
       if (!folderProjectIdentityService) throw new Error("Folder identity service is unavailable");
       await folderProjectIdentityService.create({
