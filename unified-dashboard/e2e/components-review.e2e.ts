@@ -74,6 +74,16 @@ for (const width of [1440, 390]) {
     });
     await page.goto("/components");
     const review = page.getByTestId("components-review");
+    // Page-level actions update this notice; chat samples own separate statuses.
+    const notice = review.locator(":scope > .v3-detail-scroll > .v3-task-detail-layout > .v3-task-detail-content > p[role=status]");
+    const rows = review.locator("#components-rows");
+    const sessionSample = rows.locator('[data-component="RichSessionRow / RunRowFrame"]').filter({
+      has: page.getByText("RichSessionRow / RunRowFrame · 기본 · 행 클릭 · 포커스", { exact: true }),
+    });
+    const cardSample = rows.locator('[data-component="CardRowView / RunRowFrame"]');
+    const documentSample = rows.locator('[data-component="InlineMarkdownCard"]');
+    const timelineSample = review.locator('#components-bubbles [data-component="CardTimeline / UserMessage / AssistantMessage"]');
+    const handoffSample = review.locator("#components-input").getByTestId("card-handoff-review-sample");
     await expect(review).toBeVisible();
     await expect(review.locator('section[id^="components-"] > .v3-detail-section-head > h3')).toHaveText([
       "목록 행", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
@@ -95,22 +105,23 @@ for (const width of [1440, 390]) {
     expect(viewport.scrollWidth).toBe(viewport.clientWidth);
     expect(viewport.documentWidth).toBe(width);
     await capture(page, `components-${width}-rows`);
-    await review.locator(".v3-run-open").first().focus();
+    await sessionSample.locator(".v3-run-open").focus();
     await page.keyboard.press("Enter");
-    await expect(review.locator("p[role=status]")).toHaveText("세션 샘플을 열었습니다.");
+    await expect(notice).toHaveText("세션 샘플을 열었습니다.");
     await capture(page, `components-${width}-focus`);
-    await review.locator(".v3-card-row .v3-run-open").first().click();
-    await expect(review.locator("p[role=status]")).toHaveText("카드 샘플을 열었습니다.");
-    await review.locator("[data-testid=v3-task-components-parent]").click();
-    await expect(review.locator("p[role=status]")).toHaveText("상위 폴더 샘플을 열었습니다.");
-    await review.locator("[data-board-kind=markdown] .v3-inline-board-expand").click();
-    await expect(review.getByRole("button", { name: "검수 문서 편집", exact: true }).first()).toBeVisible();
+    await cardSample.getByRole("button", { name: "카드 카드 행 기본 열기", exact: true }).click();
+    await expect(notice).toHaveText("카드 샘플을 열었습니다.");
+    await rows.getByTestId("v3-task-components-parent").click();
+    await expect(notice).toHaveText("상위 폴더 샘플을 열었습니다.");
+    await documentSample.locator(".v3-inline-board-expand").click();
+    await expect(documentSample.locator('button.v3-description-content[aria-label="검수 문서 편집"]')).toBeVisible();
     await capture(page, `components-${width}-documents`);
-    await review.getByRole("button", { name: "샘플 별표", exact: true }).click();
-    await expect(review.getByRole("button", { name: "샘플 별표", exact: true })).toHaveAttribute("aria-pressed", "true");
+    const star = review.locator("#components-heads").getByRole("button", { name: "샘플 별표", exact: true });
+    await star.click();
+    await expect(star).toHaveAttribute("aria-pressed", "true");
 
     const geometry = async () => {
-      await waitForStableLayout(review, [".v3-run-row", "[data-slot=chat-input-body]", "[data-testid=send-button]"]);
+      await waitForStableLayout(handoffSample, ["[data-slot=chat-input-body]", "[data-testid=send-button]"]);
       return review.evaluate(el => {
       const box = (node: Element | null) => {
         if (!node) return null;
@@ -123,10 +134,13 @@ for (const width of [1440, 390]) {
       return { page: box(el), header: box(el.querySelector("header")),
         firstCap: box(el.querySelector("header .dashboard-icon-cap")), lastCap: box(el.querySelector("header .v3-folder-header-actions")),
         sections: [...el.querySelectorAll('section[id^="components-"] > .v3-detail-section-head')].map(head => ({ section: box(head.parentElement), head: box(head) })),
-        rows: [...el.querySelectorAll(".v3-run-row")].map(row => ({ self: box(row), open: box(row.querySelector(".v3-run-open")),
+        rows: [...el.querySelectorAll('#components-rows [data-component^="RichSessionRow"] .v3-run-row, #components-rows [data-component="CardRowView / RunRowFrame"] .v3-run-row')].map(row => ({ self: box(row), open: box(row.querySelector(".v3-run-open")),
           avatar: box(row.querySelector(".v3-run-avatar")), copy: box(row.querySelector(".v3-run-copy")), trailing: box(row.querySelector(".v3-run-trailing")) })),
-        input: box(el.querySelector("[data-slot=chat-input-body]")), send: box(el.querySelector("[data-testid=send-button]")),
-        chip: box(el.querySelector(".v3-card-handoff-chip")), composer: box(el.querySelector("[data-slot=chat-input-composer]")) };
+        inputSection: box(el.querySelector("#components-input")),
+        input: box(el.querySelector('[data-testid="card-handoff-review-sample"] [data-slot=chat-input-body]')),
+        send: box(el.querySelector('[data-testid="card-handoff-review-sample"] [data-testid=send-button]')),
+        chip: box(el.querySelector('[data-testid="card-handoff-review-sample"] .v3-card-handoff-chip')),
+        composer: box(el.querySelector('[data-testid="card-handoff-review-sample"] [data-slot=chat-input-composer]')) };
       });
     };
     const initial = await geometry();
@@ -139,35 +153,35 @@ for (const width of [1440, 390]) {
 
     await review.locator("#components-bubbles").scrollIntoViewIfNeeded();
     await capture(page, `components-${width}-bubbles`);
-    await review.getByRole("button", { name: "검수 이미지", exact: true }).click();
+    await timelineSample.getByRole("button", { name: "검수 이미지", exact: true }).click();
     await expect(page.getByRole("dialog").getByRole("img", { name: "검수 이미지" })).toBeVisible();
     await capture(page, `components-${width}-image`);
     await page.keyboard.press("Escape");
-    const attachment = review.getByRole("link", { name: "샘플 첨부 열기" });
+    const attachment = timelineSample.getByRole("link", { name: "샘플 첨부 열기" });
     await expect(attachment).toHaveAttribute("href", "/icon-512.png");
     const popup = page.waitForEvent("popup");
     await attachment.click();
     const opened = await popup; await expect(opened).toHaveURL(/icon-512\.png$/); await opened.close();
 
-    await review.getByRole("button", { name: "샘플 폴더 선택" }).click();
+    await handoffSample.getByRole("button", { name: "샘플 폴더 선택", exact: true }).click();
     await expect(page.getByRole("tabpanel", { name: "별표" })).toBeVisible();
     await capture(page, `components-${width}-picker`);
-    await page.locator(".v3-folder-picker .v3-project-nav-link").last().click();
-    const input = review.getByLabel("검수 메시지");
+    await page.locator(".v3-folder-picker").getByRole("button", { name: "👩‍💻 검수 폴더", exact: true }).click();
+    const input = handoffSample.getByLabel("검수 메시지", { exact: true });
     await input.fill("한 줄\n두 줄\n세 줄\n네 줄");
     await capture(page, `components-${width}-input`);
     const multiline = await geometry();
     expect(multiline.input!.h).toBeGreaterThan(initial.input!.h);
     expect(multiline.send!.h).toBe(initial.send!.h);
-    expect(multiline.send!.right).toBeLessThanOrEqual(multiline.sections[3].section!.right);
-    expect(multiline.composer!.w).toBe(multiline.sections[3].section!.w);
-    await review.locator("input[type=file]").setInputFiles({ name: "샘플.txt", mimeType: "text/plain", buffer: Buffer.from("샘플 첨부") });
-    await expect(review.getByTitle("샘플.txt")).toBeVisible();
-    await review.getByRole("button", { name: "샘플 전송", exact: true }).click();
+    expect(multiline.send!.right).toBeLessThanOrEqual(multiline.inputSection!.right);
+    expect(multiline.composer!.w).toBe(multiline.inputSection!.w);
+    await handoffSample.locator("input[type=file]").setInputFiles({ name: "샘플.txt", mimeType: "text/plain", buffer: Buffer.from("샘플 첨부") });
+    await expect(handoffSample.getByTitle("샘플.txt")).toBeVisible();
+    await handoffSample.getByRole("button", { name: "샘플 전송", exact: true }).click();
     await expect(input).toHaveValue("");
-    await expect(review.locator("p[role=status]")).toHaveText("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
-    await expect(review.locator('[data-card-entry="커멘트"]')).toHaveCount(1);
-    await review.getByRole("button", { name: "샘플 패널 열기" }).click();
+    await expect(notice).toHaveText("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
+    await expect(timelineSample.locator('[data-card-entry="커멘트"]')).toHaveCount(1);
+    await review.locator("#components-surfaces").getByRole("button", { name: "샘플 패널 열기", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "패널 표면 샘플" })).toBeVisible();
     await capture(page, `components-${width}-surface`);
     await page.keyboard.press("Escape");
