@@ -8,8 +8,8 @@ jest.mock('../../components/planner/MarkdownDocumentContent', () => ({ MarkdownD
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
 import React from 'react';
 import { act, render, renderHook } from '@testing-library/react-native';
-import { StyleSheet, Text } from 'react-native';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createSurfaceRoles, useTokens } from '../../theme';
 import { TabletNavigator } from '../TabletNavigator';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
@@ -32,7 +32,12 @@ const safeAreaMetrics = {
   insets: { top: 24, right: 0, bottom: 20, left: 0 },
 };
 
-function renderTabletDetail(kind: 'card' | 'document') {
+function renderTabletDetail(kind: 'card' | 'document', dimensions: { width: number; height: number }) {
+  const dimensionsSpy = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
+    ...dimensions,
+    scale: 1,
+    fontScale: 1,
+  });
   mockFocusState.current = true;
   resetNavigationCapture();
   const navigator = render(<PersistentSessionProvider><Probe /><TabletNavigator /></PersistentSessionProvider>);
@@ -42,28 +47,43 @@ function renderTabletDetail(kind: 'card' | 'document') {
 
   const testID = kind === 'card' ? 'persistent-tablet-card-sheet' : 'persistent-tablet-document-sheet';
   const route = kind === 'card' ? { params: { cardId: 'card-1' } } : { params: { documentId: 'doc-1' } };
-  const screen = render(<SafeAreaProvider initialMetrics={safeAreaMetrics}>
+  const screen = render(<SafeAreaProvider initialMetrics={{
+    frame: { ...safeAreaMetrics.frame, ...dimensions },
+    insets: safeAreaMetrics.insets,
+  }}>
     <PersistentSessionProvider>{React.createElement(component, { route, navigation: { goBack: jest.fn() } })}</PersistentSessionProvider>
     <SafeAreaInsetsProbe />
   </SafeAreaProvider>);
 
-  const safeArea = screen.UNSAFE_getByType(SafeAreaView);
+  const detailFrame = screen.UNSAFE_getAllByType(View).find((node) => {
+    const style = StyleSheet.flatten(node.props.style);
+    return style.position === 'absolute' && style.width !== undefined && style.right !== undefined;
+  });
+  dimensionsSpy.mockRestore();
   return {
     screen,
     testID,
-    edges: safeArea.props.edges,
-    style: StyleSheet.flatten(safeArea.props.style),
+    style: detailFrame ? StyleSheet.flatten(detailFrame.props.style) : undefined,
     insets: screen.getByTestId('safe-area-insets').props.children,
   };
 }
 
-test('iPad 카드와 문서 시트는 0이 아닌 안전 영역에서 같은 위아래 12 여백을 쓴다', () => {
+test.each([
+  ['가로', { width: 1180, height: 820 }, 460],
+  ['세로', { width: 820, height: 1180 }, 369],
+])('iPad %s 카드와 문서 시트는 outerInset 위치 계약을 공유한다', (_orientation, dimensions, sheetWidth) => {
   const t = renderHook(() => useTokens()).result.current;
-  const card = renderTabletDetail('card');
-  const document = renderTabletDetail('document');
+  const card = renderTabletDetail('card', dimensions);
+  const document = renderTabletDetail('document', dimensions);
 
-  expect(card.edges).toEqual(['top', 'bottom', 'right']);
-  expect(card.style).toMatchObject({ position: 'absolute', top: 0, bottom: 0, right: 0, paddingVertical: t.uiSpacing.md });
+  expect(t.tabletShell.outerInset).toBe(12);
+  expect(card.style).toEqual({
+    position: 'absolute',
+    top: 24 + t.tabletShell.outerInset,
+    right: t.tabletShell.outerInset,
+    bottom: t.tabletShell.outerInset,
+    width: sheetWidth,
+  });
   expect(document.style).toEqual(card.style);
   expect(card.insets).toBe('24:20');
   expect(card.screen.getByTestId(card.testID)).toBeTruthy();
