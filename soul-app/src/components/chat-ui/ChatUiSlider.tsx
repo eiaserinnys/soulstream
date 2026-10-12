@@ -28,7 +28,7 @@ export function ChatUiSlider({ doc, fieldKey, label, controller, presentation }:
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
       <GlassButton variant={presentation === 'manuscript' ? 'paper' : 'secondary'} size="compact" iconOnly
         accessibilityLabel={`${label} 줄이기`} onPress={() => controller.set(fieldKey, value - field.step)}><Text style={body}>−</Text></GlassButton>
-      <View style={{ flex: 1, minWidth: 0 }}><ChatUiNumberInput fieldKey={fieldKey} label="" accessibilityLabel={label} controller={controller} /></View>
+      <View style={{ flex: 1, minWidth: 0 }}><ChatUiNumberInput fieldKey={fieldKey} label="" accessibilityLabel={label} controller={controller} presentation={presentation} /></View>
       <GlassButton variant={presentation === 'manuscript' ? 'paper' : 'secondary'} size="compact" iconOnly
         accessibilityLabel={`${label} 늘리기`} onPress={() => controller.set(fieldKey, value + field.step)}><Text style={body}>+</Text></GlassButton>
     </View>

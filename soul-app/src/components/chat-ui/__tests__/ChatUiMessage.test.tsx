@@ -105,22 +105,48 @@ test('all five form fields, search selection, set action and reset flow through 
   expect(screen.getByLabelText('진행 순서: 앱 먼저')).toBeTruthy();
 });
 
-test('incomplete numbers stay editable, compose returns focus to the editor, reset clears the draft', () => {
+test.each([
+  [1, 50, 1, 8, '999', ['9', '99', '999'], [9, 50, 50]],
+  [2020, 2035, 1, 2026, '2028', ['2', '20', '202', '2028'], [2020, 2020, 2020, 2028]],
+  [0, 100, 5, 20, '35', ['3', '35'], [5, 35]],
+] as const)('typing preserves each draft in %s..%s step %s, blur restores the reducer value', (min, max, step, initial, text, drafts, values) => {
+  for (const example of ['normal', 'gallery'] as const) {
+    const document = { ...chatUiDocuments[example], fields: { ...chatUiDocuments[example].fields,
+      seats: { ...chatUiDocuments[example].fields!.seats, type: 'number' as const, min, max, step, initial } } };
+    const screen = render(sample(chatUiFixtureEvent(example, { document })));
+    const input = () => screen.getByLabelText(example === 'normal' ? '인원수' : '인원수 (명)');
+    fireEvent(input(), 'focus'); fireEvent.changeText(input(), '');
+    for (let index = 0; index < text.length; index++) {
+      fireEvent.changeText(input(), text.slice(0, index + 1));
+      expect(input().props.value).toBe(drafts[index]);
+      expect(screen.getByTestId('chat-ui-slider-seats').props.value).toBe(values[index]);
+    }
+    fireEvent(input(), 'blur'); expect(input().props.value).toBe(String(values.at(-1)));
+    fireEvent.changeText(input(), ''); fireEvent(input(), 'blur');
+    expect(input().props.value).toBe(String(values.at(-1)));
+    screen.unmount();
+  }
+});
+
+test('outside number actions replace a focused draft, and compose restores empty or invalid drafts', () => {
   const screen = render(sample(chatUiFixtureEvent('gallery')));
-  const focus = jest.fn(); const input = screen.getByLabelText('인원수 (명)');
-  fireEvent(input, 'change', { currentTarget: { focus }, nativeEvent: { text: '' } });
-  fireEvent.changeText(input, '');
-  expect(screen.getByLabelText('인원수 (명)').props.value).toBe('');
-  expect(screen.getByTestId('chat-ui-slider-seats').props.value).toBe(8);
-  fireEvent(screen.getByLabelText('인원수 (명)'), 'endEditing');
-  expect(focus).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByLabelText('이 값으로 요청'));
-  expect(append).not.toHaveBeenCalled(); expect(focus).toHaveBeenCalled();
-  fireEvent.press(screen.getByLabelText('초기화'));
-  expect(screen.getByLabelText('인원수 (명)').props.value).toBe('8');
-  fireEvent.changeText(screen.getByLabelText('인원수 (명)'), '999');
-  fireEvent(screen.getByLabelText('인원수 (명)'), 'endEditing');
-  expect(screen.getByLabelText('인원수 (명)').props.value).toBe('50');
+  const input = () => screen.getByLabelText('인원수 (명)');
+  fireEvent(input(), 'focus'); fireEvent.changeText(input(), '999');
+  fireEvent.press(screen.getByLabelText('12명으로 설정'));
+  expect(input().props.value).toBe('12');
+  fireEvent.changeText(input(), ''); fireEvent(screen.getByTestId('chat-ui-slider-seats'), 'valueChange', 9);
+  expect(input().props.value).toBe('9');
+  fireEvent.changeText(input(), ''); fireEvent.press(screen.getByLabelText('인원수 늘리기'));
+  expect(input().props.value).toBe('10');
+  fireEvent.changeText(input(), ''); fireEvent.press(screen.getByLabelText('인원수 줄이기'));
+  expect(input().props.value).toBe('9');
+  fireEvent.changeText(input(), ''); fireEvent.press(screen.getByLabelText('초기화'));
+  expect(input().props.value).toBe('8');
+  for (const draft of ['', '-']) {
+    fireEvent.changeText(input(), draft); fireEvent.press(screen.getByLabelText('이 값으로 요청'));
+    expect(input().props.value).toBe('8');
+    expect(append).toHaveBeenLastCalledWith('session-one', expect.any(String));
+  }
 });
 
 test('row remount and same-publication history retain values and expanded entities; session/hash changes reset', () => {
@@ -194,4 +220,33 @@ test('a renderer exception after edits falls back to defaults, retains saved eve
   parts.mockImplementation(jest.requireActual('@soulstream/chat-ui').renderParts); error.mockRestore();
   screen.rerender(sample(chatUiFixtureEvent('normal', { hash: 'b'.repeat(64) })));
   expect(screen.getByText('232,000원/월')).toBeTruthy();
+});
+
+
+test.each([2, null])('long fallback notices can wrap instead of truncating (%s)', schemaVersion => {
+  const event = chatUiFixtureEvent('normal', { document: schemaVersion === null ? undefined : { schema_version: schemaVersion } });
+  const screen = render(sample(event));
+  expect(screen.getByTestId('chat-ui-fallback-notice').props.numberOfLines).toBeUndefined();
+});
+
+test.each(['number', 'slider', 'plus', 'minus', 'checkbox', 'choice', 'text', 'selection', 'set'] as const)(
+  'value change through %s clears the previous reset/copy notice', async path => {
+    const screen = render(sample(chatUiFixtureEvent('gallery')));
+    const change = () => {
+      if (path === 'number') fireEvent.changeText(screen.getByLabelText('인원수 (명)'), '12');
+      if (path === 'slider') fireEvent(screen.getByTestId('chat-ui-slider-seats'), 'valueChange', 12);
+      if (path === 'plus') fireEvent.press(screen.getByLabelText('인원수 늘리기'));
+      if (path === 'minus') fireEvent.press(screen.getByLabelText('인원수 줄이기'));
+      if (path === 'checkbox') fireEvent.press(screen.getByLabelText('연간 결제 (20% 할인)'));
+      if (path === 'choice') { fireEvent.press(screen.getByLabelText('진행 순서: 앱 먼저')); fireEvent.press(screen.getByLabelText('웹 먼저')); }
+      if (path === 'text') fireEvent.changeText(screen.getByLabelText('덧붙일 말'), '새 값');
+      if (path === 'selection') fireEvent.press(screen.getByLabelText('전체 초기화'));
+      if (path === 'set') fireEvent.press(screen.getByLabelText('12명으로 설정'));
+    };
+    fireEvent.press(screen.getByLabelText('초기화')); expect(screen.getByText('기본값으로 돌아갔어')).toBeTruthy();
+    change(); expect(screen.queryByTestId('chat-ui-action-notice')).toBeNull();
+    fireEvent.press(screen.getByLabelText('초기화'));
+    await act(async () => fireEvent.press(screen.getByLabelText('복사')));
+    expect(screen.getByText('현재 값 복사됨')).toBeTruthy();
+    change(); expect(screen.queryByTestId('chat-ui-action-notice')).toBeNull();
 });

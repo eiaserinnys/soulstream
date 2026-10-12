@@ -1,5 +1,5 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
+import React, { useEffect, useId, useState } from 'react';
+import { Text, View } from 'react-native';
 import type { Field } from '@soulstream/chat-ui';
 import { useTokens } from '../../theme';
 import { SettingsInput, useSettingsFormStyles } from '../settings/SettingsFormParts';
@@ -17,8 +17,8 @@ type Props = { fieldKey: string; field: Field; label: string; controller: ChatUi
 export function ChatUiField({ fieldKey, field, label, controller, presentation }: Props) {
   const t = useTokens();
   const value = controller.state.values[fieldKey];
-  if (field.type === 'number') return <ChatUiNumberInput fieldKey={fieldKey} label={label} controller={controller} />;
-  if (field.type === 'text') return <SettingsInput variant="chat" label={label} value={String(value)}
+  if (field.type === 'number') return <ChatUiNumberInput fieldKey={fieldKey} label={label} controller={controller} presentation={presentation} />;
+  if (field.type === 'text') return <SettingsInput variant="chat" presentation={presentation} label={label} value={String(value)}
     onChangeText={text => controller.set(fieldKey, text)} />;
   if (field.type === 'boolean') return <CardItemCheckbox variant="chat" label={label} checked={value === true}
     onPress={() => controller.set(fieldKey, !value)} />;
@@ -36,30 +36,23 @@ export function ChatUiField({ fieldKey, field, label, controller, presentation }
   </View>;
 }
 
-export function ChatUiNumberInput({ fieldKey, label, accessibilityLabel = label, controller }: {
-  fieldKey: string; label: string; accessibilityLabel?: string; controller: ChatUiController;
+export function ChatUiNumberInput({ fieldKey, label, accessibilityLabel = label, controller, presentation }: {
+  fieldKey: string; label: string; accessibilityLabel?: string; controller: ChatUiController; presentation: 'default' | 'manuscript';
 }) {
   const value = controller.state.values[fieldKey] as number;
   const [draft, setDraft] = useState(String(value));
-  const input = useRef<TextInput | null>(null);
   const editorId = useId();
-  useEffect(() => { setDraft(String(value)); }, [value, controller.resetEpoch]);
-  const commit = (focusInvalid = true) => {
-    if (!draft.trim() || !Number.isFinite(Number(draft))) { if (focusInvalid) input.current?.focus(); return false; }
-    const next = controller.set(fieldKey, Number(draft));
-    setDraft(String(next.values[fieldKey]));
-    return true;
-  };
-  const commitRef = useRef(commit); commitRef.current = commit;
-  useEffect(() => controller.registerNumberEditor(editorId, () => commitRef.current()), [controller.registerNumberEditor, editorId]);
-  return <SettingsInput variant="chat" label={label} accessibilityLabel={accessibilityLabel} value={draft}
+  // Typing updates the common state without replacing this editor's draft.
+  // Outside controls sync the registered editor even when the value is unchanged.
+  useEffect(() => { setDraft(String(value)); }, [controller.resetEpoch]);
+  useEffect(() => controller.registerNumberEditor(editorId, fieldKey, next => setDraft(String(next))),
+    [controller.registerNumberEditor, editorId, fieldKey]);
+  const commit = () => setDraft(String(value));
+  return <SettingsInput variant="chat" presentation={presentation} label={label} accessibilityLabel={accessibilityLabel} value={draft}
     keyboardType="decimal-pad" inputMode="decimal"
-    onChange={event => { input.current = event.currentTarget as unknown as TextInput; }}
     onChangeText={text => {
       setDraft(text);
-      // Preserve incomplete edits such as an empty string or a trailing decimal.
-      // Range and step normalization always belong to the common reducer.
-      if (/^-?\d+(\.\d+)?$/.test(text) && Number.isFinite(Number(text))) controller.set(fieldKey, Number(text));
+      if (text.trim() && Number.isFinite(Number(text))) controller.set(fieldKey, Number(text), editorId);
     }}
-    onEndEditing={() => commit(false)} onSubmitEditing={() => commit()} />;
+    onBlur={commit} onSubmitEditing={commit} />;
 }

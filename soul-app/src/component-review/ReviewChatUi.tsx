@@ -11,6 +11,7 @@ import { ChatUiNotice } from '../components/chat-ui/ChatUiNotice';
 import { GlassButton } from '../components/GlassSurface';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { getChatRowHorizontalInset } from '../components/chat/ChatBody.styles';
+import { AssistantMessage } from '../components/events/AssistantMessage';
 import { UserMessage } from '../components/events/UserMessage';
 import { chatUiFixtureEvent, chatUiCoverageDocument, type ChatUiExample } from './chat-ui-fixtures';
 
@@ -58,6 +59,8 @@ export function ReviewChatUi() {
           keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingVertical: t.spacing.md, gap: t.spacing.lg }}>
           <UserMessage event={{ id: 'chat-ui-review-prompt', type: 'user_message', data: { text:
             example === 'pas' ? '검수 뒤에는 무엇부터 진행할까?' : example === 'normal' ? '인원수와 결제 조건을 바꾸며 팀 요금을 비교해 줘.' : '첫 조각 구성 요소와 모든 입력 종류를 보여줘.' } }} presentation={presentation} />
+          {params.get('sample') === 'row-inset' && <AssistantMessage session={session} presentation={presentation}
+            event={{ id: 'chat-ui-review-long-plain', type: 'assistant_message', data: { content: '같은 화면의 일반 글과 구조화 응답의 초상과 말풍선 양 끝을 비교해. '.repeat(8) } }} />}
           {shown && (state === 'render-error' && parsed.ok
             ? <ChatUiLinkFocusScope><ChatUiErrorBoundary fallback={<ChatUiRenderFallback event={event} session={session} presentation={presentation} document={parsed.document} />}>
                 <ReviewRenderFailure />

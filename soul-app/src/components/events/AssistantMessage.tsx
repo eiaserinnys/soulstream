@@ -23,6 +23,8 @@ import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 interface Props {
   bubbleWidth?: 'content' | 'fill';
+  /** 바깥 줄 여백을 소유한 타임라인만 none을 지정한다. */
+  rowInset?: 'default' | 'none';
   messageKind?: React.ReactNode;
   /** 표시 전용 글 대체. 저장 이벤트와 메뉴 연결은 호출자가 소유한다. */
   textOverride?: string;
@@ -53,6 +55,7 @@ export function AssistantMessage({
   event,
   session,
   bubbleWidth = 'content',
+  rowInset = 'default',
   messageKind,
   textOverride,
   notice,
@@ -110,7 +113,7 @@ export function AssistantMessage({
   return (
     <View style={presentation === 'manuscript'
       ? styles.manuscriptRow
-      : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
+      : rowInset === 'none' ? [styles.row, { marginHorizontal: 0 }] : styles.row}>
       {presentation === 'manuscript' ? null : avatarUri ? (
         <Image
           source={{

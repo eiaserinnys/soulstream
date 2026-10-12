@@ -8,7 +8,7 @@ export type AppendGeneratedText = (sessionId: string, text: string) =>
   | { ok: true }
   | { ok: false; reason: 'wrong_session' | 'not_ready' | 'sending' | 'disabled' | 'too_long' };
 type Entry = { state: ChatUiState; expanded: Record<string, boolean>; resetEpoch: number };
-type NumberEditor = { publicationKey: string; commit(): boolean };
+type NumberEditor = { publicationKey: string; field: string; commit(): void; sync(value: number): void };
 type Props = { sessionId: string; appendGeneratedText: AppendGeneratedText; children: React.ReactNode };
 type ContextValue = {
   sessionId: string;
@@ -61,16 +61,25 @@ export function useChatUiController(publication: ChatUiRichPublication) {
   const doc = publication.document;
   const key = publicationKey(context.sessionId, publication);
   const entry = context.read(publication);
-  const set = (field: string, value: FieldValue) => context.update(publication,
-    current => ({ ...current, state: reduce(doc, current.state, { type: 'set', field, value }) })).state;
+  const set = (field: string, value: FieldValue, typingEditorId?: string) => {
+    const previous = context.read(publication).state.values[field];
+    const next = context.update(publication,
+      current => ({ ...current, state: reduce(doc, current.state, { type: 'set', field, value }) })).state;
+    if (JSON.stringify(previous) !== JSON.stringify(next.values[field])) context.setNotice('');
+    for (const [id, editor] of context.numberEditors) {
+      if (editor.publicationKey === key && editor.field === field && id !== typingEditorId) editor.sync(next.values[field] as number);
+    }
+    return next;
+  };
   return {
     ...entry,
     set,
     toggleEntity(id: string) {
       context.update(publication, current => ({ ...current, expanded: { ...current.expanded, [id]: !current.expanded[id] } }));
     },
-    registerNumberEditor(id: string, commit: () => boolean) {
-      context.numberEditors.set(id, { publicationKey: key, commit });
+    registerNumberEditor(id: string, field: string, sync: (value: number) => void) {
+      context.numberEditors.set(id, { publicationKey: key, field, sync,
+        commit: () => sync(context.read(publication).state.values[field] as number) });
       return () => { context.numberEditors.delete(id); };
     },
     async action(nodeId: string, action: Action) {
@@ -92,7 +101,7 @@ export function useChatUiController(publication: ChatUiRichPublication) {
         return;
       }
       for (const editor of context.numberEditors.values()) {
-        if (editor.publicationKey === key && !editor.commit()) return;
+        if (editor.publicationKey === key) editor.commit();
       }
       const result = context.appendGeneratedText(context.sessionId, composeText(doc, context.read(publication).state, nodeId));
       context.setNotice(result.ok ? '' : result.reason === 'too_long'

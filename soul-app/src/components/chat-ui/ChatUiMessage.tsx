@@ -29,7 +29,7 @@ function RichMessage({ publication, ...props }: Props & { publication: ChatUiRic
 }
 function FallbackNotice({ text }: { text: string }) {
   const t = useTokens();
-  return <Text testID="chat-ui-fallback-notice" numberOfLines={1} ellipsizeMode="tail" style={{ fontSize: t.chatFontSize.meta,
+  return <Text testID="chat-ui-fallback-notice" style={{ fontSize: t.chatFontSize.meta,
     lineHeight: t.chatFontSize.meta * t.lineHeightRatio, color: t.colors.textSecondary, marginBottom: t.spacing.sm }}>{text}</Text>;
 }
 
