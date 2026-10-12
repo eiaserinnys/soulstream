@@ -17,7 +17,7 @@ export function DocumentReaderDialog({ documentId, onClose, request = globalThis
   const error = content?.documentId === visibleDocumentId ? content.error : null;
   useEffect(() => {
     if (!documentId) return;
-    setContent({ documentId, document: null, error: null });
+    setContent((previous) => previous?.documentId === documentId && previous.document ? previous : { documentId, document: null, error: null });
     const controller = new AbortController();
     void request(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
       credentials: "same-origin", headers: { Accept: "application/json" }, signal: controller.signal,

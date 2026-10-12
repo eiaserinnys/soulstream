@@ -246,11 +246,13 @@ test("document reader keeps its frame across states and captures the proposed la
 });
 
 test("document reader scrolls with native keys from the focused body", async ({page}) => {
-  await prepare(page,1440); await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
+  await prepare(page,1440);
   const link=page.getByRole('link',{name:'긴 문서',exact:true}), dialog=page.getByTestId('internal-document-dialog');
   const body=dialog.getByRole('region',{name:'문서 본문'}), scroll=dialog.locator('[data-slot="dialog-panel-scroll"]');
   const observations: unknown[]=[];
   for(const mode of ['keyboard','mouse','body click']) {
+    // 마우스 초점 표시는 이전 키보드 조작이 없는 새 화면에서 확인한다.
+    await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
     if(mode==='keyboard') { await link.focus(); await link.press('Enter'); } else await link.click();
     await expect(dialog.locator('.v3-folder-board-document-copy')).toBeVisible();
     if(mode==='body click') await dialog.locator('.v3-folder-board-document-copy p').first().click();
@@ -264,7 +266,6 @@ test("document reader scrolls with native keys from the focused body", async ({p
     }
     await page.keyboard.press('End'); await expect(dialog.getByText('마지막 줄 확인',{exact:true})).toBeInViewport();
     await page.keyboard.press('Home'); await expect.poll(()=>scroll.evaluate(element=>element.scrollTop)).toBe(0);
-    if(mode==='keyboard') await page.screenshot({path:path.join(output,'keyboard-focus-frame.png'),animations:'disabled'});
     await page.keyboard.press('Escape'); await expect(dialog).toBeHidden(); await expect(link).toBeFocused();
   }
   await page.getByRole('link',{name:'문서 링크',exact:true}).focus(); await page.keyboard.press('Enter');
