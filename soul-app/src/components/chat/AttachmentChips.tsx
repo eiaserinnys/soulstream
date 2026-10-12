@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ChatAttachment } from '../../hooks/useChatAttachments';
 import type { ChatBodyStyles } from './ChatBody.styles';
@@ -16,6 +16,7 @@ interface Props {
   onRemove: (index: number) => void;
   disabled?: boolean;
   presentation?: 'default' | 'manuscript';
+  containerStyle?: StyleProp<ViewStyle>;
 }
 
 export function AttachmentChips({
@@ -26,14 +27,15 @@ export function AttachmentChips({
   onRemove,
   disabled = false,
   presentation = 'default',
+  containerStyle,
 }: Props) {
   const t = useTokens();
   if (attachments.length === 0) return null;
 
   return (
-    <View style={presentation === 'manuscript'
+    <View style={containerStyle ?? (presentation === 'manuscript'
       ? [styles.attachmentRow, { paddingHorizontal: getChatRowHorizontalInset(t, presentation) }]
-      : styles.attachmentRow}>
+      : styles.attachmentRow)}>
       {attachments.map((attachment, idx) => (
         <View key={`${attachment.path}-${idx}`} style={styles.attachmentTouchFrame}>
           <View style={presentation === 'manuscript'

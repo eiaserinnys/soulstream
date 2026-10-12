@@ -150,6 +150,20 @@ describe('ChatInputComposer generated text handle', () => {
     expect(parent).toBeTruthy();
   });
 
+  test('attachments and generated undo share one auxiliary row', () => {
+    mockAttachments = [{ path: '/review/file', name: '검수 파일.pdf' }];
+    const screen = renderComposer();
+    fireEvent.changeText(screen.field(), '초안');
+    act(() => { screen.ref.current!.appendGeneratedText(screen.props.sessionId, '생성 글'); });
+
+    const row = screen.getByTestId('chat-composer-generated-row');
+    for (const testId of ['chat-attachment-remove-0', 'chat-composer-generated-undo-button']) {
+      let descendant: typeof row | null = screen.getByTestId(testId);
+      while (descendant && descendant !== row) descendant = descendant.parent;
+      expect(descendant).toBe(row);
+    }
+  });
+
   test.each([
     ['wrong_session', 'different-session'],
     ['sending', 'current-session'],

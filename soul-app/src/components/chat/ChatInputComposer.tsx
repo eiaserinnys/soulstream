@@ -353,31 +353,39 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     composeFlowRef.current = null;
     clearAttachments();
   }, [sessionId, api, clearAttachments]);
+  const showGeneratedNotice = generatedNotice !== undefined && generatedNotice !== null;
+  const showGeneratedUndo = generatedUndo !== null && input === generatedUndo.after;
+  const showComposerAuxiliaryRow = attachments.length > 0 || showGeneratedNotice || showGeneratedUndo;
   const attachmentsAndComposer = <>
-    <AttachmentChips
-      attachments={attachments}
-      styles={styles}
-      textSecondaryColor={t.colors.textSecondary}
-      textMutedColor={t.colors.textMuted}
-      onRemove={removeAttachment}
-      disabled={inputDisabled}
-      {...(presentation === 'manuscript' ? { presentation } : {})}
-    />
-
-    {(generatedNotice !== undefined && generatedNotice !== null) || (generatedUndo !== null && input === generatedUndo.after) ? (
+    {showComposerAuxiliaryRow ? (
       <View
         testID="chat-composer-generated-row"
         style={[styles.generatedTextRow, { paddingHorizontal: getChatRowHorizontalInset(t, presentation) }]}
       >
-        {generatedNotice !== undefined && generatedNotice !== null ? (
+        {attachments.length > 0 ? (
+          <View style={styles.generatedAttachmentSlot}>
+            <AttachmentChips
+              attachments={attachments}
+              styles={styles}
+              containerStyle={[styles.attachmentRow, { paddingHorizontal: 0, paddingTop: 0 }]}
+              textSecondaryColor={t.colors.textSecondary}
+              textMutedColor={t.colors.textMuted}
+              onRemove={removeAttachment}
+              disabled={inputDisabled}
+              {...(presentation === 'manuscript' ? { presentation } : {})}
+            />
+          </View>
+        ) : null}
+        {showGeneratedNotice ? (
           <View style={styles.generatedNoticeSlot}>{generatedNotice}</View>
         ) : null}
-        {generatedUndo !== null && input === generatedUndo.after ? (
+        {showGeneratedUndo ? (
           <GlassButton
             testID="chat-composer-generated-undo-button"
             accessibilityLabel="되돌리기"
             size="compact"
             variant={presentation === 'manuscript' ? 'paper' : 'secondary'}
+            style={{ marginLeft: 'auto' }}
             onPress={undoGeneratedText}
           >
             되돌리기
