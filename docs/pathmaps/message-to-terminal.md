@@ -92,3 +92,13 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 `PersistentSessionScreen`은 PAS 목록으로 대상의 영구 세션 여부를 확인한 뒤 `resolveSessionForOpen`의 대상 ID 조회로 summary를 받는다. `activateRunSession`의 summary → 활성 세션 → 탭 순서 다음에 `PersistentSessionChatView`를 마운트한다. 상세 stream은 기존 `useSessionProvider` 한 벌이고 cursor scope는 origin과 이메일이다. 다른 PAS나 홈으로 이동하면 기존 cleanup이 이전 구독을 닫는다.
 
 전송은 원고형 `ChatView`의 기존 `ChatInput` → 세션 개입 경로를 그대로 쓴다. 입력과 업로드는 소유 노드의 연결 상태로 제한하고 `/api/attachments/sessions?nodeId=<encoded nodeId>`를 쓴다. 표시·모션의 토글은 `usePersistentSessionDetailsController`의 즉시 저장과 활성 세션 표시 설정 투영을 재사용한다. 설정창과 카드 상세 오버레이는 대화 마운트와 활성 ID를 유지한다.
+
+## 새 세션 생성 전 가용 판정
+
+| 경로 | 구현 | 계약 |
+| --- | --- | --- |
+| HTTP `POST /api/sessions`, 원격 MCP `create_remote_agent_session` | `session/session_command_routes.ts`와 원격 MCP 실행 경로 → `ModelPresetAvailabilityService.requireAvailable` | 기본 또는 명시 프리셋을 노드에 보내기 전에 확인한다. 실제 한도 거부 중이면 프리셋 ID, 노드, 사유 라벨, `resets_at` ISO 시각을 오류로 돌려주며 노드 생성 명령은 보내지 않는다. |
+| 실행 프록시의 새 실행 | `runtime/live_execute_proxy_route_provider.ts:executeNew` → `requireAvailable` | 새 세션 실행만 보내기 전에 확인한다. 기존 세션 재개는 이 검사를 거치지 않는다. |
+| 새 PAS 생성·기존 PAS 기본 모델 저장 | `session/persistent_session_settings_service.ts`의 `normalizeNewDefaultModel`·`normalizeDefaultModel`; 반복 작업 설정은 `recurring-jobs/target_validator.ts` | 새 PAS 생성은 일반 생성처럼 확인한다. 기존 PAS 기본 모델 변경과 반복 작업 생성·수정은 `limit_rejected`만 저장할 수 있으며 환경·인증·권한 검사는 유지한다. |
+| 한도 거부 기억 갱신 | 인증된 노드의 `node/event_ingress_controller.ts`가 `commitBatch` 뒤 fresh 이벤트를 `usage/usage_summary_service.ts:observeProviderExecution`으로 전달 | 중복 receipt와 dead letter는 건너뛴다. `error_code`가 `claude_rate_limit_stop_failure` 또는 `codex_usage_limit_exceeded`인 durable 오류만 기록한다. |
+| 기억 해제와 수명 | `usage/provider_limit_rejection.ts` → `ModelPresetAvailabilityService` | 같은 프로바이더 계정의 Claude `result.success === true` 또는 Codex `complete`의 `raw_event_type=turn/completed`, `status=completed`가 거부 이벤트보다 나중이면 해제한다. `resets_at` 도달도 조회 시 해제된 것으로 판정한다. 기억은 orch 메모리에만 있어 재시작하면 사라진다. |

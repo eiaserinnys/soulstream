@@ -383,10 +383,27 @@ describe("card MCP execution", () => {
     h.service.getCard.mockResolvedValue({ card: { ...h.card, status: "todo" }, reports: [], questions: [], comments: [], sessions: [], notes: [], nowHistory: [] });
     const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문", run: true, caller_session_id: "session-1" });
     expect(result.isError).not.toBe(true);
-    expect(h.service.createCard).toHaveBeenCalledWith(expect.objectContaining({ folderId: "folder-1", title: "제목", actorKind: "agent" }));
+    expect(h.service.createCard).toHaveBeenCalledWith(expect.objectContaining({ folderId: "folder-1", title: "제목", actorKind: "agent", actorSessionId: "session-1" }));
     expect(h.service.createCard.mock.calls[0]![0]).not.toHaveProperty("run");
     expect(h.executor.execute).toHaveBeenCalledTimes(1);
     expect(result.structuredContent).toMatchObject({ card: { id: "card-1" }, execution: { state: "started" } });
+  });
+  it("rejects create_card run when caller session differs from the authenticated header", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문",
+      run: true, caller_session_id: "session-B" }, context);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe("caller_session_id must match the authenticated request session header");
+    expect(h.service.createCard).not.toHaveBeenCalled();
+    expect(h.executor.execute).not.toHaveBeenCalled();
+  });
+  it("rejects queued create_card when caller session differs from the authenticated header", async () => {
+    const h = cardHarness();
+    const result = await call(h.options, "create_card", { folder_id: "folder-1", title: "제목", request: "원문",
+      queue: true, caller_session_id: "session-B" }, context);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toBe("caller_session_id must match the authenticated request session header");
+    expect(h.service.createCard).not.toHaveBeenCalled();
   });
   it("uses the serialized operation target when create_card replay has no card snapshot", async () => {
     const h = cardHarness();

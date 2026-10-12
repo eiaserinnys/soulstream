@@ -17,6 +17,7 @@ import { registerWebsocketPlugin } from "../websocket_plugin.js";
 import {
   NodeEventIngressController,
   type NodeEventIngressCommitter,
+  type NodeEventIngressControllerOptions,
 } from "./event_ingress_controller.js";
 import { isEventAppendBatchFrame } from "./event_ingress_types.js";
 import { registerNodeControlWsRoute } from "./control_ws_route.js";
@@ -45,6 +46,7 @@ export type NodeWsRouteOptions = {
   transportHub?: NodeCommandTransportHub;
   eventSink?: NodeRegistryEventSink;
   eventIngress?: NodeEventIngressCommitter;
+  onCommittedProviderEvent?: NodeEventIngressControllerOptions["onCommittedProviderEvent"];
   registrationTimeoutMs?: number;
   heartbeatTimeoutMs?: number;
   releaseActivationReceipts?: ReleaseActivationReceiptStore;
@@ -381,6 +383,9 @@ function createEventIngressController(input: {
   return new NodeEventIngressController({
     ...source,
     committer,
+    ...(options.onCommittedProviderEvent === undefined
+      ? {}
+      : { onCommittedProviderEvent: options.onCommittedProviderEvent }),
     isCurrentConnection: () =>
       options.registry.getConnectedNode(source.nodeId)?.connectionId === source.connectionId,
     receiveCommittedEvent: (message) =>

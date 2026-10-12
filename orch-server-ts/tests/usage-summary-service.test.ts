@@ -18,6 +18,40 @@ describe("UsageSummaryService", () => {
     expect(onCollected).toHaveBeenCalledOnce();
     expect(onCollected.mock.calls[0]?.[0].collectedAt).toBe("2026-07-20T10:00:00.000Z");
   });
+
+  it("shares durable rejection memory by configured provider account across collections", async () => {
+    const service = new UsageSummaryService({
+      registry: fakeRegistry(["node-a", "node-b"]),
+      bridge: {
+        sendPendingCommand: vi.fn(async () => successResponse(16)),
+      } as unknown as UsageSummaryBridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [{ provider: "codex", nodeIds: ["node-b", "node-a"] }],
+      now: () => new Date("2026-07-20T10:00:00.000Z"),
+    });
+
+    service.observeProviderExecution({
+      nodeId: "node-a",
+      eventType: "error",
+      payload: {
+        type: "error",
+        error_code: "codex_usage_limit_exceeded",
+        rate_limit_type: "five_hour",
+        resets_at: "2026-07-20T11:00:00.000Z",
+      },
+      createdAt: "2026-07-20T09:59:00.000Z",
+    });
+    const rejection = service.getLimitRejection("node-b", "codex");
+    expect(rejection).toMatchObject({
+      rejectedUntil: "2026-07-20T11:00:00.000Z",
+      observedAt: "2026-07-20T09:59:00.000Z",
+    });
+
+    await service.collectOnce();
+
+    expect(service.getLimitRejection("node-a", "codex")).toEqual(rejection);
+    expect(service.getLimitRejection("node-b", "codex")).toEqual(rejection);
+  });
   it("fans out to connected nodes in parallel and projects remaining percentages", async () => {
     const pending = new Map<string, (value: unknown) => void>();
     const registry = fakeRegistry(["node-b", "node-a"]);

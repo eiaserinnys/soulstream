@@ -156,7 +156,10 @@ export async function buildPersistentSettingsApp(
       },
     } as never);
 
-    const presets = new ModelPresetAvailabilityService(registry, { getSummary: () => ({ nodes: [] }) as never });
+    const presets = new ModelPresetAvailabilityService(registry, {
+      getSummary: () => ({ nodes: [] }) as never,
+      getLimitRejection: () => null,
+    });
     const folderOf = async (sessionId: string) =>
       (await sql<Array<{ folder_id: string | null }>>`SELECT folder_id FROM sessions WHERE session_id = ${sessionId}`)[0]?.folder_id ?? null;
     const denyHidden = (folderId: string | null) => {

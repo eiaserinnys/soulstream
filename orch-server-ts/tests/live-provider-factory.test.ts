@@ -497,6 +497,7 @@ function createUsageSummaryRoutes() {
         collectedAt: null,
         nodes: [],
       }),
+      getLimitRejection: () => null,
     },
   };
 }

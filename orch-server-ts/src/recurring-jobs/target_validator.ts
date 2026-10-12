@@ -35,6 +35,7 @@ export type RecurringJobTargetValidationInput = {
   readonly target: RecurringJobTarget;
   /** Skip only live node/model selection for a retained persisted target. */
   readonly requireAvailableTarget?: boolean;
+  readonly purpose: "settings" | "execution";
 };
 
 /**
@@ -45,7 +46,7 @@ export type RecurringJobTargetValidationInput = {
 export function createRecurringJobTargetValidator(
   options: RecurringJobTargetValidatorOptions,
 ): (input: RecurringJobTargetValidationInput) => Promise<void> {
-  return async ({ actor, target, requireAvailableTarget = true }) => {
+  return async ({ actor, target, requireAvailableTarget = true, purpose }) => {
     if (requireAvailableTarget) {
       try {
         const selection = selectNodeForSessionCreate(options.registry, {
@@ -54,7 +55,11 @@ export function createRecurringJobTargetValidator(
           ...(target.modelPreset === null ? {} : { modelPresetId: target.modelPreset }),
         });
         if (selection.modelPresetId) {
-          options.modelPresetAvailability.requireAvailable(selection.node.nodeId, selection.modelPresetId);
+          options.modelPresetAvailability.requireAvailable(
+            selection.node.nodeId,
+            selection.modelPresetId,
+            purpose === "settings" ? { allowLimitRejected: true } : undefined,
+          );
         }
       } catch (error) {
         throw targetSelectionError(error);

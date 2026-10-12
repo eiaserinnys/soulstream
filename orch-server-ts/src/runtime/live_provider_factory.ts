@@ -36,7 +36,10 @@ import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js"
 import type { UiEventRepository, UiEventRouteOptions }
   from "../ui-events/ui_event_routes.js";
 import { createLiveUiEventIdentityResolver } from "./live_ui_event_identity.js";
-import { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
+import {
+  ModelPresetAvailabilityService,
+  type ModelPresetUsageSummary,
+} from "../model/model_preset_availability.js";
 import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_routes.js";
 import type { AgentProfileRouteOptions } from "../node/agent_profile_routes.js";
 import type { ContextBundleRouteOptions } from "../node/context_bundle_routes.js";
@@ -159,7 +162,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly contextBundleRoutes: ContextBundleRouteOptions;
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
-  readonly usageSummaryRoutes: UsageSummaryRouteOptions;
+  readonly usageSummaryRoutes: LiveUsageSummaryRouteOptions;
   readonly uiEventRoutes: UiEventRouteOptions;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
@@ -167,13 +170,17 @@ export type LiveOrchestratorProviderBundle = {
 export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly dependencies: LiveProviderDependencies;
   readonly runtimeServices: OrchestratorRuntimeServices;
-  readonly usageSummaryRoutes: UsageSummaryRouteOptions;
+  readonly usageSummaryRoutes: LiveUsageSummaryRouteOptions;
   readonly uiEventRepository: UiEventRepository;
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
   readonly resolveAttachmentStorage?: MultipartAttachmentOptions["resolveStorage"];
   readonly resolveReadStorage?: CreateLiveAttachmentReadOptions["resolveReadStorage"];
   readonly readPageAttachmentEvidence?: CreateLiveAttachmentReadOptions["readPageAttachmentEvidence"];
+};
+
+type LiveUsageSummaryRouteOptions = Omit<UsageSummaryRouteOptions, "service"> & {
+  readonly service: UsageSummaryRouteOptions["service"] & ModelPresetUsageSummary;
 };
 
 export function createLiveOrchestratorProviderBundle(

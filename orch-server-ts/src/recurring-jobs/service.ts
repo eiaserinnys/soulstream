@@ -302,6 +302,7 @@ export class RecurringJobService {
         actor: schedulerActorFor(frozenJob),
         target: frozenJob,
         requireAvailableTarget: true,
+        purpose: "execution",
       });
     } catch (error) {
       if (isUnavailableTarget(error)) {
@@ -450,6 +451,7 @@ export class RecurringJobService {
         requireAvailableTarget: candidate.nodeId !== current.nodeId ||
           candidate.agentId !== current.agentId ||
           candidate.modelPreset !== current.modelPreset,
+        purpose: "settings",
       });
       return candidate;
     }

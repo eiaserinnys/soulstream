@@ -142,6 +142,8 @@ describe("card work runtime and internal MCP integration", () => {
       usageSnapshot: () => ({}) as never,
       ensureSystemFolder: async () => undefined,
       validateFolder: async () => true,
+      resolveSessionOwner: async () => null,
+      findUserByEmail: async () => null,
     });
     mcp = {
       authBearerToken: "test",
