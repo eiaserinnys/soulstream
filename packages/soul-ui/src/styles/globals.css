@@ -1358,7 +1358,8 @@ pre[data-markdown-code-layout="document"] {
   --image-viewer-inline-reserve: 0rem;
   --image-viewer-block-reserve: 0rem;
   width: fit-content;
-  min-width: min(20rem, calc(100dvw - 2rem));
+  min-width: min(var(--container-xs), calc(100dvw - 2rem));
+  min-height: min(var(--container-3xs), calc(100dvh - 2rem));
   max-width: calc(100dvw - 2rem);
 }
 .image-viewer-popup img {
@@ -1369,12 +1370,25 @@ pre[data-markdown-code-layout="document"] {
   min-height: 0;
   max-width: calc(100dvw - 2rem - 2 * var(--image-viewer-rim) - var(--image-viewer-inline-reserve));
   max-height: calc(100dvh - 2rem - 2 * var(--image-viewer-rim) - var(--image-viewer-block-reserve));
-  margin-inline: auto;
+  margin: auto;
   align-self: center;
   object-fit: contain;
 }
 .image-viewer-popup > figure {
+  flex: 1 1 auto;
   min-height: 0;
+}
+.image-viewer-popup[data-slot="dialog-popup"]:has(> img) {
+  --image-viewer-inline-reserve: calc(var(--spacing) * 6);
+  --image-viewer-block-reserve: calc(var(--spacing) * 6);
+  padding: calc(var(--spacing) * 3);
+}
+.image-viewer-popup:not(:has([data-slot="dialog-header"])) img {
+  border-radius: var(--chat-attachment-radius);
+}
+.image-viewer-popup:not(:has([data-slot="dialog-header"])) > [aria-label="Close"] {
+  background-color: color-mix(in srgb, var(--background) 80%, transparent);
+  border-color: var(--border);
 }
 .image-viewer-popup > figure > figcaption,
 .image-viewer-popup > [data-slot="dialog-header"],
@@ -1399,7 +1413,14 @@ pre[data-markdown-code-layout="document"] {
   --image-viewer-block-reserve: calc(var(--spacing) * 20 + var(--font-size-xl--line-height) + var(--font-size-sm--line-height) + var(--chat-attachment-filename-gap));
 }
 .chat-image-viewer-popup[data-slot="dialog-popup"]:has([data-slot="dialog-footer"]) {
+  width: calc(100dvw - 2rem);
+  height: calc(100dvh - 2rem);
   --image-viewer-block-reserve: calc(var(--spacing) * 37 + var(--font-size-xl--line-height) + var(--font-size-sm--line-height) + var(--chat-attachment-filename-gap) + var(--image-viewer-rim));
+}
+.chat-image-viewer-popup:has([data-slot="dialog-footer"]) > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup:has([data-slot="dialog-footer"]) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel,
+.chat-image-viewer-popup:has([data-slot="dialog-footer"]) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
+  flex: 1 1 auto;
 }
 .chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] {
   display: flex;
