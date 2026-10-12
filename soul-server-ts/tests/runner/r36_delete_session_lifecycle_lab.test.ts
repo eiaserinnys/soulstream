@@ -148,7 +148,12 @@ describe("R36 delete_session lifecycle lab", () => {
       silentLogger(),
       {
         now: () => now,
-        withMutationLock: async <T>(_path: string, operation: () => Promise<T>) =>
+        monotonicNow: () => now,
+        withMutationLock: async <T>(
+          _path: string,
+          operation: () => Promise<T>,
+          _observationContext,
+        ) =>
           await operation(),
         refresh: async (candidate) => registrations.get(candidate.config.sessionId)!,
         inspect: async (candidate) => ({
