@@ -36,6 +36,9 @@ test("PAS period history is a strict internal read-only tool", () => {
   assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00", max_text_chars: 99 }).success, false);
 });
 test("turn usage reads are strict internal-only read-only tools", () => {
+  assert.equal(sessionTools.list_turn_usage.timeoutMs, 30000);
+  assert.equal(sessionTools.summarize_turn_usage.timeoutMs, 60000);
+
   for (const definition of [sessionTools.list_turn_usage, sessionTools.summarize_turn_usage]) {
     assert.equal(definition.audience, "internal");
     assert.equal(definition.strictInputSchema, true);
