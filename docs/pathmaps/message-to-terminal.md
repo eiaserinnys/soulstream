@@ -70,6 +70,12 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.
 
+## 로컬 MCP 새 세션 생성 전 가용 확인
+
+| 경로 | 구현 | 계약 |
+| --- | --- | --- |
+| 로컬 MCP 새 세션 생성 | `soul-server-ts/src/mcp/tools/session_mgmt.ts:create_agent_session`이 `model_preset`을 우선하고 없으면 agent의 `default_preset`을 선택한다. 선택된 프리셋이 있으면 `fetchOrchResponse`로 `GET /api/nodes/:node_id/model-presets`를 한 번 요청하며 제한 시간은 2초다. | 판정은 orch의 가용 판정을 따른다. `available:false`이고 `reason:"limit_rejected"`인 경우에만 세션을 만들지 않고 사유와 해제 시각이 담긴 오류를 돌려준다. 조회 실패·시간 초과·그 밖의 응답은 기존 생성 경로를 진행하며 재시도하지 않는다. 기존 세션의 재개 경로에는 이 확인이 없다. |
+
 ## 앱 PAS 전화면 진입과 대화 상태 (N5)
 
 | 경로 | 구현 | 계약 |
