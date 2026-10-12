@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { SettingsOptionRow, type SettingsOption } from '../SettingsOptionRow';
-import { PHONE_FOUNDATION } from '../../../theme';
+import { PHONE_CHAT_TYPOGRAPHY, PHONE_FOUNDATION, TABLET_CHAT_TYPOGRAPHY } from '../../../theme';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
@@ -51,4 +51,48 @@ test('긴 목록의 reason과 접힌 선택 버튼은 사유에 meta 위계를 �
   const popupReason = reasonTexts[1];
   expect(StyleSheet.flatten(popupReason.props.style))
     .toMatchObject(PHONE_FOUNDATION.typography.meta);
+});
+
+test('채팅용 짧은 선택지는 본문 크기와 presentation 버튼으로 선택 상태를 전달한다', () => {
+  const onSelect = jest.fn();
+  const screen = render(<SettingsOptionRow variant="chat" presentation="manuscript" label="결제 주기" selected="monthly" options={[
+    { id: 'monthly', label: '월간' },
+    { id: 'annual', label: '연간' },
+  ]} emptyLabel="없음" onSelect={onSelect}/>);
+
+  const selected = screen.getByLabelText('결제 주기: 월간');
+  expect(selected.props.accessibilityState).toMatchObject({ selected: true });
+  expect([PHONE_CHAT_TYPOGRAPHY.body, TABLET_CHAT_TYPOGRAPHY.body])
+    .toContain(StyleSheet.flatten(screen.getByText('월간').props.style).fontSize);
+  fireEvent.press(screen.getByLabelText('결제 주기: 연간'));
+  expect(onSelect).toHaveBeenCalledWith('annual');
+});
+
+test('채팅용 긴 선택은 본문 크기 검색 입력을 쓰고 선택 뒤 modal을 닫는다', () => {
+  const onSelect = jest.fn();
+  const options = Array.from({ length: 6 }, (_, index) => ({
+    id: `plan-${index + 1}`,
+    label: `요금제 ${index + 1}`,
+  }));
+  const screen = render(<SettingsOptionRow variant="chat" presentation="default" label="요금제" selected="plan-1" options={options} emptyLabel="없음" onSelect={onSelect}/>);
+
+  fireEvent.press(screen.getByLabelText('요금제: 요금제 1'));
+  const search = screen.getByLabelText('요금제 검색');
+  expect([PHONE_CHAT_TYPOGRAPHY.body, TABLET_CHAT_TYPOGRAPHY.body])
+    .toContain(StyleSheet.flatten(search.props.style).fontSize);
+  fireEvent.changeText(search, '요금제 6');
+  expect(screen.queryByText('요금제 2')).toBeNull();
+  fireEvent.press(screen.getByLabelText('요금제 6'));
+  expect(onSelect).toHaveBeenCalledWith('plan-6');
+  expect(screen.queryByLabelText('요금제 검색')).toBeNull();
+});
+
+test('채팅용 선택 modal은 닫기 후 원래 선택 행으로 돌아온다', () => {
+  const options = Array.from({ length: 6 }, (_, index) => ({ id: `v${index}`, label: `선택 ${index}` }));
+  const screen = render(<SettingsOptionRow variant="chat" presentation="manuscript" label="선택" selected="v0" options={options} emptyLabel="없음" onSelect={jest.fn()}/>);
+
+  fireEvent.press(screen.getByLabelText('선택: 선택 0'));
+  fireEvent.press(screen.getByText('닫기'));
+  expect(screen.queryByLabelText('선택 검색')).toBeNull();
+  expect(screen.getByLabelText('선택: 선택 0')).toBeTruthy();
 });
