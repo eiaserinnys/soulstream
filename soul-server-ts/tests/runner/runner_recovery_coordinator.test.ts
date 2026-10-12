@@ -531,7 +531,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "offline",
       expect.any(Function),
-      expect.objectContaining({ runSync: expect.any(Function) }),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
   });
 
@@ -553,6 +557,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -579,6 +588,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       undefined,
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -594,6 +608,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -617,6 +636,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -651,6 +675,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
   });
 
@@ -703,6 +732,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      undefined,
     );
     expect(subject.markReaped.mock.invocationCallOrder[0]).toBeLessThan(
       recoverRegisteredRunner.mock.invocationCallOrder[1]!,
@@ -908,6 +938,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      undefined,
     );
   });
 
@@ -923,6 +954,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      undefined,
     );
     expect(subject.markRunnerFailure).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -955,6 +987,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).toHaveBeenCalledWith(
       expect.anything(),
@@ -978,6 +1015,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).toHaveBeenCalledWith(
       expect.anything(),
@@ -1009,6 +1051,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).toHaveBeenCalledOnce();
 
@@ -1050,6 +1097,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.markRunnerFailureAndResume).not.toHaveBeenCalled();
     expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
@@ -1301,6 +1353,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     finishRecovery();
     await subject.coordinator.stop();
@@ -1407,6 +1464,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.markReaped).not.toHaveBeenCalled();
@@ -1434,6 +1496,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.markReaped).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -1455,6 +1522,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "offline",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.markRunnerFailure).not.toHaveBeenCalled();
     expect(subject.task.runnerTerminalFact).toBe("reaped");
@@ -1878,6 +1950,11 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       "execute-a",
       "adopt",
       expect.any(Function),
+      expect.objectContaining({
+        runSync: expect.any(Function),
+        runAsync: expect.any(Function),
+        databaseSummary: expect.any(Function),
+      }),
     );
     expect(subject.logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
