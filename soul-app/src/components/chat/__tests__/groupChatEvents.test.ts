@@ -322,6 +322,42 @@ describe('groupChatEvents', () => {
     }
   });
 
+  it('UI 발행본은 답변 delta와 일반 final 사이에서 별도 행으로 남는다', () => {
+    const uiPublication = ev('3', 'assistant_message', {
+      content: '화면 설명',
+      ui: { schema_version: 1, ui_id: 'ui-1', document: {} },
+    });
+    const events = [
+      ev('1', 'text_delta', {
+        text: '안녕',
+        tool_use_id: 'answer-1',
+        raw_event_type: 'item/agentMessage/delta',
+        _live_only: true,
+      }),
+      uiPublication,
+      ev('4', 'text_delta', {
+        text: '하세요',
+        tool_use_id: 'answer-1',
+        raw_event_type: 'item/agentMessage/delta',
+        _live_only: true,
+      }),
+      ev('5', 'assistant_message', {
+        content: '안녕하세요',
+        tool_use_id: 'answer-1',
+        _final_for_live_stream: true,
+      }),
+    ];
+
+    const out = groupChatEvents(events);
+
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ kind: 'event', event: uiPublication, key: 'evt-3' });
+    expect(out[1]).toMatchObject({
+      kind: 'event',
+      event: { id: '5', type: 'assistant_message', data: { content: '안녕하세요' } },
+    });
+  });
+
   it('raw durable delta와 decorated final의 item identity를 맞춰 한 행만 렌더한다', () => {
     const events = [
       ev('70', 'text_delta', {
