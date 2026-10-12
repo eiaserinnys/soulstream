@@ -6,6 +6,7 @@ import type { DeviceType } from '../theme/useDeviceType';
 import { TabNavigator } from './TabNavigator';
 import { UiUsageEventsHost } from '../components/UiUsageEventsHost';
 import { recordCurrentPlannerUsageView } from '../lib/planner-folder-workspace';
+import { ContentLinkProvider } from './ContentLinkProvider';
 
 interface Props {
   generation: string;
@@ -52,7 +53,7 @@ export function AuthenticatedAppSubtree({
 
 function AuthenticatedAppInstance({ device, startupReady, sessionIntent, onOpenPersistent, onPersistentLeaveReady }: Pick<Props, 'device' | 'startupReady' | 'sessionIntent' | 'onOpenPersistent' | 'onPersistentLeaveReady'>) {
   return <PersistentSessionProvider sessionIntent={sessionIntent} onLeaveReady={onPersistentLeaveReady}>
-    {device === 'phone' ? <TabNavigator /> : <TabletNavigator />}
+    <ContentLinkProvider>{device === 'phone' ? <TabNavigator /> : <TabletNavigator />}</ContentLinkProvider>
     {onOpenPersistent ? <PersistentSessionStartup ready={startupReady === true} sessionIntent={sessionIntent === true} onOpen={onOpenPersistent} /> : null}
   </PersistentSessionProvider>;
 }

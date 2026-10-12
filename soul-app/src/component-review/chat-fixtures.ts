@@ -24,3 +24,25 @@ export function reviewSessionEventsUrl(sessionId: string, lastEventId?: string):
   })}\n\n`);
   return `data:text/event-stream;charset=utf-8,${encodeURIComponent(frames.join(''))}`;
 }
+
+export function contentLinkReviewSessionEventsUrl(
+  sessionId: string,
+  lastEventId?: string,
+  origin = 'https://soulstream.test',
+): string {
+  const messages: HistoricalMessage[] = [
+    { id: 1, parent_event_id: null, event_type: 'user_message',
+      payload: { text: '문서와 첨부 링크를 확인합니다.' }, created_at: '2026-10-12T00:00:00Z' },
+    { id: 2, parent_event_id: 1, event_type: 'assistant_message',
+      payload: { text: `[문서 보기](${origin}/api/markdown-documents/public-content-document) · [이미지 보기](${origin}/api/attachments/files?nodeId=public-node&path=%2Ftmp%2Fsample.png) · [카드 보기](${origin}/?card=public-shell-card-owner) · [외부 링크](https://example.com)` },
+      created_at: '2026-10-12T00:00:01Z' },
+  ];
+  const frames = messages
+    .filter(event => event.id > Number(lastEventId ?? 0))
+    .map(event => `id: ${event.id}\nevent: ${event.event_type}\ndata: ${JSON.stringify({
+      ...event.payload, session_id: sessionId, _event_id: event.id,
+      parent_event_id: event.parent_event_id, timestamp: event.created_at,
+    })}\n\n`);
+  frames.push(`event: history_sync\ndata: ${JSON.stringify({ session_id: sessionId, last_event_id: messages[1].id })}\n\n`);
+  return `data:text/event-stream;charset=utf-8,${encodeURIComponent(frames.join(''))}`;
+}

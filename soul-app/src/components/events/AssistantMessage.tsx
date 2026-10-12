@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -20,6 +19,7 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import type { MessageSelectionModel } from './message-selection-model';
 import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
 import { CopyableAssistantMarkdown } from './CopyableAssistantMarkdown';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 interface Props {
   bubbleWidth?: 'content' | 'fill';
@@ -46,12 +46,6 @@ export function shouldRenderAsPlainStreamingText(event: SessionEvent): boolean {
   return event.type === 'text_delta' || (event.data as any)?._live_only === true;
 }
 
-function openAssistantLink({ url }: { url: string }) {
-  WebBrowser.openBrowserAsync(url).catch((err) => {
-    console.warn('[AssistantMessage] openBrowserAsync failed:', err);
-  });
-}
-
 export function AssistantMessage({
   event,
   session,
@@ -69,6 +63,7 @@ export function AssistantMessage({
   );
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
+  const openContentLink = useOpenContentLink();
 
   // 메시지 발신자 신원 — 위임 에이전트가 응답한 경우 caller에 source=agent가 들어온다.
   // assistant 응답은 본인 picture와 무관하므로 profile=null로 호출하여 caller.avatar_url
@@ -156,7 +151,7 @@ export function AssistantMessage({
           <CopyableAssistantMarkdown
             markdown={renderedText}
             markdownStyle={markdownStyle}
-            onLinkPress={openAssistantLink}
+            onLinkPress={({ url }) => { void openContentLink(url); }}
             presentation={presentation}
             serverUrl={serverUrl}
             jwt={jwt}

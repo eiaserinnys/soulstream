@@ -24,6 +24,7 @@ import { nativeSettingsReviewApi } from './native-settings-fixtures';
 import { dialogueApi } from './dialogue-fixtures';
 import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
 import { createPersistentFullscreenReviewApi } from './persistent-fullscreen-fixtures';
+import { contentLinkReviewSessionEventsUrl } from './chat-fixtures';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
@@ -91,6 +92,31 @@ const entryShellApi = {
   getStarredFolders: async () => ({ items: [], nextCursor: null }),
   catalogStreamUrl: reviewFeedStreamUrl, nodeStreamUrl: () => '',
 };
+
+export type ContentLinkDocumentState = 'ready' | 'loading' | 'error';
+export const contentLinkDocumentId = 'public-content-document';
+export const contentLinkReviewDocument = {
+  id: contentLinkDocumentId,
+  title: '공개 문서 예시',
+  body: '# 오늘의 계획\n\n채팅의 내부 링크가 앱 안에서 연 문서입니다.\n\n- 제목과 본문이 보입니다.\n- 돌아가기로 대화에 복귀합니다.',
+  version: 1,
+};
+
+export function createContentLinkReviewApi(state: ContentLinkDocumentState = 'ready'): ApiClient {
+  const origin = typeof window === 'undefined' ? 'https://soulstream.test'
+    : window.location?.origin ?? 'https://soulstream.test';
+  return {
+    ...entryShellApi,
+    sessionEventsUrl: (sessionId: string, lastEventId?: string) =>
+      contentLinkReviewSessionEventsUrl(sessionId, lastEventId, origin),
+    getMarkdownDocument: async (documentId: string) => {
+      if (documentId !== contentLinkDocumentId) throw new Error('공개 예시: 문서를 찾지 못했습니다.');
+      if (state === 'loading') return new Promise(() => {});
+      if (state === 'error') throw new Error('공개 예시: 문서를 불러오지 못했습니다.');
+      return contentLinkReviewDocument;
+    },
+  } as unknown as ApiClient;
+}
 
 function createCardChecksReviewApi(): ApiClient {
   const location = typeof window === 'undefined' ? undefined : window.location;
@@ -304,6 +330,11 @@ export function createCardColorReviewClient(mode: CardColorReviewMode = 'success
 }
 export function createApiClient(): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
+  if (section === 'contentLinks' || section === 'contentLinkDocument') {
+    const value = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('documentState');
+    const state = value === 'loading' || value === 'error' ? value : 'ready';
+    return createContentLinkReviewApi(state);
+  }
   if (section === 'cardChecks') return cardChecksApi;
   if (section === 'folderTabs') {
     const empty = new URLSearchParams(window.location.search).get('state') === 'empty';

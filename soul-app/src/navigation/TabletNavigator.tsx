@@ -6,6 +6,8 @@ import { StyleSheet, TouchableWithoutFeedback, View, useWindowDimensions } from 
 import { createApiClient } from '../api/client';
 import { SplitLayout } from '../components/split/SplitLayout';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
+import { MarkdownDocumentContent } from '../components/planner/MarkdownDocumentContent';
+import type { MarkdownDocument } from '../api/boardItemEndpoints';
 import { openPlannerSessionWorkspace } from '../lib/planner-folder-workspace';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { useSettingsStore } from '../store/settingsStore';
@@ -18,6 +20,7 @@ export type TabletStackParamList = {
   Main: undefined;
   PersistentSession: undefined;
   CardDetail: { cardId: string };
+  MarkdownDocument: { documentId: string; initialDocument?: MarkdownDocument };
 };
 const Stack = createNativeStackNavigator<TabletStackParamList>();
 
@@ -40,18 +43,38 @@ function TabletCardDetail({ route, navigation }: NativeStackScreenProps<TabletSt
   const host = usePersistentSessionHost();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  return <TabletDetailScreenFrame navigation={navigation} testID="persistent-tablet-card-sheet" accessibilityLabel="카드 상세 닫기">
+    <CardDetailContent inline api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
+      onOpenSession={sessionId => { host.store.getState().leave(); navigation.popTo('Main'); void openPlannerSessionWorkspace(sessionId); }} />
+  </TabletDetailScreenFrame>;
+}
+
+function TabletMarkdownDocument({ route, navigation }: NativeStackScreenProps<TabletStackParamList, 'MarkdownDocument'>) {
+  const serverUrl = useSettingsStore(state => state.serverUrl);
+  const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  return <TabletDetailScreenFrame navigation={navigation} testID="persistent-tablet-document-sheet" accessibilityLabel="문서 닫기">
+    <MarkdownDocumentContent api={api} documentId={route.params.documentId}
+      initialDocument={route.params.initialDocument} onClose={() => navigation.goBack()} />
+  </TabletDetailScreenFrame>;
+}
+
+function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, children }: {
+  navigation: { goBack(): void };
+  testID: string;
+  accessibilityLabel: string;
+  children: React.ReactNode;
+}) {
   const t = useTokens();
   const { width } = useWindowDimensions();
   const sheetWidth = getCardDetailPaneWidth(getFolderWorkspaceOverlayWidth(width));
   return <View style={{ flex: 1 }}>
-    <TouchableWithoutFeedback onPress={() => navigation.goBack()} accessibilityLabel="카드 상세 닫기">
+    <TouchableWithoutFeedback onPress={() => navigation.goBack()} accessibilityLabel={accessibilityLabel}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: FOLDER_WORKSPACE_BACKDROP_COLOR }]} />
     </TouchableWithoutFeedback>
     <SafeAreaView edges={['top', 'bottom', 'right']} style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: sheetWidth }}>
-      <AppGlassCard role="glassSoft" testID="persistent-tablet-card-sheet" style={{ flex: 1, borderRadius: t.foundation.radius.panel }}>
+      <AppGlassCard role="glassSoft" testID={testID} style={{ flex: 1, borderRadius: t.foundation.radius.panel }}>
         <View style={{ flex: 1, backgroundColor: createSurfaceRoles(t).glassCard.tokenStyle.backgroundColor }}>
-    <CardDetailContent inline api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
-      onOpenSession={sessionId => { host.store.getState().leave(); navigation.popTo('Main'); void openPlannerSessionWorkspace(sessionId); }} />
+          {children}
         </View>
       </AppGlassCard>
     </SafeAreaView>
@@ -64,5 +87,6 @@ export function TabletNavigator() {
     <Stack.Screen name="Main" component={TabletMain} />
     <Stack.Screen name="PersistentSession" component={TabletPersistentSession} />
     <Stack.Screen name="CardDetail" component={TabletCardDetail} options={{ presentation: 'transparentModal' }} />
+    <Stack.Screen name="MarkdownDocument" component={TabletMarkdownDocument} options={{ presentation: 'transparentModal' }} />
   </Stack.Navigator>;
 }

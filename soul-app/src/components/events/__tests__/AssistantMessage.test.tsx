@@ -24,6 +24,7 @@ jest.mock('expo-web-browser', () => ({
 import { render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as ContentLinkHook from '../../../hooks/useOpenContentLink';
 import {
   AssistantMessage,
   extractText,
@@ -165,6 +166,22 @@ describe('AssistantMessage selection entry', () => {
       url: 'https://example.com',
     });
     expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith('https://example.com');
+  });
+
+  test('내부 문서 링크는 앱 콘텐츠 링크 핸들러에 전달한다', async () => {
+    const openContentLink = jest.fn();
+    jest.spyOn(ContentLinkHook, 'useOpenContentLink').mockReturnValue(openContentLink);
+    const { getByTestId } = render(
+      <AssistantMessage
+        event={ev('assistant_message', { content: '[문서](https://soulstream.test/api/markdown-documents/doc-1)' })}
+        session={session()}
+      />,
+    );
+
+    await getByTestId('assistant-markdown').props.onLinkPress({
+      url: 'https://soulstream.test/api/markdown-documents/doc-1',
+    });
+    expect(openContentLink).toHaveBeenCalledWith('https://soulstream.test/api/markdown-documents/doc-1');
   });
 
   test('streaming cumulative text_delta assistant bubble은 native markdown에 넣지 않는다', () => {

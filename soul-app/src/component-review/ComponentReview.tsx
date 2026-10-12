@@ -46,6 +46,7 @@ import { ReviewTurnEndCaptions } from './ReviewTurnEndCaptions';
 import { ReviewAgentMessageGroup } from './ReviewAgentMessageGroup';
 import { ReviewManuscriptActivity } from './ReviewManuscriptActivity';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
+import { ReviewContentLinkDocument } from './ReviewContentLinkDocument';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -64,6 +65,8 @@ const sections = [
   {value:'folderWorkspace',label:'폴더 카드'},
   { value: 'folderTabs', label: '폴더 탭' },
   { value: 'entryShell', label: '앱 홈 조합' },
+  { value: 'contentLinks', label: '내부 링크 이동' },
+  { value: 'contentLinkDocument', label: '문서 화면' },
   { value: 'longFolders', label: '긴 폴더 목록' },
   { value: 'autoRefresh', label: '자동 갱신' },
   { value: 'cardImages', label: '카드 이미지' },
@@ -72,7 +75,9 @@ const sections = [
 type Section = typeof sections[number]['value'];
 
 export function initializeReview() {
-  const entryShell = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'entryShell';
+  const contentLinks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'contentLinks';
+  const entryShell = typeof window !== 'undefined' && (new URLSearchParams(window.location?.search).get('section') === 'entryShell' || contentLinks);
+  const contentLinkDocument = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'contentLinkDocument';
   const folderTabs = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('section') === 'folderTabs';
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
   const cardChecks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardChecks';
@@ -84,7 +89,7 @@ export function initializeReview() {
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || chat ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || chat || contentLinks || contentLinkDocument ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
     const state = useChatStore.getState();
@@ -95,7 +100,7 @@ export function initializeReview() {
       turn_usage_mode: 'collapsed',
     });
   }
-  if (nativeSettings || persistent) {
+  if (nativeSettings || persistent || contentLinks || contentLinkDocument) {
     useAuthStore.setState({ jwt: firstNativeConnection ? null : 'header.eyJlbWFpbCI6InB1YmxpYy1yZXZpZXdAZXhhbXBsZS5pbnZhbGlkIiwic3ViIjoicHVibGljLXJldmlld0BleGFtcGxlLmludmFsaWQiLCJuYW1lIjoiUHVibGljIFJldmlldyIsInBpY3R1cmUiOiIiLCJleHAiOjIwMDAwMDAwMDB9.signature', authRejected: false });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-error') useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: window.location.origin + '/assets/ios-components/unavailable-photo.jpg' } });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-fallback') useSettingsStore.setState({ wallpaper: { mode: 'photo' } });
@@ -167,7 +172,8 @@ function Gallery() {
   if (section === 'board') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoard/></View>;
   if(section==='folderWorkspace')return <View style={{flex:1,backgroundColor:t.colors.background}}><ReviewFolderWorkspace/></View>;
   if (section === 'folderTabs') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewFolderTabs /></View>;
-  if (section === 'entryShell') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
+  if (section === 'entryShell' || section === 'contentLinks') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
+  if (section === 'contentLinkDocument') return <ReviewContentLinkDocument />;
   if (section === 'longFolders') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewLongFolders /></View>;
   if (section === 'autoRefresh') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewAutoRefresh /></View>;
   return <View style={{ flex: 1 }}><ScrollView testID="component-review" style={{ flex: 1, backgroundColor: t.colors.background }}
@@ -201,7 +207,8 @@ function Gallery() {
         window.history.replaceState(null, '', url);
         initializeReview();
       }
-      if (next === 'entryShell' || next === 'folderTabs') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
+  if (next === 'entryShell' || next === 'folderTabs') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
+  if (next === 'contentLinks' || next === 'contentLinkDocument') useSettingsStore.setState({ serverUrl: window.location.origin });
       if (next === 'cardImages') useSettingsStore.setState({ serverUrl: window.location.origin });
       setSection(next);
     }} options={sections} wrap={section === 'dialogues'} />
@@ -233,8 +240,11 @@ export function ComponentReview() {
 function getNativeSettingsSafeAreaFixture(search: string, width: number, height: number): { frame: Rect; insets: EdgeInsets } | null {
   const params = new URLSearchParams(search);
   const pasImageSample = params.get('section') === 'chat' && params.get('sample') === 'pas-images';
-  if (params.get('safeArea') !== 'fixture' && !pasImageSample) return null;
-  const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent';
+  const contentLinkSample = params.get('section') === 'contentLinks' || params.get('section') === 'contentLinkDocument';
+  if (params.get('safeArea') !== 'fixture' && !pasImageSample && !contentLinkSample) return null;
+  const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent'
+    || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
+    || params.get('section') === 'contentLinkDocument';
   if (!pasImageSample && !cardChecks && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 
   return {
