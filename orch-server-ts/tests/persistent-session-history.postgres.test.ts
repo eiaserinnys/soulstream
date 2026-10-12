@@ -97,6 +97,34 @@ describePostgres("persistent session history event query", () => {
     expect(result.nextCursor).toBeNull();
   });
 
+  it("returns an assistant_message chat UI payload unchanged from persistent history", async () => {
+    const sessionId = `chat-ui-history-${randomUUID()}`;
+    const ui = {
+      schema_version: 1,
+      ui_id: "ui_0123456789abcdef0123456789abcdef",
+      hash: "a".repeat(64),
+      revision: 1,
+      document: {
+        schema_version: 1,
+        title: "선택지",
+        body: [{ id: "choice", kind: "text", parts: ["첫 번째"] }],
+      },
+    };
+    await seedSession(sessionId);
+    await seedEvent({
+      sessionId,
+      id: 1,
+      type: "assistant_message",
+      at: "2026-10-04T15:08:00Z",
+      payload: { content: "선택지", ui },
+    });
+
+    const result = await repository.readPersistentSessionHistory(query(sessionId));
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.payload.ui).toEqual(ui);
+  });
+
   it("uses a time-and-id cursor, returns limit plus one as a continuation, and rejects invalid cursors", async () => {
     const sessionId = `cursor-${randomUUID()}`;
     const otherSessionId = `other-${randomUUID()}`;

@@ -2480,7 +2480,20 @@
       "description": "SSE: 어시스턴트 메시지 완료본.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "assistant_message" } }
+      "properties": {
+        "type": { "const": "assistant_message" },
+        "ui": {
+          "type": "object",
+          "required": ["schema_version", "ui_id", "hash", "revision", "document"],
+          "properties": {
+            "schema_version": { "const": 1 },
+            "ui_id": { "type": "string" },
+            "hash": { "type": "string" },
+            "revision": { "const": 1 },
+            "document": { "type": "object", "additionalProperties": true }
+          }
+        }
+      }
     },
     "SSEEventTurnSummary": {
       "type": "object",

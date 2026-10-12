@@ -423,6 +423,9 @@ importers:
       '@soulstream/agent-profile-contract':
         specifier: workspace:*
         version: link:../packages/agent-profile-contract
+      '@soulstream/chat-ui':
+        specifier: workspace:*
+        version: link:../packages/chat-ui
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position

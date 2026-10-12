@@ -206,6 +206,39 @@ describe("EventPersistence durable ingress", () => {
     }));
   });
 
+  it("persists chat UI payload with registration and semantic dedupe", () => {
+    const ui = {
+      schema_version: 1,
+      ui_id: "ui_0123456789abcdef0123456789abcdef",
+      hash: "a".repeat(64),
+      revision: 1,
+      document: { schema_version: 1, body: [] },
+    };
+    const event = {
+      type: "assistant_message",
+      content: "선택 화면",
+      ui,
+      timestamp: 1731700000,
+      _dedupe_key: `chat-ui:${ui.ui_id}`,
+    } as unknown as SSEEventPayload;
+
+    const input = buildEventOutboxAppendInput("sess-1", event, undefined, "registration-1");
+
+    expect(input).toMatchObject({
+      session_id: "sess-1",
+      registration_id: "registration-1",
+      event_type: "assistant_message",
+      semantic_dedupe_key: `chat-ui:${ui.ui_id}`,
+      payload: {
+        type: "assistant_message",
+        content: "선택 화면",
+        ui,
+        timestamp: 1731700000,
+      },
+    });
+    expect(input.payload).not.toHaveProperty("_dedupe_key");
+  });
+
   it("sanitizes and fsync-enqueues persistent events without direct event DB calls", async () => {
     const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
