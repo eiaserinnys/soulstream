@@ -178,7 +178,7 @@ function isIndependentNpmProject(repoRoot: string, packagePath: string): boolean
   return false;
 }
 
-function nodeModulesDirectories(base: string): string[] {
+export function nodeModulesDirectories(base: string): string[] {
   const found: string[] = [];
   const visit = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
