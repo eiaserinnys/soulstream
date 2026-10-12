@@ -8,6 +8,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
 import { WorktreeGit, WorktreeGitError } from "./worktree_git.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
+import { baseDependencyLinksIntoWorktree } from "./worktree_dependency_links.js";
 import { defaultWorktreeSetupMode, setupSharedDependencies } from "./worktree_setup.js";
 import type {
   WorktreeHost,
@@ -329,6 +330,16 @@ export class WorktreeService implements WorktreeExecutionResolver {
     try {
       await this.options.lock.withLock(commonDirectory, async () => {
         this.assertWorkspaceUnused(record.canonicalPath);
+        const links = await baseDependencyLinksIntoWorktree(
+          join(this.options.projectsRoot, record.repoId), record.canonicalPath,
+        );
+        if (links.length > 0) {
+          throw new WorktreeServiceError(
+            "WORKTREE_BASE_DEPENDENCY_IN_USE",
+            "Base dependency links point into this worktree; repair the listed links before retrying removal",
+            { links },
+          );
+        }
         const workspaceState = await this.options.git.removalWorkspaceState({
           repoId: record.repoId,
           path: record.canonicalPath,
