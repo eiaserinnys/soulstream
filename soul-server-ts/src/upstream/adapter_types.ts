@@ -29,6 +29,7 @@ export interface UpstreamConfig {
   runnerStateDir?: string;
   heartbeatIntervalMs?: number;
   heartbeatMaxMissed?: number;
+  serveDrainTimeoutMs?: number;
   releaseActivationState?: ReleaseActivationState;
 }
 
