@@ -31,6 +31,12 @@ export type NodeEventIngressControllerOptions = {
   close(code: number, reason: string): void;
   logError(error: unknown, message: string): void;
   logWarn(context: Record<string, unknown>, message: string): void;
+  onCommittedProviderEvent?: (input: {
+    nodeId: string;
+    eventType: string;
+    payload: unknown;
+    createdAt: string;
+  }) => void;
 };
 
 export class NodeEventIngressController {
@@ -110,6 +116,18 @@ export class NodeEventIngressController {
           path: item.deadLetter.path,
         }, "Event ingress dead-lettered permanent failure");
         continue;
+      }
+      if (!item.duplicateReceipt && this.options.onCommittedProviderEvent) {
+        try {
+          this.options.onCommittedProviderEvent({
+            nodeId: this.options.nodeId,
+            eventType: item.envelope.event_type,
+            payload: item.envelope.payload,
+            createdAt: item.envelope.created_at,
+          });
+        } catch (error) {
+          this.options.logError(error, "Committed provider execution observation failed");
+        }
       }
       const payload = isRecord(item.envelope.payload)
         ? { ...item.envelope.payload, id: item.eventId, _event_id: item.eventId }

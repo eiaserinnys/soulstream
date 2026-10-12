@@ -734,11 +734,13 @@ describe("RecurringJobService", () => {
       actor,
       target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
       requireAvailableTarget: true,
+      purpose: "settings",
     });
     expect(validateTarget).toHaveBeenNthCalledWith(2, {
       actor,
       target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-b" }),
       requireAvailableTarget: false,
+      purpose: "settings",
     });
   });
 });

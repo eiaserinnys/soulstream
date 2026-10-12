@@ -5,6 +5,13 @@ import type {
 } from "../node/pending_commands.js";
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
+import {
+  getProviderLimitRejection,
+  observeProviderExecution,
+  type ProviderExecutionEvent,
+  type ProviderLimitProvider,
+  type ProviderLimitRejection,
+} from "./provider_limit_rejection.js";
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
 
@@ -133,6 +140,7 @@ export class UsageSummaryService {
   private readonly onCollected: UsageSummaryServiceOptions["onCollected"];
   private readonly onWarning: (message: string, error?: unknown) => void;
   private readonly nodes = new Map<string, MutableNodeState>();
+  private readonly providerLimitRejections = new Map<string, ProviderLimitRejection>();
   private collectedAt: string | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
   private activeCollection: Promise<void> | undefined;
@@ -190,6 +198,28 @@ export class UsageSummaryService {
         .sort((left, right) => left.nodeId.localeCompare(right.nodeId))
         .map((state) => summarizeNode(state)),
     };
+  }
+
+  observeProviderExecution(input: ProviderExecutionEvent): void {
+    observeProviderExecution({
+      memory: this.providerLimitRejections,
+      sharedAccountGroups: this.sharedAccountGroups,
+      event: input,
+      now: this.now(),
+    });
+  }
+
+  getLimitRejection(
+    nodeId: string,
+    provider: ProviderLimitProvider,
+  ): ProviderLimitRejection | null {
+    return getProviderLimitRejection({
+      memory: this.providerLimitRejections,
+      sharedAccountGroups: this.sharedAccountGroups,
+      nodeId,
+      provider,
+      now: this.now(),
+    });
   }
 
   private async runCollection(): Promise<void> {
