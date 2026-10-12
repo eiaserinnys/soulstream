@@ -28,12 +28,12 @@ jest.mock('../../api/plannerTypes', () => ({
 const document = { id: 'doc-1', title: '문서 제목', body: '# 본문', version: 4 };
 const folderDetail = { folder: { id: 'folder-1' }, page: { id: 'page-1', title: '폴더 페이지' } };
 
-function makeNavigation(topRoute = 'Main') {
+function makeNavigation(topRoute = 'Main', params?: Record<string, unknown>) {
   const tabs = { navigate: jest.fn() };
   return {
     push: jest.fn(),
     getParent: jest.fn(() => tabs),
-    getState: jest.fn(() => ({ index: 0, routes: [{ name: topRoute }] })),
+    getState: jest.fn(() => ({ index: 0, routes: [{ name: topRoute, params }] })),
     dispatch: jest.fn(),
     popTo: jest.fn(),
     tabs,
@@ -87,16 +87,24 @@ beforeEach(() => {
 test.each([
   'https://soulstream.test/api/markdown-documents/doc-1',
   'https://soulstream.test/?document=doc-1',
-])('문서는 조회한 뒤 현재 stack의 MarkdownDocument 화면으로 연다 (%s)', async (href) => {
+])('문서는 조회 전에 현재 stack의 MarkdownDocument 화면으로 연다 (%s)', async (href) => {
   const state = deps(href);
 
   await openContentLinkNavigation(state.input);
 
-  expect(state.api.getMarkdownDocument).toHaveBeenCalledWith('doc-1');
-  expect(state.navigation.push).toHaveBeenCalledWith('MarkdownDocument', {
-    documentId: 'doc-1', initialDocument: document,
-  });
+  expect(state.api.getMarkdownDocument).not.toHaveBeenCalled();
+  expect(state.navigation.push).toHaveBeenCalledWith('MarkdownDocument', { documentId: 'doc-1' });
   expect(state.alert).not.toHaveBeenCalled();
+});
+
+test('현재 맨 위와 같은 문서는 두 번 push하지 않는다', async () => {
+  const navigation = makeNavigation('MarkdownDocument', { documentId: 'doc-1' });
+  const state = deps('https://soulstream.test/?document=doc-1', { navigation });
+
+  await openContentLinkNavigation(state.input);
+
+  expect(state.api.getMarkdownDocument).not.toHaveBeenCalled();
+  expect(state.navigation.push).not.toHaveBeenCalled();
 });
 
 test('세션은 phone의 기존 검색 세션 opener에 숫자 eventId를 전달하고 미리 조회하지 않는다', async () => {
@@ -153,6 +161,16 @@ test('카드는 phone에서 현재 stack에 push하고 태블릿 Main에서는 a
   expect(tablet.navigation.push).not.toHaveBeenCalled();
 });
 
+test('현재 맨 위와 같은 카드는 두 번 push하지 않는다', async () => {
+  const navigation = makeNavigation('CardDetail', { cardId: 'card-1' });
+  const state = deps('https://soulstream.test/?card=card-1', { navigation });
+
+  await openContentLinkNavigation(state.input);
+
+  expect(state.navigation.push).not.toHaveBeenCalled();
+  expect(state.api.getCard).not.toHaveBeenCalled();
+});
+
 test('폴더는 includeCompleted=false로 읽고 phone의 FolderTab workspace를 연다', async () => {
   const state = deps('https://soulstream.test/?folder=folder-1');
 
@@ -197,30 +215,6 @@ test.each([
   }
 });
 
-test.each([404, 403])('문서 조회 HTTP %s 실패는 화면을 바꾸지 않고 한 줄 알림을 보낸다', async (status) => {
-  const error = Object.assign(new Error('request failed'), { status });
-  const state = deps('https://soulstream.test/?document=missing', {
-    api: makeApi({ getMarkdownDocument: jest.fn().mockRejectedValue(error) }),
-  });
-
-  await openContentLinkNavigation(state.input);
-
-  expect(state.navigation.push).not.toHaveBeenCalled();
-  expect(state.alert).toHaveBeenCalledWith('문서를 열지 못했습니다.');
-});
-
-test('401은 기존 인증 만료 흐름에 맡기고 콘텐츠 알림을 추가하지 않는다', async () => {
-  const error = Object.assign(new Error('unauthorized'), { status: 401 });
-  const state = deps('https://soulstream.test/?document=missing', {
-    api: makeApi({ getMarkdownDocument: jest.fn().mockRejectedValue(error) }),
-  });
-
-  await openContentLinkNavigation(state.input);
-
-  expect(state.alert).not.toHaveBeenCalled();
-  expect(state.navigation.push).not.toHaveBeenCalled();
-});
-
 test.each([
   'https://outside.test/path',
   '/unknown/path',
@@ -233,11 +227,11 @@ test.each([
   expect(state.navigation.push).not.toHaveBeenCalled();
 });
 
-test('내부 링크를 단독 렌더에서 열어도 browser를 호출하지 않고 한 줄 알린다', async () => {
+test('내부 링크를 단독 렌더에서 열어도 browser를 호출하지 않는다', async () => {
   const state = deps('https://soulstream.test/?document=doc-1', { navigation: null });
 
   await openContentLinkNavigation(state.input);
 
   expect(state.openExternal).not.toHaveBeenCalled();
-  expect(state.alert).toHaveBeenCalledWith('문서를 열지 못했습니다.');
+  expect(state.alert).not.toHaveBeenCalled();
 });

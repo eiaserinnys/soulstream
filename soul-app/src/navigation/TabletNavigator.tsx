@@ -7,7 +7,6 @@ import { createApiClient } from '../api/client';
 import { SplitLayout } from '../components/split/SplitLayout';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { MarkdownDocumentContent } from '../components/planner/MarkdownDocumentContent';
-import type { MarkdownDocument } from '../api/boardItemEndpoints';
 import { openPlannerSessionWorkspace } from '../lib/planner-folder-workspace';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { useSettingsStore } from '../store/settingsStore';
@@ -20,7 +19,7 @@ export type TabletStackParamList = {
   Main: undefined;
   PersistentSession: undefined;
   CardDetail: { cardId: string };
-  MarkdownDocument: { documentId: string; initialDocument?: MarkdownDocument };
+  MarkdownDocument: { documentId: string };
 };
 const Stack = createNativeStackNavigator<TabletStackParamList>();
 
@@ -54,7 +53,7 @@ function TabletMarkdownDocument({ route, navigation }: NativeStackScreenProps<Ta
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   return <TabletDetailScreenFrame navigation={navigation} testID="persistent-tablet-document-sheet" accessibilityLabel="문서 닫기">
     <MarkdownDocumentContent api={api} documentId={route.params.documentId}
-      initialDocument={route.params.initialDocument} onClose={() => navigation.goBack()} />
+      onClose={() => navigation.goBack()} />
   </TabletDetailScreenFrame>;
 }
 
@@ -65,9 +64,10 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, child
   children: React.ReactNode;
 }) {
   const t = useTokens();
+  const focused = useIsFocused();
   const { width } = useWindowDimensions();
   const sheetWidth = getCardDetailPaneWidth(getFolderWorkspaceOverlayWidth(width));
-  return <View style={{ flex: 1 }}>
+  return <View style={{ flex: 1, display: focused ? 'flex' : 'none' }}>
     <TouchableWithoutFeedback onPress={() => navigation.goBack()} accessibilityLabel={accessibilityLabel}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: FOLDER_WORKSPACE_BACKDROP_COLOR }]} />
     </TouchableWithoutFeedback>

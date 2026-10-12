@@ -6,31 +6,24 @@ import type { MarkdownDocument } from '../../api/boardItemEndpoints';
 import { useDeviceType, useTokens } from '../../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassButton } from '../GlassSurface';
+import { removeOverlappingDocumentHeading } from '../../lib/markdown-document-heading';
 import { cardDetailStyles } from './CardDetail.styles';
 import { PlannerMarkdownText } from './PlannerMarkdownText';
 
-export function MarkdownDocumentContent({ api, documentId, initialDocument, onClose }: {
+export function MarkdownDocumentContent({ api, documentId, onClose }: {
   api: ApiClient | null;
   documentId: string;
-  initialDocument?: MarkdownDocument;
   onClose(): void;
 }) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const phone = useDeviceType() === 'phone';
   const insets = useSafeAreaInsets();
-  const initial = initialDocument?.id === documentId ? initialDocument : null;
-  const [document, setDocument] = useState<MarkdownDocument | null>(initial);
-  const [loading, setLoading] = useState(initial === null);
+  const [document, setDocument] = useState<MarkdownDocument | null>(null);
+  const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (initialDocument?.id === documentId) {
-      setDocument(initialDocument);
-      setLoading(false);
-      setFailed(false);
-      return;
-    }
     let active = true;
     setDocument(null);
     setLoading(true);
@@ -45,7 +38,7 @@ export function MarkdownDocumentContent({ api, documentId, initialDocument, onCl
       .catch(() => { if (active) setFailed(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [api, documentId, initialDocument]);
+  }, [api, documentId]);
 
   return <View style={styles.frame}>
     <View style={styles.header}>
@@ -66,7 +59,8 @@ export function MarkdownDocumentContent({ api, documentId, initialDocument, onCl
         keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {loading ? <ActivityIndicator testID="markdown-document-loading" color={t.colors.accent} /> : null}
         {failed ? <Text testID="markdown-document-error" style={styles.error}>문서를 불러오지 못했습니다.</Text> : null}
-        {document ? <PlannerMarkdownText testID="markdown-document-body" markdown={document.body} /> : null}
+        {document ? <PlannerMarkdownText testID="markdown-document-body"
+          markdown={removeOverlappingDocumentHeading(document.body, document.title)} /> : null}
       </ScrollView>
     </View>
   </View>;

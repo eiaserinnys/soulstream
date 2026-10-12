@@ -34,7 +34,7 @@ export function contentLinkReviewSessionEventsUrl(
     { id: 1, parent_event_id: null, event_type: 'user_message',
       payload: { text: '문서와 첨부 링크를 확인합니다.' }, created_at: '2026-10-12T00:00:00Z' },
     { id: 2, parent_event_id: 1, event_type: 'assistant_message',
-      payload: { text: `[문서 보기](${origin}/api/markdown-documents/public-content-document) · [이미지 보기](${origin}/api/attachments/files?nodeId=public-node&path=%2Ftmp%2Fsample.png) · [카드 보기](${origin}/?card=public-shell-card-owner) · [외부 링크](https://example.com)` },
+      payload: { text: `[문서 보기](${origin}/api/markdown-documents/public-content-document) · [느린 문서 보기](${origin}/api/markdown-documents/public-content-document) · [이미지 보기](${origin}/api/attachments/files?nodeId=public-node&path=%2Ftmp%2Fsample.png) · [카드 보기](${origin}/?card=public-shell-card-owner) · [외부 링크](https://example.com)` },
       created_at: '2026-10-12T00:00:01Z' },
   ];
   const frames = messages

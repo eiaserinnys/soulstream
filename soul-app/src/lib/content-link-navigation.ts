@@ -19,12 +19,12 @@ import { useUIStore } from '../store/uiStore';
 import type { DeviceType } from '../theme/useDeviceType';
 
 type ContentLinkApi = Pick<ApiClient,
-  'getCard' | 'getPlannerFolder' | 'getPage' | 'getMarkdownDocument'>;
+  'getPlannerFolder' | 'getPage'>;
 
 export interface ContentLinkNavigation {
   push?: (name: string, params?: Record<string, unknown>) => void;
   getParent?: () => { navigate?: (name: string, params?: Record<string, unknown>) => void } | undefined;
-  getState?: () => { index?: number; routes?: Array<{ name?: string }> };
+  getState?: () => { index?: number; routes?: Array<{ name?: string; params?: Record<string, unknown> }> };
   dispatch?: (action: unknown) => void;
   popTo?: (name: string) => void;
 }
@@ -43,11 +43,11 @@ export interface OpenContentLinkNavigationArgs {
   alert: (message: string) => void;
 }
 
-function failureMessage(target: InternalLinkTarget): string {
+function failureMessage(target: InternalLinkTarget): string | null {
   switch (target.kind) {
     case 'session': return '세션을 열지 못했습니다.';
     case 'card': return '카드를 열지 못했습니다.';
-    case 'document': return '문서를 열지 못했습니다.';
+    case 'document': return null;
     case 'folder': return '폴더를 열지 못했습니다.';
     case 'page': return '페이지를 열지 못했습니다.';
     case 'attachment': return '이미지를 열지 못했습니다.';
@@ -95,7 +95,20 @@ function alertForMissingNavigation(
   alert: (message: string) => void,
   target: InternalLinkTarget,
 ): void {
-  alert(failureMessage(target));
+  const message = failureMessage(target);
+  if (message) alert(message);
+}
+
+function isSameTopRouteTarget(
+  navigation: ContentLinkNavigation,
+  routeName: string,
+  paramName: string,
+  targetId: string,
+): boolean {
+  const state = navigation.getState?.();
+  const index = state?.index ?? ((state?.routes?.length ?? 0) - 1);
+  const topRoute = state?.routes?.[index];
+  return topRoute?.name === routeName && topRoute.params?.[paramName] === targetId;
 }
 
 function alertUnlessUnauthorized(
@@ -170,10 +183,22 @@ export async function openContentLinkNavigation({
     if (device !== 'phone' && isTabletMain(navigation)) {
       useUIStore.getState().openCardOverlay(target.cardId, activeSessionId);
     } else if (navigation.push) {
-      navigation.push('CardDetail', { cardId: target.cardId });
+      if (!isSameTopRouteTarget(navigation, 'CardDetail', 'cardId', target.cardId)) {
+        navigation.push('CardDetail', { cardId: target.cardId });
+      }
     } else {
       alertForMissingNavigation(alert, target);
     }
+    return;
+  }
+
+  if (target.kind === 'document') {
+    if (!navigation.push) {
+      alertForMissingNavigation(alert, target);
+      return;
+    }
+    if (isSameTopRouteTarget(navigation, 'MarkdownDocument', 'documentId', target.documentId)) return;
+    navigation.push('MarkdownDocument', { documentId: target.documentId });
     return;
   }
 
@@ -215,17 +240,6 @@ export async function openContentLinkNavigation({
       return;
     }
 
-    if (target.kind === 'document') {
-      const document = await api.getMarkdownDocument(target.documentId);
-      if (!navigation.push) {
-        alertForMissingNavigation(alert, target);
-        return;
-      }
-      navigation.push('MarkdownDocument', {
-        documentId: target.documentId,
-        initialDocument: document,
-      });
-    }
   } catch (error) {
     alertUnlessUnauthorized(alert, target, error);
   }
