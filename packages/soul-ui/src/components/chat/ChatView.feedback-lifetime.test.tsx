@@ -62,7 +62,7 @@ beforeEach(async () => {
   useDashboardStore.getState().reset();
   useDashboardStore.getState().setActiveSession("main-session");
   overlay = createChatSessionStore("overlay-session");
-  for (const store of [useDashboardStore, overlay.store]) store.getState().processEvent({ type: "assistant_message", text: "기존 답", timestamp: 1 }, 1);
+  for (const store of [useDashboardStore, overlay.store]) store.getState().processEvent({ type: "assistant_message", content: "기존 답", timestamp: 1 }, 1);
   vi.mocked(submitIntervention).mockReset();
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await mount();
