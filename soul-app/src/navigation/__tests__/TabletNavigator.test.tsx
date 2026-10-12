@@ -21,10 +21,11 @@ test('PAS 카드 선택은 기존 스택 안에 머물고 별도 카드 상세 �
   resetNavigationCapture();
   render(<PersistentSessionProvider><Probe /><TabletNavigator /></PersistentSessionProvider>);
   const stack = getNativeStackCaptures()[0];
-  expect(stack.screens.map(screen => screen.name)).toEqual(['Main', 'PersistentSession', 'CardDetail']);
+  expect(stack.screens.map(screen => screen.name)).toEqual(['Main', 'PersistentSession', 'CardDetail', 'MarkdownDocument']);
   expect(stack.navigatorProps?.initialRouteName).toBe('Main');
   expect((stack.navigatorProps?.screenOptions as any).contentStyle).toEqual(createSurfaceRoles(renderHook(() => useTokens()).result.current).canvas.tokenStyle);
   expect(stack.screens[2].options.presentation).toBe('transparentModal');
+  expect(stack.screens[3].options.presentation).toBe('transparentModal');
   const navigation = { navigate: jest.fn(), goBack: jest.fn() };
   act(() => { store.getState().open({ session_id: 'pas-1', persistent: true } as any); store.getState().selectCard('card-1'); });
   render(<PersistentSessionProvider><Probe />{React.createElement(stack.screens[1].component, { navigation })}</PersistentSessionProvider>);
