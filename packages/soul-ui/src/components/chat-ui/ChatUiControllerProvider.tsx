@@ -22,6 +22,7 @@ function ControllerScope({ sessionId, children }: PropsWithChildren<{ sessionId:
   const update = useCallback((key: string, state: ChatUiState) => {
     if (states.get(key) === state) return;
     states.set(key, state);
+    notify('');
     setVersion(version => version + 1);
   }, [states]);
   const registerComposer = useCallback<RegisterGeneratedTextActions>(handle => { composer.current = handle; }, []);
@@ -58,7 +59,11 @@ export function useChatUiController(uiId: string, hash: string, doc: NormalizedC
   const key = JSON.stringify([sessionId, uiId, hash]);
   if (!states.has(key)) states.set(key, initialState(doc));
   const current = () => states.get(key)!;
-  const set = (field: string, value: FieldValue) => update(key, reduce(doc, current(), { type: 'set', field, value }));
+  const set = (field: string, value: FieldValue) => {
+    const next = reduce(doc, current(), { type: 'set', field, value });
+    update(key, next);
+    return next.values[field];
+  };
   const act = async (action: Exclude<Action, { type: 'open_source' }>, nodeId: string) => {
     switch (action.type) {
       case 'set': set(action.field, action.value); break;

@@ -3,9 +3,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderText } from '@soulstream/chat-ui';
+import { InternalLinkProvider } from '../InternalLinkProvider';
 import { ChatUiMessage } from './ChatUiMessage';
 import { ChatUiControllerProvider, useChatUiHost } from './ChatUiControllerProvider';
-import { documentFixture, envelope } from './chat-ui.test-fixture';
+import { documentFixture, envelope, fixture } from './chat-ui.test-fixture';
 
 const fail = vi.hoisted(() => ({ render: false }));
 vi.mock('./ChatUiRenderer', async (importOriginal) => {
@@ -89,8 +90,53 @@ describe('ChatUiMessage', () => {
     await click('12명으로'); await click('복사');
     expect(writeText).toHaveBeenCalledWith(renderText(documentFixture, { values: { ...Object.fromEntries(Object.entries(documentFixture.fields).map(([k, f]) => [k, f.initial])), seats: 12 } }));
     expect(host.querySelector('output')?.textContent).toBe('현재 값 복사됨');
+    await click('자료 상세'); expect(host.querySelector('output')?.textContent).toBe('현재 값 복사됨');
     writeText.mockRejectedValueOnce(new Error('denied')); await click('복사');
     expect(host.querySelector('output')?.textContent).toBe('복사하지 못했어.');
     await click('초기화'); expect(host.querySelector('output')?.textContent).toBe('기본값으로 돌아갔어');
+  });
+  it('normalizes number text before composing even when submit does not blur the input', async () => {
+    await mount(); const control = host.querySelector<HTMLInputElement>('input[type="number"]')!;
+    await act(async () => { control.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(control, '999'); control.dispatchEvent(new Event('input', { bubbles: true })); });
+    expect(control.value).toBe('999');
+    await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    expect(control.value).toBe('50');
+  });
+  it('shows an uncited entity source in one place while expanding and collapsing', async () => {
+    await mount({ ...envelope, document: { ...fixture, sources: { ...fixture.sources, extra: { type: 'external_link', label: '항목 출처', url: 'https://example.com/item' } }, body: fixture.body.map(node => node.kind === 'entity' ? { ...node, source: 'extra' } : node) } });
+    const links = () => host.querySelectorAll('a[href="https://example.com/item"]');
+    expect(links()).toHaveLength(1);
+    await click('자료 상세'); expect(links()).toHaveLength(1);
+    expect(links()[0].closest('[data-chat-ui-node="entity"]')).toBeTruthy();
+    await click('자료 상세'); expect(links()).toHaveLength(1);
+    expect(links()[0].closest('[data-chat-ui-node="entity"]')).toBeNull();
+  });
+  it('keeps the assumption action mounted in its button row and expands the note below', async () => {
+    const action = fixture.body.find(node => node.id === 'assumption')!;
+    await mount({ ...envelope, document: { ...fixture, body: [{ id: 'actions', kind: 'group', layout: 'wrap', children: [action] }] } });
+    const button = Array.from(host.querySelectorAll('button')).find(button => button.textContent === '가정 보기')!;
+    const row = button.closest('.chat-ui-group')!;
+    await click('가정 보기');
+    expect(button.isConnected).toBe(true); expect(button.closest('.chat-ui-group')).toBe(row);
+    const note = row.querySelector('.chat-ui-action-note')!;
+    expect(note.textContent).toBe('실제 요금이 아니야.');
+    expect(note.parentElement).toBe(row); expect(button.getAttribute('aria-controls')).toBe(note.id);
+    expect(row.lastElementChild).toBe(note);
+  });
+  it('uses the same Button classes for source actions and keeps the shared internal-link and modifier path', async () => {
+    await mount(); const openTarget = vi.fn();
+    const ui = { ...envelope, document: { ...fixture, sources: { ...fixture.sources, link: { type: 'external_link', label: '원문', url: 'https://example.com/?card=card-review' } } } };
+    await act(async () => root.render(<InternalLinkProvider internalOrigins={['https://example.com']} openTarget={openTarget}><ChatUiControllerProvider sessionId="session-a"><ChatUiMessage ui={ui} content="저장된 글" /></ChatUiControllerProvider></InternalLinkProvider>));
+    const link = Array.from(host.querySelectorAll('a')).find(anchor => anchor.textContent === '출처 열기')!;
+    const copy = Array.from(host.querySelectorAll('button')).find(button => button.textContent === '복사')!;
+    expect(link.className).toBe(copy.className);
+    expect(link.getAttribute('target')).toBe('_blank');
+    let prevented = false;
+    // Observe after React handles the event; suppress jsdom's unsupported navigation only afterwards.
+    host.addEventListener('click', event => { prevented = event.defaultPrevented; event.preventDefault(); });
+    await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })));
+    expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: 'card-review' }, link.href);
+    await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ctrlKey: true })));
+    expect(prevented).toBe(false); expect(openTarget).toHaveBeenCalledTimes(1);
   });
 });

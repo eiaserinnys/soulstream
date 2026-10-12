@@ -14,6 +14,9 @@ function Row({ hash = 'hash-a' }: { hash?: string }) {
   const { feedback } = useChatUiHost();
   return <><output>{controller.state.values.seats}</output><p>{feedback}</p>
     <button onClick={() => controller.set('seats', 12)}>set</button>
+    <button onClick={() => controller.set('seats', 9)}>set9</button>
+    <button onClick={() => controller.act({ type: 'copy' }, 'copy')}>copy</button>
+    <button onClick={() => controller.act({ type: 'reset' }, 'reset')}>reset</button>
     <button onClick={() => controller.act({ type: 'compose' }, 'compose')}>compose</button>
     <button onClick={() => controller.act({ type: 'compose' }, 'form')}>form</button></>;
 }
@@ -33,6 +36,15 @@ it('retains a publication across row remounts, separates hashes and sessions, an
   await render('s1'); expect(host.querySelector('output')?.textContent).toBe('12');
   await render('s2'); expect(host.querySelector('output')?.textContent).toBe('8');
   await render('s1'); expect(host.querySelector('output')?.textContent).toBe('8');
+});
+it('clears operation feedback only when a field actually changes', async () => {
+  setup(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
+  await act(async () => root.render(<ChatUiControllerProvider sessionId="s1"><Row /></ChatUiControllerProvider>));
+  await click('set'); await click('copy'); expect(host.querySelector('p')?.textContent).toBe('현재 값 복사됨');
+  await click('set'); expect(host.querySelector('p')?.textContent).toBe('현재 값 복사됨');
+  await click('set9'); expect(host.querySelector('p')?.textContent).toBe('');
+  await click('reset'); expect(host.querySelector('p')?.textContent).toBe('기본값으로 돌아갔어');
+  await click('set9'); expect(host.querySelector('p')?.textContent).toBe('');
 });
 it('uses the latest bridge and current compose values, clearing feedback only on success', async () => {
   setup(); const appendGeneratedText = vi.fn().mockReturnValue({ ok: true });
