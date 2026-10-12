@@ -12,6 +12,7 @@ import {
 import type { UnknownRecord } from "./validate_utils.js";
 
 const KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,47}$/;
+const DIMENSION_PATTERN = /^[A-Za-z][A-Za-z0-9_:]{0,31}$/;
 
 function checkObject(
   value: unknown,
@@ -190,7 +191,7 @@ function checkUnit(value: unknown, path: string, issues: ValidationIssue[]): voi
     if (keys.length > 4) addIssue(issues, `${path}.dims`, "차원 키는 네 개 이하여야 합니다.");
     for (const key of keys) {
       const exponent = dims[key];
-      if (key.length < 1 || key.length > 32) addIssue(issues, `${path}.dims.${key}`, "차원 키는 1에서 32자여야 합니다.");
+      if (!DIMENSION_PATTERN.test(key)) addIssue(issues, `${path}.dims.${key}`, "차원 키 형식이 올바르지 않습니다.");
       checkFiniteNumber(exponent, `${path}.dims.${key}`, issues);
       if (typeof exponent === "number" && (!Number.isInteger(exponent) || exponent < -3 || exponent > 3 || exponent === 0)) {
         addIssue(issues, `${path}.dims.${key}`, "차원 지수는 -3에서 3 사이의 0이 아닌 정수여야 합니다.");
@@ -294,12 +295,12 @@ function checkExpr(value: unknown, path: string, depth: number, issues: Validati
     add: "many", sub: 2, mul: "many", div: 2, eq: 2, lt: 2, lte: 2,
     and: "many", or: "many", not: 1, if: 3,
   };
-  const arity = arities[op];
-  if (arity === undefined) {
+  if (!hasOwn(arities, op)) {
     checkObject(value, path, ["op"], ["op"], issues);
     addIssue(issues, `${path}.op`, "지원하지 않는 op입니다.");
     return;
   }
+  const arity = arities[op]!;
   const expr = checkObject(value, path, ["op", "args"], ["op", "args"], issues);
   if (!expr) return;
   const args = checkArray(expr.args, `${path}.args`, issues);
@@ -339,12 +340,12 @@ function checkNode(value: unknown, path: string, depth: number, count: { nodes: 
     entity: { allowed: ["label", "details", "source"], required: ["label", "details"] },
     citation: { allowed: ["source"], required: ["source"] },
   };
-  const spec = fields[kind];
-  if (!spec) {
-    checkObject(value, path, base, ["id", "kind"], issues);
+  if (!hasOwn(fields, kind)) {
+    checkObject(value, path, [...base, "kind"], ["id", "kind"], issues);
     addIssue(issues, `${path}.kind`, "지원하지 않는 kind입니다.");
     return;
   }
+  const spec = fields[kind]!;
   const allowed = [...base, "kind", ...spec.allowed];
   const required = ["id", "kind", ...spec.required];
   const node = checkObject(value, path, allowed, required, issues);
@@ -408,7 +409,8 @@ function checkMap(
 
 export function checkStructure(input: unknown): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  inspectJsonValue(input, "", issues, new WeakSet());
+  const maxJsonDepth = 2 * CHAT_UI_LIMITS.maxNodeDepth + 2 * CHAT_UI_LIMITS.maxExprDepth + 8;
+  inspectJsonValue(input, "", issues, new WeakSet(), 0, maxJsonDepth);
   if (issues.length) return issues;
 
   const root = checkObject(

@@ -25,10 +25,14 @@ function dimsForProduct(values: Value[], divideBy?: Value): Record<string, numbe
   const dims: Record<string, number> = {};
   for (const value of values) {
     if (value.type !== "number") continue;
-    for (const key of Object.keys(value.dims)) dims[key] = (dims[key] ?? 0) + value.dims[key]!;
+    for (const key of Object.keys(value.dims)) {
+      dims[key] = (hasOwn(dims, key) ? dims[key]! : 0) + value.dims[key]!;
+    }
   }
   if (divideBy?.type === "number") {
-    for (const key of Object.keys(divideBy.dims)) dims[key] = (dims[key] ?? 0) - divideBy.dims[key]!;
+    for (const key of Object.keys(divideBy.dims)) {
+      dims[key] = (hasOwn(dims, key) ? dims[key]! : 0) - divideBy.dims[key]!;
+    }
   }
   for (const key of Object.keys(dims)) if (dims[key] === 0) delete dims[key];
   return Object.fromEntries(Object.keys(dims).sort().map((key) => [key, dims[key]!])) as Record<string, number>;

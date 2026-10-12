@@ -35,10 +35,14 @@ function combineDims(args: StaticType[], subtract?: StaticType): Record<string, 
   const dims: Record<string, number> = {};
   for (const arg of args) {
     if (arg.kind !== "number") continue;
-    for (const key of Object.keys(arg.dims)) dims[key] = (dims[key] ?? 0) + arg.dims[key]!;
+    for (const key of Object.keys(arg.dims)) {
+      dims[key] = (hasOwn(dims, key) ? dims[key]! : 0) + arg.dims[key]!;
+    }
   }
   if (subtract?.kind === "number") {
-    for (const key of Object.keys(subtract.dims)) dims[key] = (dims[key] ?? 0) - subtract.dims[key]!;
+    for (const key of Object.keys(subtract.dims)) {
+      dims[key] = (hasOwn(dims, key) ? dims[key]! : 0) - subtract.dims[key]!;
+    }
   }
   for (const key of Object.keys(dims)) if (dims[key] === 0) delete dims[key];
   return Object.fromEntries(Object.keys(dims).sort().map((key) => [key, dims[key]!])) as Record<string, number>;
@@ -109,6 +113,7 @@ function checkSemantics(doc: NormalizedChatUiDocumentV1): ValidationIssue[] {
         }
         return { kind: "number", dims: unit.dims };
       }
+      if (hasOwn(expr, "unit")) report(`${path}.unit`, "unit은 number const에만 사용할 수 있습니다.");
       return { kind: typeof expr.value === "string" ? "string" : "boolean" };
     }
     if (expr.op === "ref") return typeOfRef(expr.ref, `${path}.ref`);
@@ -269,6 +274,9 @@ function checkSemantics(doc: NormalizedChatUiDocumentV1): ValidationIssue[] {
   for (const key of Object.keys(doc.data)) {
     const data = doc.data[key]!;
     if (typeof data.value === "number" && !data.unit) report(`data.${key}.unit`, "숫자 data에는 unit이 필요합니다.");
+    if (typeof data.value !== "number" && hasOwn(data, "unit")) {
+      report(`data.${key}.unit`, "unit은 number data에만 사용할 수 있습니다.");
+    }
     if (data.unit && !unitAt(data.unit)) report(`data.${key}.unit`, `unit '${data.unit}'를 찾을 수 없습니다.`);
     if (data.source && !hasOwn(doc.sources, data.source)) report(`data.${key}.source`, `source '${data.source}'를 찾을 수 없습니다.`);
   }

@@ -25,12 +25,12 @@ export type ChatUiDocumentV1 = {
 export type NormalizedChatUiDocumentV1 =
   Required<Omit<ChatUiDocumentV1, "title">> & { title?: string };
 
-/** dims는 차원 지수 맵. 원 {"currency:KRW":1}, 원/개 {"currency:KRW":1,"count":-1},
+/** dims는 차원 지수 맵. 키는 /^[A-Za-z][A-Za-z0-9_:]{0,31}$/. 원 {"currency:KRW":1}, 원/개 {"currency:KRW":1,"count":-1},
  *  시간 {"time":1}, 무차원(비율) {}. scale은 같은 차원의 기준 단위 대비 배율(h=3600, min=60, s=1). */
 export type Unit = { dims: Record<string, number>; symbol: string; scale: number };
 
 export type Scalar = string | boolean | number;
-/** value가 number면 unit 필수. source는 sources의 키. */
+/** unit은 value가 number일 때만 쓰고 그때는 필수다. source는 sources의 키. */
 export type DataValue = { value: Scalar; unit?: Key; source?: Key };
 
 export type Option = { id: Key; label: string };
@@ -48,7 +48,7 @@ export type TextPart =
   | { value: ValueRef; format?: "plain" | "number" | "percent"; digits?: number; unit?: Key };
 
 export type Expr =
-  | { op: "const"; value: Scalar; unit?: Key } // number면 unit 필수
+  | { op: "const"; value: Scalar; unit?: Key } // unit은 number일 때만 쓰고 그때는 필수
   | { op: "ref"; ref: ValueRef }
   | { op: "add" | "mul"; args: Expr[] }        // 둘 이상
   | { op: "sub" | "div"; args: [Expr, Expr] }

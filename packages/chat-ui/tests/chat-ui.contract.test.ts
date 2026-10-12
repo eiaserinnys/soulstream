@@ -12,6 +12,7 @@ import {
 } from "../src/index.js";
 import type {
   ChatUiDocumentV1,
+  Expr,
   NormalizedChatUiDocumentV1,
   Unit,
 } from "../src/index.js";
@@ -187,7 +188,14 @@ describe("@soulstream/chat-ui 계약", () => {
     ])).toBe("10%");
   });
 
-  it("6. 순환·누락 참조·미지 스키마·비유한 값·중복 id·특수 키를 거부한다", () => {
+  it("6. 잘못된 참조와 구조를 각각 원인 위치에서 거부한다", () => {
+    const expectRejectedAt = (input: unknown, path: string): void => {
+      const result = validateChatUiDocument(input);
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("잘못된 입력이 허용되었습니다.");
+      expect(result.errors.map(({ path: issuePath }) => issuePath)).toContain(path);
+    };
+
     const cyclic: unknown = {
       schema_version: 1,
       computed: {
@@ -203,7 +211,7 @@ describe("@soulstream/chat-ui 계약", () => {
     };
     const unknownKind: unknown = {
       schema_version: 1,
-      body: [{ id: "node", kind: "unknown", extra: true }],
+      body: [{ id: "node", kind: "constructor" }],
     };
     const unknownKey: unknown = {
       schema_version: 1,
@@ -211,6 +219,11 @@ describe("@soulstream/chat-ui 계약", () => {
       body: [],
     };
     (unknownKey as Record<string, unknown>).unexpected = true;
+    const unknownOp: unknown = {
+      schema_version: 1,
+      computed: { broken: { op: "constructor" } },
+      body: [],
+    };
     const duplicateIds: unknown = {
       schema_version: 1,
       body: [
@@ -219,22 +232,18 @@ describe("@soulstream/chat-ui 계약", () => {
       ],
     };
     const protoKey = JSON.parse(
-      '{"schema_version":1,"data":{"__proto__":{"value":1,"unit":"unit"}},"body":[]}',
+      '{"schema_version":1,"data":{"__proto__":{"value":1}},"body":[]}',
     ) as unknown;
 
-    for (const input of [
-      cyclic,
-      missing,
-      unknownKind,
-      unknownKey,
-      duplicateIds,
-      protoKey,
-      { schema_version: 1, data: { "bad\n": { value: 1, unit: "unit" } }, body: [] },
-      { schema_version: 1, data: { bad: { value: Number.NaN, unit: "unit" } }, body: [] },
-      { schema_version: 1, data: { bad: { value: Number.POSITIVE_INFINITY, unit: "unit" } }, body: [] },
-    ]) {
-      expect(validateChatUiDocument(input).ok).toBe(false);
-    }
+    expectRejectedAt(cyclic, "computed.second.ref");
+    expectRejectedAt(missing, "computed.absent.ref.field");
+    expectRejectedAt(unknownKind, "body[0].kind");
+    expectRejectedAt(unknownKey, "unexpected");
+    expectRejectedAt(unknownOp, "computed.broken.op");
+    expectRejectedAt(duplicateIds, "body[1].id");
+    expectRejectedAt(protoKey, "data.__proto__");
+    expectRejectedAt({ schema_version: 1, data: { bad: { value: Number.NaN } }, body: [] }, "data.bad.value");
+    expectRejectedAt({ schema_version: 1, data: { bad: { value: Number.POSITIVE_INFINITY } }, body: [] }, "data.bad.value");
   });
 
   it("7. 입력 상태는 범위와 step에 맞추고 잘못된 값은 같은 상태로 거부한다", () => {
@@ -347,6 +356,159 @@ describe("@soulstream/chat-ui 계약", () => {
     expect(canonicalJson(left)).toBe(canonicalJson(right));
     expect(left).toEqual(omitted);
     expect(canonicalJson(left)).toBe(canonicalJson(omitted));
+  });
+
+  it("11. parts가 있는 form은 compose 글을 먼저 사용한다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      fields: {
+        order: {
+          type: "choice",
+          initial: "app",
+          options: [
+            { id: "app", label: "앱 먼저" },
+            { id: "web", label: "웹 먼저" },
+          ],
+        },
+      },
+      body: [{
+        id: "orderForm",
+        kind: "form",
+        items: [{ field: "order", label: "순서" }],
+        submitLabel: "추가",
+        action: {
+          type: "compose",
+          parts: ["순서는 ", { value: { field: "order" } }, "로 해 주세요"],
+        },
+      }],
+    });
+
+    expect(composeText(doc, initialState(doc), "orderForm")).toBe("순서는 앱 먼저로 해 주세요");
+  });
+
+  it("12. form 항목은 renderText에서 빈 줄, composeText에서는 줄바꿈 하나로 잇는다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      fields: {
+        enabled: { type: "boolean", initial: true },
+        approved: { type: "boolean", initial: false },
+      },
+      body: [{
+        id: "flags",
+        kind: "form",
+        items: [
+          { field: "enabled", label: "A" },
+          { field: "approved", label: "B" },
+        ],
+        submitLabel: "추가",
+        action: { type: "compose" },
+      }],
+    });
+    const state = initialState(doc);
+
+    expect(renderText(doc, state)).toBe("A: 예\n\nB: 아니오");
+    expect(composeText(doc, state, "flags")).toBe("A: 예\nB: 아니오");
+  });
+
+  it("13. 빈 그룹과 빈 줄은 렌더에서 빠지고 빈 text 값은 label만 남긴다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      fields: { note: { type: "text", initial: "", maxLength: 20 } },
+      body: [
+        { id: "emptyGroup", kind: "group", layout: "stack", children: [] },
+        { id: "emptyText", kind: "text", parts: [""] },
+        {
+          id: "noteForm",
+          kind: "form",
+          items: [{ field: "note", label: "메모" }],
+          submitLabel: "추가",
+          action: { type: "compose" },
+        },
+      ],
+    });
+    const state = initialState(doc);
+
+    expect(renderText(doc, state)).toBe("메모:");
+    expect(renderText(doc, state)).not.toContain("\n\n\n");
+    expect(composeText(doc, state, "noteForm")).toBe("");
+  });
+
+  it("14. constructor 차원 지수를 정적 검사와 계산에 보존하고 __proto__는 거부한다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      units: {
+        special: unit({ constructor: 1 }, "x"),
+        ratio: unit({}, ""),
+      },
+      data: {
+        measured: { value: 2, unit: "special" },
+        multiplier: { value: 3, unit: "ratio" },
+      },
+      computed: {
+        product: {
+          op: "mul",
+          args: [
+            { op: "ref", ref: { data: "measured" } },
+            { op: "ref", ref: { data: "multiplier" } },
+          ],
+        },
+      },
+      body: [],
+    });
+    const invalidDims = JSON.parse(
+      '{"schema_version":1,"units":{"bad":{"dims":{"__proto__":1},"symbol":"x","scale":1}},"body":[]}',
+    ) as unknown;
+    const rejected = validateChatUiDocument(invalidDims);
+
+    expect(evaluate(doc, initialState(doc)).computed.product).toEqual({
+      type: "number",
+      base: 6,
+      dims: { constructor: 1 },
+    });
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) expect(rejected.errors.map(({ path }) => path)).toContain("units.bad.dims.__proto__");
+  });
+
+  it.each([
+    ["const", {
+      schema_version: 1,
+      units: { plain: unit({}, "") },
+      computed: { message: { op: "const", value: "hello", unit: "plain" } },
+      body: [],
+    }, "computed.message.unit"],
+    ["data", {
+      schema_version: 1,
+      units: { plain: unit({}, "") },
+      data: { message: { value: "hello", unit: "plain" } },
+      body: [],
+    }, "data.message.unit"],
+  ])("15. 문자열 %s 값의 unit을 해당 경로에서 거부한다", (_name, input, path) => {
+    const result = validateChatUiDocument(input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.map(({ path: issuePath }) => issuePath)).toContain(path);
+  });
+
+  it("16. 깊은 입력은 순회 상한에서 멈추고 공유 객체 참조는 허용한다", () => {
+    let nested: Expr = { op: "const", value: true };
+    for (let index = 0; index < 5000; index += 1) nested = { op: "not", args: [nested] };
+    const tooDeep = validateChatUiDocument({
+      schema_version: 1,
+      computed: { deeplyNested: nested },
+      body: [],
+    });
+    const sharedValue = { value: "shared" };
+    const shared = validateChatUiDocument({
+      schema_version: 1,
+      data: { first: sharedValue, second: sharedValue },
+      body: [],
+    });
+
+    expect(tooDeep.ok).toBe(false);
+    if (!tooDeep.ok) {
+      expect(tooDeep.errors[0]!.path).not.toBe("$");
+      expect(tooDeep.errors[0]!.reason).toMatch(/중첩|상한/);
+    }
+    expect(shared.ok).toBe(true);
   });
 
   it("일반 텍스트 노드, 필드, 버튼, 출처와 가정을 문서 순서대로 렌더한다", () => {

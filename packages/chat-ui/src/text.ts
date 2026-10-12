@@ -127,6 +127,10 @@ function renderFieldValue(doc: NormalizedChatUiDocumentV1, state: ChatUiState, k
   return labels.length ? labels.join(", ") : "선택 없음";
 }
 
+function labelledLine(label: string, value: string): string {
+  return value === "" ? `${label}:` : `${label}: ${value}`;
+}
+
 function isVisible(node: Node, evaluateExpression: (expr: Expr) => Value): boolean {
   if (!node.visibleWhen) return true;
   const result = evaluateExpression(node.visibleWhen);
@@ -146,15 +150,15 @@ function renderNode(
   }
   if (node.kind === "caption") return renderPartsWithContext(doc, node.parts, evaluateExpression);
   if (node.kind === "group") return renderChildren(doc, state, node.children, evaluateExpression);
-  if (node.kind === "slider") return `${node.label}: ${renderFieldValue(doc, state, node.field)}`;
-  if (node.kind === "checkbox") return `${node.label}: ${renderFieldValue(doc, state, node.field)}`;
+  if (node.kind === "slider") return labelledLine(node.label, renderFieldValue(doc, state, node.field));
+  if (node.kind === "checkbox") return labelledLine(node.label, renderFieldValue(doc, state, node.field));
   if (node.kind === "form") {
-    return node.items.map((item) => `${item.label}: ${renderFieldValue(doc, state, item.field)}`).join("\n");
+    return node.items.map((item) => labelledLine(item.label, renderFieldValue(doc, state, item.field))).join("\n\n");
   }
   if (node.kind === "button") return `[${node.label}]`;
   if (node.kind === "entity") {
     return node.details.length
-      ? `${node.label}: ${renderPartsWithContext(doc, node.details, evaluateExpression)}`
+      ? labelledLine(node.label, renderPartsWithContext(doc, node.details, evaluateExpression))
       : node.label;
   }
   const source = doc.sources[node.source]!;
@@ -178,7 +182,8 @@ function renderChildren(
       continue;
     }
     if (node.kind !== "button") {
-      blocks.push(renderNode(doc, state, node, evaluateExpression));
+      const rendered = renderNode(doc, state, node, evaluateExpression);
+      if (rendered !== "") blocks.push(rendered);
       index += 1;
       continue;
     }
@@ -232,10 +237,15 @@ export function composeText(
 ): string {
   const node = findNode(doc.body, nodeId);
   if (!node) return "";
-  if (node.kind === "form") {
-    return node.items.map((item) => `${item.label}: ${renderFieldValue(doc, state, item.field)}`).join("\n");
+  if (node.kind !== "form" && node.kind !== "button") return "";
+  if (node.action.type === "compose" && node.action.parts !== undefined) {
+    return renderParts(doc, state, node.action.parts);
   }
-  if (node.kind !== "button") return "";
-  if (node.action.type === "compose" && node.action.parts) return renderParts(doc, state, node.action.parts);
+  if (node.kind === "form") {
+    return node.items
+      .filter((item) => doc.fields[item.field]!.type !== "text" || state.values[item.field] !== "")
+      .map((item) => labelledLine(item.label, renderFieldValue(doc, state, item.field)))
+      .join("\n");
+  }
   return renderText(doc, state);
 }

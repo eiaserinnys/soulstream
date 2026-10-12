@@ -19,7 +19,9 @@ export function inspectJsonValue(
   value: unknown,
   path: string,
   issues: ValidationIssue[],
-  seen: WeakSet<object>,
+  active: WeakSet<object>,
+  depth: number,
+  maxDepth: number,
 ): void {
   if (issues.length >= MAX_ISSUES) return;
   if (value === null || value === undefined) {
@@ -35,21 +37,27 @@ export function inspectJsonValue(
     addIssue(issues, path, "JSON 값만 사용할 수 있습니다.");
     return;
   }
-  if (seen.has(value)) {
-    addIssue(issues, path, "순환하거나 공유된 객체 참조는 사용할 수 없습니다.");
+  if (depth > maxDepth) {
+    addIssue(issues, path, "JSON 중첩 깊이가 허용 상한을 넘습니다.");
     return;
   }
-  seen.add(value);
+  if (active.has(value)) {
+    addIssue(issues, path, "순환하는 객체 참조는 사용할 수 없습니다.");
+    return;
+  }
+  active.add(value);
 
   const array = Array.isArray(value);
   if (array) {
     if (Object.getPrototypeOf(value) !== Array.prototype) {
       addIssue(issues, path, "일반 배열만 사용할 수 있습니다.");
+      active.delete(value);
       return;
     }
     const keys = Reflect.ownKeys(value).filter((key) => key !== "length");
     if (keys.some((key) => typeof key !== "string") || keys.length !== value.length) {
       addIssue(issues, path, "빈 칸이나 추가 속성이 없는 배열만 사용할 수 있습니다.");
+      active.delete(value);
       return;
     }
     for (let index = 0; index < value.length && issues.length < MAX_ISSUES; index += 1) {
@@ -58,13 +66,15 @@ export function inspectJsonValue(
         addIssue(issues, `${path}[${index}]`, "열거 가능한 일반 데이터 속성만 사용할 수 있습니다.");
         continue;
       }
-      inspectJsonValue(descriptor.value, `${path}[${index}]`, issues, seen);
+      inspectJsonValue(descriptor.value, `${path}[${index}]`, issues, active, depth + 1, maxDepth);
     }
+    active.delete(value);
     return;
   }
 
   if (!isPlainObject(value)) {
     addIssue(issues, path, "일반 객체만 사용할 수 있습니다.");
+    active.delete(value);
     return;
   }
   const keys = Reflect.ownKeys(value);
@@ -82,10 +92,13 @@ export function inspectJsonValue(
       descriptor.value,
       path ? `${path}.${key}` : key,
       issues,
-      seen,
+      active,
+      depth + 1,
+      maxDepth,
     );
-    if (issues.length >= MAX_ISSUES) return;
+    if (issues.length >= MAX_ISSUES) break;
   }
+  active.delete(value);
 }
 
 export function utf8ByteLength(value: string): number {
