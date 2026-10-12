@@ -77,7 +77,7 @@ export function GroupedGlassRow({
   const interactive = !disabled && !!(onPress || onLongPress);
   if (compact) return <CompactTouchTarget testID={testID} disabled={!interactive} accessibilityRole={accessibilityRole}
     accessibilityLabel={accessibilityLabel} accessibilityState={{ ...accessibilityState, disabled: !interactive, selected }}
-    onPress={onPress} onLongPress={onLongPress} frameStyle={{ alignSelf: 'stretch' }}
+    onPress={onPress} onLongPress={onLongPress} frameStyle={{ alignSelf: 'stretch', paddingVertical: (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 }}
     surfaceTestID={testID ? `${testID}-visual` : undefined}
     surfaceStyle={[style, styles.compactRow, { backgroundColor: selected ? t.colors.accentTint : 'transparent' }]}>{children}</CompactTouchTarget>;
   return (
@@ -131,7 +131,7 @@ function makeStyles(t: DesignTokens) {
       marginLeft: t.cardLayout.padding,
       backgroundColor: planner.grouped.dividerColor,
     },
-    compactRow: { height: t.foundation.iconFrame.compact, width: '100%', justifyContent: 'center', paddingVertical: 0 },
+    compactRow: { minHeight: t.foundation.iconFrame.compact, width: '100%', justifyContent: 'center', paddingVertical: t.uiSpacing.xs, gap: t.uiSpacing.xs },
     rowTouchTarget: {
       minWidth: t.hitTarget.min,
       minHeight: t.hitTarget.min,

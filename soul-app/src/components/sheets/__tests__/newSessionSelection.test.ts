@@ -4,6 +4,7 @@ import {
   buildModelPresetActionSheet,
   buildNodeActionSheet,
   formatModelPresetLabel,
+  formatModelPresetUnavailableReason,
   resolveAgentActionSheetSelection,
   resolveFolderActionSheetSelection,
   resolveModelPresetActionSheetSelection,
@@ -159,7 +160,7 @@ describe('newSessionSelection', () => {
         available: false,
         reason: 'server-reason',
         reason_label: '서버 제한 사유',
-        resets_at: '2030-01-02T03:04:00.000Z',
+        resets_at: new Date(2030, 0, 2, 12, 4).toISOString(),
         usage_warning: false,
       },
       {
@@ -177,7 +178,7 @@ describe('newSessionSelection', () => {
 
     expect(sheet.options[0]).toBe('자동 선택');
     expect(sheet.options[1]).toBe('서버 모델 A');
-    expect(sheet.options[2]).toMatch(/^서버 모델 B \(서버 제한 사유\) · \d{2}:\d{2} 해제$/);
+    expect(sheet.options[2]).toBe('서버 모델 B (서버 제한 사유) · 1/2 12:04 해제');
     expect(sheet.options[3]).toBe('서버 모델 C (사용량 확인 지연)');
     expect(sheet.disabledButtonIndices).toEqual([2]);
     expect(resolveModelPresetActionSheetSelection(1, presets, sheet.cancelButtonIndex))
@@ -186,6 +187,60 @@ describe('newSessionSelection', () => {
       .toEqual({ cancelled: true });
     expect(resolveModelPresetActionSheetSelection(0, presets, sheet.cancelButtonIndex))
       .toEqual({ cancelled: false, modelPresetId: null });
+  });
+
+  test('거부 중 사유에는 해제 시각을 붙이고 action sheet label 형식은 유지한다', () => {
+    const resetsAt = new Date(2030, 0, 2, 3, 4).toISOString();
+    const preset = {
+      id: 'rejected',
+      label: '거부 중 모델',
+      backend: 'codex',
+      available: false,
+      reason: 'limit_rejected',
+      reason_label: '5시간 한도 거부 중',
+      resets_at: resetsAt,
+      usage_warning: false,
+    };
+    const unavailableReason = formatModelPresetUnavailableReason(preset);
+
+    expect(unavailableReason).toBe('5시간 한도 거부 중 · 1/2 03:04 해제');
+    expect(formatModelPresetLabel(preset, false))
+      .toBe('거부 중 모델 (5시간 한도 거부 중) · 1/2 03:04 해제');
+    expect(formatModelPresetLabel({
+      ...preset,
+      available: true,
+      reason: 'quota_exhausted',
+    }, false)).toBe('거부 중 모델');
+  });
+
+  test('reset 시각은 오늘이면 시각만, 다른 날이면 로컬 날짜와 시각을 표시한다', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 9, 12, 8, 0));
+    const preset = {
+      id: 'rejected',
+      label: '거부 중 모델',
+      backend: 'codex',
+      available: false,
+      reason: 'limit_rejected',
+      reason_label: '7일 한도 거부 중',
+      resets_at: new Date(2026, 9, 12, 13, 19).toISOString(),
+      usage_warning: false,
+    };
+
+    try {
+      expect(formatModelPresetUnavailableReason(preset))
+        .toBe('7일 한도 거부 중 · 13:19 해제');
+      expect(formatModelPresetUnavailableReason({
+        ...preset,
+        resets_at: new Date(2026, 9, 13, 1, 30).toISOString(),
+      })).toBe('7일 한도 거부 중 · 10/13 01:30 해제');
+      expect(formatModelPresetUnavailableReason({
+        ...preset,
+        resets_at: new Date(2026, 9, 15, 13, 19).toISOString(),
+      })).toBe('7일 한도 거부 중 · 10/15 13:19 해제');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('선택 preset이 노드에 없으면 대체하지 않고 다시 선택하도록 표시한다', () => {

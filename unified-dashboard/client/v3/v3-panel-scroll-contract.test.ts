@@ -114,17 +114,19 @@ describe("v3 panel scroll contract", () => {
     expect(statusLabel).toMatch(/text-overflow:\s*ellipsis/);
   });
 
-  it("shares one liquid-glass scrollbar contract between the project nav and session panel", () => {
+  it("shares one liquid-glass scrollbar contract between the project nav, session panel, and execution picker", () => {
     const plannerCss = readFileSync(PLANNER_CSS_PATH, "utf8");
     const panelCss = readFileSync(SESSION_PANEL_CSS_PATH, "utf8");
     const navigationScrollbar = lastRuleBody(plannerCss, ".v3-navigation-scroll");
     const sessionPanelScrollbar = lastRuleBody(plannerCss, ".v3-session-panel-scroll");
+    const executionPickerScrollbar = lastRuleBody(plannerCss, ".v3-card-execution-body > .v3-card-execution-columns");
 
-    expect(plannerCss).toMatch(/\.v3-navigation-scroll,\s*\.v3-session-panel-scroll\s*{/);
+    expect(plannerCss).toMatch(/\.v3-navigation-scroll,\s*\.v3-session-panel-scroll,\s*\.v3-card-execution-body > \.v3-card-execution-columns\s*{/);
     expect(navigationScrollbar).toEqual(sessionPanelScrollbar);
+    expect(navigationScrollbar).toEqual(executionPickerScrollbar);
     expect(navigationScrollbar).toMatch(/scrollbar-width:\s*thin/);
     expect(navigationScrollbar).toMatch(/scrollbar-color:\s*color-mix\(/);
-    expect(plannerCss).toContain(".v3-navigation-scroll::-webkit-scrollbar-thumb,\n.v3-session-panel-scroll::-webkit-scrollbar-thumb");
+    expect(plannerCss).toContain(".v3-navigation-scroll::-webkit-scrollbar-thumb,\n.v3-session-panel-scroll::-webkit-scrollbar-thumb,\n.v3-card-execution-body > .v3-card-execution-columns::-webkit-scrollbar-thumb");
     expect(panelCss).not.toMatch(/\.v3-session-panel-scroll\s*\{[^}]*scrollbar-(?:width|color)/s);
   });
 

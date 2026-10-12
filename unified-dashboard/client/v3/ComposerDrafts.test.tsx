@@ -18,7 +18,7 @@ vi.mock("@tanstack/react-query",()=>({useQueryClient:()=>({})}));
 vi.mock("@seosoyoung/soul-ui/hooks/useFileUpload",()=>({useFileUpload:()=>({files:[],uploadedPaths:[],isReady:true,isUploading:false,addFiles:vi.fn(),removeFile:vi.fn(),resetLocal:vi.fn()})}));
 vi.mock("./FolderPicker",()=>({FolderPicker:({folders,onSelect}:any)=><button onClick={()=>onSelect(folders[0])}>다음 폴더</button>}));
 vi.mock("./use-folder-picker-stars",()=>({useFolderPickerStars:()=>({folderIds:[]})}));
-vi.mock("./CardExecutionPicker",()=>({CardExecutionPicker:({selection,onChange}:any)=><button onClick={()=>onChange({...selection,nodeId:"next-node"})}>다음 노드</button>}));
+vi.mock("./CardExecutionPicker",()=>({useCardExecutionPicker:({selection,onChange}:any)=>({agent:null,model:null,valid:true,unavailableMessage:null,view:{selection,onChange}}),CardExecutionPickerView:({selection,onChange}:any)=><button onClick={()=>onChange({...selection,nodeId:"next-node"})}>다음 노드</button>}));
 const mainKey="composer:main";
 const cardKey=(id:string)=>`composer:card-comment:${id}`;
 let container:HTMLDivElement,root:Root;

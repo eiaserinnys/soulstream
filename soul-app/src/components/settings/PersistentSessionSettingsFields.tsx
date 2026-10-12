@@ -7,6 +7,7 @@ import type {
   PersistentTurnUsageMode,
 } from '../../api/persistentSessionEndpoints';
 import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
 import {
   SettingsFormGroup as Group,
   SettingsAction as Action,
@@ -216,7 +217,7 @@ export function PersistentSessionSettingsFields({
       id: preset.id,
       label: preset.label,
       available: preset.available,
-      reason: preset.reason_label,
+      reason: formatModelPresetUnavailableReason(preset),
     }))} onSelect={onModelChange} emptyLabel="선택 가능한 모델이 없습니다." />
     {modelError ? <Text accessibilityRole="alert" style={styles.error}>{modelError}</Text> : null}
     {!modelPreset && !loadingTargets ? <Notice text="기본 모델을 선택해야 저장할 수 있습니다." /> : null}
