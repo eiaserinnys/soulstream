@@ -139,7 +139,7 @@ export function AssistantMessage({
         */}
         {messageKind}
         {notice}
-        {children ?? (selectionModel && onSelectionDone ? (
+        {selectionModel && onSelectionDone ? (
           <MessageTextSelectionView
             model={selectionModel}
             onDone={onSelectionDone}
@@ -148,7 +148,7 @@ export function AssistantMessage({
             markdownStyle={markdownInputStyle}
             {...(presentation === 'manuscript' ? { actionColor: t.colors.textPrimary } : {})}
           />
-        ) : renderAsPlainStreamingText ? (
+        ) : children ?? (renderAsPlainStreamingText ? (
           <Text
             testID="assistant-streaming-text"
             selectable={false}

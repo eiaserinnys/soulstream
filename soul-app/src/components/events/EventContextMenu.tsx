@@ -32,6 +32,7 @@ interface Props {
   children: React.ReactNode;
   onSelectText?: (model: MessageSelectionModel) => void;
   selectionActive?: boolean;
+  getMessageText?: () => string;
 }
 
 function reportCopyFailure(e: any) {
@@ -47,23 +48,27 @@ export function createEventMenuActions(
   event: SessionEvent,
   resultEvent?: SessionEvent,
   onSelectText?: (model: MessageSelectionModel) => void,
+  getMessageText?: () => string,
 ): EventMenuAction[] {
   const actions: EventMenuAction[] = [
     {
       text: '내용 복사',
       run: async () => {
-        const text = extractEventCopyText(event, resultEvent);
+        const text = getMessageText ? getMessageText() : extractEventCopyText(event, resultEvent);
         if (!text.trim()) return;
         await Clipboard.setStringAsync(text);
       },
     },
   ];
 
-  const selectionModel = createMessageSelectionModel(event);
+  const selectionModel = createMessageSelectionModel(event, getMessageText?.());
   if (selectionModel && onSelectText) {
     actions.push({
       text: '선택하기',
-      run: () => onSelectText(selectionModel),
+      run: () => {
+        const current = createMessageSelectionModel(event, getMessageText?.());
+        if (current) onSelectText(current);
+      },
     });
   }
 
@@ -99,6 +104,7 @@ export function EventContextMenu({
   children,
   onSelectText,
   selectionActive = false,
+  getMessageText,
 }: Props) {
   const t = useTokens();
   const anchorRef = useRef<View>(null);
@@ -107,6 +113,7 @@ export function EventContextMenu({
     event,
     resultEvent,
     onSelectText,
+    getMessageText,
   );
 
   const runAction = (idx: number) => {

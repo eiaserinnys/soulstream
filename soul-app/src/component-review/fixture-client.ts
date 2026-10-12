@@ -25,6 +25,7 @@ import { dialogueApi } from './dialogue-fixtures';
 import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
 import { createPersistentFullscreenReviewApi } from './persistent-fullscreen-fixtures';
 import { contentLinkReviewSessionEventsUrl } from './chat-fixtures';
+import { createChatUiFlowReviewApi } from './chat-ui-flow-client';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
@@ -412,6 +413,7 @@ export function createCardColorReviewClient(mode: CardColorReviewMode = 'success
 }
 export function createApiClient(): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
+  if (section === 'chatUiRenderer') return createChatUiFlowReviewApi(window.location.search);
   if (section === 'contentLinks' || section === 'contentLinkDocument') {
     const value = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('documentState');
     const state = value === 'loading' || value === 'slow' || value === 'error' ? value : 'ready';

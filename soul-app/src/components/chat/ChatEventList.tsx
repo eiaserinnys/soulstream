@@ -28,6 +28,7 @@ import { useTokens } from '../../theme';
 import { ChatNewMessageButton } from './ChatNewMessageButton';
 import { CollapsibleCaption, CollapsibleCaptionLine } from './CollapsibleCaption';
 import { LabeledDivider } from './LabeledDivider';
+import { useChatUiMessageText } from '../chat-ui/ChatUiControllerProvider';
 
 // FlatList onEndReachedThreshold 시맨틱: remainingLength / viewportLength.
 // 1.0 = 끝까지 한 화면 분량이 남았을 때 미리 페치 트리거. inverted 모드에서는 위쪽(과거)
@@ -205,6 +206,8 @@ const ChatEventRow = memo(function ChatEventRow({
   selection, activeSelection, highlighted, highlightedItemKey, selectText, closeSelection, presentation,
 }: RowProps) {
   const t = useTokens();
+  const getMessageText = useChatUiMessageText(item.kind === 'event' && item.event.type === 'assistant_message'
+    ? item.event.data : undefined);
   if (item.kind === 'typing') return <TypingIndicator session={session}
     {...(presentation === 'manuscript' ? { presentation } : {})} />;
   if (item.kind === 'agent-message-group') {
@@ -325,7 +328,7 @@ const ChatEventRow = memo(function ChatEventRow({
       </SearchFocusHighlight>
     );
   }
-  const selectionModel = createMessageSelectionModel(item.event);
+  const selectionModel = createMessageSelectionModel(item.event, getMessageText?.());
   const selectionActive =
     selection !== null;
   return (
@@ -338,6 +341,7 @@ const ChatEventRow = memo(function ChatEventRow({
             ? (model) => selectText(item.key, model)
             : undefined}
           selectionActive={selectionActive}
+          getMessageText={getMessageText}
         >
           <EventRenderer
             event={item.event}

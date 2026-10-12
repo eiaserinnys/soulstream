@@ -3,6 +3,7 @@ import * as Clipboard from 'expo-clipboard';
 import { composeText, initialState, reduce, renderText, type Action, type ChatUiState, type FieldValue } from '@soulstream/chat-ui';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import type { ChatUiRichPublication } from './chatUiPublication';
+import { readChatUiPublication } from './chatUiPublication';
 
 export type AppendGeneratedText = (sessionId: string, text: string) =>
   | { ok: true }
@@ -56,6 +57,14 @@ function publicationKey(sessionId: string, publication: ChatUiRichPublication) {
   return JSON.stringify([sessionId, publication.uiId, publication.hash]);
 }
 export function useChatUiNotice() { return useControllerContext().notice; }
+/** Explicit menu bridge: read the publication's current state when invoked. */
+export function useChatUiMessageText(data: unknown): (() => string) | undefined {
+  const context = useContext(Context);
+  const publication = useMemo(() => readChatUiPublication(data), [data]);
+  if (publication.kind === 'rich') return () => renderText(publication.document, context?.read(publication).state);
+  if (publication.kind === 'unsupported') return () => renderText(publication.document);
+  return undefined;
+}
 export function useChatUiController(publication: ChatUiRichPublication) {
   const context = useControllerContext();
   const doc = publication.document;

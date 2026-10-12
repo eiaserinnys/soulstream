@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Platform, Text } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Contract from '@soulstream/chat-ui';
@@ -187,6 +187,18 @@ test('source citation, remaining source and open_source action use existing link
   expect(mockOpenLink).toHaveBeenLastCalledWith('https://www.openui.com/docs/openui-lang/renderer');
   expect(screen.getAllByText(/^계산 가정:/)).toHaveLength(1);
   expect(screen.queryByRole('link', { name: '계산 가정' })).toBeNull();
+});
+
+test('RN웹 출처는 anchor 기본 이동을 막고 앱 링크 경로를 한 번 실행한다', () => {
+  const previous = Platform.OS;
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'web' });
+  try {
+    const screen = render(sample());
+    const preventDefault = jest.fn();
+    fireEvent(screen.getByRole('link', { name: 'OpenUI 원문' }), 'press', { preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(mockOpenLink).toHaveBeenCalledTimes(1);
+  } finally { Object.defineProperty(Platform, 'OS', { configurable: true, value: previous }); }
 });
 
 test('absent UI keeps stored content without a notice; invalid/missing documents use saved content', () => {

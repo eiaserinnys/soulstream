@@ -14,5 +14,8 @@ export function ChatUiSourceLink({ source }: { source: Source }) {
   // app content-link policy, including internal navigation and external browser.
   const webProps = Platform.OS === 'web' ? { href: source.url, hrefAttrs: { target: '_blank', rel: 'noopener noreferrer' } } : {};
   return <Text {...webProps} accessibilityRole="link" accessibilityLabel={source.label}
-    onPress={() => { void openLink(source.url); }} style={style}>{source.label}</Text>;
+    onPress={event => {
+      if (Platform.OS === 'web') event.preventDefault();
+      void openLink(source.url);
+    }} style={style}>{source.label}</Text>;
 }

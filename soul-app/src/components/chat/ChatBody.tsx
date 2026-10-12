@@ -1,3 +1,5 @@
+// This lifecycle hub stays together to share the history/SSE queues, viewport
+// and composer refs; pure projection and input logic already live in owners.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -34,8 +36,10 @@ import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { renderItemContainsEventId } from './chatSearchAnchor';
 import { SessionStoryPanel } from './SessionStoryPanel';
 import { useAppForegroundLifecycle } from '../../hooks/useAppForegroundLifecycle';
-import { ChatInputComposer, type ChatInputComposerHandle } from './ChatInputComposer';
+import type { ChatInputComposerHandle } from './ChatInputComposer';
 import { useEnsureSessionCached } from '../../hooks/useEnsureSessionCached';
+import { ChatUiControllerProvider, type AppendGeneratedText } from '../chat-ui/ChatUiControllerProvider';
+import { ChatUiInputComposer } from '../chat-ui/ChatUiInputComposer';
 
 interface Props {
   /** 표시할 세션 ID. undefined면 빈 상태 패널을 그린다. */
@@ -161,6 +165,8 @@ export function ChatBody({
   const ownsSessionConnectionRef = useRef(ownsSessionConnection);
   ownsSessionConnectionRef.current = ownsSessionConnection;
   const composerRef = useRef<ChatInputComposerHandle>(null);
+  const appendGeneratedText = useCallback<AppendGeneratedText>((targetSessionId, text) =>
+    composerRef.current?.appendGeneratedText(targetSessionId, text) ?? { ok: false, reason: 'not_ready' }, []);
   const handleRetryPending = useCallback((eventId: string) => composerRef.current?.retryPending(eventId), []);
   const handleRestorePending = useCallback((eventId: string) => composerRef.current?.restorePending(eventId), []);
 
@@ -448,6 +454,7 @@ export function ChatBody({
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <ChatUiControllerProvider key={sessionId} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
       {showSessionAuxiliary ? <SessionStoryPanel
         presentation={presentation}
         sessionId={sessionId}
@@ -490,7 +497,7 @@ export function ChatBody({
 
       {showSessionAuxiliary ? <ChatRuntimeStrips sessionId={sessionId} api={ownsSessionConnection ? api : null} presentation={presentation} /> : null}
 
-      <ChatInputComposer
+      <ChatUiInputComposer
         key={sessionId}
         ref={composerRef}
         sessionId={sessionId}
@@ -505,6 +512,7 @@ export function ChatBody({
         presentation={presentation}
         onComposerLayout={onComposerLayout}
       />
+      </ChatUiControllerProvider>
     </AppKeyboardAvoidingView>
   );
 }

@@ -2,6 +2,7 @@ import React from 'react';
 import type { SessionEvent, Session } from '../../api/types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
+import { ChatUiMessage } from '../chat-ui/ChatUiMessage';
 import { ThinkingEvent } from './ThinkingEvent';
 import { SystemEvent } from './SystemEvent';
 import { ChatInputRequest } from '../chat/ChatInputRequest';
@@ -75,6 +76,8 @@ export function EventRenderer({
         />
       );
     case 'assistant_message':
+      return <ChatUiMessage event={event} presentation={presentation} session={session}
+        selectionModel={selectionModel} onSelectionDone={onSelectionDone} />;
     case 'text_delta':
       return (
         <AssistantMessage
