@@ -1,11 +1,14 @@
+const path = require('node:path');
 const { getDefaultConfig } = require("expo/metro-config");
+const { resolveChatUiSourceRequest } = require('./scripts/chat-ui-source-resolution.cjs');
 
 const config = getDefaultConfig(__dirname);
 config.watchFolders = [
   ...(config.watchFolders ?? []),
-  require('node:path').resolve(__dirname, '../packages/soul-ui/src/cards'),
-  require('node:path').resolve(__dirname, '../packages/soul-ui/src/lib'),
-  require('node:path').resolve(__dirname, '../packages/wire-schema/src'),
+  path.resolve(__dirname, '../packages/soul-ui/src/cards'),
+  path.resolve(__dirname, '../packages/soul-ui/src/lib'),
+  path.resolve(__dirname, '../packages/wire-schema/src'),
+  path.resolve(__dirname, '../packages/chat-ui'),
 ];
 
 // react-native-webrtc@124.0.7 still imports event-target-shim/index even though
@@ -13,7 +16,7 @@ config.watchFolders = [
 // specifier to the public root; keep package-exports enforcement enabled for
 // every other dependency.
 config.resolver.resolveRequest = (context, moduleName, platform) =>
-  context.resolveRequest(
+  resolveChatUiSourceRequest(
     context,
     moduleName === "event-target-shim/index" ? "event-target-shim" : moduleName,
     platform,
