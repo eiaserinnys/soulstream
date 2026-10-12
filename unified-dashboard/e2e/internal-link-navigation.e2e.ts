@@ -160,6 +160,9 @@ async function captureDocument(page: Page, name: string, screenshot = true) {
     const status = element.querySelector('.v3-board-load-state p');
     const reader = element.querySelector('.v3-folder-board-document-copy');
     const titleRange = document.createRange(); titleRange.selectNodeContents(title);
+    const style = getComputedStyle(element), context = document.createElement('canvas').getContext('2d')!;
+    const luminance = (color: string) => { context.clearRect(0,0,1,1); context.fillStyle=color; context.fillRect(0,0,1,1); return Array.from(context.getImageData(0,0,1,1).data).slice(0,3).map(value=>{const channel=value/255; return channel<=0.04045?channel/12.92:((channel+0.055)/1.055)**2.4;}).reduce((sum,value,index)=>sum+value*[0.2126,0.7152,0.0722][index],0); };
+    const foreground = luminance(style.outlineColor), background = luminance(style.backgroundColor);
     return { dialog: rect(element), panel: rect(element.querySelector('[data-slot="dialog-panel-scroll"]')!),
       header: rect(element.querySelector('[data-slot="dialog-header"]')!), title: rect(title),
       titleLines: Array.from(titleRange.getClientRects()).map(line => line.toJSON()),
@@ -170,7 +173,8 @@ async function captureDocument(page: Page, name: string, screenshot = true) {
       last: reader?.lastElementChild ? rect(reader.lastElementChild) : null,
       scroll: {top: element.querySelector('[data-slot="dialog-panel-scroll"]')!.scrollTop, height: element.querySelector('[data-slot="dialog-panel-scroll"]')!.scrollHeight},
       tokens: {height: getComputedStyle(element).height, cap: getComputedStyle(element).getPropertyValue('--container-5xl'), inset: getComputedStyle(element).getPropertyValue('--v3-space-8')},
-      surface: getComputedStyle(element).backgroundColor,
+      surface: style.backgroundColor,
+      focus: { color:style.outlineColor, width:style.outlineWidth, offset:style.outlineOffset, style:style.outlineStyle, shadow:style.boxShadow, contrast:(Math.max(foreground,background)+0.05)/(Math.min(foreground,background)+0.05) },
       readerFont: element.querySelector('.v3-folder-board-document-copy') ? getComputedStyle(element.querySelector('.v3-folder-board-document-copy')!).fontSize : null,
       backdrop: getComputedStyle(document.querySelector('[data-slot="dialog-backdrop"]')!).backgroundColor };
   });
@@ -246,10 +250,11 @@ test("document reader keeps its frame across states and captures the proposed la
 });
 
 test("document reader scrolls with native keys from the focused body", async ({page}) => {
-  await prepare(page,1440);
+  await prepare(page,1440); await page.setViewportSize({width:1440,height:900});
   const link=page.getByRole('link',{name:'긴 문서',exact:true}), dialog=page.getByTestId('internal-document-dialog');
   const body=dialog.getByRole('region',{name:'문서 본문'}), scroll=dialog.locator('[data-slot="dialog-panel-scroll"]');
   const observations: unknown[]=[];
+  let frameShadow: string | undefined;
   for(const mode of ['keyboard','mouse','body click']) {
     // 마우스 초점 표시는 이전 키보드 조작이 없는 새 화면에서 확인한다.
     await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
@@ -258,7 +263,9 @@ test("document reader scrolls with native keys from the focused body", async ({p
     if(mode==='body click') await dialog.locator('.v3-folder-board-document-copy p').first().click();
     await expect(body).toBeFocused();
     expect(await body.evaluate(element=>element.matches(':focus-visible'))).toBe(mode==='keyboard');
-    observations.push({mode,focusVisible:await body.evaluate(element=>element.matches(':focus-visible')),frameShadow:await dialog.evaluate(element=>getComputedStyle(element).boxShadow)});
+    const shadow = await dialog.evaluate(element=>getComputedStyle(element).boxShadow);
+    if(mode==='keyboard') { frameShadow=shadow; const geometry=await captureDocument(page,'pas-1440-focus-dark'); expect(geometry.focus).toMatchObject({width:'2px',offset:'-2px',style:'solid'}); expect(geometry.focus.contrast).toBeGreaterThanOrEqual(3); expect([geometry.dialog.width,geometry.dialog.height]).toEqual([768,836]); } else { expect(shadow).toBe(frameShadow); await expect(dialog).toHaveCSS('outline-style','none'); }
+    observations.push({mode,focusVisible:await body.evaluate(element=>element.matches(':focus-visible')),frameShadow:shadow});
     for(const key of ['PageDown','Space','ArrowDown']) {
       await page.keyboard.press('Home'); await expect.poll(()=>scroll.evaluate(element=>element.scrollTop)).toBe(0);
       await page.keyboard.press(key); await expect.poll(()=>scroll.evaluate(element=>element.scrollTop)).toBeGreaterThan(0);
@@ -273,6 +280,12 @@ test("document reader scrolls with native keys from the focused body", async ({p
   for(const name of ['같은 문서','다른 문서','본문 이미지','본문 카드']) { await page.keyboard.press('Tab'); await expect(dialog.getByRole('link',{name,exact:true})).toBeFocused(); }
   await page.keyboard.press('Tab'); await expect(dialog.getByRole('button',{name:'문서 닫기'})).toBeFocused();
   await page.keyboard.press('Tab'); await expect(body).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  await page.emulateMedia({colorScheme:'light'}); await page.addInitScript(()=>localStorage.setItem('soul-dashboard-theme','light')); await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
+  await openDocumentFromChat(page); await expect(body).toBeFocused(); expect(await body.evaluate(element=>element.matches(':focus-visible'))).toBe(false); await expect(dialog).toHaveCSS('outline-style','none'); const lightShadow=await dialog.evaluate(element=>getComputedStyle(element).boxShadow);
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden(); await page.getByRole('link',{name:'문서 링크',exact:true}).focus(); await page.keyboard.press('Enter'); await expect(body).toBeFocused();
+  const light=await captureDocument(page,'pas-1440-focus-light'); expect(light.focus).toMatchObject({width:'2px',offset:'-2px',style:'solid',shadow:lightShadow}); expect(light.focus.contrast).toBeGreaterThanOrEqual(3); expect([light.dialog.width,light.dialog.height]).toEqual([768,836]);
+  observations.push({mode:'light',mouseShadow:lightShadow,keyboard:light.focus});
   await writeFile(path.join(output,'keyboard-scroll.json'),JSON.stringify(observations,null,2));
 });
 
@@ -307,14 +320,13 @@ for (const screen of ["v3", "pas"] as const) for (const width of [1440, 1024]) {
     const position = await scroller.evaluate(element => element.scrollTop);
     const address = page.url();
     const link = page.getByRole("link", { name: "문서 링크", exact: true });
-    await link.focus();
-    await link.press("Enter");
+    if(screen==='pas'&&width===1440) await link.click(); else { await link.focus(); await link.press("Enter"); }
     const dialog = page.getByTestId("internal-document-dialog");
     await expect(dialog.locator('[data-slot="dialog-title"]')).toHaveText("내부 링크 문서");
     await expect(dialog).toContainText("본문 확인");
     await expect(dialog.locator('h1')).toHaveCount(0);
     await expect.poll(() => dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
-    await captureDocument(page, `${screen}-${width}-document`);
+    await captureDocument(page, screen==='pas'&&width===1440?'pas-1440-document-mouse':`${screen}-${width}-document`);
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(link).toBeFocused();
@@ -325,7 +337,7 @@ for (const screen of ["v3", "pas"] as const) for (const width of [1440, 1024]) {
     const image = page.getByRole("dialog", { name: "이미지", exact: true });
     await expect(image).toBeVisible();
     await expect(image).not.toHaveAttribute("data-starting-style");
-    await page.screenshot({ path: path.join(output, `${screen}-${width}-image-reference.png`), animations: "disabled" });
+    if(screen!=='pas'||width!==1440) await page.screenshot({ path: path.join(output, `${screen}-${width}-image-reference.png`), animations: "disabled" });
   });
 }
 

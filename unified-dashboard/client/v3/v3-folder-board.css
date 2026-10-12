@@ -383,11 +383,11 @@
   line-height: var(--font-size-sm--line-height);
 }
 
-.v3-document-reader-dialog { height: min(var(--container-5xl), calc(100dvh - var(--v3-space-8) * 2)); }
+.v3-document-reader-dialog { --ring: var(--muted-foreground); height: min(var(--container-5xl), calc(100dvh - var(--v3-space-8) * 2)); }
 .v3-document-reader-dialog [data-slot="dialog-title"] { overflow-wrap: anywhere; }
 .v3-document-reader-dialog > [data-slot="dialog-panel-scroll"] { display: flex; flex-direction: column; }
 .v3-document-reader-dialog [data-slot="dialog-panel"] { display: flex; flex: 1 0 auto; flex-direction: column; min-width: 0; min-height: 100%; outline: none; }
-.v3-document-reader-dialog:has([data-slot="dialog-panel"]:focus-visible) { box-shadow: 0 0 0 var(--spacing) var(--ring); }
+.v3-document-reader-dialog:has([data-slot="dialog-panel"]:focus-visible) { outline: calc(var(--spacing) / 2) solid var(--ring); outline-offset: calc(var(--spacing) / -2); }
 .v3-document-reader-dialog [data-slot="dialog-panel"]:has(> .v3-board-load-state) { padding-block: var(--v3-space-6); }
 .v3-document-reader-dialog .v3-board-load-state { flex: 1; font: var(--v3-type-body) var(--v3-font-family); }
 @media (max-width: 40rem) {
