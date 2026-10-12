@@ -13,7 +13,11 @@ export function removeOverlappingDocumentHeading(body: string, title: string): s
   const heading = normalizeHeadingText(headingMatch[1]);
   const documentTitle = normalizeHeadingText(title);
   if (!heading || !documentTitle
-    || !(heading === documentTitle || heading.startsWith(documentTitle) || documentTitle.startsWith(heading))) {
+    || !(heading === documentTitle
+      || heading.startsWith(documentTitle)
+      || documentTitle.startsWith(heading)
+      || heading.endsWith(documentTitle)
+      || documentTitle.endsWith(heading))) {
     return body;
   }
 
