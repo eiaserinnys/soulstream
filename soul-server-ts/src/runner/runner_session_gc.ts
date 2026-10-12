@@ -1,17 +1,26 @@
 import { rm } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { Logger } from "pino";
 
 import {
   inspectRunnerDurableState,
+  probeRunnerDurableRetention,
   readRunnerRegistrationForDeletion,
+  type RunnerDurableRetentionProbe,
   type RunnerRegistration,
   type RunnerRegistrationScan,
 } from "./runner_process_registry.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import type { RunnerSessionMutationLockObservationContext } from "./runner_session_mutation_lock.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import {
+  assertOwnedSessionDirectory,
+  countRetainedReasons,
+  hasCentralDeletionOverride,
+  hasProvenEmptyPrebootstrapEvidence,
+  sameRegistrationGeneration,
+  terminalCandidateReason,
+} from "./runner_session_gc_predicates.js";
 
 export interface RunnerSessionGarbageCollectorDependencies {
   now(): number;
@@ -29,7 +38,17 @@ export interface RunnerSessionGarbageCollectorDependencies {
     registration: RunnerRegistration,
     phaseObservation?: RunnerPhaseObservation,
   ): ReturnType<typeof inspectRunnerDurableState>;
+  probeRetention(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<RunnerDurableRetentionProbe>;
   removeDirectory(path: string): Promise<void>;
+}
+
+interface RunnerSessionGcDiagnostics {
+  retentionProbeDecisions: Record<string, number>;
+  durableInspectionCount: number;
+  mutationLockCallbackEntries: number;
 }
 
 export interface RunnerSessionGcResult {
@@ -69,11 +88,17 @@ export class RunnerSessionGarbageCollector {
       );
       return measuredDurationMs;
     };
+    const diagnostics: RunnerSessionGcDiagnostics = {
+      retentionProbeDecisions: {},
+      durableInspectionCount: 0,
+      mutationLockCallbackEntries: 0,
+    };
     try {
       return await this.collectSweep(
         scan,
         startedAtMs,
         durationMs,
+        diagnostics,
         policy,
         phaseObservation,
       );
@@ -90,7 +115,9 @@ export class RunnerSessionGarbageCollector {
             phaseDurationsMs: phaseDurationsWithOtherMs(phaseObservation, elapsedMs),
             database: phaseObservation.databaseSummary(),
             databaseAndPhaseDurationsOverlap: true,
+            nestedMutationTimingOverlapsAcquire: true,
           } : {}),
+          ...diagnostics,
         }, "runner session GC sweep failed");
       } catch {
         // Preserve the original collection failure if reporting also fails.
@@ -103,6 +130,7 @@ export class RunnerSessionGarbageCollector {
     scan: RunnerRegistrationScan,
     startedAtMs: number,
     durationMs: () => number,
+    diagnostics: RunnerSessionGcDiagnostics,
     policy?: RunnerSessionGarbageCollectionPolicy,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<RunnerSessionGcResult> {
@@ -124,6 +152,7 @@ export class RunnerSessionGarbageCollector {
       await this.deps.withMutationLock(
         registration.config.paths.sessionDirectory,
         async () => {
+          diagnostics.mutationLockCallbackEntries += 1;
           try {
             assertOwnedSessionDirectory(
               this.stateDirectory,
@@ -144,14 +173,67 @@ export class RunnerSessionGarbageCollector {
               result.retained.push({ sessionId: registration.config.sessionId, reason: freshReason });
               return;
             }
-            const inspect = () => this.deps.inspect(fresh, phaseObservation);
+            const probe = () => this.deps.probeRetention(fresh, phaseObservation);
+            const retentionProbe = phaseObservation
+              ? await phaseObservation.runAsync("durableRetentionProbe", {
+                sessionId: registration.config.sessionId,
+              }, probe)
+              : await probe();
+            const probeReason = retentionProbe.localRetentionReason;
+            const probeDecision = probeReason ?? "full_inspection_required";
+            diagnostics.retentionProbeDecisions[probeDecision] =
+              (diagnostics.retentionProbeDecisions[probeDecision] ?? 0) + 1;
+            if (!sameRegistrationGeneration(fresh, retentionProbe.registration)) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: "registration_changed",
+              });
+              return;
+            }
+            const probeTerminalReason = terminalCandidateReason(
+              retentionProbe.registration,
+              this.deps.now(),
+              this.retentionMs,
+            );
+            if (probeTerminalReason) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: probeTerminalReason,
+              });
+              return;
+            }
+            let deletedSessionEvidence = false;
+            if (probeReason) {
+              if (!hasCentralDeletionOverride(retentionProbe.registration, policy)) {
+                result.retained.push({
+                  sessionId: registration.config.sessionId,
+                  reason: probeReason,
+                });
+                return;
+              }
+              deletedSessionEvidence = await isDeletedCentralSessionEvidence(
+                retentionProbe.registration,
+                policy,
+                phaseObservation,
+                "initial",
+              );
+              if (!deletedSessionEvidence) {
+                result.retained.push({
+                  sessionId: registration.config.sessionId,
+                  reason: probeReason,
+                });
+                return;
+              }
+            }
+            diagnostics.durableInspectionCount += 1;
+            const inspect = () => this.deps.inspect(retentionProbe.registration, phaseObservation);
             const inspection = phaseObservation
               ? await phaseObservation.runAsync("durableInspection", {
                 sessionId: registration.config.sessionId,
               }, inspect)
               : await inspect();
             const hydrated = inspection.registration;
-            if (!sameRegistrationGeneration(fresh, hydrated)) {
+            if (!sameRegistrationGeneration(retentionProbe.registration, hydrated)) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
                 reason: "registration_changed",
@@ -170,12 +252,14 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            const deletedSessionEvidence = await isDeletedCentralSessionEvidence(
-              hydrated,
-              policy,
-              phaseObservation,
-              "initial",
-            );
+            if (!probeReason) {
+              deletedSessionEvidence = await isDeletedCentralSessionEvidence(
+                hydrated,
+                policy,
+                phaseObservation,
+                "initial",
+              );
+            }
             if (!deletedSessionEvidence) {
               if (!hydrated.lifecycle) {
                 result.retained.push({
@@ -309,10 +393,12 @@ export class RunnerSessionGarbageCollector {
         unreadableRegistrations: scan.errors.length,
         startedAtMs,
         durationMs: elapsedMs,
+        ...diagnostics,
         ...(phaseObservation ? {
           phaseDurationsMs,
           database: phaseObservation.databaseSummary(),
           databaseAndPhaseDurationsOverlap: true,
+          nestedMutationTimingOverlapsAcquire: true,
           ...(lastFailure !== undefined
             && phaseObservation.failureFor(lastFailure)
             ? {
@@ -355,6 +441,7 @@ function phaseDurationsWithOtherMs(
     "mutationAcquire",
     "mutationRelease",
     "freshRegistration",
+    "durableRetentionProbe",
     "durableInspection",
     "centralSessionLookup",
     "removeDirectory",
@@ -367,52 +454,6 @@ function phaseDurationsWithOtherMs(
   return phaseDurationsMs;
 }
 
-function hasProvenEmptyPrebootstrapEvidence(
-  inspection: Awaited<ReturnType<typeof inspectRunnerDurableState>>,
-): boolean {
-  return inspection.durableRecordCount === 0
-    && inspection.unacknowledgedIpcFrameCount === 0
-    && inspection.pendingInterventionCount === 0;
-}
-
-function terminalCandidateReason(
-  registration: RunnerRegistration,
-  nowMs: number,
-  retentionMs: number,
-): string | null {
-  if (registration.retiredAt) {
-    const retiredAt = Date.parse(registration.retiredAt);
-    if (!Number.isFinite(retiredAt)) return "retirement_timestamp_invalid";
-    if (nowMs - retiredAt < retentionMs) return "retention_window";
-    return null;
-  }
-  if (registration.pid === null) return "pid_evidence_missing";
-  if (registration.pidAlive) return "live_runner";
-  const lifecycle = registration.lifecycle;
-  if (!lifecycle) return "lifecycle_missing";
-  if (lifecycle.execution_state === "running") return "running_lifecycle";
-  const terminalAt = Date.parse(lifecycle.progress_at);
-  if (!Number.isFinite(terminalAt)) return "terminal_timestamp_invalid";
-  if (nowMs - terminalAt < retentionMs) return "retention_window";
-  return null;
-}
-
-function countRetainedReasons(
-  retained: RunnerSessionGcResult["retained"],
-): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const item of retained) counts[item.reason] = (counts[item.reason] ?? 0) + 1;
-  return counts;
-}
-
-function assertOwnedSessionDirectory(stateDirectory: string, sessionDirectory: string): void {
-  const state = resolve(stateDirectory);
-  const session = resolve(sessionDirectory);
-  if (session === state || resolve(dirname(session)) !== state) {
-    throw new Error(`runner session directory escaped state root: ${sessionDirectory}`);
-  }
-}
-
 function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
   return {
     now: Date.now,
@@ -423,18 +464,7 @@ function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
       phaseObservation,
     ),
     inspect: inspectRunnerDurableState,
+    probeRetention: probeRunnerDurableRetention,
     removeDirectory: async (path) => await rm(path, { recursive: true }),
   };
-}
-
-function sameRegistrationGeneration(
-  left: RunnerRegistration,
-  right: RunnerRegistration,
-): boolean {
-  return left.config.sessionId === right.config.sessionId
-    && left.config.codeSha === right.config.codeSha
-    && left.config.paths.sessionDirectory === right.config.paths.sessionDirectory
-    && (left.registrationId ?? null) === (right.registrationId ?? null)
-    && left.pid === right.pid
-    && (left.pidStartIdentity ?? null) === (right.pidStartIdentity ?? null);
 }

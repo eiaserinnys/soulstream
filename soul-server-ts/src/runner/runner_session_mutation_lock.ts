@@ -43,8 +43,16 @@ export async function withRunnerSessionMutationLock<T>(
         "mutationAcquire",
         { sessionId: observationContext.sessionId },
         async () => {
-          await mkdir(dirname(sessionDirectory), { recursive: true, mode: 0o700 });
-          return await RunnerWriterLock.acquire(runnerSessionMutationLockPath(sessionDirectory));
+          await observationContext.phaseObservation.runAsync(
+            "mutationParentMkdir",
+            { sessionId: observationContext.sessionId },
+            async () => await mkdir(dirname(sessionDirectory), { recursive: true, mode: 0o700 }),
+          );
+          return await RunnerWriterLock.acquire(
+            runnerSessionMutationLockPath(sessionDirectory),
+            undefined,
+            observationContext,
+          );
         },
       );
     } else {

@@ -51,6 +51,7 @@ import {
   readRunnerAcknowledgedThrough as readAcknowledgedThrough,
   readRunnerSchemaVersion as readUserVersion,
   recoverRunnerOutbox as recover,
+  recoverRunnerOutboxRetentionMetadata as recoverRetentionMetadata,
   recoverRunnerOutboxTail as recoverTail,
   runnerRowCount as rowCount,
   runnerTableHasColumn as hasColumn,
@@ -219,6 +220,54 @@ export class RunnerSqliteEventOutbox {
         version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
         options,
       );
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  }
+
+  static async openReadOnlyRetentionProbe(
+    databasePath: string,
+    options: RunnerSqliteEventOutboxOptions = {},
+  ): Promise<{
+    outbox: RunnerSqliteEventOutbox;
+    bootstrap: RunnerBootstrapRecord | null;
+    latestDurableSourceSeq: number;
+  }> {
+    await assertExistingRunnerDatabase(databasePath);
+    const databaseObservation = options.phaseObservation
+      ? {
+        phaseObservation: options.phaseObservation,
+        ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+        label: "runner outbox retention probe open",
+      }
+      : undefined;
+    const database = openRunnerSqliteReadOnlyDatabase(databasePath, databaseObservation);
+    try {
+      requireRunnerSqliteWal(database);
+      const version = readUserVersion(database);
+      assertRunnerReadOnlySchema(database, version);
+      const recovered = options.phaseObservation
+        ? options.phaseObservation.runSync("dbRead", {
+          ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+          databasePath,
+          label: "runner outbox retention metadata",
+        }, () => recoverRetentionMetadata(database))
+        : recoverRetentionMetadata(database);
+      const registrationId = await readOutboxRegistrationId(databasePath, recovered.bootstrap);
+      return {
+        outbox: new RunnerSqliteEventOutbox(
+          database,
+          databasePath,
+          recovered.bootstrap,
+          recovered.ackedThrough ?? 0,
+          registrationId,
+          version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
+          options,
+        ),
+        bootstrap: recovered.bootstrap,
+        latestDurableSourceSeq: recovered.latestDurableSourceSeq,
+      };
     } catch (error) {
       database.close();
       throw error;
