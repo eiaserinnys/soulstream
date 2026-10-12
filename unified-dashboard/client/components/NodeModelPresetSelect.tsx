@@ -9,6 +9,7 @@ import { CatalogSelectionField } from "./CatalogSelectionField";
 import {
   modelPresetDisplayLabel,
   modelPresetOptionLabel,
+  modelPresetUnavailableReason,
   modelPresetSelectionState,
 } from "../lib/model-presets";
 import {
@@ -81,7 +82,16 @@ export function NodeModelPresetSelect({
     options={[
       { value: "", label: "미지정" },
       ...(selectedPresetMissing ? [{ value, disabled: loaded, label: loading ? "선택한 모델 확인 중…" : "선택한 모델" }] : []),
-      ...presets.map(preset => ({ value: preset.id, disabled: !preset.available, label: <span className={preset.reason === "quota_exhausted" ? "text-destructive" : undefined}>{modelPresetOptionLabel(preset)}</span> })),
+      ...presets.map(preset => {
+        const reason = modelPresetUnavailableReason(preset);
+        return {
+          value: preset.id,
+          disabled: !preset.available,
+          label: reason
+            ? <span className="flex flex-col"><span>{preset.label}</span><span className="text-sm sm:text-xs">{reason}</span></span>
+            : <span className={preset.reason === "quota_exhausted" ? "text-destructive" : undefined}>{modelPresetOptionLabel(preset)}</span>,
+        };
+      }),
     ]}
     adornment={selection.preset?.usage_warning ? <Badge variant="warning">사용량 확인 지연</Badge> : null}
     message={selection.warning} onValueChange={onValueChange}/>;

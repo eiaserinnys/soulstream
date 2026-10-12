@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchNodeModelPresets,
+  modelPresetUnavailableReason,
   modelPresetOptionLabel,
   modelPresetSelectionState,
 } from "./model-presets";
@@ -47,6 +48,24 @@ describe("model preset presentation", () => {
     expect(modelPresetSelectionState(rejected.id, [rejected], true).valid).toBe(false);
     expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
     expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
+  });
+
+  it("formats the unavailable reason for a picker row without repeating the model name", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 12, 8, 0));
+    const rejected = {
+      ...availablePreset,
+      available: false,
+      reason: "limit_rejected",
+      reason_label: "7일 한도 거부 중",
+      resets_at: new Date(2026, 9, 15, 13, 19).toISOString(),
+    };
+
+    expect(modelPresetUnavailableReason(rejected)).toBe("7일 한도 거부 중 · 10/15 13:19 해제");
+    expect(modelPresetUnavailableReason({ ...rejected, resets_at: null }))
+      .toBe("7일 한도 거부 중");
+    expect(modelPresetUnavailableReason(availablePreset)).toBeNull();
+    expect(modelPresetUnavailableReason({ ...rejected, reason_label: null })).toBeNull();
   });
   afterEach(() => {
     vi.useRealTimers();

@@ -25,6 +25,14 @@ export function modelPresetOptionLabel(
   return `${preset.label}${reason}${resetTime ? ` · ${resetTime} 해제` : ""}`;
 }
 
+export function modelPresetUnavailableReason(
+  preset: ModelPresetAvailability,
+): string | null {
+  if (preset.available || !preset.reason_label) return null;
+  const resetTime = preset.resets_at ? localResetTime(preset.resets_at) : null;
+  return `${preset.reason_label}${resetTime ? ` · ${resetTime} 해제` : ""}`;
+}
+
 export function modelPresetSelectionState(
   selectedId: string,
   presets: readonly ModelPresetAvailability[],

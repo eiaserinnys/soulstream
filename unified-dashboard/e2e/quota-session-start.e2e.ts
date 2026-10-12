@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
-const output = path.resolve("../../../.local/artifacts/20261012-limit-rejected-display-308-fix2");
+const output = path.resolve("../../../.local/artifacts/20261012-limit-rejected-display-308-fix3");
 mkdirSync(output, { recursive: true });
 const rejectedTodayResetAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 const preset = { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex",
@@ -66,6 +66,8 @@ for (const width of [1440, 390]) for (const explicit of [true, false]) {
     await expect(weeklyRejected).toHaveAttribute("data-disabled");
     await expect(weeklyRejected).toContainText(weeklyRejectedPreset.reason_label);
     await expect(weeklyRejected).toContainText(/\d{1,2}\/\d{1,2} \d{2}:\d{2} 해제/);
+    await expect(weeklyRejected.getByText(weeklyRejectedPreset.label, { exact: true })).toBeVisible();
+    await expect(weeklyRejected.getByText(/7일 한도 거부 중 · \d{1,2}\/\d{1,2} \d{2}:\d{2} 해제/)).toBeVisible();
     await expect(weeklyRejected.locator(".break-keep")).toHaveCSS("word-break", "keep-all");
     if (width === 390) {
       const positioner = page.locator('[data-slot="select-positioner"]:visible').last();
@@ -84,6 +86,9 @@ for (const width of [1440, 390]) for (const explicit of [true, false]) {
     expect(dangerColor).not.toBe(await exhausted.evaluate(el => getComputedStyle(el).color));
     if (explicit) {
       await page.screenshot({ path: path.join(output, `web-options-${width}.png`), animations: "disabled" });
+      const modelList = page.locator('[role="listbox"]:visible').last();
+      await expect(modelList).toBeVisible();
+      await modelList.screenshot({ path: path.join(output, `web-new-session-model-list-${width}.png`), animations: "disabled" });
       if (width === 1440) {
         await rejected.screenshot({ path: path.join(output, "web-rejected-row-zoom-1440.png"), animations: "disabled" });
       }
@@ -155,6 +160,8 @@ test("app production execution picker rendered through React Native Web", async 
 
   const capturePicker = async (width: number) => {
     await page.setViewportSize({ width, height: 900 });
+    await expect.poll(() => page.getByTestId("execution-model-public-rejected-model")
+      .evaluate(element => element.getBoundingClientRect().height)).toBe(width === 390 ? 64 : 68);
     const metrics = await page.evaluate(() => {
       const rect = (element: Element | null) => {
         if (!element) return null;
@@ -245,7 +252,7 @@ test("main handoff keeps the exhausted model selected and submits it", async ({ 
     id: "roselin_codex", name: "로젤린", backend: "codex", default_preset: preset.id, portraitUrl: null,
   }] } }));
   await page.route("**/api/nodes/*/model-presets", route => route.fulfill({ json: {
-    model_presets: [preset, rejectedPreset, normalPreset],
+    model_presets: [preset, rejectedPreset, weeklyRejectedPreset, normalPreset, unavailablePreset],
   } }));
   await page.goto("/");
   const composer = page.locator(".v3-card-handoff");
@@ -257,13 +264,13 @@ test("main handoff keeps the exhausted model selected and submits it", async ({ 
   await expect(rejected).toBeDisabled();
   await expect(rejected).toContainText("5시간 한도 거부 중");
   await expect(rejected).toContainText(/\d{2}:\d{2} 해제/);
-  await expect(rejected).toHaveAttribute("title", /5시간 한도 거부 중.*\d{2}:\d{2} 해제/);
+  await expect(rejected).not.toHaveAttribute("title");
   const option = page.locator(".v3-card-execution-picker").getByRole("button", { name: preset.label, exact: true });
   await expect(option).toBeEnabled();
   await option.click();
   await expect(option).toHaveAttribute("aria-pressed", "true");
-  await page.screenshot({ path: path.join(output, "main-execution-picker-1440.png") });
-  await page.keyboard.press("Escape");
+  await page.screenshot({ path: path.join(output, "main-handoff-execution-picker-1440.png") });
+  await page.locator(".v3-card-execution-picker").getByRole("button", { name: "확인", exact: true }).click();
   await expect(page.locator(".v3-card-execution-picker")).toBeHidden();
   await expect(composer.getByText(preset.label, { exact: true })).toHaveClass("text-destructive");
   await composer.getByRole("textbox", { name: "세션 첫 메시지" }).fill("소진 모델을 선택해 시작");
@@ -275,4 +282,205 @@ test("main handoff keeps the exhausted model selected and submits it", async ({ 
   await expect.poll(() => payloads.length).toBe(1);
   expect(payloads[0]).toMatchObject({ model_preset: preset.id });
   writeFileSync(path.join(output, "main-submission.json"), JSON.stringify(payloads[0], null, 2));
+});
+
+test("main execution picker applies a draft only on confirm and discards it on dismissal", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
+    localStorage.setItem("cards-p1-handoff", JSON.stringify({
+      folderId: "folder-amber", nodeId: "eiaserinnys", agentId: "roselin_codex", modelPreset: "codex-6.1-sol",
+    }));
+  });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true });
+  await page.route("**/api/nodes/*/agents", route => route.fulfill({ json: { agents: [{
+    id: "roselin_codex", name: "로젤린", backend: "codex", default_preset: preset.id, portraitUrl: null,
+  }] } }));
+  await page.route("**/api/nodes/*/model-presets", route => route.fulfill({ json: {
+    model_presets: [preset, rejectedPreset, weeklyRejectedPreset, normalPreset, unavailablePreset],
+  } }));
+  await page.goto("/");
+  await expect(page.locator(".v3-shell[data-mobile-tab]")).toBeVisible({ timeout: 30_000 });
+  const composer = page.locator(".v3-card-handoff");
+  const execution = composer.getByRole("button", { name: "실행 조합 선택", exact: true });
+  const picker = page.locator(".v3-card-execution-picker");
+  await execution.click();
+  const normal = picker.getByRole("button").filter({ hasText: normalPreset.label });
+  await normal.click();
+  await expect(normal).toHaveAttribute("aria-pressed", "true");
+  await expect(execution).toContainText(preset.label);
+  await expect(execution).not.toContainText(normalPreset.label);
+  await page.screenshot({ path: path.join(output, "main-execution-picker-1440.png"), animations: "disabled" });
+  const pickerMetrics = await picker.evaluate(element => {
+    const rect = (target: Element | null) => {
+      if (!target) return null;
+      const box = target.getBoundingClientRect();
+      return { x: +box.x.toFixed(1), y: +box.y.toFixed(1), width: +box.width.toFixed(1), height: +box.height.toFixed(1), bottom: +box.bottom.toFixed(1) };
+    };
+    const columns = element.querySelector(".v3-card-execution-columns");
+    const actions = element.querySelector(".v3-card-execution-actions");
+    const oneLine = element.querySelector('section[aria-label="모델"] > button:not(.v3-card-execution-option--reason)');
+    const twoLine = element.querySelector('section[aria-label="모델"] > button.v3-card-execution-option--reason');
+    const actionStyle = actions ? getComputedStyle(actions) : null;
+    return {
+      picker: rect(element),
+      columns: rect(columns),
+      columnWidths: [...(columns?.querySelectorAll("section") ?? [])].map(section => +section.getBoundingClientRect().width.toFixed(1)),
+      oneLineModelRow: rect(oneLine),
+      twoLineModelRow: rect(twoLine),
+      actions: {
+        box: rect(actions),
+        marginTop: actionStyle?.marginTop,
+        paddingTop: actionStyle?.paddingTop,
+        borderTopWidth: actionStyle?.borderTopWidth,
+        buttonHeight: actions ? rect(actions.querySelector("button"))?.height : null,
+        totalHeightWithMargin: actions ? +(actions.getBoundingClientRect().height + parseFloat(actionStyle!.marginTop)).toFixed(1) : null,
+      },
+    };
+  });
+  expect(pickerMetrics.picker?.width).toBe(584);
+  expect(pickerMetrics.oneLineModelRow?.height).toBe(32);
+  expect(pickerMetrics.twoLineModelRow?.height).toBe(50);
+  writeFileSync(path.join(output, "main-picker-metrics-1440.json"), JSON.stringify(pickerMetrics, null, 2));
+  await picker.getByRole("button", { name: "확인", exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect(execution).toContainText(normalPreset.label);
+  await expect(execution).toBeFocused();
+
+  await execution.click();
+  await picker.getByRole("button").filter({ hasText: preset.label }).click();
+  await picker.getByRole("button", { name: "취소", exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect(execution).toContainText(normalPreset.label);
+  await expect(execution).toBeFocused();
+
+  await execution.click();
+  await picker.getByRole("button").filter({ hasText: preset.label }).click();
+  await page.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await expect(execution).toContainText(normalPreset.label);
+  await expect(execution).toBeFocused();
+
+  await execution.click();
+  await picker.getByRole("button").filter({ hasText: preset.label }).click();
+  await page.mouse.click(10, 10);
+  await expect(picker).toBeHidden();
+  await expect(execution).toContainText(normalPreset.label);
+  await expect(execution).toBeFocused();
+});
+
+test("main handoff marks a saved rejected model and disables confirmation", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
+    localStorage.setItem("cards-p1-handoff", JSON.stringify({
+      folderId: "folder-amber", nodeId: "eiaserinnys", agentId: "roselin_codex", modelPreset: "claude-opus-rejected",
+    }));
+  });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true });
+  await page.route("**/api/nodes/*/agents", route => route.fulfill({ json: { agents: [{
+    id: "roselin_codex", name: "로젤린", backend: "codex", default_preset: preset.id, portraitUrl: null,
+  }] } }));
+  await page.route("**/api/nodes/*/model-presets", route => route.fulfill({ json: {
+    model_presets: [preset, rejectedPreset, weeklyRejectedPreset, normalPreset, unavailablePreset],
+  } }));
+  await page.goto("/");
+  const composer = page.locator(".v3-card-handoff");
+  const execution = composer.getByRole("button", { name: "실행 조합 선택", exact: true });
+  const notice = page.locator(".v3-card-handoff-error");
+  await expect(execution).toHaveAttribute("data-invalid", "true");
+  await expect(notice).toContainText(rejectedPreset.label);
+  await expect(notice).toContainText(rejectedPreset.reason_label);
+  await expect(notice).toContainText("해제");
+  const noticeMetrics = await notice.evaluate(element => {
+    const style = getComputedStyle(element);
+    const box = element.getBoundingClientRect();
+    return {
+      fontSize: style.fontSize,
+      lineHeight: style.lineHeight,
+      fontWeight: style.fontWeight,
+      marginTop: style.marginTop,
+      box: { x: +box.x.toFixed(1), y: +box.y.toFixed(1), width: +box.width.toFixed(1), height: +box.height.toFixed(1) },
+    };
+  });
+  expect(noticeMetrics).toMatchObject({ fontSize: "12px", lineHeight: "18px", fontWeight: "600", marginTop: "2px" });
+  writeFileSync(path.join(output, "main-saved-rejected-notice-metrics-1440.json"), JSON.stringify(noticeMetrics, null, 2));
+  await page.screenshot({ path: path.join(output, "main-saved-model-rejected-1440.png"), animations: "disabled" });
+
+  await execution.click();
+  const picker = page.locator(".v3-card-execution-picker");
+  const rejected = picker.getByRole("button").filter({ hasText: rejectedPreset.label });
+  await expect(rejected).toBeDisabled();
+  await expect(rejected.locator(".v3-card-execution-reason")).toContainText(rejectedPreset.reason_label);
+  await expect(picker.getByRole("button", { name: "확인", exact: true })).toBeDisabled();
+  await page.screenshot({ path: path.join(output, "main-saved-model-rejected-picker-1440.png"), animations: "disabled" });
+});
+
+test("mobile execution picker keeps its action row fixed while the long list scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
+    localStorage.setItem("cards-p1-handoff", JSON.stringify({
+      folderId: "folder-amber", nodeId: "eiaserinnys", agentId: "roselin_codex", modelPreset: "codex-6.1-sol",
+    }));
+  });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true });
+  const manyAgents = Array.from({ length: 12 }, (_, index) => ({
+    id: index === 0 ? "roselin_codex" : `agent-${index + 1}`,
+    name: index === 0 ? "로젤린" : `에이전트 ${index + 1}`,
+    backend: "codex",
+    default_preset: preset.id,
+    portraitUrl: null,
+  }));
+  await page.route("**/api/nodes/*/agents", route => route.fulfill({ json: { agents: manyAgents } }));
+  await page.route("**/api/nodes/*/model-presets", route => route.fulfill({ json: {
+    model_presets: [preset, rejectedPreset, weeklyRejectedPreset, normalPreset, unavailablePreset],
+  } }));
+  await page.goto("/");
+  await expect(page.locator(".v3-shell[data-mobile-tab]")).toBeVisible({ timeout: 30_000 });
+  const execution = page.locator(".v3-card-handoff").getByRole("button", { name: "실행 조합 선택", exact: true });
+  await execution.click();
+  const picker = page.locator(".v3-card-execution-picker");
+  const columns = picker.locator(".v3-card-execution-columns");
+  const confirm = picker.getByRole("button", { name: "확인", exact: true });
+  const lastModel = columns.locator("section[aria-label=모델]").getByRole("button").last();
+  await expect(lastModel).toContainText(unavailablePreset.label);
+  await expect(confirm).toBeEnabled();
+  const confirmBefore = await confirm.boundingBox();
+  expect(confirmBefore).not.toBeNull();
+  await page.screenshot({ path: path.join(output, "main-picker-long-start-390.png"), animations: "disabled" });
+  await columns.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await expect(lastModel).toBeInViewport();
+  const confirmAfter = await confirm.boundingBox();
+  expect(confirmAfter).not.toBeNull();
+  expect(Math.abs(confirmAfter!.y - confirmBefore!.y)).toBeLessThan(1);
+  await page.screenshot({ path: path.join(output, "main-picker-long-end-390.png"), animations: "disabled" });
+});
+
+test("component review shows the default and saved rejected handoff states", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
+  });
+  await installV3VisualQaRoutes(page, { unifiedFolderView: true });
+  await page.goto("/components");
+  const sample = page.getByTestId("card-handoff-review-sample");
+  await expect(sample).toBeVisible({ timeout: 30_000 });
+  await sample.scrollIntoViewIfNeeded();
+  const execution = sample.getByRole("button", { name: "실행 조합 선택", exact: true });
+  await expect(execution).not.toHaveAttribute("data-invalid");
+  await expect(sample.getByRole("alert")).toHaveCount(0);
+
+  await sample.getByRole("button", { name: "저장 모델 거부 중", exact: true }).click();
+  await expect(execution).toHaveAttribute("data-invalid", "true");
+  await expect(sample.getByRole("alert")).toContainText("Claude - Opus");
+  await expect(sample.getByRole("alert")).toContainText("5시간 한도 거부 중");
+  await execution.click();
+  const picker = page.locator(".v3-card-execution-picker");
+  await expect(picker.getByRole("button", { name: "확인", exact: true })).toBeDisabled();
+  await sample.screenshot({ path: path.join(output, "component-review-saved-rejected-1440.png"), animations: "disabled" });
 });
