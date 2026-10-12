@@ -126,6 +126,18 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
 
+  packages/chat-ui:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.15)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.46.1)
+
   packages/db-schema:
     dependencies:
       dotenv:

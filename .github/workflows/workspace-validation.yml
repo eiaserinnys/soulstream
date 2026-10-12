@@ -56,6 +56,9 @@ jobs:
           - name: page-model tests
             package: packages/page-model
             kind: unit
+          - name: chat-ui contract tests
+            package: packages/chat-ui
+            kind: unit
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,6 +103,9 @@ jobs:
           elif [[ "${{ matrix.package }}" == "unified-dashboard" ]]; then
             corepack pnpm --dir unified-dashboard exec vitest run \
               --config vitest.config.ts --minWorkers=1 --maxWorkers=2
+          elif [[ "${{ matrix.package }}" == "packages/chat-ui" ]]; then
+            corepack pnpm --dir packages/chat-ui exec vitest run \
+              --minWorkers=1 --maxWorkers=2 --testTimeout=60000
           else
             corepack pnpm --dir packages/page-model exec vitest run \
               --minWorkers=1 --maxWorkers=2

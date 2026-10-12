@@ -11,6 +11,7 @@ const expectedV3DialogConsumers = [
   "CardCreateDialog.tsx",
   "CardImageViewer.tsx",
   "ComponentsReviewPage.tsx",
+  "DocumentReaderDialog.tsx",
   "FolderArchiveDialog.tsx",
   "FolderDetailArchiveDialog.tsx",
   "ProjectDialog.tsx",

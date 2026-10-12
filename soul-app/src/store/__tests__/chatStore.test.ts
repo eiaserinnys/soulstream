@@ -465,6 +465,40 @@ describe('chatStore.streamingSlots — live delta append 제거', () => {
     expect(snapshots).not.toContainEqual({ hasFinal: false, hasSlot: false });
   });
 
+  it('UI 발행본은 답변 slot을 유지하고 일반 assistant_message가 끝낼 때 비운다', () => {
+    const { setStreamingEvent, mergeEvents } = useChatStore.getState();
+    setStreamingEvent(SID, 'assistant', {
+      id: '50',
+      type: 'text_delta',
+      data: { text: '작성 중인 답변' },
+    });
+
+    mergeEvents(SID, [{
+      id: '51',
+      type: 'assistant_message',
+      data: {
+        content: '화면 설명',
+        ui: {
+          schema_version: 1,
+          ui_id: 'ui-1',
+          hash: 'hash-1',
+          revision: 1,
+          document: {},
+        },
+      },
+    }]);
+
+    expect(getStreamingSlots()?.assistant?.data.text).toBe('작성 중인 답변');
+
+    mergeEvents(SID, [{
+      id: '52',
+      type: 'assistant_message',
+      data: { content: '완료된 답변' },
+    }]);
+
+    expect(getStreamingSlots()?.assistant).toBeUndefined();
+  });
+
   it('clearSession은 streaming slot도 함께 비운다', () => {
     const { setStreamingEvent, clearSession } = useChatStore.getState();
     setStreamingEvent(SID, 'assistant', {

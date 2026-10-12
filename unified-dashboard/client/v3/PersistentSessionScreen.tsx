@@ -24,6 +24,8 @@ import { CardWorkspace } from './CardWorkspace';
 import { useMobilePlannerMode } from './MobilePlannerTabs';
 import type { MobilePlannerTab } from './mobile-planner-state';
 import type { CardSessionSelection } from './CardSessionHistory';
+import { InternalLinkViewers } from './InternalLinkViewers';
+import { useRegisterDashboardLinkOpeners } from './DashboardInternalLinks';
 import { V3_CARD_GAP_PX, V3_PANEL_GAP_PX, V3_OUTER_INSET_PX } from './v3-layout-metrics';
 import './v3-dashboard-styles';
 import './persistent-session-screen.css';
@@ -141,6 +143,14 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     setMobileTab('today');
     setSelectedCardId(cardId);
   }, []);
+  const dashboardLinkOpeners = useMemo(() => ({
+    card: (target: import('@seosoyoung/soul-ui').InternalLinkTarget) => {
+      if (target.kind !== 'card') return false;
+      openTaskCard(target.cardId);
+      return true;
+    },
+  }), [openTaskCard]);
+  useRegisterDashboardLinkOpeners(dashboardLinkOpeners);
   const closeCardWorkspace = useCallback(() => {
     setSelectedCardId(null);
     setOverlaySessionSelection(null);
@@ -235,5 +245,6 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap appearance="bare" label={displaySettings.showCharacter ? '캐릭터 숨기기' : '캐릭터 표시'} disabled={details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <PersistentSessionPortraitOffIcon/> : <PersistentSessionPortraitIcon/>}</DashboardIconCap></div>}
     {settingsOpen && resource?.node_id && <PersistentSessionSettingsDialog sessionId={resource.session_id} nodeId={resource.node_id} onSaved={applySaved} onClose={() => setSettingsOpen(false)}/>}
     <ConfigModal open={configOpen} initialTab="persistent" onOpenChange={open => { setConfigOpen(open); if (!open) navigateDashboard('/'); }}/>
+    <InternalLinkViewers />
   </div>;
 }

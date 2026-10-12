@@ -6,6 +6,7 @@ import { useDashboardStore } from '@seosoyoung/soul-ui/stores/dashboard-store';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { PersistentSessionScreen } from './PersistentSessionScreen';
 import { useCardNavigation } from './card-navigation';
+import { DashboardInternalLinks } from './DashboardInternalLinks';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn(), get: vi.fn(), update: vi.fn(), cardRequest: vi.fn() }));
 vi.mock('@seosoyoung/soul-ui', async () => {
@@ -28,7 +29,7 @@ const session=(id:string)=>({session_id:id,display_name:id,persistent:true,node_
 const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([options]:any[])=>options as any);
 beforeEach(()=>{vi.clearAllMocks();Object.defineProperty(window,'innerWidth',{configurable:true,value:1024});vi.stubGlobal('matchMedia',(query:string)=>({matches:false,media:query,addEventListener:vi.fn(),removeEventListener:vi.fn()}));localStorage.clear();useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
-async function mount(id?:string){await act(async()=>{root.render(<PersistentSessionScreen sessionId={id}/>);});}
+async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
 it('opens the existing add screen for zero PAS without creating a session',async()=>{mocks.list.mockResolvedValue({sessions:[]});await mount();expect(host.querySelector('[data-testid="config"]')?.getAttribute('data-tab')).toBe('persistent');expect(mocks.fetchSessions).not.toHaveBeenCalled();});
 it('provides the common frame spacing tokens to reused card components',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');const frame=host.querySelector<HTMLElement>('[data-testid="persistent-session-screen"]')!;

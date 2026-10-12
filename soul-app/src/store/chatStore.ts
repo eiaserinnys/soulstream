@@ -8,7 +8,10 @@ import type {
   SessionEvent,
 } from '../api/types';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
-import { mergeAppendOnlyStreamingDelta } from '../lib/streamingDeltaEvent';
+import {
+  isAssistantUiPublication,
+  mergeAppendOnlyStreamingDelta,
+} from '../lib/streamingDeltaEvent';
 import { subscribeAuthScope } from '../lib/auth-scope';
 import {
   applyClaudeRuntimePayload,
@@ -278,7 +281,10 @@ function shouldAdvanceLastEventId(
 }
 
 function hasAssistantMessage(events: SessionEvent[]): boolean {
-  return events.some((event) => event.type === 'assistant_message');
+  return events.some((event) => (
+    event.type === 'assistant_message'
+    && !isAssistantUiPublication(event.type, event.data)
+  ));
 }
 
 function streamingIdentity(event: SessionEvent): string | null {
