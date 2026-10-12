@@ -41,6 +41,7 @@ import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSessionPortraitToggleReviewSample";
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
+import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -232,6 +233,9 @@ export function ComponentsReviewPage() {
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
             </Sample>
+            <Sample name="AssistantMessage contentLayout" state="일반 · structured · PAS">
+              <ChatUiMessageReviewSample />
+            </Sample>
             <Sample name="SystemMessage / CollapsibleCaption / LabeledDivider" state="기존 요약 · 접힘/펼침 · 말줄임 · 가운데 라벨">
               <div data-testid="caption-comparison">
                 <UserMessage msg={{id:"assigned-card-input",role:"user",treeNodeId:"assigned-card-input",treeNodeType:"user_message",content:"외부 카드 알림을 확인해줘"}}/>
@@ -286,6 +290,9 @@ export function ComponentsReviewPage() {
             <Sample name="CardCreateDialog / AgentNodeAssignmentFields / SessionAttachmentFields" state="운영 폼 · 폴더·실행 대상·첨부 · 로컬 검수 저장"><CardCreateSample/></Sample>
           <Sample name="CardHandoffView / CardComposer / ChatInputComposer / ChatInputEditor" state="선택행 위 · 한 줄 → 여러 줄 · 전송 · 로컬 첨부">
               <CardHandoffSample key={inputSampleVersion} onSend={send}/>
+            </Sample>
+            <Sample name="ChatInputAccessories" state="첨부 있음/없음 · 긴 파일명 · 되돌리기와 전송">
+              <ChatInputAccessoriesReviewSample />
             </Sample>
           </section>
           <section id="components-controls" className="v3-detail-section">

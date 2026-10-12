@@ -31,6 +31,7 @@ interface MarkdownContentProps {
   content: string;
   compact?: boolean;
   linkTone?: "default" | "onUserBubble";
+  sourceLinkComponent?: NonNullable<Components["a"]>;
   enableBlockquoteCopy?: boolean;
   codeBlockLayout?: "bounded" | "document";
   chatImages?: {
@@ -340,6 +341,7 @@ export function MarkdownContent({
   onImageClick,
   compact = false,
   linkTone = "default",
+  sourceLinkComponent,
   enableBlockquoteCopy = false,
   codeBlockLayout = "bounded",
   chatImages,
@@ -420,8 +422,10 @@ export function MarkdownContent({
     const blockquoteComponents = enableBlockquoteCopy
       ? { ...chatComponents, blockquote: createCopyableBlockquote(compact) }
       : chatComponents;
-    return blockquoteComponents;
-  }, [codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer]);
+    return sourceLinkComponent
+      ? { ...blockquoteComponents, a: sourceLinkComponent }
+      : blockquoteComponents;
+  }, [codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer, sourceLinkComponent]);
 
   const markdown = (
     <ReactMarkdown
