@@ -47,7 +47,7 @@ beforeEach(() => {
   api.listModelPresets.mockResolvedValue({ model_presets: [
     { id: 'model-a', label: '모델 A', backend: 'claude', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
     { id: 'model-b', label: '모델 B', backend: 'codex', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, default_effort: 'high' },
-    { id: 'model-down', label: '모델 C', backend: 'codex', available: false, reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: '2030-01-02T03:04:00.000Z', usage_warning: false },
+    { id: 'model-down', label: '모델 C', backend: 'codex', available: false, reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: new Date(2030, 0, 2, 12, 4).toISOString(), usage_warning: false },
   ] });
   useAuthStore.setState({ jwt: null });
   useChatStore.getState().clearPersistentDisplaySettings();
@@ -124,7 +124,7 @@ test('an unavailable model is not selected and the reason is shown; the name can
   await waitFor(() => expect(screen.getByLabelText('세션 이름').props.value).toBe('관제 세션'));
   fireEvent.press(await screen.findByText('모델 C'));
   expect(await screen.findByText('모델 C은(는) 지금 선택할 수 없습니다: 5시간 한도 거부 중')).toBeTruthy();
-  expect(await screen.findByText(/^5시간 한도 거부 중 · \d{2}:\d{2} 해제$/)).toBeTruthy();
+  expect(await screen.findByText('5시간 한도 거부 중 · 1/2 12:04 해제')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름');
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
@@ -139,7 +139,7 @@ test('keeps a saved rejected model while saving an unrelated PAS setting', async
   const screen = await openList();
   await openEditor(screen);
   await waitFor(() => expect(screen.getByLabelText('세션 이름').props.value).toBe('관제 세션'));
-  expect(await screen.findByText(/^5시간 한도 거부 중 · \d{2}:\d{2} 해제$/)).toBeTruthy();
+  expect(await screen.findByText('5시간 한도 거부 중 · 1/2 12:04 해제')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('세션 이름'), '이름 변경');
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', {
@@ -261,7 +261,7 @@ test('adds a session with the server defaults and no first message constant of i
   expect(api.listNodeAgents).toHaveBeenCalledWith('node-a');
   expect(api.listModelPresets).toHaveBeenCalledWith('node-a');
   expect(screen.getByText('세션 추가')).toBeTruthy();
-  expect(await screen.findByText(/^5시간 한도 거부 중 · \d{2}:\d{2} 해제$/)).toBeTruthy();
+  expect(await screen.findByText('5시간 한도 거부 중 · 1/2 12:04 해제')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('settings-scope-save'));
   expect(api.createPersistentSession).not.toHaveBeenCalled();

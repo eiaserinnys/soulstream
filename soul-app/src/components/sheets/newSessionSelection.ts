@@ -240,10 +240,14 @@ export function formatModelPresetUnavailableReason(
     : preset.reason_label;
 }
 
-function formatLocalResetTime(value: string): string | null {
+function formatLocalResetTime(value: string, now: Date = new Date()): string | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+  const time = `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
+  const isToday = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  return isToday ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
 }
 
 function twoDigits(value: number): string {

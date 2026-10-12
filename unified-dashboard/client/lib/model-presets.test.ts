@@ -49,7 +49,29 @@ describe("model preset presentation", () => {
     expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("formats reset dates in local time only when the reset day differs from today", () => {
+    const now = new Date(2026, 9, 12, 8, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const resetLabel = (date: Date) => modelPresetOptionLabel({
+      ...availablePreset,
+      available: false,
+      reason: "limit_rejected",
+      reason_label: "7일 한도 거부 중",
+      resets_at: date.toISOString(),
+    });
+
+    expect(resetLabel(new Date(2026, 9, 12, 13, 19)))
+      .toBe("프리셋 A (7일 한도 거부 중) · 13:19 해제");
+    expect(resetLabel(new Date(2026, 9, 13, 1, 30)))
+      .toBe("프리셋 A (7일 한도 거부 중) · 10/13 01:30 해제");
+    expect(resetLabel(new Date(2026, 9, 15, 13, 19)))
+      .toBe("프리셋 A (7일 한도 거부 중) · 10/15 13:19 해제");
   });
 
   it("renders only server labels plus a locally formatted reset time", () => {

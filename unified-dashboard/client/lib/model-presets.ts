@@ -65,12 +65,16 @@ export function modelPresetDisplayLabel({
   return selectedId ? missingLabel : "미지정";
 }
 
-function localResetTime(value: string): string | null {
+function localResetTime(value: string, now: Date = new Date()): string | null {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
-  return new Intl.DateTimeFormat(undefined, {
+  const time = new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
+  const isToday = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  return isToday ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
 }

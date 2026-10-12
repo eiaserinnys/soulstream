@@ -7,11 +7,13 @@ import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalo
 import "./v3-context-succession.css";
 
 const agents: AgentInfo[] = [{ id: "roselin", name: "로젤린" }, { id: "seosoyoung", name: "서소영" }];
+const rejectedTodayResetAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 const catalog: NodeModelPresetCatalog = {
   nodeId: "components-local", status: "ready", presets: [
     { id: "sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
     { id: "exhausted-sol", label: "Sol (사용량 소진 예시)", backend: "codex", available: true, reason: "quota_exhausted", reason_label: "7일 사용량 제한", resets_at: null, usage_warning: false },
-    { id: "rejected-opus", label: "Claude - Opus", backend: "claude", available: false, reason: "limit_rejected", reason_label: "5시간 한도 거부 중", resets_at: "2030-01-02T03:04:00.000Z", usage_warning: false },
+    { id: "rejected-opus", label: "Claude - Opus", backend: "claude", available: false, reason: "limit_rejected", reason_label: "5시간 한도 거부 중", resets_at: rejectedTodayResetAt, usage_warning: false },
+    { id: "rejected-fable", label: "Claude - Fable", backend: "claude", available: false, reason: "limit_rejected", reason_label: "7일 한도 거부 중", resets_at: "2030-01-02T03:04:00.000Z", usage_warning: false },
     { id: "unavailable-astra", label: "Codex - 6 Astra", backend: "codex", available: false, reason: "disabled", reason_label: "사용 불가", resets_at: null, usage_warning: false },
   ],
 };
