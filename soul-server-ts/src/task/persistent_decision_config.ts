@@ -32,7 +32,7 @@ export const DEFAULT_CONFIG: PersistentDecisionConfig = {
   keepalive_short_floor: 20,
   keepalive_weekly_floor: -40,
   generation_short_floor: 10,
-  headroom_gap: 25,
+  generation_weekly_floor: 10,
   usage_stale_seconds: 1_200,
   usage_refresh_seconds: 300,
 };

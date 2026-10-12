@@ -49,7 +49,7 @@ export interface PersistentDecisionConfig {
   keepalive_short_floor: number;
   keepalive_weekly_floor: number;
   generation_short_floor: number;
-  headroom_gap: number;
+  generation_weekly_floor: number;
   usage_stale_seconds: number;
   usage_refresh_seconds: number;
 }
@@ -217,7 +217,8 @@ export function decidePersistentGeneration(
     });
 
   if (eligibleCandidates.length > 0) {
-    const selection = selectPreset(input, config, eligibleCandidates);
+    // Forced switching keeps any positive weekly balance; it does not reserve headroom.
+    const selection = selectPreset(input, config, eligibleCandidates, 0);
     return createResult(
       context,
       "new_generation",
@@ -305,6 +306,7 @@ function selectPreset(
   input: DecisionInput,
   config: PersistentDecisionConfig,
   candidatePresets: string[] = uniquePresets(input.default_model, input.fallback_model),
+  weeklyFloor: number = config.generation_weekly_floor,
 ): PresetSelection {
   const afterShortFloor = candidatePresets.filter((preset) => {
     const account = accountForPreset(input, preset);
@@ -338,7 +340,7 @@ function selectPreset(
   const afterWeeklyFloor = afterShortFloor.filter((preset) => {
     const account = accountForPreset(input, preset);
     return isStaleForValue(input, account, account?.weekly_remaining_percent, config)
-      || account!.weekly_remaining_percent! > 0;
+      || account!.weekly_remaining_percent! >= weeklyFloor;
   });
 
   if (afterWeeklyFloor.length === 0) {
@@ -349,14 +351,6 @@ function selectPreset(
     return { targetPreset: afterWeeklyFloor[0]!, rule: "preset.single" };
   }
 
-  const defaultAccount = accountForPreset(input, input.default_model)!;
-  const fallbackAccount = accountForPreset(input, input.fallback_model)!;
-  if (
-    fallbackAccount.weekly_headroom! - defaultAccount.weekly_headroom!
-    >= config.headroom_gap
-  ) {
-    return { targetPreset: input.fallback_model, rule: "preset.fallback_by_gap" };
-  }
   return { targetPreset: input.default_model, rule: "preset.default" };
 }
 
