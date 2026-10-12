@@ -28,6 +28,7 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 import { appendModelPresetLookupHint } from "./model_preset_hint.js";
+import { preflightModelPreset } from "./model_preset_preflight.js";
 
 export function registerSessionMgmtTools(
   server: McpServer,
@@ -106,6 +107,15 @@ export function registerSessionMgmtTools(
         return errorResult(`agent_id를 찾을 수 없습니다: ${resolvedAgentId}`);
       }
 
+      const selectedPresetId = model_preset ?? agent.default_preset;
+      const preflightError = await preflightModelPreset({
+        nodeId: runtime.nodeId,
+        orch: runtime.orch,
+        logger: runtime.logger,
+        selectedPresetId,
+      });
+      if (preflightError !== null) return errorResult(preflightError);
+
       // caller_info 조립 — 명시 caller_session_id 우선, 없으면 MCP request context 사용.
       const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
       const resolvedFolderId = await resolveDelegatedFolderId(runtime, {
@@ -125,7 +135,7 @@ export function registerSessionMgmtTools(
                 agentProfileHasDbPortrait: agentResolution.portraitSource === "db",
               }
             : {}),
-          modelPreset: model_preset ?? agent.default_preset,
+          modelPreset: selectedPresetId,
           ...(reasoning_effort !== undefined ? { reasoningEffort: reasoning_effort } : {}),
           callerSessionId: resolveStructuralCallerSessionId(
             attribution.callerSessionId,
