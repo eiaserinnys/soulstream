@@ -30,11 +30,11 @@ export function DocumentReaderDialog({ documentId, onClose, request = globalThis
     return () => controller.abort();
   }, [documentId, request]);
   return <Dialog open={documentId !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogPopup className="v3-surface max-w-3xl" data-testid="internal-document-dialog">
-      {document ? <DialogHeader><DialogTitle>{document.title}</DialogTitle></DialogHeader> : <DialogTitle className="sr-only">문서</DialogTitle>}
+    <DialogPopup className="v3-surface v3-document-reader-dialog max-w-3xl" closeProps={{ "aria-label": "문서 닫기" }} data-testid="internal-document-dialog">
+      <DialogHeader className="pe-14"><DialogTitle className="min-h-7 leading-7">{document ? document.title : <span className="sr-only">문서</span>}</DialogTitle></DialogHeader>
       <DialogPanel>
-        {error ? <p className="v3-inline-board-error">{error}</p> : null}
-        {!document && !error ? <p className="v3-detail-empty">본문을 불러오는 중…</p> : null}
+        {error ? <div className="v3-board-load-state"><p>{error}</p></div> : null}
+        {!document && !error ? <div className="v3-board-load-state"><p>본문을 불러오는 중…</p></div> : null}
         {document ? <div className="v3-folder-board-document-copy"><MarkdownContent content={removeOverlappingDocumentHeading(document.body, document.title)} codeBlockLayout="document"/></div> : null}
       </DialogPanel>
     </DialogPopup>

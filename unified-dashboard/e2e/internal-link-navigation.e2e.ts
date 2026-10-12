@@ -5,7 +5,7 @@ import { reviewCard } from "../client/v3/components-review-fixtures";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4323";
-const output = path.resolve("../.local/artifacts/20261012-internal-link-web-reader");
+const output = path.resolve("../.local/artifacts/20261012-internal-link-web-reader-v2");
 const sessionId = "run-alpha-2";
 const messageMarkdown = [
   "[문서 링크](/api/markdown-documents/doc-1)",
@@ -149,20 +149,101 @@ async function openDocumentFromChat(page: Page, name = "문서 링크") {
   return dialog;
 }
 
-async function captureDocument(page: Page, name: string) {
+async function captureDocument(page: Page, name: string, screenshot = true) {
   await expect(page.getByTestId("internal-document-dialog")).not.toHaveAttribute("data-starting-style");
   await expect(page.getByTestId("internal-document-dialog")).not.toHaveAttribute("data-ending-style");
   await expect(page.getByTestId("internal-document-dialog")).toHaveCSS("opacity", "1");
-  await page.screenshot({ path: path.join(output, `${name}.png`), animations: "disabled" });
+  if (screenshot) await page.screenshot({ path: path.join(output, `${name}.png`), animations: "disabled" });
   const geometry = await page.getByTestId("internal-document-dialog").evaluate((element) => {
     const rect = (node: Element) => node.getBoundingClientRect().toJSON();
+    const title = element.querySelector('[data-slot="dialog-title"]')!;
+    const status = element.querySelector('.v3-board-load-state p');
+    const reader = element.querySelector('.v3-folder-board-document-copy');
+    const titleRange = document.createRange(); titleRange.selectNodeContents(title);
     return { dialog: rect(element), panel: rect(element.querySelector('[data-slot="dialog-panel-scroll"]')!),
+      header: rect(element.querySelector('[data-slot="dialog-header"]')!), title: rect(title),
+      titleLines: Array.from(titleRange.getClientRects()).map(line => line.toJSON()),
+      close: rect(element.querySelector('button[aria-label="문서 닫기"]')!),
+      status: status ? rect(status) : null,
+      statusStyle: status ? {fontSize: getComputedStyle(status).fontSize, lineHeight: getComputedStyle(status).lineHeight, color: getComputedStyle(status).color} : null,
+      first: reader?.firstElementChild ? rect(reader.firstElementChild) : null,
+      last: reader?.lastElementChild ? rect(reader.lastElementChild) : null,
+      scroll: {top: element.querySelector('[data-slot="dialog-panel-scroll"]')!.scrollTop, height: element.querySelector('[data-slot="dialog-panel-scroll"]')!.scrollHeight},
+      tokens: {height: getComputedStyle(element).height, cap: getComputedStyle(element).getPropertyValue('--container-5xl'), inset: getComputedStyle(element).getPropertyValue('--v3-space-8')},
       surface: getComputedStyle(element).backgroundColor,
       readerFont: element.querySelector('.v3-folder-board-document-copy') ? getComputedStyle(element.querySelector('.v3-folder-board-document-copy')!).fontSize : null,
       backdrop: getComputedStyle(document.querySelector('[data-slot="dialog-backdrop"]')!).backgroundColor };
   });
   await writeFile(path.join(output, `${name}-geometry.json`), JSON.stringify(geometry, null, 2));
+  return geometry;
 }
+
+test("document reader keeps its frame across states and captures the proposed layout", async ({page}) => {
+  // One bounded capture pass covers the requested screens, states and viewport sizes.
+  test.setTimeout(240_000);
+  const short = "# 문서 읽기 개선 보고서\n\n채팅에 인용한 문서를 현재 화면에서 읽도록 정리했습니다. 닫으면 보고 있던 대화로 돌아갑니다.\n\n짧은 보고도 불러오는 중과 같은 틀을 유지해 내용이 도착할 때 화면이 움직이지 않습니다.\n\n- 문서 읽기 전용 보기\n- 화면 안에서 본문 스크롤\n- 닫은 뒤 대화로 복귀";
+  const normal = short + "\n\n## 확인 결과\n\n대시보드와 영구 세션 화면에서 같은 문서 보기와 상태 표시를 사용합니다. 넓은 화면에서는 읽기에 적당한 폭을 유지하고 높이를 확보했습니다.\n\n본문은 제목 아래에서 시작합니다. 문서가 길어지면 다이얼로그 안에서 끝까지 내려 읽을 수 있습니다.\n\n| 화면 | 확인 항목 | 결과 |\n| --- | --- | --- |\n| 대시보드 | 문서 읽기 | 확인 |\n| 영구 세션 | 대화 복귀 | 확인 |\n| 좁은 화면 | 본문 스크롤 | 확인 |\n\n```ts\nconst documentId = 'report-314';\nopenDocument(documentId);\n```";
+  const long = normal + "\n\n" + Array.from({length:40}, (_, i) => `### 확인 기록 ${i+1}\n\n실제 채팅의 문서 링크를 눌러 본문을 읽었습니다. 긴 내용을 끝까지 내려도 닫기 버튼은 머리에 남고 뒤의 대화는 그대로 유지됩니다. 같은 문서 보기의 폭과 높이를 각 화면에서 비교했습니다.`).join("\n\n") + "\n\n마지막 줄 확인";
+  const names = ['short', 'normal', 'long', 'title', 'loading', 'missing', 'failure'] as const;
+  const links = names.map(name => `[시안 ${name}](/api/markdown-documents/proposal-${name})`).join('\n\n');
+  await prepare(page,1440,{1:messageMarkdown+'\n\n'+links});
+  let release: (() => void) | undefined;
+  await page.route('**/api/markdown-documents/proposal-*', async route => {
+    const name = route.request().url().split('proposal-').at(-1)!;
+    if (name === 'loading') await new Promise<void>(resolve => {release=resolve;});
+    if (name === 'missing' || name === 'failure') return route.fulfill({status:name==='missing'?404:500,json:{error:'fixture'}});
+    const title = name === 'title' ? (page.viewportSize()!.width<500 ? '문서읽기화면의긴제목과상태배치를확인하는최종검수보고서' : '채팅 내부 문서 읽기 화면의 크기와 상태 배치, 제목 줄바꿈을 확인한 최종 검수 보고서 — 영구 세션과 대시보드의 같은 보기 및 긴 문서 스크롤 결과') : '문서 읽기 개선 보고서';
+    await route.fulfill({json:{id:'proposal-'+name,title,body:name==='long'?long:name==='short'?short:normal,version:1}});
+  });
+  const dialog = page.getByTestId('internal-document-dialog');
+  const measurements: Awaited<ReturnType<typeof captureDocument>>[] = [];
+  const scenarios = [
+    {screen:'pas',width:1920,height:1080,theme:'dark',states:names,captures:['short','normal','long','loading','missing','title']},
+    {screen:'v3',width:1920,height:1080,theme:'dark',states:names,captures:['normal']},
+    {screen:'pas',width:1440,height:900,theme:'dark',states:names,captures:['normal','loading','missing']},
+    {screen:'v3',width:1440,height:900,theme:'dark',states:names,captures:[]},
+    {screen:'pas',width:1440,height:900,theme:'light',states:['normal'],captures:['normal']},
+    {screen:'pas',width:390,height:844,theme:'dark',states:names,captures:['long','title','loading']},
+    {screen:'v3',width:390,height:844,theme:'dark',states:names,captures:[]},
+    {screen:'pas',width:720,height:1000,theme:'dark',states:['title'],captures:[]},
+    {screen:'pas',width:2560,height:1440,theme:'dark',states:['normal'],captures:[]},
+  ];
+  for (const scenario of scenarios) {
+    await page.setViewportSize({width:scenario.screen==='v3'&&scenario.width<500?1440:scenario.width,height:scenario.height});
+    await page.emulateMedia({colorScheme:scenario.theme as 'dark'|'light'});
+    await page.addInitScript(theme=>localStorage.setItem('soul-dashboard-theme',theme),scenario.theme);
+    if (scenario.screen==='v3') { await openV3Chat(page); if(scenario.width<500) { await page.setViewportSize({width:scenario.width,height:scenario.height}); await page.getByTestId('v3-mobile-tab-chat').click(); } }
+    else await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
+    let frame: unknown;
+    for (const state of scenario.states) {
+      await page.getByRole('link',{name:'시안 '+state,exact:true}).click();
+      await expect(dialog.locator(state==='loading'||state==='missing'||state==='failure'?'.v3-board-load-state':'.v3-folder-board-document-copy')).toBeVisible();
+      const name = `${scenario.screen}-${scenario.width}-${scenario.theme}-${state}`;
+      const geometry = await captureDocument(page,name,scenario.captures.includes(state));
+      measurements.push(geometry);
+      if(state!=='title') { if(frame) expect(geometry.dialog).toEqual(frame); else frame=geometry.dialog; }
+      const expectedHeight = scenario.width<640?scenario.height-32:Math.min(1024,scenario.height-64);
+      expect({width:geometry.dialog.width,height:geometry.dialog.height}).toEqual({width:Math.min(768,scenario.width-32),height:expectedHeight});
+      if(geometry.status) {
+        expect(Math.abs(geometry.status.x+geometry.status.width/2-geometry.panel.x-geometry.panel.width/2)).toBeLessThanOrEqual(2);
+        expect(Math.abs(geometry.status.y+geometry.status.height/2-geometry.panel.y-geometry.panel.height/2)).toBeLessThanOrEqual(2);
+        expect(geometry.statusStyle!.fontSize).toBe('14px'); expect(geometry.statusStyle!.lineHeight).toBe('22px');
+      }
+      if(state==='title') for(const line of geometry.titleLines) expect(geometry.close.x-line.right).toBeGreaterThanOrEqual(8);
+      if(state==='short') expect(geometry.first!.y-geometry.panel.y).toBe(20);
+      if(state==='long') {
+        const panel=dialog.locator('[data-slot="dialog-panel-scroll"]'); await panel.hover(); await page.mouse.wheel(0,30000);
+        await expect(dialog.getByText('마지막 줄 확인',{exact:true})).toBeInViewport();
+        const end=await captureDocument(page,name+'-end',scenario.width===390&&scenario.screen==='pas');
+        expect(end.panel.bottom-end.last!.bottom).toBe(40);
+      }
+      release?.(); release=undefined;
+      await dialog.getByRole('button',{name:'문서 닫기',exact:true}).click(); await expect(dialog).toBeHidden();
+    }
+  }
+  const states=measurements.filter(item=>item.statusStyle);
+  for(const geometry of states) expect(geometry.statusStyle).toEqual(states[0].statusStyle);
+});
 
 for (const screen of ["v3", "pas"] as const) for (const width of [1440, 1024]) {
   test(`document reader preserves ${screen} chat and focus at ${width}`, async ({ page }) => {
