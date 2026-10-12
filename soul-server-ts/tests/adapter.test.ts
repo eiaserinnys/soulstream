@@ -504,6 +504,163 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
+  it("reconnects after a command handler outlives the bounded serve drain", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+
+    const serveDrainTimeoutMs = 50;
+    const cancelTaskStarted = deferred<void>();
+    const cancelTaskResult = deferred<boolean>();
+    let cancelTaskFinished = false;
+    const cancelTask = vi.fn(() => {
+      cancelTaskStarted.resolve();
+      return cancelTaskResult.promise.then((result) => {
+        cancelTaskFinished = true;
+        return result;
+      });
+    });
+    const reconnectPolicy = new RecordingReconnectPolicy();
+    const logger = pino({ level: "silent" });
+    const warnSpy = vi.spyOn(logger, "warn");
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        serveDrainTimeoutMs,
+      },
+      logger,
+      makeDeps({
+        reconnectPolicy,
+        taskManager: { cancelTask } as unknown as TaskManager,
+      }),
+    );
+    const runPromise = adapter.run();
+    const registrationCount = () => orch.receivedMessages.filter(
+      (message) => (message as Record<string, unknown>).type === "node_register",
+    ).length;
+
+    try {
+      await waitFor(() => registrationCount() === 1);
+      const firstSocket = orch.sockets[0]!;
+      firstSocket.send(JSON.stringify({
+        type: "interrupt_session",
+        agentSessionId: "session-blocked",
+        requestId: "blocked-request",
+      }));
+      await cancelTaskStarted.promise;
+
+      firstSocket.close(1011, "test connection loss");
+      await waitFor(() => registrationCount() >= 2, 1000);
+
+      expect(registrationCount()).toBeGreaterThanOrEqual(2);
+      expect(cancelTaskFinished).toBe(false);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          handlerCount: 1,
+          handlers: [{ type: "interrupt_session", requestId: "blocked-request" }],
+          timeoutMs: serveDrainTimeoutMs,
+        }),
+        "Upstream command handlers did not drain before timeout",
+      );
+
+      cancelTaskResult.resolve(true);
+      await waitFor(() => cancelTaskFinished);
+      await waitFor(
+        () => warnSpy.mock.calls.some(([, message]) => message === "Cannot send — WebSocket not open"),
+      );
+      expect(orch.receivedMessages.some(
+        (message) => (message as Record<string, unknown>).type === "interrupt_session_ack",
+      )).toBe(false);
+    } finally {
+      cancelTaskResult.resolve(true);
+      await adapter.shutdown();
+      await runPromise;
+    }
+  });
+
+  it("reconnects without warning when active command handlers drain before the timeout", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ acknowledgeRegistration: true });
+
+    const cancelTaskStarted = deferred<void>();
+    const cancelTaskResult = deferred<boolean>();
+    const drainStarted = deferred<void>();
+    let cancelTaskFinished = false;
+    const cancelTask = vi.fn(() => {
+      cancelTaskStarted.resolve();
+      return cancelTaskResult.promise.then((result) => {
+        cancelTaskFinished = true;
+        return result;
+      });
+    });
+    const eventOutboxPump = {
+      connect: vi.fn(async () => true),
+      disconnect: vi.fn(() => drainStarted.resolve()),
+      isAck: () => false,
+      handleAck: vi.fn(),
+      isRejection: () => false,
+      handleRejection: vi.fn(),
+    } as unknown as EventOutboxPump;
+    const reconnectPolicy = new RecordingReconnectPolicy();
+    const logger = pino({ level: "silent" });
+    const warnSpy = vi.spyOn(logger, "warn");
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        serveDrainTimeoutMs: 1000,
+      },
+      logger,
+      makeDeps({
+        eventOutboxPump,
+        reconnectPolicy,
+        taskManager: { cancelTask } as unknown as TaskManager,
+      }),
+    );
+    const runPromise = adapter.run();
+    const registrationCount = () => orch.receivedMessages.filter(
+      (message) => (message as Record<string, unknown>).type === "node_register",
+    ).length;
+
+    try {
+      await waitFor(() => registrationCount() === 1);
+      const firstSocket = orch.sockets[0]!;
+      firstSocket.send(JSON.stringify({
+        type: "interrupt_session",
+        agentSessionId: "session-finishing",
+      }));
+      await cancelTaskStarted.promise;
+
+      firstSocket.close(1011, "test connection loss");
+      await drainStarted.promise;
+      expect(cancelTaskFinished).toBe(false);
+      cancelTaskResult.resolve(false);
+      await waitFor(() => registrationCount() >= 2, 1000);
+
+      expect(registrationCount()).toBeGreaterThanOrEqual(2);
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({ timeoutMs: 1000 }),
+        "Upstream command handlers did not drain before timeout",
+      );
+    } finally {
+      cancelTaskResult.resolve(false);
+      await adapter.shutdown();
+      await runPromise;
+    }
+  });
+
   it("terminates the socket when registration setup fails before serving", async () => {
     await stopMockOrch(orch);
     orch = await startMockOrch({ acknowledgeRegistration: true });

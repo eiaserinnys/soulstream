@@ -11,6 +11,7 @@ import { sendInitialRunnerState } from "./initial_runner_state_sync.js";
 import { isConnectionError } from "./adapter_connection_error.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
 import { createUpstreamCommandDispatcher } from "./upstream_command_dispatcher.js";
+import { createActiveHandlerDrain } from "./active_handler_drain.js";
 import type {
   ReconnectPolicyBoundary,
   UpstreamConfig,
@@ -29,6 +30,7 @@ const APP_HEARTBEAT_PONG = "app_heartbeat_pong";
 const APP_HEARTBEAT_INTERVAL_MS = 10_000;
 const APP_HEARTBEAT_MAX_MISSED = 2;
 const APP_HEARTBEAT_CLOSE_CODE = 1011;
+const UPSTREAM_SERVE_DRAIN_TIMEOUT_MS = 10_000;
 
 /**
  * orch에 역방향 WebSocket 연결.
@@ -226,24 +228,13 @@ export class UpstreamAdapter {
     const registrationPromise = new Promise<NodeRegisterAck>((resolve) => {
       resolveRegistration = resolve;
     });
-    const activeHandlers = new Set<Promise<void>>();
+    const activeHandlerDrain = createActiveHandlerDrain(
+      this.logger,
+      this.config.serveDrainTimeoutMs ?? UPSTREAM_SERVE_DRAIN_TIMEOUT_MS,
+    );
     const servePromise = new Promise<void>((resolve) => {
       let settled = false;
-      const handleMessage = async (raw: Buffer | ArrayBuffer | Buffer[]) => {
-        let cmd: unknown;
-        try {
-          const text = Array.isArray(raw)
-            ? Buffer.concat(raw).toString("utf-8")
-            : Buffer.isBuffer(raw)
-              ? raw.toString("utf-8")
-              : raw instanceof ArrayBuffer
-                ? Buffer.from(raw).toString("utf-8")
-                : String(raw);
-          cmd = JSON.parse(text);
-        } catch (err) {
-          this.logger.warn({ err }, "Invalid JSON from upstream");
-          return;
-        }
+      const handleMessage = async (cmd: unknown) => {
         try {
           if (isNodeRegisterAck(cmd, this.config.nodeId)) {
             if (!registrationAccepted) {
@@ -278,11 +269,8 @@ export class UpstreamAdapter {
           this.logger.error({ err }, "Dispatcher threw");
         }
       };
-      const onMessage = (raw: Buffer | ArrayBuffer | Buffer[]) => {
-        const active = handleMessage(raw);
-        activeHandlers.add(active);
-        void active.finally(() => activeHandlers.delete(active));
-      };
+      const onMessage = (raw: Buffer | ArrayBuffer | Buffer[]) =>
+        activeHandlerDrain.handle(raw, handleMessage);
       const settle = async (
         kind: "close" | "error",
         detail: { code: number; reason: Buffer } | { err: Error },
@@ -292,9 +280,9 @@ export class UpstreamAdapter {
         ws.off("message", onMessage);
         ws.off("close", onClose);
         ws.off("error", onError);
-        await Promise.allSettled([...activeHandlers]);
         this.stopAppHeartbeat();
         this.deps.eventOutboxPump?.disconnect();
+        await activeHandlerDrain.drain();
         if (kind === "close" && "code" in detail) {
           this.logger.info(
             { code: detail.code, reason: detail.reason.toString("utf-8") },
