@@ -562,7 +562,6 @@ describe("@soulstream/chat-ui 계약", () => {
       "왼쪽\n\n오른쪽",
       "수량: 2개",
       "완료: 예",
-      "[확인] [취소]",
       "상세",
       "수량: 값 2개",
       "출처: 기준",
@@ -626,5 +625,48 @@ describe("@soulstream/chat-ui 계약", () => {
       "출처: 가정 출처; [자료 링크](https://example.test/data)",
     ].join("\n\n"));
     expect(renderText(reordered)).toBe(renderText(doc));
+  });
+
+  it("18. 글 대체와 복사에는 compose button 이름만 남긴다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      units: { people: unit({ count: 1 }, "명") },
+      fields: {
+        people: { type: "number", initial: 12, min: 1, max: 100, step: 1, unit: "people" },
+      },
+      sources: {
+        ref: { type: "external_link", label: "자료", url: "https://example.test/ref" },
+      },
+      body: [
+        {
+          id: "ask",
+          kind: "button",
+          label: "질문하기",
+          action: { type: "compose", parts: ["다시 계산해 줘"] },
+        },
+        { id: "copy", kind: "button", label: "복사", action: { type: "copy" } },
+        { id: "retry", kind: "button", label: "다시 묻기", action: { type: "compose" } },
+        { id: "reset", kind: "button", label: "초기화", action: { type: "reset" } },
+        {
+          id: "setPeople",
+          kind: "button",
+          label: "12명으로",
+          action: { type: "set", field: "people", value: 12 },
+        },
+        {
+          id: "openSource",
+          kind: "button",
+          label: "출처 열기",
+          action: { type: "open_source", source: "ref" },
+        },
+      ],
+    });
+    const text = renderText(doc);
+
+    expect(text).toBe("[질문하기] [다시 묻기]\n\n출처: [자료](https://example.test/ref)");
+    for (const label of ["복사", "초기화", "12명으로", "출처 열기"]) {
+      expect(text).not.toContain(label);
+    }
+    expect(composeText(doc, initialState(doc), "copy")).toBe(text);
   });
 });
