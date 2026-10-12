@@ -9,6 +9,8 @@ import { createNodeFromEvent, applyUpdate } from "./node-factory";
 import { createProcessingContext, makeNode, registerNode } from "./processing-context";
 import type { ProcessingContext } from "./processing-context";
 import type {
+  AssistantMessageEvent,
+  AssistantMessageNode,
   EventTreeNode,
   UserMessageEvent,
   InterventionSentEvent,
@@ -94,6 +96,42 @@ describe("createNodeFromEvent", () => {
       expect(node!.completed).toBe(true);
       expect((node as UserMessageNode).user).toBe("alice");
       expect(node!.children).toEqual([]);
+    });
+
+    it("preserves the published UI object on an assistant_message node", () => {
+      const ui = {
+        schema_version: 1,
+        revision: 1,
+        ui_id: "ui_dfee7bbffdfbdc6da160cea6005ebfdd",
+        hash: "a9a314dbbfd5e9a70a851cbb25a79a7767fbdf204f3d513c6e66ca6252c92ed2",
+        document: {
+          schema_version: 1,
+          title: "Stored answer",
+          body: [],
+          fields: [],
+          computed: [],
+          data: {},
+          sources: [],
+          assumptions: [],
+          units: [],
+        },
+      };
+      const event: AssistantMessageEvent = {
+        type: "assistant_message",
+        content: "Stored answer",
+        timestamp: 1700000123,
+        ui,
+      };
+
+      const node = createNodeFromEvent(event, 270);
+
+      expect(node).toMatchObject({
+        id: "asst-msg-270",
+        type: "assistant_message",
+        content: "Stored answer",
+        completed: true,
+      });
+      expect((node as AssistantMessageNode).ui).toBe(ui);
     });
 
     it("preserves existing user_message attachments and node_id for the view", () => {

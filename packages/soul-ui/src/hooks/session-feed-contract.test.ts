@@ -6,6 +6,9 @@ import type { SoulSSEEvent } from "../shared/types";
 import { toSessionSummary } from "../shared/mappers";
 import { createProcessingContext } from "../stores/processing-context";
 import { processEventsBatch } from "../stores/event-processor";
+import { flattenTree } from "../lib/flatten-tree";
+import { toSSEEvent, type HistoricalMessage } from "../components/chat/useMessageHistoryBuffer";
+import { validateChatUiDocument } from "@soulstream/chat-ui";
 import {
   appendBrowserNotices,
   detailEventToSessionNotice,
@@ -463,5 +466,64 @@ describe("server-owned session feed v2 fixture", () => {
       completed: true,
       eventId: 4,
     });
+  });
+});
+
+describe("historical assistant_message UI payload", () => {
+  it("imports the chat-ui public entry through the workspace dependency", () => {
+    expect(typeof validateChatUiDocument).toBe("function");
+  });
+
+  it("carries the published UI reference through the history adapter and duplicate prepend", () => {
+    const ui = {
+      schema_version: 1,
+      revision: 1,
+      ui_id: "ui_dfee7bbffdfbdc6da160cea6005ebfdd",
+      hash: "a9a314dbbfd5e9a70a851cbb25a79a7767fbdf204f3d513c6e66ca6252c92ed2",
+      document: {
+        schema_version: 1,
+        title: "Stored answer",
+        body: [],
+        fields: [],
+        computed: [],
+        data: {},
+        sources: [],
+        assumptions: [],
+        units: [],
+      },
+    };
+    const stored: HistoricalMessage = {
+      id: 2701,
+      parent_event_id: null,
+      event_type: "assistant_message",
+      payload: {
+        type: "assistant_message",
+        content: "Stored answer",
+        timestamp: 1700000123,
+        ui,
+      },
+      created_at: "2026-10-12T10:00:00.000Z",
+    };
+
+    const historical = toSSEEvent(stored);
+    expect(historical.eventId).toBe(2701);
+    expect((historical.event as unknown as { ui?: unknown }).ui).toBe(ui);
+
+    const result = processEventsBatch(
+      [historical, historical],
+      createProcessingContext(),
+      null,
+      "session-a",
+      null,
+      0,
+      true,
+    );
+    const node = result.root?.children.find((child) => child.type === "assistant_message");
+    const messages = flattenTree(result.root);
+
+    expect(result.root?.children).toHaveLength(1);
+    expect(node?.ui).toBe(ui);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].ui).toBe(ui);
   });
 });

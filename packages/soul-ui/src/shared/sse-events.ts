@@ -795,6 +795,8 @@ export interface InputRequestRespondedEvent {
 export interface AssistantMessageEvent extends Partial<Pick<LiveTextEventMetadata, "streamIdentity">> {
   type: "assistant_message";
   content: string;
+  /** Published chat UI envelope carried by the existing assistant_message event. */
+  ui?: unknown;
   usage?: { input_tokens: number; output_tokens: number };
   model?: string;
   provider?: string;

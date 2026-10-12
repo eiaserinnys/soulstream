@@ -226,6 +226,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.72.1(react@19.2.4))
+      '@soulstream/chat-ui':
+        specifier: workspace:*
+        version: link:../chat-ui
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../fractional-position
@@ -499,6 +502,9 @@ importers:
       '@seosoyoung/soul-ui':
         specifier: workspace:*
         version: link:../packages/soul-ui
+      '@soulstream/chat-ui':
+        specifier: workspace:*
+        version: link:../packages/chat-ui
       '@soulstream/search-contract':
         specifier: workspace:*
         version: link:../packages/search-contract
