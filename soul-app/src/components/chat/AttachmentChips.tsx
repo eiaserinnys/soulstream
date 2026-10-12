@@ -78,20 +78,16 @@ export function AttachmentChips({
     : styles.attachmentRow);
 
   return (
-    <View style={[baseContainerStyle, hasTrailingAccessory && styles.generatedAttachmentRows]}>
+    <View style={baseContainerStyle}>
       {hasTrailingAccessory ? (
         <>
-          {attachments.length > 1 ? (
-            <View style={[styles.attachmentRow, { paddingHorizontal: 0, paddingTop: 0 }]}>
-              {attachments.slice(0, -1).map((attachment, idx) => renderAttachment(attachment, idx))}
-            </View>
-          ) : null}
+          {attachments.slice(0, -1).map((attachment, idx) => renderAttachment(attachment, idx))}
           <View style={styles.generatedAttachmentActionRow}>
             {renderAttachment(attachments[attachments.length - 1], attachments.length - 1, [
               attachmentTouchFrameStyle,
-              { flex: 1, minWidth: 0 },
+              { flexShrink: 1, minWidth: 0, maxWidth: '100%' },
             ])}
-            <View style={{ flexShrink: 0 }}>{trailingAccessory}</View>
+            <View style={{ marginLeft: 'auto', flexShrink: 0 }}>{trailingAccessory}</View>
           </View>
         </>
       ) : attachments.map((attachment, idx) => renderAttachment(attachment, idx))}

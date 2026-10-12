@@ -391,7 +391,6 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
                 paddingHorizontal: 0,
                 paddingTop: 0,
               }]}
-              attachmentTouchFrameStyle={showGeneratedUndo ? { maxWidth: '100%' } : undefined}
               trailingAccessory={generatedUndoButton}
               textSecondaryColor={t.colors.textSecondary}
               textMutedColor={t.colors.textMuted}

@@ -156,14 +156,11 @@ export function makeStyles(t: DesignTokens) {
       paddingTop: t.spacing.xs,
     },
     generatedNoticeSlot: { flex: 1, minWidth: 0 },
-    generatedAttachmentRows: {
-      flexDirection: 'column',
-      flexWrap: 'nowrap',
-      gap: t.spacing.sm,
-      minWidth: 0,
-    },
     generatedAttachmentActionRow: {
       flexDirection: 'row',
+      flexGrow: 1,
+      flexShrink: 1,
+      maxWidth: '100%',
       alignItems: 'center',
       gap: t.spacing.sm,
       minWidth: 0,
