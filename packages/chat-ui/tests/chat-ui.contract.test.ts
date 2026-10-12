@@ -5,9 +5,11 @@ import {
   composeText,
   evaluate,
   initialState,
+  isNodeVisible,
   reduce,
   renderParts,
   renderText,
+  unreferencedSourceKeys,
   validateChatUiDocument,
 } from "../src/index.js";
 import type {
@@ -668,5 +670,96 @@ describe("@soulstream/chat-ui 계약", () => {
       expect(text).not.toContain(label);
     }
     expect(composeText(doc, initialState(doc), "copy")).toBe(text);
+  });
+
+  it("19. 노드 표시 여부는 boolean 조건과 계산 오류에 대해 글 렌더링과 같다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      units: { ratio: unit({}, "") },
+      fields: {
+        enabled: { type: "boolean", initial: false },
+      },
+      body: [
+        { id: "always", kind: "text", parts: ["항상 표시"] },
+        {
+          id: "conditional",
+          kind: "text",
+          parts: ["조건부 표시"],
+          visibleWhen: { op: "ref", ref: { field: "enabled" } },
+        },
+        {
+          id: "calculationError",
+          kind: "text",
+          parts: ["계산 오류에도 표시"],
+          visibleWhen: {
+            op: "eq",
+            args: [
+              {
+                op: "div",
+                args: [
+                  { op: "const", value: 1, unit: "ratio" },
+                  { op: "const", value: 0, unit: "ratio" },
+                ],
+              },
+              { op: "const", value: 1, unit: "ratio" },
+            ],
+          },
+        },
+      ],
+    });
+    const start = initialState(doc);
+    const always = doc.body[0]!;
+    const conditional = doc.body[1]!;
+    const calculationError = doc.body[2]!;
+
+    expect(isNodeVisible(doc, start, always)).toBe(true);
+    expect(isNodeVisible(doc, start, conditional)).toBe(false);
+    expect(isNodeVisible(doc, reduce(doc, start, { type: "set", field: "enabled", value: true }), conditional))
+      .toBe(true);
+    expect(isNodeVisible(doc, start, calculationError)).toBe(true);
+    expect(renderText(doc, start)).toContain("계산 오류에도 표시");
+  });
+
+  it("20. 중첩 citation만 출처를 참조하고 남은 출처 키와 글 순서를 고정한다", () => {
+    const doc = validDocument({
+      schema_version: 1,
+      sources: {
+        b_link: { type: "external_link", label: "자료 링크", url: "https://example.test/data" },
+        c_cited: { type: "assumption", label: "본문 근거" },
+        a_note: { type: "assumption", label: "가정 출처" },
+      },
+      body: [
+        {
+          id: "outer",
+          kind: "group",
+          layout: "stack",
+          children: [
+            {
+              id: "inner",
+              kind: "group",
+              layout: "stack",
+              children: [
+                { id: "citation", kind: "citation", source: "c_cited" },
+              ],
+            },
+            { id: "entity", kind: "entity", label: "링크 대상", details: [], source: "b_link" },
+          ],
+        },
+      ],
+    });
+    const reordered = validDocument({
+      schema_version: 1,
+      sources: {
+        a_note: { type: "assumption", label: "가정 출처" },
+        c_cited: { type: "assumption", label: "본문 근거" },
+        b_link: { type: "external_link", label: "자료 링크", url: "https://example.test/data" },
+      },
+      body: doc.body,
+    });
+
+    expect(unreferencedSourceKeys(doc)).toEqual(["a_note", "b_link"]);
+    expect(unreferencedSourceKeys(reordered)).toEqual(["a_note", "b_link"]);
+    expect(renderText(doc).split("\n\n").slice(-1)[0])
+      .toBe("출처: 가정 출처; [자료 링크](https://example.test/data)");
   });
 });
