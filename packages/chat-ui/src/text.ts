@@ -177,7 +177,10 @@ function renderChildren(
   let index = 0;
   while (index < nodes.length) {
     const node = nodes[index]!;
-    if (!isVisible(node, evaluateExpression)) {
+    if (
+      !isVisible(node, evaluateExpression)
+      || (node.kind === "button" && node.action.type !== "compose")
+    ) {
       index += 1;
       continue;
     }
@@ -191,7 +194,10 @@ function renderChildren(
     let cursor = index;
     while (cursor < nodes.length) {
       const candidate = nodes[cursor]!;
-      if (!isVisible(candidate, evaluateExpression)) {
+      if (
+        !isVisible(candidate, evaluateExpression)
+        || (candidate.kind === "button" && candidate.action.type !== "compose")
+      ) {
         cursor += 1;
         continue;
       }

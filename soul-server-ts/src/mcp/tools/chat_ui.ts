@@ -16,14 +16,14 @@ export function registerChatUiTools(server: McpServer, runtime: McpRuntime): voi
     "publish_chat_ui",
     {
       description: `채팅 답변 안에 사용자가 직접 조작하는 화면 조각을 한 번 내보낸다. 값을 바꿔 가며 비교하거나 선택지를 고르게 할 때처럼 글보다 조작이 나은 경우에만 쓰고, 내보낸 내용을 글 답변에서 되풀이하지 않는다. 화면은 대화에 완성된 상태로 표시되고 고칠 수 없다(고치려면 새 publication_key로 다시 낸다). 조작은 사용자 화면에서만 계산되며 모델을 다시 부르지 않는다. 화면을 그리지 못하는 곳에서는 같은 내용이 글로 보인다.
-document: {schema_version:1, title?, body:[노드], units?, data?, fields?, computed?, sources?, assumptions?:[문자열]}
-노드(모두 id 필수, visibleWhen?은 boolean 식): heading{level:1~3,parts} | text{parts,emphasis?:"strong"} | caption{parts} | group{layout:"stack"|"row"|"wrap",children} | slider{field,label} | checkbox{field,label} | form{items:[{field,label}],submitLabel,action:{type:"compose",parts?}} | button{label,action} | entity{label,details:parts,source?} | citation{source}. 종류는 kind에 적는다.
+document: {schema_version:1, title?, body:[노드], units?, data?, fields?, computed?, sources?, assumptions?:[문자열]}. title은 맨 위에 제목으로 표시되니 body의 heading으로 되풀이하지 않는다.
+노드(모두 id 필수, visibleWhen?은 boolean 식): heading{level:1~3,parts} | text{parts,emphasis?:"strong"} | caption{parts} | group{layout:"stack"|"row"|"wrap",children} | slider{field,label} | checkbox{field,label} | form{items:[{field,label}],submitLabel,action:{type:"compose",parts?}} | button{label,action} | entity{label,details:parts,source?} | citation{source}. 종류는 kind에 적는다. entity는 누르면 details가 펼쳐지는 항목이다.
 parts: 문자열 또는 {value:{data|field|computed:키},format?:"plain"|"number"|"percent",digits?,unit?}의 배열.
-fields: 키→ number{initial,min,max,step,unit} | text{initial,maxLength} | boolean{initial} | choice{initial,options:[{id,label}]} | selection{initial:[],options}. 종류는 type에 적는다.
+fields: 키→ number{initial,min,max,step,unit} | text{initial,maxLength} | boolean{initial} | choice{initial,options:[{id,label}]} | selection{initial:[],options}. 종류는 type에 적는다. choice와 selection의 initial은 options의 id이고 화면에는 label이 보인다.
 units: 키→{dims:{차원:지수},symbol,scale}. 예: 원 {dims:{"currency:KRW":1},symbol:"원",scale:1}, 시간 {dims:{time:1},symbol:"h",scale:3600}, 무차원 {dims:{},symbol:"",scale:1}. 숫자 값에는 unit 키가 필수다.
 data: 키→{value,unit?,source?}. computed: 키→식. 식: {op:"const",value,unit?} | {op:"ref",ref:{data|field|computed:키}} | add,mul(args 둘 이상) | sub,div,eq,lt,lte(args 둘) | and,or | not | if(args:[조건,참,거짓]). 차원이 맞지 않는 식은 거부된다. computed 수를 parts에 쓸 때는 unit을 준다.
 action: {type:"compose",parts?}(입력창에 글을 더한다. 전송은 사용자가 한다) | {type:"set",field,value} | {type:"reset"} | {type:"copy"} | {type:"open_source",source}.
-sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url(https)}.
+sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url(https)}. source에는 이 키를 쓴다.
 키와 id는 영문자로 시작하는 영문, 숫자, 밑줄이다. 검증에 실패하면 결과의 path와 reason을 보고 고쳐 같은 publication_key로 다시 부른다.`,
       inputSchema: z.object({
         publication_key: z.string().min(1).max(64),

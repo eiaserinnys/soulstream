@@ -66,6 +66,17 @@ afterEach(async () => {
 });
 
 describe("publish_chat_ui", () => {
+  it("keeps the advertised description under the client limit and explains the title", async () => {
+    const client = await createClient(makeRuntime());
+    const { tools } = await client.listTools();
+    const tool = tools.find(({ name }) => name === "publish_chat_ui");
+    const description = tool?.description ?? "";
+
+    expect(tool?.description).toEqual(expect.any(String));
+    expect(description.length).toBeLessThanOrEqual(2000);
+    expect(description).toContain("title은 맨 위에 제목으로 표시되니");
+  });
+
   it("requires an authenticated caller and an active execution registration", async () => {
     const publisher = vi.fn(async () => ({ eventId: 41 }));
     const client = await createClient(makeRuntime({ publisher, task: activeTask() }));
