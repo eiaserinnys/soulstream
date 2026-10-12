@@ -64,6 +64,9 @@ export function mapAppServerNotification(
       const contextPayloads = contextUsage ? [contextUsage as SSEEventPayload] : [];
       if (turn.status === "failed") {
         const isUsageLimit = willRetry !== true && isUsageLimitTurnError(turn.error);
+        const usage = tokenUsage ? codexTurnUsage(tokenUsage) : undefined;
+        const firstCall = tokenUsage?.first;
+        const turnCostUsd = usage ? codexTurnCostUsd(usage, model) : undefined;
         return [
           ...contextPayloads,
           {
@@ -74,6 +77,13 @@ export function mapAppServerNotification(
             timestamp: nowEpochSec(),
             error_info: turn.error?.codexErrorInfo ?? null,
             additional_details: turn.error?.additionalDetails ?? null,
+            ...(usage ? { usage } : {}),
+            ...(firstCall ? { first_call: {
+              input_tokens: firstCall.inputTokens,
+              cached_input_tokens: firstCall.cachedInputTokens,
+            } } : {}),
+            ...(tokenUsage && model !== undefined ? { model } : {}),
+            ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
             ...rawContext(notification.method, { threadId, turnId: turn.id }),
           } as SSEEventPayload,
         ];

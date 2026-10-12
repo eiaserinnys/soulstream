@@ -11,6 +11,7 @@ import {
 } from "./claude_persistent_background_lifecycle.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
+import { ClaudeSdkUsageCarry } from "./claude_sdk_usage_carry.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
 import * as rateLimit from "./claude_sdk_rate_limit_stop_failure.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
@@ -26,7 +27,6 @@ import {
   describeResultProvenance,
   handlePersistentTurnInactivity,
   isExpectedInterruptDiagnostic,
-  isExpectedInterruptTerminalEvent,
   isTurnStartingUserInput,
   makeStaleInterruptReceiptLogger,
   provableTurnResultOwner,
@@ -72,6 +72,7 @@ export class ClaudeSdkPersistentSession {
   private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
   private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
   private readonly exactResultCache = new ClaudeExactResultCache();
+  private readonly usageCarry = new ClaudeSdkUsageCarry();
   private readonly nativeNotificationTracker: ClaudePendingNativeNotificationTracker;
   private activeForeground: ActiveForeground | null = null;
   private interventionFence: ActiveForeground | null = null;
@@ -155,6 +156,7 @@ export class ClaudeSdkPersistentSession {
     }
     this.runtime.close(reason);
     this.exactResultCache.clear();
+    this.usageCarry.clear();
     this.nativeNotificationTracker.clear();
     const active = this.activeForeground;
     this.clearForegroundTimers(active);
@@ -305,8 +307,7 @@ export class ClaudeSdkPersistentSession {
         },
         "Fenced the first interrupted-owner Result before accepting the intervention Result",
       );
-      for (const event of terminalEvents) {
-        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) continue;
+      for (const event of this.usageCarry.emittable(terminalEvents, expectedInterruptDiagnostic)) {
         markPostResultDrainEvent(event);
         await this.emitDetached(event);
       }
@@ -341,7 +342,7 @@ export class ClaudeSdkPersistentSession {
     }
     if (deferForegroundResultForInjectedInput({
       phase, active, runtime: this.runtime, message, logger: this.logger,
-    })) return;
+    })) { this.usageCarry.absorb(terminalEvents); return; }
 
     this.runtime.observeResult({
       userMessageUuid: active.uuid,
@@ -359,8 +360,7 @@ export class ClaudeSdkPersistentSession {
       const expectedInterruptDiagnostic =
         this.interventionFence === active
         && terminalEvents.some(isExpectedInterruptDiagnostic);
-      for (const event of terminalEvents) {
-        if (isExpectedInterruptTerminalEvent(event, expectedInterruptDiagnostic)) continue;
+      for (const event of this.usageCarry.emittable(terminalEvents, expectedInterruptDiagnostic)) {
         if (active) {
           active.output.push(event);
         } else {

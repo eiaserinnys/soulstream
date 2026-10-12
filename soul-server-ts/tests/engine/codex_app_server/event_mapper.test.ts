@@ -317,8 +317,10 @@ describe("Codex app-server notification mapper", () => {
       },
       undefined,
       {
+        model: "gpt-6.1-sol",
         tokenUsage: {
-          first: null,
+          first: { totalTokens: 14_129, inputTokens: 14_124, cachedInputTokens: 12_288,
+            cacheWriteInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 0 },
           baseline: {
             totalTokens: 0,
             inputTokens: 0,
@@ -351,6 +353,22 @@ describe("Codex app-server notification mapper", () => {
     );
 
     expect(out.map((event) => event.type)).toEqual(["context_usage", "error"]);
+    expect(out[1]).toMatchObject({
+      usage: { input_tokens: 14_124, cached_input_tokens: 12_288, output_tokens: 5,
+        reasoning_output_tokens: 0 },
+      first_call: { input_tokens: 14_124, cached_input_tokens: 12_288 },
+      model: "gpt-6.1-sol", turn_cost_usd: 0.004951,
+    });
+  });
+
+  it("omits usage fields on a failed turn without token usage", () => {
+    const out = mapAppServerNotification({ method: "turn/completed", params: {
+      threadId: "thread-1", turn: turn("turn-1", "failed", { message: "turn failed" }),
+    } }, undefined, { model: "gpt-6.1-sol" });
+    expect(out.map(event => event.type)).toEqual(["error"]);
+    for (const key of ["usage", "first_call", "model", "turn_cost_usd"]) {
+      expect(out[0]).not.toHaveProperty(key);
+    }
   });
 
   it("ignores token usage updates without warning", () => {

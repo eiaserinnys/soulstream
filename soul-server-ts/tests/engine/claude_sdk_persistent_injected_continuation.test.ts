@@ -1,4 +1,5 @@
 import pino from "pino";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it, vi } from "vitest";
 
 import { ClaudeSdkClient } from "../../src/engine/claude_adapter.js";
@@ -92,13 +93,25 @@ describe("persistent Claude session: injected input the CLI runs as a following 
     await harness.nextInput();
 
     harness.push(sdkCommandLifecycle("INJ", "queued"));
-    harness.push(sdkAssistantText("a-first", "first turn text"));
-    harness.push(sdkResult("sdk-session", "U1", "first turn done"));
+    harness.push({
+      ...sdkAssistantText("a-first", "first turn text"),
+      message: { model: "claude-opus-5-5", role: "assistant", content: [{ type: "text", text: "first turn text" }],
+        usage: { input_tokens: 100, cache_read_input_tokens: 30 } },
+    } as unknown as SDKMessage);
+    harness.push({ ...sdkResult("sdk-session", "U1", "first turn done"),
+      usage: { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 30 },
+    } as unknown as SDKMessage);
     harness.push(sdkCommandLifecycle("U1", "completed"));
     harness.push(sdkCommandLifecycle("INJ", "started"));
     harness.push(sdkInit("sdk-session"));
-    harness.push(sdkAssistantText("a-follow", "following turn text"));
-    harness.push(sdkResult("sdk-session", "INJ", "following turn done"));
+    harness.push({
+      ...sdkAssistantText("a-follow", "following turn text"),
+      message: { model: "claude-opus-5-5", role: "assistant", content: [{ type: "text", text: "following turn text" }],
+        usage: { input_tokens: 200, cache_read_input_tokens: 60 } },
+    } as unknown as SDKMessage);
+    harness.push({ ...sdkResult("sdk-session", "INJ", "following turn done"),
+      usage: { input_tokens: 200, output_tokens: 20, cache_read_input_tokens: 60 },
+    } as unknown as SDKMessage);
     harness.push(sdkCommandLifecycle("INJ", "completed"));
     await foreground.done;
 
@@ -115,6 +128,15 @@ describe("persistent Claude session: injected input the CLI runs as a following 
       expect.objectContaining({ type: "result", output: "first turn done" }),
     );
     expect(detachedTexts(harness.detached)).toEqual([]);
+
+    expect(completes(foreground.events)[0]).toMatchObject({
+      usage: { input_tokens: 300, output_tokens: 30, cache_read_input_tokens: 90 },
+      firstCall: { inputTokens: 130, cachedInputTokens: 30 },
+      turnCostUsd: 0.001818,
+    });
+    expect(foreground.events.find(event => event.type === "result")).toMatchObject({
+      usage: { input_tokens: 300, output_tokens: 30, cache_read_input_tokens: 90 },
+    });
 
     await expectNextForegroundRuns(harness, client, "F2");
     expect(harness.close).not.toHaveBeenCalled();

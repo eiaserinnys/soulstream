@@ -35,6 +35,9 @@ export type ClaudeClientEvent =
       output: string;
       error?: string | null;
       usage?: unknown;
+      model?: string;
+      turnCostUsd?: number;
+      firstCall?: { inputTokens: number; cachedInputTokens: number };
       totalCostUsd?: number | null;
       stopReason?: string | null;
       terminalReason?: string | null;
