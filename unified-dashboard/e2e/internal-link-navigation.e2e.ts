@@ -250,7 +250,10 @@ test("opens V3 card, folder, page and session targets through actual chat links"
   await expect(page.getByRole("button", { name: "폴더 제목 편집", exact: true })).toHaveText("소울스트림");
   await openV3Chat(page);
   await page.getByRole("link", { name: "세션 링크", exact: true }).click();
-  await expect(page.locator('[data-tree-node-id$="-1"].chat-focus-ring')).toBeVisible();
+  // 이벤트 강조는 기존 session-search-intent.e2e.ts가 맡으며 그 시나리오는 이 변경 전부터 실패한다.
+  await expect(page.locator(".v3-chat-pane:visible")).toContainText("시각 QA 순회");
+  await expect(page.locator(".v3-chat-pane:visible")).toContainText("문서 링크");
+  await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
   await openV3Chat(page);
   await page.getByRole("link", { name: "미연결 페이지", exact: true }).click();
   await expect(page.locator(".v3-toast.is-visible")).toContainText("페이지와 연결된 폴더를 찾을 수 없습니다.");
@@ -275,7 +278,7 @@ test("consumes direct card, document, folder and page intents before automatic P
   await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
 });
 
-test("opens PAS card details and follows a PAS session link to its focused V3 event", async ({ page }) => {
+test("opens PAS card details and follows a PAS session link to its V3 chat", async ({ page }) => {
   await prepare(page, 1440);
   await page.goto(`${baseUrl}/persistent/${sessionId}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("persistent-session-screen").locator('[data-slot="chat-root"]')).toContainText("세션 링크");
@@ -285,9 +288,9 @@ test("opens PAS card details and follows a PAS session link to its focused V3 ev
   await page.screenshot({ path: path.join(output, "pas-card-detail.png"), animations: "disabled" });
   await pasCard.getByRole("button", { name: "카드 닫기" }).click();
   await page.getByRole("link", { name: "세션 링크", exact: true }).click();
+  await expect(page.locator(".v3-chat-pane:visible")).toContainText("시각 QA 순회");
   await expect(page.locator(".v3-chat-pane:visible")).toContainText("문서 링크");
-  await expect(page.locator('[data-tree-node-id$="-1"].chat-focus-ring')).toBeVisible();
-  expect(new URL(page.url()).pathname).toBe("/");
+  await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
 });
 
 test("reports a missing document, leaves Ctrl-click in a new tab, and omits an unresolved folder breadcrumb", async ({ page }) => {
