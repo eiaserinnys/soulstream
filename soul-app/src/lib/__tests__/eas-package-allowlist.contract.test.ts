@@ -5,6 +5,19 @@ import * as ts from 'typescript';
 const repoRoot = path.resolve(__dirname, '../../../../');
 const appSourceRoot = path.join(repoRoot, 'soul-app', 'src');
 const packagesRoot = path.join(repoRoot, 'packages');
+const chatUiRoot = path.join(packagesRoot, 'chat-ui');
+const chatUiSourceRoot = path.join(chatUiRoot, 'src');
+const chatUiSourceFiles = [
+  'canonical.ts',
+  'controller.ts',
+  'evaluate.ts',
+  'index.ts',
+  'text.ts',
+  'types.ts',
+  'validate.ts',
+  'validate_structure.ts',
+  'validate_utils.ts',
+];
 
 test('every shared package source imported by soul-app is allowed by .easignore', () => {
   const pending = sourceFilesUnder(appSourceRoot);
@@ -17,6 +30,14 @@ test('every shared package source imported by soul-app is allowed by .easignore'
     scanned.add(importer);
 
     for (const specifier of moduleSpecifiers(importer)) {
+      const packageImport = resolvePackageNameImport(importer, specifier);
+      if (packageImport) {
+        packageFiles.add(relativePosix(repoRoot, packageImport.manifestPath));
+        packageFiles.add(relativePosix(repoRoot, packageImport.entryPath));
+        pending.push(packageImport.entryPath);
+        continue;
+      }
+
       const importedFile = resolveRelativePackageImport(importer, specifier);
       if (!importedFile) continue;
       packageFiles.add(relativePosix(repoRoot, importedFile));
@@ -30,6 +51,16 @@ test('every shared package source imported by soul-app is allowed by .easignore'
       .map((line) => line.trim()),
   );
   assertPackageFilesAllowed(packageFiles, allowedLines);
+
+  expect([...packageFiles]
+    .filter((file) => file.startsWith('packages/chat-ui/'))
+    .sort()).toEqual([
+    'packages/chat-ui/package.json',
+    ...chatUiSourceFiles.map((file) => `packages/chat-ui/src/${file}`),
+  ].sort());
+  for (const parent of ['packages', 'packages/chat-ui', 'packages/chat-ui/src']) {
+    expect(allowedLines.has(`!/${parent}`)).toBe(true);
+  }
 });
 
 test('skips type-only imports and re-exports', () => {
@@ -147,13 +178,44 @@ function assertPackageFilesAllowed(packageFiles: Iterable<string>, allowedLines:
   }
 }
 
+function resolvePackageNameImport(importer: string, specifier: string): { manifestPath: string; entryPath: string } | null {
+  if (specifier !== '@soulstream/chat-ui' || !isWithin(appSourceRoot, importer)) return null;
+
+  const appManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'soul-app/package.json'), 'utf8'));
+  if (appManifest.dependencies?.[specifier] !== 'file:../packages/chat-ui') {
+    throw new Error('soul-app must use the local @soulstream/chat-ui package.');
+  }
+
+  const manifestPath = path.join(chatUiRoot, 'package.json');
+  const packageManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (
+    packageManifest.name !== specifier
+    || packageManifest.main !== 'src/index.ts'
+    || packageManifest.types !== 'src/index.ts'
+    || packageManifest.exports?.['.'] !== './src/index.ts'
+  ) {
+    throw new Error('@soulstream/chat-ui must expose its public src/index.ts entry.');
+  }
+
+  const entryPath = path.resolve(chatUiRoot, packageManifest.exports['.']);
+  if (!isWithin(chatUiRoot, entryPath) || !fs.existsSync(entryPath)) {
+    throw new Error('@soulstream/chat-ui public entry is missing from packages.');
+  }
+  return { manifestPath, entryPath };
+}
+
 function resolveRelativePackageImport(importer: string, specifier: string): string | null {
   if (!specifier.startsWith('.')) return null;
   const basePath = path.resolve(path.dirname(importer), specifier);
   if (!isWithin(packagesRoot, basePath)) return null;
 
-  const candidates = path.extname(basePath)
-    ? [basePath]
+  const chatUiJsRequest = isWithin(chatUiSourceRoot, importer)
+    && isWithin(chatUiSourceRoot, basePath)
+    && basePath.endsWith('.js');
+  const candidates = chatUiJsRequest
+    ? [`${basePath.slice(0, -3)}.ts`, `${basePath.slice(0, -3)}.tsx`, basePath]
+    : path.extname(basePath)
+      ? [basePath]
     : [
       `${basePath}.ts`,
       `${basePath}.tsx`,

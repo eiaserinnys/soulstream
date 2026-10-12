@@ -4,6 +4,20 @@
 # EAS copy filtering checks parent directory paths without trailing slashes.
 !/packages
 /packages/*
+!/packages/chat-ui
+/packages/chat-ui/*
+!/packages/chat-ui/package.json
+!/packages/chat-ui/src
+/packages/chat-ui/src/*
+!/packages/chat-ui/src/index.ts
+!/packages/chat-ui/src/types.ts
+!/packages/chat-ui/src/validate.ts
+!/packages/chat-ui/src/validate_structure.ts
+!/packages/chat-ui/src/validate_utils.ts
+!/packages/chat-ui/src/evaluate.ts
+!/packages/chat-ui/src/controller.ts
+!/packages/chat-ui/src/text.ts
+!/packages/chat-ui/src/canonical.ts
 !/packages/soul-ui
 /packages/soul-ui/*
 !/packages/soul-ui/src
