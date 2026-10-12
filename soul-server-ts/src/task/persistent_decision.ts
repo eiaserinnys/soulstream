@@ -49,7 +49,7 @@ export interface PersistentDecisionConfig {
   keepalive_short_floor: number;
   keepalive_weekly_floor: number;
   generation_short_floor: number;
-  generation_weekly_floor: number;
+  default_weekly_reserve: number;
   usage_stale_seconds: number;
   usage_refresh_seconds: number;
 }
@@ -217,7 +217,7 @@ export function decidePersistentGeneration(
     });
 
   if (eligibleCandidates.length > 0) {
-    // Forced switching keeps any positive weekly balance; it does not reserve headroom.
+    // Forced switching does not reserve the default model's weekly quota.
     const selection = selectPreset(input, config, eligibleCandidates, 0);
     return createResult(
       context,
@@ -306,7 +306,7 @@ function selectPreset(
   input: DecisionInput,
   config: PersistentDecisionConfig,
   candidatePresets: string[] = uniquePresets(input.default_model, input.fallback_model),
-  weeklyFloor: number = config.generation_weekly_floor,
+  defaultWeeklyReserve: number = config.default_weekly_reserve,
 ): PresetSelection {
   const afterShortFloor = candidatePresets.filter((preset) => {
     const account = accountForPreset(input, preset);
@@ -339,8 +339,10 @@ function selectPreset(
 
   const afterWeeklyFloor = afterShortFloor.filter((preset) => {
     const account = accountForPreset(input, preset);
-    return isStaleForValue(input, account, account?.weekly_remaining_percent, config)
-      || account!.weekly_remaining_percent! >= weeklyFloor;
+    if (isStaleForValue(input, account, account?.weekly_remaining_percent, config)) return true;
+    const remaining = account!.weekly_remaining_percent!;
+    return remaining > 0
+      && (preset !== input.default_model || remaining >= defaultWeeklyReserve);
   });
 
   if (afterWeeklyFloor.length === 0) {

@@ -304,7 +304,7 @@ const decisionCases: DecisionCase[] = [
     expectedSnapshot: { preset_rule: "preset.single" },
   },
   {
-    name: "arrival selects the fallback when its weekly reserve reaches the threshold",
+    name: "arrival uses positive fallback quota when the default is below its weekly reserve",
     input: {
       trigger: "arrival",
       current_preset: "codex-6.1-sol",
@@ -324,7 +324,7 @@ const decisionCases: DecisionCase[] = [
         claude: {
           observed_at: NOW,
           weekly_headroom: -37.9381,
-          weekly_remaining_percent: 10,
+          weekly_remaining_percent: 1,
           short_remaining_percent: 100,
           short_reset_at: null,
         },
@@ -677,19 +677,52 @@ const decisionCases: DecisionCase[] = [
     expectedSnapshot: { preset_rule: "preset.default" },
   },
   {
-    name: "limit_hit switches when the fallback has less than the weekly reserve",
+    name: "limit_hit ignores the default weekly reserve when switching",
     input: {
       trigger: "limit_hit",
+      current_preset: "codex-6.1-sol",
+      default_model: "claude-sonnet",
+      fallback_model: "codex-6.1-sol",
+      limit_reset_at: "2026-10-06T13:00:00.000Z",
+      accounts: {
+        claude: { weekly_headroom: 0, weekly_remaining_percent: 5, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        codex: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 0, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+      },
+    },
+    expected: { action: "new_generation", rule: "limit_hit.switch", target_preset: "claude-sonnet" },
+    expectedSnapshot: { preset_rule: "preset.single" },
+  },
+  {
+    name: "arrival uses positive fallback quota when both presets are below the default reserve",
+    input: {
+      trigger: "arrival",
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
       fallback_model: "codex-6.1-sol",
+      context_tokens: 120_001,
       accounts: {
-        claude: { weekly_headroom: 0, weekly_remaining_percent: 80, short_remaining_percent: 0, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
-        codex: { weekly_headroom: 0, weekly_remaining_percent: 5, short_remaining_percent: 50, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        claude: { weekly_headroom: 0, weekly_remaining_percent: 9, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        codex: { weekly_headroom: 0, weekly_remaining_percent: 9, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
       },
     },
-    expected: { action: "new_generation", rule: "limit_hit.switch", target_preset: "codex-6.1-sol" },
+    expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "codex-6.1-sol" },
     expectedSnapshot: { preset_rule: "preset.single" },
+  },
+  {
+    name: "arrival keeps using the default when positive fallback quota is exhausted",
+    input: {
+      trigger: "arrival",
+      current_preset: "claude-sonnet",
+      default_model: "claude-sonnet",
+      fallback_model: "codex-6.1-sol",
+      context_tokens: 120_001,
+      accounts: {
+        claude: { weekly_headroom: 0, weekly_remaining_percent: 9, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+        codex: { weekly_headroom: 0, weekly_remaining_percent: 0, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
+      },
+    },
+    expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "claude-sonnet" },
+    expectedSnapshot: { preset_rule: "preset.weekly_floor_all" },
   },
   {
     name: "uses the fallback when Claude is below the short-window reserve",
