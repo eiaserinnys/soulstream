@@ -12,6 +12,8 @@ on:
       - 'soul-server-ts/package.json'
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
+      # soul-server-ts/tests/mcp/cluster-roundtrip-fixture.ts imports orch-server-ts/src.
+      - 'orch-server-ts/src/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - '.github/workflows/soul-server-ts.yml'
@@ -22,6 +24,7 @@ on:
       - 'soul-server-ts/package.json'
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
+      - 'orch-server-ts/src/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - '.github/workflows/soul-server-ts.yml'
