@@ -108,13 +108,15 @@ export function DialoguesOverlaySamples({
         onChanged={async () => done("프로젝트 컨텍스트 저장")}
       />
     );
-  if (id === "card-image")
+  if (id === "card-image" || id === "card-image-screen")
     return (
       <CardTimeline
         card={reviewCard}
         detail={reviewDetail}
         portraitUrl="/system-portrait.png"
-        initialImage={{ src: "/icon-192.png", alt: "검수 이미지" }}
+        initialImage={id === "card-image-screen"
+          ? { src: "/image-viewer-screen.png", alt: "화면 캡처" }
+          : { src: "/icon-192.png", alt: "검수 이미지" }}
         onAnswer={() => done("샘플 응답")}
         pending={false}
       />
