@@ -35,6 +35,25 @@ test("PAS period history is a strict internal read-only tool", () => {
   assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00", limit: 101 }).success, false);
   assert.equal(input.safeParse({ since: "2026-10-05T00:00:00+09:00", until: "2026-10-06T00:00:00+09:00", max_text_chars: 99 }).success, false);
 });
+test("turn usage reads are strict internal-only read-only tools", () => {
+  for (const definition of [sessionTools.list_turn_usage, sessionTools.summarize_turn_usage]) {
+    assert.equal(definition.audience, "internal");
+    assert.equal(definition.strictInputSchema, true);
+    assert.equal(definition.config.annotations?.readOnlyHint, true);
+    assert.equal(mcpToolDefinitions.some((tool) => tool.name === definition.name && tool.audience === "all"), false);
+  }
+
+  const list = z.object(sessionTools.list_turn_usage.config.inputSchema).strict();
+  assert.equal(list.safeParse({ session_id: "session-1" }).success, true);
+  assert.equal(list.safeParse({ since: "2026-10-05T00:00:00+09:00" }).success, true);
+  assert.equal(list.safeParse({}).success, true); // the paired handler requires session_id or since.
+  assert.equal(list.safeParse({ session_id: "session-1", caller_session_id: "forged" }).success, false);
+  assert.equal(list.safeParse({ session_id: "session-1", limit: 201 }).success, false);
+
+  const summary = z.object(sessionTools.summarize_turn_usage.config.inputSchema).strict();
+  assert.equal(summary.safeParse({ since: "2026-10-05T00:00:00+09:00" }).success, true);
+  assert.equal(summary.safeParse({ since: "2026-10-05T00:00:00+09:00", extra: true }).success, false);
+});
 test("card check item tools are internal-only while existing review and comment tools remain public", () => {
   for (const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"] as const)
     assert.equal(cardTools[name].audience,"internal",name);

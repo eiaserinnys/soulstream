@@ -151,6 +151,29 @@ export const sessionTools = {
         max_text_chars: z.number().int().min(100).max(20000).default(2000),
       },
     } },
+  list_turn_usage: { name: "list_turn_usage", audience: "internal", strictInputSchema: true, config: {
+      title: "List turn usage",
+      description:
+        "세션 하나 또는 기간의 턴별 사용량을 시간순으로 조회한다. kind는 complete, failed, no_usage이며, 입력 토큰은 캐시를 포함한 합계이고 비용은 정가 추정이다. 기간 전체 합계는 summarize_turn_usage로 본다.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        session_id: z.string().min(1).optional(),
+        since: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시작 시각. 포함.").optional(),
+        until: z.string().min(1).describe("오프셋이 명시된 ISO 8601 끝 시각. 제외. 생략하면 호출 시각.").optional(),
+        cursor: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(200).default(100),
+      },
+    } },
+  summarize_turn_usage: { name: "summarize_turn_usage", audience: "internal", strictInputSchema: true, config: {
+      title: "Summarize turn usage",
+      description:
+        "기간의 턴 사용량을 한 번에 요약한다. 에이전트와 모델별로 묶으며, 주입 글자 수와 첫 호출 입력 통계는 기간에 만들어진 세션만으로 낸다. 턴별 결과는 list_turn_usage로 본다.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        since: z.string().min(1).describe("오프셋이 명시된 ISO 8601 시작 시각. 포함."),
+        until: z.string().min(1).describe("오프셋이 명시된 ISO 8601 끝 시각. 제외. 생략하면 호출 시각.").optional(),
+      },
+    } },
   get_session_story: { name: "get_session_story", audience: "all", config: {
       description:
         "접힌 세션 줄거리와 아직 접히지 않은 턴 요약을 조회한다. 스토리가 없으면 저장된 턴 요약으로 폴백한다.",
