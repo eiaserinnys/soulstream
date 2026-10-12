@@ -44,7 +44,7 @@ export function ChatUiNumberInput({ fieldKey, label, accessibilityLabel = label,
   const editorId = useId();
   // Typing updates the common state without replacing this editor's draft.
   // Outside controls sync the registered editor even when the value is unchanged.
-  useEffect(() => { setDraft(String(value)); }, [controller.resetEpoch]);
+  useEffect(() => { setDraft(String(value)); }, [controller.sessionId, controller.resetEpoch]);
   useEffect(() => controller.registerNumberEditor(editorId, fieldKey, next => setDraft(String(next))),
     [controller.registerNumberEditor, editorId, fieldKey]);
   const commit = () => setDraft(String(value));
