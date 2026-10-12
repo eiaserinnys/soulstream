@@ -38,9 +38,7 @@ export function FolderDocumentOverlay({
     >
       <header className="v3-chat-header" onMouseDown={onHeaderMouseDown}>
         <div>
-          <small>
-            {projectTitle} › {folderTitle}
-          </small>
+          {folderTitle ? <small>{projectTitle} › {folderTitle}</small> : null}
           <strong>마크다운 문서</strong>
         </div>
         <DashboardIconCap

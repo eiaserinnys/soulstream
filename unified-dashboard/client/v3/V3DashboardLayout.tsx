@@ -7,7 +7,7 @@ import { CardWorkspace } from "./CardWorkspace";
 import type { CardSessionSelection } from "./CardSessionHistory";
 import { useCardNavigation } from "./card-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AskQuestionBanner, DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, fetchFolderSnapshot, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useNotification, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type CatalogFolder, type InternalLinkTarget, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX } from "./v3-layout-metrics";
 import { V3_MAIN_COLUMNS_OUTER_MARGIN_PX } from "./v3-main-columns";
@@ -45,10 +45,7 @@ import { usePlannerCollections } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
 import { invalidateV3, useV3PageInvalidationKey, useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
 import { useFolderParentMoveController } from "./use-folder-parent-move-controller";
-import {
-  parseSessionSearchIntent,
-  removeSessionSearchIntent,
-} from "@soulstream/search-contract";
+import { parseSessionSearchIntent } from "@soulstream/search-contract";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
 import { useV3MutationProjection } from "./use-v3-mutation-projection";
@@ -58,6 +55,16 @@ import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
 import { useProjectNavigationMutations } from "./use-project-navigation-mutations";
 import { useFolderSessions } from "./use-folder-sessions";
 import { useTodayDate } from "./use-today-date";
+import { InternalLinkViewers } from "./InternalLinkViewers";
+import {
+  useDashboardInternalLinks,
+  useRegisterDashboardLinkOpeners,
+} from "./DashboardInternalLinks";
+import {
+  consumeDashboardLinkIntent,
+  readDashboardLinkIntent,
+  type DashboardLinkIntent,
+} from "./dashboard-link-intent";
 import "./v3-dashboard-styles";
 export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
@@ -110,6 +117,7 @@ function V3DashboardContent() {
     void refreshAuthStatus().catch(() => undefined);
   }, [refreshAuthStatus]);
   const { toast, notify, notifyWriteFailure } = useV3Notifications(refreshAuthStatus);
+  const { openTarget: openDashboardLink } = useDashboardInternalLinks();
   useUserPreferencesSync(user?.email ?? null);
   const catalogLoadState = useInitialCatalogLoad(true);
   const catalogLoadError = catalogLoadState.status === "authentication"
@@ -243,46 +251,96 @@ function V3DashboardContent() {
     openCard: cardNavigation.open,
     clearCard: cardNavigation.close,
   });
-  const attemptedSessionIntent = useRef<string | null>(null);
+  const dashboardLinkOpeners = useMemo(() => ({
+    session: (target: InternalLinkTarget) => {
+      if (target.kind !== "session") return false;
+      const eventId = target.eventId === undefined ? null : Number(target.eventId);
+      const focusEventId = eventId !== null && Number.isSafeInteger(eventId) && eventId > 0 ? eventId : null;
+      return sessionPanel.openSessionById(target.sessionId, focusEventId);
+    },
+    card: (target: InternalLinkTarget) => {
+      if (target.kind !== "card") return false;
+      cardNavigation.open(target.cardId);
+      return true;
+    },
+    folder: (target: InternalLinkTarget) => {
+      if (target.kind !== "folder") return false;
+      const folder = catalog?.folders.find((candidate) => candidate.id === target.folderId);
+      return folder ? selectFolder(folder).then(() => true) : false;
+    },
+    page: (target: InternalLinkTarget) => {
+      if (target.kind !== "page") return false;
+      const folder = catalog?.folders.find((candidate) => candidate.projectPageId === target.pageId);
+      if (!folder) {
+        notify("페이지와 연결된 폴더를 찾을 수 없습니다.");
+        return false;
+      }
+      return selectFolder(folder).then(() => true);
+    },
+  }), [cardNavigation.open, catalog?.folders, notify, selectFolder, sessionPanel.openSessionById]);
+  useRegisterDashboardLinkOpeners(dashboardLinkOpeners);
+
+  const attemptedDashboardIntent = useRef<string | null>(null);
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
-    const hasQueryIntent = currentUrl.searchParams.has("session");
+    const hasDashboardQuery = ["session", "card", "document", "folder", "page"]
+      .some((key) => currentUrl.searchParams.has(key));
     const hasLegacyIntent = /^#\/feed\//.test(currentUrl.hash);
-    if (!hasQueryIntent && !hasLegacyIntent) {
-      attemptedSessionIntent.current = null;
+    if (currentUrl.pathname !== "/" || (!hasDashboardQuery && !hasLegacyIntent)) {
+      attemptedDashboardIntent.current = null;
       return;
     }
     if (authLoading || !isAuthenticated) return;
 
     const identity = currentUrl.toString();
-    if (attemptedSessionIntent.current === identity) return;
-    attemptedSessionIntent.current = identity;
-
-    const intent = parseSessionSearchIntent(currentUrl);
-    if (!intent) {
-      notify("세션 링크 형식이 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
-      return;
-    }
-    let focusEventId: number | null = null;
-    if (intent.eventId !== undefined) {
-      if (!/^\d+$/.test(intent.eventId) || Number(intent.eventId) < 1
-        || !Number.isSafeInteger(Number(intent.eventId))) {
-        notify("세션 링크의 이벤트 ID가 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
+    if (attemptedDashboardIntent.current === identity) return;
+    const dashboardIntent = readDashboardLinkIntent(window.location, [window.location.origin]);
+    const isSessionIntent = currentUrl.searchParams.has("session") || hasLegacyIntent;
+    let sessionTarget: Extract<InternalLinkTarget, { kind: "session" }> | null = null;
+    if (isSessionIntent) {
+      const sessionIntent = parseSessionSearchIntent(currentUrl);
+      if (!sessionIntent) {
+        attemptedDashboardIntent.current = identity;
+        notify("세션 링크 형식이 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
         return;
       }
-      focusEventId = Number(intent.eventId);
+      if (sessionIntent.eventId !== undefined) {
+        if (!/^\d+$/.test(sessionIntent.eventId) || Number(sessionIntent.eventId) < 1
+          || !Number.isSafeInteger(Number(sessionIntent.eventId))) {
+          attemptedDashboardIntent.current = identity;
+          notify("세션 링크의 이벤트 ID가 잘못되었습니다. URL을 확인한 뒤 다시 시도하세요.");
+          return;
+        }
+      }
+      sessionTarget = {
+        kind: "session",
+        sessionId: sessionIntent.sessionId,
+        ...(sessionIntent.eventId === undefined ? {} : { eventId: sessionIntent.eventId }),
+      };
     }
+    const intent: DashboardLinkIntent | null = dashboardIntent ?? (sessionTarget ? {
+      target: sessionTarget,
+      identity: `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+      legacy: hasLegacyIntent,
+    } : null);
+    if (!intent) {
+      return;
+    }
+    if ((intent.target.kind === "folder" || intent.target.kind === "page")
+      && catalogLoadState.status === "loading") return;
 
-    void sessionPanel.openSessionById(intent.sessionId, focusEventId).then((opened) => {
-      if (opened !== true || window.location.href !== identity) return;
+    attemptedDashboardIntent.current = identity;
+    const target = sessionTarget ?? intent.target;
+    void openDashboardLink(target, identity).then((opened) => {
+      if (!opened || window.location.href !== identity) return;
       window.history.replaceState(
         window.history.state,
         "",
-        removeSessionSearchIntent(window.location.href),
+        consumeDashboardLinkIntent(identity, intent),
       );
-      attemptedSessionIntent.current = null;
+      attemptedDashboardIntent.current = null;
     });
-  }, [authLoading, isAuthenticated, notify, sessionPanel.openSessionById]);
+  }, [authLoading, catalogLoadState.status, isAuthenticated, notify, openDashboardLink]);
   const clearSessionPanelFocus = sessionPanel.clearFocusRequest;
   const removeRunHistorySessions = folderSessions.removeSessions;
   const moveRunHistorySession = folderSessions.moveSession;
@@ -732,6 +790,7 @@ function V3DashboardContent() {
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
       <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} onOpenFolder={(folderId) => { const folder = catalog?.folders.find((candidate) => candidate.id === folderId); if (folder) void selectFolder(folder); }} />
       <V3Toast message={toast} />
+      <InternalLinkViewers onDocumentDeleted={() => setMarkdownDocumentsRevision((current) => current + 1)} />
     </div>
     </SessionMenuProvider>
   );

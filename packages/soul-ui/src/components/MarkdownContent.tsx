@@ -15,6 +15,7 @@ import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownImage } from "./MarkdownImage";
+import { useInternalLinkClick } from "./InternalLinkProvider";
 import { ChatImageAttachments, ChatImageViewer } from "./chat/ChatImageAttachments";
 import {
   buildStructuredChatImageItems,
@@ -43,17 +44,26 @@ const defaultAnchorClass = "text-accent-blue hover:underline";
 const userBubbleAnchorClass =
   "text-white underline decoration-white/70 underline-offset-2 hover:decoration-white";
 
-const createAnchorComponent = (className: string): NonNullable<Components["a"]> =>
-  ({ children, ...props }) => (
-    <a
-      className={className}
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    >
-      {children}
-    </a>
-  );
+const createAnchorComponent = (className: string): NonNullable<Components["a"]> => {
+  const AnchorComponent: NonNullable<Components["a"]> = ({ children, onClick, ...props }) => {
+    const internalLinkClick = useInternalLinkClick();
+    return (
+      <a
+        className={className}
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+        onClick={(event) => {
+          onClick?.(event);
+          internalLinkClick(event);
+        }}
+      >
+        {children}
+      </a>
+    );
+  };
+  return AnchorComponent;
+};
 
 const defaultAnchor = createAnchorComponent(defaultAnchorClass);
 const userBubbleAnchor = createAnchorComponent(userBubbleAnchorClass);

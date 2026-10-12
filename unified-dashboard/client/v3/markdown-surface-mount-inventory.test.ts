@@ -51,6 +51,7 @@ describe("markdown surface mount inventory", () => {
     expect(inventoryMounts("MarkdownDocumentPanel")).toEqual([
       "unified-dashboard/client/v3/DialoguesOverlaySamples.tsx",
       "unified-dashboard/client/v3/FolderBoardWorkspace.tsx",
+      "unified-dashboard/client/v3/InternalLinkViewers.tsx",
     ]);
   });
 

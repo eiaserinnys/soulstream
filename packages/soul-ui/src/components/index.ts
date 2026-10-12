@@ -25,6 +25,8 @@ export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 export { MarkdownDeleteDialog } from "./MarkdownDeleteDialog";
 export type { MarkdownDeleteDialogProps } from "./MarkdownDeleteDialog";
 export { MarkdownContent } from "./MarkdownContent";
+export { InternalLinkProvider, useInternalLinkClick } from "./InternalLinkProvider";
+export type { InternalLinkOpenTarget } from "./InternalLinkProvider";
 export { SwayCharacter } from "./SwayCharacter";
 export type { SwayCharacterProps } from "./SwayCharacter";
 export { SessionContextMenu } from "./SessionContextMenu";

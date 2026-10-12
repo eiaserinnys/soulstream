@@ -87,6 +87,7 @@ export interface MarkdownDocument {
   title: string;
   body: string;
   version: number;
+  folderId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

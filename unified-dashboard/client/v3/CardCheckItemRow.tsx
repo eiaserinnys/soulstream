@@ -1,4 +1,4 @@
-import { Checkbox } from "@seosoyoung/soul-ui";
+import { Checkbox, useInternalLinkClick } from "@seosoyoung/soul-ui";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
 import { Check, Link, TriangleAlert } from "lucide-react";
@@ -13,6 +13,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
  onConfirmChange(confirmed:boolean):void;onToggleExpanded():void;onTargetItem():void;onOpenImage(src:string,alt:string):void;
  readOnly?:boolean;
 }) {
+ const internalLinkClick=useInternalLinkClick();
  const dropped=item.display==="dropped";
  const display=checked&&pending?"confirmed":item.display;
  const label=`${item.id} ${item.title}, ${displayLabels[display]}${display==="fix"?` ${item.fixOpen}`:""}`;
@@ -48,7 +49,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
      </figure>)}
      {missingEvidence?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
     </div>:null}
-    {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=><a key={`${evidence.url}:${index}`} href={evidence.url} target="_blank" rel="noreferrer" title={evidence.label}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>)}</div>:null}
+    {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=><a key={`${evidence.url}:${index}`} href={evidence.url} target="_blank" rel="noreferrer" title={evidence.label} onClick={internalLinkClick}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>)}</div>:null}
     {!readOnly?<div className="v3-card-check-item-foot">
      {metadata}
      {!dropped?<button type="button" className="v3-card-check-item-target" onClick={onTargetItem}>고칠 점 남기기</button>:null}
