@@ -192,8 +192,8 @@ test("document reader keeps its frame across states and captures the proposed la
     const name = route.request().url().split('proposal-').at(-1)!;
     if (name === 'loading') await new Promise<void>(resolve => {release=resolve;});
     if (name === 'missing' || name === 'failure') return route.fulfill({status:name==='missing'?404:500,json:{error:'fixture'}});
-    const title = name === 'title' ? (page.viewportSize()!.width<500 ? '문서읽기화면의긴제목과상태배치를확인하는최종검수보고서' : '채팅 내부 문서 읽기 화면의 크기와 상태 배치, 제목 줄바꿈을 확인한 최종 검수 보고서 — 영구 세션과 대시보드의 같은 보기 및 긴 문서 스크롤 결과') : '문서 읽기 개선 보고서';
-    await route.fulfill({json:{id:'proposal-'+name,title,body:name==='long'?long:name==='short'?short:normal,version:1}});
+    const title = name === 'title' ? (page.viewportSize()!.width<500 ? '문서읽기화면의긴제목과상태배치를확인하는최종검수보고서' : '채팅 내부 문서 읽기 화면의 크기와 상태 배치, 제목 줄바꿈을 확인한 최종 검수 보고서와 영구 세션 및 대시보드의 긴 문서 스크롤 결과') : '문서 읽기 개선 보고서';
+    await route.fulfill({json:{id:'proposal-'+name,title,body:name==='long'?long:name==='short'?short:name==='title'?normal.replace(/^# 문서 읽기 개선 보고서\n\n/, ''):normal,version:1}});
   });
   const dialog = page.getByTestId('internal-document-dialog');
   const measurements: Awaited<ReturnType<typeof captureDocument>>[] = [];
