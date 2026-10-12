@@ -8,6 +8,7 @@ import type {
   RunnerReleaseDescriptor,
   RunnerReleaseMaterializer,
 } from "../../src/runner/runner_release_materializer.js";
+import { BuildArtifactReleaseMaterializer } from "../../src/runner/runner_release_materializer.js";
 import {
   RunnerReleasePool,
   type RunnerReleasePoolDependencies,
@@ -50,6 +51,50 @@ describe("RunnerReleasePool", () => {
     expect(materializer.materialize).toHaveBeenCalledOnce();
     expect(materializer.verify).toHaveBeenCalled();
     expect(await pool.listReadyReleases()).toEqual([release]);
+  });
+
+  it("lists marker-valid candidates without full bundle verification", async () => {
+    const root = await temporaryDirectory();
+    const artifacts = await temporaryDirectory();
+    await writeFile(join(artifacts, "package.json"), "{\"type\":\"module\"}\n");
+    await writeFile(join(artifacts, "runner_entry.js"), "export {};\n");
+    const materializer = new BuildArtifactReleaseMaterializer(artifacts);
+    const verify = vi.spyOn(materializer, "verify");
+    const pool = new RunnerReleasePool(root, materializer);
+    const valid = pool.describe("release-marker-only");
+    await mkdir(valid.releaseRoot, { recursive: true });
+    await writeFile(join(valid.releaseRoot, ".runner-release.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      releaseId: valid.releaseId,
+      hashAlgorithm: "sha256",
+      artifacts: ["package.json", "runner_entry.js"],
+    })}\n`);
+    const invalid = pool.describe("release-invalid-marker");
+    await mkdir(invalid.releaseRoot, { recursive: true });
+    await writeFile(join(invalid.releaseRoot, ".runner-release.json"), "not-json\n");
+
+    await expect(pool.listReleaseCandidates()).resolves.toEqual([valid]);
+    expect(verify).not.toHaveBeenCalled();
+    await expect(pool.listReadyReleases()).resolves.toEqual([]);
+    expect(verify).toHaveBeenCalledTimes(2);
+    expect(verify).toHaveBeenCalledWith(valid);
+    expect(verify).toHaveBeenCalledWith(invalid);
+  });
+
+  it("verifies only canonical release descriptors through the locked API", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-locked");
+    const pool = new RunnerReleasePool(root, materializer);
+    const release = pool.describe("release-locked");
+    await pool.ensureRelease(release);
+    materializer.verify.mockClear();
+
+    await expect(pool.verifyReleaseLocked(release)).resolves.toBeUndefined();
+    await expect(pool.verifyReleaseLocked({
+      ...release,
+      releaseRoot: join(root, "outside-release-pool"),
+    })).rejects.toThrow("runner release path escaped its pool");
+    expect(materializer.verify).toHaveBeenCalledOnce();
   });
 
   it("fails loudly on materialization errors without publishing a live-checkout fallback", async () => {
@@ -138,6 +183,11 @@ class FakeMaterializer implements RunnerReleaseMaterializer {
     this.ready.add(release.releaseId);
   });
   readonly verify = vi.fn(async (release: RunnerReleaseDescriptor) => {
+    if (!this.ready.has(release.releaseId)) {
+      throw Object.assign(new Error("not ready"), { code: "ENOENT" });
+    }
+  });
+  readonly checkReadyMarker = vi.fn(async (release: RunnerReleaseDescriptor) => {
     if (!this.ready.has(release.releaseId)) {
       throw Object.assign(new Error("not ready"), { code: "ENOENT" });
     }

@@ -80,7 +80,7 @@ export class RunnerReleaseGarbageCollector {
       }
     };
     try {
-      const enumerate = () => this.pool.listReadyReleases();
+      const enumerate = () => this.pool.listReleaseCandidates();
       const releases = phaseObservation
         ? await phaseObservation.runAsync("enumerateAndVerify", {}, enumerate)
         : await enumerate();
@@ -160,6 +160,26 @@ export class RunnerReleaseGarbageCollector {
                   }
                   continue releaseLoop;
                 }
+              }
+              try {
+                const verify = () => this.pool.verifyReleaseLocked(release);
+                if (phaseObservation) {
+                  await phaseObservation.runAsync(
+                    "candidateVerification",
+                    { label: release.releaseId },
+                    verify,
+                  );
+                } else {
+                  await verify();
+                }
+              } catch (error) {
+                lastInspectionFailure = error;
+                result.retained.push({ releaseId: release.releaseId, reason: "evidence_unreadable" });
+                this.logger.warn(
+                  { err: error, releaseId: release.releaseId },
+                  "runner release GC retained release because release verification failed",
+                );
+                continue releaseLoop;
               }
               await this.pool.removeReleaseLocked(release);
               result.removed.push(release.releaseId);

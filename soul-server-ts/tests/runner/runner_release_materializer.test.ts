@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,6 +20,29 @@ afterEach(async () => {
 });
 
 describe("BuildArtifactReleaseMaterializer", () => {
+  it("checks only the ready marker without reading release artifacts", async () => {
+    const releases = await temporaryDirectory("runner-releases-");
+    const releaseRoot = join(releases, "release-marker-only");
+    await mkdir(releaseRoot, { recursive: true });
+    const release = {
+      releaseId: "release-marker-only",
+      releaseRoot,
+      runnerModuleRoot: releaseRoot,
+    };
+    await writeFile(join(releaseRoot, ".runner-release.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      releaseId: release.releaseId,
+      hashAlgorithm: "sha256",
+      artifacts: ["package.json", "runner_entry.js"],
+    })}\n`);
+    const materializer = new BuildArtifactReleaseMaterializer(
+      await temporaryDirectory("runner-artifacts-"),
+    );
+
+    await expect(materializer.checkReadyMarker(release)).resolves.toBeUndefined();
+    await expect(materializer.verify(release)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("derives release_id only from the ordered, explicit runtime artifact set", async () => {
     const first = await artifactDirectory("export const version = 1;\n");
     const second = await artifactDirectory("export const version = 1;\n");

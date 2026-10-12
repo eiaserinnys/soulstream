@@ -35,6 +35,7 @@ export interface RunnerReleaseDescriptor {
 export interface RunnerReleaseMaterializer {
   resolveCurrentReleaseId(): Promise<string>;
   materialize(release: RunnerReleaseDescriptor, stagingPath: string): Promise<void>;
+  checkReadyMarker(release: RunnerReleaseDescriptor): Promise<void>;
   verify(release: RunnerReleaseDescriptor): Promise<void>;
   remove(release: RunnerReleaseDescriptor): Promise<void>;
 }
@@ -108,10 +109,7 @@ export class BuildArtifactReleaseMaterializer implements RunnerReleaseMaterializ
   }
 
   async verify(release: RunnerReleaseDescriptor): Promise<void> {
-    const marker = parseMarker(await readFile(join(release.releaseRoot, READY_MARKER), "utf8"));
-    if (marker.releaseId !== release.releaseId) {
-      throw new Error(`runner release marker mismatch: ${release.releaseId}`);
-    }
+    await this.checkReadyMarker(release);
     const releaseId = await hashArtifactSet(release.runnerModuleRoot);
     if (releaseId !== release.releaseId) {
       throw new Error(`runner release content mismatch: ${release.releaseId}`);
@@ -119,6 +117,13 @@ export class BuildArtifactReleaseMaterializer implements RunnerReleaseMaterializ
     // Idempotently finish a publish interrupted after atomic rename but before
     // permission hardening. Content is verified before any directory is trusted.
     await makeReleaseReadOnly(release.releaseRoot);
+  }
+
+  async checkReadyMarker(release: RunnerReleaseDescriptor): Promise<void> {
+    const marker = parseMarker(await readFile(join(release.releaseRoot, READY_MARKER), "utf8"));
+    if (marker.releaseId !== release.releaseId) {
+      throw new Error(`runner release marker mismatch: ${release.releaseId}`);
+    }
   }
 
   async remove(release: RunnerReleaseDescriptor): Promise<void> {
