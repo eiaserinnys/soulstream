@@ -42,6 +42,7 @@ import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskLi
 import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSessionPortraitToggleReviewSample";
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
+import { ChatUiReviewSample } from './ChatUiReviewSample';
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -235,6 +236,12 @@ export function ComponentsReviewPage() {
             </Sample>
             <Sample name="AssistantMessage contentLayout" state="일반 · structured · PAS">
               <ChatUiMessageReviewSample />
+            </Sample>
+            <Sample name="ChatUiMessage · 일반" state="첫 조각 · 글 대체 · 실제 발행본">
+              <ChatUiReviewSample presentation="default" />
+            </Sample>
+            <Sample name="ChatUiMessage · PAS" state="첫 조각 · 글 대체 · 실제 발행본">
+              <ChatUiReviewSample presentation="manuscript" />
             </Sample>
             <Sample name="SystemMessage / CollapsibleCaption / LabeledDivider" state="기존 요약 · 접힘/펼침 · 말줄임 · 가운데 라벨">
               <div data-testid="caption-comparison">
