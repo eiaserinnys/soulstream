@@ -8,7 +8,8 @@ jest.mock('../../components/planner/MarkdownDocumentContent', () => ({ MarkdownD
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null }));
 import React from 'react';
 import { act, render, renderHook } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createSurfaceRoles, useTokens } from '../../theme';
 import { TabletNavigator } from '../TabletNavigator';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
@@ -20,6 +21,57 @@ import type { PersistentSessionScene } from '../../store/persistentSessionScene'
 
 let store: StoreApi<PersistentSessionScene>;
 function Probe() { store = usePersistentSessionHost().store; return null; }
+
+function SafeAreaInsetsProbe() {
+  const insets = useSafeAreaInsets();
+  return <Text testID="safe-area-insets">{`${insets.top}:${insets.bottom}`}</Text>;
+}
+
+const safeAreaMetrics = {
+  frame: { x: 0, y: 0, width: 1024, height: 1366 },
+  insets: { top: 24, right: 0, bottom: 20, left: 0 },
+};
+
+function renderTabletDetail(kind: 'card' | 'document') {
+  mockFocusState.current = true;
+  resetNavigationCapture();
+  const navigator = render(<PersistentSessionProvider><Probe /><TabletNavigator /></PersistentSessionProvider>);
+  const screenName = kind === 'card' ? 'CardDetail' : 'MarkdownDocument';
+  const component = getNativeStackCaptures()[0].screens.find(screen => screen.name === screenName)!.component;
+  navigator.unmount();
+
+  const testID = kind === 'card' ? 'persistent-tablet-card-sheet' : 'persistent-tablet-document-sheet';
+  const route = kind === 'card' ? { params: { cardId: 'card-1' } } : { params: { documentId: 'doc-1' } };
+  const screen = render(<SafeAreaProvider initialMetrics={safeAreaMetrics}>
+    <PersistentSessionProvider>{React.createElement(component, { route, navigation: { goBack: jest.fn() } })}</PersistentSessionProvider>
+    <SafeAreaInsetsProbe />
+  </SafeAreaProvider>);
+
+  const safeArea = screen.UNSAFE_getByType(SafeAreaView);
+  return {
+    screen,
+    testID,
+    edges: safeArea.props.edges,
+    style: StyleSheet.flatten(safeArea.props.style),
+    insets: screen.getByTestId('safe-area-insets').props.children,
+  };
+}
+
+test('iPad 카드와 문서 시트는 0이 아닌 안전 영역에서 같은 위아래 12 여백을 쓴다', () => {
+  const t = renderHook(() => useTokens()).result.current;
+  const card = renderTabletDetail('card');
+  const document = renderTabletDetail('document');
+
+  expect(card.edges).toEqual(['top', 'bottom', 'right']);
+  expect(card.style).toMatchObject({ position: 'absolute', top: 0, bottom: 0, right: 0, paddingVertical: t.uiSpacing.md });
+  expect(document.style).toEqual(card.style);
+  expect(card.insets).toBe('24:20');
+  expect(card.screen.getByTestId(card.testID)).toBeTruthy();
+  expect(document.screen.getByTestId(document.testID)).toBeTruthy();
+  card.screen.unmount();
+  document.screen.unmount();
+});
+
 test('PAS 카드 선택은 기존 스택 안에 머물고 별도 카드 상세 경로는 그대로 동작한다', () => {
   resetNavigationCapture();
   render(<PersistentSessionProvider><Probe /><TabletNavigator /></PersistentSessionProvider>);

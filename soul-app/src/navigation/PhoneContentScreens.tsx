@@ -32,7 +32,7 @@ function PhoneDetailScreenFrame({ navigation, children }: { navigation: any; chi
       tabs?.setOptions({ tabBarStyle: getDefaultTabBarStyle(t.colors) });
     };
   }, [navigation, t.colors]));
-  return <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>{children}</SafeAreaView>;
+  return <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, paddingTop: t.uiSpacing.md }}>{children}</SafeAreaView>;
 }
 
 export function PhoneCardDetail({ route, navigation }: {

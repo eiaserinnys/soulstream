@@ -36,7 +36,7 @@ function DefaultImageViewerModal({ sources, initialIndex, onClose, captions }: {
             <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>×</Text>
           </GlassButton>
         </View>
-        <View style={{ flex: 1 }} onLayout={({ nativeEvent: { layout } }) => setViewport({ width: layout.width, height: layout.height })}>
+        <View style={{ flex: 1, marginVertical: t.spacing.md }} onLayout={({ nativeEvent: { layout } }) => setViewport({ width: layout.width, height: layout.height })}>
           <ScrollView testID="image-viewer-pages" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
             contentOffset={{ x: initialIndex * viewport.width, y: 0 }}>
             {sources.map((source, index) => captions?.[index] ? <CaptionedImagePage key={index} source={source} caption={captions[index]} index={index} viewport={viewport} /> : <ScrollView key={index} testID="image-viewer-zoom"

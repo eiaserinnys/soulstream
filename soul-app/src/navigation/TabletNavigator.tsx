@@ -71,7 +71,7 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, child
     <TouchableWithoutFeedback onPress={() => navigation.goBack()} accessibilityLabel={accessibilityLabel}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: FOLDER_WORKSPACE_BACKDROP_COLOR }]} />
     </TouchableWithoutFeedback>
-    <SafeAreaView edges={['top', 'bottom', 'right']} style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: sheetWidth }}>
+    <SafeAreaView edges={['top', 'bottom', 'right']} style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: sheetWidth, paddingVertical: t.uiSpacing.md }}>
       <AppGlassCard role="glassSoft" testID={testID} style={{ flex: 1, borderRadius: t.foundation.radius.panel }}>
         <View style={{ flex: 1, backgroundColor: createSurfaceRoles(t).glassCard.tokenStyle.backgroundColor }}>
           {children}
