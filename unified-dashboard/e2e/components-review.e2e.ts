@@ -75,8 +75,9 @@ for (const width of [1440, 390]) {
     const review = page.getByTestId("components-review");
     await expect(review).toBeVisible();
     await expect(review.locator('section[id^="components-"] > .v3-detail-section-head > h3')).toHaveText([
-      "목록 행", "섹션 머리와 캡", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
+      "목록 행", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
     ]);
+    await expect(review.locator('#components-heads .v3-detail-section-head > h3').filter({ hasText: "섹션 머리와 캡" })).toHaveText("섹션 머리와 캡");
     await page.reload();
     await expect(review).toBeVisible();
     await expect(page.locator(".v3-navigation, .v3-session-panel, .v3-planner, .v3-global-toolbar")).toHaveCount(0);

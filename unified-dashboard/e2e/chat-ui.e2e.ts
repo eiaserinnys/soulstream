@@ -71,9 +71,10 @@ for (const pas of [false, true]) for (const width of [1440, 360]) {
       const er = editor.getBoundingClientRect(), rr = row.getBoundingClientRect(), ur = undo.getBoundingClientRect(), ar = attachment.getBoundingClientRect();
       return { rowBottom: rr.bottom, composerTop: composer.getBoundingClientRect().top, undoCenter: ur.y + ur.height / 2,
         attachmentCenter: ar.y + ar.height / 2, editorFont: getComputedStyle(editor).fontSize, undoFont: getComputedStyle(undo).fontSize,
+        configuredFont: getComputedStyle(node).getPropertyValue("--chat-font-size").trim(),
         attachmentScrollbar: getComputedStyle(attachment.firstElementChild!).scrollbarWidth, editorX: er.x };
     });
-    expect(geometry.undoFont).toBe(geometry.editorFont);
+    expect(geometry.undoFont).toBe(geometry.configuredFont);
     expect(Math.abs(geometry.undoCenter - geometry.attachmentCenter)).toBeLessThanOrEqual(1);
     expect(geometry.attachmentScrollbar).toBe("none");
     writeFileSync(path.join(output, `${label}-geometry.json`), JSON.stringify({ geometry, identities: h.identities }, null, 2));
@@ -96,9 +97,12 @@ for (const pas of [false, true]) for (const width of [1440, 360]) {
     await capture(page, `${label}-notice`);
     await root.getByRole("button", { name: "초기화", exact: true }).click();
     await expect(notice).toHaveText("기본값으로 돌아갔어");
+    const openedNoticeHeight = (await notice.boundingBox())!.height;
     await root.getByRole("checkbox", { name: pas ? "결과 알림" : "연간 결제 (20% 할인)", exact: true }).click();
     await expect(notice).toBeVisible();
     await expect(notice).toHaveText("");
+    expect((await notice.boundingBox())!.height).toBe(openedNoticeHeight);
+    await capture(page, `${label}-feedback-empty-line`);
     if (!pas && width === 1440) {
       await root.getByTestId("send-button").click();
       await expect.poll(() => h.sends.length).toBe(1);
