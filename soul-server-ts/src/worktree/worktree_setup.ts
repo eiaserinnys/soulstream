@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 
 import { GitProcessError } from "./worktree_process.js";
@@ -45,7 +46,7 @@ export async function setupSharedDependencies(input: {
   const managedPaths: ManagedWorktreePath[] = [];
   const previous = new Map((input.previouslyManagedPaths ?? []).map((entry) => [entry.path, entry]));
   const sourceByPath = new Map<string, string>();
-  for (const source of nodeModulesDirectories(base)) {
+  for (const source of await nodeModulesDirectories(base)) {
     if (pnpmRepository && isIndependentNpmProject(base, dirname(source))) continue;
     sourceByPath.set(normalizeRelative(relative(base, source)), source);
   }
@@ -178,20 +179,20 @@ function isIndependentNpmProject(repoRoot: string, packagePath: string): boolean
   return false;
 }
 
-export function nodeModulesDirectories(base: string): string[] {
+export async function nodeModulesDirectories(base: string): Promise<string[]> {
   const found: string[] = [];
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (entry.name === ".git") continue;
       const path = join(directory, entry.name);
       if (entry.name === "node_modules") {
         if (entry.isDirectory() || entry.isSymbolicLink()) found.push(path);
         continue;
       }
-      if (entry.isDirectory()) visit(path);
+      if (entry.isDirectory()) await visit(path);
     }
   };
-  visit(base);
+  await visit(base);
   return found.sort();
 }
 

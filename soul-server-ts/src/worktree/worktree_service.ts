@@ -330,7 +330,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
     try {
       await this.options.lock.withLock(commonDirectory, async () => {
         this.assertWorkspaceUnused(record.canonicalPath);
-        const links = baseDependencyLinksIntoWorktree(
+        const links = await baseDependencyLinksIntoWorktree(
           join(this.options.projectsRoot, record.repoId), record.canonicalPath,
         );
         if (links.length > 0) {
