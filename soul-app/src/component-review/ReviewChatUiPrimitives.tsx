@@ -13,6 +13,7 @@ const planOptions = [
   { id: 'studio', label: '스튜디오 요금제' },
   { id: 'enterprise', label: '기업 요금제' },
   { id: 'custom', label: '사용자 지정 요금제' },
+  { id: 'extended', label: '기업용 분석 및 내부 검수 자료 포함' },
 ];
 
 export function ReviewChatUiPrimitives() {
@@ -27,7 +28,9 @@ export function ReviewChatUiPrimitives() {
   const [annual, setAnnual] = useState(true);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>(['summary']);
   const [billing, setBilling] = useState('monthly');
-  const [plan, setPlan] = useState('starter');
+  const [plan, setPlan] = useState('extended');
+  const [defaultPlan, setDefaultPlan] = useState('starter');
+  const [paperChoice, setPaperChoice] = useState('draft');
   const [note, setNote] = useState('기본 입력 예시');
   const [defaultChoice, setDefaultChoice] = useState('first');
   const [defaultChecked, setDefaultChecked] = useState(false);
@@ -40,36 +43,43 @@ export function ReviewChatUiPrimitives() {
         <Text accessibilityRole="header" style={{ ...body, fontWeight: '700' }}>채팅용</Text>
         <SettingsInput variant="chat" label="참석 인원" value={attendeeCount} onChangeText={setAttendeeCount} keyboardType="number-pad" inputMode="numeric" />
         <SettingsInput variant="chat" label="" accessibilityLabel="예산" value={amount} onChangeText={setAmount} keyboardType="number-pad" inputMode="numeric" />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
-          <CardItemCheckbox variant="chat" title="연간 결제" checked={annual} testID="chat-annual-plan" onPress={() => setAnnual(value => !value)} />
-          <Text accessibilityRole="button" onPress={() => setAnnual(value => !value)} style={body}>연간 결제</Text>
-        </View>
-        <View style={{ gap: t.spacing.xs }}>
+        <CardItemCheckbox variant="chat" label="연간 결제" checked={annual} testID="chat-annual-plan" onPress={() => setAnnual(value => !value)} />
+        <View style={{ gap: t.spacing.md }}>
           <Text style={body}>포함 항목</Text>
-          {[
-            { id: 'summary', label: '요약' },
-            { id: 'sources', label: '출처' },
-          ].map(option => {
-            const checked = selectedFeatures.includes(option.id);
-            const toggle = () => setSelectedFeatures(current => checked
-              ? current.filter(id => id !== option.id)
-              : [...current, option.id]);
-            return <View key={option.id} style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
-              <CardItemCheckbox variant="chat" title={option.label} checked={checked} testID={`chat-feature-${option.id}`} onPress={toggle} />
-              <Text accessibilityRole="button" onPress={toggle} style={body}>{option.label}</Text>
-            </View>;
-          })}
+          <View>
+            {[
+              { id: 'summary', label: '요약' },
+              { id: 'sources', label: '출처' },
+            ].map(option => {
+              const checked = selectedFeatures.includes(option.id);
+              const toggle = () => setSelectedFeatures(current => checked
+                ? current.filter(id => id !== option.id)
+                : [...current, option.id]);
+              return <CardItemCheckbox key={option.id} variant="chat" label={option.label} checked={checked} testID={`chat-feature-${option.id}`} onPress={toggle} />;
+            })}
+          </View>
         </View>
-        <View style={{ gap: t.spacing.xs }}>
+        <View style={{ gap: t.spacing.sm }}>
           <Text style={body}>결제 주기</Text>
           <SettingsOptionRow variant="chat" presentation="default" label="결제 주기" selected={billing} options={[
             { id: 'monthly', label: '월간' },
             { id: 'annual', label: '연간' },
           ]} emptyLabel="없음" onSelect={setBilling} />
         </View>
-        <View style={{ gap: t.spacing.xs }}>
+        <View style={{ gap: t.spacing.sm }}>
+          <Text style={body}>문서 보관</Text>
+          <SettingsOptionRow variant="chat" presentation="manuscript" label="문서 보관" selected={paperChoice} options={[
+            { id: 'draft', label: '초안' },
+            { id: 'final', label: '최종본' },
+          ]} emptyLabel="없음" onSelect={setPaperChoice} />
+        </View>
+        <View style={{ gap: t.spacing.sm }}>
           <Text style={body}>요금제</Text>
           <SettingsOptionRow variant="chat" presentation="manuscript" label="요금제" selected={plan} options={planOptions} emptyLabel="없음" onSelect={setPlan} />
+        </View>
+        <View style={{ gap: t.spacing.sm }}>
+          <Text style={body}>팀 요금제</Text>
+          <SettingsOptionRow variant="chat" presentation="default" label="팀 요금제" selected={defaultPlan} options={planOptions} emptyLabel="없음" onSelect={setDefaultPlan} />
         </View>
       </View>
 

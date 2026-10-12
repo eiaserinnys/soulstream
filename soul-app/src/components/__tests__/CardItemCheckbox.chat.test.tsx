@@ -5,33 +5,43 @@ import { CardItemCheckbox } from '../CardItemCheckbox';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
-test('채팅 체크는 카드 번호 없이 이름·checked 상태를 노출하고 웹 Space를 한 번 처리한다', () => {
+test('채팅 체크 줄은 이름과 checked 상태를 한 요소로 묶고 라벨·Space를 한 번 토글한다', () => {
   const onPress = jest.fn();
   const originalPlatform = Platform.OS;
   (Platform as any).OS = 'web';
   try {
-    const screen = render(
-      <CardItemCheckbox
-        variant="chat"
-        title="연간 결제"
-        checked={false}
-        testID="chat-annual-plan"
-        onPress={onPress}
-      />,
-    );
+    function Harness() {
+      const [checked, setChecked] = React.useState(false);
+      return <CardItemCheckbox variant="chat" label="연간 결제" checked={checked} testID="chat-annual-plan" onPress={() => {
+        onPress();
+        setChecked(value => !value);
+      }} />;
+    }
+    const screen = render(<Harness />);
 
     const checkbox = screen.getByTestId('chat-annual-plan');
-    const visual = screen.getByTestId('chat-annual-plan-visual');
-    const borderBeforeFocus = StyleSheet.flatten(visual.props.style).borderColor;
     expect(checkbox.props.accessibilityLabel).toBe('연간 결제');
     expect(checkbox.props.accessibilityState).toMatchObject({ checked: false });
-    fireEvent(checkbox, 'focus');
-    expect(StyleSheet.flatten(visual.props.style).borderColor).not.toBe(borderBeforeFocus);
+    expect(screen.getAllByRole('checkbox', { name: '연간 결제' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: '연간 결제' })).toBeNull();
+
+    fireEvent.press(screen.getByText('연간 결제'));
+    expect(screen.getByRole('checkbox', { name: '연간 결제' }).props.accessibilityState).toMatchObject({ checked: true });
+    expect(onPress).toHaveBeenCalledTimes(1);
+    const checkedBorderWidth = StyleSheet.flatten(screen.getByTestId('chat-annual-plan-visual').props.style).borderWidth;
+    fireEvent(screen.getByRole('checkbox', { name: '연간 결제' }), 'focus');
+    const focusedStyle = StyleSheet.flatten(screen.getByTestId('chat-annual-plan-visual').props.style);
+    expect(focusedStyle.borderWidth).toBeGreaterThan(checkedBorderWidth);
+    expect(focusedStyle.outlineColor).toBe(focusedStyle.borderColor);
+    expect(focusedStyle.outlineWidth).toBeGreaterThan(0);
+    expect(focusedStyle.outlineOffset).toBeGreaterThan(0);
+
     const keyEvent = { key: ' ', preventDefault: jest.fn(), stopPropagation: jest.fn() };
-    fireEvent(checkbox, 'keyDownCapture', keyEvent);
+    fireEvent(screen.getByRole('checkbox', { name: '연간 결제' }), 'keyDownCapture', keyEvent);
     expect(keyEvent.preventDefault).toHaveBeenCalledTimes(1);
     expect(keyEvent.stopPropagation).toHaveBeenCalledTimes(1);
-    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('checkbox', { name: '연간 결제' }).props.accessibilityState).toMatchObject({ checked: false });
+    expect(onPress).toHaveBeenCalledTimes(2);
   } finally {
     (Platform as any).OS = originalPlatform;
   }

@@ -15,7 +15,7 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
   const t = useTokens();
   const baseStyles = useMemo(() => cardStyles(t), [t]);
   const styles = variant === 'chat'
-    ? { ...baseStyles, body: { ...baseStyles.body, fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio }, heading: { ...baseStyles.heading, fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio } }
+    ? { ...baseStyles, body: { ...baseStyles.body, fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio } }
     : baseStyles;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -32,7 +32,7 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
         ? <GlassButton key={option.id} variant={presentation === 'manuscript' ? 'paper' : 'secondary'} size="compact"
             accessibilityLabel={`${label}: ${option.label}`} accessibilityState={{ selected: selected === option.id }}
             aria-pressed={selected === option.id} onPress={() => choose(option.id)}
-            contentStyle={selected === option.id ? { backgroundColor: t.colors.accentTint, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.accent } : undefined}>
+            contentStyle={selected === option.id ? { backgroundColor: t.colors.accentTint } : undefined}>
             <Text style={styles.body}>{option.label}</Text>{description(option) ? <Text style={styles.meta}>{description(option)}</Text> : null}
           </GlassButton>
         : <TouchableOpacity key={option.id} accessibilityRole="button" accessibilityState={{ selected: selected === option.id }} onPress={() => choose(option.id)} style={{ minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, borderWidth: StyleSheet.hairlineWidth, borderColor: selected === option.id ? t.colors.accent : t.colors.border, backgroundColor: selected === option.id ? t.colors.accentTint : t.colors.surfaceMuted }}><Text style={styles.body}>{option.label}</Text>{description(option) ? <Text style={styles.meta}>{description(option)}</Text> : null}</TouchableOpacity>)}
@@ -43,7 +43,7 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
         {variant === 'chat'
           ? <SettingsInput variant="chat" label="" accessibilityLabel={`${label} 검색`} placeholder="검색" value={query} onChangeText={setQuery}/>
           : <TextInput accessibilityLabel={`${label} 검색`} placeholder="검색" value={query} onChangeText={setQuery} style={styles.input} placeholderTextColor={t.colors.textPlaceholder}/>}
-        <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={variant === 'chat' ? false : undefined} style={{ flex: 1 }}>
           <GroupedGlassSheet>{rows.map(option => <GroupedGlassRow key={option.id} selected={option.id === selected} accessibilityLabel={[option.label, description(option)].filter(Boolean).join(' · ')} onPress={() => choose(option.id)} style={{ padding: t.cardLayout.padding, gap: t.spacing.xs }}><Text style={styles.body}>{option.label}</Text>{description(option) ? <Text style={styles.meta}>{description(option)}</Text> : null}</GroupedGlassRow>)}</GroupedGlassSheet>
           {!rows.length ? <Text style={styles.body}>검색 결과가 없습니다.</Text> : null}
         </ScrollView>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { SettingsOptionRow, type SettingsOption } from '../SettingsOptionRow';
 import { PHONE_CHAT_TYPOGRAPHY, PHONE_FOUNDATION, TABLET_CHAT_TYPOGRAPHY } from '../../../theme';
@@ -64,6 +64,14 @@ test('채팅용 짧은 선택지는 본문 크기와 presentation 버튼으로 �
   expect(selected.props.accessibilityState).toMatchObject({ selected: true });
   expect([PHONE_CHAT_TYPOGRAPHY.body, TABLET_CHAT_TYPOGRAPHY.body])
     .toContain(StyleSheet.flatten(screen.getByText('월간').props.style).fontSize);
+  const styleOf = (button: typeof selected) => StyleSheet.flatten(
+    typeof button.props.style === 'function' ? button.props.style({ pressed: false }) : button.props.style,
+  );
+  const selectedStyle = styleOf(selected);
+  const unselectedStyle = styleOf(screen.getByLabelText('결제 주기: 연간'));
+  for (const property of ['width', 'height', 'minWidth', 'minHeight', 'paddingHorizontal', 'paddingVertical', 'borderWidth', 'borderColor'] as const) {
+    expect(selectedStyle[property]).toBe(unselectedStyle[property]);
+  }
   fireEvent.press(screen.getByLabelText('결제 주기: 연간'));
   expect(onSelect).toHaveBeenCalledWith('annual');
 });
@@ -92,7 +100,16 @@ test('채팅용 선택 modal은 닫기 후 원래 선택 행으로 돌아온다'
   const screen = render(<SettingsOptionRow variant="chat" presentation="manuscript" label="선택" selected="v0" options={options} emptyLabel="없음" onSelect={jest.fn()}/>);
 
   fireEvent.press(screen.getByLabelText('선택: 선택 0'));
+  expect(screen.UNSAFE_getByType(ScrollView).props.showsVerticalScrollIndicator).toBe(false);
   fireEvent.press(screen.getByText('닫기'));
   expect(screen.queryByLabelText('선택 검색')).toBeNull();
   expect(screen.getByLabelText('선택: 선택 0')).toBeTruthy();
+});
+
+test('기본 설정 선택 modal은 세로 indicator 기본 동작을 유지한다', () => {
+  const options = Array.from({ length: 6 }, (_, index) => ({ id: `v${index}`, label: `선택 ${index}` }));
+  const screen = render(<SettingsOptionRow label="선택" selected="v0" options={options} emptyLabel="없음" onSelect={jest.fn()}/>);
+
+  fireEvent.press(screen.getByLabelText('선택: 선택 0'));
+  expect(screen.UNSAFE_getByType(ScrollView).props.showsVerticalScrollIndicator).toBeUndefined();
 });
