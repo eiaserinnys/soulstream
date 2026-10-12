@@ -8,6 +8,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { redirectRetiredDashboardPathname } from "./dashboard-routes";
 import { usePersistentSessionStartup } from './v3/use-persistent-session-startup';
 import { V3Toast } from './v3/V3Toast';
+import { DashboardInternalLinks } from './v3/DashboardInternalLinks';
 
 const V3DashboardLayout = lazy(() =>
   import("./v3/V3DashboardLayout").then((mod) => ({
@@ -52,7 +53,7 @@ export function App() {
   }, []);
 
   return (
-    <><V3Toast message={startupToast}/><Suspense fallback={null}>
+    <DashboardInternalLinks><V3Toast message={startupToast}/><Suspense fallback={null}>
       {/^\/persistent(?:\/[^/]+)?\/?$/.test(pathname)
         ? <PersistentSessionScreen sessionId={pathname.split('/')[2] ? decodeURIComponent(pathname.split('/')[2]!) : undefined}/>
         : pathname === "/dialogues/ios" || pathname === "/dialogues/ios/"
@@ -61,6 +62,6 @@ export function App() {
         ? <IosComponentsReviewPage />
         : pathname === "/dialogues" || pathname === "/dialogues/" ? <DialoguesReviewPage />
         : pathname === "/components" ? <ComponentsReviewLayout /> : <V3DashboardLayout />}
-    </Suspense></>
+    </Suspense></DashboardInternalLinks>
   );
 }
