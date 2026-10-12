@@ -637,6 +637,7 @@ export class RunnerRecoveryCoordinator {
         attemptRunner = runner;
         return onRunnerAttached;
       },
+      phaseObservation,
     );
     const ownedRunner = task.runner;
     if (mode === "offline") {

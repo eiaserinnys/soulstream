@@ -229,7 +229,17 @@ export class RunnerSqliteEventOutbox {
     databasePath: string,
     options: RunnerSqliteEventOutboxOptions,
   ): Promise<RunnerSqliteEventOutbox> {
-    const database = openRunnerSqliteDatabase(databasePath);
+    const database = openRunnerSqliteDatabase(
+      databasePath,
+      {},
+      options.phaseObservation
+        ? {
+          phaseObservation: options.phaseObservation,
+          ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+          label: "runner writable outbox open",
+        }
+        : undefined,
+    );
     try {
       await chmod(databasePath, 0o600);
       const recovered = await withRunnerSqliteBusyRetry(() => {
@@ -265,9 +275,16 @@ export class RunnerSqliteEventOutbox {
         }
         ensureRunnerLifecycleColumns(database);
         ensureRunnerIpcJournalV4(database);
-        const next = recover(database, {
+        const recoverSnapshot = () => recover(database, {
           migrateLegacyAckCheckpoint: version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION,
         });
+        const next = options.phaseObservation
+          ? options.phaseObservation.runSync("dbRead", {
+            ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+            databasePath,
+            label: "runner writable outbox recovery",
+          }, recoverSnapshot)
+          : recoverSnapshot();
         migrateRunnerInterventionInboxV9(database, version);
         if (version < RUNNER_EVENT_OUTBOX_SCHEMA_VERSION) {
           database.exec(`PRAGMA user_version = ${RUNNER_EVENT_OUTBOX_SCHEMA_VERSION}`);

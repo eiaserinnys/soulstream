@@ -43,6 +43,7 @@ import type {
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import type { RunnerReleasePool } from "./runner_release_pool.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import type { ReleaseManifestV1 } from "../release/release_manifest.js";
 import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 
@@ -111,6 +112,7 @@ export function createRunnerProcessRuntimeFactory(
     spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
     runnerProcess: SpawnedRunnerProcess | Promise<SpawnedRunnerProcess> | null,
     recoveryMode?: "adopt" | "replay" | "offline",
+    phaseObservation?: RunnerPhaseObservation,
   ) => {
     const dispatcher = new RunnerProcessDispatcher({
       spawn,
@@ -120,6 +122,7 @@ export function createRunnerProcessRuntimeFactory(
       pumpMux: options.pumpMux,
       logger: options.logger,
       ...(options.nodeStallMonitor ? { nodeStallMonitor: options.nodeStallMonitor } : {}),
+      ...(phaseObservation ? { phaseObservation } : {}),
       handleHostCall: async (call, registerPostResponse) => await applyRunnerHostCall(
         call,
         task,
@@ -189,7 +192,13 @@ export function createRunnerProcessRuntimeFactory(
   }) as RunnerProcessRuntimeFactory;
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
-  factory.recover = (task, registration, snapshots, mode = "adopt") => {
+  factory.recover = (
+    task,
+    registration,
+    snapshots,
+    mode = "adopt",
+    phaseObservation,
+  ) => {
     const config = registration.config;
     const spawnInput = spawnInputFromConfig(
       stateDirectory,
@@ -206,6 +215,7 @@ export function createRunnerProcessRuntimeFactory(
       spawnInput,
       mode === "offline" ? null : adoptRegisteredRunner(spawner, registration),
       mode,
+      phaseObservation,
     );
   };
   return factory;

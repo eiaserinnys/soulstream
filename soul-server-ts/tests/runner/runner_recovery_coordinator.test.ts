@@ -516,6 +516,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     const strandedTask = task("session-a");
     strandedTask.runner = abandonedRunner();
     const subject = makeSubject([stranded], RECOVERY_NOW_MS, [], {
+      nodeStallMonitor: { beginRunnerOperation: vi.fn(() => vi.fn()) } as never,
       taskManager: {
         hydrateRunnerRecoveryTask: vi.fn(async () => strandedTask),
       } as never,
@@ -530,6 +531,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
       expect.anything(),
       "offline",
       expect.any(Function),
+      expect.objectContaining({ runSync: expect.any(Function) }),
     );
   });
 
