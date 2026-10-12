@@ -7,6 +7,7 @@ import { CardControlPlaneService } from "../src/cards/card_control_plane_service
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 import {createCardDispatchRuntime} from "../src/cards/card_dispatch_runtime.js";
+import { createSessionOwnerResolver } from "../src/session/session_owner.js";
 import { buildCardPrompt } from "../src/cards/card_prompt.js";
 import { readCardDispatchSettings, updateCardDispatchSettings } from "../src/cards/card_dispatch_settings.js";
 import { registerCardDispatchSettingsRoutes } from "../src/cards/card_dispatch_settings_routes.js";
@@ -86,6 +87,27 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.sessionEnded(sessionId);
         await dispatcher.drain();
     }
+    function sessionOwnerResolver() {
+        const user = { email: human.actorUserId!, isAdmin: true, allowedFolderIds: [] };
+        return createSessionOwnerResolver({
+            getSession: async id => (await h.sql`SELECT * FROM sessions WHERE session_id=${id}`)[0] ?? null,
+            findUserByEmail: async email => email === user.email ? user : null,
+            findExternalAgent: async () => null,
+        });
+    }
+    async function makeRuntime(createSession: any, routeExisting: any, send: any) {
+        return createCardDispatchRuntime({
+            sqlResolver:{resolveSql:async()=>h.liveSql,close:async()=>{}},
+            router:{selectNodeForCreate:()=>({nodeId:'eiaserinnys',profileId:'roselin',modelPresetId:'sol'}),createSession,
+                waitForCreatedSession:async()=>true,routeExistingSessionPendingCommand:routeExisting} as any,
+            bridge:{sendPendingCommand:send} as any,
+            availability:{resolveForNode:()=>({available:true}),requireAvailable:()=>undefined} as any,
+            notifier:{} as any,admin:{} as any,broadcaster:{append:()=>{}} as any,warn,
+            onFolderHeaderUpdated:async()=>{},usageSnapshot:()=>({}) as any,ensureSystemFolder:async()=>{},validateFolder:async()=>true,
+            resolveSessionOwner:sessionOwnerResolver(),
+            findUserByEmail:async email=>email===human.actorUserId?{email,isAdmin:true,allowedFolderIds:[]}:null,
+        });
+    }
     it("stores structured attachments over HTTP, reads them and launches then resumes with paths", async () => {
         const attachments=[{nodeId:"eiaserinnys",path:"/incoming/upload/image.png",name:"그림.png",mimeType:"image/png"}];
         const app=Fastify();
@@ -124,15 +146,13 @@ describe("card dispatch and session lifecycle", () => {
             if(p.type==='create_session')await h.sql`INSERT INTO sessions(session_id,card_id,node_id,agent_id,status,model_preset) VALUES(${p.agentSessionId},${p.cardId},'eiaserinnys','roselin','running','sol')`;
             return {type:'session_created',agentSessionId:p.agentSessionId,status:'ok'};
         });
-        const runtime=await createCardDispatchRuntime({sqlResolver:{resolveSql:async()=>h.liveSql,close:async()=>{}},
-            router:{selectNodeForCreate:()=>({nodeId:'eiaserinnys',profileId:'roselin',modelPresetId:'sol'}),createSession,waitForCreatedSession:async()=>true,routeExistingSessionPendingCommand:routeExisting} as any,
-            bridge:{sendPendingCommand:send} as any,availability:{resolveForNode:()=>({available:true})} as any,notifier:{} as any,admin:{} as any,broadcaster:{append:()=>{}} as any,
-            warn,onFolderHeaderUpdated:async()=>{},usageSnapshot:()=>({}) as any,ensureSystemFolder:async()=>{},validateFolder:async()=>true});
+        const runtime=await makeRuntime(createSession,routeExisting,send);
         try {
             const service=await runtime.serviceProvider();
             const created=await service.createCard({...human,folderId:'dispatch-folder',title:'실제 경계',request:'原文',attachments,queue:true,assignee:{kind:'agent',agentId:'roselin'},nodeId:'eiaserinnys',modelPreset:'sol',idempotencyKey:key()});
             await runtime.dispatcher.drain();
             expect(createSession).toHaveBeenCalledWith(expect.objectContaining({attachment_paths:[attachments[0]!.path]}),expect.anything());
+            expect(createSession).toHaveBeenCalledWith(expect.objectContaining({caller_info:{source:'system',email:human.actorUserId}}),expect.anything());
             const sessionId=createSession.mock.calls[0]![0].agentSessionId;
             await service.patchCard({ ...human, cardId: created.operation.target_id, assignee: { kind: 'session', sessionId } });
             await h.sql`UPDATE sessions SET status='error',termination_reason='limit_hit',termination_event_id=1 WHERE session_id=${sessionId}`;
@@ -140,6 +160,27 @@ describe("card dispatch and session lifecycle", () => {
             await runtime.dispatcher.checkLimits();await runtime.dispatcher.drain();
             expect(routeExisting).toHaveBeenCalledWith(expect.objectContaining({type:'intervene',attachment_paths:[attachments[0]!.path]}));
             expect(send).toHaveBeenLastCalledWith(expect.objectContaining({command:expect.objectContaining({payload:expect.objectContaining({attachment_paths:[attachments[0]!.path]})})}));
+        }finally{await runtime.dispatcher.drain();}
+    });
+    it("carries a queued card creator session's verified owner to the dispatched session",async()=>{
+        const email=human.actorUserId!;
+        await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,metadata)
+          VALUES('queue-creator','eiaserinnys','roselin','running',${h.sql.json([{type:'caller_info',value:{source:'browser',email}}])})`;
+        const createSession=vi.fn((payload:any)=>({node:{nodeId:'eiaserinnys'},command:{payload},modelPresetId:'sol'}));
+        const routeExisting=vi.fn(async(payload:any)=>({node:{nodeId:'eiaserinnys'},command:{payload}}));
+        const send=vi.fn(async(routed:any)=>{
+            const payload=routed.command.payload;
+            if(payload.type==='create_session') await h.sql`INSERT INTO sessions(session_id,card_id,node_id,agent_id,status,model_preset)
+              VALUES(${payload.agentSessionId},${payload.cardId},'eiaserinnys','roselin','running','sol')`;
+            return {type:'session_created',agentSessionId:payload.agentSessionId,status:'ok'};
+        });
+        const runtime=await makeRuntime(createSession,routeExisting,send);
+        try {
+            const service=await runtime.serviceProvider();
+            await service.createCard({actorKind:'agent',actorSessionId:'queue-creator',actorUserId:null,folderId:'dispatch-folder',
+                title:'대기열 주인',request:'실행',queue:true,assignee:{kind:'agent',agentId:'roselin'},nodeId:'eiaserinnys',modelPreset:'sol',idempotencyKey:key()});
+            await runtime.dispatcher.drain();
+            expect(createSession).toHaveBeenCalledWith(expect.objectContaining({caller_info:{source:'system',email}}),expect.anything());
         }finally{await runtime.dispatcher.drain();}
     });
     it("includes user comments and spoken instructions but excludes agent replies from dispatch input", async () => {

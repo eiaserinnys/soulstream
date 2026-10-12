@@ -1,4 +1,4 @@
-import { CardExecutionService, confirmedCommandFailure } from "./card_execution_service.js";
+import { CardExecutionService, confirmedCommandFailure, type ExecutionInput } from "./card_execution_service.js";
 import { PendingNodeCommandRejectedError } from "../node/pending_commands.js";
 import { buildCardPrompt } from "./card_prompt.js";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
@@ -16,6 +16,8 @@ import { intervenePayload } from "../session/session_action_command_payloads.js"
 import type { ModelPresetAvailabilityService } from "../model/model_preset_availability.js";
 import type { PushNotifier } from "../push/push_notifier.js";
 import type { AdminAccessProvider } from "../admin/admin_access.js";
+import type { DashboardUserRepository } from "../runtime/live_dashboard_access_provider.js";
+import type { SessionOwnerResolver } from "../session/session_owner.js";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
@@ -39,6 +41,11 @@ import type { OrchestrationCandidate } from "@soulstream/wire-schema/card-orches
 import { CardWorkDispatchService, type DispatchWorkActor } from "./card_work_dispatch_service.js";
 import { canonicalWorkErrorDeliveryId, recordConfirmedErrorTx } from "./card_work_error_delivery.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
+
+function systemCallerInfo(ownerEmail:string|null) {
+  return {source:"system" as const,...(ownerEmail?{email:ownerEmail}:{})};
+}
+
 export async function createCardDispatchRuntime(options: {
   sqlResolver: LiveDbSqlResolver;
   router: SessionCommandRouter;
@@ -56,9 +63,31 @@ export async function createCardDispatchRuntime(options: {
     idempotencyKey: string;
   }) => Promise<void>;
   validateFolder: (id: string, ownerEmail: string) => Promise<boolean>;
+  resolveSessionOwner: SessionOwnerResolver;
+  findUserByEmail: DashboardUserRepository["findUserByEmail"];
 }) {
   const resolver = new BoardYjsSqlResolver(options.sqlResolver);
   const resolveSql = () => resolver.resolveSql();
+  const cardDispatchRepository = new CardDispatchRepository(resolveSql);
+  const executionCallerInfo = async (input: ExecutionInput) => {
+    if (input.callerSource === "browser") return { source: "browser" as const };
+    const owner = input.actor.actorKind !== "user" && input.actor.actorSessionId
+      ? await options.resolveSessionOwner(input.actor.actorSessionId)
+      : null;
+    return systemCallerInfo(owner?.ownerEmail ?? null);
+  };
+  const queuedCallerInfo = async (cardId:string) => {
+    const creator = await cardDispatchRepository.cardCreatorActor(cardId);
+    if (creator?.actor_user_id) {
+      const user = await options.findUserByEmail(creator.actor_user_id);
+      return systemCallerInfo(user?.email ?? null);
+    }
+    if (creator?.actor_session_id) {
+      const owner = await options.resolveSessionOwner(creator.actor_session_id);
+      return systemCallerInfo(owner?.ownerEmail ?? null);
+    }
+    return systemCallerInfo(null);
+  };
   let dispatcher: CardDispatcher;
   const serviceProvider = createCardControlPlaneServiceProvider({
     sqlResolver: options.sqlResolver,
@@ -68,7 +97,7 @@ export async function createCardDispatchRuntime(options: {
     onMutation: (change) => dispatcher.acceptMutation(change),
   });
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
-    repository: new CardDispatchRepository(resolveSql),
+    repository: cardDispatchRepository,
     cards: serviceProvider,
     deliveryExists: async id => !!await new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient).get(id),
     warn: options.warn,
@@ -103,14 +132,14 @@ export async function createCardDispatchRuntime(options: {
         };
       }
     },
-    launch: (input) =>
+    launch: async (input) =>
       createRecurringSession(
         {
           router: options.router,
           bridge: options.bridge,
           modelPresetAvailability: options.availability,
         },
-        { ...input, attachmentPaths:cardAttachmentPaths(input.attachments ?? [], input.nodeId), callerInfo: { source: "system" } },
+        { ...input, attachmentPaths:cardAttachmentPaths(input.attachments ?? [], input.nodeId), callerInfo: await queuedCallerInfo(input.cardId) },
       ),
     sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}, changeDelivery?:import("./card_change_notification.js").CardChangeDelivery, attachments?:readonly import("@soulstream/wire-schema/card-attachments").CardAttachment[]) => {
       const parsed = intervenePayload(sessionId, {
@@ -368,13 +397,13 @@ export async function createCardDispatchRuntime(options: {
         running:(await legacyOptions.repository.running()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
       return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
         {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
-          attachmentPaths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),callerInfo:{source:input.callerSource}});
+          attachmentPaths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),callerInfo:await executionCallerInfo(input)});
     },
     ensure:async input=>{
       const detail=(await (await serviceProvider()).getCard(input.cardId))!;
       const routed=await options.router.routeExistingSessionPendingCommand({type:"ensure_session_running",agentSessionId:input.sessionId,
         text:`카드 「${detail.card.title}」를 이어서 수행하세요.`,delivery_id:`card-execution:${input.requestId}`,
-        attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:{source:input.callerSource}});
+        attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:await executionCallerInfo(input)});
       const result=await options.bridge.sendPendingCommand(routed);
       if(result.status==='error' || result.type==='error')throw new PendingNodeCommandRejectedError({
         commandType:routed.command.commandType,requestId:routed.command.requestId,

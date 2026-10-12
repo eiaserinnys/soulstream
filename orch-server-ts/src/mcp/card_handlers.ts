@@ -17,7 +17,8 @@ type Handler = (options: Pick<McpHostOptions, "cards">, args: Args, context: Mcp
 export const cardHandlers = {
   create_card: (o, a, c) => run(async () => {
     if (a.run === true && a.queue === true) throw new Error("run과 queue는 함께 쓸 수 없습니다");
-    const actor = agent(a, c);
+    matchingHeader(a, c);
+    const actor = agent(a, c, true);
     const assignee = !Object.hasOwn(a, "assignee") ? {} : { assignee: !a.assignee ? null : {
       kind: (a.assignee as Args).kind, agentId: (a.assignee as Args).agent_id,
       sessionId: (a.assignee as Args).session_id, userId: (a.assignee as Args).user_id,
