@@ -21,6 +21,9 @@ const file = new File([sampleSrc ? await fetch(sampleSrc).then(response => respo
   sampleSrc ? "screen.png" : "fixture.svg", {type:sampleSrc ? "image/png" : "image/svg+xml"});
 const caption = params.get("caption") === "none" ? "" : params.get("caption") === "long"
   ? "원본 화면에서 글자를 읽고 상태와 배치를 확인할 수 있는 증거 이미지입니다. ".repeat(5)
+  : params.get("caption") === "one" ? "화면 캡처"
+  : params.get("caption") === "small-long" ? "원본 화면에서 글자를 읽고 상태와 배치를 확인할 수 있는 증거 이미지입니다. ".repeat(3)
+  : params.get("caption") === "forty-three" ? "원본 화면의 글자와 배치를 확인하는 이미지입니다. 화면 상태와 설명을 봅니다."
   : params.get("caption") === "two" ? "192 이미지의 상태와 배치를 확인합니다."
   : params.get("caption") === "three"
   ? "원본 화면에서 글자를 읽고 상태와 배치를 확인할 수 있는 증거 이미지입니다. ".repeat(2)

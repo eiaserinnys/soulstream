@@ -6,6 +6,8 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 const phase = process.env.IMAGE_VIEWER_PHASE ?? "after";
 const output = path.resolve("../../../.local/artifacts/20261012-image-viewer", phase);
 mkdirSync(output, {recursive:true});
+const headroomOutput = path.resolve("../../../.local/artifacts/20261012-image-viewer/headroom");
+const previewPhase = process.env.IMAGE_VIEWER_PREVIEW_PHASE ?? "after";
 const cases = [[1920,1080,800,600],[1920,1080,2560,1440],[1920,1080,1200,2800],[1920,1080,64,64],[390,844,800,600]];
 async function open(page: Page, viewer: string, vw:number, vh:number, w:number, h:number, caption="", options: {theme?: "light"|"dark"; gallery?:string; sample?:string} = {}) {
   await page.setViewportSize({width:vw,height:vh});
@@ -69,6 +71,8 @@ async function metrics(popup: Locator) {
       close:rect(el.querySelector('[aria-label="Close"]')!),
       insets:[imageRect.left-popupRect.left,imageRect.top-popupRect.top,popupRect.right-imageRect.right,popupRect.bottom-imageRect.bottom],
       textStart,alignment:textStart===null?null:imageRect.left-textStart,framePadding,
+      caption:caption ? rect(caption) : null,
+      captionInset:caption ? caption.getBoundingClientRect().left-popupRect.left-parseFloat(style.borderLeftWidth) : null,
       captionLines:caption ? caption.getBoundingClientRect().height/parseFloat(getComputedStyle(caption).lineHeight) : 0,
       computed:{minWidth:style.minWidth,minHeight:style.minHeight,
         containerXs:style.getPropertyValue("--container-xs"),container3xs:style.getPropertyValue("--container-3xs")},
@@ -97,7 +101,7 @@ for(const viewer of ["card","file","chat"]) for(const [vw,vh,w,h] of cases) {
       expect.soft(data.image.width<w || data.image.height<h).toBe(true);
     }
     const padding=viewer==="chat"?48:24;
-    const expectedScale=Math.min(1,(vw-32-data.border-padding)/w,(vh-32-data.border-data.reserved)/h);
+    const expectedScale=Math.min(1,(vw-32-data.border-padding)/w,(vh-2*(vw<=640?24:32)-data.border-data.reserved)/h);
     expect.soft(Math.abs(data.image.width-w*expectedScale)).toBeLessThanOrEqual(1);
     expect.soft(Math.abs(data.image.height-h*expectedScale)).toBeLessThanOrEqual(1);
     if(viewer!=="card" || data.captionLines<=3) expect.soft(data.nonImage).toBeLessThanOrEqual(data.reserved+1);
@@ -214,10 +218,11 @@ async function capture(page:Page,popup:Locator,name:string,extra:Record<string,u
 for(const viewer of ["card","file"]) for(const theme of ["light","dark"] as const)
 for(const [vw,vh] of [[1920,1080],[390,844]]) for(const [w,h] of [[64,64],[192,192],[240,80],[200,120],[800,600],[2560,1440],[1200,2800],...(vw===390?[[390,900]]:[])]) {
   test(`repair inset ${viewer} ${theme} ${vw}x${vh} ${w}x${h}`,async({page})=>{
-    const popup=await open(page,viewer,vw,vh,w,h,viewer==="card" && w===192?"two":"",{theme});
+    const popup=await open(page,viewer,vw,vh,w,h,viewer==="card" && w===192?"forty-three":"",{theme});
     const data=await capture(page,popup,`inset-${viewer}-${theme}-${vw}x${vh}-${w}x${h}`);
     const reserved=viewer==="card"?102:24;
-    const scale=Math.min(1,(vw-58)/w,(vh-34-reserved)/h);
+    const margin=vw<=640?24:32;
+    const scale=Math.min(1,(vw-58)/w,(vh-2*margin-2-reserved)/h);
     expect(Math.abs(data.image.width-w*scale)).toBeLessThanOrEqual(1);
     expect(Math.abs(data.image.height-h*scale)).toBeLessThanOrEqual(1);
     expect(data.popup.height).toBeGreaterThanOrEqual(256);
@@ -228,11 +233,14 @@ for(const [vw,vh] of [[1920,1080],[390,844]]) for(const [w,h] of [[64,64],[192,1
     expect(data.framePadding).toEqual([12,12,12,12]);
     for(const inset of data.insets) expect(inset).toBeGreaterThanOrEqual(12);
     expect(data.popup.left).toBeGreaterThanOrEqual(16);expect(data.popup.right).toBeLessThanOrEqual(vw-16);
-    expect(data.popup.top).toBeGreaterThanOrEqual(16);expect(data.popup.bottom).toBeLessThanOrEqual(vh-16);
+    expect(data.popup.top).toBeGreaterThanOrEqual(margin);expect(data.popup.bottom).toBeLessThanOrEqual(vh-margin);
+    expect(Math.abs(data.popup.top-(vh-data.popup.bottom))).toBeLessThanOrEqual(1);
     expect(Math.abs(data.image.width/data.image.height-w/h)/(w/h)).toBeLessThan(.01);
     expect(data.image.width).toBeLessThanOrEqual(w);expect(data.image.height).toBeLessThanOrEqual(h);
     if(viewer==="card") {
-      expect(Math.abs(data.alignment!)).toBeLessThanOrEqual(1);
+      expect(data.captionInset).toBeCloseTo(12,0);
+      expect(data.caption!.width).toBeCloseTo(data.popup.width-26,0);
+      if(data.image.width>=data.caption!.width-1) expect(Math.abs(data.alignment!)).toBeLessThanOrEqual(1);
       if(w===192) expect(data.captionLines).toBe(2);
     }
     if(w===240) expect(data.close.bottom<=data.image.top || data.close.left>=data.image.right).toBe(true);
@@ -268,7 +276,9 @@ for(const [vw,vh] of [[1920,1080],[1440,900],[390,844]]) {
         expect(Math.abs(actual.y-initial.y)).toBeLessThanOrEqual(2);
       }
       const data=await capture(page,popup,`gallery-${vw}x${vh}-${index}`,{next:actualNext,prev:actualPrev});
-      expect(data.popup.width).toBe(vw-32);expect(data.popup.height).toBe(vh-32);
+      const margin=vw<=640?24:32;
+      expect(data.popup.width).toBe(vw-32);expect(data.popup.height).toBe(vh-2*margin);
+      expect(data.popup.top).toBe(margin);expect(data.popup.bottom).toBe(vh-margin);
       const frame=await popup.locator(".chat-image-frame").boundingBox();
       expect((data.image.top+data.image.bottom)/2).toBeCloseTo(frame!.y+frame!.height/2,0);
       steps.push({index,image:data.image,popup:data.popup,next:actualNext,prev:actualPrev});
@@ -320,3 +330,53 @@ test("repair actual screen capture sample",async({page})=>{
   expect(data.natural).toEqual([1920,1080]);
   expect(data.image.width).toBeGreaterThan(512);
 });
+
+for(const [viewer,vw,vh,w,h,caption,gallery,sample,name] of [
+  ["card",1920,1080,1920,1080,"one","","dark","card-screen-desktop"],
+  ["file",1920,1080,1920,1080,"","","dark","file-screen-desktop"],
+  ["chat",1920,1080,2560,1440,"","mixed","","gallery-desktop"],
+  ["card",390,844,1920,1080,"one","","dark","card-screen-mobile"],
+  ...(previewPhase==="after" ? [
+    ["card",1920,1080,64,64,"small-long","","","card-small-long"],
+    ["card",1920,1080,192,192,"forty-three","","","card-two-lines"],
+    ["chat",1920,1080,64,64,"","single","","chat-small-single"],
+  ] : []),
+] as [string,number,number,number,number,string,string,string,string][]) {
+  test(`headroom preview ${name}`,async({page})=>{
+    const popup=await open(page,viewer,vw,vh,w,h,caption,{gallery,sample});
+    const data=await metrics(popup);
+    mkdirSync(headroomOutput,{recursive:true});
+    const stem=`${previewPhase}-${name}`;
+    await page.screenshot({path:path.join(headroomOutput,stem+".png"),animations:"disabled"});
+    writeFileSync(path.join(headroomOutput,stem+".json"),JSON.stringify({viewport:[vw,vh],...data},null,2));
+    if(previewPhase==="after") {
+      const margin=vw<=640?24:32;
+      expect(data.popup.top).toBeGreaterThanOrEqual(margin-.1);
+      expect(vh-data.popup.bottom).toBeGreaterThanOrEqual(margin-.1);
+      expect(Math.abs(data.popup.top-(vh-data.popup.bottom))).toBeLessThanOrEqual(1);
+    }
+  });
+}
+
+for(const [vw,vh] of [[1920,1080],[390,844]]) for(const caption of ["small-long","forty-three"]) {
+  test(`headroom caption ${vw} ${caption}`,async({page})=>{
+    const w=caption==="small-long"?64:192;
+    const popup=await open(page,"card",vw,vh,w,w,caption);
+    const data=await capture(page,popup,`caption-${vw}-${caption}`);
+    expect(data.captionInset).toBeCloseTo(12,0);
+    expect(data.caption!.width).toBeCloseTo(data.popup.width-26,0);
+    expect(data.edges[0].scroll).toBe(data.edges[0].client);
+    expect(data.image.width).toBe(w);expect(data.image.height).toBe(w);
+    if(caption==="forty-three") expect(data.captionLines).toBe(2);
+  });
+}
+for(const [vw,vh] of [[1920,1080],[390,844]]) for(const [w,h] of [[64,64],[240,80],[720,450]]) {
+  test(`headroom single chat ${vw} ${w}x${h}`,async({page})=>{
+    const popup=await open(page,"chat",vw,vh,w,h,"",{gallery:"single"});
+    const data=await capture(page,popup,`single-chat-${vw}-${w}x${h}`);
+    if(vw===1920) expect(data.insets[3]).toBeCloseTo(25,0);
+    expect(data.popup.top).toBeGreaterThanOrEqual(vw<=640?24:32);
+    expect(Math.abs(data.popup.top-(vh-data.popup.bottom))).toBeLessThanOrEqual(1);
+    if(vw===1920) {expect(data.image.width).toBe(w);expect(data.image.height).toBe(h);}
+  });
+}
