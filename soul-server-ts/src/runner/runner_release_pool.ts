@@ -58,29 +58,21 @@ export class RunnerReleasePool {
   }
 
   async listReadyReleases(): Promise<RunnerReleaseDescriptor[]> {
-    let entries;
-    try {
-      entries = await readdir(this.releasesDirectory, { withFileTypes: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
-    }
-    const releases: RunnerReleaseDescriptor[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-      try {
-        const release = this.describe(entry.name);
-        if (await this.isReady(release)) releases.push(release);
-      } catch {
-        // Unknown directories are not owned by this pool and are never deleted.
-      }
-    }
-    return releases;
+    return await this.listReleases(async (release) => await this.isReady(release));
+  }
+
+  async listReleaseCandidates(): Promise<RunnerReleaseDescriptor[]> {
+    return await this.listReleases(async (release) => await this.hasReadyMarker(release));
   }
 
   async removeReleaseLocked(release: RunnerReleaseDescriptor): Promise<void> {
     this.assertDescriptor(release);
     await this.materializer.remove(release);
+  }
+
+  async verifyReleaseLocked(release: RunnerReleaseDescriptor): Promise<void> {
+    this.assertDescriptor(release);
+    await this.materializer.verify(release);
   }
 
   async withReleaseLock<T>(
@@ -122,9 +114,42 @@ export class RunnerReleasePool {
     return await acquire(0);
   }
 
+  private async listReleases(
+    ready: (release: RunnerReleaseDescriptor) => Promise<boolean>,
+  ): Promise<RunnerReleaseDescriptor[]> {
+    let entries;
+    try {
+      entries = await readdir(this.releasesDirectory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    const releases: RunnerReleaseDescriptor[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      try {
+        const release = this.describe(entry.name);
+        if (await ready(release)) releases.push(release);
+      } catch {
+        // Unknown directories are not owned by this pool and are never deleted.
+      }
+    }
+    return releases;
+  }
+
   private async isReady(release: RunnerReleaseDescriptor): Promise<boolean> {
     try {
       await this.materializer.verify(release);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  private async hasReadyMarker(release: RunnerReleaseDescriptor): Promise<boolean> {
+    try {
+      await this.materializer.checkReadyMarker(release);
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
