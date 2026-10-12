@@ -7,6 +7,7 @@ import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantM
 import { ChatInputAccessories } from "@seosoyoung/soul-ui/components/chat/ChatInputAccessories";
 import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
+import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 
 function assistantMessage(id: string, content: string): ChatMessage {
@@ -35,19 +36,23 @@ function StructuredReply() {
 }
 
 export function ChatUiMessageReviewSample() {
+  const { chatTypographyStyle } = useChatTypography();
+
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <AssistantMessage
-          msg={assistantMessage("chat-ui-text", "일반 채팅의 기존 말풍선 폭입니다.")}
-          contentLayout="text"
-        />
-        <AssistantMessage
-          msg={assistantMessage("chat-ui-structured", "")}
-          contentLayout="structured"
-        >
-          <StructuredReply />
-        </AssistantMessage>
+      <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle}>
+        <div className="space-y-2">
+          <AssistantMessage
+            msg={assistantMessage("chat-ui-text", "일반 채팅의 기존 말풍선 폭입니다.")}
+            contentLayout="text"
+          />
+          <AssistantMessage
+            msg={assistantMessage("chat-ui-structured", "")}
+            contentLayout="structured"
+          >
+            <StructuredReply />
+          </AssistantMessage>
+        </div>
       </div>
       <div className="space-y-2">
         <AssistantMessage
