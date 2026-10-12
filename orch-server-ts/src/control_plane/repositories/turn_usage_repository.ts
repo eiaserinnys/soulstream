@@ -230,7 +230,12 @@ export async function summarizeTurnUsage(
 ): Promise<TurnUsageSessionRow[]> {
   const ctes = createTurnUsageCtes(sql, query);
   const rows = await sql<TurnUsageSummarySqlRow[]>`
-    ${ctes}
+    ${ctes}, manifest_pick AS MATERIALIZED (
+      SELECT DISTINCT ON (session_id) session_id, id
+      FROM events
+      WHERE event_type = 'context_manifest' AND created_at < ${query.until}
+      ORDER BY session_id, id DESC
+    )
     SELECT
       grouped.session_id,
       grouped.turns,
@@ -246,7 +251,8 @@ export async function summarizeTurnUsage(
       s.agent_id,
       s.node_id,
       s.created_at,
-      manifest.injection_chars
+      CASE WHEN jsonb_typeof(manifest.payload->'total_chars') = 'number'
+        THEN (manifest.payload->>'total_chars')::numeric END AS injection_chars
     FROM (
       SELECT
         session_id,
@@ -272,16 +278,8 @@ export async function summarizeTurnUsage(
       ORDER BY session_id, created_at, id
     ) first_usage USING (session_id)
     LEFT JOIN sessions s ON s.session_id = grouped.session_id
-    LEFT JOIN LATERAL (
-      SELECT CASE WHEN jsonb_typeof(manifest.payload->'total_chars') = 'number'
-        THEN (manifest.payload->>'total_chars')::numeric END AS injection_chars
-      FROM events manifest
-      WHERE manifest.session_id = grouped.session_id
-        AND manifest.event_type = 'context_manifest'
-        AND manifest.created_at < ${query.until}
-      ORDER BY manifest.id DESC
-      LIMIT 1
-    ) manifest ON true
+    LEFT JOIN manifest_pick mp ON mp.session_id = grouped.session_id
+    LEFT JOIN events manifest ON manifest.session_id = mp.session_id AND manifest.id = mp.id
     ORDER BY grouped.session_id
   `;
 

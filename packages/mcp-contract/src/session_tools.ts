@@ -151,7 +151,7 @@ export const sessionTools = {
         max_text_chars: z.number().int().min(100).max(20000).default(2000),
       },
     } },
-  list_turn_usage: { name: "list_turn_usage", audience: "internal", strictInputSchema: true, config: {
+  list_turn_usage: { name: "list_turn_usage", audience: "internal", timeoutMs: 30000, strictInputSchema: true, config: {
       title: "List turn usage",
       description:
         "세션 하나 또는 기간의 턴별 사용량을 시간순으로 조회한다. kind는 complete, failed, no_usage이며, 입력 토큰은 캐시를 포함한 합계이고 비용은 정가 추정이다. 기간 전체 합계는 summarize_turn_usage로 본다.",
@@ -164,7 +164,7 @@ export const sessionTools = {
         limit: z.number().int().min(1).max(200).default(100),
       },
     } },
-  summarize_turn_usage: { name: "summarize_turn_usage", audience: "internal", strictInputSchema: true, config: {
+  summarize_turn_usage: { name: "summarize_turn_usage", audience: "internal", timeoutMs: 60000, strictInputSchema: true, config: {
       title: "Summarize turn usage",
       description:
         "기간의 턴 사용량을 한 번에 요약한다. 에이전트와 모델별로 묶으며, 주입 글자 수와 첫 호출 입력 통계는 기간에 만들어진 세션만으로 낸다. 턴별 결과는 list_turn_usage로 본다.",
