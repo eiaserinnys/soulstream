@@ -62,7 +62,8 @@ function makeSubject(options: {
     buildBackendRolloverContext: ReturnType<typeof vi.fn>;
     buildGenerationContext: ReturnType<typeof vi.fn>;
   }>;
-  initialMessagePublisher?: { publishInitialMessages: ReturnType<typeof vi.fn> };
+  initialMessagePublisher?: Partial<{ publishInitialMessages: ReturnType<typeof vi.fn>;
+    publishContextManifestBestEffort: ReturnType<typeof vi.fn> }>;
 } = {}) {
   const contextBuilder = {
     build: vi.fn().mockResolvedValue(makeContext()),
@@ -94,8 +95,10 @@ function makeSubject(options: {
     }),
     ...options.contextBuilder,
   };
-  const initialMessagePublisher = options.initialMessagePublisher ?? {
+  const initialMessagePublisher = {
     publishInitialMessages: vi.fn().mockResolvedValue(undefined),
+    publishContextManifestBestEffort: vi.fn().mockResolvedValue(undefined),
+    ...options.initialMessagePublisher,
   };
   const logger = { warn: vi.fn() } as unknown as Logger;
   const builder = new TaskTurnInputBuilder({
@@ -201,10 +204,28 @@ describe("TaskTurnInputBuilder", () => {
         ],
       }],
     });
-    const { builder, contextBuilder, initialMessagePublisher } = makeSubject();
+    const manifest = { compiler_version: "phase-a.v1", spec_hash: "generation-spec",
+      source_count: 0, total_chars: 12, total_token_estimate: 3, sources: [] };
+    const enqueueEvent = vi.fn().mockResolvedValue(undefined);
+    const manifestPublisher = new TaskInitialMessagePublisher({
+      persistence: { enqueueEvent } as never,
+      broadcaster: {} as never,
+      logger: { warn: vi.fn() } as unknown as Logger,
+    });
+    const { builder, contextBuilder, initialMessagePublisher } = makeSubject({
+      initialMessagePublisher: { publishContextManifestBestEffort: vi.fn(
+        (task, manifest) => manifestPublisher.publishContextManifestBestEffort(task, manifest),
+      ) },
+    });
+    const context = await contextBuilder.buildGenerationContext();
+    contextBuilder.buildGenerationContext.mockClear();
+    contextBuilder.buildGenerationContext.mockResolvedValue({ ...context, contextManifest: manifest });
 
     const input = await builder.prepareInitialTurnInput(task, claudeAgent);
 
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledTimes(1);
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledWith(task, manifest);
+    expect(enqueueEvent.mock.calls).toEqual([[task.agentSessionId, { type: "context_manifest", ...manifest }]]);
     expect(contextBuilder.buildGenerationContext).toHaveBeenCalledWith(
       task,
       claudeAgent,
@@ -296,7 +317,8 @@ describe("TaskTurnInputBuilder", () => {
     );
     const builder = new TaskTurnInputBuilder({
       contextBuilder,
-      initialMessagePublisher: { publishInitialMessages: vi.fn().mockResolvedValue(undefined) },
+      initialMessagePublisher: { publishInitialMessages: vi.fn().mockResolvedValue(undefined),
+        publishContextManifestBestEffort: vi.fn().mockResolvedValue(undefined) },
       logger,
     });
     const task = makeTask({

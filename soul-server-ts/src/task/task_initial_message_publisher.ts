@@ -60,7 +60,7 @@ export class TaskInitialMessagePublisher {
     await finishUserMessageEvent(task, event, this.deps);
   }
 
-  private async publishContextManifestBestEffort(
+  async publishContextManifestBestEffort(
     task: Task,
     manifest: NonNullable<PreparedContext["contextManifest"]>,
   ): Promise<void> {

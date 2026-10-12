@@ -214,7 +214,8 @@ describe("D post-complete V2 finalizer regression", () => {
     ]);
 
     task.status = "running";
-    const initialMessagePublisher = { publishInitialMessages: vi.fn() };
+    const initialMessagePublisher = { publishInitialMessages: vi.fn(),
+      publishContextManifestBestEffort: vi.fn() };
     const input = await new TaskTurnInputBuilder({
       initialMessagePublisher,
       logger,

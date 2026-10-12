@@ -12,6 +12,7 @@ import { ClaudeSessionClientRegistry } from
 import {
   collectSse,
   makeHarness,
+  sdkAssistantText,
   sdkInit,
   sdkInterruptedResult,
   sdkResult,
@@ -22,11 +23,12 @@ const silentLogger = pino({ level: "silent" });
 
 describe("R17 Claude intervention interrupt contract", () => {
   it.each([
-    { state: "between tool executions", inFlightTool: false },
-    { state: "during an in-flight tool", inFlightTool: true },
+    { state: "between tool executions", inFlightTool: false, duplicate: false },
+    { state: "during an in-flight tool", inFlightTool: true, duplicate: false },
+    { state: "with a duplicate interrupted Result", inFlightTool: false, duplicate: true },
   ])(
     "settles the old turn before acknowledging intervention $state",
-    async ({ inFlightTool }) => {
+    async ({ inFlightTool, duplicate }) => {
       const harness = makeHarness();
       const runtimeEvents: ClaudeClientEvent[] = [];
       let releaseDelayedSink!: () => void;
@@ -78,6 +80,11 @@ describe("R17 Claude intervention interrupt contract", () => {
           harness.push(sdkToolStart("tool-before-intervention", "tool-in-flight"));
           await new Promise<void>((resolve) => setImmediate(resolve));
         }
+        harness.push({
+          ...sdkAssistantText("first-call", "working"),
+          message: { model: "claude-opus-5-5", role: "assistant", content: [],
+            usage: { input_tokens: 100, cache_read_input_tokens: 30 } },
+        } as unknown as SDKMessage);
 
         let interventionSettled = false;
         const intervention = engine.intervene({
@@ -88,13 +95,21 @@ describe("R17 Claude intervention interrupt contract", () => {
         });
         await vi.waitFor(() => expect(harness.interrupt).toHaveBeenCalledTimes(1));
         if (!inFlightTool) {
-          harness.push(sdkToolStart("tool-after-intervention", "tool-must-not-start"));
+          const tool = sdkToolStart("tool-after-intervention", "tool-must-not-start");
+          harness.push({ ...tool, message: {
+            ...(tool as unknown as { message: Record<string, unknown> }).message,
+            model: "claude-opus-5-5",
+          } } as unknown as SDKMessage);
         }
         await new Promise<void>((resolve) => setImmediate(resolve));
         expect(interventionSettled).toBe(false);
         expect(harness.close).not.toHaveBeenCalled();
 
-        harness.push(sdkInterruptedResult("sdk-session", oldInput.uuid));
+        const interruptedResult = {
+          ...sdkInterruptedResult("sdk-session", oldInput.uuid),
+          usage: { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 30 },
+        } as unknown as SDKMessage;
+        harness.push(interruptedResult);
         await expect(intervention).resolves.toEqual({
           status: "not_delivered",
           mechanism: "interrupt_then_next_turn",
@@ -110,10 +125,26 @@ describe("R17 Claude intervention interrupt contract", () => {
         }));
         const nextInput = await harness.nextInput();
         harness.push(nextInput as SDKMessage);
-        harness.push(sdkResult("sdk-session", nextInput.uuid, "intervention handled"));
+        if (duplicate) harness.push(interruptedResult);
+        harness.push({
+          ...sdkAssistantText("next-call", "answering"),
+          message: { model: "claude-opus-5-5", role: "assistant", content: [],
+            usage: { input_tokens: 200, cache_read_input_tokens: 60 } },
+        } as unknown as SDKMessage);
+        harness.push({
+          ...sdkResult("sdk-session", nextInput.uuid, "intervention handled"),
+          usage: { input_tokens: 200, output_tokens: 20, cache_read_input_tokens: 60 },
+        } as unknown as SDKMessage);
         await expect(nextTurn).resolves.toContainEqual(
           expect.objectContaining({ type: "complete", result: "intervention handled" }),
         );
+        expect((await nextTurn).find(event => event.type === "complete")).toMatchObject({
+          usage: { input_tokens: 300, output_tokens: 30, cache_read_input_tokens: 90 },
+          first_call: { input_tokens: 130, cached_input_tokens: 30 },
+          turn_cost_usd: 0.001818,
+        });
+        expect(oldEvents).not.toContainEqual(expect.objectContaining({ type: "result", success: false }));
+        expect(oldEvents).not.toContainEqual(expect.objectContaining({ type: "error" }));
 
         expect(settledWhenAcknowledged).toBe(true);
         expect(oldEvents).not.toContainEqual(
