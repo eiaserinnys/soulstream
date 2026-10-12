@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { Text, View, type TextStyle } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { cardAttachmentUrl, parseCardRequest } from '../../lib/card-attachments';
 import { cardImageSource } from '../../lib/card-image-source';
 import type { CardAttachment } from '../../api/cardTypes';
@@ -10,6 +9,7 @@ import { useTokens } from '../../theme';
 import { AttachmentImage } from '../AttachmentImage';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { cardDetailStyles } from './CardDetail.styles';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 /** Card messages use the same image surface as chat; file names remain links. */
 export function CardRequestView({ request, attachments: files = [], bodyStyle, numberOfLines, collapseBlankLines = false,
@@ -18,6 +18,7 @@ export function CardRequestView({ request, attachments: files = [], bodyStyle, n
   collapseBlankLines?: boolean; attachmentImageVariant?: 'default' | 'cardCheckItem';
 }) {
   const t = useTokens();
+  const openContentLink = useOpenContentLink();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
@@ -34,7 +35,7 @@ export function CardRequestView({ request, attachments: files = [], bodyStyle, n
       ? <AttachmentImage key={`${attachment.url}-${index}`} testID={`card-request-image-${index}`} accessibilityLabel={attachment.name}
         source={source(attachment.url)} sources={sources} index={images.indexOf(attachment)} variant={attachmentImageVariant} />
       : <CompactTouchTarget key={`${attachment.url}-${index}`} accessibilityRole="link" accessibilityLabel={attachment.name}
-        frameStyle={{ alignSelf: 'flex-start' }} onPress={() => { void WebBrowser.openBrowserAsync(source(attachment.url).uri!); }}>
+        frameStyle={{ alignSelf: 'flex-start' }} onPress={() => { void openContentLink(source(attachment.url).uri!); }}>
         <Text style={[styles.body, bodyStyle, { color: t.colors.link }]}>{attachment.name}</Text>
       </CompactTouchTarget>)}
   </View>;

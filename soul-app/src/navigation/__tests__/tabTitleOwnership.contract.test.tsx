@@ -198,8 +198,9 @@ test('긴 한국어 동적 project/task/chat title은 native options.title에 �
   const longFolder = '아주 긴 한국어 업무 이름이 말줄임되어야 하는 경우';
   const projectScreens = getNativeStackCaptures()[1].screens;
 
-  expect(projectScreens).toHaveLength(3);
+  expect(projectScreens).toHaveLength(4);
   expect(projectScreens[2].name).toBe('CardDetail');
+  expect(projectScreens[3].name).toBe('MarkdownDocument');
   expect(projectScreens[2].options.title).toBe('카드');
   expect(projectScreens[1].options({ route: { params: { folderTitle: longProject } } }).title).toBe(longProject);
   expect(projectScreens[1].options({ route: { params: { folderTitle: longFolder } } }).title).toBe(longFolder);

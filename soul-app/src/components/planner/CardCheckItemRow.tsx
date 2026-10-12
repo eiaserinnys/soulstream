@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardCheckItem, CardItemDisplay } from '../../api/cardTypes';
 import { formatCardTime } from '../../lib/card-check-item-summary';
 import { cardImageSource } from '../../lib/card-image-source';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
@@ -53,6 +53,7 @@ export function CardCheckItemRow({
   onSetTarget(item: CardCheckItem): void;
 }) {
   const t = useTokens();
+  const openContentLink = useOpenContentLink();
   const styles = useMemo(() => makeStyles(t), [t]);
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
@@ -169,7 +170,7 @@ export function CardCheckItemRow({
                     accessibilityLabel={evidence.label || evidence.url}
                     frameStyle={styles.linkFrame}
                     surfaceStyle={styles.linkSurface}
-                    onPress={() => { void WebBrowser.openBrowserAsync(evidence.url); }}
+                    onPress={() => { void openContentLink(evidence.url); }}
                   >
                     <View style={styles.linkContent}>
                       <Ionicons testID={`card-check-item-${item.id}-link-icon`} name="open-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.link} />

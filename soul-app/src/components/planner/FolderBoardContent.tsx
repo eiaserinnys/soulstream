@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import * as WebBrowser from 'expo-web-browser';
 import type {
   BoardItem,
   CustomViewDocument,
@@ -9,6 +8,7 @@ import type {
 } from '../../api/boardItemEndpoints';
 import type { ApiClient } from '../../api/client';
 import { usePlannerFolder } from '../../hooks/usePlannerFolder';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import {
   buildCustomViewBindings,
   renderCustomViewHtml,
@@ -37,6 +37,7 @@ export function FolderBoardContent({
   active?: boolean;
 }) {
   const t = useTokens();
+  const openContentLink = useOpenContentLink();
   const styles = useMemo(() => makeStyles(t), [t]);
   const scopeGeneration = useAuthScopeGeneration();
   const [items, setItems] = useState<BoardItem[]>([]);
@@ -113,6 +114,7 @@ export function FolderBoardContent({
             expanded={expandedId === item.id}
             onToggle={() => setExpandedId((current) => current === item.id ? null : item.id)}
             bindings={bindings}
+            openContentLink={openContentLink}
             styles={styles}
             t={t}
           />
@@ -128,6 +130,7 @@ function FolderBoardItemCard({
   expanded,
   onToggle,
   bindings,
+  openContentLink,
   styles,
   t,
 }: {
@@ -136,6 +139,7 @@ function FolderBoardItemCard({
   expanded: boolean;
   onToggle(): void;
   bindings: ReturnType<typeof buildCustomViewBindings>;
+  openContentLink(href: string): Promise<void>;
   styles: ReturnType<typeof makeStyles>;
   t: DesignTokens;
 }) {
@@ -186,7 +190,7 @@ function FolderBoardItemCard({
         {expanded && url ? (
           <TouchableOpacity
             style={styles.assetOpenAction}
-            onPress={() => { void WebBrowser.openBrowserAsync(url); }}
+            onPress={() => { void openContentLink(url); }}
           >
             <Text style={styles.openLabel}>열기</Text>
           </TouchableOpacity>

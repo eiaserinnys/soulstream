@@ -33,7 +33,6 @@ import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassSurface } from '../components/GlassSurface';
 import { useTokens, type DesignTokens } from '../theme';
 import { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
-import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { createApiClient } from '../api/client';
 import { useSettingsStore } from '../store/settingsStore';
@@ -41,7 +40,7 @@ import { createSurfaceRoles } from '../theme/surfaceRoles';
 import { openPhoneChat, openPhoneSearchSession } from './phoneSessionNavigation';
 import { useSearchStore } from '../store/searchStore';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { PhoneCardDetail, PhoneMarkdownDocument, getDefaultTabBarStyle, type MarkdownDocumentRouteParams } from './PhoneContentScreens';
 import { PhonePersistentSession, PersistentPhoneTabIcon } from './PhonePersistentSession';
 import { usePersistentSessionHost, usePersistentSessionScene } from './PersistentSessionContext';
 import type { PhoneReturnTab } from './phonePanelHistory';
@@ -57,13 +56,7 @@ import {
 
 export { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
 
-export function getDefaultTabBarStyle(colors: DesignTokens['colors']): ViewStyle {
-  return {
-    backgroundColor: 'transparent',
-    borderTopColor: colors.border,
-    overflow: 'hidden',
-  };
-}
+export { PhoneCardDetail, getDefaultTabBarStyle } from './PhoneContentScreens';
 
 function TabBarGlassBackground() {
   return (
@@ -98,11 +91,13 @@ export type DailyStackParamList = {
   DailyHistory: undefined;
   FolderWorkspace: { folderPageId: string; folderTitle: string; folderId?: string };
   CardDetail: { cardId: string };
+  MarkdownDocument: MarkdownDocumentRouteParams;
 };
 export type FolderStackParamList = {
   FolderList: undefined;
   FolderWorkspace: { folderPageId: string; folderTitle: string; folderId?: string };
   CardDetail: { cardId: string };
+  MarkdownDocument: MarkdownDocumentRouteParams;
 };
 export type FeedStackParamList = {
   Feed: undefined;
@@ -114,10 +109,13 @@ export type FeedStackParamList = {
     usageEntry?: 'notification';
     returnTab?: PhoneReturnTab;
   } | undefined;
+  CardDetail: { cardId: string };
+  MarkdownDocument: MarkdownDocumentRouteParams;
 };
 export type PersistentStackParamList = {
   PersistentSession: undefined;
   CardDetail: { cardId: string };
+  MarkdownDocument: MarkdownDocumentRouteParams;
 };
 export type SettingsStackParamList = {
   Settings: undefined;
@@ -195,6 +193,7 @@ function DailyNavigator() {
         options={({ route }) => ({ title: route.params.folderTitle })}
       />
       <DailyStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
+      <DailyStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} options={{ headerShown: false }} />
     </DailyStack.Navigator>
   );
 }
@@ -214,21 +213,6 @@ function PhoneFolderListScreen({ navigation }: NativeStackScreenProps<FolderStac
 
 function PhoneFolderListWorkspace({ route, navigation }: NativeStackScreenProps<FolderStackParamList, 'FolderWorkspace'>) {
   return <PhoneFolderWorkspace folderPageId={route.params.folderPageId} folderId={route.params.folderId} navigation={navigation} />;
-}
-
-export function PhoneCardDetail({ route, navigation }: { route: { params: { cardId: string } }; navigation: any }) {
-  const t = useTokens();
-  const serverUrl = useSettingsStore((state) => state.serverUrl);
-  const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  useFocusEffect(useCallback(() => {
-    const tabs = navigation.getParent();
-    tabs?.setOptions({ tabBarStyle: { ...getDefaultTabBarStyle(t.colors), display: 'none' } });
-    return () => { tabs?.setOptions({ tabBarStyle: getDefaultTabBarStyle(t.colors) }); };
-  }, [navigation, t.colors]));
-  return <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1 }}>
-    <CardDetailContent api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
-      onOpenSession={(id) => openPhoneChat(navigation, id)} />
-  </SafeAreaView>;
 }
 
 export function PhoneFolderWorkspace({ folderPageId, folderId, navigation }: { folderPageId: string; folderId?: string; navigation: any }) {
@@ -268,6 +252,7 @@ function FolderNavigator() {
         options={({ route }) => ({ title: route.params.folderTitle })}
       />
       <FolderStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
+      <FolderStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} options={{ headerShown: false }} />
     </FolderStack.Navigator>
   );
 }
@@ -370,6 +355,8 @@ function FeedNavigator() {
         component={PhoneSearchScreen}
         options={{ title: '검색', headerLargeTitleEnabled: false }}
       />
+      <FeedStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
+      <FeedStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} options={{ headerShown: false }} />
       <FeedStack.Screen name="Chat" component={ChatScreen} options={{ ...rootScreenOptions('ChatTab'), gestureEnabled: false }} />
     </FeedStack.Navigator>
   );
@@ -380,6 +367,7 @@ function PersistentNavigator() {
   return <PersistentStack.Navigator screenOptions={{ ...stackScreenOptions(t), headerShown: false }}>
     <PersistentStack.Screen name="PersistentSession" component={PhonePersistentSession} />
     <PersistentStack.Screen name="CardDetail" component={PhoneCardDetail} />
+    <PersistentStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} />
   </PersistentStack.Navigator>;
 }
 
