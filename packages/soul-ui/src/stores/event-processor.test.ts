@@ -506,12 +506,12 @@ describe("processEventsBatch — app-server final assistant message", () => {
         schema_version: 1,
         title: "Hello final",
         body: [],
-        fields: [],
-        computed: [],
+        fields: {},
+        computed: {},
         data: {},
-        sources: [],
+        sources: {},
         assumptions: [],
-        units: [],
+        units: {},
       },
     };
     const result = processEventsBatch(

@@ -484,12 +484,12 @@ describe("historical assistant_message UI payload", () => {
         schema_version: 1,
         title: "Stored answer",
         body: [],
-        fields: [],
-        computed: [],
+        fields: {},
+        computed: {},
         data: {},
-        sources: [],
+        sources: {},
         assumptions: [],
-        units: [],
+        units: {},
       },
     };
     const stored: HistoricalMessage = {
