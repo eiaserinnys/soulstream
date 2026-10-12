@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "internal-link-navigation.e2e.ts",
+  testMatch: ["internal-link-navigation.e2e.ts", "session-search-intent.e2e.ts"],
   workers: 1,
   retries: 0,
   timeout: 60_000,

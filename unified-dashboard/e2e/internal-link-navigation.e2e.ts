@@ -243,11 +243,11 @@ test("opens V3 card, folder, page and session targets through actual chat links"
 
   await page.getByRole("link", { name: "폴더 링크", exact: true }).click();
   await expect(page.getByTestId("v3-folder-cards-section")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "카드 밀도와 계층 최종 QA" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "폴더 제목 편집", exact: true })).toHaveText("카드 밀도와 계층 최종 QA");
   await openV3Chat(page);
   await page.getByRole("link", { name: "페이지 링크", exact: true }).click();
   await expect(page.getByTestId("v3-folder-cards-section")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "소울스트림" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "폴더 제목 편집", exact: true })).toHaveText("소울스트림");
   await openV3Chat(page);
   await page.getByRole("link", { name: "세션 링크", exact: true }).click();
   await expect(page.locator('[data-tree-node-id$="-1"].chat-focus-ring')).toBeVisible();
@@ -271,7 +271,7 @@ test("consumes direct card, document, folder and page intents before automatic P
   await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
   await page.goto(`${baseUrl}/?page=project-amber`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("v3-folder-cards-section")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "소울스트림" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "폴더 제목 편집", exact: true })).toHaveText("소울스트림");
   await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
 });
 
@@ -320,4 +320,43 @@ test("reports a missing document, leaves Ctrl-click in a new tab, and omits an u
   await expect(sampleOverlay).toBeVisible();
   await expect(sampleOverlay.getByTestId("markdown-read-body")).toBeVisible();
   await captureDocument(page, "dialogues-document-overlay-reference");
+});
+
+async function captureNarrowDocument(page: Page, name: string) {
+  await captureDocument(page, name);
+  const styles = await page.getByTestId("v3-folder-board-document-overlay").evaluate((element) => {
+    const measure = (node: Element) => {
+      const style = getComputedStyle(node);
+      return { rect: node.getBoundingClientRect().toJSON(), position: style.position,
+        top: style.top, bottom: style.bottom, height: style.height,
+        display: style.display, gridTemplateColumns: style.gridTemplateColumns };
+    };
+    return { overlay: measure(element), workspace: measure(element.parentElement!),
+      scrim: measure(element.parentElement!.parentElement!),
+      expanded: element.classList.contains("is-expanded") };
+  });
+  await writeFile(path.join(output, `${name}-styles.json`), JSON.stringify(styles, null, 2));
+}
+
+test("captures registered and PAS narrow document surfaces for comparison", async ({ page }) => {
+  await prepare(page, 1440);
+  await page.goto(`${baseUrl}/persistent/${sessionId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator('[data-slot="chat-root"][data-chat-presentation="manuscript"]')).toContainText("문서 링크");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openDocumentFromChat(page);
+  await captureNarrowDocument(page, "pas-document-overlay-narrow-fresh");
+
+  await page.goto(`${baseUrl}/dialogues?sample=document-overlay`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("v3-folder-board-document-overlay").getByTestId("markdown-read-body")).toBeVisible();
+  await captureNarrowDocument(page, "dialogues-document-overlay-reference-narrow");
+});
+
+test("captures a document clicked from narrow V3 chat", async ({ page }) => {
+  await prepare(page, 1440);
+  await page.goto(`${baseUrl}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".v3-chat-pane:visible")).toContainText("문서 링크");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("v3-mobile-tab-chat").click();
+  await openDocumentFromChat(page);
+  await captureNarrowDocument(page, "v3-document-overlay-narrow");
 });
