@@ -2,6 +2,7 @@ import { withVerifiedSessionOwner } from "../session/session_owner.js";
 import { STATUS_CODES } from "node:http";
 import { recurringJobTools, errorResult, jsonResult, readOrchErrorEnvelopeText, type CallToolResult } from "@soulstream/mcp-contract";
 import { executeRecurringJobHostOperation } from "../recurring-jobs/recurring_job_host_routes.js";
+import { serializeJob } from "../recurring-jobs/recurring_job_routes.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
@@ -10,6 +11,7 @@ const invoke = (operation: string, body: (args: Args) => Args): Handler => async
   const explicit = typeof args.caller_session_id === "string" ? args.caller_session_id.trim() : "";
   try {
     let actor;
+    let ownerlessSessionId: string | undefined;
     if (context.principal === "external") {
       if (!context.ownedAgent) return errorResult("Recurring-job tools require a registered external agent.");
       actor = { ownerEmail: context.ownedAgent.ownerEmail, actorId: context.ownedAgent.agentId,
@@ -19,9 +21,30 @@ const invoke = (operation: string, body: (args: Args) => Args): Handler => async
         return errorResult("caller_session_id does not match authenticated session");
       const id = context.callerSessionId || explicit;
       if (!id) return errorResult("A trusted Soulstream caller session is required for recurring-job tools.");
-      const owner = await options.resolveSessionOwner?.(id);
-      if (!owner) return errorResult("The trusted caller session has no verified owner email for recurring-job access.");
-      actor = { ownerEmail: owner.ownerEmail, actorId: id, callerInfo: withVerifiedSessionOwner(context.callerInfo, owner)!, source: "agent" as const };
+      const owner = options.resolveSessionOwner ? await options.resolveSessionOwner(id) : null;
+      if (!owner) {
+        if (!options.resolveSessionOwner || !(await options.cluster.readSession(id)))
+          return errorResult("The trusted caller session has no verified owner email for recurring-job access.");
+        if (operation === "create")
+          return errorResult("This session has no verified owner, so it cannot create a recurring job. Create it from a session with a verified owner; existing jobs can still be listed, updated, run and archived.");
+        if (operation === "list") {
+          const input = body(args);
+          return jsonResult({ jobs: (await options.recurringJobs.service.listAllOwners(input.include_archived === true)).map(serializeJob) });
+        }
+        if (operation === "preview") {
+          return jsonResult(options.recurringJobs.service.preview({
+            timezone: args.timezone as string,
+            scheduleExpressions: args.schedule_expressions as string[],
+          }));
+        }
+        const input = body(args);
+        const ownerEmail = await options.recurringJobs.service.ownerEmailOf(input.job_id as string);
+        if (!ownerEmail) return errorResult(`recurring job host ${operation} failed: Recurring job was not found`);
+        actor = { ownerEmail, actorId: id, callerInfo: context.callerInfo ?? { source: "system" }, source: "agent" as const };
+        ownerlessSessionId = id;
+      } else {
+        actor = { ownerEmail: owner.ownerEmail, actorId: id, callerInfo: withVerifiedSessionOwner(context.callerInfo, owner)!, source: "agent" as const };
+      }
     }
     const response = await executeRecurringJobHostOperation(options.recurringJobs.service, operation, {
       actor, ...body(args),
@@ -30,6 +53,10 @@ const invoke = (operation: string, body: (args: Args) => Args): Handler => async
     if (response.status !== 200) {
       const detail = readOrchErrorEnvelopeText({ status: response.status, statusText: STATUS_CODES[response.status] ?? "" }, JSON.stringify(serialized));
       return errorResult(`recurring job host ${operation} failed: ${detail.message}`);
+    }
+    if (ownerlessSessionId && (operation === "update" || operation === "run" || operation === "archive")) {
+      options.cluster.logger.warn({ jobId: body(args).job_id, operation, actorSessionId: ownerlessSessionId },
+        "recurring job changed by a session without a verified owner");
     }
     return jsonResult(serialized);
   } catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }

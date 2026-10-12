@@ -22,7 +22,7 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 export const policy = { enabled: false, candidates: [{ agentId: "roselin", nodeId: "node-a", modelPreset: "sol", minimumRemainingPercent: 15 }],
   usageMaxAgeMs: 300000 as const, sessionFolderId: null, systemFolderParentId: null };
 const now = "2026-10-02T00:00:00.000Z";
-const callerEmail = (id: string) => id === "limited" ? "limited@example.com" : id === "no-email" ? undefined : "owner@example.com";
+const callerEmail = (id: string) => id === "limited" ? "limited@example.com" : id === "no-email" || id === "missing-session" ? undefined : "owner@example.com";
 
 // Reuses the in-memory repository contract in recurring-job-routes.test.ts. No live DB or node is used.
 function recurringFixture() {
@@ -33,6 +33,8 @@ function recurringFixture() {
       const job = jobs.get(id); return job?.ownerEmail === owner && (archived || job.archivedAt === null) ? job : null;
     },
     listJobsForOwner: async (owner: string, archived = false) => [...jobs.values()].filter(j => j.ownerEmail === owner && (archived || j.archivedAt === null)),
+    listAllJobs: async (archived = false) => [...jobs.values()].filter(j => archived || j.archivedAt === null),
+    findJobOwnerEmail: async (id: string) => jobs.get(id)?.ownerEmail ?? null,
     findJobByCreateIdempotency: async (owner: string, key: string) => [...jobs.values()].find(j => j.ownerEmail === owner && j.createdIdempotencyKey === key) ?? null,
     createJob: async (job: RecurringJob) => { jobs.set(job.jobId, job); return job; },
     updateJob: async (job: RecurringJob, version: number) => {
@@ -52,17 +54,25 @@ function recurringFixture() {
     cancelAutomaticPendingRuns: async () => {},
   } as unknown as RecurringJobRepository;
   const validateTarget = vi.fn(async () => {});
+  const changeWarn = vi.fn();
   const service = new RecurringJobService({ repository, now: () => new Date(now), newId: () => `generated-${++sequence}`, validateTarget });
   const seed = () => {
-    sequence = 0; jobs.clear(); runs.clear(); validateTarget.mockClear();
+    sequence = 0; jobs.clear(); runs.clear(); validateTarget.mockClear(); changeWarn.mockClear();
     const job: RecurringJob = { jobId: "job-1", ownerEmail: "owner@example.com", executionCaller: { source: "agent", email: "owner@example.com" },
       name: "정기 작업", prompt: "확인", timezone: "Asia/Seoul", scheduleKind: "recurring", runAt: null, scheduleExpressions: ["0 9 * * *"],
       nodeId: "node-a", agentId: "roselin", modelPreset: null, folderId: "allowed-folder", enabled: true, archivedAt: null,
       lateRunWindowSeconds: 1800, nextRunAt: "2026-10-03T00:00:00.000Z", version: 1, createdIdempotencyKey: "seed", createdBy: "caller", updatedBy: "caller", createdAt: now, updatedAt: now };
     jobs.set(job.jobId, job);
+    const otherJob = { ...job, jobId: "job-other", ownerEmail: "other@example.com",
+      executionCaller: { source: "browser", email: "other@example.com" }, name: "다른 소유자의 반복 작업",
+      createdIdempotencyKey: "other-seed", createdBy: "other@example.com", updatedBy: "other@example.com" };
+    jobs.set(otherJob.jobId, otherJob);
+    jobs.set("job-archived", { ...otherJob, jobId: "job-archived", archivedAt: "2026-09-30T00:00:00.000Z",
+      enabled: false, nextRunAt: null, createdIdempotencyKey: "archived-seed" });
     for (let index = 0; index < 3; index++) runs.set(`seed-run-${index}`, { runId: `seed-run-${index}`, jobId: job.jobId } as RecurringJobRun);
+    runs.set("other-seed-run", { runId: "other-seed-run", jobId: otherJob.jobId } as RecurringJobRun);
   };
-  return { service, seed, validateTarget };
+  return { service, seed, validateTarget, jobs, runs, changeWarn };
 }
 
 export async function createClusterRoundtripFixture() {
@@ -109,7 +119,7 @@ export async function createClusterRoundtripFixture() {
       if (input.expectedVersion !== settings.version) throw new CardOrchestrationSettingsError(409, "CARD_ORCHESTRATION_VERSION_CONFLICT", "Settings version changed");
       return settings = { ...settings, policy: input.policy as typeof policy, version: settings.version + 1, updatedBy: input.updatedBy };
     } };
-  const readSession = async (id: string) => ({ folder_id: id === "limited" ? null : "inherited-folder" });
+  const readSession = vi.fn(async (id: string) => id === "missing-session" ? null : ({ folder_id: id === "limited" ? null : "inherited-folder" }));
   const app = Fastify();
   registerNodeSnapshotRoutes(app, nodes); registerNodeAgentProfileRoutes(app, nodeAgentProfiles);
   registerCogitoRoutes(app, cogito); registerSessionCommandRoutes(app, sessions);
@@ -120,7 +130,7 @@ export async function createClusterRoundtripFixture() {
       const email = callerEmail(id);
       return email ? { ownerEmail: email, callerInfo: { source: "browser", email } } : null;
     },
-    cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: app.log },
+    cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: { warn: recurring.changeWarn } },
     cards: { provider: {} as never, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
     folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused folders"); } } };
 
@@ -134,5 +144,5 @@ export async function createClusterRoundtripFixture() {
     recurring.seed(); settings = { key: "card_orchestration", policy, version: 1, updatedAt: now, updatedBy: "owner@example.com" };
     sent.length = 0; if (missingTransport) transports.detach({ nodeId: "node-a", connectionId }); else attach();
   };
-  return { executionOptions, app, runtime, seed, sent, recurring, registry };
+  return { executionOptions, app, runtime, seed, sent, recurring, registry, readSession };
 }

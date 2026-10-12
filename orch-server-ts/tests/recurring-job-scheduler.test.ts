@@ -44,6 +44,8 @@ function repository(): RecurringJobRepository {
   return {
     findJobForOwner: async () => null,
     listJobsForOwner: async () => [],
+    findJobOwnerEmail: async () => null,
+    listAllJobs: async () => [],
     createJob: async () => { throw new Error("unused"); },
     findJobByCreateIdempotency: async () => null,
     updateJob: async () => { throw new Error("unused"); },
