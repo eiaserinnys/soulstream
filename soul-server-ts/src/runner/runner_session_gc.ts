@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import type { Logger } from "pino";
 
 import {
@@ -9,11 +10,17 @@ import {
   type RunnerRegistrationScan,
 } from "./runner_process_registry.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
+import type { RunnerSessionMutationLockObservationContext } from "./runner_session_mutation_lock.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export interface RunnerSessionGarbageCollectorDependencies {
   now(): number;
-  withMutationLock<T>(sessionDirectory: string, operation: () => Promise<T>): Promise<T>;
+  monotonicNow(): number;
+  withMutationLock<T>(
+    sessionDirectory: string,
+    operation: () => Promise<T>,
+    observationContext?: RunnerSessionMutationLockObservationContext,
+  ): Promise<T>;
   refresh(
     registration: RunnerRegistration,
     phaseObservation?: RunnerPhaseObservation,
@@ -52,16 +59,35 @@ export class RunnerSessionGarbageCollector {
     policy?: RunnerSessionGarbageCollectionPolicy,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<RunnerSessionGcResult> {
+    const startedAtMonotonicMs = this.deps.monotonicNow();
+    const startedAtMs = this.deps.now();
+    let measuredDurationMs: number | undefined;
+    const durationMs = () => {
+      measuredDurationMs ??= Math.max(
+        0,
+        this.deps.monotonicNow() - startedAtMonotonicMs,
+      );
+      return measuredDurationMs;
+    };
     try {
-      return await this.collectSweep(scan, policy, phaseObservation);
+      return await this.collectSweep(
+        scan,
+        startedAtMs,
+        durationMs,
+        policy,
+        phaseObservation,
+      );
     } catch (error) {
+      const elapsedMs = durationMs();
       const failure = phaseObservation?.failureFor(error);
       try {
         this.logger.warn({
           err: error,
+          startedAtMs,
+          durationMs: elapsedMs,
           ...(failure ? { failurePhase: failure.phase, failureElapsedMs: failure.elapsedMs } : {}),
           ...(phaseObservation ? {
-            phaseDurationsMs: phaseObservation.phaseDurationsMs(),
+            phaseDurationsMs: phaseDurationsWithOtherMs(phaseObservation, elapsedMs),
             database: phaseObservation.databaseSummary(),
             databaseAndPhaseDurationsOverlap: true,
           } : {}),
@@ -75,6 +101,8 @@ export class RunnerSessionGarbageCollector {
 
   private async collectSweep(
     scan: RunnerRegistrationScan,
+    startedAtMs: number,
+    durationMs: () => number,
     policy?: RunnerSessionGarbageCollectionPolicy,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<RunnerSessionGcResult> {
@@ -90,6 +118,9 @@ export class RunnerSessionGarbageCollector {
         result.retained.push({ sessionId: registration.config.sessionId, reason: candidateReason });
         continue;
       }
+      const observationArgs: [] | [RunnerSessionMutationLockObservationContext] = phaseObservation
+        ? [{ phaseObservation, sessionId: registration.config.sessionId }]
+        : [];
       await this.deps.withMutationLock(
         registration.config.paths.sessionDirectory,
         async () => {
@@ -142,6 +173,8 @@ export class RunnerSessionGarbageCollector {
             const deletedSessionEvidence = await isDeletedCentralSessionEvidence(
               hydrated,
               policy,
+              phaseObservation,
+              "initial",
             );
             if (!deletedSessionEvidence) {
               if (!hydrated.lifecycle) {
@@ -204,7 +237,12 @@ export class RunnerSessionGarbageCollector {
             }
             if (
               deletedSessionEvidence
-              && !await isDeletedCentralSessionEvidence(latest, policy)
+              && !await isDeletedCentralSessionEvidence(
+                latest,
+                policy,
+                phaseObservation,
+                "beforeDelete",
+              )
             ) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
@@ -212,7 +250,16 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            await this.deps.removeDirectory(latest.config.paths.sessionDirectory);
+            const removeDirectory = () => this.deps.removeDirectory(
+              latest.config.paths.sessionDirectory,
+            );
+            if (phaseObservation) {
+              await phaseObservation.runAsync("removeDirectory", {
+                sessionId: latest.config.sessionId,
+              }, removeDirectory);
+            } else {
+              await removeDirectory();
+            }
             result.removed.push(latest.config.sessionId);
             const prebootstrap = hydrated.bootstrap === null;
             this.logger.info(
@@ -244,8 +291,13 @@ export class RunnerSessionGarbageCollector {
             );
           }
         },
+        ...observationArgs,
       );
     }
+    const elapsedMs = durationMs();
+    const phaseDurationsMs = phaseObservation
+      ? phaseDurationsWithOtherMs(phaseObservation, elapsedMs)
+      : undefined;
     this.logger.info(
       {
         inspected: scan.registrations.length,
@@ -255,8 +307,10 @@ export class RunnerSessionGarbageCollector {
         retainedByReason: countRetainedReasons(result.retained),
         retainedSessions: result.retained,
         unreadableRegistrations: scan.errors.length,
+        startedAtMs,
+        durationMs: elapsedMs,
         ...(phaseObservation ? {
-          phaseDurationsMs: phaseObservation.phaseDurationsMs(),
+          phaseDurationsMs,
           database: phaseObservation.databaseSummary(),
           databaseAndPhaseDurationsOverlap: true,
           ...(lastFailure !== undefined
@@ -277,9 +331,40 @@ export class RunnerSessionGarbageCollector {
 async function isDeletedCentralSessionEvidence(
   registration: RunnerRegistration,
   policy: RunnerSessionGarbageCollectionPolicy | undefined,
+  phaseObservation?: RunnerPhaseObservation,
+  label: "initial" | "beforeDelete" = "initial",
 ): Promise<boolean> {
   if (!policy || !registration.retiredAt || registration.pidAlive) return false;
-  return !await policy.centralSessionExists(registration.config.sessionId);
+  const lookup = () => policy.centralSessionExists(registration.config.sessionId);
+  const exists = phaseObservation
+    ? await phaseObservation.runAsync("centralSessionLookup", {
+      sessionId: registration.config.sessionId,
+      label,
+    }, lookup)
+    : await lookup();
+  return !exists;
+}
+
+function phaseDurationsWithOtherMs(
+  phaseObservation: RunnerPhaseObservation,
+  durationMs: number,
+): Record<string, number> {
+  const phaseDurationsMs = { ...phaseObservation.phaseDurationsMs() };
+  const disjointPhases = [
+    "mutationQueueWait",
+    "mutationAcquire",
+    "mutationRelease",
+    "freshRegistration",
+    "durableInspection",
+    "centralSessionLookup",
+    "removeDirectory",
+  ];
+  const measuredMs = disjointPhases.reduce(
+    (total, phase) => total + (phaseDurationsMs[phase] ?? 0),
+    0,
+  );
+  phaseDurationsMs.otherMs = Math.max(0, durationMs - measuredMs);
+  return phaseDurationsMs;
 }
 
 function hasProvenEmptyPrebootstrapEvidence(
@@ -331,6 +416,7 @@ function assertOwnedSessionDirectory(stateDirectory: string, sessionDirectory: s
 function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
   return {
     now: Date.now,
+    monotonicNow: () => performance.now(),
     withMutationLock: withRunnerSessionMutationLock,
     refresh: async (registration, phaseObservation) => await readRunnerRegistrationForDeletion(
       registration.config.paths.sessionDirectory,

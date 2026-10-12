@@ -90,6 +90,8 @@ describe("RunnerSessionGarbageCollector", () => {
         retainedByReason: {},
         retainedSessions: [],
         unreadableRegistrations: 0,
+        startedAtMs: NOW,
+        durationMs: 1,
       },
       "runner session GC sweep completed",
     );
@@ -252,13 +254,105 @@ describe("RunnerSessionGarbageCollector", () => {
       "freshRegistration",
       "durableInspection",
       "freshRegistration",
+      "removeDirectory",
     ]);
+    expect(subject.withMutationLock).toHaveBeenCalledWith(
+      "/state/observed",
+      expect.any(Function),
+      { phaseObservation: observation, sessionId: "observed" },
+    );
     expect(subject.logger.info).toHaveBeenLastCalledWith(expect.objectContaining({
+      startedAtMs: NOW,
+      durationMs: expect.any(Number),
       phaseDurationsMs: expect.objectContaining({
         freshRegistration: expect.any(Number),
         durableInspection: expect.any(Number),
+        otherMs: expect.any(Number),
       }),
     }), "runner session GC sweep completed");
+    const sweepSummary = subject.logger.info.mock.calls.at(-1)?.[0] as {
+      durationMs: number;
+      phaseDurationsMs: Record<string, number>;
+    };
+    const measuredNonDbMs = [
+      "mutationQueueWait",
+      "mutationAcquire",
+      "mutationRelease",
+      "freshRegistration",
+      "durableInspection",
+      "centralSessionLookup",
+      "removeDirectory",
+    ].reduce((total, phase) => total + (sweepSummary.phaseDurationsMs[phase] ?? 0), 0);
+    expect(sweepSummary.phaseDurationsMs.otherMs).toBe(
+      Math.max(0, sweepSummary.durationMs - measuredNonDbMs),
+    );
+    expect(sweepSummary.phaseDurationsMs).not.toHaveProperty("dbOpen");
+    expect(sweepSummary.phaseDurationsMs).not.toHaveProperty("dbRead");
+  });
+
+  it("labels only guarded central session lookups", async () => {
+    const centralSessionExists = vi.fn(async () => false);
+    const contexts: Array<{ phase?: string; operation?: string; sessionId?: string }> = [];
+    const subject = makeSubject();
+    const observation = createRunnerPhaseObservation({
+      nodeId: "node-a",
+      scopeId: "session-gc-central-lookup",
+      operation: "runner.recovery.sessionGc",
+      logger: subject.logger as never,
+      monotonicNow: (() => {
+        let now = 0;
+        return () => now++;
+      })(),
+      beginRunnerOperation: (context) => {
+        contexts.push({ phase: context.phase, operation: context.operation, sessionId: context.sessionId });
+        return () => {};
+      },
+    });
+
+    await subject.collector.collect(scan([
+      registration({
+        sessionId: "deleted",
+        pid: null,
+        pidStartIdentity: null,
+        retiredAt: "2026-08-10T00:00:00.000Z",
+      }),
+      registration({ sessionId: "legacy" }),
+    ]), { centralSessionExists }, observation);
+
+    expect(centralSessionExists.mock.calls.map(([sessionId]) => sessionId)).toEqual([
+      "deleted",
+      "deleted",
+    ]);
+    expect(contexts.filter((context) => context.phase === "centralSessionLookup")).toEqual([
+      {
+        phase: "centralSessionLookup",
+        operation: "runner.recovery.sessionGc.centralSessionLookup.initial",
+        sessionId: "deleted",
+      },
+      {
+        phase: "centralSessionLookup",
+        operation: "runner.recovery.sessionGc.centralSessionLookup.beforeDelete",
+        sessionId: "deleted",
+      },
+    ]);
+  });
+
+  it("records failed sweep duration and preserves the original error", async () => {
+    const failure = new Error("mutation acquire failed");
+    const subject = makeSubject({
+      monotonicNow: vi.fn()
+        .mockReturnValueOnce(20)
+        .mockReturnValueOnce(32),
+      withMutationLock: async () => { throw failure; },
+    });
+
+    await expect(subject.collector.collect(scan([registration({ sessionId: "failed" })])))
+      .rejects.toBe(failure);
+    expect(subject.logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      err: failure,
+      startedAtMs: NOW,
+      durationMs: 12,
+    }), "runner session GC sweep failed");
   });
 });
 
@@ -269,12 +363,19 @@ function makeSubject(options: {
   pendingInterventionSessions?: Set<string>;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   refresh?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
+  monotonicNow?: () => number;
+  withMutationLock?: RunnerSessionGarbageCollectorDependencies["withMutationLock"];
 } = {}) {
   const removeDirectory = vi.fn(async () => {});
+  let monotonicTime = 0;
+  const withMutationLock = vi.fn(options.withMutationLock ?? (async <T>(
+    _path: string,
+    operation: () => Promise<T>,
+  ) => await operation()));
   const deps = {
     now: () => NOW,
-    withMutationLock: async <T>(_path: string, operation: () => Promise<T>) =>
-      await operation(),
+    monotonicNow: options.monotonicNow ?? (() => monotonicTime++),
+    withMutationLock,
     refresh: options.refresh ?? (async (item: RunnerRegistration) => item),
     inspect: async (item) => {
       const hydrated = await (options.hydrate ?? (async (candidate) => candidate))(item);
@@ -306,6 +407,7 @@ function makeSubject(options: {
       deps,
     ),
     removeDirectory,
+    withMutationLock,
     logger,
   };
 }
