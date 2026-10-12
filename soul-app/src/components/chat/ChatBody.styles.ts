@@ -147,6 +147,15 @@ export function makeStyles(t: DesignTokens) {
       paddingHorizontal: t.spacing.md,
       paddingTop: t.spacing.xs,
     },
+    generatedTextRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: t.spacing.sm,
+      minWidth: 0,
+      paddingTop: t.spacing.xs,
+    },
+    generatedNoticeSlot: { flex: 1, minWidth: 0 },
     attachmentTouchFrame: {
       minHeight: t.hitTarget.min,
       maxWidth: '70%',
