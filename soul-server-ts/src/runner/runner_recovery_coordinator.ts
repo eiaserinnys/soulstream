@@ -41,9 +41,11 @@ import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordin
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
+import { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
+  private readonly scanCache = new RunnerRegistrationScanCache();
   private readonly active = new Map<string, Promise<void>>();
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
@@ -161,6 +163,7 @@ export class RunnerRecoveryCoordinator {
     }
     const scan = await (this.options.scan ?? scanRunnerRegistrations)(
       this.options.stateDirectory,
+      { cache: this.scanCache },
     );
     await this.unreadableRegistrationHandler.handle(scan.errors);
     this.recoveryLogger.prune(scan.registrations);
