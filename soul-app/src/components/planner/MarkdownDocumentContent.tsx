@@ -6,7 +6,7 @@ import type { MarkdownDocument } from '../../api/boardItemEndpoints';
 import { useDeviceType, useTokens } from '../../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GlassButton } from '../GlassSurface';
-import { removeOverlappingDocumentHeading } from '../../lib/markdown-document-heading';
+import { removeOverlappingDocumentHeading } from '../../../../packages/soul-ui/src/lib/markdown-document-heading';
 import { cardDetailStyles } from './CardDetail.styles';
 import { PlannerMarkdownText } from './PlannerMarkdownText';
 
