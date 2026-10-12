@@ -44,8 +44,8 @@ function Link({ href }: { href: string }) {
 }
 
 function LinkState() {
-  const { selectedDocument, selectedImage } = useDashboardInternalLinks();
-  return <div data-testid="link-state" data-document={selectedDocument?.id ?? ""} data-image={selectedImage?.src ?? ""}/>;
+  const { selectedDocumentId, selectedImage } = useDashboardInternalLinks();
+  return <div data-testid="link-state" data-document={selectedDocumentId ?? ""} data-image={selectedImage?.src ?? ""}/>;
 }
 
 function Register({ openers }: { openers: DashboardLinkOpeners }) {
@@ -123,19 +123,23 @@ describe("DashboardInternalLinks", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/?folder=folder-1");
   });
 
-  it("opens a fetched document and reports a fetch failure without selecting it", async () => {
-    mocks.fetchDocument.mockResolvedValueOnce({ id: "doc-1", title: "문서", body: "본문", version: 1 });
+  it("selects a document immediately without querying it", async () => {
     await render("/api/markdown-documents/doc-1", true);
     await click(host!.querySelector("a")!);
     expect(host!.querySelector("[data-testid=link-state]")?.getAttribute("data-document")).toBe("doc-1");
 
-    act(() => root!.unmount());
-    root = undefined;
-    mocks.fetchDocument.mockRejectedValueOnce(new Error("마크다운 문서를 불러오지 못했습니다 (404)"));
-    await render("/api/markdown-documents/missing", true);
-    await click(host!.querySelector("a")!);
+    expect(mocks.fetchDocument).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it("closes the document before opening another screen", async () => {
+    const cardOpener = vi.fn(() => true);
+    const anchor = await render("/?document=doc-1", true, { card: cardOpener });
+    await click(anchor);
+    anchor.href = "/?card=card-1";
+    await click(anchor);
     expect(host!.querySelector("[data-testid=link-state]")?.getAttribute("data-document")).toBe("");
-    expect(mocks.notify).toHaveBeenCalledWith("마크다운 문서를 불러오지 못했습니다 (404)");
+    expect(cardOpener).toHaveBeenCalled();
   });
 
   it("opens an image only after load and reports an image error", async () => {

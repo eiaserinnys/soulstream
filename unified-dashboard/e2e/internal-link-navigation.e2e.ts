@@ -5,11 +5,12 @@ import { reviewCard } from "../client/v3/components-review-fixtures";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4323";
-const output = path.resolve("../.local/artifacts/20261012-internal-link-web");
+const output = path.resolve("../.local/artifacts/20261012-internal-link-web-reader");
 const sessionId = "run-alpha-2";
 const messageMarkdown = [
   "[문서 링크](/api/markdown-documents/doc-1)",
   "[문서 쿼리 링크](/?document=doc-1)",
+  "[긴 문서](/api/markdown-documents/long-doc)",
   "[분류 없는 문서](/api/markdown-documents/orphan-doc)",
   "[없는 문서](/api/markdown-documents/missing-doc)",
   "[이미지 링크](/api/attachments/files?nodeId=eiaserinnys&path=%2Fcapture.png)",
@@ -88,20 +89,22 @@ async function prepare(page: Page, width: number, contentByEventId: Record<numbe
   }));
   await page.route((url) => new URL(url).pathname === "/api/markdown-documents/doc-1"
     || new URL(url).pathname === "/api/markdown-documents/orphan-doc"
-    || new URL(url).pathname === "/api/markdown-documents/missing-doc", async (route) => {
+    || new URL(url).pathname === "/api/markdown-documents/missing-doc"
+    || new URL(url).pathname === "/api/markdown-documents/long-doc", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("missing-doc")) {
       return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "missing" }) });
     }
-    const id = url.pathname.endsWith("orphan-doc") ? "orphan-doc" : "doc-1";
+    const id = url.pathname.split("/").at(-1)!;
     return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         id,
-        title: id === "doc-1" ? "내부 링크 문서" : "분류 없는 내부 문서",
-        body: id === "doc-1"
-          ? "# 본문 확인\n\n문서 링크를 눌러 겹쳐 보았습니다.\n\n[같은 문서](/api/markdown-documents/doc-1)"
+        title: id === "doc-1" || id === "long-doc" ? "내부 링크 문서" : "분류 없는 내부 문서",
+        body: id === "long-doc" ? "# 내부 링크 문서\n\n" + Array.from({length: 80}, (_, i) => `문단 ${i+1}. 화면보다 긴 본문을 다이얼로그 안에서 읽습니다. 긴 문서의 각 문단을 끝까지 읽을 수 있어야 합니다.`).join("\n\n") + "\n\n마지막 줄 확인"
+          : id === "doc-1"
+          ? "# 내부 링크 문서\n\n본문 확인\n\n문서 링크를 눌러 겹쳐 보았습니다.\n\n[같은 문서](/api/markdown-documents/doc-1)\n\n[다른 문서](/api/markdown-documents/orphan-doc)\n\n[본문 이미지](/api/attachments/files?nodeId=eiaserinnys&path=%2Fcapture.png)\n\n[본문 카드](/?card=link-card)"
           : "# 본문 확인\n\n폴더 경로가 없는 문서입니다.",
         version: 1,
         folderId: id === "doc-1" ? "rb-alpha" : "missing-folder",
@@ -138,81 +141,127 @@ async function openV3Chat(page: Page) {
 
 async function openDocumentFromChat(page: Page, name = "문서 링크") {
   await page.getByRole("link", { name, exact: true }).click();
-  const overlay = page.getByTestId("v3-folder-board-document-overlay");
-  await expect(overlay).toBeVisible();
-  await expect(overlay.getByRole("textbox", { name: "Document title" })).toHaveValue(
-    name === "분류 없는 문서" ? "분류 없는 내부 문서" : "내부 링크 문서",
-  );
-  await expect(overlay.getByTestId("markdown-read-body")).toContainText("본문 확인");
-  return overlay;
+  const dialog = page.getByTestId("internal-document-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('[data-slot="dialog-title"]')).toHaveText("내부 링크 문서");
+  await expect(dialog.locator('.v3-folder-board-document-copy')).toBeVisible();
+  await expect(dialog).not.toHaveAttribute("data-starting-style");
+  return dialog;
 }
 
 async function captureDocument(page: Page, name: string) {
+  await expect(page.getByTestId("internal-document-dialog")).not.toHaveAttribute("data-starting-style");
+  await expect(page.getByTestId("internal-document-dialog")).not.toHaveAttribute("data-ending-style");
+  await expect(page.getByTestId("internal-document-dialog")).toHaveCSS("opacity", "1");
   await page.screenshot({ path: path.join(output, `${name}.png`), animations: "disabled" });
-  const geometry = await page.getByTestId("v3-folder-board-document-overlay").evaluate((element) => {
+  const geometry = await page.getByTestId("internal-document-dialog").evaluate((element) => {
     const rect = (node: Element) => node.getBoundingClientRect().toJSON();
-    return { overlay: rect(element), header: rect(element.querySelector("header")!),
-      panel: rect(element.querySelector('[data-testid="markdown-read-body"]')!),
-      shell: rect(element.closest(".v3-shell")!) };
+    return { dialog: rect(element), panel: rect(element.querySelector('[data-slot="dialog-panel-scroll"]')!),
+      surface: getComputedStyle(element).backgroundColor,
+      readerFont: element.querySelector('.v3-folder-board-document-copy') ? getComputedStyle(element.querySelector('.v3-folder-board-document-copy')!).fontSize : null,
+      backdrop: getComputedStyle(document.querySelector('[data-slot="dialog-backdrop"]')!).backgroundColor };
   });
   await writeFile(path.join(output, `${name}-geometry.json`), JSON.stringify(geometry, null, 2));
 }
 
-test("opens document links over V3 and PAS without losing the underlying chat", async ({ page }) => {
-  await mkdir(output, { recursive: true });
-  await prepare(page, 1440);
-  await openV3Chat(page);
-  const v3Overlay = await openDocumentFromChat(page);
-  await captureDocument(page, "v3-document-overlay");
-  const documentRequests = await page.evaluate(() => performance.getEntriesByType("resource")
-    .filter((entry) => entry.name.includes("/api/markdown-documents/doc-1")).length);
-  await v3Overlay.getByRole("link", { name: "같은 문서", exact: true }).click();
-  await expect(v3Overlay.getByTestId("markdown-read-body")).toContainText("문서 링크를 눌러 겹쳐 보았습니다.");
-  expect(await page.evaluate(() => performance.getEntriesByType("resource")
-    .filter((entry) => entry.name.includes("/api/markdown-documents/doc-1")).length)).toBe(documentRequests);
-  await v3Overlay.getByTestId("v3-folder-board-document-overlay-close").click();
-  await expect(v3Overlay).toBeHidden();
-  await expect(page.locator(".v3-chat-pane:visible")).toContainText("문서 링크");
+for (const screen of ["v3", "pas"] as const) for (const width of [1440, 1024]) {
+  test(`document reader preserves ${screen} chat and focus at ${width}`, async ({ page }) => {
+    await prepare(page, width);
+    if (screen === "v3") await openV3Chat(page);
+    else await page.goto(`${baseUrl}/persistent/${sessionId}`, { waitUntil: "domcontentloaded" });
+    const chat = screen === "v3" ? page.locator('.v3-chat-pane:visible') : page.locator('[data-slot="chat-root"]');
+    await expect(chat).toContainText("문서 링크");
+    const chatElement = await chat.elementHandle();
+    const scroller = chat.locator('[data-virtuoso-scroller="true"]');
+    const position = await scroller.evaluate(element => element.scrollTop);
+    const address = page.url();
+    const link = page.getByRole("link", { name: "문서 링크", exact: true });
+    await link.focus();
+    await link.press("Enter");
+    const dialog = page.getByTestId("internal-document-dialog");
+    await expect(dialog.locator('[data-slot="dialog-title"]')).toHaveText("내부 링크 문서");
+    await expect(dialog).toContainText("본문 확인");
+    await expect(dialog.locator('h1')).toHaveCount(0);
+    await expect.poll(() => dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    await captureDocument(page, `${screen}-${width}-document`);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(link).toBeFocused();
+    expect(page.url()).toBe(address);
+    expect(await chatElement!.evaluate(element => element.isConnected)).toBe(true);
+    expect(await scroller.evaluate(element => element.scrollTop)).toBe(position);
+    await page.getByRole("link", { name: "이미지 링크", exact: true }).click();
+    const image = page.getByRole("dialog", { name: "이미지", exact: true });
+    await expect(image).toBeVisible();
+    await expect(image).not.toHaveAttribute("data-starting-style");
+    await page.screenshot({ path: path.join(output, `${screen}-${width}-image-reference.png`), animations: "disabled" });
+  });
+}
 
-  await page.goto(`${baseUrl}/persistent/${sessionId}`, { waitUntil: "domcontentloaded" });
-  const pasChat = page.getByTestId("persistent-session-screen").locator('[data-slot="chat-root"]');
-  await expect(pasChat).toContainText("문서 링크");
-  const originalChat = await pasChat.elementHandle();
-  const originalUrl = page.url();
-  const scroller = pasChat.locator('[data-virtuoso-scroller="true"]');
-  const scrollTop = await scroller.evaluate((element) => element.scrollTop);
-  await page.screenshot({ path: path.join(output, "pas-chat-before-wide.png"), animations: "disabled" });
-  const pasOverlay = await openDocumentFromChat(page);
-  await expect(page.locator(".v3-shell.persistent-session-screen").getByTestId("v3-folder-board-document-overlay")).toBeVisible();
-  expect(new URL(page.url()).pathname).toBe(`/persistent/${sessionId}`);
-  await captureDocument(page, "pas-document-overlay-wide");
-  await page.keyboard.press("Escape");
-  await expect(pasOverlay).toBeHidden();
-  expect(page.url()).toBe(originalUrl);
-  expect(await originalChat!.evaluate((element) => element.isConnected)).toBe(true);
-  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(scrollTop);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: path.join(output, "pas-chat-before-narrow.png"), animations: "disabled" });
-  await openDocumentFromChat(page, "문서 쿼리 링크");
-  await expect(pasOverlay).toBeVisible();
-  await captureDocument(page, "pas-document-overlay-narrow");
-  await pasOverlay.getByTestId("v3-folder-board-document-overlay-close").click();
-  await expect(pasOverlay).toBeHidden();
-  expect(new URL(page.url()).pathname).toBe(`/persistent/${sessionId}`);
-  await expect(pasChat).toContainText("문서 링크");
+for (const screen of ["pas", "v3"] as const) {
+  test(`document reader scrolls long ${screen} content at 390`, async ({ page }) => {
+    await prepare(page, 1440);
+    if (screen === "v3") await openV3Chat(page);
+    else { await page.goto(`${baseUrl}/persistent/${sessionId}`, { waitUntil: "domcontentloaded" }); await expect(page.locator('[data-slot="chat-root"]')).toContainText("긴 문서"); }
+    await page.setViewportSize({width:390,height:844});
+    if (screen === "v3") await page.getByTestId("v3-mobile-tab-chat").click();
+    const dialog = await openDocumentFromChat(page, "긴 문서");
+    await captureDocument(page, `${screen}-390-long-top`);
+    const panel = dialog.locator('[data-slot="dialog-panel-scroll"]');
+    await panel.hover(); await page.mouse.wheel(0, 20000);
+    await expect(dialog.getByText("마지막 줄 확인", {exact:true})).toBeInViewport();
+    const rect = await dialog.boundingBox(); expect(rect!.y + rect!.height).toBeLessThanOrEqual(844);
+    await captureDocument(page, `${screen}-390-long-end`);
+    const last = dialog.getByText("마지막 줄 확인", {exact:true});
+    await expect.poll(() => last.evaluate(element => {
+      const r = element.getBoundingClientRect(); return element.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));
+    })).toBe(true);
+  });
+}
+
+test("document reader opens loading and missing-document states immediately", async ({page}) => {
+  await prepare(page,1440); await openV3Chat(page);
+  let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/markdown-documents/doc-1', async route => { await gate; await route.fulfill({json:{id:'doc-1',title:'내부 링크 문서',body:'본문 확인',version:1}}); });
+  await page.getByRole('link',{name:'문서 링크',exact:true}).click();
+  const dialog=page.getByTestId('internal-document-dialog');
+  await expect(dialog).toContainText('본문을 불러오는 중…');
+  await captureDocument(page,'loading'); release();
+  await expect(dialog).toContainText('본문 확인'); await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+  await page.getByRole('link',{name:'없는 문서',exact:true}).click();
+  await expect(dialog).toContainText('문서를 찾을 수 없습니다');
+  await expect(page.locator('.v3-toast.is-visible')).toHaveCount(0);
+  await captureDocument(page,'missing-document');
 });
 
-test("starts linked documents expanded and retains the existing collapse control", async ({ page }) => {
-  await prepare(page, 1440);
-  await openV3Chat(page);
-  const overlay = await openDocumentFromChat(page);
-  await expect(overlay).toHaveClass(/is-expanded/);
-  await overlay.getByTestId("v3-folder-board-document-overlay-expand").click();
-  await expect(overlay).not.toHaveClass(/is-expanded/);
-  await overlay.getByTestId("v3-folder-board-document-overlay-close").click();
-  await expect(overlay).toHaveCount(0);
-  const reopened = await openDocumentFromChat(page);
-  await expect(reopened).toHaveClass(/is-expanded/);
+test("document reader switches documents, layers images and closes before cards", async ({page}) => {
+  await prepare(page,1440); await openV3Chat(page);
+  let reads=0; page.on('request', request => { if(new URL(request.url()).pathname==='/api/markdown-documents/doc-1') reads++; });
+  const dialog=await openDocumentFromChat(page);
+  await dialog.getByRole('link',{name:'같은 문서',exact:true}).click(); expect(reads).toBe(1);
+  await dialog.getByRole('link',{name:'본문 이미지',exact:true}).click();
+  const image=page.getByRole('dialog',{name:'이미지',exact:true}); await expect(image).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(image).toBeHidden(); await expect(dialog).toBeVisible();
+  await dialog.getByRole('link',{name:'다른 문서',exact:true}).click();
+  await expect(dialog).toContainText('분류 없는 내부 문서');
+  await page.keyboard.press('Escape'); await expect(dialog).toBeHidden(); await openDocumentFromChat(page);
+  await dialog.getByRole('link',{name:'본문 카드',exact:true}).click();
+  await expect(dialog).toBeHidden(); await expect(page.getByTestId('card-detail')).toContainText('내부 링크 카드 상세');
+});
+
+test("document reader is read-only, consumes direct intent and registers the actual sample", async ({page}) => {
+  await prepare(page,1440);
+  const writes:string[]=[]; page.on('request', request => {if(request.url().includes('/api/markdown-documents/') && request.method()!=='GET') writes.push(request.method());});
+  await page.goto(`${baseUrl}/?document=doc-1`,{waitUntil:'domcontentloaded'});
+  const dialog=page.getByTestId('internal-document-dialog'); await expect(dialog).toContainText('본문 확인');
+  await expect.poll(()=>`${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe('/');
+  const line=dialog.getByText('문서 링크를 눌러 겹쳐 보았습니다.',{exact:true}); const rect=await line.boundingBox();
+  await page.mouse.move(rect!.x+2,rect!.y+rect!.height/2); await page.mouse.down(); await page.mouse.move(rect!.x+rect!.width-2,rect!.y+rect!.height/2,{steps:10}); await page.mouse.up();
+  await expect.poll(()=>page.evaluate(()=>window.getSelection()?.toString().length??0)).toBeGreaterThan(0);
+  await page.keyboard.type('q'); await expect(dialog.locator('input,textarea,[contenteditable="true"]')).toHaveCount(0); expect(writes).toEqual([]);
+  await page.goto(`${baseUrl}/dialogues?sample=document-reader`,{waitUntil:'domcontentloaded'});
+  await expect(dialog.locator('[data-slot="dialog-title"]')).toHaveText('링크 문서 읽기'); await expect(dialog.locator('h1')).toHaveCount(0);
+  await captureDocument(page,'dialogues-document-reader');
 });
 
 test("opens an image attachment in the existing image viewer and closes it with Escape", async ({ page }) => {
@@ -263,16 +312,12 @@ test("opens V3 card, folder, page and session targets through actual chat links"
   await expect(page.locator(".v3-toast.is-visible")).toContainText("페이지와 연결된 폴더를 찾을 수 없습니다.");
 });
 
-test("consumes direct card, document, folder and page intents before automatic PAS startup", async ({ page }) => {
+test("consumes direct card, folder and page intents before automatic PAS startup", async ({ page }) => {
   await prepare(page, 1440);
   await page.goto(`${baseUrl}/?card=link-card`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("v3-card-workspace").getByTestId("card-detail")).toContainText("내부 링크 카드 상세");
   await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
   await page.getByRole("button", { name: "카드 닫기" }).click();
-  await page.goto(`${baseUrl}/?document=doc-1`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("v3-folder-board-document-overlay")).toBeVisible();
-  await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
-  await page.getByTestId("v3-folder-board-document-overlay-close").click();
   await page.goto(`${baseUrl}/?folder=rb-alpha`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("v3-folder-cards-section")).toBeVisible();
   await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
@@ -297,73 +342,10 @@ test("opens PAS card details and follows a PAS session link to its V3 chat", asy
   await expect.poll(() => `${new URL(page.url()).pathname}${new URL(page.url()).search}`).toBe("/");
 });
 
-test("reports a missing document, leaves Ctrl-click in a new tab, and omits an unresolved folder breadcrumb", async ({ page }) => {
-  await mkdir(output, { recursive: true });
-  await prepare(page, 1440);
-  await openV3Chat(page);
-  await page.getByRole("link", { name: "없는 문서", exact: true }).click();
-  await expect(page.locator(".v3-toast.is-visible")).toContainText("마크다운 문서를 불러오지 못했습니다 (404)");
-  await expect(page.getByTestId("v3-folder-board-document-overlay")).toHaveCount(0);
-
-  // Observe the real click after React's listener; headless tab creation differs by browser.
-  await page.evaluate(() => {
-    window.addEventListener("click", (event) => {
-      document.documentElement.dataset.modifiedClick = JSON.stringify({
-        ctrlKey: event.ctrlKey, defaultPrevented: event.defaultPrevented,
-      });
-    }, { once: true });
-  });
-  await page.getByRole("link", { name: "문서 링크", exact: true }).click({ modifiers: ["Control"] });
-  await expect(page.locator("html")).toHaveAttribute("data-modified-click", JSON.stringify({ ctrlKey: true, defaultPrevented: false }));
-  await expect(page.getByTestId("v3-folder-board-document-overlay")).toHaveCount(0);
-
-  const orphanOverlay = await openDocumentFromChat(page, "분류 없는 문서");
-  await expect(orphanOverlay.locator(".v3-chat-header small")).toHaveCount(0);
-  await captureDocument(page, "document-without-folder-breadcrumb");
-  await orphanOverlay.getByTestId("v3-folder-board-document-overlay-close").click();
-
-  await page.goto(`${baseUrl}/dialogues?sample=document-overlay`, { waitUntil: "domcontentloaded" });
-  const sampleOverlay = page.getByTestId("v3-folder-board-document-overlay");
-  await expect(sampleOverlay).toBeVisible();
-  await expect(sampleOverlay.getByTestId("markdown-read-body")).toBeVisible();
-  await captureDocument(page, "dialogues-document-overlay-reference");
-});
-
-async function captureNarrowDocument(page: Page, name: string) {
-  await captureDocument(page, name);
-  const styles = await page.getByTestId("v3-folder-board-document-overlay").evaluate((element) => {
-    const measure = (node: Element) => {
-      const style = getComputedStyle(node);
-      return { rect: node.getBoundingClientRect().toJSON(), position: style.position,
-        top: style.top, bottom: style.bottom, height: style.height,
-        display: style.display, gridTemplateColumns: style.gridTemplateColumns };
-    };
-    return { overlay: measure(element), workspace: measure(element.parentElement!),
-      scrim: measure(element.parentElement!.parentElement!),
-      expanded: element.classList.contains("is-expanded") };
-  });
-  await writeFile(path.join(output, `${name}-styles.json`), JSON.stringify(styles, null, 2));
-}
-
-test("captures registered and PAS narrow document surfaces for comparison", async ({ page }) => {
-  await prepare(page, 1440);
-  await page.goto(`${baseUrl}/persistent/${sessionId}`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator('[data-slot="chat-root"][data-chat-presentation="manuscript"]')).toContainText("문서 링크");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openDocumentFromChat(page);
-  await captureNarrowDocument(page, "pas-document-overlay-narrow-fresh");
-
-  await page.goto(`${baseUrl}/dialogues?sample=document-overlay`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("v3-folder-board-document-overlay").getByTestId("markdown-read-body")).toBeVisible();
-  await captureNarrowDocument(page, "dialogues-document-overlay-reference-narrow");
-});
-
-test("captures a document clicked from narrow V3 chat", async ({ page }) => {
-  await prepare(page, 1440);
-  await page.goto(`${baseUrl}/?session=${sessionId}`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".v3-chat-pane:visible")).toContainText("문서 링크");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByTestId("v3-mobile-tab-chat").click();
-  await openDocumentFromChat(page);
-  await captureNarrowDocument(page, "v3-document-overlay-narrow");
+test("preserves Ctrl-click browser behavior", async ({page}) => {
+  await prepare(page,1440); await openV3Chat(page);
+  await page.evaluate(()=>window.addEventListener('click', event=>{document.documentElement.dataset.modifiedClick=JSON.stringify({ctrlKey:event.ctrlKey,defaultPrevented:event.defaultPrevented});},{once:true}));
+  await page.getByRole('link',{name:'문서 링크',exact:true}).click({modifiers:['Control']});
+  await expect(page.locator('html')).toHaveAttribute('data-modified-click',JSON.stringify({ctrlKey:true,defaultPrevented:false}));
+  await expect(page.getByTestId('internal-document-dialog')).toHaveCount(0);
 });

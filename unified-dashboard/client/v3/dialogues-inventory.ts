@@ -258,6 +258,12 @@ export const dialoguesInventory = [
   },
   {
     section: "overlays",
+    id: "document-reader",
+    name: "링크 문서 읽기",
+    component: "DocumentReaderDialog",
+  },
+  {
+    section: "overlays",
     id: "v3-sheet",
     name: "모바일 작업 액션 시트",
     component: "V3ContextMenu",

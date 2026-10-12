@@ -790,7 +790,7 @@ function V3DashboardContent() {
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
       <V3SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} onOpenSession={sessionPanel.openSessionById} onOpenFolder={(folderId) => { const folder = catalog?.folders.find((candidate) => candidate.id === folderId); if (folder) void selectFolder(folder); }} />
       <V3Toast message={toast} />
-      <InternalLinkViewers onDocumentDeleted={() => setMarkdownDocumentsRevision((current) => current + 1)} />
+      <InternalLinkViewers />
     </div>
     </SessionMenuProvider>
   );

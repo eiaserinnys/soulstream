@@ -42,6 +42,7 @@ describe("markdown surface mount inventory", () => {
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
       "unified-dashboard/client/v3/CardNotes.tsx",
       "unified-dashboard/client/v3/CardTimeline.tsx",
+      "unified-dashboard/client/v3/DocumentReaderDialog.tsx",
       "unified-dashboard/client/v3/FolderBoardResourcePane.tsx",
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ]);
@@ -51,7 +52,6 @@ describe("markdown surface mount inventory", () => {
     expect(inventoryMounts("MarkdownDocumentPanel")).toEqual([
       "unified-dashboard/client/v3/DialoguesOverlaySamples.tsx",
       "unified-dashboard/client/v3/FolderBoardWorkspace.tsx",
-      "unified-dashboard/client/v3/InternalLinkViewers.tsx",
     ]);
   });
 
