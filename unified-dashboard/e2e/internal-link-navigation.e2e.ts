@@ -226,8 +226,9 @@ test("document reader keeps its frame across states and captures the proposed la
       const geometry = await captureDocument(page,name,scenario.captures.includes(state));
       measurements.push(geometry);
       if(state!=='title') { if(frame) expect(geometry.dialog).toEqual(frame); else frame=geometry.dialog; }
-      const expectedHeight = scenario.width<640?scenario.height-32:Math.min(1024,scenario.height-64);
+      const expectedHeight = scenario.width<=640?scenario.height-64:Math.min(1024,scenario.height-128);
       expect({width:geometry.dialog.width,height:geometry.dialog.height}).toEqual({width:Math.min(768,scenario.width-32),height:expectedHeight});
+      expect([geometry.dialog.top,scenario.height-geometry.dialog.bottom]).toEqual([(scenario.height-expectedHeight)/2,(scenario.height-expectedHeight)/2]);
       if(geometry.status) {
         expect(Math.abs(geometry.status.x+geometry.status.width/2-geometry.panel.x-geometry.panel.width/2)).toBeLessThanOrEqual(2);
         expect(Math.abs(geometry.status.y+geometry.status.height/2-geometry.panel.y-geometry.panel.height/2)).toBeLessThanOrEqual(2);
@@ -264,7 +265,7 @@ test("document reader scrolls with native keys from the focused body", async ({p
     await expect(body).toBeFocused();
     expect(await body.evaluate(element=>element.matches(':focus-visible'))).toBe(mode==='keyboard');
     const shadow = await dialog.evaluate(element=>getComputedStyle(element).boxShadow);
-    if(mode==='keyboard') { frameShadow=shadow; const geometry=await captureDocument(page,'pas-1440-focus-dark'); expect(geometry.focus).toMatchObject({width:'2px',offset:'-2px',style:'solid'}); expect(geometry.focus.contrast).toBeGreaterThanOrEqual(3); expect([geometry.dialog.width,geometry.dialog.height]).toEqual([768,836]); } else { expect(shadow).toBe(frameShadow); await expect(dialog).toHaveCSS('outline-style','none'); }
+    if(mode==='keyboard') { frameShadow=shadow; const geometry=await captureDocument(page,'pas-1440-focus-dark'); expect(geometry.focus).toMatchObject({width:'2px',offset:'-2px',style:'solid'}); expect(geometry.focus.contrast).toBeGreaterThanOrEqual(3); expect([geometry.dialog.width,geometry.dialog.height]).toEqual([768,772]); } else { expect(shadow).toBe(frameShadow); await expect(dialog).toHaveCSS('outline-style','none'); }
     observations.push({mode,focusVisible:await body.evaluate(element=>element.matches(':focus-visible')),frameShadow:shadow});
     for(const key of ['PageDown','Space','ArrowDown']) {
       await page.keyboard.press('Home'); await expect.poll(()=>scroll.evaluate(element=>element.scrollTop)).toBe(0);
@@ -284,7 +285,7 @@ test("document reader scrolls with native keys from the focused body", async ({p
   await page.emulateMedia({colorScheme:'light'}); await page.addInitScript(()=>localStorage.setItem('soul-dashboard-theme','light')); await page.goto(`${baseUrl}/persistent/${sessionId}`,{waitUntil:'domcontentloaded'});
   await openDocumentFromChat(page); await expect(body).toBeFocused(); expect(await body.evaluate(element=>element.matches(':focus-visible'))).toBe(false); await expect(dialog).toHaveCSS('outline-style','none'); const lightShadow=await dialog.evaluate(element=>getComputedStyle(element).boxShadow);
   await page.keyboard.press('Escape'); await expect(dialog).toBeHidden(); await page.getByRole('link',{name:'문서 링크',exact:true}).focus(); await page.keyboard.press('Enter'); await expect(body).toBeFocused();
-  const light=await captureDocument(page,'pas-1440-focus-light'); expect(light.focus).toMatchObject({width:'2px',offset:'-2px',style:'solid',shadow:lightShadow}); expect(light.focus.contrast).toBeGreaterThanOrEqual(3); expect([light.dialog.width,light.dialog.height]).toEqual([768,836]);
+  const light=await captureDocument(page,'pas-1440-focus-light'); expect(light.focus).toMatchObject({width:'2px',offset:'-2px',style:'solid',shadow:lightShadow}); expect(light.focus.contrast).toBeGreaterThanOrEqual(3); expect([light.dialog.width,light.dialog.height]).toEqual([768,772]);
   observations.push({mode:'light',mouseShadow:lightShadow,keyboard:light.focus});
   await writeFile(path.join(output,'keyboard-scroll.json'),JSON.stringify(observations,null,2));
 });
