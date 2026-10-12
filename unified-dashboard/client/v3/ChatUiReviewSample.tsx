@@ -1,14 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { renderText, canonicalJson, validateChatUiDocument } from '@soulstream/chat-ui';
-import { Button, ChatUiControllerProvider, ChatUiMessage, useChatUiHost } from '@seosoyoung/soul-ui';
+import { Button, ChatUiControllerProvider, ChatUiMessage, ChatInput } from '@seosoyoung/soul-ui';
+import type { ChatUiComposerHandle, RegisterGeneratedTextActions } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
 import { ChatUiErrorBoundary } from '@seosoyoung/soul-ui/components/chat-ui/ChatUiErrorBoundary';
 import { ChatUiFallback } from '@seosoyoung/soul-ui/components/chat-ui/ChatUiMessage';
 import { AssistantMessage } from '@seosoyoung/soul-ui/components/chat/AssistantMessage';
 import { UserMessage } from '@seosoyoung/soul-ui/components/chat/UserMessage';
-import { ChatInputComposer } from '@seosoyoung/soul-ui/components/chat/ChatInputComposer';
-import { ChatInputEditor } from '@seosoyoung/soul-ui/components/chat/ChatInputEditor';
 import { useChatTypography } from '@seosoyoung/soul-ui/components/chat/useChatTypography';
-import { useTextareaAutoHeight } from '@seosoyoung/soul-ui/components/chat/useTextareaAutoHeight';
 import { createChatSessionStore } from '@seosoyoung/soul-ui/stores/dashboard-store';
 import { ChatStoreScopeProvider } from '@seosoyoung/soul-ui/stores/chat-store-scope';
 import { createProcessingContext } from '@seosoyoung/soul-ui/stores/processing-context';
@@ -62,47 +60,22 @@ function RenderFailure({ msg }: { msg: ChatMessage }) {
   return <ChatUiErrorBoundary fallback={<ChatUiFallback content={renderText(validation.document)} notice="화면을 표시하지 못했어. 기본값 글로 보여줄게." />}><ThrowOnRender /></ChatUiErrorBoundary>;
 }
 
-function ReviewComposer({ sessionId, presentation }: { sessionId: string; presentation: 'default' | 'manuscript' }) {
-  const [draft, setDraft] = useState('기존 초안');
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-  const editor = useRef<HTMLTextAreaElement>(null);
-  const { chatFontSize } = useChatTypography();
-  useTextareaAutoHeight(editor, draft, chatFontSize);
-  const { feedback, registerComposer } = useChatUiHost();
-  useEffect(() => {
-    registerComposer({ appendGeneratedText: (target, text) => {
-      if (target !== sessionId) return { ok: false, reason: 'unavailable' };
-      const before = draftRef.current;
-      const after = before + (before ? '\n\n' : '') + text;
-      draftRef.current = after;
-      setDraft(after);
-      requestAnimationFrame(() => { editor.current?.focus(); editor.current?.setSelectionRange(after.length, after.length); });
-      return { ok: true };
-    } });
-    return () => registerComposer(null);
-  }, [registerComposer, sessionId]);
-  return <footer className="chat-ui-review-composer">
-    <ChatInputComposer presentation={presentation}><ChatInputEditor ref={editor} presentation={presentation}
-      inputLabel="기존 채팅 초안" text={draft} onChangeText={setDraft} onSend={() => {}} placeholder="메시지 입력"
-      buttonLabel="메시지 보내기" modeIcon="" modeLabel="" borderColor="" buttonVariant="default" disabled textareaDisabled={false} />
-    </ChatInputComposer>
-    {feedback && <p role="status" className="chat-ui-meta">{feedback}</p>}
-  </footer>;
-}
-
 export function ChatUiReviewSample({ presentation }: { presentation: 'default' | 'manuscript' }) {
   const [example, setExample] = useState<Example>('pas');
   const [mode, setMode] = useState<Mode>('rich');
   const sessionId = `chat-ui-review-${presentation}-${example}`;
-  const scope = useMemo(() => createChatSessionStore(null), []);
+  const scope = useMemo(() => createChatSessionStore(sessionId), [sessionId]);
+  const composer = useRef<ChatUiComposerHandle | null>(null);
+  const registerGeneratedTextActions = useCallback<RegisterGeneratedTextActions>(handle => { composer.current = handle; }, []);
+  const appendGeneratedText = useCallback<ChatUiComposerHandle['appendGeneratedText']>((target, text) =>
+    composer.current?.appendGeneratedText(target, text) ?? { ok: false, reason: 'unavailable' }, []);
   const messages = useMemo(() => reviewMessages(example, mode, sessionId), [example, mode, sessionId]);
   const { chatTypographyStyle } = useChatTypography();
   const manuscript = presentation === 'manuscript';
   return <div className="chat-ui-review" data-testid={`chat-ui-review-${presentation}`} style={chatTypographyStyle}>
     <div className="chat-ui-review-controls" aria-label="검수 문서" >{examples.map(([value, label]) => <Button key={value} variant="outline" aria-pressed={value === example} onClick={() => setExample(value)}>{label}</Button>)}</div>
     <div className="chat-ui-review-controls" aria-label="글 대체 상태">{modes.map(([value, label]) => <Button key={value} variant="outline" aria-pressed={value === mode} onClick={() => setMode(value)}>{label}</Button>)}</div>
-    <ChatStoreScopeProvider scope={scope}><ChatUiControllerProvider sessionId={sessionId}>
+    <ChatStoreScopeProvider scope={scope}><ChatUiControllerProvider key={sessionId} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
       <div className={manuscript ? MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME : `v3-chat-surface ${DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME}`}>
         <div data-slot="chat-root" data-chat-presentation={manuscript ? 'manuscript' : undefined} className="chat-ui-review-transcript">
           <div className="chat-ui-review-messages">{messages.map(msg => msg.role === 'user'
@@ -111,7 +84,7 @@ export function ChatUiReviewSample({ presentation }: { presentation: 'default' |
               {msg.ui ? mode === 'error' ? <RenderFailure key={`${example}-${mode}`} msg={msg} /> : <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} /> : undefined}
             </AssistantMessage>)}
           </div>
-          <ReviewComposer sessionId={sessionId} presentation={presentation} />
+          <footer className="chat-ui-review-composer"><ChatInput presentation={presentation} registerGeneratedTextActions={registerGeneratedTextActions} /></footer>
         </div>
       </div>
     </ChatUiControllerProvider></ChatStoreScopeProvider>

@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 import { ChatInputAccessories } from "./ChatInputAccessories";
 
 describe("ChatInputAccessories", () => {
+  it("does not reserve space when both slots are empty", () => {
+    expect(renderToStaticMarkup(createElement(ChatInputAccessories))).toBe("");
+  });
   it("lets the attachment area shrink while keeping its action fixed at the right", () => {
     const html = renderToStaticMarkup(createElement(ChatInputAccessories, {
       attachments: createElement("span", null, "a-long-attachment-name.pdf"),

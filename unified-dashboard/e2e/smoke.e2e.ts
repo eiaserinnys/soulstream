@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
+import { installChatUiRoutes, openChatUi } from "./chat-ui-fixtures";
 
 test("renders the built v3 dashboard with its deterministic API fixture", async ({ page }) => {
   const pageErrors: string[] = [];
@@ -39,4 +40,20 @@ test("renders the built v3 dashboard with its deterministic API fixture", async 
   await expect(page.locator(".v3-date-head")).toBeVisible();
   await expect(page.getByTestId("persistent-session-entry")).toBeVisible();
   expect(pageErrors).toEqual([]);
+});
+
+test("HTTP history and SSE UI append through the actual chat composer without sending", async ({ page }) => {
+  const harness = await installChatUiRoutes(page, { live: true });
+  const root = await openChatUi(page);
+  const draft = root.locator('textarea[data-slot="chat-input-body"]');
+  await draft.fill("스모크 초안");
+  harness.releaseLive();
+  await expect(root.locator(".chat-ui")).toHaveCount(2);
+  await root.getByRole("button", { name: "이 조건으로 질문", exact: true }).last().click();
+  await expect(draft).toHaveValue("스모크 초안\n\n8명, 연간 결제: 아니오, 월 232,000원 조건으로 비교해 줘.");
+  await expect(draft).toBeFocused();
+  expect(harness.sends).toEqual([]);
+  harness.releaseFinal(); harness.releaseDuplicate();
+  await expect(root.getByText("앞뒤 최종 답", { exact: true })).toBeVisible();
+  expect(harness.errors).toEqual([]);
 });

@@ -59,6 +59,8 @@ import { buildChatTimelineItems, type ChatTimelineItem } from "./ChatView.thinki
 import { ChatHistoryStatus } from "./ChatHistoryStatus";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import type { PendingChatSendActions } from "./pending-chat-send";
+import { ChatUiControllerProvider } from "../chat-ui/ChatUiControllerProvider";
+import type { ChatUiComposerHandle, RegisterGeneratedTextActions } from "../chat-ui/chat-ui-composer";
 
 export interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -140,6 +142,12 @@ function ChatViewContent({
   const focusEventRequestId = useChatStore((s) => s.focusEventRequestId);
   const chatStore = useChatStoreApi();
   const flattenMessages = useChatFlattenTree();
+  const generatedTextActionsRef = useRef<ChatUiComposerHandle | null>(null);
+  const registerGeneratedTextActions = useCallback<RegisterGeneratedTextActions>(handle => {
+    generatedTextActionsRef.current = handle;
+  }, []);
+  const appendGeneratedText = useCallback<ChatUiComposerHandle['appendGeneratedText']>((sessionId, text) =>
+    generatedTextActionsRef.current?.appendGeneratedText(sessionId, text) ?? { ok: false, reason: "unavailable" }, []);
   const pendingSendActionsRef = useRef<PendingChatSendActions | null>(null);
   const registerPendingSendActions = useCallback((actions: PendingChatSendActions | null) => {
     pendingSendActionsRef.current = actions;
@@ -727,6 +735,7 @@ function ChatViewContent({
   }
 
   return (
+    <ChatUiControllerProvider key={activeSessionKey} sessionId={activeSessionKey} appendGeneratedText={appendGeneratedText}>
     <div
       data-slot="chat-root"
       data-chat-font-size={chatFontSize}
@@ -942,8 +951,10 @@ function ChatViewContent({
         additionalDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
         registerPendingSendActions={registerPendingSendActions}
+        registerGeneratedTextActions={registerGeneratedTextActions}
         onSessionChange={onSessionChange}
       />
     </div>
+    </ChatUiControllerProvider>
   );
 }

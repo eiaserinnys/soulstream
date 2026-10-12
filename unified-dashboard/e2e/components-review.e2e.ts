@@ -74,7 +74,7 @@ for (const width of [1440, 390]) {
     await page.goto("/components");
     const review = page.getByTestId("components-review");
     await expect(review).toBeVisible();
-    await expect(review.locator(".v3-detail-section-head > h3")).toHaveText([
+    await expect(review.locator('section[id^="components-"] > .v3-detail-section-head > h3')).toHaveText([
       "목록 행", "섹션 머리와 캡", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
     ]);
     await page.reload();

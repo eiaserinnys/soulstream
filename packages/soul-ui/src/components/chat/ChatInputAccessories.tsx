@@ -8,6 +8,7 @@ export function ChatInputAccessories({
   attachments?: ReactNode;
   action?: ReactNode;
 }) {
+  if (!attachments && !action) return null;
   return (
     <div className="mb-2 flex w-full min-w-0 items-center gap-2" data-slot="chat-input-accessories">
       <div className="min-w-0 flex-1" data-slot="chat-input-accessories-attachments">

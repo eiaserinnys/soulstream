@@ -14,7 +14,8 @@ type ControllerContext = {
 const Context = createContext<ControllerContext | null>(null);
 
 /** The scope owns memory; virtualized message rows only borrow their entries. */
-function ControllerScope({ sessionId, children }: PropsWithChildren<{ sessionId: string }>) {
+type ScopeProps = PropsWithChildren<{ sessionId: string; appendGeneratedText?: ChatUiComposerHandle['appendGeneratedText'] }>;
+function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProps) {
   const states = useRef(new Map<string, ChatUiState>()).current;
   const composer = useRef<ChatUiComposerHandle | null>(null);
   const [, setVersion] = useState(0);
@@ -29,17 +30,22 @@ function ControllerScope({ sessionId, children }: PropsWithChildren<{ sessionId:
   const append = useCallback((text: string) => {
     if (!text) return;
     try {
-      const result = composer.current?.appendGeneratedText(sessionId, text);
+      const result = appendGeneratedText ? appendGeneratedText(sessionId, text) : composer.current?.appendGeneratedText(sessionId, text);
       notify(result?.ok ? '' : '지금은 입력창에 더할 수 없어.');
     } catch {
       notify('지금은 입력창에 더할 수 없어.');
     }
-  }, [sessionId]);
+  }, [appendGeneratedText, sessionId]);
   return <Context.Provider value={{ sessionId, states, update, feedback, notify, registerComposer, append }}>{children}</Context.Provider>;
 }
 
-export function ChatUiControllerProvider({ sessionId, children }: PropsWithChildren<{ sessionId: string }>) {
-  return <ControllerScope key={sessionId} sessionId={sessionId}>{children}</ControllerScope>;
+export function ChatUiControllerProvider({ sessionId, appendGeneratedText, children }: ScopeProps) {
+  return <ControllerScope key={sessionId} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>{children}</ControllerScope>;
+}
+
+/** Ordinary composers can also mount outside a chat UI scope. */
+export function useChatUiFeedback() {
+  return useContext(Context)?.feedback ?? '';
 }
 
 function useControllerContext() {
