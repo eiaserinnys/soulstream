@@ -101,6 +101,8 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
 | `list_user_messages(since, until, sources, cursor, limit, max_text_chars)` | Internal only. `user_message` events in a time range across sessions, oldest first, with text and `caller_info` fields only (no injected context). Without `sources`, `agent`, `api`, `channel_observer`, `execute-proxy`, `llm`, `system` and messages with no source are left out; text over `max_text_chars` is cut and flagged `truncated` (full text via `get_session_event`) |
+| `list_turn_usage(session_id, since, until, cursor, limit)` | Internal only. Reads per-turn token usage in time order for one session or a period; includes `complete`, failed usage, and closed turns without usage. Input tokens include cached tokens; cost is a list-price estimate. |
+| `summarize_turn_usage(since, until)` | Internal only. Returns period totals, agent/model groups, and the 20 most expensive sessions; new-session injection and first-call statistics use sessions created in the period. Use `list_turn_usage` for individual turns. |
 | `search_sessions(query, top_k=10, folder_id)` | Search past sessions by meaning, ranked by relevance; includes `created_at` and `updated_at` ISO timestamps; use `search_session_history` for exact event text |
 | `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 event search with actual turn count and saved summary/story/highlight presence metadata; use `search_sessions` first for session-level search |
 

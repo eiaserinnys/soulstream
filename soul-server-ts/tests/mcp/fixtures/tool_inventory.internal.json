@@ -3712,6 +3712,50 @@
     "name": "list_sessions"
   },
   {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "세션 하나 또는 기간의 턴별 사용량을 시간순으로 조회한다. kind는 complete, failed, no_usage이며, 입력 토큰은 캐시를 포함한 합계이고 비용은 정가 추정이다. 기간 전체 합계는 summarize_turn_usage로 본다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "default": 0,
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "default": 100,
+          "maximum": 200,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "session_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "since": {
+          "description": "오프셋이 명시된 ISO 8601 시작 시각. 포함.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "until": {
+          "description": "오프셋이 명시된 ISO 8601 끝 시각. 제외. 생략하면 호출 시각.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_turn_usage",
+    "title": "List turn usage"
+  },
+  {
     "description": "기간 안의 user_message 이벤트를 여러 세션에 걸쳐 시간순으로 조회한다. 본문과 발신 정보, 첨부 ID와 저장된 레거시 경로 문자열을 돌려주며, 본문이 없어도 유효한 첨부가 있으면 포함한다. 주입 컨텍스트는 뺀다. sources를 생략하면 에이전트와 시스템 발신, 발신 정보가 없는 메시지를 뺀다. 잘린 본문의 전문은 get_session_event로 본다.",
     "execution": {
       "taskSupport": "forbidden"
@@ -6984,6 +7028,37 @@
       "type": "object"
     },
     "name": "stop_claude_background_task"
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "기간의 턴 사용량을 한 번에 요약한다. 에이전트와 모델별로 묶으며, 주입 글자 수와 첫 호출 입력 통계는 기간에 만들어진 세션만으로 낸다. 턴별 결과는 list_turn_usage로 본다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "since": {
+          "description": "오프셋이 명시된 ISO 8601 시작 시각. 포함.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "until": {
+          "description": "오프셋이 명시된 ISO 8601 끝 시각. 제외. 생략하면 호출 시각.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "since"
+      ],
+      "type": "object"
+    },
+    "name": "summarize_turn_usage",
+    "title": "Summarize turn usage"
   },
   {
     "description": "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다.",

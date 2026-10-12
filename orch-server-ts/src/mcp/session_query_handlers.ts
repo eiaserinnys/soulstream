@@ -7,6 +7,7 @@ import { SessionConsumptionBoundary } from "./session_consumption_boundary.js";
 import { sessionReadAdapter, type McpSessionReadAdapter, type McpSessionRow } from "./session_read_adapter.js";
 import { sessionListQueryHandlers } from "./session_list_query_handlers.js";
 import { persistentSessionHistoryHandlers } from "./persistent_session_history_handlers.js";
+import { turnUsageHandlers } from "./turn_usage_handlers.js";
 import { parseOffsetTimestamp, serializeDate } from "./session_query_values.js";
 import type { McpToolHandler } from "./types.js";
 type SessionArgs<N extends keyof typeof sessionTools> = z.infer<z.ZodObject<typeof sessionTools[N]["config"]["inputSchema"]>>;
@@ -14,6 +15,7 @@ type SessionArgs<N extends keyof typeof sessionTools> = z.infer<z.ZodObject<type
 export const sessionQueryHandlers = {
   ...sessionListQueryHandlers,
   ...persistentSessionHistoryHandlers,
+  ...turnUsageHandlers,
   get_session_event: async (options, args, context) => {
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");

@@ -2,6 +2,11 @@ import type { SqlClient } from "../control_plane_types.js";
 import type { SessionReadPeriod } from "@soulstream/mcp-contract";
 import { projectInputAttachments } from "../../session/attachment_history_projection.js";
 import {
+  isPostgresStatementTimeout,
+  normalizeEvent,
+  type EventSearchRecord,
+} from "./event_read_support.js";
+import {
   readPersistentSessionHistory,
   type PersistentSessionHistoryPage,
   type PersistentSessionHistoryQuery,
@@ -13,6 +18,12 @@ import {
   type LiveSearchSql,
   withLiveSearchDbConnection,
 } from "../../runtime/live_db_sql.js";
+import {
+  listTurnUsage as readTurnUsagePage,
+  summarizeTurnUsage as readTurnUsageSummary,
+  type TurnUsageQuery,
+  type TurnUsageSummaryQuery,
+} from "./turn_usage_repository.js";
 
 export interface HostEventRow {
   id: number;
@@ -231,6 +242,14 @@ export class EventReadRepository {
       rows,
       total: Number(totals[0]?.total ?? 0),
     };
+  }
+
+  listTurnUsage(query: TurnUsageQuery) {
+    return readTurnUsagePage(this.sql, query);
+  }
+
+  summarizeTurnUsage(query: TurnUsageSummaryQuery) {
+    return readTurnUsageSummary(this.sql, query);
   }
 
   async readRecentEvents(
@@ -475,28 +494,4 @@ export class EventReadRepository {
       // Cancellation reporting must not hide the caller's cancellation error.
     }
   }
-}
-
-type EventSearchRecord = Omit<HostEventSearchRow, "payload"> & { payload: unknown };
-
-function isPostgresStatementTimeout(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
-    && "code" in error
-    && error.code === "57014";
-}
-
-function normalizeEvent(
-  row: Omit<HostEventRow, "payload"> & { payload: unknown },
-): HostEventRow {
-  return {
-    id: Number(row.id),
-    session_id: row.session_id,
-    event_type: row.event_type,
-    payload: row.payload && typeof row.payload === "object"
-      ? row.payload as Record<string, unknown>
-      : {},
-    searchable_text: row.searchable_text,
-    created_at: row.created_at,
-  };
 }
