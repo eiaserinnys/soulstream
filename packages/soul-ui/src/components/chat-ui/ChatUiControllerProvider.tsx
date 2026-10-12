@@ -20,6 +20,8 @@ const FeedbackLifecycleContext = createContext<(() => void) | null>(null);
 type ScopeProps = PropsWithChildren<{ sessionId: string; appendGeneratedText?: ChatUiComposerHandle['appendGeneratedText'] }>;
 function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProps) {
   const [scope, setScope] = useState(() => ({ sessionId, states: new Map<string, ChatUiState>() }));
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
   const { states } = scope;
   const composer = useRef<ChatUiComposerHandle | null>(null);
   const [, setVersion] = useState(0);
@@ -29,7 +31,11 @@ function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProp
     setScope({ sessionId, states: new Map<string, ChatUiState>() });
     setFeedback({ text: '', open: false });
   }
-  const notify = useCallback((text: string) => setFeedback(previous => ({ text, open: previous.open || !!text })), []);
+  const notify = useCallback((text: string) => {
+    // A → B → A has a new Map, so an old operation cannot write its feedback.
+    if (currentScope.current.states !== states) return;
+    setFeedback(previous => ({ text, open: previous.open || !!text }));
+  }, [states]);
   const closeFeedback = useCallback(() => setFeedback({ text: '', open: false }), []);
   const update = useCallback((key: string, state: ChatUiState) => {
     if (states.get(key) === state) return;

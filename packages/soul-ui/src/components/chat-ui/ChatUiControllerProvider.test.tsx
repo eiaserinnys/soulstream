@@ -50,6 +50,31 @@ it('keeps the opened feedback line through value changes and closes only at send
   expect(host.querySelector('p')?.textContent).toBe('');
   await click('copy'); await render('s2'); expect(host.querySelector('p')?.dataset.open).toBe('false');
 });
+it.each([
+  { transition: 'A → B', sessions: ['s2'], outcome: 'resolve' },
+  { transition: 'A → B', sessions: ['s2'], outcome: 'reject' },
+  { transition: 'A → B → A', sessions: ['s2', 's1'], outcome: 'resolve' },
+  { transition: 'A → B → A', sessions: ['s2', 's1'], outcome: 'reject' },
+])('ignores an old copy $outcome after $transition', async ({ sessions, outcome }) => {
+  setup();
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const pending = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+  const writeText = vi.fn().mockReturnValue(pending);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  const render = (sessionId: string) => act(async () => root.render(<ChatUiControllerProvider sessionId={sessionId}><Row /></ChatUiControllerProvider>));
+  await render('s1');
+  await click('copy');
+  expect(writeText).toHaveBeenCalledOnce();
+  for (const sessionId of sessions) await render(sessionId);
+  expect(host.querySelector('p')?.dataset.open).toBe('false');
+  await act(async () => {
+    if (outcome === 'resolve') resolve();
+    else reject(new Error('clipboard unavailable'));
+  });
+  expect(host.querySelector('p')?.dataset.open).toBe('false');
+  expect(host.querySelector('p')?.textContent).toBe('');
+});
 it('clears operation feedback only when a field actually changes', async () => {
   setup(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
   await act(async () => root.render(<ChatUiControllerProvider sessionId="s1"><Row /></ChatUiControllerProvider>));
