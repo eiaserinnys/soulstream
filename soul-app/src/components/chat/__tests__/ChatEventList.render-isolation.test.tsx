@@ -8,6 +8,9 @@ import type { ChatRenderItem, PersistentDisplayProjectionSettings } from '../gro
 import { ChatEventList } from '../ChatEventList';
 import { useChatBottomFollow } from '../useChatBottomFollow';
 import { useChatRenderItems } from '../useChatRenderItems';
+import { ChatUiControllerProvider, useChatUiController } from '../../chat-ui/ChatUiControllerProvider';
+import { readChatUiPublication } from '../../chat-ui/chatUiPublication';
+import { chatUiFixtureEvent } from '../../../component-review/chat-ui-fixtures';
 
 const mockFlatListState = {
   props: null as Record<string, any> | null,
@@ -95,6 +98,29 @@ const ev = (
 ): SessionEvent => ({ id, type, data });
 
 const noop = () => {};
+test('UI values and notices under the real provider do not render ordinary rows again', () => {
+  const ui = chatUiFixtureEvent('normal');
+  const publication = readChatUiPublication(ui.data);
+  if (publication.kind !== 'rich') throw Error('공개 UI fixture가 필요합니다.');
+  let controller!: ReturnType<typeof useChatUiController>;
+  function Controls() { controller = useChatUiController(publication as Extract<typeof publication, { kind: 'rich' }>); return null; }
+  render(<ChatUiControllerProvider sessionId="sess-a" appendGeneratedText={() => ({ ok: true })}>
+    <Controls />
+    <Harness events={[
+      ev('plain', 'assistant_message', { content: '일반 글' }),
+      ev('user', 'user_message', { text: '사용자 글' }),
+      ev('tool', 'tool_start', { tool_name: 'Read', tool_use_id: 'read' }),
+      ui,
+    ]} />
+  </ChatUiControllerProvider>);
+  const counts = () => ['event:plain', 'event:user', 'tool:tool'].map(key => mockRenderOrder.filter(value => value === key).length);
+  const before = counts();
+  expect(before.every(count => count > 0)).toBe(true);
+  act(() => controller.set('seats', 12));
+  expect(counts()).toEqual(before);
+  act(() => { void controller.action('reset', { type: 'reset' }); });
+  expect(counts()).toEqual(before);
+});
 function Harness({
   events,
   sessionId = 'sess-a',

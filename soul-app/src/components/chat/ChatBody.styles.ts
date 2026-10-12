@@ -155,7 +155,8 @@ export function makeStyles(t: DesignTokens) {
       minWidth: 0,
       paddingTop: t.spacing.xs,
     },
-    generatedNoticeSlot: { flex: 1, minWidth: 0 },
+    generatedNoticeRow: { paddingTop: t.spacing.xs },
+    generatedNoticeSlot: { height: t.chatFontSize.meta * t.lineHeightRatio, minWidth: 0 },
     generatedAttachmentActionRow: {
       flexDirection: 'row',
       flexGrow: 1,

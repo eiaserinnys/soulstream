@@ -1,11 +1,12 @@
 import React, { forwardRef } from 'react';
 import { ChatInputComposer, type ChatInputComposerHandle } from '../chat/ChatInputComposer';
-import { useChatUiNotice } from './ChatUiControllerProvider';
+import { useChatUiNoticeLine } from './ChatUiControllerProvider';
 import { ChatUiNotice } from './ChatUiNotice';
 
-/** Keep the existing auxiliary row absent when there is no action notice. */
+/** Keep the opened line until the composer submits or this session unmounts. */
 export const ChatUiInputComposer = forwardRef<ChatInputComposerHandle,
   React.ComponentProps<typeof ChatInputComposer>>(function ChatUiInputComposer(props, ref) {
-  const notice = useChatUiNotice();
-  return <ChatInputComposer {...props} ref={ref} generatedNotice={notice ? <ChatUiNotice /> : null} />;
+  const { noticeLineOpen, closeNoticeLine } = useChatUiNoticeLine();
+  return <ChatInputComposer {...props} ref={ref} onMessageSent={closeNoticeLine}
+    generatedNotice={noticeLineOpen ? <ChatUiNotice /> : null} />;
 });

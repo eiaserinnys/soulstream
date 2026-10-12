@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { composeText, initialState, reduce, renderText, type Action, type ChatUiState, type FieldValue } from '@soulstream/chat-ui';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
@@ -20,7 +20,9 @@ type ContextValue = {
   appendGeneratedText: AppendGeneratedText;
   openLink: ReturnType<typeof useOpenContentLink>;
   notice: string;
+  noticeLineOpen: boolean;
   setNotice(value: string): void;
+  closeNoticeLine(): void;
 };
 const Context = createContext<ContextValue | null>(null);
 export function ChatUiControllerProvider(props: Props) {
@@ -31,13 +33,18 @@ function SessionController({ sessionId, appendGeneratedText, children }: Props) 
   const entries = useRef(new Map<string, Entry>()).current;
   const numberEditors = useRef(new Map<string, NumberEditor>()).current;
   const [version, setVersion] = useState(0);
-  const [notice, setNotice] = useState('');
+  const [{ notice, noticeLineOpen }, setNoticeState] = useState({ notice: '', noticeLineOpen: false });
+  const setNotice = useCallback((notice: string) => {
+    setNoticeState(current => ({ notice, noticeLineOpen: current.noticeLineOpen || !!notice }));
+  }, []);
+  const closeNoticeLine = useCallback(() => setNoticeState({ notice: '', noticeLineOpen: false }), []);
   const openLink = useOpenContentLink();
   const value = useMemo<ContextValue>(() => {
     const read = (publication: ChatUiRichPublication): Entry => entries.get(publicationKey(sessionId, publication))
       ?? { state: initialState(publication.document), expanded: {}, resetEpoch: 0 };
     return {
-      sessionId, entries, read, numberEditors, appendGeneratedText, openLink, notice, setNotice,
+      sessionId, entries, read, numberEditors, appendGeneratedText, openLink,
+      notice, noticeLineOpen, setNotice, closeNoticeLine,
       update: (publication, change) => {
         const next = change(read(publication));
         entries.set(publicationKey(sessionId, publication), next);
@@ -45,7 +52,7 @@ function SessionController({ sessionId, appendGeneratedText, children }: Props) 
         return next;
       },
     };
-  }, [sessionId, entries, version, numberEditors, appendGeneratedText, openLink, notice]);
+  }, [sessionId, entries, version, numberEditors, appendGeneratedText, openLink, notice, noticeLineOpen, setNotice, closeNoticeLine]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 function useControllerContext() {
@@ -57,6 +64,10 @@ function publicationKey(sessionId: string, publication: ChatUiRichPublication) {
   return JSON.stringify([sessionId, publication.uiId, publication.hash]);
 }
 export function useChatUiNotice() { return useControllerContext().notice; }
+export function useChatUiNoticeLine() {
+  const { noticeLineOpen, closeNoticeLine } = useControllerContext();
+  return { noticeLineOpen, closeNoticeLine };
+}
 /** Explicit menu bridge: read the publication's current state when invoked. */
 export function useChatUiMessageText(data: unknown): (() => string) | undefined {
   const context = useContext(Context);

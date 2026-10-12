@@ -91,9 +91,38 @@ test.each(['default', 'manuscript'] as const)('real %s body appends into the dra
   fireEvent.changeText(input(), input().props.value + ' 직접 수정');
   expect(screen.queryByLabelText('되돌리기')).toBeNull();
   await act(async () => fireEvent.press(screen.getByLabelText('복사')));
-  expect(screen.getByTestId('chat-composer-generated-row').findByProps({ testID: 'chat-ui-action-notice' })).toBeTruthy();
+  expect(screen.getByTestId('chat-composer-generated-notice-row').findByProps({ testID: 'chat-ui-action-notice' })).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('인원수'), '13');
   expect(screen.queryByTestId('chat-ui-action-notice')).toBeNull();
+  expect(screen.getByTestId('chat-composer-generated-notice-row')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('초기화'));
+  fireEvent.press(screen.getByLabelText('인원수 늘리기'));
+  fireEvent.press(screen.getByLabelText('인원수 늘리기'));
+  expect(screen.getByLabelText('인원수').props.value).toBe('10');
+  mockApi.intervene.mockResolvedValue({ delivered: true, outcome: 'delivered' });
+  await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
+  expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+});
+test('an opened notice line resets when the session changes', async () => {
+  const screen = await open();
+  fireEvent.press(screen.getByLabelText('초기화'));
+  expect(screen.getByTestId('chat-composer-generated-notice-row')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('chat-composer-send-button'));
+  expect(screen.getByTestId('chat-composer-generated-notice-row')).toBeTruthy();
+  screen.rerender(<ChatBody sessionId="two" showSessionAuxiliary={false} />);
+  await waitFor(() => expect(screen.getByLabelText('인원수')).toBeTruthy());
+  expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+});
+test('SSE arrives before the same id history response through the reader and produces one row', async () => {
+  let resolveHistory!: (value: { messages: typeof stored[]; next_cursor: null }) => void;
+  mockApi.getTimeline.mockImplementationOnce(() => new Promise(resolve => { resolveHistory = resolve; }));
+  const screen = render(<ChatBody sessionId="one" showSessionAuxiliary={false} />);
+  await waitFor(() => expect(mockApi.getTimeline).toHaveBeenCalled());
+  await sse(ui.type, ui.data, ui.id);
+  await sse('history_sync', { last_event_id: 2 });
+  await act(async () => resolveHistory({ messages: [stored], next_cursor: null }));
+  await waitFor(() => expect(screen.getAllByLabelText('인원수')).toHaveLength(1));
+  expect(useChatStore.getState().eventsBySession.one.filter(event => event.id === ui.id)).toHaveLength(1);
 });
 test('same id SSE/history is one row, row remount retains state, changing session resets defaults', async () => {
   const screen = await open(); edit(screen);
@@ -130,17 +159,19 @@ test('ordinary live answer → UI → ordinary final keeps both responses', asyn
   expect(screen.getByText('일반 최종')).toBeTruthy();
 });
 test('text_start/delta interrupted by UI keeps separate text runs', async () => {
-  const screen = await open();
+  mockApi.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
+  const screen = render(<ChatBody sessionId="one" showSessionAuxiliary={false} />);
+  await act(async () => { await Promise.resolve(); });
+  await sse('history_sync', { last_event_id: 0 });
   const events: SessionEvent[] = [
     { id: '1', type: 'text_start', data: {} }, { id: '2', type: 'text_delta', data: { text: '앞 글' } },
     { ...ui, id: '3' }, { id: '4', type: 'text_delta', data: { text: '뒤 글' } }, { id: '5', type: 'text_end', data: {} },
   ];
-  act(() => useChatStore.setState({ eventsBySession: { one: events } }));
+  for (const event of events) await sse(event.type, event.data, event.id);
   expect(screen.getByText('앞 글')).toBeTruthy(); expect(screen.getByText('뒤 글')).toBeTruthy();
   expect(screen.getAllByLabelText('인원수')).toHaveLength(1);
 });
 test('PAS tool/thinking activity breaks at UI and preserves delegation/notification/keepalive hiding', async () => {
-  const screen = await open('manuscript');
   const events: SessionEvent[] = [
     { id: '1', type: 'thinking_start', data: {} }, { id: '2', type: 'thinking_delta', data: { text: '생각' } },
     { ...ui, id: '3' }, { id: '4', type: 'tool_start', data: { tool_name: 'Read', tool_use_id: 'read' } },
@@ -149,11 +180,17 @@ test('PAS tool/thinking activity breaks at UI and preserves delegation/notificat
     { id: '7', type: 'user_message', data: { text: 'keepalive', purpose: 'cache_keepalive' } },
     { id: '8', type: 'assistant_message', data: { content: 'keepalive 답' } },
   ];
-  const projection = projectManuscriptMessages(groupChatEvents(projectCacheKeepaliveTurns(events).displayEvents));
+  mockApi.getTimeline.mockResolvedValue({ messages: events.slice().reverse().map(event => ({
+    id: Number(event.id), event_type: event.type, payload: event.data,
+    created_at: '2026-10-12T00:00:01Z', parent_event_id: null,
+  })), next_cursor: null });
+  const screen = await open('manuscript');
+  const readEvents = useChatStore.getState().eventsBySession.one;
+  expect(readEvents.map(event => event.id)).toEqual(events.map(event => event.id));
+  const projection = projectManuscriptMessages(groupChatEvents(projectCacheKeepaliveTurns(readEvents).displayEvents));
   const ids = projection.filter(item => item.kind === 'event').map(item => item.event.id);
-  expect(ids).not.toEqual(expect.arrayContaining(['5', '6', '7', '8']));
+  for (const id of ['5', '6', '7', '8']) expect(ids).not.toContain(id);
   expect(ids).toContain('3');
-  act(() => useChatStore.setState({ eventsBySession: { one: events } }));
   expect(screen.getByLabelText('인원수')).toBeTruthy();
   expect(screen.queryByText('위임 보고')).toBeNull(); expect(screen.queryByText('자동 알림')).toBeNull();
 });
