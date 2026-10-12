@@ -708,6 +708,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     try {
       await this.ready;
       if (this.activeExecution?.stream !== stream) return;
+      await this.ensurePump();
+      if (this.activeExecution?.stream !== stream) return;
       this.bindActiveExecution(stream);
       this.observeActiveExecution(commandId, "execute");
       const recoverAcceptedExecution = await this.acceptExecuteCommand(commandId, params);
