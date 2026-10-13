@@ -31,7 +31,7 @@ describe("session serialization contract fixture", () => {
     const fixture = loadCase();
 
     expect(jsonShape(toSessionSummary(fixture.expectedOrchResponse))).toEqual(
-      fixture.expectedSoulUiSummaryFromOrch,
+      { ...fixture.expectedSoulUiSummaryFromOrch, persistentReport: fixture.expectedOrchResponse.persistentReport },
     );
   });
 

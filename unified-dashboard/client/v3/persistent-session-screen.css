@@ -4,6 +4,7 @@
   --pas-list-width: 264px;
   --pas-header-height: 76px;
   --pas-compact-header-height: 56px;
+  --pas-task-toggle-right: var(--v3-space-8);
   --pas-task-scroll-inset: var(--v3-space-2);
   display: block;
   background: var(--persistent-session-paper);
@@ -29,7 +30,7 @@
 .persistent-session-character { position: absolute; pointer-events: none; }
 .persistent-session-character-toggle { position: absolute; transform: translate(-50%, -50%); }
 .persistent-session-save-error { flex: none; margin-bottom: var(--v3-space-2); }
-.persistent-session-task-toggle { position: absolute; top: calc(var(--pas-header-height) + var(--v3-space-4)); right: var(--v3-space-8); }
+.persistent-session-task-toggle { position: absolute; top: calc(var(--pas-header-height) + var(--v3-space-4)); right: var(--pas-task-toggle-right); }
 .persistent-session-tasks { position: absolute; top: calc(var(--pas-header-height) + var(--v3-space-4)); right: var(--v3-space-8); bottom: var(--v3-space-8); width: var(--pas-list-width); display: flex; flex-direction: column; min-height: 0; z-index: var(--v3-layer-panel); }
 .persistent-session-task-head { display: flex; flex: none; align-items: center; justify-content: space-between; min-height: var(--v3-action-size); }
 .persistent-session-task-head h2 { font: var(--v3-type-body) var(--v3-font-family); }
@@ -39,7 +40,8 @@
   .persistent-session-tasks { width: min(var(--pas-list-width), calc((100% - var(--pas-main-width)) / 2 - var(--v3-space-8) - var(--v3-space-4))); }
 }
 @media (max-width: 767px) {
-  .persistent-session-task-toggle { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--v3-space-5); }
+  .persistent-session-screen { --pas-task-toggle-right: var(--v3-space-5); }
+  .persistent-session-task-toggle { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: var(--pas-task-toggle-right); }
   .persistent-session-tasks { top: calc(var(--pas-header-height) + var(--v3-space-2)); right: 0; left: 0; width: auto; padding-inline: var(--v3-space-5); background: var(--persistent-session-paper); }
 }
 @media (min-width: 1101px) and (max-width: 1250px) {

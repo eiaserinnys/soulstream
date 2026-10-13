@@ -196,6 +196,56 @@ function deferred<T>() {
 const seeA = { ...reportReviewEntries[2], key: 'a', title: '첫째 보고' };
 const seeB = { ...reportReviewEntries[2], key: 'b', title: '둘째 보고' };
 
+test('a cloned publication stays hidden when the full report arrives with a new sheet', async () => {
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA, seeB]));
+  const response = deferred<any>();
+  const api = { dismissPersistentReport: jest.fn(() => response.promise) } as any;
+  const hook = renderHook(() => usePersistentReport('pas', true, api, undefined, undefined));
+  let request!: Promise<boolean>;
+  act(() => { request = hook.result.current.dismiss('a'); });
+  const cloneA = { ...seeA }, c = { ...seeB, key: 'c', title: '새 보고' };
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [cloneA, { ...seeB }, c]));
+  expect(cloneA).not.toBe(seeA);
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['b', 'c']);
+  await act(async () => { response.resolve({ ok: true, persistent_report: [seeB] }); await request; });
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['b', 'c']);
+});
+
+test.each(['success', 'failure'] as const)('a revised publication is visible while its old dismissal waits and survives %s', async outcome => {
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA, seeB]));
+  const response = deferred<any>();
+  const api = { dismissPersistentReport: jest.fn(() => response.promise) } as any;
+  const hook = renderHook(() => usePersistentReport('pas', true, api, undefined, undefined));
+  let request!: Promise<boolean>;
+  act(() => { request = hook.result.current.dismiss('a'); });
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['b']);
+  const revisedA = { ...seeA, title: '고쳐진 첫째 보고', updated_at: '2026-10-13T00:02:00Z' };
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [revisedA, { ...seeB }]));
+  expect(hook.result.current.entries).toContainEqual(revisedA);
+  await act(async () => {
+    if (outcome === 'success') response.resolve({ ok: true, persistent_report: [seeB] });
+    else response.reject(Error('old dismissal failed'));
+    expect(await request).toBe(outcome === 'success');
+  });
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['a', 'b']);
+  expect(hook.result.current.entries).toContainEqual(revisedA);
+  expect(useSessionStore.getState().persistentReportsBySession.pas.entries).toContainEqual(revisedA);
+});
+
+test('old success does not delete the revised publication from the latest server report', async () => {
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA]));
+  const response = deferred<any>();
+  const api = { dismissPersistentReport: jest.fn(() => response.promise) } as any;
+  const hook = renderHook(() => usePersistentReport('pas', true, api, undefined, undefined));
+  let request!: Promise<boolean>;
+  act(() => { request = hook.result.current.dismiss('a'); });
+  const revisedA = { ...seeA, updated_at: '2026-10-13T00:02:00Z' };
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [revisedA]));
+  await act(async () => { response.resolve({ ok: true, persistent_report: [] }); await request; });
+  expect(useSessionStore.getState().persistentReportsBySession.pas.entries).toEqual([revisedA]);
+  expect(hook.result.current.entries).toEqual([revisedA]);
+});
+
 test('two dismissals stay hidden when responses arrive in reverse order', async () => {
   const tail = { ...reportReviewEntries[0], key: 'tail' };
   act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA, seeB, tail]));

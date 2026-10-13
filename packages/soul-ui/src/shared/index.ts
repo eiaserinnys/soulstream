@@ -60,6 +60,7 @@ export type {
   ReviewState,
   LlmUsage,
   SessionSummary,
+  PersistentReportEntry,
   SessionDetail,
   EventTreeNodeType,
   SessionNode,

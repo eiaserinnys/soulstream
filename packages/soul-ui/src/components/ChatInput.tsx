@@ -33,6 +33,7 @@ import { ChatInputAccessories } from "./chat/ChatInputAccessories";
 import { ChatInputFeedback } from "./chat/ChatInputFeedback";
 import { useGeneratedTextActions } from "./chat/useGeneratedTextActions";
 import { useCloseChatUiFeedback } from "./chat-ui/ChatUiControllerProvider";
+import { usePersistentReport } from './persistent-report/PersistentReportProvider';
 import type { RegisterGeneratedTextActions } from "./chat-ui/chat-ui-composer";
 import { mergePendingTextIntoComposer, type PendingChatSendActions } from "./chat/pending-chat-send";
 import type { PendingChatSend } from "../stores/dashboard-store-types";
@@ -65,6 +66,7 @@ export function ChatInput({
   onSessionChange,
 }: ChatInputProps = {}) {
   const closeChatUiFeedback = useCloseChatUiFeedback();
+  const report = usePersistentReport();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
   const tree = useChatStore((s) => s.tree);
@@ -98,6 +100,8 @@ export function ChatInput({
   );
 
   const [text, setText] = useState("");
+  // Appending onto an existing draft also releases a non-exact report reply.
+  useEffect(() => { report?.draftChanged(text); }, [report, text]);
   // 사용 로그: 입력 구간 기록기. 초안 원문은 절대 싣지 않고 길이만 남긴다.
   const trackUiEvent = useUiEventTracker();
   const composeEvents = useMemo(
@@ -152,12 +156,14 @@ export function ChatInput({
     getPendingChatSend: (sessionId) => useDashboardStore.getState().pendingChatSends[sessionId],
     setPendingChatSend,
     clearDraft,
+    getMessageContext: report?.getMessageContext,
     setActiveSession: (sessionId) => {
       setActiveSession(sessionId);
       onSessionChange?.(sessionId);
     },
     onBeforeSend: () => {
       clearGeneratedUndo();
+      report?.clearReply();
       closeChatUiFeedback?.();
       composeEvents.submitted(activeSessionKey, textRef.current.length, composeMode);
       setText("");
@@ -310,10 +316,11 @@ export function ChatInput({
       // 빈 초안에 첫 글자가 들어온 순간만 입력 시작으로 본다. 타건 자체는 남기지 않는다.
       composeEvents.textChanged(activeSessionKey, textRef.current, value);
       textRef.current = value;
+      report?.draftChanged(value);
       setText(value);
       if (activeSessionKey) setDraft(activeSessionKey, value);
     },
-    [activeSessionKey, setDraft, composeEvents],
+    [activeSessionKey, setDraft, composeEvents, report],
   );
 
   const { changeText, canUndo, undo, clearUndo: clearGeneratedUndo } = useGeneratedTextActions({
@@ -349,7 +356,7 @@ export function ChatInput({
     </div>
   ) : null;
   const accessories = <ChatInputAccessories attachments={pendingAttachments} action={canUndo ? (
-    <Button type="button" variant="outline" onClick={undo} style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-line-height)" }}>되돌리기</Button>
+    <Button type="button" variant="outline" onClick={() => { report?.clearReply(); undo(); }} style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-line-height)" }}>되돌리기</Button>
   ) : null} />;
   const composer = (
     <ChatInputComposer presentation={presentation}>

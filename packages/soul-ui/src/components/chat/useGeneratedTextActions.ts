@@ -34,9 +34,9 @@ export function useGeneratedTextActions({ sessionId, text, textRef, textareaRef,
     return { ok: true };
   }, [onChangeText, sending, sessionId, textareaRef, textRef]);
   useEffect(() => {
-    register?.({ appendGeneratedText });
+    register?.({ appendGeneratedText, focusInput: () => textareaRef.current?.focus({ preventScroll: true }) });
     return () => register?.(null);
-  }, [appendGeneratedText, register]);
+  }, [appendGeneratedText, register, textareaRef]);
   const changeText = useCallback((value: string) => {
     clearUndo(); onChangeText(value);
   }, [clearUndo, onChangeText]);

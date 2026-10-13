@@ -167,6 +167,10 @@ export function useSessionStreamCacheSync(
     );
     for (const session of snapshots.values()) {
       hydrateNoticeBaseline(noticeBaselinesRef.current, session);
+      const state = useDashboardStore.getState();
+      if (session.persistentReport !== undefined) {
+        state.setPersistentReport(session.agentSessionId, session.persistentReport, { current: undefined });
+      }
     }
 
     const state = useDashboardStore.getState();
@@ -640,6 +644,18 @@ export function useSessionStreamCacheSync(
   }, [runRecovery]);
 
   const routeDataEvent = useCallback((event: SessionStreamEvent) => {
+    // Report ownership is independent of the session-query hydration barrier.
+    // Capture the SSE identity now so a slower PAS REST read cannot replace it.
+    const state = useDashboardStore.getState();
+    if (event.type === 'session_updated' && event.persistent_report !== undefined) {
+      state.setPersistentReport(event.agent_session_id, event.persistent_report);
+    } else if (event.type === 'session_created' || event.type === 'session_list') {
+      const sessions = event.type === 'session_list' ? event.sessions : [event.session];
+      for (const raw of sessions) {
+        const session = toSessionSummary(raw as unknown as Record<string, unknown>);
+        if (session.persistentReport !== undefined) state.setPersistentReport(session.agentSessionId, session.persistentReport);
+      }
+    }
     let recovery = recoveryRef.current;
     if (!recovery) {
       const hasUnhydratedSessionQuery = queryClient.getQueryCache()

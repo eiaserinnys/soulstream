@@ -3,6 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ChatInput } from "./ChatInput";
+import { PersistentReportProvider, usePersistentReport } from "./persistent-report/PersistentReportProvider";
+import type { PersistentReportEntry } from "../shared/session-types";
 import { createChatSessionStore, useDashboardStore } from "../stores/dashboard-store";
 import { ChatStoreScopeProvider } from "../stores/chat-store-scope";
 import type { ChatUiComposerHandle } from "./chat-ui/chat-ui-composer";
@@ -80,4 +82,23 @@ it("returns unavailable for a different session or disabled editor and sending f
   await render(true); expect(handle!.appendGeneratedText("s1", "생성")).toEqual({ ok: false, reason: "unavailable" });
   sendState.sending = true; await render();
   expect(handle!.appendGeneratedText("s1", "생성")).toEqual({ ok: false, reason: "sending" }); expect(editor().value).toBe("");
+});
+
+it("releases the report link immediately when appending onto a draft or editing the reply", async () => {
+  const entry: PersistentReportEntry = { key: 'one', kind: 'ask', title: '예산 확인', card_numbers: [], context: '', action: '', options: ['응'], state: 'open', answer: '', updated_at: 'first' };
+  let report!: NonNullable<ReturnType<typeof usePersistentReport>>;
+  function Probe() { report = usePersistentReport()!; return null; }
+  await act(async () => root.render(<PersistentReportProvider sessionId="s1" entries={[entry]}><Probe /><ChatStoreScopeProvider scope={scope}><ChatInput registerGeneratedTextActions={register} /></ChatStoreScopeProvider></PersistentReportProvider>));
+  await edit('쓰던 글');
+  await act(async () => { handle!.appendGeneratedText('s1', '예산 확인: 응'); report.bindReply(entry, '응'); });
+  expect(sendState.args!.getMessageContext!(editor().value).contextItems?.[0]?.key).toBe('persistent_report_visible');
+  await edit('예산 확인: 응');
+  expect(sendState.args!.getMessageContext!(editor().value).contextItems?.[0]?.key).toBe('persistent_report_visible');
+  await edit('');
+  await act(async () => { handle!.appendGeneratedText('s1', '예산 확인: 응'); report.bindReply(entry, '응'); });
+  expect(sendState.args!.getMessageContext!(editor().value).contextItems?.[0]?.key).toBe('persistent_report_reply');
+  await edit('예산 확인: 응 대신 보류합니다');
+  expect(sendState.args!.getMessageContext!(editor().value).contextItems?.[0]?.key).toBe('persistent_report_visible');
+  await edit('예산 확인: 응');
+  expect(sendState.args!.getMessageContext!(editor().value).contextItems?.[0]?.key).toBe('persistent_report_visible');
 });
