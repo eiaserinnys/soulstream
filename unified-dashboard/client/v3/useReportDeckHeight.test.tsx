@@ -7,7 +7,7 @@ import { useReportDeckHeight } from './useReportDeckHeight';
 let host: HTMLDivElement; let root: ReturnType<typeof createRoot>; let sizing: ReturnType<typeof useReportDeckHeight>;
 function Harness({ contentHeight }: { contentHeight: number }) {
   const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, contentHeight, 'a');
-  return <section ref={ref} style={{ height: sizing.height }} onScrollEnd={sizing.endScroll}><article className="pas-report-sheet" data-publication={contentHeight} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-content" data-height={contentHeight}/><div className="pas-report-footer" data-height="32"/></article></section>;
+  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, visibility: sizing.waitingForFont ? "hidden" : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}><article className="pas-report-sheet" data-publication={contentHeight} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-content" data-height={contentHeight}/><div className="pas-report-footer" data-height="32"/></article></section>;
 }
 const render = (height: number) => act(async () => root.render(<Harness contentHeight={height}/>));
 beforeEach(() => {
@@ -29,12 +29,31 @@ it('holds smooth pagination without a pointer and releases an ordinary press as 
   act(() => window.dispatchEvent(new Event('pointerup'))); expect(sizing.height).toBe(374);
 });
 
-it('discards earlier larger measurements when content shrinks', async () => {
-  await render(300); expect(sizing.height).toBe(374); await render(100); expect(sizing.height).toBe(174);
+it('measures before showing after font success or failure, shows cached fonts immediately, and never hides again', async () => {
+  for (const outcome of ['success', 'failure', 'cached'] as const) {
+    let finish!: () => void, fail!: () => void;
+    const load = vi.fn(() => new Promise<void>((resolve, reject) => { finish = resolve; fail = () => reject(new Error('font unavailable')); }));
+    const check = vi.fn(() => outcome === 'cached');
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { check, load, ready: new Promise(() => {}), addEventListener: vi.fn(), removeEventListener: vi.fn() } });
+    await render(300);
+    expect(check).toHaveBeenCalledWith('normal 400 14px ReportTest');
+    const deck = host.firstElementChild as HTMLElement;
+    if (outcome === 'cached') {
+      expect(deck.style.visibility).toBe(''); expect(load).not.toHaveBeenCalled();
+    } else {
+      expect(deck.style.visibility).toBe('hidden'); expect(deck.hasAttribute('inert')).toBe(true); expect(deck.getAttribute('aria-hidden')).toBe('true');
+      // The actual font changes the intrinsic height before the pending load settles.
+      deck.querySelector<HTMLElement>('.pas-report-content')!.dataset.height = '100';
+      await act(async () => outcome === 'success' ? finish() : fail());
+      expect(sizing.height).toBe(174); expect(deck.style.visibility).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
+    }
+    await render(100); expect(sizing.height).toBe(174); expect(deck.style.visibility).toBe(''); expect(check).toHaveBeenCalledTimes(1);
+    act(() => root.unmount()); root = createRoot(host);
+  }
 });
 
 it('preserves answered A across timestamp changes and B updates, and drops A when its content changes',async()=>{
-  Object.defineProperty(document,'fonts',{configurable:true,value:{ready:Promise.resolve(),addEventListener:vi.fn(),removeEventListener:vi.fn()}});
+  Object.defineProperty(document,'fonts',{configurable:true,value:{check:()=>true,ready:Promise.resolve(),addEventListener:vi.fn(),removeEventListener:vi.fn()}});
   function Publications({answered=false,aUpdated='first',bUpdated='first',aContent='original'}:{answered?:boolean;aUpdated?:string;bUpdated?:string;aContent?:string}){
     const ref=useRef<HTMLElement|null>(null); sizing=useReportDeckHeight(ref,JSON.stringify([aUpdated,bUpdated,aContent]),'a');
     return <section ref={ref} style={{height:sizing.height}}>{[['A',aContent,answered?80:300,answered],['B','original',100,false]].map(([key,updated,height,answer])=><article key={String(key)} className="pas-report-sheet" data-publication={JSON.stringify(['a',key,updated])} data-answered={answer} style={{paddingTop:12,paddingBottom:16,rowGap:12}}><div className="pas-report-content" data-height={height}/><div className="pas-report-footer" data-height="32"/></article>)}</section>;

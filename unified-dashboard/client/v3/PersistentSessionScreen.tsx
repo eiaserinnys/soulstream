@@ -269,6 +269,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       useDashboardStore.getState().setPersistentSessionDisplaySettings(sessionId, selectedSession.settings);
       if (user?.email) setPersistentSessionLastSessionId(user.email, sessionId);
       setActivatedId(sessionId);
+      setLoading(false);
     }).catch(caught => { if (current) setError(caught instanceof Error ? caught.message : String(caught)); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };

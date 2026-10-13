@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 /** Measures unconstrained content; only a publication's pre-answer height survives a reply. */
 export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revision: unknown, sessionId: string, layoutKey = sessionId, maximumHeight?: number) {
   const [measurement, setMeasurement] = useState<{ revision: unknown; layoutKey: string; height: number }>();
+  const [waitingForFont, setWaitingForFont] = useState(false);
+  const checkedInitialFont = useRef(false), mounted = useRef(true);
   const holding = useRef(false), pressing = useRef(false), scrolling = useRef(false);
   const pending = useRef<{ revision: unknown; layoutKey: string; height: number } | undefined>(undefined);
   const beforeAnswer = useRef(new Map<string, number>());
@@ -43,6 +45,26 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
       });
     };
     measureCurrent.current = measure;
+    // Gate only the first connected node, before paint. Later revisions and
+    // portal changes keep the already visible deck visible.
+    if (!checkedInitialFont.current) {
+      checkedInitialFont.current = true;
+      const fonts = document.fonts;
+      if (fonts) {
+        const style = getComputedStyle(node);
+        const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        if (!fonts.check(font)) {
+          setWaitingForFont(true);
+          const done = () => {
+            if (!mounted.current) return;
+            beforeAnswer.current.clear();
+            measureCurrent.current();
+            setWaitingForFont(false);
+          };
+          void fonts.load(font).then(done, done);
+        }
+      }
+    }
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
@@ -50,13 +72,14 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
     return () => { observer.disconnect(); measureCurrent.current = () => {}; };
   }, [root, revision, sessionId, layoutKey, reset]);
   useEffect(() => {
+    mounted.current = true;
     let active = true;
     const fontsChanged = () => { if (active) { beforeAnswer.current.clear(); measureCurrent.current(); } };
     // Wait once per mount, not once per content revision. Later loadingdone
     // events represent actual font arrivals and use the current measurement.
     document.fonts?.ready.then(fontsChanged);
     document.fonts?.addEventListener('loadingdone', fontsChanged);
-    return () => { active = false; document.fonts?.removeEventListener('loadingdone', fontsChanged); };
+    return () => { mounted.current = false; active = false; document.fonts?.removeEventListener('loadingdone', fontsChanged); };
   }, []);
   useEffect(() => {
     const release = () => { pressing.current = false; releaseIfSettled(); };
@@ -65,7 +88,7 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
   }, [releaseIfSettled]);
   const height = measurement?.layoutKey === layoutKey && (measurement.revision === revision || holding.current) ? measurement.height : undefined;
   return {
-    height, holding, overflowing: maximumHeight !== undefined && height !== undefined && height > maximumHeight,
+    height, holding, waitingForFont, overflowing: maximumHeight !== undefined && height !== undefined && height > maximumHeight,
     hold: () => { pressing.current = true; holding.current = true; },
     startScroll: () => { scrolling.current = true; holding.current = true; },
     endScroll: () => { scrolling.current = false; releaseIfSettled(); },
