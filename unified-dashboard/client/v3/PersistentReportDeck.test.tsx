@@ -6,6 +6,12 @@ import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persist
 import { InternalLinkProvider } from '@seosoyoung/soul-ui/components/InternalLinkProvider';
 import { PersistentReportDeck } from './PersistentReportDeck';
 import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
+import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
+import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
+
+const { request } = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock('@seosoyoung/soul-ui/cards/card-api', async importOriginal => ({ ...await importOriginal<object>(), cardRequest: request }));
+const cardRow: CardRow = { id: '0ef7a7b5-588f-436b-839b-53131aba0a43', number: 270, folderId: 'folder', title: '카드', request: '', brief: '', attachments: [], status: 'running', blockedKind: null, blockedDetail: null, positionKey: 'a', queuePositionKey: null, assigneeKind: null, assigneeAgentId: null, assigneeUserId: null, assigneeSessionId: null, nodeId: null, modelPreset: null, version: 1, archived: false, createdAt: '', updatedAt: '' };
 
 vi.mock('@seosoyoung/soul-ui/components/LiquidGlassProvider', () => ({ useGlassSurface: () => false }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -20,7 +26,7 @@ const render = () => act(async () => root.render(<InternalLinkProvider internalO
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 beforeEach(async () => {
-  vi.clearAllMocks(); entries = [one, two];
+  vi.clearAllMocks(); request.mockReset(); useCardStore.getState().reset(); entries = [one, two];
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
@@ -39,11 +45,46 @@ it('renders only the current sheet into the accessible/tab surface, navigates by
   expect(button('다음 장').disabled).toBe(true);
 });
 it('uses the existing internal-card link opener and https source policy', async () => {
-  const card = host.querySelector<HTMLAnchorElement>('a[href="/?card=270"]')!;
+  await act(async () => useCardStore.getState().putCards([cardRow]));
+  const card = host.querySelector<HTMLAnchorElement>('a[aria-label="카드 270번 열기"]')!;
+  expect(card.getAttribute('href')).toBe(`/?card=${cardRow.id}`);
   await act(async () => card.click());
-  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: '270' }, '/?card=270');
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`);
+  expect(request).not.toHaveBeenCalled();
   const source = host.querySelector<HTMLAnchorElement>('a[href="https://example.test/"]')!;
   expect(source.target).toBe('_blank'); expect(source.rel).toContain('noopener');
+});
+it('resolves a missing number once across sheets, then opens its ID through SourceLink', async () => {
+  let resolve!: (value: unknown) => void;
+  request.mockReturnValue(new Promise(yes => { resolve = yes; }));
+  const card = host.querySelector<HTMLAnchorElement>('[data-current="true"] a[aria-label="카드 270번 열기"]')!;
+  expect(card.getAttribute('href')).toBeNull(); expect(card.getAttribute('role')).toBe('link'); expect(card.tabIndex).toBe(0);
+  await act(async () => { card.click(); card.click(); host.querySelector<HTMLAnchorElement>('[data-testid="report-sheet-two"] a')!.click(); });
+  expect(request).toHaveBeenCalledTimes(1); expect(request).toHaveBeenCalledWith('/api/cards?includeCompleted=true');
+  expect(openTarget).not.toHaveBeenCalled();
+  await act(async () => { resolve({ cards: [cardRow] }); });
+  expect(openTarget).toHaveBeenCalledTimes(1);
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`);
+  expect(card.getAttribute('href')).toBe(`/?card=${cardRow.id}`);
+  expect(host.querySelector('a[href="/?card=270"]')).toBeNull();
+});
+it('supports Enter before lookup and preserves newer stored card versions', async () => {
+  let resolve!: (value: unknown) => void; request.mockReturnValue(new Promise(yes => { resolve = yes; }));
+  const card = host.querySelector<HTMLAnchorElement>('[data-current="true"] a[aria-label="카드 270번 열기"]')!;
+  card.focus();
+  await act(async () => card.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+  expect(request).toHaveBeenCalledTimes(1);
+  await act(async () => { useCardStore.getState().putCards([{ ...cardRow, version: 2, title: '새 카드' }]); resolve({ cards: [cardRow] }); });
+  expect(useCardStore.getState().byId[cardRow.id].version).toBe(2);
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`);
+});
+it.each(['missing', 'failed'])('opens nothing and adds no error surface when lookup is %s', async failure => {
+  if (failure === 'missing') request.mockResolvedValue({ cards: [] }); else request.mockRejectedValue(new Error('offline'));
+  const card = host.querySelector<HTMLAnchorElement>('[data-current="true"] a[aria-label="카드 270번 열기"]')!;
+  const before = host.textContent;
+  await act(async () => card.click());
+  expect(openTarget).not.toHaveBeenCalled(); expect(card.getAttribute('href')).toBeNull(); expect(host.textContent).toBe(before);
+  expect(useCardStore.getState().errors).toEqual({});
 });
 it('keeps an outside focus, moves an inside focus to the replacement, then to the input when the last sheet leaves', async () => {
   const outside = document.createElement('input'); document.body.append(outside); outside.focus();

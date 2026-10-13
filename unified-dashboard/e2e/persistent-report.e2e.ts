@@ -4,8 +4,9 @@ import path from 'node:path';
 import { installChatUiRoutes, chatUiSession } from './chat-ui-fixtures';
 import { reportReviewEntries } from '../client/v3/persistent-report-review-data';
 import { waitForStableLayout } from './layout-stability';
+import { reviewCard } from '../client/v3/components-review-fixtures';
 
-const output = path.resolve('../../../.local/artifacts/pas-report-web-r2');
+const output = path.resolve('../../../.local/artifacts/pas-report-card-link-r2c');
 const sse = (type: string, payload: object, id: number) => `id: ${id}\nevent: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focus', async ({ page }) => {
@@ -13,6 +14,26 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   const fixture = await installChatUiRoutes(page, { ui: false, count: 3 });
+  const cards = [270, 328].map((number, index) => ({ ...reviewCard,
+    id: index === 0 ? '0ef7a7b5-588f-436b-839b-53131aba0a43' : '89a431e6-f40b-4164-91b8-9ca5f40b3454',
+    number, folderId: 'rb-alpha', title: `보고 카드 ${number}`, assigneeKind: null, assigneeSessionId: null, assigneeAgentId: null }));
+  let cardLists = 0;
+  const firstCardList = gate();
+  const cardDetails: string[] = [];
+  await page.route(url => url.pathname === '/api/cards', async route => {
+    if (new URL(route.request().url()).searchParams.get('includeCompleted') !== 'true') return route.fulfill({ json: { cards: [] } });
+    cardLists++;
+    if (cardLists === 1) await firstCardList.promise;
+    return route.fulfill({ json: { cards: cardLists === 1 ? [cards[0]] : cards } });
+  });
+  await page.route(url => url.pathname.startsWith('/api/cards/'), route => {
+    const id = decodeURIComponent(new URL(route.request().url()).pathname.slice('/api/cards/'.length));
+    cardDetails.push(id);
+    const card = cards.find(card => card.id === id);
+    // Production treats a number as an unknown ID; never conceal this regression.
+    if (!card) return route.fulfill({ status: 404, json: { detail: { error: { code: 'CARD_NOT_FOUND', message: '카드가 없습니다' } } } });
+    return route.fulfill({ json: { card, reports: [], questions: [], sessions: [], comments: [], notes: [] } });
+  });
   await page.addInitScript(() => localStorage.setItem('soul-dashboard-theme', 'light'));
   let entries = reportReviewEntries;
   const settings = { default_model: { model_preset: null, reasoning_effort: null }, fallback_model: null, show_generation_separator: true, show_character: false, show_jev_candidates: true, animate_character: false, show_turn_usage: true, turn_usage_mode: 'collapsed' };
@@ -65,8 +86,35 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   await expect(deck.locator('.pas-report-count')).toHaveText('1 / 3');
   expect(await deck.locator('article[inert][aria-hidden="true"]').count()).toBe(2);
   await page.screenshot({ path: path.join(output, '1440-default.png') });
+  const workspace = page.getByTestId('v3-card-workspace');
+  const firstCardLink = current().getByRole('link', { name: '카드 270번 열기', exact: true });
+  await expect(firstCardLink).not.toHaveAttribute('href');
+  await firstCardLink.click(); await firstCardLink.click();
+  await expect.poll(() => cardLists).toBe(1);
+  await expect(workspace).toHaveCount(0);
+  firstCardList.release();
+  await expect(workspace.getByTestId('card-detail')).toContainText('보고 카드 270');
+  await expect(firstCardLink).toHaveAttribute('href', `/?card=${cards[0].id}`);
+  await page.screenshot({ path: path.join(output, '1440-card-open.png') });
+  await workspace.getByRole('button', { name: '카드 닫기', exact: true }).click();
+  await expect(workspace).toHaveCount(0);
+  await firstCardLink.focus(); await page.keyboard.press('Enter');
+  await expect(workspace.getByTestId('card-detail')).toContainText('보고 카드 270');
+  expect(cardLists).toBe(1);
+  await workspace.getByRole('button', { name: '카드 닫기', exact: true }).click();
+  await expect(workspace).toHaveCount(0);
   await deck.getByRole('button', { name: '다음 장', exact: true }).click();
   await expect(current().getByRole('heading')).toHaveText('블로그 저장소 브랜치 정리');
+  // Focus scrolls an anchor into view; let the pager finish its native scroll first.
+  await expect.poll(() => track.evaluate(node => Math.abs(node.scrollLeft - node.clientWidth))).toBeLessThan(1);
+  await waitForStableLayout(deck, ['[data-current="true"]']);
+  const secondCardLink = current().getByRole('link', { name: '카드 328번 열기', exact: true });
+  await expect(secondCardLink).not.toHaveAttribute('href');
+  await secondCardLink.focus(); await expect(secondCardLink).toBeFocused(); await page.keyboard.press('Enter');
+  await expect(workspace.getByTestId('card-detail')).toContainText('보고 카드 328');
+  expect(cardLists).toBe(2);
+  await workspace.getByRole('button', { name: '카드 닫기', exact: true }).click();
+  await expect(workspace).toHaveCount(0);
   await waitForStableLayout(deck, ['[data-current="true"]']);
   const geometry = await current().evaluate(node => ({ height: node.getBoundingClientRect().height, x: node.querySelector('h2')!.getBoundingClientRect().x }));
   await editor.fill('쓰던 글');
@@ -104,6 +152,12 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   await expect(current().getByRole('heading')).toHaveText('다이제스트 세 편');
   const popup = page.waitForEvent('popup'); await current().getByRole('link', { name: 'Meta Muse Wonder' }).click();
   const opened = await popup; await expect(opened).toHaveURL('https://example.test/digest'); await opened.close();
+  const missingCardLink = current().getByRole('link', { name: '카드 338번 열기', exact: true });
+  await missingCardLink.click();
+  await expect.poll(() => cardLists).toBe(3);
+  await expect(missingCardLink).not.toHaveAttribute('href');
+  await expect(workspace).toHaveCount(0);
+  await expect(page.getByTestId('chat-input').locator('p[role=status]')).toHaveCount(0);
   const last = { ...entries[0], key: 'last', title: '마지막 보고', options: [] };
   publish([...entries, last]); await expect(deck.locator('.pas-report-count')).toHaveText('2 / 3');
   await page.setViewportSize({ width: 1180, height: 820 });
@@ -192,6 +246,7 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
     await expect(current().getByRole('heading')).toHaveText(reportReviewEntries[0].title);
   }
   expect(fixture.errors).toEqual([]);
-  writeFileSync(path.join(output, 'metrics.json'), JSON.stringify({ geometry, mode, sends, deletes, measurements, errors: fixture.errors }, null, 2));
+  expect(cardDetails.some(id => /^\d+$/.test(id))).toBe(false);
+  writeFileSync(path.join(output, 'metrics.json'), JSON.stringify({ geometry, mode, sends, deletes, measurements, cardLists, cardDetails, errors: fixture.errors }, null, 2));
   for (const update of updates) update.gate.release();
 });
