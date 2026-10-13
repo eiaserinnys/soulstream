@@ -26,7 +26,7 @@ export function PersistentSessionWeeklyUsage({ node, gauges, maxGaugeCount, load
     className="persistent-session-weekly-usage"
     role="group"
     aria-label="주간 남은 사용량"
-    title={stale && updatedLabel ? `갱신 지연 · ${updatedLabel}` : undefined}
+    title={stale && updatedLabel ? `갱신 지연, ${updatedLabel}` : undefined}
     data-testid="persistent-session-weekly-usage"
   >
     {Array.from({ length: placeholders }, (_, index) => <div className="persistent-session-weekly-usage-row is-placeholder" aria-hidden="true" key={`placeholder-${index}`}>

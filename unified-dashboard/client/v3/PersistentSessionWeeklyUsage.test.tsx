@@ -79,7 +79,7 @@ it("keeps stale values and the node row while putting the update time in the acc
   renderUsage({ node: staleNode, loadState: "connectionError" });
 
   const readout = host.querySelector('[data-testid="persistent-session-weekly-usage"]')!;
-  expect(readout.getAttribute("title")).toContain("갱신 지연 · 마지막");
+  expect(readout.getAttribute("title")).toContain("갱신 지연, 마지막");
   expect(readout.textContent).not.toContain("갱신 지연");
   expect(host.querySelectorAll('[role="progressbar"]')).toHaveLength(2);
   expect(host.querySelector('[aria-label="노드 바꾸기, 현재 node-a"]')).not.toBeNull();

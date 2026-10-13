@@ -284,9 +284,6 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} showHome={!isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}
       showWeeklyUsage={usageAvailable && chatReady && resource?.node_id && user?.email ? showWeeklyUsage : undefined}
       onToggleUsage={usageAvailable && chatReady && resource?.node_id && user?.email ? toggleWeeklyUsage : undefined}/>
-    {hasWeeklyUsage && <div ref={usageRef} className="persistent-session-usage-seat" data-testid="persistent-session-weekly-usage-seat">
-      <PersistentSessionWeeklyUsage {...usageSummary} onRetry={usageSummary.retry} onNextNode={nextWeeklyUsageNode}/>
-    </div>}
     <main ref={mainRef} className="persistent-session-main">
       {details.error && <div className="persistent-session-save-error"><SettingsAlert>{details.error}</SettingsAlert></div>}
       {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={lastId === session.session_id} portrait={<ProfileAvatar role="assistant" shape="circle" hasPortrait portraitUrl={persistentSessionPortrait(session.node_id, session.agent_id)} fallbackEmoji="🤖"/>} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}
@@ -301,6 +298,11 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
         </div>
         <div className="persistent-session-task-scroll" hidden={Boolean(selectedCardId)}><PersistentSessionTaskList onOpenCard={openTaskCard}/></div>
       </aside>}
+    </>}
+    {hasWeeklyUsage && <div ref={usageRef} className="persistent-session-usage-seat" data-testid="persistent-session-weekly-usage-seat">
+      <PersistentSessionWeeklyUsage {...usageSummary} onRetry={usageSummary.retry} onNextNode={nextWeeklyUsageNode}/>
+    </div>}
+    {chatReady && !error && <>
       {selectedCardId && <CardWorkspace cardId={selectedCardId} initialSessionId={overlaySessionId} folders={folders ?? []} onClose={closeCardWorkspace} onCloseChat={() => setMobileTab('today')} onOpenSession={selectOverlaySession}
         mobileMode={mobileMode} mobileTab={mobileTab} activeSession={overlayActiveSession} storeScope={overlaySessionId === sessionId ? undefined : overlayStoreScope ?? undefined} onSessionChange={continueOverlaySession}
         chatInputDisabled={overlayChatInputDisabled} fileUploadUrl={!overlayChatInputDisabled && overlayNodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(overlayNodeId)}` : undefined}

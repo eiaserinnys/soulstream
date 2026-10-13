@@ -101,6 +101,7 @@ it('persists the weekly usage toggle and selected node, pauses below 1101px, and
  expect(mocks.usage.mock.calls.at(-1)?.[0]).toMatchObject({enabled:true,selectedNodeId:'node-2'});
  expect(host.querySelector('[aria-label="노드 바꾸기, 현재 node-2"]')).not.toBeNull();
  await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="작업 목록"]')!.click());
+ expect(host.querySelector('.persistent-session-tasks')!.compareDocumentPosition(readout!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
  expect(host.querySelector('[data-testid="persistent-session-weekly-usage"]')).toBe(readout);
  expect(host.querySelector('[data-testid="chat"]')).toBe(chat);
  await act(async()=>getToggle().click());

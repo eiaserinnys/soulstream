@@ -83,6 +83,8 @@ export function PersistentSessionWeeklyUsageReviewSample() {
         <RefreshCw className="size-4" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
       </DashboardIconCap>
     </div>
-    {enabled ? <PersistentSessionWeeklyUsage {...usage} onRetry={() => { setSampleState('normal'); setSelectedNodeId(null); }} onNextNode={nextNode} /> : null}
+    {enabled ? <div className="persistent-session-weekly-usage-review-seat">
+      <PersistentSessionWeeklyUsage {...usage} onRetry={() => { setSampleState('normal'); setSelectedNodeId(null); }} onNextNode={nextNode} />
+    </div> : null}
   </div>;
 }
