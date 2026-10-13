@@ -26,6 +26,7 @@ import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
 import { createPersistentFullscreenReviewApi } from './persistent-fullscreen-fixtures';
 import { contentLinkReviewSessionEventsUrl } from './chat-fixtures';
 import { createChatUiFlowReviewApi } from './chat-ui-flow-client';
+import { createPersistentReportReviewApi } from './persistent-report-fixtures';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
@@ -427,7 +428,11 @@ export function createApiClient(): ApiClient {
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
   if (section === 'nativeSettings') return nativeSettingsApi;
-  if (section === 'persistent') return createPersistentFullscreenReviewApi(window.location.search);
+  if (section === 'persistent') {
+    const api = createPersistentFullscreenReviewApi(window.location.search);
+    return new URLSearchParams(window.location.search).get('sample') === 'report'
+      ? createPersistentReportReviewApi(api, window.location.search) : api;
+  }
   if (section === 'dialogues' && new URLSearchParams(window.location.search).get('sample') === 'persistent-select') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;

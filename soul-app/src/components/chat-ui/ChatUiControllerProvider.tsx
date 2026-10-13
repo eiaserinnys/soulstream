@@ -4,8 +4,9 @@ import { composeText, initialState, reduce, renderText, type Action, type ChatUi
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import type { ChatUiRichPublication } from './chatUiPublication';
 import { readChatUiPublication } from './chatUiPublication';
+import type { ReportReplyDraft } from '../../lib/persistent-report';
 
-export type AppendGeneratedText = (sessionId: string, text: string) =>
+export type AppendGeneratedText = (sessionId: string, text: string, reportReply?: ReportReplyDraft) =>
   | { ok: true }
   | { ok: false; reason: 'wrong_session' | 'not_ready' | 'sending' | 'disabled' | 'too_long' };
 type Entry = { state: ChatUiState; expanded: Record<string, boolean>; resetEpoch: number };
@@ -45,12 +46,19 @@ function SessionController({ sessionId, appendGeneratedText, children }: Props) 
     setState(current => current.entries === entries
       ? { ...current, notice: '', noticeLineOpen: false } : current);
   }, [entries]);
+  const appendWithNotice = useCallback<AppendGeneratedText>((targetSessionId, text, reportReply) => {
+    const result = reportReply === undefined ? appendGeneratedText(targetSessionId, text)
+      : appendGeneratedText(targetSessionId, text, reportReply);
+    setNotice(result.ok ? '' : result.reason === 'too_long'
+      ? '입력창이 가득 차서 더하지 못했어.' : '지금은 입력창에 더할 수 없어.');
+    return result;
+  }, [appendGeneratedText, setNotice]);
   const openLink = useOpenContentLink();
   const value = useMemo<ContextValue>(() => {
     const read = (publication: ChatUiRichPublication): Entry => entries.get(publicationKey(sessionId, publication))
       ?? { state: initialState(publication.document), expanded: {}, resetEpoch: 0 };
     return {
-      sessionId, entries, read, numberEditors, appendGeneratedText, openLink,
+      sessionId, entries, read, numberEditors, appendGeneratedText: appendWithNotice, openLink,
       notice, noticeLineOpen, setNotice, closeNoticeLine,
       update: (publication, change) => {
         const next = change(read(publication));
@@ -59,7 +67,7 @@ function SessionController({ sessionId, appendGeneratedText, children }: Props) 
         return next;
       },
     };
-  }, [sessionId, state, appendGeneratedText, openLink, setNotice, closeNoticeLine]);
+  }, [sessionId, state, appendWithNotice, openLink, setNotice, closeNoticeLine]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 function useControllerContext() {
@@ -71,6 +79,10 @@ function publicationKey(sessionId: string, publication: ChatUiRichPublication) {
   return JSON.stringify([sessionId, publication.uiId, publication.hash]);
 }
 export function useChatUiNotice() { return useControllerContext().notice; }
+export function useChatUiActions() {
+  const { sessionId, appendGeneratedText, setNotice } = useControllerContext();
+  return { sessionId, appendGeneratedText, setNotice };
+}
 export function useChatUiNoticeLine() {
   const { noticeLineOpen, closeNoticeLine } = useControllerContext();
   return { noticeLineOpen, closeNoticeLine };
@@ -131,9 +143,7 @@ export function useChatUiController(publication: ChatUiRichPublication) {
       for (const editor of context.numberEditors.values()) {
         if (editor.publicationKey === key) editor.commit();
       }
-      const result = context.appendGeneratedText(context.sessionId, composeText(doc, context.read(publication).state, nodeId));
-      context.setNotice(result.ok ? '' : result.reason === 'too_long'
-        ? '입력창이 가득 차서 더하지 못했어.' : '지금은 입력창에 더할 수 없어.');
+      context.appendGeneratedText(context.sessionId, composeText(doc, context.read(publication).state, nodeId));
     },
   };
 }

@@ -1,4 +1,7 @@
+// Size exception: atomic session/feed actions share one store; independent
+// attention/report domains are projected here without splitting public actions.
 import { create } from 'zustand';
+import type { PersistentReportEntry } from '../api/types';
 import type {
   Session,
   Catalog,
@@ -25,7 +28,12 @@ type FeedPageState = {
   status: 'idle' | 'loading' | 'error';
 };
 
+export type PersistentReportSnapshot = { entries: PersistentReportEntry[] };
+export type PersistentReportBaseline = { snapshot: PersistentReportSnapshot | undefined; generation: string };
 interface SessionStore {
+  /** Full report projection, including updates received before session hydration. */
+  persistentReportsBySession: Record<string, PersistentReportSnapshot>;
+  applyPersistentReport(sessionId: string, entries: PersistentReportEntry[], baseline?: PersistentReportBaseline): void;
   scopeGeneration: string;
   sessions: Record<string, Session>;
   catalog: Catalog;
@@ -196,6 +204,7 @@ function mergeCatalogSessionsDelta(
 function initialSessionState(scopeGeneration = captureAuthScope().generation) {
   return {
     scopeGeneration,
+    persistentReportsBySession: {},
     sessions: {},
     catalog: { folders: [], sessions: {} } as Catalog,
     feedMembership: {},
@@ -212,6 +221,11 @@ function initialSessionState(scopeGeneration = captureAuthScope().generation) {
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
   ...initialSessionState(),
+  applyPersistentReport: (sessionId, entries, baseline) => set(state => {
+    if (baseline && (state.scopeGeneration !== baseline.generation
+      || state.persistentReportsBySession[sessionId] !== baseline.snapshot)) return state;
+    return { persistentReportsBySession: { ...state.persistentReportsBySession, [sessionId]: { entries } } };
+  }),
   setSessions: (list) =>
     set((state) => {
       const sessions = buildSessionMap(list);
@@ -422,15 +436,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }),
   deleteSession: (agentSessionId) =>
     set((state) => {
-      if (!state.sessions[agentSessionId] && !state.feedMembership[agentSessionId]) {
+      if (!state.sessions[agentSessionId] && !state.feedMembership[agentSessionId] && !state.persistentReportsBySession[agentSessionId]) {
         return state;
       }
       const { [agentSessionId]: _, ...rest } = state.sessions;
+      const { [agentSessionId]: _report, ...persistentReportsBySession } = state.persistentReportsBySession;
       const { [agentSessionId]: _version, ...restVersions } =
         state.pendingAttentionVersionsBySession;
       const { [agentSessionId]: _membership, ...feedMembership } = state.feedMembership;
       return {
         sessions: rest,
+        persistentReportsBySession,
         pendingAttentionVersionsBySession: restVersions,
         feedMembership,
         feedSessionIds: computeFeedSessionIds(

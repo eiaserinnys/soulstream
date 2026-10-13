@@ -7,6 +7,9 @@
 // 비교: `packages/soul-ui/src/shared/types.ts:SessionSummary`. soul-app은
 // llmProvider/llmModel/llmUsage 같은 web 전용 필드를 두지 않는다 (앱이 llm
 // 세션 채팅 UI 미지원). 필요 시 후속에서 확장.
+import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+export type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+export type MessageContextItem = { key: string; content: unknown };
 export type ReviewState = 'not_required' | 'needs_review' | 'acknowledged';
 
 // Server-owned v2 feed wire: contract 0ff47de3, producer 7caf0414. 앱은 소비만 하며
@@ -68,6 +71,8 @@ export interface LiveTextEventMetadata {
 }
 
 export interface Session {
+  /** REST/summary snapshot; live report projection is owned by sessionStore. */
+  persistentReport?: PersistentReportEntry[];
   cardId?: string | null;
   /** server: agent_session_id. 세션의 정본 식별자. */
   agentSessionId: string;

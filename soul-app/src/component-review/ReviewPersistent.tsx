@@ -30,7 +30,7 @@ function recordReviewOpen(cardId: string) {
 export function ReviewPersistent() {
   const sample = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('sample');
   return sample === 'buttons' ? <ReviewPersistentButtons />
-    : sample === 'screen' || sample === 'entry' || sample === 'startup' ? <ReviewPersistentFullscreen /> : <PersistentParts />;
+    : sample === 'screen' || sample === 'report' || sample === 'entry' || sample === 'startup' ? <ReviewPersistentFullscreen /> : <PersistentParts />;
 }
 
 function PersistentParts() {

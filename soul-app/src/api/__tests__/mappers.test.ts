@@ -513,3 +513,12 @@ describe('toSessionEndedReconciliation', () => {
       .toBeNull();
   });
 });
+
+
+test('persistent report snapshots and deltas preserve omission and explicit empty', () => {
+  const entries = [{ key: 'ask-one', kind: 'ask', title: '예산', card_numbers: [270], context: '맥락', action: '답해 주세요', options: ['응'], state: 'open', answer: '', updated_at: '2026-10-13T00:00:00Z' }];
+  expect(toSession({ agentSessionId: 'pas', persistentReport: entries }).persistentReport).toEqual(entries);
+  expect(toSession({ agent_session_id: 'pas', persistent_report: entries }).persistentReport).toEqual(entries);
+  expect(applySessionUpdated({ persistent_report: [] }).persistentReport).toEqual([]);
+  expect(applySessionUpdated({ status: 'running' })).not.toHaveProperty('persistentReport');
+});
