@@ -52,6 +52,34 @@ export class PersistentReportService {
       return null;
     });
   }
+  /** Card commit is complete. Discover without locks, then recheck each current board under its session lock. */
+  async pruneForCard(cardId: string): Promise<void> {
+    const targets = await this.sql<{session_id:string}[]>`SELECT session_id FROM sessions
+      WHERE metadata @> '[{"type":"persistent_report"}]'::jsonb
+        AND EXISTS (SELECT 1 FROM jsonb_array_elements(metadata) AS m,
+          jsonb_array_elements(m->'value'->'entries') AS e
+          WHERE m->>'type'='persistent_report' AND
+            (e->'card_numbers' @> jsonb_build_array((SELECT number FROM cards WHERE id=${cardId}))
+              OR e->>'question_id' IN (SELECT id FROM card_questions WHERE card_id=${cardId})))`;
+    for (const target of targets) {
+      await this.mutate(target.session_id, async (sql, entries) => {
+        const card = (await sql<{number:number | null}[]>`SELECT number FROM cards WHERE id=${cardId}`)[0];
+        const questions = await sql<{id:string}[]>`SELECT id FROM card_questions WHERE card_id=${cardId}`;
+        const next: PersistentReportEntry[] = [];
+        for (const entry of entries) {
+          const related = (card?.number != null && entry.card_numbers.includes(card.number))
+            || questions.some(q=>q.id === entry.question_id);
+          if (!related) { next.push(entry); continue; }
+          const answered = entry.question_id ? (await sql<{answer:string | null}[]>`SELECT answer FROM card_questions WHERE id=${entry.question_id}`)[0]?.answer != null : false;
+          const statuses = entry.card_numbers.length ? await sql<{number:number;status:string}[]>`SELECT number,status FROM cards WHERE number=ANY(${sql.array(entry.card_numbers)}::integer[])` : [];
+          const finished = entry.card_numbers.length > 0 && statuses.length === new Set(entry.card_numbers).size && statuses.every(c=>c.status==='done'||c.status==='cancelled');
+          if (!answered && !finished) next.push(entry);
+        }
+        entries.splice(0,entries.length,...next);
+        return null;
+      });
+    }
+  }
   private async mutate(sessionId: string, apply: (sql:RepositorySql, entries:PersistentReportEntry[])=>Promise<PersistentReportIssue[] | null>): Promise<PersistentReportResult> {
     const outcome = await this.sql.begin(async sql => {
       const row = (await sql<ReportRow[]>`SELECT session_id,node_id,session_type,metadata FROM sessions WHERE session_id=${sessionId} FOR UPDATE`)[0];
@@ -66,6 +94,7 @@ export class PersistentReportService {
       const update = changed ? await writePersistentReportTx(sql,row,next) : undefined;
       return {result:{ok:true,changed,entries:next.map(({key,title})=>({key,title})),persistent_report:next} as PersistentReportResult,update};
     });
+    // Publish the transaction's own result immediately after commit, before any other await.
     if (outcome.update) await this.publish([outcome.update]);
     return outcome.result;
   }
@@ -74,29 +103,4 @@ export class PersistentReportService {
 export async function writePersistentReportTx(sql: RepositorySql, row: Pick<ReportRow,"session_id"|"node_id">, entries: PersistentReportEntry[]): Promise<PersistentReportUpdate> {
   await sql`SELECT session_apply_metadata_entry(${row.session_id},${JSON.stringify({type:PERSISTENT_REPORT_METADATA_TYPE,value:{entries}})},${PERSISTENT_REPORT_METADATA_TYPE},NOW())`;
   return {agent_session_id:row.session_id,node_id:row.node_id,persistent_report:entries};
-}
-
-/** Called inside the existing card transaction; broadcasting belongs to its caller after commit. */
-export async function prunePersistentReportsForCardTx(sql: RepositorySql, cardId: string): Promise<PersistentReportUpdate[]> {
-  const card = (await sql<{number:number | null}[]>`SELECT number FROM cards WHERE id=${cardId}`)[0];
-  const rows = await sql<ReportRow[]>`SELECT session_id,node_id,metadata FROM sessions
-    WHERE metadata @> '[{"type":"persistent_report"}]'::jsonb
-      AND EXISTS (SELECT 1 FROM jsonb_array_elements(metadata) AS m,
-        jsonb_array_elements(m->'value'->'entries') AS e
-        WHERE m->>'type'='persistent_report' AND
-          (e->'card_numbers' @> ${sql.json([card?.number])}::jsonb OR e->>'question_id' IN (SELECT id FROM card_questions WHERE card_id=${cardId})))
-    ORDER BY session_id FOR UPDATE`;
-  const updates: PersistentReportUpdate[] = [];
-  for (const row of rows) {
-    const entries=readPersistentReport(row.metadata);
-    const next:PersistentReportEntry[]=[];
-    for (const entry of entries) {
-      const answered = entry.question_id ? (await sql<{answer:string | null}[]>`SELECT answer FROM card_questions WHERE id=${entry.question_id}`)[0]?.answer != null : false;
-      const statuses = entry.card_numbers.length ? await sql<{number:number;status:string}[]>`SELECT number,status FROM cards WHERE number=ANY(${sql.array(entry.card_numbers)}::integer[])` : [];
-      const finished = entry.card_numbers.length > 0 && statuses.length === new Set(entry.card_numbers).size && statuses.every(c=>c.status==='done'||c.status==='cancelled');
-      if (!answered && !finished) next.push(entry);
-    }
-    if (next.length !== entries.length) updates.push(await writePersistentReportTx(sql,row,next));
-  }
-  return updates;
 }

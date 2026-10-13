@@ -32,6 +32,7 @@ export interface FolderMutateParams {
   payload: Record<string, unknown>;
   preflight?: (sql: RepositorySql) => Promise<void>;
   apply: (sql: RepositorySql, eventId: number | null) => Promise<void>;
+  afterCommit?: () => Promise<void>;
   reason?: string | null;
   idempotencyKey?: string | null;
 }
@@ -68,6 +69,7 @@ export class CardMutationCore {
     if (idempotent) return idempotent;
 
     const { operation, eventId } = await this.repo.transaction((sql) => this.mutateTx(sql, params));
+    await params.afterCommit?.();
 
     const result = {
       snapshot: await this.requireSnapshot(params.folderId),

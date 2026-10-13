@@ -31,7 +31,7 @@ export function createCardControlPlaneServiceProvider(options: {
       async emitCardUpdated(cardId, folderId) {
         options.broadcaster.append({ type: "card_updated", cardId, folderId });
       },
-    },options.onMutation,options.onReportsChanged);
+    },options.onMutation,options.onReportsChanged,options.warn);
     return service;
   };
 }
