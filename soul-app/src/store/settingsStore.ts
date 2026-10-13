@@ -20,6 +20,13 @@ export interface PersistentSessionDevicePreference {
   openOnStart: boolean;
   lastSessionId: string | null;
   collapsedTaskGroups: CardStatus[];
+  showWeeklyUsage?: boolean;
+  weeklyUsageNodeSelection?: PersistentSessionWeeklyUsageNodeSelection | null;
+}
+
+export interface PersistentSessionWeeklyUsageNodeSelection {
+  configuredNodeId: string;
+  selectedNodeId: string | null;
 }
 
 export type PersistentSessionDevicePrefs = Record<string, PersistentSessionDevicePreference>;
@@ -52,6 +59,8 @@ interface SettingsState {
   getPersistentSessionDevicePreference: (serverUrl: string, email: string | null | undefined) => PersistentSessionDevicePreference;
   setPersistentSessionOpenOnStart: (serverUrl: string, email: string | null | undefined, openOnStart: boolean) => void;
   setPersistentSessionLastSessionId: (serverUrl: string, email: string | null | undefined, sessionId: string | null) => void;
+  setPersistentSessionShowWeeklyUsage: (serverUrl: string, email: string | null | undefined, showWeeklyUsage: boolean) => void;
+  setPersistentSessionWeeklyUsageNodeSelection: (serverUrl: string, email: string | null | undefined, selection: PersistentSessionWeeklyUsageNodeSelection) => void;
   setPersistentSessionCollapsedTaskGroups: (serverUrl: string, email: string | null | undefined, collapsedTaskGroups: CardStatus[]) => void;
   applyUserPreferences: (preferences: UserPreferencesSnapshot) => void;
 }
@@ -60,6 +69,8 @@ const DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE: PersistentSessionDevicePrefe
   openOnStart: false,
   lastSessionId: null,
   collapsedTaskGroups: ['todo'],
+  showWeeklyUsage: false,
+  weeklyUsageNodeSelection: null,
 };
 
 function persistentSessionDevicePreferenceKey(serverUrl: string, email: string | null | undefined): string | null {
@@ -103,6 +114,7 @@ export const useSettingsStore = create<SettingsState>()(
           ...DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE,
           ...stored,
           collapsedTaskGroups: stored?.collapsedTaskGroups ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE.collapsedTaskGroups,
+          weeklyUsageNodeSelection: stored?.weeklyUsageNodeSelection ?? null,
         };
       },
       setPersistentSessionOpenOnStart: (serverUrl, email, openOnStart) => {
@@ -127,6 +139,32 @@ export const useSettingsStore = create<SettingsState>()(
             [key]: {
               ...(state.persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE),
               lastSessionId: sessionId,
+            },
+          },
+        }));
+      },
+      setPersistentSessionShowWeeklyUsage: (serverUrl, email, showWeeklyUsage) => {
+        const key = persistentSessionDevicePreferenceKey(serverUrl, email);
+        if (!key) return;
+        set((state) => ({
+          persistentSessionDevicePrefs: {
+            ...state.persistentSessionDevicePrefs,
+            [key]: {
+              ...(state.persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE),
+              showWeeklyUsage,
+            },
+          },
+        }));
+      },
+      setPersistentSessionWeeklyUsageNodeSelection: (serverUrl, email, selection) => {
+        const key = persistentSessionDevicePreferenceKey(serverUrl, email);
+        if (!key) return;
+        set((state) => ({
+          persistentSessionDevicePrefs: {
+            ...state.persistentSessionDevicePrefs,
+            [key]: {
+              ...(state.persistentSessionDevicePrefs[key] ?? DEFAULT_PERSISTENT_SESSION_DEVICE_PREFERENCE),
+              weeklyUsageNodeSelection: selection,
             },
           },
         }));

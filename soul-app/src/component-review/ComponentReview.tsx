@@ -118,6 +118,13 @@ export function initializeReview() {
     const email = 'public-review@example.invalid';
     useSettingsStore.getState().setPersistentSessionOpenOnStart('https://public-fixture.invalid', email, params.get('startup') === '1');
     useSettingsStore.getState().setPersistentSessionLastSessionId('https://public-fixture.invalid', email, params.get('last'));
+    if (params.get('sample') === 'usage') {
+      useSettingsStore.getState().setPersistentSessionShowWeeklyUsage('https://public-fixture.invalid', email, true);
+      useSettingsStore.getState().setPersistentSessionWeeklyUsageNodeSelection('https://public-fixture.invalid', email, {
+        configuredNodeId: 'node-a',
+        selectedNodeId: params.get('usageState') === 'none' ? 'node-c' : null,
+      });
+    }
   }
   const longSelection = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chips') === 'long';
   if (longSelection) useSettingsStore.setState({ cardAssignments: {
