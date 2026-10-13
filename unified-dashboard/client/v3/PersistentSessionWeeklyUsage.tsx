@@ -19,7 +19,7 @@ export function PersistentSessionWeeklyUsage({ node, gauges, maxGaugeCount, load
   const message = emptyMessage({ node, gauges, loading, loadState });
   const stale = loadState === "connectionError" && gauges.length > 0;
   const updatedLabel = stale && node ? formatUsageUpdatedLabel(node.fetchedAt, true) : null;
-  const slotCount = Math.max(1, maxGaugeCount, gauges.length);
+  const slotCount = Math.max(3, maxGaugeCount, gauges.length);
   const placeholders = Math.max(0, slotCount - (gauges.length || 1));
 
   return <div
@@ -66,7 +66,7 @@ export function PersistentSessionWeeklyUsage({ node, gauges, maxGaugeCount, load
       <div className="persistent-session-weekly-usage-track" aria-hidden="true" />
     </div>}
     {node ? <button type="button" className="persistent-session-weekly-usage-node" aria-label={`노드 바꾸기, 현재 ${node.nodeId}`} onClick={onNextNode}>
-      <span>{node.nodeId}</span><ChevronRight className="persistent-session-weekly-usage-chevron" aria-hidden="true" />
+      <span>{node.nodeId}</span><ChevronRight className="persistent-session-weekly-usage-chevron size-4" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
     </button> : <div className="persistent-session-weekly-usage-node is-placeholder" aria-hidden="true" />}
   </div>;
 }

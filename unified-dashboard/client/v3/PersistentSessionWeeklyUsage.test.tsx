@@ -67,6 +67,9 @@ it("shows compact reset labels, full accessible times, percentages, and a whole-
   const nodeButton = host.querySelector<HTMLButtonElement>('[aria-label="노드 바꾸기, 현재 node-a"]')!;
   expect(nodeButton.classList.contains("persistent-session-weekly-usage-node")).toBe(true);
   expect(nodeButton.textContent).toContain("node-a");
+  const chevron = nodeButton.querySelector("svg");
+  expect(chevron?.classList.contains("size-4")).toBe(true);
+  expect(Number(chevron?.getAttribute("stroke-width"))).toBeCloseTo(1.4, 2);
   act(() => nodeButton.click());
   expect(onNextNode).toHaveBeenCalledOnce();
 });
@@ -95,7 +98,23 @@ it("keeps one fixed status slot and exposes retry when no gauges are available",
   expect(host.querySelectorAll(".persistent-session-weekly-usage-row[aria-hidden=\"true\"]")).toHaveLength(2);
   const retry = host.querySelector<HTMLButtonElement>('[aria-label="주간 사용량 다시 시도"]')!;
   expect(retry).not.toBeNull();
+  expect(retry.classList.contains("persistent-session-weekly-usage-retry")).toBe(true);
   act(() => retry.click());
   expect(onRetry).toHaveBeenCalledOnce();
   expect(host.querySelector('[aria-label^="노드 바꾸기"]')).toBeNull();
+});
+
+it("reserves three provider slots before the first usage summary arrives", () => {
+  renderUsage({
+    summary: null,
+    node: null,
+    gauges: [],
+    maxGaugeCount: 0,
+    loading: true,
+    loadState: "idle",
+  });
+
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("불러오는 중");
+  expect(host.querySelectorAll(".persistent-session-weekly-usage-row.is-placeholder")).toHaveLength(2);
+  expect(host.querySelector(".persistent-session-weekly-usage-node.is-placeholder")).not.toBeNull();
 });
