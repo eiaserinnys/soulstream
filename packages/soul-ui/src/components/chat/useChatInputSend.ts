@@ -103,6 +103,10 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
         args.onSendFailure?.();
         return;
       }
+      const current = args.getPendingChatSend(sessionId);
+      if (current?.id === pending.id && current.persistentReportOperation) {
+        args.setPendingChatSend(sessionId, { ...current, persistentReportOperation: { ...current.persistentReportOperation, acknowledged: true } });
+      }
       args.onAfterSend();
     } catch (requestError) {
       const current = args.getPendingChatSend(sessionId);

@@ -60,7 +60,7 @@ function Integrated() {
   actions = usePersistentReportDismiss('a', getOperations);
   return <ChatUiControllerProvider sessionId="a"><ChatUiOperationsBridge register={registerOperations} />
     <PersistentReportProvider sessionId="a" entries={actions.visibleEntries}>
-      <PersistentReportDeck sessionId="a" appendGeneratedText={() => ({ ok: true })} focusInput={() => host.querySelector('textarea')!.focus()} dismissReport={actions.dismiss} />
+      <PersistentReportDeck sessionId="a" notify={notify} focusInput={() => host.querySelector('textarea')!.focus()} dismissReport={actions.dismiss} />
     </PersistentReportProvider><textarea /><Feedback />
   </ChatUiControllerProvider>;
 }

@@ -10,6 +10,8 @@ import { useCardNavigation } from './card-navigation';
 import { DashboardInternalLinks } from './DashboardInternalLinks';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn(), get: vi.fn(), update: vi.fn(), cardRequest: vi.fn(), usage: vi.fn(), usageRetry: vi.fn(), usageSummary: null as UsageSummarySnapshot | null }));
+const geometry = vi.hoisted(() => ({ value: null as any }));
+vi.mock('./use-persistent-session-geometry',()=>({usePersistentSessionGeometry:()=>geometry.value}));
 vi.mock('@seosoyoung/soul-ui', async () => {
  const real = await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
  return { ...real, LiquidGlassProvider: ({children}:any) => children, useAuth: () => ({ user:{email:'test@example.com'},refreshAuthStatus:vi.fn() }), useUserPreferencesSync:vi.fn(), useInitialCatalogLoad:vi.fn(), useSessionProvider:(o:any)=> {mocks.provider(o);return {synchronizedSessionKey:o.sessionKey}}, initTheme:vi.fn() };
@@ -32,7 +34,7 @@ vi.mock('../hooks/useUsageSummary', async()=>{
  }};
 });
 vi.mock('../components/ConfigModal',()=>({ConfigModal:(p:any)=>p.open?<div data-testid="config" data-tab={p.initialTab}/>:null}));
-vi.mock('./PersistentSessionChatView',()=>({PersistentSessionChatView:(p:any)=><div data-testid="chat" data-session={p.sessionId} data-upload={p.fileUploadUrl} data-history={p.historyEnabled} data-runtime-strips={String(p.showRuntimeStrips)}/> }));
+vi.mock('./PersistentSessionChatView',()=>({PersistentSessionChatView:(p:any)=><div data-testid="chat" data-session={p.sessionId} data-report-ready={String(p.reportSeat?.ready)} data-upload={p.fileUploadUrl} data-history={p.historyEnabled} data-runtime-strips={String(p.showRuntimeStrips)}/> }));
 
 let host:HTMLDivElement,root:Root;
 type MediaListener={query:string;listener:(event:{matches:boolean})=>void};
@@ -61,8 +63,21 @@ const usageSummaryFixture:UsageSummarySnapshot={generatedAt:'2026-10-13T08:00:00
 const session=(id:string)=>({session_id:id,display_name:id,persistent:true,node_id:'node-1',settings:{default_model:{model_preset:null},show_character:true}});
 const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([options]:any[])=>options as any);
 beforeEach(()=>{vi.clearAllMocks();resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
-afterEach(()=>{act(()=>root.unmount());host.remove();vi.unstubAllGlobals();});
+afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
+it('seeds the active display settings from its PAS list before opening chat',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('two');
+ expect(useDashboardStore.getState().persistentSessionDisplaySettings).toMatchObject({sessionId:'two',showCharacter:true});
+});
+it('provides measured report geometry while the chat view owns settings readiness',async()=>{
+ geometry.value={reportBubble:null,body:null,toggle:null,lineY:0,lineLeftReach:0};
+ useDashboardStore.getState().setPersistentSessionDisplaySettings('one',null);
+ mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');
+ const chat=()=>host.querySelector('[data-testid="chat"]')!;
+ expect(chat().getAttribute('data-report-ready')).toBe('true');
+ act(()=>useDashboardStore.getState().setPersistentSessionDisplaySettings('one',{show_generation_separator:true,show_jev_candidates:true,show_character:false,animate_character:false,turn_usage_mode:'collapsed'}));
+ expect(chat().getAttribute('data-report-ready')).toBe('true');
+});
 it('opens the existing add screen for zero PAS without creating a session',async()=>{mocks.list.mockResolvedValue({sessions:[]});await mount();expect(host.querySelector('[data-testid="config"]')?.getAttribute('data-tab')).toBe('persistent');expect(mocks.fetchSessions).not.toHaveBeenCalled();});
 it('provides the common frame spacing tokens to reused card components',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');const frame=host.querySelector<HTMLElement>('[data-testid="persistent-session-screen"]')!;
@@ -158,7 +173,7 @@ it('uses the phone card session flow and returns to the same detail without chan
  expect(host.querySelector('[data-testid="scene-overlay"]')).toBeNull();expect(host.querySelector('[data-testid="chat"]')).toBe(chat);expect(taskScroll.scrollTop).toBe(87);expect(useDashboardStore.getState().activeSessionKey).toBe('one');
 });
 it('clears the PAS tree and settings when changing PAS or leaving its route',async()=>{
- mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('one');act(()=>useDashboardStore.setState({tree:{id:'old-pas-tree'} as any,persistentSessionDisplaySettings:{sessionId:'one',showCharacter:true} as any}));await mount('two');expect(useDashboardStore.getState().activeSessionKey).toBe('two');expect(useDashboardStore.getState().tree).toBeNull();expect(useDashboardStore.getState().persistentSessionDisplaySettings).toBeNull();await act(()=>root.render(<div/>));expect(useDashboardStore.getState().activeSessionKey).toBeNull();expect(useDashboardStore.getState().activeSessionSummary).toBeNull();
+ mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('one');act(()=>useDashboardStore.setState({tree:{id:'old-pas-tree'} as any,persistentSessionDisplaySettings:{sessionId:'one',showCharacter:true} as any}));await mount('two');expect(useDashboardStore.getState().activeSessionKey).toBe('two');expect(useDashboardStore.getState().tree).toBeNull();expect(useDashboardStore.getState().persistentSessionDisplaySettings).toMatchObject({sessionId:'two',showCharacter:true});await act(()=>root.render(<div/>));expect(useDashboardStore.getState().persistentSessionDisplaySettings).toBeNull();expect(useDashboardStore.getState().activeSessionKey).toBeNull();expect(useDashboardStore.getState().activeSessionSummary).toBeNull();
 });
 
 it('keeps the actual agent name in the header when the PAS display name changes',async()=>{
