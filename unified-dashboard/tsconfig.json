@@ -15,6 +15,6 @@
       "client/*": ["./client/*"]
     }
   },
-  "include": ["client/**/*.ts", "client/**/*.tsx"],
+  "include": ["client/**/*.ts", "client/**/*.tsx", "mockups/**/*.ts", "mockups/**/*.tsx"],
   "exclude": ["node_modules", "dist"]
 }
