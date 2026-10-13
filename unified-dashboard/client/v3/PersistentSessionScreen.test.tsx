@@ -57,6 +57,7 @@ const usageNode=(nodeId:string,claude:number|null,codex:number|null,fable=false)
   claude:claude!==null||fable?usageProvider(claude,fable?[{id:'claude:weekly_scoped:fable',label:'Fable',window:'7d',model:null,remainingPercent:41,resetAt:1_900_000_000}]:[]):null,
   codex:codex===null?null:usageProvider(codex),
   gemini:null,
+  antigravity:null,
  },
 });
 const usageSummaryFixture:UsageSummarySnapshot={generatedAt:'2026-10-13T08:00:00.000Z',collectedAt:null,nodes:[usageNode('node-1',73,38,true),usageNode('node-2',61,42),usageNode('node-3',null,null)]};

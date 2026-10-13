@@ -63,6 +63,7 @@ test('provider filter composes one provider without changing the default all-pro
         planType: null,
         quotas: [],
       },
+      antigravity: { status: 'not_configured', source: '', planType: null, quotas: [] },
     },
   } as any;
   const all = render(React.createElement(ProviderUsageChart, { usage }));
@@ -94,4 +95,4 @@ test('real quota values retain precision while only the visual fill is clamped',
   expect(screen.getAllByText('3 / 10 남음').length).toBeGreaterThan(0);
 });
 
-test('labels the existing Antigravity provider chart', () => { const screen = render(React.createElement(ProviderUsageChart, { usage: { generatedAt: '2026-10-14T00:00:00Z', providers: { antigravity: { status: 'auto', source: 'agy:/usage', planType: null, quotas: [quota({ label: 'Gemini Models', remainingPercent: 99 })] } } } as any })); expect(screen.getByText('Antigravity')).toBeTruthy(); });
+test('labels the existing Antigravity provider chart', () => { const screen = render(React.createElement(ProviderUsageChart, { usage: { generatedAt: '2026-10-14T00:00:00Z', providers: { antigravity: { status: 'auto', source: 'agy:/usage', planType: null, quotas: [quota({ label: '7일', remainingPercent: 99 })] } } } as any })); expect(screen.getByText('Antigravity')).toBeTruthy(); });

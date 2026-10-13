@@ -394,6 +394,7 @@ function successResponse(
         }]),
         codex: limits(codexWeeklyUsedPercent, null, []),
         gemini: limits(geminiWeeklyUsedPercent, null, []),
+        antigravity: { status: "not_configured", weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null, shortResetAt: null, quotas: [] },
       },
     },
   };
@@ -424,11 +425,13 @@ function limits(
 }
 
 it("projects Antigravity and fills only its absence in older snapshots", async () => {
-  let response: unknown = successResponse(16);
+  // This one legacy worker intentionally omits the added provider.
+  const { antigravity: _antigravity, ...legacyProviders } = successResponse(16).data.providers;
+  let response: unknown = { ...successResponse(16), data: { providers: legacyProviders } };
   const service = new UsageSummaryService({ registry: fakeRegistry(["node-a"]), bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [] });
   await service.collectOnce();
   expect(service.getSummary().nodes[0]?.providers.antigravity).toMatchObject({ status: "not_configured", quotas: [] });
-  response = { ...successResponse(16), data: { providers: { ...successResponse(16).data.providers, antigravity: limits(10, 20, [{ id: "antigravity:gemini:weekly", label: "Gemini Models", window: "7d", model: null, remainingPercent: 90, resetAt: 1_753_100_000 }]) } } };
+  response = { ...successResponse(16), data: { providers: { ...successResponse(16).data.providers, antigravity: limits(10, 20, [{ id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, remainingPercent: 90, resetAt: 1_753_100_000 }]) } } };
   await service.collectOnce();
   expect(service.getSummary().nodes[0]?.providers.antigravity).toMatchObject({ status: "auto", weeklyRemainingPercent: 90, shortRemainingPercent: 80, quotas: [{ window: "7d", model: null }] });
   expect(service.getSummary().nodes[0]?.stale).toBe(false);

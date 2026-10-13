@@ -563,7 +563,7 @@ function rejection(rejectedUntil: string, rateLimitType: string | null): Provide
 
 it("uses Antigravity group quotas for both presets and existing availability states", () => {
   const usage = summary(null);
-  const agy = provider({ quotas: [{ id: "antigravity:gemini:weekly", label: "Gemini Models", window: "7d", model: null, remainingPercent: 90, resetAt: now.getTime()/1000 + 86400 }] });
+  const agy = provider({ quotas: [{ id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, remainingPercent: 90, resetAt: now.getTime()/1000 + 86400 }] });
   const nodes = [{ ...usage.nodes[0]!, providers: { ...usage.nodes[0]!.providers, antigravity: agy } }];
   for (const id of ["gemini-3.8-flash", "gemini-4-argon"]) {
     const agyPreset = { ...preset, id, backend: "antigravity" as const, usage_provider: "antigravity" as const, usage_model_id: id };
@@ -578,7 +578,7 @@ it("uses Antigravity group quotas for both presets and existing availability sta
 
 it("accepts advertised Antigravity presets in the shared node-list API availability service", () => {
   const usage = summary(null);
-  const antigravity = provider({ quotas: [{ id: "antigravity:gemini:weekly", label: "Gemini Models", window: "7d", model: null, remainingPercent: 90, resetAt: now.getTime() / 1000 + 86400 }] });
+  const antigravity = provider({ quotas: [{ id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, remainingPercent: 90, resetAt: now.getTime() / 1000 + 86400 }] });
   const presets = ["gemini-3.8-flash", "gemini-4-argon"].map(id => ({ ...preset, id, backend: "antigravity", usage_provider: "antigravity", usage_model_id: id }));
   const service = new ModelPresetAvailabilityService(
     { getConnectedNode: () => ({ nodeId: "node-a", modelPresets: presets } as unknown as NodeConnectionSnapshot) },

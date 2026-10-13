@@ -55,7 +55,7 @@ function limitsFromOutput(output: string): ProviderLimits {
         throw new Error("Invalid bucket");
       }
       return {
-        id: `antigravity:gemini:${window}`, label: "Gemini Models", window: window === "weekly" ? "7d" : "5h",
+        id: `antigravity:gemini:${window}`, label: window === "weekly" ? "7일" : "5시간", window: window === "weekly" ? "7d" : "5h",
         unit: null, used: null, remaining: null, limit: null, model: null,
         remainingPercent: 100 * fraction, usedPercent: 100 * (1 - fraction), resetAt,
         source: "agy:/usage", purpose: "execution",

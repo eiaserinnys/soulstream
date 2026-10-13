@@ -264,15 +264,15 @@ describe('newSessionSelection', () => {
 });
 
 test('Antigravity uses existing warning, exhaustion and disabled model options without headroom numbers', () => {
-  const preset = { id: 'gemini-3.8-flash', label: 'Antigravity - Flash', backend: 'antigravity', available: true,
+  const preset = { id: 'gemini-3.8-flash', label: 'Gemini - 3.8 Flash', backend: 'antigravity', available: true,
     reason: null, reason_label: null, resets_at: null, usage_warning: false,
     weekly_headroom: { status: 'ok' as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: null, observed_at: null, quota_label: '7일' } };
-  expect(formatModelPresetLabel({ ...preset, usage_warning: true })).toBe('Antigravity - Flash (사용량 확인 지연)');
+  expect(formatModelPresetLabel({ ...preset, usage_warning: true })).toBe('Gemini - 3.8 Flash (사용량 확인 지연)');
   const exhausted = { ...preset, reason: 'quota_exhausted', reason_label: '7일 사용량 제한' };
-  const unavailable = { ...preset, id: 'gemini-4-argon', label: 'Antigravity - Argon', available: false, reason: 'auth_not_configured', reason_label: '인증 미설정' };
+  const unavailable = { ...preset, id: 'gemini-4-argon', label: 'Gemini - 4 Argon', available: false, reason: 'auth_not_configured', reason_label: '인증 미설정' };
   const sheet = buildModelPresetActionSheet([exhausted, unavailable]);
-  expect(sheet.options[1]).toBe('Antigravity - Flash');
-  expect(sheet.options[2]).toBe('Antigravity - Argon (인증 미설정)');
+  expect(sheet.options[1]).toBe('Gemini - 3.8 Flash');
+  expect(sheet.options[2]).toBe('Gemini - 4 Argon (인증 미설정)');
   expect(sheet.destructiveButtonIndex).toEqual([1]);
   expect(sheet.disabledButtonIndices).toEqual([2]);
   expect(resolveModelPresetActionSheetSelection(1, [exhausted, unavailable], sheet.cancelButtonIndex)).toEqual({ cancelled: false, modelPresetId: 'gemini-3.8-flash' });
