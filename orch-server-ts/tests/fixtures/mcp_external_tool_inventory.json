@@ -2934,7 +2934,8 @@
               "enum": [
                 "claude",
                 "codex",
-                "openai-agents"
+                "openai-agents",
+                "antigravity"
               ],
               "type": "string"
             },
