@@ -34,7 +34,7 @@ function node(
     providers: {
       claude: null,
       codex: null,
-      gemini: null,
+      gemini: null, antigravity: null,
       ...providers,
     },
   };
@@ -162,4 +162,11 @@ describe("usage summary projection", () => {
     expect(formatUsageUpdatedLabel(null, false)).toBe("갱신 대기 중");
     expect(formatUsageUpdatedLabel("invalid", false)).toBe("갱신 대기 중");
   });
+});
+
+it("keeps PAS gauges limited to Claude, Fable and Codex with Antigravity data present", () => {
+  const providers = { ...emptyProvider, weeklyRemainingPercent: 99, weeklyResetAt: 1792500000 };
+  expect(weeklyUsageGauges(node("agy", { antigravity: providers }))).toEqual([]);
+  const original = node("all", { claude: providers, codex: providers });
+  expect(weeklyUsageGauges(node("all", { ...original.providers, antigravity: providers }))).toEqual(weeklyUsageGauges(original));
 });

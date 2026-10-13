@@ -27,3 +27,5 @@ describe("resolveBackendStyle", () => {
     expect(BACKEND_STYLE.codex.className).not.toBe("");
   });
 });
+
+it("labels Antigravity using the existing uncolored badge", () => { expect(resolveBackendStyle("antigravity")).toEqual({ label: "Antigravity", className: "" }); });

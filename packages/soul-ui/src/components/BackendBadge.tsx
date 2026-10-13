@@ -12,6 +12,7 @@ export interface BackendStyle {
 }
 
 export const BACKEND_STYLE: Record<string, BackendStyle> = {
+  antigravity: { label: "Antigravity", className: "" },
   claude: {
     label: "Claude",
     className: "bg-blue-500/10 text-blue-700 border-blue-500/30 dark:text-blue-300",

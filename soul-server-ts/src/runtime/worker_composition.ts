@@ -1,3 +1,4 @@
+import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
@@ -88,7 +89,15 @@ export async function composeWorkerRuntime(
     { store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH) },
     logger,
   );
-  const providerUsage = new ProviderUsageService({ claudeAuth, modelCatalog, logger });
+  const providerUsage = new ProviderUsageService({
+    claudeAuth, modelCatalog, logger,
+    antigravity: {
+      cliPath: antigravityCliPath?.path,
+      environment: antigravityEnvironment(process.env),
+      // Required by the existing process-runner startup configuration.
+      stateDirectory: env.SOUL_RUNNER_STATE_DIR!,
+    },
+  });
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
     logger.error({ err: error }, "Durable event outbox pump failed");

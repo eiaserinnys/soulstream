@@ -134,7 +134,7 @@ export interface NodeRegister {
     /**
      * orch 사용량 오버레이용 내부 조인 키. API-key endpoint preset은 null.
      */
-    usage_provider: "claude" | "codex" | null;
+    usage_provider: "claude" | "codex" | "antigravity" | null;
     /**
      * 모델 범위 쿼터 조인용 내부 식별자.
      */

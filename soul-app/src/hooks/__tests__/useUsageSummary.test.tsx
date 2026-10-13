@@ -20,7 +20,7 @@ const usage: UsageSummarySnapshot = {
         shortRemainingPercent: null, shortResetAt: null, quotas: [],
       },
       codex: null,
-      gemini: null,
+      gemini: null, antigravity: null,
     },
   }],
 };

@@ -393,3 +393,11 @@ describe("Claude auth route harness", () => {
     await upstreamDenied.app.close();
   });
 });
+
+it("accepts Antigravity provider usage through the existing REST route", async () => {
+  const { app, sent } = createClaudeAuthHarness();
+  const response = await app.inject({ method: "GET", url: "/api/nodes/fake-node/provider-usage/antigravity" });
+  expect(response.statusCode).toBe(200);
+  expect(sent).toContainEqual(expect.objectContaining({ type: "provider_usage_get", provider: "antigravity" }));
+  await app.close();
+});

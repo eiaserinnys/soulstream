@@ -15,7 +15,7 @@ const node: UsageSummaryNode = {
   fetchedAt: "2026-10-13T08:00:00.000Z",
   stale: false,
   staleSince: null,
-  providers: { claude: null, codex: null, gemini: null },
+  providers: { claude: null, codex: null, gemini: null, antigravity: null },
 };
 const gauges: UsageSummaryGauge[] = [
   { id: "claude", label: "Claude", remainingPercent: 73, resetAt: evaluatedAtMs / 1000 + 4 * 24 * 60 * 60 + 2 * 60 * 60 },

@@ -7,7 +7,7 @@ interface Props {
   nodeId: string;
 }
 
-type ProviderName = "claude" | "codex" | "gemini";
+type ProviderName = "claude" | "codex" | "gemini" | "antigravity";
 
 type ProviderQuota = {
   id: string;
@@ -41,6 +41,7 @@ const PROVIDER_LABELS: Record<ProviderName, string> = {
   claude: "Claude Code",
   codex: "Codex",
   gemini: "Gemini",
+  antigravity: "Antigravity",
 };
 
 function formatResetsAt(epochSeconds: number | null): string | null {

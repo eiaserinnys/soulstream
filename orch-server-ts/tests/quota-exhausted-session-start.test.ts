@@ -22,7 +22,7 @@ function harness(reason: "quota" | "env" | "auth" = "quota") {
   let now = new Date("2026-10-12T03:00:00.000Z");
   const summary: UsageSummarySnapshot = { generatedAt: now.toISOString(), collectedAt: null,
     nodes: [{ nodeId: "quota-node", fetchedAt: null, stale: false, staleSince: null,
-      providers: { claude: null, gemini: null, codex: {
+      providers: { claude: null, gemini: null, antigravity: null, codex: {
         status: reason === "auth" ? "not_configured" : "auto",
         weeklyRemainingPercent: 0, weeklyResetAt: null, shortRemainingPercent: 0, shortResetAt: null,
         quotas: [{ id: "codex:weekly", label: "7일", window: "7d", model: null,

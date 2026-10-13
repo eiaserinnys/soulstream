@@ -110,7 +110,7 @@ function harness(state = durableState(), options: {
     resolveTarget: () => ({ nodeId: "node", agentId: "worker", modelPreset: "worker-preset", available: true, reason: null }),
     selectOrchestrator: async candidates => {
       const provider = { status: "auto" as const, source: "claude-api", sourceKind: "remote" as const, observedAt: state.quotaObservedAt, weeklyRemainingPercent: state.quotaRemaining, weeklyResetAt: null, shortRemainingPercent: state.quotaRemaining, shortResetAt: null, quotas: [{ id: "claude:5h", label: "5시간", window: "5h", model: null, remainingPercent: state.quotaRemaining, resetAt: null, purpose: "execution" as const }] };
-      const snapshot = { generatedAt: state.quotaObservedAt, collectedAt: state.quotaObservedAt, nodes: [{ nodeId: "node", fetchedAt: state.quotaObservedAt, stale: false, staleSince: null, providers: { claude: provider, codex: null, gemini: null } }] };
+      const snapshot = { generatedAt: state.quotaObservedAt, collectedAt: state.quotaObservedAt, nodes: [{ nodeId: "node", fetchedAt: state.quotaObservedAt, stale: false, staleSince: null, providers: { claude: provider, codex: null, gemini: null, antigravity: null } }] };
       for (const candidate of candidates) {
         const usage = strictOrchestrationUsage(candidate.nodeId, { usage_provider: "claude", usage_model_id: "opus" }, snapshot, new Date(Date.parse("2026-10-01T12:00:00Z") + state.now), candidate.minimumRemainingPercent);
         if (usage.available) return { candidate, reason: null, instructionsRevision: state.instructionsRevision };

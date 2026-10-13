@@ -108,7 +108,7 @@ type CallbackQuery = {
   state?: string;
 };
 
-const PROVIDERS = new Set(["claude", "codex", "gemini"]);
+const PROVIDERS = new Set(["claude", "codex", "gemini", "antigravity"]);
 
 export const nodeClaudeAuthRouteAuthRequirements = {
   "GET /api/nodes/:node_id/claude-auth/start": true,
@@ -323,7 +323,7 @@ export function registerNodeClaudeAuthRoutes(
     async (request, reply) => {
       const params = request.params;
       if (!PROVIDERS.has(params.provider)) {
-        return detail(reply, 400, "provider must be one of: claude, codex, gemini");
+        return detail(reply, 400, "provider must be one of: claude, codex, gemini, antigravity");
       }
       return sendDataCommand(reply, options, params.node_id, {
         type: "provider_usage_get",

@@ -157,3 +157,5 @@ describe('resolveSessionCardCaller', () => {
     });
   });
 });
+
+test('labels Antigravity and preserves the preset label priority', () => { expect(resolveSessionModelLabel({ backend: 'antigravity' })).toBe('Antigravity'); expect(resolveSessionModelLabel({ backend: 'antigravity', modelLabel: 'Argon' })).toBe('Argon'); });

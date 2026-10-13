@@ -12,6 +12,7 @@ const PROVIDER_LABELS: Record<ProviderName, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   gemini: 'Gemini',
+  antigravity: 'Antigravity',
 };
 
 export function formatResetsAt(epochSeconds: number | null): string | null {

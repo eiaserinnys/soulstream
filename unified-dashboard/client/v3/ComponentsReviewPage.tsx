@@ -147,7 +147,7 @@ export function ComponentsReviewPage() {
               </Sample>
               <Sample name="RichSessionRow / RunRowFrame" state="운영 패널 폭 · 소속 · 긴 제목과 본문 · 오른쪽 상태와 시간">
                 <div className="v3-run-list" style={{ width: "100%", maxWidth: V3_SESSION_PANEL_DEFAULT_WIDTH_PX }} data-testid="session-row-operating-sample">
-                  <RichSessionRow session={{ ...reviewSession, displayName: reviewTitle }} affiliation={reviewTitle} preview={reviewTitle} onOpen={() => open("운영 폭 세션")}/>
+                  <RichSessionRow session={{ ...reviewSession, displayName: reviewTitle, backend: "antigravity", modelLabel: undefined }} affiliation={reviewTitle} preview={reviewTitle} onOpen={() => open("운영 폭 세션")}/>
                 </div>
               </Sample>
               <Sample name="CardRowView / RunRowFrame" state="기본 · 여러 항목 · 긴 한국어 제목">

@@ -162,7 +162,7 @@ describe("UsageSummaryService", () => {
         fetchedAt: null,
         stale: true,
         staleSince: "2026-07-20T10:00:00.000Z",
-        providers: { claude: null, codex: null, gemini: null },
+        providers: { claude: null, codex: null, gemini: null, antigravity: null },
       },
     ]);
   });
@@ -203,6 +203,8 @@ describe("UsageSummaryService", () => {
         const usedPercentByQuery: Readonly<Record<string, number>> = {
           "node-a:claude": 40,
           "node-b:gemini": 50,
+          "node-a:antigravity": 0,
+          "node-b:antigravity": 0,
         };
         const usedPercent = usedPercentByQuery[`${node.nodeId}:${provider}`];
         if (usedPercent === undefined) throw new Error("unexpected provider query");
@@ -223,7 +225,7 @@ describe("UsageSummaryService", () => {
 
     await service.collectOnce();
 
-    expect(registry.createCommand).toHaveBeenCalledTimes(3);
+    expect(registry.createCommand).toHaveBeenCalledTimes(5);
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-c",
       { type: "provider_usage_get" },
@@ -286,7 +288,7 @@ describe("UsageSummaryService", () => {
 
     await service.collectOnce();
 
-    expect(registry.createCommand).toHaveBeenCalledTimes(1);
+    expect(registry.createCommand).toHaveBeenCalledTimes(2);
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-z",
       { type: "provider_usage_get" },
@@ -420,3 +422,14 @@ function limits(
     quotas,
   };
 }
+
+it("projects Antigravity and fills only its absence in older snapshots", async () => {
+  let response: unknown = successResponse(16);
+  const service = new UsageSummaryService({ registry: fakeRegistry(["node-a"]), bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [] });
+  await service.collectOnce();
+  expect(service.getSummary().nodes[0]?.providers.antigravity).toMatchObject({ status: "not_configured", quotas: [] });
+  response = { ...successResponse(16), data: { providers: { ...successResponse(16).data.providers, antigravity: limits(10, 20, [{ id: "antigravity:gemini:weekly", label: "Gemini Models", window: "7d", model: null, remainingPercent: 90, resetAt: 1_753_100_000 }]) } } };
+  await service.collectOnce();
+  expect(service.getSummary().nodes[0]?.providers.antigravity).toMatchObject({ status: "auto", weeklyRemainingPercent: 90, shortRemainingPercent: 80, quotas: [{ window: "7d", model: null }] });
+  expect(service.getSummary().nodes[0]?.stale).toBe(false);
+});
