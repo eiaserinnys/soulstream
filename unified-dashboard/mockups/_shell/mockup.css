@@ -1,0 +1,8 @@
+/* 운영 진입점(client/main.tsx)과 같은 순서로 같은 CSS를 불러온다. 값을 새로 적지 않는다. */
+@import "../../client/globals.css";
+@import "../../client/v3/v3-visual-system.css";
+
+/* 운영 빌드는 unified-dashboard 전체를 훑어 Tailwind 유틸리티를 만든다.
+   시안 빌드의 root는 mockups/<이름>이므로 같은 범위를 명시한다. */
+@source "../../client";
+@source "..";
