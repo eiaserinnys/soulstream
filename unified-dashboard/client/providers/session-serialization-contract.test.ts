@@ -42,7 +42,7 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
     const result = await new OrchestratorSessionProvider().fetchSessions();
 
     expect(jsonShape(result.sessions[0])).toEqual(
-      {...fixture.expectedUnifiedDashboardSession,cardId:null},
+      {...fixture.expectedUnifiedDashboardSession,cardId:null,persistentReport:fixture.expectedOrchResponse.persistentReport},
     );
     expect(result).toMatchObject({ total: 1, hasMore: false });
   });

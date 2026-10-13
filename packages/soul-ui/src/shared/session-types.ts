@@ -7,6 +7,8 @@
 
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type { SessionStatus } from "@soulstream/wire-schema";
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
+export type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 
 export type { SessionStatus } from "@soulstream/wire-schema";
 
@@ -70,6 +72,7 @@ export interface UserProfile {
 
 /** 세션 요약 정보 (목록 조회용) */
 export interface SessionSummary extends AgentProfile, UserProfile {
+  persistentReport?: PersistentReportEntry[];
   /** 세션의 유일한 키. JSONL 파일명. */
   agentSessionId: string;
   status: SessionStatus;

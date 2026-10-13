@@ -26,6 +26,8 @@ import type { LiquidGlassSettings } from "../lib/glass-settings";
 import type { ChatFontSize } from "../lib/chat-typography";
 import type { ChatFocusTarget } from "../shared/search-focus";
 import type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";
+import type { PersistentReportEntry } from '../shared/session-types';
+import type { ReportSendContext } from '../shared/persistent-report';
 
 export interface NewSessionDefaults {
   folderId?: string | null;
@@ -43,7 +45,7 @@ export interface PendingChatSendAttachment {
   path: string;
 }
 
-export interface PendingChatSend {
+export interface PendingChatSend extends ReportSendContext {
   id: string;
   status: "sending" | "failed";
   text: string;
@@ -85,6 +87,7 @@ export type { ChatFontSize, LiquidGlassSettings, WallpaperMode, WallpaperSetting
 // === State Interface ===
 
 export interface DashboardState {
+  persistentReports: Record<string, PersistentReportEntry[] | undefined>;
   /** Current PAS chat display settings, read by the dashboard for one active session. */
   persistentSessionDisplaySettings: {
     sessionId: string;
@@ -263,6 +266,7 @@ export interface FolderBoardLayoutSnapshot {
 // === Actions Interface ===
 
 export interface DashboardActions {
+  setPersistentReport: (sessionId: string, entries: PersistentReportEntry[], expected?: { current: PersistentReportEntry[] | undefined }) => void;
   setPersistentSessionDisplaySettings: (sessionId: string, settings: {
     show_generation_separator: boolean;
     show_jev_candidates: boolean;

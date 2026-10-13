@@ -43,6 +43,7 @@ import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSession
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
 import { ChatUiReviewSample } from './ChatUiReviewSample';
+import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -230,6 +231,7 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
+            <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 봤다"><PersistentReportReviewSample /></Sample>
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
