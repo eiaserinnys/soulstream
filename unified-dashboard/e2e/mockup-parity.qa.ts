@@ -337,49 +337,75 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
     }, null, 2));
 
     if (width === 1440 && theme === "light") {
-      const longTitle = "긴 제목 테스트 ".repeat(12);
+      const currentTitle = "실제 컴포넌트로 만든 시안 확인";
+      const longTitle = "긴 제목 테스트 ".repeat(12).slice(0, 98);
       const context = await browser.newContext();
       const longPage = await context.newPage();
       await longPage.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
-      await longPage.route("**/proof-343/index.html*", async route => {
-        const response = await route.fetch();
-        const html = await response.text();
-        const replaced = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${longTitle}</title>`);
-        if (replaced === html) throw new Error("mockup host HTML title was not replaced");
-        await route.fulfill({ response, body: replaced });
-      });
       await longPage.goto(`${HOST}?theme=light&w=fit&glass=css`);
-      await expect(longPage.locator(".mockup-host-title")).toHaveText(longTitle);
+      await expect(longPage.frameLocator(".mockup-host-frame").locator(".v3-components-page")).toBeVisible();
+      await longPage.evaluate(() => document.fonts.ready);
+      const readTitleLayout = () => longPage.locator(".mockup-host-header").evaluate(header => {
+        const title = header.querySelector<HTMLElement>(".mockup-host-title")!;
+        const parts = [title,
+          header.querySelector<HTMLElement>('[role="group"][aria-label="테마"]')!,
+          header.querySelector<HTMLElement>('[role="group"][aria-label="화면 폭"]')!,
+        ];
+        const positions = parts.map(element => {
+          const rect = element.getBoundingClientRect();
+          return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        });
+        const centers = positions.map(rect => Math.round(rect.y + rect.height / 2));
+        const lines = [...new Set(centers)].sort((a, b) => a - b);
+        const style = getComputedStyle(title);
+        return {
+          rows: lines.length, height: header.offsetHeight,
+          titleClientWidth: title.clientWidth, titleScrollWidth: title.scrollWidth,
+          titleTruncated: title.scrollWidth > title.clientWidth,
+          titleLine: lines.indexOf(centers[0]) + 1,
+          themeLine: lines.indexOf(centers[1]) + 1,
+          widthLine: lines.indexOf(centers[2]) + 1,
+          positions,
+          titleStyle: { overflow: style.overflow, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace },
+          horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
       const titleLayouts = [];
-      for (const titleWidth of [390, 820, 1440]) {
+      for (const titleWidth of [320, 360, 390, 412, 430, 480, 540, 572, 600, 820, 1440]) {
         await longPage.setViewportSize({ width: titleWidth, height: 1000 });
-        await longPage.waitForTimeout(150);
-        const metrics = await longPage.locator(".mockup-host-header").evaluate(header => {
-          const title = header.querySelector<HTMLElement>(".mockup-host-title");
-          const themeGroup = header.querySelector<HTMLElement>('[role="group"][aria-label="테마"]');
-          const widthGroup = header.querySelector<HTMLElement>('[role="group"][aria-label="화면 폭"]');
-          if (!title || !themeGroup || !widthGroup) throw new Error("mockup host header parts are missing");
-          const centers = [title, themeGroup, widthGroup].map(element => {
-            const rect = element.getBoundingClientRect();
-            return Math.round(rect.top + rect.height / 2);
-          });
-          return {
-            rows: new Set(centers).size,
-            height: header.offsetHeight,
-            titleClientWidth: title.clientWidth,
-            titleScrollWidth: title.scrollWidth,
-            titleTruncated: title.scrollWidth > title.clientWidth,
-          };
-        });
-        expect(metrics.rows).toBe(titleWidth === 390 ? 2 : 1);
-        expect(metrics.titleTruncated).toBe(true);
-        titleLayouts.push({ width: titleWidth, ...metrics });
-        await longPage.locator(".mockup-host-header").screenshot({
-          path: path.join(output, `host-title-${titleWidth}.png`),
-          animations: "disabled",
-        });
+        const pair = [];
+        for (const [name, title] of [["current", currentTitle], ["long", longTitle]] as const) {
+          await longPage.evaluate(value => { document.title = value; }, title);
+          // document.title은 상태가 아니므로 테마를 바꿔 실제 host를 다시 그린다.
+          await longPage.getByRole("button", { name: name === "current" ? "어둡게" : "밝게" }).click();
+          await expect(longPage.locator(".mockup-host-title")).toHaveText(title);
+          const metrics = await readTitleLayout();
+          expect(metrics.horizontalOverflow).toBe(false);
+          if (titleWidth >= 360) expect(metrics.titleClientWidth).toBeGreaterThanOrEqual(160);
+          expect(metrics.titleStyle).toEqual({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+          if (name === "long") expect(metrics.titleTruncated).toBe(true);
+          pair.push(metrics);
+          titleLayouts.push({ width: titleWidth, title: name, titleLength: title.length, ...metrics });
+          if ((name === "current" && [412, 430, 480, 540].includes(titleWidth))
+            || (name === "long" && [430, 820].includes(titleWidth))) {
+            await longPage.screenshot({
+              path: path.join(output, `host-title-${name}-${titleWidth}.png`),
+              animations: "disabled",
+            });
+          }
+        }
+        expect(pair[1].rows).toBe(pair[0].rows);
+        expect(pair[1].height).toBe(pair[0].height);
+        expect(pair[1].positions).toEqual(pair[0].positions);
       }
-      writeFileSync(path.join(output, "host-long-title-layout.json"), JSON.stringify({ title: longTitle, layouts: titleLayouts }, null, 2));
+      writeFileSync(path.join(output, "host-title-widths.json"), JSON.stringify({ currentTitle, longTitle, layouts: titleLayouts }, null, 2));
+      // 이전 결함을 주입하면 같은 폭 검사가 실제 렌더에서 실패하는지 확인한다.
+      await longPage.setViewportSize({ width: 412, height: 1000 });
+      await longPage.locator(".mockup-host-title").evaluate(element => { (element as HTMLElement).style.minWidth = "0"; });
+      const broken = await readTitleLayout();
+      expect(broken.titleClientWidth).toBeLessThan(160);
+      expect(() => expect(broken.titleClientWidth).toBeGreaterThanOrEqual(160)).toThrow();
+      writeFileSync(path.join(output, "host-title-regression.json"), JSON.stringify(broken, null, 2));
       await context.close();
     }
   });

@@ -26,7 +26,7 @@ body {
 
 .mockup-host-title {
   flex: 1 1 0;
-  min-width: 0;
+  min-width: 10em;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
