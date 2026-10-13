@@ -106,9 +106,11 @@ it('routes report failures through the existing scoped feedback line', async () 
   expect(host.querySelector('p')?.textContent).toBe('지금은 입력창에 더할 수 없어.');
   await act(async () => operations!.notify('보고를 내리지 못했어.'));
   expect(host.querySelector('p')?.textContent).toBe('보고를 내리지 못했어.');
-  await click('set9');
+  await act(async () => operations!.clearFeedback('보고를 내리지 못했어.'));
   expect(host.querySelector('p')?.textContent).toBe('');
   expect(host.querySelector('p')?.dataset.open).toBe('true');
+  await act(async () => { operations!.notify('현재 값 복사됨'); operations!.clearFeedback('보고를 내리지 못했어.'); });
+  expect(host.querySelector('p')?.textContent).toBe('현재 값 복사됨');
   const old = operations!;
   await render('s2'); await render('s1');
   await act(async () => old.notify('보고를 내리지 못했어.'));

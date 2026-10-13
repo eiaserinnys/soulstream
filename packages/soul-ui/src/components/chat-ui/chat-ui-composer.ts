@@ -7,5 +7,5 @@ export interface ChatUiComposerHandle {
 }
 
 export type RegisterGeneratedTextActions = (handle: ChatUiComposerHandle | null) => void;
-export type ChatUiOperationsHandle = Pick<ChatUiComposerHandle, 'appendGeneratedText'> & { notify: (text: string) => void };
+export type ChatUiOperationsHandle = Pick<ChatUiComposerHandle, 'appendGeneratedText'> & { notify: (text: string) => void; clearFeedback: (text: string) => void };
 export type RegisterChatUiOperations = (handle: ChatUiOperationsHandle | null) => void;

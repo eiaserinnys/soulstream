@@ -7,10 +7,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
-type Props = { sessionId: string; appendGeneratedText: ChatUiComposerHandle['appendGeneratedText']; focusInput: () => void; dismissReport: (key: string) => Promise<void>; pendingDismiss?: ReadonlySet<string> };
+type Props = { sessionId: string; appendGeneratedText: ChatUiComposerHandle['appendGeneratedText']; focusInput: () => void; dismissReport: (key: string) => Promise<void> };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
-export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInput, dismissReport, pendingDismiss }: Props) {
+export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInput, dismissReport }: Props) {
   const report = usePersistentReport()!;
   const { entries, visibleKey } = report;
   const index = Math.max(0, entries.findIndex(entry => entry.key === visibleKey));
@@ -88,7 +88,7 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
             <p className="pas-report-todo" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}><ReportAction text={entry.action} /></p>
           </div>
           {(entry.kind === 'see' || entry.options.length > 0) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
-            {(entry.kind === 'see' ? ['봤다'] : entry.options).map(option => <Button key={option} variant="outline" aria-busy={entry.kind === 'see' && pendingDismiss?.has(entry.key) || undefined} onClick={() => {
+            {(entry.kind === 'see' ? ['봤다'] : entry.options).map(option => <Button key={option} variant="outline" onClick={() => {
               if (entry.kind === 'see') {
                 void dismissReport(entry.key);
               } else {

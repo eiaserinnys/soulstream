@@ -14,7 +14,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
   return {
     ChatView: () => React.createElement("div", { "data-testid": "chat-view" }),
-    useDashboardStore: Object.assign((selector: (state: { setPersistentSessionDisplaySettings: typeof setDisplaySettings }) => unknown) => selector({ setPersistentSessionDisplaySettings: setDisplaySettings }), {
+    useDashboardStore: Object.assign((selector: (state: { setPersistentSessionDisplaySettings: typeof setDisplaySettings }) => unknown) => selector({ setPersistentSessionDisplaySettings: setDisplaySettings, persistentReports: {} } as any), {
       getState: () => ({ persistentReports: {}, setPersistentReport: vi.fn() }),
     }),
   };

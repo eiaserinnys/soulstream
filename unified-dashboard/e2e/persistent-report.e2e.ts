@@ -19,11 +19,13 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   const resource = () => ({ session_id: chatUiSession, display_name: '보고 검수', node_id: 'eiaserinnys', folder_id: 'rb-alpha', agent_id: 'roselin_codex', agent_name: '로젤린', persistent: true, persistent_report: entries, settings, runtime: { current_model: { model_preset: null, reasoning_effort: null, model: 'codex' }, pending: null } });
   const deletes: string[] = [];
   let failDismiss = true;
+  const firstDismiss = gate(), secondDismiss = gate();
   await page.route('**/api/persistent-sessions**', async route => {
     const pathname = new URL(route.request().url()).pathname;
     if (route.request().method() === 'DELETE') {
       const key = pathname.split('/').pop()!; deletes.push(key);
-      if (failDismiss) { failDismiss = false; return route.fulfill({ status: 503, json: { detail: '검수 내리기 실패' } }); }
+      if (failDismiss) { failDismiss = false; await firstDismiss.promise; return route.fulfill({ status: 503, json: { detail: '검수 내리기 실패' } }); }
+      await secondDismiss.promise;
       entries = entries.filter(entry => entry.key !== key);
       return route.fulfill({ json: { ok: true, changed: true, entries: entries.map(({ key, title }) => ({ key, title })), persistent_report: entries } });
     }
@@ -59,6 +61,7 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   const current = () => deck.locator('[data-current="true"]');
   const editor = page.getByRole('textbox', { name: '메시지', exact: true });
   await expect(deck).toBeVisible(); await expect(editor).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
   await expect(deck.locator('.pas-report-count')).toHaveText('1 / 3');
   expect(await deck.locator('article[inert][aria-hidden="true"]').count()).toBe(2);
   await page.screenshot({ path: path.join(output, '1440-default.png') });
@@ -108,19 +111,87 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   await page.screenshot({ path: path.join(output, '1180-see.png') });
   await current().getByRole('button', { name: '봤다', exact: true }).focus();
   await current().getByRole('button', { name: '봤다', exact: true }).click();
+  await expect(deck.getByTestId('report-sheet-digest')).toHaveCount(0);
+  await expect(deck.locator('.pas-report-count')).toHaveText('2 / 2');
+  await expect(current().getByRole('heading')).toHaveText('마지막 보고');
+  await expect(current()).toBeFocused();
+  await page.screenshot({ path: path.join(output, '1180-dismiss-pending.png') });
+  firstDismiss.release();
   await expect(page.getByRole('status').filter({ hasText: '보고를 내리지 못했어.' })).toBeVisible();
+  await expect(deck.getByTestId('report-sheet-digest')).toHaveCount(1);
+  await expect(deck.locator('.pas-report-count')).toHaveText('3 / 3');
+  await deck.getByRole('button', { name: '앞 장', exact: true }).click();
   await expect(current().getByRole('heading')).toHaveText('다이제스트 세 편');
-  await expect(deck.locator('.pas-report-count')).toHaveText('2 / 3');
   await page.screenshot({ path: path.join(output, '1180-dismiss-failed.png') });
   await current().getByRole('button', { name: '봤다', exact: true }).click();
   await expect(current().getByRole('heading')).toHaveText('마지막 보고');
-  await expect(current()).toBeFocused(); expect(deletes).toEqual(['digest', 'digest']);
+  await expect(current()).toBeFocused();
+  secondDismiss.release();
+  await expect(page.getByRole('status').filter({ hasText: '보고를 내리지 못했어.' })).toHaveCount(0);
+  await expect(page.getByTestId('chat-input').locator('p[role=status]')).toHaveText('');
+  expect(deletes).toEqual(['digest', 'digest']);
   await current().focus(); publish([entries[1]]);
   await expect(deck.locator('.pas-report-nav')).toHaveCount(0);
   await page.screenshot({ path: path.join(output, '1180-one.png') });
   publish([]); await expect(deck).toHaveCount(0); await expect(editor).toBeFocused();
   await page.screenshot({ path: path.join(output, '1180-empty.png') });
+  const measurements: Record<string, unknown> = {};
+  const maximum = { ...reportReviewEntries[0], key: 'maximum', title: '소울스트림 첨부 보관과 채팅 미리보기 설계안', card_numbers: [245, 314, 270],
+    context: '첨부를 R2에 보관하고 채팅에서 미리 보게 하자 하신 일입니다. 저장 경로와 만료 규칙, 미리보기 크기 제한까지 설계를 마쳤고, 머지된 변경은 조건을 붙여 배포할 수 있습니다. 남은 것은 옛 첨부를 옮길 순서입니다.',
+    action: '셋 가운데 하나를 골라 주십시오. 지금 전부 옮기면 한 시간쯤 걸리고, 새 첨부부터 적용하면 곧바로 되며, 보류하시면 다음 주에 다시 여쭙겠습니다. 비교는 설계 문서에 적었습니다.',
+    options: ['지금 전부 옮겨서 적용', '새 첨부부터 바로 적용', '다음 주까지 결정 보류'] };
+  const single = { ...reportReviewEntries[0], key: 'x-refs', title: 'X 그림 두 장을 레퍼런스에', card_numbers: [334],
+    context: 'moodydarkroom의 X 글에서 그림 두 장을 수퍼포지션 시각 레퍼런스에 넣으라 하신 일입니다. 그 글에 사진이 넷이라 멈춰 있습니다.',
+    action: '번호 둘만 주십시오. 1 얼굴에 다색 광선, 2 거울 앞, 3 등에 빛나는 나비, 4 주황 배경' };
+  for (const width of [1440, 1180]) {
+    await page.setViewportSize({ width, height: 900 });
+    publish([reportReviewEntries[1], single]);
+    await track.focus(); await page.keyboard.press('ArrowLeft');
+    await editor.focus();
+    await expect(deck.locator('.pas-report-count')).toHaveText('1 / 2');
+    await waitForStableLayout(deck, ['.pas-report-sheet']);
+    const normalHeight = (await deck.boundingBox())!.height;
+    expect(normalHeight).toBe(236);
+    // Compare the approved original nav offset in the same frame/content.
+    const baselineStyle = await page.addStyleTag({ content: '.persistent-session-main > .pas-report { --pas-report-nav-right: var(--v3-space-4) !important; }' });
+    const before = await deck.screenshot({ animations: 'disabled' });
+    await baselineStyle.evaluate(node => node.remove());
+    const after = await deck.screenshot({ animations: 'disabled', path: path.join(output, `${width}-normal-final.png`) });
+    expect(after.equals(before)).toBe(true);
+    publish([maximum, single]);
+    await expect(current().getByRole('heading')).toHaveText(maximum.title);
+    await waitForStableLayout(deck, ['.pas-report-sheet']);
+    const maximumHeight = (await deck.boundingBox())!.height;
+    expect(maximumHeight).toBe(258);
+    await page.screenshot({ path: path.join(output, `${width}-maximum-final.png`) });
+    publish([single]);
+    await expect(deck.locator('.pas-report-nav')).toHaveCount(0);
+    await waitForStableLayout(deck, ['.pas-report-sheet']);
+    const singleHeight = (await deck.boundingBox())!.height;
+    expect(singleHeight).toBe(170);
+    await page.screenshot({ path: path.join(output, `${width}-single-final.png`) });
+    measurements[width] = { normalHeight, maximumHeight, singleHeight, originalNavPixelsEqual: true };
+  }
+  publish(reportReviewEntries);
+  await expect(deck.locator('.pas-report-count')).toHaveText('1 / 3');
+  await expect(current().getByRole('heading')).toHaveText(reportReviewEntries[0].title);
+  for (const width of [390, 600]) {
+    await page.setViewportSize({ width, height: 900 });
+    await waitForStableLayout(deck, ['.pas-report-nav']);
+    const next = deck.getByRole('button', { name: '다음 장', exact: true });
+    const task = page.getByRole('button', { name: '작업 목록', exact: true });
+    const nextBox = (await next.boundingBox())!, taskBox = (await task.boundingBox())!;
+    const hit = await next.evaluate(button => { const b = button.getBoundingClientRect(); return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('button') === button; });
+    expect(hit).toBe(true);
+    measurements[width] = { next: nextBox, task: taskBox, centerHitsNext: hit };
+    await page.screenshot({ path: path.join(output, `${width}-navigation-final.png`) });
+    await page.mouse.click(nextBox.x + nextBox.width / 2, nextBox.y + nextBox.height / 2);
+    await expect(current().getByRole('heading')).toHaveText(reportReviewEntries[1].title);
+    await expect(page.locator('.persistent-session-tasks')).toHaveCount(0);
+    await deck.getByRole('button', { name: '앞 장', exact: true }).click();
+    await expect(current().getByRole('heading')).toHaveText(reportReviewEntries[0].title);
+  }
   expect(fixture.errors).toEqual([]);
-  writeFileSync(path.join(output, 'metrics.json'), JSON.stringify({ geometry, mode, sends, deletes, errors: fixture.errors }, null, 2));
+  writeFileSync(path.join(output, 'metrics.json'), JSON.stringify({ geometry, mode, sends, deletes, measurements, errors: fixture.errors }, null, 2));
   for (const update of updates) update.gate.release();
 });

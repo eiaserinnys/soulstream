@@ -27,8 +27,8 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   const register = useCallback<RegisterGeneratedTextActions>(handle => { generated.current = handle; }, []);
   const append = useCallback<ChatUiComposerHandle['appendGeneratedText']>((id, text) => operations.current?.appendGeneratedText(id, text) ?? { ok: false, reason: 'unavailable' }, []);
   const focusInput = useCallback(() => generated.current?.focusInput?.(), []);
-  const getNotify = useCallback(() => operations.current?.notify, []);
-  const { dismiss, pending } = usePersistentReportDismiss(sessionId, getNotify, dismissReport);
+  const getFeedback = useCallback(() => operations.current ?? undefined, []);
+  const { dismiss, visibleEntries } = usePersistentReportDismiss(sessionId, getFeedback, dismissReport, entries);
   const setGlobalDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const setDisplaySettings = storeScope?.store.getState().setPersistentSessionDisplaySettings
     ?? setGlobalDisplaySettings;
@@ -47,8 +47,8 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
     return () => { active = false; };
   }, [loadDisplaySettings, sessionId, setDisplaySettings]);
   if (!showReport) return <ChatView {...props} storeScope={storeScope} />;
-  return <PersistentReportProvider sessionId={sessionId} entries={entries}>
-    <PersistentReportDeck sessionId={sessionId} appendGeneratedText={append} focusInput={focusInput} dismissReport={dismiss} pendingDismiss={pending} />
+  return <PersistentReportProvider sessionId={sessionId} entries={visibleEntries}>
+    <PersistentReportDeck sessionId={sessionId} appendGeneratedText={append} focusInput={focusInput} dismissReport={dismiss} />
     <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
   </PersistentReportProvider>;
 }
