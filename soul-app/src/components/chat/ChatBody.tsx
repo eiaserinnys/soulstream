@@ -40,13 +40,12 @@ import type { ChatInputComposerHandle } from './ChatInputComposer';
 import { useEnsureSessionCached } from '../../hooks/useEnsureSessionCached';
 import { ChatUiControllerProvider, type AppendGeneratedText } from '../chat-ui/ChatUiControllerProvider';
 import { ChatUiInputComposer } from '../chat-ui/ChatUiInputComposer';
-import { PersistentReportPager } from '../persistent/PersistentReportPager';
-import { usePersistentReport } from '../persistent/usePersistentReport';
-import type { PersistentReportEntry } from '../../api/types';
+import type { ReportReplyDraft, ReportSendContext } from '../../lib/persistent-report';
 
 interface Props {
-  showPersistentReport?: boolean;
-  persistentReportSnapshot?: PersistentReportEntry[];
+  reportView?: React.ReactNode;
+  inputComposerRef?: React.RefObject<ChatInputComposerHandle | null>;
+  getReportSendContext?: (text: string, reply: ReportReplyDraft | null) => ReportSendContext;
   /** 표시할 세션 ID. undefined면 빈 상태 패널을 그린다. */
   sessionId: string | undefined;
   /** 실제 화면에 표시되는 동안만 상세 REST/SSE를 연다. mount된 UI state는 보존한다. */
@@ -105,8 +104,7 @@ export function ChatBody({
   presentation = 'default',
   showSessionAuxiliary = true,
   onComposerLayout,
-  showPersistentReport = false,
-  persistentReportSnapshot,
+  reportView, inputComposerRef, getReportSendContext,
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -171,7 +169,8 @@ export function ChatBody({
   const detailedNetworkActive = composerActive && ownsSessionConnection;
   const ownsSessionConnectionRef = useRef(ownsSessionConnection);
   ownsSessionConnectionRef.current = ownsSessionConnection;
-  const composerRef = useRef<ChatInputComposerHandle>(null);
+  const localComposerRef = useRef<ChatInputComposerHandle>(null);
+  const composerRef = inputComposerRef ?? localComposerRef;
   const appendGeneratedText = useCallback<AppendGeneratedText>((targetSessionId, text, reportReply) =>
     composerRef.current?.appendGeneratedText(targetSessionId, text, reportReply) ?? { ok: false, reason: 'not_ready' }, []);
   const handleRetryPending = useCallback((eventId: string) => composerRef.current?.retryPending(eventId), []);
@@ -200,8 +199,6 @@ export function ChatBody({
     () => (serverUrl ? createApiClient(serverUrl, { authScope }) : null),
     [authScope, serverUrl]
   );
-  const report = usePersistentReport(sessionId, showPersistentReport, api,
-    persistentReportSnapshot ?? session?.persistentReport, pendingOptimistic);
   const { persistentDisplaySettings, turnUsageMode } = usePersistentChatDisplaySettings(
     api, detailedNetworkActive, sessionId, ownsSessionConnection,
   );
@@ -463,7 +460,7 @@ export function ChatBody({
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ChatUiControllerProvider sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
+      <ChatUiControllerProvider inherited={!!inputComposerRef} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
       {showSessionAuxiliary ? <SessionStoryPanel
         presentation={presentation}
         sessionId={sessionId}
@@ -478,9 +475,7 @@ export function ChatBody({
         </Text>
       ) : null}
 
-      {showPersistentReport ? <PersistentReportPager entries={report.entries} index={report.index} api={api}
-        onSelect={report.select} onDismiss={report.dismiss}
-        onFocusComposer={() => composerRef.current?.focusAccessibility()} /> : null}
+      {reportView}
       <ChatEventList
         flatListRef={flatListRef}
         items={reversedItems}
@@ -523,7 +518,7 @@ export function ChatBody({
         requestBottomFollow={requestBottomFollow}
         presentation={presentation}
         onComposerLayout={onComposerLayout}
-        getReportSendContext={showPersistentReport ? report.getSendContext : undefined}
+        getReportSendContext={getReportSendContext}
       />
       </ChatUiControllerProvider>
     </AppKeyboardAvoidingView>

@@ -41,6 +41,8 @@ import type { StoreApi } from 'zustand';
 import { StyleSheet, View } from 'react-native';
 import { renderHook } from '@testing-library/react-native';
 import { useChatStore } from '../../store/chatStore';
+import { useSessionStore } from '../../store/sessionStore';
+import { reportReviewEntries } from '../../component-review/persistent-report-fixtures';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useUsageSummary } from '../../hooks/useUsageSummary';
@@ -105,12 +107,27 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');
+  expect(body.props.reportView).toBeNull(); // No provisional band before composer/layout measurement.
   act(() => body.props.onComposerLayout(
     { x: 0, y: 644, width: 480, height: 76 },
     { x: 0, y: 20, width: 480, height: 56 },
   ));
   const before = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
   const line = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style);
+  act(() => useSessionStore.getState().applyPersistentReport('pas-1', reportReviewEntries));
+  const bubble = view.getByTestId('persistent-session-report-bubble-seat', { includeHiddenElements: true });
+  const character = view.getByTestId('persistent-session-character-seat');
+  // Native pointerEvents=none portrait cannot own the report's hit frame.
+  const hostParent = (node: typeof bubble) => {
+    let parent = node.parent;
+    while (parent && typeof parent.type !== 'string') parent = parent.parent;
+    return parent;
+  };
+  // Compare identity as a boolean: printing a React tree on failure is unbounded.
+  expect(hostParent(bubble) === hostParent(character)).toBe(true);
+  expect(character.props.pointerEvents).toBe('none');
+  expect(body.props.reportView).toBeNull();
+  expect(StyleSheet.flatten(bubble.props.style).width).toBe(318);
   expect(before.width).toBe(152);
   expect(line.top).toBe(795);
   expect(before.top + before.height).toBe(line.top + 1);

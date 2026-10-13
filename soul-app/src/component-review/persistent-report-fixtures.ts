@@ -54,7 +54,16 @@ export function createPersistentReportReviewApi(base: ApiClient, search: string)
   if (searchKey !== search) {
     searchKey = search;
     const params = new URLSearchParams(search);
-    entries = params.get('reports') === 'none' ? [] : params.get('reports') === 'one' ? [reportReviewEntries[2]] : [...reportReviewEntries];
+    const bubble: PersistentReportEntry[] = [
+      { ...reportReviewEntries[1], key: 'usage-report', title: 'PAS 사용량 버튼 시안', card_numbers: [201],
+        context: '오른쪽 아래 사용량 버튼 시안을 지시대로 고쳤습니다. 게이지 폭은 카드 끝에 맞췄고, 시안은 카드에 붙어 있습니다.',
+        action: '"응" 하시면 이 시안대로 구현합니다.' },
+      { ...reportReviewEntries[2], key: 'links', title: '작업 결과', card_numbers: [201, 270, 328] },
+    ];
+    const long = { ...bubble[0], key: 'long', title: '진행 방향 확인',
+      context: Array(8).fill('검토한 결과와 남은 선택을 함께 확인해 주세요.').join(' '),
+      action: '이 결과로 진행할 방향을 골라 주세요.', options: ['이 방향으로 진행', '다른 방향으로 진행', '일단 보류합니다'] };
+    entries = params.get('reports') === 'bubble' ? bubble : params.get('reports') === 'overflow' ? [long, ...bubble] : params.get('reports') === 'none' ? [] : params.get('reports') === 'one' ? [reportReviewEntries[2]] : [...reportReviewEntries];
   }
   const publish = (next: PersistentReportEntry[]) => {
     entries = next;
@@ -77,12 +86,14 @@ export function createPersistentReportReviewApi(base: ApiClient, search: string)
     listCards: async (id, query) => {
       const result = await base.listCards(id, query);
       const example = result.cards[0];
-      return { cards: example ? [...result.cards, { ...example, number: 270 }, { ...example, number: 328 }] : [] };
+      return { cards: example ? [...result.cards, { ...example, number: 201 }, { ...example, number: 270 }, { ...example, number: 328 }] : [] };
     },
     intervene: async (_id, _text, _paths, context?: MessageContextItem[]) => {
       if (failNext) { failNext = false; throw Error('공개 예시: 전송 실패'); }
       const reply = pendingReportReply(context);
-      if (reply) publish(entries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
+      // Receipt-only samples retain the publication while the real send hook
+      // renders its accepted reply. No server replacement or timer is simulated.
+      if (reply && new URLSearchParams(search).get('answer') !== 'receipt') publish(entries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
         ? { ...entry, state: 'answered', answer: reply.option, updated_at: '2026-10-13T00:01:00Z' } : entry));
       return { delivered: true };
     },

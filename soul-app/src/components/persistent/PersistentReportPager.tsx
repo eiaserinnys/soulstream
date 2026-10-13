@@ -1,23 +1,36 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { useDeviceType, useTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
-import { chatAuxiliarySurface } from '../chat/chatAuxiliarySurface';
 import { useChatUiActions } from '../chat-ui/ChatUiControllerProvider';
 import { PersistentReportSheet, reportTag, reportWebProps } from './PersistentReportSheet';
 import { reportStyles } from './persistentReportStyles';
+import type { usePersistentReportSend } from './usePersistentReportSend';
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer }: {
+function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps<typeof LiquidGlassButton> & { interaction(pressed: boolean): void }) {
+  const held = useRef(false);
+  const release = () => { if (held.current) { held.current = false; interaction(false); } };
+  useEffect(() => () => release(), [interaction]);
+  useEffect(() => { if (props.disabled) release(); }, [props.disabled]);
+  return <View testID={testID} onTouchStart={() => { if (!props.disabled) { held.current = true; interaction(true); } }}
+    onTouchEnd={release} onTouchCancel={release}>
+    <LiquidGlassButton {...props} />
+  </View>;
+}
+
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onReady, sessionId }: {
   entries: PersistentReportEntry[]; index: number; api: ApiClient | null;
   onSelect(index: number): void; onDismiss(key: string): Promise<boolean | void>;
   onFocusComposer(): void;
+  send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
+  onReady?(ready: boolean): void; sessionId?: string;
 }) {
   const t = useTokens();
-  const { sessionId, appendGeneratedText, setNotice } = useChatUiActions();
+  const { setNotice } = useChatUiActions();
   const phone = useDeviceType() === 'phone';
   const bleed = phone ? t.foundation.pageInset : t.uiSpacing.lg;
   const styles = useMemo(() => reportStyles(t, bleed, !phone), [t, bleed, phone]);
@@ -28,11 +41,40 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboard(false));
     return () => { show.remove(); hide.remove(); };
   }, [phone]);
-  const compact = phone && keyboard;
+  const compact = phone && keyboard && !bubble;
+  const [width, setWidth] = useState(0);
+  const measuredHeights = useRef(new Map<string, number>());
+  const readyHeights = useRef(new Set<string>());
+  const openHeights = useRef(new Map<string, number>());
+  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers]);
+  const pressing = useRef(false);
+  const [height, setHeight] = useState(0);
+  const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
+  const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
+  const commitHeight = () => {
+    const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
+    if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
+      || (presentedLayout === layoutKey && !allMeasured)) return;
+    const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
+      entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
+    setHeight(saved => saved === next ? saved : next);
+    if (allMeasured && next > 0) setPresentedLayout(layoutKey);
+  };
+  const latestMeasurement = useRef({ entries, commitHeight, measureKey });
+  latestMeasurement.current = { entries, commitHeight, measureKey };
+  useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
+  const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
+  // Publication edits wait for height without hiding an already visible deck.
+  // A new session/layout still measures before its first presentation.
+  const ready = presentedLayout === layoutKey;
+  useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
+  const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
+  const latestInteraction = useRef(interaction);
+  latestInteraction.current = interaction;
+  const navInteraction = useCallback((pressed: boolean) => latestInteraction.current(pressed), []);
   const scroll = useRef<ScrollView>(null);
   const deck = useRef<View>(null);
   const titleNodes = useRef<Record<string, Text | null>>({});
-  const [width, setWidth] = useState(0);
   const expectedScroll = useRef<number | null>(null);
   const scrollOffset = useRef(0);
   const moveFocus = useRef(false);
@@ -83,10 +125,15 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   };
   if (!count) return null;
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
-    style={[chatAuxiliarySurface(t, 'manuscript'), styles.deck]} {...reportWebProps({ role: 'region' })}
+    pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
+    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track}
+      keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={bubble ? { height: bubbleHeight, flexShrink: 0,
+        // The surface's existing horizontal borders belong to its height;
+        // let the viewport span them without adding two more pixels.
+        marginVertical: -StyleSheet.hairlineWidth } : height ? { height } : undefined}
+      onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
       onLayout={event => setWidth(event.nativeEvent.layout.width)} onContentSizeChange={align}
       onScroll={event => {
         if (!width) return;
@@ -99,26 +146,44 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         const next = Math.max(0, Math.min(count - 1, Math.round(x / width)));
         if (next !== index) { if (focusInside()) moveFocus.current = true; onSelect(next); }
       }} scrollEventThrottle={16}>
-      {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={`${entry.key}-${width}`} entry={entry}
+      {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={measureKey(entry)} entry={entry}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
+        bubble={bubble} bubbleHeight={bubbleHeight} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
+        onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
+        onReady={() => {
+          const id = measureKey(entry), latest = latestMeasurement.current;
+          if (!latest.entries.some(saved => latest.measureKey(saved) === id)) return;
+          readyHeights.current.add(id); latest.commitHeight();
+        }}
+        onHeight={height => {
+          const id = measureKey(entry), latest = latestMeasurement.current;
+          const currentEntry = latest.entries.find(saved => latest.measureKey(saved) === id);
+          if (!currentEntry) return; // A removed/replaced sheet cannot restore an old height.
+          measuredHeights.current.set(id, height);
+          if (currentEntry.state === 'open') openHeights.current.set(id, height);
+          latest.commitHeight();
+        }}
         titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
         onDismiss={() => {
           moveFocus.current = Platform.OS !== 'web' || focusInside();
           void onDismiss(entry.key).then(ok => { if (ok === false) setNotice('보고를 내리지 못했어.'); });
         }}
         onOption={option => {
-          const text = `${entry.title}: ${option}`;
-          appendGeneratedText(sessionId, text, { key: entry.key, option, text });
+          void send?.sendOption(entry, option);
         }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />) : null}
     </ScrollView>
-    {count > 1 && !phone ? <View testID="report-nav" style={styles.nav}>
-      <LiquidGlassButton iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
+    {count > 1 && !compact && !phone ? <View testID="report-nav" style={styles.nav}>
+      <ReportNavButton interaction={navInteraction} testID="report-prev-touch" iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
         <Ionicons name="chevron-back" size={t.iconSize.navigation} color={index === 0 ? t.colors.textPlaceholder : t.colors.textPrimary} />
-      </LiquidGlassButton>
-      <Text testID="report-count" aria-live="polite" style={styles.count}>{page}</Text>
-      <LiquidGlassButton iconOnly variant="plain" size="compact" accessibilityLabel="다음 장" disabled={index === count - 1} onPress={() => step(1)}>
+      </ReportNavButton>
+      <Text testID={phone ? 'report-page' : 'report-count'} aria-live="polite" style={styles.count}
+        accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
+        accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}
+        accessibilityActions={[{ name: 'increment', label: '다음 장' }, { name: 'decrement', label: '앞 장' }]}
+        onAccessibilityAction={event => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>{page}</Text>
+      <ReportNavButton interaction={navInteraction} testID="report-next-touch" iconOnly variant="plain" size="compact" accessibilityLabel="다음 장" disabled={index === count - 1} onPress={() => step(1)}>
         <Ionicons name="chevron-forward" size={t.iconSize.navigation} color={index === count - 1 ? t.colors.textPlaceholder : t.colors.textPrimary} />
-      </LiquidGlassButton>
+      </ReportNavButton>
     </View> : null}
   </View>;
 }

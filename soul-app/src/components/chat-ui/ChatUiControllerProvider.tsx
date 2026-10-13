@@ -11,7 +11,7 @@ export type AppendGeneratedText = (sessionId: string, text: string, reportReply?
   | { ok: false; reason: 'wrong_session' | 'not_ready' | 'sending' | 'disabled' | 'too_long' };
 type Entry = { state: ChatUiState; expanded: Record<string, boolean>; resetEpoch: number };
 type NumberEditor = { publicationKey: string; field: string; commit(): void; sync(value: number): void };
-type Props = { sessionId: string; appendGeneratedText: AppendGeneratedText; children: React.ReactNode };
+type Props = { inherited?: boolean; sessionId: string; appendGeneratedText: AppendGeneratedText; children: React.ReactNode };
 type ContextValue = {
   sessionId: string;
   entries: Map<string, Entry>;
@@ -27,7 +27,7 @@ type ContextValue = {
 };
 const Context = createContext<ContextValue | null>(null);
 export function ChatUiControllerProvider(props: Props) {
-  return <SessionController {...props} />;
+  return props.inherited ? <>{props.children}</> : <SessionController {...props} />;
 }
 function createSessionState(sessionId: string) {
   return { sessionId, entries: new Map<string, Entry>(), numberEditors: new Map<string, NumberEditor>(),

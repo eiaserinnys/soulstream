@@ -43,6 +43,8 @@ export interface PendingOptimisticEvent extends SessionEvent, ReportSendContext 
   failureReason?: string;
   /** 입력창을 비운 뒤에도 해당 전송의 사용 로그 결과를 연결한다. */
   usageFlowId?: string | null;
+  /** Local cancellation identity survives the ordinary failed-message retry path. */
+  reportCancellation?: { key: string; updated_at: string };
 }
 
 export type StreamingSlotKind = 'assistant' | 'thinking';

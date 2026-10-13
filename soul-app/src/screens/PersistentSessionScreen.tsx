@@ -7,6 +7,12 @@ import { calculatePersistentSessionLayout, type PersistentSessionRect } from '..
 import { nextUsageSummaryNodeId } from '../../../packages/soul-ui/src/lib/usage-summary';
 import { createApiClient } from '../api/client';
 import { ChatBody } from '../components/chat/ChatBody';
+import { ChatUiControllerProvider, useChatUiActions } from '../components/chat-ui/ChatUiControllerProvider';
+import type { ChatInputComposerHandle } from '../components/chat/ChatInputComposer';
+import { usePersistentReport } from '../components/persistent/usePersistentReport';
+import { usePersistentReportSend } from '../components/persistent/usePersistentReportSend';
+import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
+import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
@@ -21,6 +27,7 @@ import { decodeAuthJwt } from '../auth/jwt-payload';
 import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
+import { useSessionStore } from '../store/sessionStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 
@@ -31,7 +38,16 @@ export interface PersistentSessionScreenProps {
   onHome(): void;
 }
 
-export function PersistentSessionScreen({ active = true, chatActive = active, onOpenPhoneCard, onHome }: PersistentSessionScreenProps) {
+export function PersistentSessionScreen(props: PersistentSessionScreenProps) {
+  const sessionId = usePersistentSessionScene(state => state.session?.session_id) ?? '';
+  const inputComposerRef = React.useRef<ChatInputComposerHandle>(null);
+  const append = React.useCallback((id: string, text: string) => inputComposerRef.current?.appendGeneratedText(id, text)
+    ?? { ok: false as const, reason: 'not_ready' as const }, []);
+  return <ChatUiControllerProvider sessionId={sessionId} appendGeneratedText={append}>
+    <PersistentSessionContents {...props} inputComposerRef={inputComposerRef} />
+  </ChatUiControllerProvider>;
+}
+function PersistentSessionContents({ active = true, chatActive = active, onOpenPhoneCard, onHome, inputComposerRef }: PersistentSessionScreenProps & { inputComposerRef: React.RefObject<ChatInputComposerHandle | null> }) {
   const t = useTokens();
   const device = useDeviceType();
   const phone = device === 'phone';
@@ -51,6 +67,13 @@ export function PersistentSessionScreen({ active = true, chatActive = active, on
   const storedUsageNodeId = useSettingsStore(state => state.getPersistentSessionDevicePreference(serverUrl, email).weeklyUsageNodeSelection?.selectedNodeId ?? null);
   const selectedUsageNodeId = usageConfiguredNodeId === session?.node_id ? storedUsageNodeId : null;
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  const { setNotice } = useChatUiActions();
+  const pending = useChatStore(state => session ? state.pendingOptimisticBySession[session.session_id] : undefined);
+  const report = usePersistentReport(session?.session_id, true, api, session?.persistent_report, pending);
+  const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
+  const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
+  const [reportPressed, setReportPressed] = useState(false);
+  const [reportReady, setReportReady] = useState(false);
   const display = useChatStore(state => session?.session_id
     ? state.persistentDisplaySettingsBySession[session.session_id]?.settings ?? null
     : null);
@@ -89,14 +112,26 @@ export function PersistentSessionScreen({ active = true, chatActive = active, on
   const composerRoles = createSessionVisualRoles(t).chat.composer;
   const inputRowHeight = Math.max(composerRoles.contentMinHeight,
     t.chatFontSize.body * t.lineHeightRatio * fontScale + composerRoles.inputPaddingVertical * 2);
-  const geometry = app && main && composer ? calculatePersistentSessionLayout({
+  const nextGeometry = app && main && composer ? calculatePersistentSessionLayout({
     app,
     header: { left: app.left, top: app.top, width: app.width, height: headerHeight },
     main,
     baselineBottom: main.top + composer.anchor.y + composer.box.y + composer.box.height,
     inputRowHeight, rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter: display?.show_character === true,
     phoneConfigured: phone || compact,
+    reportBubble: { widthScale: 1, minimumHeight: minimumReportBubbleHeight(t) },
   }) : null;
+  const heldGeometry = React.useRef(nextGeometry);
+  const previousSize = React.useRef([app?.width, app?.height]);
+  const resized = previousSize.current[0] !== app?.width || previousSize.current[1] !== app?.height;
+  if (!reportPressed || resized) heldGeometry.current = nextGeometry;
+  previousSize.current = [app?.width, app?.height];
+  const geometry = heldGeometry.current;
+  const pager = geometry ? <PersistentReportPager entries={reportSend.entries} index={report.index} api={api}
+    sessionId={session?.session_id} onReady={setReportReady}
+    send={reportSend} bubble={!!geometry?.reportBubble} maxHeight={geometry?.reportBubble?.maxHeight}
+    onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed}
+    onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
     if (state.scene === 'cards') {
@@ -171,7 +206,8 @@ export function PersistentSessionScreen({ active = true, chatActive = active, on
         style={{ position: 'absolute', top: headerHeight, bottom: 0, left: columnLeft, width: columnWidth,
           opacity: hidePhoneConversation ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript" showSessionAuxiliary={false}
-          showPersistentReport persistentReportSnapshot={session?.persistent_report}
+          inputComposerRef={inputComposerRef} getReportSendContext={report.getSendContext}
+          reportView={geometry?.reportBubble ? null : pager}
           active={chatActive} minimumBottomPadding={phone ? 0 : insets.bottom}
           onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
@@ -184,6 +220,17 @@ export function PersistentSessionScreen({ active = true, chatActive = active, on
         left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}>
         <SwayCharacter width={geometry.body.width} height={geometry.body.height} shown motionEnabled={display?.animate_character === true}
           active={active && !settingsOpen} />
+      </View> : null}
+      {!phone && geometry?.reportBubble && report.entries.length > 0 ? <View testID="persistent-session-report-bubble-seat"
+        pointerEvents={reportReady ? 'auto' : 'none'} accessibilityElementsHidden={!reportReady}
+        style={{ position: 'absolute', left: geometry.reportBubble.left, bottom: (app?.height ?? 0) - geometry.reportBubble.bottom,
+          width: geometry.reportBubble.width, maxHeight: geometry.reportBubble.maxHeight, opacity: reportReady ? 1 : 0 }}>
+        {pager}
+        <View testID="report-tail" pointerEvents="none" style={{ position: 'absolute',
+          left: geometry.reportBubble.tailLeft - t.uiSpacing.lg / 2, bottom: -t.uiSpacing.lg / 2,
+          width: t.uiSpacing.lg, height: t.uiSpacing.lg, backgroundColor: t.persistentSession.panel,
+          borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: t.persistentSession.line,
+          transform: [{ skewX: geometry.reportBubble.tailDirection === 'left' ? '-45deg' : '45deg' }, { rotate: '45deg' }] }} />
       </View> : null}
       {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
         left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,
