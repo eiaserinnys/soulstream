@@ -20,7 +20,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--v3-space-2);
+  gap: var(--v3-space-4);
   padding: var(--v3-space-2) var(--v3-space-3);
 }
 
@@ -31,13 +31,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.mockup-host-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--v3-space-1);
 }
 
 .mockup-host-stage {

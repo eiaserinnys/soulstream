@@ -12,6 +12,17 @@ const MOCK = "http://127.0.0.1:4392/proof-343/frame.html";
 const HOST = "http://127.0.0.1:4392/proof-343/index.html";
 const TIME = new Date("2026-10-01T00:00:00Z");
 type Theme = "light" | "dark";
+type PressedColors = {
+  selectedLabel: string;
+  accent: string;
+  selectedColor: string;
+  unselectedColor: string;
+};
+
+function expectPressedAccent(colors: PressedColors) {
+  expect(colors.selectedColor).toBe(colors.accent);
+  expect(colors.unselectedColor).not.toBe(colors.accent);
+}
 
 async function common(page: Page, width: number, theme: Theme, log: string[]) {
   page.on("pageerror", error => log.push(`pageerror ${error.message}`));
@@ -114,6 +125,29 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
     await expect(page.getByRole("group", { name: "테마" })).toBeVisible();
     await expect(page.getByRole("group", { name: "화면 폭" })).toBeVisible();
     await expect(page.frameLocator(".mockup-host-frame").locator(".v3-components-page")).toBeVisible();
+    const readPressedColors = (name: string) => page.getByRole("group", { name }).evaluate((group, label): PressedColors => {
+      const selected = group.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
+      const unselected = group.querySelector<HTMLButtonElement>('button[aria-pressed="false"]');
+      if (!selected || !unselected) throw new Error(`${label} must have selected and unselected buttons`);
+      const probe = document.createElement("span");
+      probe.style.color = "var(--v3-accent)";
+      group.append(probe);
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        selectedLabel: selected.textContent?.trim() ?? "",
+        accent,
+        selectedColor: getComputedStyle(selected).color,
+        unselectedColor: getComputedStyle(unselected).color,
+      };
+    }, name);
+
+    const initialThemeColors = await readPressedColors("테마");
+    const initialWidthColors = await readPressedColors("화면 폭");
+    expect(initialThemeColors.selectedLabel).toBe(theme === "light" ? "밝게" : "어둡게");
+    expect(initialWidthColors.selectedLabel).toBe("맞춤");
+    expectPressedAccent(initialThemeColors);
+    expectPressedAccent(initialWidthColors);
 
     const header = await page.locator(".mockup-host-header").evaluate(element => {
       const rect = element.getBoundingClientRect();
@@ -156,7 +190,11 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
       Boolean((element as HTMLIFrameElement).contentDocument?.documentElement.classList.contains("dark")),
     )).toBe(nextTheme === "dark");
     expect(new URL(page.url()).searchParams.get("theme")).toBe(nextTheme);
+    const afterThemeColors = await readPressedColors("테마");
+    expect(afterThemeColors.selectedLabel).toBe(nextTheme === "light" ? "밝게" : "어둡게");
+    expectPressedAccent(afterThemeColors);
 
+    let afterPhoneColors: PressedColors | null = null;
     for (const [label, id, expectedWidth] of [
       ["맞춤", "fit", null],
       ["휴대폰", "phone", "390px"],
@@ -173,9 +211,21 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
           .toBe(expectedWidth);
       }
       expect(new URL(page.url()).searchParams.get("w")).toBe(id);
+      await expect(page.getByRole("group", { name: "화면 폭" }).getByRole("button", { name: label }))
+        .toHaveAttribute("aria-pressed", "true");
+      if (label === "휴대폰") afterPhoneColors = await readPressedColors("화면 폭");
     }
+    expect(afterPhoneColors).not.toBeNull();
+    expect(afterPhoneColors!.selectedLabel).toBe("휴대폰");
+    expectPressedAccent(afterPhoneColors!);
     const transform = await frame.evaluate(element => (element as HTMLIFrameElement).style.transform);
     if (width === 390) expect(transform.startsWith("scale(")).toBe(true);
     else expect(transform).toBe("");
+    writeFileSync(path.join(output, "host", `${width}-${theme}-colors.json`), JSON.stringify({
+      initialTheme: initialThemeColors,
+      initialWidth: initialWidthColors,
+      afterTheme: afterThemeColors,
+      afterPhoneWidth: afterPhoneColors,
+    }, null, 2));
   });
 }

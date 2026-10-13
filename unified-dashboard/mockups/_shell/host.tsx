@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@seosoyoung/soul-ui";
 import "./mockup.css";
+import "../../client/v3/v3-card-board.css";
 import "./host.css";
 
 const WIDTHS = [
@@ -25,7 +26,7 @@ function ToggleGroup<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="mockup-host-group" role="group" aria-label={label}>
+    <div className="v3-completed-periods" role="group" aria-label={label}>
       {items.map(item => (
         <Button
           key={item.id}

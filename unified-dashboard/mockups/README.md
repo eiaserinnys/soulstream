@@ -10,7 +10,7 @@
 | `_shell/mockup.css` | 운영 진입점과 같은 순서로 같은 CSS를 불러온다 |
 | `_shell/mock-env.ts` | 서버 없이 뜨게 하는 환경. 테마, 서버 호출 가짜 응답, 정적 자원 주소 옮기기 |
 | `_shell/MockupShell.tsx` | 화면 바탕. 검수 창과 같은 겉틀 |
-| `_shell/host.tsx` | 실제 Button으로 테마와 화면 폭을 바꾸는 바깥 틀 |
+| `_shell/host.tsx` | 완료 기간 선택과 같은 Button 표시로 테마와 화면 폭을 바꾸는 바깥 틀 |
 | `_shell/host.css` | 바깥 틀의 전체 높이와 배치 |
 | `<이름>/frame.html`, `frame.tsx` | 시안 본문. 실제 컴포넌트를 올린다 |
 | `<이름>/index.html` | 바깥 틀 진입점. `_shell/host.tsx`를 부른다 |
