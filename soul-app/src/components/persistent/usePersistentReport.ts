@@ -10,10 +10,11 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
   const live = useSessionStore(state => enabled && sessionId ? state.persistentReportsBySession[sessionId] : undefined);
   const server = enabled ? live?.entries ?? snapshot ?? EMPTY_REPORT : EMPTY_REPORT;
   const [view, setView] = useState<{ sessionId: string | undefined; key?: string; index: number;
-    dismissed?: { key: string; base: PersistentReportEntry[] } }>({ sessionId, index: 0 });
-  if (view.sessionId !== sessionId) setView({ sessionId, index: 0 });
-  const dismissed = view.sessionId === sessionId && view.dismissed?.base === server ? view.dismissed.key : undefined;
-  const visibleEntries = dismissed ? server.filter(entry => entry.key !== dismissed) : server;
+    dismissals: Map<string, Promise<boolean>> }>({ sessionId, index: 0, dismissals: new Map() });
+  if (view.sessionId !== sessionId) setView({ sessionId, index: 0, dismissals: new Map() });
+  const dismissals = view.dismissals;
+  const visibleEntries = view.sessionId === sessionId && dismissals.size
+    ? server.filter(entry => !dismissals.has(entry.key)) : server;
   const found = view.sessionId === sessionId ? visibleEntries.findIndex(entry => entry.key === view.key) : -1;
   const index = found >= 0 ? found : Math.max(0, Math.min(view.sessionId === sessionId ? view.index : 0, visibleEntries.length - 1));
   const key = visibleEntries[index]?.key;
@@ -32,20 +33,34 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
     getSendContext(text: string, reply: ReportReplyDraft | null) {
       return reportSendContext(server, key, text, reply);
     },
-    async dismiss(key: string) {
-      if (!api || !sessionId) return false;
-      const store = useSessionStore.getState();
-      const baseline = { snapshot: store.persistentReportsBySession[sessionId], generation: store.scopeGeneration };
-      setView(current => ({ ...current, dismissed: { key, base: server } }));
-      try {
-        const result = await api.dismissPersistentReport(sessionId, key);
-        useSessionStore.getState().applyPersistentReport(sessionId, result.persistent_report, baseline);
-        return true;
-      } catch {
-        setView(current => current.dismissed?.base === server && current.dismissed.key === key
-          ? { ...current, dismissed: undefined, key, index } : current);
-        return false;
-      }
+    dismiss(key: string): Promise<boolean> {
+      const existing = dismissals.get(key);
+      if (existing) return existing;
+      if (!api || !sessionId) return Promise.resolve(false);
+      const generation = useSessionStore.getState().scopeGeneration;
+      const request = (async () => {
+        try {
+          await api.dismissPersistentReport(sessionId, key);
+          const store = useSessionStore.getState();
+          const latest = store.persistentReportsBySession[sessionId]?.entries ?? server;
+          // HTTP replies can arrive out of order: acknowledge only this key,
+          // keeping other entries from the latest server projection intact.
+          if (store.scopeGeneration === generation && latest.some(entry => entry.key === key)) {
+            store.applyPersistentReport(sessionId, latest.filter(entry => entry.key !== key));
+          }
+          dismissals.delete(key);
+          setView(current => current.dismissals === dismissals ? { ...current } : current);
+          return true;
+        } catch {
+          dismissals.delete(key);
+          setView(current => current.dismissals === dismissals ? { ...current, key, index } : current);
+          return false;
+        }
+      })();
+      // Register synchronously, so two presses before a render share one request.
+      dismissals.set(key, request);
+      setView(current => current.dismissals === dismissals ? { ...current } : current);
+      return request;
     },
   };
 }

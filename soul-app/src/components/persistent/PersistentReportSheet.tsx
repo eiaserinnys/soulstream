@@ -11,9 +11,9 @@ export function reportTag(entry: PersistentReportEntry) {
   return entry.kind === 'see' ? '보실 것' : entry.state === 'answered' ? '답 받음' : '답하실 것';
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
-  nodeRef, onStep, onExpand, onOption, onDismiss, onCard, onLink }: {
+  titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink }: {
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
-  styles: ReturnType<typeof reportStyles>; nodeRef(node: View | null): void;
+  styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
   onCard(number: number): void; onLink(url: string): void;
 }) {
@@ -35,7 +35,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const tag = reportTag(entry);
   const received = <Text testID="report-received" style={styles.todo}><Text style={styles.receivedLabel}>받은 답  </Text>{entry.answer}</Text>;
   const answer = entry.kind === 'ask' && entry.state === 'answered';
-  return <Pressable testID={`report-sheet-${entry.key}`} ref={nodeRef} accessible={false}
+  return <Pressable testID={`report-sheet-${entry.key}`} accessible={false}
     aria-hidden={!current} accessibilityElementsHidden={!current} importantForAccessibility={current ? 'auto' : 'no-hide-descendants'}
     accessibilityLabel={`${count > 1 ? `${page}, ` : ''}${tag}, ${entry.title}`}
     onPress={compact ? onExpand : undefined} {...reportWebProps({ inert: !current, tabIndex: -1, role: 'group' })}
@@ -54,7 +54,8 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
             {...reportWebProps({ 'aria-valuemin': 1, 'aria-valuemax': count, 'aria-valuenow': index + 1, 'aria-valuetext': page, tabIndex: 0 })}
             style={styles.page}>{page}</Text> : null}
         </View>
-        <Text testID="report-title" accessibilityRole="header" style={styles.title}
+        <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header" style={styles.title}
+          {...reportWebProps({ tabIndex: -1 })}
           {...(compact ? { onPress: (event: { stopPropagation(): void }) => { event.stopPropagation(); onExpand(); }, accessibilityHint: '누르면 펼칩니다', accessibilityState: { expanded: false },
             accessibilityActions: [{ name: 'expand', label: '펼치기' }], onAccessibilityAction: onExpand,
             ...reportWebProps({ 'aria-label': `${entry.title}, 누르면 펼칩니다` }) } : {})}>{entry.title}</Text>

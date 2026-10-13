@@ -1,5 +1,6 @@
 import React from 'react';
 import { AccessibilityInfo, Keyboard, Platform, StyleSheet } from 'react-native';
+import * as ReactNative from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { usePersistentReport } from '../usePersistentReport';
@@ -174,11 +175,91 @@ test('failed dismiss returns to the same visible key when another sheet filled i
   expect(hook.result.current.entries).toEqual(reportReviewEntries);
 });
 
-test('reply line must remain intact; ordinary text describes the visible sheet and absent report has no context', () => {
+test('only the complete trimmed message matching the button reply carries reply context', () => {
   const reply = { key: 'cleanup', option: '응', text: '블로그 저장소 브랜치 정리: 응' };
-  expect(reportSendContext(reportReviewEntries, 'app', `쓰던 글\n\n${reply.text}`, reply).contextItems)
+  expect(reportSendContext(reportReviewEntries, 'app', ` \n${reply.text}\n `, reply).contextItems)
     .toEqual([{ key: 'persistent_report_reply', content: { key: 'cleanup', option: '응' } }]);
+  for (const text of [`쓰던 글\n\n${reply.text}`, `${reply.text} 대신 보류합니다`, `${reply.text}!`]) {
+    expect(reportSendContext(reportReviewEntries, 'app', text, reply).contextItems)
+      .toEqual([{ key: 'persistent_report_visible', content: { key: 'app', title: '앱 보고 확인' } }]);
+  }
   expect(reportSendContext(reportReviewEntries, 'app', '다른 답', reply).contextItems)
     .toEqual([{ key: 'persistent_report_visible', content: { key: 'app', title: '앱 보고 확인' } }]);
   expect(reportSendContext([], undefined, '일반 글', null)).toEqual({});
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void, reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+const seeA = { ...reportReviewEntries[2], key: 'a', title: '첫째 보고' };
+const seeB = { ...reportReviewEntries[2], key: 'b', title: '둘째 보고' };
+
+test('two dismissals stay hidden when responses arrive in reverse order', async () => {
+  const tail = { ...reportReviewEntries[0], key: 'tail' };
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA, seeB, tail]));
+  const a = deferred<any>(), b = deferred<any>();
+  const api = { dismissPersistentReport: jest.fn((_id, key) => key === 'a' ? a.promise : b.promise) } as any;
+  const seen: string[][] = [];
+  const hook = renderHook(() => {
+    const report = usePersistentReport('pas', true, api, undefined, undefined);
+    seen.push(report.entries.map(entry => entry.key));
+    return report;
+  });
+  let requestA!: Promise<boolean>, requestB!: Promise<boolean>;
+  act(() => { requestA = hook.result.current.dismiss('a'); });
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['b', 'tail']);
+  act(() => { requestB = hook.result.current.dismiss('b'); });
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['tail']);
+  seen.length = 0;
+  await act(async () => { b.resolve({ ok: true, persistent_report: [seeA, tail] }); await requestB; });
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['tail']);
+  await act(async () => { a.resolve({ ok: true, persistent_report: [seeB, tail] }); await requestA; });
+  expect(hook.result.current.entries.map(entry => entry.key)).toEqual(['tail']);
+  expect(seen.every(keys => keys.join(',') === 'tail')).toBe(true);
+  expect(useSessionStore.getState().persistentReportsBySession.pas.entries).toEqual([tail]);
+});
+
+test('two presses on the same pending key share exactly one request', async () => {
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA]));
+  const response = deferred<any>();
+  const api = { dismissPersistentReport: jest.fn(() => response.promise) } as any;
+  const hook = renderHook(() => usePersistentReport('pas', true, api, undefined, undefined));
+  let first!: Promise<boolean>, second!: Promise<boolean>;
+  act(() => { first = hook.result.current.dismiss('a'); second = hook.result.current.dismiss('a'); });
+  expect(first).toBe(second);
+  expect(api.dismissPersistentReport).toHaveBeenCalledTimes(1);
+  await act(async () => { response.resolve({ ok: true, persistent_report: [] }); await first; });
+  expect(hook.result.current.entries).toEqual([]);
+});
+
+test('removing the focused sheet focuses the accessible replacement title, not its outer Pressable', async () => {
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [seeA, seeB]));
+  const response = deferred<any>();
+  const api = { dismissPersistentReport: jest.fn(() => response.promise) } as any;
+  // Spy on the module used by named imports, not Babel's namespace copy.
+  const find = jest.spyOn(require('react-native') as typeof ReactNative, 'findNodeHandle').mockImplementation(node => {
+    const props = (node as { props?: { children?: string } } | null)?.props;
+    return props?.children === seeB.title ? 22 : 11;
+  });
+  const focus = jest.spyOn(AccessibilityInfo, 'setAccessibilityFocus');
+  function Harness() {
+    const report = usePersistentReport('pas', true, api, undefined, undefined);
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+      <PersistentReportPager {...report} api={api} onSelect={report.select} onDismiss={report.dismiss} onFocusComposer={jest.fn()} />
+    </ChatUiControllerProvider>;
+  }
+  const screen = render(<Harness />, { createNodeMock: element => ({ props: element.props }) });
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  AccessibilityInfo.setAccessibilityFocus(11);
+  focus.mockClear();
+  fireEvent.press(screen.getByLabelText('봤다'));
+  expect(screen.getByTestId('report-title').props.accessible).toBe(true);
+  expect(screen.getByTestId('report-sheet-b').props.accessible).toBe(false);
+  expect(find).toHaveBeenLastCalledWith(expect.objectContaining({ props: expect.objectContaining({
+    testID: 'report-title', accessible: true, accessibilityRole: 'header', children: seeB.title,
+  }) }));
+  expect(focus).toHaveBeenLastCalledWith(22);
+  await act(async () => { response.resolve({ ok: true, persistent_report: [seeB] }); });
 });

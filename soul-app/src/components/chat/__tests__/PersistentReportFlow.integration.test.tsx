@@ -97,12 +97,13 @@ test('report answer appends into the actual composer with undo and sending/faile
   expect(input().props.value).toBe('쓰던 글\n\n예산 확인: 응');
   fireEvent.press(screen.getByLabelText('되돌리기'));
   expect(input().props.value).toBe('쓰던 글');
+  fireEvent.changeText(input(), '');
   fireEvent.press(screen.getByLabelText('응'));
   let reject!: (error: Error) => void;
   mockApi.intervene.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   fireEvent.press(screen.getByTestId('chat-composer-send-button'));
   await waitFor(() => expect(screen.getByText('답 받음')).toBeTruthy());
-  expect(mockApi.intervene).toHaveBeenCalledWith('one', '쓰던 글\n\n예산 확인: 응', undefined, [{ key: 'persistent_report_reply', content: { key: 'ask-one', option: '응' } }]);
+  expect(mockApi.intervene).toHaveBeenCalledWith('one', '예산 확인: 응', undefined, [{ key: 'persistent_report_reply', content: { key: 'ask-one', option: '응' } }]);
   await act(async () => reject(Error('failed')));
   expect(screen.getByText('답하실 것')).toBeTruthy();
   mockApi.intervene.mockResolvedValueOnce({ delivered: true });
@@ -125,6 +126,41 @@ test('editing the appended answer sends visible context without changing the rep
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
   expect(mockApi.intervene).toHaveBeenCalledWith('one', '예산 확인: 다른 의견', undefined, [{ key: 'persistent_report_visible', content: { key: 'ask-one', title: '예산 확인' } }]);
   expect(screen.getByText('답하실 것')).toBeTruthy();
+});
+
+test.each([
+  ['suffix', '', '예산 확인: 응 대신 보류합니다'],
+  ['existing draft', '쓰던 글', undefined],
+  ['edited then restored', '', '예산 확인: 응'],
+] as const)('%s breaks the button reply binding and sends only visible context', async (kind, before, edited) => {
+  const screen = await openReport();
+  const input = screen.getByTestId('chat-composer-text-input');
+  if (before) fireEvent.changeText(input, before);
+  fireEvent.press(screen.getByLabelText('응'));
+  if (kind === 'edited then restored') fireEvent.changeText(input, '예산 확인: 응 대신 보류합니다');
+  if (edited !== undefined) fireEvent.changeText(input, edited);
+  const sent = input.props.value;
+  let finish!: (value: { delivered: boolean }) => void;
+  mockApi.intervene.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  fireEvent.press(screen.getByTestId('chat-composer-send-button'));
+  await waitFor(() => expect(mockApi.intervene).toHaveBeenCalled());
+  expect(mockApi.intervene).toHaveBeenCalledWith('one', sent, undefined,
+    [{ key: 'persistent_report_visible', content: { key: 'ask-one', title: '예산 확인' } }]);
+  expect(screen.queryByText('답 받음')).toBeNull();
+  expect(screen.getByText('답하실 것')).toBeTruthy();
+  await act(async () => finish({ delivered: true }));
+});
+
+test('only whitespace around the unchanged button reply keeps the binding', async () => {
+  const screen = await openReport();
+  const input = screen.getByTestId('chat-composer-text-input');
+  fireEvent.press(screen.getByLabelText('응'));
+  fireEvent.changeText(input, ' \n예산 확인: 응\n ');
+  mockApi.intervene.mockResolvedValueOnce({ delivered: true });
+  await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
+  expect(mockApi.intervene).toHaveBeenCalledWith('one', '예산 확인: 응', undefined,
+    [{ key: 'persistent_report_reply', content: { key: 'ask-one', option: '응' } }]);
+  expect(screen.getByText('답 받음')).toBeTruthy();
 });
 
 test('too long report append uses the existing composer notice row and preserves the draft', async () => {
@@ -169,4 +205,28 @@ test('failed dismiss restores the same report and uses the sticky composer notic
   mockApi.intervene.mockResolvedValueOnce({ delivered: true });
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
   expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+});
+
+test('two consecutive dismissals with only one failure restore only the failed sheet and show the notice', async () => {
+  const a = { ...report, kind: 'see' as const, key: 'a', title: '첫째 보고', options: [] };
+  const b = { ...a, key: 'b', title: '둘째 보고' };
+  useSessionStore.setState({ persistentReportsBySession: { one: { entries: [a, b] } } } as any);
+  let rejectA!: (error: Error) => void, resolveB!: (value: any) => void;
+  mockApi.dismissPersistentReport.mockImplementationOnce(() => new Promise((_done, fail) => { rejectA = fail; }))
+    .mockImplementationOnce(() => new Promise(done => { resolveB = done; }));
+  const screen = render(<ChatBody sessionId="one" presentation="manuscript" showSessionAuxiliary={false} showPersistentReport />);
+  await waitFor(() => expect(screen.getByTestId('report-track')).toBeTruthy());
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  fireEvent.press(screen.getByLabelText('봤다'));
+  expect(screen.queryByText('첫째 보고')).toBeNull();
+  fireEvent.press(screen.getByLabelText('봤다'));
+  expect(screen.queryByTestId('report-deck')).toBeNull();
+  await act(async () => resolveB({ ok: true, persistent_report: [a] }));
+  expect(screen.queryByTestId('report-deck')).toBeNull();
+  await act(async () => rejectA(Error('첫째 내림 실패')));
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  expect(screen.getByText('첫째 보고')).toBeTruthy();
+  expect(screen.queryByText('둘째 보고')).toBeNull();
+  expect(screen.getByTestId('chat-composer-generated-notice-row')
+    .findByProps({ testID: 'chat-ui-action-notice' }).props.children).toBe('보고를 내리지 못했어.');
 });

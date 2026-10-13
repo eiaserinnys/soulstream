@@ -31,7 +31,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const compact = phone && keyboard;
   const scroll = useRef<ScrollView>(null);
   const deck = useRef<View>(null);
-  const sheetNodes = useRef<Record<string, View | null>>({});
+  const titleNodes = useRef<Record<string, Text | null>>({});
   const [width, setWidth] = useState(0);
   const expectedScroll = useRef<number | null>(null);
   const scrollOffset = useRef(0);
@@ -54,7 +54,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     if (key && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(count > 1 ? page : reportTag(entries[index]));
     if (!moveFocus.current) return;
     moveFocus.current = false;
-    const target = key ? sheetNodes.current[key] : null;
+    const target = key ? titleNodes.current[key] : null;
     if (!target) { onFocusComposer(); return; }
     if (Platform.OS === 'web') (target as unknown as HTMLElement).focus({ preventScroll: true });
     else { const handle = findNodeHandle(target); if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle); }
@@ -101,7 +101,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
       }} scrollEventThrottle={16}>
       {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={`${entry.key}-${width}`} entry={entry}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
-        nodeRef={node => { sheetNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
+        titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
         onDismiss={() => {
           moveFocus.current = Platform.OS !== 'web' || focusInside();
           void onDismiss(entry.key).then(ok => { if (ok === false) setNotice('보고를 내리지 못했어.'); });

@@ -8,9 +8,13 @@ export type ReportSendContext = {
 };
 export const EMPTY_REPORT: PersistentReportEntry[] = [];
 
+export function isReportReply(text: string, reply: ReportReplyDraft | null | undefined): reply is ReportReplyDraft {
+  return !!reply && text.trim() === reply.text;
+}
+
 export function reportSendContext(entries: PersistentReportEntry[], visibleKey: string | undefined,
   text: string, reply: ReportReplyDraft | null): ReportSendContext {
-  if (reply && text.includes(reply.text)) return {
+  if (isReportReply(text, reply)) return {
     contextItems: [{ key: 'persistent_report_reply', content: { key: reply.key, option: reply.option } }],
     reportBase: entries, reportReply: reply,
   };

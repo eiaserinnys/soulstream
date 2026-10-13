@@ -1,6 +1,6 @@
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, findNodeHandle, Platform, Text, View, type LayoutChangeEvent, type LayoutRectangle, type TextInput } from 'react-native';
-import type { ReportReplyDraft, ReportSendContext } from '../../lib/persistent-report';
+import { isReportReply, type ReportReplyDraft, type ReportSendContext } from '../../lib/persistent-report';
 import type { ApiClient } from '../../api/client';
 import type { Session, SessionEvent } from '../../api/types';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
@@ -164,7 +164,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }, [inputDraft.clear, onComposerClearedForSend]);
 
   const handleInputChange = useCallback((value: string) => {
-    if (reportReplyRef.current && !value.includes(reportReplyRef.current.text)) reportReplyRef.current = null;
+    if (!isReportReply(value, reportReplyRef.current)) reportReplyRef.current = null;
     const previous = inputRef.current;
     if (previous !== value) {
       setGeneratedUndo(null);
@@ -289,7 +289,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     if (after.length > CHAT_COMPOSER_MAX_LENGTH) return { ok: false, reason: 'too_long' };
 
     handleInputChange(after);
-    if (reportReply) reportReplyRef.current = reportReply;
+    if (reportReply) reportReplyRef.current = isReportReply(after, reportReply) ? reportReply : null;
     setGeneratedUndo({ before, after });
     focusInputAtSelection({ start: after.length, end: after.length });
     return { ok: true };
@@ -312,7 +312,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     const restored = restorePendingOptimistic(eventId, inputRef.current);
     if (!restored) return;
     inputRef.current = restored.inputText;
-    reportReplyRef.current = restored.reportReply ?? null;
+    reportReplyRef.current = isReportReply(restored.inputText, restored.reportReply) ? restored.reportReply : null;
     setGeneratedUndo(null);
     setGeneratedSelection(undefined);
     inputDraft.setValue(restored.inputText);
