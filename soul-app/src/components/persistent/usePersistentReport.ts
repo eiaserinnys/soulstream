@@ -5,6 +5,10 @@ import { EMPTY_REPORT, pendingReportReply, reportSendContext, type ReportReplyDr
 import { useSessionStore } from '../../store/sessionStore';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
 
+function dismissalId(sessionId: string | undefined, entry: PersistentReportEntry): string {
+  return JSON.stringify([sessionId, entry.key, entry.updated_at]);
+}
+
 export function usePersistentReport(sessionId: string | undefined, enabled: boolean, api: ApiClient | null,
   snapshot: PersistentReportEntry[] | undefined, pending: PendingOptimisticEvent | undefined) {
   const live = useSessionStore(state => enabled && sessionId ? state.persistentReportsBySession[sessionId] : undefined);
@@ -14,7 +18,7 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
   if (view.sessionId !== sessionId) setView({ sessionId, index: 0, dismissals: new Map() });
   const dismissals = view.dismissals;
   const visibleEntries = view.sessionId === sessionId && dismissals.size
-    ? server.filter(entry => !dismissals.has(entry.key)) : server;
+    ? server.filter(entry => !dismissals.has(dismissalId(sessionId, entry))) : server;
   const found = view.sessionId === sessionId ? visibleEntries.findIndex(entry => entry.key === view.key) : -1;
   const index = found >= 0 ? found : Math.max(0, Math.min(view.sessionId === sessionId ? view.index : 0, visibleEntries.length - 1));
   const key = visibleEntries[index]?.key;
@@ -34,31 +38,33 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
       return reportSendContext(server, key, text, reply);
     },
     dismiss(key: string): Promise<boolean> {
-      const existing = dismissals.get(key);
+      const target = server.find(entry => entry.key === key);
+      if (!api || !sessionId || !target) return Promise.resolve(false);
+      const id = dismissalId(sessionId, target);
+      const existing = dismissals.get(id);
       if (existing) return existing;
-      if (!api || !sessionId) return Promise.resolve(false);
       const generation = useSessionStore.getState().scopeGeneration;
       const request = (async () => {
         try {
           await api.dismissPersistentReport(sessionId, key);
           const store = useSessionStore.getState();
           const latest = store.persistentReportsBySession[sessionId]?.entries ?? server;
-          // HTTP replies can arrive out of order: acknowledge only this key,
-          // keeping other entries from the latest server projection intact.
-          if (store.scopeGeneration === generation && latest.some(entry => entry.key === key)) {
-            store.applyPersistentReport(sessionId, latest.filter(entry => entry.key !== key));
+          // Acknowledge only the requested publication; a revised entry with
+          // the same key belongs to the latest server report and stays visible.
+          if (store.scopeGeneration === generation && latest.some(entry => dismissalId(sessionId, entry) === id)) {
+            store.applyPersistentReport(sessionId, latest.filter(entry => dismissalId(sessionId, entry) !== id));
           }
-          dismissals.delete(key);
+          dismissals.delete(id);
           setView(current => current.dismissals === dismissals ? { ...current } : current);
           return true;
         } catch {
-          dismissals.delete(key);
+          dismissals.delete(id);
           setView(current => current.dismissals === dismissals ? { ...current, key, index } : current);
           return false;
         }
       })();
       // Register synchronously, so two presses before a render share one request.
-      dismissals.set(key, request);
+      dismissals.set(id, request);
       setView(current => current.dismissals === dismissals ? { ...current } : current);
       return request;
     },
