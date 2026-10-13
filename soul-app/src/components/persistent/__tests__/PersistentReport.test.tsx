@@ -12,6 +12,7 @@ import { useSessionStore } from '../../../store/sessionStore';
 import { reportSendContext, type ReportReplyDraft } from '../../../lib/persistent-report';
 import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDisplaySettings';
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
+import type { PersistentReportEntry } from '../../../api/types';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 let mockDevice = 'phone';
@@ -322,15 +323,15 @@ test('bubble scrolls only its reading block and keeps the footer fixed; compact 
     <PersistentReportPager entries={[reportReviewEntries[1]]} index={0} api={api} bubble maxHeight={300}
       onSelect={jest.fn()} onDismiss={jest.fn().mockResolvedValue(true)} onFocusComposer={jest.fn()} />
   </ChatUiControllerProvider>);
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 318 } } });
-  const scrolling = screen.getByTestId('report-scroll');
+  fireEvent(screen.getByTestId('report-track', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { width: 318 } } });
+  const scrolling = screen.getByTestId('report-scroll', { includeHiddenElements: true });
   expect(scrolling.findAllByProps({ testID: 'report-footer' })).toHaveLength(0);
-  expect(screen.getByTestId('report-footer')).toBeTruthy();
+  expect(screen.getByTestId('report-footer', { includeHiddenElements: true })).toBeTruthy();
   fireEvent(scrolling, 'layout', { nativeEvent: { layout: { height: 100 } } });
   fireEvent(scrolling, 'contentSizeChange', 318, 400);
-  expect(screen.getByTestId('report-more-below')).toBeTruthy();
+  expect(screen.getByTestId('report-more-below', { includeHiddenElements: true })).toBeTruthy();
   fireEvent.scroll(scrolling, { nativeEvent: { contentOffset: { y: 300 } } });
-  expect(screen.queryByTestId('report-more-below')).toBeNull();
+  expect(screen.queryByTestId('report-more-below', { includeHiddenElements: true })).toBeNull();
 });
 
 test('measured height updates are deferred during a report press and applied on release', () => {
@@ -351,9 +352,9 @@ test('bubble surface and every page share the explicit capped height after all i
     <PersistentReportPager entries={[reportReviewEntries[1], reportReviewEntries[2]]} index={0} api={null} bubble maxHeight={440}
       onSelect={jest.fn()} onDismiss={jest.fn().mockResolvedValue(true)} onFocusComposer={jest.fn()} />
   </ChatUiControllerProvider>);
-  expect(StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height).toBe(440);
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 318 } } });
-  const a = screen.getByTestId('report-sheet-cleanup');
+  expect(StyleSheet.flatten(screen.getByTestId('report-deck', { includeHiddenElements: true }).props.style).height).toBe(440);
+  fireEvent(screen.getByTestId('report-track', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { width: 318 } } });
+  const a = screen.getByTestId('report-sheet-cleanup', { includeHiddenElements: true });
   const b = screen.getByTestId('report-sheet-result', { includeHiddenElements: true });
   fireEvent(a.findByProps({ testID: 'report-scroll' }), 'contentSizeChange', 318, 294);
   expect(StyleSheet.flatten(a.props.style).height).toBe(440);
@@ -361,12 +362,12 @@ test('bubble surface and every page share the explicit capped height after all i
   expect(StyleSheet.flatten(a.props.style).height).toBe(440);
   fireEvent(b.findByProps({ testID: 'report-scroll' }), 'contentSizeChange', 318, 100);
   fireEvent(b.findByProps({ testID: 'report-footer' }), 'layout', { nativeEvent: { layout: { height: 80 } } });
-  expect(StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height).toBe(440);
+  expect(StyleSheet.flatten(screen.getByTestId('report-deck', { includeHiddenElements: true }).props.style).height).toBe(440);
   expect(StyleSheet.flatten(a.props.style).height).toBe(440);
   expect(StyleSheet.flatten(b.props.style).height).toBe(440);
   fireEvent(a.findByProps({ testID: 'report-scroll' }), 'contentSizeChange', 318, 100);
   fireEvent(a.findByProps({ testID: 'report-footer' }), 'layout', { nativeEvent: { layout: { height: 80 } } });
-  expect(StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height).toBe(180);
+  expect(StyleSheet.flatten(screen.getByTestId('report-deck', { includeHiddenElements: true }).props.style).height).toBe(180);
   expect(StyleSheet.flatten(a.props.style).height).toBe(180);
   expect(StyleSheet.flatten(b.props.style).height).toBe(180);
 });
@@ -386,4 +387,88 @@ test('bubble reports intrinsic height only after both reading and footer are mea
   fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 242 } } });
   expect(onHeight).toHaveBeenCalledTimes(1);
   expect(onHeight).toHaveBeenLastCalledWith(536);
+});
+
+test('answered bubble holds its publication surface height without an artificial reading height', () => {
+  const entry = reportReviewEntries[1];
+  const ready = jest.fn();
+  const draw = (entry: PersistentReportEntry) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[entry]} index={0} api={null} bubble maxHeight={440} onReady={ready}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>;
+  const screen = render(draw(entry));
+  const get = (id: string) => screen.getByTestId(id, { includeHiddenElements: true });
+  expect(get('report-deck').props.pointerEvents).toBe('none');
+  expect(StyleSheet.flatten(get('report-deck').props.style).opacity).toBe(0);
+  fireEvent(get('report-track'), 'layout', { nativeEvent: { layout: { width: 318 } } });
+  fireEvent(get('report-scroll'), 'contentSizeChange', 318, 400);
+  expect(ready).toHaveBeenLastCalledWith(false);
+  fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  expect(ready).toHaveBeenLastCalledWith(true);
+  expect(StyleSheet.flatten(get('report-deck').props.style).height).toBe(440);
+  screen.rerender(draw({ ...entry, state: 'answered', answer: '응' }));
+  expect(StyleSheet.flatten(get('report-reading').props.style).minHeight).toBeUndefined();
+  fireEvent(get('report-scroll'), 'contentSizeChange', 318, 100);
+  fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  fireEvent(get('report-scroll'), 'layout', { nativeEvent: { layout: { height: 100 } } });
+  expect(screen.queryByTestId('report-more-below')).toBeNull();
+  expect(StyleSheet.flatten(get('report-deck').props.style).height).toBe(440);
+});
+
+test('navigation touch defers a live height update and releases on end, cancellation and disappearance', () => {
+  mockDevice = 'tablet';
+  const interaction = jest.fn();
+  const draw = (entries: PersistentReportEntry[]) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={entries} index={0} api={null} onInteraction={interaction}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>;
+  const initial = reportReviewEntries.slice(0, 2);
+  const screen = render(draw(initial));
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 400 } } });
+  const reading = () => screen.getByTestId('report-sheet-app').findByProps({ testID: 'report-reading' });
+  const height = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
+  fireEvent(reading(), 'layout', { nativeEvent: { layout: { height: 100 } } });
+  for (const end of ['touchEnd', 'touchCancel']) {
+    const before = height();
+    fireEvent(screen.getByTestId('report-next-touch'), 'touchStart');
+    screen.rerender(draw(initial.map(entry => ({ ...entry, context: `${entry.context} 갱신` }))));
+    fireEvent(reading(), 'layout', { nativeEvent: { layout: { height: before + 100 } } });
+    expect(height()).toBe(before);
+    fireEvent(screen.getByTestId('report-next-touch'), end);
+    expect(height()).toBeGreaterThan(before);
+    expect(interaction).toHaveBeenLastCalledWith(false);
+  }
+  fireEvent(screen.getByTestId('report-next-touch'), 'touchStart');
+  screen.rerender(draw([initial[0]]));
+  expect(screen.queryByTestId('report-next-touch')).toBeNull();
+  expect(interaction).toHaveBeenLastCalledWith(false);
+  const before = height();
+  fireEvent(reading(), 'layout', { nativeEvent: { layout: { height: before + 100 } } });
+  expect(height()).toBeGreaterThan(before);
+});
+
+test('unequal compact sheets stretch to the shared height with their page after the flexible space', () => {
+  const listeners: Record<string, () => void> = {};
+  jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
+    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+  });
+  const screen = pager(reportReviewEntries.slice(0, 2));
+  act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
+  const short = screen.getByTestId('report-sheet-app');
+  const long = screen.getByTestId('report-sheet-cleanup', { includeHiddenElements: true });
+  fireEvent(short.findByProps({ testID: 'report-reading' }), 'layout', { nativeEvent: { layout: { height: 44 } } });
+  const smallHeight = StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
+  fireEvent(long.findByProps({ testID: 'report-reading' }), 'layout', { nativeEvent: { layout: { height: 88 } } });
+  expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBe(smallHeight + 44);
+  const page = short.findByProps({ testID: 'report-page' });
+  expect(StyleSheet.flatten(page.props.style).marginTop).toBe('auto');
+  expect(StyleSheet.flatten(page.parent!.props.style).flexGrow).toBe(1);
+});
+
+test('tablet card chips resolve their card number to the existing internal card ID', async () => {
+  mockDevice = 'tablet';
+  const screen = pager([reportReviewEntries[0]]);
+  fireEvent.press(screen.getByLabelText('카드 270번 열기'), { stopPropagation: jest.fn() });
+  await act(async () => {});
+  expect(mockOpen).toHaveBeenCalledWith('/?card=public-card');
 });

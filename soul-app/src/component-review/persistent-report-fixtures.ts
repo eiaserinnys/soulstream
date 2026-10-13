@@ -91,7 +91,9 @@ export function createPersistentReportReviewApi(base: ApiClient, search: string)
     intervene: async (_id, _text, _paths, context?: MessageContextItem[]) => {
       if (failNext) { failNext = false; throw Error('공개 예시: 전송 실패'); }
       const reply = pendingReportReply(context);
-      if (reply) publish(entries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
+      // Receipt-only samples retain the publication while the real send hook
+      // renders its accepted reply. No server replacement or timer is simulated.
+      if (reply && new URLSearchParams(search).get('answer') !== 'receipt') publish(entries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
         ? { ...entry, state: 'answered', answer: reply.option, updated_at: '2026-10-13T00:01:00Z' } : entry));
       return { delivered: true };
     },

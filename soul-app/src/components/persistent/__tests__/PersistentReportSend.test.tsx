@@ -1,15 +1,21 @@
-import { act, renderHook } from '@testing-library/react-native';
+import React from 'react';
+import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { usePersistentReportSend, FAILED_REPORT_SEND_REMAINS } from '../usePersistentReportSend';
 import { reportReviewEntries } from '../../../component-review/persistent-report-fixtures';
 import { useChatStore, createOptimisticUserEvent } from '../../../store/chatStore';
 import type { PersistentReportEntry } from '../../../api/types';
 import type { ApiClient } from '../../../api/client';
+import { useChatSendFlow } from '../../chat/useChatSendFlow';
+import { PersistentReportPager } from '../PersistentReportPager';
+import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
+
+jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
 const entry = reportReviewEntries[1];
 const base = [entry];
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: Error) => void;
   const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
-beforeEach(() => useChatStore.setState({ pendingOptimisticBySession: {} }));
+beforeEach(() => useChatStore.setState({ pendingOptimisticBySession: {}, eventsBySession: {} }));
 function setup(intervene = jest.fn().mockResolvedValue({ delivered: true })) {
   const notice = jest.fn();
   const api = { intervene } as unknown as ApiClient;
@@ -64,4 +70,73 @@ test('cancel uses visible context, survives until publication changes, and failu
   expect(h.result.current.cancelSent(entry)).toBe(true);
   h.rerender({ entries: [{ ...entry, updated_at: 'new' }] });
   expect(h.result.current.cancelSent(h.result.current.entries[0])).toBe(false);
+});
+
+test('conversation retry preserves cancellation identity through sending, failure, arrival and republication', async () => {
+  const answered = { ...entry, state: 'answered' as const, answer: '응' };
+  const server = [answered];
+  const retryFailure = deferred<{ delivered: boolean }>();
+  const retrySuccess = deferred<{ delivered: boolean }>();
+  const intervene = jest.fn().mockRejectedValueOnce(Error('cancel failed'))
+    .mockImplementationOnce(() => retryFailure.promise).mockImplementationOnce(() => retrySuccess.promise);
+  const api = { intervene } as unknown as ApiClient;
+  const h = renderHook(({ entries }: { entries: PersistentReportEntry[] }) => ({
+    report: usePersistentReportSend('pas', api, entries, server, 'completed', jest.fn()),
+    conversation: useChatSendFlow({ api, sessionId: 'pas', session: { status: 'completed' },
+      attachments: [], clearAttachments: jest.fn(), scrollToBottom: jest.fn() }),
+  }), { initialProps: { entries: server } });
+  await act(async () => h.result.current.report.cancel(answered));
+  const failed = useChatStore.getState().pendingOptimisticBySession.pas;
+  expect(failed.reportCancellation).toEqual({ key: answered.key, updated_at: answered.updated_at });
+  expect(h.result.current.report.cancelSent(answered)).toBe(false);
+  let retry!: Promise<void>;
+  act(() => { retry = h.result.current.conversation.retryPendingOptimistic(failed.id); });
+  expect(h.result.current.report.cancelSent(answered)).toBe(true);
+  await act(async () => { retryFailure.reject(Error('retry failed')); await retry; });
+  expect(h.result.current.report.cancelSent(answered)).toBe(false);
+  act(() => { retry = h.result.current.conversation.retryPendingOptimistic(failed.id); });
+  expect(h.result.current.report.cancelSent(answered)).toBe(true);
+  await act(async () => { retrySuccess.resolve({ delivered: true }); await retry; });
+  expect(h.result.current.report.cancelSent(answered)).toBe(true);
+  const delivered = useChatStore.getState().pendingOptimisticBySession.pas;
+  act(() => useChatStore.getState().mergeEvents('pas', [{ ...delivered, id: '42' }]));
+  expect(useChatStore.getState().pendingOptimisticBySession.pas).toBeUndefined();
+  expect(h.result.current.report.cancelSent(answered)).toBe(true);
+  const revised = { ...answered, updated_at: '2026-10-14T00:00:00Z' };
+  h.rerender({ entries: [revised] });
+  expect(h.result.current.report.cancelSent(revised)).toBe(false);
+  h.rerender({ entries: server });
+  expect(h.result.current.report.cancelSent(answered)).toBe(false);
+});
+
+test('actual report controls hide cancellation until receipt, disable during other sends, and show the failed-slot notice', async () => {
+  const response = deferred<{ delivered: boolean }>();
+  const notice = jest.fn();
+  const api = { intervene: jest.fn(() => response.promise) } as unknown as ApiClient;
+  function Harness({ entries = base }: { entries?: PersistentReportEntry[] }) {
+    const send = usePersistentReportSend('pas', api, entries, entries, 'completed', notice);
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+      <PersistentReportPager entries={send.entries} index={0} api={api} send={send}
+        onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+    </ChatUiControllerProvider>;
+  }
+  const screen = render(<Harness />);
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  fireEvent.press(screen.getByLabelText('응'));
+  expect(screen.queryByTestId('report-cancel')).toBeNull();
+  await act(async () => { response.resolve({ delivered: true }); });
+  expect(screen.getByTestId('report-cancel').props.disabled).toBe(false);
+  const other = { ...createOptimisticUserEvent('다른 글', 'user_message'), pendingStatus: 'sending' as const };
+  act(() => useChatStore.getState().setPendingOptimistic('pas', other));
+  expect(screen.getByTestId('report-cancel').props.disabled).toBe(true);
+  act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'failed', 'failure'));
+  fireEvent.press(screen.getByTestId('report-cancel'));
+  expect(notice).toHaveBeenCalledWith(FAILED_REPORT_SEND_REMAINS);
+  act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'sending'));
+  const revised = [{ ...entry, updated_at: '2026-10-14T00:00:00Z' }];
+  screen.rerender(<Harness entries={revised} />);
+  expect(screen.getByLabelText('응').props.disabled).toBe(true);
+  act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'failed', 'failure'));
+  fireEvent.press(screen.getByLabelText('응'));
+  expect(notice).toHaveBeenCalledWith(FAILED_REPORT_SEND_REMAINS);
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
@@ -11,11 +11,23 @@ import { PersistentReportSheet, reportTag, reportWebProps } from './PersistentRe
 import { reportStyles } from './persistentReportStyles';
 import type { usePersistentReportSend } from './usePersistentReportSend';
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction }: {
+function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps<typeof LiquidGlassButton> & { interaction(pressed: boolean): void }) {
+  const held = useRef(false);
+  const release = () => { if (held.current) { held.current = false; interaction(false); } };
+  useEffect(() => () => release(), [interaction]);
+  useEffect(() => { if (props.disabled) release(); }, [props.disabled]);
+  return <View testID={testID} onTouchStart={() => { if (!props.disabled) { held.current = true; interaction(true); } }}
+    onTouchEnd={release} onTouchCancel={release}>
+    <LiquidGlassButton {...props} />
+  </View>;
+}
+
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onReady, sessionId }: {
   entries: PersistentReportEntry[]; index: number; api: ApiClient | null;
   onSelect(index: number): void; onDismiss(key: string): Promise<boolean | void>;
   onFocusComposer(): void;
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
+  onReady?(ready: boolean): void; sessionId?: string;
 }) {
   const t = useTokens();
   const { setNotice } = useChatUiActions();
@@ -30,21 +42,29 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     return () => { show.remove(); hide.remove(); };
   }, [phone]);
   const compact = phone && keyboard && !bubble;
+  const [width, setWidth] = useState(0);
   const measuredHeights = useRef(new Map<string, number>());
+  const openHeights = useRef(new Map<string, number>());
+  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, compact, width, entry.key, entry.updated_at]);
   const pressing = useRef(false);
   const [height, setHeight] = useState(0);
   const commitHeight = () => {
-    if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(`${compact}:${entry.key}`)))) return;
-    const next = Math.max(0, ...entries.map(entry => measuredHeights.current.get(`${compact}:${entry.key}`) ?? 0));
+    if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))) return;
+    const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
+      bubble && entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
     setHeight(saved => saved === next ? saved : next);
   };
-  useLayoutEffect(commitHeight, [entries, compact]);
+  useLayoutEffect(commitHeight, [entries, compact, width, bubble]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
+  const ready = !bubble || height > 0;
+  useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
   const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
+  const latestInteraction = useRef(interaction);
+  latestInteraction.current = interaction;
+  const navInteraction = useCallback((pressed: boolean) => latestInteraction.current(pressed), []);
   const scroll = useRef<ScrollView>(null);
   const deck = useRef<View>(null);
   const titleNodes = useRef<Record<string, Text | null>>({});
-  const [width, setWidth] = useState(0);
   const expectedScroll = useRef<number | null>(null);
   const scrollOffset = useRef(0);
   const moveFocus = useRef(false);
@@ -95,7 +115,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   };
   if (!count) return null;
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
-    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }]} {...reportWebProps({ role: 'region' })}
+    pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
+    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={bubble ? { height: bubbleHeight, flexShrink: 0,
@@ -115,11 +136,16 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         const next = Math.max(0, Math.min(count - 1, Math.round(x / width)));
         if (next !== index) { if (focusInside()) moveFocus.current = true; onSelect(next); }
       }} scrollEventThrottle={16}>
-      {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={`${entry.key}-${width}`} entry={entry}
+      {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={measureKey(entry)} entry={entry}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         bubble={bubble} bubbleHeight={bubbleHeight} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
-        onHeight={height => { measuredHeights.current.set(`${compact}:${entry.key}`, height); commitHeight(); }}
+        onHeight={height => {
+          const id = measureKey(entry);
+          measuredHeights.current.set(id, height);
+          if (bubble && entry.state === 'open') openHeights.current.set(id, height);
+          commitHeight();
+        }}
         titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
         onDismiss={() => {
           moveFocus.current = Platform.OS !== 'web' || focusInside();
@@ -129,18 +155,18 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
           void send?.sendOption(entry, option);
         }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />) : null}
     </ScrollView>
-    {count > 1 && !compact ? <View testID="report-nav" style={styles.nav}>
-      {!phone ? <LiquidGlassButton iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
+    {count > 1 && !compact && !phone ? <View testID="report-nav" style={styles.nav}>
+      <ReportNavButton interaction={navInteraction} testID="report-prev-touch" iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
         <Ionicons name="chevron-back" size={t.iconSize.navigation} color={index === 0 ? t.colors.textPlaceholder : t.colors.textPrimary} />
-      </LiquidGlassButton> : null}
+      </ReportNavButton>
       <Text testID={phone ? 'report-page' : 'report-count'} aria-live="polite" style={styles.count}
         accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
         accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}
         accessibilityActions={[{ name: 'increment', label: '다음 장' }, { name: 'decrement', label: '앞 장' }]}
         onAccessibilityAction={event => step(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>{page}</Text>
-      {!phone ? <LiquidGlassButton iconOnly variant="plain" size="compact" accessibilityLabel="다음 장" disabled={index === count - 1} onPress={() => step(1)}>
+      <ReportNavButton interaction={navInteraction} testID="report-next-touch" iconOnly variant="plain" size="compact" accessibilityLabel="다음 장" disabled={index === count - 1} onPress={() => step(1)}>
         <Ionicons name="chevron-forward" size={t.iconSize.navigation} color={index === count - 1 ? t.colors.textPlaceholder : t.colors.textPrimary} />
-      </LiquidGlassButton> : null}
+      </ReportNavButton>
     </View> : null}
   </View>;
 }

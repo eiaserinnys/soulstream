@@ -40,7 +40,7 @@ export function reportStyles(t: DesignTokens, _bleed: number, showNav: boolean) 
     nav: { position: 'absolute', left: t.uiSpacing.lg - (showNav ? iconOverhang : 0), bottom: t.uiSpacing.lg,
       flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs },
     count: { ...type.meta, color: t.colors.textMuted, fontVariant: ['tabular-nums'], minWidth: t.uiSpacing.xxl, textAlign: 'center' },
-    page: { ...type.meta, color: t.colors.textMuted, fontVariant: ['tabular-nums'], alignSelf: 'flex-start' },
+    page: { ...type.meta, color: t.colors.textMuted, fontVariant: ['tabular-nums'], alignSelf: 'flex-start', marginTop: 'auto' },
     actions: { marginLeft: 'auto', flexShrink: 1, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end',
       columnGap: t.uiSpacing.sm, rowGap: t.uiSpacing.xs },
     button: { maxWidth: '100%' },

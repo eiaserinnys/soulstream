@@ -107,6 +107,7 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');
+  expect(body.props.reportView).toBeNull(); // No provisional band before composer/layout measurement.
   act(() => body.props.onComposerLayout(
     { x: 0, y: 644, width: 480, height: 76 },
     { x: 0, y: 20, width: 480, height: 56 },
@@ -114,7 +115,7 @@ test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점
   const before = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style);
   const line = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style);
   act(() => useSessionStore.getState().applyPersistentReport('pas-1', reportReviewEntries));
-  const bubble = view.getByTestId('persistent-session-report-bubble-seat');
+  const bubble = view.getByTestId('persistent-session-report-bubble-seat', { includeHiddenElements: true });
   const character = view.getByTestId('persistent-session-character-seat');
   // Native pointerEvents=none portrait cannot own the report's hit frame.
   const hostParent = (node: typeof bubble) => {

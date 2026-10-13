@@ -61,13 +61,22 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
       accessibilityRole="link" style={styles.link} onPress={event => { event.stopPropagation(); onLink(part.url); }}>{part.label}</Text>)}
   </Text>;
   const frame = <View testID="report-reading"
-    onLayout={!bubble && !compact ? event => measure('reading', event.nativeEvent.layout.height + t.uiSpacing.md) : undefined} style={[styles.reading, answer && !compact && asked.reading ? { minHeight: Math.max(0, asked.reading - t.uiSpacing.md) } : null]}>
+    onLayout={!bubble ? event => measure('reading', event.nativeEvent.layout.height + t.uiSpacing.md
+      + (compact ? t.uiSpacing.lg + (count > 1 ? t.uiSpacing.sm + t.foundation.typography.meta.lineHeight : 0) : 0)) : undefined}
+    style={[styles.reading, answer && !bubble && !compact && asked.reading ? { minHeight: Math.max(0, asked.reading - t.uiSpacing.md) } : null]}>
     {heading}{!compact ? <Text testID="report-context" style={styles.context}>{entry.context}</Text> : null}
     {answer ? compact ? received : null : todo}
   </View>;
   const foot = hasFooter
     ? <View testID="report-footer" style={styles.foot} onLayout={event => measure('foot', event.nativeEvent.layout.height)}>
-      {count > 1 ? <View testID="report-nav-slot" style={styles.navSlot} /> : null}
+      {count > 1 ? <View testID="report-nav-slot" style={[styles.navSlot, !showNav && { width: 'auto', minWidth: t.uiSpacing.xxl,
+        height: t.hitTarget.min, justifyContent: 'center' }]}>
+        {!showNav ? <Text testID="report-page" style={styles.count} numberOfLines={1}
+          accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
+          accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}
+          accessibilityActions={[{ name: 'increment', label: '다음 장' }, { name: 'decrement', label: '앞 장' }]}
+          onAccessibilityAction={event => onStep(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>{page}</Text> : null}
+      </View> : null}
       {answer ? <View style={[styles.received, { minHeight: Math.max(asked.foot - t.uiSpacing.md - t.uiSpacing.lg, t.hitTarget.min) }]}>
         {received}{cancelSent ? <Text testID="report-cancel-sent" style={styles.cancelLabel}>취소 요청 보냄</Text>
           : canCancel ? <View style={styles.cancelEdge}><GlassButton testID="report-cancel" variant="plain" size="compact"
@@ -87,8 +96,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     onTouchCancel={() => onInteraction?.(false)} {...reportWebProps({ inert: !current, tabIndex: -1, role: 'group' })}
     style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }, bubble && { height: bubbleHeight }, !compact && styles.resting]}>
     {bubble ? <PersistentReportReading current={current} styles={styles} onHeight={height => measure('reading', height)}>{frame}</PersistentReportReading>
-      : <View style={[styles.body, compact ? styles.compact : null, { flexGrow: compact ? 0 : 1 }]}
-          onLayout={compact ? event => measure('reading', event.nativeEvent.layout.height) : undefined}>{frame}
+      : <View style={[styles.body, compact ? styles.compact : null, { flexGrow: 1 }]}>{frame}
         {compact && count > 1 ? <Text testID="report-page" style={styles.page} accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
           accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}
           accessibilityActions={[{ name: 'increment', label: '다음 장' }, { name: 'decrement', label: '앞 장' }]}

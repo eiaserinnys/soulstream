@@ -73,6 +73,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
   const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
   const [reportPressed, setReportPressed] = useState(false);
+  const [reportReady, setReportReady] = useState(false);
   const display = useChatStore(state => session?.session_id
     ? state.persistentDisplaySettingsBySession[session.session_id]?.settings ?? null
     : null);
@@ -126,10 +127,11 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   if (!reportPressed || resized) heldGeometry.current = nextGeometry;
   previousSize.current = [app?.width, app?.height];
   const geometry = heldGeometry.current;
-  const pager = <PersistentReportPager entries={reportSend.entries} index={report.index} api={api}
+  const pager = geometry ? <PersistentReportPager entries={reportSend.entries} index={report.index} api={api}
+    sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} bubble={!!geometry?.reportBubble} maxHeight={geometry?.reportBubble?.maxHeight}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed}
-    onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} />;
+    onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
     if (state.scene === 'cards') {
@@ -220,8 +222,9 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           active={active && !settingsOpen} />
       </View> : null}
       {!phone && geometry?.reportBubble && report.entries.length > 0 ? <View testID="persistent-session-report-bubble-seat"
+        pointerEvents={reportReady ? 'auto' : 'none'} accessibilityElementsHidden={!reportReady}
         style={{ position: 'absolute', left: geometry.reportBubble.left, bottom: (app?.height ?? 0) - geometry.reportBubble.bottom,
-          width: geometry.reportBubble.width, maxHeight: geometry.reportBubble.maxHeight }}>
+          width: geometry.reportBubble.width, maxHeight: geometry.reportBubble.maxHeight, opacity: reportReady ? 1 : 0 }}>
         {pager}
         <View testID="report-tail" pointerEvents="none" style={{ position: 'absolute',
           left: geometry.reportBubble.tailLeft - t.uiSpacing.lg / 2, bottom: -t.uiSpacing.lg / 2,
