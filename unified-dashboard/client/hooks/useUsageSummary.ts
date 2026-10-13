@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  findUsageSummaryNode,
+  maxWeeklyUsageGaugeCount,
+  selectUsageSummaryNode,
   weeklyUsageGauges,
   USAGE_SUMMARY_REFRESH_INTERVAL_MS,
   type UsageSummaryGauge,
@@ -16,6 +17,7 @@ export type UsageSummaryLoadState = "idle" | "ready" | "serverPending" | "connec
 export type UseUsageSummaryOptions = {
   enabled: boolean;
   nodeId: string | null;
+  selectedNodeId?: string | null;
   scopeKey: string;
   request?: typeof fetch;
 };
@@ -24,6 +26,7 @@ export type UseUsageSummaryResult = {
   summary: UsageSummarySnapshot | null;
   node: UsageSummaryNode | null;
   gauges: UsageSummaryGauge[];
+  maxGaugeCount: number;
   loading: boolean;
   loadState: UsageSummaryLoadState;
   evaluatedAtMs: number;
@@ -60,6 +63,7 @@ function statusOf(caught: unknown): number | null {
 export function useUsageSummary({
   enabled,
   nodeId,
+  selectedNodeId = null,
   scopeKey,
   request = globalThis.fetch,
 }: UseUsageSummaryOptions): UseUsageSummaryResult {
@@ -133,8 +137,9 @@ export function useUsageSummary({
 
   const scopedState = state.scopeKey === scopeKey ? state : emptyState(scopeKey);
   const summary = scopedState.hideSummary ? null : scopedState.lastSuccess;
-  const node = findUsageSummaryNode(summary, nodeId);
+  const node = selectUsageSummaryNode(summary, nodeId, selectedNodeId);
   const gauges = useMemo(() => weeklyUsageGauges(node), [node]);
+  const maxGaugeCount = maxWeeklyUsageGaugeCount(summary);
   let loadState: UsageSummaryLoadState;
   if (scopedState.outcome === "connectionError") loadState = "connectionError";
   else if (scopedState.outcome === "serverPending") loadState = "serverPending";
@@ -145,6 +150,7 @@ export function useUsageSummary({
     summary,
     node,
     gauges,
+    maxGaugeCount,
     loading: scopedState.loading,
     loadState,
     evaluatedAtMs: scopedState.evaluatedAtMs,

@@ -4,7 +4,7 @@ import type { ApiClient } from '../../api/client';
 import { resetAuthScopeForTest } from '../../lib/auth-scope';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
-import { useUsageSummary } from '../useUsageSummary';
+import { useUsageSummary, type UseUsageSummaryOptions } from '../useUsageSummary';
 
 const usage: UsageSummarySnapshot = {
   generatedAt: '2026-10-11T00:00:00.000Z',
@@ -23,6 +23,24 @@ const usage: UsageSummarySnapshot = {
       gemini: null,
     },
   }],
+};
+const usageWithNodes: UsageSummarySnapshot = {
+  ...usage,
+  nodes: [
+    usage.nodes[0],
+    {
+      ...usage.nodes[0],
+      nodeId: 'other-node',
+      providers: {
+        ...usage.nodes[0].providers,
+        claude: { ...usage.nodes[0].providers.claude!, weeklyRemainingPercent: 41 },
+        codex: {
+          status: 'auto', weeklyRemainingPercent: 22, weeklyResetAt: null,
+          shortRemainingPercent: null, shortResetAt: null, quotas: [],
+        },
+      },
+    },
+  ],
 };
 
 function deferred<T>() {
@@ -85,15 +103,32 @@ test('opens immediately, pauses closed, reopens, keeps a failed refresh, retries
 });
 
 test('node changes project the all-node response without another request', async () => {
-  const api = { getUsageSummary: jest.fn().mockResolvedValue(usage) } as unknown as ApiClient;
+  const api = {
+    getUsageSummary: jest.fn()
+      .mockResolvedValueOnce(usageWithNodes)
+      .mockRejectedValueOnce(new Error('offline')),
+  } as unknown as ApiClient;
+  const initial: UseUsageSummaryOptions = { enabled: true, nodeId: 'missing-node', selectedNodeId: null, api };
   const { result, rerender } = renderHook(
-    ({ nodeId }: { nodeId: string | null }) => useUsageSummary({ enabled: true, nodeId, api }),
-    { initialProps: { nodeId: 'pas-node' } },
+    (props: typeof initial) => useUsageSummary(props),
+    { initialProps: initial },
   );
   await waitFor(() => expect(result.current.node?.nodeId).toBe('pas-node'));
+  expect(result.current.maxGaugeCount).toBe(2);
 
-  rerender({ nodeId: 'other-node' });
+  rerender({ ...initial, selectedNodeId: 'other-node' });
   expect(api.getUsageSummary).toHaveBeenCalledTimes(1);
-  expect(result.current.node).toBeNull();
-  expect(result.current.loadState).toBe('serverPending');
+  expect(result.current.node?.nodeId).toBe('other-node');
+  expect(result.current.gauges.map((gauge) => gauge.remainingPercent)).toEqual([41, 22]);
+
+  await act(async () => { await jest.advanceTimersByTimeAsync(15 * 60 * 1000); });
+  await waitFor(() => expect(result.current.loadState).toBe('connectionError'));
+  expect(result.current.node?.nodeId).toBe('other-node');
+  expect(result.current.gauges.map((gauge) => gauge.remainingPercent)).toEqual([41, 22]);
+  expect(api.getUsageSummary).toHaveBeenCalledTimes(2);
+
+  rerender({ ...initial, selectedNodeId: 'missing-node' });
+  expect(result.current.node?.nodeId).toBe('pas-node');
+  expect(result.current.gauges[0]?.remainingPercent).toBe(73);
+  expect(api.getUsageSummary).toHaveBeenCalledTimes(2);
 });

@@ -54,6 +54,36 @@ export function findUsageSummaryNode(
   return summary.nodes.find((node) => node.nodeId === nodeId) ?? null;
 }
 
+export function selectUsageSummaryNode(
+  summary: UsageSummarySnapshot | null,
+  preferredNodeId: string | null,
+  selectedNodeId: string | null,
+): UsageSummaryNode | null {
+  return findUsageSummaryNode(summary, selectedNodeId)
+    ?? findUsageSummaryNode(summary, preferredNodeId)
+    ?? summary?.nodes[0]
+    ?? null;
+}
+
+export function nextUsageSummaryNodeId(
+  summary: UsageSummarySnapshot | null,
+  currentNodeId: string | null,
+): string | null {
+  if (!summary || summary.nodes.length === 0) return null;
+
+  const currentIndex = summary.nodes.findIndex((node) => node.nodeId === currentNodeId);
+  const startIndex = currentIndex < 0 ? 0 : currentIndex;
+  return summary.nodes[(startIndex + 1) % summary.nodes.length].nodeId;
+}
+
+export function maxWeeklyUsageGaugeCount(summary: UsageSummarySnapshot | null): number {
+  if (!summary) return 0;
+  return summary.nodes.reduce(
+    (maximum, node) => Math.max(maximum, weeklyUsageGauges(node).length),
+    0,
+  );
+}
+
 export function weeklyUsageGauges(node: UsageSummaryNode | null): UsageSummaryGauge[] {
   if (!node) return [];
 

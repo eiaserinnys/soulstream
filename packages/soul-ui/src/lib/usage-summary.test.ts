@@ -5,6 +5,9 @@ import {
   formatUsageResetCountdown,
   formatUsageUpdatedLabel,
   formatWeeklyRemainingPercent,
+  maxWeeklyUsageGaugeCount,
+  nextUsageSummaryNodeId,
+  selectUsageSummaryNode,
   weeklyUsageGauges,
   type UsageSummaryNode,
   type UsageSummarySnapshot,
@@ -49,6 +52,57 @@ describe("usage summary projection", () => {
     expect(findUsageSummaryNode(summary, "missing-node")).toBeNull();
     expect(findUsageSummaryNode(summary, null)).toBeNull();
     expect(findUsageSummaryNode(null, "pas-node")).toBeNull();
+  });
+
+  it("selects the stored node, then the PAS node, then the first response node", () => {
+    const summary: UsageSummarySnapshot = {
+      generatedAt: "2026-10-11T00:00:00.000Z",
+      collectedAt: null,
+      nodes: [node("first-node"), node("pas-node"), node("stored-node")],
+    };
+
+    expect(selectUsageSummaryNode(summary, "pas-node", "stored-node")?.nodeId).toBe("stored-node");
+    expect(selectUsageSummaryNode(summary, "pas-node", "missing-node")?.nodeId).toBe("pas-node");
+    expect(selectUsageSummaryNode(summary, "missing-node", null)?.nodeId).toBe("first-node");
+    expect(selectUsageSummaryNode({ ...summary, nodes: [] }, "pas-node", null)).toBeNull();
+    expect(selectUsageSummaryNode(null, "pas-node", null)).toBeNull();
+  });
+
+  it("cycles in response order, including stale nodes without gauges, and keeps the maximum slot count", () => {
+    const fableQuota = {
+      id: "claude:weekly_scoped:fable",
+      label: "Fable",
+      window: "7d",
+      model: null,
+      remainingPercent: 55,
+      resetAt: null,
+    };
+    const threeGauges = node("three-gauges", {
+      claude: { ...emptyProvider, weeklyRemainingPercent: 73, quotas: [fableQuota] },
+      codex: { ...emptyProvider, weeklyRemainingPercent: 42 },
+    });
+    const noGauges = { ...node("no-gauges"), stale: true };
+    const twoGauges = node("two-gauges", {
+      claude: { ...emptyProvider, weeklyRemainingPercent: 61 },
+      codex: { ...emptyProvider, weeklyRemainingPercent: 38 },
+    });
+    const summary: UsageSummarySnapshot = {
+      generatedAt: "2026-10-11T00:00:00.000Z",
+      collectedAt: null,
+      nodes: [threeGauges, noGauges, twoGauges],
+    };
+
+    expect(nextUsageSummaryNodeId(summary, "three-gauges")).toBe("no-gauges");
+    expect(nextUsageSummaryNodeId(summary, "no-gauges")).toBe("two-gauges");
+    expect(nextUsageSummaryNodeId(summary, "missing-node")).toBe("no-gauges");
+    expect(nextUsageSummaryNodeId({ ...summary, nodes: [twoGauges] }, "two-gauges")).toBe("two-gauges");
+    expect(nextUsageSummaryNodeId({ ...summary, nodes: [] }, "three-gauges")).toBeNull();
+    expect(nextUsageSummaryNodeId(null, "three-gauges")).toBeNull();
+    expect(weeklyUsageGauges(threeGauges)).toHaveLength(3);
+    expect(weeklyUsageGauges(twoGauges)).toHaveLength(2);
+    expect(maxWeeklyUsageGaugeCount(summary)).toBe(3);
+    expect(maxWeeklyUsageGaugeCount({ ...summary, nodes: [] })).toBe(0);
+    expect(maxWeeklyUsageGaugeCount(null)).toBe(0);
   });
 
   it("uses Claude, the first matching Fable scoped quota, then Codex while preserving zero", () => {
