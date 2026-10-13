@@ -1,4 +1,5 @@
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
+import type { PublishPersistentReports } from "./session/persistent_report_service.js";
 import { OwnedAgentService } from "./owned-agents/service.js";
 import { createSessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
@@ -260,11 +261,13 @@ export async function createLiveProductionApplication(
     },
     repository: new SessionDeletionRepository(sqlResolver),
   });
+  let publishPersistentReports: PublishPersistentReports = () => undefined;
   const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(
     sqlResolver,
     sessionDeletionService,
     searchDbConnectionFactory,
     reportSearchCancelError,
+    updates => publishPersistentReports(updates),
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
@@ -474,6 +477,12 @@ export async function createLiveProductionApplication(
       sessionIds,
       movedBoardItem ? { [movedBoardItem.id]: movedBoardItem } : {},
     );
+  publishPersistentReports = updates => {
+    for (const update of updates) {
+      registry.sessionCache.patchPersistentReport(update.agent_session_id, update.persistent_report);
+      runtimeServices.sessionBroadcaster.append({ type: "session_updated", agent_session_id: update.agent_session_id, persistent_report: update.persistent_report });
+    }
+  };
   publishReconciledSessionUpdate = (update) => {
     const message = {
       type: "session_updated",
@@ -606,6 +615,7 @@ export async function createLiveProductionApplication(
   cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
     availability:providers.modelPresetAvailability,notifier:pushNotifier,admin:providers.adminUsersRoutes.provider,
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
+    onReportsChanged: updates => publishPersistentReports(updates),
     usageSnapshot: () => usageSummaryService.getSummary(),
     validateFolder: orchestrationAccess.validateFolder,
     resolveSessionOwner,
@@ -1104,6 +1114,9 @@ export function buildProductionRouteOptions(
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,
+      acceptPersistentReportReply: async (sessionId, contextItems, callerInfo) => {
+        await (await persistenceRepositoryProvider()).persistentReports!.acceptReply(sessionId,contextItems,callerInfo);
+      },
       deliveryRepositoryProvider: async () =>
         (await persistenceRepositoryProvider()).deliveries,
     },
@@ -1121,6 +1134,8 @@ export function buildProductionRouteOptions(
     sessionCatalogRoutes: providers.sessionCatalogRoutes,
     persistentSessionRoutes: {
       service: persistentSessionSettingsService,
+      reports: { remove: async (sessionId,key) => (await persistenceRepositoryProvider()).persistentReports!.remove(sessionId,key) },
+      requireSessionAccess: sessionAccessProvider.requireSessionAccess,
     },
     sessionCommandRoutes: providers.runtime.sessionCommandRoutes,
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,

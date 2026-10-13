@@ -8,6 +8,11 @@ import {
 } from "../src/index.js";
 
 describe("session feed projection", () => {
+  it("carries current report values including empty and preserves omission", () => {
+    expect(projectSessionFeedSummary({persistentReport:[]})).toHaveProperty('persistentReport',[]);
+    expect(projectSessionFeedUpdate({agentSessionId:'pas',persistent_report:[]})).toEqual({type:'session_updated',agent_session_id:'pas',persistent_report:[]});
+    expect(projectSessionFeedUpdate({agentSessionId:'pas',status:'running'})).not.toHaveProperty('persistent_report');
+  });
   it("retains cardId in the snapshot and one canonical patch field", () => {
     expect(projectSessionFeedSummary({ agentSessionId: "s",cardId: "c" })).toHaveProperty("cardId", "c");
     expect(projectSessionFeedUpdate({ agentSessionId: "s",cardId: "c" })).toMatchObject({ card_id: "c" });

@@ -103,6 +103,7 @@ export class SessionReadRepository {
             s.model,
             NULLIF(s.reasoning_effort, 'auto') AS reasoning_effort,
             s.predecessor_session_id,
+            (SELECT m->'value'->'entries' FROM jsonb_array_elements(COALESCE(s.metadata,'[]'::jsonb)) m WHERE m->>'type'='persistent_report' LIMIT 1) AS persistent_report,
             COUNT(*) OVER()::BIGINT AS total_count
           FROM sessions s
           WHERE (
@@ -162,6 +163,7 @@ export class SessionReadRepository {
           -- tell a pre-089 NULL apart from a recorded "auto".
           NULLIF(s.reasoning_effort, 'auto') AS reasoning_effort,
           s.predecessor_session_id,
+          (SELECT m->'value'->'entries' FROM jsonb_array_elements(COALESCE(s.metadata,'[]'::jsonb)) m WHERE m->>'type'='persistent_report' LIMIT 1) AS persistent_report,
           COUNT(*) OVER()::BIGINT AS total_count
         FROM sessions s
         WHERE (

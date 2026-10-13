@@ -49,7 +49,7 @@ const HOST_RECEIVED_AT_HEADER = "x-soulstream-host-received-at-ms";
 const HOST_RESPONDED_AT_HEADER = "x-soulstream-host-responded-at-ms";
 const OPAQUE_ARGUMENT_KEYS = new Set(["payload", "caller_info"]);
 /** Response keys whose subtree is persisted JSON and is returned exactly as stored. */
-const OPAQUE_RESPONSE_KEYS = new Set(["metadata"]);
+const OPAQUE_RESPONSE_KEYS = new Set(["metadata", "persistent_report"]);
 
 export class PersistenceHostRequestError extends Error {
   readonly retryable: boolean;

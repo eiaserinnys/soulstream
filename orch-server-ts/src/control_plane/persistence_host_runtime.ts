@@ -14,8 +14,10 @@ import { SessionHistorySearchRepository } from "./repositories/session_history_s
 import { SessionReadCompositeRepository } from "./repositories/session_read_composite.js";
 import type { SessionDeletionPort } from "../session/session_deletion_service.js";
 import { WorktreeRepository } from "./repositories/worktree_repository.js";
+import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
 
 export interface PersistenceHostRepositories {
+  persistentReports?: PersistentReportService;
   deliveries: SessionDeliveryRepository;
   claudeBackgroundTasks: ClaudeBackgroundTaskRepository;
   claudeTranscripts: ClaudeTranscriptRepository;
@@ -34,6 +36,7 @@ export function createPersistenceHostRepositoryProvider(
   sessionDeletion: SessionDeletionPort,
   searchConnectionFactory: LiveSearchDbConnectionFactory,
   onSearchCancelError?: (error: unknown) => void,
+  publishReports: PublishPersistentReports = () => undefined,
 ): () => Promise<PersistenceHostRepositories> {
   const resolver = new BoardYjsSqlResolver(sqlResolver);
   let repositories: PersistenceHostRepositories | undefined;
@@ -48,6 +51,7 @@ export function createPersistenceHostRepositoryProvider(
       onSearchCancelError,
     );
     repositories = {
+      persistentReports: new PersistentReportService(await resolver.resolveSql(), publishReports),
       deliveries: new SessionDeliveryRepository(sql),
       claudeBackgroundTasks: new ClaudeBackgroundTaskRepository(sql),
       claudeTranscripts: new ClaudeTranscriptRepository(sql),

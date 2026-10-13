@@ -20,6 +20,7 @@ import {
 import { SessionDataHostClient } from "../control_plane/session_data_host_client.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
+import { PersistentReportHostClient } from "../control_plane/persistent_report_host_client.js";
 import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
 import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
 import { LlmExecutor } from "../llm/executor.js";
@@ -363,6 +364,7 @@ export async function composeWorkerRuntime(
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
   const mcpRuntime: McpRuntime = {
+    persistentReports: new PersistentReportHostClient(orchHostClientDeps),
     nodeId: env.SOULSTREAM_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,

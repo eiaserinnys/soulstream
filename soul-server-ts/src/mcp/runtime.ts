@@ -37,6 +37,7 @@ export interface ChatUiPublisher {
 }
 
 export interface McpRuntime {
+  persistentReports?: Pick<import("../control_plane/persistent_report_host_client.js").PersistentReportHostClient, "put" | "remove">;
   nodeId: string;
   agentsConfigPath: string;
   db: SessionDB;

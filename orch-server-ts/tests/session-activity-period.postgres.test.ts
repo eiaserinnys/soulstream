@@ -25,6 +25,7 @@ describe("session activity period repositories", () => {
         ADD COLUMN away_summary TEXT,
         ADD COLUMN last_read_event_id INTEGER,
         ADD COLUMN model_preset TEXT,
+        ADD COLUMN metadata JSONB NOT NULL DEFAULT '[]'::jsonb,
         ADD COLUMN model TEXT;
       CREATE OR REPLACE FUNCTION event_read(
         p_session_id TEXT, p_after_id INTEGER, p_limit INTEGER, p_event_types TEXT[]

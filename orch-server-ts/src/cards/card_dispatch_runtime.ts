@@ -41,6 +41,7 @@ import type { OrchestrationCandidate } from "@soulstream/wire-schema/card-orches
 import { CardWorkDispatchService, type DispatchWorkActor } from "./card_work_dispatch_service.js";
 import { canonicalWorkErrorDeliveryId, recordConfirmedErrorTx } from "./card_work_error_delivery.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
+import type { PublishPersistentReports } from "../session/persistent_report_service.js";
 
 function systemCallerInfo(ownerEmail:string|null) {
   return {source:"system" as const,...(ownerEmail?{email:ownerEmail}:{})};
@@ -55,6 +56,7 @@ export async function createCardDispatchRuntime(options: {
   admin: AdminAccessProvider;
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   warn: (message: string) => void;
+  onReportsChanged?: PublishPersistentReports;
   onFolderHeaderUpdated: () => Promise<void>;
   usageSnapshot: () => UsageSummarySnapshot;
   ensureSystemFolder: (input: {
@@ -95,6 +97,7 @@ export async function createCardDispatchRuntime(options: {
     warn: options.warn,
     onFolderHeaderUpdated: options.onFolderHeaderUpdated,
     onMutation: (change) => dispatcher.acceptMutation(change),
+    onReportsChanged: options.onReportsChanged,
   });
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
     repository: cardDispatchRepository,
