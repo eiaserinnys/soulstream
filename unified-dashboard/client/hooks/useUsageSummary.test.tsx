@@ -22,7 +22,7 @@ const pasNode: UsageSummarySnapshot["nodes"][number] = {
       quotas: [],
     },
     codex: null,
-    gemini: null,
+    gemini: null, antigravity: null,
   },
 };
 const otherNode: UsageSummarySnapshot["nodes"][number] = {

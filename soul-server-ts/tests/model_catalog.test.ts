@@ -303,3 +303,11 @@ presets:
     });
   });
 });
+
+it("advertises the Antigravity usage provider for both account presets", () => {
+  const catalog = new ModelCatalog(path.resolve(process.cwd(), "config/model-catalog.yaml.example"));
+  expect(catalog.advertise({}).filter(p => p.backend === "antigravity")).toMatchObject([
+    { id: "gemini-3.8-flash", usage_provider: "antigravity" },
+    { id: "gemini-4-argon", usage_provider: "antigravity" },
+  ]);
+});

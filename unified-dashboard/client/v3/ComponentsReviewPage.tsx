@@ -137,6 +137,9 @@ export function ComponentsReviewPage() {
               <Sample name="RichSessionRow / RunRowFrame" state="기본 · 행 클릭 · 포커스">
                 <div className="v3-run-list"><RichSessionRow session={reviewSession} onOpen={() => open("세션")}/></div>
               </Sample>
+              <Sample name="RichSessionRow / RunRowFrame" state="Antigravity · backend 이름">
+                <div className="v3-run-list"><RichSessionRow session={{ ...reviewSession, agentSessionId: "components-antigravity", backend: "antigravity", modelLabel: undefined }} onOpen={() => open("Antigravity 세션")}/></div>
+              </Sample>
               <Sample name="RichSessionRow" state="small · 긴 한국어 제목">
                 <div className="v3-run-list"><RichSessionRow size="small" session={{ ...reviewSession, agentSessionId: "components-small", displayName: reviewTitle }} onOpen={() => open("small 세션")}/></div>
               </Sample>

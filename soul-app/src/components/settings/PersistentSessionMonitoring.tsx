@@ -201,7 +201,7 @@ export function persistentSessionQuotaRows(session: PersistentSessionResource, p
   }
 
   return [...groups].map(([key, group]) => {
-    const provider = group.backend === 'claude' ? 'Claude' : group.backend === 'codex' ? 'Codex' : group.backend;
+    const provider = group.backend === 'claude' ? 'Claude' : group.backend === 'codex' ? 'Codex' : group.backend === 'antigravity' ? 'Antigravity' : group.backend;
     const label = provider ? `${provider} · ${group.roles.join('·')}` : group.roles.join('·');
     if (group.unavailable || group.headroom === null) return { key, label, headroomLabel: null, metadata: null };
 

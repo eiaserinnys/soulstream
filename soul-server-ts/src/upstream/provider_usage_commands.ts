@@ -43,10 +43,10 @@ function normalizeProvider(value: unknown): ProviderUsageName | undefined {
   if (value === undefined || value === null || value === "") {
     return undefined;
   }
-  if (value === "claude" || value === "codex" || value === "gemini") {
+  if (value === "claude" || value === "codex" || value === "gemini" || value === "antigravity") {
     return value;
   }
-  throw new ProviderUsageCommandError("provider must be one of: claude, codex, gemini");
+  throw new ProviderUsageCommandError("provider must be one of: claude, codex, gemini, antigravity");
 }
 
 function commandRequestId(cmd: CommandLike): string {

@@ -10,6 +10,7 @@ const usage: ProviderUsageSnapshot = { generatedAt: '2026-10-04T00:00:00Z', prov
   claude: { status: 'auto', source: 'public-fixture', planType: '공개 예시', quotas: [quota('5h', 0), quota('weekly', 50.125), quota('amount-only', null)] },
   codex: { status: 'auto', source: 'public-fixture', planType: '공개 예시', quotas: [quota('primary', 120.125), quota('secondary', null)] },
   gemini: { status: 'not_configured', source: 'public-fixture', planType: null, quotas: [] },
+  antigravity: { status: 'not_configured', source: 'public-fixture', planType: null, quotas: [] },
 } };
 let policy: SessionReviewPolicyPayload = { policy: { key: 'session_review_policy', sourceAllowlist: ['slack'], version: 1, updatedBy: '공개 예시', updatedAt: '2026-10-04T00:00:00Z' }, conditionalRules: [], sourceCatalog: ['slack', 'soul-app', 'external-llm', 'clipper', 'llm', 'agent', 'system', 'cron', 'channel_observer'].map(source => ({ source, label: source, description: '공개 예시 출처', automatic: ['llm', 'agent', 'system', 'cron', 'channel_observer'].includes(source) })) };
 let jobs: RecurringJobDto[] = Array.from({ length: 12 }, (_, index) => ({

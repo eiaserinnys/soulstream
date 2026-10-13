@@ -28,10 +28,10 @@ function reviewNode(nodeId: string, providers: UsageSummaryNode['providers']): U
 const threeGauges = reviewNode('node-a', {
   claude: provider(73, [{ id: 'claude:weekly_scoped:fable', label: 'Fable', window: '7d', model: 'Fable', remainingPercent: 41, resetAt }]),
   codex: provider(18),
-  gemini: null,
+  gemini: null, antigravity: null,
 });
-const twoGauges = reviewNode('node-b', { claude: provider(66), codex: provider(42), gemini: null });
-const noGauges = reviewNode('node-c', { claude: null, codex: null, gemini: null });
+const twoGauges = reviewNode('node-b', { claude: provider(66), codex: provider(42), gemini: null, antigravity: null });
+const noGauges = reviewNode('node-c', { claude: null, codex: null, gemini: null, antigravity: null });
 const summary: UsageSummarySnapshot = {
   generatedAt: '2026-10-13T08:00:00.000Z',
   collectedAt: null,

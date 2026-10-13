@@ -8,7 +8,7 @@ function quota(remainingPercent: number | null, fields: Partial<UsageSummaryQuot
   return { id: "codex:5h", label: "5시간", window: "5h", model: null, remainingPercent, resetAt: 1, source: "codex-usage-api", purpose: "execution", ...fields };
 }
 function snapshot(fields: Partial<UsageSummaryProvider> = {}, stale = false): UsageSummarySnapshot {
-  return { generatedAt: now.toISOString(), collectedAt: now.toISOString(), nodes: [{ nodeId: "node", fetchedAt: now.toISOString(), stale, staleSince: null, providers: { claude: null, gemini: null, codex: { status: "auto", weeklyRemainingPercent: null, weeklyResetAt: null, shortRemainingPercent: null, shortResetAt: null, observedAt: now.toISOString(), source: "codex-usage-api", sourceKind: "remote", quotas: [quota(15)], ...fields } } }] };
+  return { generatedAt: now.toISOString(), collectedAt: now.toISOString(), nodes: [{ nodeId: "node", fetchedAt: now.toISOString(), stale, staleSince: null, providers: { claude: null, gemini: null, antigravity: null, codex: { status: "auto", weeklyRemainingPercent: null, weeklyResetAt: null, shortRemainingPercent: null, shortResetAt: null, observedAt: now.toISOString(), source: "codex-usage-api", sourceKind: "remote", quotas: [quota(15)], ...fields } } }] };
 }
 describe("strict orchestration quota admission", () => {
   it("admits exactly 15% fresh global and matching model execution windows and preserves evidence", () => {

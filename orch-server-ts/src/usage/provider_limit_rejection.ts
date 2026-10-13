@@ -1,4 +1,4 @@
-export type ProviderLimitProvider = "claude" | "codex";
+export type ProviderLimitProvider = "claude" | "codex" | "antigravity";
 
 export type ProviderLimitRejection = {
   readonly rejectedUntil: string;

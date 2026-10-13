@@ -161,3 +161,17 @@ describe("model preset presentation", () => {
     });
   });
 });
+
+it("uses existing warning and exhausted labels for Antigravity without showing headroom numbers", () => {
+  const antigravity = { ...availablePreset, id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity",
+    weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: null, observed_at: null, quota_label: "7일" } };
+  const delayed = { ...antigravity, usage_warning: true };
+  expect(modelPresetOptionLabel(delayed)).toBe("Gemini - 3.8 Flash (사용량 확인 지연)");
+  expect(modelPresetSelectionState(delayed.id, [delayed], true).valid).toBe(true);
+  const exhausted = { ...antigravity, reason: "quota_exhausted", reason_label: "7일 사용량 제한" };
+  expect(modelPresetOptionLabel(exhausted)).toBe("Gemini - 3.8 Flash");
+  expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
+  const unconfigured = { ...antigravity, available: false, reason: "auth_not_configured", reason_label: "인증 미설정" };
+  expect(modelPresetOptionLabel(unconfigured)).toBe("Gemini - 3.8 Flash (인증 미설정)");
+  expect(modelPresetSelectionState(unconfigured.id, [unconfigured], true).valid).toBe(false);
+});

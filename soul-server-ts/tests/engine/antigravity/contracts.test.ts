@@ -19,11 +19,11 @@ it("uses the shared backend schema at catalog, frame and child-config boundaries
     expect(RunnerEventFrameSchema.safeParse({ protocolVersion: 1, channel: "event", kind, snapshot: { backendId: "antigravity", serialized: null, items: [] } }).success).toBe(true);
   }
 });
-it("advertises two base-model presets, bounded efforts and null usage provider until PR B", () => {
+it("advertises two base-model presets, bounded efforts and the Antigravity usage provider", () => {
   const catalog=new ModelCatalog(join(process.cwd(),"config/model-catalog.yaml.example"));
   for(const [id,effort] of [["gemini-3.8-flash","low"],["gemini-4-argon","high"]]) {
     expect(catalog.list().find(x=>x.id===id)).toMatchObject({backend:"antigravity",model:id,default_effort:effort,supported_efforts:["low","medium","high"]});
-    expect(catalog.advertise().find(x=>x.id===id)?.usage_provider).toBeNull();
+    expect(catalog.advertise().find(x=>x.id===id)?.usage_provider).toBe("antigravity");
   }
   expect(nodeEffortCapabilities("sdk").antigravity).toEqual(["low","medium","high"]);
 });

@@ -11,6 +11,7 @@ import {
   ANTHROPIC_USAGE_URL,
   type ClaudeAuthCommandHandler,
 } from "./claude_auth.js";
+import { collectAntigravityUsage, type AntigravityUsageConfig } from "./antigravity_usage.js";
 import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
 import { rememberProviderUsageObservation } from "./provider_usage_observation.js";
 import {
@@ -28,7 +29,7 @@ import {
   withinProviderUsageTimeout,
 } from "./provider_usage_telemetry.js";
 
-export type ProviderUsageName = "claude" | "codex" | "gemini";
+export type ProviderUsageName = "claude" | "codex" | "gemini" | "antigravity";
 
 export interface ProviderQuota {
   id: string;
@@ -87,6 +88,7 @@ export interface ProviderUsageCommandHandler {
 }
 
 export interface ProviderUsageServiceConfig {
+  antigravity?: AntigravityUsageConfig;
   claudeAuth?: ClaudeAuthCommandHandler;
   modelCatalog?: Pick<ModelCatalog, "list">;
   homeDir?: string;
@@ -212,14 +214,15 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   }
 
   async fetchSnapshot(): Promise<ProviderUsageSnapshot> {
-    const [claude, codex, gemini] = await Promise.all([
+    const [claude, codex, gemini, antigravity] = await Promise.all([
       this.fetchProvider("claude"),
       this.fetchProvider("codex"),
       this.fetchProvider("gemini"),
+      this.fetchProvider("antigravity"),
     ]);
     return {
       generatedAt: new Date().toISOString(),
-      providers: { claude, codex, gemini },
+      providers: { claude, codex, gemini, antigravity },
     };
   }
 
@@ -301,6 +304,8 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         return this.fetchCodexLimits(signal, deadlineAtMs, attempts);
       case "gemini":
         return this.fetchGeminiLimits(signal, attempts);
+      case "antigravity":
+        return collectAntigravityUsage(this.config.antigravity, signal);
     }
   }
 
@@ -710,6 +715,8 @@ function primaryProviderEndpoint(provider: ProviderUsageName): string {
       return CODEX_USAGE_URLS[0];
     case "gemini":
       return `${GEMINI_CODE_ASSIST_URL}:loadCodeAssist`;
+    case "antigravity":
+      return "agy:/usage";
   }
 }
 

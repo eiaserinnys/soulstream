@@ -1,6 +1,6 @@
 export const USAGE_SUMMARY_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
-export type UsageSummaryProviderName = "claude" | "codex" | "gemini";
+export type UsageSummaryProviderName = "claude" | "codex" | "gemini" | "antigravity";
 
 export type UsageSummaryQuota = {
   readonly id: string;

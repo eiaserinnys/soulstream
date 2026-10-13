@@ -36,3 +36,5 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 | 24. 로컬 MCP 프리셋 사전 확인 deadline | `soul-server-ts/src/mcp/tools/model_preset_preflight.ts:preflightModelPreset`, `control_plane/persistence_host_transport.ts:fetchOrchResponse` | **owner:** `create_agent_session`; **cadence:** 선택된 프리셋이 있을 때 호출당 orch 모델 목록 GET 1회; **기한:** 요청과 응답 읽기를 합쳐 2,000ms; **목적:** 새 세션 생성 전 orch의 프리셋 가용 판정 확인; **판정:** 재시도나 주기 timer를 만들지 않는다. | 조회가 2초를 넘기면 한 번 경고하고 세션 생성을 진행한다. |
 
 이 장을 갱신해야 하는 변경 부류: startup/maintenance cadence·delivery attempt/retry·notification recovery·node-ready/maintenance replay·runtime follow-up watchdog/receipt·event outbox/ingress retry·runner scan/liveness/termination/GC timer 변경.
+
+기존 계정 사용량 수집 주기(`UsageSummaryService`, 기본 5분)는 antigravity 공급자의 모델 없는 `/usage` 조회도 호출한다. 수집 경로의 정본은 `message-to-terminal.md`의 「Antigravity 실행 경로 (PR A)」에 있는 계정 잔량 설명이다. 새 타이머, 재시도와 캐시는 없으며 기존 ProviderUsageService 예산과 중단 신호를 쓴다.

@@ -903,3 +903,9 @@ def test_antigravity_backend_node_registration() -> None:
     validator = jsonschema.Draft202012Validator(schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"])
     validator.validate({"id": "gemini-3.8-flash", "label": "Gemini - 3.8 Flash", "backend": "antigravity", "available": True, "usage_provider": None})
     assert list(validator.iter_errors({"id": "x", "label": "x", "backend": "unknown", "available": True, "usage_provider": None}))
+
+def test_antigravity_usage_provider_is_advertised():
+    schema = _load_schema()
+    preset = schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"]
+    assert "antigravity" in preset["properties"]["usage_provider"]["enum"]
+    assert 'usage_provider: "claude" | "codex" | "antigravity" | null' in GENERATED_TS_PATH.read_text(encoding="utf-8")

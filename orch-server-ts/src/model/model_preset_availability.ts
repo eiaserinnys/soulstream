@@ -22,7 +22,7 @@ export type StaticModelPreset = {
   readonly backend: AgentBackend;
   readonly available: boolean;
   readonly reason?: "env_unresolved";
-  readonly usage_provider: "claude" | "codex" | null;
+  readonly usage_provider: "claude" | "codex" | "antigravity" | null;
   readonly usage_model_id?: string;
   /** Effort levels the node advertised for this preset. Absent = no effort control. */
   readonly supported_efforts?: readonly string[];
@@ -396,7 +396,7 @@ function isBackend(
 function isUsageProvider(
   value: unknown,
 ): value is StaticModelPreset["usage_provider"] {
-  return value === "claude" || value === "codex" || value === null;
+  return value === "claude" || value === "codex" || value === "antigravity" || value === null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

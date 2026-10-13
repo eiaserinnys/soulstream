@@ -389,7 +389,18 @@ export function createDialoguesApi() {
         : path.endsWith("/profile")
           ? { account: { email: "sample@example.invalid", display_name: "검수 계정", has_claude_max: true } }
           : { has_token: true };
-    else if (path.endsWith("/provider-usage")) value = { providers: [] };
+    else if (path.endsWith("/provider-usage")) value = path === "/api/nodes/sample-usage-node/provider-usage" ? { generatedAt: "2026-10-14T00:00:00Z", providers: {
+      claude: { status: "auto", source: "public-fixture", planType: "Max", quotas: [
+        { id: "claude:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 50, remainingPercent: 50, resetAt: 1792515242, source: "public-fixture" },
+      ] },
+      codex: { status: "auto", source: "public-fixture", planType: "Plus", quotas: [
+        { id: "codex:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 50, remainingPercent: 50, resetAt: 1792515242, source: "public-fixture" },
+      ] },
+      antigravity: { status: "auto", source: "agy:/usage", planType: null, quotas: [
+        { id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 0.3, remainingPercent: 99.7, resetAt: 1792515242, source: "agy:/usage" },
+        { id: "antigravity:gemini:5h", label: "5시간", window: "5h", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 1.1, remainingPercent: 98.9, resetAt: 1791928442, source: "agy:/usage" },
+      ] },
+    } } : { providers: [] };
     else if (path === "/api/ui-events") value = { events: [] };
     else if (path === "/api/ui-events/installs") value = { installs: [] };
     else if (path === "/api/atom/nodes" || path.startsWith("/api/atom/nodes/"))
@@ -442,6 +453,18 @@ export function createDialoguesApi() {
         "sample-node",
         {
           nodeId: "sample-node",
+          host: "sample.invalid",
+          port: 0,
+          status: "connected",
+          capabilities: {},
+          connectedAt: 0,
+          sessionCount: 1,
+        },
+      ],
+      [
+        "sample-usage-node",
+        {
+          nodeId: "sample-usage-node",
           host: "sample.invalid",
           port: 0,
           status: "connected",

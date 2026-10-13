@@ -22,10 +22,10 @@ export const persistentWeeklyUsageReviewSummary: UsageSummarySnapshot = {
     reviewUsageNode('node-a', {
       claude: reviewUsageProvider(73, [{ id: 'claude:weekly_scoped:fable', label: 'Fable', window: '7d', model: 'Fable', remainingPercent: 41, resetAt: reviewUsageResetAt }]),
       codex: reviewUsageProvider(18),
-      gemini: null,
+      gemini: null, antigravity: null,
     }),
-    reviewUsageNode('node-b', { claude: reviewUsageProvider(66), codex: reviewUsageProvider(42), gemini: null }),
-    reviewUsageNode('node-c', { claude: null, codex: null, gemini: null }),
+    reviewUsageNode('node-b', { claude: reviewUsageProvider(66), codex: reviewUsageProvider(42), gemini: null, antigravity: null }),
+    reviewUsageNode('node-c', { claude: null, codex: null, gemini: null, antigravity: null }),
   ],
 };
 
