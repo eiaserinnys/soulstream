@@ -22,10 +22,11 @@
 1. `mockups/proof-343`을 복사해 `mockups/<이름>`을 만든다.
 2. `index.html`에서 제목과 설명, `og:url`, `og:image`의 발행 슬러그를 고친다.
 3. `frame.tsx`에서 실제 컴포넌트를 불러 `mountMockup(...)`에 넘긴다. 같은 역할의 컴포넌트가 있으면 그대로 쓰고, 새 구성은 `client/` 아래 실제 컴포넌트로 쓴다. 색, 글자 크기, 간격을 시안 파일에 새로 적지 않는다.
-4. 데이터는 props로 준다. `client/v3/components-review-fixtures.ts`의 값을 먼저 쓴다. 서버를 부르는 컴포넌트는 `mockApi({ "GET /api/...": 응답 })`와 `mockImages(...)`로 응답을 등록한다. 답이 없는 호출은 콘솔과 `window.__mockupUnmocked`에 남는다.
-5. 미리보기 그림은 1200×630으로 만든다. `html-publish` 스킬의 `make_og.py`를 쓴다.
-6. 빌드: `MOCKUP=<이름> vite build --config vite.mockup.config.ts`. 결과는 `dist-mockups/<이름>/`이다.
-7. 개발 중에는 `MOCKUP=<이름> vite --config vite.mockup.config.ts`로 띄워 `frame.html`을 연다.
+4. 컴포넌트가 쓰는 CSS를 같이 불러온다. 이 리포에서는 컴포넌트의 CSS를 그 컴포넌트 파일이 아니라 그것을 그리는 화면 쪽 모듈이 불러오는 경우가 많아서, 컴포넌트만 따로 올리면 CSS가 빠져 꾸며지지 않은 모습으로 나온다. 실제 화면이 불러오는 CSS 파일을 `frame.tsx`에서 같은 순서로 import한다. 예를 들어 읽기 전용 카드 목록(`ReadOnlyCardList`)은 `v3-cards.css`, `v3-context-succession.css`, `v3-postit-cards.css`가 필요하다. 어느 파일인지는 컴포넌트가 쓰는 클래스 이름을 `client/` 아래 CSS에서 찾으면 나온다. 화면 전체를 올릴 때는 그 화면의 최상위 컴포넌트를 import하면 딸린 CSS가 함께 온다.
+5. 데이터는 props로 준다. `client/v3/components-review-fixtures.ts`의 값을 먼저 쓴다. 서버를 부르는 컴포넌트는 `mockApi({ "GET /api/...": 응답 })`와 `mockImages(...)`로 응답을 등록한다. 답이 없는 호출은 콘솔과 `window.__mockupUnmocked`에 남는다.
+6. 미리보기 그림은 1200×630으로 만든다. `html-publish` 스킬의 `make_og.py`를 쓴다.
+7. 빌드: `MOCKUP=<이름> vite build --config vite.mockup.config.ts`. 결과는 `dist-mockups/<이름>/`이다.
+8. 개발 중에는 `MOCKUP=<이름> vite --config vite.mockup.config.ts`로 띄워 `frame.html`을 연다.
 
 ## 보는 법
 
@@ -53,6 +54,8 @@ python3 $AGENT_COMMON_FILES_DIR/skills/html-publish/scripts/publish.py --dir dis
 ```
 
 코멘트는 본문인 `frame.html`에만 붙는다. 발행 슬러그는 추측하기 어렵도록 끝에 임의의 글자를 붙인다.
+
+발행한 주소를 브라우저로 열어 확인한다. 카드, 버튼, 입력의 모습이 검수 창(`/components`)의 같은 견본과 다르거나 글자만 줄줄이 나오면 CSS가 빠진 것이다. 답이 없는 서버 호출은 `window.__mockupUnmocked`에서 본다.
 
 ## 앱 시안
 
