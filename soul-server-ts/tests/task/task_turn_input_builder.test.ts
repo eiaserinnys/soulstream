@@ -133,7 +133,8 @@ describe("TaskTurnInputBuilder", () => {
     expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
   });
 
-  it("prepares a new Claude turn by publishing initial messages and splitting systemPrompt from prompt text", async () => {
+  it.each(["claude", "antigravity"] as const)("prepares a new %s turn by splitting systemPrompt from prompt text", async (backend) => {
+    const agent = { ...claudeAgent, backend };
     const ctx = makeContext();
     const task = makeTask({
       attachmentPaths: ["/tmp/incoming/sess/screen.png", "/tmp/incoming/sess/readme.txt"],
@@ -142,9 +143,9 @@ describe("TaskTurnInputBuilder", () => {
       contextBuilder: { build: vi.fn().mockResolvedValue(ctx) },
     });
 
-    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const input = await builder.prepareInitialTurnInput(task, agent);
 
-    expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
+    expect(contextBuilder.build).toHaveBeenCalledWith(task, agent);
     expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(task, ctx);
     expect(input.systemPrompt).toBe("system instructions");
     expect(input.prompt).toContain("<session_context>");
@@ -152,6 +153,12 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).not.toContain("system instructions");
     expect(input.prompt.endsWith("사용자 요청")).toBe(true);
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/screen.png"]);
+  });
+
+  it.each(["antigravity", "claude"] as const)("preserves the approved empty-instruction first turn for %s", async backend => {
+    const { builder } = makeSubject({ contextBuilder: { build: vi.fn().mockResolvedValue({ ...makeContext(), effectiveSystemPrompt: undefined }) } });
+    const input = await builder.prepareInitialTurnInput(makeTask(), { ...claudeAgent, backend });
+    expect(input.systemPrompt).toBe(backend === "antigravity" ? "" : undefined);
   });
 
   it("binds the initial public message, prepared context, and engine input to one registered input UUID", async () => {
@@ -886,5 +893,20 @@ describe("rollover assigned-card slot",()=>{
     },"previous");
     expect(input.prompt).toContain("fresh card");expect(input.prompt).not.toContain("stale card");
     expect(input.prompt.match(/<assigned_cards>/g)).toHaveLength(1);expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
+  });
+});
+
+describe("Antigravity follow-up system contract", () => {
+  it("ordinary resume keeps instructions in the native conversation and does not prepend them", async () => {
+    const { builder } = makeSubject();
+    const input = await builder.prepareInitialTurnInput(makeTask({ codexThreadId: "agy-id", modelPresetBackend: "antigravity", interventionQueue: [{ text: "다음 요청", user: "u" }] }), claudeAgent);
+    expect(input.systemPrompt).toBeUndefined();
+    expect(input.prompt).not.toContain("system instructions");
+    expect(input.prompt).toContain("다음 요청");
+  });
+  it("without a native ID ordinary follow-up still omits systemPrompt (reported host limitation)", async () => {
+    const { builder } = makeSubject();
+    const input = await builder.prepareInitialTurnInput(makeTask({ modelPresetBackend: "antigravity", interventionQueue: [{ text: "다시", user: "u" }] }), claudeAgent);
+    expect(input.systemPrompt).toBeUndefined();
   });
 });

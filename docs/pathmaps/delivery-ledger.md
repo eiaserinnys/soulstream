@@ -42,3 +42,9 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 | 27. legacy collision 승격 복구 | `soul-server-ts/src/task/claude_background_generation_startup_recovery.ts:ClaudeBackgroundGenerationStartupRecovery`, `recoverLegacyRow`, `runtime/claude_runtime_startup_recovery.ts:recoverAll`, `runtime/claude_runtime_composition.ts:composeClaudeRuntime` | 새 runtime의 기존 boot recovery owner가 legacy terminal 행과 SDK reconstructed parent chain을 대조한다. task id와 initiating tool use id가 정확히 결속된 native terminal 한 건만 sidecar로 승격하며, 후행 assistant UUID가 있으면 relation tombstone을 먼저 내구 기록해 consumed delivery 1/outbox 0으로 복구한다. 각 legacy row의 조회·tombstone·observe 실패는 그 row에 기록하고 다음 row를 계속 처리한다. | 후보 0개·복수, SDK session 불일치, 비-Claude backend, relation write 실패 행은 복구하지 않는다. 한 실패 행은 후속 exact 행을 막지 않는다. 088 스키마만 적용된 구 worker에는 이 판정이 생기지 않으며 새 runtime 기동 뒤에만 실행된다. |
 
 이 장을 갱신해야 하는 변경 부류: `session_deliveries` 스키마·등록/claim/dispatch/queue/retry/receipt/consume/supersede/dead-letter writer·notification outbox·terminal resume DB 함수 변경.
+
+## Antigravity 일반 메시지 개입 (PR A)
+
+`task_running_intervention_transition.ts:tryIntervene` → 러너 generic invoke → `engine/antigravity/adapter.ts:intervene`은 agy 그룹을 SIGINT로 중단하고 `not_delivered / interrupt_then_next_turn / next_turn_required`를 반환한다. 기존 acceptance 게시와 enqueue, interruptRequest 장벽 이후 턴 루프가 즉시 다음 execute를 시작한다. acceptance는 엔진 소비 증거와 별개이며 일반 메시지·위임 완료 보고의 소비는 기존 `task_delivery_turn_receipt.ts:observe`가 다음 턴의 일반 이벤트에서 확인한다.
+
+Antigravity는 Claude background runtime follow-up 생산자가 없어 해당 전달용 exact receipt와 새 metadata를 추가하지 않는다. 기존 ledger writer/TTL/정책은 그대로다. 예상 중단은 complete/error를 생성하지 않고 스트림을 끝내며, init ID가 있는 러너는 이를 기존 정상 lifecycle 종료로 처리한다. init 이전에 중단 요청이 오면 반환은 즉시 하고, init 직후 SIGINT를 보내 대화 ID를 먼저 공개한다. init 없이 스스로 끝난 CLI는 기존 일반 실패 경로를 따른다.

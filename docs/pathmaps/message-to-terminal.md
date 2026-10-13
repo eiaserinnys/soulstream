@@ -172,3 +172,27 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 | 일반 최종 답과 분리 | `stores/node-factory.ts`의 `_final_for_live_stream`·stream key 처리 | UI 발행은 독립 completed assistant 노드다. live text의 종료는 기존 final marker와 같은 key만 소유하며 UI 도착으로 streaming이나 세션 lifecycle을 종료하지 않는다. |
 
 웹 E2E 진입점은 대시보드 빌드 후 `pnpm --dir unified-dashboard test:e2e:chat-ui`다. Script가 `COMPONENTS_REVIEW_PHASE=chat-ui`를 지정하고 chat-ui·smoke·components-review 사례를 실행한다. 좌표는 대상 배치가 연속 세 프레임 같아진 뒤 한 번 측정한다.
+
+## Antigravity 실행 경로 (PR A)
+
+프리셋 backend의 정본은 `packages/model-catalog/src/index.ts:MODEL_BACKENDS`다. 노드 등록 wire의 backend enum과 러너 snapshot은 이를 받아 `antigravity`를 전달한다. 계정 잔량 공급자 연결과 화면 라벨은 PR B에서 이어지며, PR A의 광고 `usage_provider`는 null이다. 운영 활성화는 두 PR 이후다.
+
+```text
+모델 프리셋 → task/task_model_preset.ts:effectiveTaskBackend
+ → task/task_turn_input_builder.ts:prepareNewTaskTurnInput (systemPrompt 분리)
+ → task/task_engine_turn_runner.ts:executeTurn (native ID 재개)
+ → runner/runner_child_engine_factory.ts:createRunnerChildEngine
+ → engine/antigravity/adapter.ts:executeFrames
+     새 대화: 홈/.gemini/config/agents의 이름별 정의, --agent만 전달
+     정의 본문=시스템 지시(첫 턴의 빈 지시도 문자열), 26개 도구+세션 MCP
+     재개: --conversation ID, 정의/--agent/--add-dir 없음
+     한 프로세스: stdin user NDJSON 한 줄 + EOF, --log-file 세션 상태 경로
+ → events.ts:accept (session/글/도구), terminal (complete 또는 error)
+ → runner SQLite outbox → orch events JSONB → 기존 SSE/도구 표시/턴 사용량 MCP
+```
+
+`init.conversation_id`는 기존 `session.session_id` 이벤트와 `sessions.claude_session_id` 저장 경로를 사용한다. MCP 이름은 Codex와 같은 `mcp/<서버>/<도구>`이고 도구 ID는 native ID+턴 UUID+step index다. 시스템 지시와 MCP는 대화 생성 시 고정된다. HTTP는 headers를 보존하고 내부 MCP 주소와 세션 ID 헤더를 기존 helper로 구성한다. stdio는 command/args/env/cwd를 전달하며 SSE는 서버 이름만 warning 로그에 남기고 제외한다.
+
+`task_running_intervention_transition.ts:tryIntervene`의 사람 또는 non-Claude 분기가 사람·에이전트·완료 보고를 모두 `intervene`으로 보낸다. 어댑터는 agy 프로세스 그룹에 SIGINT를 보내고 `not_delivered / interrupt_then_next_turn / next_turn_required`를 반환한다. init 이전 요청은 init 직후까지 신호를 보류한다. 실제 중단 직전에 /proc 자손 PID/starttime을 기록하고 close 뒤 살아 있는 동일 identity 자손에만 SIGTERM을 한 번 보낸다. complete/error 없이 스트림을 닫으며 제품 코드에는 종료 대기 루프나 SIGKILL을 추가하지 않는다. 호스트 장벽과 `task_turn_loop_transition.ts:resolveTurnLoopTransition`이 개입 큐를 다음 execute로 잇는다. 별도 전달 정책과 receipt metadata를 추가하지 않는다.
+
+`events.ts`의 모델 DONE step 합만 턴 사용량이다. input_tokens는 input+cache_read, cached_input_tokens는 cache_read, output_tokens는 output, reasoning_output_tokens는 thinking이다. `init.model`을 종료 이벤트에 싣고 대화 누적 result.usage는 사용하지 않는다. 예상 중단에서 관찰한 합은 어댑터 메모리에 보관해 다음 complete/error에 한 번 더한다. 러너가 교체되면 미발행 누산분은 사라진다. total_tokens/context_usage/비용/first_call은 생성하지 않는다. 기존 `turn_usage_mode` 표시와 내부 `list_turn_usage`가 같은 complete/error를 소비한다.

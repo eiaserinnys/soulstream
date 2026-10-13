@@ -18,6 +18,7 @@ import {
   buildRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
 import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
@@ -72,6 +73,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
   sessionStore: IdempotentClaudeSessionStore;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
+  antigravityCliPath?: AntigravityCliPathResolution;
   releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
   releaseManifest?: ReleaseManifestV1;
   nodeStallMonitor?: Pick<
@@ -164,6 +166,7 @@ export function createRunnerProcessRuntimeFactory(
       snapshotPath: release.runnerModuleRoot,
       codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
       codexCliPath: options.codexCliPath?.path,
+      antigravityCliPath: options.antigravityCliPath?.path,
       codexDetachedResultRetentionMs:
         options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
       codexAppServerRequestTimeoutMs:
@@ -254,6 +257,7 @@ function spawnInputFromConfig(
     snapshotPath: config.snapshotPath,
     codexAdapterMode: config.codexAdapterMode,
     ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),
+    ...(config.antigravityCliPath ? { antigravityCliPath: config.antigravityCliPath } : {}),
     codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
     claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,

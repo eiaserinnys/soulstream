@@ -336,7 +336,7 @@
               "label": { "type": "string" },
               "backend": {
                 "type": "string",
-                "enum": ["claude", "codex", "openai-agents"]
+                "enum": ["claude", "codex", "openai-agents", "antigravity"]
               },
               "available": { "type": "boolean" },
               "reason": {

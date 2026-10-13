@@ -91,10 +91,11 @@ describe("EnginePort interface compliance", () => {
 });
 
 describe("BackendId type alias 분리 (P2)", () => {
-  it("BackendId가 'claude' | 'codex' literal union을 받는다", () => {
+  it("BackendId accepts the shared backend literal union", () => {
     const c: BackendId = "claude";
     const x: BackendId = "codex";
-    expect([c, x]).toEqual(["claude", "codex"]);
+    const a: BackendId = "antigravity";
+    expect([c, x, a]).toEqual(["claude", "codex", "antigravity"]);
   });
 });
 

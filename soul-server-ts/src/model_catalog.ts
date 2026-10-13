@@ -12,6 +12,7 @@ import type { AgentBackend } from "@soulstream/model-catalog";
 import type { ReasoningEffort } from "@soulstream/model-catalog";
 
 import {
+  antigravityTransportEfforts,
   claudeTransportEfforts,
   codexTransportEfforts,
 } from "./engine/effort_boundary.js";
@@ -284,5 +285,6 @@ export function nodeEffortCapabilities(
   return {
     claude: claudeTransportEfforts(),
     codex: codexTransportEfforts(codexAdapterMode),
+    antigravity: antigravityTransportEfforts(),
   };
 }

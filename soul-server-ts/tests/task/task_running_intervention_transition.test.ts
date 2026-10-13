@@ -6,6 +6,7 @@ import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine
 import { createInProcessTaskRunnerRuntime, createTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
+import { resolveTurnLoopTransition } from "../../src/task/task_turn_loop_transition.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "../../src/task/task_delivery_turn_receipt.js";
@@ -47,6 +48,22 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
+  it.each(["browser", "agent", "system"])("interrupts Antigravity for %s input and immediately prepares the next turn", async source => {
+    const intervene = vi.fn().mockResolvedValue({ status: "not_delivered", mechanism: "interrupt_then_next_turn", reason: "next_turn_required" });
+    const injectAtToolBoundary = vi.fn();
+    const task = makeRunningTask({ modelPresetBackend: "antigravity", runner: createInProcessTaskRunnerRuntime({
+      backendId: "antigravity", workspaceDir: "/tmp/agy", async *execute() {}, async interrupt() { return true; }, async close() {}, intervene, injectAtToolBoundary,
+    } as unknown as EnginePort) });
+    const transition = new RunningInterventionTransition({ broadcaster: makeBroadcaster(), logger: silentLogger, persistence: makeEventPersistenceTestDouble().persistence });
+    const message = { text: "새 정보로 계속", user: source, callerInfo: { source }, ...(source === "system" ? { deliveryIntent: "completion_notification" as const } : {}) };
+    const outcome = await transition.deliver(task, message);
+    expect(outcome).toMatchObject({ delivered: false, queued: true, reason: "next_turn_required" });
+    await task.interruptRequest;
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(injectAtToolBoundary).not.toHaveBeenCalled();
+    expect(task.status).toBe("running");
+    expect(resolveTurnLoopTransition(task, { id: "test", name: "시험", backend: "antigravity", workspace_dir: "/tmp/agy" })).toMatchObject({ kind: "continue", prompt: expect.stringContaining("새 정보로 계속") });
+  });
   it.each([
     {
       label: "an agent report whose delivery metadata still looks human",

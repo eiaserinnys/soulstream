@@ -5,6 +5,7 @@ export const MODEL_BACKENDS = [
   "claude",
   "codex",
   "openai-agents",
+  "antigravity",
 ] as const;
 
 export const MODEL_REASONING_EFFORTS = [
