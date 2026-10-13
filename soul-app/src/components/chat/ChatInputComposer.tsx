@@ -1,5 +1,6 @@
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, Text, View, type LayoutChangeEvent, type LayoutRectangle, type TextInput } from 'react-native';
+import { AccessibilityInfo, Alert, findNodeHandle, Platform, Text, View, type LayoutChangeEvent, type LayoutRectangle, type TextInput } from 'react-native';
+import { isReportReply, type ReportReplyDraft, type ReportSendContext } from '../../lib/persistent-report';
 import type { ApiClient } from '../../api/client';
 import type { Session, SessionEvent } from '../../api/types';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
@@ -24,9 +25,11 @@ export type AppendGeneratedTextResult =
 export interface ChatInputComposerHandle {
   retryPending(eventId: string): void;
   restorePending(eventId: string): void;
-  appendGeneratedText(sessionId: string, text: string): AppendGeneratedTextResult;
+  appendGeneratedText(sessionId: string, text: string, reportReply?: ReportReplyDraft): AppendGeneratedTextResult;
+  focusAccessibility(): void;
 }
 interface Props {
+  getReportSendContext?: (text: string, reply: ReportReplyDraft | null) => ReportSendContext;
   sessionId: string;
   sessionStatus: Session['status'] | undefined;
   nodeId: Session['nodeId'];
@@ -54,7 +57,7 @@ const ChatVoiceControls = memo(function ChatVoiceControls(props: Omit<React.Comp
 
 export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>(function ChatInputComposer({
   sessionId, sessionStatus, nodeId, backend, api, detailedNetworkActive, appForeground, minimumBottomPadding, requestBottomFollow,
-  presentation = 'default', generatedNotice, onComposerClearedForSend, onComposerLayout,
+  presentation = 'default', generatedNotice, onComposerClearedForSend, onComposerLayout, getReportSendContext,
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -88,6 +91,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }) : false);
   const input = inputDraft.value;
   const textInputRef = useRef<TextInput | null>(null);
+  const reportReplyRef = useRef<ReportReplyDraft | null>(null);
   const [generatedUndo, setGeneratedUndo] = useState<{ before: string; after: string } | null>(null);
   const [generatedSelection, setGeneratedSelection] = useState<{ start: number; end: number } | undefined>();
   const [interrupting, setInterrupting] = useState(false);
@@ -150,6 +154,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }, []);
 
   const clearComposerInput = useCallback(() => {
+    reportReplyRef.current = null;
     inputRef.current = '';
     composeFlowRef.current = null;
     setGeneratedUndo(null);
@@ -159,6 +164,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }, [inputDraft.clear, onComposerClearedForSend]);
 
   const handleInputChange = useCallback((value: string) => {
+    if (!isReportReply(value, reportReplyRef.current)) reportReplyRef.current = null;
     const previous = inputRef.current;
     if (previous !== value) {
       setGeneratedUndo(null);
@@ -256,6 +262,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     disabled: inputDisabled,
     scrollToBottom: requestBottomFollow,
     onUsageEvent: handleSendUsage,
+    getMessageContext: getReportSendContext ? text => getReportSendContext(text, reportReplyRef.current) : undefined,
   });
 
   const focusInputAtSelection = useCallback((selection: { start: number; end: number }) => {
@@ -270,7 +277,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     });
   }, []);
 
-  const appendGeneratedText = useCallback((targetSessionId: string, text: string): AppendGeneratedTextResult => {
+  const appendGeneratedText = useCallback((targetSessionId: string, text: string, reportReply?: ReportReplyDraft): AppendGeneratedTextResult => {
     if (targetSessionId !== sessionId) return { ok: false, reason: 'wrong_session' };
     if (!inputDraft.ready) return { ok: false, reason: 'not_ready' };
     if (sending) return { ok: false, reason: 'sending' };
@@ -282,12 +289,14 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     if (after.length > CHAT_COMPOSER_MAX_LENGTH) return { ok: false, reason: 'too_long' };
 
     handleInputChange(after);
+    if (reportReply) reportReplyRef.current = isReportReply(after, reportReply) ? reportReply : null;
     setGeneratedUndo({ before, after });
     focusInputAtSelection({ start: after.length, end: after.length });
     return { ok: true };
   }, [focusInputAtSelection, handleInputChange, inputDisabled, inputDraft.ready, sending, sessionId]);
 
   const undoGeneratedText = useCallback(() => {
+    reportReplyRef.current = null;
     const undo = generatedUndo;
     if (!undo || inputRef.current !== undo.after) return;
     handleInputChange(undo.before);
@@ -303,6 +312,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     const restored = restorePendingOptimistic(eventId, inputRef.current);
     if (!restored) return;
     inputRef.current = restored.inputText;
+    reportReplyRef.current = isReportReply(restored.inputText, restored.reportReply) ? restored.reportReply : null;
     setGeneratedUndo(null);
     setGeneratedSelection(undefined);
     inputDraft.setValue(restored.inputText);
@@ -351,6 +361,11 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     retryPending: eventId => { void retryPendingOptimistic(eventId); },
     restorePending: handleRestorePending,
     appendGeneratedText,
+    focusAccessibility: () => {
+      if (Platform.OS === 'web') { textInputRef.current?.focus(); return; }
+      const handle = findNodeHandle(textInputRef.current);
+      if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+    },
   }), [appendGeneratedText, retryPendingOptimistic, handleRestorePending]);
   useEffect(() => {
     composeFlowRef.current = null;

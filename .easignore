@@ -40,11 +40,13 @@
 /packages/wire-schema/src/*
 !/packages/wire-schema/src/card_colors.ts
 !/packages/wire-schema/src/persistent_jev_candidates.ts
+!/packages/wire-schema/src/persistent_report.ts
 
 # .easignore replaces all .gitignore files, including soul-app/.gitignore.
 node_modules/
 .expo/
 dist/
+/soul-app/dist-mockups/
 build/
 web-build/
 expo-env.d.ts
