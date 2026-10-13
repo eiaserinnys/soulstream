@@ -356,6 +356,7 @@ function fakeRegistry(nodeIds: readonly string[]): UsageSummaryRegistry {
     nodeId,
     connectionId: `connection-${nodeId}`,
     connected: true,
+    supportedBackends: ["claude", "codex", "gemini", "antigravity"],
   }]));
   return {
     listConnectedNodes: vi.fn(() => [...nodes.values()]),
@@ -424,8 +425,8 @@ function limits(
   };
 }
 
-it("projects Antigravity and fills only its absence in older snapshots", async () => {
-  // This one legacy worker intentionally omits the added provider.
+it("projects Antigravity and fills only its absence in full snapshots", async () => {
+  // Preserve compatibility when a full snapshot omits the added provider.
   const { antigravity: _antigravity, ...legacyProviders } = successResponse(16).data.providers;
   let response: unknown = { ...successResponse(16), data: { providers: legacyProviders } };
   const service = new UsageSummaryService({ registry: fakeRegistry(["node-a"]), bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [] });
@@ -435,4 +436,60 @@ it("projects Antigravity and fills only its absence in older snapshots", async (
   await service.collectOnce();
   expect(service.getSummary().nodes[0]?.providers.antigravity).toMatchObject({ status: "auto", weeklyRemainingPercent: 90, shortRemainingPercent: 80, quotas: [{ window: "7d", model: null }] });
   expect(service.getSummary().nodes[0]?.stale).toBe(false);
+});
+
+it.each([false, true])("keeps existing usage fresh without requesting an unadvertised Antigravity backend (shared account: %s)", async (shared) => {
+  const registry = fakeRegistry(["node-a", "node-b"]);
+  registry.getConnectedNode("node-b")!.supportedBackends = ["claude", "codex", "gemini"];
+  const onWarning = vi.fn();
+  const bridge = {
+    sendPendingCommand: vi.fn(async ({ node, command }: {
+      node: { nodeId: string };
+      command: { message: { provider?: string } };
+    }) => {
+      const provider = command.message.provider;
+      if (node.nodeId === "node-b" && provider === "antigravity") {
+        return { success: false, error: "provider must be one of: claude, codex, gemini" };
+      }
+      return provider === undefined
+        ? successResponse(10, 20, 30)
+        : providerSuccessResponse(provider, provider === "claude" ? 10 : provider === "codex" ? 20 : 30);
+    }),
+  } as unknown as UsageSummaryBridge;
+  const service = new UsageSummaryService({
+    registry, bridge, pollIntervalMs: 300_000,
+    sharedAccountGroups: shared ? [{ provider: "codex", nodeIds: ["node-a", "node-b"] }] : [],
+    onWarning,
+  });
+
+  await service.collectOnce();
+
+  expect(registry.createCommand).not.toHaveBeenCalledWith("node-b", expect.objectContaining({ provider: "antigravity" }), expect.anything());
+  expect(service.getSummary().nodes.find((node) => node.nodeId === "node-b")).toMatchObject({
+    stale: false, staleSince: null,
+    providers: {
+      claude: { status: "auto", weeklyRemainingPercent: 90 },
+      codex: { status: "auto", weeklyRemainingPercent: 80 },
+      gemini: { status: "auto", weeklyRemainingPercent: 70 },
+      antigravity: { status: "not_configured", quotas: [] },
+    },
+  });
+  expect(onWarning).not.toHaveBeenCalled();
+});
+
+it("preserves collection errors from an advertised Antigravity backend", async () => {
+  const registry = fakeRegistry(["node-a", "node-b"]);
+  const bridge = {
+    sendPendingCommand: vi.fn(async ({ command }: { command: { message: { provider?: string } } }) => {
+      const provider = command.message.provider;
+      if (provider === "antigravity") return { success: true, data: { ...limits(null, null, []), status: "error" } };
+      return provider === undefined ? successResponse(10, 20, 30) : providerSuccessResponse(provider, 10);
+    }),
+  } as unknown as UsageSummaryBridge;
+  const service = new UsageSummaryService({
+    registry, bridge, pollIntervalMs: 300_000,
+    sharedAccountGroups: [{ provider: "codex", nodeIds: ["node-a", "node-b"] }],
+  });
+  await service.collectOnce();
+  expect(service.getSummary().nodes.find((node) => node.nodeId === "node-b")?.providers.antigravity).toMatchObject({ status: "error", quotas: [] });
 });

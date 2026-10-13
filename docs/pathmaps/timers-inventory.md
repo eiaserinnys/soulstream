@@ -37,4 +37,4 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 이 장을 갱신해야 하는 변경 부류: startup/maintenance cadence·delivery attempt/retry·notification recovery·node-ready/maintenance replay·runtime follow-up watchdog/receipt·event outbox/ingress retry·runner scan/liveness/termination/GC timer 변경.
 
-기존 계정 사용량 수집 주기(`UsageSummaryService`, 기본 5분)는 antigravity 공급자의 모델 없는 `/usage` 조회도 호출한다. 수집 경로의 정본은 `message-to-terminal.md`의 「새 세션 생성 전 가용 판정」이다. 새 타이머, 재시도와 캐시는 없으며 기존 ProviderUsageService 예산과 중단 신호를 쓴다.
+기존 계정 사용량 수집 주기(`UsageSummaryService`, 기본 5분)는 antigravity 공급자의 모델 없는 `/usage` 조회도 호출한다. 수집 경로의 정본은 `message-to-terminal.md`의 「Antigravity 실행 경로 (PR A)」에 있는 계정 잔량 설명이다. 새 타이머, 재시도와 캐시는 없으며 기존 ProviderUsageService 예산과 중단 신호를 쓴다.

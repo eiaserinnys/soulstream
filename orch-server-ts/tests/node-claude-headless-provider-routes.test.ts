@@ -195,7 +195,7 @@ describe("Claude headless and provider usage route harness", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
-      detail: "provider must be one of: claude, codex, gemini",
+      detail: "provider must be one of: claude, codex, gemini, antigravity",
     });
     expect(sent).toEqual([]);
 

@@ -1,3 +1,5 @@
+// Collection and wire parsing remain together for this compatibility fix; their
+// existing contract tests cover both paths without a separate module refactor.
 import type {
   NodeCommandResponse,
   PendingNodeCommand,
@@ -121,6 +123,11 @@ type ProviderQuota = {
   readonly resetAt: number | null;
   readonly source?: string | null;
   readonly purpose?: "execution" | "code_review" | "other";
+};
+
+const NOT_CONFIGURED_PROVIDER_LIMITS: ProviderLimits = {
+  status: "not_configured", weeklyUsedPercent: null, weeklyResetAt: null,
+  shortUsedPercent: null, shortResetAt: null, quotas: [],
 };
 
 type MutableNodeState = {
@@ -296,7 +303,12 @@ export class UsageSummaryService {
   ): Map<string, Promise<ProviderLimits>> {
     const requests = new Map<string, Promise<ProviderLimits>>();
     for (const node of connectedNodes) {
+      const supportsAntigravity = node.supportedBackends.includes("antigravity");
+      if (!supportsAntigravity) {
+        requests.set(providerRequestKey(node.nodeId, "antigravity"), Promise.resolve(NOT_CONFIGURED_PROVIDER_LIMITS));
+      }
       const ownedProviders = USAGE_SUMMARY_PROVIDER_NAMES.filter((provider) =>
+        (provider !== "antigravity" || supportsAntigravity) &&
         (providerOwners.get(providerRequestKey(node.nodeId, provider)) ?? node.nodeId)
           === node.nodeId,
       );
@@ -423,7 +435,7 @@ function parseProviderUsageSnapshot(value: unknown): ProviderUsageSnapshot {
       codex: parseProviderLimits(providers.codex, "codex"),
       gemini: parseProviderLimits(providers.gemini, "gemini"),
       antigravity: providers.antigravity === undefined
-        ? { status: "not_configured", weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null, shortResetAt: null, quotas: [] }
+        ? NOT_CONFIGURED_PROVIDER_LIMITS
         : parseProviderLimits(providers.antigravity, "antigravity"),
     },
   };
