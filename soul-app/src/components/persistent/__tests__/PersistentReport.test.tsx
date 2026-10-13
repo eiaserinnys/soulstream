@@ -342,3 +342,28 @@ test('measured height updates are deferred during a report press and applied on 
   fireEvent(sheet, 'touchEnd');
   expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBeGreaterThan(before);
 });
+
+test('bubble surface and every page share the explicit capped height after all intrinsic measurements', () => {
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[reportReviewEntries[1], reportReviewEntries[2]]} index={0} api={null} bubble maxHeight={440}
+      onSelect={jest.fn()} onDismiss={jest.fn().mockResolvedValue(true)} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>);
+  expect(StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height).toBe(440);
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 318 } } });
+  const a = screen.getByTestId('report-sheet-cleanup');
+  const b = screen.getByTestId('report-sheet-result', { includeHiddenElements: true });
+  fireEvent(a.findByProps({ testID: 'report-scroll' }), 'contentSizeChange', 318, 294);
+  expect(StyleSheet.flatten(a.props.style).height).toBe(440);
+  fireEvent(a.findByProps({ testID: 'report-footer' }), 'layout', { nativeEvent: { layout: { height: 242 } } });
+  expect(StyleSheet.flatten(a.props.style).height).toBe(440);
+  fireEvent(b.findByProps({ testID: 'report-scroll' }), 'contentSizeChange', 318, 100);
+  fireEvent(b.findByProps({ testID: 'report-footer' }), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  expect(StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height).toBe(440);
+  expect(StyleSheet.flatten(a.props.style).height).toBe(440);
+  expect(StyleSheet.flatten(b.props.style).height).toBe(440);
+  fireEvent(a.findByProps({ testID: 'report-scroll' }), 'contentSizeChange', 318, 100);
+  fireEvent(a.findByProps({ testID: 'report-footer' }), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  expect(StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height).toBe(180);
+  expect(StyleSheet.flatten(a.props.style).height).toBe(180);
+  expect(StyleSheet.flatten(b.props.style).height).toBe(180);
+});

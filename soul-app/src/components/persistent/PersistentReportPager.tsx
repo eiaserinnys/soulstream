@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, Text, View } from 'react-native';
+import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
@@ -34,11 +34,12 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const pressing = useRef(false);
   const [height, setHeight] = useState(0);
   const commitHeight = () => {
-    if (pressing.current) return;
+    if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(`${compact}:${entry.key}`)))) return;
     const next = Math.max(0, ...entries.map(entry => measuredHeights.current.get(`${compact}:${entry.key}`) ?? 0));
     setHeight(saved => saved === next ? saved : next);
   };
   useLayoutEffect(commitHeight, [entries, compact]);
+  const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
   const scroll = useRef<ScrollView>(null);
   const deck = useRef<View>(null);
@@ -94,10 +95,13 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   };
   if (!count) return null;
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
-    style={[styles.deck, !bubble && styles.band, bubble && { maxHeight }]} {...reportWebProps({ role: 'region' })}
+    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }]} {...reportWebProps({ role: 'region' })}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={height ? { height: bubble ? Math.min(height, maxHeight ?? height) : height } : bubble ? { maxHeight } : undefined}
+      keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={bubble ? { height: bubbleHeight, flexShrink: 0,
+        // The surface's existing horizontal borders belong to its height;
+        // let the viewport span them without adding two more pixels.
+        marginVertical: -StyleSheet.hairlineWidth } : height ? { height } : undefined}
       onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
       onLayout={event => setWidth(event.nativeEvent.layout.width)} onContentSizeChange={align}
       onScroll={event => {
@@ -113,7 +117,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
       }} scrollEventThrottle={16}>
       {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={`${entry.key}-${width}`} entry={entry}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
-        bubble={bubble} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
+        bubble={bubble} bubbleHeight={bubbleHeight} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
         onHeight={height => { measuredHeights.current.set(`${compact}:${entry.key}`, height); commitHeight(); }}
         titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}

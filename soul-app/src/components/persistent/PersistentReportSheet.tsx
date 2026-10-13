@@ -14,23 +14,28 @@ export function reportTag(entry: PersistentReportEntry) {
   return entry.kind === 'see' ? '보실 것' : entry.state === 'answered' ? '답 받음' : '답하실 것';
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
-  titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, busy = false,
+  titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, bubbleHeight, busy = false,
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction }: {
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
   onCard(number: number): void; onLink(url: string): void;
-  bubble?: boolean; busy?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
+  bubble?: boolean; bubbleHeight?: number; busy?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
   onHeight?(height: number): void; onInteraction?(pressed: boolean): void;
 }) {
   const t = useTokens();
   const signature = JSON.stringify([entry.title, entry.context, entry.action, entry.options, compact]);
   const [asked, setAsked] = useState({ signature, reading: 0, foot: 0 });
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
-  const measured = useRef({ reading: 0, foot: 0 });
+  const hasFooter = !compact && (count > 1 || entry.state === 'answered' || entry.kind === 'see' || entry.options.length > 0);
+  const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
   const measure = (part: 'reading' | 'foot', height: number) => {
     measured.current[part] = height;
-    onHeight?.(measured.current.reading + measured.current.foot);
+    // Content size already includes reading padding; footer layout includes
+    // its padding. Wait for both parts rather than publishing a partial height.
+    if (measured.current.reading !== null && (!hasFooter || measured.current.foot !== null)) {
+      onHeight?.(measured.current.reading + (hasFooter ? measured.current.foot ?? 0 : 0));
+    }
     if (entry.state === 'open') setAsked(saved => saved[part] === height ? saved : { ...saved, [part]: height });
   };
   const answer = entry.kind === 'ask' && entry.state === 'answered';
@@ -60,7 +65,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     {heading}{!compact ? <Text testID="report-context" style={styles.context}>{entry.context}</Text> : null}
     {answer ? compact ? received : null : todo}
   </View>;
-  const foot = !compact && (count > 1 || answer || entry.kind === 'see' || entry.options.length > 0)
+  const foot = hasFooter
     ? <View testID="report-footer" style={styles.foot} onLayout={event => measure('foot', event.nativeEvent.layout.height)}>
       {count > 1 ? <View testID="report-nav-slot" style={styles.navSlot} /> : null}
       {answer ? <View style={[styles.received, { minHeight: Math.max(asked.foot - t.uiSpacing.md - t.uiSpacing.lg, t.hitTarget.min) }]}>
@@ -80,7 +85,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     accessibilityLabel={`${count > 1 ? `${page}, ` : ''}${reportTag(entry)}, ${entry.title}`}
     onPress={compact ? onExpand : undefined} onTouchStart={() => onInteraction?.(true)} onTouchEnd={() => onInteraction?.(false)}
     onTouchCancel={() => onInteraction?.(false)} {...reportWebProps({ inert: !current, tabIndex: -1, role: 'group' })}
-    style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }, !compact && styles.resting]}>
+    style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }, bubble && { height: bubbleHeight }, !compact && styles.resting]}>
     {bubble ? <PersistentReportReading current={current} styles={styles} onHeight={height => measure('reading', height)}>{frame}</PersistentReportReading>
       : <View style={[styles.body, compact ? styles.compact : null, { flexGrow: compact ? 0 : 1 }]}
           onLayout={compact ? event => measure('reading', event.nativeEvent.layout.height) : undefined}>{frame}
