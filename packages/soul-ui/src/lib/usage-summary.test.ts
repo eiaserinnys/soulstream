@@ -94,6 +94,7 @@ describe("usage summary projection", () => {
 
     expect(nextUsageSummaryNodeId(summary, "three-gauges")).toBe("no-gauges");
     expect(nextUsageSummaryNodeId(summary, "no-gauges")).toBe("two-gauges");
+    expect(nextUsageSummaryNodeId(summary, "two-gauges")).toBe("three-gauges");
     expect(nextUsageSummaryNodeId(summary, "missing-node")).toBe("no-gauges");
     expect(nextUsageSummaryNodeId({ ...summary, nodes: [twoGauges] }, "two-gauges")).toBe("two-gauges");
     expect(nextUsageSummaryNodeId({ ...summary, nodes: [] }, "three-gauges")).toBeNull();
