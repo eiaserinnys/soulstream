@@ -156,6 +156,7 @@ export const tsOnlyRouteKeys = [
   "PATCH /api/planner/starred-folders/order",
   "GET /api/persistent-sessions",
   "GET /api/persistent-sessions/{session_id}",
+  "DELETE /api/persistent-sessions/{session_id}/reports/{key}",
   "PUT /api/persistent-sessions/{session_id}",
   "POST /api/persistent-sessions",
   "GET /api/persistent-sessions/{session_id}/instructions",
