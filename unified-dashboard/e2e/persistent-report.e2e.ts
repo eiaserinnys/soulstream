@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { installChatUiRoutes, chatUiSession } from './chat-ui-fixtures';
 import { reportReviewEntries } from '../client/v3/persistent-report-review-data';
@@ -11,6 +11,7 @@ const sse = (type: string, payload: object, id: number) => `id: ${id}\nevent: ${
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest board and focus', async ({ page }) => {
   mkdirSync(output, { recursive: true });
+  for (const file of readdirSync(output)) if (file.endsWith('.png') || file === 'metrics.json') unlinkSync(path.join(output, file));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   const fixture = await installChatUiRoutes(page, { ui: false, count: 3 });
@@ -172,7 +173,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   expect(sends[0]).toMatchObject({ text: '블로그 저장소 브랜치 정리: 응', context_items: [{ key: 'persistent_report_reply', content: { key: 'blog', option: '응' } }] });
   expect(sends[0].attachmentPaths).toBeUndefined();
   sendControl = { gate: gate(), fail: false };
-  await current().getByRole('button', { name: '응', exact: true }).click();
+  await page.getByRole('button', { name: '다시 보내기', exact: true }).click();
   await expect.poll(() => sends.length).toBe(2);
   await expect(current()).toHaveAttribute('aria-label', /답 받음/);
   sendControl.gate.release();
@@ -184,8 +185,9 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   sendControl = { gate: gate(), fail: true }; await cancel.click(); await expect.poll(() => sends.length).toBe(3);
   await expect(current().getByText('취소 요청 보냄', { exact: true })).toBeVisible(); sendControl.gate.release();
   await expect(cancel).toBeEnabled();
-  sendControl = { gate: gate(), fail: false }; await cancel.click(); await expect.poll(() => sends.length).toBe(4); sendControl.gate.release();
+  sendControl = { gate: gate(), fail: false }; await page.getByRole('button', { name: '다시 보내기', exact: true }).click(); await expect.poll(() => sends.length).toBe(4); sendControl.gate.release();
   await expect(current().getByText('취소 요청 보냄', { exact: true })).toBeVisible();
+  await editor.focus(); await expect(editor).toBeFocused();
   expect(sends[3]).toMatchObject({ text: '블로그 저장소 브랜치 정리: 답을 취소합니다', context_items: [{ key: 'persistent_report_visible', content: { key: 'blog', title: '블로그 저장소 브랜치 정리' } }] });
   const reopened = { ...entries[1], title: '블로그 다시 확인', updated_at: 'latest' };
   publish([entries[0], reopened, entries[2]]);
@@ -274,8 +276,8 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await snapshot('1440-three-card-chips');
   publish([maximum, reportReviewEntries[1]]); await track.focus(); await page.keyboard.press('ArrowLeft'); await expect(current().getByRole('heading')).toHaveText(maximum.title);
   await snapshot('1440-three-answer-buttons');
-  await page.evaluate(() => document.documentElement.classList.remove('dark')); await snapshot('1440-light');
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
+  await page.getByRole('button', { name: '라이트 모드로 전환', exact: true }).click(); await snapshot('1440-light');
+  await page.getByRole('button', { name: '다크 모드로 전환', exact: true }).click();
   await page.setViewportSize({ width: 1180, height: 640 });
   await expect(deck).toHaveAttribute('data-bubble', 'true');
   const reading = current().locator('.pas-report-reading'); const footer = current().locator('.pas-report-footer');

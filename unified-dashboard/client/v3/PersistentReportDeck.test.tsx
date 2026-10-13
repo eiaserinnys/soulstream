@@ -20,13 +20,14 @@ const two = { ...one, key: 'two', kind: 'see' as const, options: [], title: '볼
 let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
+let portalTarget: HTMLDivElement | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
 const render = () => act(async () => root.render(<InternalLinkProvider internalOrigins={['https://example.test']} openTarget={openTarget}><PersistentReportProvider sessionId="a" entries={entries}>
-  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss} />
+  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss} seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : undefined} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 beforeEach(async () => {
-  vi.clearAllMocks(); useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  vi.clearAllMocks(); portalTarget = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
@@ -155,4 +156,18 @@ it('preserves the viewed key when a preceding sheet disappears and focuses the n
   expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe('1 / 2');
   entries = [entries[1]]; await render();
   expect(document.activeElement?.getAttribute('data-testid')).toBe('report-sheet-three');
+});
+
+it.each([false, true])('keeps composer focus after a focused control disappears, including portal=%s', async portal => {
+  const outside = document.createElement('input'); document.body.append(outside);
+  if (portal) { portalTarget = document.createElement('div'); document.body.append(portalTarget); await render(); }
+  const deckHost = portalTarget ?? host;
+  const focused = deckHost.querySelector<HTMLButtonElement>('[data-current="true"] button')!;
+  focused.focus();
+  // Native removal of the focused control supplies no deck blur event.
+  focused.remove(); expect(document.activeElement).toBe(document.body);
+  outside.focus();
+  entries = [two]; await render();
+  expect(document.activeElement).toBe(outside);
+  outside.remove(); portalTarget?.remove();
 });

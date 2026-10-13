@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, DashboardIconCap, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { SourceLink } from '@seosoyoung/soul-ui/components/SourceLink';
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
@@ -50,10 +50,21 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const index = Math.max(0, entries.findIndex(entry => entry.key === visibleKey));
   const track = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLElement | null>(null);
-  const sizing = useReportDeckHeight(root, [entries, sending, seat], sessionId);
   const bubble = seat?.target && seat.body ? seat.layout : null;
+  const inBubble = Boolean(bubble);
+  const measurementRevision = useMemo(() => ({ entries, inBubble }), [entries, inBubble]);
+  const sizing = useReportDeckHeight(root, measurementRevision, sessionId);
   const focusWithin = useRef(false);
   const flying = useRef<number | null>(null);
+  useEffect(() => {
+    const focused = (event: FocusEvent) => {
+      // A removed button can leave focus on body without a blur. Observe the
+      // next real destination, using the actual portal DOM rather than its parent.
+      if (event.target instanceof Node && event.target !== document.body && !root.current?.contains(event.target)) focusWithin.current = false;
+    };
+    document.addEventListener('focusin', focused);
+    return () => document.removeEventListener('focusin', focused);
+  }, []);
   const current = useRef({ index });
   current.current = { index };
 
@@ -62,6 +73,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     const at = Math.max(0, Math.min(entries.length - 1, target));
     if (!node || at === index) return;
     if ((at === 0 || at === entries.length - 1) && document.activeElement?.closest('.pas-report-nav')) node.focus({ preventScroll: true });
+    sizing.startScroll();
     flying.current = at;
     report.view(entries[at].key);
     node.scrollTo({ left: at * node.clientWidth, behavior: 'smooth' });
@@ -89,21 +101,23 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   if (!entries.length) return null;
   const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} style={{ height: sizing.height, maxHeight: bubble?.maxHeight, ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
     aria-label="지금의 보고" aria-roledescription="carousel"
-    onPointerDownCapture={sizing.hold} onPointerUpCapture={sizing.release} onPointerCancel={sizing.release}
+    onPointerDownCapture={sizing.hold}
     onFocusCapture={() => { focusWithin.current = true; }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && (event.relatedTarget || event.target.isConnected)) focusWithin.current = false; }}
     onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); go(index + (event.key === 'ArrowRight' ? 1 : -1)); } }}>
     <div ref={track} className="pas-report-track" data-testid="report-track" tabIndex={entries.length > 1 ? 0 : -1} role="group" aria-label="보고 장. 좌우 화살표로 넘깁니다"
       onScroll={event => {
         const node = event.currentTarget;
+        sizing.startScroll();
         const at = Math.round(node.scrollLeft / Math.max(1, node.clientWidth));
         if (flying.current !== null) { if (at !== flying.current) return; flying.current = null; }
         if (entries[at]) report.view(entries[at].key);
       }}
       onScrollEnd={event => {
-        flying.current = null; sizing.release();
+        flying.current = null;
         const at = Math.round(event.currentTarget.scrollLeft / Math.max(1, event.currentTarget.clientWidth));
         if (entries[at]) report.view(entries[at].key);
+        sizing.endScroll();
       }}>
       {entries.map((entry, position) => {
         const answer = report.answer(entry);

@@ -8,9 +8,9 @@ PAS 전화면의 `PersistentSessionChatView(showReport)` → `PersistentReportPr
 
 보고 답은 `usePersistentReportSend` → `setPendingChatSend` → `submitIntervention.context_items`로 직접 보낸다. 「제목: 선택지」와 `persistent_report_reply {key,option}`, 원본 장 identity를 세션별 pending 칸에 싣고 초안·첨부·되돌리기는 건드리지 않는다. 일반 입력창의 자유 답은 기존 `getMessageContext`의 정확한 일치 조건과 visible 문맥을 유지한다. 채팅 답 안의 1단계 단추는 기존 `appendGeneratedText` 경로다.
 
-sending은 임시 answered, failed는 open으로 돌아간다. 실패 표시와 재전송은 기존 대화의 pending 말풍선이 맡고, 같은 답 단추의 retry는 같은 ID/context를 유지한다. 다른 글이 sending이면 답과 취소 요청을 비활성화한다. 다른 실패 글이 남으면 scoped operations bridge의 기존 알림 줄로 안내한다. 서버가 받은 뒤에만 취소 요청을 보이고, 「제목: 답을 취소합니다」와 `persistent_report_visible {key,title}`을 같은 전송 칸으로 보낸다. 취소 요청 보냄은 그 장의 `updated_at`이 바뀔 때까지 남는다. 메시지 ack는 기존 이벤트 정합으로 pending을 비운다. 서버의 새 판은 임시 답을 교체한다.
+sending은 임시 answered, failed는 open으로 돌아간다. 실패 표시와 재전송은 기존 대화의 pending 말풍선이 맡고, 같은 답 단추의 retry는 같은 ID/context를 유지한다. 다른 글이 sending이면 답과 취소 요청을 비활성화한다. 다른 실패 글이 남으면 scoped operations bridge의 기존 알림 줄로 안내한다. `pendingChatSends.persistentReportOperation`은 key·updatedAt·종류와 접수 결과를 기록한다. 직접 전송과 `useChatInputSend`의 대화 재전송이 같은 표식을 유지하고 성공 시 acknowledged를 적는다. `PersistentReportProvider`가 표식을 읽어 접수와 취소 요청 상태의 유일한 기억을 소유하며, 세션·key·updated_at이 바뀌면 그 기억을 지운다. 서버가 받은 뒤에만 취소 요청을 보이고, 「제목: 답을 취소합니다」와 `persistent_report_visible {key,title}`을 같은 전송 칸으로 보낸다. 취소 요청 보냄은 그 장의 `updated_at`이 바뀔 때까지 남는다. 메시지 ack는 기존 이벤트 정합으로 pending을 비운다. 서버의 새 판은 임시 답을 교체한다.
 
-`use-persistent-session-geometry`가 공용 `calculatePersistentSessionLayout`에 웹 폭 0.8과 최소 뼈대 221을 전달한다. 말풍선은 초상 칸에 portal하고 그 밖은 대화 칸 위에 선다. `useReportDeckHeight`는 장의 자연 높이를 재고 누르는 동안 높이 반영을 미룬다. 말풍선에서만 제목·칩·맥락·하실 일을 함께 굴리고 맨 아래 넘김과 답은 고정한다.
+`use-persistent-session-geometry`가 공용 `calculatePersistentSessionLayout`에 웹 폭 0.8과 최소 뼈대 221을 전달한다. 말풍선은 초상 칸에 portal하고 그 밖은 대화 칸 위에 선다. `useReportDeckHeight`는 장의 자연 높이를 재고 누르는 동안과 가로 넘김이 끝날 때까지 높이 반영을 미룬다. pointerup은 누름만 풀고, 가로 넘김은 기존 scrollend에서 보고 장이 정해진 뒤 푼다. 바깥 focusin은 portal의 실제 덱 DOM으로 판정해 초점 기억을 끄며, 사라진 단추에서 body로 떨어진 초점의 복구는 유지한다. 말풍선에서만 제목·칩·맥락·하실 일을 함께 굴리고 맨 아래 넘김과 답은 고정한다.
 
 「봤다」는 기존 인증된 PAS DELETE다. key별 원본 장을 대기에 기록해 즉시 숨기며 실패하면 그 key만 원래 순서로 복원한다. 최신 동일 key 발행본과 역순 응답 처리를 유지한다. 실패는 기존 알림 줄의 「보고를 내리지 못했어.」다. 번호 칩은 기존 `ReportCardLink`의 선조회와 수정 키 처리로 번호를 카드 ID로 바꾸어 내부 링크로 연다.
 

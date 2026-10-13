@@ -3,13 +3,14 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { usePersistentReportSend } from './usePersistentReportSend';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const entry: PersistentReportEntry = { key: 'one', kind: 'ask', title: '확인', context: '맥락', action: '선택', options: ['응'], card_numbers: [], state: 'open', answer: '', updated_at: 'one' };
 let host: HTMLDivElement; let root: ReturnType<typeof createRoot>; let send: ReturnType<typeof usePersistentReportSend>;
 const notify = vi.fn(); const transport = vi.fn();
 function Harness() { send = usePersistentReportSend('a', notify, transport); return null; }
-beforeEach(async () => { vi.clearAllMocks(); useDashboardStore.getState().setPendingChatSend('a', null); transport.mockReset(); transport.mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); host = document.createElement('div'); document.body.append(host); root = createRoot(host); await act(async () => root.render(<Harness/>)); });
+beforeEach(async () => { vi.clearAllMocks(); useDashboardStore.getState().setPendingChatSend('a', null); transport.mockReset(); transport.mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); host = document.createElement('div'); document.body.append(host); root = createRoot(host); await act(async () => root.render(<PersistentReportProvider sessionId="a" entries={[entry]}><Harness/></PersistentReportProvider>)); });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
 it('sends directly with a reply receipt, preserves drafts, and allows cancellation only after acknowledgement', async () => {
   let resolve!: (value: unknown) => void; transport.mockReturnValue(new Promise(yes => { resolve = yes; }));
@@ -52,4 +53,20 @@ it('sends cancellation as a normal visible-context message, keeps its label unti
   await act(async () => send.cancel(answered)); expect(send.cancelRequested(answered)).toBe(true);
   await act(async () => useDashboardStore.getState().setPendingChatSend('a', null)); expect(send.cancelRequested(answered)).toBe(true);
   expect(send.cancelRequested({ ...answered, updated_at: 'new' })).toBe(false);
+});
+
+it.each(['reply', 'cancel'] as const)('follows existing chat retry acknowledgements for %s and keeps the publication receipt', async kind => {
+  transport.mockRejectedValueOnce(new Error('offline'));
+  await act(async () => kind === 'reply' ? send.reply(entry, '응') : send.cancel(entry));
+  const failed = useDashboardStore.getState().pendingChatSends.a;
+  expect(failed.persistentReportOperation).toMatchObject({ key: entry.key, updatedAt: entry.updated_at, kind });
+  await act(async () => useDashboardStore.getState().setPendingChatSend('a', { ...failed, status: 'sending', reason: undefined }));
+  expect(send.canCancel(entry)).toBe(false);
+  if (kind === 'cancel') expect(send.cancelRequested(entry)).toBe(true);
+  await act(async () => useDashboardStore.getState().setPendingChatSend('a', { ...failed, status: 'sending', persistentReportOperation: { ...failed.persistentReportOperation!, acknowledged: true } }));
+  if (kind === 'reply') expect(send.canCancel(entry)).toBe(true);
+  await act(async () => useDashboardStore.getState().setPendingChatSend('a', null));
+  expect(kind === 'reply' ? send.canCancel(entry) : send.cancelRequested(entry)).toBe(true);
+  await act(async () => root.render(<PersistentReportProvider sessionId="a" entries={[{ ...entry, updated_at: 'new' }]}><Harness/></PersistentReportProvider>));
+  expect(kind === 'reply' ? send.canCancel(entry) : send.cancelRequested(entry)).toBe(false);
 });

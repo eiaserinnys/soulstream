@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 /** Measure intrinsic pages; retain an answered publication's height without scrollable blanks. */
 export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revision: unknown, sessionId: string) {
   const [height, setHeight] = useState<number>();
   const holding = useRef(false);
+  const pressing = useRef(false);
+  const scrolling = useRef(false);
   const pending = useRef<number | undefined>(undefined);
   const measured = useRef(new Map<string, number>());
   useLayoutEffect(() => { measured.current.clear(); }, [sessionId]);
@@ -36,10 +38,19 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
     node.querySelectorAll('.pas-report-content, .pas-report-footer').forEach(child => observer.observe(child));
     return () => observer.disconnect();
   }, [root, revision]);
+  const releaseIfSettled = useCallback(() => {
+    holding.current = pressing.current || scrolling.current;
+    if (!holding.current && pending.current !== undefined) setHeight(pending.current);
+  }, []);
   useEffect(() => {
-    const release = () => { if (holding.current) { holding.current = false; if (pending.current !== undefined) setHeight(pending.current); } };
+    const release = () => { pressing.current = false; releaseIfSettled(); };
     window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release);
     return () => { window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); };
-  }, []);
-  return { height, hold: () => { holding.current = true; }, release: () => { holding.current = false; if (pending.current !== undefined) setHeight(pending.current); }, holding };
+  }, [releaseIfSettled]);
+  return {
+    height, holding,
+    hold: () => { pressing.current = true; holding.current = true; },
+    startScroll: () => { scrolling.current = true; holding.current = true; },
+    endScroll: () => { scrolling.current = false; releaseIfSettled(); },
+  };
 }

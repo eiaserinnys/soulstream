@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, useDashboardStore } from '@seosoyoung/soul-ui';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { calculatePersistentSessionLayout } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
@@ -27,6 +27,8 @@ export function PersistentReportReviewSample({ bubble = false }: { bubble?: bool
   </PersistentReportProvider>;
 }
 function ReviewDeck({ sessionId, seat, dismiss }: { sessionId: string; seat?: ReportBubbleSeat; dismiss: (key: string) => Promise<void> }) {
+  const pending = useDashboardStore(state => state.pendingChatSends[sessionId]);
+  useEffect(() => { if (pending?.persistentReportOperation?.acknowledged) useDashboardStore.getState().setPendingChatSend(sessionId, null); }, [pending, sessionId]);
   return <PersistentReportDeck sessionId={sessionId} seat={seat} notify={() => {}} focusInput={() => {}} dismissReport={dismiss}
-    transport={async () => { useDashboardStore.getState().setPendingChatSend(sessionId, null); return { ok: true, delivered: true, reason: null, consumeWhen: null }; }} />;
+    transport={async () => { return { ok: true, delivered: true, reason: null, consumeWhen: null }; }} />;
 }
