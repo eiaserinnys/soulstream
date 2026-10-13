@@ -18,6 +18,8 @@ import { parseRunnerChildConfig } from
 import type { RunnerRegistration } from
   "../../src/runner/runner_process_registry.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
+import { createRunnerPhaseObservation } from
+  "../../src/runner/runner_phase_observation.js";
 import type { Task } from "../../src/task/task_models.js";
 
 describe("createRunnerProcessRuntimeFactory", () => {
@@ -162,10 +164,16 @@ describe("createRunnerProcessRuntimeFactory", () => {
       prompt: "resume",
       status: "pending",
     } as Task;
+    const phaseObservation = createRunnerPhaseObservation({
+      nodeId: "node-test",
+      scopeId: "recovery-test",
+      operation: "runnerRecovery.scan",
+      logger: { warn: vi.fn() },
+    });
     const runtime = factory.recover!(task, registration, {
       persistRunState: vi.fn(async () => undefined),
       persistSessionItems: vi.fn(async () => undefined),
-    });
+    }, "adopt", phaseObservation);
     expect((runtime.dispatcher as unknown as {
       options: {
         spawn: { codexDetachedResultRetentionMs: number };
@@ -176,6 +184,9 @@ describe("createRunnerProcessRuntimeFactory", () => {
 
     await expect(runtime.dispatcher.prepareSession("session-adopt"))
       .rejects.toThrow("stop after successful adoption");
+    expect((runtime.dispatcher as unknown as {
+      options: { phaseObservation?: unknown };
+    }).options.phaseObservation).toBe(phaseObservation);
     expect(adopt).toHaveBeenCalledOnce();
     expect(adopt).toHaveBeenCalledWith(registration);
     expect(spawn).not.toHaveBeenCalled();

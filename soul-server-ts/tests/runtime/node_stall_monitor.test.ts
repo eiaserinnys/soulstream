@@ -8,6 +8,7 @@ import {
   startNodeStallMonitor,
   type EventLoopDelayHistogram,
 } from "../../src/runtime/node_stall_monitor.js";
+import { createRunnerPhaseObservation } from "../../src/runner/runner_phase_observation.js";
 
 const monitors: Array<{ stop(): Promise<void> }> = [];
 const tempDirectories: string[] = [];
@@ -64,11 +65,19 @@ describe("node stall monitor", () => {
       watchdogDiagnosticPath: diagnosticPath,
     });
     monitors.push(monitor);
-    const finishRunnerOperation = monitor.beginRunnerOperation({
-      sessionId: "session-stalled",
-      commandId: "execute:stalled",
-      operation: "execute",
+    const observation = createRunnerPhaseObservation({
+      nodeId: "node-stall-test",
+      scopeId: "scan-stalled",
+      operation: "runnerRecovery.scan",
+      logger: { warn: vi.fn() },
+      beginRunnerOperation: monitor.beginRunnerOperation.bind(monitor),
     });
+    let finishPhase!: () => void;
+    const phase = observation.runAsync(
+      "dbRead",
+      { sessionId: "session-stalled", databasePath: "/tmp/stalled.sqlite", label: "outbox" },
+      async () => await new Promise<void>((resolve) => { finishPhase = resolve; }),
+    );
     monitor.observeSqliteTransaction({
       transactionId: "tx-stalled",
       transactionLabel: "event_outbox.acknowledge_host_frame",
@@ -86,7 +95,8 @@ describe("node stall monitor", () => {
     const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     Atomics.wait(signal, 0, 0, 140);
     await delay(80);
-    finishRunnerOperation();
+    finishPhase();
+    await phase;
     await monitor.stop();
     monitors.splice(monitors.indexOf(monitor), 1);
 
@@ -100,8 +110,12 @@ describe("node stall monitor", () => {
       source: "node-stall-watchdog",
       activeRunnerOperations: [{
         sessionId: "session-stalled",
-        commandId: "execute:stalled",
-        operation: "execute",
+        commandId: "scan-stalled",
+        operation: "runnerRecovery.scan.dbRead.outbox",
+        nodeId: "node-stall-test",
+        scanId: "scan-stalled",
+        phase: "dbRead",
+        databasePath: "/tmp/stalled.sqlite",
       }],
       activeSqliteTransactions: [{
         transactionId: "tx-stalled",

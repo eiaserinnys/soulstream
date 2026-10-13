@@ -1,5 +1,11 @@
 # 재시작 복구
 
+## PAS 판 복원 (#270 R1)
+
+판의 정본은 sessions.metadata의 persistent_report 항목 하나다. 초기 REST/sessions snapshot과 세대 시작 컨텍스트가 이 값을 다시 읽는다. 새 복구 timer/loop/재시도 lane은 없다. 세대 metadata 교체는 persistent_generation 타입만 다루므로 판을 유지한다.
+
+앱은 PAS 목록/상세 REST로 판을 다시 읽고 이후 session_updated를 보고 projection에 교체한다. 먼저 시작한 REST 응답은 요청 시작의 projection 참조를 비교하여 그 뒤 도착한 live 판을 덮지 않는다. 인증 scope 교체 때 projection을 비운다. 별도 복구 timer나 재시도 계층은 없다.
+
 R3 코드 대조 커밋 SHA: `e15bfa04bbb304f4138930a8e022f4d70ccffd4e`
 
 R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`

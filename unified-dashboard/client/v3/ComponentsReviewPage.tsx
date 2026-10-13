@@ -41,6 +41,9 @@ import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSessionPortraitToggleReviewSample";
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
+import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
+import { ChatUiReviewSample } from './ChatUiReviewSample';
+import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -228,9 +231,19 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
+            <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 봤다"><PersistentReportReviewSample /></Sample>
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
+            </Sample>
+            <Sample name="AssistantMessage contentLayout" state="일반 · structured · PAS">
+              <ChatUiMessageReviewSample />
+            </Sample>
+            <Sample name="ChatUiMessage · 일반" state="첫 조각 · 글 대체 · 실제 발행본">
+              <ChatUiReviewSample presentation="default" />
+            </Sample>
+            <Sample name="ChatUiMessage · PAS" state="첫 조각 · 글 대체 · 실제 발행본">
+              <ChatUiReviewSample presentation="manuscript" />
             </Sample>
             <Sample name="SystemMessage / CollapsibleCaption / LabeledDivider" state="기존 요약 · 접힘/펼침 · 말줄임 · 가운데 라벨">
               <div data-testid="caption-comparison">
@@ -286,6 +299,9 @@ export function ComponentsReviewPage() {
             <Sample name="CardCreateDialog / AgentNodeAssignmentFields / SessionAttachmentFields" state="운영 폼 · 폴더·실행 대상·첨부 · 로컬 검수 저장"><CardCreateSample/></Sample>
           <Sample name="CardHandoffView / CardComposer / ChatInputComposer / ChatInputEditor" state="선택행 위 · 한 줄 → 여러 줄 · 전송 · 로컬 첨부">
               <CardHandoffSample key={inputSampleVersion} onSend={send}/>
+            </Sample>
+            <Sample name="ChatInputAccessories" state="첨부 있음/없음 · 긴 파일명 · 되돌리기와 전송">
+              <ChatInputAccessoriesReviewSample />
             </Sample>
           </section>
           <section id="components-controls" className="v3-detail-section">

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +12,12 @@ import type {
   RunnerReleaseDescriptor,
   RunnerReleaseMaterializer,
 } from "../../src/runner/runner_release_materializer.js";
+import {
+  BuildArtifactReleaseMaterializer,
+  RUNNER_RELEASE_ARTIFACTS,
+} from "../../src/runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
+import { createRunnerPhaseObservation } from "../../src/runner/runner_phase_observation.js";
 import {
   scanRunnerRegistrations,
   type RunnerRegistration,
@@ -37,6 +42,7 @@ describe("RunnerReleaseGarbageCollector", () => {
     });
     expect(subject.materializer.remove).not.toHaveBeenCalled();
     expect(subject.inspect).not.toHaveBeenCalled();
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
   });
 
   it("retains a stopped terminal runner until outbox and IPC final ACK", async () => {
@@ -47,6 +53,7 @@ describe("RunnerReleaseGarbageCollector", () => {
       retained: [{ releaseId: "release-a", reason: "final_ack_pending" }],
     });
     expect(subject.materializer.remove).not.toHaveBeenCalled();
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
   });
 
   it("fails closed when a live runner loses its PID-file evidence", async () => {
@@ -59,6 +66,7 @@ describe("RunnerReleaseGarbageCollector", () => {
       retained: [{ releaseId: "release-a", reason: "pid_evidence_missing" }],
     });
     expect(subject.materializer.remove).not.toHaveBeenCalled();
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
     expect(subject.logger.warn).toHaveBeenCalledWith(
       { releaseId: "release-a", sessionId: "session-a" },
       "runner release GC retained release because PID evidence is missing",
@@ -75,6 +83,19 @@ describe("RunnerReleaseGarbageCollector", () => {
       retained: [{ releaseId: "release-a", reason: "running_lifecycle" }],
     });
     expect(subject.materializer.remove).not.toHaveBeenCalled();
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
+  });
+
+  it("retains a release when durable ACK evidence cannot be read without verifying its bundle", async () => {
+    const subject = await makeSubject([registration()], false);
+    subject.inspect.mockRejectedValueOnce(new Error("durable evidence unreadable"));
+
+    await expect(subject.collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: "release-a", reason: "evidence_unreadable" }],
+    });
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
+    expect(subject.materializer.remove).not.toHaveBeenCalled();
   });
 
   it("removes a release only after every registration is stopped, terminal, and fully ACKed", async () => {
@@ -88,6 +109,7 @@ describe("RunnerReleaseGarbageCollector", () => {
       retained: [],
     });
     expect(subject.materializer.remove).toHaveBeenCalledOnce();
+    expect(subject.materializer.verify).toHaveBeenCalledOnce();
   });
 
   it("retains a prewarmed release with no final-ACK evidence", async () => {
@@ -97,6 +119,85 @@ describe("RunnerReleaseGarbageCollector", () => {
       removed: [],
       retained: [{ releaseId: "release-a", reason: "no_final_ack_evidence" }],
     });
+    expect(subject.materializer.checkReadyMarker).toHaveBeenCalledOnce();
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
+  });
+
+  it("fully verifies a deletion candidate and continues after a candidate fails verification", async () => {
+    const subject = await makeSubject([
+      registration({ sessionId: "session-a" }),
+      registration({ sessionId: "session-b", codeSha: "release-b" }),
+    ], false);
+    await subject.pool.ensureRelease(subject.pool.describe("release-b"));
+    subject.materializer.verify.mockClear();
+    subject.materializer.verify.mockImplementation(async (release) => {
+      if (!subject.materializer.isIntact(release.releaseId)) {
+        throw new Error("runner release content mismatch");
+      }
+    });
+    subject.materializer.corrupt("release-a");
+
+    const result = await subject.collector.collect();
+
+    expect(result.removed).toEqual(["release-b"]);
+    expect(result.retained).toEqual([
+      { releaseId: "release-a", reason: "evidence_unreadable" },
+    ]);
+    expect(subject.materializer.verify).toHaveBeenCalledTimes(2);
+    expect(subject.materializer.remove).toHaveBeenCalledOnce();
+    expect(subject.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ releaseId: "release-a" }),
+      "runner release GC retained release because release verification failed",
+    );
+  });
+
+  it("retains a marker-valid bundle when final full verification finds changed content", async () => {
+    const root = await temporaryDirectory();
+    const artifacts = join(root, "build-artifacts");
+    await mkdir(artifacts, { recursive: true });
+    await writeFile(join(artifacts, "package.json"), "{\"type\":\"module\"}\n");
+    await writeFile(join(artifacts, "runner_entry.js"), "export const ready = true;\n");
+    const materializer = new BuildArtifactReleaseMaterializer(artifacts);
+    const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
+    const release = await pool.resolveCurrentRelease();
+    await pool.ensureRelease(release);
+    await chmod(release.releaseRoot, 0o755);
+    await chmod(join(release.releaseRoot, "runner_entry.js"), 0o644);
+    await writeFile(join(release.releaseRoot, "runner_entry.js"), "export const ready = false;\n");
+    const verify = vi.spyOn(materializer, "verify");
+    verify.mockClear();
+    const registrationForRelease = registration({ codeSha: release.releaseId });
+    const inspect = vi.fn(async (current: RunnerRegistration) => ({
+      registration: current,
+      acknowledgedThrough: 2,
+      latestDurableSourceSeq: 2,
+      incompleteDurableWork: false,
+      durableRecordCount: 2,
+      unacknowledgedIpcFrameCount: 0,
+      pendingInterventionCount: 0,
+    }));
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const collector = new RunnerReleaseGarbageCollector(
+      pool,
+      join(root, "runner-state"),
+      logger as never,
+      {
+        scan: vi.fn(async () => ({ registrations: [registrationForRelease], errors: [] })),
+        inspect,
+      },
+    );
+
+    await expect(collector.collect()).resolves.toEqual({
+      removed: [],
+      retained: [{ releaseId: release.releaseId, reason: "evidence_unreadable" }],
+    });
+    expect(verify).toHaveBeenCalledOnce();
+    await expect(readFile(join(release.releaseRoot, "runner_entry.js"), "utf8"))
+      .resolves.toBe("export const ready = false;\n");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ releaseId: release.releaseId }),
+      "runner release GC retained release because release verification failed",
+    );
   });
 
   it("does not fail closed on reserved runner-state infrastructure", async () => {
@@ -127,6 +228,7 @@ describe("RunnerReleaseGarbageCollector", () => {
       retained: [{ releaseId: "release-a", reason: "inventory_incomplete" }],
     });
     expect(subject.materializer.remove).not.toHaveBeenCalled();
+    expect(subject.materializer.verify).not.toHaveBeenCalled();
   });
 
   it("scans the registration inventory once regardless of release count", async () => {
@@ -148,11 +250,13 @@ describe("RunnerReleaseGarbageCollector", () => {
       error: new Error("corrupt lifecycle summary"),
     }]);
     await subject.pool.ensureRelease(subject.pool.describe("release-b"));
+    subject.materializer.verify.mockClear();
 
     await expect(subject.collector.collect()).resolves.toEqual({
       removed: ["release-b"],
       retained: [{ releaseId: "release-a", reason: "inventory_incomplete" }],
     });
+    expect(subject.materializer.verify).toHaveBeenCalledOnce();
   });
 
   it("re-scans registration ownership under the release lock before deletion", async () => {
@@ -172,6 +276,44 @@ describe("RunnerReleaseGarbageCollector", () => {
     expect(subject.scan).toHaveBeenCalledOnce();
     expect(subject.materializer.remove).not.toHaveBeenCalled();
   });
+
+  it("reports release GC phases in lock, fresh inventory, then durable inspection order", async () => {
+    const subject = await makeSubject([registration()], false);
+    const phases: string[] = [];
+    let now = 10;
+    const observation = createRunnerPhaseObservation({
+      nodeId: "node-a",
+      scopeId: "release-gc-1",
+      operation: "runner.recovery.releaseGc",
+      logger: subject.logger as never,
+      monotonicNow: () => now++,
+      beginRunnerOperation: (context) => {
+        phases.push(context.phase ?? "missing");
+        return () => {};
+      },
+    });
+
+    await subject.collector.collect(undefined, observation);
+
+    expect(phases).toEqual([
+      "enumerateAndVerify",
+      "releaseLock",
+      "registry",
+      "durableInspection",
+      "candidateVerification",
+    ]);
+    expect(subject.scan).toHaveBeenCalledOnce();
+    expect(subject.inspect).toHaveBeenCalledOnce();
+    expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({
+      phaseDurationsMs: expect.objectContaining({
+        enumerateAndVerify: expect.any(Number),
+        releaseLock: expect.any(Number),
+        registry: expect.any(Number),
+        durableInspection: expect.any(Number),
+        candidateVerification: expect.any(Number),
+      }),
+    }), "runner release GC sweep completed");
+  });
 });
 
 async function makeSubject(
@@ -186,6 +328,7 @@ async function makeSubject(
   const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
   const release = pool.describe("release-a");
   await pool.ensureRelease(release);
+  materializer.verify.mockClear();
   const scan = vi.fn(scanRegistrationInventory
     ?? (async () => ({ registrations, errors })));
   const inspect = vi.fn(async (registration: RunnerRegistration) => ({
@@ -221,9 +364,24 @@ async function makeSubject(
 class FakeMaterializer implements RunnerReleaseMaterializer {
   readonly remove = vi.fn(async (release: RunnerReleaseDescriptor) => {
     this.ready.delete(release.releaseId);
+    this.intact.delete(release.releaseId);
     await rm(release.releaseRoot, { recursive: true, force: true });
   });
+  readonly verify = vi.fn(async (release: RunnerReleaseDescriptor) => {
+    if (!this.ready.has(release.releaseId)) {
+      throw Object.assign(new Error("not ready"), { code: "ENOENT" });
+    }
+    if (!this.intact.has(release.releaseId)) {
+      throw new Error("runner release content mismatch");
+    }
+  });
+  readonly checkReadyMarker = vi.fn(async (release: RunnerReleaseDescriptor) => {
+    if (!this.ready.has(release.releaseId)) {
+      throw Object.assign(new Error("not ready"), { code: "ENOENT" });
+    }
+  });
   private readonly ready = new Set<string>();
+  private readonly intact = new Set<string>();
 
   async resolveCurrentReleaseId(): Promise<string> {
     return "release-a";
@@ -232,13 +390,25 @@ class FakeMaterializer implements RunnerReleaseMaterializer {
   async materialize(release: RunnerReleaseDescriptor): Promise<void> {
     await mkdir(release.runnerModuleRoot, { recursive: true });
     await writeFile(join(release.runnerModuleRoot, "runner_entry.js"), "");
+    await writeFile(
+      join(release.releaseRoot, ".runner-release.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        releaseId: release.releaseId,
+        hashAlgorithm: "sha256",
+        artifacts: RUNNER_RELEASE_ARTIFACTS,
+      }) + "\n",
+    );
     this.ready.add(release.releaseId);
+    this.intact.add(release.releaseId);
   }
 
-  async verify(release: RunnerReleaseDescriptor): Promise<void> {
-    if (!this.ready.has(release.releaseId)) {
-      throw Object.assign(new Error("not ready"), { code: "ENOENT" });
-    }
+  corrupt(releaseId: string): void {
+    this.intact.delete(releaseId);
+  }
+
+  isIntact(releaseId: string): boolean {
+    return this.intact.has(releaseId);
   }
 }
 

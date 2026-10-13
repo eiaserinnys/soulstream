@@ -3016,14 +3016,24 @@ describe("TaskExecutor runner process boundary", () => {
             : null,
         },
       } as unknown as RunnerRegistration;
+      const phaseObservation = { marker: "recovery-scan" } as never;
 
       await executor.recoverRegisteredRunner(
         task,
         registration,
         "execute-old",
         "offline",
+        undefined,
+        phaseObservation,
       );
 
+      expect(processFactory.recover).toHaveBeenCalledWith(
+        task,
+        registration,
+        expect.anything(),
+        "offline",
+        phaseObservation,
+      );
       expect(task.status).toBe(expectedStatus);
       expect(recoveredTerminal).toHaveBeenCalledOnce();
       expect(recoveredTerminal).toHaveBeenCalledWith(

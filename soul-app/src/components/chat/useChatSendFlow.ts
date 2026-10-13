@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
 import type { Session } from '../../api/types';
+import type { ReportReplyDraft, ReportSendContext } from '../../lib/persistent-report';
 import { appendAttachmentPathNotes } from '../../utils/attachmentPathNotes';
 import {
   useChatStore,
@@ -14,6 +15,7 @@ import {
 // 받아 첨부 도메인의 lifecycle은 알지 않는다.
 
 export interface UseChatSendFlowDeps {
+  getMessageContext?: (text: string) => ReportSendContext;
   /** API 클라이언트. null이면 재시도 가능한 준비 중 오류를 노출한다. */
   api: ApiClient | null;
   /** 현재 세션 ID. undefined면 세션 식별 오류를 노출한다. */
@@ -64,7 +66,7 @@ export interface UseChatSendFlowResult {
   restorePendingOptimistic: (
     eventId: string,
     currentText: string,
-  ) => { inputText: string; attachments: PendingOptimisticAttachment[] } | undefined;
+  ) => { inputText: string; attachments: PendingOptimisticAttachment[]; reportReply?: ReportReplyDraft } | undefined;
   /**
    * 사용자가 입력한 텍스트를 송신한다.
    *
@@ -108,6 +110,7 @@ export function useChatSendFlow(
     scrollToBottom,
     disabled = false,
     onUsageEvent,
+    getMessageContext,
   } = deps;
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
@@ -171,6 +174,7 @@ export function useChatSendFlow(
       originalText: text,
       attachmentItems,
       usageFlowId,
+      ...getMessageContext?.(text),
     };
     useChatStore.getState().setPendingOptimistic(sessionId, optimistic, true);
     // 사용자 액션 시점의 정본 snap 트리거 — typing indicator(=session.status='running'이
@@ -206,7 +210,7 @@ export function useChatSendFlow(
   function restorePendingOptimistic(
     eventId: string,
     currentText: string,
-  ): { inputText: string; attachments: PendingOptimisticAttachment[] } | undefined {
+  ): { inputText: string; attachments: PendingOptimisticAttachment[]; reportReply?: ReportReplyDraft } | undefined {
     if (!sessionId) return undefined;
     const pending = useChatStore.getState().pendingOptimisticBySession[sessionId];
     if (!pending || pending.id !== eventId || pending.pendingStatus !== 'failed') {
@@ -219,6 +223,7 @@ export function useChatSendFlow(
         ? `${originalText}\n\n${currentText}`
         : originalText,
       attachments: pending.attachmentItems ?? [],
+      ...(pending.reportReply ? { reportReply: pending.reportReply } : {}),
     };
   }
 
@@ -228,11 +233,9 @@ export function useChatSendFlow(
     const messageText = String(pending.data.text ?? '');
     const paths = pending.attachmentItems?.map((attachment) => attachment.path) ?? [];
     try {
-      const verdict = await api.intervene(
-        sessionId,
-        messageText,
-        paths.length > 0 ? paths : undefined,
-      );
+      const verdict = await (pending.contextItems?.length
+        ? api.intervene(sessionId, messageText, paths.length > 0 ? paths : undefined, pending.contextItems)
+        : api.intervene(sessionId, messageText, paths.length > 0 ? paths : undefined));
       if (verdict.delivered === null || verdict.outcome === 'unknown') {
         useChatStore.getState().updatePendingOptimisticStatus(
           sessionId,

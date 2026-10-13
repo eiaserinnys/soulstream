@@ -22,6 +22,8 @@ import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import type { ProcessIdentity } from "./runner_process_lock.js";
 import { isRunnerRegistrationDirectoryName } from "./runner_process_paths.js";
 import { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
+import type { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 
@@ -59,6 +61,18 @@ export interface RunnerDurableInspection {
   pendingInterventionCount: number;
 }
 
+export type RunnerSessionGcRetentionReason =
+  | "incomplete_bootstrap"
+  | "final_ack_pending"
+  | "durable_replay_pending";
+
+export interface RunnerDurableRetentionProbe {
+  registration: RunnerRegistration;
+  localRetentionReason: RunnerSessionGcRetentionReason | null;
+}
+
+export { probeRunnerDurableRetention } from "./runner_durable_retention_probe.js";
+
 export type RunnerRecoveryDisposition =
   | "wait_for_bootstrap"
   | "adopt_prebootstrap"
@@ -83,14 +97,17 @@ export interface LiveRunnerSessionIdsOptions {
   stateDirectory: string;
   leaseTimeoutMs: number;
   scan?: typeof scanRunnerRegistrations;
+  cache?: RunnerRegistrationScanCache;
   now?: () => number;
   onScanError?: (failure: RunnerRegistrationScan["errors"][number]) => void;
   logger?: Pick<Logger, "info">;
+  phaseObservation?: RunnerPhaseObservation;
 }
 
 export async function scanRunnerRegistrations(
   stateDirectory: string,
   options: {
+    cache?: RunnerRegistrationScanCache;
     verifyProcessIdentity?: boolean;
     inspectProcess?: (pid: number) => Promise<ProcessIdentity>;
   } & AuthoritativeRunnerLifecycleOptions = {},
@@ -102,18 +119,25 @@ export async function scanRunnerRegistrations(
     entries = await readdir(stateDirectory, { withFileTypes: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      options.cache?.prune(new Set());
       return { registrations, errors };
     }
     throw error;
   }
+  options.cache?.prune(new Set(entries
+    .filter((entry) => entry.isDirectory() && isRunnerRegistrationDirectoryName(entry.name))
+    .map((entry) => resolve(stateDirectory, entry.name))));
   for (const entry of entries) {
     if (!entry.isDirectory() || !isRunnerRegistrationDirectoryName(entry.name)) continue;
     const directory = resolve(stateDirectory, entry.name);
     try {
-      registrations.push(await readRunnerRegistrationSummary(directory, {
-        ...options,
-        verifyProcessIdentity: options.verifyProcessIdentity ?? true,
-      }));
+      const readFresh = async () => await readRunnerRegistrationSummary(directory, {
+          ...options,
+          verifyProcessIdentity: options.verifyProcessIdentity ?? true,
+        });
+      registrations.push(options.cache
+        ? await options.cache.read(directory, readFresh)
+        : await readFresh());
     } catch (error) {
       const normalized = asError(error);
       const stage = (normalized as Error & { runnerRegistrationStage?: string })
@@ -184,7 +208,10 @@ export function classifyRunnerRegistration(
 export async function listLiveRunnerSessionIds(
   options: LiveRunnerSessionIdsOptions,
 ): Promise<string[]> {
-  const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory);
+  const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory, {
+    ...(options.cache ? { cache: options.cache } : {}),
+    ...(options.phaseObservation ? { phaseObservation: options.phaseObservation } : {}),
+  });
   const errors: RunnerRegistrationScan["errors"] = [];
   const disappearedDirectories: string[] = [];
   for (const failure of result.errors) {
@@ -232,8 +259,12 @@ export async function listLiveRunnerSessionIds(
 
 export async function readRunnerRegistrationForDeletion(
   directory: string,
+  phaseObservation?: RunnerPhaseObservation,
 ): Promise<RunnerRegistration> {
-  return await readRunnerRegistrationSummary(directory, { verifyProcessIdentity: true });
+  return await readRunnerRegistrationSummary(directory, {
+    verifyProcessIdentity: true,
+    ...(phaseObservation ? { phaseObservation } : {}),
+  });
 }
 
 export function runnerReleaseGcCandidateFingerprint(scan: RunnerRegistrationScan): string {
@@ -276,10 +307,12 @@ function isReleaseGcCandidate(registration: RunnerRegistration): boolean {
 
 export async function hydrateRunnerRegistration(
   registration: RunnerRegistration,
+  phaseObservation?: RunnerPhaseObservation,
 ): Promise<RunnerRegistration> {
   const outbox = await RunnerParentOutbox.open(
     registration.config.paths.databasePath,
     registration.config.sessionId,
+    phaseObservation ? { phaseObservation } : {},
   );
   let bootstrap: RunnerBootstrapRecord | null;
   try {
@@ -287,25 +320,53 @@ export async function hydrateRunnerRegistration(
   } finally {
     outbox.close();
   }
-  const lifecycle = readRunnerSqliteLifecycle(registration.config.paths.databasePath);
+  const lifecycle = readRunnerSqliteLifecycle(
+    registration.config.paths.databasePath,
+    phaseObservation
+      ? {
+        phaseObservation,
+        sessionId: registration.config.sessionId,
+        label: "hydrated runner lifecycle",
+      }
+      : undefined,
+  );
   return { ...registration, bootstrap, lifecycle };
 }
 
 export async function inspectRunnerDurableState(
   registration: RunnerRegistration,
+  phaseObservation?: RunnerPhaseObservation,
 ): Promise<RunnerDurableInspection> {
   const outbox = await RunnerSqliteEventOutbox.openReadOnly(
     registration.config.paths.databasePath,
-    { sessionId: registration.config.sessionId },
+    {
+      sessionId: registration.config.sessionId,
+      ...(phaseObservation ? { phaseObservation } : {}),
+    },
   );
-  const lifecycle = readRunnerSqliteLifecycle(registration.config.paths.databasePath);
+  const lifecycle = readRunnerSqliteLifecycle(
+    registration.config.paths.databasePath,
+    phaseObservation
+      ? {
+        phaseObservation,
+        sessionId: registration.config.sessionId,
+        label: "inspected runner lifecycle",
+      }
+      : undefined,
+  );
   let bootstrap: RunnerBootstrapRecord | null;
   let acknowledgedThrough: number | null = null;
   let latestDurableSourceSeq: number | null = null;
   let incompleteDurableWork: boolean;
   let evidence!: ReturnType<RunnerSqliteEventOutbox["inspectPendingDurableEvidence"]>;
   try {
-    evidence = outbox.inspectPendingDurableEvidence();
+    evidence = phaseObservation
+      ? phaseObservation.runSync("dbRead", {
+        sessionId: registration.config.sessionId,
+        databasePath: registration.config.paths.databasePath,
+        label: "runner durable evidence",
+      }, () => outbox.inspectPendingDurableEvidence())
+      : outbox.inspectPendingDurableEvidence();
     bootstrap = await outbox.readBootstrap();
     if (!bootstrap) {
       incompleteDurableWork = true;
@@ -315,10 +376,23 @@ export async function inspectRunnerDurableState(
         runnerHostStatePath(registration.config.paths.databasePath),
         bootstrap.stream_id,
         bootstrap.session_id,
+        phaseObservation
+          ? {
+            phaseObservation,
+            sessionId: registration.config.sessionId,
+            label: "runner host ACK",
+          }
+          : undefined,
       );
       incompleteDurableWork = acknowledgedThrough === null
         || acknowledgedThrough !== latestDurableSourceSeq
-        || await outbox.hasPendingDurableWork(acknowledgedThrough);
+        || await (phaseObservation
+          ? phaseObservation.runAsync("dbRead", {
+            sessionId: registration.config.sessionId,
+            databasePath: registration.config.paths.databasePath,
+            label: "runner pending durable work",
+          }, () => outbox.hasPendingDurableWork(acknowledgedThrough!))
+          : outbox.hasPendingDurableWork(acknowledgedThrough));
     }
   } finally {
     outbox.close();

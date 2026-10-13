@@ -15,12 +15,19 @@ afterEach(() => {
 
 test('full-screen image modal owns its safe area outside the header and scrolling image', () => {
   const onClose = jest.fn();
+  const t = renderHook(() => useTokens()).result.current;
   const screen = render(<ImageViewerModal sources={[{ uri: 'https://test/photo.png' }]} initialIndex={0} onClose={onClose} />);
   const modal = screen.UNSAFE_getByType(Modal);
   expect(modal.props.children.type).toBe(SafeAreaProvider);
   expect(modal.props.children.props.initialMetrics).toBeUndefined();
   expect(modal.props.children.props.children.type).toBe(SafeAreaView);
   expect(modal.props).toMatchObject({ transparent: true, presentationStyle: 'overFullScreen', onRequestClose: onClose });
+  const imageArea = screen.UNSAFE_getAllByType(View).find((view) => {
+    const style = StyleSheet.flatten(view.props.style);
+    return style.flex === 1 && typeof view.props.onLayout === 'function';
+  });
+  expect(imageArea).toBeDefined();
+  expect(StyleSheet.flatten(imageArea!.props.style)).toMatchObject({ flex: 1, marginVertical: t.spacing.md });
   fireEvent.press(screen.getByLabelText('이미지 닫기'));
   expect(onClose).toHaveBeenCalledTimes(1);
 });

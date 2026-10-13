@@ -497,6 +497,23 @@ describe("processEventsBatch — prompt_suggestion", () => {
 describe("processEventsBatch — app-server final assistant message", () => {
   it("live final assistant_message replaces the streaming text node instead of creating a duplicate bubble", () => {
     const ctx = createProcessingContext();
+    const ui = {
+      schema_version: 1,
+      revision: 1,
+      ui_id: "ui_dfee7bbffdfbdc6da160cea6005ebfdd",
+      hash: "a9a314dbbfd5e9a70a851cbb25a79a7767fbdf204f3d513c6e66ca6252c92ed2",
+      document: {
+        schema_version: 1,
+        title: "Hello final",
+        body: [],
+        fields: {},
+        computed: {},
+        data: {},
+        sources: {},
+        assumptions: [],
+        units: {},
+      },
+    };
     const result = processEventsBatch(
       [
         {
@@ -520,8 +537,18 @@ describe("processEventsBatch — app-server final assistant message", () => {
         },
         {
           event: {
-            type: "text_delta",
+            type: "assistant_message",
             timestamp: 3,
+            content: "Hello final",
+            tool_use_id: "item-1",
+            ui,
+          } as unknown as SoulSSEEvent,
+          eventId: 9,
+        },
+        {
+          event: {
+            type: "text_delta",
+            timestamp: 4,
             text: "lo",
             tool_use_id: "item-1",
             _live_only: true,
@@ -531,7 +558,7 @@ describe("processEventsBatch — app-server final assistant message", () => {
         {
           event: {
             type: "assistant_message",
-            timestamp: 4,
+            timestamp: 5,
             content: "Hello final",
             tool_use_id: "item-1",
             _final_for_live_stream: true,
@@ -541,7 +568,7 @@ describe("processEventsBatch — app-server final assistant message", () => {
         {
           event: {
             type: "text_end",
-            timestamp: 4,
+            timestamp: 5,
             tool_use_id: "item-1",
             _live_only: true,
           } as unknown as SoulSSEEvent,
@@ -556,14 +583,56 @@ describe("processEventsBatch — app-server final assistant message", () => {
     );
 
     const messages = flattenTree(result.root);
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
+    expect(messages).toHaveLength(2);
+    const uiMessage = messages.find((message) => message.treeNodeType === "assistant_message");
+    const finalText = messages.find((message) => message.treeNodeType === "text");
+    expect(uiMessage).toMatchObject({
+      role: "assistant",
+      content: "Hello final",
+      treeNodeType: "assistant_message",
+    });
+    expect(uiMessage?.ui).toBe(ui);
+    expect(finalText).toMatchObject({
       role: "assistant",
       content: "Hello final",
       isStreaming: false,
       treeNodeType: "text",
     });
-    expect((result.root?.children ?? [])).toHaveLength(1);
+    expect((result.root?.children ?? [])).toHaveLength(2);
+  });
+
+  it("keeps same-content UI and ordinary assistant messages as separate nodes", () => {
+    const ui = {
+      schema_version: 1,
+      revision: 1,
+      ui_id: "ui_same-content",
+      hash: "same-content-hash",
+      document: { schema_version: 1, title: "Answer" },
+    };
+    const result = processEventsBatch(
+      [
+        {
+          event: { type: "assistant_message", content: "Answer", ui } as unknown as SoulSSEEvent,
+          eventId: 20,
+        },
+        {
+          event: { type: "assistant_message", content: "Answer" } as unknown as SoulSSEEvent,
+          eventId: 21,
+        },
+      ],
+      createProcessingContext(),
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    const messages = flattenTree(result.root);
+    expect(messages).toHaveLength(2);
+    expect(messages.map((message) => message.content)).toEqual(["Answer", "Answer"]);
+    expect(messages[0].id).not.toBe(messages[1].id);
+    expect(messages[0].ui).toBe(ui);
+    expect(messages[1].ui).toBeUndefined();
   });
 
   it("id 없는 live-only text_start는 과거 이벤트보다 뒤에 붙는다", () => {

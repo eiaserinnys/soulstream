@@ -96,6 +96,45 @@ export function recoverRunnerOutboxTail(database: DatabaseSync): {
   }
 }
 
+/** Reads only bootstrap integrity, the append head, and the ACK cursor for GC retention. */
+export function recoverRunnerOutboxRetentionMetadata(database: DatabaseSync): {
+  bootstrap: RunnerBootstrapRecord | null;
+  ackedThrough: number | null;
+  latestDurableSourceSeq: number;
+} {
+  database.exec("BEGIN");
+  try {
+    const latestDurableSourceSeq = latestRunnerSequence(database);
+    if (!Number.isSafeInteger(latestDurableSourceSeq) || latestDurableSourceSeq < 0) {
+      throw new Error("runner event outbox durable append cursor is invalid");
+    }
+    const bootstrapRow = database.prepare(`
+      SELECT * FROM runner_event_outbox WHERE record_kind = 'bootstrap'
+    `).get() as unknown as RunnerEventOutboxRow | undefined;
+    if (!bootstrapRow) {
+      if (latestDurableSourceSeq !== 0) {
+        throw new Error("runner bootstrap is missing before durable records");
+      }
+      database.exec("COMMIT");
+      return { bootstrap: null, ackedThrough: null, latestDurableSourceSeq };
+    }
+    if (bootstrapRow.source_seq !== 1) {
+      throw new Error("runner bootstrap record must be source_seq 1");
+    }
+    assertRunnerAckCheckpoint(bootstrapRow);
+    const bootstrap = runnerRowToBootstrap(bootstrapRow);
+    const ackedThrough = bootstrapRow.acked_through!;
+    if (latestDurableSourceSeq < 1 || ackedThrough > latestDurableSourceSeq) {
+      throw new Error("event outbox ACK exceeds durable append cursor");
+    }
+    database.exec("COMMIT");
+    return { bootstrap, ackedThrough, latestDurableSourceSeq };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function recoverSnapshot(
   database: DatabaseSync,
   options: { migrateLegacyAckCheckpoint?: boolean },

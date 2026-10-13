@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { flattenTree, clearFlattenTreeCache, extractEventId, type ChatMessage } from "./flatten-tree";
+import { flattenTree, clearFlattenTreeCache, extractEventId } from "./flatten-tree";
 import type {
   AssistantMessageNode,
   CompactNode,
@@ -963,6 +963,27 @@ describe("flattenTree identity 보존", () => {
     for (let i = 0; i < first.length; i++) {
       expect(first[i]).toBe(second[i]);
     }
+  });
+
+  it("assistant UI reference가 같으면 메시지를 재사용하고 바뀌면 새 메시지를 만든다", () => {
+    const firstUi = { schema_version: 1, revision: 1, ui_id: "ui-1", hash: "hash-1", document: {} };
+    const node = {
+      ...makeAssistantMessage(120),
+      ui: firstUi,
+    };
+    const tree = makeSession([node]);
+
+    const first = flattenTree(tree);
+    const same = flattenTree(tree);
+    expect(first[0]).toBe(same[0]);
+    expect(first[0].ui).toBe(firstUi);
+
+    const nextUi = { schema_version: 1, revision: 1, ui_id: "ui-2", hash: "hash-2", document: {} };
+    node.ui = nextUi;
+
+    const changed = flattenTree(tree);
+    expect(changed[0]).not.toBe(same[0]);
+    expect(changed[0].ui).toBe(nextUi);
   });
 
   it("자식 push로 트리를 mutate한 후 — 변경되지 않은 노드는 동일 reference, 새 노드만 새 reference", () => {

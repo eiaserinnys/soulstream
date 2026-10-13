@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { type ApiClient } from '../../api/client';
 import { useChatStore } from '../../store/chatStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { persistentChatDisplaySettings } from '../settings/persistentSessionSettingsActions';
 
 export function usePersistentChatDisplaySettings(
@@ -35,8 +36,11 @@ export function usePersistentChatDisplaySettings(
     if (!detailedNetworkActive) return;
     let active = true;
     const requestId = beginLoad(sessionId);
+    const reportState = useSessionStore.getState();
     void api.getPersistentSession(sessionId).then(({ session }) => {
       if (!active) return;
+      if (session.persistent_report !== undefined) useSessionStore.getState().applyPersistentReport(sessionId, session.persistent_report,
+        { snapshot: reportState.persistentReportsBySession[sessionId], generation: reportState.scopeGeneration });
       const nextSettings = session.persistent ? persistentChatDisplaySettings(session) : null;
       finishLoad(sessionId, requestId, nextSettings);
     }).catch(() => {

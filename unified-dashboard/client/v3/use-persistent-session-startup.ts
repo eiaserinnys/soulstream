@@ -5,6 +5,7 @@ import { createPersistentSessionsApi, type PersistentSessionList } from '../lib/
 import { readPersistentSessionDevicePreferences } from '../lib/persistent-session-device-preferences';
 import { navigateDashboard } from '../dashboard-navigation';
 import { useV3Notifications } from './use-v3-notifications';
+import { readDashboardLinkIntent } from './dashboard-link-intent';
 
 export function usePersistentSessionStartup(pathname: string) {
   const { user, isLoading, isAuthenticated, refreshAuthStatus } = useAuth();
@@ -13,7 +14,8 @@ export function usePersistentSessionStartup(pathname: string) {
   const request = useRef<Promise<PersistentSessionList> | null>(null);
   useEffect(() => {
     if (consumed.current) return;
-    if (pathname !== '/' || parseSessionSearchIntent(window.location.href)) { consumed.current = true; return; }
+    const hasDashboardIntent = readDashboardLinkIntent(window.location, [window.location.origin]);
+    if (pathname !== '/' || parseSessionSearchIntent(window.location.href) || hasDashboardIntent) { consumed.current = true; return; }
     if (isLoading || !isAuthenticated || !user?.email) return;
     const preferences = readPersistentSessionDevicePreferences(user.email);
     if (!preferences.openOnStart) { consumed.current = true; return; }

@@ -178,6 +178,7 @@ describe("live DB SSE replay snapshots", () => {
           createdAt: "2026-07-09T00:00:00.000Z",
           updatedAt: "2026-07-09T00:01:00.000Z",
           sessionType: "codex",
+          persistentReport: [],
           lastMessage: null,
           clientId: "client-1",
           displayName: "Display",

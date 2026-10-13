@@ -18,6 +18,8 @@ export async function startSessionTestHost(runtime: McpRuntime, searchProvider?:
       countEvents: (id: string) => db.countEvents(id),
       readOneEvent: (id: string, eventId: number) => db.readOneEvent(id, eventId),
       listUserMessages: (...args: any[]) => (db.listUserMessages as Function)(...args),
+      listTurnUsage: (...args: any[]) => (db.listTurnUsage as Function)(...args),
+      summarizeTurnUsage: (...args: any[]) => (db.summarizeTurnUsage as Function)(...args),
     },
     storyReads: {
       getSessionStory: (id: string) => db.getSessionStory(id),

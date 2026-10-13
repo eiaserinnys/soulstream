@@ -58,6 +58,9 @@ jest.mock('../../events/TurnSummaryCaption', () => ({
 }));
 jest.mock('../TypingIndicator', () => ({ TypingIndicator: () => null }));
 jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
+jest.mock('../../../hooks/useOpenContentLink', () => ({
+  useOpenContentLink: () => jest.fn(),
+}));
 jest.mock('../../../theme', () => ({
   useTokens: () => ({ colors: { accentTint: 'transparent', accent: 'blue' } }),
 }));

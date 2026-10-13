@@ -1,0 +1,263 @@
+{
+  "id": 15,
+  "event_type": "assistant_message",
+  "payload": {
+    "content": "**팀 요금 비교**\n\n인당 월 29,000원. 연간 결제 시 20% 할인됩니다.\n\n팀 인원: 8명\n\n연간 결제 (20% 할인): 아니오\n\n현재 인원: 8명\n\n월간 결제: 월 232,000원\n\n연간 결제: 월 환산 185,600원\n\n**지금 조건의 월 요금: 232,000원**\n\n연간 결제 금액은 월 환산 기준입니다.\n\n[지금 조건으로 질문 이어 가기]",
+    "ui": {
+      "hash": "f162a3e73e8b34c55367c53e6f655f7fbee10b830b9d3cc78f8a4a317cfe0656",
+      "ui_id": "ui_5e91e173e4832fe1bd99e045f692ec7b",
+      "document": {
+        "body": [
+          {
+            "id": "priceInfo",
+            "kind": "text",
+            "parts": [
+              "인당 월 29,000원. 연간 결제 시 20% 할인됩니다."
+            ]
+          },
+          {
+            "id": "seatSlider",
+            "kind": "slider",
+            "field": "seats",
+            "label": "팀 인원"
+          },
+          {
+            "id": "annualToggle",
+            "kind": "checkbox",
+            "field": "annual",
+            "label": "연간 결제 (20% 할인)"
+          },
+          {
+            "id": "teamSize",
+            "kind": "text",
+            "parts": [
+              "현재 인원: ",
+              {
+                "unit": "people",
+                "value": {
+                  "field": "seats"
+                },
+                "format": "number"
+              }
+            ]
+          },
+          {
+            "id": "comparison",
+            "kind": "group",
+            "layout": "stack",
+            "children": [
+              {
+                "id": "monthlyPrice",
+                "kind": "text",
+                "parts": [
+                  "월간 결제: 월 ",
+                  {
+                    "unit": "krw",
+                    "value": {
+                      "computed": "monthly"
+                    },
+                    "format": "number"
+                  }
+                ]
+              },
+              {
+                "id": "annualPrice",
+                "kind": "text",
+                "parts": [
+                  "연간 결제: 월 환산 ",
+                  {
+                    "unit": "krw",
+                    "value": {
+                      "computed": "annualMonthly"
+                    },
+                    "format": "number"
+                  }
+                ]
+              },
+              {
+                "id": "currentPrice",
+                "kind": "text",
+                "parts": [
+                  "지금 조건의 월 요금: ",
+                  {
+                    "unit": "krw",
+                    "value": {
+                      "computed": "selectedMonthly"
+                    },
+                    "format": "number"
+                  }
+                ],
+                "emphasis": "strong"
+              }
+            ]
+          },
+          {
+            "id": "annualNotice",
+            "kind": "caption",
+            "parts": [
+              "연간 결제 금액은 월 환산 기준입니다."
+            ]
+          },
+          {
+            "id": "actions",
+            "kind": "group",
+            "layout": "wrap",
+            "children": [
+              {
+                "id": "copyButton",
+                "kind": "button",
+                "label": "복사",
+                "action": {
+                  "type": "copy"
+                }
+              },
+              {
+                "id": "resetButton",
+                "kind": "button",
+                "label": "초기화",
+                "action": {
+                  "type": "reset"
+                }
+              },
+              {
+                "id": "continueButton",
+                "kind": "button",
+                "label": "지금 조건으로 질문 이어 가기",
+                "action": {
+                  "type": "compose",
+                  "parts": [
+                    "팀 ",
+                    {
+                      "unit": "people",
+                      "value": {
+                        "field": "seats"
+                      },
+                      "format": "number"
+                    },
+                    "의 월 환산 요금 ",
+                    {
+                      "unit": "krw",
+                      "value": {
+                        "computed": "selectedMonthly"
+                      },
+                      "format": "number"
+                    },
+                    "인 지금 조건으로 팀 요금에 관한 질문을 이어 가고 싶습니다."
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "data": {
+          "price": {
+            "unit": "krw",
+            "value": 29000
+          },
+          "annualMultiplier": {
+            "unit": "scalar",
+            "value": 0.8
+          }
+        },
+        "title": "팀 요금 비교",
+        "units": {
+          "krw": {
+            "dims": {
+              "currency:KRW": 1
+            },
+            "scale": 1,
+            "symbol": "원"
+          },
+          "people": {
+            "dims": {},
+            "scale": 1,
+            "symbol": "명"
+          },
+          "scalar": {
+            "dims": {},
+            "scale": 1,
+            "symbol": ""
+          }
+        },
+        "fields": {
+          "seats": {
+            "max": 20,
+            "min": 1,
+            "step": 1,
+            "type": "number",
+            "unit": "people",
+            "initial": 8
+          },
+          "annual": {
+            "type": "boolean",
+            "initial": false
+          }
+        },
+        "sources": {},
+        "computed": {
+          "monthly": {
+            "op": "mul",
+            "args": [
+              {
+                "op": "ref",
+                "ref": {
+                  "data": "price"
+                }
+              },
+              {
+                "op": "ref",
+                "ref": {
+                  "field": "seats"
+                }
+              }
+            ]
+          },
+          "annualMonthly": {
+            "op": "mul",
+            "args": [
+              {
+                "op": "ref",
+                "ref": {
+                  "computed": "monthly"
+                }
+              },
+              {
+                "op": "ref",
+                "ref": {
+                  "data": "annualMultiplier"
+                }
+              }
+            ]
+          },
+          "selectedMonthly": {
+            "op": "if",
+            "args": [
+              {
+                "op": "ref",
+                "ref": {
+                  "field": "annual"
+                }
+              },
+              {
+                "op": "ref",
+                "ref": {
+                  "computed": "annualMonthly"
+                }
+              },
+              {
+                "op": "ref",
+                "ref": {
+                  "computed": "monthly"
+                }
+              }
+            ]
+          }
+        },
+        "assumptions": [],
+        "schema_version": 1
+      },
+      "revision": 1,
+      "schema_version": 1
+    }
+  }
+}

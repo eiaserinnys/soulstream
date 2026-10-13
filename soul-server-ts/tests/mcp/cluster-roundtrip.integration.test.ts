@@ -41,7 +41,17 @@ const cases: Case[] = [
   ["archive recurring", "archive_recurring_job", { job_id: "job-1", expected_version: 1 }],
   ["recurring history limit", "list_recurring_job_runs", { job_id: "job-1", limit: 1 }],
   ["recurring no session", "create_recurring_job", create, {}, true],
-  ["recurring no email", "list_recurring_jobs", {}, { callerSessionId: "no-email" }, true],
+  ["recurring no email", "list_recurring_jobs", {}, { callerSessionId: "no-email" }],
+  ["ownerless include archived", "list_recurring_jobs", { include_archived: true }, { callerSessionId: "no-email" }],
+  ["ownerless get another owner's job", "get_recurring_job", { job_id: "job-other" }, { callerSessionId: "no-email" }],
+  ["ownerless list another owner's runs", "list_recurring_job_runs", { job_id: "job-other", limit: 10 }, { callerSessionId: "no-email" }],
+  ["ownerless update another owner's job", "update_recurring_job", { job_id: "job-other", expected_version: 1, name: "Updated by ownerless" }, { callerSessionId: "no-email" }],
+  ["ownerless run another owner's job", "run_recurring_job", { job_id: "job-other", idempotency_key: "ownerless-run" }, { callerSessionId: "no-email" }],
+  ["ownerless archive another owner's job", "archive_recurring_job", { job_id: "job-other", expected_version: 1 }, { callerSessionId: "no-email" }],
+  ["ownerless preview", "preview_recurring_schedule", { timezone: "Asia/Seoul", schedule_expressions: ["0 9 * * *"] }, { callerSessionId: "no-email" }],
+  ["ownerless create denied", "create_recurring_job", { ...create, idempotency_key: "ownerless-create" }, { callerSessionId: "no-email" }, true],
+  ["verified owner cannot read another owner's job", "get_recurring_job", { job_id: "job-other" }, context, true],
+  ["missing session cannot use ownerless access", "list_recurring_jobs", {}, { callerSessionId: "missing-session" }, true],
   ["recurring missing", "get_recurring_job", { job_id: "missing" }, context, true],
   ["recurring bad version", "update_recurring_job", { job_id: "job-1", expected_version: 999 }, context, true],
   ["recurring archive bad version", "archive_recurring_job", { job_id: "job-1", expected_version: 999 }, context, true],
@@ -110,6 +120,77 @@ describe("cluster MCP roundtrip", () => {
     expect(JSON.stringify(fixture.sent.map(cmd => maskCluster("create_remote_agent_session", cmd)))).toMatchSnapshot("node commands");
     expect(JSON.stringify(fixture.recurring.validateTarget.mock.calls)).toMatchSnapshot("recurring actors");
     if (name === "list_recurring_job_runs" && !fails) expect((next.structuredContent as any).runs).toHaveLength(1);
+    if (label === "recurring no email") {
+      expect((next.structuredContent as any).jobs.map((job: any) => job.job_id)).toEqual(expect.arrayContaining(["job-1", "job-other"]));
+      expect(fixture.recurring.changeWarn).not.toHaveBeenCalled();
+    }
+    if (label === "ownerless include archived") {
+      expect((next.structuredContent as any).jobs.map((job: any) => job.job_id)).toEqual(expect.arrayContaining(["job-1", "job-other", "job-archived"]));
+      expect(fixture.recurring.changeWarn).not.toHaveBeenCalled();
+    }
+    if (label === "ownerless get another owner's job") {
+      expect((next.structuredContent as any).job).toMatchObject({
+        job_id: "job-other", owner_email: "other@example.com", created_by: "other@example.com", updated_by: "other@example.com",
+      });
+      expect(fixture.recurring.changeWarn).not.toHaveBeenCalled();
+    }
+    if (label === "ownerless list another owner's runs") expect((next.structuredContent as any).runs).toHaveLength(1);
+    if (label === "ownerless update another owner's job") {
+      expect(fixture.recurring.jobs.get("job-other")).toMatchObject({
+        ownerEmail: "other@example.com",
+        executionCaller: { source: "browser", email: "other@example.com" },
+        updatedBy: "no-email",
+        version: 2,
+      });
+      expect((next.structuredContent as any).job).toMatchObject({ created_by: "other@example.com", updated_by: "no-email" });
+      expect(fixture.recurring.changeWarn).toHaveBeenCalledOnce();
+      expect(fixture.recurring.changeWarn).toHaveBeenCalledWith(
+        { jobId: "job-other", operation: "update", actorSessionId: "no-email" },
+        "recurring job changed by a session without a verified owner",
+      );
+    }
+    if (label === "ownerless run another owner's job") {
+      expect((next.structuredContent as any).run).toMatchObject({ job_id: "job-other", trigger: "manual" });
+      expect(fixture.recurring.changeWarn).toHaveBeenCalledWith(
+        { jobId: "job-other", operation: "run", actorSessionId: "no-email" },
+        "recurring job changed by a session without a verified owner",
+      );
+    }
+    if (label === "ownerless archive another owner's job") {
+      expect(fixture.recurring.jobs.get("job-other")).toMatchObject({
+        ownerEmail: "other@example.com", archivedAt: expect.any(String), updatedBy: "no-email", version: 2,
+      });
+      expect((next.structuredContent as any).job).toMatchObject({ created_by: "other@example.com", updated_by: "no-email" });
+      expect(fixture.recurring.changeWarn).toHaveBeenCalledWith(
+        { jobId: "job-other", operation: "archive", actorSessionId: "no-email" },
+        "recurring job changed by a session without a verified owner",
+      );
+    }
+    if (label === "ownerless preview") {
+      expect((next.structuredContent as any).nextRuns.length).toBeGreaterThan(0);
+      expect(fixture.recurring.changeWarn).not.toHaveBeenCalled();
+    }
+    if (label === "ownerless create denied") {
+      expect((next.structuredContent as any).error).toBe("This session has no verified owner, so it cannot create a recurring job. Create it from a session with a verified owner; existing jobs can still be listed, updated, run and archived.");
+      expect(fixture.recurring.jobs.size).toBe(3);
+      expect(fixture.recurring.changeWarn).not.toHaveBeenCalled();
+    }
+    if (label === "verified owner cannot read another owner's job") expect((next.structuredContent as any).error).toContain("not found");
+    if (label === "missing session cannot use ownerless access") {
+      expect((next.structuredContent as any).error).toContain("no verified owner email");
+      expect(fixture.readSession).toHaveBeenCalledWith("missing-session");
+      expect(fixture.recurring.changeWarn).not.toHaveBeenCalled();
+    }
+    if (label === "list recurring") {
+      expect((next.structuredContent as any).jobs.map((job: any) => job.job_id)).toEqual(["job-1"]);
+    }
+    const changedByOwnerlessSession = [
+      "ownerless update another owner's job",
+      "ownerless run another owner's job",
+      "ownerless archive another owner's job",
+    ].includes(label);
+    if (changedByOwnerlessSession) expect(fixture.recurring.changeWarn).toHaveBeenCalledOnce();
+    else expect(fixture.recurring.changeWarn).not.toHaveBeenCalled();
     if (label === "remote limited omitted") expect(fixture.sent[0]).toHaveProperty("folderId", "allowed-folder");
     if (label === "remote inherited folder") expect(fixture.sent[0]).toHaveProperty("folderId", "inherited-folder");
     if (label === "remote no notification") expect(fixture.sent[0]).toMatchObject({ caller_session_id: "caller", notify_completion: false });

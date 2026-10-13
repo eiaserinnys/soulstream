@@ -176,11 +176,13 @@ describe("recurring job routes", () => {
         actor: agentActor,
         target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
         requireAvailableTarget: true,
+        purpose: "settings",
       });
       expect(validateTarget).toHaveBeenNthCalledWith(2, {
         actor: agentActor,
         target: expect.objectContaining({ nodeId: "node-a", folderId: "folder-a" }),
         requireAvailableTarget: false,
+        purpose: "settings",
       });
     } finally {
       await app.close();
@@ -283,6 +285,8 @@ function failingRepository() {
   return {
     findJobForOwner: async () => null,
     listJobsForOwner: async () => [],
+    findJobOwnerEmail: async () => null,
+    listAllJobs: async () => [],
     createJob: async () => { throw new Error("unused"); },
     findJobByCreateIdempotency: async () => null,
     updateJob: async () => { throw new Error("unused"); },

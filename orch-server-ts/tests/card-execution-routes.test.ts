@@ -47,9 +47,9 @@ it.each(routes)("dispatches %s with the authenticated user and source folder sco
   const denied = setup("user", ["target"]);
   expect((await denied.call(operation)).statusCode).toBe(403);
   expect(denied.execute).not.toHaveBeenCalled(); expect(denied.observe).not.toHaveBeenCalled(); expect(denied.save).not.toHaveBeenCalled();
-  const user = setup("user");
+  const user = setup("owner@example.test");
   expect((await user.call(operation)).statusCode).toBe(200);
-  const actor = { actorKind: "user", actorSessionId: null, actorUserId: "user" };
+  const actor = { actorKind: "user", actorSessionId: null, actorUserId: "owner@example.test" };
   if (operation === "execution") expect(user.observe).toHaveBeenCalledWith("card", "request", actor);
   else expect(operation === "execute" ? user.execute : user.save).toHaveBeenCalledWith(expect.objectContaining({ cardId: "card", ...actor }));
 });

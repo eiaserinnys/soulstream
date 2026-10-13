@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -20,10 +19,16 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import type { MessageSelectionModel } from './message-selection-model';
 import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
 import { CopyableAssistantMarkdown } from './CopyableAssistantMarkdown';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 interface Props {
   bubbleWidth?: 'content' | 'fill';
+  /** 바깥 줄 여백을 소유한 타임라인만 none을 지정한다. */
+  rowInset?: 'default' | 'none';
   messageKind?: React.ReactNode;
+  /** 표시 전용 글 대체. 저장 이벤트와 메뉴 연결은 호출자가 소유한다. */
+  textOverride?: string;
+  notice?: React.ReactNode;
   children?: React.ReactNode;
   event: SessionEvent;
   /** 좌측 에이전트 아바타에 사용할 세션 메타. 없으면 아바타 미표시. */
@@ -46,17 +51,14 @@ export function shouldRenderAsPlainStreamingText(event: SessionEvent): boolean {
   return event.type === 'text_delta' || (event.data as any)?._live_only === true;
 }
 
-function openAssistantLink({ url }: { url: string }) {
-  WebBrowser.openBrowserAsync(url).catch((err) => {
-    console.warn('[AssistantMessage] openBrowserAsync failed:', err);
-  });
-}
-
 export function AssistantMessage({
   event,
   session,
   bubbleWidth = 'content',
+  rowInset = 'default',
   messageKind,
+  textOverride,
+  notice,
   children,
   selectionModel,
   onSelectionDone,
@@ -69,6 +71,7 @@ export function AssistantMessage({
   );
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
+  const openContentLink = useOpenContentLink();
 
   // 메시지 발신자 신원 — 위임 에이전트가 응답한 경우 caller에 source=agent가 들어온다.
   // assistant 응답은 본인 picture와 무관하므로 profile=null로 호출하여 caller.avatar_url
@@ -78,7 +81,7 @@ export function AssistantMessage({
   // 단일 \n을 GFM hard break로 변환 — 라이브러리가 md4cFlags hard-break를
   // JS로 노출하지 않아 컴포넌트 내부 렌더 직전 사전처리로 동등 효과를 낸다.
   // useMemo는 React Hooks rules에 따라 early-return *위*에 배치한다.
-  const text = extractText(event);
+  const text = textOverride ?? extractText(event);
   const renderedText = useMemo(
     () => normalizeMarkdownBreaks(text),
     [text],
@@ -92,7 +95,7 @@ export function AssistantMessage({
       '[AssistantMessage] rendering streaming assistant text with plain Text fallback',
     );
   }, [renderAsPlainStreamingText]);
-  if (!renderedText && !children) return null;
+  if (!renderedText && !children && !notice) return null;
 
   const { uri: avatarUri, useBearer } = pickUserAvatarUri(
     caller,
@@ -110,7 +113,7 @@ export function AssistantMessage({
   return (
     <View style={presentation === 'manuscript'
       ? styles.manuscriptRow
-      : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
+      : rowInset === 'none' ? [styles.row, { marginHorizontal: 0 }] : styles.row}>
       {presentation === 'manuscript' ? null : avatarUri ? (
         <Image
           source={{
@@ -135,7 +138,8 @@ export function AssistantMessage({
           (빌드 13부터 정본 — 자체 LinkSheet/WebView는 Google OAuth 정책으로 Gmail 차단되어 폐기.)
         */}
         {messageKind}
-        {children ?? (selectionModel && onSelectionDone ? (
+        {notice}
+        {selectionModel && onSelectionDone ? (
           <MessageTextSelectionView
             model={selectionModel}
             onDone={onSelectionDone}
@@ -144,7 +148,7 @@ export function AssistantMessage({
             markdownStyle={markdownInputStyle}
             {...(presentation === 'manuscript' ? { actionColor: t.colors.textPrimary } : {})}
           />
-        ) : renderAsPlainStreamingText ? (
+        ) : children ?? (renderAsPlainStreamingText ? (
           <Text
             testID="assistant-streaming-text"
             selectable={false}
@@ -156,7 +160,7 @@ export function AssistantMessage({
           <CopyableAssistantMarkdown
             markdown={renderedText}
             markdownStyle={markdownStyle}
-            onLinkPress={openAssistantLink}
+            onLinkPress={({ url }) => { void openContentLink(url); }}
             presentation={presentation}
             serverUrl={serverUrl}
             jwt={jwt}

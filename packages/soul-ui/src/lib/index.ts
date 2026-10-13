@@ -14,6 +14,8 @@ export { retainEqualSet, retainEqualValue } from "./structural-sharing";
 export { appendAttachmentPathNotes } from "./attachment-path-notes";
 export { formatAssignedCardContextSnapshot } from "./assigned-card-context-content";
 export * from "./usage-summary";
+export { classifyInternalLink, internalLinkPath } from "./internal-link";
+export type { InternalLinkTarget } from "./internal-link";
 
 // === Folder / Session Operations ===
 export { createFolderOperations } from "./folder-operations";

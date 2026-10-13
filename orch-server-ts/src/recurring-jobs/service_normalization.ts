@@ -19,6 +19,7 @@ export type ValidateRecurringJobTarget = (input: {
   readonly actor: RecurringJobActor;
   readonly target: Pick<RecurringJob, "nodeId" | "agentId" | "modelPreset" | "folderId">;
   readonly requireAvailableTarget: boolean;
+  readonly purpose: "settings" | "execution";
 }) => Promise<void>;
 
 export type NormalizedRecurringJobCreate = {
@@ -71,7 +72,7 @@ export async function normalizeRecurringJobCreate(
     lateRunWindowSeconds: positiveLateRunWindowSeconds(input.lateRunWindowSeconds ?? 1_800),
     schedule,
   };
-  await validateTarget?.({ actor, target: normalized, requireAvailableTarget: true });
+  await validateTarget?.({ actor, target: normalized, requireAvailableTarget: true, purpose: "settings" });
   return normalized;
 }
 
@@ -125,6 +126,7 @@ export async function mergeRecurringJobUpdate(
     requireAvailableTarget: candidate.nodeId !== current.nodeId ||
       candidate.agentId !== current.agentId ||
       candidate.modelPreset !== current.modelPreset,
+    purpose: "settings",
   });
   return candidate;
 }

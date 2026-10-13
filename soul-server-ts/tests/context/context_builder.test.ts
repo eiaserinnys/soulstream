@@ -59,6 +59,13 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
+it('injects the persisted report on initial PAS context rather than stale task metadata', async () => {
+  const board=[{key:'latest',title:'최신 보고'}];
+  const builder=makeBuilder({getSession:vi.fn(async()=>({session_id:'sess-1',metadata:[{type:'persistent_report',value:{entries:board}}]})) as never});
+  const result=await builder.build(makeTask({persistent:true,metadata:[]}),codexAgent);
+  expect(result.combinedContextItems.filter(i=>i.key==='persistent_report')).toEqual([{key:'persistent_report',label:'지금의 보고',content:`지금의 보고 (1장)\n${JSON.stringify(board)}`}]);
+});
+
 function makeBuilder(
   dbOverrides: Partial<SessionDB> = {},
   registry?: AgentRegistry,

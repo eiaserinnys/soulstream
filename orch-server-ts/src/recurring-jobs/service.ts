@@ -64,6 +64,14 @@ export class RecurringJobService {
     return await this.options.repository.listJobsForOwner(actor.ownerEmail, includeArchived);
   }
 
+  async listAllOwners(includeArchived = false): Promise<RecurringJob[]> {
+    return await this.options.repository.listAllJobs(includeArchived);
+  }
+
+  async ownerEmailOf(jobId: string): Promise<string | null> {
+    return await this.options.repository.findJobOwnerEmail(jobId);
+  }
+
   async get(actor: RecurringJobActor, jobId: string, includeArchived = false): Promise<RecurringJob> {
     return await this.requireJob(actor, jobId, includeArchived);
   }
@@ -302,6 +310,7 @@ export class RecurringJobService {
         actor: schedulerActorFor(frozenJob),
         target: frozenJob,
         requireAvailableTarget: true,
+        purpose: "execution",
       });
     } catch (error) {
       if (isUnavailableTarget(error)) {
@@ -450,6 +459,7 @@ export class RecurringJobService {
         requireAvailableTarget: candidate.nodeId !== current.nodeId ||
           candidate.agentId !== current.agentId ||
           candidate.modelPreset !== current.modelPreset,
+        purpose: "settings",
       });
       return candidate;
     }

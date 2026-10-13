@@ -22,8 +22,9 @@ jest.mock('expo-web-browser', () => ({
 }));
 
 import { render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as ContentLinkHook from '../../../hooks/useOpenContentLink';
 import {
   AssistantMessage,
   extractText,
@@ -167,6 +168,22 @@ describe('AssistantMessage selection entry', () => {
     expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith('https://example.com');
   });
 
+  test('내부 문서 링크는 앱 콘텐츠 링크 핸들러에 전달한다', async () => {
+    const openContentLink = jest.fn();
+    jest.spyOn(ContentLinkHook, 'useOpenContentLink').mockReturnValue(openContentLink);
+    const { getByTestId } = render(
+      <AssistantMessage
+        event={ev('assistant_message', { content: '[문서](https://soulstream.test/api/markdown-documents/doc-1)' })}
+        session={session()}
+      />,
+    );
+
+    await getByTestId('assistant-markdown').props.onLinkPress({
+      url: 'https://soulstream.test/api/markdown-documents/doc-1',
+    });
+    expect(openContentLink).toHaveBeenCalledWith('https://soulstream.test/api/markdown-documents/doc-1');
+  });
+
   test('streaming cumulative text_delta assistant bubble은 native markdown에 넣지 않는다', () => {
     const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
     const { getByTestId, queryByTestId } = render(
@@ -199,4 +216,21 @@ describe('AssistantMessage selection entry', () => {
     expect(getByTestId('assistant-streaming-text').props.children).toBe('chunk');
     expect(queryByTestId('assistant-markdown')).toBeNull();
   });
+});
+
+
+test('structured children inherit the ordinary row inset; timeline callers explicitly opt out', () => {
+  const event = ev('assistant_message', { text: '같은 줄' });
+  const screen = render(<AssistantMessage event={event} />);
+  const row = () => {
+    let node = screen.getByTestId('assistant-message-bubble').parent;
+    while (node && StyleSheet.flatten(node.props.style)?.marginHorizontal === undefined) node = node.parent;
+    return StyleSheet.flatten(node!.props.style);
+  };
+  const ordinary = row().marginHorizontal;
+  expect(ordinary).toBeGreaterThan(0);
+  screen.rerender(<AssistantMessage event={event}><Text>구조화 내용</Text></AssistantMessage>);
+  expect(row().marginHorizontal).toBe(ordinary);
+  screen.rerender(<AssistantMessage event={event} rowInset="none"><Text>타임라인 내용</Text></AssistantMessage>);
+  expect(row().marginHorizontal).toBe(0);
 });

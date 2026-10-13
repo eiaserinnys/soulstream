@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { InMemoryNodeRegistry } from "../src/node/registry.js";
+import { ModelPresetAvailabilityError } from "../src/model/model_preset_availability.js";
+import type { ModelPresetAvailability } from "../src/model/model_preset_availability.js";
 import { createRecurringJobTargetValidator } from "../src/recurring-jobs/target_validator.js";
 import type { RecurringJobActor } from "../src/recurring-jobs/types.js";
 
@@ -28,11 +30,49 @@ describe("recurring job target validator", () => {
       }),
     });
 
-    await expect(validator({ actor, target: target("allowed-folder") })).resolves.toBeUndefined();
-    expect(requireAvailable).toHaveBeenCalledWith("node-a", "codex-default");
-    await expect(validator({ actor, target: target("private-folder") })).rejects.toMatchObject({
+    await expect(validator({ actor, target: target("allowed-folder"), purpose: "settings" })).resolves.toBeUndefined();
+    expect(requireAvailable).toHaveBeenCalledWith("node-a", "codex-default", { allowLimitRejected: true });
+    await expect(validator({ actor, target: target("private-folder"), purpose: "execution" })).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
+  });
+
+  it("allows a remembered limit rejection while saving settings and keeps execution blocked", async () => {
+    const requireAvailable = vi.fn((_nodeId: string, presetId: string, options?: { allowLimitRejected?: boolean }): ModelPresetAvailability => {
+      if (options?.allowLimitRejected !== true) {
+        throw new ModelPresetAvailabilityError("MODEL_PRESET_UNAVAILABLE", "provider rejected the preset");
+      }
+      return {
+        id: presetId,
+        label: presetId,
+        backend: "codex",
+        available: true,
+        reason: null,
+        reason_label: null,
+        resets_at: null,
+        usage_warning: false,
+        weekly_headroom: null,
+      };
+    });
+    const validator = createRecurringJobTargetValidator({
+      registry: registry(),
+      modelPresetAvailability: { requireAvailable },
+      listFolders: async () => [{ id: "allowed-folder" }],
+      findUserByEmail: async () => ({
+        email: "member@example.com",
+        isAdmin: false,
+        allowedFolderIds: ["allowed-folder"],
+      }),
+    });
+
+    await expect(validator({ actor, target: target("allowed-folder"), purpose: "settings" }))
+      .resolves.toBeUndefined();
+    await expect(validator({ actor, target: target("allowed-folder"), purpose: "execution" }))
+      .rejects.toMatchObject({ code: "VALIDATION" });
+    expect(requireAvailable.mock.calls).toEqual([
+      ["node-a", "codex-default", { allowLimitRejected: true }],
+      ["node-a", "codex-default", undefined],
+    ]);
   });
 
   it("rejects a deleted, archived, or newly inaccessible task target", async () => {
@@ -53,12 +93,12 @@ describe("recurring job target validator", () => {
     };
 
     folder = null;
-    await expect(validator({ actor, target: taskTarget })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(validator({ actor, target: taskTarget, purpose: "execution" })).rejects.toMatchObject({ code: "NOT_FOUND" });
     folder = { id: "allowed-folder", archived: true };
-    await expect(validator({ actor, target: taskTarget })).rejects.toMatchObject({ code: "ARCHIVED" });
+    await expect(validator({ actor, target: taskTarget, purpose: "execution" })).rejects.toMatchObject({ code: "ARCHIVED" });
     folder = { id: "allowed-folder", archived: false };
     allowed = false;
-    await expect(validator({ actor, target: taskTarget })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(validator({ actor, target: taskTarget, purpose: "execution" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("retains folder authorization when an offline persisted target skips live selection", async () => {
@@ -78,16 +118,19 @@ describe("recurring job target validator", () => {
       actor,
       target: target("allowed-folder"),
       requireAvailableTarget: true,
+      purpose: "execution",
     })).rejects.toMatchObject({ code: "NODE_UNAVAILABLE" });
     await expect(validator({
       actor,
       target: target("allowed-folder"),
       requireAvailableTarget: false,
+      purpose: "settings",
     })).resolves.toBeUndefined();
     await expect(validator({
       actor,
       target: target("private-folder"),
       requireAvailableTarget: false,
+      purpose: "settings",
     })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(requireAvailable).not.toHaveBeenCalled();
   });

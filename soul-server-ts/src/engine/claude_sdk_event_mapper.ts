@@ -296,12 +296,18 @@ export class ClaudeSdkEventMapper {
     const stopReason = asNullableString(message.stop_reason);
     const terminalReason = asNullableString(message.terminal_reason);
     const modelUsage = asRecord(message.modelUsage);
+    const model = this.latestIterationModel;
+    const turnCostUsd = claudeTurnCostUsd(usage, model);
+    const firstCall = firstCallInput(this.firstIterationUsage);
     const resultEvent: ClaudeClientEvent = {
       type: "result",
       success,
       output,
       error: success ? null : output,
       ...(usage !== undefined ? { usage } : {}),
+      ...(model !== undefined ? { model } : {}),
+      ...(turnCostUsd !== undefined ? { turnCostUsd } : {}),
+      ...(firstCall !== undefined ? { firstCall } : {}),
       totalCostUsd: totalCostUsd ?? null,
       ...(stopReason !== undefined ? { stopReason } : {}),
       ...(terminalReason !== undefined ? { terminalReason } : {}),
@@ -314,9 +320,6 @@ export class ClaudeSdkEventMapper {
       message.modelUsage,
       this.latestIterationModel,
     );
-    const model = this.latestIterationModel;
-    const turnCostUsd = claudeTurnCostUsd(usage, model);
-    const firstCall = firstCallInput(this.firstIterationUsage);
     this.latestIterationUsage = undefined;
     this.firstIterationUsage = undefined;
     this.latestIterationModel = undefined;

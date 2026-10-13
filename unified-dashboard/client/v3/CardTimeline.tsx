@@ -1,6 +1,6 @@
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import { useRef, useState, type HTMLAttributes, type ReactNode } from "react";
-import { Button, MarkdownContent } from "@seosoyoung/soul-ui";
+import { Button, MarkdownContent, useInternalLinkClick } from "@seosoyoung/soul-ui";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
@@ -56,9 +56,10 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  })}</div><CardImageViewer image={image} onClose={closeImage}/></>;
 }
 function RequestPreview({request,attachments,expanded,onImageClick}:{request:string;attachments:CardRow["attachments"];expanded:boolean;onImageClick(src:string,alt:string):void}) {
+ const internalLinkClick=useInternalLinkClick();
  return <><div className={expanded?undefined:"v3-card-three-lines"}><MarkdownContent content={cardRequestMarkdown(request)} onImageClick={onImageClick}/></div>{attachments.length?<div className="v3-card-report-thumbnails">{attachments.map(attachment=>{
   const src=`/api/attachments/files?${new URLSearchParams({nodeId:attachment.nodeId,path:attachment.path})}`;
-  return attachment.mimeType.startsWith("image/")?<MarkdownImage key={src} src={src} alt={attachment.name} onOpen={onImageClick}/>:<a key={src} href={src} target="_blank" rel="noreferrer">{attachment.name}</a>;
+  return attachment.mimeType.startsWith("image/")?<MarkdownImage key={src} src={src} alt={attachment.name} onOpen={onImageClick}/>:<a key={src} href={src} target="_blank" rel="noreferrer" onClick={internalLinkClick}>{attachment.name}</a>;
  })}</div>:null}<span className="v3-card-collapse-hint">{expanded?"접기":"더 보기"}</span></>;
 }
 function ReportPreview({report,expanded,onImageClick}:{report:CardReport;expanded:boolean;onImageClick(src:string,alt:string):void}) {

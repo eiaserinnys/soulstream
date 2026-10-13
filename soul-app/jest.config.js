@@ -6,6 +6,7 @@ process.env.NODE_ENV = 'test';
 module.exports = {
   preset: 'jest-expo',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  resolver: '<rootDir>/scripts/jest-chat-ui-resolver.cjs',
   // Shared workspace packages resolve their dependencies from the app install.
   modulePaths: ['<rootDir>/node_modules'],
   testPathIgnorePatterns: [

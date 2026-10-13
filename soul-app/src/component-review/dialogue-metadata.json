@@ -212,6 +212,7 @@
     "hooks/useCardItems.ts",
     "hooks/useCardTransition.ts",
     "hooks/useChatAttachments.ts",
+    "hooks/useOpenContentLink.ts",
     "hooks/usePlannerContextMenus.ts",
     "navigation/RootNavigator.tsx",
     "navigation/phoneSessionNavigation.ts",

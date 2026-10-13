@@ -6,6 +6,7 @@ import {
   type PersistentTurnUsageMode,
   type PersistentPendingTarget,
 } from "@soulstream/wire-schema/persistent-session-settings";
+import { readPersistentReport, type PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 
 /** Model selection as the settings screens see it; the preset is null until a real one is chosen. */
 export type PersistentModelSelectionView = {
@@ -25,6 +26,7 @@ export type PersistentSettingsView = {
 };
 
 export type PersistentSessionResource = {
+  persistent_report: PersistentReportEntry[];
   session_id: string;
   display_name: string | null;
   node_id: string | null;
@@ -89,6 +91,7 @@ export function buildPersistentSessionResource(
     agent_id: agentId,
     agent_name: agentName ?? agentId,
     persistent: readPersistentEnabled(row.metadata),
+    persistent_report: readPersistentReport(row.metadata),
     settings,
     runtime: {
       current_model: current,

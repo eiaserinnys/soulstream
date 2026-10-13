@@ -91,6 +91,7 @@
         }
       },
       "expectedOrchResponse": {
+        "persistentReport": [],
         "agentSessionId": "sess-contract-1",
         "status": "running",
         "reviewRequired": true,

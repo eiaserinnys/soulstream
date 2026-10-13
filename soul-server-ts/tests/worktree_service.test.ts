@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -90,6 +90,74 @@ async function captureWorktreeError(operation: Promise<unknown>): Promise<Worktr
 }
 
 describe("WorktreeService", () => {
+  it("preserves a shared worktree when base dependency links point back into it", async () => {
+    const { repo, service, host } = fixture();
+    mkdirSync(join(repo, "node_modules"));
+    mkdirSync(join(repo, "packages", "ui", "node_modules"));
+    const created = await service.create({
+      actorSessionId: "owner", repoId: "demo", branch: "feature/base-links",
+      mode: "new", setup: "shared_dependencies", requireSetup: false,
+    });
+    const path = String(created.path);
+    const target = join(path, "packages", "ui");
+    const rootLink = join(repo, "node_modules", "ui");
+    const packageLink = join(repo, "packages", "ui", "node_modules", "@demo", "ui");
+    mkdirSync(dirname(packageLink));
+    symlinkSync(target, rootLink, "dir");
+    symlinkSync(relative(dirname(packageLink), target), packageLink, "dir");
+    const beginRemove = vi.spyOn(host, "beginRemove");
+
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .rejects.toMatchObject({
+        code: "WORKTREE_BASE_DEPENDENCY_IN_USE",
+        details: { links: [
+          { path: "node_modules/ui", target },
+          { path: "packages/ui/node_modules/@demo/ui", target },
+        ] },
+      });
+    expect(beginRemove).not.toHaveBeenCalled();
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
+    expect(realpathSync(join(path, "node_modules"))).toBe(realpathSync(join(repo, "node_modules")));
+    expect(realpathSync(rootLink)).toBe(target);
+    expect(realpathSync(packageLink)).toBe(target);
+
+    rmSync(rootLink);
+    rmSync(packageLink);
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .resolves.toMatchObject({ removed: true });
+  });
+
+  it("blocks a base node_modules directory linked into an independently set up worktree", async () => {
+    const { repo, service } = fixture();
+    const created = await service.create({
+      actorSessionId: "owner", repoId: "demo", branch: "feature/base-directory",
+      mode: "new", setup: "none",
+    });
+    const target = join(String(created.path), "packages", "ui");
+    symlinkSync(target, join(repo, "node_modules"), "dir");
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .rejects.toMatchObject({
+        code: "WORKTREE_BASE_DEPENDENCY_IN_USE",
+        details: { links: [{ path: "node_modules", target }] },
+      });
+    expect(existsSync(String(created.path))).toBe(true);
+  });
+
+  it("allows base dependency links to a different worktree with a matching path prefix", async () => {
+    const { repo, service } = fixture();
+    const created = await service.create({
+      actorSessionId: "owner", repoId: "demo", branch: "feature/sibling-link",
+      mode: "new", setup: "none",
+    });
+    const sibling = `${String(created.path)}-other`;
+    mkdirSync(sibling);
+    mkdirSync(join(repo, "node_modules"));
+    symlinkSync(sibling, join(repo, "node_modules", "other"), "dir");
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .resolves.toMatchObject({ removed: true });
+    expect(realpathSync(join(repo, "node_modules", "other"))).toBe(sibling);
+  });
+
   it("rejects invalid repository IDs before reading setup defaults", async () => {
     const { service, host } = fixture();
     const list = vi.spyOn(host, "list");

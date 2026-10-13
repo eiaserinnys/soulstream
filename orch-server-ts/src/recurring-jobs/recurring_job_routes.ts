@@ -190,6 +190,8 @@ export function serializeJob(job: import("./types.js").RecurringJob): Record<str
   return {
     job_id: job.jobId,
     owner_email: job.ownerEmail,
+    created_by: job.createdBy,
+    updated_by: job.updatedBy,
     name: job.name,
     prompt: job.prompt,
     timezone: job.timezone,

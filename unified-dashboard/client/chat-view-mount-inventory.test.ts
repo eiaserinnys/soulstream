@@ -37,10 +37,10 @@ describe("ChatView product mount inventory", () => {
     expect(actual).toEqual([
       { path: "unified-dashboard/client/v3/FolderWorkspace.tsx", count: 2 },
       { path: "unified-dashboard/client/v3/PersistentManuscriptChatReviewSample.tsx", count: 1 },
-      { path: "unified-dashboard/client/v3/PersistentSessionChatView.tsx", count: 1 },
+      { path: "unified-dashboard/client/v3/PersistentSessionChatView.tsx", count: 2 },
       { path: "unified-dashboard/client/v3/PersistentSessionScreen.tsx", count: 1 },
       { path: "unified-dashboard/client/v3/WorkspaceSessionColumn.tsx", count: 1 },
     ]);
-    expect(actual.reduce((sum, entry) => sum + entry.count, 0)).toBe(6);
+    expect(actual.reduce((sum, entry) => sum + entry.count, 0)).toBe(7);
   });
 });

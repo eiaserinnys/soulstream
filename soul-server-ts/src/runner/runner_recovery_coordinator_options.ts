@@ -13,6 +13,7 @@ import type {
 import type { quarantineUnreadableRunnerRegistration } from "./runner_registration_quarantine.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { RunnerSessionGarbageCollector } from "./runner_session_gc.js";
+import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 
 export interface RunnerRecoveryCoordinatorOptions {
   nodeId: string;
@@ -43,6 +44,7 @@ export interface RunnerRecoveryCoordinatorOptions {
   ) => Promise<RunnerRegistration>;
   now?: () => number;
   monotonicNow?: () => number;
+  nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">;
   markReaped?: (
     registration: RunnerRegistration,
     progressedAt: string,

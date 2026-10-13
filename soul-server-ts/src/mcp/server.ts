@@ -28,6 +28,8 @@ import { registerWorktreeTools } from "./tools/worktree.js";
 import { ownedAgentTools } from "@soulstream/mcp-contract";
 import { registerOrchestratorTools } from "./orchestrator_tools.js";
 import { registerExternalLlmTools } from "./tools/external_llm.js";
+import { registerChatUiTools } from "./tools/chat_ui.js";
+import { registerPersistentReportTools } from "./tools/persistent_report.js";
 
 export function buildMcpServer(runtime: McpRuntime): McpServer {
   const server = new McpServer({
@@ -54,5 +56,7 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerOrchestratorTools(inventoryServer, runtime, Object.values(ownedAgentTools));
   registerCardOrchestrationTools(inventoryServer, runtime);
   registerExternalLlmTools(inventoryServer, runtime);
+  registerChatUiTools(inventoryServer, runtime);
+  registerPersistentReportTools(inventoryServer, runtime);
   return server;
 }

@@ -28,6 +28,7 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 import { appendModelPresetLookupHint } from "./model_preset_hint.js";
+import { preflightModelPreset } from "./model_preset_preflight.js";
 
 export function registerSessionMgmtTools(
   server: McpServer,
@@ -67,7 +68,7 @@ export function registerSessionMgmtTools(
     "create_agent_session",
     {
       description:
-        "현재 노드에 새 에이전트 세션을 생성한다. 비동기 — 세션 ID만 반환. caller_session_id가 있으면 caller_info(v1)를 자동 조립. notify_completion=false는 카드가 추적 표면일 때 권장.",
+        "현재 노드에 새 에이전트 세션을 생성한다. 비동기 — 세션 ID만 반환. caller_session_id가 있으면 caller_info(v1)를 자동 조립. 결과를 기다리는 위임은 notify_completion=true로 설정한다. 완료 알림을 받을 필요가 없을 때만 false를 사용한다.",
       inputSchema: {
         agent_id: z.string().optional(),
         model_preset: z.string().min(1).optional(),
@@ -106,6 +107,15 @@ export function registerSessionMgmtTools(
         return errorResult(`agent_id를 찾을 수 없습니다: ${resolvedAgentId}`);
       }
 
+      const selectedPresetId = model_preset ?? agent.default_preset;
+      const preflightError = await preflightModelPreset({
+        nodeId: runtime.nodeId,
+        orch: runtime.orch,
+        logger: runtime.logger,
+        selectedPresetId,
+      });
+      if (preflightError !== null) return errorResult(preflightError);
+
       // caller_info 조립 — 명시 caller_session_id 우선, 없으면 MCP request context 사용.
       const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
       const resolvedFolderId = await resolveDelegatedFolderId(runtime, {
@@ -125,7 +135,7 @@ export function registerSessionMgmtTools(
                 agentProfileHasDbPortrait: agentResolution.portraitSource === "db",
               }
             : {}),
-          modelPreset: model_preset ?? agent.default_preset,
+          modelPreset: selectedPresetId,
           ...(reasoning_effort !== undefined ? { reasoningEffort: reasoning_effort } : {}),
           callerSessionId: resolveStructuralCallerSessionId(
             attribution.callerSessionId,

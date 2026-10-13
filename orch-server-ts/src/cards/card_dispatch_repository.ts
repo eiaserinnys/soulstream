@@ -91,6 +91,18 @@ export class CardDispatchRepository {
       ORDER BY created_at DESC,id DESC LIMIT 1`;
         return rows[0]?.session_id ?? null;
     }
+    async cardCreatorActor(cardId:string): Promise<{actor_session_id:string|null;actor_user_id:string|null}|null> {
+        const sql=await this.resolveSql();
+        return (await sql<{actor_session_id:string|null;actor_user_id:string|null}[]>`SELECT actor_session_id,actor_user_id FROM folder_operations
+      WHERE operation_type='create_card' AND target_kind='card' AND target_id=${cardId}
+      ORDER BY created_at ASC,id ASC LIMIT 1`)[0]??null;
+    }
+    async cardExecutionActorUser(sessionId:string): Promise<string|null> {
+        const sql=await this.resolveSql();
+        const rows=await sql<{actor_user_id:string|null}[]>`SELECT actor_user_id FROM card_execution_requests
+      WHERE session_id=${sessionId} AND actor_user_id IS NOT NULL ORDER BY created_at DESC,id DESC LIMIT 1`;
+        return rows[0]?.actor_user_id??null;
+    }
     async rejectionReason(cardId: string): Promise<string | null> {
         const sql = await this.resolveSql();
         const rows = await sql<{

@@ -14,6 +14,7 @@ import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { submitIntervention, SubmitInterventionHttpError } from "./submitIntervention";
 import { submitResume } from "./submitResume";
 import { submitLlmContinuation } from "./submitLlmContinuation";
+import type { ReportSendContext } from '../../shared/persistent-report';
 
 /** Soul 서버의 MAX_MESSAGE_LENGTH과 일치 (인터벤션 메시지의 최대 길이) */
 export const MAX_MESSAGE_LENGTH = 50_000;
@@ -43,6 +44,7 @@ export interface UseChatInputSendArgs {
   /** LLM continuation 실패는 기존 입력창 복원 동작을 유지한다. */
   onSendError?: (text: string) => void;
   onRetry?: (sessionId: string, pending: PendingChatSend) => void;
+  getMessageContext?: (text: string) => ReportSendContext;
 }
 
 export interface UseChatInputSendResult {
@@ -81,6 +83,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
       const context = {
         sessionKey: sessionId,
         text: pending.messageText,
+        contextItems: pending.contextItems,
         attachmentPaths: pending.attachmentPaths.length > 0
           ? pending.attachmentPaths
           : undefined,
@@ -178,6 +181,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
         attachmentPaths,
         attachments: [...args.uploadedAttachments],
         mode: args.isFinished ? "resume" : "intervention",
+        ...args.getMessageContext?.(trimmed),
       };
 
       setError(null);

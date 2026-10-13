@@ -215,7 +215,7 @@ export function ChatImageViewer({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogPopup className="chat-image-viewer-popup">
+      <DialogPopup className="image-viewer-popup chat-image-viewer-popup">
         <DialogHeader className="chat-image-viewer-header">
           <DialogTitle className="chat-image-viewer-title">{filename ?? "이미지"}</DialogTitle>
           {meta && <p className="chat-image-viewer-metadata">{meta}</p>}

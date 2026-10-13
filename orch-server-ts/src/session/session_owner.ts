@@ -6,6 +6,7 @@ export function createSessionOwnerResolver(options: {
   getSession(id: string): Promise<Record<string, unknown> | null>;
   findUserByEmail: DashboardUserRepository["findUserByEmail"];
   findExternalAgent(id: string): Promise<{ id: string; ownerEmail: string } | null>;
+  findCardExecutionUser?: (sessionId: string) => Promise<string | null>;
 }): SessionOwnerResolver {
   return async sessionId => {
     const visited = new Set<string>();
@@ -27,9 +28,14 @@ export function createSessionOwnerResolver(options: {
           if (typeof externalId !== "string") continue;
           const agent = await options.findExternalAgent(externalId);
           if (!agent || agent.ownerEmail !== email) continue;
-        } else if (!["browser", "soul-app", "slack", "agent"].includes(String(caller.source))) continue;
+        } else if (!["browser", "soul-app", "slack", "agent", "system"].includes(String(caller.source))) continue;
         const user = await options.findUserByEmail(email);
         if (user) return { ownerEmail: user.email, callerInfo: { ...caller, email: user.email } };
+      }
+      const executionEmail = await options.findCardExecutionUser?.(id);
+      if (executionEmail) {
+        const user = await options.findUserByEmail(executionEmail);
+        if (user) return { ownerEmail: user.email, callerInfo: { source: "browser", email: user.email } };
       }
       for (const relation of [session.caller_session_id, session.predecessor_session_id]) {
         if (typeof relation === "string" && relation) {

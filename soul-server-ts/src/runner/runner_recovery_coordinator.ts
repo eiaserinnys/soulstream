@@ -41,9 +41,12 @@ import type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordin
 import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
 import { RunnerSessionGarbageCollectionScheduler } from "./runner_session_gc_scheduler.js";
 import { UnreadableRunnerRegistrationHandler } from "./unreadable_runner_registration_handler.js";
+import { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
+import { createRunnerPhaseObservation, type RunnerPhaseObservation } from "./runner_phase_observation.js";
 export type { RunnerRecoveryCoordinatorOptions } from "./runner_recovery_coordinator_options.js";
 /** Owns runner adoption and failure recovery; no domain state is derived here. */
 export class RunnerRecoveryCoordinator {
+  private readonly scanCache = new RunnerRegistrationScanCache();
   private readonly active = new Map<string, Promise<void>>();
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
@@ -53,6 +56,7 @@ export class RunnerRecoveryCoordinator {
   private readonly sessionGarbageCollectionScheduler: RunnerSessionGarbageCollectionScheduler;
   private readonly unreadableRegistrationHandler: UnreadableRunnerRegistrationHandler;
   private readonly registrationControl: RunnerRegistrationControl;
+  private observationSequence = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   constructor(private readonly options: RunnerRecoveryCoordinatorOptions) {
@@ -61,18 +65,20 @@ export class RunnerRecoveryCoordinator {
       ...(options.sessionGarbageCollector
         ? {
           collector: {
-            collect: async (scan) => await options.sessionGarbageCollector!.collect(
+            collect: async (scan, policy, phaseObservation) => await options.sessionGarbageCollector!.collect(
               scan,
               {
                 centralSessionExists: async (sessionId) =>
                   await options.taskManager.hydrateRunnerRecoveryTask(sessionId) !== null,
               },
+              phaseObservation,
             ),
           },
         }
         : {}),
       logger: options.logger,
       now: options.now ?? Date.now,
+      phaseObservationFactory: () => this.createObservation("runner.recovery.sessionGc"),
     });
     this.unreadableRegistrationHandler = new UnreadableRunnerRegistrationHandler({
       stateDirectory: options.stateDirectory,
@@ -156,145 +162,205 @@ export class RunnerRecoveryCoordinator {
   private async performScan(): Promise<void> {
     const monotonicNow = this.options.monotonicNow ?? (() => performance.now());
     const startedAt = monotonicNow();
-    if (this.sessionGarbageCollectionScheduler.inFlight) {
-      await this.sessionGarbageCollectionScheduler.inFlight;
-    }
-    const scan = await (this.options.scan ?? scanRunnerRegistrations)(
-      this.options.stateDirectory,
-    );
-    await this.unreadableRegistrationHandler.handle(scan.errors);
-    this.recoveryLogger.prune(scan.registrations);
-    this.adoptionFailureRecovery.prune(
-      scan.registrations.map((registration) => registration.config.sessionId),
-    );
-    const admitted: Array<{
+    const scanId = `${this.options.nodeId}:recovery-scan:${++this.observationSequence}`;
+    const observation = this.createObservation("runner.recovery.scan", scanId);
+    let scanRegistrations: RunnerRegistration[] = [];
+    let admitted: Array<{
       registration: RunnerRegistration;
       disposition: RunnerRecoveryDisposition;
     }> = [];
-    for (const registration of scan.registrations) {
-      const sessionId = registration.config.sessionId;
-      if (
-        this.active.has(sessionId)
-        || this.adoptionFailureRecovery.has(sessionId)
-      ) continue;
-      const disposition = classifyRunnerRegistrationSafely(
-        registration,
-        (this.options.now ?? Date.now)(),
-        this.options.leaseTimeoutMs,
-        (error) => this.recoveryLogger.classification(registration, error),
-      );
-      if (!disposition) continue;
-      if (
-        (disposition === "adopt_prebootstrap" || disposition === "adopt_running")
-        && this.adoptionFailureRecovery.shouldSkip(sessionId)
-      ) continue;
-      if (
-        disposition === "wait_for_bootstrap"
-      ) {
-        this.recoveryLogger.clear(sessionId);
-        continue;
+    try {
+      const sessionGcInFlight = this.sessionGarbageCollectionScheduler.inFlight;
+      if (sessionGcInFlight) {
+        await observation.runAsync("gcWait", {}, async () => await sessionGcInFlight);
+      } else {
+        observation.runSync("gcWait", {}, () => undefined);
       }
-      if (disposition === "retired_terminal") {
-        this.recoveryLogger.clear(sessionId);
-        continue;
-      }
-      admitted.push({ registration, disposition });
-    }
-    const hydrationOutcomes = await this.hydrationPhase.run(
-      admitted.filter(({ disposition }) => dispositionRequiresTask(disposition)),
-    );
-    const hydrationBySession = new Map(
-      hydrationOutcomes.map((outcome) => [
-        outcome.registration.config.sessionId,
-        outcome,
-      ]),
-    );
-    const recoveryReadiness: Promise<void>[] = [];
-    for (const { registration, disposition } of admitted) {
-      const sessionId = registration.config.sessionId;
-      const outcome = hydrationBySession.get(sessionId);
-      if (outcome && outcome.status !== "ready") {
+      const scan = await observation.runAsync("registration", {}, async () =>
+        await (this.options.scan ?? scanRunnerRegistrations)(
+          this.options.stateDirectory,
+          { cache: this.scanCache, phaseObservation: observation },
+        ));
+      scanRegistrations = scan.registrations;
+      await observation.runAsync("unreadable", {}, async () => {
+        await this.unreadableRegistrationHandler.handle(scan.errors);
+        this.recoveryLogger.prune(scan.registrations);
+        this.adoptionFailureRecovery.prune(
+          scan.registrations.map((registration) => registration.config.sessionId),
+        );
+      });
+      for (const registration of scan.registrations) {
+        const sessionId = registration.config.sessionId;
         if (
-          outcome.status === "missing"
-          && !registration.pidAlive
-          && (
-            registration.pid === null
-            || (
-              registration.lifecycle !== null
-              && isTerminalRunnerExecutionState(registration.lifecycle.execution_state)
-            )
-          )
-          && registration.pidStartIdentity === null
-        ) {
-          try {
-            await this.registrationControl.retireReleasedTerminal(
-              registration,
-              async () =>
-                await this.options.taskManager.hydrateRunnerRecoveryTask(sessionId) === null,
-            );
-            registration.retiredAt = new Date(
-              (this.options.now ?? Date.now)(),
-            ).toISOString();
-            this.recoveryLogger.clear(sessionId);
-            this.options.logger.info(
-              { sessionId },
-              "deleted session runner evidence retired after kernel-lock release",
-            );
-          } catch (error) {
-            this.recoveryLogger.failure(registration, disposition, error);
-          }
+          this.active.has(sessionId)
+          || this.adoptionFailureRecovery.has(sessionId)
+        ) continue;
+        const disposition = classifyRunnerRegistrationSafely(
+          registration,
+          (this.options.now ?? Date.now)(),
+          this.options.leaseTimeoutMs,
+          (error) => this.recoveryLogger.classification(registration, error),
+        );
+        if (!disposition) continue;
+        if (
+          (disposition === "adopt_prebootstrap" || disposition === "adopt_running")
+          && this.adoptionFailureRecovery.shouldSkip(sessionId)
+        ) continue;
+        if (disposition === "wait_for_bootstrap" || disposition === "retired_terminal") {
+          this.recoveryLogger.clear(sessionId);
           continue;
         }
-        this.recoveryLogger.hydration(outcome);
-        continue;
+        admitted.push({ registration, disposition });
       }
-      const task = outcome?.status === "ready" ? outcome.task : undefined;
-      let ready = false;
-      let resolveReady!: () => void;
-      const readiness = new Promise<void>((resolve) => { resolveReady = resolve; });
-      const markReady = () => {
-        if (ready) return;
-        ready = true;
-        resolveReady();
-      };
-      const recovery = this.handleWithFailureTracking(
-        registration,
-        disposition,
-        task,
-        markReady,
-      )
-        .finally(() => {
-          markReady();
-          if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
-        });
-      this.active.set(sessionId, recovery);
-      recoveryReadiness.push(readiness);
-    }
-    await Promise.all(recoveryReadiness);
-    const releaseFingerprint = runnerReleaseGcCandidateFingerprint(scan);
-    if (
-      this.options.releaseGarbageCollector
-      && releaseFingerprint !== this.releaseGarbageCollectionFingerprint
-    ) {
-      try {
-        await this.options.releaseGarbageCollector.collect(scan);
-        this.releaseGarbageCollectionFingerprint = releaseFingerprint;
-      } catch (error) {
-        this.options.logger.error({ err: error }, "runner release GC failed");
+      const hydrationOutcomes = await observation.runAsync("hydration", {}, async () =>
+        await this.hydrationPhase.run(
+          admitted.filter(({ disposition }) => dispositionRequiresTask(disposition)),
+        ));
+      const hydrationBySession = new Map(
+        hydrationOutcomes.map((outcome) => [
+          outcome.registration.config.sessionId,
+          outcome,
+        ]),
+      );
+      await observation.runAsync("recoveryReady", {}, async () => {
+        const recoveryReadiness: Promise<void>[] = [];
+        for (const { registration, disposition } of admitted) {
+          const sessionId = registration.config.sessionId;
+          const outcome = hydrationBySession.get(sessionId);
+          if (outcome && outcome.status !== "ready") {
+            if (
+              outcome.status === "missing"
+              && !registration.pidAlive
+              && (
+                registration.pid === null
+                || (
+                  registration.lifecycle !== null
+                  && isTerminalRunnerExecutionState(registration.lifecycle.execution_state)
+                )
+              )
+              && registration.pidStartIdentity === null
+            ) {
+              try {
+                await this.registrationControl.retireReleasedTerminal(
+                  registration,
+                  async () =>
+                    await this.options.taskManager.hydrateRunnerRecoveryTask(sessionId) === null,
+                );
+                registration.retiredAt = new Date(
+                  (this.options.now ?? Date.now)(),
+                ).toISOString();
+                this.recoveryLogger.clear(sessionId);
+                this.options.logger.info(
+                  { sessionId },
+                  "deleted session runner evidence retired after kernel-lock release",
+                );
+              } catch (error) {
+                this.recoveryLogger.failure(registration, disposition, error);
+              }
+              continue;
+            }
+            this.recoveryLogger.hydration(outcome);
+            continue;
+          }
+          const task = outcome?.status === "ready" ? outcome.task : undefined;
+          let ready = false;
+          let resolveReady!: () => void;
+          const readiness = new Promise<void>((resolve) => { resolveReady = resolve; });
+          const markReady = () => {
+            if (ready) return;
+            ready = true;
+            resolveReady();
+          };
+          const recovery = this.handleWithFailureTracking(
+            registration,
+            disposition,
+            task,
+            markReady,
+            observation,
+          )
+            .finally(() => {
+              markReady();
+              if (this.active.get(sessionId) === recovery) this.active.delete(sessionId);
+            });
+          this.active.set(sessionId, recovery);
+          recoveryReadiness.push(readiness);
+        }
+        await Promise.all(recoveryReadiness);
+      });
+      const releaseFingerprint = runnerReleaseGcCandidateFingerprint(scan);
+      if (
+        this.options.releaseGarbageCollector
+        && releaseFingerprint !== this.releaseGarbageCollectionFingerprint
+      ) {
+        const releaseObservation = this.createObservation("runner.recovery.releaseGc");
+        try {
+          await observation.runAsync("releaseGc", {}, async () =>
+            await this.options.releaseGarbageCollector!.collect(scan, releaseObservation));
+          this.releaseGarbageCollectionFingerprint = releaseFingerprint;
+        } catch (error) {
+          this.options.logger.error({ err: error }, "runner release GC failed");
+        }
       }
+      this.sessionGarbageCollectionScheduler.schedule({
+        ...scan,
+        registrations: scan.registrations.filter(
+          (registration) => !this.active.has(registration.config.sessionId),
+        ),
+      });
+      const finishedAt = monotonicNow();
+      const phaseDurationsMs = observation.phaseDurationsMs();
+      const measuredMs = Object.values(phaseDurationsMs).reduce((sum, duration) => sum + duration, 0);
+      phaseDurationsMs.otherMs = Math.max(0, finishedAt - startedAt - measuredMs);
+      logRunnerRecoveryScan(
+        this.options.logger,
+        admitted.map(({ registration }) => registration),
+        startedAt,
+        finishedAt,
+        {
+          nodeId: this.options.nodeId,
+          scanId,
+          phaseDurationsMs,
+          database: observation.databaseSummary(),
+          databaseAndPhaseDurationsOverlap: true,
+          nestedGcTimingOverlapsReleaseGc: true,
+        },
+      );
+    } catch (error) {
+      const failure = observation.failureFor(error);
+      if (failure) {
+        try {
+          this.options.logger.warn({
+            nodeId: this.options.nodeId,
+            scanId,
+            durationMs: Math.max(0, monotonicNow() - startedAt),
+            registrations: scanRegistrations.length,
+            failurePhase: failure.phase,
+            failureElapsedMs: failure.elapsedMs,
+            phaseDurationsMs: observation.phaseDurationsMs(),
+            database: observation.databaseSummary(),
+            databaseAndPhaseDurationsOverlap: true,
+          }, "runner recovery scan phase failed");
+        } catch {
+          // Preserve the original scan error if reporting also fails.
+        }
+      }
+      throw error;
     }
-    this.sessionGarbageCollectionScheduler.schedule({
-      ...scan,
-      registrations: scan.registrations.filter(
-        (registration) => !this.active.has(registration.config.sessionId),
-      ),
+  }
+
+  private createObservation(operation: string, scopeId?: string): RunnerPhaseObservation {
+    const id = scopeId ?? `${this.options.nodeId}:${operation}:${++this.observationSequence}`;
+    const nodeStallMonitor = this.options.nodeStallMonitor;
+    return createRunnerPhaseObservation({
+      nodeId: this.options.nodeId,
+      scopeId: id,
+      operation,
+      logger: this.options.logger,
+      ...(this.options.monotonicNow ? { monotonicNow: this.options.monotonicNow } : {}),
+      ...(nodeStallMonitor
+        ? { beginRunnerOperation: nodeStallMonitor.beginRunnerOperation.bind(nodeStallMonitor) }
+        : {}),
     });
-    logRunnerRecoveryScan(
-      this.options.logger,
-      admitted.map(({ registration }) => registration),
-      startedAt,
-      monotonicNow(),
-    );
   }
   async stop(): Promise<void> {
     this.stopped = true;
@@ -322,6 +388,7 @@ export class RunnerRecoveryCoordinator {
     disposition: RunnerRecoveryDisposition,
     task?: Task,
     onRunnerAttached?: () => void,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
     if (
       task
@@ -383,6 +450,7 @@ export class RunnerRecoveryCoordinator {
         disposition,
         requireRecoveryTask(task, registration),
         onRunnerAttached,
+        phaseObservation,
       );
       return;
     }
@@ -392,12 +460,16 @@ export class RunnerRecoveryCoordinator {
         disposition,
         requireRecoveryTask(task, registration),
         onRunnerAttached,
+        phaseObservation,
       );
       return;
     }
     if (disposition === "closed") {
       const recoveredTask = requireRecoveryTask(task, registration);
-      const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+      const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(
+        registration,
+        phaseObservation,
+      );
       const verifiedDisposition = classifyRunnerRegistration(
         hydrated,
         (this.options.now ?? Date.now)(),
@@ -415,6 +487,7 @@ export class RunnerRecoveryCoordinator {
             verifiedDisposition,
             recoveredTask,
             onRunnerAttached,
+            phaseObservation,
           );
         }
         return;
@@ -422,7 +495,7 @@ export class RunnerRecoveryCoordinator {
       if (hydrated.pidAlive) await this.registrationControl.terminate(hydrated);
       const closedRegistration = { ...hydrated, pidAlive: false };
       if (closedRunnerTailRequiresDrain(closedRegistration)) {
-        await this.options.closedTailDrainer.drain(closedRegistration);
+        await this.options.closedTailDrainer.drain(closedRegistration, phaseObservation);
       }
       prepareRecoveredTask(recoveredTask, closedRegistration);
       const projectClosedRunner = this.options.taskManager.projectClosedRunner;
@@ -440,7 +513,10 @@ export class RunnerRecoveryCoordinator {
       await terminalizeReapedRunner({
         registration,
         task: requireRecoveryTask(task, registration),
-        ...(this.options.hydrate ? { hydrate: this.options.hydrate } : {}),
+        hydrate: (owned) => (this.options.hydrate ?? hydrateRunnerRegistration)(
+          owned,
+          phaseObservation,
+        ),
         terminate: async (owned) => {
           await this.registrationControl.terminate(owned);
         },
@@ -453,6 +529,7 @@ export class RunnerRecoveryCoordinator {
             undefined,
             undefined,
             onRunnerAttached,
+            phaseObservation,
           )).task,
         logger: this.options.logger,
       });
@@ -466,6 +543,7 @@ export class RunnerRecoveryCoordinator {
     disposition: RunnerRecoveryDisposition,
     task?: Task,
     onRunnerAttached?: () => void,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
     await handleRecoveryWithFailureTracking({
       registration,
@@ -477,6 +555,7 @@ export class RunnerRecoveryCoordinator {
           ownedDisposition,
           recoveredTask,
           onRunnerAttached,
+          phaseObservation,
         ),
       recoveryLogger: this.recoveryLogger,
     });
@@ -490,6 +569,7 @@ export class RunnerRecoveryCoordinator {
     ) => Promise<RunnerRegistration>,
     adoptionDisposition?: RunnerAdoptionDisposition,
     onRunnerAttached?: () => void,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<{ task: Task; replayed: boolean }> {
     if (
       mode === "offline"
@@ -541,7 +621,10 @@ export class RunnerRecoveryCoordinator {
     if (prepareRegistrationAfterTaskGuard) {
       registration = await prepareRegistrationAfterTaskGuard(registration);
     }
-    const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(registration);
+    const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(
+      registration,
+      phaseObservation,
+    );
     const lifecycle = hydrated.lifecycle;
     prepareRecoveredTask(task, hydrated);
     let attemptRunner: TaskRunnerRuntime | undefined;
@@ -554,6 +637,7 @@ export class RunnerRecoveryCoordinator {
         attemptRunner = runner;
         return onRunnerAttached;
       },
+      phaseObservation,
     );
     const ownedRunner = task.runner;
     if (mode === "offline") {
@@ -589,12 +673,16 @@ export class RunnerRecoveryCoordinator {
     disposition: "reap_dead",
     task: Task,
     onRunnerAttached?: () => void,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
     await terminalizeFailedRunner({
       registration,
       disposition,
       task,
-      ...(this.options.hydrate ? { hydrate: this.options.hydrate } : {}),
+      hydrate: (owned) => (this.options.hydrate ?? hydrateRunnerRegistration)(
+        owned,
+        phaseObservation,
+      ),
       now: this.options.now ?? Date.now,
       leaseTimeoutMs: this.options.leaseTimeoutMs,
       recover: async (owned, verified, recoveredTask) =>
@@ -603,6 +691,7 @@ export class RunnerRecoveryCoordinator {
           verified,
           recoveredTask,
           onRunnerAttached,
+          phaseObservation,
         ),
       terminalize: async (owned, recoveredTask, error, verified) => {
         if (await this.retireAttachedTerminalAdmission(owned, recoveredTask)) return;
@@ -636,6 +725,7 @@ export class RunnerRecoveryCoordinator {
     disposition: RecoverableRunnerDisposition,
     task: Task,
     onRunnerAttached?: () => void,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<Task> {
     if (
       (disposition === "replay_terminal" || disposition === "replay_terminal_dead")
@@ -655,6 +745,7 @@ export class RunnerRecoveryCoordinator {
           undefined,
           adoptionDisposition,
           onRunnerAttached,
+          phaseObservation,
         )).task,
       recoverOffline: async (ownedRegistration, ownedTask, prepare) =>
         await this.recoverRegistered(
@@ -664,6 +755,7 @@ export class RunnerRecoveryCoordinator {
           prepare,
           undefined,
           onRunnerAttached,
+          phaseObservation,
         ),
       terminate: async (ownedRegistration) =>
         await this.registrationControl.terminate(ownedRegistration),

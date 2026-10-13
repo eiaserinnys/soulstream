@@ -1,8 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { readRunnerRegistrationSummary } from "../../src/runner/runner_registration_reader.js";
 import {
@@ -16,6 +17,10 @@ import {
 } from "../../src/runner/runner_registration_identity.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
+import { RunnerRegistrationScanCache } from "../../src/runner/runner_registration_scan_cache.js";
+import * as sqliteConnection from "../../src/runner/runner_sqlite_connection.js";
+import { RunnerHostStateStore, runnerHostStatePath } from "../../src/runner/runner_host_state_store.js";
+import * as processLock from "../../src/runner/runner_process_lock.js";
 
 const temporaryDirectories: string[] = [];
 const CURRENT_PID = process.pid;
@@ -24,9 +29,234 @@ const CURRENT_START_IDENTITY = "current-runner-start";
 const OTHER_START_IDENTITY = "other-runner-start";
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(temporaryDirectories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
+});
+
+describe("terminal registration scan cache", () => {
+  async function subject() {
+    const fixture = await writeRegistrationFixture("cached-terminal", {
+      identity: "absent", sidecarPid: STALE_PID, lifecyclePid: STALE_PID,
+    });
+    await writeRunnerRegistrationIdentity(fixture.paths.sessionDirectory, {
+      ...pendingRunnerRegistrationIdentity("session-cached-terminal", "release-a"),
+      retiredAt: "2026-10-12T00:00:00.000Z",
+    });
+    let now = 0;
+    const cache = new RunnerRegistrationScanCache(() => now);
+    const fresh = vi.fn(async () => await readRunnerRegistrationSummary(
+      fixture.paths.sessionDirectory,
+      { verifyProcessIdentity: true, inspectWriterLock: async () => ({ kind: "free" }) },
+    ));
+    const read = async () => await cache.read(fixture.paths.sessionDirectory, fresh);
+    return { ...fixture, cache, fresh, read, advance: () => { now += 300_000; } };
+  }
+
+  it("opens no SQLite DB on a repeated terminal read, while the direct reader still rechecks", async () => {
+    const s = await subject();
+    const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+    const first = await s.read();
+    expect(open).toHaveBeenCalledOnce();
+    expect((await stat(`${s.paths.databasePath}-wal`)).size).toBe(0);
+    open.mockClear();
+    // The cold read creates WAL/shm. It cannot establish an unchanged proof.
+    expect(await s.read()).toEqual(first);
+    expect(open).toHaveBeenCalledOnce();
+    open.mockClear();
+    // Only the second full read has a stable fingerprint; the third reuses it.
+    expect(await s.read()).toEqual(first);
+    expect(open).not.toHaveBeenCalled();
+    await s.fresh();
+    expect(open).toHaveBeenCalled();
+  });
+
+  it.each(["runner-wal", "host-db", "host-wal", "pid"] as const)(
+    "rechecks when a new %s file appears or grows", async (kind) => {
+      const s = await subject();
+      await s.read();
+      await s.read();
+      const host = runnerHostStatePath(s.paths.databasePath);
+      const path = kind === "runner-wal" ? `${s.paths.databasePath}-wal`
+        : kind === "host-db" ? host
+        : kind === "host-wal" ? `${host}-wal` : s.paths.pidPath;
+      if (kind === "pid") {
+        await writeFile(path, `${process.pid}\n`);
+      } else {
+        // The reader tolerates these auxiliary files for a retired registration;
+        // their appearance must still invalidate the scan's previous proof.
+        await appendFile(path, "changed");
+      }
+      const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+      await s.read();
+      expect(open).toHaveBeenCalled();
+      expect(s.fresh).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it("rechecks a same-size replacement even when mtime is restored", async () => {
+    const s = await subject();
+    await s.read();
+    await s.read();
+    const before = await stat(s.paths.pidPath);
+    const replacement = `${s.paths.pidPath}.replacement`;
+    await writeFile(replacement, `${STALE_PID}\n`);
+    await utimes(replacement, before.atime, before.mtime);
+    await rename(replacement, s.paths.pidPath);
+    await s.read();
+    expect(s.fresh).toHaveBeenCalledTimes(3);
+  });
+
+  it("forces a fresh proof after five minutes and after pruning", async () => {
+    const s = await subject();
+    await s.read();
+    await s.read();
+    s.advance();
+    await s.read();
+    expect(s.fresh).toHaveBeenCalledTimes(3);
+    s.cache.prune(new Set());
+    await s.read();
+    expect(s.fresh).toHaveBeenCalledTimes(4);
+  });
+
+  it("rechecks when the cached dead PID is reused without a file change", async () => {
+    const s = await subject();
+    await s.read();
+    await s.read();
+    await s.read();
+    expect(s.fresh).toHaveBeenCalledTimes(2);
+    vi.spyOn(processLock, "isProcessAlive").mockReturnValue(true);
+    await s.read();
+    expect(s.fresh).toHaveBeenCalledTimes(3);
+  });
+
+  it("reuses an acknowledged closed tail and discovers an actual WAL append", async () => {
+    const fixture = await writeRegistrationFixture("closed-cached", {
+      identity: "absent", sidecarPid: STALE_PID, lifecyclePid: STALE_PID,
+    });
+    const lifecycle = RunnerSqliteLifecycle.open(fixture.paths.databasePath);
+    lifecycle.finish("execute-closed-cached", "closed", "2026-10-12T00:00:00.000Z");
+    lifecycle.close();
+    const writer = await RunnerSqliteEventOutbox.open(fixture.paths.databasePath);
+    const streamId = writer.streamId;
+    writer.close();
+    const host = RunnerHostStateStore.open(runnerHostStatePath(fixture.paths.databasePath));
+    host.initializeEventCheckpoint({
+      streamId, sessionId: "session-closed-cached", acknowledgedThrough: 1,
+    });
+    host.close();
+    const cache = new RunnerRegistrationScanCache();
+    const read = async () => await cache.read(fixture.paths.sessionDirectory, async () =>
+      await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, {
+        verifyProcessIdentity: true, inspectWriterLock: async () => ({ kind: "free" }),
+      }));
+    await read();
+    await read();
+    const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+    expect((await read()).closedTailState?.status).toBe("fully_acknowledged");
+    expect(open).not.toHaveBeenCalled();
+    const appender = await RunnerSqliteEventOutbox.open(fixture.paths.databasePath);
+    try {
+      await appender.append({
+        session_id: "session-closed-cached", event_type: "assistant", payload: { text: "tail" },
+        searchable_text: "tail", created_at: "2026-10-12T00:00:01.000Z",
+        semantic_dedupe_key: null, session_effect: null,
+      });
+      open.mockClear();
+      expect((await read()).closedTailState).toMatchObject({
+        status: "requires_drain", latestDurableSourceSeq: 2, acknowledgedThrough: 1,
+      });
+      expect(open).toHaveBeenCalled();
+    } finally {
+      appender.close();
+    }
+  });
+
+  it("measures a warm scan with 62 retired and four live SQLite registrations", async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), "runner-scan-66-"));
+    temporaryDirectories.push(stateDirectory);
+    const livePaths = new Set<string>();
+    for (let i = 0; i < 66; i++) {
+      const live = i >= 62;
+      const label = `scan-${i}`;
+      const fixture = await writeRegistrationFixture(label, {
+        stateDirectory,
+        identity: live ? "complete" : "absent",
+        sidecarPid: live ? CURRENT_PID : STALE_PID,
+        lifecyclePid: live ? CURRENT_PID : STALE_PID,
+      });
+      if (live) livePaths.add(fixture.paths.lockPath);
+      else await writeRunnerRegistrationIdentity(fixture.paths.sessionDirectory, {
+        ...pendingRunnerRegistrationIdentity(`session-${label}`, "release-a"),
+        retiredAt: "2026-10-12T00:00:00.000Z",
+      });
+    }
+    const options = {
+      inspectWriterLock: async (path: string) => livePaths.has(path)
+        ? { kind: "held" as const, owner: { pid: CURRENT_PID, startIdentity: CURRENT_START_IDENTITY } }
+        : { kind: "free" as const },
+    };
+    const cache = new RunnerRegistrationScanCache();
+    const cachedOptions = { ...options, cache };
+    // Prime both paths. Compare one actual scan each after cold WAL creation.
+    await scanRunnerRegistrations(stateDirectory, options);
+    await scanRunnerRegistrations(stateDirectory, cachedOptions);
+    await scanRunnerRegistrations(stateDirectory, cachedOptions);
+    const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+    async function measure(input: typeof options & { cache?: RunnerRegistrationScanCache }) {
+      open.mockClear();
+      let lastTick = performance.now();
+      let maxTimerGapMs = 0;
+      let stallsOver50Ms = 0;
+      const timer = setInterval(() => {
+        const now = performance.now();
+        const gap = now - lastTick;
+        maxTimerGapMs = Math.max(maxTimerGapMs, gap);
+        if (gap > 50) stallsOver50Ms += 1;
+        lastTick = now;
+      }, 1);
+      try {
+        const start = performance.now();
+        const scan = await scanRunnerRegistrations(stateDirectory, input);
+        const durationMs = performance.now() - start;
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        expect(scan.errors).toEqual([]);
+        expect(scan.registrations).toHaveLength(66);
+        expect(scan.registrations.filter((registration) => registration.pidAlive)).toHaveLength(4);
+        return { durationMs, maxTimerGapMs, stallsOver50Ms, databaseOpens: open.mock.calls.length };
+      } finally {
+        clearInterval(timer);
+      }
+    }
+    const before = await measure(options);
+    const after = await measure(cachedOptions);
+    expect(before.databaseOpens).toBe(66);
+    expect(after.databaseOpens).toBe(4);
+    console.info("runner warm scan measurement", JSON.stringify({ before, after }));
+  });
+
+  it("always rechecks a live runner and a closed runner with an unacknowledged tail", async () => {
+    const fixture = await writeRegistrationFixture("uncached-live", {
+      identity: "complete", sidecarPid: CURRENT_PID, lifecyclePid: CURRENT_PID,
+    });
+    const cache = new RunnerRegistrationScanCache();
+    const fresh = vi.fn(async () => await readFixture(fixture, CURRENT_START_IDENTITY));
+    await cache.read(fixture.paths.sessionDirectory, fresh);
+    await cache.read(fixture.paths.sessionDirectory, fresh);
+    expect(fresh).toHaveBeenCalledTimes(2);
+    const lifecycle = RunnerSqliteLifecycle.open(fixture.paths.databasePath);
+    lifecycle.finish("execute-uncached-live", "closed", "2026-10-12T00:00:00.000Z");
+    lifecycle.close();
+    const dead = vi.fn(async () => await readRunnerRegistrationSummary(
+      fixture.paths.sessionDirectory,
+      { verifyProcessIdentity: true, inspectWriterLock: async () => ({ kind: "free" }) },
+    ));
+    expect((await cache.read(fixture.paths.sessionDirectory, dead)).closedTailState?.status)
+      .toBe("requires_drain");
+    await cache.read(fixture.paths.sessionDirectory, dead);
+    expect(dead).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("runner registration reader", () => {
@@ -153,13 +383,15 @@ type IdentityState = "absent" | "pending" | "complete";
 async function writeRegistrationFixture(
   label: string,
   evidence: {
+    stateDirectory?: string;
     identity: IdentityState;
     sidecarPid: number | null;
     lifecyclePid: number;
   },
 ) {
-  const stateDirectory = await mkdtemp(join(tmpdir(), `runner-reader-${label}-`));
-  temporaryDirectories.push(stateDirectory);
+  const stateDirectory = evidence.stateDirectory
+    ?? await mkdtemp(join(tmpdir(), `runner-reader-${label}-`));
+  if (!evidence.stateDirectory) temporaryDirectories.push(stateDirectory);
   const sessionId = `session-${label}`;
   const paths = runnerProcessPaths(stateDirectory, sessionId);
   const config: RunnerChildConfig = {

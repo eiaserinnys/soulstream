@@ -648,4 +648,15 @@ describe("MarkdownDocumentPanel", () => {
     await waitForSelector(container, '[data-testid="markdown-read-body"]');
     expect(container.querySelector('[data-testid="markdown-codemirror-editor"]')).toBeNull();
   });
+
+  it("keeps link clicks in read mode instead of entering edit mode", async () => {
+    storedDocument.body = "[document](https://soulstream.eiaserinnys.me/api/markdown-documents/doc-b)";
+    ({ container, root } = renderPanel());
+
+    const anchor = await waitForSelector<HTMLAnchorElement>(container, '[data-testid="markdown-read-body"] a');
+    flushSync(() => anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })));
+
+    expect(container.querySelector('[data-testid="markdown-read-body"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="markdown-codemirror-editor"]')).toBeNull();
+  });
 });

@@ -1,4 +1,5 @@
 import type { ApiRequestContext } from './clientCore';
+import type { PersistentReportEntry } from './types';
 import type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
 
 export type { PersistentTurnUsageMode } from '../../../packages/wire-schema/src/persistent_session_settings';
@@ -23,6 +24,7 @@ export interface PersistentSessionSettings {
 }
 
 export interface PersistentSessionResource {
+  persistent_report?: PersistentReportEntry[];
   session_id: string;
   display_name: string | null;
   /** The server reads both from the stored row, so an old or half-registered session can have neither. */
@@ -95,6 +97,10 @@ export function createPersistentSessionEndpoints({ base, authFetch, readJson }: 
   const root = `${base}/api/persistent-sessions`;
   const itemUrl = (sessionId: string) => `${root}/${encodeURIComponent(sessionId)}`;
   return {
+    dismissPersistentReport: (sessionId: string, key: string): Promise<{
+      ok: true; changed: boolean; entries: Array<{ key: string; title: string }>; persistent_report: PersistentReportEntry[];
+    }> => authFetch(`${itemUrl(sessionId)}/reports/${encodeURIComponent(key)}`, { method: 'DELETE' })
+      .then(response => readJson(response, 'dismissPersistentReport')),
     listPersistentSessions: (): Promise<{
       sessions: PersistentSessionResource[];
       total: number;

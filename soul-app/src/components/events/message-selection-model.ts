@@ -12,6 +12,7 @@ function isLiveOnly(event: SessionEvent): boolean {
 
 export function createMessageSelectionModel(
   event: SessionEvent,
+  textOverride?: string,
 ): MessageSelectionModel | null {
   let kind: MessageSelectionModel['kind'];
 
@@ -33,6 +34,6 @@ export function createMessageSelectionModel(
       return null;
   }
 
-  const text = extractEventCopyText(event);
+  const text = textOverride ?? extractEventCopyText(event);
   return text.trim() ? { kind, text } : null;
 }

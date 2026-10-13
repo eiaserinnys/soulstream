@@ -37,11 +37,14 @@ describe("markdown surface mount inventory", () => {
   it("enumerates every shared MarkdownContent surface", () => {
     expect(inventoryMounts("MarkdownContent")).toEqual([
       "packages/soul-ui/src/components/MarkdownDocumentPanel.tsx",
+      "packages/soul-ui/src/components/chat-ui/ChatUiMessage.tsx",
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
       "unified-dashboard/client/v3/CardNotes.tsx",
       "unified-dashboard/client/v3/CardTimeline.tsx",
+      "unified-dashboard/client/v3/ChatUiPartsReviewSample.tsx",
+      "unified-dashboard/client/v3/DocumentReaderDialog.tsx",
       "unified-dashboard/client/v3/FolderBoardResourcePane.tsx",
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ]);
@@ -62,9 +65,11 @@ describe("markdown surface mount inventory", () => {
       "unified-dashboard/client/v3/FolderDescriptionPanel.tsx",
     ];
     const boundedSurfaces = [
+      "packages/soul-ui/src/components/chat-ui/ChatUiMessage.tsx",
       "packages/soul-ui/src/components/chat/AssistantMessage.tsx",
       "packages/soul-ui/src/components/chat/ThinkingMessage.tsx",
       "packages/soul-ui/src/components/chat/UserMessage.tsx",
+      "unified-dashboard/client/v3/ChatUiPartsReviewSample.tsx",
     ];
     const cardDetailPane = readSource("unified-dashboard/client/v3/CardDetailPane.tsx");
     const cardNotes = readSource("unified-dashboard/client/v3/CardNotes.tsx");

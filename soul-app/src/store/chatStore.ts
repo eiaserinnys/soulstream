@@ -2,13 +2,17 @@
 // The independent Claude runtime payload projection lives in claudeRuntimeProjection;
 // splitting the remaining single-use transitions would create shallow pass-through modules.
 import { create } from 'zustand';
+import type { ReportSendContext } from '../lib/persistent-report';
 import type {
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeTasksResponse,
   SessionEvent,
 } from '../api/types';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
-import { mergeAppendOnlyStreamingDelta } from '../lib/streamingDeltaEvent';
+import {
+  isAssistantUiPublication,
+  mergeAppendOnlyStreamingDelta,
+} from '../lib/streamingDeltaEvent';
 import { subscribeAuthScope } from '../lib/auth-scope';
 import {
   applyClaudeRuntimePayload,
@@ -31,7 +35,7 @@ export interface PendingOptimisticAttachment {
   path: string;
   name?: string;
 }
-export interface PendingOptimisticEvent extends SessionEvent {
+export interface PendingOptimisticEvent extends SessionEvent, ReportSendContext {
   /** 일반 초기 프롬프트 낙관 이벤트는 이 값이 없다. */
   pendingStatus?: PendingOptimisticStatus;
   originalText?: string;
@@ -278,7 +282,10 @@ function shouldAdvanceLastEventId(
 }
 
 function hasAssistantMessage(events: SessionEvent[]): boolean {
-  return events.some((event) => event.type === 'assistant_message');
+  return events.some((event) => (
+    event.type === 'assistant_message'
+    && !isAssistantUiPublication(event.type, event.data)
+  ));
 }
 
 function streamingIdentity(event: SessionEvent): string | null {

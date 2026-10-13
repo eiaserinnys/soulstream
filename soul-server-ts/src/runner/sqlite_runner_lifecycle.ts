@@ -12,6 +12,7 @@ import {
   requireRunnerSqliteWal,
   withRunnerSqliteTransactionSync,
 } from "./runner_sqlite_connection.js";
+import type { RunnerDatabaseObservationContext } from "./runner_phase_observation.js";
 import {
   readRunnerLifecycleRecord,
   validateLifecycleSummary,
@@ -57,10 +58,27 @@ export async function readRunnerLifecycleSummary(
 
 export function readRunnerSqliteLifecycle(
   databasePath: string,
+  observation?: RunnerDatabaseObservationContext,
 ): RunnerLifecycleRecord | null {
-  const database = openRunnerSqliteReadOnlyDatabase(databasePath);
+  const databaseObservation = observation
+    ? {
+      ...observation,
+      databasePath,
+      label: observation.label ?? "runner lifecycle",
+    }
+    : undefined;
+  const database = openRunnerSqliteReadOnlyDatabase(databasePath, databaseObservation);
   try {
-    return readRunnerLifecycleRecord(database);
+    const read = () => readRunnerLifecycleRecord(database);
+    return databaseObservation
+      ? databaseObservation.phaseObservation.runSync("dbRead", {
+        ...(databaseObservation.sessionId
+          ? { sessionId: databaseObservation.sessionId }
+          : {}),
+        databasePath,
+        ...(databaseObservation.label ? { label: databaseObservation.label } : {}),
+      }, read)
+      : read();
   } finally {
     database.close();
   }

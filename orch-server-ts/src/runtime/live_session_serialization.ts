@@ -1,4 +1,5 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
+import { readPersistentReport, type PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import {
   findNodeAgentProfile,
   findRegisteredAgentProfile,
@@ -13,6 +14,11 @@ export type SessionSerializationOptions = {
   readonly registry?: InMemoryNodeRegistry;
   readonly agentProfiles?: readonly AgentProfileIdentityOverlay[];
 };
+
+function reportProjection(row: Record<string, unknown>): PersistentReportEntry[] {
+  const projected = row.persistent_report ?? row.persistentReport;
+  return Array.isArray(projected) ? projected as PersistentReportEntry[] : readPersistentReport(row.metadata);
+}
 
 export type SessionBackendCatalogEntry = {
   readonly kind: "agent" | "preset";
@@ -116,6 +122,7 @@ export function serializeSessionRow(
     ),
     clientId: firstDefined(row, "client_id", "clientId"),
     metadata: row.metadata,
+    persistentReport: reportProjection(row),
     displayName: firstDefined(row, "display_name", "displayName") ?? null,
     nodeId: firstDefined(row, "node_id", "nodeId") ?? null,
     folderId: firstDefined(row, "folder_id", "folderId") ?? null,

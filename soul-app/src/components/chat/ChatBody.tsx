@@ -1,3 +1,5 @@
+// This lifecycle hub stays together to share the history/SSE queues, viewport
+// and composer refs; pure projection and input logic already live in owners.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -34,10 +36,17 @@ import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { renderItemContainsEventId } from './chatSearchAnchor';
 import { SessionStoryPanel } from './SessionStoryPanel';
 import { useAppForegroundLifecycle } from '../../hooks/useAppForegroundLifecycle';
-import { ChatInputComposer, type ChatInputComposerHandle } from './ChatInputComposer';
+import type { ChatInputComposerHandle } from './ChatInputComposer';
 import { useEnsureSessionCached } from '../../hooks/useEnsureSessionCached';
+import { ChatUiControllerProvider, type AppendGeneratedText } from '../chat-ui/ChatUiControllerProvider';
+import { ChatUiInputComposer } from '../chat-ui/ChatUiInputComposer';
+import { PersistentReportPager } from '../persistent/PersistentReportPager';
+import { usePersistentReport } from '../persistent/usePersistentReport';
+import type { PersistentReportEntry } from '../../api/types';
 
 interface Props {
+  showPersistentReport?: boolean;
+  persistentReportSnapshot?: PersistentReportEntry[];
   /** 표시할 세션 ID. undefined면 빈 상태 패널을 그린다. */
   sessionId: string | undefined;
   /** 실제 화면에 표시되는 동안만 상세 REST/SSE를 연다. mount된 UI state는 보존한다. */
@@ -96,6 +105,8 @@ export function ChatBody({
   presentation = 'default',
   showSessionAuxiliary = true,
   onComposerLayout,
+  showPersistentReport = false,
+  persistentReportSnapshot,
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -161,6 +172,8 @@ export function ChatBody({
   const ownsSessionConnectionRef = useRef(ownsSessionConnection);
   ownsSessionConnectionRef.current = ownsSessionConnection;
   const composerRef = useRef<ChatInputComposerHandle>(null);
+  const appendGeneratedText = useCallback<AppendGeneratedText>((targetSessionId, text, reportReply) =>
+    composerRef.current?.appendGeneratedText(targetSessionId, text, reportReply) ?? { ok: false, reason: 'not_ready' }, []);
   const handleRetryPending = useCallback((eventId: string) => composerRef.current?.retryPending(eventId), []);
   const handleRestorePending = useCallback((eventId: string) => composerRef.current?.restorePending(eventId), []);
 
@@ -187,6 +200,8 @@ export function ChatBody({
     () => (serverUrl ? createApiClient(serverUrl, { authScope }) : null),
     [authScope, serverUrl]
   );
+  const report = usePersistentReport(sessionId, showPersistentReport, api,
+    persistentReportSnapshot ?? session?.persistentReport, pendingOptimistic);
   const { persistentDisplaySettings, turnUsageMode } = usePersistentChatDisplaySettings(
     api, detailedNetworkActive, sessionId, ownsSessionConnection,
   );
@@ -448,6 +463,7 @@ export function ChatBody({
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <ChatUiControllerProvider sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
       {showSessionAuxiliary ? <SessionStoryPanel
         presentation={presentation}
         sessionId={sessionId}
@@ -462,6 +478,9 @@ export function ChatBody({
         </Text>
       ) : null}
 
+      {showPersistentReport ? <PersistentReportPager entries={report.entries} index={report.index} api={api}
+        onSelect={report.select} onDismiss={report.dismiss}
+        onFocusComposer={() => composerRef.current?.focusAccessibility()} /> : null}
       <ChatEventList
         flatListRef={flatListRef}
         items={reversedItems}
@@ -490,7 +509,7 @@ export function ChatBody({
 
       {showSessionAuxiliary ? <ChatRuntimeStrips sessionId={sessionId} api={ownsSessionConnection ? api : null} presentation={presentation} /> : null}
 
-      <ChatInputComposer
+      <ChatUiInputComposer
         key={sessionId}
         ref={composerRef}
         sessionId={sessionId}
@@ -504,7 +523,9 @@ export function ChatBody({
         requestBottomFollow={requestBottomFollow}
         presentation={presentation}
         onComposerLayout={onComposerLayout}
+        getReportSendContext={showPersistentReport ? report.getSendContext : undefined}
       />
+      </ChatUiControllerProvider>
     </AppKeyboardAvoidingView>
   );
 }

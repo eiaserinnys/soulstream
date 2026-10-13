@@ -16,12 +16,17 @@ import { CardWorkspace } from "./CardWorkspace";
 import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { PostItCardView } from "./PostItCard";
 import { FolderDocumentOverlay } from "./FolderDocumentOverlay";
+import { DocumentReaderDialog } from "./DocumentReaderDialog";
 import { V3ContextMenu } from "./V3ContextMenu";
 import { dialoguesFolders, dialoguesAssignment, createDialoguesApi } from "./dialogues-api";
 import { reviewCard, reviewDetail, reviewFolder, reviewSession } from "./components-review-fixtures";
 import type { DialogueId } from "./dialogues-inventory";
 import { activateRunSession } from "./folder-workspace-run-model";
 import "./v3-card-board.css";
+const readSampleDocument: typeof fetch = async () => Response.json({
+  id: "sample-linked-document", title: "링크 문서 읽기", version: 1,
+  body: "# 링크 문서 읽기\n\n" + Array.from({ length: 60 }, (_, index) => `문단 ${index + 1}. 채팅에서 인용한 문서를 읽습니다. 긴 본문은 다이얼로그 안에서 끝까지 스크롤할 수 있습니다.`).join("\n\n"),
+});
 export function DialoguesOverlaySamples({
   id,
   api,
@@ -103,13 +108,15 @@ export function DialoguesOverlaySamples({
         onChanged={async () => done("프로젝트 컨텍스트 저장")}
       />
     );
-  if (id === "card-image")
+  if (id === "card-image" || id === "card-image-screen")
     return (
       <CardTimeline
         card={reviewCard}
         detail={reviewDetail}
         portraitUrl="/system-portrait.png"
-        initialImage={{ src: "/icon-192.png", alt: "검수 이미지" }}
+        initialImage={id === "card-image-screen"
+          ? { src: "/image-viewer-screen.png", alt: "화면 캡처" }
+          : { src: "/icon-192.png", alt: "검수 이미지" }}
         onAnswer={() => done("샘플 응답")}
         pending={false}
       />
@@ -148,6 +155,7 @@ export function DialoguesOverlaySamples({
         renderCard={(card) => <PostItCardView card={card} activity={null} onOpen={() => done("보드 카드 열기")} />}
       />
     );
+  if (id === "document-reader") return <DocumentReaderDialog documentId="sample-linked-document" request={readSampleDocument} onClose={onClose}/>;
   if (id === "document-overlay")
     return createPortal(
       <div className="v3-workspace-scrim is-chat-open is-task-board">

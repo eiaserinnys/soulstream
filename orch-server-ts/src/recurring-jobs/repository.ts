@@ -37,12 +37,32 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
     return rows[0] ? jobFromRow(rows[0]) : null;
   }
 
+  async findJobOwnerEmail(jobId: string): Promise<string | null> {
+    const sql = await this.resolveSql();
+    const rows = await sql<Row[]>`
+      SELECT owner_email FROM recurring_jobs
+      WHERE job_id = ${jobId}
+      LIMIT 1
+    `;
+    return rows[0] ? String(rows[0].owner_email) : null;
+  }
+
   async listJobsForOwner(ownerEmail: string, includeArchived = false): Promise<RecurringJob[]> {
     const sql = await this.resolveSql();
     const rows = await sql<Row[]>`
       SELECT * FROM recurring_jobs
       WHERE owner_email = ${ownerEmail}
         AND (${includeArchived} OR archived_at IS NULL)
+      ORDER BY archived_at NULLS FIRST, next_run_at NULLS LAST, created_at DESC
+    `;
+    return rows.map(jobFromRow);
+  }
+
+  async listAllJobs(includeArchived = false): Promise<RecurringJob[]> {
+    const sql = await this.resolveSql();
+    const rows = await sql<Row[]>`
+      SELECT * FROM recurring_jobs
+      WHERE (${includeArchived} OR archived_at IS NULL)
       ORDER BY archived_at NULLS FIRST, next_run_at NULLS LAST, created_at DESC
     `;
     return rows.map(jobFromRow);

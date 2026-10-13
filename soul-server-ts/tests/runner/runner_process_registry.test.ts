@@ -10,6 +10,7 @@ import {
   classifyRunnerRegistration,
   inspectRunnerDurableState,
   listLiveRunnerSessionIds,
+  probeRunnerDurableRetention,
   scanRunnerRegistrations,
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
@@ -29,6 +30,7 @@ import {
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
 import { RunnerWriterLock } from "../../src/runner/runner_writer_lock.js";
+import { loadNodeSqlite } from "../../src/runner/node_sqlite.js";
 
 const temporaryDirectories: string[] = [];
 const writerLocks: RunnerWriterLock[] = [];
@@ -494,6 +496,65 @@ describe("runner process registry", () => {
       latestDurableSourceSeq: latestSourceSeq,
       acknowledgedThrough: latestSourceSeq,
     });
+    await expect(probeRunnerDurableRetention(scan.registrations[0]!)).resolves.toMatchObject({
+      localRetentionReason: null,
+    });
+  });
+
+  it.each(["bootstrap", "host checkpoint"] as const)(
+    "falls back to full inspection when %s integrity is damaged",
+    async (evidenceKind) => {
+      const { stateDirectory, paths, outbox, host } = await closedRunnerState(
+        `retention-probe-${evidenceKind.replaceAll(" ", "-")}`,
+        "completed",
+      );
+      outbox.close();
+      host.close();
+      const { DatabaseSync } = loadNodeSqlite();
+      const databasePath = evidenceKind === "bootstrap"
+        ? paths.databasePath
+        : runnerHostStatePath(paths.databasePath);
+      const database = new DatabaseSync(databasePath);
+      if (evidenceKind === "bootstrap") {
+        database.prepare(`
+          UPDATE runner_event_outbox SET payload_hash = ? WHERE record_kind = 'bootstrap'
+        `).run("0".repeat(64));
+      } else {
+        database.prepare(`
+          UPDATE runner_event_ack_checkpoint SET checkpoint_hash = ?
+        `).run("0".repeat(64));
+      }
+      database.close();
+      const fresh = (await scanRunnerRegistrations(stateDirectory)).registrations[0]!;
+      expect(fresh.closedTailState).toBeUndefined();
+
+      await expect(probeRunnerDurableRetention(fresh)).resolves.toMatchObject({
+        localRetentionReason: null,
+      });
+      await expect(inspectRunnerDurableState(fresh)).rejects.toThrow();
+    },
+  );
+
+  it("falls back when a missing bootstrap leaves a nonzero sqlite_sequence head", async () => {
+    const { stateDirectory, paths, outbox, host } = await closedRunnerState(
+      "retention-probe-orphaned-head",
+      "completed",
+    );
+    outbox.close();
+    host.close();
+    const { DatabaseSync } = loadNodeSqlite();
+    const database = new DatabaseSync(paths.databasePath);
+    database.prepare("DELETE FROM runner_event_outbox WHERE record_kind = 'bootstrap'").run();
+    database.close();
+    const fresh = (await scanRunnerRegistrations(stateDirectory)).registrations[0]!;
+
+    await expect(probeRunnerDurableRetention(fresh)).resolves.toMatchObject({
+      localRetentionReason: null,
+    });
+    await expect(inspectRunnerDurableState(fresh)).resolves.toMatchObject({
+      incompleteDurableWork: true,
+      registration: { bootstrap: null },
+    });
   });
 
   it.each(["missing", "stale", "invalid"] as const)(
@@ -778,8 +839,13 @@ describe("runner process registry", () => {
     });
     lifecycle.finish("execute-a", "closed", "2026-08-11T00:00:02.000Z");
     lifecycle.close();
-    const current = registration({ pidAlive: false, lifecycleState: "failed" });
+    const current = registration({ pidAlive: false, lifecycleState: "closed" });
     current.config = { ...current.config, paths };
+
+    await expect(probeRunnerDurableRetention(current)).resolves.toMatchObject({
+      localRetentionReason: null,
+      registration: { lifecycle: { execution_state: "closed" }, bootstrap: null },
+    });
 
     await expect(inspectRunnerDurableState(current)).resolves.toMatchObject({
       acknowledgedThrough: null,
@@ -791,6 +857,85 @@ describe("runner process registry", () => {
       registration: { bootstrap: null, lifecycle: { execution_state: "closed" } },
     });
   });
+
+  it("uses a fresh closed-tail ACK gap as local retention evidence without writes", async () => {
+    const { stateDirectory, paths, outbox, host } = await closedRunnerState("retention-probe-ack-lag");
+    await outbox.append({
+      session_id: "session-retention-probe-ack-lag",
+      event_type: "assistant_message",
+      payload: { type: "assistant_message", content: "pending" },
+      searchable_text: "pending",
+      created_at: "2026-08-11T00:00:04.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    });
+    outbox.close();
+    host.close();
+
+    const scan = await scanRunnerRegistrations(stateDirectory);
+    const fresh = scan.registrations[0]!;
+    expect(fresh.closedTailState).toMatchObject({ status: "requires_drain" });
+    const runnerBefore = await readFile(paths.databasePath);
+    const hostBefore = await readFile(runnerHostStatePath(paths.databasePath));
+
+    await expect(probeRunnerDurableRetention(fresh)).resolves.toMatchObject({
+      localRetentionReason: "final_ack_pending",
+      registration: { lifecycle: { execution_state: "closed" } },
+    });
+    expect(await readFile(paths.databasePath)).toEqual(runnerBefore);
+    expect(await readFile(runnerHostStatePath(paths.databasePath))).toEqual(hostBefore);
+  });
+
+  it.each(["ipc", "inbox"] as const)(
+    "retains an ACK-at-head runner with pending %s evidence",
+    async (pendingKind) => {
+      const label = `retention-probe-${pendingKind}`;
+      const { stateDirectory, paths, outbox, host } = await closedRunnerState(label);
+      if (pendingKind === "ipc") {
+        const payload = { type: "assistant_message", content: "applied event" };
+        const durable = await outbox.appendEngineFrame({
+          session_id: `session-${label}`,
+          event_type: "assistant_message",
+          payload,
+          searchable_text: "applied event",
+          created_at: "2026-08-11T00:00:04.000Z",
+          semantic_dedupe_key: null,
+          session_effect: null,
+        }, {
+          protocolVersion: 1,
+          channel: "event",
+          kind: "engine_event",
+          payload,
+        });
+        await outbox.acknowledge(outbox.streamId, durable.source_seq);
+        host.acknowledgeEvent({
+          streamId: outbox.streamId,
+          sessionId: `session-${label}`,
+          acknowledgedThrough: durable.source_seq,
+          latestDurableSourceSeq: durable.source_seq,
+        });
+      } else {
+        await outbox.stageIntervention({
+          interventionId: "pending-intervention",
+          message: { content: "pending" },
+          queued: true,
+          queuedAt: "2026-08-11T00:00:04.000Z",
+        });
+      }
+      outbox.close();
+      host.close();
+      const fresh = (await scanRunnerRegistrations(stateDirectory)).registrations[0]!;
+      expect(fresh.closedTailState).toMatchObject({ status: "fully_acknowledged" });
+      const runnerBefore = await readFile(paths.databasePath);
+      const hostBefore = await readFile(runnerHostStatePath(paths.databasePath));
+
+      await expect(probeRunnerDurableRetention(fresh)).resolves.toMatchObject({
+        localRetentionReason: "durable_replay_pending",
+      });
+      expect(await readFile(paths.databasePath)).toEqual(runnerBefore);
+      expect(await readFile(runnerHostStatePath(paths.databasePath))).toEqual(hostBefore);
+    },
+  );
 
   it("reports a terminal durable tail as pending when the orch ACK is behind", async () => {
     const stateDirectory = await temporaryDirectory("terminal-partial-ack");
@@ -852,7 +997,7 @@ describe("runner process registry", () => {
   });
 });
 
-async function closedRunnerState(label: string) {
+async function closedRunnerState(label: string, lifecycleState: "closed" | "completed" = "closed") {
   const sessionId = `session-${label}`;
   const stateDirectory = await temporaryDirectory(label);
   const paths = runnerProcessPaths(stateDirectory, sessionId);
@@ -885,7 +1030,7 @@ async function closedRunnerState(label: string) {
   });
   lifecycle.finish(
     `execute-${label}`,
-    "closed",
+    lifecycleState,
     "2026-08-11T00:00:03.000Z",
   );
   lifecycle.close();

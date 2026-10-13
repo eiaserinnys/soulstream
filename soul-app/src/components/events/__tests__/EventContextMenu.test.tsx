@@ -28,6 +28,15 @@ beforeEach(() => {
 });
 
 describe('EventContextMenu', () => {
+  test('명시적 getter는 메뉴 생성 뒤 바뀐 값도 실행 순간 복사하고 선택한다', async () => {
+    let text = '처음 값';
+    const select = jest.fn();
+    const actions = createEventMenuActions('session-1', event(), undefined, select, () => text);
+    text = '현재 값 278,400원';
+    await actions[0].run(); actions[1].run();
+    expect(Clipboard.setStringAsync).toHaveBeenLastCalledWith(text);
+    expect(select).toHaveBeenLastCalledWith({ kind: 'markdown', text });
+  });
   test('메시지 메뉴 순서는 내용 복사, 선택하기, 이벤트 주소 복사다', () => {
     const actions = createEventMenuActions(
       'session-1',

@@ -11,6 +11,7 @@ import type { NewSessionAgentProfileSource } from "../agent_profile_source.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { CatalogService } from "../catalog/catalog_service.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { SSEEventPayload } from "../engine/protocol.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { ChildCompletionConsumptionRecorder } from "../task/child_completion_consumption.js";
 import type { TaskExecutor } from "../task/task_executor.js";
@@ -27,7 +28,16 @@ export interface OrchProxyConfig {
   headers: Record<string, string>;
 }
 
+export interface ChatUiPublisher {
+  publish(
+    sessionId: string,
+    event: SSEEventPayload,
+    registrationId: string,
+  ): Promise<{ eventId: number }>;
+}
+
 export interface McpRuntime {
+  persistentReports?: Pick<import("../control_plane/persistent_report_host_client.js").PersistentReportHostClient, "put" | "remove">;
   nodeId: string;
   agentsConfigPath: string;
   db: SessionDB;
@@ -50,4 +60,6 @@ export interface McpRuntime {
   orch?: OrchProxyConfig;
   /** Present only when WORKTREE_MCP_ENABLED and startup validation succeeded. */
   worktreeService?: WorktreeService;
+  /** Durable event publisher used by the internal publish_chat_ui tool. */
+  chatUiPublisher?: ChatUiPublisher;
 }

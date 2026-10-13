@@ -7,10 +7,13 @@ import {
   type RunnerLifecycleRecord,
   type RunnerSqliteLifecycleOptions,
 } from "./sqlite_runner_lifecycle.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import { RunnerLifecycleSummaryWriter } from "./runner_lifecycle_summary_writer.js";
 
 export interface AuthoritativeRunnerLifecycleOptions {
   lifecycleSummaryOptions?: RunnerSqliteLifecycleOptions;
+  phaseObservation?: RunnerPhaseObservation;
+  sessionId?: string;
 }
 
 /**
@@ -37,7 +40,20 @@ export async function readAuthoritativeRunnerLifecycle(
       scavengeStaleTemps: false,
     },
   );
-  const durableLifecycle = readRunnerSqliteLifecycle(databasePath);
+  const durableLifecycle = readRunnerSqliteLifecycle(
+    databasePath,
+    options.phaseObservation
+      ? {
+        phaseObservation: options.phaseObservation,
+        ...(options.sessionId
+          ? { sessionId: options.sessionId }
+          : cachedLifecycle?.session_id
+            ? { sessionId: cachedLifecycle.session_id }
+            : {}),
+        label: "authoritative lifecycle",
+      }
+      : undefined,
+  );
   if (
     cacheNeedsRefresh
     || JSON.stringify(cachedLifecycle) !== JSON.stringify(durableLifecycle)

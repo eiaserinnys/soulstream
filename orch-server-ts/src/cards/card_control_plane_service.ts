@@ -1,4 +1,6 @@
 import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
+// 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
+import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
@@ -47,11 +49,15 @@ const shortTitle = (title: string) => [...title].slice(0, 60).join("");
 export class CardControlPlaneService {
   private readonly repo: CardRepository;
   private readonly core: CardMutationCore;
+  private readonly reports?: PersistentReportService;
   readonly mcpRead: CardMcpReadService;
   constructor(private readonly repoSql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort,
-    private readonly onMutation?: (change:CardMutationChange)=>void) {
+    private readonly onMutation?: (change:CardMutationChange)=>void,
+    onReportsChanged?: PublishPersistentReports,
+    private readonly warn: (message: string) => void = console.warn) {
     this.repo=new CardRepository(repoSql);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
+    this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged) : undefined;
     this.mcpRead=new CardMcpReadService(repoSql);
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
@@ -472,6 +478,11 @@ export class CardControlPlaneService {
         previousAssigneeSessionId=locked.assignee_session_id;
         await apply(sql,locked,eventId,clean);
         committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
+      },
+      afterCommit: async () => {
+        if (!this.reports || (operationType !== "answer_card_question" && committedCard?.status !== "done" && committedCard?.status !== "cancelled")) return;
+        try { await this.reports.pruneForCard(card.id); }
+        catch (error) { this.warn(`PAS report pruning failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
     if (!result.idempotent && notifyMutation) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});

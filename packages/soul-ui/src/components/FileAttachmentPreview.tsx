@@ -62,7 +62,7 @@ function ImagePreview({ file, initialOpen = false }: ImagePreviewProps) {
       src={objectUrl}
       alt={file.name}
       className="w-full h-full object-cover rounded outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    /><Dialog open={open} onOpenChange={setOpen}><DialogPopup><DialogTitle className="sr-only">{file.name}</DialogTitle><img src={objectUrl} alt={file.name} className="max-w-full object-contain"/></DialogPopup></Dialog></>
+    /><Dialog open={open} onOpenChange={setOpen}><DialogPopup className="image-viewer-popup"><DialogTitle className="sr-only">{file.name}</DialogTitle><img src={objectUrl} alt={file.name} className="max-w-full object-contain"/></DialogPopup></Dialog></>
   );
 }
 

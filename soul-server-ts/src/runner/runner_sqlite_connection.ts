@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { performance } from "node:perf_hooks";
 
 import { loadNodeSqlite } from "./node_sqlite.js";
+import type { RunnerDatabaseObservationContext } from "./runner_phase_observation.js";
 
 export const RUNNER_SQLITE_BUSY_TIMEOUT_MS = 25;
 // Preserve the former ~15.25s contention budget without holding the event loop:
@@ -68,29 +69,51 @@ let transactionObserverFailureWarned = false;
 export function openRunnerSqliteDatabase(
   databasePath: string,
   options: RunnerSqliteOpenOptions = {},
+  observation?: RunnerDatabaseObservationContext,
 ): DatabaseSync {
-  const { DatabaseSync } = loadNodeSqlite();
-  const database = new DatabaseSync(databasePath, {
-    readOnly: options.readOnly ?? false,
-  });
-  try {
-    database.exec(`PRAGMA busy_timeout = ${RUNNER_SQLITE_BUSY_TIMEOUT_MS}`);
-    return database;
-  } catch (error) {
-    database.close();
-    throw error;
-  }
+  const open = (): DatabaseSync => {
+    const { DatabaseSync } = loadNodeSqlite();
+    const database = new DatabaseSync(databasePath, {
+      readOnly: options.readOnly ?? false,
+    });
+    try {
+      database.exec(`PRAGMA busy_timeout = ${RUNNER_SQLITE_BUSY_TIMEOUT_MS}`);
+      return database;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  };
+  return observation
+    ? observation.phaseObservation.runSync("dbOpen", {
+      ...(observation.sessionId ? { sessionId: observation.sessionId } : {}),
+      databasePath,
+      ...(observation.label ? { label: observation.label } : {}),
+    }, open)
+    : open();
 }
 
-export function openRunnerSqliteReadOnlyDatabase(databasePath: string): DatabaseSync {
-  const database = openRunnerSqliteDatabase(databasePath, { readOnly: true });
-  try {
-    requireRunnerSqliteWal(database);
-    return database;
-  } catch (error) {
-    database.close();
-    throw error;
-  }
+export function openRunnerSqliteReadOnlyDatabase(
+  databasePath: string,
+  observation?: RunnerDatabaseObservationContext,
+): DatabaseSync {
+  const open = (): DatabaseSync => {
+    const database = openRunnerSqliteDatabase(databasePath, { readOnly: true });
+    try {
+      requireRunnerSqliteWal(database);
+      return database;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
+  };
+  return observation
+    ? observation.phaseObservation.runSync("dbOpen", {
+      ...(observation.sessionId ? { sessionId: observation.sessionId } : {}),
+      databasePath,
+      ...(observation.label ? { label: observation.label } : {}),
+    }, open)
+    : open();
 }
 
 export function ensureRunnerSqliteWal(database: DatabaseSync): void {

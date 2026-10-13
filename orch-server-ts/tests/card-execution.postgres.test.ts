@@ -4,7 +4,10 @@ import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page
 import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
+import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
+import { createCardDispatchRuntime } from "../src/cards/card_dispatch_runtime.js";
 import { CardExecutionService, confirmedCommandFailure, readCardExecutionRegistration, type CardExecutionOptions, type CardExecutionRequest } from "../src/cards/card_execution_service.js";
+import { createSessionOwnerResolver } from "../src/session/session_owner.js";
 import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
 import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
 import { PendingNodeCommandRejectedError, PendingNodeCommandTimeoutError } from "../src/node/pending_commands.js";
@@ -62,6 +65,29 @@ describe("user card execution transport",()=>{
     expect(operations.length).toBeGreaterThan(0);
     expect(operations.every(row=>row.actor_kind==='agent'&&row.actor_session_id==='agent-caller')).toBe(true);
   });
+  it("resolves a browser execution owner from the persisted card execution request",async()=>{
+    const ownerEmail="owner@example.test";
+    const f=await fixture();
+    const result=await f.service.execute({...input(f.cardId,"browser-owner"),actorUserId:ownerEmail});
+    expect(await h.sql`SELECT actor_user_id FROM card_execution_requests WHERE id=${result.execution.requestId}`)
+      .toEqual([{actor_user_id:ownerEmail}]);
+
+    const repository=new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql));
+    const resolve=createSessionOwnerResolver({
+      getSession:async id=>(await h.sql`SELECT * FROM sessions WHERE session_id=${id}`)[0]??null,
+      findUserByEmail:async email=>email===ownerEmail?{email,isAdmin:true,allowedFolderIds:[]}:null,
+      findExternalAgent:async()=>null,
+      findCardExecutionUser:sessionId=>repository.cardExecutionActorUser(sessionId),
+    });
+    expect(await resolve(result.execution.sessionId)).toEqual({
+      ownerEmail,
+      callerInfo:{source:"browser",email:ownerEmail},
+    });
+
+    const unregistered=await fixture();
+    const unknownResult=await unregistered.service.execute({...input(unregistered.cardId,"browser-unknown"),actorUserId:"unknown@example.test"});
+    expect(await resolve(unknownResult.execution.sessionId)).toBeNull();
+  });
   it("executes a draft for an external LLM and records a sessionless actor",async()=>{
     const f=await fixture();const result=await f.service.execute(llmInput(f.cardId,"llm-run"));
     expect(f.launch).toHaveBeenCalledTimes(1);
@@ -71,6 +97,85 @@ describe("user card execution transport",()=>{
     const operations=await h.sql`SELECT actor_kind,actor_session_id FROM folder_operations WHERE target_id=${f.cardId} AND operation_type='execute_card'`;
     expect(operations.length).toBeGreaterThan(0);
     expect(operations.every(row=>row.actor_kind==='llm'&&row.actor_session_id===null)).toBe(true);
+  });
+  it("sends verified owners on system execution commands and resolves direct browser executions",async()=>{
+    const ownerEmail="owner@example.test";
+    const repository=new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql));
+    const findUserByEmail=async(email:string)=>email===ownerEmail?{email,isAdmin:true,allowedFolderIds:[]}:null;
+    const resolveSessionOwner=createSessionOwnerResolver({
+      getSession:async id=>(await h.sql`SELECT * FROM sessions WHERE session_id=${id}`)[0]??null,
+      findUserByEmail,
+      findExternalAgent:async()=>null,
+      findCardExecutionUser:sessionId=>repository.cardExecutionActorUser(sessionId),
+    });
+    const createSession=vi.fn((payload:any)=>({node:{nodeId:"node"},command:{payload},modelPresetId:"model"}));
+    const routeExisting=vi.fn(async(payload:any)=>({node:{nodeId:"node"},command:{payload}}));
+    const bridge={sendPendingCommand:async(routed:any)=>{
+      const payload=routed.command.payload;
+      if(payload.type==="create_session"){
+        await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset,metadata)
+          VALUES(${payload.agentSessionId},'node','profile','initializing',${payload.cardId},'work','model',${h.sql.json([{type:"caller_info",value:payload.caller_info}])})
+          ON CONFLICT(session_id) DO NOTHING`;
+        const proof={registrationId:`registration-${payload.agentSessionId}`,executionCommandId:`command-${payload.agentSessionId}`};
+        await recordWorkReceipt(h,payload.agentSessionId,"running",proof);
+        return {type:"session_created",agentSessionId:payload.agentSessionId,status:"ok"};
+      }
+      if(payload.type==="ensure_session_running"){
+        return {state:"started",execution:{registrationId:`registration-${payload.agentSessionId}`,executionCommandId:`command-${payload.agentSessionId}`}};
+      }
+      return {type:"ack",status:"ok"};
+    }};
+    const runtime=await createCardDispatchRuntime({
+      sqlResolver:{resolveSql:async()=>h.liveSql,close:async()=>undefined},
+      router:{selectNodeForCreate:({nodeId,profileId,modelPresetId}:{nodeId:string;profileId:string;modelPresetId?:string})=>({nodeId,profileId,modelPresetId:modelPresetId??"model"}),
+        createSession,routeExistingSessionPendingCommand:routeExisting,waitForCreatedSession:async()=>true} as any,
+      bridge:bridge as any,
+      availability:{resolveForNode:()=>({available:true}),requireAvailable:()=>undefined} as any,
+      notifier:{} as any,admin:{} as any,broadcaster:{append:()=>undefined} as any,warn:vi.fn(),
+      onFolderHeaderUpdated:async()=>undefined,usageSnapshot:()=>({}) as any,ensureSystemFolder:async()=>undefined,validateFolder:async()=>true,
+      resolveSessionOwner,findUserByEmail,
+    });
+    try{
+      const execution=await runtime.executionServiceProvider();
+      await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset,metadata) VALUES
+        ('owned-caller','node','profile','running','model',${h.sql.json([{type:"caller_info",value:{source:"browser",email:ownerEmail}}])}),
+        ('ownerless-caller','node','profile','running','model',${h.sql.json([{type:"caller_info",value:{source:"agent"}}])})`;
+
+      const ownedCard=(await cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,folderId:"work",title:"에이전트 실행",request:"수행",
+        assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
+      const ownedCurrent=(await cards.getCard(ownedCard))!.card;
+      await execution.execute({actorKind:"agent",actorSessionId:"owned-caller",actorUserId:null,cardId:ownedCard,expectedVersion:ownedCurrent.version,idempotencyKey:"owned-execution"});
+      expect(createSession).toHaveBeenLastCalledWith(expect.objectContaining({caller_info:{source:"system",email:ownerEmail}}),expect.anything());
+
+      const ownerlessCard=(await cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,folderId:"work",title:"주인 없는 실행",request:"수행",
+        assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
+      const ownerlessCurrent=(await cards.getCard(ownerlessCard))!.card;
+      await execution.execute({actorKind:"agent",actorSessionId:"ownerless-caller",actorUserId:null,cardId:ownerlessCard,expectedVersion:ownerlessCurrent.version,idempotencyKey:"ownerless-execution"});
+      expect(createSession).toHaveBeenLastCalledWith(expect.objectContaining({caller_info:{source:"system"}}),expect.anything());
+      expect(createSession.mock.calls.at(-1)![0].caller_info).not.toHaveProperty("email");
+
+      const resumeCard=(await cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,folderId:"work",title:"에이전트 재개",request:"수행",
+        assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
+      await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
+        VALUES('existing-card-owner','node','profile','completed',${resumeCard},'work','model')`;
+      await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id='existing-card-owner' WHERE id=${resumeCard}`;
+      const resumeCurrent=(await cards.getCard(resumeCard))!.card;
+      await execution.execute({actorKind:"agent",actorSessionId:"owned-caller",actorUserId:null,cardId:resumeCard,expectedVersion:resumeCurrent.version,idempotencyKey:"owned-resume"});
+      expect(routeExisting).toHaveBeenCalledWith(expect.objectContaining({caller_info:{source:"system",email:ownerEmail}}));
+
+      const browserCard=(await cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,folderId:"work",title:"사람 실행",request:"수행",
+        assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
+      const browserCurrent=(await cards.getCard(browserCard))!.card;
+      const browserExecution=await execution.execute({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,cardId:browserCard,
+        expectedVersion:browserCurrent.version,idempotencyKey:"browser-execution"});
+      const browserPayload=createSession.mock.calls.at(-1)![0];
+      expect(browserPayload.caller_info).toEqual({source:"browser"});
+      expect(await h.sql`SELECT actor_user_id FROM card_execution_requests WHERE id=${browserExecution.execution.requestId}`)
+        .toEqual([{actor_user_id:ownerEmail}]);
+      expect(await resolveSessionOwner(browserExecution.execution.sessionId)).toEqual({
+        ownerEmail,callerInfo:{source:"browser",email:ownerEmail},
+      });
+    }finally{await runtime.dispatcher.drain();}
   });
   it.each(["running","done"] as const)("refuses agent execution while a card is %s",async status=>{
     const f=await fixture();

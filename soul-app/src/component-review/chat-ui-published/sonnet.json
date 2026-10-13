@@ -1,0 +1,212 @@
+{
+  "id": 15,
+  "event_type": "assistant_message",
+  "payload": {
+    "content": "**팀 요금 비교**\n\n인원수: 8\n\n연간 결제 (20% 할인): 아니오\n\n**월 요금: 232,000원**\n\n인당 월 29,000원 기준, 인원수 8명\n\n[이 조건으로 질문 이어 가기]",
+    "ui": {
+      "hash": "a9a314dbbfd5e9a70a851cbb25a79a7767fbdf204f3d513c6e66ca6252c92ed2",
+      "ui_id": "ui_dfee7bbffdfbdc6da160cea6005ebfdd",
+      "document": {
+        "body": [
+          {
+            "id": "seatsSlider",
+            "kind": "slider",
+            "field": "seats",
+            "label": "인원수"
+          },
+          {
+            "id": "annualCheck",
+            "kind": "checkbox",
+            "field": "annual",
+            "label": "연간 결제 (20% 할인)"
+          },
+          {
+            "id": "result",
+            "kind": "text",
+            "parts": [
+              "월 요금: ",
+              {
+                "unit": "won",
+                "value": {
+                  "computed": "monthly"
+                },
+                "digits": 0,
+                "format": "number"
+              }
+            ],
+            "emphasis": "strong"
+          },
+          {
+            "id": "note",
+            "kind": "caption",
+            "parts": [
+              "인당 월 29,000원 기준, 인원수 ",
+              {
+                "unit": "none",
+                "value": {
+                  "field": "seats"
+                },
+                "digits": 0,
+                "format": "number"
+              },
+              "명"
+            ]
+          },
+          {
+            "id": "actions",
+            "kind": "group",
+            "layout": "row",
+            "children": [
+              {
+                "id": "copyBtn",
+                "kind": "button",
+                "label": "복사",
+                "action": {
+                  "type": "copy"
+                }
+              },
+              {
+                "id": "resetBtn",
+                "kind": "button",
+                "label": "초기화",
+                "action": {
+                  "type": "reset"
+                }
+              },
+              {
+                "id": "askBtn",
+                "kind": "button",
+                "label": "이 조건으로 질문 이어 가기",
+                "action": {
+                  "type": "compose",
+                  "parts": [
+                    "팀 요금 조건: ",
+                    {
+                      "unit": "none",
+                      "value": {
+                        "field": "seats"
+                      },
+                      "digits": 0,
+                      "format": "number"
+                    },
+                    "명, 월 요금 ",
+                    {
+                      "unit": "won",
+                      "value": {
+                        "computed": "monthly"
+                      },
+                      "digits": 0,
+                      "format": "number"
+                    },
+                    "입니다. 이어서 질문합니다: "
+                  ]
+                }
+              }
+            ]
+          }
+        ],
+        "data": {
+          "price": {
+            "unit": "won",
+            "value": 29000
+          },
+          "discount": {
+            "unit": "none",
+            "value": 0.2
+          }
+        },
+        "title": "팀 요금 비교",
+        "units": {
+          "won": {
+            "dims": {
+              "currency:KRW": 1
+            },
+            "scale": 1,
+            "symbol": "원"
+          },
+          "none": {
+            "dims": {},
+            "scale": 1,
+            "symbol": ""
+          }
+        },
+        "fields": {
+          "seats": {
+            "max": 20,
+            "min": 1,
+            "step": 1,
+            "type": "number",
+            "unit": "none",
+            "initial": 8
+          },
+          "annual": {
+            "type": "boolean",
+            "initial": false
+          }
+        },
+        "sources": {},
+        "computed": {
+          "factor": {
+            "op": "if",
+            "args": [
+              {
+                "op": "ref",
+                "ref": {
+                  "field": "annual"
+                }
+              },
+              {
+                "op": "sub",
+                "args": [
+                  {
+                    "op": "const",
+                    "unit": "none",
+                    "value": 1
+                  },
+                  {
+                    "op": "ref",
+                    "ref": {
+                      "data": "discount"
+                    }
+                  }
+                ]
+              },
+              {
+                "op": "const",
+                "unit": "none",
+                "value": 1
+              }
+            ]
+          },
+          "monthly": {
+            "op": "mul",
+            "args": [
+              {
+                "op": "ref",
+                "ref": {
+                  "data": "price"
+                }
+              },
+              {
+                "op": "ref",
+                "ref": {
+                  "field": "seats"
+                }
+              },
+              {
+                "op": "ref",
+                "ref": {
+                  "computed": "factor"
+                }
+              }
+            ]
+          }
+        },
+        "assumptions": [],
+        "schema_version": 1
+      },
+      "revision": 1,
+      "schema_version": 1
+    }
+  }
+}
