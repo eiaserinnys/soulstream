@@ -312,7 +312,9 @@ test('removing the focused sheet focuses the accessible replacement title, not i
       <PersistentReportPager {...report} api={api} onSelect={report.select} onDismiss={report.dismiss} onFocusComposer={jest.fn()} />
     </ChatUiControllerProvider>;
   }
-  const screen = render(<Harness />, { createNodeMock: element => ({ props: element.props }) });
+  const screen = render(<Harness />, { createNodeMock: element => ({
+    props: element.props, measureLayout: jest.fn(),
+  }) });
   measurePersistentReports(screen);
   AccessibilityInfo.setAccessibilityFocus(11);
   focus.mockClear();
