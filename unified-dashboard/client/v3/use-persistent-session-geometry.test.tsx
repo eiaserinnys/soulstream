@@ -9,16 +9,17 @@ it('keeps the portrait and toggle on the composer baseline while the shared anch
  let nextFrame:FrameRequestCallback|undefined;vi.stubGlobal('requestAnimationFrame',(cb:FrameRequestCallback)=>{nextFrame=cb;return 1});vi.stubGlobal('cancelAnimationFrame',vi.fn());
  vi.stubGlobal('matchMedia',()=>({matches:true,addEventListener(){},removeEventListener(){}}));
  const app=createRef<HTMLDivElement>(),header=createRef<HTMLElement>(),main=createRef<HTMLElement>(),composer=createRef<HTMLDivElement>();let layout:any;
- let anchorTop=400;
+ let anchorTop=400, overflowOffset=0;
  const rect=(left:number,t:number,width:number,height:number)=>({left,top:t,width,height,right:left+width,bottom:t+height,x:left,y:t,toJSON(){}});
- function Harness(){layout=usePersistentSessionGeometry({app,header,main,composer,enabled:true,showCharacter:true});return <div ref={app}><header ref={header}/><main ref={main}><div ref={composer}><div data-slot="chat-input-composer" style={{paddingBottom:'4px'}}><button data-testid="send-button"/></div></div></main></div>}
+ function Harness(){layout=usePersistentSessionGeometry({app,header,main,composer,enabled:true,showCharacter:true});return <div ref={app}><header ref={header}/><main ref={main}><div data-slot="chat-root"><div data-testid="chat-input"><div ref={composer}><div data-slot="chat-input-composer" style={{paddingBottom:'4px'}}><button data-testid="send-button"/></div></div></div></div></main></div>}
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host);await act(async()=>root.render(<Harness/>));
  app.current!.getBoundingClientRect=()=>rect(0,0,1440,900);header.current!.getBoundingClientRect=()=>rect(0,0,1440,76);main.current!.getBoundingClientRect=()=>rect(460,76,520,824);
  composer.current!.getBoundingClientRect=()=>rect(460,anchorTop,520,900-anchorTop);
- composer.current!.querySelector('[data-slot="chat-input-composer"]')!.getBoundingClientRect=()=>rect(460,868,520,32);
+ composer.current!.querySelector('[data-slot="chat-input-composer"]')!.getBoundingClientRect=()=>rect(460,868+overflowOffset,520,32);
  composer.current!.querySelector('button')!.getBoundingClientRect=()=>rect(0,0,32,32);
- act(()=>nextFrame!(0));expect(layout.body.width).toBe(184);expect(layout.lineY).toBe(899);expect(layout.body.top+layout.body.height).toBe(900);expect(layout.toggle.top+layout.toggle.height/2).toBe(879);
+ host.querySelector<HTMLElement>('[data-testid="chat-input"]')!.getBoundingClientRect=()=>rect(460,anchorTop,520,900+overflowOffset-anchorTop);
+ act(()=>{resize();nextFrame!(0)});expect(layout.body.width).toBe(184);expect(layout.lineY).toBe(899);expect(layout.body.top+layout.body.height).toBe(900);expect(layout.toggle.top+layout.toggle.height/2).toBe(879);
  const first={lineY:layout.lineY,body:layout.body,toggle:layout.toggle};
- anchorTop=200;act(()=>{resize();nextFrame!(0)});expect(layout).toMatchObject(first);
+ overflowOffset=35; anchorTop=200;act(()=>{resize();nextFrame!(0)});expect(layout).toMatchObject(first);
  act(()=>root.unmount());host.remove();vi.unstubAllGlobals();
 });

@@ -181,6 +181,18 @@ describe("useChatInputSend pending message", () => {
     expect(useDashboardStore.getState().pendingChatSends['session-1']?.persistentReportSource).toBeUndefined();
   });
 
+  it.each(['reply', 'cancel'] as const)('acknowledges the retained report %s marker through the ordinary chat retry', async kind => {
+    const contextItems = [{ key: kind === 'reply' ? 'persistent_report_reply' : 'persistent_report_visible', content: { key: 'report-a', option: '응' } }];
+    const failed: PendingChatSend = { id: 'report-retry', status: 'failed', text: '확인: 응', messageText: '확인: 응', attachmentPaths: [], attachments: [], mode: 'intervention', contextItems,
+      persistentReportOperation: { key: 'report-a', updatedAt: 'first', kind } };
+    useDashboardStore.getState().setPendingChatSend('session-1', failed);
+    vi.mocked(submitIntervention).mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
+    render();
+    await act(async () => latest!.retry('session-1', failed));
+    expect(useDashboardStore.getState().pendingChatSends['session-1']).toMatchObject({ id: failed.id, persistentReportOperation: { ...failed.persistentReportOperation, acknowledged: true } });
+    expect(vi.mocked(submitIntervention).mock.calls[0][0]).toMatchObject({ contextItems });
+  });
+
   it.each([false, true])('captures report context and preserves it through retry (resume=%s)', async isFinished => {
     args.isFinished = isFinished;
     const contextItems = [{ key: 'persistent_report_reply', content: { key: 'report-a', option: '응' } }];

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { InternalLinkProvider } from '@seosoyoung/soul-ui/components/InternalLinkProvider';
 import { PersistentReportDeck } from './PersistentReportDeck';
-import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
+import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 
@@ -18,24 +18,31 @@ vi.mock('@seosoyoung/soul-ui/components/LiquidGlassProvider', () => ({ useGlassS
 const one: PersistentReportEntry = { key: 'one', kind: 'ask', title: '확인', card_numbers: [270], context: '맥락', action: '[출처](https://example.test/)', options: ['응'], state: 'open', answer: '', updated_at: 'first' };
 const two = { ...one, key: 'two', kind: 'see' as const, options: [], title: '볼 장' };
 let root: Root; let host: HTMLDivElement;
-const append = vi.fn().mockReturnValue({ ok: true }); const focusInput = vi.fn(); const openTarget = vi.fn();
+const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
+let portalTarget: HTMLDivElement | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
 const render = () => act(async () => root.render(<InternalLinkProvider internalOrigins={['https://example.test']} openTarget={openTarget}><PersistentReportProvider sessionId="a" entries={entries}>
-  <PersistentReportDeck sessionId="a" appendGeneratedText={append} focusInput={focusInput} dismissReport={dismiss} />
+  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss} seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : undefined} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
+let contentHeight = 0;
 beforeEach(async () => {
-  vi.clearAllMocks(); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  vi.clearAllMocks(); contentHeight = 100; portalTarget = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) { return { height: this.classList.contains('pas-report-content') ? contentHeight : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect; });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
-it('renders only the current sheet into the accessible/tab surface, navigates by arrows and appends without sending', async () => {
+afterEach(() => { act(() => root.unmount()); host.remove(); Reflect.deleteProperty(document, 'fonts'); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('renders only the current sheet into the accessible/tab surface, navigates by arrows and sends directly', async () => {
   expect(host.querySelector('[data-testid="report-sheet-two"]')?.getAttribute('aria-hidden')).toBe('true');
   await act(async () => button('응').click());
-  expect(append).toHaveBeenCalledWith('a', '확인: 응');
+  expect(transport).toHaveBeenCalledWith(expect.objectContaining({ sessionKey: 'a', text: '확인: 응' }));
+  expect(host.querySelector('.pas-report-kind')).toBeNull();
+  expect(host.querySelector('[data-current="true"]')?.getAttribute('aria-label')).toContain('답 받음');
+  expect(host.querySelector('.pas-report-footer')).not.toBeNull();
+  expect(host.querySelector('.pas-report-heading')?.firstElementChild?.tagName).toBe('H2');
   const track = host.querySelector<HTMLElement>('[data-testid="report-track"]')!;
   track.focus();
   await act(async () => track.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
@@ -151,4 +158,61 @@ it('preserves the viewed key when a preceding sheet disappears and focuses the n
   expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe('1 / 2');
   entries = [entries[1]]; await render();
   expect(document.activeElement?.getAttribute('data-testid')).toBe('report-sheet-three');
+});
+
+it.each([false, true])('keeps composer focus after a focused control disappears, including portal=%s', async portal => {
+  const outside = document.createElement('input'); document.body.append(outside);
+  if (portal) { portalTarget = document.createElement('div'); document.body.append(portalTarget); await render(); }
+  const deckHost = portalTarget ?? host;
+  const focused = deckHost.querySelector<HTMLButtonElement>('[data-current="true"] button')!;
+  focused.focus();
+  // Native removal of the focused control supplies no deck blur event.
+  focused.remove(); expect(document.activeElement).toBe(document.body);
+  outside.focus();
+  entries = [two]; await render();
+  expect(document.activeElement).toBe(outside);
+  outside.remove(); portalTarget?.remove();
+});
+
+it('aligns the selected second sheet after moving into and out of the portrait portal', async () => {
+  await act(async () => button('다음 장').click());
+  portalTarget = document.createElement('div'); document.body.append(portalTarget);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
+  await render(); expect(portalTarget.querySelector<HTMLElement>('.pas-report-track')!.scrollLeft).toBe(340);
+  const target = portalTarget; portalTarget = null; await render(); expect(host.querySelector<HTMLElement>('.pas-report-track')!.scrollLeft).toBe(340); target.remove();
+});
+
+it('settles at a page boundary without scrollend and resets a lost scroll on placement/removal', async () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
+  await render(); const height = () => host.querySelector<HTMLElement>('.pas-report')!.style.height;
+  expect(height()).toBe('134px');
+  await act(async () => button('다음 장').click());
+  contentHeight = 200; entries = entries.map(entry => ({ ...entry, context: '새 내용' })); await render(); expect(height()).toBe('134px');
+  await act(async () => host.querySelector('.pas-report-track')!.dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('234px');
+  await act(async () => button('앞 장').click());
+  entries = []; await render(); entries = [one, two]; contentHeight = 300; await render(); expect(height()).toBe('334px');
+});
+it('retains height across the server answered revision but discards it when content is rewritten',async()=>{
+ entries=[one]; await render();
+ const height=()=>host.querySelector<HTMLElement>('.pas-report')!.style.height;
+ expect(height()).toBe('134px');
+ contentHeight=40; entries=[{...one,state:'answered',answer:'응',updated_at:'server-answered'}]; await render();
+ expect(height()).toBe('134px');
+ entries=[{...entries[0],context:'새 맥락',updated_at:'rewritten'}]; await render(); expect(height()).toBe('74px');
+});
+
+it('hides the whole deck with opacity until its initial font settles', async () => {
+  act(() => root.unmount()); root = createRoot(host);
+  let finish!: () => void;
+  Object.defineProperty(document, 'fonts', { configurable: true, value: {
+    check: () => false, load: () => new Promise<void>(resolve => { finish = resolve; }),
+    ready: new Promise(() => {}), addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  } });
+  await render();
+  const deck = host.querySelector<HTMLElement>('[data-testid="report-deck"]')!;
+  expect(deck.style.opacity).toBe('0'); expect(deck.style.visibility).toBe('');
+  expect(deck.style.transitionProperty).toBe('none'); expect(deck.hasAttribute('inert')).toBe(true); expect(deck.getAttribute('aria-hidden')).toBe('true');
+  await act(async () => finish());
+  expect(deck.style.opacity).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
 });
