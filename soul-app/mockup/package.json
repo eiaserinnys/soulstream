@@ -1,0 +1,5 @@
+{
+  "name": "soul-app-mockup",
+  "private": true,
+  "main": "../mockup-entry.tsx"
+}
