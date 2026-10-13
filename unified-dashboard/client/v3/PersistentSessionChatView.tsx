@@ -22,6 +22,7 @@ type PersistentSessionChatViewProps = {
 export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySettings = true, showReport = false, reportEntries, reportSeat, dismissReport, ...props }: PersistentSessionChatViewProps) {
   const storedReport = useDashboardStore(state => showReport ? state.persistentReports[sessionId] ?? EMPTY_REPORT : EMPTY_REPORT);
   const entries = reportEntries ?? storedReport;
+  const listedSettings = useDashboardStore(state => !storeScope && state.persistentSessionDisplaySettings?.sessionId === sessionId);
   const generated = useRef<ChatUiComposerHandle | null>(null);
   const operations = useRef<ChatUiOperationsHandle | null>(null);
   const registerOperations = useCallback<RegisterChatUiOperations>(handle => { operations.current = handle; }, []);
@@ -39,7 +40,8 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
     if (!loadDisplaySettings) return;
     let active = true;
     setSettledSettingsSession(null);
-    setDisplaySettings(sessionId, null);
+    const hasSettings = () => (storeScope?.store.getState() ?? useDashboardStore.getState()).persistentSessionDisplaySettings?.sessionId === sessionId;
+    if (!hasSettings()) setDisplaySettings(sessionId, null);
     const reportBaseline = useDashboardStore.getState().persistentReports[sessionId];
     void createPersistentSessionsApi().get(sessionId).then(({ session }) => {
       if (!active) return;
@@ -47,13 +49,13 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
       if (session.persistent_report !== undefined) useDashboardStore.getState().setPersistentReport(sessionId, session.persistent_report, { current: reportBaseline });
       setSettledSettingsSession(sessionId);
     }).catch(() => {
-      if (active) { setDisplaySettings(sessionId, null); setSettledSettingsSession(sessionId); }
+      if (active) { if (!hasSettings()) setDisplaySettings(sessionId, null); setSettledSettingsSession(sessionId); }
     });
     return () => { active = false; };
-  }, [loadDisplaySettings, sessionId, setDisplaySettings]);
+  }, [loadDisplaySettings, sessionId, setDisplaySettings, storeScope]);
   if (!showReport) return <ChatView {...props} storeScope={storeScope} />;
   return <PersistentReportProvider sessionId={sessionId} entries={visibleEntries}>
-    {(!loadDisplaySettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss} />}
+    {(!loadDisplaySettings || listedSettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss} />}
     <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
   </PersistentReportProvider>;
 }

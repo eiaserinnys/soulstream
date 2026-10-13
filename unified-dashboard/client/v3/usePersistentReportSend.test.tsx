@@ -12,7 +12,7 @@ const notify = vi.fn(); const transport = vi.fn();
 function Harness() { send = usePersistentReportSend('a', notify, transport); return null; }
 beforeEach(async () => { vi.clearAllMocks(); useDashboardStore.getState().setPendingChatSend('a', null); transport.mockReset(); transport.mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); host = document.createElement('div'); document.body.append(host); root = createRoot(host); await act(async () => root.render(<PersistentReportProvider sessionId="a" entries={[entry]}><Harness/></PersistentReportProvider>)); });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
-it('sends directly with a reply receipt, preserves drafts, and allows cancellation only after acknowledgement', async () => {
+it('preserves drafts and allows cancellation only after the server publishes its answered revision', async () => {
   let resolve!: (value: unknown) => void; transport.mockReturnValue(new Promise(yes => { resolve = yes; }));
   useDashboardStore.getState().setDraft('a', '쓰던 글');
   let request!: Promise<void>;
@@ -21,7 +21,16 @@ it('sends directly with a reply receipt, preserves drafts, and allows cancellati
   expect(send.canCancel(entry)).toBe(false);
   expect(useDashboardStore.getState().drafts.a).toBe('쓰던 글');
   await act(async () => { resolve({ ok: true, delivered: true }); await request; });
-  expect(send.canCancel(entry)).toBe(true);
+  expect(send.canCancel(entry)).toBe(false);
+  const confirmed={...entry,state:'answered' as const,answer:'응',updated_at:'server-answered'};
+  await act(async()=>root.render(<PersistentReportProvider sessionId="a" entries={[confirmed]}><Harness/></PersistentReportProvider>));
+  expect(send.canCancel(confirmed)).toBe(true);
+  await act(async()=>useDashboardStore.getState().setPendingChatSend('a',null));
+  await act(async()=>send.cancel(confirmed));
+  expect(useDashboardStore.getState().pendingChatSends.a.persistentReportOperation).toMatchObject({kind:'cancel',updatedAt:'server-answered'});
+  await act(async()=>useDashboardStore.getState().setPendingChatSend('a',null));
+  await act(async()=>root.render(<PersistentReportProvider sessionId="a" entries={[{...confirmed}]}><Harness/></PersistentReportProvider>));
+  expect(send.cancelRequested(confirmed)).toBe(true);
 });
 it('disables while any message is sending, and explains a retained unrelated failure on the existing notice', async () => {
   const pending = { id: 'other', status: 'sending' as const, text: '다른 글', messageText: '다른 글', mode: 'intervention' as const, attachments: [], attachmentPaths: [] };
@@ -37,7 +46,7 @@ it('retains failures in the chat slot and retries the same answer with the same 
   const failed = useDashboardStore.getState().pendingChatSends.a;
   expect(failed.status).toBe('failed'); expect(send.canCancel(entry)).toBe(false); expect(notify).not.toHaveBeenCalled();
   await act(async () => send.reply(entry, '응'));
-  expect(useDashboardStore.getState().pendingChatSends.a).toMatchObject({ id: failed.id, status: 'sending' }); expect(send.canCancel(entry)).toBe(true);
+  expect(useDashboardStore.getState().pendingChatSends.a).toMatchObject({ id: failed.id, status: 'sending' }); expect(send.canCancel(entry)).toBe(false);
 });
 it('treats unknown delivery as failure', async () => {
   transport.mockResolvedValueOnce({ ok: true, delivered: null }); await act(async () => send.reply(entry, '응'));
@@ -64,9 +73,9 @@ it.each(['reply', 'cancel'] as const)('follows existing chat retry acknowledgeme
   expect(send.canCancel(entry)).toBe(false);
   if (kind === 'cancel') expect(send.cancelRequested(entry)).toBe(true);
   await act(async () => useDashboardStore.getState().setPendingChatSend('a', { ...failed, status: 'sending', persistentReportOperation: { ...failed.persistentReportOperation!, acknowledged: true } }));
-  if (kind === 'reply') expect(send.canCancel(entry)).toBe(true);
+  if (kind === 'reply') expect(send.canCancel(entry)).toBe(false);
   await act(async () => useDashboardStore.getState().setPendingChatSend('a', null));
-  expect(kind === 'reply' ? send.canCancel(entry) : send.cancelRequested(entry)).toBe(true);
+  expect(kind === 'reply' ? send.canCancel(entry) : send.cancelRequested(entry)).toBe(kind === 'cancel');
   await act(async () => root.render(<PersistentReportProvider sessionId="a" entries={[{ ...entry, updated_at: 'new' }]}><Harness/></PersistentReportProvider>));
   expect(kind === 'reply' ? send.canCancel(entry) : send.cancelRequested(entry)).toBe(false);
 });

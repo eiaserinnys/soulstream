@@ -5,17 +5,18 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersistentSessionChatView } from "./PersistentSessionChatView";
 
-const { getSession, setDisplaySettings } = vi.hoisted(() => ({
+const { getSession, setDisplaySettings, settingsState } = vi.hoisted(() => ({
   getSession: vi.fn(),
   setDisplaySettings: vi.fn(),
+  settingsState: { current: null as {sessionId:string} | null },
 }));
 
 vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
   return {
     ChatView: () => React.createElement("div", { "data-testid": "chat-view" }),
-    useDashboardStore: Object.assign((selector: (state: { setPersistentSessionDisplaySettings: typeof setDisplaySettings }) => unknown) => selector({ setPersistentSessionDisplaySettings: setDisplaySettings, persistentReports: {} } as any), {
-      getState: () => ({ persistentReports: {}, setPersistentReport: vi.fn() }),
+    useDashboardStore: Object.assign((selector: (state: { setPersistentSessionDisplaySettings: typeof setDisplaySettings }) => unknown) => selector({ setPersistentSessionDisplaySettings: setDisplaySettings, persistentReports: {}, persistentSessionDisplaySettings: settingsState.current } as any), {
+      getState: () => ({ persistentReports: {}, persistentSessionDisplaySettings: settingsState.current, setPersistentReport: vi.fn() }),
     }),
   };
 });
@@ -34,6 +35,7 @@ describe("PersistentSessionChatView", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    settingsState.current=null;
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
@@ -96,5 +98,12 @@ describe("PersistentSessionChatView", () => {
     getSession.mockReturnValue(new Promise(()=>{}));
     act(()=>root?.render(<PersistentSessionChatView sessionId="b" showReport reportSeat={seat}/>));
     expect(host?.querySelector('[data-testid="report-deck"]')).toBeNull();
+  });
+  it.each(['hang','failure'])('keeps listed settings and renders without waiting for a GET that will %s',async outcome=>{
+    settingsState.current={sessionId:'listed'};
+    getSession.mockReturnValue(outcome==='hang'?new Promise(()=>{}):Promise.reject(new Error('offline')));
+    await act(async()=>root?.render(<PersistentSessionChatView sessionId="listed" showReport/>));
+    expect(host?.querySelector('[data-testid="report-deck"]')).not.toBeNull();
+    expect(setDisplaySettings).not.toHaveBeenCalledWith('listed',null);
   });
 });

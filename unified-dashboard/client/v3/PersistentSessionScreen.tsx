@@ -260,11 +260,13 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
         else if (result.sessions.length === 1) navigateDashboard(`/persistent/${encodeURIComponent(result.sessions[0]!.session_id)}`, true);
         return;
       }
-      if (!result.sessions.some(session => session.session_id === sessionId && session.persistent)) throw new Error('영구 세션을 찾을 수 없습니다.');
+      const selectedSession = result.sessions.find(session => session.session_id === sessionId && session.persistent);
+      if (!selectedSession) throw new Error('영구 세션을 찾을 수 없습니다.');
       const summary = await resolveSessionForOpen({ sessionId, fetchSessions: orchestratorSessionProvider.fetchSessions });
       if (!current) return;
       if (!summary) throw new Error('영구 세션의 대화를 불러오지 못했습니다.');
       activateRunSession(summary, useDashboardStore.getState());
+      useDashboardStore.getState().setPersistentSessionDisplaySettings(sessionId, selectedSession.settings);
       if (user?.email) setPersistentSessionLastSessionId(user.email, sessionId);
       setActivatedId(sessionId);
     }).catch(caught => { if (current) setError(caught instanceof Error ? caught.message : String(caught)); })

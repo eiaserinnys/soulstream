@@ -33,14 +33,15 @@ it('discards earlier larger measurements when content shrinks', async () => {
   await render(300); expect(sizing.height).toBe(374); await render(100); expect(sizing.height).toBe(174);
 });
 
-it('preserves answered A when only B changes, and drops A on its own new publication',async()=>{
+it('preserves answered A across timestamp changes and B updates, and drops A when its content changes',async()=>{
   Object.defineProperty(document,'fonts',{configurable:true,value:{ready:Promise.resolve(),addEventListener:vi.fn(),removeEventListener:vi.fn()}});
-  function Publications({answered=false,aUpdated='first',bUpdated='first'}:{answered?:boolean;aUpdated?:string;bUpdated?:string}){
-    const ref=useRef<HTMLElement|null>(null); sizing=useReportDeckHeight(ref,JSON.stringify([aUpdated,bUpdated]),'a');
-    return <section ref={ref} style={{height:sizing.height}}>{[['A',aUpdated,answered?80:300,answered],['B',bUpdated,100,false]].map(([key,updated,height,answer])=><article key={String(key)} className="pas-report-sheet" data-publication={JSON.stringify(['a',key,updated])} data-answered={answer} style={{paddingTop:12,paddingBottom:16,rowGap:12}}><div className="pas-report-content" data-height={height}/><div className="pas-report-footer" data-height="32"/></article>)}</section>;
+  function Publications({answered=false,aUpdated='first',bUpdated='first',aContent='original'}:{answered?:boolean;aUpdated?:string;bUpdated?:string;aContent?:string}){
+    const ref=useRef<HTMLElement|null>(null); sizing=useReportDeckHeight(ref,JSON.stringify([aUpdated,bUpdated,aContent]),'a');
+    return <section ref={ref} style={{height:sizing.height}}>{[['A',aContent,answered?80:300,answered],['B','original',100,false]].map(([key,updated,height,answer])=><article key={String(key)} className="pas-report-sheet" data-publication={JSON.stringify(['a',key,updated])} data-answered={answer} style={{paddingTop:12,paddingBottom:16,rowGap:12}}><div className="pas-report-content" data-height={height}/><div className="pas-report-footer" data-height="32"/></article>)}</section>;
   }
   await act(async()=>root.render(<Publications/>)); expect(sizing.height).toBe(374);
   await act(async()=>root.render(<Publications answered/>));
   await act(async()=>root.render(<Publications answered bUpdated="new"/>)); expect(sizing.height).toBe(374);
-  await act(async()=>root.render(<Publications answered aUpdated="new" bUpdated="new"/>)); expect(sizing.height).toBe(174);
+  await act(async()=>root.render(<Publications answered aUpdated="server-answered" bUpdated="new"/>)); expect(sizing.height).toBe(374);
+  await act(async()=>root.render(<Publications answered aUpdated="rewritten" aContent="new" bUpdated="new"/>)); expect(sizing.height).toBe(174);
 });

@@ -193,3 +193,11 @@ it('settles at a page boundary without scrollend and resets a lost scroll on pla
   await act(async () => button('앞 장').click());
   entries = []; await render(); entries = [one, two]; contentHeight = 300; await render(); expect(height()).toBe('334px');
 });
+it('retains height across the server answered revision but discards it when content is rewritten',async()=>{
+ entries=[one]; await render();
+ const height=()=>host.querySelector<HTMLElement>('.pas-report')!.style.height;
+ expect(height()).toBe('134px');
+ contentHeight=40; entries=[{...one,state:'answered',answer:'응',updated_at:'server-answered'}]; await render();
+ expect(height()).toBe('134px');
+ entries=[{...entries[0],context:'새 맥락',updated_at:'rewritten'}]; await render(); expect(height()).toBe('74px');
+});

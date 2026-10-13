@@ -65,6 +65,10 @@ const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([optio
 beforeEach(()=>{vi.clearAllMocks();resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
+it('seeds the active display settings from its PAS list before opening chat',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('two');
+ expect(useDashboardStore.getState().persistentSessionDisplaySettings).toMatchObject({sessionId:'two',showCharacter:true});
+});
 it('provides measured report geometry while the chat view owns settings readiness',async()=>{
  geometry.value={reportBubble:null,body:null,toggle:null,lineY:0,lineLeftReach:0};
  useDashboardStore.getState().setPersistentSessionDisplaySettings('one',null);

@@ -54,7 +54,7 @@ export function PersistentReportProvider({ sessionId, entries, children }: Props
       if (scope.receipt && !matchesReportReply(text, scope.receipt.line)) clearReply();
     },
     getMessageContext: text => reportMessageContext(entries, scope.key, scope.receipt, text),
-    canCancel: entry => entry.state === 'answered' || scope.operations.some(receipt => samePublication(entry, receipt.operation) && receipt.operation.kind === 'reply' && receipt.status === 'acknowledged'),
+    canCancel: entry => entry.state === 'answered',
     cancelRequested: entry => scope.operations.some(receipt => samePublication(entry, receipt.operation) && receipt.operation.kind === 'cancel' && receipt.status !== 'failed'),
     answer: entry => {
       if (entry.state === 'answered') return entry.answer;

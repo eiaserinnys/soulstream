@@ -99,6 +99,8 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
     const body = route.request().postDataJSON(); sends.push(body);
     const control = sendControl; await control.gate.promise;
     if (control.fail) return route.fulfill({ status: 503, json: { detail: '검수 전송 실패' } });
+    const reply=body.context_items?.find((item:{key:string})=>item.key==='persistent_report_reply')?.content;
+    if(reply)publish(entries.map(entry=>entry.key===reply.key&&entry.state==='open'?{...entry,state:'answered' as const,answer:reply.option,updated_at:new Date().toISOString()}:entry));
     await route.fulfill({ json: { delivered: true } });
     echo(body.text);
   });
@@ -197,7 +199,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await expect(current().getByText('취소 요청 보냄', { exact: true })).toBeVisible();
   await editor.focus(); await expect(editor).toBeFocused();
   expect(sends[3]).toMatchObject({ text: '블로그 저장소 브랜치 정리: 답을 취소합니다', context_items: [{ key: 'persistent_report_visible', content: { key: 'blog', title: '블로그 저장소 브랜치 정리' } }] });
-  const reopened = { ...entries[1], title: '블로그 다시 확인', updated_at: 'latest' };
+  const reopened = { ...entries[1], state:'open' as const, answer:'', title: '블로그 다시 확인', updated_at: 'latest' };
   publish([entries[0], reopened, entries[2]]);
   await expect(current().getByRole('heading')).toHaveText('블로그 다시 확인');
   await expect(current()).toHaveAttribute('aria-label', /답하실 것/);
@@ -329,7 +331,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   for (const update of [...updates, ...events]) update.gate.release();
 });
 
-test('PAS settings failure settles loading and shows later SSE reports above chat',async({page})=>{
+test('PAS list settings show reports while GET hangs and survive its failure with later SSE updates',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   const fixture=await installChatUiRoutes(page,{ui:false,count:3});
   const settings={default_model:{model_preset:null,reasoning_effort:null},fallback_model:null,show_generation_separator:true,show_character:true,show_jev_candidates:true,animate_character:false,show_turn_usage:true,turn_usage_mode:'collapsed'};
@@ -349,11 +351,11 @@ test('PAS settings failure settles loading and shows later SSE reports above cha
   await page.goto(`/persistent/${chatUiSession}`);
   await expect(page.getByRole('textbox',{name:'메시지',exact:true})).toBeVisible();
   await expect.poll(()=>lookupRequests).toBeGreaterThan(0);
-  const deck=page.getByTestId('report-deck'); await expect(deck).toHaveCount(0);
-  lookup.release(); await expect(deck).toBeVisible(); await expect(deck).toHaveAttribute('data-bubble','false');
+  const deck=page.getByTestId('report-deck'); await expect(deck).toBeVisible(); await expect(deck).toHaveAttribute('data-bubble','true');
+  lookup.release(); await expect(deck).toBeVisible(); await expect(deck).toHaveAttribute('data-bubble','true');
   reportUpdate.release(); await expect(deck.getByRole('heading')).toHaveText('설정 실패 뒤의 보고');
-  await expect(deck.locator('.pas-report-tail')).toHaveCount(0);
+  await expect(deck.locator('.pas-report-tail')).toHaveCount(1);
   await page.evaluate(()=>document.fonts.ready); await page.mouse.move(0,0);
-  await page.screenshot({path:path.join(output,'1440-settings-failed-r4.png')});
+  await page.screenshot({path:path.join(output,'1440-listed-settings-r5.png')});
   expect(fixture.errors).toEqual([]);
 });
