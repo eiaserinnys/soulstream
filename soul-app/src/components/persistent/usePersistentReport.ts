@@ -29,7 +29,7 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
     ? { ...entry, state: 'answered' as const, answer: reply.option } : entry) : visibleEntries;
 
   return {
-    entries, index,
+    entries, index, server,
     select(index: number) {
       const next = Math.max(0, Math.min(entries.length - 1, index));
       setView(current => ({ ...current, index: next, key: entries[next]?.key }));

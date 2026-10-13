@@ -47,13 +47,14 @@ test('zero sheets renders nothing; one sheet has no page or arrows and see alway
 
 test('phone swipes and adjustable page select one accessible sheet; tablet arrows and keyboard also page', () => {
   const screen = pager();
-  expect(screen.queryByTestId('report-nav')).toBeNull();
-  expect(screen.getAllByTestId('report-kind')).toHaveLength(1);
+  expect(screen.queryByLabelText('앞 장')).toBeNull();
+  expect(screen.queryByTestId('report-kind')).toBeNull();
+  expect(screen.getByTestId('report-sheet-app').props.accessibilityLabel).toContain('답하실 것');
   fireEvent.scroll(screen.getByTestId('report-track'), { nativeEvent: { contentOffset: { x: 390 } } });
   expect(screen.getByTestId('report-page').props.accessibilityValue.text).toBe('2 / 3');
   if (Platform.OS !== 'web') expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith('2 / 3');
   fireEvent(screen.getByTestId('report-page'), 'accessibilityAction', { nativeEvent: { actionName: 'increment' } });
-  expect(screen.getByText('보실 것')).toBeTruthy();
+  expect(screen.getByTestId('report-sheet-result').props.accessibilityLabel).toContain('보실 것');
   screen.unmount();
   mockDevice = 'tablet';
   const tablet = pager();
@@ -154,13 +155,10 @@ test('the whole report touch frame uses the minimum tokens without changing its 
   expect(style.minWidth).toBeGreaterThanOrEqual(44);
   expect(style.minHeight).toBeGreaterThanOrEqual(44);
   expect(style.width).toBe(390);
-  const reading = screen.getByTestId('report-title').props.style;
-  const titleHeight = StyleSheet.flatten(reading).lineHeight;
-  const tagHeight = StyleSheet.flatten(screen.getByTestId('report-kind').props.style).lineHeight;
-  // Even the compact title+tag and unchanged padding already exceed the floor.
-  expect(titleHeight + tagHeight + style.paddingTop + style.paddingBottom).toBeGreaterThan(style.minHeight);
-  expect(style.paddingTop).toBe(12);
-  expect(style.paddingBottom).toBe(16);
+  const chip = screen.getByLabelText('카드 270번 열기');
+  expect(StyleSheet.flatten(chip.props.style).minHeight).toBeGreaterThanOrEqual(44);
+  expect(StyleSheet.flatten(screen.getByTestId('report-card-pill').props.style).minHeight).toBe(24);
+  expect(screen.queryByTestId('report-kind')).toBeNull();
 });
 
 test('failed dismiss returns to the same visible key when another sheet filled its slot', async () => {
@@ -312,4 +310,35 @@ test('removing the focused sheet focuses the accessible replacement title, not i
   }) }));
   expect(focus).toHaveBeenLastCalledWith(22);
   await act(async () => { response.resolve({ ok: true, persistent_report: [seeB] }); });
+});
+
+
+test('bubble scrolls only its reading block and keeps the footer fixed; compact has no empty strip', () => {
+  const api = { listCards: jest.fn().mockResolvedValue({ cards: [] }) } as any;
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[reportReviewEntries[1]]} index={0} api={api} bubble maxHeight={300}
+      onSelect={jest.fn()} onDismiss={jest.fn().mockResolvedValue(true)} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>);
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 318 } } });
+  const scrolling = screen.getByTestId('report-scroll');
+  expect(scrolling.findAllByProps({ testID: 'report-footer' })).toHaveLength(0);
+  expect(screen.getByTestId('report-footer')).toBeTruthy();
+  fireEvent(scrolling, 'layout', { nativeEvent: { layout: { height: 100 } } });
+  fireEvent(scrolling, 'contentSizeChange', 318, 400);
+  expect(screen.getByTestId('report-more-below')).toBeTruthy();
+  fireEvent.scroll(scrolling, { nativeEvent: { contentOffset: { y: 300 } } });
+  expect(screen.queryByTestId('report-more-below')).toBeNull();
+});
+
+test('measured height updates are deferred during a report press and applied on release', () => {
+  const screen = pager();
+  const sheet = screen.getByTestId('report-sheet-app');
+  const reading = screen.getByTestId('report-reading');
+  fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 100 } } });
+  const before = StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
+  fireEvent(sheet, 'touchStart');
+  fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 200 } } });
+  expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBe(before);
+  fireEvent(sheet, 'touchEnd');
+  expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBeGreaterThan(before);
 });

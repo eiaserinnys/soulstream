@@ -287,7 +287,7 @@ export function useChatSendFlow(
   };
 }
 
-function getSendFailureReason(error: unknown): string {
+export function getSendFailureReason(error: unknown): string {
   if (error instanceof ApiHttpError) {
     let message = `HTTP ${error.status}`;
     try {
