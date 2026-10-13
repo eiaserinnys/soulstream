@@ -1,7 +1,7 @@
 import React from 'react';
 import { AccessibilityInfo, Keyboard, Platform, StyleSheet } from 'react-native';
 import * as ReactNative from 'react-native';
-import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
+import { act, configure, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { PersistentReportSheet } from '../PersistentReportSheet';
 import { reportStyles } from '../persistentReportStyles';
@@ -14,6 +14,8 @@ import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDi
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 import type { PersistentReportEntry } from '../../../api/types';
 
+// These component tests drive layout manually, including the hidden measuring pass.
+configure({ defaultIncludeHiddenElements: true });
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 let mockDevice = 'phone';
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
@@ -472,4 +474,46 @@ test('tablet card chips resolve their card number to the existing internal card 
   fireEvent.press(screen.getByLabelText('카드 270번 열기'), { stopPropagation: jest.fn() });
   await act(async () => {});
   expect(mockOpen).toHaveBeenCalledWith('/?card=public-card');
+});
+
+
+test('bands remain hidden, untouchable and outside accessibility until their natural group height is measured', () => {
+  const ready = jest.fn();
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[reportReviewEntries[0]]} index={0} api={null} onReady={ready}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>);
+  const deck = () => screen.getByTestId('report-deck');
+  expect(deck().props.pointerEvents).toBe('none');
+  expect(deck().props.accessibilityElementsHidden).toBe(true);
+  expect(StyleSheet.flatten(deck().props.style).opacity).toBe(0);
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  fireEvent(screen.getByTestId('report-reading'), 'layout', { nativeEvent: { layout: { height: 100 } } });
+  expect(deck().props.pointerEvents).toBe('none');
+  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  expect(deck().props.pointerEvents).toBe('auto');
+  expect(deck().props.accessibilityElementsHidden).toBe(false);
+  expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBeGreaterThan(100);
+  expect(ready).toHaveBeenLastCalledWith(true);
+});
+
+test('footer resize measures the current navigation position without another child layout event', () => {
+  const bottom = jest.fn();
+  let y = 178;
+  const relative = jest.fn((_footer, done) => done(0, y, 100, 48));
+  function Harness() {
+    const t = useTokens();
+    return <PersistentReportSheet entry={reportReviewEntries[1]} index={0} count={2} current compact={false}
+      showNav width={318} styles={reportStyles(t, 0, true)} bubble bubbleHeight={440}
+      titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()} onDismiss={jest.fn()}
+      onCard={jest.fn()} onLink={jest.fn()} onNavigationBottom={bottom} />;
+  }
+  const screen = render(<Harness />, { createNodeMock: element => element.props.testID === 'report-nav-slot'
+    ? { measureLayout: relative } : {} });
+  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 242 } } });
+  expect(bottom).toHaveBeenLastCalledWith(16);
+  y = 36;
+  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 120 } } });
+  expect(relative).toHaveBeenCalledTimes(2);
+  expect(bottom).toHaveBeenLastCalledWith(36);
 });

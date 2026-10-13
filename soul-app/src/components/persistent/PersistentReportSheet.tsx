@@ -15,7 +15,7 @@ export function reportTag(entry: PersistentReportEntry) {
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, bubbleHeight, busy = false,
-  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onNavigationBottom }: {
+  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onNavigationBottom, onReady }: {
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
@@ -23,6 +23,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   bubble?: boolean; bubbleHeight?: number; busy?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
   onHeight?(height: number): void; onInteraction?(pressed: boolean): void;
   onNavigationBottom?(bottom: number): void;
+  onReady?(): void;
 }) {
   const t = useTokens();
   const signature = JSON.stringify([entry.title, entry.context, entry.action, entry.options, compact]);
@@ -30,10 +31,16 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
   const hasFooter = !compact && (count > 1 || entry.state === 'answered' || entry.kind === 'see' || entry.options.length > 0);
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
-  const navLayout = useRef<{ y: number; height: number } | null>(null);
+  const footerNode = useRef<View>(null);
+  const navNode = useRef<View>(null);
   const reportNavigationBottom = () => {
-    if (measured.current.foot !== null && navLayout.current) {
-      onNavigationBottom?.(measured.current.foot - navLayout.current.y - navLayout.current.height);
+    const footer = footerNode.current;
+    if (footer && measured.current.foot !== null) {
+      // RN web only sends onLayout when size changes. Read the current relative
+      // position after footer resize instead of retaining a previous child y.
+      navNode.current?.measureLayout(footer, (_x, y, _width, height) => {
+        if (measured.current.foot !== null) onNavigationBottom?.(measured.current.foot - y - height);
+      });
     }
   };
   const measure = (part: 'reading' | 'foot', height: number) => {
@@ -43,6 +50,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     if (!bubble || (measured.current.reading !== null && (!hasFooter || measured.current.foot !== null))) {
       onHeight?.((measured.current.reading ?? 0) + (hasFooter || !bubble ? measured.current.foot ?? 0 : 0));
     }
+    if (measured.current.reading !== null && (!hasFooter || measured.current.foot !== null)) onReady?.();
     if (entry.state === 'open') setAsked(saved => saved[part] === height ? saved : { ...saved, [part]: height });
   };
   const answer = entry.kind === 'ask' && entry.state === 'answered';
@@ -75,12 +83,12 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     {answer ? compact ? received : null : todo}
   </View>;
   const foot = hasFooter
-    ? <View testID="report-footer" style={styles.foot} onLayout={event => {
+    ? <View ref={footerNode} testID="report-footer" style={styles.foot} onLayout={event => {
       measure('foot', event.nativeEvent.layout.height); reportNavigationBottom();
     }}>
-      {count > 1 ? <View testID="report-nav-slot" style={[styles.navSlot, !showNav && { width: 'auto', minWidth: t.uiSpacing.xxl,
+      {count > 1 ? <View ref={navNode} testID="report-nav-slot" style={[styles.navSlot, !showNav && { width: 'auto', minWidth: t.uiSpacing.xxl,
         height: t.hitTarget.min, justifyContent: 'center' }]}
-        onLayout={event => { navLayout.current = event.nativeEvent.layout; reportNavigationBottom(); }}>
+        onLayout={reportNavigationBottom}>
         {!showNav ? <Text testID="report-page" style={styles.count} numberOfLines={1}
           accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
           accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}
