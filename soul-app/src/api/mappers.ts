@@ -102,6 +102,8 @@ export function toSession(raw: Record<string, unknown> | null | undefined): Sess
   );
   return {
     agentSessionId,
+    ...(Array.isArray(pick(raw, 'persistentReport', 'persistent_report'))
+      ? { persistentReport: pick<Session['persistentReport']>(raw, 'persistentReport', 'persistent_report') } : {}),
     cardId: raw.cardId as string | null | undefined,
     displayName: (pick<string | null>(raw, 'displayName', 'display_name') ?? null),
     status: pick<string>(raw, 'status') ?? 'unknown',
@@ -167,6 +169,8 @@ export function applySessionUpdated(
   raw: Record<string, unknown>,
 ): Partial<Session> {
   const updates: Partial<Session> = {};
+  const report = pick<Session['persistentReport']>(raw, 'persistentReport', 'persistent_report');
+  if (Array.isArray(report)) updates.persistentReport = report;
   if (raw.cardId !== undefined) updates.cardId = raw.cardId as string | null;
   const status = pick<string>(raw, 'status');
   if (status != null) updates.status = status;

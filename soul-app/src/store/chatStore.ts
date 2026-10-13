@@ -2,6 +2,7 @@
 // The independent Claude runtime payload projection lives in claudeRuntimeProjection;
 // splitting the remaining single-use transitions would create shallow pass-through modules.
 import { create } from 'zustand';
+import type { ReportSendContext } from '../lib/persistent-report';
 import type {
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeTasksResponse,
@@ -34,7 +35,7 @@ export interface PendingOptimisticAttachment {
   path: string;
   name?: string;
 }
-export interface PendingOptimisticEvent extends SessionEvent {
+export interface PendingOptimisticEvent extends SessionEvent, ReportSendContext {
   /** 일반 초기 프롬프트 낙관 이벤트는 이 값이 없다. */
   pendingStatus?: PendingOptimisticStatus;
   originalText?: string;

@@ -246,6 +246,7 @@ export function useSessionsStream() {
     const attention = attentionDeltaFrom(data);
     const store = useSessionStore.getState();
     const membership = store.feedMembership[sessionId];
+    if (updates.persistentReport !== undefined) store.applyPersistentReport(sessionId, updates.persistentReport);
 
     if (store.sessions[sessionId]) {
       store.updateSession(sessionId, updates);
@@ -282,6 +283,7 @@ export function useSessionsStream() {
         if (raw) {
           const row = toSession(raw);
           if (row.agentSessionId) {
+            if (row.persistentReport !== undefined) useSessionStore.getState().applyPersistentReport(row.agentSessionId, row.persistentReport);
             useSessionStore.getState().upsertSession(row, { feedEvent: true });
           }
         }
@@ -318,6 +320,9 @@ export function useSessionsStream() {
         const meta = streamMetaRef.current;
         if (!meta) throw new Error('session_list arrived without stream_meta');
         const snapshot = readSessionList(data);
+        for (const row of snapshot.sessions) {
+          if (row.persistentReport !== undefined) useSessionStore.getState().applyPersistentReport(row.agentSessionId, row.persistentReport);
+        }
         const snapshotSessionIds = new Set(snapshot.sessions.map((session) => session.agentSessionId));
         abortAllHydrations();
         useSessionStore.getState().applyFeedSnapshot(snapshot);

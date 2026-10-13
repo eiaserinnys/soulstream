@@ -6,6 +6,7 @@ import type {
   ClaudeRuntimeSchedulesResponse,
   ClaudeRuntimeStopTaskResponse,
   InterveneResponse,
+  MessageContextItem,
 } from './types';
 import type { MessagesResponse, ToolTraceResponse } from './historyTypes';
 import { useAuthStore } from '../store/authStore';
@@ -187,6 +188,7 @@ export function createSessionEndpoints({
       sessionId: string,
       text: string,
       attachmentPaths?: string[],
+      contextItems?: MessageContextItem[],
     ): Promise<InterveneResponse> => {
       const profile = decodeAuthJwt(useAuthStore.getState().jwt);
       const caller_info = buildSoulAppCallerInfo(profile);
@@ -198,6 +200,7 @@ export function createSessionEndpoints({
           text: messageText,
           user: 'soul-app',
           caller_info,
+          ...(contextItems?.length ? { context_items: contextItems } : {}),
           ...(attachmentPaths && attachmentPaths.length > 0
             ? { attachmentPaths }
             : {}),

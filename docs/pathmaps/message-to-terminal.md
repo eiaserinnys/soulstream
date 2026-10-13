@@ -9,6 +9,17 @@
 | 전달 | commit 뒤 production.ts 중앙 callback만 cache patch 및 session_updated.persistent_report 전체 목록을 발행한다. []는 비움, 필드 생략은 보존. 일반 세션 REST/snapshot은 persistentReport, PAS resource는 persistent_report. 워커의 상태 알림은 판을 재발행하지 않는다. |
 | 세대 시작 | soul-server-ts/src/context/context_builder.ts가 최신 DB metadata를 읽어 persistent_report_context.ts의 판 item을 첫 실행/세대 교체 조립에 한 번 넣는다. 후속 턴에 반복하지 않으며 task_initial_message_publisher.ts는 판 snapshot을 사용자 이벤트에서 제외한다. reply/visible 문맥은 일반 사용자 이벤트에 남는다. |
 
+## PAS 앱 보고 화면 (#270 R3)
+
+| 경로 | 앱의 소유자와 계약 |
+| :-- | :-- |
+| 판 받기 | `api/types.ts`와 `mappers.ts`는 REST/요약의 persistentReport 및 SSE의 persistent_report를 보존한다. `useSessionsStream.ts`는 세션 cache가 아직 없어도 보고 projection에 전체 판을 싣는다. []는 비움이며 생략은 보존이다. 화면 정본은 `sessionStore.persistentReportsBySession`이다. |
+| 진입과 최신 판 | `PersistentSessionContext.tsx`의 PAS 목록과 `usePersistentChatDisplaySettings.ts`의 PAS 상세는 요청 시작의 보고 projection 참조와 인증 scope를 기록한다. 완료 때 그 사이 도착한 live/다른 판이 있으면 snapshot을 적용하지 않는다. |
+| 표시와 수명 | `PersistentSessionScreen.tsx`가 PAS 전용 prop을 전달하고 `ChatBody.tsx`는 `PersistentReportPager`를 목록 앞에 둔다. `usePersistentReport`는 현재 key를 유지하고 내려간 자리의 다음 장/앞 장을 고른다. pager는 승인된 보조 표면, 가로 paging과 최장 장 높이, 폰 키보드 축약/복원을 쓴다. provider나 목록의 세션 key를 추가하지 않는다. |
+| 단추 답과 송신 | `ChatInputComposer.appendGeneratedText`는 쓰던 초안 뒤 빈 줄 하나와 제목:선택지를 붙이고 기존 undo와 초점을 유지한다. 입력창이 답 연결을 소유하며 undo/비우기로 푼다. 보낼 때 붙인 줄이 그대로 있으면 `persistent_report_reply {key,option}`, 그 밖에는 보이는 장의 `persistent_report_visible {key,title}`을 `sessionEndpoints.intervene`의 context_items로 싣는다. 자동 전송은 없다. |
+| 보내는 중/실패/재전송 | `useChatSendFlow`의 기존 pending 슬롯에 context와 당시 서버 판 참조를 보존한다. 같은 판의 sending 답만 임시 answered이며 failed/unknown은 원래 장으로 돌아간다. retry는 원래 context를 재사용한다. 서버의 새 판은 임시 상태보다 우선한다. |
+| 봤다와 링크 | see에는 늘 봤다가 있다. `api/persistentSessionEndpoints.dismissPersistentReport`의 인증된 DELETE를 호출하고 장을 즉시 숨긴다. 응답은 같은 snapshot guard로 적용하며 실패하면 복원한다. 카드 번호는 기존 listCards로 ID를 찾아 `useOpenContentLink`의 내부 카드 경로로, action 링크도 같은 기존 정책으로 연다. |
+
 채팅 UI 앱 P5 코드 대조 커밋 SHA: `09097a54963a5de9a38c0658f979efed17bc97bd`
 
 앱 P5의 메뉴 구독 분리와 안내 줄 수명 보완은 PR #1423의 보완 diff 기준이다.

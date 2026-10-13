@@ -125,6 +125,7 @@ export function PersistentSessionScreen({ active = true, chatActive = active, on
         style={{ position: 'absolute', top: headerHeight, bottom: 0, left: columnLeft, width: columnWidth,
           opacity: hidePhoneConversation ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript" showSessionAuxiliary={false}
+          showPersistentReport persistentReportSnapshot={session?.persistent_report}
           active={chatActive} minimumBottomPadding={phone ? 0 : insets.bottom}
           onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
