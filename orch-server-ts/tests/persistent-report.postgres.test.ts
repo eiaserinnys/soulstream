@@ -23,9 +23,14 @@ describe("PAS reports on production PostgreSQL schema", () => {
   beforeAll(async () => {
     const container = startPostgresTestContainer({ user: "pas_report_test", password: "pas_report_test", database: "pas_report_test_db" });
     stop = container.stop;
-    sql = postgres(`postgres://pas_report_test:pas_report_test@127.0.0.1:${container.port}/pas_report_test_db`, { max: 4, onnotice: () => undefined });
-    await waitForPostgres(sql);
-    await sql.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
+    const url = `postgres://pas_report_test:pas_report_test@127.0.0.1:${container.port}/pas_report_test_db`;
+    // Like page_postgres_harness, keep startup retries out of the service pool.
+    const bootstrap = postgres(url, { max: 1, onnotice: () => undefined });
+    try {
+      await waitForPostgres(bootstrap);
+      await bootstrap.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
+    } finally { await bootstrap.end({ timeout: 2 }); }
+    sql = postgres(url, { max: 4, onnotice: () => undefined });
     expect(Number((await sql`SELECT COUNT(*) AS n FROM sessions`)[0]!.n)).toBe(0);
     await sql`INSERT INTO folders(id,name) VALUES ('report-folder','보고')`;
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,metadata) VALUES
@@ -107,6 +112,26 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect(result.json()).toMatchObject({persistent_report:[]});
     expect(publish.mock.lastCall?.[0][0]).toMatchObject({persistent_report:[]});
     await app.close();
+  });
+  it("prunes only when entering done/cancelled or answering a question, not when editing a finished card", async () => {
+    const cardId = (await cards.createCard({...human,folderId:'report-folder',title:'내림 호출',request:''})).operation.target_id;
+    const prune = vi.spyOn(PersistentReportService.prototype, 'pruneForCard');
+    try {
+      await cards.setCardStatus({...human,cardId,status:'done'});
+      expect(prune).toHaveBeenCalledTimes(1);
+      expect(prune).toHaveBeenCalledWith(cardId);
+      await cards.setCardStatus({...human,cardId,status:'done'});
+      await cards.patchCard({...human,cardId,title:'제목 수정'});
+      await cards.patchCard({...human,cardId,archived:true});
+      expect(prune).toHaveBeenCalledTimes(1);
+      await cards.setCardStatus({...human,cardId,status:'cancelled'});
+      expect(prune).toHaveBeenCalledTimes(2);
+      await cards.askQuestion({...human,cardId,text:'판단?'});
+      expect(prune).toHaveBeenCalledTimes(2);
+      const question = (await cards.getCard(cardId))!.questions[0]!.id;
+      await cards.answerQuestion({...human,cardId,questionId:String(question),answer:'진행'});
+      expect(prune).toHaveBeenCalledTimes(3);
+    } finally { prune.mockRestore(); }
   });
   it("keeps a see entry unchanged when a reply context is received", async () => {
     await reports.put('pas',{...entry('see-only'),kind:'see',options:undefined});
