@@ -1,5 +1,9 @@
 # 재시작 복구
 
+## PAS 판 복원 (#270 R1)
+
+판의 정본은 sessions.metadata의 persistent_report 항목 하나다. 초기 REST/sessions snapshot과 세대 시작 컨텍스트가 이 값을 다시 읽는다. 새 복구 timer/loop/재시도 lane은 없다. 세대 metadata 교체는 persistent_generation 타입만 다루므로 판을 유지한다.
+
 R3 코드 대조 커밋 SHA: `e15bfa04bbb304f4138930a8e022f4d70ccffd4e`
 
 R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`

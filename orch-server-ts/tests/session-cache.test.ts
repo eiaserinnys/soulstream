@@ -7,6 +7,15 @@ import {
 } from "../src/index.js";
 
 describe("PerNodeSessionCache retention", () => {
+  it("keeps central reports through worker status patches and accepts an empty board", () => {
+    const cache=new PerNodeSessionCache();
+    cache.upsertFromSessionUpdated({nodeId:'n',connectionId:'c',message:{agent_session_id:'pas',status:'running'},nowMs:1});
+    cache.patchPersistentReport('pas',[{key:'r',title:'보고'}]);
+    cache.upsertFromSessionUpdated({nodeId:'n',connectionId:'c',message:{agent_session_id:'pas',status:'completed'},nowMs:2});
+    expect(cache.findSession('pas')?.payload.persistent_report).toEqual([{key:'r',title:'보고'}]);
+    cache.patchPersistentReport('pas',[]);
+    expect(cache.findSession('pas')?.payload.persistent_report).toEqual([]);
+  });
   it("seeds durable DB sessions without overwriting newer WebSocket state", () => {
     const cache = new PerNodeSessionCache();
     cache.upsertFromSessionUpdated({

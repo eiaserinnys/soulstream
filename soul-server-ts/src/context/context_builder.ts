@@ -1,5 +1,7 @@
 /** Builds input context; agent and folder instructions form the system prompt. */
 import { readPersistentInstructions } from "@soulstream/wire-schema/persistent-session-instructions";
+import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
+import { buildPersistentReportContext } from "./persistent_report_context.js";
 import { fetchAssignedCardContextItem, type AssignedCardContextCapture } from "./assigned_card_context.js";
 import type { Logger } from "pino";
 import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
@@ -326,6 +328,8 @@ export class ExecutionContextBuilder {
       assignedCardItem: await this.buildAssignedCardContext(task, inputId),
       predecessorSummaryItem,
       generationCheckpointItem: checkpoint?.item ?? null,
+      persistentReportItem: task.persistent || readPersistentEnabled(resumeContext.session?.metadata)
+        ? buildPersistentReportContext(resumeContext.session?.metadata ?? task.metadata) : null,
       nativeSessionId: generation ? null : task.codexThreadId ?? null,
       cogitoContextItem,
       workingDir,

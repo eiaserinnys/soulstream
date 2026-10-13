@@ -90,6 +90,8 @@ const pageBindingOperations = {
 } as const satisfies Record<string, OperationTarget>;
 
 const sessionDataOperations = {
+  put_report_entry: ["persistentReports", null, "put"],
+  remove_report_entry: ["persistentReports", null, "remove"],
   register_session: ["sessionMutations", null, "registerSession"],
   register_session_with_worktree: ["sessionMutations", null, "registerSessionWithWorktree"],
   transition_session: ["sessionMutations", null, "transitionSession"],
@@ -284,7 +286,7 @@ function readArgs(value: unknown, operation: string): unknown[] | null {
   return args.map((child, index) => {
     // The transcript store is an opaque SDK wire format. Keep its snake-case
     // fields intact so resume materialization receives the same entries the worker wrote.
-    if (operation === "append_transcript_entries" && index === 1) return child;
+    if ((operation === "append_transcript_entries" || operation === "put_report_entry") && index === 1) return child;
     const opaqueKeys = operation === "append_transcript_entries_idempotent"
       ? OPAQUE_TRANSCRIPT_ENTRY_ARGUMENT_KEYS
       : OPAQUE_ARGUMENT_KEYS;

@@ -1,5 +1,14 @@
 # 메시지 도착에서 종단까지
 
+## PAS 지금의 보고 (#270 R1)
+
+| 경로 | 정본과 계약 |
+| --- | --- |
+| 저장/도구 | soul-server-ts/src/mcp/tools/persistent_report.ts 직접 put_report_entry/remove_report_entry → control_plane/persistent_report_host_client.ts → orch-server-ts/src/session/persistent_report_service.ts. sessions.metadata의 persistent_report 항목만 잠금/교체한다. 공유 계약은 packages/wire-schema/src/persistent_report.ts. DB migration과 보고 이벤트는 없다. |
+| 일반 메시지 | session_action_command_routes.ts의 접수 지점에서 신뢰된 사람의 persistent_report_reply {key,option}만 ask/open 장의 answered/answer로 반영한다. 없는 key·see·answered 장은 판을 보존한다. persistent_report_visible {key,title}은 문맥만 전달한다. 이후 기존 intervene 경로는 동일하다. 정식 카드 답변과 연결하지 않는다. |
+| 전달 | commit 뒤 production.ts 중앙 callback만 cache patch 및 session_updated.persistent_report 전체 목록을 발행한다. []는 비움, 필드 생략은 보존. 일반 세션 REST/snapshot은 persistentReport, PAS resource는 persistent_report. 워커의 상태 알림은 판을 재발행하지 않는다. |
+| 세대 시작 | soul-server-ts/src/context/context_builder.ts가 최신 DB metadata를 읽어 persistent_report_context.ts의 판 item을 첫 실행/세대 교체 조립에 한 번 넣는다. 후속 턴에 반복하지 않으며 task_initial_message_publisher.ts는 판 snapshot을 사용자 이벤트에서 제외한다. reply/visible 문맥은 일반 사용자 이벤트에 남는다. |
+
 채팅 UI 앱 P5 코드 대조 커밋 SHA: `09097a54963a5de9a38c0658f979efed17bc97bd`
 
 앱 P5의 메뉴 구독 분리와 안내 줄 수명 보완은 PR #1423의 보완 diff 기준이다.

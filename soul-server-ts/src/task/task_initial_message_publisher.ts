@@ -46,7 +46,7 @@ export class TaskInitialMessagePublisher {
       inputId,
       callerInfo: task.callerInfo,
       attachmentPaths: task.attachmentPaths,
-      contextItems: (ctx ? ctx.combinedContextItems : task.contextItems)?.filter(item=>item.key !== "assigned_cards"),
+      contextItems: (ctx ? ctx.combinedContextItems : task.contextItems)?.filter(item=>item.key !== "assigned_cards" && item.key !== "persistent_report"),
     });
     await persistUserMessageEvent(task, event, this.deps);
     if (!task.executionRegistration) {

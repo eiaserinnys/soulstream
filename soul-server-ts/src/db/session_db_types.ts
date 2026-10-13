@@ -250,6 +250,7 @@ export interface RunningSessionSummaryRow {
 }
 
 export interface ListSessionSummaryRow {
+  persistent_report?: import("@soulstream/wire-schema/persistent-report").PersistentReportEntry[];
   session_id: string;
   display_name: string | null;
   status: string | null;

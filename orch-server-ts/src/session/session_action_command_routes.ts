@@ -46,6 +46,7 @@ export type SessionActionCommandRouteOptions =
     resolveCallerInfo?: SessionActionCallerInfoResolver;
     reviewAcknowledgeFallback?: SessionReviewAcknowledgeFallback;
     deliveryRepositoryProvider?: () => Promise<Pick<SessionDeliveryRepository, "register">>;
+    acceptPersistentReportReply?: (sessionId: string, context: unknown, callerInfo: JsonObject | undefined) => Promise<void>;
   };
 
 export const sessionActionCommandRouteAuthRequirements = {
@@ -192,6 +193,11 @@ export async function executeSessionIntervention(
   if (durable.conflict) return { status: 409, body: { error: {
     code: "DELIVERY_IDENTITY_CONFLICT", message: `Delivery identity conflict: ${durable.deliveryId}`, deliveryId: durable.deliveryId,
   } } };
+  try {
+    await options.acceptPersistentReportReply?.(targetSessionId, payload.value.extra_context_items, payload.value.caller_info);
+  } catch (error) {
+    if ("log" in caller) caller.log.warn({ err: error }, "Report answer update failed; delivering the user message");
+  }
   return executeInterveneCommand(options, durable.payload, durable.deliveryId);
 }
 

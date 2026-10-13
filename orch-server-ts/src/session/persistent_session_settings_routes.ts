@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type { PersistentReportService } from "./persistent_report_service.js";
+import type { SessionResourceAccessProvider } from "./session_resource_access.js";
 
 import { mapNodeCommandError } from "../http/api_errors.js";
 import { PersistentSessionApiError } from "./persistent_session_api_error.js";
@@ -10,11 +12,14 @@ import { SessionResourceAccessError } from "./session_resource_access.js";
 
 export type PersistentSessionSettingsRouteOptions = {
   service: PersistentSessionSettingsService;
+  reports?: Pick<PersistentReportService, "remove">;
+  requireSessionAccess?: SessionResourceAccessProvider["requireSessionAccess"];
 };
 
 export const persistentSessionSettingsRouteAuthRequirements = {
   "GET /api/persistent-sessions": true,
   "GET /api/persistent-sessions/:session_id": true,
+  "DELETE /api/persistent-sessions/:session_id/reports/:key": true,
   "PUT /api/persistent-sessions/:session_id": true,
   "POST /api/persistent-sessions": true,
   "GET /api/persistent-sessions/:session_id/instructions": true,
@@ -36,6 +41,15 @@ export function registerPersistentSessionSettingsRoutes(
   options: PersistentSessionSettingsRouteOptions,
 ): void {
   const { service } = options;
+  if (options.reports && options.requireSessionAccess) {
+    app.delete<{ Params: { session_id: string; key: string } }>("/api/persistent-sessions/:session_id/reports/:key", async (request, reply) => {
+      try {
+        await options.requireSessionAccess!({ request, sessionId: request.params.session_id });
+        const result = await options.reports!.remove(request.params.session_id, request.params.key);
+        return reply.code(result.ok ? 200 : result.code === "SESSION_NOT_FOUND" ? 404 : 422).send(result);
+      } catch (error) { return sendError(reply,error); }
+    });
+  }
 
   app.get("/api/persistent-sessions", async (request, reply) => {
     try {
@@ -132,6 +146,9 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   }
   if (nodeError !== undefined) {
     return reply.code(nodeError.statusCode).send({ error: nodeError.apiError });
+  }
+  if (error && typeof error === "object" && "statusCode" in error && typeof error.statusCode === "number") {
+    return reply.code(error.statusCode).send({ error: { code: "REPORT_REQUEST_ERROR", message: error instanceof Error ? error.message : String(error) } });
   }
   return reply.code(500).send({
     error: {

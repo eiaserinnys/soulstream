@@ -1,5 +1,9 @@
 # 폴더와 카드 저장 경로
 
+## PAS 보고 자동 내림 (#270 R1)
+
+card_control_plane_service.ts의 기존 카드 트랜잭션에서 persistent_report_service.ts의 prunePersistentReportsForCardTx를 호출한다. 묶인 question_id의 정식 답이 저장되거나 card_numbers 전부가 done/cancelled일 때만 해당 장을 제거한다. 한 카드만 끝난 다중 카드 장은 유지한다. 삭제는 같은 트랜잭션, 판 방송은 commit 뒤다. 질문 답변의 기존 메시지 전달은 그대로다.
+
 `folders.id`가 폴더, 카드, 보드, 세션, worktree의 공통 소속이다. 카드는 섹션 없이 폴더에 직접 속한다. 폴더 상세의 카드 영역은 항상 보이며, 카드가 없을 때는 제목과 추가 동작만 표시한다.
 
 | 경로 | 소유자 | 저장과 알림 |

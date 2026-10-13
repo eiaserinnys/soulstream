@@ -222,6 +222,12 @@ export class PerNodeSessionCache {
     });
   }
 
+  patchPersistentReport(agentSessionId: string, entries: unknown[]): void {
+    const current = this.findSession(agentSessionId);
+    if (!current) return;
+    this.storeSession({ ...current, payload: { ...current.payload, persistent_report: entries, persistentReport: entries } });
+  }
+
   deleteFromSessionDeleted(params: {
     message: Record<string, unknown>;
   }): CachedNodeSession | undefined {
