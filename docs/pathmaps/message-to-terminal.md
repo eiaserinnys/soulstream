@@ -97,6 +97,8 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 
 전송은 원고형 `ChatView`의 기존 `ChatInput` → 세션 개입 경로를 그대로 쓴다. 입력과 업로드는 소유 노드의 연결 상태로 제한하고 `/api/attachments/sessions?nodeId=<encoded nodeId>`를 쓴다. 표시·모션의 토글은 `usePersistentSessionDetailsController`의 즉시 저장과 활성 세션 표시 설정 투영을 재사용한다. 설정창과 카드 상세 오버레이는 대화 마운트와 활성 ID를 유지한다.
 
+채팅 UI의 상태는 공통 `ChatViewContent`가 `ChatStoreScopeProvider` 안에서 읽은 `activeSessionKey`로 붙인 `ChatUiControllerProvider`에 있다. 일반 column, PAS 전화면, 다른 세션 overlay 모두 같은 owner를 쓴다. UI의 초안 추가는 전송을 호출하지 않으며 기존 입력창의 초안만 바꾼다.
+
 ## 새 세션 생성 전 가용 판정
 
 | 경로 | 구현 | 계약 |
@@ -116,7 +118,21 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 | 3. 이벤트 정규화 | `soul-server-ts/src/mcp/tools/chat_ui.ts` | 세션·publication key·정규 문서로 안정된 UI ID와 hash를 만들고, 일반 답변의 종료·스트리밍 필드 없이 `assistant_message`의 `content`와 `ui`를 allowlist로 구성한다. |
 | 4. 내구 저장과 ACK | `soul-server-ts/src/runtime/worker_composition.ts`, `src/db/event_persistence.ts:EventPersistence.enqueueEventAndWaitForSessionAck`, `src/upstream/event_outbox_pump.ts` | 현재 실행 등록 ID를 outbox에 전달한다. `_dedupe_key`는 semantic dedupe key로 옮기고 payload에서 제거하며, ACK 시간 초과면 기존 outbox 재전송에 맡긴다. |
 | 5. 저장과 이력 반환 | `orch-server-ts/src/node/event_ingress_repository.ts`, `src/control_plane/repositories/event_read_repository.ts` | event payload 전체를 저장하고, persistent history에서 `ui` 필드를 그대로 반환한다. |
-| 6. 웹 화면 동작 | `packages/soul-ui/src/components/chat/AssistantMessage.tsx` | 아직 `ui` 렌더러는 없다. 같은 이벤트의 `content` fallback을 표시한다. 렌더러 전달과 조작 UI는 별도 구현 범위다. |
+| 6. 웹 화면과 초안 추가 | `packages/soul-ui/src/components/chat/ChatMessageItem.tsx`, `components/chat-ui/ChatUiMessage.tsx`, `ChatUiControllerProvider.tsx`, `components/ChatInput.tsx` | 웹은 보존된 `ui`를 같은 assistant 행에서 검증·표시한다. 세션 범위 provider의 현재 조작값으로 생성한 글은 등록된 입력창 핸들이 최신 초안 뒤에 붙인다. |
 | 6. 앱 화면 동작 | `soul-app/src/components/events/EventRenderer.tsx` → `components/chat-ui/ChatUiMessage.tsx` → `ChatUiControllerProvider.tsx` | assistant_message만 UI 경계로 전달한다. REST 이력과 SSE의 같은 id는 기존 store가 병합한다. text_delta·realtime_transcript는 기존 경로다. ui 없음은 AssistantMessage, 글 대체는 메시지 안의 안내와 markdown이다. UI 메시지만 ChatUiEventContextMenu에서 provider를 구독한다. 일반 글·사용자·도구 행은 구독하지 않는다. 메뉴의 현재 글 getter는 renderText(doc,state)를 실행 순간 읽으며 선택 종료 뒤 같은 조작 값으로 돌아온다. |
 | 앱 조작 → 초안 | `ChatUiControllerProvider.tsx` → `ChatBody.tsx:composerRef` → `ChatInputComposer.tsx:appendGeneratedText` → `usePersistentDraft.ts` | composeText를 현재 세션의 쓰던 초안 뒤 빈 줄 하나로 더하고 입력창에 포커스한다. 자동 전송은 없다. 기존 첨부·전송 모드는 유지한다. 직전 before/after 한 건만 기록하며 현재 초안이 after와 같을 때만 되돌리기로 before를 복원한다. 사용자 수정·복원·전송으로 초안이 달라지면 되돌리기는 사라진다. |
 | 앱 패키징 | `soul-app/package.json`, native/review Metro 설정, `soul-app/scripts/chat-ui-source-resolution.cjs`, `.easignore` | 앱은 `@soulstream/chat-ui` public entry의 패키지 소스를 Metro가 해석하고, EAS 허용 목록은 package manifest와 import closure의 9개 TS source를 포함한다. |
+
+## 웹 채팅 UI 읽기와 초안 추가
+
+| 단계 | 파일:심볼 | 계약 |
+| --- | --- | --- |
+| SSE와 HTTP 이력 | `unified-dashboard/client/providers/OrchestratorSessionProvider.ts`, `packages/soul-ui/src/components/chat/useMessageHistoryBuffer.ts` → `stores/event-processor.ts:processEventsBatch` | 기존 상세 SSE와 timeline payload의 raw `ui`와 eventId를 같은 processor에 전달한다. 새로운 이벤트·요청은 없다. |
+| 메시지 전달 | `stores/node-factory.ts:createNodeFromEvent` → `lib/flatten-tree.ts:flattenTree` → `components/chat/VirtualizedItem.tsx` → `ChatMessageItem.tsx` | `ui?: unknown`의 reference를 보존하며 eventId 중복은 기존 트리에서 처리한다. UI 없는 행은 UI context를 구독하지 않는다. 질문·승인·대기 중 전송의 라우팅은 그대로다. |
+| 표시·글 대체 | `components/chat-ui/ChatUiMessage.tsx`, `ChatUiErrorBoundary.tsx` → `components/chat/AssistantMessage.tsx` | 유효한 발행본은 `contentLayout="structured"`와 직접 React 렌더러. 미지원 버전과 메시지별 렌더 오류는 기본 상태 `renderText(doc)`, 읽을 수 없는 문서는 저장된 `content`다. 정상 복사는 현재 상태의 `renderText(doc, state)`다. |
+| 조작값 수명 | `components/chat/ChatView.tsx` → `components/chat-ui/ChatUiControllerProvider.tsx` | 키는 `[session_id, ui_id, hash]`의 직렬화. 행 unmount/remount·같은 발행본 history/SSE 재수신은 유지, 세션 변경·ChatView 폐기·reload는 기본값. 목록 밖 provider 하나가 입력창까지 감싸며 세션 변경 때 자기 Map과 안내 상태만 초기화한다. ChatInput 수명과 기존 Virtuoso key는 유지한다. |
+| 초안 추가와 취소 | provider의 stable append 함수 → `ChatInput.tsx:registerGeneratedTextActions` → `components/chat/useGeneratedTextActions.ts` → `handleChangeText` | 호출 시점 `textRef.current`에 빈 줄 하나와 생성 글을 붙이고 기존 draft에 반영한다. 포커스·커서는 기존 textarea 끝. before/after/sessionId 한 건의 exact undo만 제공한다. 전송·첨부·업로드·mode·pending send는 그대로다. 실제 send 뒤는 위 기존 개입 경로를 따른다. |
+| 입력창 보조 영역 | `components/chat/ChatInputAccessories.tsx`, `ChatInputFeedback.tsx` | 첨부와 되돌리기를 같은 줄에 놓고 둘 다 없으면 줄이 없다. 조작 안내는 입력창 아래 기존 textarea 시작선에 보조 글 한 줄로 놓는다. Provider가 첫 안내부터 줄을 열고 값 변경 때 글만 비워 높이를 유지한다. 전송을 눌러 입력창을 비우는 `onBeforeSend` 또는 같은 세션의 재시도 `onRetry` 시점과 세션 변경 때만 닫으며, 전송 결과의 성공·실패는 줄을 닫지 않는다. |
+| 일반 최종 답과 분리 | `stores/node-factory.ts`의 `_final_for_live_stream`·stream key 처리 | UI 발행은 독립 completed assistant 노드다. live text의 종료는 기존 final marker와 같은 key만 소유하며 UI 도착으로 streaming이나 세션 lifecycle을 종료하지 않는다. |
+
+웹 E2E 진입점은 대시보드 빌드 후 `pnpm --dir unified-dashboard test:e2e:chat-ui`다. Script가 `COMPONENTS_REVIEW_PHASE=chat-ui`를 지정하고 chat-ui·smoke·components-review 사례를 실행한다. 좌표는 대상 배치가 연속 세 프레임 같아진 뒤 한 번 측정한다.

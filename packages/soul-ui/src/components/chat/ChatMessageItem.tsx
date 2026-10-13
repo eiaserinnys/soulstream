@@ -12,6 +12,7 @@ import { ToolMessage } from "./ToolMessage";
 import { ChatInputRequest } from "./ChatInputRequest";
 import { ChatToolApproval } from "./ChatToolApproval";
 import { AwaySummaryMessage } from "./AwaySummaryMessage";
+import { ChatUiMessage, isSupportedChatUiPublication } from "../chat-ui/ChatUiMessage";
 
 /**
  * 모듈 범위의 seen 집합.
@@ -42,7 +43,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       // thinking 노드와 text 노드를 독립 컴포넌트로 분리
       body = msg.treeNodeType === "thinking"
         ? <ThinkingMessage msg={msg} presentation={presentation} />
-        : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} />;
+        : msg.ui !== undefined
+          ? <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"}>
+            <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} />
+          </AssistantMessage>
+          : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} />;
       break;
     case "tool":
       body = <ToolMessage msg={msg} />;

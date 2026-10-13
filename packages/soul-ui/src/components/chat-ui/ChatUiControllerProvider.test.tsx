@@ -11,8 +11,9 @@ let root: Root; let host: HTMLDivElement;
 afterEach(() => { if (root) act(() => root.unmount()); host?.remove(); });
 function Row({ hash = 'hash-a' }: { hash?: string }) {
   const controller = useChatUiController('ui-a', hash, documentFixture);
-  const { feedback } = useChatUiHost();
-  return <><output>{controller.state.values.seats}</output><p>{feedback}</p>
+  const { feedback, feedbackOpen, closeFeedback } = useChatUiHost();
+  return <><output>{controller.state.values.seats}</output><p data-open={String(feedbackOpen)}>{feedback}</p>
+    <button onClick={closeFeedback}>close</button>
     <button onClick={() => controller.set('seats', 12)}>set</button>
     <button onClick={() => controller.set('seats', 9)}>set9</button>
     <button onClick={() => controller.act({ type: 'copy' }, 'copy')}>copy</button>
@@ -36,6 +37,43 @@ it('retains a publication across row remounts, separates hashes and sessions, an
   await render('s1'); expect(host.querySelector('output')?.textContent).toBe('12');
   await render('s2'); expect(host.querySelector('output')?.textContent).toBe('8');
   await render('s1'); expect(host.querySelector('output')?.textContent).toBe('8');
+});
+it('keeps the opened feedback line through value changes and closes only at send or session boundaries', async () => {
+  setup(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
+  const render = (sessionId: string) => act(async () => root.render(<ChatUiControllerProvider sessionId={sessionId}><Row /></ChatUiControllerProvider>));
+  await render('s1'); expect(host.querySelector('p')?.dataset.open).toBe('false');
+  await click('copy'); expect(host.querySelector('p')?.dataset.open).toBe('true');
+  await click('set9'); expect(host.querySelector('p')?.textContent).toBe('');
+  expect(host.querySelector('p')?.dataset.open).toBe('true');
+  await click('reset'); expect(host.querySelector('p')?.dataset.open).toBe('true');
+  await click('close'); expect(host.querySelector('p')?.dataset.open).toBe('false');
+  expect(host.querySelector('p')?.textContent).toBe('');
+  await click('copy'); await render('s2'); expect(host.querySelector('p')?.dataset.open).toBe('false');
+});
+it.each([
+  { transition: 'A → B', sessions: ['s2'], outcome: 'resolve' },
+  { transition: 'A → B', sessions: ['s2'], outcome: 'reject' },
+  { transition: 'A → B → A', sessions: ['s2', 's1'], outcome: 'resolve' },
+  { transition: 'A → B → A', sessions: ['s2', 's1'], outcome: 'reject' },
+])('ignores an old copy $outcome after $transition', async ({ sessions, outcome }) => {
+  setup();
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const pending = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+  const writeText = vi.fn().mockReturnValue(pending);
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  const render = (sessionId: string) => act(async () => root.render(<ChatUiControllerProvider sessionId={sessionId}><Row /></ChatUiControllerProvider>));
+  await render('s1');
+  await click('copy');
+  expect(writeText).toHaveBeenCalledOnce();
+  for (const sessionId of sessions) await render(sessionId);
+  expect(host.querySelector('p')?.dataset.open).toBe('false');
+  await act(async () => {
+    if (outcome === 'resolve') resolve();
+    else reject(new Error('clipboard unavailable'));
+  });
+  expect(host.querySelector('p')?.dataset.open).toBe('false');
+  expect(host.querySelector('p')?.textContent).toBe('');
 });
 it('clears operation feedback only when a field actually changes', async () => {
   setup(); Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });

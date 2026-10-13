@@ -24,6 +24,10 @@ function readEnvelope(ui: unknown) {
   return { type: 'rich' as const, doc, fallbackText, uiId: raw.ui_id as string, hash: raw.hash as string };
 }
 
+export function isSupportedChatUiPublication(ui: unknown): boolean {
+  return readEnvelope(ui).type === 'rich';
+}
+
 function MarkdownSource(props: ComponentPropsWithoutRef<typeof SourceLink>) {
   return <SourceLink {...props} className="chat-ui-source" />;
 }

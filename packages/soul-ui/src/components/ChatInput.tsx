@@ -29,6 +29,11 @@ import { SuggestionChip } from "./SuggestionChip";
 import { Button } from "./ui/button";
 import { DashboardIconCap } from "./DashboardIconCap";
 import { ChatInputComposer } from "./chat/ChatInputComposer";
+import { ChatInputAccessories } from "./chat/ChatInputAccessories";
+import { ChatInputFeedback } from "./chat/ChatInputFeedback";
+import { useGeneratedTextActions } from "./chat/useGeneratedTextActions";
+import { useCloseChatUiFeedback } from "./chat-ui/ChatUiControllerProvider";
+import type { RegisterGeneratedTextActions } from "./chat-ui/chat-ui-composer";
 import { mergePendingTextIntoComposer, type PendingChatSendActions } from "./chat/pending-chat-send";
 import type { PendingChatSend } from "../stores/dashboard-store-types";
 
@@ -44,6 +49,7 @@ interface ChatInputProps {
    */
   fileUploadUrl?: string;
   registerPendingSendActions?: (actions: PendingChatSendActions | null) => void;
+  registerGeneratedTextActions?: RegisterGeneratedTextActions;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
   onSessionChange?: (sessionId: string) => void;
@@ -53,10 +59,12 @@ export function ChatInput({
   additionalDisabled = false,
   fileUploadUrl,
   registerPendingSendActions,
+  registerGeneratedTextActions,
   presentation = "default",
   composerAnchorRef,
   onSessionChange,
 }: ChatInputProps = {}) {
+  const closeChatUiFeedback = useCloseChatUiFeedback();
   const activeSessionKey = useChatStore((s) => s.activeSessionKey);
   const activeSessionSummary = useChatStore((s) => s.activeSessionSummary);
   const tree = useChatStore((s) => s.tree);
@@ -149,8 +157,11 @@ export function ChatInput({
       onSessionChange?.(sessionId);
     },
     onBeforeSend: () => {
+      clearGeneratedUndo();
+      closeChatUiFeedback?.();
       composeEvents.submitted(activeSessionKey, textRef.current.length, composeMode);
       setText("");
+      textRef.current = "";
       if (!isLlmFinished) resetLocal();
     },
     onAfterSend: () => {
@@ -158,10 +169,12 @@ export function ChatInput({
     },
     onSendFailure: () => composeEvents.settled("error"),
     onSendError: (failedText) => {
+      textRef.current = failedText;
       setText(failedText);
       if (activeSessionKey) setDraft(activeSessionKey, failedText);
     },
     onRetry: (sessionId, pending) => {
+      if (sessionId === activeSessionKey) closeChatUiFeedback?.();
       composeEvents.submitted(sessionId, pending.text.length, pending.mode);
     },
   });
@@ -177,6 +190,8 @@ export function ChatInput({
 
     setPendingChatSend(sessionId, null);
     const restoredText = mergePendingTextIntoComposer(pending.text, textRef.current);
+    clearGeneratedUndo();
+    textRef.current = restoredText;
     setText(restoredText);
     setDraft(sessionId, restoredText);
     restoreUploadedFiles(pending.attachments.map(({ id, file, path }) => ({
@@ -217,6 +232,7 @@ export function ChatInput({
       previousSessionKeyRef.current = activeSessionKey;
     }
     setText(saved);
+    textRef.current = saved;
     resetLocal();
   }, [activeSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -293,11 +309,17 @@ export function ChatInput({
     (value: string) => {
       // 빈 초안에 첫 글자가 들어온 순간만 입력 시작으로 본다. 타건 자체는 남기지 않는다.
       composeEvents.textChanged(activeSessionKey, textRef.current, value);
+      textRef.current = value;
       setText(value);
       if (activeSessionKey) setDraft(activeSessionKey, value);
     },
     [activeSessionKey, setDraft, composeEvents],
   );
+
+  const { changeText, canUndo, undo, clearUndo: clearGeneratedUndo } = useGeneratedTextActions({
+    sessionId: activeSessionKey, text, textRef, textareaRef, sending,
+    onChangeText: handleChangeText, register: registerGeneratedTextActions,
+  });
 
   if (!activeSessionKey) return null;
 
@@ -315,7 +337,7 @@ export function ChatInput({
     ctxCount: llmMessages.length,
   });
   const pendingAttachments = effectiveFileUploadUrl && files.length > 0 ? (
-    <div className="flex gap-2 overflow-x-auto pb-2">
+    <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {files.map((f) => (
         <FileAttachmentPreview
           key={f.id}
@@ -326,6 +348,9 @@ export function ChatInput({
       ))}
     </div>
   ) : null;
+  const accessories = <ChatInputAccessories attachments={pendingAttachments} action={canUndo ? (
+    <Button type="button" variant="outline" onClick={undo} style={{ fontSize: "var(--chat-font-size)", lineHeight: "var(--chat-line-height)" }}>되돌리기</Button>
+  ) : null} />;
   const composer = (
     <ChatInputComposer presentation={presentation}>
       {showInterrupt && (
@@ -366,7 +391,7 @@ export function ChatInput({
       <ChatInputEditor
         ref={textareaRef}
         text={text}
-        onChangeText={handleChangeText}
+        onChangeText={changeText}
         onSend={sendMessage}
         inputLabel={presentation === "manuscript" ? "메시지" : undefined}
         placeholder={presentation === "manuscript" ? "" : mode.placeholder}
@@ -388,8 +413,7 @@ export function ChatInput({
     <SuggestionChip
       text={lastSuggestion}
       onShortTap={(t) => {
-        setText(t);
-        if (activeSessionKey) setDraft(activeSessionKey, t);
+        changeText(t);
       }}
       onSendImmediate={async (t) => {
         await send(t);
@@ -411,11 +435,13 @@ export function ChatInput({
         <>
           {suggestion}
           <div ref={composerAnchorRef} data-slot="chat-composer-anchor" className="-mx-1 px-1 pt-3">
-            {pendingAttachments}
+            {accessories}
             {composer}
           </div>
         </>
-      ) : <>{pendingAttachments}{suggestion}{composer}</>}
+      ) : <>{accessories}{suggestion}{composer}</>}
+
+      <ChatInputFeedback textareaRef={textareaRef} />
 
       {(error || interruptError || uploadError) && (
         <div className="chat-tone-danger rounded px-2 py-1 text-xs">

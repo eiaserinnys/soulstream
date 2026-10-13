@@ -7,39 +7,70 @@ type ControllerContext = {
   states: Map<string, ChatUiState>;
   update: (key: string, state: ChatUiState) => void;
   feedback: string;
+  feedbackOpen: boolean;
+  closeFeedback: () => void;
   notify: (text: string) => void;
   registerComposer: RegisterGeneratedTextActions;
   append: (text: string) => void;
 };
 const Context = createContext<ControllerContext | null>(null);
+const FeedbackLifecycleContext = createContext<(() => void) | null>(null);
 
 /** The scope owns memory; virtualized message rows only borrow their entries. */
-function ControllerScope({ sessionId, children }: PropsWithChildren<{ sessionId: string }>) {
-  const states = useRef(new Map<string, ChatUiState>()).current;
+type ScopeProps = PropsWithChildren<{ sessionId: string; appendGeneratedText?: ChatUiComposerHandle['appendGeneratedText'] }>;
+function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProps) {
+  const [scope, setScope] = useState(() => ({ sessionId, states: new Map<string, ChatUiState>() }));
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const { states } = scope;
   const composer = useRef<ChatUiComposerHandle | null>(null);
   const [, setVersion] = useState(0);
-  const [feedback, notify] = useState('');
+  const [{ text: feedback, open: feedbackOpen }, setFeedback] = useState({ text: '', open: false });
+  // Reset this owner before rendering its children; their component lifetimes stay intact.
+  if (scope.sessionId !== sessionId) {
+    setScope({ sessionId, states: new Map<string, ChatUiState>() });
+    setFeedback({ text: '', open: false });
+  }
+  const notify = useCallback((text: string) => {
+    // A → B → A has a new Map, so an old operation cannot write its feedback.
+    if (currentScope.current.states !== states) return;
+    setFeedback(previous => ({ text, open: previous.open || !!text }));
+  }, [states]);
+  const closeFeedback = useCallback(() => setFeedback({ text: '', open: false }), []);
   const update = useCallback((key: string, state: ChatUiState) => {
     if (states.get(key) === state) return;
     states.set(key, state);
     notify('');
     setVersion(version => version + 1);
-  }, [states]);
+  }, [states, notify]);
   const registerComposer = useCallback<RegisterGeneratedTextActions>(handle => { composer.current = handle; }, []);
   const append = useCallback((text: string) => {
     if (!text) return;
     try {
-      const result = composer.current?.appendGeneratedText(sessionId, text);
+      const result = appendGeneratedText ? appendGeneratedText(sessionId, text) : composer.current?.appendGeneratedText(sessionId, text);
       notify(result?.ok ? '' : '지금은 입력창에 더할 수 없어.');
     } catch {
       notify('지금은 입력창에 더할 수 없어.');
     }
-  }, [sessionId]);
-  return <Context.Provider value={{ sessionId, states, update, feedback, notify, registerComposer, append }}>{children}</Context.Provider>;
+  }, [appendGeneratedText, sessionId, notify]);
+  return <FeedbackLifecycleContext.Provider value={closeFeedback}>
+    <Context.Provider value={{ sessionId, states, update, feedback, feedbackOpen, closeFeedback, notify, registerComposer, append }}>{children}</Context.Provider>
+  </FeedbackLifecycleContext.Provider>;
 }
 
-export function ChatUiControllerProvider({ sessionId, children }: PropsWithChildren<{ sessionId: string }>) {
-  return <ControllerScope key={sessionId} sessionId={sessionId}>{children}</ControllerScope>;
+export function ChatUiControllerProvider({ sessionId, appendGeneratedText, children }: ScopeProps) {
+  return <ControllerScope sessionId={sessionId} appendGeneratedText={appendGeneratedText}>{children}</ControllerScope>;
+}
+
+/** Ordinary composers can also mount outside a chat UI scope. */
+export function useChatUiFeedback() {
+  const context = useContext(Context);
+  return { feedback: context?.feedback ?? '', open: context?.feedbackOpen ?? false };
+}
+
+/** Sending subscribes only to the stable lifecycle action, not UI values. */
+export function useCloseChatUiFeedback() {
+  return useContext(FeedbackLifecycleContext);
 }
 
 function useControllerContext() {
@@ -50,8 +81,8 @@ function useControllerContext() {
 
 /** The input host registers its bridge and places feedback below the composer. */
 export function useChatUiHost() {
-  const { feedback, registerComposer } = useControllerContext();
-  return { feedback, registerComposer };
+  const { feedback, feedbackOpen, closeFeedback, registerComposer } = useControllerContext();
+  return { feedback, feedbackOpen, closeFeedback, registerComposer };
 }
 
 export function useChatUiController(uiId: string, hash: string, doc: NormalizedChatUiDocumentV1) {
