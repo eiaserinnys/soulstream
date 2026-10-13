@@ -60,6 +60,7 @@ describe("upstream failure payload logging", () => {
         agentRegistry: new AgentRegistry([]),
         taskManager: {} as TaskManager,
         taskExecutor: {} as TaskExecutor,
+        providerUsage: { fetchUsage: vi.fn() },
       },
     );
     const secret = "must-not-appear-in-log".repeat(20_000);

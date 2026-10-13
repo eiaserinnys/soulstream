@@ -441,6 +441,7 @@ export async function composeWorkerRuntime(
       worker: params,
       taskManager,
       taskExecutor: taskRuntime.taskExecutor,
+      providerUsage,
       attachmentStore,
       claudeAuth,
       sessionDb: db,

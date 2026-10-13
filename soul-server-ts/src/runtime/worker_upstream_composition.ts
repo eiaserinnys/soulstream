@@ -2,6 +2,7 @@ import type { AuthorizeOrchestrationWorker } from "../upstream/task_runtime_comm
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { FileAttachmentStore } from "../attachments/file_manager.js";
 import type { ClaudeAuthService } from "../auth/claude_auth.js";
+import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -25,6 +26,7 @@ interface WorkerUpstreamCompositionParams {
   taskExecutor: TaskExecutor;
   attachmentStore: FileAttachmentStore;
   claudeAuth: ClaudeAuthService;
+  providerUsage: ProviderUsageCommandHandler;
   sessionDb: SessionDB;
   realtimeBroker: RealtimeBroker;
   agentConfigService: AgentConfigService;
@@ -44,6 +46,7 @@ export function composeWorkerUpstreamAdapter({
   taskExecutor,
   attachmentStore,
   claudeAuth,
+  providerUsage,
   sessionDb,
   realtimeBroker,
   agentConfigService,
@@ -81,6 +84,7 @@ export function composeWorkerUpstreamAdapter({
       taskExecutor,
       attachmentStore,
       claudeAuth,
+      providerUsage,
       sessionDb,
       realtimeBroker,
       agentConfigService,
