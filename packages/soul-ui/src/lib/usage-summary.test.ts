@@ -129,6 +129,7 @@ describe("usage summary projection", () => {
       },
       codex: { ...emptyProvider, weeklyRemainingPercent: 73, weeklyResetAt: 300 },
       gemini: { ...emptyProvider, weeklyRemainingPercent: 99, weeklyResetAt: 500 },
+      antigravity: null,
     };
 
     expect(weeklyUsageGauges(node("pas-node", providers))).toEqual([
