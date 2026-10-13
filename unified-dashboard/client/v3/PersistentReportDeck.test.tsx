@@ -32,7 +32,7 @@ beforeEach(async () => {
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it('renders only the current sheet into the accessible/tab surface, navigates by arrows and sends directly', async () => {
   expect(host.querySelector('[data-testid="report-sheet-two"]')?.getAttribute('aria-hidden')).toBe('true');
   await act(async () => button('응').click());
@@ -170,4 +170,26 @@ it.each([false, true])('keeps composer focus after a focused control disappears,
   entries = [two]; await render();
   expect(document.activeElement).toBe(outside);
   outside.remove(); portalTarget?.remove();
+});
+
+it('aligns the selected second sheet after moving into and out of the portrait portal', async () => {
+  await act(async () => button('다음 장').click());
+  portalTarget = document.createElement('div'); document.body.append(portalTarget);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
+  await render(); expect(portalTarget.querySelector<HTMLElement>('.pas-report-track')!.scrollLeft).toBe(340);
+  const target = portalTarget; portalTarget = null; await render(); expect(host.querySelector<HTMLElement>('.pas-report-track')!.scrollLeft).toBe(340); target.remove();
+});
+
+it('settles at a page boundary without scrollend and resets a lost scroll on placement/removal', async () => {
+  let contentHeight = 100;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) { return { height: this.classList.contains('pas-report-content') ? contentHeight : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect; });
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
+  await render(); const height = () => host.querySelector<HTMLElement>('.pas-report')!.style.height;
+  expect(height()).toBe('134px');
+  await act(async () => button('다음 장').click());
+  contentHeight = 200; entries = entries.map(entry => ({ ...entry, context: '새 내용' })); await render(); expect(height()).toBe('134px');
+  await act(async () => host.querySelector('.pas-report-track')!.dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('234px');
+  await act(async () => button('앞 장').click());
+  entries = []; await render(); entries = [one, two]; contentHeight = 300; await render(); expect(height()).toBe('334px');
 });

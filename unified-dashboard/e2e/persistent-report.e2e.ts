@@ -199,6 +199,14 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await expect(deck.locator('.pas-report-count')).toHaveText('1 / 2'); await expect(editor).toBeFocused();
   await track.focus(); await page.keyboard.press('ArrowRight');
   await expect(current().getByRole('heading')).toHaveText('다이제스트 세 편');
+  // Portal remounts must restore the physical page as well as the selected key.
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect(deck).toHaveAttribute('data-bubble', 'false');
+  await expect.poll(() => track.evaluate(node => Math.abs(node.scrollLeft - node.clientWidth))).toBeLessThan(1);
+  await expect(current().getByRole('heading')).toHaveText('다이제스트 세 편');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(deck).toHaveAttribute('data-bubble', 'true');
+  await expect.poll(() => track.evaluate(node => Math.abs(node.scrollLeft - node.clientWidth))).toBeLessThan(1);
   const popup = page.waitForEvent('popup'); await current().getByRole('link', { name: 'Meta Muse Wonder' }).click();
   const opened = await popup; await expect(opened).toHaveURL('https://example.test/digest'); await opened.close();
   // The changed number set starts one prefetch, shared by an ordinary click.

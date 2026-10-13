@@ -70,3 +70,17 @@ it.each(['reply', 'cancel'] as const)('follows existing chat retry acknowledgeme
   await act(async () => root.render(<PersistentReportProvider sessionId="a" entries={[{ ...entry, updated_at: 'new' }]}><Harness/></PersistentReportProvider>));
   expect(kind === 'reply' ? send.canCancel(entry) : send.cancelRequested(entry)).toBe(false);
 });
+
+it('retries the same publication after SSE replaces its object, using the current source', async () => {
+  transport.mockRejectedValueOnce(new Error('offline')); await act(async () => send.reply(entry, '응'));
+  const id = useDashboardStore.getState().pendingChatSends.a.id;
+  const repeated = { ...entry }; await act(async () => root.render(<PersistentReportProvider sessionId="a" entries={[repeated]}><Harness/></PersistentReportProvider>));
+  await act(async () => send.reply(repeated, '응'));
+  expect(transport).toHaveBeenCalledTimes(2); expect(notify).not.toHaveBeenCalled();
+  expect(useDashboardStore.getState().pendingChatSends.a).toMatchObject({ id, persistentReportSource: repeated });
+});
+it('does not reuse a previous publication cancellation failure', async () => {
+  transport.mockRejectedValueOnce(new Error('offline')); await act(async () => send.cancel(entry));
+  await act(async () => send.cancel({ ...entry, updated_at: 'new' }));
+  expect(transport).toHaveBeenCalledTimes(1); expect(notify).toHaveBeenCalledOnce();
+});

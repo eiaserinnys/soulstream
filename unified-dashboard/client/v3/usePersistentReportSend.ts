@@ -14,12 +14,13 @@ export function usePersistentReportSend(sessionId: string, notify: (text: string
     const current = state.pendingChatSends[sessionId];
     if (current?.status === 'sending') return;
     const text = `${entry.title}: ${option ?? '답을 취소합니다'}`;
+    const operation = current?.persistentReportOperation;
     const isSameFailure = current?.status === 'failed' && current.messageText === text
-      && (option === undefined
-        ? current.contextItems?.some(item => item.key === 'persistent_report_visible' && item.content.key === entry.key)
-        : current.persistentReportSource === entry && current.contextItems?.some(item => item.key === 'persistent_report_reply' && item.content.option === option));
+      && operation?.key === entry.key && operation.updatedAt === entry.updated_at
+      && operation.kind === (option === undefined ? 'cancel' : 'reply')
+      && (option === undefined || current.contextItems?.some(item => item.key === 'persistent_report_reply' && item.content.option === option));
     if (current && !isSameFailure) { notify(RETAINED_FAILURE); return; }
-    const next: PendingChatSend = isSameFailure ? { ...current!, status: 'sending', reason: undefined } : {
+    const next: PendingChatSend = isSameFailure ? { ...current!, status: 'sending', reason: undefined, ...(option !== undefined ? { persistentReportSource: entry } : {}) } : {
       persistentReportOperation: { key: entry.key, updatedAt: entry.updated_at, kind: option === undefined ? 'cancel' : 'reply' },
       id: crypto.randomUUID(), status: 'sending', text, messageText: text, attachments: [], attachmentPaths: [], mode: 'intervention',
       ...(option === undefined ? { contextItems: [{ key: 'persistent_report_visible', content: { key: entry.key, title: entry.title } }] }

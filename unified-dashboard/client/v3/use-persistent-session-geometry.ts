@@ -22,7 +22,13 @@ export function usePersistentSessionGeometry({ app, header, main, composer, enab
       const headerRect = header.current!.getBoundingClientRect();
       const mainRect = main.current!.getBoundingClientRect();
       const composerElement = composer.current!.querySelector<HTMLElement>('[data-slot="chat-input-composer"]')!;
-      const baselineBottom = composerElement.getBoundingClientRect().bottom;
+      const composerRect = composerElement.getBoundingClientRect();
+      const chatRoot = composerElement.closest<HTMLElement>('[data-slot="chat-root"]')!;
+      const input = composerElement.closest<HTMLElement>('[data-testid="chat-input"]')!;
+      // The reading column owns the bottom seat. An overflowing inline report
+      // must not move the portrait by pushing the composer's measured Y outward.
+      const belowComposer = input.getBoundingClientRect().bottom - composerRect.bottom;
+      const baselineBottom = mainRect.bottom - (parseFloat(getComputedStyle(chatRoot).paddingBottom) || 0) - belowComposer;
       const rowBottomGap = Number.parseFloat(getComputedStyle(composerElement).paddingBottom) || 0;
       const inputRowHeight = composerElement.querySelector('[data-testid="send-button"]')?.getBoundingClientRect().height ?? 0;
       const style = getComputedStyle(app.current!);
@@ -34,11 +40,12 @@ export function usePersistentSessionGeometry({ app, header, main, composer, enab
     const schedule = () => { if (frame === null) frame = requestAnimationFrame(measure); };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
     for (const ref of [app, header, main, composer]) observer?.observe(ref.current!);
+    observer?.observe(composer.current!.closest<HTMLElement>('[data-testid="chat-input"]')!);
     pointer.addEventListener('change', schedule);
     window.visualViewport?.addEventListener('resize', schedule);
     window.visualViewport?.addEventListener('scroll', schedule);
     window.addEventListener('resize', schedule);
-    schedule();
+    measure();
     return () => {
       observer?.disconnect(); if (frame !== null) cancelAnimationFrame(frame);
       pointer.removeEventListener('change', schedule);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, DashboardIconCap, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { SourceLink } from '@seosoyoung/soul-ui/components/SourceLink';
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
@@ -14,7 +14,7 @@ import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
-export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null };
+export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number };
 type Props = { sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
@@ -52,8 +52,10 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const root = useRef<HTMLElement | null>(null);
   const bubble = seat?.target && seat.body ? seat.layout : null;
   const inBubble = Boolean(bubble);
-  const measurementRevision = useMemo(() => ({ entries, inBubble }), [entries, inBubble]);
-  const sizing = useReportDeckHeight(root, measurementRevision, sessionId);
+  const ready = seat?.ready !== false;
+  const measurementRevision = JSON.stringify(entries.map(entry => [entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options]));
+  const layoutKey = JSON.stringify([sessionId, inBubble, bubble?.width ?? seat?.inlineWidth, bubble?.maxHeight, ready, entries.length > 0]);
+  const sizing = useReportDeckHeight(root, measurementRevision, sessionId, layoutKey, bubble?.maxHeight);
   const focusWithin = useRef(false);
   const flying = useRef<number | null>(null);
   useEffect(() => {
@@ -86,7 +88,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     const observer = new ResizeObserver(align);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [entries, sessionId]);
+  }, [entries, sessionId, inBubble, ready]);
   useLayoutEffect(() => {
     if (!focusWithin.current || !root.current) return;
     // A removed section still contains its old children in the retained ref.
@@ -98,8 +100,8 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     if (sheet) sheet.focus({ preventScroll: true });
   }, [visibleKey, entries.length, focusInput]);
 
-  if (!entries.length) return null;
-  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} style={{ height: sizing.height, maxHeight: bubble?.maxHeight, ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
+  if (!entries.length || !ready) return null;
+  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-overflow={sizing.overflowing} style={{ height: sizing.height, maxHeight: bubble?.maxHeight, ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
     aria-label="지금의 보고" aria-roledescription="carousel"
     onPointerDownCapture={sizing.hold}
     onFocusCapture={() => { focusWithin.current = true; }}
@@ -112,6 +114,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         const at = Math.round(node.scrollLeft / Math.max(1, node.clientWidth));
         if (flying.current !== null) { if (at !== flying.current) return; flying.current = null; }
         if (entries[at]) report.view(entries[at].key);
+        if (Math.abs(node.scrollLeft - at * node.clientWidth) < 0.5) sizing.endScroll();
       }}
       onScrollEnd={event => {
         flying.current = null;
@@ -124,7 +127,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         const answered = answer !== undefined;
         const tag = entry.kind === 'see' ? '보실 것' : answered ? '답 받음' : '답하실 것';
         return <article key={entry.key} className="pas-report-sheet" data-testid={`report-sheet-${entry.key}`} data-current={position === index}
-          data-publication={JSON.stringify([sessionId, entry.key, entry.title, entry.context, entry.action, entry.options])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
+          data-answered={answered} data-publication={JSON.stringify([sessionId, entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
           aria-label={`${entries.length > 1 ? `${position + 1} / ${entries.length}, ` : ''}${tag}, ${entry.title}`}>
           <div className="pas-report-reading v3-session-panel-scroll" onScroll={event => {
             const node = event.currentTarget;
@@ -140,7 +143,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
             </div>
           </div>
           {(entries.length > 1 || entry.kind === 'see' || entry.options.length > 0 || answered) && <div className="pas-report-footer">
-            {(entry.kind === 'see' || entry.options.length > 0) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
+            {(entry.kind === 'see' || entry.options.length > 0) && !(answered && sizing.overflowing) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
               {(entry.kind === 'see' ? ['봤다'] : entry.options).map(option => <Button key={option} variant="outline" disabled={entry.kind === 'ask' && (disabled || sending.sending)} onClick={() => {
                 if (entry.kind === 'see') void dismissReport(entry.key);
                 else void sending.reply(entry, option);
@@ -184,7 +187,7 @@ function ReportCardLink({ number, pending, lookupCards }: { number: number; pend
     } finally { if (open) pending.delete(number); }
   };
   return <SourceLink href={id ? `/?card=${encodeURIComponent(id)}` : undefined}
-    role="link" tabIndex={0} className={`v3-chat-status pas-report-card text-info-foreground hover:underline ${LINK_FOCUS}`} aria-label={`카드 ${number}번 열기`}
+    role="link" tabIndex={0} className={`v3-chat-status pas-report-card hover:underline ${LINK_FOCUS}`} aria-label={`카드 ${number}번 열기`}
     onKeyDown={event => { if (!id && event.key === 'Enter') {
       event.preventDefault();
       void resolve(!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey, event.currentTarget);
