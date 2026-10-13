@@ -106,3 +106,71 @@ describe('calculatePersistentSessionLayout', () => {
     expect(result.toggle).not.toBeNull();
   });
 });
+
+describe('persistent report bubble geometry', () => {
+  function reportLayout(width: number, height: number, widthScale: number, minimumHeight: number, overrides: Partial<Parameters<typeof calculatePersistentSessionLayout>[0]> = {}) {
+    const conversation = width >= 1280 ? 520 : width >= 1000 ? 480 : 400;
+    return layout({
+      app: { left: 0, top: 0, width, height },
+      header: { left: 0, top: 0, width, height: 76 },
+      main: { left: (width - conversation) / 2, top: 76, width: conversation, height: height - 120 },
+      baselineBottom: height - 45,
+      pointerFine: widthScale === 0.8,
+      reportBubble: { widthScale, minimumHeight },
+      ...overrides,
+    });
+  }
+
+  it.each([[1920, 1080, 441], [1440, 900, 342], [1180, 820, 318], [1179, 820, null]])('matches the approved web width at %i', (width, height, expectedWidth) => {
+    const result = reportLayout(width!, height!, 0.8, 221);
+    expect(result.reportBubble?.width ?? null).toBe(expectedWidth);
+  });
+
+  it.each([[1180, 820, 318], [1133, 820, null], [820, 1180, null]])('matches the approved unscaled width at %i', (width, height, expectedWidth) => {
+    const result = reportLayout(width!, height!, 1, 358);
+    expect(result.reportBubble?.width ?? null).toBe(expectedWidth);
+  });
+
+  it('accepts exactly the minimum skeleton height and rejects the height just below it', () => {
+    const available = reportLayout(1440, 900, 0.8, 0).reportBubble!.maxHeight;
+    expect(reportLayout(1440, 900, 0.8, available).reportBubble).not.toBeNull();
+    expect(reportLayout(1440, 900, 0.8, available + 1).reportBubble).toBeNull();
+  });
+
+  it('adds no seat to legacy calls, hidden portraits, or constrained phone layouts', () => {
+    expect(layout().reportBubble).toBeNull();
+    expect(reportLayout(1440, 900, 0.8, 221, { showCharacter: false }).reportBubble).toBeNull();
+    expect(reportLayout(1440, 900, 0.8, 221, { phoneConfigured: true }).reportBubble).toBeNull();
+    const { reportBubble, ...existing } = reportLayout(1440, 900, 0.8, 221);
+    const { reportBubble: disabled, ...withoutBubble } = reportLayout(1440, 900, 0.8, 221, { reportBubble: undefined });
+    expect(existing).toEqual(withoutBubble);
+  });
+
+  it('centers or clamps inside the gutter and seats its tail toward the portrait center', () => {
+    for (const [width, scale] of [[1920, 0.8], [1440, 0.8], [1180, 1]]) {
+      const result = reportLayout(width, 1080, scale, 221);
+      const bubble = result.reportBubble!, body = result.body!;
+      const gutter = (width - (width >= 1280 ? 520 : 480)) / 2;
+      const center = body.left + body.width / 2;
+      expect(bubble.left).toBe(Math.max(16, Math.min(center - bubble.width / 2, gutter - 16 - bubble.width)));
+      expect(bubble.left).toBeGreaterThanOrEqual(16);
+      expect(bubble.left + bubble.width).toBeLessThanOrEqual(gutter - 16);
+      expect(bubble.bottom).toBe(body.top - 16);
+      expect(bubble.maxHeight).toBe(bubble.bottom - (76 + 16));
+      expect(bubble.tailLeft).toBe(bubble.width * 2 / 3);
+      expect(bubble.tailDirection).toBe(center < bubble.left + bubble.tailLeft ? 'left' : 'right');
+    }
+    expect(reportLayout(1180, 820, 1, 358).reportBubble!.left).toBe(16);
+  });
+
+  it('returns app-local geometry when the shared viewport origin moves', () => {
+    const base = reportLayout(1440, 900, 0.8, 221);
+    const moved = reportLayout(1440, 900, 0.8, 221, {
+      app: { left: 100, top: 200, width: 1440, height: 900 },
+      header: { left: 100, top: 200, width: 1440, height: 76 },
+      main: { left: 560, top: 276, width: 520, height: 780 },
+      baselineBottom: 1055,
+    });
+    expect(moved).toEqual(base);
+  });
+});
