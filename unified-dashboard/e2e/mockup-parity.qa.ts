@@ -17,11 +17,18 @@ type PressedColors = {
   accent: string;
   selectedColor: string;
   unselectedColor: string;
+  selectedBackground: string;
+  unselectedBackground: string;
+  hostBackground: string;
 };
 
 function expectPressedAccent(colors: PressedColors) {
   expect(colors.selectedColor).toBe(colors.accent);
   expect(colors.unselectedColor).not.toBe(colors.accent);
+  expect(colors.selectedBackground).not.toBe("transparent");
+  expect(colors.selectedBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(colors.selectedBackground).not.toBe(colors.hostBackground);
+  expect(colors.selectedBackground).not.toBe(colors.unselectedBackground);
 }
 
 async function common(page: Page, width: number, theme: Theme, log: string[]) {
@@ -116,10 +123,11 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"]] 
 }
 
 for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], [390, "dark"]] as const)) {
-  test(`mockup host renders and responds at ${width} ${theme}`, async ({ page }) => {
+  test(`mockup host renders and responds at ${width} ${theme}`, async ({ page, browser }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
     await page.goto(`${HOST}?theme=${theme}&w=fit&glass=css`);
+    mkdirSync(output, { recursive: true });
     const frame = page.locator(".mockup-host-frame");
     await expect(page.locator(".mockup-host-title")).toHaveText("실제 컴포넌트로 만든 시안 확인");
     await expect(page.getByRole("group", { name: "테마" })).toBeVisible();
@@ -134,11 +142,16 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
       group.append(probe);
       const accent = getComputedStyle(probe).color;
       probe.remove();
+      const host = document.querySelector<HTMLElement>(".mockup-host");
+      if (!host) throw new Error("mockup host is missing");
       return {
         selectedLabel: selected.textContent?.trim() ?? "",
         accent,
         selectedColor: getComputedStyle(selected).color,
         unselectedColor: getComputedStyle(unselected).color,
+        selectedBackground: getComputedStyle(selected).backgroundColor,
+        unselectedBackground: getComputedStyle(unselected).backgroundColor,
+        hostBackground: getComputedStyle(host).backgroundColor,
       };
     }, name);
 
@@ -148,6 +161,30 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
     expect(initialWidthColors.selectedLabel).toBe("맞춤");
     expectPressedAccent(initialThemeColors);
     expectPressedAccent(initialWidthColors);
+
+    const headerLayout = await page.locator(".mockup-host-header").evaluate(header => {
+      const rectCenter = (selector: string) => {
+        const element = header.querySelector<HTMLElement>(selector);
+        if (!element) throw new Error(`${selector} is missing`);
+        const rect = element.getBoundingClientRect();
+        return Math.round(rect.top + rect.height / 2);
+      };
+      const title = header.querySelector<HTMLElement>(".mockup-host-title");
+      if (!title) throw new Error("mockup host title is missing");
+      const rows = new Set([
+        rectCenter(".mockup-host-title"),
+        rectCenter('[role="group"][aria-label="테마"]'),
+        rectCenter('[role="group"][aria-label="화면 폭"]'),
+      ]);
+      return {
+        rows: rows.size,
+        height: header.offsetHeight,
+        titleClientWidth: title.clientWidth,
+        titleScrollWidth: title.scrollWidth,
+      };
+    });
+    expect(headerLayout.rows).toBe(width === 390 ? 2 : 1);
+    writeFileSync(path.join(output, `host-${width}-${theme}-layout.json`), JSON.stringify(headerLayout, null, 2));
 
     const header = await page.locator(".mockup-host-header").evaluate(element => {
       const rect = element.getBoundingClientRect();
@@ -171,16 +208,87 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
     ))).toBe(false);
     const titleStyle = await page.locator(".mockup-host-title").evaluate(element => {
       const style = getComputedStyle(element);
-      return { overflow: style.overflow, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace };
+      return {
+        overflow: style.overflow,
+        textOverflow: style.textOverflow,
+        whiteSpace: style.whiteSpace,
+        fontWeight: style.fontWeight,
+        fontSize: style.fontSize,
+        lineHeight: style.lineHeight,
+      };
     });
-    expect(titleStyle).toEqual({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    expect(titleStyle).toEqual({
+      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      fontWeight: "650", fontSize: "16px", lineHeight: "24px",
+    });
 
-    mkdirSync(path.join(output, "host"), { recursive: true });
     await page.screenshot({
-      path: path.join(output, "host", `${width}-${theme}.png`),
+      path: path.join(output, `host-${width}-${theme}.png`),
       fullPage: true,
       animations: "disabled",
     });
+
+    if (width === 1440 && theme === "light") {
+      await page.setViewportSize({ width: 820, height: 1000 });
+      await page.waitForTimeout(150);
+      const currentTitleAt820 = await page.locator(".mockup-host-header").evaluate(header => {
+        const parts = [
+          header.querySelector<HTMLElement>(".mockup-host-title"),
+          header.querySelector<HTMLElement>('[role="group"][aria-label="테마"]'),
+          header.querySelector<HTMLElement>('[role="group"][aria-label="화면 폭"]'),
+        ];
+        if (parts.some(part => !part)) throw new Error("mockup host header parts are missing");
+        const centers = parts.map(part => {
+          const rect = part!.getBoundingClientRect();
+          return Math.round(rect.top + rect.height / 2);
+        });
+        return { rows: new Set(centers).size, height: header.offsetHeight };
+      });
+      expect(currentTitleAt820.rows).toBe(1);
+      writeFileSync(path.join(output, "host-current-title-820-layout.json"), JSON.stringify({
+        title: await page.locator(".mockup-host-title").innerText(),
+        ...currentTitleAt820,
+      }, null, 2));
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.waitForTimeout(150);
+    }
+
+    if (width === 1440) {
+      const hoveredLabel = theme === "light" ? "어둡게" : "밝게";
+      const hovered = page.getByRole("group", { name: "테마" }).getByRole("button", { name: hoveredLabel });
+      await hovered.hover();
+      const hoveredBackground = await hovered.evaluate(element => getComputedStyle(element).backgroundColor);
+      await page.getByRole("group", { name: "테마" }).screenshot({
+        path: path.join(output, `selected-hover-${theme}.png`),
+        animations: "disabled",
+      });
+      writeFileSync(path.join(output, `selected-hover-${theme}.json`), JSON.stringify({
+        selected: initialThemeColors.selectedBackground,
+        hovered: hoveredBackground,
+        unselected: initialThemeColors.unselectedBackground,
+      }, null, 2));
+
+      const sample = page.frameLocator(".mockup-host-frame").locator('[data-testid="card-board-sample"]');
+      await sample.getByRole("button", { name: "일반 보기", exact: true }).click();
+      await sample.getByRole("switch", { name: "완료·취소 숨김" }).click();
+      const periods = sample.getByRole("group", { name: "완료 기간" });
+      await expect(periods).toBeVisible();
+      const periodColors = await periods.evaluate(group => {
+        const selected = group.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
+        const unselected = group.querySelector<HTMLButtonElement>('button[aria-pressed="false"]');
+        if (!selected || !unselected) throw new Error("completed-periods buttons are missing");
+        return {
+          selectedLabel: selected.textContent?.trim() ?? "",
+          selectedBackground: getComputedStyle(selected).backgroundColor,
+          unselectedBackground: getComputedStyle(unselected).backgroundColor,
+        };
+      });
+      writeFileSync(path.join(output, `completed-periods-after-${theme}.json`), JSON.stringify(periodColors, null, 2));
+      await sample.locator(".v3-completed-controls").screenshot({
+        path: path.join(output, `completed-periods-after-${theme}.png`),
+        animations: "disabled",
+      });
+    }
 
     const nextTheme = theme === "light" ? "dark" : "light";
     await page.getByRole("button", { name: nextTheme === "dark" ? "어둡게" : "밝게" }).click();
@@ -221,11 +329,58 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], 
     const transform = await frame.evaluate(element => (element as HTMLIFrameElement).style.transform);
     if (width === 390) expect(transform.startsWith("scale(")).toBe(true);
     else expect(transform).toBe("");
-    writeFileSync(path.join(output, "host", `${width}-${theme}-colors.json`), JSON.stringify({
+    writeFileSync(path.join(output, `host-${width}-${theme}-colors.json`), JSON.stringify({
       initialTheme: initialThemeColors,
       initialWidth: initialWidthColors,
       afterTheme: afterThemeColors,
       afterPhoneWidth: afterPhoneColors,
     }, null, 2));
+
+    if (width === 1440 && theme === "light") {
+      const longTitle = "긴 제목 테스트 ".repeat(12);
+      const context = await browser.newContext();
+      const longPage = await context.newPage();
+      await longPage.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+      await longPage.route("**/proof-343/index.html*", async route => {
+        const response = await route.fetch();
+        const html = await response.text();
+        const replaced = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${longTitle}</title>`);
+        if (replaced === html) throw new Error("mockup host HTML title was not replaced");
+        await route.fulfill({ response, body: replaced });
+      });
+      await longPage.goto(`${HOST}?theme=light&w=fit&glass=css`);
+      await expect(longPage.locator(".mockup-host-title")).toHaveText(longTitle);
+      const titleLayouts = [];
+      for (const titleWidth of [390, 820, 1440]) {
+        await longPage.setViewportSize({ width: titleWidth, height: 1000 });
+        await longPage.waitForTimeout(150);
+        const metrics = await longPage.locator(".mockup-host-header").evaluate(header => {
+          const title = header.querySelector<HTMLElement>(".mockup-host-title");
+          const themeGroup = header.querySelector<HTMLElement>('[role="group"][aria-label="테마"]');
+          const widthGroup = header.querySelector<HTMLElement>('[role="group"][aria-label="화면 폭"]');
+          if (!title || !themeGroup || !widthGroup) throw new Error("mockup host header parts are missing");
+          const centers = [title, themeGroup, widthGroup].map(element => {
+            const rect = element.getBoundingClientRect();
+            return Math.round(rect.top + rect.height / 2);
+          });
+          return {
+            rows: new Set(centers).size,
+            height: header.offsetHeight,
+            titleClientWidth: title.clientWidth,
+            titleScrollWidth: title.scrollWidth,
+            titleTruncated: title.scrollWidth > title.clientWidth,
+          };
+        });
+        expect(metrics.rows).toBe(titleWidth === 390 ? 2 : 1);
+        expect(metrics.titleTruncated).toBe(true);
+        titleLayouts.push({ width: titleWidth, ...metrics });
+        await longPage.locator(".mockup-host-header").screenshot({
+          path: path.join(output, `host-title-${titleWidth}.png`),
+          animations: "disabled",
+        });
+      }
+      writeFileSync(path.join(output, "host-long-title-layout.json"), JSON.stringify({ title: longTitle, layouts: titleLayouts }, null, 2));
+      await context.close();
+    }
   });
 }

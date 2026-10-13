@@ -70,7 +70,7 @@
 .v3-completed-controls { display: flex; flex-direction: column; gap: var(--v3-space-2); padding: var(--v3-space-1); margin-bottom: var(--v3-space-3); }
 .v3-completed-periods, .v3-completed-dates { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); }
 .v3-completed-periods button { font: var(--v3-type-body) var(--v3-font-family); }
-.v3-completed-periods button[aria-pressed="true"] { background: var(--v3-glass-panel); color: var(--v3-accent); }
+.v3-completed-periods button[aria-pressed="true"] { background: color-mix(in srgb, var(--v3-accent) 16%, transparent); color: var(--v3-accent); }
 .v3-completed-dates > input { flex: 1; min-width: 0; }
 .v3-card-board-lane.v3-completed-viewport { display: block; overflow: hidden; }
 .v3-completed-grid { display: grid; grid-template-columns: repeat(auto-fill,var(--postit-width)); gap: calc(var(--v3-space-6) * var(--postit-scale)); padding-block: var(--v3-space-1); }
