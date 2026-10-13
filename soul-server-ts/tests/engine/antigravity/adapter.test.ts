@@ -1,13 +1,13 @@
 import { existsSync, readFileSync, writeFileSync, chmodSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import pino from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AntigravityEngineAdapter } from "../../../src/engine/antigravity/adapter.js";
 import { makeTempDirSync } from "../../helpers/temp_dir.js";
 
 // Like the existing stdio transport tests, use an isolated Node fixture process.
 // This verifies stdin EOF, process close, SIGINT and file lifetime without calling agy.
-function fixture() {
+function fixture(processEnv: NodeJS.ProcessEnv = process.env) {
   const directory = makeTempDirSync("agy-adapter-");
   const executable = join(directory, "fake-agy.mjs");
   writeFileSync(executable, `#!/usr/bin/env node
@@ -16,6 +16,13 @@ const args=process.argv.slice(2);
 const value=(key)=>args[args.indexOf(key)+1];
 const emit=(x)=>console.log(JSON.stringify(x));
 const model=value('--model');
+if(model==='environment'){
+ const names=['SCRATCH_WORKSPACE_DIR','SOULSTREAM_AGENT_ID','AGENT_COMMON_FILES_DIR','GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_GEMINI_BASE_URL'];
+ const env=Object.fromEntries(names.filter(name=>process.env[name]!==undefined).map(name=>[name,process.env[name]]));
+ emit({event:'init',conversation_id:'fixture-conversation',init:{model}});
+ emit({event:'result',result:{status:'SUCCESS',response:JSON.stringify(env)}});
+ process.exit(0);
+}
 if(model==='parse-error'){console.log('not json');process.exit(0);}
 let input=''; for await(const chunk of process.stdin) input+=chunk;
 const prompt=JSON.parse(input).message.content;
@@ -33,7 +40,7 @@ if(model==='blocking'){
   chmodSync(executable, 0o700);
   const state = join(directory, "state");
   const engine = new AntigravityEngineAdapter({ workspaceDir: directory, agentId: "test", sessionDirectory: state,
-    executablePath: executable, processEnv: process.env }, pino({ level: "silent" }));
+    executablePath: executable, processEnv }, pino({ level: "silent" }));
   return { directory, state, engine };
 }
 const testHome = makeTempDirSync("agy-adapter-home-");
@@ -46,6 +53,41 @@ async function collect(engine: AntigravityEngineAdapter, params = input) {
 }
 
 describe("AntigravityEngineAdapter", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([undefined, "fixture-conversation"])("passes agent workspace env and strips Google API routing keys (resume: %s)", async resumeSessionId => {
+    vi.stubEnv("AGENT_COMMON_FILES_DIR", "/fixture/worker-common");
+    const processEnv = {
+      ...process.env,
+      SCRATCH_WORKSPACE_DIR: undefined,
+      SOULSTREAM_AGENT_ID: undefined,
+      AGENT_COMMON_FILES_DIR: "/fixture/stale-common",
+      GEMINI_API_KEY: "fixture-gemini-key",
+      GOOGLE_API_KEY: "fixture-google-key",
+      GOOGLE_GEMINI_BASE_URL: "https://fixture.invalid",
+    };
+    const { engine, directory } = fixture(processEnv);
+    try {
+      const events = await collect(engine, { ...input, model: "environment", resumeSessionId });
+      const complete = events.find(event => event.type === "complete");
+      expect(complete).toBeDefined();
+      if (complete?.type !== "complete") throw new Error("Fixture did not complete");
+      expect(JSON.parse(complete.result!)).toEqual({
+        SCRATCH_WORKSPACE_DIR: directory,
+        SOULSTREAM_AGENT_ID: "test",
+        AGENT_COMMON_FILES_DIR: "/fixture/worker-common",
+      });
+      expect(processEnv).toMatchObject({
+        AGENT_COMMON_FILES_DIR: "/fixture/stale-common",
+        GEMINI_API_KEY: "fixture-gemini-key",
+        GOOGLE_API_KEY: "fixture-google-key",
+        GOOGLE_GEMINI_BASE_URL: "https://fixture.invalid",
+      });
+    } finally {
+      await engine.close();
+    }
+  });
+
   it("implements frame/channel execution, waits for close and removes definitions on success", async () => {
     const { engine, directory, state } = fixture();
     const frames: unknown[] = [];

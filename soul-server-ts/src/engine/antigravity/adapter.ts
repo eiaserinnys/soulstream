@@ -8,6 +8,7 @@ import { engineEventFrame, type RunnerEventFrame } from "../../runner/frame_prot
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";
 import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
 import type { EngineExecuteParams, EngineInterventionResult, EnginePort, EngineUserInput, SSEEventPayload } from "../protocol.js";
+import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import { writeAntigravityAgentDefinition } from "./agent_definition.js";
 import { addAntigravityUsage, AntigravityEventMapper, type AntigravityUsage } from "./events.js";
 import { antigravityArguments, antigravityUserMessage } from "./params.js";
@@ -69,7 +70,14 @@ export class AntigravityEngineAdapter implements EnginePort {
       }
       process = launchAntigravityProcess({ executablePath: this.options.executablePath,
         args: antigravityArguments(params, join(sessionDirectory, "antigravity.log"), definition),
-        cwd: this.workspaceDir, env: this.options.processEnv, input: antigravityUserMessage(params.prompt), logger: this.logger,
+        cwd: this.workspaceDir,
+        env: withScratchWorkspaceEnv(
+          Object.fromEntries(Object.entries(this.options.processEnv).filter(
+            (entry): entry is [string, string] => entry[1] !== undefined,
+          )),
+          { workspaceDir: this.workspaceDir, agentId: this.options.agentId },
+        ),
+        input: antigravityUserMessage(params.prompt), logger: this.logger,
       });
       const cleanedUp = process.done.then(async () => await definition?.remove());
       this.active = { process, cleanedUp };
