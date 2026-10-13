@@ -54,9 +54,10 @@ export class PersistentReportService {
   }
   /** Card commit is complete. Discover without locks, then recheck each current board under its session lock. */
   async pruneForCard(cardId: string): Promise<void> {
-    const targets = await this.sql<{session_id:string}[]>`SELECT session_id FROM sessions
-      WHERE metadata @> '[{"type":"persistent_report"}]'::jsonb
-        AND EXISTS (SELECT 1 FROM jsonb_array_elements(metadata) AS m,
+    const targets = await this.sql<{session_id:string}[]>`WITH candidates AS MATERIALIZED (
+      SELECT session_id,metadata FROM sessions WHERE metadata @> '[{"type":"persistent_report"}]'::jsonb
+    ) SELECT session_id FROM candidates
+      WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(metadata) AS m,
           jsonb_array_elements(m->'value'->'entries') AS e
           WHERE m->>'type'='persistent_report' AND
             (e->'card_numbers' @> jsonb_build_array((SELECT number FROM cards WHERE id=${cardId}))
