@@ -5,6 +5,7 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
   const holding = useRef(false), pressing = useRef(false), scrolling = useRef(false);
   const pending = useRef<{ revision: unknown; layoutKey: string; height: number } | undefined>(undefined);
   const beforeAnswer = useRef(new Map<string, number>());
+  const measureCurrent = useRef<() => void>(() => {});
   const previousLayout = useRef(layoutKey);
   const releaseIfSettled = useCallback(() => {
     holding.current = pressing.current || scrolling.current;
@@ -41,16 +42,22 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
         reading.dataset.more = String(reading.scrollHeight - reading.scrollTop - reading.clientHeight > 1);
       });
     };
+    measureCurrent.current = measure;
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     node.querySelectorAll('.pas-report-content, .pas-report-footer, .pas-report-reading').forEach(child => observer.observe(child));
+    return () => { observer.disconnect(); measureCurrent.current = () => {}; };
+  }, [root, revision, sessionId, layoutKey, reset]);
+  useEffect(() => {
     let active = true;
-    const fontsChanged = () => { if (active) { beforeAnswer.current.clear(); measure(); } };
+    const fontsChanged = () => { if (active) { beforeAnswer.current.clear(); measureCurrent.current(); } };
+    // Wait once per mount, not once per content revision. Later loadingdone
+    // events represent actual font arrivals and use the current measurement.
     document.fonts?.ready.then(fontsChanged);
     document.fonts?.addEventListener('loadingdone', fontsChanged);
-    return () => { active = false; observer.disconnect(); document.fonts?.removeEventListener('loadingdone', fontsChanged); };
-  }, [root, revision, sessionId, layoutKey, reset]);
+    return () => { active = false; document.fonts?.removeEventListener('loadingdone', fontsChanged); };
+  }, []);
   useEffect(() => {
     const release = () => { pressing.current = false; releaseIfSettled(); };
     window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release);

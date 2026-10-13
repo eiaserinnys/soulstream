@@ -65,12 +65,12 @@ const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([optio
 beforeEach(()=>{vi.clearAllMocks();resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
-it('waits for the current PAS portrait setting before marking measured report geometry ready',async()=>{
+it('provides measured report geometry while the chat view owns settings readiness',async()=>{
  geometry.value={reportBubble:null,body:null,toggle:null,lineY:0,lineLeftReach:0};
  useDashboardStore.getState().setPersistentSessionDisplaySettings('one',null);
  mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');
  const chat=()=>host.querySelector('[data-testid="chat"]')!;
- expect(chat().getAttribute('data-report-ready')).toBe('false');
+ expect(chat().getAttribute('data-report-ready')).toBe('true');
  act(()=>useDashboardStore.getState().setPersistentSessionDisplaySettings('one',{show_generation_separator:true,show_jev_candidates:true,show_character:false,animate_character:false,turn_usage_mode:'collapsed'}));
  expect(chat().getAttribute('data-report-ready')).toBe('true');
 });

@@ -127,7 +127,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         const answered = answer !== undefined;
         const tag = entry.kind === 'see' ? '보실 것' : answered ? '답 받음' : '답하실 것';
         return <article key={entry.key} className="pas-report-sheet" data-testid={`report-sheet-${entry.key}`} data-current={position === index}
-          data-answered={answered} data-publication={JSON.stringify([sessionId, entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
+          data-answered={answered} data-publication={JSON.stringify([sessionId, entry.key, entry.updated_at])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
           aria-label={`${entries.length > 1 ? `${position + 1} / ${entries.length}, ` : ''}${tag}, ${entry.title}`}>
           <div className="pas-report-reading v3-session-panel-scroll" onScroll={event => {
             const node = event.currentTarget;

@@ -328,3 +328,32 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   writeFileSync(path.join(output, 'metrics.json'), JSON.stringify({ geometry, sends, deletes, measurements, cardLists, cardDetails, errors: fixture.errors }, null, 2));
   for (const update of [...updates, ...events]) update.gate.release();
 });
+
+test('PAS settings failure settles loading and shows later SSE reports above chat',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  const fixture=await installChatUiRoutes(page,{ui:false,count:3});
+  const settings={default_model:{model_preset:null,reasoning_effort:null},fallback_model:null,show_generation_separator:true,show_character:true,show_jev_candidates:true,animate_character:false,show_turn_usage:true,turn_usage_mode:'collapsed'};
+  const resource={session_id:chatUiSession,display_name:'설정 조회 실패 검수',node_id:'eiaserinnys',folder_id:'rb-alpha',agent_id:'roselin_codex',agent_name:'로젤린',persistent:true,settings,persistent_report:reportReviewEntries,runtime:{current_model:{model_preset:null,reasoning_effort:null,model:'codex'},pending:null}};
+  const lookup=gate(),reportUpdate=gate(); let lookupRequests=0,streamRequests=0;
+  await page.route('**/api/persistent-sessions**',async route=>{
+    const pathname=new URL(route.request().url()).pathname;
+    if(pathname==='/api/persistent-sessions')return route.fulfill({json:{sessions:[resource],total:1,create_defaults:{node_id:resource.node_id,preferred_agent_id:resource.agent_id,settings,initial_instruction:'',unavailable_reason:null}}});
+    if(pathname.endsWith('/instructions'))return route.fulfill({json:{instructions:[]}});
+    lookupRequests++; await lookup.promise; return route.fulfill({status:503,json:{detail:'설정 조회 실패'}});
+  });
+  await page.route('**/api/sessions/stream?*',async route=>{
+    if(streamRequests++===0)return route.fulfill({contentType:'text/event-stream',body:'retry: 100\n\n'+sse('session_list',{sessions:[{agentSessionId:chatUiSession,status:'running',eventCount:3,nodeId:'eiaserinnys',agentId:'roselin_codex'}],total:1},1)});
+    await reportUpdate.promise;
+    return route.fulfill({contentType:'text/event-stream',body:'retry: 60000\n\n'+sse('session_updated',{agent_session_id:chatUiSession,persistent_report:[{...reportReviewEntries[0],title:'설정 실패 뒤의 보고',updated_at:'failed-settings'}]},2)});
+  });
+  await page.goto(`/persistent/${chatUiSession}`);
+  await expect(page.getByRole('textbox',{name:'메시지',exact:true})).toBeVisible();
+  await expect.poll(()=>lookupRequests).toBeGreaterThan(0);
+  const deck=page.getByTestId('report-deck'); await expect(deck).toHaveCount(0);
+  lookup.release(); await expect(deck).toBeVisible(); await expect(deck).toHaveAttribute('data-bubble','false');
+  reportUpdate.release(); await expect(deck.getByRole('heading')).toHaveText('설정 실패 뒤의 보고');
+  await expect(deck.locator('.pas-report-tail')).toHaveCount(0);
+  await page.evaluate(()=>document.fonts.ready); await page.mouse.move(0,0);
+  await page.screenshot({path:path.join(output,'1440-settings-failed-r4.png')});
+  expect(fixture.errors).toEqual([]);
+});

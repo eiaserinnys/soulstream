@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { ChatView, useDashboardStore, type ChatSessionStoreScope, type PersistentReportEntry } from "@seosoyoung/soul-ui";
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { EMPTY_REPORT } from '@seosoyoung/soul-ui/shared/persistent-report';
@@ -33,23 +33,27 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   const setGlobalDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const setDisplaySettings = storeScope?.store.getState().setPersistentSessionDisplaySettings
     ?? setGlobalDisplaySettings;
+  // Null settings can be the final failed result; completion belongs to this lookup.
+  const [settledSettingsSession, setSettledSettingsSession] = useState<string | null>(null);
   useEffect(() => {
     if (!loadDisplaySettings) return;
     let active = true;
+    setSettledSettingsSession(null);
     setDisplaySettings(sessionId, null);
     const reportBaseline = useDashboardStore.getState().persistentReports[sessionId];
     void createPersistentSessionsApi().get(sessionId).then(({ session }) => {
       if (!active) return;
       setDisplaySettings(sessionId, session.persistent ? session.settings : null);
       if (session.persistent_report !== undefined) useDashboardStore.getState().setPersistentReport(sessionId, session.persistent_report, { current: reportBaseline });
+      setSettledSettingsSession(sessionId);
     }).catch(() => {
-      if (active) setDisplaySettings(sessionId, null);
+      if (active) { setDisplaySettings(sessionId, null); setSettledSettingsSession(sessionId); }
     });
     return () => { active = false; };
   }, [loadDisplaySettings, sessionId, setDisplaySettings]);
   if (!showReport) return <ChatView {...props} storeScope={storeScope} />;
   return <PersistentReportProvider sessionId={sessionId} entries={visibleEntries}>
-    <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss} />
+    {(!loadDisplaySettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss} />}
     <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
   </PersistentReportProvider>;
 }
