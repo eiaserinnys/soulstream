@@ -15,13 +15,14 @@ export function reportTag(entry: PersistentReportEntry) {
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, bubbleHeight, busy = false,
-  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction }: {
+  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onNavigationBottom }: {
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
   onCard(number: number): void; onLink(url: string): void;
   bubble?: boolean; bubbleHeight?: number; busy?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
   onHeight?(height: number): void; onInteraction?(pressed: boolean): void;
+  onNavigationBottom?(bottom: number): void;
 }) {
   const t = useTokens();
   const signature = JSON.stringify([entry.title, entry.context, entry.action, entry.options, compact]);
@@ -29,6 +30,12 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
   const hasFooter = !compact && (count > 1 || entry.state === 'answered' || entry.kind === 'see' || entry.options.length > 0);
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
+  const navLayout = useRef<{ y: number; height: number } | null>(null);
+  const reportNavigationBottom = () => {
+    if (measured.current.foot !== null && navLayout.current) {
+      onNavigationBottom?.(measured.current.foot - navLayout.current.y - navLayout.current.height);
+    }
+  };
   const measure = (part: 'reading' | 'foot', height: number) => {
     measured.current[part] = height;
     // Content size already includes reading padding; footer layout includes
@@ -68,16 +75,20 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     {answer ? compact ? received : null : todo}
   </View>;
   const foot = hasFooter
-    ? <View testID="report-footer" style={styles.foot} onLayout={event => measure('foot', event.nativeEvent.layout.height)}>
+    ? <View testID="report-footer" style={styles.foot} onLayout={event => {
+      measure('foot', event.nativeEvent.layout.height); reportNavigationBottom();
+    }}>
       {count > 1 ? <View testID="report-nav-slot" style={[styles.navSlot, !showNav && { width: 'auto', minWidth: t.uiSpacing.xxl,
-        height: t.hitTarget.min, justifyContent: 'center' }]}>
+        height: t.hitTarget.min, justifyContent: 'center' }]}
+        onLayout={event => { navLayout.current = event.nativeEvent.layout; reportNavigationBottom(); }}>
         {!showNav ? <Text testID="report-page" style={styles.count} numberOfLines={1}
           accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
           accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}
           accessibilityActions={[{ name: 'increment', label: '다음 장' }, { name: 'decrement', label: '앞 장' }]}
           onAccessibilityAction={event => onStep(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>{page}</Text> : null}
       </View> : null}
-      {answer ? <View style={[styles.received, { minHeight: Math.max(asked.foot - t.uiSpacing.md - t.uiSpacing.lg, t.hitTarget.min) }]}>
+      {answer ? <View testID="report-received-row" style={[styles.received, { minHeight: bubble ? t.hitTarget.min
+        : Math.max(asked.foot - t.uiSpacing.md - t.uiSpacing.lg, t.hitTarget.min) }]}>
         {received}{cancelSent ? <Text testID="report-cancel-sent" style={styles.cancelLabel}>취소 요청 보냄</Text>
           : canCancel ? <View style={styles.cancelEdge}><GlassButton testID="report-cancel" variant="plain" size="compact"
             disabled={busy} accessibilityLabel="취소 요청" onPress={() => onCancel?.()}><Text style={styles.cancelLabel}>취소 요청</Text></GlassButton></View> : null}

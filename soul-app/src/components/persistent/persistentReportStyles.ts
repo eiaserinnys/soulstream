@@ -33,7 +33,7 @@ export function reportStyles(t: DesignTokens, _bleed: number, showNav: boolean) 
     todo: { ...type.body, color: t.colors.textPrimary },
     link: { color: t.colors.link },
     receivedLabel: { ...type.meta, color: t.colors.textSecondary },
-    foot: { flexDirection: 'row', flexWrap: 'wrap-reverse', alignItems: 'flex-start', columnGap: t.uiSpacing.sm,
+    foot: { flexDirection: 'row', flexWrap: 'wrap-reverse', alignItems: 'center', columnGap: t.uiSpacing.sm,
       rowGap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.lg, paddingTop: t.uiSpacing.md, paddingBottom: t.uiSpacing.lg },
     navSlot: { width: showNav ? t.hitTarget.min * 2 + t.uiSpacing.xxl + t.uiSpacing.xs * 2 - iconOverhang : t.uiSpacing.xxl,
       height: showNav ? t.hitTarget.min : type.meta.lineHeight },

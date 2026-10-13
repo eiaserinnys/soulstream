@@ -403,11 +403,12 @@ test('answered bubble holds its publication surface height without an artificial
   fireEvent(get('report-track'), 'layout', { nativeEvent: { layout: { width: 318 } } });
   fireEvent(get('report-scroll'), 'contentSizeChange', 318, 400);
   expect(ready).toHaveBeenLastCalledWith(false);
-  fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 242 } } });
   expect(ready).toHaveBeenLastCalledWith(true);
   expect(StyleSheet.flatten(get('report-deck').props.style).height).toBe(440);
   screen.rerender(draw({ ...entry, state: 'answered', answer: '응' }));
   expect(StyleSheet.flatten(get('report-reading').props.style).minHeight).toBeUndefined();
+  expect(StyleSheet.flatten(get('report-received-row').props.style).minHeight).toBeLessThan(80);
   fireEvent(get('report-scroll'), 'contentSizeChange', 318, 100);
   fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
   fireEvent(get('report-scroll'), 'layout', { nativeEvent: { layout: { height: 100 } } });

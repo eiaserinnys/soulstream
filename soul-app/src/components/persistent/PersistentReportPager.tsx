@@ -45,16 +45,20 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const [width, setWidth] = useState(0);
   const measuredHeights = useRef(new Map<string, number>());
   const openHeights = useRef(new Map<string, number>());
+  const navBottoms = useRef(new Map<string, number>());
   const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, compact, width, entry.key, entry.updated_at]);
   const pressing = useRef(false);
   const [height, setHeight] = useState(0);
+  const [navBottom, setNavBottom] = useState(t.uiSpacing.lg);
   const commitHeight = () => {
     if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))) return;
     const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
       bubble && entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
     setHeight(saved => saved === next ? saved : next);
+    const nextBottom = entries[index] ? navBottoms.current.get(measureKey(entries[index])) ?? t.uiSpacing.lg : t.uiSpacing.lg;
+    setNavBottom(saved => saved === nextBottom ? saved : nextBottom);
   };
-  useLayoutEffect(commitHeight, [entries, compact, width, bubble]);
+  useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   const ready = !bubble || height > 0;
   useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
@@ -140,6 +144,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         bubble={bubble} bubbleHeight={bubbleHeight} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
+        onNavigationBottom={bottom => { navBottoms.current.set(measureKey(entry), bottom); commitHeight(); }}
         onHeight={height => {
           const id = measureKey(entry);
           measuredHeights.current.set(id, height);
@@ -155,7 +160,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
           void send?.sendOption(entry, option);
         }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />) : null}
     </ScrollView>
-    {count > 1 && !compact && !phone ? <View testID="report-nav" style={styles.nav}>
+    {count > 1 && !compact && !phone ? <View testID="report-nav" style={[styles.nav, { bottom: navBottom }]}>
       <ReportNavButton interaction={navInteraction} testID="report-prev-touch" iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
         <Ionicons name="chevron-back" size={t.iconSize.navigation} color={index === 0 ? t.colors.textPlaceholder : t.colors.textPrimary} />
       </ReportNavButton>
