@@ -15,6 +15,12 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
   const fixture = await installChatUiRoutes(page, { ui: false, count: 3 });
+  // Preferences must acknowledge the selected theme rather than restore the fixture default.
+  let preferences: Record<string, unknown> = { appearance: 'dark' };
+  await page.route('**/api/user/preferences', route => {
+    if (route.request().method() !== 'GET') preferences = route.request().postDataJSON();
+    return route.fulfill({ json: { preferences, hasBackground: false } });
+  });
   const cards = [270, 328, 338].map((number, index) => ({ ...reviewCard,
     id: ['0ef7a7b5-588f-436b-839b-53131aba0a43', '89a431e6-f40b-4164-91b8-9ca5f40b3454', 'd725a58c-b123-4b30-a660-997d57c31e0e'][index],
     number, folderId: 'rb-alpha', title: `보고 카드 ${number}`, assigneeKind: null, assigneeSessionId: null, assigneeAgentId: null }));
@@ -96,9 +102,11 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
     await route.fulfill({ json: { delivered: true } });
     echo(body.text);
   });
+  // The screen survives the portal/inline switch; resolve its current deck each frame.
+  const waitForReportLayout = () => waitForStableLayout(page.getByTestId('persistent-session-screen'), ['[data-testid="report-deck"]', '[data-testid="report-deck"] [data-current="true"]']);
   const snapshot = async (name: string) => {
     await page.mouse.move(0, 0); await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-    await waitForStableLayout(page.getByTestId('report-deck'), ['.pas-report-sheet']);
+    await waitForReportLayout();
     await page.screenshot({ path: path.join(output, `${name}.png`) });
   };
   await page.context().route('https://example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<title>보고 출처</title>' }));
@@ -141,7 +149,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await expect(current().getByRole('heading')).toHaveText('블로그 저장소 브랜치 정리');
   // Focus scrolls an anchor into view; let the pager finish its native scroll first.
   await expect.poll(() => track.evaluate(node => Math.abs(node.scrollLeft - node.clientWidth))).toBeLessThan(1);
-  await waitForStableLayout(deck, ['[data-current="true"]']);
+  await waitForReportLayout();
   const secondCardLink = current().getByRole('link', { name: '카드 328번 열기', exact: true });
   await expect(secondCardLink).not.toHaveAttribute('href');
   await secondCardLink.focus(); await expect(secondCardLink).toBeFocused(); await page.keyboard.press('Enter');
@@ -152,7 +160,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   expect(cardLists).toBe(2);
   await workspace.getByRole('button', { name: '카드 닫기', exact: true }).click();
   await expect(workspace).toHaveCount(0);
-  await waitForStableLayout(deck, ['[data-current="true"]']);
+  await waitForReportLayout();
   const geometry = await current().evaluate(node => ({ height: node.getBoundingClientRect().height, x: node.querySelector('h2')!.getBoundingClientRect().x }));
   await expect(deck).toHaveAttribute('data-bubble', 'true');
   expect((await deck.boundingBox())!.width).toBe(342);
@@ -228,7 +236,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   const last = { ...entries[0], key: 'last', title: '마지막 보고', options: [] };
   publish([...entries, last]); await expect(deck.locator('.pas-report-count')).toHaveText('2 / 3');
   await page.setViewportSize({ width: 1180, height: 820 });
-  await waitForStableLayout(deck, ['[data-current="true"]']);
+  await waitForReportLayout();
   await page.screenshot({ path: path.join(output, '1180-see.png') });
   await current().getByRole('button', { name: '봤다', exact: true }).focus();
   await current().getByRole('button', { name: '봤다', exact: true }).click();
@@ -298,7 +306,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await snapshot('1180-overflow-bottom');
   // Defer a PAS height update until the pointer interaction ends.
   await page.setViewportSize({ width: 1440, height: 900 });
-  publish([reportReviewEntries[1]]); await expect(current().getByRole('heading')).toHaveText(reportReviewEntries[1].title); await waitForStableLayout(deck, ['.pas-report-sheet']);
+  publish([reportReviewEntries[1]]); await expect(current().getByRole('heading')).toHaveText(reportReviewEntries[1].title); await waitForReportLayout();
   const heldHeight = (await deck.boundingBox())!.height;
   const point = (await current().getByRole('heading').boundingBox())!;
   await page.mouse.move(point.x + 4, point.y + 4); await page.mouse.down();

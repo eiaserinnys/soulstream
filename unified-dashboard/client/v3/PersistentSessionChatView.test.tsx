@@ -76,4 +76,10 @@ describe("PersistentSessionChatView", () => {
     });
     expect(setDisplaySettings).toHaveBeenLastCalledWith("ordinary", null);
   });
+  it("renders immediately without fetching settings when the caller disables loading", async () => {
+    act(() => root?.render(<PersistentSessionChatView sessionId="pas-inline" loadDisplaySettings={false} />));
+    expect(host?.querySelector('[data-testid="chat-view"]')).not.toBeNull();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(setDisplaySettings).not.toHaveBeenCalled();
+  });
 });

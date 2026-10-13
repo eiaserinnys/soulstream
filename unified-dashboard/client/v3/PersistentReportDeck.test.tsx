@@ -26,9 +26,11 @@ const render = () => act(async () => root.render(<InternalLinkProvider internalO
   <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss} seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : undefined} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
+let contentHeight = 0;
 beforeEach(async () => {
-  vi.clearAllMocks(); portalTarget = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  vi.clearAllMocks(); contentHeight = 100; portalTarget = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) { return { height: this.classList.contains('pas-report-content') ? contentHeight : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect; });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
 });
@@ -181,8 +183,6 @@ it('aligns the selected second sheet after moving into and out of the portrait p
 });
 
 it('settles at a page boundary without scrollend and resets a lost scroll on placement/removal', async () => {
-  let contentHeight = 100;
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) { return { height: this.classList.contains('pas-report-content') ? contentHeight : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect; });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
   await render(); const height = () => host.querySelector<HTMLElement>('.pas-report')!.style.height;
   expect(height()).toBe('134px');
