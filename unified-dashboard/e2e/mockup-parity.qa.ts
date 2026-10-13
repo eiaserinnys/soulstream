@@ -9,6 +9,7 @@ const output = process.env.MOCKUP_PARITY_OUTPUT;
 if (!output) throw new Error("MOCKUP_PARITY_OUTPUT is required");
 const REAL = "http://127.0.0.1:4391/components";
 const MOCK = "http://127.0.0.1:4392/proof-343/frame.html";
+const HOST = "http://127.0.0.1:4392/proof-343/index.html";
 const TIME = new Date("2026-10-01T00:00:00Z");
 type Theme = "light" | "dark";
 
@@ -100,5 +101,81 @@ for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"]] 
       realLog: [...new Set(realLog)], mockLog: [...new Set(mockLog)], unmocked: [...new Set(unmocked)],
     }, null, 2));
     expect(samples[1]).toBe(samples[0]);
+  });
+}
+
+for (const [width, theme] of ([[1440, "light"], [1440, "dark"], [390, "light"], [390, "dark"]] as const)) {
+  test(`mockup host renders and responds at ${width} ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+    await page.goto(`${HOST}?theme=${theme}&w=fit&glass=css`);
+    const frame = page.locator(".mockup-host-frame");
+    await expect(page.locator(".mockup-host-title")).toHaveText("실제 컴포넌트로 만든 시안 확인");
+    await expect(page.getByRole("group", { name: "테마" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "화면 폭" })).toBeVisible();
+    await expect(page.frameLocator(".mockup-host-frame").locator(".v3-components-page")).toBeVisible();
+
+    const header = await page.locator(".mockup-host-header").evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    });
+    const buttons = await page.locator(".mockup-host-header button").evaluateAll(elements =>
+      elements.map(element => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      }),
+    );
+    expect(buttons).toHaveLength(6);
+    expect(buttons.every(rect =>
+      rect.left >= header.left && rect.right <= header.right
+      && rect.top >= header.top && rect.bottom <= header.bottom
+      && rect.left >= 0 && rect.right <= width,
+    )).toBe(true);
+    expect(buttons.some((rect, index) => buttons.slice(index + 1).some(other =>
+      rect.left < other.right && other.left < rect.right
+      && rect.top < other.bottom && other.top < rect.bottom,
+    ))).toBe(false);
+    const titleStyle = await page.locator(".mockup-host-title").evaluate(element => {
+      const style = getComputedStyle(element);
+      return { overflow: style.overflow, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace };
+    });
+    expect(titleStyle).toEqual({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+
+    mkdirSync(path.join(output, "host"), { recursive: true });
+    await page.screenshot({
+      path: path.join(output, "host", `${width}-${theme}.png`),
+      fullPage: true,
+      animations: "disabled",
+    });
+
+    const nextTheme = theme === "light" ? "dark" : "light";
+    await page.getByRole("button", { name: nextTheme === "dark" ? "어둡게" : "밝게" }).click();
+    await expect.poll(() => page.locator("html").evaluate(element => element.classList.contains("dark")))
+      .toBe(nextTheme === "dark");
+    await expect.poll(() => frame.evaluate(element =>
+      Boolean((element as HTMLIFrameElement).contentDocument?.documentElement.classList.contains("dark")),
+    )).toBe(nextTheme === "dark");
+    expect(new URL(page.url()).searchParams.get("theme")).toBe(nextTheme);
+
+    for (const [label, id, expectedWidth] of [
+      ["맞춤", "fit", null],
+      ["휴대폰", "phone", "390px"],
+      ["태블릿", "tablet", "820px"],
+      ["데스크톱", "desktop", "1440px"],
+    ] as const) {
+      await page.getByRole("button", { name: label }).click();
+      if (expectedWidth === null) {
+        const stageWidth = await page.locator(".mockup-host-stage").evaluate(element => element.clientWidth);
+        await expect.poll(() => frame.evaluate(element => (element as HTMLIFrameElement).style.width))
+          .toBe(`${stageWidth}px`);
+      } else {
+        await expect.poll(() => frame.evaluate(element => (element as HTMLIFrameElement).style.width))
+          .toBe(expectedWidth);
+      }
+      expect(new URL(page.url()).searchParams.get("w")).toBe(id);
+    }
+    const transform = await frame.evaluate(element => (element as HTMLIFrameElement).style.transform);
+    if (width === 390) expect(transform.startsWith("scale(")).toBe(true);
+    else expect(transform).toBe("");
   });
 }

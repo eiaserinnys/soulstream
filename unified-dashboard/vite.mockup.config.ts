@@ -1,5 +1,5 @@
 import { defineConfig, type UserConfig } from "vite";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -27,13 +27,21 @@ const publicDir = resolve(__dirname, "public");
 const input: Record<string, string> = { frame: join(root, "frame.html") };
 if (existsSync(join(root, "index.html"))) input.index = join(root, "index.html");
 
+const copyOg = {
+  name: "copy-mockup-og",
+  writeBundle() {
+    const source = join(root, "og.png");
+    if (existsSync(source)) copyFileSync(source, join(outDir, "og.png"));
+  },
+};
+
 export default defineConfig({
   root,
   // 발행 주소가 /d/<slug>/ 아래이므로 모든 자원을 상대 경로로 낸다.
   base: "./",
   publicDir,
   define: production.define,
-  plugins: [tailwindcss(), react()],
+  plugins: [tailwindcss(), react(), copyOg],
   resolve: production.resolve,
   build: { outDir, emptyOutDir: true, rollupOptions: { input } },
   server: { fs: { allow: [resolve(__dirname, "..")] } },

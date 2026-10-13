@@ -108,22 +108,6 @@ for (const prototype of [HTMLImageElement.prototype, HTMLIFrameElement.prototype
   };
 }
 
-// pages의 코멘트 버튼은 묶음 안의 모든 HTML에 붙는다. 시안 본문(이 문서)의 것만 남기고,
-// 안쪽에 끼운 문서(캐릭터 등)의 것은 숨긴다. 바깥 틀의 것은 host.ts가 숨긴다.
-new MutationObserver(records => {
-  for (const record of records) record.addedNodes.forEach(node => {
-    const frames = node instanceof HTMLIFrameElement ? [node] : node instanceof Element ? [...node.querySelectorAll("iframe")] : [];
-    for (const frame of frames) frame.addEventListener("load", () => {
-      try {
-        const style = frame.contentDocument?.createElement("style");
-        if (!style) return;
-        style.textContent = "#pages-review{display:none!important}";
-        frame.contentDocument!.head.append(style);
-      } catch { /* 다른 출처의 문서는 건드리지 않는다 */ }
-    });
-  });
-}).observe(document.documentElement, { subtree: true, childList: true });
-
 // 로그인 없이 뜨도록 하는 기본 응답. e2e의 경로 가짜와 같은 값이다.
 mockApi({
   "GET /api/health": { healthy: true, ready: true, draining: false, build_id: "mockup" },
