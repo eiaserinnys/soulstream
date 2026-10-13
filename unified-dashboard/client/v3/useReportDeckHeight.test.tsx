@@ -7,7 +7,7 @@ import { useReportDeckHeight } from './useReportDeckHeight';
 let host: HTMLDivElement; let root: ReturnType<typeof createRoot>; let sizing: ReturnType<typeof useReportDeckHeight>;
 function Harness({ contentHeight }: { contentHeight: number }) {
   const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, contentHeight, 'a');
-  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, visibility: sizing.waitingForFont ? "hidden" : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}><article className="pas-report-sheet" data-publication={contentHeight} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-content" data-height={contentHeight}/><div className="pas-report-footer" data-height="32"/></article></section>;
+  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}><article className="pas-report-sheet" data-publication={contentHeight} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-content" data-height={contentHeight}/><div className="pas-report-footer" data-height="32"/></article></section>;
 }
 const render = (height: number) => act(async () => root.render(<Harness contentHeight={height}/>));
 beforeEach(() => {
@@ -39,15 +39,15 @@ it('measures before showing after font success or failure, shows cached fonts im
     expect(check).toHaveBeenCalledWith('normal 400 14px ReportTest');
     const deck = host.firstElementChild as HTMLElement;
     if (outcome === 'cached') {
-      expect(deck.style.visibility).toBe(''); expect(load).not.toHaveBeenCalled();
+      expect(deck.style.opacity).toBe(''); expect(load).not.toHaveBeenCalled();
     } else {
-      expect(deck.style.visibility).toBe('hidden'); expect(deck.hasAttribute('inert')).toBe(true); expect(deck.getAttribute('aria-hidden')).toBe('true');
+      expect(deck.style.opacity).toBe('0'); expect(deck.hasAttribute('inert')).toBe(true); expect(deck.getAttribute('aria-hidden')).toBe('true');
       // The actual font changes the intrinsic height before the pending load settles.
       deck.querySelector<HTMLElement>('.pas-report-content')!.dataset.height = '100';
       await act(async () => outcome === 'success' ? finish() : fail());
-      expect(sizing.height).toBe(174); expect(deck.style.visibility).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
+      expect(sizing.height).toBe(174); expect(deck.style.opacity).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
     }
-    await render(100); expect(sizing.height).toBe(174); expect(deck.style.visibility).toBe(''); expect(check).toHaveBeenCalledTimes(1);
+    await render(100); expect(sizing.height).toBe(174); expect(deck.style.opacity).toBe(''); expect(check).toHaveBeenCalledTimes(1);
     act(() => root.unmount()); root = createRoot(host);
   }
 });

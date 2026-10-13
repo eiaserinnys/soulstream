@@ -34,7 +34,7 @@ beforeEach(async () => {
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); Reflect.deleteProperty(document, 'fonts'); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it('renders only the current sheet into the accessible/tab surface, navigates by arrows and sends directly', async () => {
   expect(host.querySelector('[data-testid="report-sheet-two"]')?.getAttribute('aria-hidden')).toBe('true');
   await act(async () => button('응').click());
@@ -200,4 +200,19 @@ it('retains height across the server answered revision but discards it when cont
  contentHeight=40; entries=[{...one,state:'answered',answer:'응',updated_at:'server-answered'}]; await render();
  expect(height()).toBe('134px');
  entries=[{...entries[0],context:'새 맥락',updated_at:'rewritten'}]; await render(); expect(height()).toBe('74px');
+});
+
+it('hides the whole deck with opacity until its initial font settles', async () => {
+  act(() => root.unmount()); root = createRoot(host);
+  let finish!: () => void;
+  Object.defineProperty(document, 'fonts', { configurable: true, value: {
+    check: () => false, load: () => new Promise<void>(resolve => { finish = resolve; }),
+    ready: new Promise(() => {}), addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  } });
+  await render();
+  const deck = host.querySelector<HTMLElement>('[data-testid="report-deck"]')!;
+  expect(deck.style.opacity).toBe('0'); expect(deck.style.visibility).toBe('');
+  expect(deck.style.transitionProperty).toBe('none'); expect(deck.hasAttribute('inert')).toBe(true); expect(deck.getAttribute('aria-hidden')).toBe('true');
+  await act(async () => finish());
+  expect(deck.style.opacity).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
 });

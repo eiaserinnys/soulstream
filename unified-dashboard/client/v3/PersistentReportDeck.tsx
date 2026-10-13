@@ -102,8 +102,8 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
 
   if (!entries.length || !ready) return null;
   // The global reduced-motion duration must not interpolate the initial font
-  // gate's visibility or measured height for a frame.
-  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-overflow={sizing.overflowing} style={{ transitionProperty: 'none', visibility: sizing.waitingForFont ? 'hidden' : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
+  // gate's opacity or measured height for a frame.
+  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-overflow={sizing.overflowing} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
     inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} aria-label="지금의 보고" aria-roledescription="carousel"
     onPointerDownCapture={sizing.hold}
     onFocusCapture={() => { focusWithin.current = true; }}
