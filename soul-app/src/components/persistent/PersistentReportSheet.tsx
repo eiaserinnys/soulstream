@@ -39,7 +39,8 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     aria-hidden={!current} accessibilityElementsHidden={!current} importantForAccessibility={current ? 'auto' : 'no-hide-descendants'}
     accessibilityLabel={`${count > 1 ? `${page}, ` : ''}${tag}, ${entry.title}`}
     onPress={compact ? onExpand : undefined} {...reportWebProps({ inert: !current, tabIndex: -1, role: 'group' })}
-    style={[styles.sheet, { width }, answer && sizes.reading ? { minHeight: beforeAnswer } : null, !compact && styles.resting]}>
+    style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min },
+      answer && sizes.reading ? { minHeight: beforeAnswer } : null, !compact && styles.resting]}>
     <View style={styles.reading} onLayout={event => measure('reading', event.nativeEvent.layout.height)}>
       <View style={styles.heading}>
         <View style={[styles.tagRow, count > 1 && showNav && styles.tagRowWithNav]}>

@@ -14,6 +14,7 @@ import { chatUiFixtureEvent } from '../../../component-review/chat-ui-fixtures';
 import { groupChatEvents, projectManuscriptMessages } from '../groupChatEvents';
 import { projectCacheKeepaliveTurns } from '../cacheKeepaliveProjection';
 import type { SessionEvent } from '../../../api/types';
+import { CHAT_COMPOSER_MAX_LENGTH } from '../ChatComposer';
 
 // Existing ChatBody/AssistantMessage test patterns: replace OS transport and
 // native markdown/slider only. History, SSE gate, store, list and draft are real.
@@ -41,6 +42,7 @@ const mockApi = {
   getSessionsByIds: jest.fn().mockResolvedValue([]),
   getPersistentSession: jest.fn().mockResolvedValue({ session: { persistent: false, settings: {} } }),
   getQueue: jest.fn().mockResolvedValue({ messages: [] }),
+  dismissPersistentReport: jest.fn(),
   intervene: jest.fn(),
 };
 jest.mock('../../../api/client', () => ({ createApiClient: () => mockApi }));
@@ -123,4 +125,48 @@ test('editing the appended answer sends visible context without changing the rep
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
   expect(mockApi.intervene).toHaveBeenCalledWith('one', '예산 확인: 다른 의견', undefined, [{ key: 'persistent_report_visible', content: { key: 'ask-one', title: '예산 확인' } }]);
   expect(screen.getByText('답하실 것')).toBeTruthy();
+});
+
+test('too long report append uses the existing composer notice row and preserves the draft', async () => {
+  const screen = await openReport();
+  const input = screen.getByTestId('chat-composer-text-input');
+  const draft = '가'.repeat(CHAT_COMPOSER_MAX_LENGTH);
+  fireEvent.changeText(input, draft);
+  fireEvent.press(screen.getByLabelText('응'));
+  const row = screen.getByTestId('chat-composer-generated-notice-row');
+  expect(row.findByProps({ testID: 'chat-ui-action-notice' }).props.children).toBe('입력창이 가득 차서 더하지 못했어.');
+  expect(input.props.value).toBe(draft);
+  expect(screen.queryByLabelText('되돌리기')).toBeNull();
+});
+
+test('append while sending uses the existing composer notice row', async () => {
+  const screen = await openReport();
+  let reject!: (error: Error) => void;
+  mockApi.intervene.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '다른 의견');
+  fireEvent.press(screen.getByTestId('chat-composer-send-button'));
+  await waitFor(() => expect(mockApi.intervene).toHaveBeenCalled());
+  fireEvent.press(screen.getByLabelText('응'));
+  const row = screen.getByTestId('chat-composer-generated-notice-row');
+  expect(row.findByProps({ testID: 'chat-ui-action-notice' }).props.children).toBe('지금은 입력창에 더할 수 없어.');
+  expect(screen.getByTestId('chat-composer-text-input').props.value).toBe('');
+  await act(async () => reject(Error('공개 예시 전송 실패')));
+});
+
+test('failed dismiss restores the same report and uses the sticky composer notice line', async () => {
+  const see = { ...report, kind: 'see' as const, options: [] };
+  useSessionStore.setState({ persistentReportsBySession: { one: { entries: [see] } } } as any);
+  mockApi.dismissPersistentReport.mockRejectedValueOnce(Error('공개 예시 내림 실패'));
+  const screen = render(<ChatBody sessionId="one" presentation="manuscript" showSessionAuxiliary={false} showPersistentReport />);
+  await waitFor(() => expect(screen.getByTestId('report-track')).toBeTruthy());
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '남길 초안');
+  await act(async () => fireEvent.press(screen.getByLabelText('봤다')));
+  expect(screen.getByTestId('report-sheet-ask-one')).toBeTruthy();
+  const row = screen.getByTestId('chat-composer-generated-notice-row');
+  expect(row.findByProps({ testID: 'chat-ui-action-notice' }).props.children).toBe('보고를 내리지 못했어.');
+  expect(screen.getByTestId('chat-composer-text-input').props.value).toBe('남길 초안');
+  mockApi.intervene.mockResolvedValueOnce({ delivered: true });
+  await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
+  expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
 });

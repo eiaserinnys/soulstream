@@ -172,8 +172,8 @@ export function ChatBody({
   const ownsSessionConnectionRef = useRef(ownsSessionConnection);
   ownsSessionConnectionRef.current = ownsSessionConnection;
   const composerRef = useRef<ChatInputComposerHandle>(null);
-  const appendGeneratedText = useCallback<AppendGeneratedText>((targetSessionId, text) =>
-    composerRef.current?.appendGeneratedText(targetSessionId, text) ?? { ok: false, reason: 'not_ready' }, []);
+  const appendGeneratedText = useCallback<AppendGeneratedText>((targetSessionId, text, reportReply) =>
+    composerRef.current?.appendGeneratedText(targetSessionId, text, reportReply) ?? { ok: false, reason: 'not_ready' }, []);
   const handleRetryPending = useCallback((eventId: string) => composerRef.current?.retryPending(eventId), []);
   const handleRestorePending = useCallback((eventId: string) => composerRef.current?.restorePending(eventId), []);
 
@@ -480,7 +480,6 @@ export function ChatBody({
 
       {showPersistentReport ? <PersistentReportPager entries={report.entries} index={report.index} api={api}
         onSelect={report.select} onDismiss={report.dismiss}
-        onAppend={(text, reply) => composerRef.current?.appendGeneratedText(sessionId, text, reply) ?? { ok: false, reason: 'not_ready' }}
         onFocusComposer={() => composerRef.current?.focusAccessibility()} /> : null}
       <ChatEventList
         flatListRef={flatListRef}

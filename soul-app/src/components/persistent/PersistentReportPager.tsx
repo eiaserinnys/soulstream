@@ -1,23 +1,23 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, findNodeHandle, Keyboard, Platform, ScrollView, Text, View } from 'react-native';
+import { AccessibilityInfo, findNodeHandle, Keyboard, Platform, ScrollView, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
-import type { ReportReplyDraft } from '../../lib/persistent-report';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { useDeviceType, useTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import { chatAuxiliarySurface } from '../chat/chatAuxiliarySurface';
-import type { AppendGeneratedTextResult } from '../chat/ChatInputComposer';
+import { useChatUiActions } from '../chat-ui/ChatUiControllerProvider';
 import { PersistentReportSheet, reportTag, reportWebProps } from './PersistentReportSheet';
 import { reportStyles } from './persistentReportStyles';
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onAppend, onFocusComposer }: {
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer }: {
   entries: PersistentReportEntry[]; index: number; api: ApiClient | null;
-  onSelect(index: number): void; onDismiss(key: string): Promise<void>;
-  onAppend(text: string, reply: ReportReplyDraft): AppendGeneratedTextResult; onFocusComposer(): void;
+  onSelect(index: number): void; onDismiss(key: string): Promise<boolean | void>;
+  onFocusComposer(): void;
 }) {
   const t = useTokens();
+  const { sessionId, appendGeneratedText, setNotice } = useChatUiActions();
   const phone = useDeviceType() === 'phone';
   const bleed = phone ? t.foundation.pageInset : t.uiSpacing.lg;
   const styles = useMemo(() => reportStyles(t, bleed, !phone), [t, bleed, phone]);
@@ -71,12 +71,9 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const expand = () => { Keyboard.dismiss(); setKeyboard(false); };
   async function openCard(number: number) {
     if (!api) return;
-    try {
-      const { cards } = await api.listCards(undefined, { includeCompleted: true });
-      const card = cards.find(card => card.number === number);
-      if (!card) throw Error('missing');
-      await openLink(`/?card=${encodeURIComponent(card.id)}`);
-    } catch { Alert.alert('카드를 열지 못했습니다.'); }
+    const { cards } = await api.listCards(undefined, { includeCompleted: true });
+    const card = cards.find(card => card.number === number);
+    if (card) await openLink(`/?card=${encodeURIComponent(card.id)}`);
   }
   // RN 0.86 View exposes nativeEvent.key; RN web exposes key directly.
   const onKeyDown = (event: { key?: string; nativeEvent?: { key?: string }; preventDefault?(): void }) => {
@@ -105,11 +102,13 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
       {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={`${entry.key}-${width}`} entry={entry}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         nodeRef={node => { sheetNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
-        onDismiss={() => { moveFocus.current = Platform.OS !== 'web' || focusInside(); void onDismiss(entry.key); }}
+        onDismiss={() => {
+          moveFocus.current = Platform.OS !== 'web' || focusInside();
+          void onDismiss(entry.key).then(ok => { if (ok === false) setNotice('보고를 내리지 못했어.'); });
+        }}
         onOption={option => {
           const text = `${entry.title}: ${option}`;
-          const result = onAppend(text, { key: entry.key, option, text });
-          if (!result.ok) Alert.alert(result.reason === 'too_long' ? '입력창이 가득 차서 더하지 못했어.' : '지금은 입력창에 더할 수 없어.');
+          appendGeneratedText(sessionId, text, { key: entry.key, option, text });
         }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />) : null}
     </ScrollView>
     {count > 1 && !phone ? <View testID="report-nav" style={styles.nav}>

@@ -1,12 +1,13 @@
 import React from 'react';
-import { AccessibilityInfo, Keyboard, Platform } from 'react-native';
+import { AccessibilityInfo, Keyboard, Platform, StyleSheet } from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { usePersistentReport } from '../usePersistentReport';
 import { reportReviewEntries } from '../../../component-review/persistent-report-fixtures';
 import { useSessionStore } from '../../../store/sessionStore';
-import { reportSendContext } from '../../../lib/persistent-report';
+import { reportSendContext, type ReportReplyDraft } from '../../../lib/persistent-report';
 import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDisplaySettings';
+import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 let mockDevice = 'phone';
@@ -20,12 +21,14 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 function pager(entries = reportReviewEntries) {
-  const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn(() => ({ ok: true as const }));
+  const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn((_text: string, _reply?: ReportReplyDraft) => ({ ok: true as const }));
   const api = { listCards: jest.fn().mockResolvedValue({ cards: [{ id: 'public-card', number: 270 }] }) } as any;
   function Harness() {
     const [index, setIndex] = React.useState(0);
-    return <PersistentReportPager entries={entries} index={index} api={api}
-      onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onAppend={onAppend} onFocusComposer={jest.fn()} />;
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={(_id, text, reply) => onAppend(text, reply)}>
+      <PersistentReportPager entries={entries} index={index} api={api}
+        onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()} />
+    </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
   if (entries.length) fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
@@ -131,8 +134,9 @@ test('dismiss removes immediately and moves to the composer when the last report
   const focus = jest.fn();
   function Harness() {
     const report = usePersistentReport('pas', true, api, undefined, undefined);
-    return <PersistentReportPager {...report} api={api} onSelect={report.select} onDismiss={report.dismiss}
-      onAppend={() => ({ ok: true })} onFocusComposer={focus} />;
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+      <PersistentReportPager {...report} api={api} onSelect={report.select} onDismiss={report.dismiss} onFocusComposer={focus} />
+    </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
   fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
@@ -141,6 +145,33 @@ test('dismiss removes immediately and moves to the composer when the last report
   if (Platform.OS !== 'web') expect(focus).toHaveBeenCalledTimes(1);
   await act(async () => finish({ ok: true, persistent_report: [] }));
   expect(api.dismissPersistentReport).toHaveBeenCalledWith('pas', 'result');
+});
+
+test('the whole report touch frame uses the minimum tokens without changing its content padding or width', () => {
+  const screen = pager();
+  const style = StyleSheet.flatten(screen.getByTestId('report-sheet-app').props.style);
+  expect(style.minWidth).toBeGreaterThanOrEqual(44);
+  expect(style.minHeight).toBeGreaterThanOrEqual(44);
+  expect(style.width).toBe(390);
+  const reading = screen.getByTestId('report-title').props.style;
+  const titleHeight = StyleSheet.flatten(reading).lineHeight;
+  const tagHeight = StyleSheet.flatten(screen.getByTestId('report-kind').props.style).lineHeight;
+  // Even the compact title+tag and unchanged padding already exceed the floor.
+  expect(titleHeight + tagHeight + style.paddingTop + style.paddingBottom).toBeGreaterThan(style.minHeight);
+  expect(style.paddingTop).toBe(12);
+  expect(style.paddingBottom).toBe(16);
+});
+
+test('failed dismiss returns to the same visible key when another sheet filled its slot', async () => {
+  act(() => useSessionStore.getState().applyPersistentReport('pas', reportReviewEntries));
+  const api = { dismissPersistentReport: jest.fn().mockRejectedValue(Error('public failure')) } as any;
+  const hook = renderHook(() => usePersistentReport('pas', true, api, undefined, undefined));
+  act(() => hook.result.current.select(2));
+  let ok: boolean | undefined;
+  await act(async () => { ok = await hook.result.current.dismiss('result'); });
+  expect(ok).toBe(false);
+  expect(hook.result.current.entries[hook.result.current.index].key).toBe('result');
+  expect(hook.result.current.entries).toEqual(reportReviewEntries);
 });
 
 test('reply line must remain intact; ordinary text describes the visible sheet and absent report has no context', () => {

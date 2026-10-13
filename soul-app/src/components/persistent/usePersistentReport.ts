@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Alert } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
 import { EMPTY_REPORT, pendingReportReply, reportSendContext, type ReportReplyDraft } from '../../lib/persistent-report';
@@ -34,17 +33,18 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
       return reportSendContext(server, key, text, reply);
     },
     async dismiss(key: string) {
-      if (!api || !sessionId) return;
+      if (!api || !sessionId) return false;
       const store = useSessionStore.getState();
       const baseline = { snapshot: store.persistentReportsBySession[sessionId], generation: store.scopeGeneration };
       setView(current => ({ ...current, dismissed: { key, base: server } }));
       try {
         const result = await api.dismissPersistentReport(sessionId, key);
         useSessionStore.getState().applyPersistentReport(sessionId, result.persistent_report, baseline);
+        return true;
       } catch {
         setView(current => current.dismissed?.base === server && current.dismissed.key === key
-          ? { ...current, dismissed: undefined } : current);
-        Alert.alert('보고를 내리지 못했습니다.');
+          ? { ...current, dismissed: undefined, key, index } : current);
+        return false;
       }
     },
   };
