@@ -2,20 +2,26 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Button, DashboardIconCap, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { SourceLink } from '@seosoyoung/soul-ui/components/SourceLink';
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
-import type { ChatUiComposerHandle } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import type { PersistentSessionReportBubbleLayout, PersistentSessionRect } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
+import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
+import { usePersistentReportSend } from './usePersistentReportSend';
+import { useReportDeckHeight } from './useReportDeckHeight';
+import { ChevronLeft, ChevronRight, Link } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { cardRequest } from '@seosoyoung/soul-ui/cards/card-api';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
-type Props = { sessionId: string; appendGeneratedText: ChatUiComposerHandle['appendGeneratedText']; focusInput: () => void; dismissReport: (key: string) => Promise<void> };
+export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null };
+type Props = { sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
-export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInput, dismissReport }: Props) {
+export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport }: Props) {
   const report = usePersistentReport()!;
   const { entries, visibleKey } = report;
+  const sending = usePersistentReportSend(sessionId, notify, transport);
   const pendingCardNumbers = useRef(new Set<number>()).current;
   const byId = useCardStore(state => state.byId);
   const numbers = [...new Set(entries.flatMap(entry => entry.card_numbers))].sort((a, b) => a - b);
@@ -44,6 +50,8 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
   const index = Math.max(0, entries.findIndex(entry => entry.key === visibleKey));
   const track = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLElement | null>(null);
+  const sizing = useReportDeckHeight(root, [entries, sending, seat], sessionId);
+  const bubble = seat?.target && seat.body ? seat.layout : null;
   const focusWithin = useRef(false);
   const flying = useRef<number | null>(null);
   const current = useRef({ index });
@@ -61,7 +69,7 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
   useLayoutEffect(() => {
     const node = track.current;
     if (!node) return;
-    const align = () => { flying.current = null; node.scrollTo({ left: current.current.index * node.clientWidth, behavior: 'auto' }); };
+    const align = () => { if (sizing.holding.current) return; flying.current = null; node.scrollTo({ left: current.current.index * node.clientWidth, behavior: 'auto' }); };
     align();
     const observer = new ResizeObserver(align);
     observer.observe(node);
@@ -79,8 +87,9 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
   }, [visibleKey, entries.length, focusInput]);
 
   if (!entries.length) return null;
-  return <section ref={node => { if (node) root.current = node; }} className="pas-report" data-testid="report-deck" data-many={entries.length > 1}
+  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} style={{ height: sizing.height, maxHeight: bubble?.maxHeight, ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
     aria-label="지금의 보고" aria-roledescription="carousel"
+    onPointerDownCapture={sizing.hold} onPointerUpCapture={sizing.release} onPointerCancel={sizing.release}
     onFocusCapture={() => { focusWithin.current = true; }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && (event.relatedTarget || event.target.isConnected)) focusWithin.current = false; }}
     onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); go(index + (event.key === 'ArrowRight' ? 1 : -1)); } }}>
@@ -92,7 +101,7 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
         if (entries[at]) report.view(entries[at].key);
       }}
       onScrollEnd={event => {
-        flying.current = null;
+        flying.current = null; sizing.release();
         const at = Math.round(event.currentTarget.scrollLeft / Math.max(1, event.currentTarget.clientWidth));
         if (entries[at]) report.view(entries[at].key);
       }}>
@@ -101,31 +110,33 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
         const answered = answer !== undefined;
         const tag = entry.kind === 'see' ? '보실 것' : answered ? '답 받음' : '답하실 것';
         return <article key={entry.key} className="pas-report-sheet" data-testid={`report-sheet-${entry.key}`} data-current={position === index}
-          inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
+          data-publication={JSON.stringify([sessionId, entry.key, entry.title, entry.context, entry.action, entry.options])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
           aria-label={`${entries.length > 1 ? `${position + 1} / ${entries.length}, ` : ''}${tag}, ${entry.title}`}>
-          <div className="pas-report-reading">
-            <div className="pas-report-heading">
-              <div className="pas-report-tags">
-                <span className="pas-report-kind" data-kind={entry.kind === 'ask' && !answered ? 'ask' : 'see'}>{tag}</span>
+          <div className="pas-report-reading v3-session-panel-scroll" onScroll={event => {
+            const node = event.currentTarget;
+            node.dataset.more = String(node.scrollHeight - node.scrollTop - node.clientHeight > 1);
+          }} ref={node => { if (node) node.dataset.more = String(node.scrollHeight - node.scrollTop - node.clientHeight > 1); }}>
+            <div className="pas-report-content">
+              <div className="pas-report-heading">
+                <h2 className="pas-report-title">{entry.title}</h2>
                 {entry.card_numbers.map(number => <ReportCardLink key={number} number={number} pending={pendingCardNumbers} lookupCards={lookupCards} />)}
               </div>
-              <h2 className="pas-report-title">{entry.title}</h2>
+              <p className="pas-report-context">{entry.context}</p>
+              {!answered && <p className="pas-report-todo"><ReportAction text={entry.action} /></p>}
             </div>
-            <p className="pas-report-context">{entry.context}</p>
-            {/* Retain the source's intrinsic height, not a stretched tallest-page measurement. */}
-            <p className="pas-report-todo" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}><ReportAction text={entry.action} /></p>
           </div>
-          {(entry.kind === 'see' || entry.options.length > 0) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
-            {(entry.kind === 'see' ? ['봤다'] : entry.options).map(option => <Button key={option} variant="outline" onClick={() => {
-              if (entry.kind === 'see') {
-                void dismissReport(entry.key);
-              } else {
-                const result = appendGeneratedText(sessionId, `${entry.title}: ${option}`);
-                if (result.ok) report.bindReply(entry, option);
-              }
-            }}>{option}</Button>)}
+          {(entries.length > 1 || entry.kind === 'see' || entry.options.length > 0 || answered) && <div className="pas-report-footer">
+            {(entry.kind === 'see' || entry.options.length > 0) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
+              {(entry.kind === 'see' ? ['봤다'] : entry.options).map(option => <Button key={option} variant="outline" disabled={entry.kind === 'ask' && (disabled || sending.sending)} onClick={() => {
+                if (entry.kind === 'see') void dismissReport(entry.key);
+                else void sending.reply(entry, option);
+              }}>{option}</Button>)}
+            </div>}
+            {answered && <div className="pas-report-received">
+              <p className="pas-report-todo"><span className="pas-report-received-label">받은 답</span>{answer}</p>
+              {sending.canCancel(entry) && (sending.cancelRequested(entry) ? <span className="pas-report-cancel-sent">취소 요청 보냄</span> : <Button variant="ghost" size="xs" disabled={disabled || sending.sending} onClick={() => void sending.cancel(entry)}>취소 요청</Button>)}
+            </div>}
           </div>}
-          {answered && <p className="pas-report-todo pas-report-received"><span className="pas-report-received-label">받은 답</span>{answer}</p>}
         </article>;
       })}
     </div>
@@ -134,7 +145,9 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
       <span className="pas-report-count" aria-live="polite" aria-atomic="true">{index + 1} / {entries.length}</span>
       <DashboardIconCap size="small" appearance="bare" label="다음 장" disabled={index === entries.length - 1} onClick={() => go(index + 1)}><ChevronRight className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" /></DashboardIconCap>
     </div>}
+    {bubble && <i aria-hidden="true" className="pas-report-tail" data-direction={bubble.tailDirection} />}
   </section>;
+  return bubble && seat?.target ? createPortal(deck, seat.target) : deck;
 }
 
 function ReportCardLink({ number, pending, lookupCards }: { number: number; pending: Set<number>; lookupCards: () => Promise<void> }) {
@@ -157,7 +170,7 @@ function ReportCardLink({ number, pending, lookupCards }: { number: number; pend
     } finally { if (open) pending.delete(number); }
   };
   return <SourceLink href={id ? `/?card=${encodeURIComponent(id)}` : undefined}
-    role="link" tabIndex={0} className={`pas-report-card text-info-foreground hover:underline ${LINK_FOCUS}`} aria-label={`카드 ${number}번 열기`}
+    role="link" tabIndex={0} className={`v3-chat-status pas-report-card text-info-foreground hover:underline ${LINK_FOCUS}`} aria-label={`카드 ${number}번 열기`}
     onKeyDown={event => { if (!id && event.key === 'Enter') {
       event.preventDefault();
       void resolve(!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey, event.currentTarget);
@@ -167,7 +180,7 @@ function ReportCardLink({ number, pending, lookupCards }: { number: number; pend
       if (id) return;
       event.preventDefault();
       void resolve(event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey, event.currentTarget);
-    }}>#{number}</SourceLink>;
+    }}><Link size={12} aria-hidden="true"/>#{number}</SourceLink>;
 }
 
 function ReportAction({ text }: { text: string }) {

@@ -4,9 +4,15 @@
 
 웹 R2의 판 수신은 `session-types`/`mappers`/`stream-events` → `buildSessionUpdates` → `useSessionStreamCacheSync`의 보고 투영 → `persistentReports`다. SSE는 세션 query hydration barrier와 독립적으로 먼저 판 identity를 기록한다. PAS list/get 응답은 요청 시작 때의 판 identity가 여전히 같은 경우에만 반영하며, 생략은 보존하고 []는 비운다.
 
-PAS 전화면의 `PersistentSessionChatView(showReport)` → `PersistentReportProvider` → `PersistentReportDeck`은 실제 대화 칸의 첫 자식이고 ChatView/Virtuoso 앞에 놓인다. 일반 column과 카드 overlay에는 보고를 켜지 않는다. provider는 선택 key·단일 답 receipt·임시 답만 소유하고 자식을 session key로 다시 붙이지 않는다. 기존 ChatView 등록 bridge → ChatInput/useGeneratedTextActions로 「제목: 선택지」를 붙이며 초안·첨부·모드·exact undo를 유지한다. 직접 고친 줄과 undo는 receipt를 해제한다.
+PAS 전화면의 `PersistentSessionChatView(showReport)` → `PersistentReportProvider` → `PersistentReportDeck`만 보고를 켠다. 일반 column과 카드 overlay에는 표시하지 않는다. provider는 기존 선택 key·단일 답 receipt·임시 답을 소유한다.
 
-전송은 `getMessageContext` → `PendingChatSend.contextItems`/원본 보고 identity → `submitPending` → `submitResume` 또는 `submitIntervention.context_items`다. 전송 글 전체를 trim한 값이 붙인 줄과 정확히 같을 때만 reply, 그 밖의 글은 지금 보이는 장의 visible만 싣는다. retry는 같은 context를 유지한다. sending은 임시 answered, failed는 open, 서버의 새 판은 임시 답을 교체한다. 메시지 ack가 pending을 비워도 임시 답은 새 서버 판까지 남는다. 「봤다」는 인증된 PAS DELETE이며 key별 원본 장을 대기에 기록해 곧바로 표시에서 숨기고 중복 요청을 막는다. canonical 판은 유지하므로 실패하면 그 key만 원래 순서로 다시 보인다. 성공은 현재 판에서 그 요청의 원본 장만 제거하고 내리기 실패 문구만 비우며, 실패는 그 key의 대기만 푼다. 안내 줄의 높이와 다른 안내는 보존한다. 역순 응답의 전체 판으로 이미 내려간 장을 되살리지 않으며 최신 동일 key 발행본은 유지한다. 메시지를 보내지 않는다. 실패하면 장을 유지하며 W4의 scoped operations bridge를 통해 기존 `ChatInputFeedback`에 「보고를 내리지 못했어.」를 쓴다. 선택지 붙이기도 같은 bridge를 사용하여 실패 안내와 안내 줄의 수명을 W4와 공유한다. 카드 번호는 기존 내부 링크 정책의 실패 동작을 따른다.
+보고 답은 `usePersistentReportSend` → `setPendingChatSend` → `submitIntervention.context_items`로 직접 보낸다. 「제목: 선택지」와 `persistent_report_reply {key,option}`, 원본 장 identity를 세션별 pending 칸에 싣고 초안·첨부·되돌리기는 건드리지 않는다. 일반 입력창의 자유 답은 기존 `getMessageContext`의 정확한 일치 조건과 visible 문맥을 유지한다. 채팅 답 안의 1단계 단추는 기존 `appendGeneratedText` 경로다.
+
+sending은 임시 answered, failed는 open으로 돌아간다. 실패 표시와 재전송은 기존 대화의 pending 말풍선이 맡고, 같은 답 단추의 retry는 같은 ID/context를 유지한다. 다른 글이 sending이면 답과 취소 요청을 비활성화한다. 다른 실패 글이 남으면 scoped operations bridge의 기존 알림 줄로 안내한다. 서버가 받은 뒤에만 취소 요청을 보이고, 「제목: 답을 취소합니다」와 `persistent_report_visible {key,title}`을 같은 전송 칸으로 보낸다. 취소 요청 보냄은 그 장의 `updated_at`이 바뀔 때까지 남는다. 메시지 ack는 기존 이벤트 정합으로 pending을 비운다. 서버의 새 판은 임시 답을 교체한다.
+
+`use-persistent-session-geometry`가 공용 `calculatePersistentSessionLayout`에 웹 폭 0.8과 최소 뼈대 221을 전달한다. 말풍선은 초상 칸에 portal하고 그 밖은 대화 칸 위에 선다. `useReportDeckHeight`는 장의 자연 높이를 재고 누르는 동안 높이 반영을 미룬다. 말풍선에서만 제목·칩·맥락·하실 일을 함께 굴리고 맨 아래 넘김과 답은 고정한다.
+
+「봤다」는 기존 인증된 PAS DELETE다. key별 원본 장을 대기에 기록해 즉시 숨기며 실패하면 그 key만 원래 순서로 복원한다. 최신 동일 key 발행본과 역순 응답 처리를 유지한다. 실패는 기존 알림 줄의 「보고를 내리지 못했어.」다. 번호 칩은 기존 `ReportCardLink`의 선조회와 수정 키 처리로 번호를 카드 ID로 바꾸어 내부 링크로 연다.
 
 실화면 진입점: 대시보드 빌드 뒤 `pnpm --dir unified-dashboard test:e2e:pas-report`(PAS HTTP/SSE 한 경로, heavy_verify runner 사용). 운영 컴포넌트는 `/components`의 PersistentReportDeck 샘플에도 등록되어 있다.
 

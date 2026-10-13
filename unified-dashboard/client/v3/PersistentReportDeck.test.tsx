@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { InternalLinkProvider } from '@seosoyoung/soul-ui/components/InternalLinkProvider';
 import { PersistentReportDeck } from './PersistentReportDeck';
-import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
+import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 
@@ -18,24 +18,28 @@ vi.mock('@seosoyoung/soul-ui/components/LiquidGlassProvider', () => ({ useGlassS
 const one: PersistentReportEntry = { key: 'one', kind: 'ask', title: '확인', card_numbers: [270], context: '맥락', action: '[출처](https://example.test/)', options: ['응'], state: 'open', answer: '', updated_at: 'first' };
 const two = { ...one, key: 'two', kind: 'see' as const, options: [], title: '볼 장' };
 let root: Root; let host: HTMLDivElement;
-const append = vi.fn().mockReturnValue({ ok: true }); const focusInput = vi.fn(); const openTarget = vi.fn();
+const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
 const render = () => act(async () => root.render(<InternalLinkProvider internalOrigins={['https://example.test']} openTarget={openTarget}><PersistentReportProvider sessionId="a" entries={entries}>
-  <PersistentReportDeck sessionId="a" appendGeneratedText={append} focusInput={focusInput} dismissReport={dismiss} />
+  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 beforeEach(async () => {
-  vi.clearAllMocks(); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  vi.clearAllMocks(); useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
-it('renders only the current sheet into the accessible/tab surface, navigates by arrows and appends without sending', async () => {
+it('renders only the current sheet into the accessible/tab surface, navigates by arrows and sends directly', async () => {
   expect(host.querySelector('[data-testid="report-sheet-two"]')?.getAttribute('aria-hidden')).toBe('true');
   await act(async () => button('응').click());
-  expect(append).toHaveBeenCalledWith('a', '확인: 응');
+  expect(transport).toHaveBeenCalledWith(expect.objectContaining({ sessionKey: 'a', text: '확인: 응' }));
+  expect(host.querySelector('.pas-report-kind')).toBeNull();
+  expect(host.querySelector('[data-current="true"]')?.getAttribute('aria-label')).toContain('답 받음');
+  expect(host.querySelector('.pas-report-footer')).not.toBeNull();
+  expect(host.querySelector('.pas-report-heading')?.firstElementChild?.tagName).toBe('H2');
   const track = host.querySelector<HTMLElement>('[data-testid="report-track"]')!;
   track.focus();
   await act(async () => track.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));

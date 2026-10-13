@@ -3,7 +3,7 @@ import { ChatView, useDashboardStore, type ChatSessionStoreScope, type Persisten
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { EMPTY_REPORT } from '@seosoyoung/soul-ui/shared/persistent-report';
 import type { ChatUiComposerHandle, ChatUiOperationsHandle, RegisterGeneratedTextActions, RegisterChatUiOperations } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
-import { PersistentReportDeck } from './PersistentReportDeck';
+import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportDeck';
 import { usePersistentReportDismiss } from './usePersistentReportDismiss';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
 
@@ -15,17 +15,18 @@ type PersistentSessionChatViewProps = {
   loadDisplaySettings?: boolean;
   showReport?: boolean;
   reportEntries?: PersistentReportEntry[];
+  reportSeat?: ReportBubbleSeat;
   dismissReport?: (key: string) => Promise<void>;
 } & Omit<NonNullable<Parameters<typeof ChatView>[0]>, "presentation" | "composerAnchorRef">;
 
-export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySettings = true, showReport = false, reportEntries, dismissReport, ...props }: PersistentSessionChatViewProps) {
+export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySettings = true, showReport = false, reportEntries, reportSeat, dismissReport, ...props }: PersistentSessionChatViewProps) {
   const storedReport = useDashboardStore(state => showReport ? state.persistentReports[sessionId] ?? EMPTY_REPORT : EMPTY_REPORT);
   const entries = reportEntries ?? storedReport;
   const generated = useRef<ChatUiComposerHandle | null>(null);
   const operations = useRef<ChatUiOperationsHandle | null>(null);
   const registerOperations = useCallback<RegisterChatUiOperations>(handle => { operations.current = handle; }, []);
   const register = useCallback<RegisterGeneratedTextActions>(handle => { generated.current = handle; }, []);
-  const append = useCallback<ChatUiComposerHandle['appendGeneratedText']>((id, text) => operations.current?.appendGeneratedText(id, text) ?? { ok: false, reason: 'unavailable' }, []);
+  const notify = useCallback((text: string) => operations.current?.notify(text), []);
   const focusInput = useCallback(() => generated.current?.focusInput?.(), []);
   const getFeedback = useCallback(() => operations.current ?? undefined, []);
   const { dismiss, visibleEntries } = usePersistentReportDismiss(sessionId, getFeedback, dismissReport, entries);
@@ -48,7 +49,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   }, [loadDisplaySettings, sessionId, setDisplaySettings]);
   if (!showReport) return <ChatView {...props} storeScope={storeScope} />;
   return <PersistentReportProvider sessionId={sessionId} entries={visibleEntries}>
-    <PersistentReportDeck sessionId={sessionId} appendGeneratedText={append} focusInput={focusInput} dismissReport={dismiss} />
+    <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss} />
     <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
   </PersistentReportProvider>;
 }
