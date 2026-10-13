@@ -52,6 +52,9 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     llmUsage: toLlmUsage(raw.llm_usage ?? raw.llmUsage),
     clientId: (raw.client_id ?? raw.clientId) as string | undefined,
     lastMessage,
+    ...(Array.isArray(raw.persistent_report ?? raw.persistentReport)
+      ? { persistentReport: (raw.persistent_report ?? raw.persistentReport) as SessionSummary['persistentReport'] }
+      : {}),
     ...(Array.isArray(raw.pending_attentions ?? raw.pendingAttentions)
       ? { pendingAttentions: (raw.pending_attentions ?? raw.pendingAttentions) as SessionSummary["pendingAttentions"] }
       : {}),

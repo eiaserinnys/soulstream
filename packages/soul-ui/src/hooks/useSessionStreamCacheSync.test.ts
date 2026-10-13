@@ -93,6 +93,28 @@ describe("useSessionStreamCacheSync", () => {
     expect(invalidateQueries).not.toHaveBeenCalled();
   });
 
+  it('syncs report SSE into the store, active summary and session cache while preserving omitted fields', () => {
+    container = document.createElement('div'); document.body.append(container); root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryKey = ['sessions', 'feed', null];
+    const summary = { agentSessionId: 'report-session', status: 'running' as const, eventCount: 1 };
+    queryClient.setQueryData(queryKey, { pages: [{ sessions: [summary], total: 1 }], pageParams: [0] });
+    useDashboardStore.getState().setActiveSession(summary.agentSessionId);
+    useDashboardStore.getState().setActiveSessionSummary(summary);
+    flushSync(() => root!.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness))));
+    const options = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    const report = [{ key: 'one', kind: 'see' as const, title: '보고', card_numbers: [], context: '맥락', action: '읽어 줘', options: [], state: 'open' as const, answer: '', updated_at: 'now' }];
+    options.onSessionUpdated?.({ type: 'session_updated', agent_session_id: summary.agentSessionId, persistent_report: report });
+    expect(useDashboardStore.getState().persistentReports[summary.agentSessionId]).toBe(report);
+    expect(useDashboardStore.getState().activeSessionSummary?.persistentReport).toEqual(report);
+    expect(queryClient.getQueryData<{ pages: { sessions: { persistentReport: unknown }[] }[] }>(queryKey)?.pages[0].sessions[0].persistentReport).toEqual(report);
+    options.onSessionUpdated?.({ type: 'session_updated', agent_session_id: summary.agentSessionId, status: 'running' });
+    expect(useDashboardStore.getState().persistentReports[summary.agentSessionId]).toBe(report);
+    options.onSessionUpdated?.({ type: 'session_updated', agent_session_id: summary.agentSessionId, persistent_report: [] });
+    expect(useDashboardStore.getState().persistentReports[summary.agentSessionId]).toEqual([]);
+    expect(useDashboardStore.getState().activeSessionSummary?.persistentReport).toEqual([]);
+  });
+
   it("applies a pre-subscription resume from the initial session_list snapshot", () => {
     container = document.createElement("div");
     document.body.appendChild(container);

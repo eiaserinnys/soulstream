@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useRef, useState, type PropsWithChildren } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type PropsWithChildren } from 'react';
 import { composeText, initialState, reduce, renderText, type Action, type ChatUiState, type FieldValue, type NormalizedChatUiDocumentV1 } from '@soulstream/chat-ui';
-import type { ChatUiComposerHandle, RegisterGeneratedTextActions } from './chat-ui-composer';
+import type { ChatUiComposerHandle, RegisterGeneratedTextActions, RegisterChatUiOperations } from './chat-ui-composer';
 
 type ControllerContext = {
   sessionId: string;
@@ -11,7 +11,7 @@ type ControllerContext = {
   closeFeedback: () => void;
   notify: (text: string) => void;
   registerComposer: RegisterGeneratedTextActions;
-  append: (text: string) => void;
+  append: (text: string) => ReturnType<ChatUiComposerHandle['appendGeneratedText']>;
 };
 const Context = createContext<ControllerContext | null>(null);
 const FeedbackLifecycleContext = createContext<(() => void) | null>(null);
@@ -44,13 +44,15 @@ function ControllerScope({ sessionId, appendGeneratedText, children }: ScopeProp
     setVersion(version => version + 1);
   }, [states, notify]);
   const registerComposer = useCallback<RegisterGeneratedTextActions>(handle => { composer.current = handle; }, []);
-  const append = useCallback((text: string) => {
-    if (!text) return;
+  const append = useCallback<ControllerContext['append']>((text: string) => {
+    if (!text) return { ok: true };
     try {
-      const result = appendGeneratedText ? appendGeneratedText(sessionId, text) : composer.current?.appendGeneratedText(sessionId, text);
-      notify(result?.ok ? '' : '지금은 입력창에 더할 수 없어.');
+      const result = (appendGeneratedText ? appendGeneratedText(sessionId, text) : composer.current?.appendGeneratedText(sessionId, text)) ?? { ok: false, reason: 'unavailable' };
+      notify(result.ok ? '' : '지금은 입력창에 더할 수 없어.');
+      return result;
     } catch {
       notify('지금은 입력창에 더할 수 없어.');
+      return { ok: false, reason: 'unavailable' };
     }
   }, [appendGeneratedText, sessionId, notify]);
   return <FeedbackLifecycleContext.Provider value={closeFeedback}>
@@ -77,6 +79,20 @@ function useControllerContext() {
   const context = useContext(Context);
   if (!context) throw new Error('ChatUiControllerProvider is required');
   return context;
+}
+
+/** Registers the same scoped operations used by UI messages for a PAS report sibling. */
+export function ChatUiOperationsBridge({ register }: { register?: RegisterChatUiOperations }) {
+  const { sessionId, append, notify } = useControllerContext();
+  useEffect(() => {
+    register?.({ notify, appendGeneratedText: (target, text) => {
+      if (target === sessionId) return append(text);
+      notify('지금은 입력창에 더할 수 없어.');
+      return { ok: false, reason: 'unavailable' };
+    } });
+    return () => register?.(null);
+  }, [append, notify, register, sessionId]);
+  return null;
 }
 
 /** The input host registers its bridge and places feedback below the composer. */

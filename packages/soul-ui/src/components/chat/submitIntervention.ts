@@ -8,6 +8,7 @@
 import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { extractErrorMessage } from "./submitErrors";
 import type { InterveneResponse } from "../../shared/api-types";
+import type { ReportContextItem } from '../../shared/persistent-report';
 
 export interface SubmitInterventionContext {
   /** 세션 식별자 (activeSessionKey). */
@@ -18,6 +19,7 @@ export interface SubmitInterventionContext {
   attachmentPaths?: string[];
   /** fetch AbortController 의 signal. 이전 요청 취소 지원. */
   signal?: AbortSignal;
+  contextItems?: ReportContextItem[];
 }
 
 export interface SubmitInterventionResult {
@@ -53,6 +55,7 @@ export async function submitIntervention(
       body: JSON.stringify({
         text: messageText,
         user: "dashboard",
+        ...(ctx.contextItems?.length ? { context_items: ctx.contextItems } : {}),
         ...(attachmentPaths && attachmentPaths.length > 0
           ? { attachmentPaths }
           : {}),

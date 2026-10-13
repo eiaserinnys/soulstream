@@ -1,4 +1,4 @@
-import type { AgentInfo, PersistentTurnUsageMode } from "@seosoyoung/soul-ui";
+import type { AgentInfo, PersistentTurnUsageMode, PersistentReportEntry } from "@seosoyoung/soul-ui";
 
 import { HttpResponseError } from "./http-response-error";
 
@@ -17,6 +17,7 @@ export type PersistentSettings = {
 };
 
 export type PersistentSession = {
+  persistent_report?: PersistentReportEntry[];
   session_id: string;
   display_name: string | null;
   /** 소유 노드를 알 수 없는 기존 세션은 null이며 서버가 아무것도 저장하지 못한다. */
@@ -110,6 +111,7 @@ export function createPersistentSessionsApi(request: typeof fetch = fetch) {
   return {
     list: () => call<PersistentSessionList>(""),
     get: (sessionId: string) => call<{ session: PersistentSession }>(`/${encodeURIComponent(sessionId)}`),
+    dismissReport: (sessionId: string, key: string) => call<{ ok: boolean; changed: boolean; entries: { key: string; title: string }[]; persistent_report: PersistentReportEntry[] }>(`/${encodeURIComponent(sessionId)}/reports/${encodeURIComponent(key)}`, 'DELETE'),
     listAgents: async (nodeId: string): Promise<AgentInfo[]> => {
       const response = await request(`/api/nodes/${encodeURIComponent(nodeId)}/agents`, {
         credentials: "same-origin",

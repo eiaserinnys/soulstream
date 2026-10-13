@@ -34,6 +34,7 @@ import { createEventProcessingSlice } from "./slices/event-processing-slice";
 import { createOptimisticSessionSlice } from "./slices/optimistic-session-slice";
 import { createPromptSuggestionSlice } from "./slices/prompt-suggestion-slice";
 import { createPendingChatSendSlice } from "./slices/pending-chat-send-slice";
+import { createPersistentReportSlice } from './slices/persistent-report-slice';
 import { createWallpaperSlice } from "./slices/wallpaper-slice";
 import { createLiquidGlassSlice } from "./slices/liquid-glass-slice";
 import { createChatTypographySlice } from "./slices/chat-typography-slice";
@@ -99,6 +100,7 @@ function createDashboardStateCreator(options: {
       ...createOptimisticSessionSlice(set, get, store),
       ...createPromptSuggestionSlice(set, get, store),
       ...createPendingChatSendSlice(set, get, store),
+      ...createPersistentReportSlice(set, get, store),
       ...createWallpaperSlice(set, get, store),
       ...createLiquidGlassSlice(set, get, store),
       ...createChatTypographySlice(set, get, store),

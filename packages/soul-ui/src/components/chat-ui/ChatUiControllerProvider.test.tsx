@@ -2,9 +2,9 @@
 import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
-import { ChatUiControllerProvider, useChatUiController, useChatUiHost } from './ChatUiControllerProvider';
+import { ChatUiControllerProvider, ChatUiOperationsBridge, useChatUiController, useChatUiHost } from './ChatUiControllerProvider';
 import { documentFixture } from './chat-ui.test-fixture';
-import type { ChatUiComposerHandle } from './chat-ui-composer';
+import type { ChatUiComposerHandle, ChatUiOperationsHandle } from './chat-ui-composer';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root; let host: HTMLDivElement;
@@ -93,4 +93,25 @@ it('uses the latest bridge and current compose values, clearing feedback only on
   await click('form'); expect(appendGeneratedText.mock.lastCall?.[1]).toContain('인원수 입력: 12명');
   appendGeneratedText.mockReturnValue({ ok: false, reason: 'sending' }); await click('compose'); expect(host.querySelector('p')?.textContent).toBe('지금은 입력창에 더할 수 없어.');
   await render(null); await click('compose'); expect(appendGeneratedText).toHaveBeenCalledTimes(3);
+});
+
+it('routes report failures through the existing scoped feedback line', async () => {
+  setup();
+  let operations: ChatUiOperationsHandle | null = null;
+  const register = (handle: ChatUiOperationsHandle | null) => { operations = handle; };
+  const appendGeneratedText = vi.fn().mockReturnValue({ ok: false, reason: 'sending' });
+  const render = (sessionId: string) => act(async () => root.render(<ChatUiControllerProvider sessionId={sessionId} appendGeneratedText={appendGeneratedText}><ChatUiOperationsBridge register={register} /><Row /></ChatUiControllerProvider>));
+  await render('s1');
+  await act(async () => { expect(operations!.appendGeneratedText('s1', '보고: 응')).toEqual({ ok: false, reason: 'sending' }); });
+  expect(host.querySelector('p')?.textContent).toBe('지금은 입력창에 더할 수 없어.');
+  await act(async () => operations!.notify('보고를 내리지 못했어.'));
+  expect(host.querySelector('p')?.textContent).toBe('보고를 내리지 못했어.');
+  await click('set9');
+  expect(host.querySelector('p')?.textContent).toBe('');
+  expect(host.querySelector('p')?.dataset.open).toBe('true');
+  const old = operations!;
+  await render('s2'); await render('s1');
+  await act(async () => old.notify('보고를 내리지 못했어.'));
+  expect(host.querySelector('p')?.dataset.open).toBe('false');
+  expect(host.querySelector('p')?.textContent).toBe('');
 });

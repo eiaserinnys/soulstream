@@ -17,6 +17,7 @@ import type {
   ReviewState,
   SessionStatus,
   SessionSummary,
+  PersistentReportEntry,
 } from "./session-types";
 import type { SessionFeedDelta } from "../../../../orch-server-ts/src/session/session_feed_contract";
 
@@ -45,6 +46,7 @@ export interface SessionCreatedStreamEvent {
 
 /** 세션 상태 업데이트 */
 export interface SessionUpdatedStreamEvent extends SessionFeedDelta {
+  persistent_report?: PersistentReportEntry[];
   type: "session_updated";
   card_id?: string | null;
   agent_session_id: string;

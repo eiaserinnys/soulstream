@@ -169,6 +169,23 @@ describe("useChatInputSend pending message", () => {
     ));
   }
 
+  it.each([false, true])('captures report context and preserves it through retry (resume=%s)', async isFinished => {
+    args.isFinished = isFinished;
+    const contextItems = [{ key: 'persistent_report_reply', content: { key: 'report-a', option: '응' } }];
+    args.getMessageContext = vi.fn().mockReturnValue({ contextItems });
+    vi.mocked(submitIntervention).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
+    render();
+    await act(async () => { await latest!.send('확인: 응'); });
+    const pending = useDashboardStore.getState().pendingChatSends['session-1'];
+    expect(pending.contextItems).toEqual(contextItems);
+    expect(pending.status).toBe('failed');
+    args.getMessageContext = vi.fn().mockReturnValue({});
+    render();
+    await act(async () => { await latest!.retry('session-1', pending); });
+    expect(vi.mocked(submitIntervention).mock.calls[1][0]).toMatchObject({ contextItems, attachmentPaths: ['/tmp/evidence.png'] });
+    expect(args.getMessageContext).not.toHaveBeenCalled();
+  });
+
   it("clears the composer immediately, keeps it editable, and shows a sending bubble", async () => {
     const request = deferred<{
       ok: true;

@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e:smoke": "pnpm build && playwright test --config playwright.smoke.config.ts",
-    "test:e2e:chat-ui": "COMPONENTS_REVIEW_PHASE=chat-ui playwright test --config playwright.chat-ui.config.ts"
+    "test:e2e:chat-ui": "COMPONENTS_REVIEW_PHASE=chat-ui playwright test --config playwright.chat-ui.config.ts",
+    "test:e2e:pas-report": "playwright test --config playwright.pas-report.config.ts"
   },
   "dependencies": {
     "@seosoyoung/soul-ui": "workspace:*",

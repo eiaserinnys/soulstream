@@ -12,6 +12,12 @@ const instruction: PersistentInstruction = {
 };
 
 describe("persistent instruction API", () => {
+  it('dismisses a report through the authenticated session/key route and returns the full board', async () => {
+    const result = { ok: true, changed: true, entries: [], persistent_report: [] };
+    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json(result));
+    await expect(createPersistentSessionsApi(request).dismissReport('session/a', 'report-one')).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledWith('/api/persistent-sessions/session%2Fa/reports/report-one', { credentials: 'same-origin', method: 'DELETE', headers: { Accept: 'application/json' } });
+  });
   it("loads active instructions with the wrapped response", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ instructions: [instruction] }));
     const api = createPersistentSessionsApi(request);
