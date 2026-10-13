@@ -47,6 +47,17 @@ jest.mock('../../../api/client', () => ({ createApiClient: () => mockApi }));
 jest.mock('../SessionStoryPanel', () => ({ SessionStoryPanel: () => null }));
 jest.mock('../ChatRuntimeStrips', () => ({ ChatRuntimeStrips: () => null }));
 jest.mock('../RealtimeVoiceControls', () => ({ RealtimeVoiceControls: () => null }));
+const mockListMount = jest.fn();
+const mockListUnmount = jest.fn();
+// Keep the real list; the probe measures its lifecycle beneath ChatBody.
+jest.mock('../ChatEventList', () => {
+  const React = require('react');
+  const { ChatEventList } = jest.requireActual('../ChatEventList');
+  return { ChatEventList: React.memo((props: any) => {
+    React.useEffect(() => { mockListMount(); return () => mockListUnmount(); }, []);
+    return React.createElement(ChatEventList, props);
+  }) };
+});
 const ui = { ...chatUiFixtureEvent('normal'), id: '2' };
 const stored = { id: 2, event_type: ui.type, payload: ui.data, parent_event_id: 1, created_at: '2026-10-12T00:00:01Z' };
 const session = (id: string) => ({ agentSessionId: id, nodeId: 'public-node', status: 'completed' as const,
@@ -130,6 +141,49 @@ test('an opened notice line resets when the session changes', async () => {
   screen.rerender(<ChatBody sessionId="two" showSessionAuxiliary={false} />);
   await waitFor(() => expect(screen.getByLabelText('인원수')).toBeTruthy());
   expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+});
+test('same ChatBody keeps its list mounted while resetting UI state and preserving session draft boundaries', async () => {
+  jest.useFakeTimers();
+  const screen = await open();
+  try {
+    edit(screen);
+    fireEvent.press(screen.getByLabelText('요금 가정'));
+    const input = () => screen.getByTestId('chat-composer-text-input');
+    fireEvent.changeText(input(), 'A의 초안');
+    fireEvent.press(screen.getByLabelText('이 조건으로 질문'));
+    const draftA = input().props.value;
+    expect(screen.getByLabelText('되돌리기')).toBeTruthy();
+    expect(input().props.selection).toBeDefined();
+    await act(async () => fireEvent.press(screen.getByLabelText('복사')));
+    expect(screen.getByTestId('chat-composer-generated-notice-row')).toBeTruthy();
+    expect(mockListMount).toHaveBeenCalledTimes(1);
+
+    screen.rerender(<ChatBody sessionId="two" showSessionAuxiliary={false} />);
+    await waitFor(() => expect(screen.getByLabelText('인원수').props.value).toBe('8'));
+    expect(mockListMount).toHaveBeenCalledTimes(1);
+    expect(mockListUnmount).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('연간 결제 (20% 할인)').props.accessibilityState.checked).toBe(false);
+    expect(screen.queryByText('실제 서비스 요금이 아닌 계산 예시야.')).toBeNull();
+    expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
+    expect(screen.queryByLabelText('되돌리기')).toBeNull();
+    expect(input().props.selection).toBeUndefined();
+    expect(input().props.value).toBe('');
+    fireEvent.changeText(input(), 'B의 초안');
+    fireEvent.press(screen.getByLabelText('이 조건으로 질문'));
+    expect(input().props.value).toMatch(/^B의 초안\n\n.*8명/);
+    expect(input().props.value).not.toContain('A의 초안');
+    expect(Object.values(useDraftStore.getState().drafts)).toContain(draftA);
+
+    screen.rerender(<ChatBody sessionId="one" showSessionAuxiliary={false} />);
+    await waitFor(() => expect(input().props.value).toBe(draftA));
+    expect(screen.getByLabelText('인원수').props.value).toBe('8');
+    expect(mockListMount).toHaveBeenCalledTimes(1);
+    expect(mockListUnmount).not.toHaveBeenCalled();
+    await act(async () => { jest.runOnlyPendingTimers(); });
+  } finally {
+    screen.unmount();
+    jest.useRealTimers();
+  }
 });
 test('SSE arrives before the same id history response through the reader and produces one row', async () => {
   let resolveHistory!: (value: { messages: typeof stored[]; next_cursor: null }) => void;

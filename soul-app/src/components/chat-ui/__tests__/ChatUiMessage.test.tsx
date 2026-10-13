@@ -26,6 +26,24 @@ jest.mock('@react-native-community/slider', () => {
   return (props: any) => React.createElement(View, props);
 });
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(() => Promise.resolve()) }));
+const mockNumberInputRenders: string[] = [];
+const mockNumberInputCommits: string[] = [];
+const mockNumberInputMount = jest.fn();
+// Keep the real input; record its value before passive effects can repair it.
+jest.mock('../../settings/SettingsFormParts', () => {
+  const React = require('react');
+  const actual = jest.requireActual('../../settings/SettingsFormParts');
+  return { ...actual, SettingsInput: (props: any) => {
+    if (props.accessibilityLabel === '인원수') mockNumberInputRenders.push(props.value);
+    React.useLayoutEffect(() => {
+      if (props.accessibilityLabel === '인원수') mockNumberInputCommits.push(props.value);
+    });
+    React.useEffect(() => {
+      if (props.accessibilityLabel === '인원수') mockNumberInputMount();
+    }, []);
+    return React.createElement(actual.SettingsInput, props);
+  } };
+});
 const mockOpenLink = jest.fn(() => Promise.resolve());
 jest.mock('../../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpenLink }));
 
@@ -163,6 +181,42 @@ test('row remount and same-publication history retain values and expanded entiti
   expect(screen.getByLabelText('인원수').props.value).toBe('8');
   screen.rerender(sample(event, 'session-one'));
   expect(screen.getByLabelText('인원수').props.value).toBe('8');
+});
+
+test.each(['12', '-'])('session switch replaces numeric draft %s before the first input commit', draft => {
+  const event = chatUiFixtureEvent('normal');
+  const screen = render(sample(event));
+  fireEvent.changeText(screen.getByLabelText('인원수'), draft);
+  expect(screen.getByLabelText('인원수').props.value).toBe(draft);
+  mockNumberInputRenders.length = 0;
+  mockNumberInputCommits.length = 0;
+
+  // Same message/document keys: the numeric editor instance stays mounted.
+  screen.rerender(sample(event, 'session-two'));
+
+  expect(mockNumberInputMount).toHaveBeenCalledTimes(1);
+  expect(mockNumberInputRenders.length).toBeGreaterThan(0);
+  expect(mockNumberInputCommits.length).toBeGreaterThan(0);
+  expect([...new Set(mockNumberInputRenders)]).toEqual(['8']);
+  expect([...new Set(mockNumberInputCommits)]).toEqual(['8']);
+  expect(screen.getByTestId('chat-ui-slider-seats').props.value).toBe(8);
+});
+
+test.each(['12', '-'])('reset replaces numeric draft %s before the first input commit', draft => {
+  const screen = render(sample());
+  fireEvent.changeText(screen.getByLabelText('인원수'), draft);
+  expect(screen.getByLabelText('인원수').props.value).toBe(draft);
+  mockNumberInputRenders.length = 0;
+  mockNumberInputCommits.length = 0;
+
+  fireEvent.press(screen.getByLabelText('초기화'));
+
+  expect(mockNumberInputMount).toHaveBeenCalledTimes(1);
+  expect(mockNumberInputRenders.length).toBeGreaterThan(0);
+  expect(mockNumberInputCommits.length).toBeGreaterThan(0);
+  expect([...new Set(mockNumberInputRenders)]).toEqual(['8']);
+  expect([...new Set(mockNumberInputCommits)]).toEqual(['8']);
+  expect(screen.getByTestId('chat-ui-slider-seats').props.value).toBe(8);
 });
 
 test.each(['wrong_session', 'not_ready', 'sending', 'disabled', 'too_long'] as const)('compose failure %s preserves the document and uses agreed notice', reason => {

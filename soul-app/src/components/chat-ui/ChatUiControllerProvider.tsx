@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import { composeText, initialState, reduce, renderText, type Action, type ChatUiState, type FieldValue } from '@soulstream/chat-ui';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
@@ -26,18 +26,25 @@ type ContextValue = {
 };
 const Context = createContext<ContextValue | null>(null);
 export function ChatUiControllerProvider(props: Props) {
-  // Session navigation discards this screen's memory, including old notices.
-  return <SessionController key={props.sessionId} {...props} />;
+  return <SessionController {...props} />;
+}
+function createSessionState(sessionId: string) {
+  return { sessionId, entries: new Map<string, Entry>(), numberEditors: new Map<string, NumberEditor>(),
+    notice: '', noticeLineOpen: false };
 }
 function SessionController({ sessionId, appendGeneratedText, children }: Props) {
-  const entries = useRef(new Map<string, Entry>()).current;
-  const numberEditors = useRef(new Map<string, NumberEditor>()).current;
-  const [version, setVersion] = useState(0);
-  const [{ notice, noticeLineOpen }, setNoticeState] = useState({ notice: '', noticeLineOpen: false });
+  const [state, setState] = useState(() => createSessionState(sessionId));
+  // Reset only our state before children commit; keep their existing lifetimes.
+  if (state.sessionId !== sessionId) setState(createSessionState(sessionId));
+  const { entries, numberEditors, notice, noticeLineOpen } = state;
   const setNotice = useCallback((notice: string) => {
-    setNoticeState(current => ({ notice, noticeLineOpen: current.noticeLineOpen || !!notice }));
-  }, []);
-  const closeNoticeLine = useCallback(() => setNoticeState({ notice: '', noticeLineOpen: false }), []);
+    setState(current => current.entries === entries
+      ? { ...current, notice, noticeLineOpen: current.noticeLineOpen || !!notice } : current);
+  }, [entries]);
+  const closeNoticeLine = useCallback(() => {
+    setState(current => current.entries === entries
+      ? { ...current, notice: '', noticeLineOpen: false } : current);
+  }, [entries]);
   const openLink = useOpenContentLink();
   const value = useMemo<ContextValue>(() => {
     const read = (publication: ChatUiRichPublication): Entry => entries.get(publicationKey(sessionId, publication))
@@ -48,11 +55,11 @@ function SessionController({ sessionId, appendGeneratedText, children }: Props) 
       update: (publication, change) => {
         const next = change(read(publication));
         entries.set(publicationKey(sessionId, publication), next);
-        setVersion(current => current + 1);
+        setState(current => current.entries === entries ? { ...current } : current);
         return next;
       },
     };
-  }, [sessionId, entries, version, numberEditors, appendGeneratedText, openLink, notice, noticeLineOpen, setNotice, closeNoticeLine]);
+  }, [sessionId, state, appendGeneratedText, openLink, setNotice, closeNoticeLine]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 function useControllerContext() {
@@ -93,6 +100,7 @@ export function useChatUiController(publication: ChatUiRichPublication) {
   };
   return {
     ...entry,
+    sessionId: context.sessionId,
     set,
     toggleEntity(id: string) {
       context.update(publication, current => ({ ...current, expanded: { ...current.expanded, [id]: !current.expanded[id] } }));

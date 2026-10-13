@@ -454,7 +454,7 @@ export function ChatBody({
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ChatUiControllerProvider key={sessionId} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
+      <ChatUiControllerProvider sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
       {showSessionAuxiliary ? <SessionStoryPanel
         presentation={presentation}
         sessionId={sessionId}
