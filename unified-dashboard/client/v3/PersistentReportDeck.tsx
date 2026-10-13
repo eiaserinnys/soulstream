@@ -1,9 +1,12 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, DashboardIconCap, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { SourceLink } from '@seosoyoung/soul-ui/components/SourceLink';
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import type { ChatUiComposerHandle } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
+import { cardRequest } from '@seosoyoung/soul-ui/cards/card-api';
+import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
@@ -13,6 +16,31 @@ const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:r
 export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInput, dismissReport }: Props) {
   const report = usePersistentReport()!;
   const { entries, visibleKey } = report;
+  const pendingCardNumbers = useRef(new Set<number>()).current;
+  const byId = useCardStore(state => state.byId);
+  const numbers = [...new Set(entries.flatMap(entry => entry.card_numbers))].sort((a, b) => a - b);
+  const numbersKey = JSON.stringify(numbers);
+  const lookupScope = useRef({ key: numbersKey, numbers, missing: new Set<number>() });
+  if (lookupScope.current.key !== numbersKey) lookupScope.current = { key: numbersKey, numbers, missing: new Set() };
+  const pendingLookup = useRef<Promise<void> | null>(null);
+  const lookupCards = useCallback(() => {
+    if (pendingLookup.current) return pendingLookup.current;
+    const lookup = (async () => {
+      try {
+        const { cards } = await cardRequest<{ cards: CardRow[] }>('/api/cards?includeCompleted=true');
+        const store = useCardStore.getState();
+        store.putCards(cards.filter(card => !store.byId[card.id] || store.byId[card.id].version <= card.version));
+        const known = new Set(Object.values(useCardStore.getState().byId).map(card => card.number));
+        lookupScope.current.missing = new Set(lookupScope.current.numbers.filter(number => !known.has(number)));
+      } catch { /* A failed lookup stays retryable, without a new error surface. */ }
+    })().finally(() => { pendingLookup.current = null; });
+    pendingLookup.current = lookup;
+    return lookup;
+  }, []);
+  useEffect(() => {
+    const known = new Set(Object.values(byId).map(card => card.number));
+    if (lookupScope.current.numbers.some(number => !known.has(number) && !lookupScope.current.missing.has(number))) void lookupCards();
+  }, [byId, numbersKey, lookupCards]);
   const index = Math.max(0, entries.findIndex(entry => entry.key === visibleKey));
   const track = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLElement | null>(null);
@@ -79,7 +107,7 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
             <div className="pas-report-heading">
               <div className="pas-report-tags">
                 <span className="pas-report-kind" data-kind={entry.kind === 'ask' && !answered ? 'ask' : 'see'}>{tag}</span>
-                {entry.card_numbers.map(number => <SourceLink key={number} href={`/?card=${number}`} className={`pas-report-card text-info-foreground hover:underline ${LINK_FOCUS}`} aria-label={`카드 ${number}번 열기`}>#{number}</SourceLink>)}
+                {entry.card_numbers.map(number => <ReportCardLink key={number} number={number} pending={pendingCardNumbers} lookupCards={lookupCards} />)}
               </div>
               <h2 className="pas-report-title">{entry.title}</h2>
             </div>
@@ -107,6 +135,39 @@ export function PersistentReportDeck({ sessionId, appendGeneratedText, focusInpu
       <DashboardIconCap size="small" appearance="bare" label="다음 장" disabled={index === entries.length - 1} onClick={() => go(index + 1)}><ChevronRight className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" /></DashboardIconCap>
     </div>}
   </section>;
+}
+
+function ReportCardLink({ number, pending, lookupCards }: { number: number; pending: Set<number>; lookupCards: () => Promise<void> }) {
+  const id = useCardStore(state => Object.values(state.byId).find(card => card.number === number)?.id);
+  const anchor = useRef<HTMLAnchorElement>(null);
+  const [openAfterLookup, setOpenAfterLookup] = useState(false);
+  useEffect(() => {
+    if (!openAfterLookup || !id) return;
+    setOpenAfterLookup(false);
+    // SourceLink has no imperative opener. Activate the resolved anchor after its
+    // href commits so the existing internal-link handler/PAS card opener receives it.
+    anchor.current?.click();
+  }, [id, openAfterLookup]);
+  const resolve = async (open: boolean, node: HTMLAnchorElement) => {
+    if (open && pending.has(number)) return;
+    if (open) { pending.add(number); anchor.current = node; }
+    try {
+      await lookupCards();
+      if (open && Object.values(useCardStore.getState().byId).some(card => card.number === number)) setOpenAfterLookup(true);
+    } finally { if (open) pending.delete(number); }
+  };
+  return <SourceLink href={id ? `/?card=${encodeURIComponent(id)}` : undefined}
+    role="link" tabIndex={0} className={`pas-report-card text-info-foreground hover:underline ${LINK_FOCUS}`} aria-label={`카드 ${number}번 열기`}
+    onKeyDown={event => { if (!id && event.key === 'Enter') {
+      event.preventDefault();
+      void resolve(!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey, event.currentTarget);
+    } }}
+    onAuxClick={event => { if (!id) { event.preventDefault(); void resolve(false, event.currentTarget); } }}
+    onClick={event => {
+      if (id) return;
+      event.preventDefault();
+      void resolve(event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey, event.currentTarget);
+    }}>#{number}</SourceLink>;
 }
 
 function ReportAction({ text }: { text: string }) {
