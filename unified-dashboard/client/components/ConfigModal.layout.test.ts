@@ -218,7 +218,12 @@ describe("ConfigModal layout", () => {
     flushSync(() => toggle?.click());
 
     expect(JSON.parse(localStorage.getItem("soulstream-pas-device:admin@example.com") ?? "null"))
-      .toEqual({ openOnStart: true, lastSessionId: null });
+      .toEqual({
+        openOnStart: true,
+        lastSessionId: null,
+        showWeeklyUsage: false,
+        weeklyUsageNodeSelection: null,
+      });
     expect(vi.mocked(fetch)).not.toHaveBeenCalledWith("/api/user/preferences", expect.anything());
   });
 
