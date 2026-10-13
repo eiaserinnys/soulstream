@@ -3,6 +3,9 @@ import { AccessibilityInfo, Keyboard, Platform, StyleSheet } from 'react-native'
 import * as ReactNative from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
+import { PersistentReportSheet } from '../PersistentReportSheet';
+import { reportStyles } from '../persistentReportStyles';
+import { useTokens } from '../../../theme';
 import { usePersistentReport } from '../usePersistentReport';
 import { reportReviewEntries } from '../../../component-review/persistent-report-fixtures';
 import { useSessionStore } from '../../../store/sessionStore';
@@ -366,4 +369,21 @@ test('bubble surface and every page share the explicit capped height after all i
   expect(StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height).toBe(180);
   expect(StyleSheet.flatten(a.props.style).height).toBe(180);
   expect(StyleSheet.flatten(b.props.style).height).toBe(180);
+});
+
+test('bubble reports intrinsic height only after both reading and footer are measured', () => {
+  const onHeight = jest.fn();
+  function Harness() {
+    const t = useTokens();
+    return <PersistentReportSheet entry={reportReviewEntries[1]} index={0} count={1} current compact={false}
+      showNav={false} width={318} styles={reportStyles(t, 0, false)} bubble bubbleHeight={440}
+      titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()} onDismiss={jest.fn()}
+      onCard={jest.fn()} onLink={jest.fn()} onHeight={onHeight} />;
+  }
+  const screen = render(<Harness />);
+  fireEvent(screen.getByTestId('report-scroll'), 'contentSizeChange', 318, 294);
+  expect(onHeight).not.toHaveBeenCalled();
+  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 242 } } });
+  expect(onHeight).toHaveBeenCalledTimes(1);
+  expect(onHeight).toHaveBeenLastCalledWith(536);
 });

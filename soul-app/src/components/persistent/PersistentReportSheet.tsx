@@ -32,9 +32,9 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const measure = (part: 'reading' | 'foot', height: number) => {
     measured.current[part] = height;
     // Content size already includes reading padding; footer layout includes
-    // its padding. Wait for both parts rather than publishing a partial height.
-    if (measured.current.reading !== null && (!hasFooter || measured.current.foot !== null)) {
-      onHeight?.(measured.current.reading + (hasFooter ? measured.current.foot ?? 0 : 0));
+    // its padding. Only bubbles wait for both parts; bands report each measurement.
+    if (!bubble || (measured.current.reading !== null && (!hasFooter || measured.current.foot !== null))) {
+      onHeight?.((measured.current.reading ?? 0) + (hasFooter || !bubble ? measured.current.foot ?? 0 : 0));
     }
     if (entry.state === 'open') setAsked(saved => saved[part] === height ? saved : { ...saved, [part]: height });
   };
