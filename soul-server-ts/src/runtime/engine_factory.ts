@@ -2,6 +2,8 @@ import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
+import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
+import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
 import type { ClaudeSessionClientRegistry } from
@@ -23,12 +25,15 @@ type EngineFactoryEnv = Pick<
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
+  | "SOUL_RUNNER_STATE_DIR"
 >;
 
 export interface CreateEngineFactoryParams {
   env: EngineFactoryEnv;
   logger: Logger;
   codexCliPath?: CodexCliPathResolution;
+  antigravityCliPath?: AntigravityCliPathResolution;
+  antigravityProcessEnv: NodeJS.ProcessEnv;
   codexProcessEnv: NodeJS.ProcessEnv;
   buildClaudeProcessEnv(): Record<string, string | undefined>;
   claudeSessionStore: SessionStore;
@@ -41,6 +46,8 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
     env,
     logger,
     codexCliPath,
+    antigravityCliPath,
+    antigravityProcessEnv,
     codexProcessEnv,
     buildClaudeProcessEnv,
     claudeSessionStore,
@@ -50,6 +57,17 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
 
   return (agent, backendOverride) => {
     const backend = backendOverride ?? agent.backend;
+    if (backend === "antigravity") {
+      return new AntigravityEngineAdapter({
+        workspaceDir: agent.workspace_dir,
+        agentId: agent.id,
+        stateDirectory: env.SOUL_RUNNER_STATE_DIR,
+        executablePath: antigravityCliPath?.path,
+        processEnv: antigravityProcessEnv,
+        resolvedMcpServers: mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+        internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
+      }, logger);
+    }
     if (backend === "codex") {
       const resolvedMcpServers =
         mcpConfigService.resolveMcpProfile(agent)?.mcp_servers;

@@ -6,6 +6,7 @@ import type { ClaudeAuthService } from "../auth/claude_auth.js";
 import type { Env } from "../config.js";
 import type { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -32,6 +33,7 @@ export interface WorkerCompositionParams {
   agentRegistry: AgentRegistry;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
+  antigravityCliPath?: AntigravityCliPathResolution;
   modelCatalog?: ModelCatalog;
   agentProfileSource?: NewSessionAgentProfileSource;
   nodeStallMonitor?: Pick<

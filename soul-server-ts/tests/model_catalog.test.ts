@@ -48,6 +48,8 @@ describe("ModelCatalog", () => {
       "codex-5.6-terra",
       "kimi-2",
       "kimi-3",
+      "gemini-3.8-flash",
+      "gemini-4-argon",
     ]);
   });
 

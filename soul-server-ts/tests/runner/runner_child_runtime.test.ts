@@ -67,6 +67,7 @@ describe("buildDurableRunnerEvent", () => {
   it("waits for resume material only on ID-bearing backends", () => {
     expect(requiresBackendSessionId("claude")).toBe(true);
     expect(requiresBackendSessionId("codex")).toBe(true);
+    expect(requiresBackendSessionId("antigravity")).toBe(true);
     expect(requiresBackendSessionId("openai-agents")).toBe(false);
   });
   it("removes internal dedupe metadata before the durable frame crosses IPC", () => {

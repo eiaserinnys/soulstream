@@ -63,7 +63,7 @@ export type { WorkerComposition, WorkerCompositionParams } from "./worker_compos
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
-  const { env, logger, agentRegistry, mcpConfigService, codexCliPath, agentProfileSource } = params;
+  const { env, logger, agentRegistry, mcpConfigService, codexCliPath, antigravityCliPath, agentProfileSource } = params;
   const modelCatalog =
     params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
   let upstreamAdapter: UpstreamAdapter | null = null;
@@ -262,6 +262,8 @@ export async function composeWorkerRuntime(
     env,
     logger,
     codexCliPath,
+    antigravityCliPath,
+    antigravityProcessEnv: process.env,
     codexProcessEnv: process.env,
     buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
     claudeSessionStore,
@@ -269,7 +271,7 @@ export async function composeWorkerRuntime(
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
   const runnerProcess = await composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
-    env, logger, mcpConfigService, codexCliPath,
+    env, logger, mcpConfigService, codexCliPath, antigravityCliPath,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,

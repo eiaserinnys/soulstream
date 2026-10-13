@@ -37,3 +37,9 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 | 19. upstream inventory 재보고 | `soul-server-ts/src/upstream/initial_runner_state_sync.ts:sendInitialRunnerState` (L11–58) | 현재 connection에 runner inventory를 최대 5회 보고하여 orch가 node-ready session-node mapping을 다시 구성하게 한다. | connection 교체·WebSocket close면 즉시 중단; 5회 실패 뒤 현재 connection에서 종료한다. |
 
 이 장을 갱신해야 하는 변경 부류: worker startup 순서·queued transcript recovery·node-ready/maintenance replay·delivery attempt maintenance·runner scan/classification/adoption·host gap frame forwarding·initial inventory 변경.
+
+## Antigravity 대화 재개 (PR A)
+
+살아 있는 runner에 다시 붙으면 기존 child config의 MCP/내부 주소/CLI 경로가 유지된다. 새 runner에는 `runner_process_runtime_factory.ts:spawnInputFromConfig`가 저장된 선택 CLI 경로를 전달한다. `runner_recovery_task.ts:prepareRecoveredTask`와 `task_evicted_hydration.ts`의 공통 backend session ID가 `AntigravityEngineAdapter.executeFrames`의 `--conversation` 인자로 이어진다. native 대화가 생성 때 저장한 지시와 MCP를 사용하므로 재개에서 정의 파일을 다시 만들지 않는다. Claude transcript 복구 기능은 확장하지 않는다.
+
+예상 중단의 미발행 사용량은 어댑터 메모리에만 보관하므로 runner 교체 때 소실된다. 첫 실행이 init 전에 실패한 뒤 일반 후속 메시지를 보내면 호스트 `task_turn_input_builder.ts:prepareFollowupTurnInput`은 시스템 지시를 다시 보내지 않는다. 어댑터는 새 대화에 필요한 systemPrompt가 undefined이면 “이 세션은 첫 턴에서 대화를 만들지 못했습니다. 새 세션을 시작해 주십시오.” 오류를 내고 빈 문자열은 허용한다. 호스트의 composeEffectiveSystemPrompt는 지시 재료가 모두 비면 undefined를 반환한다. Antigravity의 초기 입력 분기만 이를 빈 문자열로 바꾸므로 규칙 없는 초기 프로필은 빈 본문 정의로 새 대화를 만든다. Claude와 일반 후속 입력 정책은 그대로다.

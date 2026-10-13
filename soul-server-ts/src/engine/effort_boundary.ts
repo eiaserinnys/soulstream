@@ -63,6 +63,10 @@ export function claudeTransportEfforts(): readonly ReasoningEffort[] {
   return CLAUDE_SDK_EFFORTS as readonly ReasoningEffort[];
 }
 
+export function antigravityTransportEfforts(): readonly ReasoningEffort[] {
+  return ["low", "medium", "high"];
+}
+
 export function toClaudeSdkEffort(
   effort: ReasoningEffort | undefined,
 ): EffortLevel | undefined {
