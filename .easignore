@@ -46,6 +46,7 @@
 node_modules/
 .expo/
 dist/
+/soul-app/dist-mockups/
 build/
 web-build/
 expo-env.d.ts
