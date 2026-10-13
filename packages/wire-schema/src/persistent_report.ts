@@ -26,7 +26,7 @@ export function parsePersistentReportEntry(input: unknown):
   for (const key of Object.keys(input)) if (!INPUT_KEYS.has(key)) errors.push({ path: key, reason: "지원하지 않는 칸입니다" });
   if (typeof input.key !== "string" || !PERSISTENT_REPORT_KEY.test(input.key)) errors.push({ path: "key", reason: "소문자·숫자로 시작하는 소문자·숫자·_- 1~48자가 필요합니다" });
   if (input.kind !== "ask" && input.kind !== "see") errors.push({ path: "kind", reason: "ask 또는 see가 필요합니다" });
-  for (const [field, max] of [["title",24],["context",120],["action",100],["answer",40]] as const) {
+  for (const [field, max] of [["title",24],["context",120],["answer",40]] as const) {
     const value = field === "answer" ? input[field] ?? "" : input[field];
     if (typeof value !== "string" || Array.from(value).length > max) errors.push({ path: field, reason: `${max}자 이내 문자열이 필요합니다` });
   }
@@ -36,7 +36,8 @@ export function parsePersistentReportEntry(input: unknown):
   if (input.kind === "see" && input.state === "answered") errors.push({ path: "state", reason: "see 장은 answered 상태를 받을 수 없습니다" });
   if (input.question_id !== undefined && (typeof input.question_id !== "string" || !input.question_id)) errors.push({ path: "question_id", reason: "질문 ID 문자열이 필요합니다" });
   if (input.state !== undefined && input.state !== "open" && input.state !== "answered") errors.push({ path: "state", reason: "open 또는 answered가 필요합니다" });
-  if (typeof input.action === "string" && !validAction(input.action)) errors.push({ path: "action", reason: "글과 [글](https://…) 링크만 넣을 수 있습니다" });
+  if (typeof input.action !== "string") errors.push({ path: "action", reason: "문자열이 필요합니다" });
+  else errors.push(...validateAction(input.action));
   if (errors.length) return { ok: false, errors };
   return { ok: true, value: {
     key: input.key as string, kind: input.kind as PersistentReportEntry["kind"], title: input.title as string,
@@ -47,14 +48,22 @@ export function parsePersistentReportEntry(input: unknown):
   } };
 }
 
-function validAction(action: string): boolean {
-  if (/!\[/.test(action)) return false;
+function validateAction(action: string): PersistentReportIssue[] {
+  if (Array.from(action).length > 1000) return [{ path: "action", reason: "전체 원문은 1,000자까지입니다" }];
+  const errors: PersistentReportIssue[] = [];
   let badLink = false;
-  const plain = action.replace(/\[([^\]\n]+)\]\(([^\s)]+)\)/g, (_match, _label, url: string) => {
+  let linkCount = 0, labelLength = 0;
+  const plain = action.replace(/\[([^\]\n]+)\]\(([^\s)]+)\)/g, (_match, label: string, url: string) => {
+    linkCount++;
+    labelLength += Array.from(label).length;
     try { if (new URL(url).protocol !== "https:") badLink = true; } catch { badLink = true; }
     return "";
   });
-  return !badLink && !/[\[\]<>`*]|__|_[^\s_]+_|(^|\n)\s*(?:#{1,6}\s|[-+]\s|\d+\.\s)/.test(plain);
+  if (labelLength + Array.from(plain).length > 100) errors.push({ path: "action", reason: "보이는 글은 100자까지입니다(링크 주소 제외)" });
+  if (linkCount > 5) errors.push({ path: "action", reason: "링크는 5개까지입니다" });
+  if (/!\[/.test(action) || badLink || /[\[\]<>`*]|__|_[^\s_]+_|(^|\n)\s*(?:#{1,6}\s|[-+]\s|\d+\.\s)/.test(plain))
+    errors.push({ path: "action", reason: "글과 [글](https://…) 링크만 넣을 수 있습니다" });
+  return errors;
 }
 
 export function readPersistentReport(metadata: unknown): PersistentReportEntry[] {

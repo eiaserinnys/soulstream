@@ -32,4 +32,28 @@ describe("persistent report shared contract", () => {
     const { options: _options, ...see } = { ...entry, kind: "see" };
     expect(parsePersistentReportEntry({ ...see, state: "answered", answer: "확인" })).toMatchObject({ ok: false, errors: [{path:"state",reason:expect.any(String)}] });
   });
+  it("accepts three links with long digest addresses without counting their URLs", () => {
+    const action = ["첫 글", "둘째 글", "셋째 글"]
+      .map((label, i) => `[${label}](https://pages.eiaserinnys.me/d/${"a".repeat(55)}${i})`).join(" ");
+    expect(Array.from(action).length).toBeGreaterThan(100);
+    expect(parsePersistentReportEntry({ ...entry, action })).toMatchObject({ok:true,value:{action}});
+  });
+  it("counts visible labels as codepoints and rejects 101 visible characters", () => {
+    expect(parsePersistentReportEntry({ ...entry, action: `[${"😀".repeat(100)}](https://example.com)` }).ok).toBe(true);
+    expect(parsePersistentReportEntry({ ...entry, action: `[${"😀".repeat(100)}](https://example.com)가` }))
+      .toMatchObject({ok:false,errors:[{path:"action",reason:"보이는 글은 100자까지입니다(링크 주소 제외)"}]});
+  });
+  it("rejects raw action text above 1,000 codepoints independently of its visible length", () => {
+    const prefix = "[글](https://example.com/";
+    const atLimit = prefix + "a".repeat(1000 - Array.from(prefix).length - 1) + ")";
+    expect(parsePersistentReportEntry({ ...entry, action: atLimit }).ok).toBe(true);
+    expect(parsePersistentReportEntry({ ...entry, action: atLimit.replace(")", "a)") }))
+      .toMatchObject({ok:false,errors:[{path:"action",reason:"전체 원문은 1,000자까지입니다"}]});
+  });
+  it("accepts five links and rejects a sixth even when both text limits are met", () => {
+    const link = "[글](https://a)";
+    expect(parsePersistentReportEntry({ ...entry, action: Array(5).fill(link).join(" ") }).ok).toBe(true);
+    expect(parsePersistentReportEntry({ ...entry, action: Array(6).fill(link).join(" ") }))
+      .toMatchObject({ok:false,errors:[{path:"action",reason:"링크는 5개까지입니다"}]});
+  });
 });
