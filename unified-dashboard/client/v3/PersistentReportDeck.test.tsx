@@ -54,6 +54,15 @@ it('uses the existing internal-card link opener and https source policy', async 
   const source = host.querySelector<HTMLAnchorElement>('a[href="https://example.test/"]')!;
   expect(source.target).toBe('_blank'); expect(source.rel).toContain('noopener');
 });
+it.each([{ ctrlKey: true }, { metaKey: true }, { button: 1 }])('leaves resolved-link gestures to the browser: %j', async modifiers => {
+  const card = host.querySelector<HTMLAnchorElement>('[data-current="true"] a[aria-label="카드 270번 열기"]')!;
+  const event = new MouseEvent('button' in modifiers ? 'auxclick' : 'click', { bubbles: true, cancelable: true, ...modifiers });
+  const preventDefault = vi.spyOn(event, 'preventDefault');
+  await act(async () => card.dispatchEvent(event));
+  expect(preventDefault).not.toHaveBeenCalled(); expect(event.defaultPrevented).toBe(false);
+  expect(request).not.toHaveBeenCalled(); expect(openTarget).not.toHaveBeenCalled();
+  expect(card.getAttribute('href')).toBe(`/?card=${cardRow.id}`); expect(card.target).toBe('_blank');
+});
 it('resolves a missing number once across sheets, then opens its ID through SourceLink', async () => {
   let resolve!: (value: unknown) => void;
   request.mockReturnValue(new Promise(yes => { resolve = yes; }));

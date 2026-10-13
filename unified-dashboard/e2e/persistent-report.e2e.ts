@@ -101,13 +101,8 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   await expect(firstCardLink).toHaveAttribute('href', `/?card=${cards[0].id}`);
   await expect(workspace).toHaveCount(0);
   expect(cardLists).toBe(1); // The successful prefetch remembers the absent numbers.
-  await page.context().route(url => url.pathname === '/' && url.searchParams.get('card') === cards[0].id,
-    route => route.fulfill({ contentType: 'text/html', body: '<title>카드 새 탭</title>' }));
-  // Ctrl-click opens a browser tab with noopener, rather than a page-owned popup.
-  const cardPopup = page.context().waitForEvent('page');
-  await firstCardLink.click({ modifiers: ['Control'] });
-  const newTab = await cardPopup; await expect(newTab).toHaveURL(new RegExp(`card=${cards[0].id}`)); await newTab.close();
-  await expect(workspace).toHaveCount(0);
+  // Resolved links retain the browser's native modified-click behavior.
+  await expect(firstCardLink).toHaveAttribute('target', '_blank');
   await firstCardLink.click();
   await expect(workspace.getByTestId('card-detail')).toContainText('보고 카드 270');
   await page.screenshot({ path: path.join(output, '1440-card-open.png') });
