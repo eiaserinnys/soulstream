@@ -50,20 +50,25 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, entry.updated_at]);
   const pressing = useRef(false);
   const [height, setHeight] = useState(0);
-  const [measuredReady, setMeasuredReady] = useState(false);
+  const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
+  const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
   const [navBottom, setNavBottom] = useState(t.uiSpacing.lg);
   const commitHeight = () => {
-    if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))) return;
+    const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
+    if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
+      || (presentedLayout === layoutKey && !allMeasured)) return;
     const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
       bubble && entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
     setHeight(saved => saved === next ? saved : next);
-    setMeasuredReady(width > 0 && next > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry))));
+    if (allMeasured && next > 0) setPresentedLayout(layoutKey);
     const nextBottom = entries[index] ? navBottoms.current.get(measureKey(entries[index])) ?? t.uiSpacing.lg : t.uiSpacing.lg;
     setNavBottom(saved => saved === nextBottom ? saved : nextBottom);
   };
   useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
-  const ready = measuredReady && width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
+  // Publication edits wait for height without hiding an already visible deck.
+  // A new session/layout still measures before its first presentation.
+  const ready = presentedLayout === layoutKey;
   useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
   const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
   const latestInteraction = useRef(interaction);

@@ -7,6 +7,7 @@ import type { PersistentReportEntry } from '../../../api/types';
 import type { ApiClient } from '../../../api/client';
 import { useChatSendFlow } from '../../chat/useChatSendFlow';
 import { PersistentReportPager } from '../PersistentReportPager';
+import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -121,9 +122,7 @@ test('actual report controls hide cancellation until receipt, disable during oth
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
-  fireEvent(screen.getByTestId('report-track', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { width: 390 } } });
-  fireEvent(screen.getByTestId('report-reading', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { height: 100 } } });
-  fireEvent(screen.getByTestId('report-footer', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  measurePersistentReports(screen);
   fireEvent.press(screen.getByLabelText('응'));
   expect(screen.queryByTestId('report-cancel')).toBeNull();
   await act(async () => { response.resolve({ delivered: true }); });
@@ -140,8 +139,7 @@ test('actual report controls hide cancellation until receipt, disable during oth
   act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'sending'));
   const revised = [{ ...entry, updated_at: '2026-10-14T00:00:00Z' }];
   screen.rerender(<Harness entries={revised} />);
-  fireEvent(screen.getByTestId('report-reading', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { height: 100 } } });
-  fireEvent(screen.getByTestId('report-footer', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  measurePersistentReports(screen);
   expect(screen.getByLabelText('응').props.accessibilityState.disabled).toBe(true);
   act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'failed', 'failure'));
   fireEvent.press(screen.getByLabelText('응'));

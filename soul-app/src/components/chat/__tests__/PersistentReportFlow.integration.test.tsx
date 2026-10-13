@@ -18,6 +18,7 @@ import { ChatUiControllerProvider, useChatUiActions } from '../../chat-ui/ChatUi
 import { usePersistentReport } from '../../persistent/usePersistentReport';
 import { usePersistentReportSend, FAILED_REPORT_SEND_REMAINS } from '../../persistent/usePersistentReportSend';
 import { PersistentReportPager } from '../../persistent/PersistentReportPager';
+import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
 import type { ChatInputComposerHandle } from '../ChatInputComposer';
 
 // Existing ChatBody/AssistantMessage test patterns: replace OS transport and
@@ -105,8 +106,8 @@ function ReportConversation({ inputRef }: { inputRef: React.RefObject<ChatInputC
 async function openReport() {
   useSessionStore.setState({ persistentReportsBySession: { one: { entries: [report] } } } as any);
   const screen = render(<ReportHost />);
-  await waitFor(() => expect(screen.getByTestId('report-track')).toBeTruthy());
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 390, height: 200 } } });
+  await waitFor(() => expect(screen.getByTestId('report-track', { includeHiddenElements: true })).toBeTruthy());
+  measurePersistentReports(screen);
   return screen;
 }
 test('direct answer preserves the real draft and has no undo, then failure/retry/server projection', async () => {
@@ -159,8 +160,8 @@ test('failed dismiss restores the same report and uses the sticky composer notic
   useSessionStore.setState({ persistentReportsBySession: { one: { entries: [see] } } } as any);
   mockApi.dismissPersistentReport.mockRejectedValueOnce(Error('공개 예시 내림 실패'));
   const screen = render(<ReportHost />);
-  await waitFor(() => expect(screen.getByTestId('report-track')).toBeTruthy());
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  await waitFor(() => expect(screen.getByTestId('report-track', { includeHiddenElements: true })).toBeTruthy());
+  measurePersistentReports(screen);
   fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '남길 초안');
   await act(async () => fireEvent.press(screen.getByLabelText('봤다')));
   expect(screen.getByTestId('report-sheet-ask-one')).toBeTruthy();
@@ -180,8 +181,8 @@ test('two consecutive dismissals with only one failure restore only the failed s
   mockApi.dismissPersistentReport.mockImplementationOnce(() => new Promise((_done, fail) => { rejectA = fail; }))
     .mockImplementationOnce(() => new Promise(done => { resolveB = done; }));
   const screen = render(<ReportHost />);
-  await waitFor(() => expect(screen.getByTestId('report-track')).toBeTruthy());
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  await waitFor(() => expect(screen.getByTestId('report-track', { includeHiddenElements: true })).toBeTruthy());
+  measurePersistentReports(screen);
   fireEvent.press(screen.getByLabelText('봤다'));
   expect(screen.queryByText('첫째 보고')).toBeNull();
   fireEvent.press(screen.getByLabelText('봤다'));
@@ -189,7 +190,7 @@ test('two consecutive dismissals with only one failure restore only the failed s
   await act(async () => resolveB({ ok: true, persistent_report: [a] }));
   expect(screen.queryByTestId('report-deck')).toBeNull();
   await act(async () => rejectA(Error('첫째 내림 실패')));
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  measurePersistentReports(screen);
   expect(screen.getByText('첫째 보고')).toBeTruthy();
   expect(screen.queryByText('둘째 보고')).toBeNull();
   expect(screen.getByTestId('chat-composer-generated-notice-row')

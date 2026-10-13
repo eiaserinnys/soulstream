@@ -1,7 +1,7 @@
 import React from 'react';
 import { AccessibilityInfo, Keyboard, Platform, StyleSheet } from 'react-native';
 import * as ReactNative from 'react-native';
-import { act, configure, fireEvent, render, renderHook } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { PersistentReportSheet } from '../PersistentReportSheet';
 import { reportStyles } from '../persistentReportStyles';
@@ -13,10 +13,16 @@ import { reportSendContext, type ReportReplyDraft } from '../../../lib/persisten
 import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDisplaySettings';
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 import type { PersistentReportEntry } from '../../../api/types';
+import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
 
-// These component tests drive layout manually, including the hidden measuring pass.
-configure({ defaultIncludeHiddenElements: true });
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+// Forward View refs to the host so createNodeMock supplies the actual native
+// measurement boundary rather than the preset's inert class method.
+jest.mock('react-native/Libraries/Components/View/View', () => {
+  const ReactModule = jest.requireActual<typeof import('react')>('react');
+  return { __esModule: true, default: ReactModule.forwardRef<ReactNative.View, ReactNative.ViewProps>(
+    (props, ref) => ReactModule.createElement('View', { ...props, ref })) };
+});
 let mockDevice = 'phone';
 jest.mock('../../../theme', () => ({ ...jest.requireActual('../../../theme'), useDeviceType: () => mockDevice }));
 const mockOpen = jest.fn(() => Promise.resolve());
@@ -38,7 +44,7 @@ function pager(entries = reportReviewEntries) {
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
-  if (entries.length) fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  measurePersistentReports(screen);
   return { ...screen, onSelect, onDismiss, onAppend, api };
 }
 
@@ -78,6 +84,7 @@ test('phone keyboard collapses context/buttons, keeps two-line action, and resto
   const dismiss = jest.spyOn(Keyboard, 'dismiss');
   const screen = pager();
   act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
+  measurePersistentReports(screen);
   expect(screen.queryByTestId('report-context')).toBeNull();
   expect(screen.queryByTestId('report-actions')).toBeNull();
   expect(screen.getByTestId('report-todo').props.numberOfLines).toBe(2);
@@ -94,6 +101,7 @@ test('phone keyboard collapses context/buttons, keeps two-line action, and resto
   expect(dismiss).not.toHaveBeenCalled();
   fireEvent.press(screen.getByTestId('report-sheet-result'));
   expect(dismiss).toHaveBeenCalledTimes(1);
+  measurePersistentReports(screen);
   expect(screen.getByTestId('report-context')).toBeTruthy();
 });
 
@@ -147,7 +155,7 @@ test('dismiss removes immediately and moves to the composer when the last report
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  measurePersistentReports(screen);
   fireEvent.press(screen.getByLabelText('봤다'));
   expect(screen.queryByTestId('report-deck')).toBeNull();
   if (Platform.OS !== 'web') expect(focus).toHaveBeenCalledTimes(1);
@@ -305,7 +313,7 @@ test('removing the focused sheet focuses the accessible replacement title, not i
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />, { createNodeMock: element => ({ props: element.props }) });
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  measurePersistentReports(screen);
   AccessibilityInfo.setAccessibilityFocus(11);
   focus.mockClear();
   fireEvent.press(screen.getByLabelText('봤다'));
@@ -325,15 +333,15 @@ test('bubble scrolls only its reading block and keeps the footer fixed; compact 
     <PersistentReportPager entries={[reportReviewEntries[1]]} index={0} api={api} bubble maxHeight={300}
       onSelect={jest.fn()} onDismiss={jest.fn().mockResolvedValue(true)} onFocusComposer={jest.fn()} />
   </ChatUiControllerProvider>);
-  fireEvent(screen.getByTestId('report-track', { includeHiddenElements: true }), 'layout', { nativeEvent: { layout: { width: 318 } } });
-  const scrolling = screen.getByTestId('report-scroll', { includeHiddenElements: true });
+  measurePersistentReports(screen, { width: 318 });
+  const scrolling = screen.getByTestId('report-scroll');
   expect(scrolling.findAllByProps({ testID: 'report-footer' })).toHaveLength(0);
-  expect(screen.getByTestId('report-footer', { includeHiddenElements: true })).toBeTruthy();
+  expect(screen.getByTestId('report-footer')).toBeTruthy();
   fireEvent(scrolling, 'layout', { nativeEvent: { layout: { height: 100 } } });
   fireEvent(scrolling, 'contentSizeChange', 318, 400);
-  expect(screen.getByTestId('report-more-below', { includeHiddenElements: true })).toBeTruthy();
+  expect(screen.getByTestId('report-more-below')).toBeTruthy();
   fireEvent.scroll(scrolling, { nativeEvent: { contentOffset: { y: 300 } } });
-  expect(screen.queryByTestId('report-more-below', { includeHiddenElements: true })).toBeNull();
+  expect(screen.queryByTestId('report-more-below')).toBeNull();
 });
 
 test('measured height updates are deferred during a report press and applied on release', () => {
@@ -427,7 +435,7 @@ test('navigation touch defers a live height update and releases on end, cancella
   </ChatUiControllerProvider>;
   const initial = reportReviewEntries.slice(0, 2);
   const screen = render(draw(initial));
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 400 } } });
+  measurePersistentReports(screen, { width: 400 });
   const reading = () => screen.getByTestId('report-sheet-app').findByProps({ testID: 'report-reading' });
   const height = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
   fireEvent(reading(), 'layout', { nativeEvent: { layout: { height: 100 } } });
@@ -457,6 +465,8 @@ test('unequal compact sheets stretch to the shared height with their page after 
   });
   const screen = pager(reportReviewEntries.slice(0, 2));
   act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
+  measurePersistentReports(screen);
+  measurePersistentReports(screen, { readingHeight: 44 });
   const short = screen.getByTestId('report-sheet-app');
   const long = screen.getByTestId('report-sheet-cleanup', { includeHiddenElements: true });
   fireEvent(short.findByProps({ testID: 'report-reading' }), 'layout', { nativeEvent: { layout: { height: 44 } } });
@@ -477,20 +487,31 @@ test('tablet card chips resolve their card number to the existing internal card 
 });
 
 
-test('bands remain hidden, untouchable and outside accessibility until their natural group height is measured', () => {
+test.each([false, true])('band waits for its reading and only its existing footer (footer=%s)', withFooter => {
   const ready = jest.fn();
+  const onDismiss = jest.fn();
+  const entry = reportReviewEntries[withFooter ? 2 : 0];
   const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
-    <PersistentReportPager entries={[reportReviewEntries[0]]} index={0} api={null} onReady={ready}
-      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+    <PersistentReportPager entries={[entry]} index={0} api={null} onReady={ready}
+      onSelect={jest.fn()} onDismiss={onDismiss} onFocusComposer={jest.fn()} />
   </ChatUiControllerProvider>);
-  const deck = () => screen.getByTestId('report-deck');
+  const get = (id: string) => screen.getByTestId(id, { includeHiddenElements: true });
+  const deck = () => get('report-deck');
   expect(deck().props.pointerEvents).toBe('none');
   expect(deck().props.accessibilityElementsHidden).toBe(true);
   expect(StyleSheet.flatten(deck().props.style).opacity).toBe(0);
-  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
-  fireEvent(screen.getByTestId('report-reading'), 'layout', { nativeEvent: { layout: { height: 100 } } });
-  expect(deck().props.pointerEvents).toBe('none');
-  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  fireEvent(get('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
+  if (withFooter) {
+    fireEvent.press(screen.getByLabelText('봤다', { includeHiddenElements: true }));
+    expect(onDismiss).not.toHaveBeenCalled();
+  }
+  fireEvent(get('report-reading'), 'layout', { nativeEvent: { layout: { height: 100 } } });
+  if (withFooter) {
+    expect(deck().props.pointerEvents).toBe('none');
+    fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  } else {
+    expect(screen.queryByTestId('report-footer', { includeHiddenElements: true })).toBeNull();
+  }
   expect(deck().props.pointerEvents).toBe('auto');
   expect(deck().props.accessibilityElementsHidden).toBe(false);
   expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBeGreaterThan(100);
@@ -508,12 +529,51 @@ test('footer resize measures the current navigation position without another chi
       titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()} onDismiss={jest.fn()}
       onCard={jest.fn()} onLink={jest.fn()} onNavigationBottom={bottom} />;
   }
-  const screen = render(<Harness />, { createNodeMock: element => element.props.testID === 'report-nav-slot'
-    ? { measureLayout: relative } : {} });
+  const screen = render(<Harness />, { createNodeMock: element => {
+    const props = element.props;
+    return props !== null && typeof props === 'object' && 'testID' in props && props.testID === 'report-nav-slot'
+      ? { measureLayout: relative } : {};
+  } });
   fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 242 } } });
   expect(bottom).toHaveBeenLastCalledWith(16);
   y = 36;
   fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 120 } } });
   expect(relative).toHaveBeenCalledTimes(2);
   expect(bottom).toHaveBeenLastCalledWith(36);
+});
+
+
+test.each([false, true])('a presented deck stays visible while added/revised publications measure (bubble=%s)', bubble => {
+  const entry = reportReviewEntries[1];
+  const draw = (entries: PersistentReportEntry[]) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager sessionId="pas" entries={entries} index={0} api={null} bubble={bubble} maxHeight={440}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>;
+  const screen = render(draw([entry]));
+  measurePersistentReports(screen, { readingHeight: 100 });
+  const deck = () => screen.getByTestId('report-deck');
+  const trackHeight = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
+  const original = trackHeight();
+  const added = { ...entry, key: 'added' };
+  screen.rerender(draw([entry, added]));
+  expect(deck().props.pointerEvents).toBe('auto');
+  expect(deck().props.accessibilityElementsHidden).toBe(false);
+  expect(trackHeight()).toBe(original);
+  const revised = { ...entry, updated_at: '2026-10-14T00:00:00Z' };
+  screen.rerender(draw([revised, added]));
+  expect(deck().props.pointerEvents).toBe('auto');
+  expect(trackHeight()).toBe(original);
+  const current = screen.getByTestId('report-sheet-cleanup');
+  const measure = () => fireEvent(current.findByProps({ testID: bubble ? 'report-scroll' : 'report-reading' }),
+    bubble ? 'contentSizeChange' : 'layout', ...(bubble ? [390, 200] : [{ nativeEvent: { layout: { height: 200 } } }]));
+  measure();
+  expect(trackHeight()).toBe(original);
+  measurePersistentReports(screen, { readingHeight: 200 });
+  expect(deck().props.pointerEvents).toBe('auto');
+  expect(trackHeight()).toBeGreaterThan(original);
+  screen.rerender(draw([revised, added]));
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 318 } } });
+  expect(screen.getByTestId('report-deck', { includeHiddenElements: true }).props.pointerEvents).toBe('none');
+  measurePersistentReports(screen, { width: 318 });
+  expect(deck().props.pointerEvents).toBe('auto');
 });
