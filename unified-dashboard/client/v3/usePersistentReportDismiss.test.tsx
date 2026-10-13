@@ -22,7 +22,7 @@ beforeEach(async () => {
   vi.clearAllMocks(); useDashboardStore.getState().reset(); useDashboardStore.getState().setPersistentReport('a', [one, two]);
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await act(async () => root.render(<Probe />));
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 it('clears only each request key with reversed full-board responses and deduplicates a pending key', async () => {
   const first = deferred(), second = deferred(); request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
   let a!: Promise<void>, b!: Promise<void>;
@@ -57,7 +57,6 @@ const registerOperations = (value: ChatUiOperationsHandle | null) => { operation
 const getOperations = () => operations ?? undefined;
 function Feedback() { const { feedback, open } = useChatUiFeedback(); return <p role="status" data-open={open}>{feedback}</p>; }
 function Integrated() {
-  const entries = useDashboardStore(state => state.persistentReports.a!);
   actions = usePersistentReportDismiss('a', getOperations);
   return <ChatUiControllerProvider sessionId="a"><ChatUiOperationsBridge register={registerOperations} />
     <PersistentReportProvider sessionId="a" entries={actions.visibleEntries}>
@@ -65,6 +64,54 @@ function Integrated() {
     </PersistentReportProvider><textarea /><Feedback />
   </ChatUiControllerProvider>;
 }
+async function mountIntegrated() {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, options: ScrollToOptions) { this.scrollLeft = options.left ?? 0; } });
+  await act(async () => root.render(<Integrated />));
+}
+const sheetKeys = () => [...host.querySelectorAll('article')].map(node => node.dataset.testid);
+it('keeps the same server publication hidden through a JSON full-board update and removes it after success', async () => {
+  await mountIntegrated();
+  const pending = deferred(); request.mockReturnValueOnce(pending.promise);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-current="true"] button')!.click());
+  const third = { ...one, key: 'third', title: '셋째' };
+  const received = JSON.parse(JSON.stringify([one, two, third])) as PersistentReportEntry[];
+  expect(received[0]).not.toBe(one);
+  await act(async () => useDashboardStore.getState().setPersistentReport('a', received));
+  expect(sheetKeys()).toEqual(['report-sheet-two', 'report-sheet-third']);
+  expect(host.querySelector('.pas-report-count')?.textContent).toBe('1 / 2');
+  await act(async () => pending.resolve({ ok: true, persistent_report: [two] }));
+  expect(useDashboardStore.getState().persistentReports.a).toEqual(received.slice(1));
+  expect(sheetKeys()).toEqual(['report-sheet-two', 'report-sheet-third']);
+  expect(host.querySelector('.pas-report-count')?.textContent).toBe('1 / 2');
+});
+it('shows a newer publication while DELETE waits and keeps it after the old acknowledgement', async () => {
+  await mountIntegrated();
+  const pending = deferred(); request.mockReturnValueOnce(pending.promise);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-current="true"] button')!.click());
+  const replacement = { ...one, title: '고친 하나', updated_at: 'latest' };
+  await act(async () => useDashboardStore.getState().setPersistentReport('a', [replacement, two]));
+  expect(sheetKeys()).toEqual(['report-sheet-one', 'report-sheet-two']);
+  expect(host.querySelector('[data-testid="report-sheet-one"] h2')?.textContent).toBe('고친 하나');
+  expect(host.querySelector('.pas-report-count')?.textContent).toBe('2 / 2');
+  await act(async () => pending.resolve({ ok: true, persistent_report: [two] }));
+  expect(useDashboardStore.getState().persistentReports.a).toEqual([replacement, two]);
+  expect(sheetKeys()).toEqual(['report-sheet-one', 'report-sheet-two']);
+});
+it('unhides only the pending publication on failure and shows the current server board', async () => {
+  await mountIntegrated();
+  const pending = deferred(); request.mockReturnValueOnce(pending.promise);
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-current="true"] button')!.click());
+  const third = { ...one, key: 'third', title: '셋째' };
+  const received = JSON.parse(JSON.stringify([one, { ...two, title: '고친 둘' }, third])) as PersistentReportEntry[];
+  await act(async () => useDashboardStore.getState().setPersistentReport('a', received));
+  expect(sheetKeys()).toEqual(['report-sheet-two', 'report-sheet-third']);
+  await act(async () => pending.reject(new Error('offline')));
+  expect(useDashboardStore.getState().persistentReports.a).toEqual(received);
+  expect(sheetKeys()).toEqual(['report-sheet-one', 'report-sheet-two', 'report-sheet-third']);
+  expect(host.querySelector('.pas-report-count')?.textContent).toBe('2 / 3');
+  expect(host.querySelector('[data-testid="report-sheet-two"] h2')?.textContent).toBe('고친 둘');
+});
 it('removes delayed dismissals immediately under the real provider/deck, moves focus, and restores only a failed key in order', async () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, options: ScrollToOptions) { this.scrollLeft = options.left ?? 0; } });
