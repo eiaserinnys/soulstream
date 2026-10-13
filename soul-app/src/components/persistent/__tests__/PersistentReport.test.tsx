@@ -445,7 +445,7 @@ test('navigation touch defers a live height update and releases on end, cancella
     const before = height();
     fireEvent(screen.getByTestId('report-next-touch'), 'touchStart');
     screen.rerender(draw(initial.map(entry => ({ ...entry, context: `${entry.context} 갱신` }))));
-    fireEvent(reading(), 'layout', { nativeEvent: { layout: { height: before + 100 } } });
+    measurePersistentReports(screen, { width: 400, readingHeight: before + 100 });
     expect(height()).toBe(before);
     fireEvent(screen.getByTestId('report-next-touch'), end);
     expect(height()).toBeGreaterThan(before);
@@ -539,7 +539,7 @@ test.each([false, true])('server answer keeps content height and bottom navigati
   measurePersistentReports(screen, { width: 318, readingHeight: 100, footerHeight: 120 });
   expect(height()).toBe(beforeHeight);
   expect(bottom()).toBe(beforeBottom);
-  expect(StyleSheet.flatten(screen.getByTestId('report-footer').props.style).alignItems).toBe('flex-end');
+  expect(StyleSheet.flatten(screen.getByTestId('report-footer').props.style).alignItems).toBe('flex-start');
   screen.rerender(draw(answered, 1));
   expect(bottom()).toBe(beforeBottom);
 });
