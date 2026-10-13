@@ -18,7 +18,7 @@ export function registerPersistentReportTools(server: McpServer, runtime: McpRun
     } catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }
   };
   server.registerTool("put_report_entry", {
-    description: "호출한 영구 에이전트 세션의 보고 한 장을 저장한다. 같은 key는 원래 자리에서 통째로 교체하며 새 key는 끝에 추가한다. 최대 12장이다. key는 소문자·숫자로 시작하는 소문자·숫자·밑줄·하이픈 1~48자. kind: ask 또는 see. title 24자, card_numbers 정수 0~3개, context 120자, action 100자(글과 [글](https://…) 링크), options 0~3개·각 12자, question_id 선택. see에 options가 있거나 state가 answered면 거절된다. state는 open 또는 answered이며 생략하면 open, answer는 40자 이내이며 생략하면 빈 문자열. updated_at은 서버가 적는다. 길이는 코드포인트로 센다. 없는 카드·질문, 한도와 형식 위반, 영구 세션이 아닌 호출은 거절 사유와 칸을 반환한다. 결과의 entries는 현재 장의 key와 title 목록이다.",
+    description: "호출한 영구 에이전트 세션의 보고 한 장을 저장한다. 같은 key는 원래 자리에서 통째로 교체하며 새 key는 끝에 추가한다. 최대 12장이다. key는 소문자·숫자로 시작하는 소문자·숫자·밑줄·하이픈 1~48자. kind: ask 또는 see. title 24자, card_numbers 정수 0~3개, context 120자, action은 보이는 글 100자(링크 주소는 세지 않음)·전체 원문 1,000자·링크 5개까지(글과 [글](https://…) 링크만), options 0~3개·각 12자, question_id 선택. see에 options가 있거나 state가 answered면 거절된다. state는 open 또는 answered이며 생략하면 open, answer는 40자 이내이며 생략하면 빈 문자열. updated_at은 서버가 적는다. 길이는 코드포인트로 센다. 없는 카드·질문, 한도와 형식 위반, 영구 세션이 아닌 호출은 거절 사유와 칸을 반환한다. 결과의 entries는 현재 장의 key와 title 목록이다.",
     inputSchema: z.object({key:z.string(),kind:z.string(),title:z.string(),card_numbers:z.array(z.number()),context:z.string(),action:z.string(),options:z.array(z.string()).optional(),question_id:z.string().optional(),state:z.string().optional(),answer:z.string().optional()}).passthrough(),
     annotations: {readOnlyHint:false,destructiveHint:false,idempotentHint:true},
   }, async input => invoke("put",input));

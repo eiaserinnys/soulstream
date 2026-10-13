@@ -480,7 +480,9 @@ export class CardControlPlaneService {
         committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
       },
       afterCommit: async () => {
-        if (!this.reports || (operationType !== "answer_card_question" && committedCard?.status !== "done" && committedCard?.status !== "cancelled")) return;
+        const finished = previousStatus !== committedCard?.status
+          && (committedCard?.status === "done" || committedCard?.status === "cancelled");
+        if (!this.reports || (operationType !== "answer_card_question" && !finished)) return;
         try { await this.reports.pruneForCard(card.id); }
         catch (error) { this.warn(`PAS report pruning failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
