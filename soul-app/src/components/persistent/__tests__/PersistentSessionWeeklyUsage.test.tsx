@@ -54,9 +54,10 @@ test('uses meta text and fixed 3-gauge slots, then keeps their height with two g
   expect(nodeButton.props.accessibilityRole).toBe('button');
   expect(hitFrame.height).toBe(48);
   expect(hitFrame.position).toBe('absolute');
-  expect(hitFrame.bottom).toBe(0);
-  expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-node-surface').props.style).transform)
-    .toEqual([{ translateY: 15 }]);
+  expect(hitFrame.width).toBe('100%');
+  expect(hitFrame.top).toBe(-15);
+  expect(hitFrame.bottom).toBeUndefined();
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-node-surface').props.style).transform).toBeUndefined();
   const chevron = view.getByTestId('persistent-session-weekly-usage-chevron');
   expect(chevron.props.name).toBe('chevron-forward');
   expect(chevron.props.size).toBe(14);
@@ -87,6 +88,11 @@ test.each([
 
   expect(view.getByText(message)).toBeTruthy();
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-status-slot').props.style).height).toBe(24);
+  const statusTrack = StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-status-track', {
+    includeHiddenElements: true,
+  }).props.style);
+  expect(statusTrack.height).toBe(DESIGN_SPACING.xs);
+  expect(statusTrack.backgroundColor).toBeUndefined();
   expect(view.getAllByTestId(/^persistent-session-weekly-usage-slot-/, { includeHiddenElements: true })).toHaveLength(2);
   const nodeRow = view.getByTestId('persistent-session-weekly-usage-node-row', { includeHiddenElements: true });
   expect(StyleSheet.flatten(nodeRow.props.style).height).toBe(18);
@@ -97,6 +103,13 @@ test.each([
   }
   if (loadState === 'connectionError') {
     const retry = view.getByLabelText('주간 사용량 다시 시도');
+    const retryFrame = StyleSheet.flatten(retry.props.style);
+    expect(retryFrame.position).toBe('absolute');
+    expect(retryFrame.top).toBe(-15);
+    expect(retryFrame.right).toBe(-17);
+    expect(retryFrame.bottom).toBeUndefined();
+    expect(retryFrame.minHeight).toBe(48);
+    expect(retryFrame.minWidth).toBe(48);
     fireEvent.press(retry);
     expect(onRetry).toHaveBeenCalledTimes(1);
   } else {
@@ -112,7 +125,7 @@ test('keeps stale gauges in place and adds refresh timing to the group descripti
   const view = render(<PersistentSessionWeeklyUsage {...base} loadState="connectionError" />);
 
   expect(view.getByTestId('persistent-session-weekly-usage').props.accessibilityLabel)
-    .toBe(`주간 남은 사용량, 갱신 지연 · ${formatUsageUpdatedLabel(node.fetchedAt, true)}`);
+    .toBe(`주간 남은 사용량, 갱신 지연, ${formatUsageUpdatedLabel(node.fetchedAt, true)}`);
   expect(view.queryByText(/갱신 지연/)).toBeNull();
   expect(view.getAllByTestId(/^persistent-session-weekly-usage-slot-/, { includeHiddenElements: true })).toHaveLength(3);
 

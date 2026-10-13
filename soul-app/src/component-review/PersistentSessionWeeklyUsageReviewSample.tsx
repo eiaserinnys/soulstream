@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
+import { PERSISTENT_SESSION_FRAME } from '../components/persistent/persistentSessionFrame';
 import {
   maxWeeklyUsageGaugeCount,
   selectUsageSummaryNode,
@@ -29,6 +30,8 @@ export function PersistentSessionWeeklyUsageReviewSample() {
   const preferredNodeId = state === 'two' ? 'node-b' : state === 'empty' ? 'node-c' : 'node-a';
   const node = selectUsageSummaryNode(summary, preferredNodeId, null);
   const gauges = weeklyUsageGauges(node);
+  const landscapeWidth = PERSISTENT_SESSION_FRAME.landscape.tasks - 2 * t.uiSpacing.sm;
+  const portraitWidth = PERSISTENT_SESSION_FRAME.portrait.tasks - 2 * t.uiSpacing.sm;
   const nextState = () => setState(current => sampleStates[(sampleStates.indexOf(current) + 1) % sampleStates.length]!);
 
   return <View testID="weekly-usage-review-sample" style={{ flex: 1, padding: t.foundation.pageInset,
@@ -40,9 +43,19 @@ export function PersistentSessionWeeklyUsageReviewSample() {
         <Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary }}>다음 상태</Text>
       </LiquidGlassButton>
     </View>
-    <PersistentSessionWeeklyUsage node={node} gauges={gauges}
-      maxGaugeCount={maxWeeklyUsageGaugeCount(summary)} loading={state === 'loading'}
-      loadState={state === 'error' ? 'connectionError' : available ? 'ready' : 'idle'}
-      evaluatedAtMs={evaluatedAtMs} onRetry={() => setState('three')} onNextNode={nextState} />
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', alignSelf: 'flex-end', gap: t.spacing.xl }}>
+      <View testID="weekly-usage-review-landscape" style={{ width: landscapeWidth }}>
+        <PersistentSessionWeeklyUsage node={node} gauges={gauges}
+          maxGaugeCount={maxWeeklyUsageGaugeCount(summary)} loading={state === 'loading'}
+          loadState={state === 'error' ? 'connectionError' : available ? 'ready' : 'idle'}
+          evaluatedAtMs={evaluatedAtMs} onRetry={() => setState('three')} onNextNode={nextState} />
+      </View>
+      <View testID="weekly-usage-review-portrait" style={{ width: portraitWidth }}>
+        <PersistentSessionWeeklyUsage node={node} gauges={gauges}
+          maxGaugeCount={maxWeeklyUsageGaugeCount(summary)} loading={state === 'loading'}
+          loadState={state === 'error' ? 'connectionError' : available ? 'ready' : 'idle'}
+          evaluatedAtMs={evaluatedAtMs} onRetry={() => setState('three')} onNextNode={nextState} />
+      </View>
+    </View>
   </View>;
 }

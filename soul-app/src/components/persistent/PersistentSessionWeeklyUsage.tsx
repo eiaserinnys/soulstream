@@ -41,7 +41,7 @@ export function PersistentSessionWeeklyUsage({
   const stale = loadState === 'connectionError' && gauges.length > 0;
   const updatedLabel = stale && node ? formatUsageUpdatedLabel(node.fetchedAt, true) : null;
   const accessibilityLabel = stale && updatedLabel
-    ? `주간 남은 사용량, 갱신 지연 · ${updatedLabel}`
+    ? `주간 남은 사용량, 갱신 지연, ${updatedLabel}`
     : '주간 남은 사용량';
   const slotCount = Math.max(3, maxGaugeCount, gauges.length);
   const visibleGaugeSlots = gauges.length || 1;
@@ -85,12 +85,13 @@ export function PersistentSessionWeeklyUsage({
       {loadState === 'connectionError' ? <LiquidGlassButton iconOnly variant="plain" size="compact"
         accessibilityLabel="주간 사용량 다시 시도" accessibilityState={{ disabled: loading }} disabled={loading}
         onPress={onRetry} testID="persistent-session-weekly-usage-retry"
-        frameStyle={{ position: 'absolute', right: 0, bottom: 0 }}>
+        frameStyle={{ position: 'absolute', top: (meta.lineHeight - t.hitTarget.min) / 2,
+          right: -(t.hitTarget.min - t.iconSize.compact) / 2 }}>
         <Ionicons name="refresh-outline" size={t.iconSize.compact} color={t.colors.textMuted} />
       </LiquidGlassButton> : null}
     </View>
     <View testID="persistent-session-weekly-usage-status-track" accessibilityElementsHidden
-      style={{ height: trackHeight, borderRadius: t.radius.sm, backgroundColor: t.persistentSession.line }} />
+      style={{ height: trackHeight, borderRadius: t.radius.sm }} />
   </View>;
 
   return <View testID="persistent-session-weekly-usage" accessibilityRole="summary" accessibilityLabel={accessibilityLabel}
@@ -108,9 +109,9 @@ export function PersistentSessionWeeklyUsage({
     {node ? <View testID="persistent-session-weekly-usage-node-row" style={{ height: nodeVisualHeight, position: 'relative' }}>
       <CompactTouchTarget testID="persistent-session-weekly-usage-node" surfaceTestID="persistent-session-weekly-usage-node-surface"
         accessibilityRole="button" accessibilityLabel={`노드 바꾸기, 현재 ${node.nodeId}`} onPress={onNextNode}
-        frameStyle={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: t.hitTarget.min }}
-        surfaceStyle={{ width: '100%', height: nodeVisualHeight,
-          transform: [{ translateY: (t.hitTarget.min - nodeVisualHeight) / 2 }] }}>
+        frameStyle={{ position: 'absolute', left: 0, width: '100%', height: t.hitTarget.min,
+          top: (nodeVisualHeight - t.hitTarget.min) / 2 }}
+        surfaceStyle={{ width: '100%', height: nodeVisualHeight }}>
         <View style={{ width: '100%', height: nodeVisualHeight, flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
           <Text numberOfLines={1} ellipsizeMode="tail" style={{ flex: 1, ...meta, color: t.colors.textMuted }}>{node.nodeId}</Text>
           <Ionicons testID="persistent-session-weekly-usage-chevron" name="chevron-forward" size={t.iconSize.compact}
