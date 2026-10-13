@@ -33,11 +33,16 @@ it('keeps the input mounted while selection, entries and session scope reset', a
   await render([one], 'b'); expect(controller.visibleKey).toBe('one');
   expect(host.querySelector('input')).toBe(input); expect(mounts).toBe(1);
 });
-it('binds only an intact appended line; undo, editing and a session change release it', async () => {
+it('binds only the exact whole message; undo, editing and a session change release it', async () => {
   const entries = [one, two]; await render(entries);
   await act(async () => controller.bindReply(one, '응'));
-  expect(controller.getMessageContext('초안\n\n확인: 응').contextItems?.[0]).toEqual({ key: 'persistent_report_reply', content: { key: 'one', option: '응' } });
-  expect(controller.getMessageContext('확인: 응 수정').contextItems?.[0]?.key).toBe('persistent_report_visible');
+  expect(controller.getMessageContext('  확인: 응\n').contextItems?.[0]).toEqual({ key: 'persistent_report_reply', content: { key: 'one', option: '응' } });
+  for (const text of ['확인: 응 대신 보류합니다', '초안\n\n확인: 응', '확인: 응\n추가 글']) {
+    expect(controller.getMessageContext(text).contextItems?.[0]?.key).toBe('persistent_report_visible');
+  }
+  await act(async () => controller.draftChanged('확인: 응 추가'));
+  expect(controller.getMessageContext('확인: 응').contextItems?.[0]?.key).toBe('persistent_report_visible');
+  await act(async () => controller.bindReply(one, '응'));
   await act(async () => controller.draftChanged('확인: 수정'));
   expect(controller.getMessageContext('확인: 응').contextItems?.[0]?.key).toBe('persistent_report_visible');
   await act(async () => { controller.bindReply(one, '응'); });

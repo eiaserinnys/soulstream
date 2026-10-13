@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useState, type PropsWithChildren } from 'react';
 import { useDashboardStore } from '../../stores/dashboard-store';
 import type { PersistentReportEntry } from '../../shared/session-types';
-import { containsReportReply, reportMessageContext, selectReportKey, type ReportReplyReceipt, type ReportSendContext } from '../../shared/persistent-report';
+import { matchesReportReply, reportMessageContext, selectReportKey, type ReportReplyReceipt, type ReportSendContext } from '../../shared/persistent-report';
 
 type Controller = {
   entries: PersistentReportEntry[];
@@ -38,7 +38,7 @@ export function PersistentReportProvider({ sessionId, entries, children }: Props
     bindReply: (entry, option) => setScope(current => ({ ...current, receipt: { key: entry.key, option, line: `${entry.title}: ${option}` } })),
     clearReply,
     draftChanged: text => {
-      if (scope.receipt && !containsReportReply(text, scope.receipt.line)) clearReply();
+      if (scope.receipt && !matchesReportReply(text, scope.receipt.line)) clearReply();
     },
     getMessageContext: text => reportMessageContext(entries, scope.key, scope.receipt, text),
     answer: entry => {

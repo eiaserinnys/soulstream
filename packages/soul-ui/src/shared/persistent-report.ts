@@ -4,8 +4,8 @@ export type ReportContextItem = { key: string; content: Record<string, unknown> 
 export type ReportSendContext = { contextItems?: ReportContextItem[]; persistentReportSource?: PersistentReportEntry };
 export type ReportReplyReceipt = { key: string; option: string; line: string };
 export const EMPTY_REPORT: PersistentReportEntry[] = [];
-export function containsReportReply(text: string, line: string): boolean {
-  return (`\n${text}\n`).includes(`\n${line}\n`);
+export function matchesReportReply(text: string, line: string): boolean {
+  return text.trim() === line;
 }
 
 export function selectReportKey(previous: PersistentReportEntry[], next: PersistentReportEntry[], key: string | null): string | null {
@@ -15,7 +15,7 @@ export function selectReportKey(previous: PersistentReportEntry[], next: Persist
 }
 
 export function reportMessageContext(entries: PersistentReportEntry[], visibleKey: string | null, receipt: ReportReplyReceipt | null, text: string): ReportSendContext {
-  const reply = receipt && containsReportReply(text, receipt.line) ? entries.find(entry => entry.key === receipt.key) : undefined;
+  const reply = receipt && matchesReportReply(text, receipt.line) ? entries.find(entry => entry.key === receipt.key) : undefined;
   if (reply?.kind === 'ask') return {
     contextItems: [{ key: 'persistent_report_reply', content: { key: reply.key, option: receipt!.option } }],
     persistentReportSource: reply,

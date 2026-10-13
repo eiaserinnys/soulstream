@@ -4,6 +4,7 @@ import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persist
 import { EMPTY_REPORT } from '@seosoyoung/soul-ui/shared/persistent-report';
 import type { ChatUiComposerHandle, ChatUiOperationsHandle, RegisterGeneratedTextActions, RegisterChatUiOperations } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
 import { PersistentReportDeck } from './PersistentReportDeck';
+import { usePersistentReportDismiss } from './usePersistentReportDismiss';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
 
 type PersistentSessionChatViewProps = {
@@ -26,18 +27,8 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   const register = useCallback<RegisterGeneratedTextActions>(handle => { generated.current = handle; }, []);
   const append = useCallback<ChatUiComposerHandle['appendGeneratedText']>((id, text) => operations.current?.appendGeneratedText(id, text) ?? { ok: false, reason: 'unavailable' }, []);
   const focusInput = useCallback(() => generated.current?.focusInput?.(), []);
-  const dismiss = useCallback(async (key: string) => {
-    const started = operations.current;
-    const state = useDashboardStore.getState();
-    const before = state.persistentReports[sessionId] ?? EMPTY_REPORT;
-    try {
-      if (dismissReport) { await dismissReport(key); return; }
-      const result = await createPersistentSessionsApi().dismissReport(sessionId, key);
-      state.setPersistentReport(sessionId, result.persistent_report, { current: before });
-    } catch {
-      started?.notify('보고를 내리지 못했어.');
-    }
-  }, [dismissReport, sessionId]);
+  const getNotify = useCallback(() => operations.current?.notify, []);
+  const { dismiss, pending } = usePersistentReportDismiss(sessionId, getNotify, dismissReport);
   const setGlobalDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const setDisplaySettings = storeScope?.store.getState().setPersistentSessionDisplaySettings
     ?? setGlobalDisplaySettings;
@@ -57,7 +48,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   }, [loadDisplaySettings, sessionId, setDisplaySettings]);
   if (!showReport) return <ChatView {...props} storeScope={storeScope} />;
   return <PersistentReportProvider sessionId={sessionId} entries={entries}>
-    <PersistentReportDeck sessionId={sessionId} appendGeneratedText={append} focusInput={focusInput} dismissReport={dismiss} />
+    <PersistentReportDeck sessionId={sessionId} appendGeneratedText={append} focusInput={focusInput} dismissReport={dismiss} pendingDismiss={pending} />
     <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
   </PersistentReportProvider>;
 }

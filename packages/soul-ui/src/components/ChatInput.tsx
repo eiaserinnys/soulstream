@@ -100,6 +100,8 @@ export function ChatInput({
   );
 
   const [text, setText] = useState("");
+  // Appending onto an existing draft also releases a non-exact report reply.
+  useEffect(() => { report?.draftChanged(text); }, [report, text]);
   // 사용 로그: 입력 구간 기록기. 초안 원문은 절대 싣지 않고 길이만 남긴다.
   const trackUiEvent = useUiEventTracker();
   const composeEvents = useMemo(

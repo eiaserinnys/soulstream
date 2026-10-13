@@ -33,7 +33,7 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   });
   const updates: { gate: ReturnType<typeof gate>; body: string }[] = [];
   let streamRequest = 0;
-  await page.route('**/api/sessions/stream', async route => {
+  await page.route('**/api/sessions/stream?*', async route => {
     const index = streamRequest++;
     if (index === 0) return route.fulfill({ contentType: 'text/event-stream', body: 'retry: 100\n\n' + sse('session_list', { sessions: [{ agentSessionId: chatUiSession, status: 'running', eventCount: 3, nodeId: 'eiaserinnys', agentId: 'roselin_codex' }], total: 1 }, 1) });
     const update = updates[index - 1] ?? (updates[index - 1] = { gate: gate(), body: '' });
@@ -78,6 +78,9 @@ test('PAS HTTP/SSE report pager, reply/undo/failure/retry, latest board and focu
   await expect(page.getByTestId('chat-input').getByTitle('메모.pdf')).toBeVisible();
   expect(await page.getByTestId('send-button').getAttribute('data-button-variant')).toBe(mode);
   await page.screenshot({ path: path.join(output, '1440-compose-attachment-undo.png') });
+  // The appended draft example is visible context; only a whole exact reply binds.
+  await editor.fill('');
+  await current().getByRole('button', { name: '응', exact: true }).click();
   await page.getByTestId('send-button').click();
   await expect(page.getByRole('button', { name: '다시 보내기', exact: true })).toBeVisible();
   await expect(current().locator('.pas-report-kind')).toHaveText('답하실 것');

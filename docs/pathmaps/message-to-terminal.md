@@ -2,11 +2,11 @@
 
 ## PAS 지금의 보고 (#270 R1/R2)
 
-웹 R2의 판 수신은 `session-types`/`mappers`/`stream-events` → `buildSessionUpdates` → `useSessionStreamCacheSync`의 보고 투영 → `persistentReports`다. SSE는 세션 query hydration barrier와 독립적으로 먼저 판 identity를 기록한다. PAS list/get과 DELETE 응답은 요청 시작 때의 판 identity가 여전히 같은 경우에만 반영하며, 생략은 보존하고 []는 비운다.
+웹 R2의 판 수신은 `session-types`/`mappers`/`stream-events` → `buildSessionUpdates` → `useSessionStreamCacheSync`의 보고 투영 → `persistentReports`다. SSE는 세션 query hydration barrier와 독립적으로 먼저 판 identity를 기록한다. PAS list/get 응답은 요청 시작 때의 판 identity가 여전히 같은 경우에만 반영하며, 생략은 보존하고 []는 비운다.
 
 PAS 전화면의 `PersistentSessionChatView(showReport)` → `PersistentReportProvider` → `PersistentReportDeck`은 실제 대화 칸의 첫 자식이고 ChatView/Virtuoso 앞에 놓인다. 일반 column과 카드 overlay에는 보고를 켜지 않는다. provider는 선택 key·단일 답 receipt·임시 답만 소유하고 자식을 session key로 다시 붙이지 않는다. 기존 ChatView 등록 bridge → ChatInput/useGeneratedTextActions로 「제목: 선택지」를 붙이며 초안·첨부·모드·exact undo를 유지한다. 직접 고친 줄과 undo는 receipt를 해제한다.
 
-전송은 `getMessageContext` → `PendingChatSend.contextItems`/원본 보고 identity → `submitPending` → `submitResume` 또는 `submitIntervention.context_items`다. 온전한 붙인 줄은 reply, 그 밖의 글은 지금 보이는 장의 visible만 싣는다. retry는 같은 context를 유지한다. sending은 임시 answered, failed는 open, 서버의 새 판은 임시 답을 교체한다. 메시지 ack가 pending을 비워도 임시 답은 새 서버 판까지 남는다. 「봤다」는 인증된 PAS DELETE이며 성공 응답 뒤 판을 바꾸고 메시지를 보내지 않는다. 실패하면 장을 유지하며 W4의 scoped operations bridge를 통해 기존 `ChatInputFeedback`에 「보고를 내리지 못했어.」를 쓴다. 선택지 붙이기도 같은 bridge를 사용하여 실패 안내와 안내 줄의 수명을 W4와 공유한다. 카드 번호는 기존 내부 링크 정책의 실패 동작을 따른다.
+전송은 `getMessageContext` → `PendingChatSend.contextItems`/원본 보고 identity → `submitPending` → `submitResume` 또는 `submitIntervention.context_items`다. 전송 글 전체를 trim한 값이 붙인 줄과 정확히 같을 때만 reply, 그 밖의 글은 지금 보이는 장의 visible만 싣는다. retry는 같은 context를 유지한다. sending은 임시 answered, failed는 open, 서버의 새 판은 임시 답을 교체한다. 메시지 ack가 pending을 비워도 임시 답은 새 서버 판까지 남는다. 「봤다」는 인증된 PAS DELETE이며 key별 대기 집합으로 중복 요청을 막는다. 성공은 현재 판에서 그 요청의 원본 장만 제거하고 실패는 그 key의 대기만 푼다. 역순 응답의 전체 판으로 이미 내려간 장을 되살리지 않으며 최신 동일 key 발행본은 유지한다. 메시지를 보내지 않는다. 실패하면 장을 유지하며 W4의 scoped operations bridge를 통해 기존 `ChatInputFeedback`에 「보고를 내리지 못했어.」를 쓴다. 선택지 붙이기도 같은 bridge를 사용하여 실패 안내와 안내 줄의 수명을 W4와 공유한다. 카드 번호는 기존 내부 링크 정책의 실패 동작을 따른다.
 
 실화면 진입점: 대시보드 빌드 뒤 `pnpm --dir unified-dashboard test:e2e:pas-report`(PAS HTTP/SSE 한 경로, heavy_verify runner 사용). 운영 컴포넌트는 `/components`의 PersistentReportDeck 샘플에도 등록되어 있다.
 
