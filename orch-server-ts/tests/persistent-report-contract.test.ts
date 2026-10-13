@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply } from "../../packages/wire-schema/src/persistent_report.js";
 
 const entry = { key: "deploy-270", kind: "ask", title: "배포 결정", card_numbers: [], context: "검증을 마쳤습니다", action: "[결과](https://example.com/result)", options: ["진행", "보류"] };
 
 describe("persistent report shared contract", () => {
+  it("keeps the link recognition regex aligned with the display contract", () => {
+    const source = readFileSync(new URL("../../packages/wire-schema/src/persistent_report.ts", import.meta.url), "utf8");
+    expect(source).toContain(String.raw`action.replace(/\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g,`);
+  });
   it("uses codepoints, defaults open and permits agent-written answers", () => {
     expect(parsePersistentReportEntry({ ...entry, title: "😀".repeat(24) })).toMatchObject({ ok: true, value: { state: "open", answer: "" } });
     expect(parsePersistentReportEntry({ ...entry, state: "answered", answer: "진행" })).toMatchObject({ ok: true, value: { state: "answered", answer: "진행" } });
@@ -37,6 +42,13 @@ describe("persistent report shared contract", () => {
       .map((label, i) => `[${label}](https://pages.eiaserinnys.me/d/${"a".repeat(55)}${i})`).join(" ");
     expect(Array.from(action).length).toBeGreaterThan(100);
     expect(parsePersistentReportEntry({ ...entry, action })).toMatchObject({ok:true,value:{action}});
+  });
+  it.each(["HTTPS://", "https:/"])("rejects %s addresses that the displays do not recognize as links", scheme => {
+    const action = `[글](${scheme}example.com/${"a".repeat(110)})`;
+    expect(Array.from(action).length).toBeGreaterThan(100);
+    expect(parsePersistentReportEntry({ ...entry, action })).toMatchObject({
+      ok: false, errors: expect.arrayContaining([{path:"action",reason:"글과 [글](https://…) 링크만 넣을 수 있습니다"}]),
+    });
   });
   it("counts visible labels as codepoints and rejects 101 visible characters", () => {
     expect(parsePersistentReportEntry({ ...entry, action: `[${"😀".repeat(100)}](https://example.com)` }).ok).toBe(true);

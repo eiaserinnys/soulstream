@@ -53,7 +53,7 @@ function validateAction(action: string): PersistentReportIssue[] {
   const errors: PersistentReportIssue[] = [];
   let badLink = false;
   let linkCount = 0, labelLength = 0;
-  const plain = action.replace(/\[([^\]\n]+)\]\(([^\s)]+)\)/g, (_match, label: string, url: string) => {
+  const plain = action.replace(/\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g, (_match, label: string, url: string) => {
     linkCount++;
     labelLength += Array.from(label).length;
     try { if (new URL(url).protocol !== "https:") badLink = true; } catch { badLink = true; }
