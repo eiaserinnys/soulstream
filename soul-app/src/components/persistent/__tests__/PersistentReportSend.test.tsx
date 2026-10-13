@@ -20,7 +20,7 @@ beforeEach(() => useChatStore.setState({ pendingOptimisticBySession: {}, eventsB
 function setup(intervene = jest.fn().mockResolvedValue({ delivered: true })) {
   const notice = jest.fn();
   const api = { intervene } as unknown as ApiClient;
-  const hook = renderHook(({ entries }: { entries: PersistentReportEntry[] }) => usePersistentReportSend('pas', api, entries, base, 'completed', notice), { initialProps: { entries: base } });
+  const hook = renderHook(({ entries, server }: { entries: PersistentReportEntry[]; server: PersistentReportEntry[] }) => usePersistentReportSend('pas', api, entries, server, 'completed', notice), { initialProps: { entries: base, server: base } });
   return { ...hook, intervene, notice };
 }
 test('direct reply uses the existing pending slot, reply context and no composer mutations', async () => {
@@ -35,8 +35,11 @@ test('direct reply uses the existing pending slot, reply context and no composer
     [{ key: 'persistent_report_reply', content: { key: entry.key, option: '응' } }]);
   expect(useChatStore.getState().pendingOptimisticBySession.pas.attachmentItems).toEqual([]);
   await act(async () => { response.resolve({ delivered: true }); await send; });
-  expect(h.result.current.canCancel(entry)).toBe(true);
+  expect(h.result.current.canCancel(entry)).toBe(false);
   expect(h.result.current.busy).toBe(false);
+  const answered = { ...entry, state: 'answered' as const, answer: '응', updated_at: 'server-answered' };
+  h.rerender({ entries: [answered], server: [answered] });
+  expect(h.result.current.canCancel(answered)).toBe(true);
 });
 test('failure reopens options; the same failed reply retries in the same pending slot', async () => {
   const intervene = jest.fn().mockRejectedValueOnce(Error('fail')).mockResolvedValueOnce({ delivered: true });
@@ -58,19 +61,24 @@ test('another sending message disables controls without notice; unrelated failur
   await act(async () => h.result.current.sendOption(entry, '응'));
   expect(h.intervene).not.toHaveBeenCalled(); expect(h.notice).toHaveBeenCalledWith(FAILED_REPORT_SEND_REMAINS);
 });
-test('cancel uses visible context, survives until publication changes, and failure returns to cancel', async () => {
+test('cancel belongs to the server answered edition and failure returns to cancel', async () => {
   const h = setup(jest.fn().mockResolvedValueOnce({ delivered: true }).mockRejectedValueOnce(Error('fail')).mockResolvedValueOnce({ delivered: true }));
   await act(async () => h.result.current.sendOption(entry, '응'));
+  expect(h.result.current.canCancel(entry)).toBe(false);
+  const answered = { ...entry, state: 'answered' as const, answer: '응', updated_at: 'server-answer' };
+  h.rerender({ entries: [answered], server: [answered] });
   act(() => useChatStore.getState().clearPendingOptimistic('pas'));
-  await act(async () => h.result.current.cancel(entry));
-  expect(h.result.current.cancelSent(entry)).toBe(false);
+  await act(async () => h.result.current.cancel(answered));
+  expect(h.result.current.cancelSent(answered)).toBe(false);
+  expect(h.result.current.canCancel(answered)).toBe(true);
   act(() => useChatStore.getState().clearPendingOptimistic('pas'));
-  await act(async () => h.result.current.cancel(entry));
+  await act(async () => h.result.current.cancel(answered));
   expect(h.intervene.mock.calls.at(-1)).toEqual(['pas', `${entry.title}: 답을 취소합니다`, undefined,
     [{ key: 'persistent_report_visible', content: { key: entry.key, title: entry.title } }]]);
-  expect(h.result.current.cancelSent(entry)).toBe(true);
-  h.rerender({ entries: [{ ...entry, updated_at: 'new' }] });
-  expect(h.result.current.cancelSent(h.result.current.entries[0])).toBe(false);
+  expect(h.result.current.cancelSent(answered)).toBe(true);
+  const revised = { ...answered, updated_at: 'new' };
+  h.rerender({ entries: [revised], server: [revised] });
+  expect(h.result.current.cancelSent(revised)).toBe(false);
 });
 
 test('conversation retry preserves cancellation identity through sending, failure, arrival and republication', async () => {
@@ -110,7 +118,7 @@ test('conversation retry preserves cancellation identity through sending, failur
   expect(h.result.current.report.cancelSent(answered)).toBe(false);
 });
 
-test('actual report controls hide cancellation until receipt, disable during other sends, and show the failed-slot notice', async () => {
+test('actual report controls hide cancellation until server answer, disable during other sends, and show the failed-slot notice', async () => {
   const response = deferred<{ delivered: boolean }>();
   const notice = jest.fn();
   const api = { intervene: jest.fn(() => response.promise) } as unknown as ApiClient;
@@ -126,6 +134,10 @@ test('actual report controls hide cancellation until receipt, disable during oth
   fireEvent.press(screen.getByLabelText('응'));
   expect(screen.queryByTestId('report-cancel')).toBeNull();
   await act(async () => { response.resolve({ delivered: true }); });
+  expect(screen.queryByTestId('report-cancel')).toBeNull();
+  const answered = [{ ...entry, state: 'answered' as const, answer: '응', updated_at: 'server-answer' }];
+  screen.rerender(<Harness entries={answered} />);
+  measurePersistentReports(screen);
   expect(screen.getByTestId('report-cancel').props.accessibilityState.disabled).toBe(false);
   const other = { ...createOptimisticUserEvent('다른 글', 'user_message'), pendingStatus: 'sending' as const };
   act(() => useChatStore.getState().setPendingOptimistic('pas', other));
@@ -144,4 +156,29 @@ test('actual report controls hide cancellation until receipt, disable during oth
   act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'failed', 'failure'));
   fireEvent.press(screen.getByLabelText('응'));
   expect(notice).toHaveBeenCalledWith(FAILED_REPORT_SEND_REMAINS);
+});
+
+
+test.each(['restore', 'delete'] as const)('an old matching cancel in history cannot accept the new failed slot on %s', async operation => {
+  const answered = { ...entry, state: 'answered' as const, answer: '응', updated_at: 'server-answer' };
+  const server = [answered];
+  const api = { intervene: jest.fn().mockRejectedValue(Error('new cancel failed')) } as unknown as ApiClient;
+  useChatStore.getState().mergeEvents('pas', [{ id: 'old-cancel', type: 'user_message', data: { text: `${entry.title}: 답을 취소합니다` } }]);
+  const h = renderHook(() => ({
+    report: usePersistentReportSend('pas', api, server, server, 'completed', jest.fn()),
+    conversation: useChatSendFlow({ api, sessionId: 'pas', session: { status: 'completed' },
+      attachments: [], clearAttachments: jest.fn(), scrollToBottom: jest.fn() }),
+  }));
+  await act(async () => h.result.current.report.cancel(answered));
+  expect(h.result.current.report.cancelSent(answered)).toBe(false);
+  const failed = useChatStore.getState().pendingOptimisticBySession.pas;
+  expect(failed.pendingStatus).toBe('failed');
+  act(() => {
+    if (operation === 'restore') expect(h.result.current.conversation.restorePendingOptimistic(failed.id, '쓰던 글')?.inputText)
+      .toBe(`${entry.title}: 답을 취소합니다\n\n쓰던 글`);
+    else useChatStore.getState().clearPendingOptimistic('pas', failed.id);
+  });
+  expect(useChatStore.getState().pendingOptimisticBySession.pas).toBeUndefined();
+  expect(h.result.current.report.cancelSent(answered)).toBe(false);
+  expect(h.result.current.report.canCancel(answered)).toBe(true);
 });

@@ -127,6 +127,9 @@ test('direct answer preserves the real draft and has no undo, then failure/retry
   expect(screen.getByLabelText('응')).toBeTruthy();
   mockApi.intervene.mockResolvedValueOnce({ delivered: true });
   await act(async () => fireEvent.press(screen.getByLabelText('응')));
+  expect(screen.queryByLabelText('취소 요청')).toBeNull();
+  act(() => useSessionStore.getState().applyPersistentReport('one', [{ ...report, state: 'answered', answer: '응', updated_at: 'server-answer' }]));
+  measurePersistentReports(screen);
   expect(screen.getByLabelText('취소 요청')).toBeTruthy();
   expect(input().props.value).toBe('쓰던 글');
   act(() => useSessionStore.getState().applyPersistentReport('one', [{ ...report, title: '새 예산 확인', updated_at: 'new' }]));

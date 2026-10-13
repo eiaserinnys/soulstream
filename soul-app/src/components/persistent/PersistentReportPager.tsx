@@ -46,24 +46,22 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const measuredHeights = useRef(new Map<string, number>());
   const readyHeights = useRef(new Set<string>());
   const openHeights = useRef(new Map<string, number>());
-  const navBottoms = useRef(new Map<string, number>());
-  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, entry.updated_at]);
+  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers]);
   const pressing = useRef(false);
   const [height, setHeight] = useState(0);
   const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
   const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
-  const [navBottom, setNavBottom] = useState(t.uiSpacing.lg);
   const commitHeight = () => {
     const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
     if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
       || (presentedLayout === layoutKey && !allMeasured)) return;
     const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
-      bubble && entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
+      entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
     setHeight(saved => saved === next ? saved : next);
     if (allMeasured && next > 0) setPresentedLayout(layoutKey);
-    const nextBottom = entries[index] ? navBottoms.current.get(measureKey(entries[index])) ?? t.uiSpacing.lg : t.uiSpacing.lg;
-    setNavBottom(saved => saved === nextBottom ? saved : nextBottom);
   };
+  const latestMeasurement = useRef({ entries, commitHeight, measureKey });
+  latestMeasurement.current = { entries, commitHeight, measureKey };
   useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   // Publication edits wait for height without hiding an already visible deck.
@@ -152,13 +150,18 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         bubble={bubble} bubbleHeight={bubbleHeight} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
-        onReady={() => { readyHeights.current.add(measureKey(entry)); commitHeight(); }}
-        onNavigationBottom={bottom => { navBottoms.current.set(measureKey(entry), bottom); commitHeight(); }}
+        onReady={() => {
+          const id = measureKey(entry), latest = latestMeasurement.current;
+          if (!latest.entries.some(saved => latest.measureKey(saved) === id)) return;
+          readyHeights.current.add(id); latest.commitHeight();
+        }}
         onHeight={height => {
-          const id = measureKey(entry);
+          const id = measureKey(entry), latest = latestMeasurement.current;
+          const currentEntry = latest.entries.find(saved => latest.measureKey(saved) === id);
+          if (!currentEntry) return; // A removed/replaced sheet cannot restore an old height.
           measuredHeights.current.set(id, height);
-          if (bubble && entry.state === 'open') openHeights.current.set(id, height);
-          commitHeight();
+          if (currentEntry.state === 'open') openHeights.current.set(id, height);
+          latest.commitHeight();
         }}
         titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
         onDismiss={() => {
@@ -169,7 +172,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
           void send?.sendOption(entry, option);
         }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />) : null}
     </ScrollView>
-    {count > 1 && !compact && !phone ? <View testID="report-nav" style={[styles.nav, { bottom: navBottom }]}>
+    {count > 1 && !compact && !phone ? <View testID="report-nav" style={styles.nav}>
       <ReportNavButton interaction={navInteraction} testID="report-prev-touch" iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
         <Ionicons name="chevron-back" size={t.iconSize.navigation} color={index === 0 ? t.colors.textPlaceholder : t.colors.textPrimary} />
       </ReportNavButton>

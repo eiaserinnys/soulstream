@@ -520,30 +520,47 @@ test.each([false, true])('band waits for its reading and only its existing foote
   expect(ready).toHaveBeenLastCalledWith(true);
 });
 
-test('footer resize measures the current navigation position without another child layout event', () => {
-  const bottom = jest.fn();
-  let y = 178;
-  const relative = jest.fn((_footer, done) => done(0, y, 100, 48));
-  function Harness() {
-    const t = useTokens();
-    return <PersistentReportSheet entry={reportReviewEntries[1]} index={0} count={2} current compact={false}
-      showNav width={318} styles={reportStyles(t, 0, true)} bubble bubbleHeight={440}
-      titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()} onDismiss={jest.fn()}
-      onCard={jest.fn()} onLink={jest.fn()} onNavigationBottom={bottom} />;
-  }
-  const screen = render(<Harness />, { createNodeMock: element => {
-    const props = element.props;
-    return props !== null && typeof props === 'object' && 'testID' in props && props.testID === 'report-nav-slot'
-      ? { measureLayout: relative } : {};
-  } });
-  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 242 } } });
-  expect(bottom).toHaveBeenLastCalledWith(16);
-  y = 36;
-  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 120 } } });
-  expect(relative).toHaveBeenCalledTimes(2);
-  expect(bottom).toHaveBeenLastCalledWith(36);
+test.each([false, true])('server answer keeps content height and bottom navigation across a timestamp change (bubble=%s)', bubble => {
+  mockDevice = 'tablet';
+  const entry = reportReviewEntries[1], tail = reportReviewEntries[2];
+  const draw = (entry: PersistentReportEntry, index = 0) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager sessionId="pas" entries={[entry, tail]} index={index} api={null} bubble={bubble} maxHeight={440}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>;
+  const screen = render(draw(entry));
+  measurePersistentReports(screen, { width: 318, readingHeight: 294, footerHeight: 242 });
+  const height = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
+  const bottom = () => StyleSheet.flatten(screen.getByTestId('report-nav').props.style).bottom;
+  const beforeHeight = height(), beforeBottom = bottom();
+  const oldSheet = screen.UNSAFE_getAllByType(PersistentReportSheet).find(node => node.props.entry.key === entry.key);
+  const answered = { ...entry, state: 'answered' as const, answer: '응', updated_at: 'new-server-time' };
+  screen.rerender(draw(answered));
+  expect(screen.UNSAFE_getAllByType(PersistentReportSheet).find(node => node.props.entry.key === entry.key)).toBe(oldSheet);
+  measurePersistentReports(screen, { width: 318, readingHeight: 100, footerHeight: 120 });
+  expect(height()).toBe(beforeHeight);
+  expect(bottom()).toBe(beforeBottom);
+  expect(StyleSheet.flatten(screen.getByTestId('report-footer').props.style).alignItems).toBe('flex-end');
+  screen.rerender(draw(answered, 1));
+  expect(bottom()).toBe(beforeBottom);
 });
 
+test('a late height/ready callback from a removed sheet cannot change the current height', () => {
+  const first = reportReviewEntries[1], replacement = { ...first, key: 'replacement', title: '새 내용' };
+  const draw = (entry: PersistentReportEntry) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[entry]} index={0} api={null} bubble maxHeight={440}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>;
+  const screen = render(draw(first));
+  measurePersistentReports(screen, { width: 318, readingHeight: 200 });
+  const old = screen.UNSAFE_getByType(PersistentReportSheet);
+  const lateHeight = old.props.onHeight, lateReady = old.props.onReady;
+  screen.rerender(draw(replacement));
+  measurePersistentReports(screen, { width: 318, readingHeight: 100 });
+  const height = () => StyleSheet.flatten(screen.getByTestId('report-deck').props.style).height;
+  const before = height();
+  act(() => { lateHeight(800); lateReady(); });
+  expect(height()).toBe(before);
+});
 
 test.each([false, true])('a presented deck stays visible while added/revised publications measure (bubble=%s)', bubble => {
   const entry = reportReviewEntries[1];

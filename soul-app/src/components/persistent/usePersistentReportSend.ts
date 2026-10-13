@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry, Session } from '../../api/types';
 import { pendingReportReply, reportSendContext } from '../../lib/persistent-report';
-import { createOptimisticUserEvent, OPTIMISTIC_USER_ID_PREFIX, pickOptimisticVariant, useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
+import { createOptimisticUserEvent, pickOptimisticVariant, useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
 import { getSendFailureReason } from '../chat/useChatSendFlow';
 
 export const FAILED_REPORT_SEND_REMAINS = '보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.';
@@ -22,10 +22,10 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
   useEffect(() => useChatStore.subscribe((next, previous) => {
     const sent = previous.pendingOptimisticBySession[sessionId];
     if (!sent?.reportCancellation || next.pendingOptimisticBySession[sessionId]?.id === sent.id) return;
-    const arrived = next.eventsBySession[sessionId]?.some(event =>
-      (event.type === 'user_message' || event.type === 'intervention_sent') && !event.id.startsWith(OPTIMISTIC_USER_ID_PREFIX)
-      && event.data.text === sent.data.text);
-    if (sent.pendingStatus !== 'sending' && !arrived) return;
+    // mergeEvents retires this exact slot together with its accepted server
+    // event. Restore/delete only clears the slot; old history is never scanned.
+    if (!next.eventsBySession[sessionId]
+      || next.eventsBySession[sessionId] === previous.eventsBySession[sessionId]) return;
     const id = edition(sent.reportCancellation);
     setState(saved => saved.sessionId !== sessionId || saved.cancelled.has(id) ? saved
       : { ...saved, cancelled: new Set([...saved.cancelled, id]) });
@@ -72,8 +72,7 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
     }
   }
   return { entries: shown, busy,
-    canCancel: (entry: PersistentReportEntry) => base.some(saved => edition(saved) === edition(entry) && saved.state === 'answered')
-      || (current && state.replies.get(edition(entry))?.base === base),
+    canCancel: (entry: PersistentReportEntry) => base.some(saved => edition(saved) === edition(entry) && saved.state === 'answered'),
     cancelSent: (entry: PersistentReportEntry) => pending?.reportCancellation && edition(pending.reportCancellation) === edition(entry)
       ? pending.pendingStatus === 'sending' : current && state.cancelled.has(edition(entry)),
     sendOption: (entry: PersistentReportEntry, option: string) => send(entry, option),
