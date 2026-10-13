@@ -81,6 +81,7 @@ function makeDeps(
     agentRegistry,
     taskManager,
     taskExecutor,
+    providerUsage: { fetchUsage: vi.fn() },
     sessionDb: opts.sessionDb,
     eventOutboxPump: opts.eventOutboxPump,
     reconnectPolicy: opts.reconnectPolicy,

@@ -99,6 +99,7 @@ function createAdapter(
       agentRegistry: new AgentRegistry([]),
       taskManager,
       taskExecutor: { startNewExecution: () => undefined } as unknown as TaskExecutor,
+      providerUsage: { fetchUsage: vi.fn() },
       sessionDb,
       listLiveRunnerSessionIds,
     },
