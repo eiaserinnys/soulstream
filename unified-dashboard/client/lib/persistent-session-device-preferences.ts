@@ -1,11 +1,23 @@
 export type PersistentSessionDevicePreferences = {
   openOnStart: boolean;
   lastSessionId: string | null;
+  showWeeklyUsage: boolean;
+  weeklyUsageNodeSelection: PersistentSessionWeeklyUsageNodeSelection | null;
+};
+
+export type PersistentSessionWeeklyUsageNodeSelection = {
+  configuredNodeId: string;
+  selectedNodeId: string | null;
 };
 
 type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
 
-const defaults: PersistentSessionDevicePreferences = { openOnStart: false, lastSessionId: null };
+const defaults: PersistentSessionDevicePreferences = {
+  openOnStart: false,
+  lastSessionId: null,
+  showWeeklyUsage: false,
+  weeklyUsageNodeSelection: null,
+};
 
 export function persistentSessionDevicePreferenceKey(email: string): string {
   const normalizedEmail = email.trim().toLowerCase();
@@ -25,6 +37,8 @@ export function readPersistentSessionDevicePreferences(
     return {
       openOnStart: typeof value.openOnStart === "boolean" ? value.openOnStart : defaults.openOnStart,
       lastSessionId: typeof value.lastSessionId === "string" ? value.lastSessionId : defaults.lastSessionId,
+      showWeeklyUsage: typeof value.showWeeklyUsage === "boolean" ? value.showWeeklyUsage : defaults.showWeeklyUsage,
+      weeklyUsageNodeSelection: normalizeWeeklyUsageNodeSelection(value.weeklyUsageNodeSelection),
     };
   } catch {
     return { ...defaults };
@@ -45,6 +59,30 @@ export function setPersistentSessionLastSessionId(
   storage: PreferenceStorage | undefined = localStorageForBrowser(),
 ): PersistentSessionDevicePreferences {
   return write(email, { ...readPersistentSessionDevicePreferences(email, storage), lastSessionId }, storage);
+}
+
+export function setPersistentSessionShowWeeklyUsage(
+  email: string,
+  showWeeklyUsage: boolean,
+  storage: PreferenceStorage | undefined = localStorageForBrowser(),
+): PersistentSessionDevicePreferences {
+  return write(email, { ...readPersistentSessionDevicePreferences(email, storage), showWeeklyUsage }, storage);
+}
+
+export function setPersistentSessionWeeklyUsageNodeSelection(
+  email: string,
+  weeklyUsageNodeSelection: PersistentSessionWeeklyUsageNodeSelection | null,
+  storage: PreferenceStorage | undefined = localStorageForBrowser(),
+): PersistentSessionDevicePreferences {
+  return write(email, { ...readPersistentSessionDevicePreferences(email, storage), weeklyUsageNodeSelection }, storage);
+}
+
+function normalizeWeeklyUsageNodeSelection(value: unknown): PersistentSessionWeeklyUsageNodeSelection | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const selection = value as Record<string, unknown>;
+  if (typeof selection.configuredNodeId !== "string") return null;
+  if (selection.selectedNodeId !== null && typeof selection.selectedNodeId !== "string") return null;
+  return { configuredNodeId: selection.configuredNodeId, selectedNodeId: selection.selectedNodeId };
 }
 
 function write(

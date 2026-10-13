@@ -30,6 +30,7 @@ jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
 });
 jest.mock('../../components/settings/PersistentSessionPasSettingsModal', () => ({ PersistentSessionPasSettingsModal: () => null }));
 jest.mock('../SettingsScreen', () => ({ SettingsScreen: () => null }));
+jest.mock('../../hooks/useUsageSummary', () => ({ useUsageSummary: jest.fn() }));
 
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
@@ -38,11 +39,22 @@ import { PersistentSessionScreen } from '../PersistentSessionScreen';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import type { StoreApi } from 'zustand';
 import { StyleSheet, View } from 'react-native';
+import { renderHook } from '@testing-library/react-native';
 import { useChatStore } from '../../store/chatStore';
+import { useAuthStore } from '../../store/authStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import { useUsageSummary } from '../../hooks/useUsageSummary';
+import { useTokens } from '../../theme';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
-beforeEach(() => { (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false }; });
+function ScreenHarness({ active = true, show = true }: { active?: boolean; show?: boolean }) {
+  return <PersistentSessionProvider><Capture />{show ? <PersistentSessionScreen active={active} onHome={jest.fn()} /> : null}</PersistentSessionProvider>;
+}
+beforeEach(() => {
+  (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
+  jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], maxGaugeCount: 0, loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
+});
 test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입력 draft는 그대로 유지된다', () => {
   mockDevice = 'tabletLandscape';
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
@@ -198,6 +210,104 @@ test('phone의 원고형 열은 공통 pageInset으로 본문과 입력의 가�
   expect(view.queryByTestId('persistent-session-character-seat')).toBeNull();
   view.unmount();
   measure.mockRestore();
+});
+
+test.each([
+  ['tabletLandscape', 1194, 834, 'landscape'],
+  ['tabletPortrait', 834, 1194, 'portrait'],
+] as const)('%s는 사용량을 입력선에 맞추고 카드 목록과 간격을 둔다', (device, width, height, orientation) => {
+  mockDevice = device;
+  const frame = require('../../components/persistent/persistentSessionFrame').PERSISTENT_SESSION_FRAME;
+  const tokenHook = renderHook(() => useTokens());
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width, height, scale: 1, fontScale: 1 });
+  const appTop = 24;
+  const appHeight = height - appTop;
+  const columns = frame[orientation];
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, appTop, width, appHeight);
+    else if (this.props.testID === 'persistent-session-conversation') callback((width - columns.conversation) / 2, appTop + frame.header, columns.conversation, appHeight - frame.header);
+  });
+  const payload = Buffer.from(JSON.stringify({ email: 'usage@example.com', sub: 'usage@example.com', name: '사용자', exp: 2_000_000_000 })).toString('base64url');
+  useAuthStore.setState({ jwt: `header.${payload}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://usage.example', persistentSessionDevicePrefs: {} } as never);
+  jest.mocked(useUsageSummary).mockReturnValue({
+    summary: { nodes: [{ nodeId: 'node-a' }, { nodeId: 'node-b' }, { nodeId: 'node-c' }] } as any,
+    node: { nodeId: 'node-a', fetchedAt: '2026-10-13T08:00:00Z' } as any,
+    gauges: [
+      { id: 'claude', label: 'Claude', remainingPercent: 73, resetAt: 1_900_000_000 },
+      { id: 'fable', label: 'Fable', remainingPercent: 41, resetAt: 1_900_000_000 },
+      { id: 'codex', label: 'Codex', remainingPercent: 28, resetAt: 1_900_000_000 },
+    ],
+    maxGaugeCount: 3, loading: false, loadState: 'ready', evaluatedAtMs: 1_800_000_000_000, retry: jest.fn(),
+  });
+  const view = render(<ScreenHarness />);
+  act(() => store.getState().open({ session_id: 'pas-usage', node_id: 'node-a', agent_name: '서소영 (PAS)', display_name: '관제', persistent: true } as any));
+  const toggle = view.getByTestId('persistent-session-weekly-usage-toggle');
+  expect(toggle.props.accessibilityState?.selected).toBe(false);
+  expect(jest.mocked(useUsageSummary).mock.calls.at(-1)?.[0]).toMatchObject({ enabled: false, nodeId: 'node-a', selectedNodeId: null });
+  fireEvent.press(toggle);
+  expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://usage.example', 'usage@example.com').showWeeklyUsage).toBe(true);
+  expect(jest.mocked(useUsageSummary).mock.calls.at(-1)?.[0]).toMatchObject({ enabled: true, nodeId: 'node-a', selectedNodeId: null });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  const body = view.getByTestId('persistent-body-probe');
+  act(() => body.props.onComposerLayout(
+    { x: 0, y: 640, width: columns.conversation, height: 80 },
+    { x: 0, y: 24, width: columns.conversation, height: 56 },
+  ));
+  const lineY = frame.header + 640 + 24 + 56 - 1;
+  const usageSeat = view.getByTestId('persistent-session-weekly-usage-seat');
+  const usageStyle = StyleSheet.flatten(usageSeat.props.style);
+  expect(usageStyle.position).toBe('absolute');
+  expect(usageStyle.right).toBe(20);
+  expect(usageStyle.width).toBe(columns.tasks - 2 * tokenHook.result.current.uiSpacing.sm);
+  expect(usageStyle.bottom).toBe(appHeight - lineY);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).top).toBe(frame.header);
+  expect(view.getByText('소울스트림')).toBeTruthy();
+  expect(view.getByText('서소영 (PAS)')).toBeTruthy();
+  act(() => usageSeat.props.onLayout({ nativeEvent: { layout: { height: 138 } } }));
+  fireEvent.press(view.getByTestId('persistent-session-tasks'));
+  const panel = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
+  expect(panel.top).toBe(frame.header + 48);
+  expect(panel.maxHeight).toBe(Math.max(0, lineY - 138 - 32 - panel.top));
+  expect(panel.maxHeight).toBeLessThan(lineY - panel.top);
+  fireEvent.press(view.getByLabelText('노드 바꾸기, 현재 node-a'));
+  expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://usage.example', 'usage@example.com').weeklyUsageNodeSelection)
+    .toEqual({ configuredNodeId: 'node-a', selectedNodeId: 'node-b' });
+  expect(jest.mocked(useUsageSummary).mock.calls.at(-1)?.[0]).toMatchObject({ enabled: true, nodeId: 'node-a', selectedNodeId: 'node-b' });
+  fireEvent.press(view.getByTestId('persistent-session-weekly-usage-toggle'));
+  expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://usage.example', 'usage@example.com').weeklyUsageNodeSelection)
+    .toEqual({ configuredNodeId: 'node-a', selectedNodeId: 'node-b' });
+  expect(view.queryByTestId('persistent-session-weekly-usage-seat')).toBeNull();
+  view.unmount();
+  tokenHook.unmount();
+  measure.mockRestore();
+  dimensions.mockRestore();
+  useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
+  useAuthStore.setState({ jwt: null });
+});
+
+test('phone hides saved weekly usage and passes a disabled request gate', () => {
+  mockDevice = 'phone';
+  const payload = Buffer.from(JSON.stringify({ email: 'usage@example.com', sub: 'usage@example.com', name: '사용자', exp: 2_000_000_000 })).toString('base64url');
+  useAuthStore.setState({ jwt: `header.${payload}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://usage.example', persistentSessionDevicePrefs: {} } as never);
+  useSettingsStore.getState().setPersistentSessionShowWeeklyUsage('https://usage.example', 'usage@example.com', true);
+  useSettingsStore.getState().setPersistentSessionWeeklyUsageNodeSelection('https://usage.example', 'usage@example.com',
+    { configuredNodeId: 'node-a', selectedNodeId: 'node-b' });
+  const view = render(<ScreenHarness />);
+  act(() => store.getState().open({ session_id: 'pas-usage', node_id: 'node-a', agent_name: '서소영 (PAS)', display_name: '관제', persistent: true } as any));
+  expect(view.queryByTestId('persistent-session-weekly-usage-toggle')).toBeNull();
+  expect(view.queryByTestId('persistent-session-weekly-usage-seat')).toBeNull();
+  expect(view.queryByTestId('persistent-session-weekly-usage')).toBeNull();
+  expect(jest.mocked(useUsageSummary).mock.calls.at(-1)?.[0]).toMatchObject({ enabled: false, nodeId: 'node-a', selectedNodeId: 'node-b' });
+  expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://usage.example', 'usage@example.com').showWeeklyUsage).toBe(true);
+  expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://usage.example', 'usage@example.com').weeklyUsageNodeSelection)
+    .toEqual({ configuredNodeId: 'node-a', selectedNodeId: 'node-b' });
+  expect(view.getByText('서소영 (PAS)')).toBeTruthy();
+  expect(view.queryByText('소울스트림')).toBeNull();
+  view.unmount();
+  useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
+  useAuthStore.setState({ jwt: null });
 });
 
 test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 쓴다', () => {

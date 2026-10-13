@@ -44,6 +44,7 @@ import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSa
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
 import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
+import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -316,6 +317,7 @@ export function ComponentsReviewPage() {
             </Sample>
             <ComponentsReviewControls/>
             <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
+            <Sample name="PersistentSessionWeeklyUsage" state="1101px 이상 · 노드 3/2/0개 게이지 · 노드 이동 · 대기 · 조회 실패 · 갱신 지연"><PersistentSessionWeeklyUsageReviewSample/></Sample>
             <Sample name="PersistentSessionInstructions" state="빈 목록 · 항목 여럿 · 편집 중 · 상한 안내"><PersistentSessionInstructionsReviewSample/></Sample>
             <Sample name="PersistentSessionPortraitToggle" state="표시 · 숨김"><PersistentSessionPortraitToggleReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>
@@ -327,7 +329,7 @@ export function ComponentsReviewPage() {
             </div>
             <div className="v3-components-samples">
             <Sample name="SwayCharacter" state="원본 WebGL · 정지 이미지 · 표시 끔"><SwayCharacterReviewSample/></Sample>
-            <Sample name="PersistentSessionScreen" state="운영 전화면 · 독립 세션과 전송"><PersistentSessionScreenReviewSample/></Sample>
+            <Sample name="PersistentSessionScreen" state="운영 전화면 · 우하단 사용량 · 작업 목록 동시 펼침 · 실제 PAS 대화"><PersistentSessionScreenReviewSample/></Sample>
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">
               <FolderDescriptionPanel markdown={description} onSave={async body => { setDescription(body); open("설명 저장"); }}/>
               <Dialog open={panelOpen} onOpenChange={setPanelOpen}><DialogPopup>

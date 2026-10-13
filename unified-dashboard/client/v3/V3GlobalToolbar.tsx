@@ -5,7 +5,7 @@ import {
   useGlassSurface,
   useLiquidLens,
 } from "@seosoyoung/soul-ui";
-import { House, Search } from "lucide-react";
+import { Gauge, House, Search } from "lucide-react";
 
 import { ConfigButton } from "../components/ConfigButton";
 import { PersistentSessionEntry } from './PersistentSessionEntry';
@@ -13,7 +13,7 @@ import { PersistentSessionEntry } from './PersistentSessionEntry';
 export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
-  variant = 'default', sessionName, agentName, agentOnly = false, showHome = true, onOpenHome, headerRef,
+  variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage,
   appearance = 'default',
 }: {
   onOpenConfig(): void;
@@ -26,6 +26,8 @@ export function V3GlobalToolbar({
   onOpenHome?(): void;
   headerRef?: RefObject<HTMLElement | null>;
   appearance?: "default" | "bare";
+  showWeeklyUsage?: boolean;
+  onToggleUsage?(): void;
 }) {
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
@@ -46,7 +48,7 @@ export function V3GlobalToolbar({
 
   if (variant === 'minimal') return <header ref={headerRef} className="persistent-session-header" data-testid="v3-global-toolbar">
     <div className="persistent-session-brand" data-agent-only={agentOnly}>
-      {agentOnly ? <strong>{agentName}</strong> : <><span>소울스트림</span><strong>{sessionName}</strong></>}
+      <span>소울스트림</span><strong>{agentName}</strong>
     </div>
     <div className="dashboard-toolbar-actions">
       {showHome ? <DashboardIconCap label="홈" appearance={appearance} onClick={onOpenHome}>
@@ -55,6 +57,11 @@ export function V3GlobalToolbar({
           : <span aria-hidden="true" className="text-base leading-none">⌂</span>}
       </DashboardIconCap> : null}
       <ThemeToggle variant="chrome" appearance={appearance}/>
+      {onToggleUsage && showWeeklyUsage !== undefined ? <DashboardIconCap appearance={appearance} label="주간 사용량"
+        aria-pressed={showWeeklyUsage} className={`persistent-session-weekly-usage-toggle${showWeeklyUsage ? " persistent-session-weekly-usage-toggle--selected" : ""}`}
+        onClick={onToggleUsage}>
+        <Gauge className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
+      </DashboardIconCap> : null}
       <ConfigButton variant="chrome" appearance={appearance} onClick={onOpenConfig}/>
     </div>
   </header>;

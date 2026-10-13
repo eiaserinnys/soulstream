@@ -10,7 +10,7 @@ const navigation = createNavigationContainerRef<any>();
 function EntryDriver({ ready, phone }: { ready: boolean; phone: boolean }) {
   const host = usePersistentSessionHost();
   useEffect(() => {
-    if (!ready || !['screen', 'report'].includes(new URLSearchParams(window.location.search).get('sample') ?? '')) return;
+    if (!ready || !['screen', 'report', 'usage'].includes(new URLSearchParams(window.location.search).get('sample') ?? '')) return;
     void host.requestEntry(() => { navigation.navigate(phone ? 'PersistentTab' : 'PersistentSession'); }, true);
   }, [ready, phone]);
   return null;
@@ -41,7 +41,7 @@ export function ReviewPersistentFullscreen() {
       {phone ? <TabNavigator /> : <TabletNavigator />}
     </NavigationContainer>
     {sample === 'card-overlay' ? <CardOverlayEntryDriver ready={ready} phone={phone} />
-      : sample !== 'screen' && sample !== 'report'
+      : sample !== 'screen' && sample !== 'report' && sample !== 'usage'
         ? <PersistentSessionStartup ready={ready} sessionIntent={false} onOpen={() => { navigation.navigate(phone ? 'PersistentTab' : 'PersistentSession'); }} />
         : <EntryDriver ready={ready} phone={phone} />}
   </PersistentSessionProvider>;
