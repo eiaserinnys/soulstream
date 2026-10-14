@@ -2,9 +2,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardRowView } from "./CardRow";
-import { PersistentSessionTaskList, groupPersistentSessionTasks } from "./PersistentSessionTaskList";
+import { PersistentSessionTaskList, groupPersistentSessionTasks, isQuestionTooltipCard, latestUnansweredTooltipQuestion, persistentTaskTooltipContent } from "./PersistentSessionTaskList";
 import { reviewSession } from "./components-review-fixtures";
 
 const membershipMock = vi.hoisted(() => vi.fn());
@@ -16,12 +17,38 @@ const baseCard = (id: string, status: CardRow["status"], positionKey = id, queue
   assigneeUserId: null, assigneeSessionId: "session", nodeId: "eiaserinnys", modelPreset: "codex-6-luna",
   version: 1, archived: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
 });
+const originalStoreActions = { loadCard: useCardStore.getState().loadCard, mutate: useCardStore.getState().mutate };
+
+function enableTaskTooltips() {
+  window.matchMedia = vi.fn().mockImplementation((media: string) => ({
+    matches: media.includes("min-width: 768px"), media, onchange: null,
+    addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
+  }));
+}
+
+function question(id: string, askedAt: string, options: string[] | null, answer: string | null = null): CardQuestion {
+  return { id, text: `질문 ${id}`, options, answer, askedAt, answeredAt: answer === null ? null : askedAt };
+}
+
+function cardDetail(card: CardRow, questions: CardQuestion[] = []): CardDetail {
+  return { card, reports: [], questions, sessions: [] };
+}
 
 let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  window.matchMedia = vi.fn().mockImplementation((media: string) => ({
+    matches: false,
+    media,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -31,9 +58,149 @@ beforeEach(() => {
 afterEach(async () => {
   await act(() => root.unmount());
   container.remove();
+  useCardStore.setState({ byId: {}, details: {}, errors: {}, loadCard: originalStoreActions.loadCard, mutate: originalStoreActions.mutate });
 });
 
 describe("persistent session task list", () => {
+  it("identifies blocked question cards for an isolated tooltip provider", () => {
+    expect(isQuestionTooltipCard({ ...baseCard("question", "blocked"), blockedKind: "question" })).toBe(true);
+    expect(isQuestionTooltipCard({ ...baseCard("blocked", "blocked"), blockedKind: "limit" })).toBe(false);
+    expect(isQuestionTooltipCard({ ...baseCard("running", "running"), blockedKind: "question" })).toBe(false);
+  });
+
+  it("includes only the truncated title and non-empty current status fields in tooltip content", () => {
+    const card = {
+      ...baseCard("tooltip", "running"),
+      title: "PAS 카드 목록 호버 툴팁",
+      now: { text: "현재 진행", turn: "user" as const, ask: "확인 요청", updatedAt: "2026-10-14T00:00:00Z", sessionId: "session" },
+    };
+
+    expect(persistentTaskTooltipContent(card, true)).toEqual({
+      title: "PAS 카드 목록 호버 툴팁", now: "현재 진행", ask: "확인 요청",
+    });
+    expect(persistentTaskTooltipContent(card, false)).toEqual({ now: "현재 진행", ask: "확인 요청" });
+    expect(persistentTaskTooltipContent({ ...card, now: { ...card.now, turn: "agent" } }, false))
+      .toEqual({ now: "현재 진행" });
+    expect(persistentTaskTooltipContent({ ...card, now: { ...card.now, text: "", ask: "   " } }, false)).toBeNull();
+    expect(persistentTaskTooltipContent({ ...card, now: { ...card.now, text: "", ask: "다음 확인" } }, false))
+      .toEqual({ ask: "다음 확인" });
+    expect(persistentTaskTooltipContent({ ...card, now: null }, false, question("selected", "2026-10-14T10:00:00Z", ["계속"])))
+      .toEqual({ ask: "질문 selected" });
+  });
+
+  it("selects only the latest unanswered question and exposes options only for that question", () => {
+    const detail = cardDetail(baseCard("question-choice", "blocked"), [
+      question("older-open", "2026-10-13T10:00:00Z", ["이전 선택지"]),
+      question("answered-latest", "2026-10-14T10:00:00Z", ["이미 답한 선택지"], "완료"),
+      question("latest-open", "2026-10-14T09:00:00Z", ["계속", "보류"]),
+    ]);
+    expect(latestUnansweredTooltipQuestion(detail)).toEqual(detail.questions[2]);
+    expect(persistentTaskTooltipContent({ ...detail.card, now: { text: "진행", turn: "user", ask: "질문 latest-open", updatedAt: "2026-10-14T10:00:00Z", sessionId: "session" } }, false, detail.questions[2])?.ask)
+      .toBe("질문 latest-open");
+    const twoOpen = cardDetail(detail.card, [
+      question("older-open", "2026-10-13T10:00:00Z", ["이전 선택지"]),
+      question("latest-open", "2026-10-14T10:00:00Z", ["계속", "보류"]),
+    ]);
+    const afterLatestAnswer = cardDetail(detail.card, [twoOpen.questions[0]!, question("latest-open", "2026-10-14T10:00:00Z", ["계속", "보류"], "완료")]);
+    const nextQuestion = latestUnansweredTooltipQuestion(afterLatestAnswer)!;
+    expect(nextQuestion.id).toBe("older-open");
+    expect(persistentTaskTooltipContent({ ...detail.card, now: { text: "진행", turn: "user", ask: "질문 latest-open", updatedAt: "2026-10-14T10:00:00Z", sessionId: "session" } }, false, nextQuestion)?.ask)
+      .toBe("질문 older-open");
+    expect(latestUnansweredTooltipQuestion(cardDetail(detail.card, [question("free", "2026-10-14T10:00:00Z", null)]))?.options).toBeNull();
+    expect(latestUnansweredTooltipQuestion(cardDetail(detail.card, [question("done", "2026-10-14T10:00:00Z", ["답"], "완료")]))).toBeNull();
+  });
+
+  it("loads blocked question detail on row focus only when cached details are missing or stale", async () => {
+    enableTaskTooltips();
+    const card = { ...baseCard("question-load", "blocked"), blockedKind: "question" as const,
+      now: { text: "선택을 기다립니다", turn: "user" as const, ask: "계속할까요?", updatedAt: "2026-10-14T10:00:00Z", sessionId: "session" } };
+    const detail = cardDetail(card, [question("q1", "2026-10-14T10:00:00Z", ["계속"])]);
+    const loadCard = vi.fn(async () => {
+      useCardStore.setState({ byId: { [card.id]: card }, details: { [card.id]: detail } });
+      return detail;
+    });
+    useCardStore.setState({ byId: { [card.id]: card }, details: {}, loadCard });
+    await act(() => root.render(<PersistentSessionTaskList cards={[card]} onOpenCard={() => {}}/>));
+    await act(() => container.querySelector<HTMLButtonElement>(".v3-card-summary-row")!.focus());
+    expect(loadCard).toHaveBeenCalledOnce();
+    expect(loadCard).toHaveBeenCalledWith(card.id);
+
+    await act(() => root.unmount());
+    root = createRoot(container);
+    loadCard.mockClear();
+    useCardStore.setState({ byId: { [card.id]: card }, details: { [card.id]: detail } });
+    await act(() => root.render(<PersistentSessionTaskList cards={[card]} onOpenCard={() => {}}/>));
+    await act(() => container.querySelector<HTMLButtonElement>(".v3-card-summary-row")!.focus());
+    expect(loadCard).not.toHaveBeenCalled();
+
+    await act(() => root.unmount());
+    root = createRoot(container);
+    const staleDetail = cardDetail({ ...card, version: card.version - 1 }, [question("stale", "2026-10-14T10:00:00Z", ["오래된 선택지"])]);
+    let resolveLoad!: (loaded: CardDetail) => void;
+    const pendingLoad = new Promise<CardDetail>(resolve => { resolveLoad = resolve; });
+    loadCard.mockReturnValue(pendingLoad);
+    useCardStore.setState({ byId: { [card.id]: card }, details: { [card.id]: staleDetail } });
+    await act(() => root.render(<PersistentSessionTaskList cards={[card]} onOpenCard={() => {}}/>));
+    await act(() => container.querySelector<HTMLButtonElement>(".v3-card-summary-row")!.focus());
+    expect(loadCard).toHaveBeenCalledOnce();
+    expect(document.body.querySelector('[data-tooltip-field="ask"]')?.textContent).toBe("계속할까요?");
+    expect(document.body.querySelector(".pas-report-actions")).toBeNull();
+    await act(async () => {
+      useCardStore.setState({ byId: { [card.id]: card }, details: { [card.id]: detail } });
+      resolveLoad(detail);
+      await pendingLoad;
+    });
+    expect(document.body.querySelector('[data-tooltip-field="ask"]')?.textContent).toBe("질문 q1");
+    expect(document.body.querySelector(".pas-report-actions")?.textContent).toBe("계속");
+  });
+
+  it("opens a tooltip from question text and options when the blocked card has no now", async () => {
+    enableTaskTooltips();
+    const card = { ...baseCard("question-no-now", "blocked"), title: "짧은 제목", blockedKind: "question" as const, now: null };
+    const detail = cardDetail(card, [question("q1", "2026-10-14T10:00:00Z", ["계속"])]);
+    useCardStore.setState({ byId: { [card.id]: card }, details: { [card.id]: detail } });
+    await act(() => root.render(<PersistentSessionTaskList cards={[card]} onOpenCard={() => {}}/>));
+    await act(() => container.querySelector<HTMLButtonElement>(".v3-card-summary-row")!.focus());
+
+    expect(document.body.querySelector('[data-tooltip-field="ask"]')?.textContent).toBe("질문 q1");
+    expect([...document.body.querySelectorAll<HTMLButtonElement>("button")].some(button => button.textContent === "계속")).toBe(true);
+  });
+
+  it("keeps the tooltip open while sending, shows failure in place, and closes after a successful answer", async () => {
+    enableTaskTooltips();
+    const card = { ...baseCard("question-answer", "blocked"), blockedKind: "question" as const,
+      now: { text: "선택을 기다립니다", turn: "user" as const, ask: "계속할까요?", updatedAt: "2026-10-14T10:00:00Z", sessionId: "session" } };
+    const detail = cardDetail(card, [question("q/1", "2026-10-14T10:00:00Z", ["계속", "멈춤"])]);
+    let rejectPending!: (error: Error) => void;
+    const pendingMutation = new Promise<CardDetail>((_resolve, reject) => { rejectPending = reject; });
+    const mutate = vi.fn().mockReturnValueOnce(pendingMutation).mockResolvedValueOnce(detail);
+    useCardStore.setState({ byId: { [card.id]: card }, details: { [card.id]: detail }, mutate });
+    await act(() => root.render(<PersistentSessionTaskList cards={[card]} onOpenCard={() => {}}/>));
+    await act(() => container.querySelector<HTMLButtonElement>(".v3-card-summary-row")!.focus());
+
+    const option = () => [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent === "계속")!;
+    expect(option()).toBeDefined();
+    await act(async () => { option().click(); await Promise.resolve(); });
+    expect(mutate).toHaveBeenCalledWith(card.id, "/questions/q%2F1/answer", { answer: "계속" });
+    expect(option().disabled).toBe(true);
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(document.body.querySelector(".v3-persistent-task-tooltip .v3-surface")).not.toBeNull();
+    expect(option().disabled).toBe(true);
+
+    await act(async () => { rejectPending(new Error("network error")); await pendingMutation.catch(() => undefined); });
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toBe("답을 보내지 못했습니다");
+    expect(option().disabled).toBe(false);
+
+    await act(async () => { option().click(); await Promise.resolve(); });
+    expect(mutate).toHaveBeenCalledTimes(2);
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+    expect(document.body.querySelector(".v3-persistent-task-tooltip .v3-surface")).toBeNull();
+  });
+
   it("groups the complete card status inventory in the approved order and omits completed states", () => {
     const cards = [
       baseCard("done", "done"), baseCard("todo", "todo"), baseCard("queued", "queued"),
@@ -121,6 +288,7 @@ describe("persistent session task list", () => {
     expect(row.querySelector(".v3-card-summary-number-reserve")?.getAttribute("aria-hidden")).toBe("true");
     expect(row.querySelector(".v3-card-summary-number")?.textContent).toBe("#42");
     expect(row.querySelector(".v3-card-summary-title")?.textContent).toBe("긴 카드 제목");
+    expect(row.querySelector(".v3-card-summary-title")?.getAttribute("title")).toBeNull();
     expect(row.querySelector(".v3-card-summary-avatar")).not.toBeNull();
     expect(container.querySelector(".v3-run-row")).toBeNull();
     await act(() => row.click());
