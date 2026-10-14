@@ -6,6 +6,28 @@ import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 export const MANUSCRIPT_USER_ROW_CLASS_NAME = "pt-10 pb-5 ms-12 flex justify-end";
 export const MANUSCRIPT_ADJACENT_USER_ROW_CLASS_NAME = "contents [&_[data-chat-manuscript-user-row]]:pt-5";
 
+function narrationAnchor(item: ChatTimelineItem | undefined) {
+  return item?.type === "summary-group" ? item.anchor : item;
+}
+
+export function isManuscriptNarration(
+  item: ChatTimelineItem,
+  next: ChatTimelineItem | undefined,
+): boolean {
+  const current = narrationAnchor(item);
+  if (current?.type !== "single") return false;
+  if (current.msg.role !== "assistant" || current.msg.treeNodeType !== "text" || current.msg.ui !== undefined) {
+    return false;
+  }
+
+  const nextAnchor = narrationAnchor(next);
+  if (nextAnchor?.type === "activity-group" || nextAnchor?.type === "tool-group") return true;
+  return nextAnchor?.type === "single" && (
+    nextAnchor.msg.role === "tool"
+    || (nextAnchor.msg.role === "assistant" && nextAnchor.msg.treeNodeType === "thinking")
+  );
+}
+
 function isUserRow(item: ChatTimelineItem | undefined): boolean {
   return item?.type === "pending-message"
     || (item?.type === "single" && (item.msg.role === "user" || item.msg.role === "intervention"));

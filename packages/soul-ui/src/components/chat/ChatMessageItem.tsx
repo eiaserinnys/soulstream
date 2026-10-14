@@ -30,7 +30,7 @@ function shouldAnimateEnter(key: string): boolean {
 }
 
 /** 메시지 타입에 따라 적절한 컴포넌트로 라우팅 */
-export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string; presentation?: "default" | "manuscript" }) {
+export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId, presentation = "default", narration = false }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string; presentation?: "default" | "manuscript"; narration?: boolean }) {
   let body: ReactNode;
   switch (msg.role) {
     case "user":
@@ -44,10 +44,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       body = msg.treeNodeType === "thinking"
         ? <ThinkingMessage msg={msg} presentation={presentation} />
         : msg.ui !== undefined
-          ? <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"}>
+          ? <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={false} contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"}>
             <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} />
           </AssistantMessage>
-          : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} />;
+          : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={narration} />;
       break;
     case "tool":
       body = <ToolMessage msg={msg} />;

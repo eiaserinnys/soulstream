@@ -34,7 +34,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupManuscriptMessages, groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
-import { ChatManuscriptList, ChatManuscriptFooter, manuscriptItemSpacingClass } from "./ChatManuscriptList";
+import { ChatManuscriptList, ChatManuscriptFooter, isManuscriptNarration, manuscriptItemSpacingClass } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
@@ -839,6 +839,10 @@ function ChatViewContent({
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(index, item) => {
           const message = item.type === "single" ? item.msg : null;
+          const narration = isManuscript && isManuscriptNarration(
+            item,
+            timelineItems[index - firstItemIndex + 1],
+          );
           const toolGroupKey = (item.type === "tool-group" || item.type === "activity-group") && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)
             : undefined;
@@ -855,6 +859,7 @@ function ChatViewContent({
               <VirtualizedItem
                 item={item}
                 presentation={presentation}
+                narration={narration}
                 llmContext={llmContext}
                 sessionId={activeSessionKey ?? undefined}
                 toolGroupKey={toolGroupKey}

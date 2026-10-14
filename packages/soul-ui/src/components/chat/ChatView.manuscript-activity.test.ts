@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { groupManuscriptMessages } from "../../lib/grouping";
+import { isManuscriptNarration } from "./ChatManuscriptList";
+import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 function message(
   id: string,
@@ -75,5 +77,49 @@ describe("manuscript activity projection", () => {
         summaries: [summary],
       },
     ]);
+  });
+
+  it("dims assistant prose only when the next chronological row is tool activity or thinking", () => {
+    const narration = message("narration", "assistant", "text");
+    const tool = message("tool", "tool", "tool");
+    const thinking = message("thinking", "assistant", "thinking");
+    const final = message("final", "assistant", "text");
+    const asSingle = (msg: ChatMessage): Extract<ChatTimelineItem, { type: "single" }> => ({ type: "single", msg });
+
+    expect(isManuscriptNarration(asSingle(narration), asSingle(tool))).toBe(true);
+    expect(isManuscriptNarration(asSingle(narration), {
+      type: "activity-group",
+      messages: [tool],
+    })).toBe(true);
+    expect(isManuscriptNarration(asSingle(narration), asSingle(thinking))).toBe(true);
+    expect(isManuscriptNarration(asSingle(final), undefined)).toBe(false);
+  });
+
+  it("unwraps summary anchors and leaves incomplete or non-prose rows unchanged", () => {
+    const narration = message("narration", "assistant", "text");
+    const tool = message("tool", "tool", "tool");
+    const assistantWithUi = message("ui", "assistant", "text", { ui: { version: 1 } as never });
+    const assistantThinking = message("thinking", "assistant", "thinking");
+    const asSingle = (msg: ChatMessage): Extract<ChatTimelineItem, { type: "single" }> => ({ type: "single", msg });
+    const summaryGroup: ChatTimelineItem = {
+      type: "summary-group",
+      anchor: asSingle(tool),
+      summaries: [],
+    };
+
+    expect(isManuscriptNarration({
+      type: "summary-group",
+      anchor: asSingle(narration),
+      summaries: [],
+    }, summaryGroup)).toBe(true);
+    expect(isManuscriptNarration(asSingle(narration), undefined)).toBe(false);
+    expect(isManuscriptNarration(asSingle(narration), { type: "thinking-indicator" })).toBe(false);
+    expect(isManuscriptNarration(asSingle(narration), {
+      type: "pending-message",
+      pending: {} as never,
+    })).toBe(false);
+    expect(isManuscriptNarration(asSingle(narration), asSingle(message("complete", "system", "complete")))).toBe(false);
+    expect(isManuscriptNarration(asSingle(assistantWithUi), asSingle(tool))).toBe(false);
+    expect(isManuscriptNarration(asSingle(assistantThinking), asSingle(tool))).toBe(false);
   });
 });

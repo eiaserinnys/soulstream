@@ -9,6 +9,7 @@ export function useChatTypography() {
  const chatTypographyStyle={
   "--chat-font-size":`${typography.fontSize}px`,
   "--chat-line-height":`${typography.lineHeight}px`,
+  "--chat-narration-font-size":`${typography.narrationFontSize}px`,
  } as CSSProperties;
  return {chatFontSize,chatTypographyStyle};
 }
