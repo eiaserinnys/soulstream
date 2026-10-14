@@ -40,7 +40,9 @@ function pager(entries = reportReviewEntries) {
     const [index, setIndex] = React.useState(0);
     return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={(_id, text, reply) => onAppend(text, reply)}>
       <PersistentReportPager entries={entries} index={index} api={api}
-        onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()} />
+        onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()}
+        send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false,
+          cancel: jest.fn(), sendOption: jest.fn() } as any} />
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
@@ -53,7 +55,7 @@ test('zero sheets renders nothing; one sheet has no page or arrows and see alway
   const screen = pager([reportReviewEntries[2]]);
   expect(screen.queryByTestId('report-page')).toBeNull();
   expect(screen.queryByTestId('report-nav')).toBeNull();
-  fireEvent.press(screen.getByLabelText('봤다'));
+  fireEvent.press(screen.getByLabelText('확인했어'));
   expect(screen.onDismiss).toHaveBeenCalledWith('result');
 });
 
@@ -151,12 +153,13 @@ test('dismiss removes immediately and moves to the composer when the last report
   function Harness() {
     const report = usePersistentReport('pas', true, api, undefined, undefined);
     return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
-      <PersistentReportPager {...report} api={api} onSelect={report.select} onDismiss={report.dismiss} onFocusComposer={focus} />
+      <PersistentReportPager {...report} api={api} send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any}
+        onSelect={report.select} onDismiss={report.dismiss} onFocusComposer={focus} />
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
   measurePersistentReports(screen);
-  fireEvent.press(screen.getByLabelText('봤다'));
+  fireEvent.press(screen.getByLabelText('확인했어'));
   expect(screen.queryByTestId('report-deck')).toBeNull();
   if (Platform.OS !== 'web') expect(focus).toHaveBeenCalledTimes(1);
   await act(async () => finish({ ok: true, persistent_report: [] }));
@@ -309,7 +312,8 @@ test('removing the focused sheet focuses the accessible replacement title, not i
   function Harness() {
     const report = usePersistentReport('pas', true, api, undefined, undefined);
     return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
-      <PersistentReportPager {...report} api={api} onSelect={report.select} onDismiss={report.dismiss} onFocusComposer={jest.fn()} />
+      <PersistentReportPager {...report} api={api} send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any}
+        onSelect={report.select} onDismiss={report.dismiss} onFocusComposer={jest.fn()} />
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />, { createNodeMock: element => ({
@@ -318,7 +322,7 @@ test('removing the focused sheet focuses the accessible replacement title, not i
   measurePersistentReports(screen);
   AccessibilityInfo.setAccessibilityFocus(11);
   focus.mockClear();
-  fireEvent.press(screen.getByLabelText('봤다'));
+  fireEvent.press(screen.getByLabelText('확인했어'));
   expect(screen.getByTestId('report-title').props.accessible).toBe(true);
   expect(screen.getByTestId('report-sheet-b').props.accessible).toBe(false);
   expect(find).toHaveBeenLastCalledWith(expect.objectContaining({ props: expect.objectContaining({
@@ -489,13 +493,15 @@ test('tablet card chips resolve their card number to the existing internal card 
 });
 
 
-test.each([false, true])('band waits for its reading and only its existing footer (footer=%s)', withFooter => {
+test('band waits for its reading and its existing footer before accepting a close', () => {
   const ready = jest.fn();
   const onDismiss = jest.fn();
-  const entry = reportReviewEntries[withFooter ? 2 : 0];
+  const close = jest.fn(() => true);
+  const entry = reportReviewEntries[2];
   const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
     <PersistentReportPager entries={[entry]} index={0} api={null} onReady={ready}
-      onSelect={jest.fn()} onDismiss={onDismiss} onFocusComposer={jest.fn()} />
+      onSelect={jest.fn()} onDismiss={onDismiss} onFocusComposer={jest.fn()}
+      send={{ busy: false, close, canCancel: () => false, cancelSent: () => false } as any} />
   </ChatUiControllerProvider>);
   const get = (id: string) => screen.getByTestId(id, { includeHiddenElements: true });
   const deck = () => get('report-deck');
@@ -503,17 +509,12 @@ test.each([false, true])('band waits for its reading and only its existing foote
   expect(deck().props.accessibilityElementsHidden).toBe(true);
   expect(StyleSheet.flatten(deck().props.style).opacity).toBe(0);
   fireEvent(get('report-track'), 'layout', { nativeEvent: { layout: { width: 390 } } });
-  if (withFooter) {
-    fireEvent.press(screen.getByLabelText('봤다', { includeHiddenElements: true }));
-    expect(onDismiss).not.toHaveBeenCalled();
-  }
+  fireEvent.press(screen.getByLabelText('확인했어', { includeHiddenElements: true }));
+  expect(close).not.toHaveBeenCalled();
+  expect(onDismiss).not.toHaveBeenCalled();
   fireEvent(get('report-reading'), 'layout', { nativeEvent: { layout: { height: 100 } } });
-  if (withFooter) {
-    expect(deck().props.pointerEvents).toBe('none');
-    fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
-  } else {
-    expect(screen.queryByTestId('report-footer', { includeHiddenElements: true })).toBeNull();
-  }
+  expect(deck().props.pointerEvents).toBe('none');
+  fireEvent(get('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
   expect(deck().props.pointerEvents).toBe('auto');
   expect(deck().props.accessibilityElementsHidden).toBe(false);
   expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBeGreaterThan(100);

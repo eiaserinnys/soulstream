@@ -51,6 +51,34 @@ test('failure reopens options; the same failed reply retries in the same pending
   expect(useChatStore.getState().pendingOptimisticBySession.pas.id).toBe(first.id);
   expect(h.result.current.entries[0].state).toBe('answered'); expect(h.notice).not.toHaveBeenCalled();
 });
+test('close acknowledgement uses the pending slot with only closed context and retries its own failed send', async () => {
+  const intervene = jest.fn().mockRejectedValueOnce(Error('offline')).mockResolvedValueOnce({ delivered: true });
+  const h = setup(intervene);
+  let started = false;
+  await act(async () => { started = h.result.current.close(entry); });
+  expect(started).toBe(true);
+  expect(intervene).toHaveBeenCalledWith('pas', `${entry.title}: 확인했어`, undefined,
+    [{ key: 'persistent_report_closed', content: { key: entry.key, title: entry.title } }]);
+  expect(useChatStore.getState().pendingOptimisticBySession.pas).toMatchObject({ pendingStatus: 'failed', originalText: `${entry.title}: 확인했어`,
+    contextItems: [{ key: 'persistent_report_closed', content: { key: entry.key, title: entry.title } }] });
+  await act(async () => { started = h.result.current.close(entry); });
+  expect(started).toBe(true);
+  expect(intervene).toHaveBeenCalledTimes(2);
+});
+test('close acknowledgement is rejected when another message is sending or an unrelated failure remains', async () => {
+  const h = setup();
+  const other = { ...createOptimisticUserEvent('다른 글', 'user_message'), pendingStatus: 'sending' as const };
+  act(() => useChatStore.getState().setPendingOptimistic('pas', other));
+  let started = true;
+  act(() => { started = h.result.current.close(entry); });
+  expect(started).toBe(false);
+  expect(h.intervene).not.toHaveBeenCalled();
+  act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'failed', 'failure'));
+  act(() => { started = h.result.current.close(entry); });
+  expect(started).toBe(false);
+  expect(h.intervene).not.toHaveBeenCalled();
+  expect(h.notice).toHaveBeenCalledWith(FAILED_REPORT_SEND_REMAINS);
+});
 test('another sending message disables controls without notice; unrelated failure shows the existing notice', async () => {
   const h = setup();
   const other = { ...createOptimisticUserEvent('쓰던 글', 'user_message'), pendingStatus: 'sending' as const };
