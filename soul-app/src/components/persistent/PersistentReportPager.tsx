@@ -165,6 +165,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         }}
         titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
         onDismiss={() => {
+          if (!send?.close(entry)) return;
           moveFocus.current = Platform.OS !== 'web' || focusInside();
           void onDismiss(entry.key).then(ok => { if (ok === false) setNotice('보고를 내리지 못했어.'); });
         }}

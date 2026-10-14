@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry, Session } from '../../api/types';
-import { pendingReportReply, reportSendContext } from '../../lib/persistent-report';
+import { pendingReportClosed, pendingReportReply, reportSendContext } from '../../lib/persistent-report';
 import { createOptimisticUserEvent, pickOptimisticVariant, useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
 import { getSendFailureReason } from '../chat/useChatSendFlow';
 
@@ -38,22 +38,30 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
     const option = sendingReply?.key === entry.key ? sendingReply.option : receipt?.base === base ? receipt.option : undefined;
     return option !== undefined && entry.kind === 'ask' && entry.state === 'open' ? { ...entry, state: 'answered' as const, answer: option } : entry;
   });
-  async function send(entry: PersistentReportEntry, option?: string) {
-    if (!api || !sessionId) return;
+  function start(entry: PersistentReportEntry, kind: 'reply' | 'cancel' | 'close', option?: string) {
+    if (!api || !sessionId) return null;
     const store = useChatStore.getState();
     const slot = store.pendingOptimisticBySession[sessionId];
-    if (slot?.pendingStatus === 'sending' && slot.id !== state.acceptedId) return;
-    const text = option === undefined ? `${entry.title}: 답을 취소합니다` : `${entry.title}: ${option}`;
-    const ownFailed = slot?.pendingStatus === 'failed' && option !== undefined
-      && slot.originalText === text && slot.reportReply?.key === entry.key && slot.reportReply.option === option;
-    if (slot?.pendingStatus === 'failed' && !ownFailed) { setNotice(FAILED_REPORT_SEND_REMAINS); return; }
+    if (slot?.pendingStatus === 'sending' && slot.id !== state.acceptedId) return null;
+    const text = `${entry.title}: ${kind === 'reply' ? option! : kind === 'close' ? '확인했어' : '답을 취소합니다'}`;
+    const closed = pendingReportClosed(slot?.contextItems);
+    const ownFailed = slot?.pendingStatus === 'failed' && slot.originalText === text && (kind === 'reply'
+      ? slot.reportReply?.key === entry.key && slot.reportReply.option === option
+      : kind === 'close' && slot.contextItems?.length === 1
+        && closed?.key === entry.key && closed?.title === entry.title);
+    if (slot?.pendingStatus === 'failed' && !ownFailed) { setNotice(FAILED_REPORT_SEND_REMAINS); return null; }
+    const context = kind === 'close' ? { contextItems: [{ key: 'persistent_report_closed', content: { key: entry.key, title: entry.title } }] }
+      : reportSendContext(base, entry.key, text, kind === 'reply' ? { key: entry.key, option: option!, text } : null);
     const message: PendingOptimisticEvent = ownFailed ? { ...slot, pendingStatus: 'sending' }
       : { ...createOptimisticUserEvent(text, pickOptimisticVariant(status)), pendingStatus: 'sending',
-        originalText: text, attachmentItems: [], ...reportSendContext(base, entry.key, text,
-          option === undefined ? null : { key: entry.key, option, text }),
-        ...(option === undefined ? { reportCancellation: { key: entry.key, updated_at: entry.updated_at } } : {}) };
+        originalText: text, attachmentItems: [], ...context,
+        ...(kind === 'cancel' ? { reportCancellation: { key: entry.key, updated_at: entry.updated_at } } : {}) };
     if (ownFailed) store.updatePendingOptimisticStatus(sessionId, message.id, 'sending');
     else store.setPendingOptimistic(sessionId, message, true);
+    return message;
+  }
+  async function deliver(entry: PersistentReportEntry, message: PendingOptimisticEvent, kind: 'reply' | 'cancel' | 'close', text: string, option?: string) {
+    if (!api || !sessionId) return;
     const id = edition(entry);
     try {
       const verdict = await api.intervene(sessionId, text, undefined, message.contextItems);
@@ -64,18 +72,28 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
       setState(saved => {
         if (saved.sessionId !== sessionId) return saved;
         const replies = new Map(saved.replies);
-        if (option !== undefined) replies.set(id, { base, option });
+        if (kind === 'reply') replies.set(id, { base, option: option! });
         return { ...saved, acceptedId: message.id, replies };
       });
     } catch (error) {
       useChatStore.getState().updatePendingOptimisticStatus(sessionId, message.id, 'failed', getSendFailureReason(error));
     }
   }
+  async function send(entry: PersistentReportEntry, kind: 'reply' | 'cancel', option?: string) {
+    const message = start(entry, kind, option);
+    if (message) await deliver(entry, message, kind, `${entry.title}: ${kind === 'reply' ? option! : '답을 취소합니다'}`, option);
+  }
   return { entries: shown, busy,
     canCancel: (entry: PersistentReportEntry) => base.some(saved => edition(saved) === edition(entry) && saved.state === 'answered'),
     cancelSent: (entry: PersistentReportEntry) => pending?.reportCancellation && edition(pending.reportCancellation) === edition(entry)
       ? pending.pendingStatus === 'sending' : current && state.cancelled.has(edition(entry)),
-    sendOption: (entry: PersistentReportEntry, option: string) => send(entry, option),
-    cancel: (entry: PersistentReportEntry) => send(entry),
+    sendOption: (entry: PersistentReportEntry, option: string) => send(entry, 'reply', option),
+    cancel: (entry: PersistentReportEntry) => send(entry, 'cancel'),
+    close: (entry: PersistentReportEntry) => {
+      const message = start(entry, 'close');
+      if (!message) return false;
+      void deliver(entry, message, 'close', `${entry.title}: 확인했어`);
+      return true;
+    },
   };
 }

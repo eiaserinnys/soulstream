@@ -26,6 +26,10 @@ export function pendingReportReply(contextItems: MessageContextItem[] | undefine
   return contextItems?.find(item => item.key === 'persistent_report_reply')?.content as { key: string; option: string } | undefined;
 }
 
+export function pendingReportClosed(contextItems: MessageContextItem[] | undefined): { key: string; title: string } | undefined {
+  return contextItems?.find(item => item.key === 'persistent_report_closed')?.content as { key: string; title: string } | undefined;
+}
+
 /** Server permits plain text and https markdown links only. */
 export function reportActionParts(text: string): Array<string | { label: string; url: string }> {
   const parts: Array<string | { label: string; url: string }> = [];

@@ -235,7 +235,7 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
-            <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 봤다"><PersistentReportReviewSample /></Sample>
+            <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 확인했어"><PersistentReportReviewSample /></Sample>
             <Sample name="PersistentReportDeck" state="PAS 말풍선 · 1440"><PersistentReportReviewSample bubble /></Sample>
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
