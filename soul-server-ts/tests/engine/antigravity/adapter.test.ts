@@ -33,6 +33,11 @@ if(model==='blocking'){
  process.on('SIGINT',()=>{emit({event:'result',result:{status:'ERROR',error:'interrupted'}});process.exit(1)});
  setInterval(()=>{},1000);
 }else if(model==='missing-result'){process.exit(0)}else{
+ if(model==='stale-quota'||model==='current-quota'){
+  if(model==='current-quota') emit({event:'step_update',step_update:{conversation_id:id,step_index:1,state:'DONE',step_type:'error_message'}});
+  emit({event:'result',result:{status:'ERROR',response:'한글',error:'Individual quota reached. Resets in 6m57s.'}});
+  process.exit(0);
+ }
  emit({event:'result',result:{status:'SUCCESS',response:prompt,usage:{input_tokens:99999}}});
  setTimeout(()=>process.exit(model==='bad-exit'?1:0),30);
 }
@@ -125,6 +130,22 @@ describe("AntigravityEngineAdapter", () => {
     expect((await collect(engine, { ...input, resumeSessionId:"fixture-conversation", model:"bad-exit" })).find(x=>x.type==='error')).toMatchObject({ usage:{input_tokens:10,output_tokens:8} });
     expect((await collect(engine)).find(x=>x.type==='complete')).toMatchObject({ usage:{input_tokens:5,output_tokens:4} });
     await engine.close();
+  });
+  it("does not repeat a historical quota after a successful resume, but preserves a new quota", async () => {
+    const { engine } = fixture();
+    try {
+      const resumed = { ...input, resumeSessionId: "fixture-conversation" };
+      const recovered = await collect(engine, { ...resumed, model: "stale-quota" });
+      expect(recovered.filter(event => event.type === "error")).toEqual([]);
+      expect(recovered.filter(event => event.type === "complete")).toHaveLength(1);
+      expect(recovered.at(-1)).toMatchObject({ type: "complete", result: "한글", usage: { input_tokens: 5, output_tokens: 4 } });
+      const failure = await collect(engine, { ...resumed, model: "current-quota" });
+      expect(failure.filter(event => event.type === "error")).toHaveLength(1);
+      expect(failure.filter(event => event.type === "complete")).toEqual([]);
+      expect((await collect(engine, resumed)).at(-1)).toMatchObject({ type: "complete", usage: { input_tokens: 5 } });
+    } finally {
+      await engine.close();
+    }
   });
   it.each(["parse-error","missing-result","bad-exit"])("returns one fatal for %s and cleans up", async model => {
     const { engine, state }=fixture(); const events=await collect(engine,{ ...input, model });

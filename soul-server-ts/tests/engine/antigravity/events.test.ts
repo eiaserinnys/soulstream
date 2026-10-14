@@ -57,6 +57,26 @@ describe("AntigravityEventMapper", () => {
     expect(mapper.terminal({ code: 1, signal: null }, false)).toMatchObject({ type: "error", fatal: true });
     expect(new AntigravityEventMapper("turn").terminal({ code: 0, signal: null }, false)).toMatchObject({ type: "error", fatal: true });
   });
+  it("completes a resumed response when the CLI repeats a historical error at clean close", () => {
+    // agy 1.3.5 replay: old native ERROR_MESSAGE step 3, new streamed steps 10–12.
+    const mapper = new AntigravityEventMapper("resumed-turn", true);
+    mapper.accept(init);
+    mapper.accept(step(10, { step_type: "user_input" }));
+    mapper.accept(step(12, { state: "ACTIVE", text_delta: "OK" }));
+    mapper.accept(step(12, { text_delta: "\n" }));
+    mapper.accept({ event: "result", result: { status: "ERROR", response: "OK\n",
+      error: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 6m57s." } });
+    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject({ type: "complete", result: "OK\n" });
+  });
+  it.each(["new-error", "new-turn", "different-response", "bad-exit", "partial-response"])("keeps a real failure after a response (%s)", scenario => {
+    const mapper = new AntigravityEventMapper("turn", scenario !== "new-turn");
+    mapper.accept(step(12, { state: scenario === "partial-response" ? "ACTIVE" : "DONE", text_delta: "OK\n" }));
+    if (scenario === "new-error") mapper.accept(step(13, { step_type: "error_message" }));
+    mapper.accept({ event: "result", result: { status: "ERROR",
+      response: scenario === "different-response" ? "partial" : "OK\n", error: "current failure" } });
+    expect(mapper.terminal({ code: scenario === "bad-exit" ? 3 : 0, signal: null }, false))
+      .toMatchObject({ type: "error", fatal: true, message: "current failure" });
+  });
   it("suppresses expected SIGINT only, carries no success terminal, and gives a short registry failure", () => {
     const mapper = new AntigravityEventMapper("turn");
     mapper.accept({ event: "result", result: { status: "ERROR", error: "interrupted" } });

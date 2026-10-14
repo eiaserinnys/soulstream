@@ -50,7 +50,7 @@ export class AntigravityEngineAdapter implements EnginePort {
     if (this.closed) throw new Error("Antigravity engine is closed");
     if (this.executing) throw new Error("Antigravity engine already has an active turn");
     this.executing = true;
-    const mapper = new AntigravityEventMapper(randomUUID());
+    const mapper = new AntigravityEventMapper(randomUUID(), Boolean(params.resumeSessionId));
     let definition: Awaited<ReturnType<typeof writeAntigravityAgentDefinition>> | undefined;
     let process: ReturnType<typeof launchAntigravityProcess> | undefined;
     try {

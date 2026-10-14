@@ -48,8 +48,10 @@ export class AntigravityEventMapper {
   private readonly calls = new Set<number>();
   private readonly finishedTools = new Set<number>();
   private readonly text = new Map<number, string>();
+  private completedResponse: string | undefined;
+  private sawErrorMessage = false;
 
-  constructor(private readonly turnId: string) {}
+  constructor(private readonly turnId: string, private readonly resuming = false) {}
 
   accept(raw: AntigravityEvent): SSEEventPayload[] {
     const timestamp = Date.now() / 1000;
@@ -60,6 +62,7 @@ export class AntigravityEventMapper {
     if (raw.event === "result") { this.result = raw.result; return []; }
     const step = raw.step_update;
     if (raw.event !== "step_update" || !step) return [];
+    if (step.step_type === "error_message") this.sawErrorMessage = true;
     const index = step.step_index;
     if (step.state === "DONE" && step.usage && !this.counted.has(index)) {
       this.counted.add(index);
@@ -83,7 +86,10 @@ export class AntigravityEventMapper {
       }
       if (step.state === "DONE") {
         const content = this.text.get(index)!;
-        if (content) events.push({ type: "assistant_message", ...identity, content, timestamp, _final_for_live_stream: true });
+        if (content) {
+          this.completedResponse = content;
+          events.push({ type: "assistant_message", ...identity, content, timestamp, _final_for_live_stream: true });
+        }
         events.push({ type: "text_end", ...identity, timestamp, _live_only: true });
       }
     }
@@ -115,7 +121,13 @@ export class AntigravityEventMapper {
       ...(this.model !== undefined ? { model: this.model } : {}),
       ...(this.usage !== undefined ? { usage: this.usage } : {}),
     };
-    if (!exit.error && result?.status === "SUCCESS" && exit.code === 0 && exit.signal === null) {
+    // agy 1.3.5 can report a historical ERROR_MESSAGE in a resumed result.
+    // The stream contains only this execution's steps; a matching DONE response
+    // without a new error step proves recovery. Preserve all actual close errors.
+    const recovered = this.resuming && result?.status === "ERROR"
+      && !this.sawErrorMessage && this.completedResponse !== undefined
+      && result.response === this.completedResponse;
+    if (!exit.error && (result?.status === "SUCCESS" || recovered) && exit.code === 0 && exit.signal === null) {
       return { type: "complete", ...common, status: "completed", ...(result.response !== undefined ? { result: result.response } : {}) };
     }
     const registryError = result?.error?.includes("not found in registry");
