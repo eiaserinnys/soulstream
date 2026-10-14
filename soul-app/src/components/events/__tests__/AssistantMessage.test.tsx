@@ -20,6 +20,10 @@ jest.mock('@expo/vector-icons/Ionicons', () => {
 jest.mock('expo-web-browser', () => ({
   openBrowserAsync: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../../theme/useDeviceType', () => ({
+  useDeviceType: () => 'phone',
+  deviceTypeToBaseKey: (type: string) => type === 'phone' ? 'phone' : 'tablet',
+}));
 
 import { render } from '@testing-library/react-native';
 import { StyleSheet, Text } from 'react-native';
@@ -31,6 +35,8 @@ import {
   shouldRenderAsPlainStreamingText,
 } from '../AssistantMessage';
 import type { Session, SessionEvent } from '../../../api/types';
+import { LIGHT_COLORS } from '../../../theme/colors';
+import { PHONE_CHAT_TYPOGRAPHY } from '../../../theme';
 
 const ev = (type: string, data: any): SessionEvent => ({
   id: '1',
@@ -199,6 +205,31 @@ describe('AssistantMessage selection entry', () => {
     expect(infoSpy).toHaveBeenCalledWith(
       '[AssistantMessage] rendering streaming assistant text with plain Text fallback',
     );
+  });
+
+  test('원고형 진행 안내 assistant 글은 메타 크기와 보조 색을 쓰고 마지막 답은 유지한다', () => {
+    const streaming = render(<AssistantMessage presentation="manuscript" narration
+      event={ev('text_delta', { text: '두 건을 나눠 맡깁니다.' })} />);
+    expect(StyleSheet.flatten(streaming.getByTestId('assistant-streaming-text').props.style)).toMatchObject({
+      color: LIGHT_COLORS.textSecondary,
+      fontSize: PHONE_CHAT_TYPOGRAPHY.meta,
+      lineHeight: PHONE_CHAT_TYPOGRAPHY.meta * 1.6,
+    });
+
+    const progress = render(<AssistantMessage presentation="manuscript" narration
+      event={ev('assistant_message', { content: '두 건을 나눠 맡깁니다.' })} />);
+    const progressStyle = progress.getByTestId('assistant-markdown').props.markdownStyle.paragraph;
+    expect(progressStyle).toMatchObject({
+      color: LIGHT_COLORS.textSecondary,
+      fontSize: PHONE_CHAT_TYPOGRAPHY.meta,
+      lineHeight: PHONE_CHAT_TYPOGRAPHY.meta * 1.6,
+    });
+
+    const final = render(<AssistantMessage presentation="manuscript"
+      event={ev('assistant_message', { content: '확인 결과입니다.' })} />);
+    const finalStyle = final.getByTestId('assistant-markdown').props.markdownStyle.paragraph;
+    expect(finalStyle.color).toBe(LIGHT_COLORS.textPrimary);
+    expect(finalStyle.fontSize).toBe(PHONE_CHAT_TYPOGRAPHY.body);
   });
 
   test('live-only streaming assistant bubble도 native markdown에 넣지 않는다', () => {

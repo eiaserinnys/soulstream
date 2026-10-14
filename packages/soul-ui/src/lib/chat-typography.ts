@@ -15,9 +15,11 @@ export function normalizeChatFontSize(value: unknown): ChatFontSize {
 export function resolveChatTypography(fontSize: ChatFontSize): {
   fontSize: ChatFontSize;
   lineHeight: number;
+  narrationFontSize: number;
 } {
   return {
     fontSize,
     lineHeight: fontSize + 8,
+    narrationFontSize: fontSize - 2,
   };
 }

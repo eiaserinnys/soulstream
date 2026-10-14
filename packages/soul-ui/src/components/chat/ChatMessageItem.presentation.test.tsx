@@ -63,6 +63,29 @@ describe("ChatMessageItem presentation", () => {
     expect(manuscriptHtml).toContain("text-muted-foreground");
   });
 
+  it("marks only a manuscript narration assistant row", () => {
+    const msg = makeMessage("assistant", "narration");
+    const manuscriptHtml = renderToStaticMarkup(createElement(ChatMessageItem, {
+      msg,
+      presentation: "manuscript",
+      narration: true,
+    } as never));
+    const defaultHtml = renderToStaticMarkup(createElement(ChatMessageItem, {
+      msg,
+      narration: true,
+    } as never));
+
+    expect(manuscriptHtml).toContain('data-chat-narration="true"');
+    expect(defaultHtml).not.toContain('data-chat-narration="true"');
+
+    const thinking = makeMessage("assistant", "thinking", { treeNodeType: "thinking" });
+    const thinkingHtml = renderToStaticMarkup(createElement(ChatMessageItem, {
+      msg: thinking,
+      presentation: "manuscript",
+    }));
+    expect(thinkingHtml).toContain('data-chat-narration="true"');
+  });
+
   it("keeps structured image attachments manuscript-only and after the user text", () => {
     const msg = makeMessage("user", "structured-images", {
       content: "원문 텍스트입니다.",

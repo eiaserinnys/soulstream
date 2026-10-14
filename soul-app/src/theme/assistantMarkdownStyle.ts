@@ -1,21 +1,23 @@
 import type { MarkdownStyle } from 'react-native-enriched-markdown';
 import type { DesignTokens } from './tokens';
 
-export function createAssistantMarkdownStyle(t: DesignTokens): MarkdownStyle {
+export function createAssistantMarkdownStyle(t: DesignTokens, narration = false): MarkdownStyle {
   const c = t.colors;
+  const narrationColor = narration ? c.textSecondary : c.textPrimary;
+  const narrationFontSize = narration ? t.chatFontSize.meta : t.chatFontSize.body;
   return {
       paragraph: {
-        fontSize: t.chatFontSize.body,
-        color: c.textPrimary,
-        lineHeight: t.chatFontSize.body * t.lineHeightRatio,
+        fontSize: narrationFontSize,
+        color: narrationColor,
+        lineHeight: narrationFontSize * t.lineHeightRatio,
         marginTop: t.spacing.xxs,
         marginBottom: t.spacing.xxs,
       },
-      h1: { color: c.textPrimary, fontSize: t.chatFontSize.screenTitle, fontWeight: '700' },
-      h2: { color: c.textPrimary, fontSize: t.chatFontSize.rowTitle, fontWeight: '700' },
-      h3: { color: c.textPrimary, fontSize: t.chatFontSize.body, fontWeight: '700' },
-      strong: { color: c.textPrimary, fontWeight: '700' },
-      em: { color: c.textPrimary, fontStyle: 'italic' as const },
+      h1: { color: narrationColor, fontSize: narration ? narrationFontSize : t.chatFontSize.screenTitle, fontWeight: '700' },
+      h2: { color: narrationColor, fontSize: narration ? narrationFontSize : t.chatFontSize.rowTitle, fontWeight: '700' },
+      h3: { color: narrationColor, fontSize: narrationFontSize, fontWeight: '700' },
+      strong: { color: narrationColor, fontWeight: '700' },
+      em: { color: narrationColor, fontStyle: 'italic' as const },
       link: { color: c.link },
       code: {
         backgroundColor: c.surfaceCode,
@@ -43,9 +45,9 @@ export function createAssistantMarkdownStyle(t: DesignTokens): MarkdownStyle {
         gapWidth: 8,
       },
       list: {
-        color: c.textPrimary,
-        fontSize: t.chatFontSize.body,
-        lineHeight: t.chatFontSize.body * t.lineHeightRatio,
+        color: narrationColor,
+        fontSize: narrationFontSize,
+        lineHeight: narrationFontSize * t.lineHeightRatio,
         bulletColor: c.textMuted,
         markerColor: c.textMuted,
       },

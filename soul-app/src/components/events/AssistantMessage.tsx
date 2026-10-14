@@ -36,6 +36,7 @@ interface Props {
   selectionModel?: MessageSelectionModel | null;
   onSelectionDone?: () => void;
   presentation?: 'default' | 'manuscript';
+  narration?: boolean;
 }
 
 let loggedStreamingPlainTextFallback = false;
@@ -63,11 +64,13 @@ export function AssistantMessage({
   selectionModel,
   onSelectionDone,
   presentation = 'default',
+  narration = false,
 }: Props) {
   const t = useTokens();
+  const manuscriptNarration = presentation === 'manuscript' && narration;
   const { styles, markdownStyle, markdownInputStyle } = useMemo(
-    () => makeStyles(t, presentation),
-    [t, presentation],
+    () => makeStyles(t, presentation, manuscriptNarration),
+    [t, presentation, manuscriptNarration],
   );
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
@@ -174,12 +177,14 @@ export function AssistantMessage({
   );
 }
 
-function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', narration: boolean) {
   const AVATAR = t.avatarSize.message;
   const c = t.colors;
   const roles = createSurfaceRoles(t);
   const sessionRoles = createSessionVisualRoles(t);
-  const baseMarkdownStyle = createAssistantMarkdownStyle(t);
+  const baseMarkdownStyle = createAssistantMarkdownStyle(t, narration);
+  const markdownFontSize = narration ? t.chatFontSize.meta : t.chatFontSize.body;
+  const markdownTextColor = narration ? c.textSecondary : c.textPrimary;
   return {
     styles: StyleSheet.create({
       row: {
@@ -223,9 +228,9 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
         fontSize: t.chatFontSize.meta,
       },
       streamingText: {
-        color: c.textPrimary,
-        fontSize: t.chatFontSize.body,
-        lineHeight: t.chatFontSize.body * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio),
+        color: markdownTextColor,
+        fontSize: markdownFontSize,
+        lineHeight: markdownFontSize * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio),
       },
       manuscriptBubble: {
         flexShrink: 1,
@@ -235,16 +240,16 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     markdownStyle: presentation === 'manuscript'
       ? {
           ...baseMarkdownStyle,
-          paragraph: { ...baseMarkdownStyle.paragraph, lineHeight: t.chatFontSize.body * 1.6 },
-          list: { ...baseMarkdownStyle.list, lineHeight: t.chatFontSize.body * 1.6 },
+          paragraph: { ...baseMarkdownStyle.paragraph, lineHeight: markdownFontSize * 1.6 },
+          list: { ...baseMarkdownStyle.list, lineHeight: markdownFontSize * 1.6 },
         }
       : baseMarkdownStyle,
     markdownInputStyle: {
-      strong: { color: c.textPrimary },
-      em: { color: c.textPrimary },
+      strong: { color: markdownTextColor },
+      em: { color: markdownTextColor },
       link: { color: c.link, underline: true },
       spoiler: {
-        color: c.textPrimary,
+        color: markdownTextColor,
         backgroundColor: c.surface,
       },
     },

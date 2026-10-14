@@ -37,6 +37,22 @@ import { readChatUiPublication } from '../chat-ui/chatUiPublication';
 // 시각적으로 노출되지 않게 한다. (사용자 의도: "여유 있게 미리 요청")
 const PREFETCH_THRESHOLD = 1.0;
 
+export function isManuscriptNarration(
+  item: ChatRenderItem,
+  next: ChatRenderItem | undefined,
+): boolean {
+  if (item.kind !== 'event') return false;
+  if (item.event.type !== 'assistant_message' && item.event.type !== 'text_delta') return false;
+  if (item.event.data?.ui !== undefined) return false;
+  return next?.kind === 'activity'
+    || next?.kind === 'tool'
+    || (next?.kind === 'event' && (
+      next.event.type === 'thinking_start'
+      || next.event.type === 'thinking_delta'
+      || next.event.type === 'thinking_end'
+    ));
+}
+
 interface Props {
   flatListRef: React.RefObject<FlatList<ChatRenderItem> | null>;
   items: ChatRenderItem[];
@@ -105,7 +121,9 @@ export const ChatEventList = memo(function ChatEventList({
     setActiveSelection({ eventKey, model });
   }, []);
   const extraData = useMemo(() => [activeSelection, highlightedItemKey], [activeSelection, highlightedItemKey]);
-  const renderItem = useCallback(({ item }: { item: ChatRenderItem }) => {
+  const renderItem = useCallback(({ item, index }: { item: ChatRenderItem; index: number }) => {
+    const narration = presentation === 'manuscript'
+      && isManuscriptNarration(item, items[index - 1]);
     const highlighted = item.key === highlightedItemKey
       || (item.kind === 'agent-message-group' && item.events.some((event) => event.key === highlightedItemKey));
     return (
@@ -114,9 +132,9 @@ export const ChatEventList = memo(function ChatEventList({
         selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
         activeSelection={activeSelection}
         highlighted={highlighted} highlightedItemKey={highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
-        presentation={presentation} />
+        presentation={presentation} narration={narration} />
     );
-  }, [session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
+  }, [items, session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
   const list = (
     <FlatList
@@ -200,11 +218,12 @@ interface RowProps {
   selectText(eventKey: string, model: MessageSelectionModel): void;
   closeSelection(): void;
   presentation: 'default' | 'manuscript';
+  narration: boolean;
 }
 
 const ChatEventRow = memo(function ChatEventRow({
   item, session, sessionId, api, onRetryPending, onRestorePending,
-  selection, activeSelection, highlighted, highlightedItemKey, selectText, closeSelection, presentation,
+  selection, activeSelection, highlighted, highlightedItemKey, selectText, closeSelection, presentation, narration,
 }: RowProps) {
   const t = useTokens();
   if (item.kind === 'typing') return <TypingIndicator session={session}
@@ -229,6 +248,7 @@ const ChatEventRow = memo(function ChatEventRow({
               selectText={selectText}
               closeSelection={closeSelection}
               presentation={presentation}
+              narration={false}
             />
           ))}
         </AgentMessageGroup>
@@ -351,6 +371,7 @@ const ChatEventRow = memo(function ChatEventRow({
             onRetryPending={onRetryPending}
             onRestorePending={onRestorePending}
             presentation={presentation}
+            narration={narration}
             selectionModel={
               selectionActive && selection
                 ? selection

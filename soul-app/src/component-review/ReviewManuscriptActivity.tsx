@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
 import type { SessionEvent } from '../api/types';
+import { EventRenderer } from '../components/events/EventRenderer';
 import { ToolEvent } from '../components/events/ToolEvent';
 import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
@@ -9,6 +10,16 @@ import { ManuscriptActivitySegment } from '../components/chat/ManuscriptActivity
 import type { ManuscriptActivityRenderItem } from '../components/chat/manuscriptActivityProjection';
 
 const events = {
+  progress: {
+    id: 'review-progress',
+    type: 'assistant_message',
+    data: { content: '두 건을 나눠 맡깁니다.' },
+  } as SessionEvent,
+  final: {
+    id: 'review-final',
+    type: 'assistant_message',
+    data: { content: '확인 결과입니다.' },
+  } as SessionEvent,
   failedStart: {
     id: 'review-tool-failed',
     type: 'tool_start',
@@ -108,7 +119,9 @@ export function ReviewManuscriptActivity() {
         <View testID="review-activity-manuscript-column" style={{ width: columnWidth, gap: t.spacing.sm,
           backgroundColor: t.persistentSession.paper }}>
           <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>원고형</Text>
+          <EventRenderer event={events.progress} sessionId="review-activity" presentation="manuscript" narration />
           <ManuscriptActivitySegment item={manuscriptActivity} sessionId="review-activity" api={null} />
+          <EventRenderer event={events.final} sessionId="review-activity" presentation="manuscript" />
           <ManuscriptActivitySegment item={singleToolActivity} sessionId="review-activity" api={null} />
           <ThinkingEvent event={{
             id: 'review-thinking-only',
