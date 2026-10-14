@@ -162,7 +162,7 @@ describe("UsageSummaryService", () => {
         fetchedAt: null,
         stale: true,
         staleSince: "2026-07-20T10:00:00.000Z",
-        providers: { claude: null, codex: null, gemini: null, antigravity: null },
+        providers: { claude: null, codex: null, antigravity: null },
       },
     ]);
   });
@@ -199,12 +199,10 @@ describe("UsageSummaryService", () => {
         command: { message: { provider?: string } };
       }) => {
         const provider = command.message.provider;
-        if (provider === undefined) return successResponse(10, 20, 30);
+        if (provider === undefined) return successResponse(10, 20);
         const usedPercentByQuery: Readonly<Record<string, number>> = {
           "node-a:claude": 40,
-          "node-b:gemini": 50,
-          "node-a:antigravity": 0,
-          "node-b:antigravity": 0,
+          "node-b:antigravity": 50,
         };
         const usedPercent = usedPercentByQuery[`${node.nodeId}:${provider}`];
         if (usedPercent === undefined) throw new Error("unexpected provider query");
@@ -218,14 +216,14 @@ describe("UsageSummaryService", () => {
       sharedAccountGroups: [
         { provider: "claude", nodeIds: ["node-c", "node-b"] },
         { provider: "codex", nodeIds: ["node-c", "node-b", "node-a"] },
-        { provider: "gemini", nodeIds: ["node-c", "node-a"] },
+        { provider: "antigravity", nodeIds: ["node-c", "node-a"] },
       ],
       now: () => new Date("2026-07-20T10:00:00.000Z"),
     });
 
     await service.collectOnce();
 
-    expect(registry.createCommand).toHaveBeenCalledTimes(5);
+    expect(registry.createCommand).toHaveBeenCalledTimes(3);
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-c",
       { type: "provider_usage_get" },
@@ -238,7 +236,7 @@ describe("UsageSummaryService", () => {
     );
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-b",
-      { type: "provider_usage_get", provider: "gemini" },
+      { type: "provider_usage_get", provider: "antigravity" },
       { timeoutMs: 15_000 },
     );
     expect(service.getSummary().nodes).toMatchObject([
@@ -247,7 +245,7 @@ describe("UsageSummaryService", () => {
         providers: {
           claude: { weeklyRemainingPercent: 60 },
           codex: { weeklyRemainingPercent: 80 },
-          gemini: { weeklyRemainingPercent: 70 },
+          antigravity: { status: "not_configured", weeklyRemainingPercent: null },
         },
       },
       {
@@ -255,7 +253,7 @@ describe("UsageSummaryService", () => {
         providers: {
           claude: { weeklyRemainingPercent: 90 },
           codex: { weeklyRemainingPercent: 80 },
-          gemini: { weeklyRemainingPercent: 50 },
+          antigravity: { weeklyRemainingPercent: 50 },
         },
       },
       {
@@ -263,7 +261,7 @@ describe("UsageSummaryService", () => {
         providers: {
           claude: { weeklyRemainingPercent: 90 },
           codex: { weeklyRemainingPercent: 80 },
-          gemini: { weeklyRemainingPercent: 70 },
+          antigravity: { status: "not_configured", weeklyRemainingPercent: null },
         },
       },
     ]);
@@ -272,7 +270,7 @@ describe("UsageSummaryService", () => {
   it("uses the first connected member in configured order as the shared representative", async () => {
     const registry = fakeRegistry(["node-a", "node-z"]);
     const bridge = {
-      sendPendingCommand: vi.fn(async () => successResponse(10, 20, 30)),
+      sendPendingCommand: vi.fn(async () => successResponse(10, 20)),
     } as unknown as UsageSummaryBridge;
     const service = new UsageSummaryService({
       registry,
@@ -281,14 +279,14 @@ describe("UsageSummaryService", () => {
       sharedAccountGroups: [
         { provider: "claude", nodeIds: ["node-z", "node-a"] },
         { provider: "codex", nodeIds: ["node-z", "node-a"] },
-        { provider: "gemini", nodeIds: ["node-z", "node-a"] },
+        { provider: "antigravity", nodeIds: ["node-z", "node-a"] },
       ],
       now: () => new Date("2026-07-20T10:00:00.000Z"),
     });
 
     await service.collectOnce();
 
-    expect(registry.createCommand).toHaveBeenCalledTimes(2);
+    expect(registry.createCommand).toHaveBeenCalledTimes(1);
     expect(registry.createCommand).toHaveBeenCalledWith(
       "node-z",
       { type: "provider_usage_get" },
@@ -308,7 +306,7 @@ describe("UsageSummaryService", () => {
         if (node.nodeId === "node-a" && failRepresentative) throw new Error("timeout");
         const provider = command.message.provider;
         return provider === undefined
-          ? successResponse(10, 20, 30)
+          ? successResponse(10, 20)
           : providerSuccessResponse(provider, provider === "claude" ? 40 : 50);
       }),
     } as unknown as UsageSummaryBridge;
@@ -356,7 +354,7 @@ function fakeRegistry(nodeIds: readonly string[]): UsageSummaryRegistry {
     nodeId,
     connectionId: `connection-${nodeId}`,
     connected: true,
-    supportedBackends: ["claude", "codex", "gemini", "antigravity"],
+    supportedBackends: ["claude", "codex", "antigravity"],
   }]));
   return {
     listConnectedNodes: vi.fn(() => [...nodes.values()]),
@@ -377,7 +375,6 @@ function fakeRegistry(nodeIds: readonly string[]): UsageSummaryRegistry {
 function successResponse(
   claudeWeeklyUsedPercent: number,
   codexWeeklyUsedPercent = 80,
-  geminiWeeklyUsedPercent: number | null = null,
 ) {
   return {
     type: "provider_usage_result",
@@ -394,7 +391,6 @@ function successResponse(
           resetAt: 1_753_100_000,
         }]),
         codex: limits(codexWeeklyUsedPercent, null, []),
-        gemini: limits(geminiWeeklyUsedPercent, null, []),
         antigravity: { status: "not_configured", weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null, shortResetAt: null, quotas: [] },
       },
     },
@@ -452,7 +448,7 @@ it.each([false, true])("keeps existing usage fresh without requesting an unadver
         return { success: false, error: "provider must be one of: claude, codex, gemini" };
       }
       return provider === undefined
-        ? successResponse(10, 20, 30)
+        ? successResponse(10, 20)
         : providerSuccessResponse(provider, provider === "claude" ? 10 : provider === "codex" ? 20 : 30);
     }),
   } as unknown as UsageSummaryBridge;
@@ -470,7 +466,6 @@ it.each([false, true])("keeps existing usage fresh without requesting an unadver
     providers: {
       claude: { status: "auto", weeklyRemainingPercent: 90 },
       codex: { status: "auto", weeklyRemainingPercent: 80 },
-      gemini: { status: "auto", weeklyRemainingPercent: 70 },
       antigravity: { status: "not_configured", quotas: [] },
     },
   });
@@ -483,7 +478,7 @@ it("preserves collection errors from an advertised Antigravity backend", async (
     sendPendingCommand: vi.fn(async ({ command }: { command: { message: { provider?: string } } }) => {
       const provider = command.message.provider;
       if (provider === "antigravity") return { success: true, data: { ...limits(null, null, []), status: "error" } };
-      return provider === undefined ? successResponse(10, 20, 30) : providerSuccessResponse(provider, 10);
+      return provider === undefined ? successResponse(10, 20) : providerSuccessResponse(provider, 10);
     }),
   } as unknown as UsageSummaryBridge;
   const service = new UsageSummaryService({
@@ -492,4 +487,25 @@ it("preserves collection errors from an advertised Antigravity backend", async (
   });
   await service.collectOnce();
   expect(service.getSummary().nodes.find((node) => node.nodeId === "node-b")?.providers.antigravity).toMatchObject({ status: "error", quotas: [] });
+});
+
+it("ignores the legacy Gemini key at the snapshot boundary even when it is malformed", async () => {
+  const response = successResponse(16);
+  const service = new UsageSummaryService({ registry: fakeRegistry(['node-a']),
+    bridge: { sendPendingCommand: vi.fn(async () => ({ ...response, data: { providers: { ...response.data.providers, gemini: 'retired' } } })) } as unknown as UsageSummaryBridge,
+    pollIntervalMs: 300_000, sharedAccountGroups: [] });
+  await service.collectOnce();
+  const node = service.getSummary().nodes[0]!;
+  expect(node.stale).toBe(false);
+  expect(Object.keys(node.providers)).toEqual(['claude', 'codex', 'antigravity']);
+});
+
+it("requests only Claude and Codex from a worker that does not advertise Antigravity", async () => {
+  const registry = fakeRegistry(['legacy']);
+  registry.getConnectedNode('legacy')!.supportedBackends = ['claude', 'codex'];
+  const service = new UsageSummaryService({ registry,
+    bridge: { sendPendingCommand: vi.fn(async ({ command }: { command: { message: { provider: string } } }) => providerSuccessResponse(command.message.provider, 20)) } as unknown as UsageSummaryBridge,
+    pollIntervalMs: 300_000, sharedAccountGroups: [] });
+  await service.collectOnce();
+  expect((registry.createCommand as ReturnType<typeof vi.fn>).mock.calls.map(call => call[1].provider)).toEqual(['claude', 'codex']);
 });

@@ -1,3 +1,5 @@
+// Existing Claude/Codex collectors and normalizers share this module; removing
+// standalone Gemini reduces its size without refactoring unrelated usage paths.
 import {
   existsSync,
   readdirSync,
@@ -5,7 +7,7 @@ import {
   statSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 
 import {
   ANTHROPIC_USAGE_URL,
@@ -29,7 +31,7 @@ import {
   withinProviderUsageTimeout,
 } from "./provider_usage_telemetry.js";
 
-export type ProviderUsageName = "claude" | "codex" | "gemini" | "antigravity";
+export type ProviderUsageName = "claude" | "codex" | "antigravity";
 
 export interface ProviderQuota {
   id: string;
@@ -119,10 +121,6 @@ const CODEX_USAGE_RECOVERY_TIMEOUT_MS = 500;
 const CODEX_USAGE_MIN_ATTEMPT_BUDGET_MS = 100;
 const CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token";
 const CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-const GEMINI_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal";
-const GEMINI_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GEMINI_OAUTH_CLIENT_ID_RE = /const OAUTH_CLIENT_ID = '([^']+)'/;
-const GEMINI_OAUTH_CLIENT_SECRET_RE = /const OAUTH_CLIENT_SECRET = '([^']+)'/;
 const LOCAL_PROVIDER_MAX_FILES = 10000;
 
 interface CodexRuntimeScanMetrics {
@@ -214,15 +212,14 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   }
 
   async fetchSnapshot(): Promise<ProviderUsageSnapshot> {
-    const [claude, codex, gemini, antigravity] = await Promise.all([
+    const [claude, codex, antigravity] = await Promise.all([
       this.fetchProvider("claude"),
       this.fetchProvider("codex"),
-      this.fetchProvider("gemini"),
       this.fetchProvider("antigravity"),
     ]);
     return {
       generatedAt: new Date().toISOString(),
-      providers: { claude, codex, gemini, antigravity },
+      providers: { claude, codex, antigravity },
     };
   }
 
@@ -302,8 +299,6 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         return this.fetchClaudeLimits(signal, attempts);
       case "codex":
         return this.fetchCodexLimits(signal, deadlineAtMs, attempts);
-      case "gemini":
-        return this.fetchGeminiLimits(signal, attempts);
       case "antigravity":
         return collectAntigravityUsage(this.config.antigravity, signal);
     }
@@ -415,67 +410,6 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     return emptyLimits("error", lastError ? stringifyError(lastError) : "Codex OAuth token unavailable");
   }
 
-  private async fetchGeminiLimits(
-    signal: AbortSignal,
-    attempts: ProviderUsageAttempt[],
-  ): Promise<ProviderLimits> {
-    const creds = readJson(join(this.homeDir, ".gemini", "oauth_creds.json"));
-    if (!isRecord(creds)) {
-      return emptyLimits();
-    }
-    const authType = readGeminiAuthType(this.homeDir);
-    if (authType && authType !== "oauth-personal") {
-      return emptyLimits();
-    }
-
-    try {
-      const token = await this.geminiAccessToken(creds, signal, attempts);
-      if (!token) {
-        return emptyLimits();
-      }
-
-      let projectId =
-        optionalString(process.env.GOOGLE_CLOUD_PROJECT) ??
-        optionalString(process.env.GOOGLE_CLOUD_PROJECT_ID) ??
-        "";
-      const metadata: Record<string, string> = {
-        ideType: "IDE_UNSPECIFIED",
-        platform: "PLATFORM_UNSPECIFIED",
-        pluginType: "GEMINI",
-      };
-      if (projectId) {
-        metadata.duetProject = projectId;
-      }
-
-      const tierPayload = await this.geminiCodeAssistPost(
-        "loadCodeAssist",
-        { cloudaicompanionProject: projectId, metadata },
-        token,
-        signal,
-        attempts,
-      );
-      projectId = optionalString(tierPayload.cloudaicompanionProject) ?? projectId;
-      if (!projectId) {
-        return emptyLimits("error", "Gemini Code Assist project ID unavailable");
-      }
-
-      const quotaPayload = await this.geminiCodeAssistPost(
-        "retrieveUserQuota",
-        { project: projectId },
-        token,
-        signal,
-        attempts,
-      );
-      return geminiLimitsFromQuotaResponse(
-        quotaPayload,
-        tierPayload,
-        GEMINI_CODE_ASSIST_URL,
-      );
-    } catch (err) {
-      return emptyLimits("error", stringifyError(err));
-    }
-  }
-
   private async codexUsageRequest(
     accessToken: string,
     accountId: string,
@@ -521,67 +455,6 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
       }).toString(),
     }, signal, attempts);
     return optionalString(payload.access_token);
-  }
-
-  private async geminiAccessToken(
-    creds: Record<string, unknown>,
-    signal: AbortSignal,
-    attempts: ProviderUsageAttempt[],
-  ): Promise<string | null> {
-    const expiresAt = intValue(creds.expiry_date) ?? 0;
-    if (expiresAt && Date.now() >= expiresAt - 60_000) {
-      const refreshed = await this.refreshGeminiAccessToken(creds, signal, attempts);
-      return optionalString(refreshed.access_token);
-    }
-    return optionalString(creds.access_token);
-  }
-
-  private async refreshGeminiAccessToken(
-    creds: Record<string, unknown>,
-    signal: AbortSignal,
-    attempts: ProviderUsageAttempt[],
-  ): Promise<Record<string, unknown>> {
-    const refreshToken = optionalString(creds.refresh_token);
-    if (!refreshToken) {
-      throw new Error("No refresh token in ~/.gemini/oauth_creds.json");
-    }
-    const [clientId, clientSecret] = geminiOauthClientCredentials(this.homeDir, creds);
-    const payload = await this.fetchJson("gemini", GEMINI_OAUTH_TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: clientId,
-        client_secret: clientSecret,
-      }).toString(),
-    }, signal, attempts);
-    return {
-      ...creds,
-      access_token: payload.access_token ?? creds.access_token,
-      token_type: payload.token_type ?? creds.token_type ?? "Bearer",
-      expiry_date: Date.now() + (intValue(payload.expires_in) ?? 3600) * 1000,
-      ...(payload.id_token ? { id_token: payload.id_token } : {}),
-    };
-  }
-
-  private async geminiCodeAssistPost(
-    method: string,
-    payload: Record<string, unknown>,
-    accessToken: string,
-    signal: AbortSignal,
-    attempts: ProviderUsageAttempt[],
-  ): Promise<Record<string, unknown>> {
-    return this.fetchJson("gemini", `${GEMINI_CODE_ASSIST_URL}:${method}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "AgentCat/1.0",
-      },
-      body: JSON.stringify(payload),
-    }, signal, attempts);
   }
 
   private async fetchJson(
@@ -713,8 +586,6 @@ function primaryProviderEndpoint(provider: ProviderUsageName): string {
       return ANTHROPIC_USAGE_URL;
     case "codex":
       return CODEX_USAGE_URLS[0];
-    case "gemini":
-      return `${GEMINI_CODE_ASSIST_URL}:loadCodeAssist`;
     case "antigravity":
       return "agy:/usage";
   }
@@ -904,64 +775,6 @@ export function codexLimitsFromUsageResponse(
   return limits;
 }
 
-export function geminiLimitsFromQuotaResponse(
-  quotaPayload: Record<string, unknown>,
-  tierPayload: Record<string, unknown> = {},
-  source = "gemini-code-assist-quota-api",
-): ProviderLimits {
-  const limits = emptyLimits("auto");
-  limits.source = source;
-  limits.sourceKind = "remote";
-  limits.observedAt = new Date().toISOString();
-  const currentTier = isRecord(tierPayload.currentTier) ? tierPayload.currentTier : {};
-  const paidTier = isRecord(tierPayload.paidTier) ? tierPayload.paidTier : {};
-  const plan =
-    optionalString(paidTier.name) ??
-    optionalString(currentTier.name) ??
-    optionalString(paidTier.id) ??
-    optionalString(currentTier.id);
-  limits.planType = plan ?? null;
-
-  const quotas: ProviderQuota[] = [];
-  if (Array.isArray(quotaPayload.buckets)) {
-    for (const bucket of quotaPayload.buckets) {
-      if (!isRecord(bucket)) continue;
-      const model = optionalString(bucket.modelId) ?? "";
-      const remainingFraction = floatValue(bucket.remainingFraction);
-      const remainingPercent =
-        remainingFraction === null ? null : clampPercent(remainingFraction * 100);
-      const usedPercent =
-        remainingPercent === null ? null : clampPercent(100 - remainingPercent);
-      const remaining = intValue(bucket.remainingAmount);
-      const limit =
-        remaining !== null && remainingFraction !== null && remainingFraction > 0
-          ? Math.round(remaining / remainingFraction)
-          : null;
-      const tokenType = (optionalString(bucket.tokenType) ?? "REQUESTS").toLowerCase();
-      quotas.push(
-        quotaEntry(`gemini:${model || quotas.length}`, geminiDisplayName(model), {
-          usedPercent,
-          remainingPercent,
-          resetAt: bucket.resetTime,
-          unit: tokenType === "requests" ? "requests" : tokenType,
-          used: remaining === null || limit === null ? null : Math.max(limit - remaining, 0),
-          remaining,
-          limit,
-          window: "daily",
-          model: model || null,
-          source,
-        }),
-      );
-    }
-  }
-
-  limits.quotas = sortedGeminiQuotas(quotas);
-  if (limits.quotas.length === 0) {
-    limits.status = "not_configured";
-  }
-  return limits;
-}
-
 function codexRuntimeLimits(
   homeDir: string,
   metrics: CodexRuntimeScanMetrics,
@@ -1105,169 +918,6 @@ function applyCodexWindowSummary(
     limits.weeklyUsedPercent = quota.usedPercent;
     limits.weeklyResetAt = quota.resetAt;
   }
-}
-
-function readGeminiAuthType(homeDir: string): string | null {
-  for (const path of [
-    join(process.cwd(), ".gemini", "settings.json"),
-    join(homeDir, ".gemini", "settings.json"),
-  ]) {
-    const raw = readJson(path);
-    if (!isRecord(raw) || !isRecord(raw.security) || !isRecord(raw.security.auth)) {
-      continue;
-    }
-    const selected = optionalString(raw.security.auth.selectedType);
-    if (selected) return selected;
-  }
-  if (process.env.GOOGLE_GENAI_USE_GCA === "true") return "oauth-personal";
-  if (process.env.GEMINI_API_KEY) return "gemini-api-key";
-  if (process.env.GOOGLE_GENAI_USE_VERTEXAI === "true") return "vertex-ai";
-  return null;
-}
-
-function geminiOauthClientCredentials(
-  homeDir: string,
-  creds: Record<string, unknown>,
-): [string, string] {
-  const envId = optionalString(process.env.GEMINI_OAUTH_CLIENT_ID);
-  const envSecret = optionalString(process.env.GEMINI_OAUTH_CLIENT_SECRET);
-  if (envId && envSecret) return [envId, envSecret];
-
-  const credId = optionalString(creds.client_id);
-  const credSecret = optionalString(creds.client_secret);
-  if (credId && credSecret) return [credId, credSecret];
-
-  const live = geminiCliOauthClientCredentials(homeDir);
-  if (live) return live;
-  throw new Error(
-    "Gemini OAuth metadata not found; run `gemini` once or set GEMINI_OAUTH_CLIENT_ID/GEMINI_OAUTH_CLIENT_SECRET",
-  );
-}
-
-function geminiCliOauthClientCredentials(homeDir: string): [string, string] | null {
-  const rels = [
-    join("node_modules", "@google", "gemini-cli-core", "dist", "src", "code_assist", "oauth2.js"),
-    join(
-      "node_modules",
-      "@google",
-      "gemini-cli",
-      "node_modules",
-      "@google",
-      "gemini-cli-core",
-      "dist",
-      "src",
-      "code_assist",
-      "oauth2.js",
-    ),
-    join(
-      "lib",
-      "node_modules",
-      "@google",
-      "gemini-cli",
-      "node_modules",
-      "@google",
-      "gemini-cli-core",
-      "dist",
-      "src",
-      "code_assist",
-      "oauth2.js",
-    ),
-  ];
-  for (const root of geminiOauthSourceCandidates(homeDir)) {
-    for (const rel of rels) {
-      const path = join(root, rel);
-      const found = readGeminiOauthFile(path);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-function geminiOauthSourceCandidates(homeDir: string): string[] {
-  const candidates = new Set<string>();
-  const gemini = findOnPath("gemini");
-  if (gemini) {
-    const dir = dirname(resolve(gemini));
-    candidates.add(dir);
-    candidates.add(dirname(dir));
-    candidates.add(join(dirname(dir), "libexec"));
-  }
-  candidates.add("/opt/homebrew/lib");
-  candidates.add("/opt/homebrew/Cellar/gemini-cli");
-  candidates.add("/usr/local/lib");
-  const nvmVersions = join(homeDir, ".nvm", "versions");
-  candidates.add(nvmVersions);
-  for (const familyDir of safeChildDirs(nvmVersions)) {
-    candidates.add(familyDir);
-    for (const versionDir of safeChildDirs(familyDir)) {
-      candidates.add(versionDir);
-      candidates.add(join(versionDir, "lib"));
-    }
-  }
-  return [...candidates].filter((path) => existsSync(path));
-}
-
-function safeChildDirs(path: string): string[] {
-  try {
-    return readdirSync(path)
-      .map((entry) => join(path, entry))
-      .filter((entryPath) => statSync(entryPath).isDirectory());
-  } catch {
-    return [];
-  }
-}
-
-function readGeminiOauthFile(path: string): [string, string] | null {
-  if (!existsSync(path)) return null;
-  try {
-    const text = readFileSync(path, "utf-8");
-    const clientId = GEMINI_OAUTH_CLIENT_ID_RE.exec(text)?.[1];
-    const clientSecret = GEMINI_OAUTH_CLIENT_SECRET_RE.exec(text)?.[1];
-    return clientId && clientSecret ? [clientId, clientSecret] : null;
-  } catch {
-    return null;
-  }
-}
-
-function findOnPath(name: string): string | null {
-  for (const dir of (process.env.PATH ?? "").split(":")) {
-    if (!dir) continue;
-    const path = join(dir, name);
-    if (existsSync(path)) return path;
-  }
-  return null;
-}
-
-function sortedGeminiQuotas(quotas: ProviderQuota[]): ProviderQuota[] {
-  if (quotas.length > 3) {
-    return quotas.sort((a, b) => {
-      const remainingA = a.remainingPercent ?? (a.usedPercent === null ? Infinity : 100 - a.usedPercent);
-      const remainingB = b.remainingPercent ?? (b.usedPercent === null ? Infinity : 100 - b.usedPercent);
-      return (
-        remainingA - remainingB ||
-        (a.resetAt ?? Number.MAX_SAFE_INTEGER) - (b.resetAt ?? Number.MAX_SAFE_INTEGER) ||
-        a.label.localeCompare(b.label)
-      );
-    });
-  }
-  return quotas.sort((a, b) => {
-    const aPro = (a.model ?? "").toLowerCase().includes("pro") ? 0 : 1;
-    const bPro = (b.model ?? "").toLowerCase().includes("pro") ? 0 : 1;
-    return aPro - bPro || a.label.localeCompare(b.label);
-  });
-}
-
-function geminiDisplayName(model: string): string {
-  const names: Record<string, string> = {
-    "gemini-2.5-pro": "Gemini Pro",
-    "gemini-2.5-flash": "Gemini Flash",
-    "gemini-2.5-flash-lite": "Gemini Flash Lite",
-    "gemini-3-pro-preview": "Gemini 3 Pro",
-    "gemini-3-flash-preview": "Gemini 3 Flash",
-    "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash Lite",
-    "gemini-3.1-pro-preview": "Gemini 3.1 Pro",
-  };
-  return names[model] ?? model ?? "Gemini";
 }
 
 function claudeQuotaLabel(

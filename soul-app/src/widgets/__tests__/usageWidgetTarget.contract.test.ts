@@ -71,3 +71,20 @@ test('위젯은 편집 기본 노드·이전/다음 버튼·small/medium·사용
   expect(intents).toContain('WidgetConfigurationIntent');
   expect(intents).toContain('UsageNodeEntity');
 });
+
+test('네 번째 Antigravity 주간 줄과 크기별 시안 계약을 보존한다', () => {
+  const models = read('targets/usage-widget/UsageWidgetModels.swift');
+  const widget = read('targets/usage-widget/UsageWidget.swift');
+  expect(models).toContain('let antigravity: UsageSummaryProvider?');
+  expect(models).toContain('providers.antigravity?.weeklyRemainingPercent');
+  expect(models).not.toContain('let gemini:');
+  expect(widget).not.toContain('.prefix(3)');
+  expect(widget).toContain('ViewThatFits(in: .vertical)');
+  expect(widget).toContain('HStack(alignment: .top, spacing: 16)');
+  expect(widget).toContain('family == .systemMedium && node.gauges.count > 3');
+  expect(widget).toContain('compact: family == .systemSmall');
+  expect(widget).toContain('showBars: true, showUpdated: true');
+  expect(widget).toContain('showBars: true, showUpdated: false');
+  expect(widget).toContain('showBars: false, showUpdated: false');
+  expect(widget).toContain('Claude·Fable·Codex·Antigravity');
+});

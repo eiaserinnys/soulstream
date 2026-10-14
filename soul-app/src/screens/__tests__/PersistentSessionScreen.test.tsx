@@ -55,7 +55,7 @@ function ScreenHarness({ active = true, show = true }: { active?: boolean; show?
 }
 beforeEach(() => {
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
-  jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], maxGaugeCount: 0, loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
+  jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
 });
 test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입력 draft는 그대로 유지된다', () => {
   mockDevice = 'tabletLandscape';
@@ -255,7 +255,7 @@ test.each([
       { id: 'fable', label: 'Fable', remainingPercent: 41, resetAt: 1_900_000_000 },
       { id: 'codex', label: 'Codex', remainingPercent: 28, resetAt: 1_900_000_000 },
     ],
-    maxGaugeCount: 3, loading: false, loadState: 'ready', evaluatedAtMs: 1_800_000_000_000, retry: jest.fn(),
+    loading: false, loadState: 'ready', evaluatedAtMs: 1_800_000_000_000, retry: jest.fn(),
   });
   const view = render(<ScreenHarness />);
   act(() => store.getState().open({ session_id: 'pas-usage', node_id: 'node-a', agent_name: '서소영 (PAS)', display_name: '관제', persistent: true } as any));

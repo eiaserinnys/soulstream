@@ -29,7 +29,7 @@ describe("usage summary route", () => {
         fetchedAt: "2026-07-20T10:00:00.000Z",
         stale: false,
         staleSince: null,
-        providers: { claude: null, codex: null, gemini: null, antigravity: null },
+        providers: { claude: null, codex: null, antigravity: null },
       }],
     };
     const service = { getSummary: vi.fn(() => summary) };

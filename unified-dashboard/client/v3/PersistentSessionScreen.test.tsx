@@ -25,12 +25,12 @@ vi.mock('../hooks/useNodes',()=>({useNodes:vi.fn()}));
 vi.mock('./use-session-node-connectivity',()=>({useSessionNodeConnectivity:()=>({nodes:new Map([['node-1',{status:'connected'}]])})}));
 vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header data-testid="v3-global-toolbar" data-agent-only={String(p.agentOnly)} data-show-home={String(p.showHome)} data-agent-name={p.agentName}><span data-testid="scene-title">{p.agentName}</span>{p.onToggleUsage&&<button data-testid="usage-toggle" aria-pressed={p.showWeeklyUsage} onClick={p.onToggleUsage}>주간 사용량</button>}<button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
 vi.mock('../hooks/useUsageSummary', async()=>{
- const {selectUsageSummaryNode,weeklyUsageGauges,maxWeeklyUsageGaugeCount}=await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
+ const {selectUsageSummaryNode,weeklyUsageGauges}=await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
  return {useUsageSummary:(options:any)=>{
   mocks.usage(options);
   const summary=mocks.usageSummary;
   const node=selectUsageSummaryNode(summary,options.nodeId,options.selectedNodeId);
-  return {summary,node,gauges:weeklyUsageGauges(node),maxGaugeCount:maxWeeklyUsageGaugeCount(summary),loading:false,loadState:node?'ready':'idle',evaluatedAtMs:1_800_000_000_000,retry:()=>mocks.usageRetry()};
+  return {summary,node,gauges:weeklyUsageGauges(node),loading:false,loadState:node?'ready':'idle',evaluatedAtMs:1_800_000_000_000,retry:()=>mocks.usageRetry()};
  }};
 });
 vi.mock('../components/ConfigModal',()=>({ConfigModal:(p:any)=>p.open?<div data-testid="config" data-tab={p.initialTab}/>:null}));
@@ -56,7 +56,7 @@ const usageNode=(nodeId:string,claude:number|null,codex:number|null,fable=false)
  providers:{
   claude:claude!==null||fable?usageProvider(claude,fable?[{id:'claude:weekly_scoped:fable',label:'Fable',window:'7d',model:null,remainingPercent:41,resetAt:1_900_000_000}]:[]):null,
   codex:codex===null?null:usageProvider(codex),
-  gemini:null,
+
   antigravity:null,
  },
 });

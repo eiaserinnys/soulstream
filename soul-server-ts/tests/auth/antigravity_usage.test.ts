@@ -28,8 +28,8 @@ describe("Antigravity account usage", () => {
     expect(limits.shortUsedPercent).toBeCloseTo(100 * (1 - 0.9920746684074402));
     expect(limits.quotas).toHaveLength(2);
     expect(limits.quotas).toEqual([
-      expect.objectContaining({ id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, purpose: "execution", resetAt: Date.parse("2026-10-20T16:54:02Z") / 1000 }),
       expect.objectContaining({ id: "antigravity:gemini:5h", label: "5시간", window: "5h", resetAt: Date.parse("2026-10-13T21:54:02Z") / 1000 }),
+      expect.objectContaining({ id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, purpose: "execution", resetAt: Date.parse("2026-10-20T16:54:02Z") / 1000 }),
     ]);
     const invocation = JSON.parse(await readFile(join(config.stateDirectory, "invocation.json"), "utf8"));
     expect(invocation).toEqual({ args: ["--output-format", "stream-json", "--log-file", join(config.stateDirectory, "antigravity-usage.log"), "--print=/usage"], cwd: config.stateDirectory });
@@ -62,6 +62,13 @@ describe("Antigravity account usage", () => {
   it("dispatches the collector through provider_usage_get", async () => {
     const config = await fakeCli(`process.stdout.write(${JSON.stringify(fixture)})`);
     const response = await new ProviderUsageCommands({ providerUsage: new ProviderUsageService({ antigravity: config }) }).handle({ type: "provider_usage_get", requestId: "req", provider: "antigravity" });
-    expect(response).toMatchObject({ success: true, data: { status: "auto", quotas: [expect.objectContaining({ window: "7d" }), expect.objectContaining({ window: "5h" })] } });
+    expect(response).toMatchObject({ success: true, data: { status: "auto", quotas: [expect.objectContaining({ window: "5h" }), expect.objectContaining({ window: "7d" })] } });
   });
+});
+
+it('retires standalone Gemini commands and excludes it from full snapshots', async () => {
+  const service = new ProviderUsageService({ homeDir: '/nonexistent-354-fixture-home' });
+  const snapshot = await service.fetchSnapshot();
+  expect(Object.keys(snapshot.providers)).toEqual(['claude', 'codex', 'antigravity']);
+  await expect(new ProviderUsageCommands({ providerUsage: service }).handle({ type: 'provider_usage_get', provider: 'gemini' })).rejects.toThrow('provider must be one of: claude, codex, antigravity');
 });

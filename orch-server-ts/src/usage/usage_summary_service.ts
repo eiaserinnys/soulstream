@@ -17,7 +17,7 @@ import {
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
 
-export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "gemini", "antigravity"] as const;
+export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "antigravity"] as const;
 
 export type UsageSummaryProviderName = (typeof USAGE_SUMMARY_PROVIDER_NAMES)[number];
 
@@ -272,14 +272,13 @@ export class UsageSummaryService {
           }
           return request;
         };
-        const [claude, codex, gemini, antigravity] = await Promise.all([
+        const [claude, codex, antigravity] = await Promise.all([
           requiredProvider("claude"),
           requiredProvider("codex"),
-          requiredProvider("gemini"),
           requiredProvider("antigravity"),
         ]);
         const snapshot: ProviderUsageSnapshot = {
-          providers: { claude, codex, gemini, antigravity },
+          providers: { claude, codex, antigravity },
         };
         state.snapshot = snapshot;
         state.fetchedAt = this.now().toISOString();
@@ -397,11 +396,10 @@ function summarizeNode(state: MutableNodeState): UsageSummaryNode {
     stale: state.staleSince !== null,
     staleSince: state.staleSince,
     providers: state.snapshot === null
-      ? { claude: null, codex: null, gemini: null, antigravity: null }
+      ? { claude: null, codex: null, antigravity: null }
       : {
           claude: summarizeProvider(state.snapshot.providers.claude),
           codex: summarizeProvider(state.snapshot.providers.codex),
-          gemini: summarizeProvider(state.snapshot.providers.gemini),
           antigravity: summarizeProvider(state.snapshot.providers.antigravity),
         },
   };
@@ -433,7 +431,6 @@ function parseProviderUsageSnapshot(value: unknown): ProviderUsageSnapshot {
     providers: {
       claude: parseProviderLimits(providers.claude, "claude"),
       codex: parseProviderLimits(providers.codex, "codex"),
-      gemini: parseProviderLimits(providers.gemini, "gemini"),
       antigravity: providers.antigravity === undefined
         ? NOT_CONFIGURED_PROVIDER_LIMITS
         : parseProviderLimits(providers.antigravity, "antigravity"),

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
@@ -72,11 +72,23 @@ test('a node composes separate Claude and Codex provider sections', async () => 
 
   expect(screen.getByTestId('backend-provider-claude')).toBeTruthy();
   expect(screen.getByTestId('backend-provider-codex')).toBeTruthy();
+  expect(screen.getByTestId('backend-provider-antigravity')).toBeTruthy();
   expect(screen.getByText('Claude Code')).toBeTruthy();
   expect(screen.getByText('Codex')).toBeTruthy();
   await waitFor(() =>
     expect(api.getClaudeAuthStatus).toHaveBeenCalledWith('node-a'),
   );
+});
+
+test('Antigravity uses the existing usage action, failure feedback and retry', async () => {
+  const screen = render(<NodeProviderSections nodeId="node-a" serverUrl="https://soul.test" />);
+  api.getProviderUsage.mockRejectedValueOnce(new Error('offline'));
+  fireEvent.press(screen.getByTestId('backend-provider-antigravity-usage-action'));
+  expect(await screen.findByRole('alert')).toBeTruthy();
+  expect(api.getProviderUsage).toHaveBeenCalledWith('node-a');
+  fireEvent.press(screen.getByTestId('backend-provider-antigravity-usage-action'));
+  expect(await screen.findByTestId('usage-provider-antigravity')).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
 });
 
 test('Codex usage remains available while Claude is unauthenticated', async () => {
@@ -92,4 +104,19 @@ test('Codex usage remains available while Claude is unauthenticated', async () =
   expect(await screen.findByTestId('usage-bar-codex:7d')).toBeTruthy();
   expect(screen.queryByText('Codex 재로그인')).toBeNull();
   expect(screen.queryByText('준비 중')).toBeNull();
+});
+
+test('an older worker without Antigravity can refresh after another provider was loaded', async () => {
+  const missing = { status: 'not_configured', source: '', planType: null, quotas: [] };
+  api.getProviderUsage.mockResolvedValue({ generatedAt: '', providers: { claude: missing, codex: missing, gemini: missing } });
+  const screen = render(<NodeProviderSections nodeId="legacy" serverUrl="https://soul.test" />);
+  fireEvent.press(screen.getByTestId('backend-provider-codex-usage-action'));
+  expect(await screen.findByTestId('usage-provider-codex')).toBeTruthy();
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('backend-provider-antigravity-usage-action'));
+    await Promise.resolve();
+  });
+  expect(api.getProviderUsage).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('backend-provider-antigravity')).toBeTruthy();
+  expect(screen.getByText('사용량 데이터 없음')).toBeTruthy();
 });
