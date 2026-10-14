@@ -1042,6 +1042,42 @@ describe('ChatBody store subscription boundary', () => {
     expect(state.lastEventIdBySession[SID]).toBe('200');
   });
 
+  test('Antigravity mid-response entry restores one bubble and replaces it with the durable final', async () => {
+    await renderSettled();
+    const sse = latestSseOptions();
+    const streamIdentity = 'antigravity:conversation:turn-a:0';
+    const identity = { streamIdentity, liveTextMode: 'append', item_id: '0',
+      thread_id: 'conversation', turn_id: 'turn-a', raw_event_type: 'antigravity/agent_response' };
+    act(() => {
+      sse.onOpen?.();
+      sse.onEvent('text_snapshot', { type: 'text_snapshot', basedOnEventId: 200,
+        throughLiveSeq: 2, streams: [{ streamIdentity, text: '이미지와 ',
+          updatedAt: '2026-10-14T11:00:00Z', truncated: false, resetRequired: false, recovery: 'none' }],
+      }, '');
+      sse.onEvent('history_sync', { type: 'history_sync', last_event_id: 200, is_live: true }, '');
+      sse.onEvent('text_delta', { type: 'text_delta', ...identity, text: '상단 HUD ',
+        liveSeq: 3, _live_only: true }, '');
+      sse.onEvent('text_delta', { type: 'text_delta', ...identity, text: '[knowledge, node:adeec1a8]',
+        liveSeq: 4, _live_only: true }, '');
+    });
+    const content = '이미지와 상단 HUD [knowledge, node:adeec1a8]';
+    const liveState = useChatStore.getState();
+    expect(liveState.eventsBySession[SID]).toBeUndefined();
+    expect(Object.values(liveState.streamingSlotsBySession[SID]?.assistantByStream ?? {})).toHaveLength(1);
+    expect(liveState.streamingSlotsBySession[SID]?.assistantByStream?.[streamIdentity]?.data.text).toBe(content);
+    expect(mockRenderChatEventList.mock.calls.at(-1)?.[0].items.filter((item: any) => item.kind === 'event')).toHaveLength(1);
+    act(() => {
+      sse.onEvent('assistant_message', { type: 'assistant_message', ...identity, content,
+        liveSeq: 5, _event_id: 201, _final_for_live_stream: true }, '201');
+      sse.onEvent('text_end', { type: 'text_end', ...identity, liveSeq: 6, _live_only: true }, '201');
+    });
+    const finalState = useChatStore.getState();
+    expect(finalState.streamingSlotsBySession[SID]?.assistantByStream?.[streamIdentity]).toBeUndefined();
+    expect(finalState.eventsBySession[SID]?.filter((event) => event.type === 'assistant_message')).toHaveLength(1);
+    expect(finalState.eventsBySession[SID]?.[0].data.content).toBe(content);
+    expect(mockRenderChatEventList.mock.calls.at(-1)?.[0].items.filter((item: any) => item.kind === 'event')).toHaveLength(1);
+  });
+
   test('v2 text snapshot prefix 뒤 seq boundary를 버리고 다음 append를 정확히 한 번 합친다', async () => {
     await renderSettled();
     const sse = latestSseOptions();

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AntigravityEventMapper } from "../../soul-server-ts/src/engine/antigravity/events.js";
 
 import {
   LIVE_TEXT_SNAPSHOT_MAX_SESSIONS,
@@ -57,6 +58,33 @@ describe("RuntimeSessionEventHub live text snapshots", () => {
     expect(hub.snapshotLiveText("sess-1").streams).toMatchObject([
       { text: "hello", recovery: "none" },
     ]);
+  });
+
+  it("snapshots native Antigravity append text and retires it with the same durable final", () => {
+    const hub = new RuntimeSessionEventHub();
+    const seen: RuntimeSessionEvent[] = [];
+    hub.subscribe("sess-1", (event) => seen.push(event));
+    const identity = { raw_event_type: "antigravity/agent_response", thread_id: "conversation",
+      turn_id: "turn-a", item_id: "0" };
+    const mapper = new AntigravityEventMapper("turn-a");
+    for (const text of ["이미지와 ", "상단 HUD"]) {
+      for (const event of mapper.accept({ event: "step_update", step_update: {
+        conversation_id: "conversation", step_index: 0, state: "ACTIVE",
+        step_type: "agent_response", text_delta: text,
+      } })) publish(hub, { ...event });
+    }
+    const delta = seen[2]?.data.event as Record<string, unknown>;
+    expect(delta).toMatchObject({ liveTextMode: "append", streamIdentity: expect.stringMatching(/^antigravity:/) });
+    expect(hub.snapshotLiveText("sess-1").streams).toMatchObject([
+      { streamIdentity: delta.streamIdentity, text: "이미지와 상단 HUD", recovery: "none" },
+    ]);
+    for (const event of mapper.accept({ event: "step_update", step_update: {
+      conversation_id: "conversation", step_index: 0, state: "DONE", step_type: "agent_response",
+    } })) publish(hub, { ...event });
+    expect(seen[3]?.data.event).toMatchObject({ streamIdentity: delta.streamIdentity });
+    expect(hub.snapshotLiveText("sess-1").streams).toEqual([]);
+    publish(hub, { type: "text_start", _live_only: true, ...identity, turn_id: "turn-b" });
+    expect((seen[5]?.data.event as Record<string, unknown>).streamIdentity).not.toBe(delta.streamIdentity);
   });
 
   it("marks an over-cap stream unavailable and requires durable-final recovery", () => {
