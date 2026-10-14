@@ -16,7 +16,11 @@ export function isManuscriptNarration(
 ): boolean {
   const current = narrationAnchor(item);
   if (current?.type !== "single") return false;
-  if (current.msg.role !== "assistant" || current.msg.treeNodeType !== "text" || current.msg.ui !== undefined) {
+  if (
+    current.msg.role !== "assistant"
+    || (current.msg.treeNodeType !== "text" && current.msg.treeNodeType !== "assistant_message")
+    || current.msg.ui !== undefined
+  ) {
     return false;
   }
 

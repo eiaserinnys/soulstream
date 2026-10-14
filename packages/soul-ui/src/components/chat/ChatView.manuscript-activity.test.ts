@@ -81,6 +81,7 @@ describe("manuscript activity projection", () => {
 
   it("dims assistant prose only when the next chronological row is tool activity or thinking", () => {
     const narration = message("narration", "assistant", "text");
+    const persistedNarration = message("persisted-narration", "assistant", "assistant_message");
     const tool = message("tool", "tool", "tool");
     const thinking = message("thinking", "assistant", "thinking");
     const final = message("final", "assistant", "text");
@@ -88,6 +89,10 @@ describe("manuscript activity projection", () => {
 
     expect(isManuscriptNarration(asSingle(narration), asSingle(tool))).toBe(true);
     expect(isManuscriptNarration(asSingle(narration), {
+      type: "activity-group",
+      messages: [tool],
+    })).toBe(true);
+    expect(isManuscriptNarration(asSingle(persistedNarration), {
       type: "activity-group",
       messages: [tool],
     })).toBe(true);
