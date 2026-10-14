@@ -1518,14 +1518,14 @@ describe("TaskExecutor.startNewExecution", () => {
     );
   });
 
-  it("Claude fatal error event 후 throw → error event를 남기고 task status=error로 finalize", async () => {
+  it.each([true, false])("fatal error event (throws=%s) persists the error and finalizes as error_aborted", async (throws) => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "error", message: "claude boom", fatal: true, timestamp: 1 } as SSEEventPayload;
-        throw new Error("claude boom");
+        if (throws) throw new Error("claude boom");
       },
       async interrupt() { return true; },
       async close() {},

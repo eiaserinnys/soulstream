@@ -71,18 +71,20 @@ export class AntigravityEventMapper {
     }
     const events: SSEEventPayload[] = [];
     if (step.step_type === "agent_response") {
+      const identity = { item_id: String(index), thread_id: step.conversation_id,
+        turn_id: this.turnId, raw_event_type: "antigravity/agent_response" };
       if (!this.text.has(index)) {
         this.text.set(index, "");
-        events.push({ type: "text_start", timestamp, _live_only: true });
+        events.push({ type: "text_start", ...identity, timestamp, _live_only: true });
       }
       if (step.text_delta !== undefined) {
         this.text.set(index, this.text.get(index)! + step.text_delta);
-        events.push({ type: "text_delta", text: step.text_delta, timestamp });
+        events.push({ type: "text_delta", ...identity, text: step.text_delta, timestamp, _live_only: true });
       }
       if (step.state === "DONE") {
         const content = this.text.get(index)!;
-        if (content) events.push({ type: "assistant_message", content, timestamp, _final_for_live_stream: true });
-        events.push({ type: "text_end", timestamp, _live_only: true });
+        if (content) events.push({ type: "assistant_message", ...identity, content, timestamp, _final_for_live_stream: true });
+        events.push({ type: "text_end", ...identity, timestamp, _live_only: true });
       }
     }
     if (step.step_type === "tool" && step.tool_info) {

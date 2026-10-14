@@ -13,6 +13,20 @@ describe("AntigravityEventMapper", () => {
     expect(mapper.accept(step(0, { state: "ACTIVE", text_delta: "한" }))).toMatchObject([{ type: "text_start" }, { type: "text_delta", text: "한" }]);
     expect(mapper.accept(step(0, { text_delta: "글" }))).toMatchObject([{ type: "text_delta", text: "글" }, { type: "assistant_message", content: "한글", _final_for_live_stream: true }, { type: "text_end", _live_only: true }]);
   });
+  it("identifies every live and final frame by conversation, turn, and step", () => {
+    const mapper = new AntigravityEventMapper("turn-a");
+    const active = mapper.accept(step(0, { state: "ACTIVE", text_delta: "이미지와 " }));
+    const done = mapper.accept(step(0, { text_delta: "상단 HUD" }));
+    const identity = { item_id: "0", thread_id: "conversation", turn_id: "turn-a",
+      raw_event_type: "antigravity/agent_response" };
+    for (const event of [...active, ...done]) {
+      expect(event).toMatchObject(identity);
+      if (event.type !== "assistant_message") expect(event._live_only).toBe(true);
+    }
+    expect(done[1]).toMatchObject({ content: "이미지와 상단 HUD", _final_for_live_stream: true });
+    expect(mapper.accept(step(1, { text_delta: "next" }))[0]?.item_id).toBe("1");
+    expect(new AntigravityEventMapper("turn-b").accept(step(0, { text_delta: "resume" }))[0]?.turn_id).toBe("turn-b");
+  });
   it("counts each model DONE once, adds cache to input, keeps thinking inside output, ignores result cumulative usage", () => {
     const mapper = new AntigravityEventMapper("turn-a");
     mapper.accept(init);

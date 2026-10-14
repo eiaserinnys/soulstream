@@ -20,6 +20,14 @@ export function isLogicalTurnCompleteFrame(frame: RunnerEventFrame): boolean {
   return frame.kind === "engine_event" && frame.payload.type === "complete";
 }
 
+/** Fatal payloads are observable events and also prevent successful termination. */
+export function fatalErrorFromRunnerFrame(frame: RunnerEventFrame): Error | undefined {
+  if (frame.kind !== "engine_event" || frame.payload.type !== "error" || frame.payload.fatal !== true) {
+    return undefined;
+  }
+  return new Error(String(frame.payload.message));
+}
+
 export function sseEventFromRunnerFrame(
   frame: Extract<RunnerEventFrame, { kind: "engine_event" }>,
 ): SSEEventPayload {

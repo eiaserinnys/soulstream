@@ -9,7 +9,7 @@ import type {
   TurnOrigin,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
-import { sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
+import { fatalErrorFromRunnerFrame, sseEventFromRunnerFrame } from "../runner/engine_event_stream.js";
 import { DEFAULT_RUNNER_REQUEST_TIMEOUT_MS } from "../runner/in_process_frame_channel.js";
 import {
   runnerControlResponseFrame,
@@ -203,8 +203,10 @@ export async function* consumeRunnerFrames(
     scheduleToolHandler?: ScheduleToolUseHandler;
   },
 ): AsyncIterable<SSEEventPayload> {
+  let fatalError: Error | undefined;
   for await (const frame of frames) {
     if (frame.kind === "engine_event") {
+      fatalError = fatalErrorFromRunnerFrame(frame) ?? fatalError;
       yield sseEventFromRunnerFrame(frame);
       continue;
     }
@@ -273,6 +275,8 @@ export async function* consumeRunnerFrames(
       throw new Error(`Runner rejected control response: ${frame.correlationId}`);
     }
   }
+  // Drain and publish first; preserve richer dispatcher exceptions when present.
+  if (fatalError) throw fatalError;
 }
 
 function createTimeoutLifetime(timeoutMs: number): {

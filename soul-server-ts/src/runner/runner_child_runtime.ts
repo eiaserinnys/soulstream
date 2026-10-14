@@ -41,6 +41,7 @@ import {
   runnerDroppedFrameLogContext,
   type RunnerDroppedFrame,
 } from "./runner_frame_drop.js";
+import { fatalErrorFromRunnerFrame } from "./engine_event_stream.js";
 import { InProcessRunnerCommandDispatcher } from "./runner_command_dispatcher.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { completeRunnerRegistrationIdentityFromChild } from
@@ -312,6 +313,8 @@ export class RunnerChildRuntime {
     try {
       await this.prepareExecution(command);
       for await (const frame of this.dispatcher.events(command.commandId)) {
+        const fatalError = fatalErrorFromRunnerFrame(frame);
+        if (fatalError) terminalError = { code: "execution_failed", message: fatalError.message };
         try {
           await this.forwardRunnerFrame(frame, preBootstrap);
         } catch (error) {
