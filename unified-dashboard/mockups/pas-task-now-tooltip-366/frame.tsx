@@ -21,11 +21,11 @@ const settings = {
 
 const persistentSession = {
   session_id: "pas-main",
-  display_name: "PAS 대화",
+  display_name: "서소영 영구 세션",
   node_id: "eiaserinnys",
   folder_id: null,
-  agent_id: "roselin_codex",
-  agent_name: "로젤린",
+  agent_id: "seosoyoung-pas",
+  agent_name: "서소영 (PAS)",
   persistent: true,
   persistent_report: reportReviewEntries,
   settings,
@@ -34,14 +34,14 @@ const persistentSession = {
 
 const session = {
   agentSessionId: "pas-main",
-  displayName: "PAS 대화",
+  displayName: "서소영 영구 세션",
   status: "running",
   eventCount: 1,
   createdAt: now,
   updatedAt: now,
   nodeId: "eiaserinnys",
-  agentId: "roselin_codex",
-  agentName: "로젤린",
+  agentId: "seosoyoung-pas",
+  agentName: "서소영 (PAS)",
   backend: "codex",
   prompt: "PAS 작업 목록 호버 툴팁 시안",
 };
@@ -59,7 +59,7 @@ const card = (id: string, number: number, title: string, status: CardRow["status
   positionKey,
   queuePositionKey,
   assigneeSessionId: "pas-main",
-  assigneeAgentId: "roselin_codex",
+  assigneeAgentId: "seosoyoung-pas",
   assigneeKind: "session",
   nodeId: "eiaserinnys",
   now: current,
@@ -105,7 +105,7 @@ const timeline = {
 mockApi({
   "GET /api/persistent-sessions": {
     sessions: [persistentSession], total: 1,
-    create_defaults: { node_id: "eiaserinnys", preferred_agent_id: "roselin_codex", settings, initial_instruction: "", unavailable_reason: null },
+    create_defaults: { node_id: "eiaserinnys", preferred_agent_id: "seosoyoung-pas", settings, initial_instruction: "", unavailable_reason: null },
   },
   "GET /api/persistent-sessions/pas-main": { session: persistentSession },
   "GET /api/config/settings": { categories: [] },
@@ -119,7 +119,7 @@ mockApi({
   "GET /api/sessions/pas-main/timeline": timeline,
 });
 
-mockImages([{ pattern: /^\/api\/nodes\/eiaserinnys\/agents\/roselin_codex\/portrait$/, file: "system-portrait.png" }]);
+mockImages([{ pattern: /^\/api\/nodes\/eiaserinnys\/agents\/seosoyoung-pas\/portrait$/, file: "system-portrait.png" }]);
 
 function PersistentSessionMockup() {
   useEffect(() => {

@@ -113,6 +113,7 @@
   margin: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
+  word-break: keep-all;
   line-clamp: 5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 5;
