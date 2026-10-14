@@ -1,9 +1,11 @@
-import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { Button, DisclosureActionIcon } from "@seosoyoung/soul-ui";
+import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { Tooltip } from "@base-ui/react/tooltip";
 import { useEffect, useState, type ReactElement, type RefObject } from "react";
 import { cardStatusLabel } from "./CardActions";
 import { CardRow as CardRowComponent } from "./CardRow";
+import { PersistentTaskTooltipPanel } from "./PersistentTaskTooltipPanel";
 import { useCardMembership } from "./use-card-membership";
 import "./v3-persistent-task-list.css";
 
@@ -13,12 +15,20 @@ const TASK_GROUPS_STORAGE_KEY = "soulstream:pas-task-groups:v1";
 export interface PersistentSessionTaskGroup { status: TaskStatus; label: string; cards: CardRow[] }
 export interface PersistentTaskTooltipContent { title?: string; now?: string; ask?: string }
 
-export function persistentTaskTooltipContent(card: CardRow, titleTruncated: boolean): PersistentTaskTooltipContent | null {
+export function persistentTaskTooltipContent(card: CardRow, titleTruncated: boolean, question?: CardQuestion | null): PersistentTaskTooltipContent | null {
   const content: PersistentTaskTooltipContent = {};
   if (titleTruncated) content.title = card.title;
   if (card.now?.text.trim()) content.now = card.now.text;
-  if (card.now?.turn === "user" && card.now.ask?.trim()) content.ask = card.now.ask;
+  if (question?.text.trim()) content.ask = question.text;
+  else if (!question && card.now?.turn === "user" && card.now.ask?.trim()) content.ask = card.now.ask;
   return Object.keys(content).length ? content : null;
+}
+
+export function latestUnansweredTooltipQuestion(detail: CardDetail | undefined): CardQuestion | null {
+  return detail?.questions.reduce<CardQuestion | null>((latest, question) => {
+    if (question.answer !== null) return latest;
+    return latest === null || question.askedAt > latest.askedAt ? question : latest;
+  }, null) ?? null;
 }
 
 const TOOLTIP_MEDIA_QUERY = "(hover: hover) and (pointer: fine) and (min-width: 768px)";
@@ -39,30 +49,61 @@ function PersistentTaskTooltip({ card, row, titleRef }: {
   card: CardRow; row: ReactElement; titleRef: RefObject<HTMLSpanElement | null>;
 }) {
   const [open, setOpen] = useState(false);
-  const [content, setContent] = useState<PersistentTaskTooltipContent | null>(null);
+  const [titleTruncated, setTitleTruncated] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState(false);
+  const detail = useCardStore(state => state.details[card.id]);
+  const currentDetail = detail?.card.version === card.version ? detail : undefined;
+  const question = card.status === "blocked" && card.blockedKind === "question"
+    ? latestUnansweredTooltipQuestion(currentDetail)
+    : null;
+  const options = question?.options?.length ? question.options : [];
+  const content = persistentTaskTooltipContent(card, titleTruncated, question);
+
+  const loadQuestionDetail = () => {
+    if (card.status !== "blocked" || card.blockedKind !== "question") return;
+    const current = useCardStore.getState().details[card.id];
+    if (!current || current.card.version !== card.version) {
+      void useCardStore.getState().loadCard(card.id).catch(() => undefined);
+    }
+  };
+
+  const sendAnswer = async (answer: string) => {
+    if (!question || sending) return;
+    setSending(true);
+    setSendError(false);
+    try {
+      await useCardStore.getState().mutate(card.id,
+        `/questions/${encodeURIComponent(question.id)}/answer`, { answer });
+    } catch {
+      setSendError(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
   return <Tooltip.Root open={open} onOpenChange={nextOpen => {
     if (!nextOpen) {
       setOpen(false);
       return;
     }
     const title = titleRef.current;
-    const nextContent = persistentTaskTooltipContent(card, Boolean(title && title.scrollWidth > title.clientWidth));
-    if (!nextContent) {
+    const nextTitleTruncated = Boolean(title && title.scrollWidth > title.clientWidth);
+    const hasQuestionContent = card.status === "blocked" && card.blockedKind === "question";
+    if (!persistentTaskTooltipContent(card, nextTitleTruncated, question) && !hasQuestionContent) {
       setOpen(false);
       return;
     }
-    setContent(nextContent);
+    setTitleTruncated(nextTitleTruncated);
     setOpen(true);
   }}>
-    <Tooltip.Trigger render={row}/>
-    {content ? <Tooltip.Portal>
+    <Tooltip.Trigger render={row} onPointerEnter={loadQuestionDetail} onFocus={loadQuestionDetail}/>
+    {content || options.length > 0 ? <Tooltip.Portal>
       <Tooltip.Positioner side="left" align="start" sideOffset={8} alignOffset={-1}
         collisionAvoidance={{ side: "none", align: "shift", fallbackAxisSide: "none" }}
         className="v3-persistent-task-tooltip">
         <Tooltip.Popup className="v3-surface">
-          {content.title ? <p data-tooltip-field="title">{content.title}</p> : null}
-          {content.now ? <p data-tooltip-field="now">{content.now}</p> : null}
-          {content.ask ? <p data-tooltip-field="ask">{content.ask}</p> : null}
+          <PersistentTaskTooltipPanel content={content ?? {}} options={options} sending={sending} error={sendError} onSelect={sendAnswer}/>
         </Tooltip.Popup>
       </Tooltip.Positioner>
     </Tooltip.Portal> : null}
