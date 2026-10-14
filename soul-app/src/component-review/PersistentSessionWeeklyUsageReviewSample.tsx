@@ -4,17 +4,18 @@ import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
 import { PERSISTENT_SESSION_FRAME } from '../components/persistent/persistentSessionFrame';
 import {
-  maxWeeklyUsageGaugeCount,
   selectUsageSummaryNode,
   weeklyUsageGauges,
 } from '../../../packages/soul-ui/src/lib/usage-summary';
 import { useTokens } from '../theme';
 import { persistentWeeklyUsageReviewSummary } from './persistent-fullscreen-fixtures';
 
-type SampleState = 'three' | 'two' | 'empty' | 'loading' | 'error';
-const sampleStates: SampleState[] = ['three', 'two', 'empty', 'loading', 'error'];
+type SampleState = 'four' | 'three' | 'two' | 'one' | 'empty' | 'loading' | 'error';
+const sampleStates: SampleState[] = ['four', 'three', 'two', 'one', 'empty', 'loading', 'error'];
 const stateLabels: Record<SampleState, string> = {
+  four: '4개 게이지',
   three: '3개 게이지',
+  one: '1개 게이지',
   two: '2개 게이지',
   empty: '주간 한도 없음',
   loading: '불러오는 중',
@@ -24,10 +25,10 @@ const evaluatedAtMs = Date.now();
 
 export function PersistentSessionWeeklyUsageReviewSample() {
   const t = useTokens();
-  const [state, setState] = useState<SampleState>('three');
-  const available = state === 'three' || state === 'two' || state === 'empty';
+  const [state, setState] = useState<SampleState>('four');
+  const available = ['four', 'three', 'two', 'one', 'empty'].includes(state);
   const summary = available ? persistentWeeklyUsageReviewSummary : null;
-  const preferredNodeId = state === 'two' ? 'node-b' : state === 'empty' ? 'node-c' : 'node-a';
+  const preferredNodeId = state === 'two' ? 'node-b' : state === 'three' ? 'node-three' : state === 'one' ? 'node-one' : state === 'empty' ? 'node-c' : 'node-a';
   const node = selectUsageSummaryNode(summary, preferredNodeId, null);
   const gauges = weeklyUsageGauges(node);
   const landscapeWidth = PERSISTENT_SESSION_FRAME.landscape.tasks - 2 * t.uiSpacing.sm;
@@ -46,13 +47,13 @@ export function PersistentSessionWeeklyUsageReviewSample() {
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', alignSelf: 'flex-end', gap: t.spacing.xl }}>
       <View testID="weekly-usage-review-landscape" style={{ width: landscapeWidth }}>
         <PersistentSessionWeeklyUsage node={node} gauges={gauges}
-          maxGaugeCount={maxWeeklyUsageGaugeCount(summary)} loading={state === 'loading'}
+          loading={state === 'loading'}
           loadState={state === 'error' ? 'connectionError' : available ? 'ready' : 'idle'}
           evaluatedAtMs={evaluatedAtMs} onRetry={() => setState('three')} onNextNode={nextState} />
       </View>
       <View testID="weekly-usage-review-portrait" style={{ width: portraitWidth }}>
         <PersistentSessionWeeklyUsage node={node} gauges={gauges}
-          maxGaugeCount={maxWeeklyUsageGaugeCount(summary)} loading={state === 'loading'}
+          loading={state === 'loading'}
           loadState={state === 'error' ? 'connectionError' : available ? 'ready' : 'idle'}
           evaluatedAtMs={evaluatedAtMs} onRetry={() => setState('three')} onNextNode={nextState} />
       </View>

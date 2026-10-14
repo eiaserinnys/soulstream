@@ -24,6 +24,7 @@ interface Props {
   onRetryPending?: (eventId: string) => void;
   onRestorePending?: (eventId: string) => void;
   presentation?: 'default' | 'manuscript';
+  narration?: boolean;
 }
 
 export function EventRenderer({
@@ -35,6 +36,7 @@ export function EventRenderer({
   onRetryPending,
   onRestorePending,
   presentation = 'default',
+  narration = false,
 }: Props) {
   const pending = event as PendingOptimisticEvent;
   const pendingActions = pending.pendingStatus === 'failed'
@@ -76,13 +78,14 @@ export function EventRenderer({
         />
       );
     case 'assistant_message':
-      return <ChatUiMessage event={event} presentation={presentation} session={session}
+      return <ChatUiMessage event={event} presentation={presentation} narration={narration} session={session}
         selectionModel={selectionModel} onSelectionDone={onSelectionDone} />;
     case 'text_delta':
       return (
         <AssistantMessage
           event={event}
           presentation={presentation}
+          narration={narration}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
@@ -106,6 +109,7 @@ export function EventRenderer({
         <AssistantMessage
           event={event}
           presentation={presentation}
+          narration={narration}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}

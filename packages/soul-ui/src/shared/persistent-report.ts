@@ -2,7 +2,7 @@ import type { PersistentReportEntry } from './session-types';
 
 export type ReportContextItem = { key: string; content: Record<string, unknown> };
 /** Local pending-message metadata; never sent as part of the server context contract. */
-export type ReportSendOperation = { key: string; updatedAt: string; kind: 'reply' | 'cancel'; acknowledged?: boolean };
+export type ReportSendOperation = { key: string; updatedAt: string; kind: 'reply' | 'cancel' | 'close'; acknowledged?: boolean };
 export type ReportSendContext = { contextItems?: ReportContextItem[]; persistentReportSource?: PersistentReportEntry; persistentReportOperation?: ReportSendOperation };
 export type ReportReplyReceipt = { key: string; option: string; line: string };
 export const EMPTY_REPORT: PersistentReportEntry[] = [];

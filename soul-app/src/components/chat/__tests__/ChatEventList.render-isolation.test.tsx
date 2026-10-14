@@ -20,6 +20,7 @@ const mockFlatListState = {
   recordInteraction: jest.fn(),
 };
 const mockRenderOrder: string[] = [];
+const mockNarrationByEvent = new Map<string, boolean | undefined>();
 
 jest.mock('react-native/Libraries/Lists/FlatList', () => {
   const ReactModule = jest.requireActual('react');
@@ -51,8 +52,9 @@ jest.mock('react-native/Libraries/Lists/FlatList', () => {
 });
 
 jest.mock('../../events/EventRenderer', () => ({
-  EventRenderer: ({ event }: { event: SessionEvent }) => {
+  EventRenderer: ({ event, narration }: { event: SessionEvent; narration?: boolean }) => {
     mockRenderOrder.push(`event:${event.id}`);
+    mockNarrationByEvent.set(event.id, narration);
     return null;
   },
 }));
@@ -67,6 +69,7 @@ jest.mock('../../events/TurnSummaryCaption', () => ({
   },
 }));
 jest.mock('../TypingIndicator', () => ({ TypingIndicator: () => null }));
+jest.mock('../ManuscriptActivitySegment', () => ({ ManuscriptActivitySegment: () => null }));
 jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
 jest.mock('../../../hooks/useOpenContentLink', () => ({
   useOpenContentLink: () => jest.fn(),
@@ -143,6 +146,7 @@ function Harness({
     streamingSlots,
     sessionStatus: 'running',
     persistentDisplaySettings,
+    presentation,
   });
   const follow = useChatBottomFollow({
     flatListRef,
@@ -180,7 +184,40 @@ function Harness({
 describe('chat row render isolation', () => {
   const base = [ev('1', 'user_message', { text: '질문' }), ev('2', 'assistant_message', { text: '이전 답변' }),
     ev('3', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'exec_command' })];
-  beforeEach(() => { mockRenderOrder.length = 0; });
+  beforeEach(() => { mockRenderOrder.length = 0; mockNarrationByEvent.clear(); });
+
+  it('dims manuscript prose only after its next chronological tool activity arrives', () => {
+    const progress = ev('progress', 'assistant_message', { text: '두 건을 나눠 맡깁니다.' });
+    const view = render(<Harness events={[progress]} presentation="manuscript" />);
+    expect(mockNarrationByEvent.get('progress')).toBe(false);
+
+    view.rerender(<Harness events={[
+      progress,
+      ev('tool', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'Read' }),
+      ev('final', 'assistant_message', { text: '확인 결과입니다.' }),
+    ]} presentation="manuscript" />);
+
+    expect(mockNarrationByEvent.get('progress')).toBe(true);
+    expect(mockNarrationByEvent.get('final')).toBe(false);
+  });
+
+  it('does not dim assistant rows carrying a UI publication', () => {
+    render(<Harness events={[
+      ev('ui', 'assistant_message', { text: '구조화 화면', ui: { version: 1 } }),
+      ev('tool', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'Read' }),
+    ]} presentation="manuscript" />);
+
+    expect(mockNarrationByEvent.get('ui')).toBe(false);
+  });
+
+  it('recognizes a thinking event as the next chronological manuscript item', () => {
+    render(<Harness events={[
+      ev('progress', 'assistant_message', { text: '먼저 읽어 보겠습니다.' }),
+      ev('thinking', 'thinking_delta', { thinking: '결과를 검토합니다.' }),
+    ]} presentation="manuscript" />);
+
+    expect(mockNarrationByEvent.get('progress')).toBe(true);
+  });
 
   it('keeps the manuscript FlatList mounted when the new-message button appears', () => {
     mockFlatListState.mounts = 0;

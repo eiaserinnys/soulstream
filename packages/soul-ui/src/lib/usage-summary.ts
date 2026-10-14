@@ -1,6 +1,6 @@
 export const USAGE_SUMMARY_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
-export type UsageSummaryProviderName = "claude" | "codex" | "gemini" | "antigravity";
+export type UsageSummaryProviderName = "claude" | "codex" | "antigravity";
 
 export type UsageSummaryQuota = {
   readonly id: string;
@@ -40,7 +40,7 @@ export type UsageSummarySnapshot = {
 };
 
 export type UsageSummaryGauge = {
-  readonly id: "claude" | "fable" | "codex";
+  readonly id: "claude" | "fable" | "codex" | "antigravity";
   readonly label: string;
   readonly remainingPercent: number;
   readonly resetAt: number | null;
@@ -74,14 +74,6 @@ export function nextUsageSummaryNodeId(
   const currentIndex = summary.nodes.findIndex((node) => node.nodeId === currentNodeId);
   const startIndex = currentIndex < 0 ? 0 : currentIndex;
   return summary.nodes[(startIndex + 1) % summary.nodes.length].nodeId;
-}
-
-export function maxWeeklyUsageGaugeCount(summary: UsageSummarySnapshot | null): number {
-  if (!summary) return 0;
-  return summary.nodes.reduce(
-    (maximum, node) => Math.max(maximum, weeklyUsageGauges(node).length),
-    0,
-  );
 }
 
 export function weeklyUsageGauges(node: UsageSummaryNode | null): UsageSummaryGauge[] {
@@ -120,6 +112,16 @@ export function weeklyUsageGauges(node: UsageSummaryNode | null): UsageSummaryGa
       label: "Codex",
       remainingPercent: codex.weeklyRemainingPercent,
       resetAt: codex.weeklyResetAt,
+    });
+  }
+
+  const antigravity = node.providers.antigravity;
+  if (antigravity?.weeklyRemainingPercent !== null && antigravity?.weeklyRemainingPercent !== undefined) {
+    gauges.push({
+      id: "antigravity",
+      label: "Antigravity",
+      remainingPercent: antigravity.weeklyRemainingPercent,
+      resetAt: antigravity.weeklyResetAt,
     });
   }
 

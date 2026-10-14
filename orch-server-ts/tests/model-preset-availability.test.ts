@@ -51,7 +51,7 @@ function summary(
         fetchedAt: now.toISOString(),
         stale,
         staleSince: stale ? now.toISOString() : null,
-        providers: { claude, codex: null, gemini: null, antigravity: null },
+        providers: { claude, codex: null, antigravity: null },
       },
     ],
   };
@@ -64,11 +64,10 @@ function quotaSummary(
   const providers = {
     claude: null,
     codex: null,
-    gemini: null, antigravity: null,
+    antigravity: null,
   } as {
     claude: UsageSummaryProvider | null;
     codex: UsageSummaryProvider | null;
-    gemini: UsageSummaryProvider | null;
     antigravity: UsageSummaryProvider | null;
   };
   providers[providerName] = provider({ quotas: [quota] });
@@ -244,7 +243,7 @@ describe("resolvePresetAvailability", () => {
                 resetAt,
               }],
             }),
-            gemini: null, antigravity: null,
+            antigravity: null,
           },
         }],
       },
@@ -402,7 +401,7 @@ describe("resolvePresetAvailability", () => {
               },
             ],
           }),
-          gemini: null, antigravity: null,
+          antigravity: null,
         },
       }],
     };

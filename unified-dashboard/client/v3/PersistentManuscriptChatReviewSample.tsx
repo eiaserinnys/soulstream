@@ -22,6 +22,7 @@ const PAS_REVIEW_FOLLOWUP_DELIVERY_ID = "00000000-0000-4000-8000-000000002252";
 const PAS_REVIEW_AGENT_INPUT_ID = "pas251-projection-agent-report";
 const PAS_REVIEW_HUMAN_INPUT_ID = "pas251-projection-human-image";
 const PAS_REVIEW_ASSISTANT_RESPONSE = "PAS 응답: 첨부 이미지를 확인했습니다.";
+const NARRATION_REVIEW_INPUT_ID = "pas-narration-review-input";
 
 export const DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full max-w-[520px] bg-background";
 export const MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden";
@@ -227,7 +228,18 @@ function ManuscriptColumn() {
         caller_info: { source: "browser", display_name: "디렉터님" },
       },
       { type: "assistant_message", content: PAS_REVIEW_ASSISTANT_RESPONSE },
+      { type: "user_message", user: "User", text: "진행 안내와 완료 답변을 확인해줘.", input_id: NARRATION_REVIEW_INPUT_ID },
+      { type: "thinking", thinking: "두 타임라인의 표시를 확인했습니다." },
+      { type: "assistant_message", content: "두 건을 나눠 맡깁니다." },
+      { type: "tool_start", tool_use_id: "review-read-a", tool_name: "Read", tool_input: { file_path: "packages/soul-ui/src/components/chat/ChatView.tsx" } },
+      { type: "tool_result", tool_use_id: "review-read-a", tool_name: "Read", result: "현재 타임라인을 확인했습니다." },
+      { type: "tool_start", tool_use_id: "review-read-b", tool_name: "Read", tool_input: { file_path: "soul-app/src/components/chat/ChatEventList.tsx" } },
+      { type: "tool_result", tool_use_id: "review-read-b", tool_name: "Read", result: "앱 타임라인을 확인했습니다." },
+      { type: "assistant_message", content: "두 경로의 순서와 표시를 확인했습니다." },
     ] as SoulSSEEvent[];
+    const narrationInputIndex = events.findIndex(event => event.type === "user_message" && event.input_id === NARRATION_REVIEW_INPUT_ID);
+    const thinkingEvent = events.find((event): event is Extract<SoulSSEEvent, { type: "thinking" }> => event.type === "thinking");
+    if (thinkingEvent) thinkingEvent.parent_event_id = String(narrationInputIndex + 1);
     store.processEvents(events.map((event, index) => ({ event, eventId: index + 1 })));
     setReady(true);
     return () => {

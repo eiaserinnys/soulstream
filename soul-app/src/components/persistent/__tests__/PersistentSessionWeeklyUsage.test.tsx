@@ -16,7 +16,6 @@ const gauges: UsageSummaryGauge[] = [
 const base = {
   node,
   gauges,
-  maxGaugeCount: 3,
   loading: false,
   loadState: 'ready' as const,
   evaluatedAtMs: 1_800_000_000_000,
@@ -30,7 +29,7 @@ function useTabletDimensions() {
   });
 }
 
-test('uses meta text and fixed 3-gauge slots, then keeps their height with two gauges', () => {
+test('uses the existing meta text and reduces the visible height with two gauges', () => {
   const dimensions = useTabletDimensions();
   const view = render(<PersistentSessionWeeklyUsage {...base} />);
 
@@ -66,13 +65,20 @@ test('uses meta text and fixed 3-gauge slots, then keeps their height with two g
   expect(base.onNextNode).toHaveBeenCalledTimes(1);
 
   view.rerender(<PersistentSessionWeeklyUsage {...base} gauges={gauges.slice(0, 2)} />);
-  expect(view.getAllByTestId(/^persistent-session-weekly-usage-slot-/, { includeHiddenElements: true })).toHaveLength(3);
-  expect(view.getByTestId('persistent-session-weekly-usage-slot-0', { includeHiddenElements: true }).props.accessibilityElementsHidden).toBe(true);
-  expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-slot-2').props.style).height).toBe(24);
+  expect(view.getAllByTestId(/^persistent-session-weekly-usage-slot-/, { includeHiddenElements: true })).toHaveLength(2);
+  expect(view.queryByTestId('persistent-session-weekly-usage-slot-2', { includeHiddenElements: true })).toBeNull();
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-node-row').props.style).height).toBe(18);
 
   view.unmount();
   dimensions.mockRestore();
+});
+
+test.each([1, 2, 3, 4])('renders exactly %i gauges without empty slots', count => {
+  const four: UsageSummaryGauge[] = [...gauges, { id: 'antigravity', label: 'Antigravity', remainingPercent: 96, resetAt: null }];
+  const view = render(<PersistentSessionWeeklyUsage {...base} gauges={four.slice(0, count)} />);
+  const slots = view.getAllByTestId(/^persistent-session-weekly-usage-slot-/, { includeHiddenElements: true });
+  expect(slots).toHaveLength(count);
+  expect(slots.every(slot => !slot.props.accessibilityElementsHidden)).toBe(true);
 });
 
 test.each([
@@ -83,8 +89,7 @@ test.each([
 ] as const)('renders the %s message in one fixed status slot', (_label, loading, loadState, statusNode, message) => {
   const dimensions = useTabletDimensions();
   const onRetry = jest.fn();
-  const view = render(<PersistentSessionWeeklyUsage {...base} node={statusNode} gauges={[]} maxGaugeCount={3}
-    loading={loading} loadState={loadState} onRetry={onRetry} />);
+  const view = render(<PersistentSessionWeeklyUsage {...base} node={statusNode} gauges={[]} loading={loading} loadState={loadState} onRetry={onRetry} />);
 
   expect(view.getByText(message)).toBeTruthy();
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-weekly-usage-status-slot').props.style).height).toBe(24);

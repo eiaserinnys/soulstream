@@ -16,6 +16,11 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { DARK_COLORS, LIGHT_COLORS, LIGHT_PERSISTENT_SESSION_COLORS } from '../../../theme/colors';
 import * as attachmentImageSize from '../../../lib/attachment-image-size';
 
+jest.mock('../../../theme/useDeviceType', () => ({
+  useDeviceType: () => 'phone',
+  deviceTypeToBaseKey: (type: string) => type === 'phone' ? 'phone' : 'tablet',
+}));
+
 afterEach(() => jest.restoreAllMocks());
 
 test('원고형은 기존 메시지 부품에서 말풍선을 없애고 기본 채팅은 말풍선을 유지한다', () => {
@@ -93,9 +98,10 @@ test('원고형은 대기·승인·오류·도구·생각·담당 카드·첨부
   expect(thinking.getByText('생각 내용')).toBeTruthy();
   expect(thinking.queryByText('생각 중...')).toBeNull();
   expect(thinkingTextStyle).toMatchObject({
-    color: LIGHT_COLORS.textPrimary,
+    color: LIGHT_COLORS.textSecondary,
+    fontSize: 14,
   });
-  expect(thinkingTextStyle.lineHeight).toBe(thinkingTextStyle.fontSize * 1.6);
+  expect(thinkingTextStyle.lineHeight).toBe(14 * 1.6);
   expect(thinking.UNSAFE_queryAllByType(View)).toHaveLength(0);
 
   const summary = render(<TurnSummaryCaption presentation="manuscript" content="담당 카드 기록" />);

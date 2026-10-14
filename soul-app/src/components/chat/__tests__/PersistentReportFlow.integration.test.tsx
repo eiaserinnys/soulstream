@@ -79,6 +79,7 @@ beforeEach(async () => {
   useChatStore.setState({ eventsBySession: {}, lastEventIdBySession: {}, streamingSlotsBySession: {}, pendingOptimisticBySession: {}, pendingFirstMessageBySession: {} });
   useSessionStore.setState({ sessions: { one: session('one'), two: session('two') } });
   mockApi.getTimeline.mockResolvedValue({ messages: [], next_cursor: null });
+  mockApi.intervene.mockResolvedValue({ delivered: true });
   jest.useFakeTimers();
 });
 afterEach(async () => {
@@ -103,13 +104,33 @@ function ReportConversation({ inputRef }: { inputRef: React.RefObject<ChatInputC
     reportView={<PersistentReportPager entries={send.entries} index={state.index} api={mockApi as any} send={send}
       onSelect={state.select} onDismiss={state.dismiss} onFocusComposer={() => inputRef.current?.focusAccessibility()} />} />;
 }
-async function openReport() {
-  useSessionStore.setState({ persistentReportsBySession: { one: { entries: [report] } } } as any);
+async function openReport(entry = report) {
+  useSessionStore.setState({ persistentReportsBySession: { one: { entries: [entry] } } } as any);
   const screen = render(<ReportHost />);
   await waitFor(() => expect(screen.getByTestId('report-track', { includeHiddenElements: true })).toBeTruthy());
   measurePersistentReports(screen);
   return screen;
 }
+test('empty ask acknowledgement sends the exact closed context and dismisses the report', async () => {
+  const emptyAsk = { ...report, options: [] };
+  const screen = await openReport(emptyAsk);
+  await act(async () => fireEvent.press(screen.getByLabelText('확인했어')));
+  expect(mockApi.intervene).toHaveBeenCalledWith('one', '예산 확인: 확인했어', undefined,
+    [{ key: 'persistent_report_closed', content: { key: 'ask-one', title: '예산 확인' } }]);
+  expect(mockApi.dismissPersistentReport).toHaveBeenCalledWith('one', 'ask-one');
+  expect(screen.queryByText('예산 확인')).toBeNull();
+});
+test('empty ask remains open when an unrelated failed message blocks acknowledgement', async () => {
+  const emptyAsk = { ...report, options: [] };
+  const screen = await openReport(emptyAsk);
+  act(() => useChatStore.getState().setPendingOptimistic('one', {
+    ...createOptimisticUserEvent('다른 실패한 글', 'user_message'), pendingStatus: 'failed',
+  }));
+  fireEvent.press(screen.getByLabelText('확인했어'));
+  expect(mockApi.intervene).not.toHaveBeenCalled();
+  expect(mockApi.dismissPersistentReport).not.toHaveBeenCalled();
+  expect(screen.getByText('예산 확인')).toBeTruthy();
+});
 test('direct answer preserves the real draft and has no undo, then failure/retry/server projection', async () => {
   const screen = await openReport();
   const input = () => screen.getByTestId('chat-composer-text-input');
@@ -166,12 +187,13 @@ test('failed dismiss restores the same report and uses the sticky composer notic
   await waitFor(() => expect(screen.getByTestId('report-track', { includeHiddenElements: true })).toBeTruthy());
   measurePersistentReports(screen);
   fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '남길 초안');
-  await act(async () => fireEvent.press(screen.getByLabelText('봤다')));
+  await act(async () => fireEvent.press(screen.getByLabelText('확인했어')));
   expect(screen.getByTestId('report-sheet-ask-one')).toBeTruthy();
   const row = screen.getByTestId('chat-composer-generated-notice-row');
   expect(row.findByProps({ testID: 'chat-ui-action-notice' }).props.children).toBe('보고를 내리지 못했어.');
   expect(screen.getByTestId('chat-composer-text-input').props.value).toBe('남길 초안');
   mockApi.intervene.mockResolvedValueOnce({ delivered: true });
+  act(() => useChatStore.getState().clearPendingOptimistic('one'));
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
   expect(screen.queryByTestId('chat-composer-generated-notice-row')).toBeNull();
 });
@@ -186,10 +208,12 @@ test('two consecutive dismissals with only one failure restore only the failed s
   const screen = render(<ReportHost />);
   await waitFor(() => expect(screen.getByTestId('report-track', { includeHiddenElements: true })).toBeTruthy());
   measurePersistentReports(screen);
-  fireEvent.press(screen.getByLabelText('봤다'));
+  await act(async () => fireEvent.press(screen.getByLabelText('확인했어')));
   expect(screen.queryByText('첫째 보고')).toBeNull();
-  fireEvent.press(screen.getByLabelText('봤다'));
+  act(() => useChatStore.getState().clearPendingOptimistic('one'));
+  await act(async () => fireEvent.press(screen.getByLabelText('확인했어')));
   expect(screen.queryByTestId('report-deck')).toBeNull();
+  act(() => useChatStore.getState().clearPendingOptimistic('one'));
   await act(async () => resolveB({ ok: true, persistent_report: [a] }));
   expect(screen.queryByTestId('report-deck')).toBeNull();
   await act(async () => rejectA(Error('첫째 내림 실패')));

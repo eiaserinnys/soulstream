@@ -246,6 +246,12 @@
 [data-slot="chat-root"][data-chat-presentation="manuscript"] :is([data-slot="chat-body"], [data-slot="chat-tool-body"]) {
   --chat-line-height: calc(var(--chat-font-size) * 1.6);
 }
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-chat-narration="true"] {
+  --chat-font-size: var(--chat-narration-font-size);
+}
+[data-slot="chat-root"][data-chat-presentation="manuscript"] [data-chat-narration="true"] [data-slot="chat-body"] {
+  color: var(--muted-foreground);
+}
 [data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol, pre, div:has(> table)) {
   width: fit-content;
   max-width: 100%;

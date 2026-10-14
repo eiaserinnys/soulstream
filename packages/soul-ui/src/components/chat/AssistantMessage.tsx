@@ -17,6 +17,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   bubbleProps,
   presentation = "default",
   contentLayout = "text",
+  narration = false,
 }: {
   msg: ChatMessage;
   llmContext?: LlmContext;
@@ -25,6 +26,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   portraitUrl?: string | null;
   bubbleProps?: HTMLAttributes<HTMLDivElement>;
   presentation?: "default" | "manuscript";
+  narration?: boolean;
   contentLayout?: "text" | "structured";
 }) {
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -57,7 +59,7 @@ export const AssistantMessage = memo(function AssistantMessage({
     : null;
 
   return (
-    <div className={manuscript ? "flex" : "flex gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
+    <div className={manuscript ? "flex" : "flex gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined} data-chat-narration={manuscript && narration ? "true" : undefined}>
       {!manuscript && <ProfileAvatar
         role="assistant"
         hasPortrait={hasPortrait}

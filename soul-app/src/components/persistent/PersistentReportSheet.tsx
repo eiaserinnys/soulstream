@@ -28,7 +28,8 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const signature = JSON.stringify([entry.title, entry.context, entry.action, entry.options, entry.card_numbers, compact]);
   const [asked, setAsked] = useState({ signature, reading: 0, foot: 0 });
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
-  const hasFooter = !compact && (count > 1 || entry.state === 'answered' || entry.kind === 'see' || entry.options.length > 0);
+  const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && entry.state === 'open');
+  const hasFooter = !compact && (count > 1 || entry.state === 'answered' || acknowledgeable || entry.options.length > 0);
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
   const measure = (part: 'reading' | 'foot', height: number) => {
     measured.current[part] = height;
@@ -84,10 +85,10 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
         {received}{cancelSent ? <View style={styles.cancelStatus}><Text testID="report-cancel-sent" style={styles.cancelLabel}>취소 요청 보냄</Text></View>
           : canCancel ? <View style={styles.cancelEdge}><GlassButton testID="report-cancel" variant="plain" size="compact"
             disabled={busy} accessibilityLabel="취소 요청" onPress={() => onCancel?.()}><Text style={styles.cancelLabel}>취소 요청</Text></GlassButton></View> : null}
-      </View> : entry.kind === 'see' || entry.options.length ? <View testID="report-actions" style={styles.actions}>
-        {(entry.kind === 'see' ? ['봤다'] : entry.options).map(option => <GlassButton key={option} variant="paper" size="compact"
-          disabled={entry.kind === 'ask' && busy} accessibilityLabel={option}
-          onPress={() => entry.kind === 'see' ? onDismiss() : onOption(option)} style={styles.button}>
+      </View> : acknowledgeable || entry.options.length ? <View testID="report-actions" style={styles.actions}>
+        {(acknowledgeable ? ['확인했어'] : entry.options).map(option => <GlassButton key={option} variant="paper" size="compact"
+          disabled={busy} accessibilityLabel={option}
+          onPress={() => acknowledgeable ? onDismiss() : onOption(option)} style={styles.button}>
           <Text style={styles.buttonLabel}>{option}</Text>
         </GlassButton>)}
       </View> : null}

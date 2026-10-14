@@ -127,6 +127,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
       {entries.map((entry, position) => {
         const answer = report.answer(entry);
         const answered = answer !== undefined;
+        const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && !answered);
         const tag = entry.kind === 'see' ? '보실 것' : answered ? '답 받음' : '답하실 것';
         return <article key={entry.key} className="pas-report-sheet" data-testid={`report-sheet-${entry.key}`} data-current={position === index}
           data-answered={answered} data-publication={JSON.stringify([sessionId, entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
@@ -144,11 +145,12 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
               {!answered && <p className="pas-report-todo"><ReportAction text={entry.action} /></p>}
             </div>
           </div>
-          {(entries.length > 1 || entry.kind === 'see' || entry.options.length > 0 || answered) && <div className="pas-report-footer">
-            {(entry.kind === 'see' || entry.options.length > 0) && !(answered && sizing.overflowing) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
-              {(entry.kind === 'see' ? ['봤다'] : entry.options).map(option => <Button key={option} variant="outline" disabled={entry.kind === 'ask' && (disabled || sending.sending)} onClick={() => {
-                if (entry.kind === 'see') void dismissReport(entry.key);
-                else void sending.reply(entry, option);
+          {(entries.length > 1 || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">
+            {(acknowledgeable || entry.options.length > 0) && !(answered && sizing.overflowing) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
+              {(acknowledgeable ? ['확인했어'] : entry.options).map(option => <Button key={option} variant="outline" disabled={disabled || sending.sending} onClick={() => {
+                if (acknowledgeable) {
+                  if (sending.close(entry)) void dismissReport(entry.key);
+                } else void sending.reply(entry, option);
               }}>{option}</Button>)}
             </div>}
             {answered && <div className="pas-report-received">

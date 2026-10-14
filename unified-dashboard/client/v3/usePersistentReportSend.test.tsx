@@ -93,3 +93,29 @@ it('does not reuse a previous publication cancellation failure', async () => {
   await act(async () => send.cancel({ ...entry, updated_at: 'new' }));
   expect(transport).toHaveBeenCalledTimes(1); expect(notify).toHaveBeenCalledOnce();
 });
+
+it('starts a close acknowledgement with only the closed context and retries the same failed acknowledgement', async () => {
+  transport.mockRejectedValueOnce(new Error('offline'));
+  let started = false;
+  await act(async () => { started = send.close(entry); });
+  expect(started).toBe(true);
+  expect(transport).toHaveBeenCalledWith({ sessionKey: 'a', text: '확인: 확인했어', contextItems: [
+    { key: 'persistent_report_closed', content: { key: 'one', title: '확인' } },
+  ] });
+  const failed = useDashboardStore.getState().pendingChatSends.a;
+  expect(failed).toMatchObject({ status: 'failed', persistentReportOperation: { key: 'one', updatedAt: 'one', kind: 'close' } });
+  await act(async () => { started = send.close(entry); });
+  expect(started).toBe(true);
+  expect(transport).toHaveBeenCalledTimes(2);
+  expect(useDashboardStore.getState().pendingChatSends.a).toMatchObject({ id: failed.id, status: 'sending' });
+});
+
+it('does not start or close over an unrelated retained failure', async () => {
+  const pending = { id: 'other', status: 'failed' as const, text: '다른 실패한 글', messageText: '다른 실패한 글', mode: 'intervention' as const, attachments: [], attachmentPaths: [] };
+  await act(async () => useDashboardStore.getState().setPendingChatSend('a', pending));
+  let started = true;
+  await act(async () => { started = send.close(entry); });
+  expect(started).toBe(false);
+  expect(transport).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenCalledWith('보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.');
+});

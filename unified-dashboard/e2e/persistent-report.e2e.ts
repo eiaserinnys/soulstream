@@ -120,6 +120,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await expect(deck).toBeVisible(); await expect(editor).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   await expect(deck.locator('.pas-report-count')).toHaveText('1 / 3');
+  await expect(current().getByRole('button', { name: '확인했어', exact: true })).toBeVisible();
   expect(await deck.locator('article[inert][aria-hidden="true"]').count()).toBe(2);
   await snapshot('1440-default');
   const workspace = page.getByTestId('v3-card-workspace');
@@ -240,8 +241,12 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await page.setViewportSize({ width: 1180, height: 820 });
   await waitForReportLayout();
   await page.screenshot({ path: path.join(output, '1180-see.png') });
-  await current().getByRole('button', { name: '봤다', exact: true }).focus();
-  await current().getByRole('button', { name: '봤다', exact: true }).click();
+  await current().getByRole('button', { name: '확인했어', exact: true }).focus();
+  await current().getByRole('button', { name: '확인했어', exact: true }).click();
+  await expect.poll(() => sends.length).toBe(5);
+  expect(sends[4]).toMatchObject({ text: '다이제스트 세 편: 확인했어', context_items: [
+    { key: 'persistent_report_closed', content: { key: 'digest', title: '다이제스트 세 편' } },
+  ] });
   await expect(deck.getByTestId('report-sheet-digest')).toHaveCount(0);
   await expect(deck.locator('.pas-report-count')).toHaveText('2 / 2');
   await expect(current().getByRole('heading')).toHaveText('마지막 보고');
@@ -254,7 +259,11 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   await deck.getByRole('button', { name: '앞 장', exact: true }).click();
   await expect(current().getByRole('heading')).toHaveText('다이제스트 세 편');
   await page.screenshot({ path: path.join(output, '1180-dismiss-failed.png') });
-  await current().getByRole('button', { name: '봤다', exact: true }).click();
+  await current().getByRole('button', { name: '확인했어', exact: true }).click();
+  await expect.poll(() => sends.length).toBe(6);
+  expect(sends[5]).toMatchObject({ text: '다이제스트 세 편: 확인했어', context_items: [
+    { key: 'persistent_report_closed', content: { key: 'digest', title: '다이제스트 세 편' } },
+  ] });
   await expect(current().getByRole('heading')).toHaveText('마지막 보고');
   await expect(current()).toBeFocused();
   secondDismiss.release();
@@ -320,12 +329,12 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   // A different composer send blocks answers, then leaves the existing notice on failure.
   publish([reportReviewEntries[1]]); await expect(current().getByRole('heading')).toHaveText(reportReviewEntries[1].title);
   sendControl = { gate: gate(), fail: true }; await editor.fill('다른 글'); await page.getByTestId('send-button').click();
-  await expect.poll(() => sends.length).toBe(5);
+  await expect.poll(() => sends.length).toBe(7);
   await expect(current().getByRole('button', { name: '응', exact: true })).toBeDisabled();
   sendControl.gate.release(); await expect(current().getByRole('button', { name: '응', exact: true })).toBeEnabled();
   await current().getByRole('button', { name: '응', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.' })).toBeVisible();
-  expect(sends.length).toBe(5);
+  expect(sends.length).toBe(7);
   expect(fixture.errors).toEqual([]); expect(cardDetails.some(id => /^\d+$/.test(id))).toBe(false);
   writeFileSync(path.join(output, 'metrics.json'), JSON.stringify({ geometry, sends, deletes, measurements, cardLists, cardDetails, errors: fixture.errors }, null, 2));
   for (const update of [...updates, ...events]) update.gate.release();

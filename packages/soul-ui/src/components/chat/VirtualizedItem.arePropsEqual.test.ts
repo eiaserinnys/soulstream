@@ -71,6 +71,12 @@ describe("VirtualizedItem.arePropsEqual — single", () => {
       ),
     ).toBe(false);
   });
+
+  it("narration 상태가 바뀌면 다시 렌더한다", () => {
+    const msg = makeMsg("a", "assistant");
+    const base = { item: { type: "single" as const, msg }, presentation: "manuscript" as const };
+    expect(arePropsEqual({ ...base, narration: false }, { ...base, narration: true })).toBe(false);
+  });
 });
 
 describe("VirtualizedItem.arePropsEqual — tool-group", () => {

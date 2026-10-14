@@ -17,7 +17,7 @@ export const ThinkingMessage = memo(function ThinkingMessage({
 
   if (presentation === "manuscript") {
     return (
-      <div className="flex" data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation="manuscript">
+      <div className="flex" data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation="manuscript" data-chat-narration="true">
         <div className="w-full min-w-0 text-foreground">
           <div data-slot="chat-body" className="text-base text-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]">
             <MarkdownContent content={displayContent ?? msg.content} enableBlockquoteCopy />

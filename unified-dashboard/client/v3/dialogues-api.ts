@@ -397,8 +397,8 @@ export function createDialoguesApi() {
         { id: "codex:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 50, remainingPercent: 50, resetAt: 1792515242, source: "public-fixture" },
       ] },
       antigravity: { status: "auto", source: "agy:/usage", planType: null, quotas: [
-        { id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 0.3, remainingPercent: 99.7, resetAt: 1792515242, source: "agy:/usage" },
         { id: "antigravity:gemini:5h", label: "5시간", window: "5h", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 1.1, remainingPercent: 98.9, resetAt: 1791928442, source: "agy:/usage" },
+        { id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 0.3, remainingPercent: 99.7, resetAt: 1792515242, source: "agy:/usage" },
       ] },
     } } : { providers: [] };
     else if (path === "/api/ui-events") value = { events: [] };

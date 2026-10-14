@@ -47,7 +47,7 @@ function limitsFromOutput(output: string): ProviderLimits {
     const events = output.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
     const command = events.find((event) => event.event === "command_result" && event.command?.name === "usage")?.command;
     const group = command?.data?.groups?.find((entry: { name: string }) => entry.name === "Gemini Models");
-    const quotas: ProviderQuota[] = ["weekly", "5h"].map((window) => {
+    const quotas: ProviderQuota[] = ["5h", "weekly"].map((window) => {
       const bucket = group?.buckets?.find((entry: { window: string }) => entry.window === window);
       const fraction = bucket?.remaining_fraction;
       const resetAt = Date.parse(bucket?.reset_time) / 1000;
@@ -61,10 +61,12 @@ function limitsFromOutput(output: string): ProviderLimits {
         source: "agy:/usage", purpose: "execution",
       };
     });
+    const weekly = quotas.find(quota => quota.window === "7d")!;
+    const short = quotas.find(quota => quota.window === "5h")!;
     return {
       ...blankLimits("auto"), source: "agy:/usage", sourceKind: "remote", observedAt: new Date().toISOString(),
-      weeklyUsedPercent: quotas[0]!.usedPercent, weeklyResetAt: quotas[0]!.resetAt,
-      shortUsedPercent: quotas[1]!.usedPercent, shortResetAt: quotas[1]!.resetAt, shortWindowMinutes: 300, quotas,
+      weeklyUsedPercent: weekly.usedPercent, weeklyResetAt: weekly.resetAt,
+      shortUsedPercent: short.usedPercent, shortResetAt: short.resetAt, shortWindowMinutes: 300, quotas,
     };
   } catch {
     throw new Error("Invalid Antigravity /usage response");

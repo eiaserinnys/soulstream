@@ -9,7 +9,6 @@ import {
   ProviderUsageService,
   claudeLimitsFromUsageResponse,
   codexLimitsFromUsageResponse,
-  geminiLimitsFromQuotaResponse,
 } from "../../src/auth/provider_usage.js";
 import {
   readProviderUsageObservation,
@@ -532,7 +531,7 @@ describe("ProviderUsageService", () => {
           providers: {
             claude: { status: "error" },
             codex: { status: "auto", shortUsedPercent: 19 },
-            gemini: { status: "not_configured" },
+            antigravity: { status: "not_configured" },
           },
         },
       });
@@ -901,37 +900,5 @@ describe("ProviderUsageService", () => {
     }
   });
 
-  it("normalizes Gemini Code Assist quota buckets", () => {
-    const limits = geminiLimitsFromQuotaResponse(
-      {
-        buckets: [
-          {
-            modelId: "gemini-2.5-pro",
-            remainingFraction: 0.75,
-            remainingAmount: 150,
-            tokenType: "REQUESTS",
-            resetTime: "2026-05-24T00:00:00Z",
-          },
-        ],
-      },
-      { currentTier: { name: "free" } },
-    );
 
-    expect(limits).toMatchObject({
-      status: "auto",
-      planType: "free",
-      quotas: [
-        {
-          id: "gemini:gemini-2.5-pro",
-          label: "Gemini Pro",
-          used: 50,
-          remaining: 150,
-          limit: 200,
-          usedPercent: 25,
-          remainingPercent: 75,
-          unit: "requests",
-        },
-      ],
-    });
-  });
 });

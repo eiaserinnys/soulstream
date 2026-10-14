@@ -17,6 +17,7 @@ vi.mock('@seosoyoung/soul-ui/components/LiquidGlassProvider', () => ({ useGlassS
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const one: PersistentReportEntry = { key: 'one', kind: 'ask', title: '확인', card_numbers: [270], context: '맥락', action: '[출처](https://example.test/)', options: ['응'], state: 'open', answer: '', updated_at: 'first' };
 const two = { ...one, key: 'two', kind: 'see' as const, options: [], title: '볼 장' };
+const emptyAsk = { ...one, key: 'empty-ask', options: [] };
 let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
@@ -38,6 +39,7 @@ afterEach(() => { act(() => root.unmount()); host.remove(); Reflect.deleteProper
 it('renders only the current sheet into the accessible/tab surface, navigates by arrows and sends directly', async () => {
   expect(host.querySelector('[data-testid="report-sheet-two"]')?.getAttribute('aria-hidden')).toBe('true');
   await act(async () => button('응').click());
+  expect(host.querySelector('button')?.textContent).not.toContain('확인했어');
   expect(transport).toHaveBeenCalledWith(expect.objectContaining({ sessionKey: 'a', text: '확인: 응' }));
   expect(host.querySelector('.pas-report-kind')).toBeNull();
   expect(host.querySelector('[data-current="true"]')?.getAttribute('aria-label')).toContain('답 받음');
@@ -50,6 +52,27 @@ it('renders only the current sheet into the accessible/tab surface, navigates by
   expect(host.querySelector('[data-testid="report-sheet-two"]')?.getAttribute('aria-hidden')).toBe('false');
   expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe('2 / 2');
   expect(button('다음 장').disabled).toBe(true);
+});
+it.each([two, emptyAsk])('acknowledges and closes a %s report with closed-only context', async entry => {
+  entries = [entry]; await render();
+  expect(button('확인했어')).toBeTruthy();
+  await act(async () => button('확인했어').click());
+  expect(transport).toHaveBeenCalledWith({ sessionKey: 'a', text: `${entry.title}: 확인했어`, contextItems: [
+    { key: 'persistent_report_closed', content: { key: entry.key, title: entry.title } },
+  ] });
+  expect(dismiss).toHaveBeenCalledWith(entry.key);
+});
+it('does not show the acknowledgement for an answered ask or close when a send is retained', async () => {
+  const answered = { ...one, state: 'answered' as const, answer: '응' };
+  entries = [answered]; await render();
+  expect(host.textContent).toContain('받은 답');
+  expect(host.textContent).not.toContain('확인했어');
+  entries = [emptyAsk];
+  await act(async () => useDashboardStore.getState().setPendingChatSend('a', { id: 'other', status: 'failed', text: '실패', messageText: '실패', mode: 'intervention', attachments: [], attachmentPaths: [] }));
+  await render();
+  await act(async () => button('확인했어').click());
+  expect(dismiss).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenCalledWith('보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.');
 });
 it('uses the existing internal-card link opener and https source policy', async () => {
   await act(async () => useCardStore.getState().putCards([cardRow]));
@@ -147,13 +170,13 @@ it('keeps an outside focus, moves an inside focus to the replacement, then to th
   const outside = document.createElement('input'); document.body.append(outside); outside.focus();
   entries = [two]; await render(); expect(document.activeElement).toBe(outside);
   expect(host.querySelector('.pas-report-nav')).toBeNull();
-  button('봤다').focus();
-  await act(async () => button('봤다').click());
+  button('확인했어').focus();
+  await act(async () => button('확인했어').click());
   expect(dismiss).toHaveBeenCalledWith('two'); expect(focusInput).toHaveBeenCalledOnce();
   expect(host.querySelector('[data-testid="report-deck"]')).toBeNull(); outside.remove();
 });
 it('preserves the viewed key when a preceding sheet disappears and focuses the next sheet when the focused one disappears', async () => {
-  await act(async () => button('다음 장').click()); button('봤다').focus();
+  await act(async () => button('다음 장').click()); button('확인했어').focus();
   entries = [two, { ...one, key: 'three' }]; await render();
   expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe('1 / 2');
   entries = [entries[1]]; await render();
