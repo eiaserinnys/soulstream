@@ -48,7 +48,7 @@ export function PersistentSessionWeeklyUsage({
   const slotHeight = meta.lineHeight + t.spacing.xxs + trackHeight;
   const nodeVisualHeight = Math.max(meta.lineHeight, t.iconSize.compact);
   const placeholderRows = Array.from({ length: placeholderCount }, (_, index) => <View key={`placeholder-${index}`}
-    testID={`persistent-session-weekly-usage-slot-${gauges.length ? gauges.length + index : index}`} accessibilityElementsHidden
+    testID={`persistent-session-weekly-usage-slot-${index}`} accessibilityElementsHidden
     importantForAccessibility="no-hide-descendants" pointerEvents="none"
     style={{ height: slotHeight, gap: t.spacing.xxs }}>
     <View style={{ height: meta.lineHeight }} />
