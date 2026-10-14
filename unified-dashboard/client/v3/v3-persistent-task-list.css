@@ -118,6 +118,13 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 5;
 }
+.v3-persistent-task-tooltip > .v3-surface:has(> .pas-report-actions) { padding-bottom: var(--v3-space-3); }
+.v3-persistent-task-tooltip > .v3-surface:has(> .pas-report-actions) > p[data-tooltip-field="ask"] {
+  display: block;
+  overflow: visible;
+  line-clamp: unset;
+  -webkit-line-clamp: unset;
+}
 .v3-persistent-task-tooltip > .v3-surface > p[data-tooltip-field="now"] { color: var(--v3-text-secondary); }
 @media (prefers-reduced-motion: reduce) {
   .v3-persistent-task-tooltip > .v3-surface { transition: none; }
@@ -127,3 +134,9 @@
 .v3-persistent-task-review-list { min-width: 0; box-sizing: border-box; border: 1px solid var(--persistent-session-line); padding: var(--v3-space-4); background: var(--persistent-session-paper); }
 .v3-persistent-task-review-lists { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-start; gap: var(--v3-space-4); }
 .v3-persistent-task-review-list { max-width: 100%; }
+.v3-persistent-task-review-tooltip-list {
+  width: calc(var(--pas-task-panel-width) - var(--pas-task-scroll-inset) - var(--pas-task-scroll-inset) + var(--v3-space-1) + var(--v3-space-1));
+  padding: 0;
+  border: 0;
+  background: transparent;
+}

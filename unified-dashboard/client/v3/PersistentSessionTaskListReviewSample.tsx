@@ -5,6 +5,7 @@ import { PersistentTaskTooltipPanel } from "./PersistentTaskTooltipPanel";
 import { reviewCard, reviewSession, reviewTitle } from "./components-review-fixtures";
 import { useEffect, type CSSProperties } from "react";
 import "./v3-persistent-task-list.css";
+import "./persistent-session-screen.css";
 import "./persistent-report.css";
 
 const taskAssignee = { ...reviewSession, agentSessionId: "persistent-task-review-session", agentPortraitUrl: undefined };
@@ -60,7 +61,7 @@ export function PersistentSessionTaskListReviewSample() {
       </div>)}
     </div>
     <div className="v3-persistent-task-review-lists" data-testid="persistent-task-tooltip-review-samples">
-      {tooltipReviewSamples.map(sample => <div key={sample.state} className="v3-persistent-task-review-list" style={{width:listWidths[1]}} data-tooltip-review-state={sample.state}>
+      {tooltipReviewSamples.map(sample => <div key={sample.state} className="v3-persistent-task-review-list v3-persistent-task-review-tooltip-list" data-tooltip-review-state={sample.state}>
         <div className="v3-persistent-task-tooltip" style={{width:"100%", "--anchor-width":"100%"} as CSSProperties}>
           <div className="v3-surface"><PersistentTaskTooltipPanel content={sample.content} options={sample.options} sending={sample.sending} error={sample.error} onSelect={() => {}}/></div>
         </div>

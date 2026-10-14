@@ -1,6 +1,7 @@
 /* Approved prototype geometry; spacing and typography inherit the v3 roles. */
 .persistent-session-screen,
-.persistent-session-weekly-usage-review-sample {
+.persistent-session-weekly-usage-review-sample,
+.v3-persistent-task-review {
   --pas-list-width: 264px;
   --pas-task-panel-width: var(--pas-list-width);
   --pas-task-scroll-inset: var(--v3-space-2);

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { CardRowView } from "./CardRow";
-import { PersistentSessionTaskList, groupPersistentSessionTasks, latestUnansweredTooltipQuestion, persistentTaskTooltipContent } from "./PersistentSessionTaskList";
+import { PersistentSessionTaskList, groupPersistentSessionTasks, isQuestionTooltipCard, latestUnansweredTooltipQuestion, persistentTaskTooltipContent } from "./PersistentSessionTaskList";
 import { reviewSession } from "./components-review-fixtures";
 
 const membershipMock = vi.hoisted(() => vi.fn());
@@ -62,6 +62,12 @@ afterEach(async () => {
 });
 
 describe("persistent session task list", () => {
+  it("identifies blocked question cards for an isolated tooltip provider", () => {
+    expect(isQuestionTooltipCard({ ...baseCard("question", "blocked"), blockedKind: "question" })).toBe(true);
+    expect(isQuestionTooltipCard({ ...baseCard("blocked", "blocked"), blockedKind: "limit" })).toBe(false);
+    expect(isQuestionTooltipCard({ ...baseCard("running", "running"), blockedKind: "question" })).toBe(false);
+  });
+
   it("includes only the truncated title and non-empty current status fields in tooltip content", () => {
     const card = {
       ...baseCard("tooltip", "running"),
@@ -160,12 +166,14 @@ describe("persistent session task list", () => {
     expect([...document.body.querySelectorAll<HTMLButtonElement>("button")].some(button => button.textContent === "계속")).toBe(true);
   });
 
-  it("sends the selected option through the card answer mutation and keeps the popup usable after failure", async () => {
+  it("keeps the tooltip open while sending, shows failure in place, and closes after a successful answer", async () => {
     enableTaskTooltips();
     const card = { ...baseCard("question-answer", "blocked"), blockedKind: "question" as const,
       now: { text: "선택을 기다립니다", turn: "user" as const, ask: "계속할까요?", updatedAt: "2026-10-14T10:00:00Z", sessionId: "session" } };
     const detail = cardDetail(card, [question("q/1", "2026-10-14T10:00:00Z", ["계속", "멈춤"])]);
-    const mutate = vi.fn().mockRejectedValueOnce(new Error("network error")).mockResolvedValueOnce(detail);
+    let rejectPending!: (error: Error) => void;
+    const pendingMutation = new Promise<CardDetail>((_resolve, reject) => { rejectPending = reject; });
+    const mutate = vi.fn().mockReturnValueOnce(pendingMutation).mockResolvedValueOnce(detail);
     useCardStore.setState({ byId: { [card.id]: card }, details: { [card.id]: detail }, mutate });
     await act(() => root.render(<PersistentSessionTaskList cards={[card]} onOpenCard={() => {}}/>));
     await act(() => container.querySelector<HTMLButtonElement>(".v3-card-summary-row")!.focus());
@@ -174,12 +182,23 @@ describe("persistent session task list", () => {
     expect(option()).toBeDefined();
     await act(async () => { option().click(); await Promise.resolve(); });
     expect(mutate).toHaveBeenCalledWith(card.id, "/questions/q%2F1/answer", { answer: "계속" });
+    expect(option().disabled).toBe(true);
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(document.body.querySelector(".v3-persistent-task-tooltip .v3-surface")).not.toBeNull();
+    expect(option().disabled).toBe(true);
+
+    await act(async () => { rejectPending(new Error("network error")); await pendingMutation.catch(() => undefined); });
     expect(document.body.querySelector('[role="alert"]')?.textContent).toBe("답을 보내지 못했습니다");
     expect(option().disabled).toBe(false);
 
     await act(async () => { option().click(); await Promise.resolve(); });
     expect(mutate).toHaveBeenCalledTimes(2);
     expect(document.body.querySelector('[role="alert"]')).toBeNull();
+    expect(document.body.querySelector(".v3-persistent-task-tooltip .v3-surface")).toBeNull();
   });
 
   it("groups the complete card status inventory in the approved order and omits completed states", () => {

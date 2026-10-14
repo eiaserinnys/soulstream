@@ -2,11 +2,12 @@ import type { CardDetail, CardQuestion, CardRow } from "@seosoyoung/soul-ui/card
 import { Button, DisclosureActionIcon } from "@seosoyoung/soul-ui";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { Tooltip } from "@base-ui/react/tooltip";
-import { useEffect, useState, type ReactElement, type RefObject } from "react";
+import { useEffect, useState, type CSSProperties, type ReactElement, type RefObject } from "react";
 import { cardStatusLabel } from "./CardActions";
 import { CardRow as CardRowComponent } from "./CardRow";
 import { PersistentTaskTooltipPanel } from "./PersistentTaskTooltipPanel";
 import { useCardMembership } from "./use-card-membership";
+import { V3_CARD_GAP_PX } from "./v3-layout-metrics";
 import "./v3-persistent-task-list.css";
 
 const TASK_STATUSES = ["running", "blocked", "review", "queued", "todo"] as const;
@@ -33,6 +34,10 @@ export function latestUnansweredTooltipQuestion(detail: CardDetail | undefined):
 
 const TOOLTIP_MEDIA_QUERY = "(hover: hover) and (pointer: fine) and (min-width: 768px)";
 
+export function isQuestionTooltipCard(card: CardRow): boolean {
+  return card.status === "blocked" && card.blockedKind === "question";
+}
+
 function usePersistentTaskTooltips() {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
@@ -54,14 +59,14 @@ function PersistentTaskTooltip({ card, row, titleRef }: {
   const [sendError, setSendError] = useState(false);
   const detail = useCardStore(state => state.details[card.id]);
   const currentDetail = detail?.card.version === card.version ? detail : undefined;
-  const question = card.status === "blocked" && card.blockedKind === "question"
+  const question = isQuestionTooltipCard(card)
     ? latestUnansweredTooltipQuestion(currentDetail)
     : null;
   const options = question?.options?.length ? question.options : [];
   const content = persistentTaskTooltipContent(card, titleTruncated, question);
 
   const loadQuestionDetail = () => {
-    if (card.status !== "blocked" || card.blockedKind !== "question") return;
+    if (!isQuestionTooltipCard(card)) return;
     const current = useCardStore.getState().details[card.id];
     if (!current || current.card.version !== card.version) {
       void useCardStore.getState().loadCard(card.id).catch(() => undefined);
@@ -75,6 +80,7 @@ function PersistentTaskTooltip({ card, row, titleRef }: {
     try {
       await useCardStore.getState().mutate(card.id,
         `/questions/${encodeURIComponent(question.id)}/answer`, { answer });
+      setOpen(false);
     } catch {
       setSendError(true);
     } finally {
@@ -82,8 +88,9 @@ function PersistentTaskTooltip({ card, row, titleRef }: {
     }
   };
 
-  return <Tooltip.Root open={open} onOpenChange={nextOpen => {
+  const root = <Tooltip.Root open={open} onOpenChange={nextOpen => {
     if (!nextOpen) {
+      if (sending) return;
       setOpen(false);
       return;
     }
@@ -101,13 +108,15 @@ function PersistentTaskTooltip({ card, row, titleRef }: {
     {content || options.length > 0 ? <Tooltip.Portal>
       <Tooltip.Positioner side="left" align="start" sideOffset={8} alignOffset={-1}
         collisionAvoidance={{ side: "none", align: "shift", fallbackAxisSide: "none" }}
-        className="v3-persistent-task-tooltip">
+        className="v3-persistent-task-tooltip"
+        style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
         <Tooltip.Popup className="v3-surface">
           <PersistentTaskTooltipPanel content={content ?? {}} options={options} sending={sending} error={sendError} onSelect={sendAnswer}/>
         </Tooltip.Popup>
       </Tooltip.Positioner>
     </Tooltip.Portal> : null}
   </Tooltip.Root>;
+  return isQuestionTooltipCard(card) ? <Tooltip.Provider delay={300}>{root}</Tooltip.Provider> : root;
 }
 
 function readCollapsedTaskGroups(): TaskStatus[] {
