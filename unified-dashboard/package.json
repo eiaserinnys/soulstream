@@ -13,6 +13,8 @@
     "test:e2e:pas-report": "playwright test --config playwright.pas-report.config.ts"
   },
   "dependencies": {
+    "@base-ui/react": "^1.2.0",
+    "@dnd-kit/core": "^6.3.1",
     "@seosoyoung/soul-ui": "workspace:*",
     "@soulstream/chat-ui": "workspace:*",
     "@soulstream/search-contract": "workspace:*",
@@ -21,8 +23,7 @@
     "lucide-react": "^0.575.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "zustand": "^5.0.11",
-    "@dnd-kit/core": "^6.3.1"
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

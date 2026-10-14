@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { CardRowView } from "./CardRow";
-import { PersistentSessionTaskList, groupPersistentSessionTasks } from "./PersistentSessionTaskList";
+import { PersistentSessionTaskList, groupPersistentSessionTasks, persistentTaskTooltipContent } from "./PersistentSessionTaskList";
 import { reviewSession } from "./components-review-fixtures";
 
 const membershipMock = vi.hoisted(() => vi.fn());
@@ -22,6 +22,16 @@ let root: Root;
 
 beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  window.matchMedia = vi.fn().mockImplementation((media: string) => ({
+    matches: false,
+    media,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -34,6 +44,24 @@ afterEach(async () => {
 });
 
 describe("persistent session task list", () => {
+  it("includes only the truncated title and non-empty current status fields in tooltip content", () => {
+    const card = {
+      ...baseCard("tooltip", "running"),
+      title: "PAS 카드 목록 호버 툴팁",
+      now: { text: "현재 진행", turn: "user" as const, ask: "확인 요청", updatedAt: "2026-10-14T00:00:00Z", sessionId: "session" },
+    };
+
+    expect(persistentTaskTooltipContent(card, true)).toEqual({
+      title: "PAS 카드 목록 호버 툴팁", now: "현재 진행", ask: "확인 요청",
+    });
+    expect(persistentTaskTooltipContent(card, false)).toEqual({ now: "현재 진행", ask: "확인 요청" });
+    expect(persistentTaskTooltipContent({ ...card, now: { ...card.now, turn: "agent" } }, false))
+      .toEqual({ now: "현재 진행" });
+    expect(persistentTaskTooltipContent({ ...card, now: { ...card.now, text: "", ask: "   " } }, false)).toBeNull();
+    expect(persistentTaskTooltipContent({ ...card, now: { ...card.now, text: "", ask: "다음 확인" } }, false))
+      .toEqual({ ask: "다음 확인" });
+  });
+
   it("groups the complete card status inventory in the approved order and omits completed states", () => {
     const cards = [
       baseCard("done", "done"), baseCard("todo", "todo"), baseCard("queued", "queued"),
@@ -121,6 +149,7 @@ describe("persistent session task list", () => {
     expect(row.querySelector(".v3-card-summary-number-reserve")?.getAttribute("aria-hidden")).toBe("true");
     expect(row.querySelector(".v3-card-summary-number")?.textContent).toBe("#42");
     expect(row.querySelector(".v3-card-summary-title")?.textContent).toBe("긴 카드 제목");
+    expect(row.querySelector(".v3-card-summary-title")?.getAttribute("title")).toBeNull();
     expect(row.querySelector(".v3-card-summary-avatar")).not.toBeNull();
     expect(container.querySelector(".v3-run-row")).toBeNull();
     await act(() => row.click());
