@@ -2,7 +2,7 @@ import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, f
 import { ChevronRight, RefreshCw } from "lucide-react";
 import type { UseUsageSummaryResult } from "../hooks/useUsageSummary";
 
-type Props = Pick<UseUsageSummaryResult, "node" | "gauges" | "maxGaugeCount" | "loading" | "loadState" | "evaluatedAtMs"> & {
+type Props = Pick<UseUsageSummaryResult, "node" | "gauges" | "loading" | "loadState" | "evaluatedAtMs"> & {
   onRetry: () => void;
   onNextNode: () => void;
 };
@@ -15,12 +15,15 @@ function emptyMessage({ loading, loadState, node, gauges }: Pick<Props, "loading
   return "수집 대기";
 }
 
-export function PersistentSessionWeeklyUsage({ node, gauges, maxGaugeCount, loading, loadState, evaluatedAtMs, onRetry, onNextNode }: Props) {
+export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState, evaluatedAtMs, onRetry, onNextNode }: Props) {
   const message = emptyMessage({ node, gauges, loading, loadState });
   const stale = loadState === "connectionError" && gauges.length > 0;
   const updatedLabel = stale && node ? formatUsageUpdatedLabel(node.fetchedAt, true) : null;
-  const slotCount = Math.max(3, maxGaugeCount, gauges.length);
-  const placeholders = Math.max(0, slotCount - (gauges.length || 1));
+  const placeholders = gauges.length === 0 ? 2 : 0;
+  const placeholderRows = Array.from({ length: placeholders }, (_, index) => <div className="persistent-session-weekly-usage-row is-placeholder" aria-hidden="true" key={`placeholder-${index}`}>
+    <div className="persistent-session-weekly-usage-labels persistent-session-weekly-usage-placeholder-labels" />
+    <div className="persistent-session-weekly-usage-track" />
+  </div>);
 
   return <div
     className="persistent-session-weekly-usage"
@@ -29,10 +32,7 @@ export function PersistentSessionWeeklyUsage({ node, gauges, maxGaugeCount, load
     title={stale && updatedLabel ? `갱신 지연, ${updatedLabel}` : undefined}
     data-testid="persistent-session-weekly-usage"
   >
-    {Array.from({ length: placeholders }, (_, index) => <div className="persistent-session-weekly-usage-row is-placeholder" aria-hidden="true" key={`placeholder-${index}`}>
-      <div className="persistent-session-weekly-usage-labels persistent-session-weekly-usage-placeholder-labels" />
-      <div className="persistent-session-weekly-usage-track" />
-    </div>)}
+    {gauges.length === 0 ? placeholderRows : null}
     {gauges.length ? gauges.map(gauge => {
       const percent = formatWeeklyRemainingPercent(gauge.remainingPercent);
       const warning = gauge.remainingPercent < 20;

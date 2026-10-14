@@ -20,7 +20,7 @@ const usage: UsageSummarySnapshot = {
         shortRemainingPercent: null, shortResetAt: null, quotas: [],
       },
       codex: null,
-      gemini: null, antigravity: null,
+      antigravity: null,
     },
   }],
 };
@@ -114,7 +114,7 @@ test('node changes project the all-node response without another request', async
     { initialProps: initial },
   );
   await waitFor(() => expect(result.current.node?.nodeId).toBe('pas-node'));
-  expect(result.current.maxGaugeCount).toBe(2);
+  expect(result.current.gauges).toHaveLength(1);
 
   rerender({ ...initial, selectedNodeId: 'other-node' });
   expect(api.getUsageSummary).toHaveBeenCalledTimes(1);

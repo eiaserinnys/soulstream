@@ -22,7 +22,7 @@ const pasNode: UsageSummarySnapshot["nodes"][number] = {
       quotas: [],
     },
     codex: null,
-    gemini: null, antigravity: null,
+    antigravity: null,
   },
 };
 const otherNode: UsageSummarySnapshot["nodes"][number] = {
@@ -52,7 +52,7 @@ function Probe(props: Props) {
   const state = useUsageSummary(props);
   return <div>
     <output data-testid="state" data-load-state={state.loadState} data-loading={String(state.loading)}>
-      <span data-max-gauge-count={state.maxGaugeCount} />
+      <span data-gauge-count={state.gauges.length} />
       {state.node?.nodeId ?? "none"}:{state.gauges.map((gauge) => `${gauge.id}=${gauge.remainingPercent}`).join(",")}
     </output>
     <button type="button" onClick={state.retry}>retry</button>
@@ -120,7 +120,7 @@ describe("useUsageSummary", () => {
     expect(request).toHaveBeenCalledTimes(1);
     expect(currentState().dataset.loadState).toBe("ready");
     expect(currentState().textContent).toContain("other-node:claude=41,codex=22");
-    expect(currentState().firstElementChild?.getAttribute("data-max-gauge-count")).toBe("2");
+    expect(currentState().firstElementChild?.getAttribute("data-gauge-count")).toBe("2");
 
     await render({ ...initial, selectedNodeId: "missing-node" });
     expect(request).toHaveBeenCalledTimes(1);

@@ -9,8 +9,10 @@ const quota = (id: string, usedPercent: number | null): ProviderQuota => ({ id, 
 const usage: ProviderUsageSnapshot = { generatedAt: '2026-10-04T00:00:00Z', providers: {
   claude: { status: 'auto', source: 'public-fixture', planType: '공개 예시', quotas: [quota('5h', 0), quota('weekly', 50.125), quota('amount-only', null)] },
   codex: { status: 'auto', source: 'public-fixture', planType: '공개 예시', quotas: [quota('primary', 120.125), quota('secondary', null)] },
-  gemini: { status: 'not_configured', source: 'public-fixture', planType: null, quotas: [] },
-  antigravity: { status: 'not_configured', source: 'public-fixture', planType: null, quotas: [] },
+  antigravity: { status: 'auto', source: 'agy:/usage', planType: null, quotas: [
+    { ...quota('antigravity:gemini:5h', 4.0193), label: '5시간', window: '5h' },
+    { ...quota('antigravity:gemini:weekly', 4.0193), label: '7일', window: '7d' },
+  ] },
 } };
 let policy: SessionReviewPolicyPayload = { policy: { key: 'session_review_policy', sourceAllowlist: ['slack'], version: 1, updatedBy: '공개 예시', updatedAt: '2026-10-04T00:00:00Z' }, conditionalRules: [], sourceCatalog: ['slack', 'soul-app', 'external-llm', 'clipper', 'llm', 'agent', 'system', 'cron', 'channel_observer'].map(source => ({ source, label: source, description: '공개 예시 출처', automatic: ['llm', 'agent', 'system', 'cron', 'channel_observer'].includes(source) })) };
 let jobs: RecurringJobDto[] = Array.from({ length: 12 }, (_, index) => ({

@@ -146,7 +146,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     const observer = new ResizeObserver(measure);
     observer.observe(seat);
     return () => observer.disconnect();
-  }, [hasWeeklyUsage, usageSummary.evaluatedAtMs, usageSummary.gauges.length, usageSummary.loading, usageSummary.loadState, usageSummary.maxGaugeCount, usageSummary.node?.fetchedAt]);
+  }, [hasWeeklyUsage, usageSummary.evaluatedAtMs, usageSummary.gauges.length, usageSummary.loading, usageSummary.loadState, usageSummary.node?.fetchedAt]);
   const geometry = usePersistentSessionGeometry({ app: appRef, header: headerRef, main: mainRef, composer: composerAnchorRef, enabled: chatReady, showCharacter: displaySettings?.showCharacter ?? false });
   const applySaved = useCallback((saved: PersistentSession) => {
     setListing(current => current ? { ...current, sessions: current.sessions.map(session => session.session_id === saved.session_id ? saved : session) } : current);

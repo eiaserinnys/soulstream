@@ -11,7 +11,6 @@ import { useTokens } from '../theme';
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
-  gemini: 'Gemini',
   antigravity: 'Antigravity',
 };
 
@@ -36,7 +35,7 @@ export function quotaAmount(quota: ProviderQuota): string | null {
   }
   if (quota.remaining !== null) return `${quota.remaining.toLocaleString(undefined, { maximumFractionDigits: 20 })} 남음`;
   if (quota.used !== null) return `${quota.used.toLocaleString(undefined, { maximumFractionDigits: 20 })} 사용`;
-  if (quota.remainingPercent !== null) return `${quota.remainingPercent}% 남음`;
+  if (quota.remainingPercent !== null) return `${Math.round(quota.remainingPercent)}% 남음`;
   return null;
 }
 
@@ -51,8 +50,8 @@ export function ProviderUsageChart({
   const providers = (Object.entries(usage.providers) as [
     ProviderName,
     ProviderUsageSnapshot['providers'][ProviderName],
-  ][]).filter(([provider]) =>
-    visibleProviders ? visibleProviders.includes(provider) : true,
+  ][]).filter(([provider, limits]) =>
+    limits != null && (provider as string) !== 'gemini' && (!visibleProviders || visibleProviders.includes(provider)),
   );
 
   if (providers.length === 0) {
@@ -117,7 +116,7 @@ export function ProviderUsageChart({
                 <View
                   key={quota.id}
                   testID={`usage-bar-${quota.id}`}
-                  accessible accessibilityLabel={[quota.label, quota.usedPercent !== null ? `${quota.usedPercent}%` : null, amount, reset ? `초기화: ${reset}` : null].filter(Boolean).join(' · ')}
+                  accessible accessibilityLabel={[quota.label, quota.usedPercent !== null ? `${Math.round(quota.usedPercent)}%` : null, amount, reset ? `초기화: ${reset}` : null].filter(Boolean).join(' · ')}
                   style={{ marginTop: t.spacing.sm }}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -133,7 +132,7 @@ export function ProviderUsageChart({
                     </Text>
                     <Text style={{ color: t.colors.textSecondary, ...t.foundation.typography.body }}>
                       {quota.usedPercent !== null
-                        ? `${quota.usedPercent}%`
+                        ? `${Math.round(quota.usedPercent)}%`
                         : amount ?? '-'}
                     </Text>
                   </View>

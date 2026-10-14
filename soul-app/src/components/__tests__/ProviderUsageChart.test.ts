@@ -69,6 +69,7 @@ test('provider filter composes one provider without changing the default all-pro
   const all = render(React.createElement(ProviderUsageChart, { usage }));
   expect(all.getByTestId('usage-provider-claude')).toBeTruthy();
   expect(all.getByTestId('usage-provider-codex')).toBeTruthy();
+  expect(all.queryByTestId('usage-provider-gemini')).toBeNull();
 
   const codexOnly = render(
     React.createElement(ProviderUsageChart, {
@@ -80,19 +81,28 @@ test('provider filter composes one provider without changing the default all-pro
   expect(codexOnly.queryByTestId('usage-provider-claude')).toBeNull();
 });
 
-test('real quota values retain precision while only the visual fill is clamped', () => {
+test('percent labels round like the web while raw values and visual fill remain unchanged', () => {
   const screen = render(React.createElement(ProviderUsageChart, { usage: {
     generatedAt: '2026-10-04T00:00:00Z',
     providers: { claude: { status: 'auto', source: 'test', planType: 'max',
       quotas: [quota({ id: 'over', usedPercent: 120.125 }), quota({ id: 'zero', usedPercent: 0 }),
         quota({ id: 'missing', remaining: 3, limit: 10 })] } },
   } as any }));
-  expect(screen.getByText('120.125%')).toBeTruthy();
+  expect(screen.getByText('120%')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('usage-fill-over').props.style).width).toBe('100%');
   expect(screen.getByText('0%')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('usage-fill-zero').props.style).width).toBe('0%');
   expect(screen.queryByTestId('usage-fill-missing')).toBeNull();
   expect(screen.getAllByText('3 / 10 남음').length).toBeGreaterThan(0);
+});
+
+test('rounds the remaining percent and accessible used percent', () => {
+  expect(quotaAmount(quota({ remainingPercent: 95.9807 }))).toBe('96% 남음');
+  const view = render(React.createElement(ProviderUsageChart, { usage: { generatedAt: '', providers: {
+    antigravity: { status: 'auto', source: 'agy:/usage', planType: null, quotas: [quota({ usedPercent: 4.0193, remainingPercent: 95.9807 })] },
+  } } as any }));
+  expect(view.getByText('4%')).toBeTruthy();
+  expect(view.getByLabelText(/Quota · 4% · 96% 남음/)).toBeTruthy();
 });
 
 test('labels the existing Antigravity provider chart', () => { const screen = render(React.createElement(ProviderUsageChart, { usage: { generatedAt: '2026-10-14T00:00:00Z', providers: { antigravity: { status: 'auto', source: 'agy:/usage', planType: null, quotas: [quota({ label: '7일', remainingPercent: 99 })] } } } as any })); expect(screen.getByText('Antigravity')).toBeTruthy(); });

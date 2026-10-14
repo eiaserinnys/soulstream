@@ -13,7 +13,7 @@ import { DESIGN_SPACING } from '../../theme/tokens';
 import type { UseUsageSummaryResult } from '../../hooks/useUsageSummary';
 
 type Props = Pick<UseUsageSummaryResult,
-  'node' | 'gauges' | 'maxGaugeCount' | 'loading' | 'loadState' | 'evaluatedAtMs'> & {
+  'node' | 'gauges' | 'loading' | 'loadState' | 'evaluatedAtMs'> & {
   onRetry: () => void;
   onNextNode: () => void;
 };
@@ -29,7 +29,6 @@ function emptyMessage({ loading, loadState, node, gauges }: Pick<Props, 'loading
 export function PersistentSessionWeeklyUsage({
   node,
   gauges,
-  maxGaugeCount,
   loading,
   loadState,
   evaluatedAtMs,
@@ -43,13 +42,18 @@ export function PersistentSessionWeeklyUsage({
   const accessibilityLabel = stale && updatedLabel
     ? `주간 남은 사용량, 갱신 지연, ${updatedLabel}`
     : '주간 남은 사용량';
-  const slotCount = Math.max(3, maxGaugeCount, gauges.length);
-  const visibleGaugeSlots = gauges.length || 1;
-  const placeholderCount = Math.max(0, slotCount - visibleGaugeSlots);
+  const placeholderCount = gauges.length === 0 ? 2 : 0;
   const meta = t.foundation.typography.meta;
   const trackHeight = DESIGN_SPACING.xs;
   const slotHeight = meta.lineHeight + t.spacing.xxs + trackHeight;
   const nodeVisualHeight = Math.max(meta.lineHeight, t.iconSize.compact);
+  const placeholderRows = Array.from({ length: placeholderCount }, (_, index) => <View key={`placeholder-${index}`}
+    testID={`persistent-session-weekly-usage-slot-${gauges.length ? gauges.length + index : index}`} accessibilityElementsHidden
+    importantForAccessibility="no-hide-descendants" pointerEvents="none"
+    style={{ height: slotHeight, gap: t.spacing.xxs }}>
+    <View style={{ height: meta.lineHeight }} />
+    <View style={{ height: trackHeight }} />
+  </View>);
 
   const renderGauge = (gauge: Props['gauges'][number], index: number) => {
     const percent = formatWeeklyRemainingPercent(gauge.remainingPercent);
@@ -96,15 +100,9 @@ export function PersistentSessionWeeklyUsage({
 
   return <View testID="persistent-session-weekly-usage" accessibilityRole="summary" accessibilityLabel={accessibilityLabel}
     style={{ minWidth: 0, gap: t.spacing.md }}>
-    {Array.from({ length: placeholderCount }, (_, index) => <View key={`placeholder-${index}`}
-      testID={`persistent-session-weekly-usage-slot-${index}`} accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants" pointerEvents="none"
-      style={{ height: slotHeight, gap: t.spacing.xxs }}>
-      <View style={{ height: meta.lineHeight }} />
-      <View style={{ height: trackHeight }} />
-    </View>)}
+    {gauges.length === 0 ? placeholderRows : null}
     {gauges.length
-      ? gauges.map((gauge, index) => renderGauge(gauge, placeholderCount + index))
+      ? gauges.map((gauge, index) => renderGauge(gauge, index))
       : renderStatus()}
     {node ? <View testID="persistent-session-weekly-usage-node-row" style={{ height: nodeVisualHeight, position: 'relative' }}>
       <CompactTouchTarget testID="persistent-session-weekly-usage-node" surfaceTestID="persistent-session-weekly-usage-node-surface"

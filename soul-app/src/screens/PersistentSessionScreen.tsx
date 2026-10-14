@@ -191,7 +191,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       }} style={{ position: 'absolute', right: t.foundation.pageInset, width: widths.tasks - 2 * t.uiSpacing.sm,
         bottom: app.height - geometry.lineY }}>
         <PersistentSessionWeeklyUsage node={usageSummary.node} gauges={usageSummary.gauges}
-          maxGaugeCount={usageSummary.maxGaugeCount} loading={usageSummary.loading} loadState={usageSummary.loadState}
+          loading={usageSummary.loading} loadState={usageSummary.loadState}
           evaluatedAtMs={usageSummary.evaluatedAtMs} onRetry={usageSummary.retry}
           onNextNode={() => {
             if (!session?.node_id) return;

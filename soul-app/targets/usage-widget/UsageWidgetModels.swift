@@ -96,6 +96,14 @@ struct UsageSummaryNode: Codable, Identifiable {
                 resetAt: providers.codex?.weeklyResetAt
             ))
         }
+        if let value = providers.antigravity?.weeklyRemainingPercent {
+            result.append(UsageGauge(
+                id: "antigravity",
+                label: "Antigravity",
+                remainingPercent: value,
+                resetAt: providers.antigravity?.weeklyResetAt
+            ))
+        }
         return result
     }
 }
@@ -103,7 +111,7 @@ struct UsageSummaryNode: Codable, Identifiable {
 struct UsageSummaryProviders: Codable {
     let claude: UsageSummaryProvider?
     let codex: UsageSummaryProvider?
-    let gemini: UsageSummaryProvider?
+    let antigravity: UsageSummaryProvider?
 }
 
 struct UsageSummaryProvider: Codable {

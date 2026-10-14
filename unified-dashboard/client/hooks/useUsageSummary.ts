@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  maxWeeklyUsageGaugeCount,
   selectUsageSummaryNode,
   weeklyUsageGauges,
   USAGE_SUMMARY_REFRESH_INTERVAL_MS,
@@ -26,7 +25,6 @@ export type UseUsageSummaryResult = {
   summary: UsageSummarySnapshot | null;
   node: UsageSummaryNode | null;
   gauges: UsageSummaryGauge[];
-  maxGaugeCount: number;
   loading: boolean;
   loadState: UsageSummaryLoadState;
   evaluatedAtMs: number;
@@ -139,7 +137,6 @@ export function useUsageSummary({
   const summary = scopedState.hideSummary ? null : scopedState.lastSuccess;
   const node = selectUsageSummaryNode(summary, nodeId, selectedNodeId);
   const gauges = useMemo(() => weeklyUsageGauges(node), [node]);
-  const maxGaugeCount = maxWeeklyUsageGaugeCount(summary);
   let loadState: UsageSummaryLoadState;
   if (scopedState.outcome === "connectionError") loadState = "connectionError";
   else if (scopedState.outcome === "serverPending") loadState = "serverPending";
@@ -150,7 +147,6 @@ export function useUsageSummary({
     summary,
     node,
     gauges,
-    maxGaugeCount,
     loading: scopedState.loading,
     loadState,
     evaluatedAtMs: scopedState.evaluatedAtMs,

@@ -185,17 +185,17 @@ describe("Claude headless and provider usage route harness", () => {
     await app.close();
   });
 
-  it("validates provider usage whitelist before sending node commands", async () => {
+  it.each(["openai", "gemini"])("validates provider usage whitelist before sending node commands (%s)", async (provider) => {
     const { app, sent } = createClaudeAuthHarness();
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/nodes/fake-node/provider-usage/openai",
+      url: `/api/nodes/fake-node/provider-usage/${provider}`,
     });
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
-      detail: "provider must be one of: claude, codex, gemini, antigravity",
+      detail: "provider must be one of: claude, codex, antigravity",
     });
     expect(sent).toEqual([]);
 

@@ -64,26 +64,82 @@ struct UsageWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
     private func content(_ node: UsageSummaryNode, connectionError: Bool) -> some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 8) {
-            HStack(spacing: 8) {
-                if family == .systemMedium {
-                    Button(intent: PreviousUsageNodeIntent(currentNodeID: node.nodeId)) {
-                        Image(systemName: "chevron.left")
-                    }
-                    .buttonStyle(.plain)
+        if family == .systemSmall && node.gauges.count > 3 {
+            ViewThatFits(in: .vertical) {
+                smallContent(node, connectionError: connectionError, showBars: true, showUpdated: true)
+                smallContent(node, connectionError: connectionError, showBars: true, showUpdated: false)
+                smallContent(node, connectionError: connectionError, showBars: false, showUpdated: false)
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            regularContent(node, connectionError: connectionError)
+        }
+    }
+
+    private func header(_ node: UsageSummaryNode) -> some View {
+        HStack(spacing: 8) {
+            if family == .systemMedium {
+                Button(intent: PreviousUsageNodeIntent(currentNodeID: node.nodeId)) {
+                    Image(systemName: "chevron.left")
                 }
-                Text(node.nodeId)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if family == .systemMedium {
-                    Button(intent: NextUsageNodeIntent(currentNodeID: node.nodeId)) {
-                        Image(systemName: "chevron.right")
+                .buttonStyle(.plain)
+            }
+            Text(node.nodeId)
+                .font(.headline)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if family == .systemMedium {
+                Button(intent: NextUsageNodeIntent(currentNodeID: node.nodeId)) {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func updatedText(_ node: UsageSummaryNode, connectionError: Bool) -> some View {
+        Text(
+            connectionError
+                ? "연결 오류 · " + updatedLabel(node.fetchedAt, stale: true)
+                : updatedLabel(node.fetchedAt, stale: node.stale)
+        )
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
+    }
+
+    private func smallContent(_ node: UsageSummaryNode, connectionError: Bool, showBars: Bool, showUpdated: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            header(node)
+            ForEach(node.gauges) { gauge in
+                gaugeRow(gauge, compact: true, showBar: showBars)
+            }
+            if showUpdated {
+                Spacer(minLength: 0)
+                updatedText(node, connectionError: connectionError)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func mediumGrid(_ gauges: [UsageGauge]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(0..<2) { row in
+                HStack(alignment: .top, spacing: 16) {
+                    ForEach(0..<2) { column in
+                        gaugeRow(gauges[row * 2 + column], compact: true, showBar: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private func regularContent(_ node: UsageSummaryNode, connectionError: Bool) -> some View {
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 8) {
+            header(node)
 
             if node.gauges.isEmpty {
                 Spacer()
@@ -91,25 +147,20 @@ struct UsageWidgetView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+            } else if family == .systemMedium && node.gauges.count > 3 {
+                mediumGrid(node.gauges)
             } else {
-                ForEach(node.gauges.prefix(3)) { gauge in
-                    gaugeRow(gauge)
+                ForEach(node.gauges) { gauge in
+                    gaugeRow(gauge, compact: family == .systemSmall, showBar: true)
                 }
             }
 
             Spacer(minLength: 0)
-            Text(
-                connectionError
-                    ? "연결 오류 · " + updatedLabel(node.fetchedAt, stale: true)
-                    : updatedLabel(node.fetchedAt, stale: node.stale)
-            )
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            updatedText(node, connectionError: connectionError)
         }
     }
 
-    private func gaugeRow(_ gauge: UsageGauge) -> some View {
+    private func gaugeRow(_ gauge: UsageGauge, compact: Bool, showBar: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(gauge.label)
@@ -118,7 +169,7 @@ struct UsageWidgetView: View {
                 Spacer(minLength: 0)
                 if let resetCountdown = gauge.resetCountdown(
                     at: entry.date,
-                    compact: family == .systemSmall
+                    compact: compact
                 ) {
                     Text(resetCountdown)
                         .font(.caption2)
@@ -130,8 +181,10 @@ struct UsageWidgetView: View {
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .fixedSize(horizontal: true, vertical: false)
             }
-            ProgressView(value: gauge.remainingPercent, total: 100)
-                .tint(gauge.remainingPercent < 20 ? .orange : .accentColor)
+            if showBar {
+                ProgressView(value: gauge.remainingPercent, total: 100)
+                    .tint(gauge.remainingPercent < 20 ? .orange : .accentColor)
+            }
         }
     }
 
@@ -161,7 +214,7 @@ struct UsageWidget: Widget {
             UsageWidgetView(entry: entry)
         }
         .configurationDisplayName("주간 사용량")
-        .description("노드별 Claude·Fable·Codex 주간 남은 양을 표시합니다.")
+        .description("노드별 Claude·Fable·Codex·Antigravity 주간 남은 양을 표시합니다.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

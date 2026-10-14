@@ -6,12 +6,14 @@ import { GlassButton } from '../GlassSurface';
 import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 import { ProviderUsageChart } from '../ProviderUsageChart';
 
-export function CodexProviderSection({
+export function ProviderUsageSection({
+  provider,
   usage,
   loadingUsage,
   usageError,
   onRefreshUsage,
 }: {
+  provider: 'codex' | 'antigravity';
   usage: ProviderUsageSnapshot | null;
   loadingUsage: boolean;
   usageError: string | null;
@@ -22,12 +24,12 @@ export function CodexProviderSection({
   const styles = useMemo(() => makeStyles(t), [t]);
 
   return (
-    <View testID="backend-provider-codex" style={[styles.provider, workspace && { paddingTop: 0, marginTop: 0, borderTopWidth: 0 }]}>
+    <View testID={`backend-provider-${provider}`} style={[styles.provider, workspace && { paddingTop: 0, marginTop: 0, borderTopWidth: 0 }]}>
       <View style={styles.headingRow}>
-        <Text style={styles.title}>Codex</Text>
+        <Text style={styles.title}>{provider === 'codex' ? 'Codex' : 'Antigravity'}</Text>
         <GlassButton
-          testID="backend-provider-codex-usage-action"
-          surfaceTestID="backend-provider-codex-usage-action-surface"
+          testID={`backend-provider-${provider}-usage-action`}
+          surfaceTestID={`backend-provider-${provider}-usage-action-surface`}
           style={styles.action}
           contentStyle={styles.buttonContent}
           disabled={loadingUsage}
@@ -40,7 +42,7 @@ export function CodexProviderSection({
           )}
         </GlassButton>
       </View>
-      {usage ? <ProviderUsageChart usage={usage} providers={['codex']} /> : null}
+      {usage ? <ProviderUsageChart usage={usage} providers={[provider]} /> : null}
       {usageError ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {usageError}

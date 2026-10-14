@@ -280,7 +280,7 @@ function parseUsageSummarySharedAccounts(
 function invalidUsageSummarySharedAccounts(): Error {
   return new Error(
     "USAGE_SUMMARY_SHARED_ACCOUNTS must contain semicolon-separated " +
-    "provider:node-a,node-b groups for claude, codex, gemini, or antigravity",
+    "provider:node-a,node-b groups for claude, codex, or antigravity",
   );
 }
 

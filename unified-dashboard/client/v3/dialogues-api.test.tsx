@@ -34,5 +34,5 @@ it("preserves the empty usage node and adds a separate three-provider usage node
   expect(api.config.nodes.has("sample-usage-node")).toBe(true);
   const usage = await (await api.request("/api/nodes/sample-usage-node/provider-usage")).json();
   expect(Object.keys(usage.providers)).toEqual(["claude", "codex", "antigravity"]);
-  expect(usage.providers.antigravity.quotas.map((quota: { label: string; window: string }) => [quota.label, quota.window])).toEqual([["7일", "7d"], ["5시간", "5h"]]);
+  expect(usage.providers.antigravity.quotas.map((quota: { label: string; window: string }) => [quota.label, quota.window])).toEqual([["5시간", "5h"], ["7일", "7d"]]);
 });

@@ -5,7 +5,6 @@ import {
   formatUsageResetCountdown,
   formatUsageUpdatedLabel,
   formatWeeklyRemainingPercent,
-  maxWeeklyUsageGaugeCount,
   nextUsageSummaryNodeId,
   selectUsageSummaryNode,
   weeklyUsageGauges,
@@ -34,7 +33,7 @@ function node(
     providers: {
       claude: null,
       codex: null,
-      gemini: null, antigravity: null,
+      antigravity: null,
       ...providers,
     },
   };
@@ -68,7 +67,7 @@ describe("usage summary projection", () => {
     expect(selectUsageSummaryNode(null, "pas-node", null)).toBeNull();
   });
 
-  it("cycles in response order, including stale nodes without gauges, and keeps the maximum slot count", () => {
+  it("cycles in response order, including stale nodes without gauges", () => {
     const fableQuota = {
       id: "claude:weekly_scoped:fable",
       label: "Fable",
@@ -101,9 +100,6 @@ describe("usage summary projection", () => {
     expect(nextUsageSummaryNodeId(null, "three-gauges")).toBeNull();
     expect(weeklyUsageGauges(threeGauges)).toHaveLength(3);
     expect(weeklyUsageGauges(twoGauges)).toHaveLength(2);
-    expect(maxWeeklyUsageGaugeCount(summary)).toBe(3);
-    expect(maxWeeklyUsageGaugeCount({ ...summary, nodes: [] })).toBe(0);
-    expect(maxWeeklyUsageGaugeCount(null)).toBe(0);
   });
 
   it("uses Claude, the first matching Fable scoped quota, then Codex while preserving zero", () => {
@@ -128,11 +124,11 @@ describe("usage summary projection", () => {
         ],
       },
       codex: { ...emptyProvider, weeklyRemainingPercent: 73, weeklyResetAt: 300 },
-      gemini: { ...emptyProvider, weeklyRemainingPercent: 99, weeklyResetAt: 500 },
       antigravity: null,
     };
 
-    expect(weeklyUsageGauges(node("pas-node", providers))).toEqual([
+    const legacyProviders = { ...providers, gemini: { ...emptyProvider, weeklyRemainingPercent: 99 } };
+    expect(weeklyUsageGauges(node("pas-node", legacyProviders))).toEqual([
       { id: "claude", label: "Claude", remainingPercent: 0, resetAt: 100 },
       { id: "codex", label: "Codex", remainingPercent: 73, resetAt: 300 },
     ]);
@@ -165,9 +161,14 @@ describe("usage summary projection", () => {
   });
 });
 
-it("keeps PAS gauges limited to Claude, Fable and Codex with Antigravity data present", () => {
+it("appends Antigravity after Claude, Fable and Codex using the weekly window, including zero", () => {
   const providers = { ...emptyProvider, weeklyRemainingPercent: 99, weeklyResetAt: 1792500000 };
-  expect(weeklyUsageGauges(node("agy", { antigravity: providers }))).toEqual([]);
-  const original = node("all", { claude: providers, codex: providers });
-  expect(weeklyUsageGauges(node("all", { ...original.providers, antigravity: providers }))).toEqual(weeklyUsageGauges(original));
+  const all = node("all", {
+    claude: { ...providers, quotas: [{ id: 'claude:weekly_scoped:fable', label: 'Fable', window: '7d', model: null, remainingPercent: 80, resetAt: 100 }] },
+    codex: providers,
+    antigravity: { ...providers, weeklyRemainingPercent: 0, shortRemainingPercent: 72, shortResetAt: 200 },
+  });
+  expect(weeklyUsageGauges(all).map(gauge => gauge.id)).toEqual(['claude', 'fable', 'codex', 'antigravity']);
+  expect(weeklyUsageGauges(all).at(-1)).toEqual({ id: 'antigravity', label: 'Antigravity', remainingPercent: 0, resetAt: 1792500000 });
+  expect(weeklyUsageGauges(node('missing', { antigravity: emptyProvider }))).toEqual([]);
 });

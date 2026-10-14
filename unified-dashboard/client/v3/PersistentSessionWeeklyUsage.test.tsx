@@ -15,7 +15,7 @@ const node: UsageSummaryNode = {
   fetchedAt: "2026-10-13T08:00:00.000Z",
   stale: false,
   staleSince: null,
-  providers: { claude: null, codex: null, gemini: null, antigravity: null },
+  providers: { claude: null, codex: null, antigravity: null },
 };
 const gauges: UsageSummaryGauge[] = [
   { id: "claude", label: "Claude", remainingPercent: 73, resetAt: evaluatedAtMs / 1000 + 4 * 24 * 60 * 60 + 2 * 60 * 60 },
@@ -41,7 +41,6 @@ function renderUsage(overrides: Partial<UseUsageSummaryResult> = {}, onNextNode 
     summary: null,
     node,
     gauges,
-    maxGaugeCount: 3,
     loading: false,
     loadState: "ready",
     evaluatedAtMs,
@@ -52,7 +51,7 @@ function renderUsage(overrides: Partial<UseUsageSummaryResult> = {}, onNextNode 
   return { onNextNode, onRetry };
 }
 
-it("shows compact reset labels, full accessible times, percentages, and a whole-row node action", () => {
+it("shows compact reset labels, full accessible times, percentages, and a whole-row node action without empty slots", () => {
   const { onNextNode } = renderUsage();
 
   const countdown = host.querySelector(".persistent-session-weekly-usage-countdown")!;
@@ -61,8 +60,7 @@ it("shows compact reset labels, full accessible times, percentages, and a whole-
   expect(host.querySelectorAll('[role="progressbar"]')).toHaveLength(2);
   expect(host.querySelector('[aria-label="Claude 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("73");
   expect(host.querySelector('[aria-label="Codex 주간 잔량"]')?.getAttribute("aria-valuenow")).toBe("41");
-  expect(host.querySelectorAll(".persistent-session-weekly-usage-row[aria-hidden=\"true\"]")).toHaveLength(1);
-  expect(host.querySelector(".persistent-session-weekly-usage-row.is-placeholder .persistent-session-weekly-usage-placeholder-labels")).not.toBeNull();
+  expect(host.querySelectorAll(".persistent-session-weekly-usage-row[aria-hidden=\"true\"]")).toHaveLength(0);
 
   const nodeButton = host.querySelector<HTMLButtonElement>('[aria-label="노드 바꾸기, 현재 node-a"]')!;
   expect(nodeButton.classList.contains("persistent-session-weekly-usage-node")).toBe(true);
@@ -109,7 +107,6 @@ it("reserves three provider slots before the first usage summary arrives", () =>
     summary: null,
     node: null,
     gauges: [],
-    maxGaugeCount: 0,
     loading: true,
     loadState: "idle",
   });
@@ -117,4 +114,12 @@ it("reserves three provider slots before the first usage summary arrives", () =>
   expect(host.querySelector('[role="status"]')?.textContent).toBe("불러오는 중");
   expect(host.querySelectorAll(".persistent-session-weekly-usage-row.is-placeholder")).toHaveLength(2);
   expect(host.querySelector(".persistent-session-weekly-usage-node.is-placeholder")).not.toBeNull();
+});
+
+it.each([1, 2, 3, 4])("renders exactly %i gauges without empty slots", count => {
+  const four: UsageSummaryGauge[] = [gauges[0], { ...gauges[0], id: 'fable', label: 'Fable' }, gauges[1], { ...gauges[0], id: 'antigravity', label: 'Antigravity' }];
+  renderUsage({ gauges: four.slice(0, count) });
+  expect(host.querySelectorAll('.persistent-session-weekly-usage-row')).toHaveLength(count);
+  expect(host.querySelector('.persistent-session-weekly-usage-row.is-placeholder')).toBeNull();
+  expect(host.querySelector('.persistent-session-weekly-usage')?.lastElementChild?.classList.contains('persistent-session-weekly-usage-node')).toBe(true);
 });

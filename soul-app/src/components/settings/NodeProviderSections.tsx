@@ -12,7 +12,7 @@ import type {
 } from '../../api/claudeAuthTypes';
 import { useAuthStore } from '../../store/authStore';
 import { ClaudeProviderSection } from './ClaudeProviderSection';
-import { CodexProviderSection } from './CodexProviderSection';
+import { ProviderUsageSection } from './ProviderUsageSection';
 
 export function NodeProviderSections({
   nodeId,
@@ -74,11 +74,19 @@ export function NodeProviderSections({
         {usage ? <ProviderUsageChart usage={usage} providers={['claude']}/> : null}
         {usageErrors.claude ? <Text accessibilityRole="alert" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{usageErrors.claude}</Text> : null}
       </View> : null}
-      <View style={groupStyle}><CodexProviderSection
+      <View style={groupStyle}><ProviderUsageSection
+        provider="codex"
         usage={usage}
         loadingUsage={Boolean(loadingProviders.codex)}
         usageError={usageErrors.codex ?? null}
         onRefreshUsage={() => void refreshUsage('codex')}
+      /></View>
+      <View style={groupStyle}><ProviderUsageSection
+        provider="antigravity"
+        usage={usage}
+        loadingUsage={Boolean(loadingProviders.antigravity)}
+        usageError={usageErrors.antigravity ?? null}
+        onRefreshUsage={() => void refreshUsage('antigravity')}
       /></View>
     </>
   );
