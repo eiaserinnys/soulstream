@@ -11,6 +11,7 @@ import { PersistentReportDeck } from './PersistentReportDeck';
 import { usePersistentReportDismiss } from './usePersistentReportDismiss';
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('../lib/persistent-sessions', () => ({ createPersistentSessionsApi: () => ({ dismissReport: request }) }));
+const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const one: PersistentReportEntry = { key: 'one', kind: 'see', title: '하나', card_numbers: [], context: '', action: '', options: [], state: 'open', answer: '', updated_at: 'first' };
 const two = { ...one, key: 'two' };
@@ -60,7 +61,7 @@ function Integrated() {
   actions = usePersistentReportDismiss('a', getOperations);
   return <ChatUiControllerProvider sessionId="a"><ChatUiOperationsBridge register={registerOperations} />
     <PersistentReportProvider sessionId="a" entries={actions.visibleEntries}>
-      <PersistentReportDeck sessionId="a" notify={notify} focusInput={() => host.querySelector('textarea')!.focus()} dismissReport={actions.dismiss} />
+      <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={() => host.querySelector('textarea')!.focus()} dismissReport={actions.dismiss} />
     </PersistentReportProvider><textarea /><Feedback />
   </ChatUiControllerProvider>;
 }
@@ -120,10 +121,14 @@ it('removes delayed dismissals immediately under the real provider/deck, moves f
   const first = deferred(), second = deferred(); request.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
   const seen = () => host.querySelector<HTMLButtonElement>('[data-current="true"] button')!;
   seen().focus(); await act(async () => seen().click());
+  // Production clears this pending slot when the matching user-message echo is processed.
+  // This harness has no SSE event dispatcher, so reproduce that reconciliation after acceptance.
+  await act(async () => useDashboardStore.getState().setPendingChatSend('a', null));
   expect(host.querySelector('[data-testid="report-sheet-one"]')).toBeNull();
   expect(host.querySelector('.pas-report-count')?.textContent).toBe('1 / 2');
   expect(document.activeElement?.getAttribute('data-testid')).toBe('report-sheet-two');
   seen().focus(); await act(async () => seen().click());
+  await act(async () => useDashboardStore.getState().setPendingChatSend('a', null));
   expect(host.querySelector('.pas-report-nav')).toBeNull();
   expect(document.activeElement?.getAttribute('data-testid')).toBe('report-sheet-third');
   await act(async () => { first.reject(new Error('offline')); });
