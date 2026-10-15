@@ -24,7 +24,6 @@ export function buildThreadStartParams(
   return {
     model,
     modelProvider: null,
-    serviceTier: null,
     cwd: workspaceDir,
     runtimeWorkspaceRoots: [workspaceDir],
     approvalPolicy: "never",
@@ -63,7 +62,6 @@ export function buildThreadResumeParams(
     path: null,
     model: normalizedModel(params.model),
     modelProvider: null,
-    serviceTier: null,
     cwd: workspaceDir,
     runtimeWorkspaceRoots: [workspaceDir],
     approvalPolicy: "never",
@@ -104,7 +102,6 @@ export function buildTurnStartParams(
     sandboxPolicy: { type: "dangerFullAccess" },
     permissions: null,
     model,
-    serviceTier: null,
     effort: resolveCodexModelReasoningEffort(model, params.reasoningEffort) ?? null,
     summary: null,
     personality: null,
