@@ -10,6 +10,8 @@ export interface OpenCodeEvent {
     callID?: string;
     reason?: string;
     cost?: number;
+    synthetic?: boolean;
+    metadata?: { compaction_continue?: boolean };
     state?: {
       status?: string;
       input?: unknown;
@@ -45,6 +47,7 @@ export class OpenCodeEventMapper {
   private sessionId: string | undefined;
   private readonly toolCalls = new Set<string>();
   private lastText: string | undefined;
+  private pendingText: string | undefined;
   private turnCostUsd = 0;
   private sawStop = false;
   private failed = false;
@@ -67,10 +70,16 @@ export class OpenCodeEventMapper {
 
     const part = event.part;
     if (event.type === "text" && part?.type === "text" && typeof part.text === "string") {
-      this.lastText = part.text;
-      output.push({ type: "assistant_message", content: part.text, model: this.model, timestamp });
+      if (part.synthetic === true) {
+        if (part.metadata?.compaction_continue === true) this.pendingText = undefined;
+        return output;
+      }
+      output.push(...this.flushPendingText(timestamp));
+      this.pendingText = part.text;
       return output;
     }
+
+    if (event.type === "tool_use") output.push(...this.flushPendingText(timestamp));
 
     if (event.type === "tool_use" && part?.type === "tool" && part.state
       && (part.state.status === "completed" || part.state.status === "error")
@@ -110,8 +119,9 @@ export class OpenCodeEventMapper {
 
   fail(error: unknown): SSEEventPayload[] {
     if (this.finished || this.failed) return [];
+    const pendingText = this.flushPendingText(Date.now() / 1000);
     this.failed = true;
-    return [{
+    return [...pendingText, {
       type: "error",
       fatal: true,
       message: errorMessage(error),
@@ -127,23 +137,34 @@ export class OpenCodeEventMapper {
   ): SSEEventPayload[] {
     if (this.finished || this.failed) return [];
     if (expectedInterrupt) {
+      const pendingText = this.flushPendingText(Date.now() / 1000);
       this.finished = true;
-      return [];
+      return pendingText;
     }
     if (exitCode === 0 && signal === null && this.sawStop) {
+      const timestamp = Date.now() / 1000;
+      const pendingText = this.flushPendingText(timestamp);
       this.finished = true;
-      return [{
+      return [...pendingText, {
         type: "complete",
         status: "completed",
         ...(this.lastText !== undefined ? { result: this.lastText } : {}),
         model: this.model,
         turn_cost_usd: this.turnCostUsd,
-        timestamp: Date.now() / 1000,
+        timestamp,
       }];
     }
     const reason = signal ? `signal ${signal}` : `exit code ${exitCode ?? "unknown"}`;
     return this.fail(this.sawStop
       ? `OpenCode exited with ${reason}`
       : `OpenCode ended without a stop event (${reason})`);
+  }
+
+  private flushPendingText(timestamp: number): SSEEventPayload[] {
+    if (this.pendingText === undefined) return [];
+    const content = this.pendingText;
+    this.pendingText = undefined;
+    this.lastText = content;
+    return [{ type: "assistant_message", content, model: this.model, timestamp }];
   }
 }
