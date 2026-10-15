@@ -2530,7 +2530,8 @@ describe("dashboard-store", () => {
           eventId: 50,
         },
       ]);
-      expect(result.addedCount).toBeGreaterThan(0);
+      // 빈 text_start는 트리에는 남지만 표시 행으로는 추가되지 않는다.
+      expect(result.addedCount).toBe(0);
 
       const tree = useDashboardStore.getState().tree;
       expect(tree).not.toBeNull();

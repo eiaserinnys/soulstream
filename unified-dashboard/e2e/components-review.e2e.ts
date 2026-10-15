@@ -5,6 +5,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 import { waitForStableLayout } from "./layout-stability";
 
 const output = path.resolve("../../../.local/artifacts/20261001-components-full-page");
+const argonOutput = path.resolve("../../../.local/artifacts/20261015-argon385");
 const phase = process.env.COMPONENTS_REVIEW_PHASE;
 if (!phase) throw new Error("COMPONENTS_REVIEW_PHASE is required");
 
@@ -273,6 +274,44 @@ for (const width of [1440, 390]) {
     await expect(defaultToolRow).toBeVisible();
     await defaultToolRow.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-default-after-${width}.png`), animations: "disabled" });
     writeFileSync(path.join(w13CaptureRoot, `${w13Stamp}-w13-geometry-${width}.json`), JSON.stringify(geometry, null, 2));
+
+    const argonReview = page.getByTestId("persistent-manuscript-chat-review");
+    const argonManuscript = argonReview.getByTestId("manuscript-review-column");
+    const emptyRows = defaultChat.locator('[data-tree-node-id^="text-argon-empty-"]');
+    const manuscriptEmptyRows = argonManuscript.locator('[data-tree-node-id^="text-argon-empty-"]');
+    const expectedEmptyRows = phase === "before" ? 5 : 0;
+    await expect(emptyRows).toHaveCount(expectedEmptyRows);
+    await expect(manuscriptEmptyRows).toHaveCount(expectedEmptyRows);
+
+    const responseRow = defaultChat.locator('[data-tree-node-id="text-argon-review-response"]');
+    const manuscriptChat = argonManuscript.locator('[data-slot="chat-root"]');
+    const manuscriptResponseRow = manuscriptChat.locator('[data-tree-node-id="text-argon-review-response"]');
+    await expect(responseRow).toContainText("Argon의 정상 응답입니다.");
+    await expect(manuscriptResponseRow).toContainText("Argon의 정상 응답입니다.");
+    await expect(manuscriptChat.locator('[data-slot="chat-thinking-indicator"]')).toHaveCount(0);
+    mkdirSync(argonOutput, { recursive: true });
+    if (expectedEmptyRows > 0) {
+      const firstEmptyRow = emptyRows.first();
+      await firstEmptyRow.scrollIntoViewIfNeeded();
+      await firstEmptyRow.screenshot({
+        path: path.join(argonOutput, phase + "-default-empty-row-" + width + ".png"),
+        animations: "disabled",
+      });
+    }
+    await responseRow.scrollIntoViewIfNeeded();
+    await responseRow.screenshot({
+      path: path.join(argonOutput, phase + "-default-response-" + width + ".png"),
+      animations: "disabled",
+    });
+    await manuscriptResponseRow.scrollIntoViewIfNeeded();
+    await defaultChat.screenshot({
+      path: path.join(argonOutput, phase + "-default-" + width + ".png"),
+      animations: "disabled",
+    });
+    await manuscriptChat.screenshot({
+      path: path.join(argonOutput, phase + "-manuscript-" + width + ".png"),
+      animations: "disabled",
+    });
 
     const closedGroup = activity.locator("[data-slot=manuscript-activity-toggle]").nth(1);
     await closedGroup.click();

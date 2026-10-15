@@ -23,6 +23,11 @@ const PAS_REVIEW_AGENT_INPUT_ID = "pas251-projection-agent-report";
 const PAS_REVIEW_HUMAN_INPUT_ID = "pas251-projection-human-image";
 const PAS_REVIEW_ASSISTANT_RESPONSE = "PAS 응답: 첨부 이미지를 확인했습니다.";
 const NARRATION_REVIEW_INPUT_ID = "pas-narration-review-input";
+const ARGON_REVIEW_EMPTY_STREAM_IDS = Array.from({ length: 5 }, (_, index) => "argon-empty-" + (index + 1));
+const ARGON_REVIEW_EMPTY_TEXT_NODE_IDS = ARGON_REVIEW_EMPTY_STREAM_IDS.map(id => "text-" + id);
+const ARGON_REVIEW_RESPONSE_STREAM_ID = "argon-review-response";
+const ARGON_REVIEW_RESPONSE = "Argon의 정상 응답입니다. 원문을 보존합니다 ✨";
+const ARGON_REVIEW_COMPLETE_TOTAL_COST = 0.385;
 
 export const DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full max-w-[520px] bg-background";
 export const MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden";
@@ -241,6 +246,69 @@ function ManuscriptColumn() {
     const thinkingEvent = events.find((event): event is Extract<SoulSSEEvent, { type: "thinking" }> => event.type === "thinking");
     if (thinkingEvent) thinkingEvent.parent_event_id = String(narrationInputIndex + 1);
     store.processEvents(events.map((event, index) => ({ event, eventId: index + 1 })));
+    const argonLiveEvents: SoulSSEEvent[] = [
+      ...ARGON_REVIEW_EMPTY_STREAM_IDS.flatMap((streamIdentity, index) => [
+        {
+          type: "text_start",
+          timestamp: index * 2,
+          streamIdentity,
+          liveSeq: 0,
+          liveTextMode: "replace",
+        } as SoulSSEEvent,
+        {
+          type: "text_end",
+          timestamp: index * 2 + 1,
+          streamIdentity,
+          liveSeq: 1,
+          liveTextMode: "append",
+        } as SoulSSEEvent,
+      ]),
+      {
+        type: "text_start",
+        timestamp: 20,
+        streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+        liveSeq: 0,
+        liveTextMode: "replace",
+      },
+      {
+        type: "text_delta",
+        timestamp: 21,
+        streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+        liveSeq: 1,
+        liveTextMode: "append",
+        text: ARGON_REVIEW_RESPONSE,
+      },
+      {
+        type: "text_end",
+        timestamp: 22,
+        streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+        liveSeq: 2,
+        liveTextMode: "append",
+      },
+    ];
+    store.processEvents(argonLiveEvents.map(event => ({ event, eventId: 0 })));
+    const argonFinalEventId = events.length + 1;
+    store.processEvents([
+      {
+        event: {
+          type: "assistant_message",
+          content: ARGON_REVIEW_RESPONSE,
+          streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+          _final_for_live_stream: true,
+        },
+        eventId: argonFinalEventId,
+      },
+      {
+        event: {
+          type: "complete",
+          result: "Argon 응답 완료",
+          attachments: [],
+          usage: { input_tokens: 385, output_tokens: 5 },
+          total_cost_usd: ARGON_REVIEW_COMPLETE_TOTAL_COST,
+        },
+        eventId: argonFinalEventId + 1,
+      },
+    ]);
     setReady(true);
     return () => {
       useDashboardStore.setState(state => {
@@ -298,7 +366,10 @@ export function PersistentManuscriptChatReviewSample() {
       || message.deliveryId === PAS_REVIEW_FOLLOWUP_DELIVERY_ID
       || message.inputId === PAS_REVIEW_AGENT_INPUT_ID
       || message.inputId === PAS_REVIEW_HUMAN_INPUT_ID
-      || message.content === PAS_REVIEW_ASSISTANT_RESPONSE),
+      || message.content === PAS_REVIEW_ASSISTANT_RESPONSE
+      || ARGON_REVIEW_EMPTY_TEXT_NODE_IDS.includes(message.treeNodeId ?? "")
+      || message.treeNodeId === "text-" + ARGON_REVIEW_RESPONSE_STREAM_ID
+      || (message.treeNodeType === "complete" && message.totalCostUsd === ARGON_REVIEW_COMPLETE_TOTAL_COST)),
     [tree],
   );
   return <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
