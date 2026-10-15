@@ -50,7 +50,23 @@ describe("ModelCatalog", () => {
       "kimi-3",
       "gemini-3.8-flash",
       "gemini-4-argon",
+      "opencode-deepseek-v4.1-flash-free",
     ]);
+  });
+
+  it("advertises the OpenCode DeepSeek preset without a usage provider or effort control", () => {
+    const catalog = new ModelCatalog(
+      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
+    );
+    const preset = catalog.advertise().find((entry) => entry.id === "opencode-deepseek-v4.1-flash-free");
+    expect(preset).toMatchObject({
+      backend: "opencode",
+      usage_provider: null,
+    });
+    expect(preset?.supported_efforts).toBeUndefined();
+    expect(catalog.resolve("opencode-deepseek-v4.1-flash-free")).toMatchObject({
+      model: "opencode/deepseek-v4.1-flash-free",
+    });
   });
 
   it("encodes the effort policy, leaving Kimi on the backend default", () => {

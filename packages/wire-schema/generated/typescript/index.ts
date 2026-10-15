@@ -128,7 +128,7 @@ export interface NodeRegister {
   model_presets?: {
     id: string;
     label: string;
-    backend: "claude" | "codex" | "openai-agents" | "antigravity";
+    backend: "claude" | "codex" | "openai-agents" | "antigravity" | "opencode";
     available: boolean;
     reason?: "env_unresolved";
     /**

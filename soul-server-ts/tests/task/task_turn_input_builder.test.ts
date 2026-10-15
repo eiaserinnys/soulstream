@@ -133,7 +133,7 @@ describe("TaskTurnInputBuilder", () => {
     expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
   });
 
-  it.each(["claude", "antigravity"] as const)("prepares a new %s turn by splitting systemPrompt from prompt text", async (backend) => {
+  it.each(["claude", "antigravity", "opencode"] as const)("prepares a new %s turn by splitting systemPrompt from prompt text", async (backend) => {
     const agent = { ...claudeAgent, backend };
     const ctx = makeContext();
     const task = makeTask({
@@ -155,10 +155,10 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/screen.png"]);
   });
 
-  it.each(["antigravity", "claude"] as const)("preserves the approved empty-instruction first turn for %s", async backend => {
+  it.each(["antigravity", "claude", "opencode"] as const)("preserves the approved empty-instruction first turn for %s", async backend => {
     const { builder } = makeSubject({ contextBuilder: { build: vi.fn().mockResolvedValue({ ...makeContext(), effectiveSystemPrompt: undefined }) } });
     const input = await builder.prepareInitialTurnInput(makeTask(), { ...claudeAgent, backend });
-    expect(input.systemPrompt).toBe(backend === "antigravity" ? "" : undefined);
+    expect(input.systemPrompt).toBe(backend === "antigravity" || backend === "opencode" ? "" : undefined);
   });
 
   it("binds the initial public message, prepared context, and engine input to one registered input UUID", async () => {
@@ -829,7 +829,7 @@ describe("TaskTurnInputBuilder", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it("compact 후 첫 후속 턴은 full context를 한 번만 재주입한다", async () => {
+  it.each(["claude", "opencode"] as const)("compact 후 %s 첫 후속 턴은 full context를 한 번만 재주입한다", async backend => {
     const task = makeTask({
       needsFullContextReinjection: true,
       interventionQueue: [{ text: "after compact", user: "u" }],
@@ -846,11 +846,12 @@ describe("TaskTurnInputBuilder", () => {
       },
     });
 
-    const first = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const agent = { ...claudeAgent, backend };
+    const first = await builder.prepareInitialTurnInput(task, agent);
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
-      claudeAgent,
+      agent,
       expect.objectContaining({ includeFullContext: true }),
     );
     expect(first.systemPrompt).toBe("full system");
@@ -860,13 +861,13 @@ describe("TaskTurnInputBuilder", () => {
     task.interventionQueue.push({ text: "regular", user: "u" });
     await builder.prepareFollowupTurnInput(
       task,
-      claudeAgent,
+      agent,
       [task.interventionQueue.shift()!],
     );
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
-      claudeAgent,
+      agent,
       expect.objectContaining({ includeFullContext: false }),
     );
   });

@@ -64,7 +64,7 @@ type RunnerEnv = Pick<Env,
   | "CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS"
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
->;
+> & Partial<Pick<Env, "OPENCODE_CLI_PATH">>;
 
 export interface RunnerProcessRuntimeFactoryOptions {
   env: RunnerEnv;
@@ -167,6 +167,9 @@ export function createRunnerProcessRuntimeFactory(
       codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
       codexCliPath: options.codexCliPath?.path,
       antigravityCliPath: options.antigravityCliPath?.path,
+      ...(backend === "opencode" && options.env.OPENCODE_CLI_PATH
+        ? { opencodeCliPath: options.env.OPENCODE_CLI_PATH }
+        : {}),
       codexDetachedResultRetentionMs:
         options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
       codexAppServerRequestTimeoutMs:
@@ -258,6 +261,7 @@ function spawnInputFromConfig(
     codexAdapterMode: config.codexAdapterMode,
     ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),
     ...(config.antigravityCliPath ? { antigravityCliPath: config.antigravityCliPath } : {}),
+    ...(config.opencodeCliPath ? { opencodeCliPath: config.opencodeCliPath } : {}),
     codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
     claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,

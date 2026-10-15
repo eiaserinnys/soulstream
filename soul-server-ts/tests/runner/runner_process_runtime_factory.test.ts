@@ -89,6 +89,52 @@ describe("createRunnerProcessRuntimeFactory", () => {
     }));
   });
 
+  it("forwards OPENCODE_CLI_PATH into only the OpenCode runner child config", async () => {
+    const spawn = vi.fn(async () => {
+      throw new Error("captured opencode spawn input");
+    });
+    const agent = {
+      id: "agent-opencode",
+      name: "OpenCode Agent",
+      backend: "claude",
+      workspace_dir: "/workspace/opencode",
+    } as AgentProfile;
+    const factory = createRunnerProcessRuntimeFactory({
+      env: { ...runnerEnv(), OPENCODE_CLI_PATH: "/opt/opencode" },
+      logger: pino({ level: "silent" }),
+      pumpMux: {} as never,
+      sessionStore: {} as never,
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      releasePool: {
+        resolveCurrentRelease: vi.fn(async () => ({
+          releaseId: "sha-opencode",
+          releaseRoot: "/release/sha-opencode",
+          runnerModuleRoot: "/release/sha-opencode/soul-server-ts",
+        })),
+        describe: vi.fn(),
+        ensureRelease: vi.fn(async () => undefined),
+      },
+      buildChildProcessEnv: () => ({}),
+      spawner: { adopt: vi.fn(), spawn },
+    });
+    const task = {
+      agentSessionId: "session-opencode",
+      prompt: "start",
+      status: "pending",
+    } as Task;
+    const runtime = factory(task, agent, "opencode", {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    });
+
+    await expect(runtime.dispatcher.prepareSession("session-opencode"))
+      .rejects.toThrow("captured opencode spawn input");
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      backend: "opencode",
+      opencodeCliPath: "/opt/opencode",
+    }));
+  });
+
   it("passes the existing registration to recovery adoption without spawning", async () => {
     const config: RunnerChildConfig = parseRunnerChildConfig({
       schemaVersion: 1,
@@ -211,6 +257,7 @@ function runnerEnv() {
     CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 135_000,
     MCP_INTERNAL_PORT: 4308,
     MCP_PATH: "/mcp",
+    OPENCODE_CLI_PATH: undefined,
   };
 }
 

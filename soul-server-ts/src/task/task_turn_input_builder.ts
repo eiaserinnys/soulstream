@@ -140,7 +140,7 @@ export class TaskTurnInputBuilder {
       : contextItems;
     const prompt = appendContextBlock(composed.prompt, followupContextItems);
     const systemPrompt =
-      ["claude", "antigravity"].includes(effectiveTaskBackend(task, agent)) && includeFullContext
+      ["claude", "antigravity", "opencode"].includes(effectiveTaskBackend(task, agent)) && includeFullContext
         ? ctx?.effectiveSystemPrompt
         : undefined;
     const runnerInterventionIds = interventions
@@ -276,13 +276,13 @@ export class TaskTurnInputBuilder {
         prompt: task.prompt,
         originalPrompt: task.prompt,
         imageAttachmentPaths,
-        ...(backend === "antigravity" ? { systemPrompt: "" } : {}),
+        ...(backend === "antigravity" || backend === "opencode" ? { systemPrompt: "" } : {}),
         ...(inputUuid ? { inputUuid } : {}),
         turnOrigin: { kind: "initial_prompt" },
       };
     }
 
-    if (["claude", "antigravity"].includes(backend)) {
+    if (["claude", "antigravity", "opencode"].includes(backend)) {
       return {
         originalPrompt: task.prompt,
         prompt: composeFirstTurnPrompt({
@@ -292,7 +292,7 @@ export class TaskTurnInputBuilder {
         }),
         imageAttachmentPaths,
         ...(inputUuid ? { inputUuid } : {}),
-        ...(backend === "antigravity"
+        ...(backend === "antigravity" || backend === "opencode"
           ? { systemPrompt: ctx.effectiveSystemPrompt ?? "" }
           : ctx.effectiveSystemPrompt !== undefined
           ? { systemPrompt: ctx.effectiveSystemPrompt }
