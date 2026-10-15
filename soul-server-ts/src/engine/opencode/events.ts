@@ -137,8 +137,9 @@ export class OpenCodeEventMapper {
   ): SSEEventPayload[] {
     if (this.finished || this.failed) return [];
     if (expectedInterrupt) {
+      const pendingText = this.flushPendingText(Date.now() / 1000);
       this.finished = true;
-      return [];
+      return pendingText;
     }
     if (exitCode === 0 && signal === null && this.sawStop) {
       const timestamp = Date.now() / 1000;

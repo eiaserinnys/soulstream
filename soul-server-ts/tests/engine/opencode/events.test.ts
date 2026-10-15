@@ -149,6 +149,20 @@ describe("OpenCode 1.19.0 event contract", () => {
     ]);
   });
 
+  it("flushes buffered text when the turn is interrupted", () => {
+    const mapper = new OpenCodeEventMapper("opencode/deepseek-v4.1-flash-free");
+    mapper.accept({
+      type: "text",
+      sessionID: "ses_interrupted_text",
+      part: { type: "text", text: "last text before interrupt" },
+    });
+
+    expect(mapper.finish(null, "SIGTERM", true)).toEqual([
+      expect.objectContaining({ type: "assistant_message", content: "last text before interrupt" }),
+    ]);
+    expect(mapper.finish(0, null)).toEqual([]);
+  });
+
   it("converts a failed tool call to a tool result without failing the turn", () => {
     const mapper = new OpenCodeEventMapper("opencode/deepseek-v4.1-flash-free");
     const events = fixture("tool-error.synthetic").flatMap((event) => mapper.accept(event));
