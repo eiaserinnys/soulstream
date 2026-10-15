@@ -7,6 +7,7 @@ import type { Logger } from "pino";
 
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
+import { OpenCodeEngineAdapter } from "../engine/opencode/adapter.js";
 import {
   ClaudeEngineAdapter,
   ClaudeSdkClient,
@@ -37,6 +38,17 @@ export function createRunnerChildEngine(
       agentId: config.agent.id,
       sessionDirectory: config.paths.sessionDirectory,
       executablePath: config.antigravityCliPath,
+      processEnv: process.env,
+      resolvedMcpServers: config.resolvedMcpServers,
+      internalMcpUrl: config.internalMcpUrl,
+    }, logger);
+  }
+  if (config.backend === "opencode") {
+    return new OpenCodeEngineAdapter({
+      workspaceDir: config.agent.workspace_dir,
+      agentId: config.agent.id,
+      sessionDirectory: config.paths.sessionDirectory,
+      executablePath: config.opencodeCliPath,
       processEnv: process.env,
       resolvedMcpServers: config.resolvedMcpServers,
       internalMcpUrl: config.internalMcpUrl,

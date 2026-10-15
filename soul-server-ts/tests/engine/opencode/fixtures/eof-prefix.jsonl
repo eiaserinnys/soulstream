@@ -1,0 +1,2 @@
+{"type":"step_start","timestamp":1760520000000,"sessionID":"ses_synthetic_398","part":{"id":"prt_step_398","sessionID":"ses_synthetic_398","messageID":"msg_step_398","type":"step-start","snapshot":""}}
+{"type":"text","timestamp":1760520000001,"sessionID":"ses_synthetic_398","part":{"id":"prt_text_398","sessionID":"ses_synthetic_398","messageID":"msg_step_398","type":"text","text":"PARTIAL_398","time":{"start":1760520000001,"end":1760520000002}}}

@@ -41,6 +41,7 @@ const RunnerChildConfigFields = {
   codexAdapterMode: z.enum(["sdk", "app-server"]),
   codexCliPath: z.string().min(1).optional(),
   antigravityCliPath: z.string().min(1).optional(),
+  opencodeCliPath: z.string().min(1).optional(),
   codexDetachedResultRetentionMs: z.number().int().positive().default(1_800_000),
   codexAppServerRequestTimeoutMs: z.number().int().positive().optional(),
   codexAppServerStartupTimeoutMs: z.number().int().positive().optional(),

@@ -41,3 +41,9 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 `runtime/engine_factory.ts`와 `runner_child_engine_factory.ts`는 Antigravity를 명시 선택하고 자식 팩토리는 모르는 backend를 throw한다. `runner_child_runtime_helpers.ts:requiresBackendSessionId`에 Antigravity가 포함되어 init ID가 기존 bootstrap/outbox의 선행 조건이다. 같은 `sessions.claude_session_id`와 bootstrap.backend_session_id가 다음 턴과 워커 교체 뒤 재개 ID를 공급한다.
 
 `engine/antigravity/agent_definition.ts`는 새 대화에만 `os.homedir()/.gemini/config/agents/soulstream-<session-hash>.md`를 만든다. 새 정의 디렉터리는 0700, 기존 디렉터리 권한은 유지하고 파일은 0600이다. 작업 cwd에는 정의를 쓰지 않고 `--add-dir` 없이 `--agent` 이름만 전달한다. 성공·실패·중단 모두 프로세스 close 이후 자기 정의 파일 하나만 삭제한다. 세션 상태 디렉터리에는 로그만 쓴다. 프로세스는 그룹 리더로 생성하지만 unref하지 않고 부모가 close를 기다린다. 중단 직전에 /proc 자손 PID와 starttime을 기록한 뒤 agy 그룹에 SIGINT를 보낸다. close 뒤에도 같은 starttime으로 살아 있는 관찰 자손에만 개별 SIGTERM을 한 번 보낸다. 정상 종료나 이미 init의 자식으로 떨어진 프로세스는 건드리지 않으며 SIGKILL·대기·재시도는 없다. init 이전 중단 요청은 init 직후로 보류한다. 매 실행의 로그는 `sessionDirectory/antigravity.log`로 지정한다.
+
+## OpenCode 엔진 선택과 세션 설정
+
+`main.ts`는 프로필과 카탈로그의 backend 합집합에서 `OPENCODE_CLI_PATH` 필요성을 알리고, `config.ts`의 선택 환경값을 host engine factory 또는 `runner_process_runtime_factory.ts` → `runner_process_spawn.ts` → `runner_child_config.ts.opencodeCliPath`로 전달한다. 경로가 비어도 다른 backend의 기동은 계속되며 OpenCode turn에서만 명시 오류가 난다. `runtime/engine_factory.ts`와 `runner_child_engine_factory.ts`가 `OpenCodeEngineAdapter`를 등록하고 `runner_child_runtime_helpers.ts:requiresBackendSessionId`가 세션 ID 선행 조건을 적용한다.
+
+`engine/opencode/config.ts`는 session directory에 0600 설정·system prompt 파일과 session-local XDG 경로를 두며 `agentSessionId`를 전달한다. `engine/opencode/process.ts`는 Antigravity와 같은 detached process-group SIGINT 및 close 뒤 starttime 검증 자손 정리를 쓴다. adapter는 기존 runner 이벤트만 내보내며 durable delivery는 runner outbox가 맡는다. 턴 비용은 `step_finish` 누계로, 세션 누계는 기존 runner 로직으로 유지한다.

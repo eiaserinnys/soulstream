@@ -4,6 +4,7 @@ import type { Logger } from "pino";
 import type { Env } from "../config.js";
 import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
 import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
+import { OpenCodeEngineAdapter } from "../engine/opencode/adapter.js";
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
 import type { ClaudeSessionClientRegistry } from
@@ -26,7 +27,7 @@ type EngineFactoryEnv = Pick<
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
   | "SOUL_RUNNER_STATE_DIR"
->;
+> & Partial<Pick<Env, "OPENCODE_CLI_PATH">>;
 
 export interface CreateEngineFactoryParams {
   env: EngineFactoryEnv;
@@ -64,6 +65,17 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
         stateDirectory: env.SOUL_RUNNER_STATE_DIR,
         executablePath: antigravityCliPath?.path,
         processEnv: antigravityProcessEnv,
+        resolvedMcpServers: mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
+        internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
+      }, logger);
+    }
+    if (backend === "opencode") {
+      return new OpenCodeEngineAdapter({
+        workspaceDir: agent.workspace_dir,
+        agentId: agent.id,
+        stateDirectory: env.SOUL_RUNNER_STATE_DIR,
+        executablePath: env.OPENCODE_CLI_PATH,
+        processEnv: process.env,
         resolvedMcpServers: mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
         internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
       }, logger);

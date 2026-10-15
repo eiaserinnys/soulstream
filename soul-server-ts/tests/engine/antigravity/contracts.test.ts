@@ -15,6 +15,8 @@ import { makeTempDirSync } from "../../helpers/temp_dir.js";
 it("uses the shared backend schema at catalog, frame and child-config boundaries", () => {
   expect(AgentBackendSchema.parse("antigravity")).toBe("antigravity");
   expect(requiresBackendSessionId("antigravity")).toBe(true);
+  expect(AgentBackendSchema.parse("opencode")).toBe("opencode");
+  expect(requiresBackendSessionId("opencode")).toBe(true);
   for (const kind of ["run_state_snapshot", "session_items_snapshot"]) {
     expect(RunnerEventFrameSchema.safeParse({ protocolVersion: 1, channel: "event", kind, snapshot: { backendId: "antigravity", serialized: null, items: [] } }).success).toBe(true);
   }
@@ -38,4 +40,52 @@ it("creates Antigravity through both factories without checking or spawning an i
   expect(config.antigravityCliPath).toBe("/test/agy");
   expect(createRunnerChildEngine(config,{} as never,logger).backendId).toBe("antigravity");
   expect(()=>createRunnerChildEngine({...config,backend:"unknown" as never},{} as never,logger)).toThrow(/Unsupported backend/);
+});
+
+it("creates OpenCode through host and child factories and preserves its CLI path", () => {
+  const workspaceDir = makeTempDirSync("opencode-factories-");
+  const stateDirectory = join(workspaceDir, "state");
+  const agent = { id: "test", name: "시험", backend: "claude" as const, workspace_dir: workspaceDir };
+  const logger = pino({ level: "silent" });
+  const factory = createEngineFactory({
+    env: {
+      CODEX_ADAPTER_MODE: "sdk",
+      CODEX_APP_SERVER_REQUEST_TIMEOUT_MS: 30_000,
+      CODEX_APP_SERVER_STARTUP_TIMEOUT_MS: 120_000,
+      CODEX_DETACHED_RESULT_RETENTION_MS: 1_800_000,
+      CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
+      MCP_INTERNAL_PORT: 4206,
+      MCP_PATH: "/mcp",
+      SOUL_RUNNER_STATE_DIR: stateDirectory,
+      OPENCODE_CLI_PATH: "/test/opencode",
+    },
+    logger,
+    codexProcessEnv: {},
+    antigravityProcessEnv: {},
+    buildClaudeProcessEnv: () => ({}),
+    claudeSessionStore: { async append() {}, async load() { return null; } },
+    mcpConfigService: new McpConfigService({ agentsConfigPath: join(workspaceDir, "agents.yaml") }),
+  });
+  expect(factory(agent, "opencode").backendId).toBe("opencode");
+
+  const config = parseRunnerChildConfig({
+    schemaVersion: 1,
+    sessionId: "test",
+    backend: "opencode",
+    agent,
+    paths: runnerProcessPaths(stateDirectory, "test"),
+    codeSha: "test",
+    snapshotPath: workspaceDir,
+    codexAdapterMode: "sdk",
+    opencodeCliPath: "/test/opencode",
+    claudeRuntimeV2Enabled: false,
+    claudeRuntimeIdleTtlMs: 60_000,
+    claudeRuntimeMaxEntries: 1,
+    claudeRuntimeTurnTimeoutMs: 60_000,
+    internalMcpUrl: "http://127.0.0.1:4206/mcp",
+    codexHome: null,
+    rolloutRoot: null,
+  });
+  expect(config.opencodeCliPath).toBe("/test/opencode");
+  expect(createRunnerChildEngine(config, {} as never, logger).backendId).toBe("opencode");
 });

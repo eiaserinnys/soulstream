@@ -151,3 +151,8 @@ presets:
     model: gemini-4-argon
     supported_efforts: [low, medium, high]
     default_effort: high
+
+  - id: opencode-deepseek-v4.1-flash-free
+    label: "OpenCode - DeepSeek V4.1 Flash Free"
+    backend: opencode
+    model: opencode/deepseek-v4.1-flash-free

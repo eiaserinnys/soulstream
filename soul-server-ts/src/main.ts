@@ -144,6 +144,13 @@ async function main(): Promise<void> {
   ]);
   const hasClaudeBackend = configuredBackends.has("claude");
   const hasCodexBackend = configuredBackends.has("codex");
+  if (configuredBackends.has("opencode")) {
+    if (env.OPENCODE_CLI_PATH) {
+      logger.info("OpenCode CLI path configured");
+    } else {
+      logger.warn("OPENCODE_CLI_PATH is unset; OpenCode turns will fail explicitly");
+    }
+  }
   if (agentRegistry.supportedBackends().includes("claude") && !env.CLAUDE_AUTH_TOKEN_PATH) {
     console.error(
       "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
