@@ -302,6 +302,7 @@ function ManuscriptColumn() {
         event: {
           type: "complete",
           result: "Argon 응답 완료",
+          attachments: [],
           usage: { input_tokens: 385, output_tokens: 5 },
           total_cost_usd: ARGON_REVIEW_COMPLETE_TOTAL_COST,
         },
