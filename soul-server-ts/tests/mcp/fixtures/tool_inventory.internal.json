@@ -947,7 +947,8 @@
                 "claude",
                 "codex",
                 "openai-agents",
-                "antigravity"
+                "antigravity",
+                "opencode"
               ],
               "type": "string"
             },
@@ -4820,7 +4821,8 @@
                 "claude",
                 "codex",
                 "openai-agents",
-                "antigravity"
+                "antigravity",
+                "opencode"
               ],
               "type": "string"
             },
@@ -5683,7 +5685,8 @@
                 "claude",
                 "codex",
                 "openai-agents",
-                "antigravity"
+                "antigravity",
+                "opencode"
               ],
               "type": "string"
             },
@@ -8051,7 +8054,8 @@
                 "claude",
                 "codex",
                 "openai-agents",
-                "antigravity"
+                "antigravity",
+                "opencode"
               ],
               "type": "string"
             },

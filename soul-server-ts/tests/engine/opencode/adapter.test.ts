@@ -9,9 +9,10 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
   const workspaceDir = join(root, "workspace");
   const sessionDirectory = join(root, "session");
-  const executablePath = join(root, "fake-opencode.mjs");
+  const executablePath = join(root, "fake-opencode.sh");
+  const fixturePath = join(root, "fake-opencode.mjs");
   mkdirSync(workspaceDir, { recursive: true });
-  writeFileSync(executablePath, `#!/usr/bin/env node
+  writeFileSync(fixturePath, `#!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const value = key => args[args.indexOf(key) + 1];
@@ -29,7 +30,9 @@ const env = {
 };
 console.log(JSON.stringify({ type: 'text', sessionID, part: { type: 'text', text: JSON.stringify(env) } }));
 console.log(JSON.stringify({ type: 'step_finish', sessionID, part: { type: 'step-finish', reason: 'stop', cost: 0.25 } }));
-`, { mode: 0o700 });
+`);
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+writeFileSync(executablePath, `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(fixturePath)} "$@"\n`, { mode: 0o700 });
   chmodSync(executablePath, 0o700);
   return { root, workspaceDir, sessionDirectory, executablePath };
 }
