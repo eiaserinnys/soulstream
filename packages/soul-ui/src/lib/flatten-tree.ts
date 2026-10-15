@@ -454,6 +454,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
 
     case "text": {
       const n = node as TextNode;
+      if (n.content.trim().length === 0) return null;
       return {
         id: n.id,
         role: "assistant",
