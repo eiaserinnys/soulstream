@@ -34,6 +34,18 @@ function shouldAnimateEnter(key: string): boolean {
   return true;
 }
 
+function filterDisplayedAttachments(msg: ChatMessage, items: ChatAttachmentItem[]): ChatAttachmentItem[] {
+  if (msg.attachmentDisplayIds === undefined) return items;
+  const allowedIds = new Set(msg.attachmentDisplayIds);
+  return items.filter((item) => {
+    if (item.source.kind === "asset") return allowedIds.has(item.source.attachmentId);
+    if (item.source.kind === "unavailable" && item.source.attachmentId !== undefined) {
+      return allowedIds.has(item.source.attachmentId);
+    }
+    return true;
+  });
+}
+
 /** 메시지 타입에 따라 적절한 컴포넌트로 라우팅 */
 export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId, presentation = "default", narration = false }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string; presentation?: "default" | "manuscript"; narration?: boolean }) {
   const hasAttachmentSignal = msg.role === "user" || msg.role === "intervention" || msg.role === "assistant"
@@ -45,12 +57,14 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     eventId,
     enabled: Boolean(sessionId && eventId && hasAttachmentSignal),
   });
+  const attachmentItems = filterDisplayedAttachments(msg, attachmentState.items);
+  const projectedOutputRow = msg.id.startsWith("output-attachments:");
   const [viewer, setViewer] = useState<{ index: number; trigger: HTMLElement } | null>(null);
   const attachmentRole = msg.role === "assistant" ? "assistant" : "user";
   let attachmentSlot: ReactNode = null;
-  if (attachmentState.items.length > 0) {
+  if (attachmentItems.length > 0) {
     attachmentSlot = <ChatAttachments
-      items={attachmentState.items}
+      items={attachmentItems}
       role={attachmentRole}
       onOpen={(index, trigger) => setViewer({ index, trigger })}
     />;
@@ -67,6 +81,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
         {retryable && <Button variant="outline" size="sm" onClick={attachmentState.reload}>다시 시도</Button>}
       </div>
     </div>;
+  }
+
+  if (projectedOutputRow && !attachmentState.loading && attachmentState.error === null && attachmentItems.length === 0) {
+    return null;
   }
 
   let body: ReactNode;
@@ -118,7 +136,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
   return <div className={animate ? "message-enter" : undefined} data-slot={presentation === "manuscript" ? "chat-manuscript-message" : undefined} data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}>
     {body}
     <AttachmentViewer
-      items={attachmentState.items}
+      items={attachmentItems}
       index={viewer?.index ?? null}
       onIndexChange={index => setViewer(current => current ? { ...current, index } : null)}
       onClose={() => setViewer(null)}

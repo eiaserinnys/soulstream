@@ -8,6 +8,7 @@ import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantM
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
+import { projectChatOutputAttachments } from "@seosoyoung/soul-ui/lib/chat-output-attachment-projection";
 import type { SessionEventAttachmentResponse, SessionEventAttachmentView } from "@soulstream/wire-schema/attachments";
 import { reviewDocuments } from "./chat-ui-review-documents";
 import "./components-review.css";
@@ -66,6 +67,9 @@ function connectedProjection(eventId: number, sessionId: string): SessionEventAt
     205: [connectedAsset("review-manuscript-output", "PAS 응답.txt", "text/plain", "text", sessionId)],
     206: [connectedAsset("review-intervention-file", "개입 첨부.txt", "text/plain", "text", sessionId)],
     207: [connectedAsset("review-overlay-file", "선택 카드 자료.txt", "text/plain", "text", sessionId)],
+    301: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
+    302: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
+    304: [connectedAsset("review-complete-only", "완료 첨부.txt", "text/plain", "text", sessionId)],
   };
   return { event_id: eventId, items: itemsByEvent[eventId] ?? [] };
 }
@@ -280,6 +284,45 @@ export function ChatAttachmentReviewSamples() {
       attachmentIds: ["review-temporary-failure"],
     },
   ] as ChatMessage[], [connectedUi]);
+  const projectedOutputMessages = useMemo(() => projectChatOutputAttachments([
+    {
+      id: "review-output-response",
+      role: "assistant",
+      content: "응답과 함께 전달된 파일입니다.",
+      treeNodeId: "review-output-response",
+      treeNodeType: "assistant_message",
+      eventId: 301,
+      attachmentIds: ["review-output-image"],
+    },
+    {
+      id: "review-output-complete-1",
+      role: "system",
+      content: "완료",
+      treeNodeId: "review-output-complete-1",
+      treeNodeType: "complete",
+      eventId: 302,
+      attachmentIds: ["review-output-image"],
+      captionStats: "턴 비용 $0.04",
+    },
+    {
+      id: "review-output-generation-2",
+      role: "system",
+      content: "새 세대",
+      treeNodeId: "review-output-generation-2",
+      treeNodeType: "generation_started",
+      eventId: 303,
+    },
+    {
+      id: "review-output-complete-2",
+      role: "system",
+      content: "완료",
+      treeNodeId: "review-output-complete-2",
+      treeNodeType: "complete",
+      eventId: 304,
+      attachmentIds: ["review-complete-only"],
+      captionStats: "턴 비용 $0.03",
+    },
+  ] as ChatMessage[]), []);
   const [index, setIndex] = useState<number | null>(null);
   const [viewerItems, setViewerItems] = useState(items);
   const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
@@ -335,6 +378,14 @@ export function ChatAttachmentReviewSamples() {
                   sessionId={connectedReviewSessionId}
                   presentation={msg.treeNodeId.includes("manuscript") ? "manuscript" : "default"}
                 />
+              ))}
+            </div>
+          </section>
+          <section className="flex flex-col gap-2" aria-label="응답 출력과 완료 캡션">
+            <div className="v3-type-section">응답 출력과 완료 캡션</div>
+            <div className="v3-chat-surface flex flex-col">
+              {projectedOutputMessages.map((msg) => (
+                <ChatMessageItem key={msg.treeNodeId} msg={msg} sessionId={connectedReviewSessionId} />
               ))}
             </div>
           </section>
