@@ -24,6 +24,7 @@ import {
 } from "./live_timeline_serialization.js";
 import { readLiveSessionConversationContext } from
   "./live_session_conversation_context.js";
+import { readLiveSessionEventAttachments } from "./live_session_event_attachments.js";
 
 export type CreateLiveSessionHistoryProviderOptions = {
   readonly sqlResolver: LiveDbSqlResolver;
@@ -101,6 +102,10 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     query: Parameters<SessionHistoryProvider["readConversationContext"]>[1],
   ) {
     return readLiveSessionConversationContext(this.sqlResolver, sessionId, query);
+  }
+
+  readEventAttachments(sessionId: string, eventId: number) {
+    return readLiveSessionEventAttachments(this.sqlResolver, sessionId, eventId);
   }
 
   async readTimeline(

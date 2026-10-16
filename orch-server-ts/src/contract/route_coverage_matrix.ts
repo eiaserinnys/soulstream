@@ -32,6 +32,7 @@ import { sessionCatalogRouteAuthRequirements } from "../session/session_catalog_
 import { persistentSessionSettingsRouteAuthRequirements } from "../session/persistent_session_settings_routes.js";
 import { sessionCommandRouteAuthRequirements } from "../session/session_command_routes.js";
 import { sessionHistoryRouteAuthRequirements } from "../session/session_history_routes.js";
+import { sessionEventAttachmentRouteAuthRequirements } from "../session/session_event_attachment_routes.js";
 import { sessionSnapshotRouteAuthRequirements } from "../session/session_snapshot_routes.js";
 import { sseReplayRouteAuthRequirements } from "../sse/sse_replay_routes.js";
 import { systemConfigRouteAuthRequirements } from "../system/system_config_routes.js";
@@ -89,7 +90,13 @@ export const routeCoverageOwners = [
   { owner: "session.catalog", authRequirements: sessionCatalogRouteAuthRequirements },
   { owner: "session.command", authRequirements: sessionCommandRouteAuthRequirements },
   { owner: "session.persistent-settings", authRequirements: persistentSessionSettingsRouteAuthRequirements },
-  { owner: "session.history", authRequirements: sessionHistoryRouteAuthRequirements },
+  {
+    owner: "session.history",
+    authRequirements: {
+      ...sessionHistoryRouteAuthRequirements,
+      ...sessionEventAttachmentRouteAuthRequirements,
+    },
+  },
   { owner: "session.snapshot", authRequirements: sessionSnapshotRouteAuthRequirements },
   { owner: "sse.replay", authRequirements: sseReplayRouteAuthRequirements },
   { owner: "system.config", authRequirements: systemConfigRouteAuthRequirements },
@@ -140,6 +147,7 @@ export const tsOnlyRouteKeys = [
 
   "PUT /api/admin/settings/session-review-policy",
   "GET /api/sessions/{session_id}/conversation-context",
+  "GET /api/sessions/{session_id}/events/{event_id}/attachments",
   "GET /api/sessions/{session_id}/resume-after-limit",
   "POST /api/sessions/{session_id}/resume-after-limit",
   "POST /api/ui-events",
