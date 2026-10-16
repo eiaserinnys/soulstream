@@ -66,6 +66,7 @@ describe("route coverage completeness gate", () => {
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length + tsOnlyRouteKeys.length);
     expect(registeredRouteKeys).toContain("POST /api/attachments/agent-register");
+    expect(registeredRouteKeys).toContain("POST /api/attachments/agent-output/validate");
     expect(registeredRouteKeys).toContain(
       "GET /api/attachments/worker/{attachment_id}/metadata",
     );

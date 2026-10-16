@@ -11,6 +11,7 @@ import { AttachmentCommitError } from "../src/attachments/attachment_commit_serv
 const CHECKSUM = "c".repeat(64);
 const SERVICE_TOKEN = "service-token";
 const PATH = "/api/attachments/agent-register";
+const VALIDATE_OUTPUT_PATH = "/api/attachments/agent-output/validate";
 
 const descriptor = {
   attachment_id: "asset-1",
@@ -50,16 +51,23 @@ function producerHeaders(overrides: Record<string, string> = {}) {
   };
 }
 
-function harness(options: { token?: string; environment?: string; register?: ReturnType<typeof vi.fn>; result?: unknown } = {}) {
+function harness(options: {
+  token?: string;
+  environment?: string;
+  register?: ReturnType<typeof vi.fn>;
+  result?: unknown;
+  validateSessionOutput?: ReturnType<typeof vi.fn>;
+} = {}) {
   const register = options.register ?? vi.fn(async () => options.result ?? { attachment_id: "asset-1", descriptor });
   const app = Fastify();
   registerAgentAttachmentRoutes(app, {
     authBearerToken: options.token ?? SERVICE_TOKEN,
     environment: options.environment ?? "production",
     register: register as never,
-  });
+    ...(options.validateSessionOutput === undefined ? {} : { validateSessionOutput: options.validateSessionOutput }),
+  } as never);
   const apps = [app];
-  return { app, register, apps };
+  return { app, register, validateSessionOutput: options.validateSessionOutput, apps };
 }
 
 const created: Array<{ close: () => Promise<void> }> = [];
@@ -261,9 +269,106 @@ describe("agent attachment registration route", () => {
     expect(response.json()).toMatchObject({ code: "storage_unavailable" });
   });
 
+  it("validates output attachment IDs using the trusted producer headers", async () => {
+    const validateSessionOutput = vi.fn(async () => ({ attachment_ids: ["asset-1"] }));
+    const { app } = build({ validateSessionOutput });
+    const response = await app.inject({
+      method: "POST",
+      url: VALIDATE_OUTPUT_PATH,
+      headers: {
+        ...producerHeaders(),
+        authorization: `Bearer ${SERVICE_TOKEN}`,
+        "content-type": "application/json",
+      },
+      payload: { attachment_ids: ["asset-1", "asset-1"] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ attachment_ids: ["asset-1"] });
+    expect(validateSessionOutput).toHaveBeenCalledOnce();
+    expect(validateSessionOutput).toHaveBeenCalledWith({
+      producer: { sessionId: "session-1", nodeId: "node-1", outputCommandId: "exec-1" },
+      attachmentIds: ["asset-1", "asset-1"],
+    });
+  });
+
+  it("rejects malformed or body-forged output validation requests", async () => {
+    const validateSessionOutput = vi.fn(async () => ({ attachment_ids: ["asset-1"] }));
+    const { app } = build({ validateSessionOutput });
+    const request = (
+      payload: { attachment_ids?: string[]; session_id?: string },
+      headers: Record<string, string> = producerHeaders(),
+    ) => app.inject({
+      method: "POST",
+      url: VALIDATE_OUTPUT_PATH,
+      headers: {
+        ...headers,
+        authorization: `Bearer ${SERVICE_TOKEN}`,
+        "content-type": "application/json",
+      },
+      payload,
+    });
+    const [empty, emptyId, forgedProducer, missingProducerHeader] = await Promise.all([
+      request({ attachment_ids: [] }),
+      request({ attachment_ids: [""] }),
+      request({ attachment_ids: ["asset-1"], session_id: "other-session" }),
+      request({ attachment_ids: ["asset-1"] }, {
+        "x-soulstream-agent-session-id": "session-1",
+        "x-soulstream-node-id": "node-1",
+      }),
+    ]);
+
+    for (const response of [empty, emptyId, forgedProducer, missingProducerHeader]) {
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({ code: "ATTACHMENT_INVALID_OUTPUT" });
+    }
+    expect(validateSessionOutput).not.toHaveBeenCalled();
+  });
+
+  it("does not accept output attachments when validation is unconfigured", async () => {
+    const { app } = build();
+    const response = await app.inject({
+      method: "POST",
+      url: VALIDATE_OUTPUT_PATH,
+      headers: {
+        ...producerHeaders(),
+        authorization: `Bearer ${SERVICE_TOKEN}`,
+        "content-type": "application/json",
+      },
+      payload: { attachment_ids: ["asset-1"] },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ code: "ATTACHMENT_VALIDATION_UNAVAILABLE" });
+  });
+
+  it("preserves validation policy status and error code", async () => {
+    const validateSessionOutput = vi.fn(async () => {
+      throw Object.assign(new Error("producer mismatch"), {
+        statusCode: 403,
+        code: "ATTACHMENT_PRODUCER_MISMATCH",
+      });
+    });
+    const { app } = build({ validateSessionOutput });
+    const response = await app.inject({
+      method: "POST",
+      url: VALIDATE_OUTPUT_PATH,
+      headers: {
+        ...producerHeaders(),
+        authorization: `Bearer ${SERVICE_TOKEN}`,
+        "content-type": "application/json",
+      },
+      payload: { attachment_ids: ["asset-1"] },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: "ATTACHMENT_PRODUCER_MISMATCH" });
+  });
+
   it("declares its service-bearer auth requirement", () => {
     expect(agentAttachmentRouteAuthRequirements).toEqual({
       "POST /api/attachments/agent-register": true,
+      "POST /api/attachments/agent-output/validate": true,
     });
   });
 });

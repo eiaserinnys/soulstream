@@ -1,3 +1,4 @@
+// Provider option types and bundle assembly stay together as one runtime wiring boundary.
 import type { FastifyRequest } from "fastify";
 import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
 import type { AtomRouteOptions } from "../atom/atom_routes.js";
@@ -11,6 +12,7 @@ import { createWorkerAttachmentRead } from "../attachments/worker_attachment_rea
 import { createLiveWorkerAttachmentRepository } from "./live_worker_attachment_repository.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import { createAgentAttachmentRegistration } from "../attachments/agent_attachment_registration.js";
+import { createSessionOutputAttachmentValidation } from "../attachments/session_output_attachment_validation.js";
 import { createOwnedAttachmentCommitService } from "../attachments/attachment_commit_service.js";
 import type { CreateOwnedAttachmentCommitServiceOptions } from "../attachments/attachment_commit_contract.js";
 import type { RepositorySql } from "../cards/control_plane/card_types.js";
@@ -344,6 +346,9 @@ export function createLiveOrchestratorProviderBundle(
           sql: options.agentAttachmentRegistration.sql,
           commit: commits!,
           readAsset: (id) => options.dependencies.dbCatalogRepository.attachmentReadRepository.getAsset(id),
+        }),
+        validateSessionOutput: createSessionOutputAttachmentValidation({
+          sql: options.agentAttachmentRegistration.sql,
         }),
       };
   const workerAttachmentRoutes = (() => {
