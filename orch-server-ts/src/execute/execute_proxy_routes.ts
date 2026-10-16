@@ -1,6 +1,6 @@
 import type { Readable } from "node:stream";
 
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   parseExecuteProxyPayload,
@@ -31,11 +31,14 @@ export type ExecuteProxyTextResult = {
 export type ExecuteProxyResult = ExecuteProxySseResult | ExecuteProxyTextResult;
 
 export type ExecuteProxyProvider = {
+  // request carries the authenticated transport only; payload.caller_info is never the actor.
   executeNew: (
     payload: ExecuteProxyNewProviderRequest,
+    request?: FastifyRequest,
   ) => Promise<ExecuteProxyResult> | ExecuteProxyResult;
   executeResume: (
     payload: ExecuteProxyResumeProviderRequest,
+    request?: FastifyRequest,
   ) => Promise<ExecuteProxyResult> | ExecuteProxyResult;
 };
 
@@ -78,8 +81,8 @@ export function registerExecuteProxyRoutes(
     try {
       const result = await (
         payload.value.mode === "new"
-          ? options.provider.executeNew(payload.value.value)
-          : options.provider.executeResume(payload.value.value)
+          ? options.provider.executeNew(payload.value.value, request)
+          : options.provider.executeResume(payload.value.value, request)
       );
       return sendExecuteProxyResult(reply, result);
     } catch (error) {

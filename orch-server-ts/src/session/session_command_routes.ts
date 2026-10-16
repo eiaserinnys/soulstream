@@ -1,11 +1,12 @@
-// Existing session route helpers remain together during parallel MCP extraction; the create-only response mapping is in session_create_route_response.ts.
+// Existing session route helpers remain together during parallel MCP extraction; the create-only response mapping is in session_create_route_response.ts. The create attachment admission step stays beside the create route it gates (#245).
 import { isServiceCaller, type ServiceCaller } from "../auth/service_caller.js";
 import { badRequest as createBadRequest, serviceUnavailable as createUnavailable, sendMappedError as createMappedError, sendCreateAckError as createAckError, type SessionCreateRouteResponse } from "./session_create_route_response.js";
 import { randomUUID } from "node:crypto";
 
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
-import { parseAttachmentPaths } from "./session_action_command_payloads.js";
+import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
+import { parseAttachmentIds, parseAttachmentPaths } from "./session_action_command_payloads.js";
 import { isUuid } from "../http/uuid.js";
 
 import {
@@ -32,6 +33,16 @@ import {
 } from "./session_create_lifecycle.js";
 import { SessionCreateNodeSelectionError } from "./session_create_node_selector.js";
 
+export type SessionCreateAttachmentAdmission = (
+  caller: FastifyRequest | ServiceCaller,
+  input: {
+    sessionId: string;
+    nodeId: string;
+    attachmentIds?: string[];
+    attachmentPaths?: string[];
+  },
+) => Promise<AdmittedAttachmentInput>;
+
 export type SessionCommandRouteOptions = {
   router: SessionCommandRouter;
   bridge: SessionCommandTransportBridge;
@@ -39,6 +50,7 @@ export type SessionCommandRouteOptions = {
   createSessionReconcileTimeoutMs?: number;
   createSessionLifecycle?: SessionCreateLifecycle;
   modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
+  admitAttachmentInput?: SessionCreateAttachmentAdmission;
   worktreeAuthBearerToken?: string;
   environment?: string;
 };
@@ -159,7 +171,7 @@ export function registerSessionCommandRoutes(
 /** Transport identity is preserved through the same preparation and node-command path. */
 export async function executeCreateSessionRoute(
   options: SessionCommandRouteOptions,
-  request: import("fastify").FastifyRequest | ServiceCaller,
+  request: FastifyRequest | ServiceCaller,
   input: unknown,
   logger: Pick<import("fastify").FastifyRequest["log"], "warn">,
 ): Promise<SessionCreateRouteResponse> {
@@ -192,6 +204,14 @@ export async function executeCreateSessionRoute(
     }
     const attachmentPaths = parseAttachmentPaths(body);
     if (!attachmentPaths.ok) return createBadRequest(attachmentPaths.message);
+    const attachmentIds = parseAttachmentIds(body);
+    if (!attachmentIds.ok) return createBadRequest(attachmentIds.message);
+    if (attachmentIds.value?.length && options.admitAttachmentInput === undefined) {
+      return createUnavailable({
+        code: "ATTACHMENT_INPUT_UNAVAILABLE",
+        message: "Attachment input is unavailable",
+      });
+    }
     const resolvedPrompt = resolveCreateSessionPrompt(body);
     if ("error" in resolvedPrompt) return createBadRequest(resolvedPrompt.error);
     const { prompt } = resolvedPrompt;
@@ -222,7 +242,14 @@ export async function executeCreateSessionRoute(
 
     try {
       const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
-      const payload = createSessionPayload(prepared.payload, prompt);
+      const admission = await admitCreateAttachments(
+        options,
+        request,
+        createSessionPayload(prepared.payload, prompt),
+        attachmentIds.value,
+      );
+      if ("response" in admission) return admission.response;
+      const payload = admission.payload;
       const routed = options.router.createSession(payload, {
         timeoutMs: options.timeoutMs,
         beforeCreateCommand: (selection) => {
@@ -307,6 +334,55 @@ async function prepareCreateSession(
   return lifecycle.prepare({ request, body });
 }
 
+/**
+ * Pins the node the create will use, then admits the attachment ids and paths
+ * against that node. The pinned nodeId/profile/model_preset keep router.createSession
+ * from selecting a different node after admission. Without a callback or without
+ * attachments the payload passes through untouched.
+ */
+async function admitCreateAttachments(
+  options: SessionCommandRouteOptions,
+  request: FastifyRequest | ServiceCaller,
+  payload: CreateSessionNodeCommandPayload,
+  attachmentIds: string[] | undefined,
+): Promise<{ payload: CreateSessionNodeCommandPayload } | { response: SessionCreateRouteResponse }> {
+  const admit = options.admitAttachmentInput;
+  const attachmentPaths = payload.attachment_paths;
+  if (admit === undefined || (!attachmentIds?.length && !attachmentPaths?.length)) {
+    return { payload };
+  }
+  const selection = options.router.selectNodeForCreate({
+    nodeId: firstNonEmptyString(payload.nodeId),
+    profileId: firstNonEmptyString(payload.profile),
+    modelPresetId: firstNonEmptyString(payload.model_preset),
+    legacyModelSpecified: firstNonEmptyString(payload.model) !== undefined,
+    worktreeRequired: firstNonEmptyString(payload.worktree_id) !== undefined,
+  });
+  let admitted: AdmittedAttachmentInput;
+  try {
+    admitted = await admit(request, {
+      sessionId: payload.agentSessionId,
+      nodeId: selection.node.nodeId,
+      ...(attachmentIds?.length ? { attachmentIds } : {}),
+      ...(attachmentPaths?.length ? { attachmentPaths } : {}),
+    });
+  } catch (error) {
+    const { code, statusCode } = error as { code?: unknown; statusCode?: unknown };
+    if (typeof code !== "string" || typeof statusCode !== "number") throw error;
+    return { response: { status: statusCode, body: { error: {
+      code, message: error instanceof Error ? error.message : code,
+    } } } };
+  }
+  return { payload: {
+    ...payload,
+    nodeId: selection.node.nodeId,
+    profile: selection.profileId,
+    ...(selection.modelPresetId ? { model_preset: selection.modelPresetId } : {}),
+    ...(admitted.attachment_ids.length > 0 ? { attachment_ids: admitted.attachment_ids } : {}),
+    ...(admitted.attachment_bindings.length > 0 ? { attachment_bindings: admitted.attachment_bindings } : {}),
+  } };
+}
+
 function createSessionPayload(
   body: JsonObject,
   prompt: string,
@@ -321,6 +397,8 @@ function createSessionPayload(
     profile,
     attachmentPaths: _attachmentPaths,
     attachment_paths: _attachmentPathsSnake,
+    attachmentIds: _attachmentIds,
+    attachment_ids: _attachmentIdsSnake,
     ...rest
   } = body;
   const agentSessionId = isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId, 4)

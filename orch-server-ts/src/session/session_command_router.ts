@@ -286,7 +286,7 @@ export class SessionCommandRouter {
     };
   }
 
-  private async requireNodeForExistingSession(
+  async requireNodeForExistingSession(
     agentSessionId: string,
   ): Promise<NodeConnectionSnapshot> {
     const owner = this.registry.findSessionOwner(agentSessionId);
