@@ -22,12 +22,8 @@ if (options.mode === "cancel-before-stdout") {
   }, 100);
   setInterval(() => {}, 1000);
 } else {
-  const logLine = JSON.stringify({
-    level: "ERROR",
-    message: "stream error",
-    small: options.small,
-    error: { error: `${options.errorType ?? "AI_RetryError"}: Rate limit exceeded; key=FAKE_STDERR_SECRET` },
-  });
+  const errorText = `${options.errorType ?? "AI_RetryError"}: Rate limit exceeded; key=FAKE_STDERR_SECRET`;
+  const logLine = `level=ERROR message="stream error" small=${options.small} error.error=${JSON.stringify(errorText)}`;
 
   if (options.mode === "rate-limit") {
     process.on("SIGINT", () => {

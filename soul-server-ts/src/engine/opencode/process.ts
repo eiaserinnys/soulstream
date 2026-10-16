@@ -15,21 +15,55 @@ export interface OpenCodeExit {
 const RATE_LIMIT_FAILURE = "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.";
 
 function isOpenCode119RateLimitLogLine(line: string): boolean {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return false;
+  const fields = new Map<string, string>();
+  let offset = 0;
+  while (offset < line.length) {
+    while (line[offset] === " " || line[offset] === "\t") offset += 1;
+    if (offset === line.length) break;
+    const equalsAt = line.indexOf("=", offset);
+    if (equalsAt < 0) return false;
+    const key = line.slice(offset, equalsAt);
+    if (!/^[A-Za-z][A-Za-z0-9_.-]*$/.test(key)) return false;
+    offset = equalsAt + 1;
+
+    let value: string;
+    if (line[offset] === '"') {
+      const valueStart = offset;
+      offset += 1;
+      let escaped = false;
+      while (offset < line.length) {
+        const character = line[offset];
+        offset += 1;
+        if (escaped) {
+          escaped = false;
+        } else if (character === "\\") {
+          escaped = true;
+        } else if (character === '"') {
+          break;
+        }
+      }
+      try {
+        const parsed: unknown = JSON.parse(line.slice(valueStart, offset));
+        if (typeof parsed !== "string") return false;
+        value = parsed;
+      } catch {
+        return false;
+      }
+      if (line[offset] !== undefined && line[offset] !== " " && line[offset] !== "\t") return false;
+    } else {
+      const valueStart = offset;
+      while (offset < line.length && line[offset] !== " " && line[offset] !== "\t") offset += 1;
+      if (valueStart === offset) return false;
+      value = line.slice(valueStart, offset);
+    }
+    fields.set(key, value);
   }
-  if (!value || typeof value !== "object") return false;
-  const log = value as Record<string, unknown>;
-  const error = log.error;
-  if (!error || typeof error !== "object") return false;
-  const errorText = (error as Record<string, unknown>).error;
-  return log.level === "ERROR"
-    && log.message === "stream error"
-    && log.small === false
-    && typeof errorText === "string"
+
+  const errorText = fields.get("error.error");
+  return fields.get("level") === "ERROR"
+    && fields.get("message") === "stream error"
+    && fields.get("small") === "false"
+    && errorText !== undefined
     && (errorText.startsWith("AI_APICallError") || errorText.startsWith("AI_RetryError"))
     && errorText.includes("Rate limit exceeded");
 }
