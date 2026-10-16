@@ -479,7 +479,7 @@ export class FileNotFoundError extends Error {
   }
 }
 
-function inferContentType(targetPath: string): string {
+export function inferContentType(targetPath: string): string {
   return CONTENT_TYPES[path.extname(targetPath).toLowerCase()] ?? "application/octet-stream";
 }
 
