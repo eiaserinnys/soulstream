@@ -134,6 +134,40 @@ describe("legacy attachment plan", () => {
     expect(plan.coverage_complete).toBe(false);
   });
 
+  it("does not infer absence inside a root when its incoming census is incomplete", () => {
+    const root = "/srv/incoming";
+    const explicitMissingPath = `${root}/missing-explicit.png`;
+    const unobservedPath = `${root}/not-listed.png`;
+    const explicitMissingSource = source("missing-explicit", explicitMissingPath, { type: "card", id: "missing-explicit" });
+    const unobservedSource = source("not-listed", unobservedPath, { type: "card", id: "not-listed" });
+    const explicitMissingObservation: FileObservation = {
+      ...observed("missing-explicit.png", [explicitMissingSource], {
+        known_source_paths: [explicitMissingPath],
+        incoming_relative_path: undefined,
+        source_refs: [{ source_kind: "card_request", source_table: "cards", source_pk: "missing-explicit", source_pointer: "/attachments/0/path", card_id: "missing-explicit" }],
+        physical_path: explicitMissingPath,
+      }),
+      status: FILE_OBSERVATION_STATUS.source_absent,
+      size_bytes: undefined,
+      bytes_read: undefined,
+      sha256: undefined,
+      eligible_candidate: false,
+      coverage_complete: false,
+    };
+    const incompleteCensus = {
+      ...censusSummary("node-a", root, { root_unconfirmed: 1, source_absent: 1 }, true),
+      incoming_census_complete: false,
+    };
+    const plan = buildLegacyAttachmentPlan({
+      ...input({ sources: [explicitMissingSource, unobservedSource], nodeCoverage: [incompleteCensus] }),
+      observations: [explicitMissingObservation],
+    });
+
+    const byPath = new Map(plan.identities.map((item) => [item.normalized_path, item]));
+    expect(byPath.get(explicitMissingPath)?.status).toBe(INVENTORY_PLAN_STATUS.absent_at_source);
+    expect(byPath.get(unobservedPath)?.status).toBe(INVENTORY_PLAN_STATUS.unconfirmed_node);
+  });
+
   it.each(["card_request", "card_item", "item_history", "report", "comment", "note", "message"] as const)(
     "separates the owner-null private proposal from unconfirmed coverage for %s source evidence",
     (sourceKind) => {

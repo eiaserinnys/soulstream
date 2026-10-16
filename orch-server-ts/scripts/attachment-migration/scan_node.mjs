@@ -347,7 +347,7 @@ async function main() {
       signal: controller.signal,
     })) {
       addObservation(summaryStats, observation);
-      if ((observation.status === FILE_STATUS.root_unconfirmed && observation.physical_path === incomingRoot) ||
+      if (observation.status === FILE_STATUS.root_unconfirmed ||
           (observation.incoming_relative_path !== undefined && !observation.coverage_complete)) incomingCensusComplete = false;
       await writeLine(output, observation);
       if (observation.status === FILE_STATUS.hash_interrupted) break;

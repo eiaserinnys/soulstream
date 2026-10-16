@@ -120,6 +120,51 @@ describe("node attachment inventory CLI contract", () => {
     }
   });
 
+  it("leaves the incoming census incomplete when the root is unconfirmed and one explicit source is absent", async () => {
+    const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-scan-missing-root-and-source-"));
+    const allowed = path.join(temp, "allowed");
+    const incoming = path.join(allowed, "incoming");
+    const missing = path.join(allowed, "archived", "missing.png");
+    const output = path.join(temp, "inventory.jsonl");
+    await mkdir(allowed, { recursive: true });
+    await writeFile(path.join(temp, "sources.json"), JSON.stringify([{
+      node_id: "node-a",
+      path: missing,
+      source_ref: { source_kind: "card_request", source_table: "cards", source_pk: "card-a", source_pointer: "/attachments/0/path" },
+    }]));
+    await writeFile(path.join(temp, "roots.json"), JSON.stringify([allowed]));
+
+    try {
+      const result = spawnSync(process.execPath, [
+        scannerPath,
+        "--node-id", "node-a",
+        "--incoming-root", incoming,
+        "--sources", path.join(temp, "sources.json"),
+        "--allowed-roots", path.join(temp, "roots.json"),
+        "--cutoff", "2027-01-01T00:00:00.000Z",
+        "--output", output,
+      ], { encoding: "utf8" });
+
+      expect(result.status).toBe(2);
+      const records = (await readFile(output, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line) as NodeScanOutputRecord);
+      const rootError = records.find((record) => record.record_type === "file" && record.status === FILE_OBSERVATION_STATUS.root_unconfirmed);
+      const missingFile = records.find((record) => record.record_type === "file" && record.status === FILE_OBSERVATION_STATUS.source_absent);
+      const summary = records.find((record) => record.record_type === "summary");
+      expect(rootError).toMatchObject({ status: FILE_OBSERVATION_STATUS.root_unconfirmed, coverage_complete: false });
+      expect(rootError).not.toHaveProperty("physical_path");
+      expect(missingFile).toMatchObject({ status: FILE_OBSERVATION_STATUS.source_absent, physical_path: missing, coverage_complete: false });
+      expect(summary).toMatchObject({
+        record_type: "summary",
+        coverage_complete: false,
+        incoming_census_complete: false,
+        status_counts: { root_unconfirmed: 1, source_absent: 1 },
+      });
+      expect(summary).not.toHaveProperty("incoming_root");
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a calendar-invalid cutoff before creating output", async () => {
     const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-scan-invalid-cutoff-"));
     const allowed = path.join(temp, "allowed");

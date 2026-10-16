@@ -64,8 +64,7 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
     errors.add(ERROR.manifest_mismatch);
     anomalies.push({ code: ERROR.manifest_mismatch, subject: row.node_id, message: "node summary cutoff differs from source metadata" });
   }
-  const nodeById = new Map(nodes.map((node) => [node.node_id, node]));
-  const censusRoots = censusRootsCompletedExceptForExplicitAbsences(input.nodeCoverage);
+  const censusRoots = censusRootsWithCompleteCensus(input.nodeCoverage);
   const sessions = latestSessions(input.sessionCoverage ?? []);
   const sessionById = new Map(sessions.map((session) => [session.session_id, session]));
   let complete = input.metadata.relational_coverage_complete && input.metadata.alias_snapshot_complete && input.metadata.coverage_complete !== false;
@@ -140,7 +139,7 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
     const observation = matches.find((file) => file.status === FILE.observed && file.eligible_candidate) ?? matches[0];
     const alias = aliases.get(locKey(group.node, group.path));
     const asset = alias?.asset_id ? assetById.get(alias.asset_id) : undefined;
-    const resolved = resolve(group, observation, alias, asset, nodeById.get(group.node), aliasSnapshotUsable, censusRoots.get(group.node));
+    const resolved = resolve(group, observation, alias, asset, aliasSnapshotUsable, censusRoots.get(group.node));
     const identity = makeIdentity(group, observation, alias, asset, resolved);
     identities.push(identity);
     if (!identity.coverage_complete) complete = false;
@@ -154,7 +153,7 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
     const group: Group = { node: file.node_id, path: pathName, owner, ownerConflict: false, refs: [] };
     const alias = aliases.get(locKey(file.node_id, pathName));
     const asset = alias?.asset_id ? assetById.get(alias.asset_id) : undefined;
-    const resolved = resolve(group, file, alias, asset, nodeById.get(file.node_id), aliasSnapshotUsable, censusRoots.get(file.node_id), true);
+    const resolved = resolve(group, file, alias, asset, aliasSnapshotUsable, censusRoots.get(file.node_id), true);
     identities.push(makeIdentity(group, file, alias, asset, resolved, true));
     if (!resolved.coverage) complete = false;
     if (resolved.error) errors.add(resolved.error);
@@ -335,11 +334,10 @@ function hasConflictingOwners(values: readonly InventoryOwnerEvidence[]): boolea
     .map((value) => stable({ kind: value.kind, key: value.key }))).size > 1;
 }
 
-function censusRootsCompletedExceptForExplicitAbsences(values: readonly NodeInput[]): Map<string, string> {
+function censusRootsWithCompleteCensus(values: readonly NodeInput[]): Map<string, string> {
   const result = new Map<string, string>();
   for (const value of values) {
-    if (value.record_type !== "summary" || value.coverage_complete || value.error_code || !value.incoming_root ||
-        value.incoming_census_complete !== true || (value.status_counts[FILE.source_absent] ?? 0) === 0) continue;
+    if (value.record_type !== "summary" || value.error_code || !value.incoming_root || value.incoming_census_complete !== true) continue;
     result.set(value.node_id, value.incoming_root);
   }
   return result;
@@ -393,7 +391,7 @@ function mergeOwners(values: readonly InventoryOwnerEvidence[]): InventoryOwnerE
 }
 
 function resolve(group: Group, file: FileObservation | undefined, alias: InventoryAliasSnapshot | undefined, asset: InventoryAssetSnapshot | undefined,
-  node: InventoryNodeCoverage | undefined, aliasCoverage: boolean, completedCensusRoot?: string, unreferenced = false):
+  aliasCoverage: boolean, completedCensusRoot?: string, unreferenced = false):
   { status: InventoryPlanIdentity["status"]; coverage: boolean; action: string; proposed: boolean; error?: string } {
   if (alias?.availability === "missing") return { status: STATUS.existing_alias_missing, coverage: false, action: "recheck_missing_alias_and_preservation_locations", proposed: false };
   if (alias?.availability === "resolved") {
@@ -408,8 +406,7 @@ function resolve(group: Group, file: FileObservation | undefined, alias: Invento
   if (file?.status === FILE.path_denied) return { status: STATUS.denied_path, coverage: false, action: "resolve_path_boundary", proposed: false };
   if (file?.status === FILE.not_regular) return { status: STATUS.not_regular, coverage: false, action: "inspect_non_regular_source", proposed: false };
   if (file?.status === FILE.source_absent) return { status: STATUS.absent_at_source, coverage: false, action: "check_preservation_locations", proposed: false };
-  if (!file) return (node?.status === NODE.scanned && node.coverage_complete) ||
-      (completedCensusRoot !== undefined && pathIsWithin(completedCensusRoot, group.path))
+  if (!file) return completedCensusRoot !== undefined && pathIsWithin(completedCensusRoot, group.path)
     ? { status: STATUS.absent_at_source, coverage: false, action: "check_preservation_locations", proposed: false }
     : { status: STATUS.unconfirmed_node, coverage: false, action: "wait_for_node_scan", proposed: false };
   if (file.status !== FILE.observed || !file.eligible_candidate || !file.coverage_complete) return { status: STATUS.unconfirmed_path, coverage: false, action: "resolve_observation", proposed: false };
