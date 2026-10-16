@@ -1,7 +1,12 @@
 import { CardExecutionService, confirmedCommandFailure, type ExecutionInput } from "./card_execution_service.js";
 import { PendingNodeCommandRejectedError } from "../node/pending_commands.js";
 import { buildCardPrompt } from "./card_prompt.js";
-import { cardAttachmentPaths } from "./card_attachment_paths.js";
+import { prepareCardAttachmentInput } from "./card_attachment_paths.js";
+import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
+import { AttachmentReadError, normalizeAttachmentLegacyPath } from "../attachments/attachment_read_service.js";
+import { createLiveAttachmentReadRepository } from "../runtime/live_attachment_read_repository.js";
 import { resolveCardSessionTarget } from "./card_session_target.js";
 import { sendCardChangeOnce } from "./card_change_delivery.js";
 import { SessionDeliveryRepository } from "../control_plane/repositories/session_delivery_repository.js";
@@ -71,6 +76,7 @@ export async function createCardDispatchRuntime(options: {
   const resolver = new BoardYjsSqlResolver(options.sqlResolver);
   const resolveSql = () => resolver.resolveSql();
   const cardDispatchRepository = new CardDispatchRepository(resolveSql);
+  const attachmentReadRepository = createLiveAttachmentReadRepository(options.sqlResolver);
   const executionCallerInfo = async (input: ExecutionInput) => {
     if (input.callerSource === "browser") return { source: "browser" as const };
     const owner = input.actor.actorKind !== "user" && input.actor.actorSessionId
@@ -90,6 +96,54 @@ export async function createCardDispatchRuntime(options: {
     }
     return systemCallerInfo(null);
   };
+  const admitCardAttachmentSource = async (input: {
+    cardId: string;
+    sourceNodeId: string;
+    attachmentPaths: string[];
+  }): Promise<AdmittedAttachmentInput> => {
+    const attachmentIds: string[] = [];
+    const attachmentBindings: AttachmentPathBinding[] = [];
+    const attachmentPaths: string[] = [];
+    for (const sourcePath of input.attachmentPaths) {
+      const alias = await attachmentReadRepository.getLegacyAlias(
+        input.sourceNodeId,
+        normalizeAttachmentLegacyPath(sourcePath),
+      );
+      if (alias === null) {
+        attachmentPaths.push(sourcePath);
+        continue;
+      }
+      if (alias.availability === "missing" || alias.assetId === null) {
+        throw new AttachmentReadError("ATTACHMENT_SOURCE_MISSING", "Attachment source is missing", 404);
+      }
+      const asset = await attachmentReadRepository.getAsset(alias.assetId);
+      if (asset === null || asset.storagePurpose !== "attachment") {
+        throw new AttachmentReadError("ATTACHMENT_NOT_FOUND", "Attachment not found", 404);
+      }
+      if (asset.uploadStatus !== "committed") {
+        throw new AttachmentReadError("ATTACHMENT_NOT_COMMITTED", "Attachment upload is not committed", 409);
+      }
+      const evidence = await attachmentReadRepository.getSqlScopeEvidence(
+        { type: "card", id: input.cardId },
+        asset.id,
+      );
+      if (evidence?.hasStoredRef !== true) {
+        throw new AttachmentReadError("ATTACHMENT_ACCESS_DENIED", "Attachment access denied", 403);
+      }
+      attachmentIds.push(asset.id);
+      attachmentBindings.push({ attachment_id: asset.id, node_id: input.sourceNodeId, path: sourcePath });
+    }
+    return {
+      attachment_ids: [...new Set(attachmentIds)],
+      attachment_paths: attachmentPaths,
+      attachment_bindings: attachmentBindings,
+    };
+  };
+  const prepareCardInput = (cardId: string, attachments: readonly CardAttachment[], targetNodeId: string) =>
+    prepareCardAttachmentInput(attachments, targetNodeId, {
+      cardId,
+      admitSource: admitCardAttachmentSource,
+    });
   let dispatcher: CardDispatcher;
   const serviceProvider = createCardControlPlaneServiceProvider({
     sqlResolver: options.sqlResolver,
@@ -135,19 +189,29 @@ export async function createCardDispatchRuntime(options: {
         };
       }
     },
-    launch: async (input) =>
-      createRecurringSession(
+    prepareAttachments: async (card, targetNodeId) => {
+      await prepareCardInput(card.id, card.attachments ?? [], targetNodeId);
+    },
+    launch: async (input) => {
+      const attachments = await prepareCardInput(input.cardId, input.attachments ?? [], input.nodeId);
+      return createRecurringSession(
         {
           router: options.router,
           bridge: options.bridge,
           modelPresetAvailability: options.availability,
         },
-        { ...input, attachmentPaths:cardAttachmentPaths(input.attachments ?? [], input.nodeId), callerInfo: await queuedCallerInfo(input.cardId) },
-      ),
-    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}, changeDelivery?:import("./card_change_notification.js").CardChangeDelivery, attachments?:readonly import("@soulstream/wire-schema/card-attachments").CardAttachment[]) => {
+        {
+          ...input,
+          attachmentPaths: attachments.attachment_paths,
+          attachmentIds: attachments.attachment_ids,
+          attachmentBindings: attachments.attachment_bindings,
+          callerInfo: await queuedCallerInfo(input.cardId),
+        },
+      );
+    },
+    sendMessage: async (sessionId, text, admission?:{runId:string;executionToken:string;cardId:string;deliveryId?:string}, changeDelivery?:import("./card_change_notification.js").CardChangeDelivery, attachments?:readonly CardAttachment[]) => {
       const parsed = intervenePayload(sessionId, {
         text,
-        ...(attachments?.length ? {attachment_paths:attachments.map(a=>a.path)} : {}),
         ...(admission?.deliveryId ? {delivery_id:admission.deliveryId,delivery_intent:"durable_next_turn",source:"card_orchestration",relation_key:admission.deliveryId,completion_id:admission.deliveryId} : {}),
         ...(changeDelivery ? {delivery_id:changeDelivery.deliveryId,delivery_intent:"durable_next_turn",source:"card_change",
           relation_key:changeDelivery.deliveryId,completion_id:changeDelivery.deliveryId} : {}),
@@ -155,16 +219,27 @@ export async function createCardDispatchRuntime(options: {
           ...(changeDelivery.actorSessionId ? {session_id:changeDelivery.actorSessionId} : {}) } : { source: "system" },
       });
       if (!parsed.ok) throw new Error(parsed.message);
+      let admittedAttachments: AdmittedAttachmentInput | undefined;
+      if (attachments?.length) {
+        const session = await cardDispatchRepository.session(sessionId);
+        if (!session) throw new Error("Card attachment session is missing");
+        admittedAttachments = await prepareCardInput(session.card_id, attachments, session.node_id);
+      }
+      const payload: typeof parsed.value = {
+        ...parsed.value,
+        ...(admittedAttachments?.attachment_paths.length ? { attachment_paths: admittedAttachments.attachment_paths } : {}),
+        ...(admittedAttachments?.attachment_ids.length ? { attachment_ids: admittedAttachments.attachment_ids } : {}),
+        ...(admittedAttachments?.attachment_bindings.length ? { attachment_bindings: admittedAttachments.attachment_bindings } : {}),
+      };
       const send = async (payload: typeof parsed.value) => {
         const routed = await options.router.routeExistingSessionPendingCommand({...payload,...(admission?{orchestrationAdmission:admission}:{})});
-        cardAttachmentPaths(attachments ?? [], routed.node.nodeId);
         return options.bridge.sendPendingCommand(routed);
       };
       if (changeDelivery) {
         const repository = new SessionDeliveryRepository(await resolveSql() as unknown as DeliverySqlClient);
-        return sendCardChangeOnce(repository, parsed.value, send);
+        return sendCardChangeOnce(repository, payload, send);
       }
-      const response = await send(parsed.value);
+      const response = await send(payload);
       if (response.status === "error" || response.type === "error")
         throw new Error(String(response.message ?? response.code));
     },
@@ -398,15 +473,21 @@ export async function createCardDispatchRuntime(options: {
       const prompt=buildCardPrompt({cardId:input.cardId,title:detail.card.title,folderName:folder,request:detail.card.request,
         brief:[detail.card.brief,answers].filter(Boolean).join("\n"),comments:detail.comments.filter(c=>c.author_kind==='user').map(c=>({id:String(c.id),createdAt:c.created_at as Date,body:String(c.body)})),
         running:(await legacyOptions.repository.running()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
+      const attachments=await prepareCardInput(input.cardId,detail.card.attachments??[],input.target.nodeId);
       return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
         {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
-          attachmentPaths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),callerInfo:await executionCallerInfo(input)});
+          attachmentPaths:attachments.attachment_paths,attachmentIds:attachments.attachment_ids,
+          attachmentBindings:attachments.attachment_bindings,callerInfo:await executionCallerInfo(input)});
     },
     ensure:async input=>{
       const detail=(await (await serviceProvider()).getCard(input.cardId))!;
+      const attachments=await prepareCardInput(input.cardId,detail.card.attachments??[],input.target.nodeId);
       const routed=await options.router.routeExistingSessionPendingCommand({type:"ensure_session_running",agentSessionId:input.sessionId,
         text:`카드 「${detail.card.title}」를 이어서 수행하세요.`,delivery_id:`card-execution:${input.requestId}`,
-        attachment_paths:cardAttachmentPaths(detail.card.attachments??[],input.target.nodeId),caller_info:await executionCallerInfo(input)});
+        attachment_paths:attachments.attachment_paths,
+        ...(attachments.attachment_ids.length?{attachment_ids:attachments.attachment_ids}:{}),
+        ...(attachments.attachment_bindings.length?{attachment_bindings:attachments.attachment_bindings}:{}),
+        caller_info:await executionCallerInfo(input)});
       const result=await options.bridge.sendPendingCommand(routed);
       if(result.status==='error' || result.type==='error')throw new PendingNodeCommandRejectedError({
         commandType:routed.command.commandType,requestId:routed.command.requestId,
