@@ -73,6 +73,64 @@ function makeRegistration(layout: Layout, fetchImpl = fakeFetch()) {
 }
 
 describe("createProducedAttachmentRegistration", () => {
+  it("validates session output IDs with trusted provenance and no workspace input", async () => {
+    const layout = await makeLayout();
+    const fetchImpl = fakeFetch((url, init) => {
+      expect(`${new URL(url).origin}${new URL(url).pathname}`).toBe(
+        "http://orch.test/api/attachments/agent-output/validate",
+      );
+      return Response.json({ attachment_ids: ["att-1", "att-2"] });
+    });
+    const { registration } = makeRegistration(layout, fetchImpl);
+
+    const result = await registration.validateSessionOutput(
+      { attachment_ids: ["att-1", "att-2"] },
+      { sessionId: SESSION, nodeId: "node-a", outputCommandId: "cmd-live" },
+    );
+
+    expect(result).toEqual({ attachment_ids: ["att-1", "att-2"] });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("http://orch.test/api/attachments/agent-output/validate");
+    expect(init?.method).toBe("POST");
+    expect(init?.headers).toEqual({
+      authorization: "Bearer service-token",
+      "content-type": "application/json",
+      "x-soulstream-agent-session-id": SESSION,
+      "x-soulstream-node-id": "node-a",
+      "x-soulstream-output-command-id": "cmd-live",
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({ attachment_ids: ["att-1", "att-2"] });
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("preserves validation rejections and maps network or malformed responses to unavailable", async () => {
+    const layout = await makeLayout();
+    const rejected = makeRegistration(
+      layout,
+      fakeFetch(() => Response.json({ code: "ATTACHMENT_PRODUCER_MISMATCH", detail: "다른 실행의 첨부입니다." }, { status: 403 })),
+    );
+    const unreachable = makeRegistration(layout, fakeFetch(() => Promise.reject(new TypeError("fetch failed"))));
+    const reordered = makeRegistration(
+      layout,
+      fakeFetch(() => Response.json({ attachment_ids: ["att-2", "att-1"] })),
+    );
+    const input = { attachment_ids: ["att-1", "att-2"] };
+    const execution = { sessionId: SESSION, nodeId: "node-a", outputCommandId: "cmd-live" };
+
+    await expect(rejected.registration.validateSessionOutput(input, execution)).rejects.toMatchObject({
+      code: "ATTACHMENT_PRODUCER_MISMATCH",
+      statusCode: 403,
+    });
+    await expect(unreachable.registration.validateSessionOutput(input, execution)).rejects.toMatchObject({
+      code: "ATTACHMENT_REGISTRATION_UNAVAILABLE",
+      statusCode: 503,
+    });
+    await expect(reordered.registration.validateSessionOutput(input, execution)).rejects.toMatchObject({
+      code: "ATTACHMENT_REGISTRATION_UNAVAILABLE",
+    });
+  });
+
   it("resolves a relative path against the workspace and sends original bytes with identity headers", async () => {
     const layout = await makeLayout();
     const bytes = Buffer.from("report body\n");

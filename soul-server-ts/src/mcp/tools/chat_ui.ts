@@ -64,6 +64,7 @@ sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url
         .slice(0, 32)}`;
       const content = renderText(doc);
       const text = previewText(content);
+      const outputCommandId = task.runner?.dispatcher.activeExecutionCommandId?.();
       const publisher = runtime.chatUiPublisher;
       if (!publisher) {
         return errorResultWithContent("chat UI event publisher is unavailable", {
@@ -75,6 +76,7 @@ sources: 키→{type:"assumption",label,note?} | {type:"external_link",label,url
       const event = {
         type: "assistant_message",
         content,
+        ...(outputCommandId ? { output_command_id: outputCommandId } : {}),
         ui: {
           schema_version: 1,
           ui_id: uiId,

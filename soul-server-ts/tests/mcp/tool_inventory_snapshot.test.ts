@@ -103,9 +103,20 @@ describe("advertised MCP tool inventory", () => {
       expect(internal.find(tool => tool.name === name)).toBeDefined();
     const registerAttachment = internal.find(tool => tool.name === "register_attachment");
     expect(registerAttachment).toBeDefined();
+    expect(registerAttachment!.description ?? "").toContain("attach_session_output");
     expect(Object.keys(registerAttachment!.inputSchema.properties).sort()).toEqual([
       "local_path", "mime_type", "name", "target_scope",
     ]);
+    const attachSessionOutput = internal.find(tool => tool.name === "attach_session_output");
+    expect(attachSessionOutput).toMatchObject({
+      name: "attach_session_output",
+      inputSchema: {
+        properties: { attachment_ids: expect.any(Object) },
+        required: ["attachment_ids"],
+        additionalProperties: false,
+      },
+    });
+    expect(Object.keys(attachSessionOutput!.inputSchema.properties)).toEqual(["attachment_ids"]);
     const resolveAttachment = internal.find(tool => tool.name === "resolve_attachment");
     expect(resolveAttachment).toMatchObject({
       name: "resolve_attachment",
@@ -145,7 +156,7 @@ describe("advertised MCP tool inventory", () => {
         required: ["label", "type", "url"],
       },
     ]);
-    expect(internal).toHaveLength(132);
+    expect(internal).toHaveLength(133);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });
