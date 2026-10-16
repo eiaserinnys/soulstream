@@ -9,12 +9,14 @@ import { ChatInputAccessories } from "@seosoyoung/soul-ui/components/chat/ChatIn
 import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
 import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
-import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import { projectChatAttachmentItems, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import { projectChatOutputAttachments } from "@seosoyoung/soul-ui/lib/chat-output-attachment-projection";
-import type { SessionEventAttachmentResponse, SessionEventAttachmentView } from "@soulstream/wire-schema/attachments";
 import { reviewDocuments } from "./chat-ui-review-documents";
 import "./components-review.css";
+
+type SessionEventAttachmentResponse = Parameters<typeof projectChatAttachmentItems>[0];
+type SessionEventAttachmentView = SessionEventAttachmentResponse["items"][number];
 
 const sampleContext = { type: "session" as const, id: "attachment-review-sample" };
 const connectedReviewSessionId = "attachment-review-connected";
@@ -26,6 +28,7 @@ function connectedAsset(
   mimeType: string,
   previewKind: "image" | "text" | "info",
   sessionId: string,
+  byteSize: number = 4096,
 ): SessionEventAttachmentView {
   return {
     kind: "asset",
@@ -33,7 +36,7 @@ function connectedAsset(
       attachment_id: attachmentId,
       name,
       mime_type: mimeType,
-      byte_size: 4096,
+      byte_size: byteSize,
       checksum_sha256: null,
       width: previewKind === "image" ? 1 : null,
       height: previewKind === "image" ? 1 : null,
@@ -49,6 +52,7 @@ function connectedProjection(eventId: number, sessionId: string): SessionEventAt
   const itemsByEvent: Record<number, SessionEventAttachmentView[]> = {
     201: [
       connectedAsset("review-user-image", "사용자 이미지.png", "image/png", "image", sessionId),
+      connectedAsset("review-failed-image", "누락 이미지.png", "image/png", "image", sessionId),
       connectedAsset("review-user-archive", "자료.zip", "application/zip", "info", sessionId),
       {
         kind: "legacy",
@@ -70,6 +74,7 @@ function connectedProjection(eventId: number, sessionId: string): SessionEventAt
     205: [connectedAsset("review-manuscript-output", "PAS 응답.txt", "text/plain", "text", sessionId)],
     206: [connectedAsset("review-intervention-file", "개입 첨부.txt", "text/plain", "text", sessionId)],
     207: [connectedAsset("review-overlay-file", "선택 카드 자료.txt", "text/plain", "text", sessionId)],
+    208: [connectedAsset("review-large-text", "큰_텍스트.txt", "text/plain", "text", sessionId, 1_048_586)],
     301: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
     302: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
     304: [connectedAsset("review-complete-only", "완료 첨부.txt", "text/plain", "text", sessionId)],
@@ -269,10 +274,37 @@ export function ChatAttachmentReviewSamples() {
       attachmentIds: ["review-intervention-file"],
     },
     {
-      id: "connected-forbidden",
+      id: "connected-large-text",
+      role: "assistant",
+      content: "앞부분만 확인하고 원본 전체를 저장할 수 있는 큰 텍스트 첨부입니다.",
+      treeNodeId: "connected-large-text",
+      treeNodeType: "assistant_message",
+      eventId: 208,
+      attachmentIds: ["review-large-text"],
+    },
+    {
+      id: "connected-error-401",
+      role: "user",
+      content: "로그인이 필요한 첨부입니다.",
+      treeNodeId: "connected-error-401",
+      treeNodeType: "user_message",
+      eventId: 401,
+      attachmentIds: ["review-login-required"],
+    },
+    {
+      id: "connected-error-404",
+      role: "user",
+      content: "찾을 수 없는 첨부입니다.",
+      treeNodeId: "connected-error-404",
+      treeNodeType: "user_message",
+      eventId: 404,
+      attachmentIds: ["review-not-found"],
+    },
+    {
+      id: "connected-error-403",
       role: "user",
       content: "권한이 없는 첨부입니다.",
-      treeNodeId: "connected-forbidden",
+      treeNodeId: "connected-error-403",
       treeNodeType: "user_message",
       eventId: 403,
       attachmentIds: ["review-forbidden"],
@@ -351,7 +383,12 @@ export function ChatAttachmentReviewSamples() {
       if (eventRequest) {
         const sessionId = decodeURIComponent(eventRequest[1]!);
         const eventId = Number(eventRequest[2]);
+        const requestAttribute = "data-review-event-" + eventId + "-requests";
+        const requestCount = Number(document.documentElement.getAttribute(requestAttribute) ?? "0") + 1;
+        document.documentElement.setAttribute(requestAttribute, String(requestCount));
+        if (eventId === 401) return Promise.resolve(new Response(null, { status: 401 }));
         if (eventId === 403) return Promise.resolve(new Response(null, { status: 403 }));
+        if (eventId === 404) return Promise.resolve(new Response(null, { status: 404 }));
         if (eventId === 503) return Promise.resolve(new Response(null, { status: 503 }));
         if (sessionId === connectedReviewSessionId || sessionId === overlayReviewSessionId) {
           return Promise.resolve(new Response(JSON.stringify(connectedProjection(eventId, sessionId)), {
