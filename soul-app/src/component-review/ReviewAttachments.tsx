@@ -31,6 +31,9 @@ const fileItems: AttachmentView[] = [
   infoFile('review-attachment-heic', 'photo.heic', 'image/heic', 3072),
 ];
 
+const mixedItems = [multipleImages[0], textFile('review-attachment-long', '수백 줄 서버 로그와 아주 긴 파일 이름을 가진 공개 검수용 첨부 문서.txt', 12_000), multipleImages[1], fileItems[7]];
+export const attachmentDialogueItems = mixedItems;
+
 export function ReviewAttachments() {
   const t = useTokens();
   return <ScrollView testID="review-attachments" style={{ flex: 1, backgroundColor: t.colors.background }}
@@ -44,6 +47,11 @@ export function ReviewAttachments() {
     <ReviewSection title="실패한 이미지" testID="review-attachments-image-failure">
       <MessageAttachments items={failedImage} role="user" />
     </ReviewSection>
+    {(['user', 'assistant', 'manuscript'] as const).map(kind => <ReviewSection key={kind}
+      title={kind === 'user' ? '사용자 혼합 첨부' : kind === 'assistant' ? '에이전트 혼합 첨부' : '원고형 혼합 첨부'}
+      testID={`review-attachments-mixed-${kind}`}>
+      <MessageAttachments items={mixedItems} role={kind === 'user' ? 'user' : 'assistant'} presentation={kind === 'manuscript' ? 'manuscript' : 'default'} />
+    </ReviewSection>)}
     <ReviewSection title="파일 행과 프리뷰" testID="review-attachments-files">
       <MessageAttachments items={fileItems} role="assistant" />
     </ReviewSection>

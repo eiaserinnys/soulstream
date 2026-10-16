@@ -71,6 +71,10 @@
     "settings-target": {
       "label": "설정 실행 대상",
       "source": "settings/SettingsOptionRow.tsx"
+    },
+    "attachment-preview": {
+      "label": "첨부 미리보기",
+      "source": "AttachmentViewerModal.tsx"
     }
   },
   "details": {
@@ -130,7 +134,8 @@
       "title": "확대",
       "ids": [
         "board-expanded",
-        "image-viewer"
+        "image-viewer",
+        "attachment-preview"
       ]
     },
     {

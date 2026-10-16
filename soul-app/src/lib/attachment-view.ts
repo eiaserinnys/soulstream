@@ -80,3 +80,9 @@ function nonEmptyUrl(value: string | null): string | null {
 function validByteSize(value: number): number | null {
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
+
+/** SVG and HEIC have no in-app image preview; legacy paths share this policy. */
+export function isAttachmentPreviewImage(mimeType: string | null, name: string): boolean {
+  if (/\.(?:svg|heic|heif)$/i.test(name) || /^(?:image\/svg\+xml|image\/hei[cf])$/i.test(mimeType ?? '')) return false;
+  return /\.(?:png|jpe?g|gif|webp|avif)$/i.test(name) || !!mimeType?.startsWith('image/');
+}

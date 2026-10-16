@@ -207,6 +207,21 @@ test('legacy same-origin image links use authenticated HEAD metadata and preserv
   expect(state.openExternal).not.toHaveBeenCalled();
 });
 
+test.each(['svg', 'heic'])('legacy %s stays an info attachment with or without an alias', async (extension) => {
+  const originalFetch = global.fetch;
+  const state = deps(`/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fphoto.${extension}&context_type=card&context_id=card-1`);
+  try {
+    for (const alias of [false, true]) {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: new Headers({
+        'content-type': extension === 'svg' ? 'image/svg+xml' : 'image/heic',
+        ...(alias ? { 'x-attachment-id': 'asset-1' } : {}),
+      }) });
+      await openContentLinkNavigation(state.input);
+      expect(state.openAttachment).toHaveBeenLastCalledWith(expect.objectContaining({ previewKind: 'info' }));
+    }
+  } finally { global.fetch = originalFetch; }
+});
+
 test('현재 맨 위와 같은 문서는 두 번 push하지 않는다', async () => {
   const navigation = makeNavigation('MarkdownDocument', { documentId: 'doc-1' });
   const state = deps('https://soulstream.test/?document=doc-1', { navigation });

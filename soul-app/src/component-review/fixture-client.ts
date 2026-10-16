@@ -446,6 +446,7 @@ function createAttachmentReviewApi(): ApiClient {
     readAttachmentText: async (attachmentId: string) => {
       if (attachmentId === 'review-attachment-denied') throw { kind: 'denied', status: 403 };
       if (attachmentId === 'review-attachment-retryable') throw { kind: 'retryable', status: 503 };
+      if (attachmentId === 'review-attachment-long') return { text: Array.from({ length: 300 }, (_, index) => `${index + 1}: 공개 검수용 서버 로그`).join('\n'), truncated: false };
       if (attachmentId === 'review-attachment-empty') return { text: '', truncated: false };
       if (attachmentId === 'review-attachment-markdown') return { text: '# 평문으로 표시되는 Markdown', truncated: false };
       if (attachmentId === 'review-attachment-json') return { text: '{\n  "ready": true\n}', truncated: false };

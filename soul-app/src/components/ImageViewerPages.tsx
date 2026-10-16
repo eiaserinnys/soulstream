@@ -23,6 +23,7 @@ export function ImageViewerPages({
   items,
   style,
   activeImageTestID,
+  renderAttachment,
 }: {
   sources: readonly ImageSourcePropType[];
   currentIndex: number;
@@ -31,6 +32,7 @@ export function ImageViewerPages({
   items?: readonly AttachmentView[];
   style?: StyleProp<ViewStyle>;
   activeImageTestID?: string;
+  renderAttachment?(item: AttachmentView, index: number): React.ReactNode;
 }) {
   const t = useTokens();
   const roles = createSessionVisualRoles(t).chat.attachment;
@@ -69,6 +71,9 @@ export function ImageViewerPages({
     >
       {sources.map((source, index) => {
         const item = items?.[index];
+        if (item && renderAttachment && (item.previewKind !== 'image' || item.source.kind !== 'ready')) {
+          return <View key={item.key} style={viewport}>{index === boundedIndex ? renderAttachment(item, index) : null}</View>;
+        }
         const sourceKey = `${index}:${typeof source === 'number' ? source : JSON.stringify(source)}`;
         const failureMessage = item?.source.kind === 'unavailable'
           ? item.source.availability === 'missing' ? '찾을 수 없음' : '불러오지 못함'
@@ -119,7 +124,7 @@ function ViewerImagePage({ source, index, name, caption, viewport, failed, failu
         <Image testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} resizeMode="contain"
           accessible accessibilityLabel={name || `이미지 ${index + 1}`} onError={onError} />
         {failed ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-          <Text style={{ ...roleStyles.metadata, color: roleStyles.textMuted, textAlign: 'center' }}>{failureMessage}</Text>
+          <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary, textAlign: 'center' }}>{failureMessage}</Text>
         </View> : null}
       </ScrollView>
     </View>

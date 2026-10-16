@@ -2,7 +2,7 @@ import React from 'react';
 import { Text } from 'react-native';
 import { render, waitFor } from '@testing-library/react-native';
 import { chatImageSource } from '../../../lib/chat-image-source';
-import { formatChatImageMetadata, useChatImageMetadata, type ChatRefinedGalleryItem } from '../../AttachmentImage';
+import { useChatImageMetadata, type ChatRefinedGalleryItem } from '../../AttachmentImage';
 
 const serverUrl = 'https://soulstream.eiaserinnys.me';
 const fetchMock = jest.fn();
@@ -40,7 +40,6 @@ test('메타 HEAD는 기존 보호 이미지 source를 사용하고 응답에 �
     .toBe('path-image.png|image/png|62341'));
   expect(fetchMock).toHaveBeenCalledWith(source.uri, expect.objectContaining({ method: 'HEAD' }));
   if (source.headers) expect(fetchMock.mock.calls[0][1].headers).toBe(source.headers);
-  expect(formatChatImageMetadata('image/png', 62341)).toMatch(/image\/png.*62,341 bytes/);
 });
 
 test.each([

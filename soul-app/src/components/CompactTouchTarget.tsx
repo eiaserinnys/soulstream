@@ -11,6 +11,7 @@ import { createPrimitiveRoles, useTokens, type DesignTokens } from '../theme';
 
 export interface CompactTouchTargetProps
   extends Omit<TouchableOpacityProps, 'style'> {
+  touchableRef?: React.Ref<React.ComponentRef<typeof TouchableOpacity>>;
   frameStyle?: StyleProp<ViewStyle>;
   surfaceStyle?: StyleProp<ViewStyle>;
   surfaceTestID?: string;
@@ -22,6 +23,7 @@ export interface CompactTouchTargetProps
  */
 export function CompactTouchTarget({
   children,
+  touchableRef,
   disabled,
   frameStyle,
   surfaceStyle,
@@ -33,6 +35,7 @@ export function CompactTouchTarget({
   return (
     <TouchableOpacity
       {...touchableProps}
+      ref={touchableRef}
       disabled={disabled}
       style={[frameStyle, styles.frame, disabled ? styles.disabled : undefined]}
     >

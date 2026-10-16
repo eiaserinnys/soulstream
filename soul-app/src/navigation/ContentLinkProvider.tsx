@@ -2,8 +2,7 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 import type { ImageURISource } from 'react-native';
 import type { AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
 import type { AttachmentView } from '../lib/attachment-view';
-import { captureAuthScope } from '../lib/auth-scope';
-import { AttachmentPreviewModal, saveAttachmentOriginalView } from '../components/AttachmentPreviewModal';
+import { AttachmentPreviewModal } from '../components/AttachmentPreviewModal';
 import { ImageViewerModal } from '../components/ImageViewerModal';
 
 interface ContentLinkImageHost {
@@ -32,16 +31,7 @@ export function ContentLinkProvider({ children }: { children: React.ReactNode })
   return <ContentLinkImageContext.Provider value={value}>
     {children}
     {source ? <ImageViewerModal sources={[source]} initialIndex={0} onClose={close} /> : null}
-    {attachment?.previewKind === 'image' ? <ImageViewerModal
-      sources={[attachmentImageSource(attachment)]}
-      captions={[attachment.name]}
-      items={[attachment]}
-      initialIndex={0}
-      onClose={closeAttachment}
-      onSaveOriginal={async (_index, anchor) => { await saveAttachmentOriginalView(attachment, anchor); }}
-    /> : null}
-    {attachment && attachment.previewKind !== 'image'
-      ? <AttachmentPreviewModal item={attachment} onClose={closeAttachment} /> : null}
+    {attachment ? <AttachmentPreviewModal item={attachment} onClose={closeAttachment} /> : null}
   </ContentLinkImageContext.Provider>;
 }
 
@@ -58,19 +48,4 @@ export function AttachmentReadContextProvider({ context, children }: {
 
 export function useAttachmentReadContext(): AttachmentReadContext | undefined {
   return useContext(AttachmentReadContextContext);
-}
-
-function attachmentImageSource(view: AttachmentView): ImageURISource {
-  if (view.source.kind !== 'ready') return { uri: '' };
-  const scope = captureAuthScope();
-  try {
-    const url = new URL(view.source.previewUrl ?? view.source.originalUrl, `${scope.serverUrl.replace(/\/+$/, '')}/`);
-    const sameOrigin = url.origin === new URL(scope.serverUrl).origin;
-    return {
-      uri: url.href,
-      ...(sameOrigin && scope.jwt ? { headers: { Authorization: `Bearer ${scope.jwt}` } } : {}),
-    };
-  } catch {
-    return { uri: '' };
-  }
 }

@@ -93,7 +93,7 @@ test('chat refined viewer closes from its backdrop while inner controls stay ins
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
-test('원고형 뷰어는 스와이프와 버튼이 같은 페이지를 바꾸고 현재 원본을 저장한다', () => {
+test('원고형 뷰어는 스와이프와 버튼이 같은 페이지를 바꾸고 현재 원본을 저장한다', async () => {
   const onSaveOriginal = jest.fn().mockResolvedValue(undefined);
   const sources = [{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }];
   const items = [
@@ -115,7 +115,7 @@ test('원고형 뷰어는 스와이프와 버튼이 같은 페이지를 바꾸�
   });
   expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 2');
   expect(screen.getByTestId('chat-image-viewer-image').props.source).toBe(sources[1]);
-  fireEvent.press(screen.getByTestId('chat-image-viewer-save-original'));
+  await act(async () => { fireEvent.press(screen.getByTestId('chat-image-viewer-save-original')); });
   expect(onSaveOriginal).toHaveBeenCalledWith(1, undefined);
 });
 
@@ -173,7 +173,7 @@ test('썸네일은 측정 전후 정사각 프레임을 유지하고 실패는 �
   const failed = render(<SafeAreaProvider><AttachmentImage
     source={source} accessibilityLabel="실패한 이미지" variant="chatRefined" testID="failed-chat-image"
   /></SafeAreaProvider>);
-  await waitFor(() => expect(failed.getByText('이미지를 불러오지 못했습니다.')).toBeTruthy());
+  await waitFor(() => expect(failed.getByText('불러오지 못함')).toBeTruthy());
   expect(StyleSheet.flatten(failed.getByTestId('failed-chat-image').props.style)).toMatchObject({
     minHeight: t.hitTarget.min,
     width: '100%',

@@ -82,9 +82,7 @@ test('message attachments render image thumbnails before file rows without expos
   const screen = render(<MessageAttachments items={items} role="user" presentation="default" />);
 
   const gallery = screen.getByTestId('message-attachments-images');
-  expect(StyleSheet.flatten(gallery.props.style).marginBottom).toBe(
-    createSessionVisualRoles(renderHook(() => useTokens()).result.current).chat.attachment.gridGap,
-  );
+  expect(StyleSheet.flatten(gallery.props.style).marginBottom).toBe(0);
   expect(screen.getByText('photo.png')).toBeTruthy();
   expect(screen.getByText('notes.txt')).toBeTruthy();
   expect(screen.queryByText('image/png')).toBeNull();
@@ -97,4 +95,26 @@ test('a file row opens the shared attachment preview modal', async () => {
   const screen = render(<MessageAttachments items={[textFile('text-1', 'notes.txt')]} role="assistant" />);
   fireEvent.press(screen.getByLabelText('notes.txt 열기'));
   await waitFor(() => expect(screen.getByTestId('attachment-preview-modal')).toBeTruthy());
+});
+
+test('mixed attachments share one container gap and one viewer in message order', async () => {
+  const tokens = renderHook(() => useTokens()).result.current;
+  const items = [image('one', 'one.png'), textFile('text', 'notes.txt'), image('two', 'two.png')];
+  const screen = render(<MessageAttachments items={items} role="assistant" />);
+  expect(StyleSheet.flatten(screen.getByTestId('message-attachments').props.style).gap).toBe(
+    createSessionVisualRoles(tokens).chat.attachment.gridGap,
+  );
+  fireEvent.press(screen.getByLabelText('notes.txt 열기'));
+  await waitFor(() => expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 3'));
+  expect(screen.getByText('빈 파일')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('3 / 3');
+  const next = screen.getByTestId('chat-image-viewer-next');
+  expect(next.props.disabled).not.toBe(true);
+  expect(next.props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(next);
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('3 / 3');
+  fireEvent.press(screen.getByTestId('chat-image-viewer-previous'));
+  fireEvent.press(screen.getByTestId('chat-image-viewer-previous'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('1 / 3');
 });

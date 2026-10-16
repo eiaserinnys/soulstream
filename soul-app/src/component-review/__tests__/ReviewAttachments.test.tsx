@@ -18,7 +18,13 @@ test('component review registers the production image and file attachment states
   expect(screen.getByTestId('review-attachments-multiple')).toBeTruthy();
   expect(screen.getByTestId('review-attachments-single')).toBeTruthy();
   expect(screen.getByTestId('review-attachments-image-failure')).toBeTruthy();
-  expect(screen.getByLabelText('표본 첫 이미지.png 크게 보기')).toBeTruthy();
+  expect(within(screen.getByTestId('review-attachments-multiple')).getByLabelText('표본 첫 이미지.png 크게 보기')).toBeTruthy();
+  for (const kind of ['user', 'assistant', 'manuscript']) {
+    const mixed = within(screen.getByTestId(`review-attachments-mixed-${kind}`));
+    expect(mixed.getByLabelText('표본 첫 이미지.png 크게 보기')).toBeTruthy();
+    expect(mixed.getByText('수백 줄 서버 로그와 아주 긴 파일 이름을 가진 공개 검수용 첨부 문서.txt')).toBeTruthy();
+    expect(mixed.getByText('archive.bin')).toBeTruthy();
+  }
   expect(screen.getByLabelText('표본 한 장 이미지.png 크게 보기')).toBeTruthy();
   expect(screen.getByLabelText('불러오지 못하는 이미지.png 크게 보기')).toBeTruthy();
 

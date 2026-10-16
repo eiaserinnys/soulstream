@@ -1,5 +1,6 @@
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { AttachmentReadError } from '../../api/attachmentEndpoints';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
@@ -47,6 +48,35 @@ test('empty text is represented only by the empty-file state', async () => {
 
   await waitFor(() => expect(screen.getByText('빈 파일')).toBeTruthy());
   expect(screen.queryByText('내용이 없습니다')).toBeNull();
+});
+
+test('zero-byte text never requests content', () => {
+  const screen = render(<AttachmentPreviewModal item={makeView({ byteSize: 0 })} onClose={jest.fn()} />);
+  expect(screen.getByText('빈 파일')).toBeTruthy();
+  expect(mockReadAttachmentText).not.toHaveBeenCalled();
+});
+
+test('long text scrolls inside a fixed frame with the save action outside', async () => {
+  mockReadAttachmentText.mockResolvedValue({ text: 'line\n'.repeat(300), truncated: false });
+  const screen = render(<AttachmentPreviewModal item={makeView()} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-text')).toBeTruthy());
+  const frame = screen.getByTestId('chat-image-viewer-frame');
+  expect(StyleSheet.flatten(frame.props.style).height).toBeGreaterThan(0);
+  expect(StyleSheet.flatten(screen.getByTestId('attachment-preview-text').props.style).flex).toBe(1);
+  expect(screen.getByLabelText('원본 저장')).toBeTruthy();
+});
+
+test('saving is disabled until settlement and rejection is shown without HTTP codes', async () => {
+  let reject!: (error: Error) => void;
+  const save = jest.fn(() => new Promise<void>((_, fail) => { reject = fail; }));
+  const screen = render(<AttachmentPreviewModal item={makeView({ previewKind: 'info' })} onClose={jest.fn()} onSaveOriginal={save} />);
+  fireEvent.press(screen.getByLabelText('원본 저장'));
+  expect(screen.getByLabelText('원본 저장').props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(screen.getByLabelText('원본 저장'));
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => reject(new Error('저장 실패 (403)')));
+  expect(screen.getByText('저장 실패')).toBeTruthy();
+  expect(screen.getByLabelText('원본 저장').props.accessibilityState.disabled).toBe(false);
 });
 
 test('info files show only their extension mark and unavailable files have no save action', () => {

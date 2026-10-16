@@ -1,17 +1,19 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React from 'react';
+import React, { useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { restoreAttachmentFocus } from '../lib/attachment-focus';
 import type { AttachmentView } from '../lib/attachment-view';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { CompactTouchTarget } from './CompactTouchTarget';
 
 export function AttachmentFileRow({ item, onPress, testID, presentation = 'default' }: {
   item: AttachmentView;
-  onPress(): void;
+  onPress(restoreFocus: () => void): void;
   testID?: string;
   presentation?: 'default' | 'manuscript';
 }) {
   const t = useTokens();
+  const triggerRef = useRef<any>(null);
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const status = item.source.kind === 'unavailable'
     ? item.source.availability === 'missing' ? '찾을 수 없음'
@@ -21,7 +23,9 @@ export function AttachmentFileRow({ item, onPress, testID, presentation = 'defau
 
   return <CompactTouchTarget
     testID={testID}
-    onPress={onPress}
+    touchableRef={triggerRef}
+    onPress={() => onPress(() => restoreAttachmentFocus(triggerRef.current))}
+    activeOpacity={0.82}
     accessibilityRole="button"
     accessibilityLabel={`${item.name} 열기`}
     frameStyle={{ width: '100%', alignSelf: 'stretch' }}

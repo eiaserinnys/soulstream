@@ -1,22 +1,19 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  findNodeHandle,
-  Modal,
   Platform,
   ScrollView,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { createApiClient } from '../api/client';
 import type { AttachmentView } from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
-import { formatAttachmentByteSize } from './AttachmentFileRow';
 import { createSessionVisualRoles, useTokens } from '../theme';
-import { MODAL_BACKDROP_COLOR } from '../theme/surfaceRoles';
-import { GlassButton, GlassSurface } from './GlassSurface';
+import { GlassButton } from './GlassSurface';
+import { ImageViewerModal } from './ImageViewerModal';
+import { attachmentImageSource } from '../lib/attachment-image-source';
 
 export type AttachmentOriginalSaveHandler = (
   view: AttachmentView,
@@ -43,20 +40,30 @@ export async function saveAttachmentOriginalView(
   return saver.saveAttachmentOriginal({ view, scope, anchor });
 }
 
-export function AttachmentPreviewModal({ item, onClose, onSaveOriginal }: {
+export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0, onClose, onSaveOriginal }: {
   item: AttachmentView;
+  items?: readonly AttachmentView[];
+  initialIndex?: number;
   onClose(): void;
   onSaveOriginal?: AttachmentOriginalSaveHandler;
 }) {
+  const scope = captureAuthScope();
+  return <View testID="attachment-preview-modal">
+    <ImageViewerModal variant="chatRefined" items={items} initialIndex={initialIndex} onClose={onClose}
+      sources={items.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
+        ? attachmentImageSource({ ...entry, source: entry.source }, scope.serverUrl, scope.jwt) : {})}
+      renderAttachment={(entry) => <AttachmentPreviewContent key={entry.key} item={entry} />}
+      onSaveOriginal={async (index, anchor) => { await (onSaveOriginal ?? saveAttachmentOriginalView)(items[index], anchor); }} />
+  </View>;
+}
+
+function AttachmentPreviewContent({ item }: { item: AttachmentView }) {
   const t = useTokens();
   const attachment = createSessionVisualRoles(t).chat.attachment;
-  const saveAnchorRef = useRef<View | null>(null);
   const [state, setState] = useState<PreviewState>(() => initialPreviewState(item));
   const [retryKey, setRetryKey] = useState(0);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
   useEffect(() => {
-    if (item.previewKind !== 'text' || item.source.kind !== 'ready') {
+    if (item.previewKind !== 'text' || item.source.kind !== 'ready' || item.byteSize === 0) {
       setState(initialPreviewState(item));
       return;
     }
@@ -74,70 +81,9 @@ export function AttachmentPreviewModal({ item, onClose, onSaveOriginal }: {
     return () => controller.abort();
   }, [item, retryKey]);
 
-  const save = async () => {
-    setSaveError(null);
-    const anchor = Platform.OS === 'ios' ? findNodeHandle(saveAnchorRef.current) ?? undefined : undefined;
-    try {
-      await (onSaveOriginal ?? saveAttachmentOriginalView)(item, anchor);
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : '원본을 저장하지 못했습니다.');
-    }
-  };
-
-  const canSave = item.source.kind === 'ready';
-  const size = formatAttachmentByteSize(item.byteSize);
-
-  return <Modal visible transparent presentationStyle="overFullScreen" onRequestClose={onClose}>
-    <SafeAreaProvider>
-      <SafeAreaView testID="attachment-preview-modal" style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: t.spacing.md,
-        backgroundColor: MODAL_BACKDROP_COLOR,
-      }}>
-        <GlassSurface role="modal" style={{ width: '100%', maxHeight: '90%', overflow: 'hidden' }}>
-          <View style={{ padding: t.spacing.md, gap: t.spacing.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.md }}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text numberOfLines={1} ellipsizeMode="tail" style={{
-                  ...t.foundation.typography.cardTitle,
-                  color: t.colors.textPrimary,
-                }}>{item.name}</Text>
-                {size ? <Text style={{ ...attachment.metadata, color: attachment.textMuted }}>{size}</Text> : null}
-              </View>
-              <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
-                accessibilityLabel="첨부 미리보기 닫기" testID="attachment-preview-close" onPress={onClose}>
-                <Ionicons name="close" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
-              </GlassButton>
-            </View>
-            <View style={{
-              flex: 1,
-              minHeight: t.foundation.minHeight.secondary,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: attachment.radius,
-              backgroundColor: attachment.surface,
-              padding: t.spacing.md,
-            }}>
-              {renderPreviewState(state, t, attachment)}
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.spacing.md }}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                {saveError ? <Text style={{ ...attachment.metadata, color: t.colors.textMuted }}>{saveError}</Text> : null}
-              </View>
-              {canSave ? <View ref={saveAnchorRef} collapsable={false}>
-                <GlassButton size="card" accessibilityLabel="원본 저장" testID="attachment-preview-save-original" onPress={() => { void save(); }}>
-                  <Ionicons name="download-outline" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
-                  <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>원본 저장</Text>
-                </GlassButton>
-              </View> : null}
-            </View>
-          </View>
-        </GlassSurface>
-      </SafeAreaView>
-    </SafeAreaProvider>
-  </Modal>;
+  return <View style={{ flex: 1, width: '100%', padding: t.spacing.md, alignItems: 'center', justifyContent: 'center' }}>
+    {renderPreviewState(state, t, attachment)}
+  </View>;
 
   function renderPreviewState(current: PreviewState, tokens: ReturnType<typeof useTokens>, roles: ReturnType<typeof createSessionVisualRoles>['chat']['attachment']) {
     if (current.kind === 'loading') return <ActivityIndicator color={tokens.colors.accent} />;
@@ -158,7 +104,7 @@ export function AttachmentPreviewModal({ item, onClose, onSaveOriginal }: {
     if (current.text.length === 0) {
       return <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>빈 파일</Text>;
     }
-    return <ScrollView style={{ width: '100%' }} contentContainerStyle={{ gap: tokens.spacing.sm }}>
+    return <ScrollView testID="attachment-preview-text" style={{ flex: 1, width: '100%' }} contentContainerStyle={{ gap: tokens.spacing.sm }}>
       <Text selectable style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>{current.text}</Text>
       {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted }}>앞부분만 표시</Text> : null}
     </ScrollView>;
@@ -171,7 +117,9 @@ function initialPreviewState(item: AttachmentView): PreviewState {
       : item.source.availability === 'unavailable' ? '사용할 수 없음' : '첨부 정보를 확인할 수 없음';
     return { kind: 'unavailable', message };
   }
-  return item.previewKind === 'text' ? { kind: 'loading' } : { kind: 'info' };
+  return item.previewKind === 'text'
+    ? item.byteSize === 0 ? { kind: 'text', text: '', truncated: false } : { kind: 'loading' }
+    : { kind: 'info' };
 }
 
 function readFailureState(error: unknown): PreviewState {
