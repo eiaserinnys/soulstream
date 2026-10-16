@@ -13,6 +13,8 @@ import {
   type SessionCommandTransportBridge,
 } from "./session_command_transport.js";
 import type { SessionCommandRouter } from "./session_command_router.js";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
 
 export type RecurringSessionCreateCoreOptions = {
   readonly router: SessionCommandRouter;
@@ -20,6 +22,9 @@ export type RecurringSessionCreateCoreOptions = {
   readonly modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
   readonly timeoutMs?: number;
   readonly reconcileTimeoutMs?: number;
+  readonly admitAttachments?: (
+    input: CreateRecurringSessionInput,
+  ) => Promise<AdmittedAttachmentInput>;
 };
 
 export type CreateRecurringSessionInput = {
@@ -31,7 +36,9 @@ export type CreateRecurringSessionInput = {
   readonly folderId: string;
   readonly callerInfo: Readonly<Record<string, unknown>>;
   readonly cardId?: string;
+  readonly attachmentIds?: readonly string[];
   readonly attachmentPaths?: readonly string[];
+  readonly attachmentBindings?: readonly AttachmentPathBinding[];
   readonly orchestrationAdmission?:{runId:string;executionToken:string;cardId:string};
 };
 
@@ -63,6 +70,25 @@ export async function createRecurringSession(
       "before_send",
     );
   }
+  const hasAttachmentIds = (input.attachmentIds?.length ?? 0) > 0;
+  const hasAttachmentPaths = (input.attachmentPaths?.length ?? 0) > 0;
+  let admittedAttachments: AdmittedAttachmentInput | undefined = input.attachmentBindings?.length
+    ? {
+        attachment_ids: [...(input.attachmentIds ?? [])],
+        attachment_paths: [...(input.attachmentPaths ?? [])],
+        attachment_bindings: [...input.attachmentBindings],
+      }
+    : undefined;
+  if ((hasAttachmentIds || hasAttachmentPaths) && admittedAttachments === undefined) {
+    if (options.admitAttachments !== undefined) {
+      admittedAttachments = await options.admitAttachments(input);
+    } else if (hasAttachmentIds) {
+      throw Object.assign(
+        new Error("Attachment input is unavailable"),
+        { code: "ATTACHMENT_INPUT_UNAVAILABLE", statusCode: 503 },
+      );
+    }
+  }
   const command: CreateSessionNodeCommandPayload = {
     type: "create_session",
     agentSessionId: input.sessionId,
@@ -71,7 +97,15 @@ export async function createRecurringSession(
     profile: input.agentId,
     ...(input.modelPreset === null ? {} : { model_preset: input.modelPreset }),
     folderId: input.folderId,
-    ...(input.attachmentPaths?.length ? {attachment_paths:[...input.attachmentPaths]} : {}),
+    ...((admittedAttachments?.attachment_paths ?? input.attachmentPaths)?.length
+      ? { attachment_paths: [...(admittedAttachments?.attachment_paths ?? input.attachmentPaths!)] }
+      : {}),
+    ...((admittedAttachments?.attachment_ids ?? input.attachmentIds)?.length
+      ? { attachment_ids: [...(admittedAttachments?.attachment_ids ?? input.attachmentIds!)] }
+      : {}),
+    ...((admittedAttachments?.attachment_bindings ?? input.attachmentBindings)?.length
+      ? { attachment_bindings: [...(admittedAttachments?.attachment_bindings ?? input.attachmentBindings!)] }
+      : {}),
     ...(input.cardId ? {cardId:input.cardId} : {}),
 
     ...(input.orchestrationAdmission?{orchestrationAdmission:input.orchestrationAdmission}:{}),

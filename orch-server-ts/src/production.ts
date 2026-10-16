@@ -540,6 +540,15 @@ export async function createLiveProductionApplication(
       runtimeServices,
       uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
+      findSessionNode: dbCatalogRepository.findSessionOwnerNodeId,
+      agentAttachmentRegistration: {
+        authBearerToken: config.auth_bearer_token,
+        environment: config.environment,
+        sql: await sqlResolver.resolveSql() as unknown as RepositorySql,
+        resolveAttachmentBinding: () => createR2StorageResolver(
+          async () => await sqlResolver.resolveSql() as unknown as SqlClient,
+        ).resolveBinding("attachment"),
+      },
       resolveAttachmentStorage: () => createR2StorageResolver(
         async () => await sqlResolver.resolveSql() as unknown as SqlClient,
       ).resolveBinding("attachment"),
@@ -1017,6 +1026,7 @@ export function buildProductionRouteOptions(
     atomRoutes: providers.atomRoutes,
     authRoutes: providers.authRoutes,
     attachmentRoutes: providers.attachmentRoutes,
+    ...(providers.agentAttachmentRoutes === undefined ? {} : { agentAttachmentRoutes: providers.agentAttachmentRoutes }),
     boardAssetRoutes: providers.boardAssetRoutes,
     boardItemRoutes: {
       ...providers.boardItemRoutes,

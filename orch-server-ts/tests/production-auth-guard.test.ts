@@ -4,6 +4,7 @@ import {
   createApp,
   parseOrchServerConfig,
   resolveProductionRouteAuthRequirement,
+  type CreateAppOptions,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -13,6 +14,64 @@ const config = parseOrchServerConfig({
 });
 
 describe("production auth guard", () => {
+  it("allows the service bearer without a cookie and rejects a JWT at the agent route", async () => {
+    const serviceBearer = "attachment-service-token";
+    const checksum = "c".repeat(64);
+    const resolveTokenAccess = vi.fn(async () => ({ ok: true as const }));
+    const register = vi.fn(async () => ({
+      attachment_id: "asset-1",
+      descriptor: {
+        attachment_id: "asset-1",
+        name: "report.txt",
+        mime_type: "text/plain",
+        byte_size: 4,
+        checksum_sha256: checksum,
+        width: null,
+        height: null,
+        preview_kind: "text",
+        preview_mime_type: "text/plain",
+      },
+    }));
+    const app = createApp({
+      config: parseOrchServerConfig({
+        environment: "production",
+        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+        authBearerToken: serviceBearer,
+      }),
+      productionAuth: { resolveTokenAccess },
+      agentAttachmentRoutes: {
+        authBearerToken: serviceBearer,
+        environment: "production",
+        register,
+      },
+    } as unknown as CreateAppOptions);
+
+    const request = (authorization: string) => app.inject({
+      method: "POST",
+      url: `/api/attachments/agent-register?name=report.txt&mime_type=text%2Fplain&byte_size=4&checksum_sha256=${checksum}&card_id=card-1`,
+      headers: {
+        authorization,
+        "content-type": "application/octet-stream",
+        "x-soulstream-agent-session-id": "session-1",
+        "x-soulstream-node-id": "node-1",
+        "x-soulstream-output-command-id": "command-1",
+      },
+      payload: Buffer.from("test"),
+    });
+
+    const serviceResponse = await request(`Bearer ${serviceBearer}`);
+    expect(serviceResponse.statusCode).toBe(200);
+    expect(resolveTokenAccess).toHaveBeenCalledOnce();
+    expect(register).toHaveBeenCalledOnce();
+
+    const jwtResponse = await request("Bearer dashboard-jwt");
+    expect(jwtResponse.statusCode).toBe(401);
+    expect(jwtResponse.json()).toMatchObject({ code: "ATTACHMENT_UNAUTHORIZED" });
+    expect(resolveTokenAccess).toHaveBeenCalledTimes(2);
+
+    await app.close();
+  });
+
   it("enforces protected routes and exempts public routes from the auth matrix", async () => {
     const resolveTokenAccess = vi.fn(async () => ({
       ok: false as const,
