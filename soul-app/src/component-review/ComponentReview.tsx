@@ -50,6 +50,7 @@ import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { ReviewContentLinkDocument } from './ReviewContentLinkDocument';
 import { ReviewChatUiPrimitives } from './ReviewChatUiPrimitives';
 import { ReviewChatUi } from './ReviewChatUi';
+import { ReviewAttachments } from './ReviewAttachments';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -73,6 +74,7 @@ const sections = [
   { value: 'entryShell', label: '앱 홈 조합' },
   { value: 'contentLinks', label: '내부 링크 이동' },
   { value: 'contentLinkDocument', label: '문서 화면' },
+  { value: 'attachments', label: '첨부' },
   { value: 'longFolders', label: '긴 폴더 목록' },
   { value: 'autoRefresh', label: '자동 갱신' },
   { value: 'cardImages', label: '카드 이미지' },
@@ -93,12 +95,14 @@ export function initializeReview() {
   const nativeSettings = settingsSection === 'nativeSettings' || settingsSection === 'pasSettings';
   const persistent = settingsSection === 'persistent';
   const reviewParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const attachments = settingsSection === 'attachments';
   const pasImageSample = settingsSection === 'chat' && reviewParams?.get('sample') === 'pas-images';
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || chat || contentLinks || contentLinkDocument || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
+  if (attachments) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
     const state = useChatStore.getState();
     const requestId = state.beginPersistentDisplaySettingsLoad('review-pas-1');
@@ -182,6 +186,7 @@ function Gallery() {
     </View>;
   }
   if (section === 'cardChecks') return <View testID="card-checks-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewCardChecks /></View>;
+  if (section === 'attachments') return <View testID="attachment-review-entry" style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewAttachments /></View>;
   if (section === 'chatUiRenderer') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewChatUi /></View>;
   if (section === 'chatUi') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewChatUiPrimitives /></View>;
   if (section === 'cardHome') return <View style={{ flex: 1, padding: t.uiSpacing.sm, backgroundColor: t.colors.background }}><ReviewCardHome /></View>;
@@ -227,7 +232,8 @@ function Gallery() {
         initializeReview();
       }
   if (next === 'entryShell' || next === 'folderTabs') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
-  if (next === 'contentLinks' || next === 'contentLinkDocument') useSettingsStore.setState({ serverUrl: window.location.origin });
+      if (next === 'contentLinks' || next === 'contentLinkDocument' || next === 'attachments') useSettingsStore.setState({ serverUrl: window.location.origin });
+      if (next === 'attachments') useAuthStore.setState({ jwt: null, authRejected: false });
       if (next === 'cardImages') useSettingsStore.setState({ serverUrl: window.location.origin });
       setSection(next);
     }} options={sections} wrap={section === 'dialogues'} />

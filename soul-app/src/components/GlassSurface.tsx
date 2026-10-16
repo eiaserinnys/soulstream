@@ -333,7 +333,7 @@ export function GlassButton({
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
+      accessibilityState={{ disabled: !!disabled, ...accessibilityState }}
       {...(Platform.OS === 'web' && ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
       style={({ pressed }) => [
         styles.buttonInner,
@@ -379,7 +379,7 @@ export function GlassButton({
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
-        accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
+        accessibilityState={{ disabled: !!disabled, ...accessibilityState }}
         {...(Platform.OS === 'web' && ariaPressed !== undefined ? { 'aria-pressed': ariaPressed } : {})}
         style={[{
           minWidth: Math.max(t.hitTarget.min, primitive.minHeight),
@@ -415,7 +415,7 @@ export function GlassButton({
       const visualSize = size === 'compact' ? t.foundation.iconFrame.compact : t.avatarSize.session;
       return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
         onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
-        accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
+        accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: !!disabled, ...accessibilityState }}>
         <View testID={surfaceTestID} style={[style, paperSurfaceStyle, { width: visualSize, height: visualSize, alignItems: 'center', justifyContent: 'center' }]}>{children}</View>
       </CompactTouchTarget>;
     }
@@ -428,7 +428,7 @@ export function GlassButton({
       alignItems: 'center', justifyContent: 'center' };
     return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
       onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
-      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ ...accessibilityState, disabled: !!disabled }}>
+      accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: !!disabled, ...accessibilityState }}>
       {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }, compactFocusStyle]}>{children}</View>
         : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle, compactFocusStyle]}>{children}</GlassSurfaceImpl>}
     </CompactTouchTarget>;
