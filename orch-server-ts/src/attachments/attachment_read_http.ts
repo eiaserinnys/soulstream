@@ -9,6 +9,23 @@ const SAFE_INLINE_RASTER_MIME_TYPES = new Set([
   "image/webp",
   "image/avif",
 ]);
+const SAFE_TEXT_PREVIEW_MIME_TYPES = new Set([
+  "text/plain",
+  "text/markdown",
+  "application/json",
+  "text/javascript",
+  "application/javascript",
+  "text/typescript",
+  "application/typescript",
+  "text/x-python",
+  "text/x-script.python",
+  "text/x-shellscript",
+  "text/x-csrc",
+  "text/x-c++src",
+  "text/x-java-source",
+  "text/css",
+  "text/csv",
+]);
 const MIME_TOKEN = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
 
 export type ParsedAttachmentRange = {
@@ -49,7 +66,7 @@ export function previewInfo(
   mimeType: string,
 ): { kind: AttachmentDescriptor["preview_kind"]; mimeType: string | null } {
   if (SAFE_INLINE_RASTER_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
-  if (mimeType === "text/plain" || mimeType === "text/markdown" || mimeType === "application/json") {
+  if (SAFE_TEXT_PREVIEW_MIME_TYPES.has(mimeType)) {
     return { kind: "text", mimeType: "text/plain" };
   }
   return { kind: "info", mimeType: null };
