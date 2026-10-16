@@ -111,7 +111,7 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   </>;
 }
 
-export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID, precedingContent = 'text', items, onSaveOriginal }: {
+export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID, precedingContent = 'text', items, onSaveOriginal, followedByAttachments }: {
   images: ChatRefinedGalleryItem[];
   viewerImages?: ChatRefinedGalleryItem[];
   startIndex?: number;
@@ -120,6 +120,7 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
   precedingContent?: 'text' | 'attachments' | 'none';
   items?: readonly AttachmentView[];
   onSaveOriginal?(index: number, anchor?: number): Promise<void>;
+  followedByAttachments?: boolean;
 }) {
   const t = useTokens();
   const device = useDeviceType();
@@ -168,7 +169,7 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
       flexDirection: 'column',
       gap: attachment.gridGap,
       marginTop: role === 'user' ? userLeadingGap : t.spacing.lg,
-      marginBottom: role === 'user' ? t.spacing.lg : t.uiSpacing.md,
+      marginBottom: followedByAttachments ? attachment.gridGap : role === 'user' ? t.spacing.lg : t.uiSpacing.md,
     }}
   >
     {images.length > 1
