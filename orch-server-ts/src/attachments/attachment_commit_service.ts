@@ -272,9 +272,11 @@ function prepareSpec(spec: UploadSpec): { spec: UploadSpec; checksumSha256?: str
   const validId = /^[A-Za-z0-9_-]+$/.test(spec.attachmentId);
   const validOwner = (spec.owner.kind === "user_email" || spec.owner.kind === "agent_session")
     && spec.owner.key.length > 0;
+  const validSourceNodeId = spec.registration.sourceNodeId === null
+    || (typeof spec.registration.sourceNodeId === "string" && spec.registration.sourceNodeId.length > 0);
   if (!validId || !validOwner || spec.originalName.length === 0 || spec.mimeType.length === 0
     || !Number.isSafeInteger(spec.byteSize) || spec.byteSize < 0
-    || spec.registration.sourceNodeId.length === 0 || spec.registration.sourceSessionId.length === 0) {
+    || !validSourceNodeId || spec.registration.sourceSessionId.length === 0) {
     throw new AttachmentCommitError("invalid_upload", 409, "Attachment registration is invalid", spec.attachmentId);
   }
   const checksumSha256 = spec.checksumSha256 === undefined ? undefined : normalizeChecksum(spec.checksumSha256);
@@ -339,8 +341,8 @@ function sameRegistration(left: UploadRegistration, right: UploadRegistration): 
 function assertTicketMatchesRow(ticket: VerifiedAttachmentUploadTicket, row: OwnedAttachmentUpload): void {
   if (ticket.importId !== row.attachmentId || ticket.storageKey !== row.storageKey
     || ticket.filename !== row.originalName || ticket.size !== row.byteSize
-    || ticket.contentType !== row.mimeType || ticket.sessionId !== row.registration.sourceSessionId
-    || ticket.nodeId !== row.registration.sourceNodeId) {
+    || ticket.contentType !== row.mimeType || ticket.sourceSessionId !== row.registration.sourceSessionId
+    || ticket.sourceNodeId !== row.registration.sourceNodeId) {
     throw conflict(row.attachmentId);
   }
 }
@@ -374,8 +376,8 @@ function multipartInitResult(
       filename: row.originalName,
       size: row.byteSize,
       contentType: row.mimeType,
-      sessionId: row.registration.sourceSessionId,
-      nodeId: row.registration.sourceNodeId,
+      sourceSessionId: row.registration.sourceSessionId,
+      sourceNodeId: row.registration.sourceNodeId,
       settingsIdentity,
       exp,
       ...(checksumSha256 === undefined ? {} : { checksumSha256 }),

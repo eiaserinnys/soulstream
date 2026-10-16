@@ -18,7 +18,7 @@ export type UploadOwner =
 
 export type UploadRegistration = {
   readonly registrationScope: AttachmentRegistrationScope | null;
-  readonly sourceNodeId: string;
+  readonly sourceNodeId: string | null;
   readonly sourceSessionId: string;
   readonly outputCommandId: string | null;
 };
@@ -40,8 +40,8 @@ export type VerifiedAttachmentUploadTicket = {
   readonly filename: string;
   readonly size: number;
   readonly contentType: string;
-  readonly sessionId: string;
-  readonly nodeId: string;
+  readonly sourceSessionId: string;
+  readonly sourceNodeId: string | null;
   readonly settingsIdentity: string;
   readonly exp: number;
   readonly checksumSha256?: string;

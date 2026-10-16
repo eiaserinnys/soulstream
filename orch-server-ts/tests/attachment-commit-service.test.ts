@@ -138,6 +138,32 @@ describe("owned attachment commit service", () => {
     expect(result).toMatchObject({ attachmentId: "attachment-a", byteSize: 3, checksumSha256: sha256(bytes) });
   });
 
+  it("stores browser-produced bytes with null source node and preserves the source session", async () => {
+    const h = createHarness();
+    const browserRegistration = { ...registration, sourceNodeId: null };
+
+    await h.service.putSmall({
+      spec: spec({ registration: browserRegistration }),
+      body: new Uint8Array([1, 2, 3]),
+    });
+
+    expect(h.repository.insertOwnedPending).toHaveBeenCalledWith(expect.objectContaining({
+      registration: browserRegistration,
+    }));
+    expect(h.row?.registration).toMatchObject({ sourceNodeId: null, sourceSessionId: "session-a" });
+  });
+
+  it("rejects an empty source node instead of treating it as browser provenance", async () => {
+    const h = createHarness();
+
+    await expect(h.service.putSmall({
+      spec: spec({ registration: { ...registration, sourceNodeId: "" } }),
+      body: new Uint8Array([1, 2, 3]),
+    })).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(h.repository.insertOwnedPending).not.toHaveBeenCalled();
+  });
+
   it("accepts a zero-byte upload and its SHA-256", async () => {
     const h = createHarness();
     const empty = new Uint8Array();
@@ -233,8 +259,21 @@ describe("owned attachment commit service", () => {
     expect(result.ticket).toMatchObject({ importId: "attachment-a", uploadId: "existing-upload", exp: Math.floor(now.getTime() / 1000) + 3510 });
   });
 
+  it("returns multipart tickets with null source node and preserved source session", async () => {
+    const h = createHarness();
+    const browserRegistration = { ...registration, sourceNodeId: null };
+
+    const result = await h.service.initMultipart({ spec: spec({ byteSize: 20, registration: browserRegistration }) });
+
+    expect(h.repository.insertOwnedPending).toHaveBeenCalledWith(expect.objectContaining({
+      registration: browserRegistration,
+    }));
+    expect(result.ticket).toMatchObject({ sourceNodeId: null, sourceSessionId: "session-a" });
+  });
+
   it("completes only when the stored object is absent and verifies the assembled object", async () => {
     const bytes = new Uint8Array([1, 2, 3]);
+    const browserRegistration = { ...registration, sourceNodeId: null };
     const ticket = {
       importId: "attachment-a",
       storageKey: "session-attachments/originals/attachment-a",
@@ -242,13 +281,13 @@ describe("owned attachment commit service", () => {
       filename: "hello.txt",
       size: 3,
       contentType: "text/plain",
-      sessionId: "session-a",
-      nodeId: "node-a",
+      sourceSessionId: "session-a",
+      sourceNodeId: null,
       settingsIdentity: "binding-v1",
       exp: Math.floor(now.getTime() / 1000) + 3600,
       checksumSha256: sha256(bytes),
     };
-    const pending = row(spec(), { multipartUploadId: "upload-a" });
+    const pending = row(spec({ registration: browserRegistration }), { multipartUploadId: "upload-a" });
     const h = createHarness(pending);
     h.storage.headObject.mockRejectedValueOnce(new R2StorageRequestError("head object", 404));
 
@@ -274,8 +313,8 @@ describe("owned attachment commit service", () => {
     );
     const ticket = {
       importId: "attachment-a", storageKey: pending.storageKey, uploadId: "upload-a",
-      filename: "hello.txt", size: 3, contentType: "text/plain", sessionId: "session-a",
-      nodeId: "node-a", settingsIdentity: "binding-v1", exp: Math.floor(now.getTime() / 1000) + 3600,
+      filename: "hello.txt", size: 3, contentType: "text/plain", sourceSessionId: "session-a",
+      sourceNodeId: "node-a", settingsIdentity: "binding-v1", exp: Math.floor(now.getTime() / 1000) + 3600,
     };
 
     await expect(h.service.completeMultipart({ owner, ticket, parts: [] })).resolves.toMatchObject({ attachmentId: "attachment-a" });
@@ -294,8 +333,8 @@ describe("owned attachment commit service", () => {
       filename: "hello.txt",
       size: 3,
       contentType: "text/plain",
-      sessionId: "session-a",
-      nodeId: "node-a",
+      sourceSessionId: "session-a",
+      sourceNodeId: "node-a",
       settingsIdentity: "binding-v1",
       exp: Math.floor(now.getTime() / 1000) + 3600,
     };
@@ -318,8 +357,8 @@ describe("owned attachment commit service", () => {
     h.storage.headObject.mockRejectedValueOnce(new R2StorageRequestError("head object", 403));
     const ticket = {
       importId: "attachment-a", storageKey: pending.storageKey, uploadId: "upload-a",
-      filename: "hello.txt", size: 3, contentType: "text/plain", sessionId: "session-a",
-      nodeId: "node-a", settingsIdentity: "binding-v1", exp: Math.floor(now.getTime() / 1000) + 3600,
+      filename: "hello.txt", size: 3, contentType: "text/plain", sourceSessionId: "session-a",
+      sourceNodeId: "node-a", settingsIdentity: "binding-v1", exp: Math.floor(now.getTime() / 1000) + 3600,
     };
 
     await expect(h.service.completeMultipart({ owner, ticket, parts: [] })).rejects.toMatchObject({ statusCode: 502 });
@@ -332,8 +371,8 @@ describe("owned attachment commit service", () => {
     const h = createHarness(committed);
     const ticket = {
       importId: "attachment-a", storageKey: committed.storageKey, uploadId: "upload-a",
-      filename: "hello.txt", size: 3, contentType: "text/plain", sessionId: "session-a",
-      nodeId: "node-a", settingsIdentity: "stale-binding-is-ignored", exp: Math.floor(now.getTime() / 1000) + 3600,
+      filename: "hello.txt", size: 3, contentType: "text/plain", sourceSessionId: "session-a",
+      sourceNodeId: "node-a", settingsIdentity: "stale-binding-is-ignored", exp: Math.floor(now.getTime() / 1000) + 3600,
     };
 
     await h.service.abortMultipart({ owner, ticket });
@@ -348,8 +387,8 @@ describe("owned attachment commit service", () => {
     const h = createHarness(pending);
     const ticket = {
       importId: "attachment-a", storageKey: pending.storageKey, uploadId: "upload-a",
-      filename: "hello.txt", size: 3, contentType: "text/plain", sessionId: "session-a",
-      nodeId: "node-a", settingsIdentity: "binding-v1", exp: Math.floor(now.getTime() / 1000) + 3600,
+      filename: "hello.txt", size: 3, contentType: "text/plain", sourceSessionId: "session-a",
+      sourceNodeId: "node-a", settingsIdentity: "binding-v1", exp: Math.floor(now.getTime() / 1000) + 3600,
     };
 
     await h.service.abortMultipart({ owner, ticket });

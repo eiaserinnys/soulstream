@@ -77,6 +77,34 @@ describe("live attachment commit repository", () => {
     expect(harness.calls[0]?.values).toContain("https://r2.example.test");
   });
 
+  it("restores browser provenance with a null source node and keeps the source session", async () => {
+    const browserRow = { ...pendingRow, source_node_id: null, source_session_id: "draft-session-a" };
+    const harness = createSqlHarness((text) => text.includes("INSERT INTO file_assets") ? [browserRow] : []);
+    const repository = createLiveAttachmentCommitRepository(harness.resolver);
+
+    const result = await repository.insertOwnedPending({
+      attachmentId: "asset-a",
+      storageKey: pendingRow.storage_key,
+      owner: { kind: "user_email", key: "owner@example.test" },
+      registration: {
+        registrationScope: { type: "folder", id: "folder-a" },
+        sourceNodeId: null,
+        sourceSessionId: "draft-session-a",
+        outputCommandId: "command-a",
+      },
+      originalName: "report.txt",
+      mimeType: "text/plain",
+      byteSize: 42,
+      location: { endpoint: "https://r2.example.test", bucket: "private-files" },
+    });
+
+    expect(result).toMatchObject({
+      registration: { sourceNodeId: null, sourceSessionId: "draft-session-a" },
+      uploadStatus: "pending",
+    });
+    expect(harness.calls[0]?.values).toContain(null);
+  });
+
   it("does not expose a row whose owner or purpose does not match", async () => {
     const harness = createSqlHarness((text) => text.includes("INSERT INTO file_assets") ? [] : []);
     const repository = createLiveAttachmentCommitRepository(harness.resolver);

@@ -167,11 +167,11 @@ function attachmentFromRow(row: Record<string, unknown> | undefined): OwnedAttac
   if (id === null || storageKey === null || originalName === null || mimeType === null
     || byteSize === null || storageEndpoint === null || storageBucket === null) return null;
   const scope = row.registration_scope ?? row.registrationScope ?? null;
-  const sourceNodeId = stringValue(row.source_node_id ?? row.sourceNodeId);
+  const sourceNodeId = stringOrNull(row.source_node_id ?? row.sourceNodeId);
   const sourceSessionId = stringValue(row.source_session_id ?? row.sourceSessionId);
   const outputCommandId = stringOrNull(row.output_command_id ?? row.outputCommandId);
   const createdAt = row.created_at ?? row.createdAt;
-  if (sourceNodeId === null || sourceSessionId === null || createdAt === undefined) return null;
+  if (sourceSessionId === null || createdAt === undefined) return null;
   return {
     attachmentId: id,
     storageKey,
