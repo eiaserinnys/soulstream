@@ -11,6 +11,7 @@ import {
   type InventoryNodeCoverage,
   type InventoryRunBundleMetadata,
   type LegacySource,
+  type NodeScanSummary,
 } from "../../scripts/attachment-migration/inventory_contract.js";
 
 const CUTOFF = "2026-10-17T00:00:00.000Z";
@@ -49,7 +50,7 @@ describe("legacy attachment plan", () => {
 
   it("keeps one location identity when references have conflicting ACL provenance", () => {
     const first = source("card-a", "shared.png", { type: "card", id: "card-a" });
-    const second = source("card-b", "shared.png", { type: "card", id: "card-b" });
+    const second = source("card-b", "shared.png", { type: "card", id: "card-b" }, "node-a", "different-owner@example.test");
     const plan = buildLegacyAttachmentPlan(input({ sources: [first, second], observations: [observed("shared.png", [first, second])] }));
 
     expect(plan.identities).toHaveLength(1);
@@ -57,6 +58,163 @@ describe("legacy attachment plan", () => {
     expect(plan.identities[0]?.owner).toMatchObject({ status: "unverified", reason: expect.stringContaining("conflict") });
     expect(plan.identities[0]?.status).toBe(INVENTORY_PLAN_STATUS.owner_unverified);
     expect(plan.identities[0]?.proposed_asset_id).toBeUndefined();
+    expect(plan.summary.unconfirmed_count).toBe(1);
+    expect(plan.summary.unconfirmed).toEqual([
+      expect.objectContaining({ subject: "node-a:shared.png", status: INVENTORY_PLAN_STATUS.owner_unverified }),
+    ]);
+    expect(plan.coverage_complete).toBe(false);
+    expect(plan.summary.exit_code).toBe(2);
+  });
+
+  it("uses a private proposal when the same verified owner has different source scopes", () => {
+    const first = source("card-a", "shared.png", { type: "card", id: "card-a" });
+    const second = source("card-b", "shared.png", { type: "card", id: "card-b" });
+    const plan = buildLegacyAttachmentPlan(input({ sources: [first, second], observations: [observed("shared.png", [first, second])] }));
+
+    expect(plan.identities[0]?.owner).toMatchObject({ status: "unverified", reason: expect.stringContaining("scope") });
+    expect(plan.identities[0]?.proposed_owner).toBeNull();
+    expect(plan.identities[0]?.proposed_asset_id).toBeDefined();
+  });
+
+  it("joins census-only observations by physical path and isolates explicit source absences", () => {
+    const censusPath = "/srv/incoming/census.png";
+    const missingPath = "/srv/incoming/missing.png";
+    const unobservedInsideRootPath = "/srv/incoming/not-listed.png";
+    const outsidePath = "/srv/archive/outside.png";
+    const windowsPath = "C:\\Legacy\\Incoming\\photo.png";
+    const censusSource = source("census", censusPath, { type: "card", id: "census" });
+    const missingSource = source("missing", missingPath, { type: "card", id: "missing" });
+    const unobservedInsideRootSource = source("not-listed", unobservedInsideRootPath, { type: "card", id: "not-listed" });
+    const outsideSource = source("outside", outsidePath, { type: "card", id: "outside" });
+    const windowsSource = source("windows", windowsPath, { type: "card", id: "windows" }, "node-win");
+    const censusObservation = observed("census.png", [censusSource], {
+      known_source_paths: [],
+      source_refs: [],
+      incoming_relative_path: "census.png",
+      physical_path: censusPath,
+    });
+    const windowsObservation = {
+      ...observed("photo.png", [windowsSource], {
+        known_source_paths: [],
+        source_refs: [],
+        incoming_relative_path: "photo.png",
+        physical_path: "c:/legacy/incoming/PHOTO.PNG",
+      }),
+      node_id: "node-win",
+    };
+    const missingObservation: FileObservation = {
+      ...censusObservation,
+      status: FILE_OBSERVATION_STATUS.source_absent,
+      known_source_paths: [missingPath],
+      incoming_relative_path: undefined,
+      physical_path: missingPath,
+      source_refs: [{ source_kind: "card_request", source_table: "cards", source_pk: "missing", source_pointer: "/attachments/0/path", card_id: "missing" }],
+      size_bytes: undefined,
+      bytes_read: undefined,
+      sha256: undefined,
+      eligible_candidate: false,
+      coverage_complete: false,
+    };
+    const metadata = bundle({ expected_node_ids: ["node-a", "node-win"] });
+    const plan = buildLegacyAttachmentPlan({
+      ...input({ sources: [censusSource, missingSource, unobservedInsideRootSource, outsideSource, windowsSource], metadata }),
+      observations: [censusObservation, windowsObservation, missingObservation],
+      nodeCoverage: [
+        censusSummary("node-a", "/srv/incoming", { observed: 1, source_absent: 1 }, false),
+        censusSummary("node-win", "C:\\Legacy\\Incoming", { observed: 1 }, true),
+      ],
+    });
+
+    const byPath = new Map(plan.identities.map((item) => [item.normalized_path, item]));
+    expect(byPath.get(censusPath)).toMatchObject({ status: INVENTORY_PLAN_STATUS.verified_source, physical_path: censusPath });
+    expect(byPath.get(windowsPath.replace(/\\/g, "/"))).toMatchObject({ status: INVENTORY_PLAN_STATUS.verified_source, physical_path: "c:/legacy/incoming/PHOTO.PNG" });
+    expect(byPath.get(missingPath)?.status).toBe(INVENTORY_PLAN_STATUS.absent_at_source);
+    expect(byPath.get(unobservedInsideRootPath)?.status).toBe(INVENTORY_PLAN_STATUS.absent_at_source);
+    expect(byPath.get(outsidePath)?.status).toBe(INVENTORY_PLAN_STATUS.unconfirmed_node);
+    expect(plan.coverage_complete).toBe(false);
+  });
+
+  it("does not infer absence inside a root when its incoming census is incomplete", () => {
+    const root = "/srv/incoming";
+    const explicitMissingPath = `${root}/missing-explicit.png`;
+    const unobservedPath = `${root}/not-listed.png`;
+    const explicitMissingSource = source("missing-explicit", explicitMissingPath, { type: "card", id: "missing-explicit" });
+    const unobservedSource = source("not-listed", unobservedPath, { type: "card", id: "not-listed" });
+    const explicitMissingObservation: FileObservation = {
+      ...observed("missing-explicit.png", [explicitMissingSource], {
+        known_source_paths: [explicitMissingPath],
+        incoming_relative_path: undefined,
+        source_refs: [{ source_kind: "card_request", source_table: "cards", source_pk: "missing-explicit", source_pointer: "/attachments/0/path", card_id: "missing-explicit" }],
+        physical_path: explicitMissingPath,
+      }),
+      status: FILE_OBSERVATION_STATUS.source_absent,
+      size_bytes: undefined,
+      bytes_read: undefined,
+      sha256: undefined,
+      eligible_candidate: false,
+      coverage_complete: false,
+    };
+    const incompleteCensus = {
+      ...censusSummary("node-a", root, { root_unconfirmed: 1, source_absent: 1 }, true),
+      incoming_census_complete: false,
+    };
+    const plan = buildLegacyAttachmentPlan({
+      ...input({ sources: [explicitMissingSource, unobservedSource], nodeCoverage: [incompleteCensus] }),
+      observations: [explicitMissingObservation],
+    });
+
+    const byPath = new Map(plan.identities.map((item) => [item.normalized_path, item]));
+    expect(byPath.get(explicitMissingPath)?.status).toBe(INVENTORY_PLAN_STATUS.absent_at_source);
+    expect(byPath.get(unobservedPath)?.status).toBe(INVENTORY_PLAN_STATUS.unconfirmed_node);
+  });
+
+  it.each(["card_request", "card_item", "item_history", "report", "comment", "note", "message"] as const)(
+    "separates the owner-null private proposal from unconfirmed coverage for %s source evidence",
+    (sourceKind) => {
+      const reference = sourceFor(sourceKind);
+      const file = observed("card.png", [reference], { source_refs: [] });
+      const plan = buildLegacyAttachmentPlan(input({ sources: [reference], observations: [file] }));
+
+      expect(plan.identities).toHaveLength(1);
+      expect(plan.identities[0]).toMatchObject({
+        status: INVENTORY_PLAN_STATUS.owner_unverified,
+        owner: { status: "unverified" },
+        proposed_owner: null,
+        proposed_asset_id: expect.stringMatching(/^legacy_[0-9a-f]{24}$/),
+        references: [expect.objectContaining({ source_kind: sourceKind })],
+      });
+      expect(plan.identities[0]?.references[0]?.session_id).toBe(sourceKind === "message" ? "actual-session" : undefined);
+      expect(plan.summary.proposed_message_refs).toBe(sourceKind === "message" ? 1 : 0);
+      expect(plan.summary.proposed_card_refs).toBe(sourceKind === "message" ? 0 : 1);
+      expect(plan.summary.owner_null_proposal_count).toBe(1);
+      expect(plan.summary.unconfirmed_count).toBe(0);
+      expect(plan.summary.unconfirmed).toEqual([]);
+      expect(plan.coverage_complete).toBe(true);
+      expect(plan.summary.exit_code).toBe(0);
+    },
+  );
+
+  it("keeps an unreferenced incoming file as a preservation candidate without making coverage incomplete", () => {
+    const file = observed("orphan.png", [], {
+      known_source_paths: [],
+      incoming_relative_path: "orphan.png",
+      source_refs: [],
+      size_bytes: 27,
+      physical_path: "/srv/incoming/orphan.png",
+    });
+    const plan = buildLegacyAttachmentPlan(input({ observations: [file] }));
+
+    expect(plan.identities).toHaveLength(1);
+    expect(plan.identities[0]).toMatchObject({
+      status: "unreferenced_preservation_candidate",
+      unreferenced_incoming: true,
+      references: [],
+    });
+    expect(plan.identities[0]?.proposed_asset_id).toBeUndefined();
+    expect(plan.coverage_complete).toBe(true);
+    expect(plan.summary.unconfirmed).toEqual([]);
+    expect(plan.summary.preservation_target_count).toBe(1);
+    expect(plan.summary.preservation_target_bytes).toBe(27);
   });
 
   it("matches each report path to its own observation when one body contains multiple files", () => {
@@ -208,7 +366,7 @@ function input(overrides: Partial<{
   observations: FileObservation[];
   assets: InventoryAssetSnapshot[];
   aliases: InventoryAliasSnapshot[];
-  nodeCoverage: InventoryNodeCoverage[];
+  nodeCoverage: Array<InventoryNodeCoverage | NodeScanSummary>;
   metadata: InventoryRunBundleMetadata;
 }> = {}) {
   return {
@@ -253,7 +411,7 @@ function scannedNode(): InventoryNodeCoverage {
   };
 }
 
-function source(id: string, legacyPath: string, scope: { type: "card"; id: string }): LegacySource {
+function source(id: string, legacyPath: string, scope: { type: "card"; id: string }, nodeId = "node-a", ownerKey = "owner@example.test"): LegacySource {
   return {
     schema_version: INVENTORY_SCHEMA_VERSION,
     source_kind: "card_request",
@@ -267,11 +425,57 @@ function source(id: string, legacyPath: string, scope: { type: "card"; id: strin
     card_id: id,
     data: {
       request: "",
-      attachments: [{ nodeId: "node-a", path: legacyPath }],
+      attachments: [{ nodeId, path: legacyPath }],
       owner_kind: "user_email",
-      owner_key: "owner@example.test",
+      owner_key: ownerKey,
       registration_scope: scope,
     },
+  };
+}
+
+function sourceFor(sourceKind: "card_request" | "card_item" | "item_history" | "report" | "comment" | "note" | "message"): LegacySource {
+  const common = {
+    schema_version: INVENTORY_SCHEMA_VERSION,
+    source_kind: sourceKind,
+    source_table: sourceKind === "message" ? "events" as const : sourceKind === "report" ? "card_reports" as const
+      : sourceKind === "comment" || sourceKind === "note" ? "card_comments" as const
+        : sourceKind === "item_history" ? "folder_operations" as const : "cards" as const,
+    source_pk: `${sourceKind}-source`,
+    source_pointer: "/",
+    row_sha256: "d".repeat(64),
+    created_at: CUTOFF,
+    changed_after_cutoff: false,
+    ...(sourceKind === "message" ? { session_id: "actual-session" } : { card_id: "card-source" }),
+  };
+  const target = "/api/attachments/files?nodeId=node-a&path=card.png";
+  const data: Record<string, unknown> = sourceKind === "card_request"
+    ? { request: "", attachments: [{ nodeId: "node-a", path: "card.png" }] }
+    : sourceKind === "card_item"
+      ? { items: [{ evidence: [{ url: target }] }] }
+      : sourceKind === "item_history"
+        ? { payload_json: { attachments: [{ nodeId: "node-a", path: "card.png" }] } }
+        : sourceKind === "message"
+          ? { source_node_id: "node-a", event_id: 42, attachment_candidates: [{ pointer: "/attachments/0", kind: "input_path", value: "card.png" }] }
+          : { format: "markdown", body: `![file](${target})` };
+  return { ...common, data } as LegacySource;
+}
+
+function censusSummary(nodeId: string, incomingRoot: string, statusCounts: NodeScanSummary["status_counts"], coverageComplete: boolean): NodeScanSummary {
+  return {
+    record_type: "summary",
+    schema_version: INVENTORY_SCHEMA_VERSION,
+    node_id: nodeId,
+    cutoff: CUTOFF,
+    started_at: CUTOFF,
+    ended_at: CUTOFF,
+    coverage_complete: coverageComplete,
+    file_count: statusCounts.observed ?? 0,
+    bytes_hashed: 10,
+    hashes_completed: statusCounts.observed ?? 0,
+    after_cutoff_count: 0,
+    status_counts: statusCounts,
+    incoming_root: incomingRoot,
+    incoming_census_complete: true,
   };
 }
 

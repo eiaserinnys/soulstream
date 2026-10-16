@@ -42,7 +42,8 @@ type Input = {
   allowedOrigins?: readonly string[];
 };
 type Occurrence = { node: string; path: string; target: LegacyTarget; source: LegacySource; owner: InventoryOwnerEvidence };
-type Group = { node: string; path: string; owner: InventoryOwnerEvidence; refs: InventoryPlanReference[] };
+type Group = { node: string; path: string; owner: InventoryOwnerEvidence; ownerConflict: boolean; refs: InventoryPlanReference[] };
+const CARD_REFERENCE_KINDS = new Set(["card_request", "card_item", "item_history", "report", "comment", "note"]);
 
 const MIME: Readonly<Record<string, string>> = {
   ".gif": "image/gif", ".jpeg": "image/jpeg", ".jpg": "image/jpeg", ".json": "application/json",
@@ -63,7 +64,7 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
     errors.add(ERROR.manifest_mismatch);
     anomalies.push({ code: ERROR.manifest_mismatch, subject: row.node_id, message: "node summary cutoff differs from source metadata" });
   }
-  const nodeById = new Map(nodes.map((node) => [node.node_id, node]));
+  const censusRoots = censusRootsWithCompleteCensus(input.nodeCoverage);
   const sessions = latestSessions(input.sessionCoverage ?? []);
   const sessionById = new Map(sessions.map((session) => [session.session_id, session]));
   let complete = input.metadata.relational_coverage_complete && input.metadata.alias_snapshot_complete && input.metadata.coverage_complete !== false;
@@ -138,7 +139,7 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
     const observation = matches.find((file) => file.status === FILE.observed && file.eligible_candidate) ?? matches[0];
     const alias = aliases.get(locKey(group.node, group.path));
     const asset = alias?.asset_id ? assetById.get(alias.asset_id) : undefined;
-    const resolved = resolve(group, observation, alias, asset, nodeById.get(group.node), aliasSnapshotUsable);
+    const resolved = resolve(group, observation, alias, asset, aliasSnapshotUsable, censusRoots.get(group.node));
     const identity = makeIdentity(group, observation, alias, asset, resolved);
     identities.push(identity);
     if (!identity.coverage_complete) complete = false;
@@ -149,10 +150,10 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
     if (used.has(file) || file.source_refs.length > 0 || !file.incoming_relative_path) continue;
     const pathName = normalizeAttachmentLegacyPath(file.incoming_relative_path);
     const owner: InventoryOwnerEvidence = { status: "unverified", reason: "incoming file has no source owner", source: "incoming_file" };
-    const group: Group = { node: file.node_id, path: pathName, owner, refs: [] };
+    const group: Group = { node: file.node_id, path: pathName, owner, ownerConflict: false, refs: [] };
     const alias = aliases.get(locKey(file.node_id, pathName));
     const asset = alias?.asset_id ? assetById.get(alias.asset_id) : undefined;
-    const resolved = resolve(group, file, alias, asset, nodeById.get(file.node_id), aliasSnapshotUsable);
+    const resolved = resolve(group, file, alias, asset, aliasSnapshotUsable, censusRoots.get(file.node_id), true);
     identities.push(makeIdentity(group, file, alias, asset, resolved, true));
     if (!resolved.coverage) complete = false;
     if (resolved.error) errors.add(resolved.error);
@@ -319,29 +320,79 @@ function groupTargets(values: readonly Occurrence[]): Group[] {
       changed_after_cutoff: value.source.changed_after_cutoff, owner: value.owner,
     };
     const key = locKey(value.node, value.path);
-    const group = grouped.get(key) ?? { node: value.node, path: value.path, owner: value.owner, refs: [] };
+    const group = grouped.get(key) ?? { node: value.node, path: value.path, owner: value.owner, ownerConflict: false, refs: [] };
     group.refs.push(ref);
     group.owner = mergeOwners(group.refs.map((item) => item.owner));
+    group.ownerConflict = hasConflictingOwners(group.refs.map((item) => item.owner));
     grouped.set(key, group);
   }
   return [...grouped.values()];
 }
 
-function matchesFile(file: FileObservation, group: Group): boolean {
+function hasConflictingOwners(values: readonly InventoryOwnerEvidence[]): boolean {
+  return new Set(values.filter((value) => value.status === "verified")
+    .map((value) => stable({ kind: value.kind, key: value.key }))).size > 1;
+}
+
+function censusRootsWithCompleteCensus(values: readonly NodeInput[]): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const value of values) {
+    if (value.record_type !== "summary" || value.error_code || !value.incoming_root || value.incoming_census_complete !== true) continue;
+    result.set(value.node_id, value.incoming_root);
+  }
+  return result;
+}
+
+function samePhysicalPath(left: string, right: string): boolean {
+  const leftFlavor = physicalPathFlavor(left);
+  const rightFlavor = physicalPathFlavor(right);
+  if (leftFlavor === undefined || leftFlavor !== rightFlavor) return false;
+  return normalizePhysicalPath(left, leftFlavor) === normalizePhysicalPath(right, rightFlavor);
+}
+
+function pathIsWithin(root: string, candidate: string): boolean {
+  const flavor = physicalPathFlavor(root);
+  if (flavor === undefined || physicalPathFlavor(candidate) !== flavor) return false;
+  const rootPath = normalizePhysicalPath(root, flavor);
+  const candidatePath = normalizePhysicalPath(candidate, flavor);
+  const relative = flavor === "windows" ? path.win32.relative(rootPath, candidatePath) : path.posix.relative(rootPath, candidatePath);
+  const separator = flavor === "windows" ? "\\" : "/";
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${separator}`) && !relative.startsWith(separator));
+}
+
+function physicalPathFlavor(value: string): "windows" | "posix" | undefined {
+  if (/^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\]/.test(value) || /^\/\/[^/]+\/[^/]+/.test(value)) return "windows";
+  return value.startsWith("/") ? "posix" : undefined;
+}
+
+function normalizePhysicalPath(value: string, flavor: "windows" | "posix"): string {
+  return flavor === "windows" ? path.win32.normalize(value).toLowerCase() : path.posix.normalize(value);
+}
+
+function matchesFile(file: FileObservation, group: Pick<Group, "node" | "path">): boolean {
   if (file.node_id !== group.node) return false;
-  return [...file.known_source_paths, file.incoming_relative_path ?? ""].some((value) => value !== "" && normalizeAttachmentLegacyPath(value) === group.path);
+  const namedPaths = [...file.known_source_paths, file.incoming_relative_path ?? ""];
+  if (namedPaths.some((value) => value !== "" && normalizeAttachmentLegacyPath(value) === group.path)) return true;
+  if (file.known_source_paths.length > 0) return false;
+  return file.physical_path !== undefined && samePhysicalPath(file.physical_path, group.path);
 }
 
 function mergeOwners(values: readonly InventoryOwnerEvidence[]): InventoryOwnerEvidence {
   const verified = values.filter((value) => value.status === "verified");
-  const keys = new Set(verified.map((value) => stable({ kind: value.kind, key: value.key, scope: value.scope })));
+  const keys = new Set(verified.map((value) => stable({ kind: value.kind, key: value.key })));
   const source = [...new Set(values.map((value) => value.source))].join(",");
-  if (verified.length === values.length && keys.size === 1) return { ...verified[0]!, source };
-  return { status: "unverified", reason: keys.size > 1 ? "conflicting owner provenance for the same legacy location" : "owner provenance is missing for one or more references", source };
+  if (keys.size > 1) return { status: "unverified", reason: "conflicting owner provenance for the same legacy location", source };
+  if (verified.length === values.length && keys.size === 1) {
+    const scopes = new Set(verified.map((value) => stable(value.scope)));
+    if (scopes.size === 1) return { ...verified[0]!, source };
+    return { status: "unverified", reason: "owner scope provenance differs across references", source };
+  }
+  return { status: "unverified", reason: "owner provenance is missing for one or more references", source };
 }
 
 function resolve(group: Group, file: FileObservation | undefined, alias: InventoryAliasSnapshot | undefined, asset: InventoryAssetSnapshot | undefined,
-  node: InventoryNodeCoverage | undefined, aliasCoverage: boolean): { status: InventoryPlanIdentity["status"]; coverage: boolean; action: string; proposed: boolean; error?: string } {
+  aliasCoverage: boolean, completedCensusRoot?: string, unreferenced = false):
+  { status: InventoryPlanIdentity["status"]; coverage: boolean; action: string; proposed: boolean; error?: string } {
   if (alias?.availability === "missing") return { status: STATUS.existing_alias_missing, coverage: false, action: "recheck_missing_alias_and_preservation_locations", proposed: false };
   if (alias?.availability === "resolved") {
     if (!asset || asset.storage_purpose !== "attachment" || asset.garbage_collected_at) return { status: STATUS.alias_conflict, coverage: false, action: "resolve_alias_conflict", proposed: false, error: ERROR.alias_conflict };
@@ -355,11 +406,14 @@ function resolve(group: Group, file: FileObservation | undefined, alias: Invento
   if (file?.status === FILE.path_denied) return { status: STATUS.denied_path, coverage: false, action: "resolve_path_boundary", proposed: false };
   if (file?.status === FILE.not_regular) return { status: STATUS.not_regular, coverage: false, action: "inspect_non_regular_source", proposed: false };
   if (file?.status === FILE.source_absent) return { status: STATUS.absent_at_source, coverage: false, action: "check_preservation_locations", proposed: false };
-  if (!file) return node?.status === NODE.scanned && node.coverage_complete
+  if (!file) return completedCensusRoot !== undefined && pathIsWithin(completedCensusRoot, group.path)
     ? { status: STATUS.absent_at_source, coverage: false, action: "check_preservation_locations", proposed: false }
     : { status: STATUS.unconfirmed_node, coverage: false, action: "wait_for_node_scan", proposed: false };
   if (file.status !== FILE.observed || !file.eligible_candidate || !file.coverage_complete) return { status: STATUS.unconfirmed_path, coverage: false, action: "resolve_observation", proposed: false };
-  if (group.owner.status !== "verified") return { status: STATUS.owner_unverified, coverage: false, action: "verify_owner_provenance", proposed: false, error: ERROR.owner_unverified };
+  if (unreferenced) return { status: STATUS.unreferenced_preservation_candidate, coverage: true, action: "preserve_without_references", proposed: false };
+  if (group.owner.status !== "verified") return group.ownerConflict
+    ? { status: STATUS.owner_unverified, coverage: false, action: "resolve_conflicting_owner_provenance", proposed: false, error: ERROR.owner_unverified }
+    : { status: STATUS.owner_unverified, coverage: true, action: "propose_private_attachment_asset_and_alias", proposed: true };
   return { status: STATUS.verified_source, coverage: true, action: "propose_attachment_asset_and_alias", proposed: true };
 }
 
@@ -376,7 +430,9 @@ function makeIdentity(group: Group, file: FileObservation | undefined, alias: In
     stat_after: file && (file.status === FILE.observed || file.status === FILE.after_cutoff)
       ? { size_bytes: file.size_bytes ?? null, mtime_ms: file.mtime_ms ?? null } : null,
     coverage_complete: resolved.coverage && group.refs.every((ref) => !ref.changed_after_cutoff), ...(asset ? { existing_asset_id: asset.id } : {}),
-    ...(alias ? { existing_alias: alias } : {}), ...(resolved.proposed ? { proposed_asset_id: identity } : {}), proposed_ref_action: resolved.action };
+    ...(alias ? { existing_alias: alias } : {}), ...(resolved.proposed ? { proposed_asset_id: identity,
+      proposed_owner: group.owner.status === "verified" ? { kind: group.owner.kind, key: group.owner.key, scope: group.owner.scope } : null } : {}),
+    proposed_ref_action: resolved.action };
 }
 
 function checkAnomalies(assets: readonly InventoryAssetSnapshot[], files: readonly FileObservation[], identities: readonly InventoryPlanIdentity[], output: InventoryPlanAnomaly[]): void {
@@ -423,13 +479,14 @@ function summarize(metadata: InventoryRunBundleMetadata, complete: boolean, iden
   const sized = observations.filter((file) => typeof file.size_bytes === "number");
   const verified = observations.filter((file) => file.status === FILE.observed && file.sha256 !== undefined);
   const unknownIdentitySizes = identities.filter((item) => item.size_bytes === undefined &&
-    !observations.some((file) => file.node_id === item.legacy_node_id && [...file.known_source_paths, file.incoming_relative_path ?? ""]
-      .some((value) => value !== "" && normalizeAttachmentLegacyPath(value) === item.normalized_path))).length;
+    !observations.some((file) => matchesFile(file, { node: item.legacy_node_id, path: item.normalized_path }))).length;
   const unconfirmed = [
     ...nodes.filter((node) => !node.coverage_complete).map((node) => ({ subject: node.node_id, status: node.status, reason: node.error_code })),
     ...sessions.filter((row) => !row.coverage_complete).map((row) => ({ subject: row.session_id, status: row.state, reason: row.error_code })),
     ...metadata.event_session_ids.filter((id) => !sessions.some((row) => row.session_id === id)).map((id) => ({ subject: id, status: "not_reported", reason: ERROR.manifest_mismatch })),
-    ...identities.filter((item) => !item.coverage_complete).map((item) => ({ subject: `${item.legacy_node_id}:${item.normalized_path}`, status: item.status })),
+    ...identities.filter((item) => item.status !== STATUS.unreferenced_preservation_candidate &&
+      !(item.proposed_asset_id !== undefined && item.proposed_owner === null) && !item.coverage_complete)
+      .map((item) => ({ subject: `${item.legacy_node_id}:${item.normalized_path}`, status: item.status })),
   ];
   const sourceRefs: Record<string, number> = {};
   for (const item of identities) for (const ref of item.references) sourceRefs[ref.source_kind] = (sourceRefs[ref.source_kind] ?? 0) + 1;
@@ -443,6 +500,11 @@ function summarize(metadata: InventoryRunBundleMetadata, complete: boolean, iden
   }
   const duplicateGroups = [...duplicate.values()].filter((item) => item.count > 1);
   const proposed = identities.filter((item) => item.proposed_asset_id !== undefined);
+  const preservationTargets = identities.filter((item) => item.proposed_asset_id !== undefined || item.status === STATUS.unreferenced_preservation_candidate);
+  const preservationUnknownCount = preservationTargets.filter((item) => item.size_bytes === undefined).length;
+  const preservationBytes = preservationTargets.reduce((sum, item) => sum + (item.size_bytes ?? 0), 0);
+  const messageRefs = proposed.reduce((sum, item) => sum + item.references.filter((ref) => ref.source_kind === "message").length, 0);
+  const cardRefs = proposed.reduce((sum, item) => sum + item.references.filter((ref) => CARD_REFERENCE_KINDS.has(ref.source_kind)).length, 0);
   const nodeSummary = nodes.map((node) => {
     const related = files.filter((file) => file.node_id === node.node_id);
     const scanned = node.status === NODE.scanned && node.coverage_complete;
@@ -462,10 +524,17 @@ function summarize(metadata: InventoryRunBundleMetadata, complete: boolean, iden
     confirmed_missing_count: identities.filter((item) => item.status === STATUS.confirmed_missing).length, unconfirmed_count: unconfirmed.length, unconfirmed,
     nodes: nodeSummary, source_refs: sourceRefs, duplicate_byte_groups: duplicateGroups.length,
     duplicate_byte_total_bytes: duplicateGroups.reduce((sum, item) => sum + item.size * (item.count - 1), 0),
-    expected_copy_bytes: proposed.reduce((sum, item) => sum + (item.size_bytes ?? 0), 0),
-    expected_copy_unknown_count: proposed.filter((item) => item.size_bytes === undefined).length, proposed_assets: proposed.length, proposed_aliases: proposed.length,
-    proposed_message_refs: proposed.reduce((sum, item) => sum + item.references.filter((ref) => ref.source_kind === "message").length, 0),
-    proposed_card_refs: proposed.reduce((sum, item) => sum + item.references.filter((ref) => ref.source_kind === "card_request" || ref.source_kind === "card_item").length, 0),
+    expected_copy_bytes: preservationBytes,
+    expected_copy_unknown_count: preservationUnknownCount,
+    preservation_target_count: preservationTargets.length,
+    preservation_target_bytes: preservationBytes,
+    preservation_target_unknown_count: preservationUnknownCount,
+    ref_connectable_message_count: messageRefs,
+    ref_connectable_card_count: cardRefs,
+    owner_null_proposal_count: proposed.filter((item) => item.proposed_owner === null).length,
+    proposed_assets: proposed.length, proposed_aliases: proposed.length,
+    proposed_message_refs: messageRefs,
+    proposed_card_refs: cardRefs,
     already_migrated: identities.filter((item) => item.status === STATUS.already_migrated).length,
     pending_or_temporary: assets.filter((asset) => asset.upload_status === "pending").length,
     existing_asset_count: assets.length, existing_board_asset_count: direct.filter((item) => item.kind === "board_asset").length,

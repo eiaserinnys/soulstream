@@ -70,6 +70,7 @@ export const INVENTORY_PLAN_STATUS = Object.freeze({
   pending_or_temporary: "pending_or_temporary",
   alias_conflict: "alias_conflict",
   owner_unverified: "owner_unverified",
+  unreferenced_preservation_candidate: "unreferenced_preservation_candidate",
 } as const);
 
 export const INVENTORY_NODE_COVERAGE_STATUS = Object.freeze({
@@ -209,6 +210,7 @@ export type InventoryPlanIdentity = {
   declared_mime: string | null;
   inferred_mime: string;
   owner: InventoryOwnerEvidence;
+  proposed_owner?: { kind: "user_email" | "agent_session"; key: string; scope: unknown } | null;
   status: (typeof INVENTORY_PLAN_STATUS)[keyof typeof INVENTORY_PLAN_STATUS];
   references: InventoryPlanReference[];
   source_occurrence_count: number;
@@ -282,6 +284,12 @@ export type InventoryPlanSummary = {
   duplicate_byte_total_bytes: number;
   expected_copy_bytes: number;
   expected_copy_unknown_count: number;
+  preservation_target_count: number;
+  preservation_target_bytes: number;
+  preservation_target_unknown_count: number;
+  ref_connectable_message_count: number;
+  ref_connectable_card_count: number;
+  owner_null_proposal_count: number;
   proposed_assets: number;
   proposed_aliases: number;
   proposed_message_refs: number;
@@ -389,6 +397,8 @@ export type NodeScanSummary = {
   record_type: "summary";
   schema_version: typeof INVENTORY_SCHEMA_VERSION;
   node_id: string;
+  incoming_root?: string;
+  incoming_census_complete?: boolean;
   cutoff: string;
   started_at: string;
   ended_at: string;
