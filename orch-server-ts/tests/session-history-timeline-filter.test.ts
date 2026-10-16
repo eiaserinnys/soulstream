@@ -99,6 +99,13 @@ describe("session timeline event_types filter", () => {
       { type: "context_usage", id: 3 },
     ]);
     expect(readTimeline).toHaveBeenLastCalledWith("sess-1", null, 50, ["complete", "context_usage"]);
+
+    const toolResponse = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/timeline?event_types=tool_result",
+    });
+    expect(toolResponse.statusCode).toBe(200);
+    expect(readTimeline).toHaveBeenLastCalledWith("sess-1", null, 50, ["tool_result"]);
     await app.close();
   });
 

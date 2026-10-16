@@ -25,15 +25,13 @@ import {
 import { readLiveSessionConversationContext } from
   "./live_session_conversation_context.js";
 import { readLiveSessionEventAttachments } from "./live_session_event_attachments.js";
+import { readTimelinePage, type TimelineCursor } from "./live_session_history_pages.js";
 
 export type CreateLiveSessionHistoryProviderOptions = {
   readonly sqlResolver: LiveDbSqlResolver;
 };
 
-type Cursor = {
-  readonly timestamp: string;
-  readonly id: number | null;
-};
+type Cursor = TimelineCursor;
 
 const LEGACY_TIMELINE_EVENT_TYPES = [
   ...SESSION_TIMELINE_EVENT_TYPES,
@@ -131,9 +129,22 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
       : (!hasAssistantMessage && requestedEventTypes.includes("assistant_message")
           ? [...requestedEventTypes, "complete"]
           : requestedEventTypes);
+    const includeAttachmentComplete = hasAssistantMessage && (
+      requestedEventTypes === undefined ||
+      (requestedEventTypes.includes("assistant_message") &&
+        !requestedEventTypes.includes("complete"))
+    );
     const cursor = before === null ? null : decodeCursor(before);
     const debugKinds = requestedDebugKinds ?? DEFAULT_TIMELINE_DEBUG_KINDS;
-    const rows = await readTimelinePage(sql, sessionId, eventTypes, debugKinds, cursor, limit);
+    const rows = await readTimelinePage(
+      sql,
+      sessionId,
+      eventTypes,
+      debugKinds,
+      cursor,
+      limit,
+      includeAttachmentComplete,
+    );
     const { pageRows, nextCursor } = pageRowsAndCursor(rows, limit);
     const withToolStarts = await addPairedToolStarts(sql, sessionId, pageRows);
     const messages = serializeTimelineRows(sortDesc(withToolStarts));
@@ -261,52 +272,6 @@ async function readMessagePage(
   `;
 }
 
-async function readTimelinePage(
-  sql: LivePostgresSql,
-  sessionId: string,
-  eventTypes: readonly string[],
-  debugKinds: readonly string[],
-  cursor: Cursor | null,
-  limit: number,
-): Promise<readonly Record<string, unknown>[]> {
-  if (cursor === null) {
-    return sql`
-      SELECT id, parent_event_id, event_type, payload, created_at
-      FROM events
-      WHERE session_id = ${sessionId}
-        AND event_type = ANY(${eventTypes}::text[])
-        AND (event_type <> 'debug' OR payload->>'kind' = ANY(${debugKinds}::text[]))
-      ORDER BY created_at DESC, id DESC
-      LIMIT ${limit + 1}
-    `;
-  }
-  if (cursor.id === null) {
-    return sql`
-      SELECT id, parent_event_id, event_type, payload, created_at
-      FROM events
-      WHERE session_id = ${sessionId}
-        AND event_type = ANY(${eventTypes}::text[])
-        AND (event_type <> 'debug' OR payload->>'kind' = ANY(${debugKinds}::text[]))
-        AND created_at < ${cursor.timestamp}
-      ORDER BY created_at DESC, id DESC
-      LIMIT ${limit + 1}
-    `;
-  }
-  return sql`
-    SELECT id, parent_event_id, event_type, payload, created_at
-    FROM events
-    WHERE session_id = ${sessionId}
-      AND event_type = ANY(${eventTypes}::text[])
-        AND (event_type <> 'debug' OR payload->>'kind' = ANY(${debugKinds}::text[]))
-      AND (
-        created_at < ${cursor.timestamp}
-        OR (created_at = ${cursor.timestamp} AND id < ${cursor.id})
-      )
-    ORDER BY created_at DESC, id DESC
-    LIMIT ${limit + 1}
-  `;
-}
-
 async function addMissingAncestors(
   sql: LivePostgresSql,
   sessionId: string,
@@ -398,9 +363,25 @@ function synthesizeLegacyCompleteMessages(
       payload: {
         type: "assistant_message",
         content: payload.result ?? payload.content ?? payload.output ?? "",
+        ...legacyCompleteAttachmentPayload(payload),
       },
     };
   });
+}
+
+function legacyCompleteAttachmentPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const attachmentPayload: Record<string, unknown> = {};
+  for (const field of [
+    "attachment_ids",
+    "attachments",
+    "attachment_paths",
+    "attachment_bindings",
+    "attachment_count",
+    "node_id",
+  ]) {
+    if (Object.hasOwn(payload, field)) attachmentPayload[field] = payload[field];
+  }
+  return attachmentPayload;
 }
 
 function sortDesc(
