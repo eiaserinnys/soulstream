@@ -5,7 +5,10 @@ import { assigneeSchema, callerSessionIdSchema } from "./folder_shared.js";
 const id = z.string().min(1);
 const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
 const itemId = z.number().int().positive();
-const itemEvidence = z.object({ type:z.enum(["image","link"]),url:id,label:z.string() }).strict();
+const itemEvidence = z.union([
+  z.object({ type:z.enum(["image","link"]),label:z.string(),attachment_id:id }).strict(),
+  z.object({ type:z.enum(["image","link"]),label:z.string(),url:id }).strict(),
+]);
 export const cardTools = {
   create_card: { name: "create_card", timeoutMs: 60000, config: {
     description: "요청 원문이 고정된 카드를 드래프트로 만든다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee와 node_id와 model_preset을 생략하면 만든 세션과 같은 값이 들어가며, brief에 인계 내용을 적는다.",
