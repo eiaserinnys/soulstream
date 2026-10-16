@@ -127,6 +127,7 @@ import {
   observeClaudeContextRecoveryEvent,
   shouldPreemptivelyCompact,
 } from "./claude_context_recovery.js";
+import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE = "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
 
@@ -238,6 +239,8 @@ export class TaskExecutor {
     private readonly worktreeResolver?: WorktreeExecutionResolver,
     private readonly sessionMutations?: Pick<SessionMutationHost, "setModelSelection">,
     private readonly persistentDecisionRuntime?: PersistentDecisionRuntime,
+    private readonly waitForAttachmentRefs?: (sessionId: string) => Promise<unknown>,
+    private readonly prepareAttachmentInput?: PrepareAttachmentInput,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -266,6 +269,12 @@ export class TaskExecutor {
       contextBuilder,
       initialMessagePublisher: this.initialMessagePublisher,
       logger: this.logger,
+      ...(this.prepareAttachmentInput
+        ? { prepareAttachmentInput: this.prepareAttachmentInput }
+        : {}),
+      ...(this.waitForAttachmentRefs
+        ? { waitForAttachmentRefs: this.waitForAttachmentRefs }
+        : {}),
     });
     this.agentsSnapshotPersistence = new TaskAgentsSnapshotPersistence({
       persistence,

@@ -14,6 +14,8 @@ import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
 import { publishInterventionSent } from "./task_intervention_events.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
+import { createInterventionAttachmentSource } from "./generation_turn_input.js";
+import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
 
 const HUMAN_CALLER_SOURCES = new Set(["slack", "browser", "soul-app"]);
@@ -51,6 +53,7 @@ export interface RunningInterventionTransitionDeps {
   logger: Logger;
   persistence?: EventPersistence;
   assignedCardContext?: (task: Task, inputId?: string | null) => Promise<ContextItem | null>;
+  prepareAttachmentInput?: PrepareAttachmentInput;
 }
 
 /**
@@ -95,7 +98,11 @@ export class RunningInterventionTransition {
       await this.publishAcceptance(task, deliveryMessage);
     }
 
-    const initialResult = await this.tryIntervene(task, deliveryMessage);
+    const initialResult = await this.tryIntervene(
+      task,
+      deliveryMessage,
+      publishBeforeDelivery,
+    );
     if (initialResult.status === "delivered") {
       await task.activeDeliveryTurnReceipt?.register(deliveryMessage);
       if (!publishBeforeDelivery) {
@@ -173,6 +180,7 @@ export class RunningInterventionTransition {
   private async tryIntervene(
     task: Task,
     message: InterventionMessage,
+    publishBeforeDelivery: boolean,
   ): Promise<EngineInterventionResult> {
     const engine = task.runner?.engine;
     if (!engine) {
@@ -183,7 +191,29 @@ export class RunningInterventionTransition {
         message: "Task runner engine is unavailable",
       };
     }
-    const composed = composeInterventionTurnPrompt([{...message,context:message.context?.filter(item=>item.key !== "assigned_cards")}]);
+    let executionMessage = message;
+    if ((message.attachmentIds?.length ?? 0) > 0) {
+      const prepareAttachmentInput = this.deps.prepareAttachmentInput;
+      if (!prepareAttachmentInput) throw new Error("ATTACHMENT_INPUT_UNAVAILABLE");
+      if (!publishBeforeDelivery && !message.deliveryId) {
+        throw new Error("ATTACHMENT_DELIVERY_AUTHORIZATION_REQUIRED");
+      }
+      if (publishBeforeDelivery) {
+        await this.deps.persistence?.waitForSessionAck(task.agentSessionId);
+      }
+      const source = createInterventionAttachmentSource(task.agentSessionId, message);
+      if (!source) throw new Error("ATTACHMENT_INPUT_UNAVAILABLE");
+      const prepared = await prepareAttachmentInput(source);
+      executionMessage = {
+        ...message,
+        text: prepared.text,
+        attachmentPaths: prepared.attachmentPaths,
+      };
+    }
+    const composed = composeInterventionTurnPrompt([{
+      ...executionMessage,
+      context: executionMessage.context?.filter(item => item.key !== "assigned_cards"),
+    }]);
     const inputUuid = message.deliveryId
       ? buildDeliveryInputUuid(message.deliveryId)
       : undefined;

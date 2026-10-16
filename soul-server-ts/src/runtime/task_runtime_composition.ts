@@ -33,6 +33,11 @@ import { ScheduleDispatcher } from "../schedule/schedule_dispatcher.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
+import { createAttachmentMaterializer } from "../attachments/attachment_materializer.js";
+import {
+  createAttachmentInputPreparer,
+  type PrepareAttachmentInput,
+} from "../task/prepare_attachment_input.js";
 
 export interface TaskRuntimeCompositionParams {
   env: Env;
@@ -48,6 +53,8 @@ export interface TaskRuntimeCompositionParams {
   scheduleService: SoulstreamScheduleService;
   providerUsage?: ProviderUsageCommandHandler;
   orchProxyConfig: OrchProxyConfig;
+  prepareAttachmentInput?: PrepareAttachmentInput;
+  waitForAttachmentRefs?: (sessionId: string) => Promise<unknown>;
   runnerProcessFactory?: RunnerProcessRuntimeFactory;
   claudeTranscriptReceipt?: Pick<
     ClaudeDeliveryTranscriptReceiptReader,
@@ -56,6 +63,26 @@ export interface TaskRuntimeCompositionParams {
   transientEventLogAggregator: TransientEventLogAggregator;
   worktreeResolver?: WorktreeExecutionResolver;
   sessionMutations?: Pick<SessionMutationHost, "setModelSelection">;
+}
+
+export function createWorkerAttachmentInputRuntime(
+  env: Pick<Env, "INCOMING_FILE_DIR" | "SOULSTREAM_NODE_ID">,
+  orchProxyConfig: OrchProxyConfig,
+  persistence: Pick<EventPersistence, "waitForSessionAck">,
+) {
+  const prepareAttachmentInput = createAttachmentInputPreparer(
+    createAttachmentMaterializer({
+      incomingDir: env.INCOMING_FILE_DIR,
+      nodeId: env.SOULSTREAM_NODE_ID,
+      orch: orchProxyConfig,
+      fetch: globalThis.fetch,
+    }),
+  );
+  return {
+    prepareAttachmentInput,
+    waitForAttachmentRefs: (sessionId: string) =>
+      persistence.waitForSessionAck(sessionId),
+  };
 }
 
 export interface TaskRuntimeComposition {
@@ -172,6 +199,8 @@ export function composeTaskRuntime(
           scheduleService,
         }
       : undefined,
+    params.waitForAttachmentRefs,
+    params.prepareAttachmentInput,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(
