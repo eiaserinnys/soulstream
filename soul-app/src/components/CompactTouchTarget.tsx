@@ -37,7 +37,7 @@ export function CompactTouchTarget({
       {...touchableProps}
       ref={touchableRef}
       disabled={disabled}
-      style={[frameStyle, styles.frame, disabled ? styles.disabled : undefined]}
+      style={[frameStyle, styles.frame, disabled || touchableProps.accessibilityState?.disabled ? styles.disabled : undefined]}
     >
       <View testID={surfaceTestID} style={[styles.surface, surfaceStyle]}>
         {children}

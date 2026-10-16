@@ -14,7 +14,7 @@ import {
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { getAttachmentImageSize } from '../lib/attachment-image-size';
 import { restoreAttachmentFocus } from '../lib/attachment-focus';
-import { isAttachmentPreviewImage, type AttachmentView } from '../lib/attachment-view';
+import { isLegacyAttachmentImage, type AttachmentView } from '../lib/attachment-view';
 import { ImageViewerModal } from './ImageViewerModal';
 
 /** The thumbnail is the existing chat attachment Image, with a viewer on tap. */
@@ -197,7 +197,7 @@ export function getChatAttachmentFilename(uri: string): string {
 }
 
 export function isChatImageAttachmentPath(path: string): boolean {
-  return isAttachmentPreviewImage(null, path);
+  return isLegacyAttachmentImage(path);
 }
 
 function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLabel, filename, alt, role, filenames, alts, items, onSaveOriginal, onOpen, byteSizes }: {

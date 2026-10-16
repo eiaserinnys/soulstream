@@ -53,7 +53,7 @@ function DefaultImageViewerModal({ sources, initialIndex, onClose, captions, ite
         </View>
         {sources.length > 1 || onSaveOriginal ? <View style={{ padding: t.spacing.md }}>
           <AttachmentViewerFooter count={sources.length} currentIndex={currentIndex} overlay
-            onIndexChange={setCurrentIndex} onSaveOriginal={onSaveOriginal && (!items || items[currentIndex]?.source.kind === 'ready') ? onSaveOriginal : undefined} />
+            onIndexChange={setCurrentIndex} onSaveOriginal={onSaveOriginal} saveAvailable={!items || items[currentIndex]?.source.kind === 'ready'} />
         </View> : null}
       </SafeAreaView>
     </SafeAreaProvider>

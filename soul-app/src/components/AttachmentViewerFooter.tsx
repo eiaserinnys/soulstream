@@ -5,11 +5,12 @@ import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
 
 /** One footer owns navigation, original saving and save failures for every viewer. */
-export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onSaveOriginal, overlay = false }: {
+export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onSaveOriginal, saveAvailable = true, overlay = false }: {
   count: number;
   currentIndex: number;
   onIndexChange(index: number): void;
   onSaveOriginal?: (index: number, anchor?: number) => Promise<unknown>;
+  saveAvailable?: boolean;
   overlay?: boolean;
 }) {
   const t = useTokens();
@@ -20,7 +21,7 @@ export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onS
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<{ index: number; message: string } | null>(null);
   const save = async () => {
-    if (savingRef.current || !onSaveOriginal) return;
+    if (savingRef.current || !onSaveOriginal || !saveAvailable) return;
     savingRef.current = true;
     setSaving(true);
     setFailure(null);
@@ -35,13 +36,13 @@ export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onS
       setSaving(false);
     }
   };
-  if (count < 2 && !onSaveOriginal) return null;
+  if (count < 2 && (!onSaveOriginal || !saveAvailable)) return null;
   return <View testID="attachment-viewer-footer" style={{ gap: t.spacing.sm }}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs }}>
       <View style={{ flex: 1 }} />
       {count > 1 ? <View testID="attachment-viewer-navigation" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs }}>
         <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
-          accessibilityLabel="이전 이미지" testID="chat-image-viewer-previous"
+          accessibilityLabel="이전 첨부" testID="chat-image-viewer-previous"
           accessibilityState={{ disabled: currentIndex === 0 }}
           onPress={() => { if (currentIndex > 0) onIndexChange(currentIndex - 1); }}>
           <Ionicons name="chevron-back" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
@@ -53,15 +54,20 @@ export function AttachmentViewerFooter({ count, currentIndex, onIndexChange, onS
           minWidth: t.foundation.minHeight.secondary, textAlign: 'center',
         }}>{currentIndex + 1} / {count}</Text>
         <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
-          accessibilityLabel="다음 이미지" testID="chat-image-viewer-next"
+          accessibilityLabel="다음 첨부" testID="chat-image-viewer-next"
           accessibilityState={{ disabled: currentIndex === count - 1 }}
           onPress={() => { if (currentIndex < count - 1) onIndexChange(currentIndex + 1); }}>
           <Ionicons name="chevron-forward" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
         </GlassButton>
       </View> : null}
       <View style={{ flex: 1, minWidth: 0, alignItems: 'flex-end' }}>
-        {onSaveOriginal ? <View ref={anchorRef} collapsable={false}>
-          <GlassButton iconOnly={phone} size="card" disabled={saving}
+        {onSaveOriginal ? <View ref={anchorRef} collapsable={false} testID="attachment-viewer-save-slot"
+          // Keep the real button's layout when its action is unavailable.
+          style={{ opacity: saveAvailable ? 1 : 0 }} pointerEvents={saveAvailable ? 'auto' : 'none'}
+          accessibilityElementsHidden={!saveAvailable} importantForAccessibility={saveAvailable ? 'auto' : 'no-hide-descendants'}
+          aria-hidden={!saveAvailable}>
+          <GlassButton iconOnly={phone} size="card" disabled={saving || !saveAvailable}
+            borderRadius={phone ? t.foundation.radius.round : undefined}
             accessibilityLabel="원본 저장" testID="chat-image-viewer-save-original" onPress={() => { void save(); }}>
             <Ionicons name="download-outline" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
             {!phone ? <Text numberOfLines={1} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>

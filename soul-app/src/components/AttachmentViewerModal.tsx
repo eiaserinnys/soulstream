@@ -96,7 +96,7 @@ function ChatRefinedImageViewerContent({
               activeImageTestID="chat-image-viewer-image" renderAttachment={renderAttachment} />
           </View>
           <AttachmentViewerFooter count={sources.length} currentIndex={currentIndex}
-            onIndexChange={setCurrentIndex} onSaveOriginal={onSaveOriginal && (!items || items[currentIndex]?.source.kind === 'ready') ? onSaveOriginal : undefined} />
+            onIndexChange={setCurrentIndex} onSaveOriginal={onSaveOriginal} saveAvailable={!items || items[currentIndex]?.source.kind === 'ready'} />
         </View>
       </GlassSurface>
     </SafeAreaView>;

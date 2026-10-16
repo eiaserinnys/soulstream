@@ -207,7 +207,7 @@ test('legacy same-origin image links use authenticated HEAD metadata and preserv
   expect(state.openExternal).not.toHaveBeenCalled();
 });
 
-test.each(['svg', 'heic'])('legacy %s stays an info attachment with or without an alias', async (extension) => {
+test.each([['svg', 'info'], ['heic', 'image']] as const)('legacy %s uses %s without a descriptor, with or without an alias', async (extension, previewKind) => {
   const originalFetch = global.fetch;
   const state = deps(`/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fphoto.${extension}&context_type=card&context_id=card-1`);
   try {
@@ -217,7 +217,7 @@ test.each(['svg', 'heic'])('legacy %s stays an info attachment with or without a
         ...(alias ? { 'x-attachment-id': 'asset-1' } : {}),
       }) });
       await openContentLinkNavigation(state.input);
-      expect(state.openAttachment).toHaveBeenLastCalledWith(expect.objectContaining({ previewKind: 'info' }));
+      expect(state.openAttachment).toHaveBeenLastCalledWith(expect.objectContaining({ previewKind }));
     }
   } finally { global.fetch = originalFetch; }
 });
@@ -359,4 +359,15 @@ test('내부 링크를 단독 렌더에서 열어도 browser를 호출하지 않
 
   expect(state.openExternal).not.toHaveBeenCalled();
   expect(state.alert).not.toHaveBeenCalled();
+});
+
+
+test('descriptor HEIC honors the server info preview kind', async () => {
+  const state = deps('/api/attachments/asset-1/content?context_type=card&context_id=card-1');
+  const response = await state.api.getAttachmentMetadata('asset-1', { type: 'card', id: 'card-1' });
+  (state.api.getAttachmentMetadata as jest.Mock).mockResolvedValue({ ...response, descriptor: {
+    ...response.descriptor, name: 'IMG_0001.heic', mime_type: 'image/heic', preview_kind: 'info',
+  } });
+  await openContentLinkNavigation(state.input);
+  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({ name: 'IMG_0001.heic', previewKind: 'info' }));
 });

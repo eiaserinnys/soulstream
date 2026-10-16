@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, TouchableOpacity } from 'react-native';
 import { AttachmentReadError } from '../../api/attachmentEndpoints';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
@@ -104,4 +104,33 @@ test('only retryable preview failures offer a retry action', async () => {
   await waitFor(() => expect(retryable.getByText('미리보기를 불러오지 못했습니다.')).toBeTruthy());
   fireEvent.press(retryable.getByText('다시 시도'));
   await waitFor(() => expect(mockReadAttachmentText).toHaveBeenCalledTimes(3));
+});
+
+
+test('navigation endpoints stay focusable, dimmed, and named for any attachment type', () => {
+  const items = [makeView({ previewKind: 'info' }), makeView({ key: 'two', previewKind: 'info' })];
+  const screen = render(<AttachmentPreviewModal item={items[0]} items={items} onClose={jest.fn()} />);
+  const previous = screen.getByLabelText('이전 첨부');
+  expect(previous.props.disabled).not.toBe(true);
+  expect(previous.props.accessibilityState.disabled).toBe(true);
+  expect(StyleSheet.flatten(previous.props.style).opacity).toBe(0.55);
+  expect(StyleSheet.flatten(screen.getByLabelText('다음 첨부').props.style).opacity).not.toBe(0.55);
+  fireEvent.press(screen.getByLabelText('다음 첨부'));
+  // Jest does not advance RN's native opacity animation; check the supplied RN control style.
+  const nextControl = screen.UNSAFE_getAllByType(TouchableOpacity).find(control => control.props.testID === 'chat-image-viewer-next')!;
+  expect(StyleSheet.flatten(nextControl.props.style).opacity).toBe(0.55);
+  fireEvent.press(screen.getByLabelText('다음 첨부'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 2');
+});
+
+test('unavailable items retain the original-save layout slot while hiding its action', () => {
+  const items = [makeView({ previewKind: 'info' }), makeView({ key: 'missing', source: { kind: 'unavailable', availability: 'missing' } })];
+  const screen = render(<AttachmentPreviewModal item={items[0]} items={items} onClose={jest.fn()} />);
+  expect(screen.getByTestId('attachment-viewer-save-slot')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
+  expect(screen.queryByLabelText('원본 저장')).toBeNull();
+  const slot = screen.getByTestId('attachment-viewer-save-slot', { includeHiddenElements: true });
+  expect(slot.props.children).toBeTruthy();
+  expect(StyleSheet.flatten(slot.props.style).opacity).toBe(0);
+  expect(StyleSheet.flatten(slot.props.style).display).not.toBe('none');
 });

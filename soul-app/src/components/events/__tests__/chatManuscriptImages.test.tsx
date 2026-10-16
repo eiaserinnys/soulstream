@@ -239,3 +239,19 @@ test.each([
   expect({ ...attachmentOnly.gallery, marginTop: withBody.gallery.marginTop }).toEqual(withBody.gallery);
   expect(attachmentOnly.image).toEqual(withBody.image);
 });
+
+
+test.each(['default', 'manuscript'] as const)('%s legacy HEIC keeps main’s two thumbnails and opens the second image', async presentation => {
+  const screen = render(<SafeAreaProvider><UserMessage presentation={presentation}
+    session={{ nodeId: 'eiaserinnys' }} event={{ id: 'legacy-heic', type: 'user_message', data: {
+      text: '사진 두 장', attachments: ['/review/one.png', '/review/IMG_0001.heic'],
+    } }} /></SafeAreaProvider>);
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  const second = presentation === 'manuscript'
+    ? screen.getByTestId('user-chat-image-gallery-image-1')
+    : screen.getByLabelText('첨부 이미지 2');
+  fireEvent.press(second);
+  const images = screen.UNSAFE_getAllByType(Image);
+  expect(images.some(image => image.props.source.uri?.includes('IMG_0001.heic'))).toBe(true);
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 2');
+});

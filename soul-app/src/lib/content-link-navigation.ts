@@ -9,7 +9,7 @@ import type { AttachmentReadContext } from '../../../packages/wire-schema/src/at
 import { plannerFolderDetailToSummary } from '../api/plannerTypes';
 import { cardAttachmentUrl } from './card-attachments';
 import { cardImageSource } from './card-image-source';
-import { attachmentContentUrl, isAttachmentPreviewImage, type AttachmentView } from './attachment-view';
+import { attachmentContentUrl, isLegacyAttachmentImage, type AttachmentView } from './attachment-view';
 import {
   openPlannerFolderWorkspace,
   openPlannerSessionWorkspace,
@@ -183,7 +183,7 @@ export async function openContentLinkNavigation({
   if (attachmentLink?.kind === 'legacy') {
     const context = resolveAttachmentReadContext(attachmentLink.context, readContext);
     if (!context) {
-      if (isAttachmentPreviewImage(null, attachmentLink.path)) {
+      if (isLegacyAttachmentImage(attachmentLink.path)) {
         if (openImage) {
           openImage(cardImageSource(cardAttachmentUrl(serverUrl, attachmentLink.nodeId, attachmentLink.path), serverUrl, jwt));
         } else alert('이미지를 열지 못했습니다.');
@@ -420,11 +420,11 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt }: {
 }
 
 function legacyPreviewKind(mimeType: string | null, name: string): AttachmentView['previewKind'] {
-  return isAttachmentPreviewImage(mimeType, name) ? 'image' : 'info';
+  return isLegacyAttachmentImage(name) ? 'image' : 'info';
 }
 
 function previewKindForLegacy(mimeType: string | null, name: string): AttachmentView['previewKind'] {
-  if (isAttachmentPreviewImage(mimeType, name)) return 'image';
+  if (isLegacyAttachmentImage(name)) return 'image';
   if (mimeType?.startsWith('text/') || /\.(?:txt|md|json)$/i.test(name)) return 'text';
   return 'info';
 }
