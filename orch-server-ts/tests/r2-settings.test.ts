@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerR2SettingsRoutes } from "../src/admin/r2_settings_routes.js";
@@ -10,6 +12,85 @@ import { createR2StorageResolver } from "../src/runtime/r2_storage_resolver.js";
 const endpoint = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
 const fields = { endpoint, bucket: "private-files", accessKeyId: "access", secretAccessKey: "SECRET_SENTINEL" };
 afterEach(() => vi.unstubAllGlobals());
+
+describe("R2 object upload signing", () => {
+  it("presigns the existing upload ID's part URLs without creating another multipart upload", () => {
+    const storage = createR2BoardAssetStorage(fields);
+
+    const result = storage.createMultipartPartUrls({
+      storageKey: "session-attachments/originals/asset-a",
+      uploadId: "existing-upload+/=",
+      byteSize: 16 * 1024 * 1024 + 1,
+      partSize: 16 * 1024 * 1024,
+      expiresSeconds: 90,
+    });
+
+    expect(result.uploadId).toBe("existing-upload+/=");
+    expect(result.parts).toHaveLength(2);
+    expect(new URL(result.parts[0]!.uploadUrl).searchParams.get("uploadId")).toBe("existing-upload+/=");
+    expect(new URL(result.parts[0]!.uploadUrl).searchParams.get("X-Amz-Expires")).toBe("90");
+  });
+
+  it("streams a bounded Node fetch body with duplex half and signs its exact bytes", async () => {
+    const bytes = new Uint8Array([0, 1, 255, 10, 13]);
+    const checksumSha256 = createHash("sha256").update(bytes).digest("hex");
+    const server = createServer();
+    const received = new Promise<{ body: Buffer; headers: Record<string, string | string[] | undefined> }>((resolve) => {
+      server.on("request", (request, response) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+        request.on("end", () => {
+          response.writeHead(200);
+          response.end();
+          resolve({ body: Buffer.concat(chunks), headers: request.headers });
+        });
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("Local R2 test server did not bind");
+
+    try {
+      const storage = createR2BoardAssetStorage({ ...fields, endpoint: `http://127.0.0.1:${address.port}` });
+      async function* chunks() {
+        yield bytes.subarray(0, 2);
+        yield bytes.subarray(2);
+      }
+      await storage.putObject({
+        storageKey: "stream.bin",
+        mimeType: "application/octet-stream",
+        byteSize: bytes.length,
+        checksumSha256,
+        body: chunks(),
+      });
+      const request = await received;
+
+      expect(request.body).toEqual(Buffer.from(bytes));
+      expect(request.headers["content-length"]).toBe(String(bytes.length));
+      expect(request.headers["content-type"]).toBe("application/octet-stream");
+      expect(request.headers["if-none-match"]).toBe("*");
+      expect(request.headers["x-amz-content-sha256"]).toBe(checksumSha256);
+      expect(request.headers.authorization).toContain("SignedHeaders=content-length;content-type;host;if-none-match;x-amz-content-sha256;x-amz-date");
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("rejects byte source checksum mismatch before making a storage request", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = createR2BoardAssetStorage(fields);
+
+    await expect(storage.putObject({
+      storageKey: "asset-a",
+      mimeType: "text/plain",
+      byteSize: 3,
+      checksumSha256: "0".repeat(64),
+      body: new Uint8Array([1, 2, 3]),
+    })).rejects.toThrow(/checksum/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
 
 function database() {
   const values = new Map<string, any>(["board_r2", "attachment_r2"].map(key => [key, { setting_key: key, value: { endpoint: "", bucket: "", accessKeyId: "", secretAccessKey: "" }, version: 1 }]));
