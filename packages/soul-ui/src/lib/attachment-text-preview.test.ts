@@ -113,6 +113,33 @@ describe("attachment text preview", () => {
     });
   });
 
+  it("cancels a 10 MiB 200 response when the server ignores Range", async () => {
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream<Uint8Array>({ cancel }), {
+      status: 200,
+      headers: { "Content-Length": String(10 * TEXT_PREVIEW_MAX_BYTES) },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => response));
+
+    await expect(readAttachmentText({ url: "/ignored-range.txt", byteSize: 10 * TEXT_PREVIEW_MAX_BYTES }))
+      .rejects.toMatchObject({ code: "TEXT_PREVIEW_INVALID_RESPONSE", status: 200 });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<{ reason: string; headers: Record<string, string>; code: string }>([
+    { reason: "missing Content-Range", headers: { "Content-Length": "1" }, code: "TEXT_PREVIEW_INVALID_RESPONSE" },
+    { reason: "mismatched Content-Length", headers: { "Content-Range": "bytes 0-0/1", "Content-Length": "2" }, code: "TEXT_PREVIEW_INVALID_RESPONSE" },
+    { reason: "unsupported Content-Encoding", headers: { "Content-Range": "bytes 0-0/1", "Content-Length": "1", "Content-Encoding": "gzip" }, code: "TEXT_PREVIEW_UNSUPPORTED_ENCODING" },
+  ])("cancels the response exactly once for $reason", async ({ headers, code }) => {
+    const cancel = vi.fn();
+    const response = new Response(new ReadableStream<Uint8Array>({ cancel }), { status: 206, headers });
+    vi.stubGlobal("fetch", vi.fn(async () => response));
+
+    await expect(readAttachmentText({ url: "/invalid-response.txt", byteSize: 1 }))
+      .rejects.toMatchObject({ code, status: 206 });
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it("reads local files through the same byte cap", async () => {
     const file = new File([new Uint8Array(TEXT_PREVIEW_MAX_BYTES + 10).fill(0x62)], "large.txt");
     await expect(readLocalAttachmentText(file)).resolves.toMatchObject({

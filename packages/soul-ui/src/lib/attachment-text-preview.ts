@@ -35,15 +35,14 @@ export async function readAttachmentText(input: {
     headers: { Range: `bytes=0-${expectedBytes - 1}` },
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   });
-  validateRangeResponse(response, input.byteSize, expectedBytes);
-
   const reader = response.body?.getReader();
-  if (reader === undefined) throw invalidResponse();
-  const removeAbortListener = cancelOnAbort(reader, input.signal);
+  const removeAbortListener = reader === undefined ? () => {} : cancelOnAbort(reader, input.signal);
   let bytesRead = 0;
   let text = "";
   const decoder = new TextDecoder("utf-8", { fatal: true });
   try {
+    validateRangeResponse(response, input.byteSize, expectedBytes);
+    if (reader === undefined) throw invalidResponse();
     while (true) {
       input.signal?.throwIfAborted();
       const result = await reader.read();
@@ -60,7 +59,7 @@ export async function readAttachmentText(input: {
     if (!truncated) text += decodeFinal(decoder);
     return { text, truncated, bytesRead };
   } catch (error) {
-    await reader.cancel(error).catch(() => undefined);
+    await reader?.cancel(error).catch(() => undefined);
     input.signal?.throwIfAborted();
     throw error;
   } finally {
