@@ -47,7 +47,7 @@ describe("chat attachment model", () => {
 
   it("loads a session event projection with same-origin credentials and no token query", async () => {
     const responseBody: SessionEventAttachmentResponse = { event_id: 42, items: [] };
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => responseBody }) as Response);
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, json: async () => responseBody }) as Response);
     vi.stubGlobal("fetch", fetchMock);
     const signal = new AbortController().signal;
 
@@ -62,7 +62,7 @@ describe("chat attachment model", () => {
   });
 
   it("uses the same event URL for live and history reads", async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ event_id: 42, items: [] }) }) as Response);
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, json: async () => ({ event_id: 42, items: [] }) }) as Response);
     vi.stubGlobal("fetch", fetchMock);
 
     await loadChatAttachments({ sessionId: "session-a", eventId: 42 });
@@ -146,5 +146,50 @@ describe("chat attachment model", () => {
     expect(items[2]?.originalUrl).toBeNull();
     expect(items[3]).toMatchObject({ name: null, mimeType: null, byteSize: null, originalUrl: null });
     expect(items[4]?.originalUrl).toBeNull();
+  });
+
+  it("limits legacy previews to the shared safe raster and text MIME types", () => {
+    const mimeTypes = [
+      "image/png",
+      "image/svg+xml",
+      "image/heic",
+      "text/plain",
+      "text/html",
+      "application/json",
+    ];
+    const items = projectChatAttachmentItems({
+      event_id: 43,
+      items: mimeTypes.map((mime_type, index) => ({
+        kind: "legacy" as const,
+        node_id: "node-a",
+        path: `/incoming/file-${index}`,
+        name: `file-${index}`,
+        mime_type,
+        byte_size: 12,
+        availability: "unresolved" as const,
+        read_context: sessionContext as Extract<AttachmentReadContext, { type: "session" }>,
+      })),
+    });
+
+    expect(items.map((item) => item.previewKind)).toEqual([
+      "image", "info", "info", "text", "info", "text",
+    ]);
+    expect(items[1]?.previewUrl).toBeNull();
+    expect(items[2]?.previewUrl).toBeNull();
+    expect(items[4]?.previewUrl).toBeNull();
+  });
+
+  it("does not preview assets whose MIME conflicts with an advertised kind", () => {
+    const [svg] = projectChatAttachmentItems({
+      event_id: 44,
+      items: [assetView("asset-svg", sessionContext, {
+        name: "vector.svg",
+        mime_type: "image/svg+xml",
+        preview_kind: "image",
+        preview_mime_type: "image/svg+xml",
+      })],
+    });
+
+    expect(svg).toMatchObject({ previewKind: "info", previewUrl: null });
   });
 });

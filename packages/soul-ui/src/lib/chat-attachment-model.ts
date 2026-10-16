@@ -25,6 +25,32 @@ export interface ChatAttachmentItem {
   source: ChatAttachmentSource;
 }
 
+const SAFE_RASTER_PREVIEW_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+]);
+
+const SAFE_TEXT_PREVIEW_MIME_TYPES = new Set([
+  "text/plain",
+  "text/markdown",
+  "application/json",
+  "text/javascript",
+  "application/javascript",
+  "text/typescript",
+  "application/typescript",
+  "text/x-python",
+  "text/x-script.python",
+  "text/x-shellscript",
+  "text/x-csrc",
+  "text/x-c++src",
+  "text/x-java-source",
+  "text/css",
+  "text/csv",
+]);
+
 export class ChatAttachmentRequestError extends Error {
   constructor(readonly status: number) {
     super("Chat attachment request failed");
@@ -94,14 +120,15 @@ function projectItem(view: SessionEventAttachmentView): ChatAttachmentItem {
     case "asset": {
       const { descriptor, read_context: context } = view;
       const contentUrl = attachmentContentUrl(descriptor.attachment_id, context);
+      const previewKind = safePreviewKind(descriptor.preview_kind, descriptor.mime_type);
       return {
         key: `asset:${descriptor.attachment_id}`,
         name: descriptor.name,
         mimeType: descriptor.mime_type,
         byteSize: descriptor.byte_size,
-        previewKind: descriptor.preview_kind,
+        previewKind,
         availability: "ready",
-        previewUrl: descriptor.preview_kind === "info" ? null : contentUrl,
+        previewUrl: previewKind === "info" ? null : contentUrl,
         originalUrl: attachmentContentUrl(descriptor.attachment_id, context, true),
         legacySources: view.legacy_sources,
         source: { kind: "asset", attachmentId: descriptor.attachment_id, context },
@@ -112,14 +139,15 @@ function projectItem(view: SessionEventAttachmentView): ChatAttachmentItem {
       const url = view.availability === "missing"
         ? null
         : contextualLegacyUrl(nodeId, path, context);
+      const previewKind = previewKindFromMime(view.mime_type);
       return {
         key: `legacy:${JSON.stringify([nodeId, path])}`,
         name: view.name,
         mimeType: view.mime_type,
         byteSize: view.byte_size,
-        previewKind: previewKindFromMime(view.mime_type),
+        previewKind,
         availability: view.availability,
-        previewUrl: url !== null && view.mime_type !== null && previewKindFromMime(view.mime_type) !== "info"
+        previewUrl: url !== null && previewKind !== "info"
           ? url
           : null,
         originalUrl: url === null ? null : contextualLegacyUrl(nodeId, path, context, true),
@@ -167,9 +195,27 @@ function sessionEventAttachmentUrl(sessionId: string, eventId: number): string {
 }
 
 function previewKindFromMime(mimeType: string | null): ChatAttachmentItem["previewKind"] {
-  if (mimeType?.startsWith("image/")) return "image";
-  if (mimeType?.startsWith("text/")) return "text";
+  const normalized = normalizeMimeType(mimeType);
+  if (SAFE_RASTER_PREVIEW_MIME_TYPES.has(normalized)) return "image";
+  if (SAFE_TEXT_PREVIEW_MIME_TYPES.has(normalized)) return "text";
   return "info";
+}
+
+export function isSafeRasterPreviewMimeType(mimeType: string | null): boolean {
+  return SAFE_RASTER_PREVIEW_MIME_TYPES.has(normalizeMimeType(mimeType));
+}
+
+function safePreviewKind(
+  advertisedKind: ChatAttachmentItem["previewKind"],
+  mimeType: string | null,
+): ChatAttachmentItem["previewKind"] {
+  if (advertisedKind === "image" && isSafeRasterPreviewMimeType(mimeType)) return "image";
+  if (advertisedKind === "text" && SAFE_TEXT_PREVIEW_MIME_TYPES.has(normalizeMimeType(mimeType))) return "text";
+  return "info";
+}
+
+function normalizeMimeType(mimeType: string | null): string {
+  return mimeType?.trim().toLowerCase().split(";", 1)[0] ?? "";
 }
 
 function isSessionEventAttachmentResponse(

@@ -129,6 +129,7 @@ export function AttachmentViewer({
     && (localSource || item.originalUrl !== null);
   const showSave = canSave || item.availability === "missing" || item.availability === "unavailable";
   const multiItem = items.length > 1;
+  const imageGallery = items.every(attachment => attachment.source.kind === "markdown-image");
   const saveMessage = saveFailure?.key === previewKey ? saveFailure.message : null;
   const text = textState?.key === previewKey ? textState : null;
   const imageSource = item.previewUrl
@@ -232,7 +233,7 @@ export function AttachmentViewer({
             {multiItem && (
               <>
                 <Button
-                  aria-label="이전 첨부"
+                  aria-label={imageGallery ? "이전 이미지" : "이전 첨부"}
                   variant="ghost"
                   size="icon"
                   disabled={index === 0}
@@ -240,7 +241,7 @@ export function AttachmentViewer({
                 ><ChevronLeft aria-hidden="true" /></Button>
                 <span className="chat-image-viewer-count" aria-live="polite">{index + 1}/{items.length}</span>
                 <Button
-                  aria-label="다음 첨부"
+                  aria-label={imageGallery ? "다음 이미지" : "다음 첨부"}
                   variant="ghost"
                   size="icon"
                   disabled={index === items.length - 1}

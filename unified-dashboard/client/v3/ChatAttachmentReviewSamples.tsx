@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, FileAttachmentPreview } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
+import { ChatAttachments } from "@seosoyoung/soul-ui/components/chat/ChatAttachments";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 
 const sampleContext = { type: "session" as const, id: "attachment-review-sample" };
 
-function localItem(file: File, previewKind: ChatAttachmentItem["previewKind"]): ChatAttachmentItem {
+function localItem(file: File, previewKind: ChatAttachmentItem["previewKind"], key = `local:${file.name}`): ChatAttachmentItem {
   return {
-    key: `local:${file.name}`,
+    key,
     name: file.name,
     mimeType: file.type || null,
     byteSize: file.size,
@@ -17,6 +18,21 @@ function localItem(file: File, previewKind: ChatAttachmentItem["previewKind"]): 
     originalUrl: null,
     legacySources: [],
     source: { kind: "local", file },
+  };
+}
+
+function reviewImage(key: string, name: string): ChatAttachmentItem {
+  return {
+    key,
+    name,
+    mimeType: "image/png",
+    byteSize: 4096,
+    previewKind: "image",
+    availability: "ready",
+    previewUrl: "/icon-192.png",
+    originalUrl: null,
+    legacySources: [],
+    source: { kind: "markdown-image", src: "/icon-192.png", alt: name },
   };
 }
 
@@ -82,7 +98,37 @@ export function ChatAttachmentReviewSamples() {
       missing,
     ];
   }, []);
-  const [index, setIndex] = useState<number | null>(0);
+  const chatItems = useMemo(() => {
+    const firstNote = localItem(new File(["첫 첨부"], "회의.txt", { type: "text/plain" }), "text", "user-note-one");
+    const secondNote = localItem(new File(["다른 내용"], "회의.txt", { type: "text/plain" }), "text", "user-note-two");
+    const longArchive = localItem(
+      new File([new Uint8Array([1, 2, 3])], "회의자료_아주긴한국어파일이름_최종검토본.zip", { type: "application/zip" }),
+      "info",
+      "user-long-archive",
+    );
+    const missing: ChatAttachmentItem = {
+      key: "user-missing",
+      name: "이전 첨부.txt",
+      mimeType: "text/plain",
+      byteSize: null,
+      previewKind: "info",
+      availability: "missing",
+      previewUrl: null,
+      originalUrl: null,
+      legacySources: [],
+      source: { kind: "unavailable", path: "이전 첨부.txt", context: sampleContext },
+    };
+    return {
+      user: [reviewImage("user-image-one", "사용자 이미지 1.png"), firstNote, reviewImage("user-image-two", "사용자 이미지 2.png"), secondNote, longArchive, missing],
+      assistant: [
+        reviewImage("assistant-image", "응답 이미지.png"),
+        localItem(new File(['{"ok":true}'], "manifest.json", { type: "application/json" }), "text", "assistant-json"),
+      ],
+      tile: new File(["기존 타일 표본"], "existing-attachment.pdf", { type: "application/pdf" }),
+    };
+  }, []);
+  const [index, setIndex] = useState<number | null>(null);
+  const [viewerItems, setViewerItems] = useState(items);
   const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -103,22 +149,39 @@ export function ChatAttachmentReviewSamples() {
     };
   }, []);
 
-  const openAt = (next: number, trigger: HTMLButtonElement) => {
+  const openAt = (sourceItems: ChatAttachmentItem[], next: number, trigger: HTMLElement) => {
+    setViewerItems(sourceItems);
     setReturnFocus(trigger);
     setIndex(next);
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <div className="flex flex-wrap gap-2">
-        {items.map((item, itemIndex) => (
-          <Button key={item.key} variant="outline" onClick={event => openAt(itemIndex, event.currentTarget)}>
-            {item.name ?? "첨부 파일"}
-          </Button>
-        ))}
+    <main className="flex min-h-screen flex-col gap-4 p-6">
+      <div className="flex flex-col gap-4">
+        <section>
+          <p className="text-sm text-muted-foreground">사용자</p>
+          <ChatAttachments items={chatItems.user} role="user" onOpen={(next, trigger) => openAt(chatItems.user, next, trigger)} />
+        </section>
+        <section>
+          <p className="text-sm text-muted-foreground">Assistant</p>
+          <ChatAttachments items={chatItems.assistant} role="assistant" onOpen={(next, trigger) => openAt(chatItems.assistant, next, trigger)} />
+        </section>
+        <section className="flex flex-col gap-2">
+          <p className="text-sm text-muted-foreground">기존 첨부 타일</p>
+          <div className="flex gap-2">
+            <FileAttachmentPreview file={chatItems.tile} status="done" onRemove={() => {}} />
+          </div>
+        </section>
+        <div className="flex flex-wrap gap-2">
+          {items.map((item, itemIndex) => (
+            <Button key={item.key} variant="outline" onClick={event => openAt(items, itemIndex, event.currentTarget)}>
+              {item.name ?? "첨부 파일"}
+            </Button>
+          ))}
+        </div>
       </div>
       <AttachmentViewer
-        items={items}
+        items={viewerItems}
         index={index}
         onIndexChange={setIndex}
         onClose={() => setIndex(null)}

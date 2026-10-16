@@ -95,12 +95,14 @@ function ChatImageThumbnail({
   metadata,
   onMetadata,
   onOpen,
+  openFailedImage,
 }: {
   image: ChatImageItem;
   galleryIndex: number;
   metadata?: ChatImageMetadata;
   onMetadata(key: string, metadata: ChatImageMetadata): void;
   onOpen(index: number, trigger: HTMLElement): void;
+  openFailedImage?: boolean;
 }) {
   const [failedSource, setFailedSource] = useState<string | null>(null);
   useImageMetadata(image, onMetadata);
@@ -113,7 +115,18 @@ function ChatImageThumbnail({
   return (
     <figure className="chat-image-card" data-chat-image-index={galleryIndex}>
       {failed ? (
-        <span className="chat-image-status" role="status">이미지를 불러오지 못했습니다.</span>
+        openFailedImage ? (
+          <button
+            type="button"
+            className="chat-image-status outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={filename ? `첨부 열기: ${filename}` : "첨부 열기"}
+            onClick={event => onOpen(galleryIndex, event.currentTarget)}
+          >
+            <span role="status">이미지를 불러오지 못했습니다.</span>
+          </button>
+        ) : (
+          <span className="chat-image-status" role="status">이미지를 불러오지 못했습니다.</span>
+        )
       ) : (
         <MarkdownImage
           src={image.src}
@@ -145,6 +158,7 @@ export function ChatImageAttachments({
   metadataByImage,
   onMetadata,
   onOpen,
+  openFailedImage,
 }: {
   gallery: ChatImageItem[];
   galleryIndexes: number[];
@@ -153,6 +167,7 @@ export function ChatImageAttachments({
   metadataByImage: Record<string, ChatImageMetadata>;
   onMetadata(key: string, metadata: ChatImageMetadata): void;
   onOpen(index: number, trigger: HTMLElement): void;
+  openFailedImage?: boolean;
 }) {
   if (galleryIndexes.length === 0) return null;
   return (
@@ -174,6 +189,7 @@ export function ChatImageAttachments({
               metadata={metadataByImage[chatImageMetadataKey(image)]}
               onMetadata={onMetadata}
               onOpen={onOpen}
+              openFailedImage={openFailedImage}
             />
           );
         })}

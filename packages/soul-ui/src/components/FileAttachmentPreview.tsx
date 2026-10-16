@@ -10,13 +10,27 @@
 
 import { useEffect, useState } from "react";
 import {Dialog,DialogPopup,DialogTitle} from "./ui/dialog";
+import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
 
-export interface FileAttachmentPreviewProps {
+interface LocalFileAttachmentPreviewProps {
   initialImageOpen?: boolean;
   file: File;
   status: "uploading" | "done" | "error";
   onRemove: () => void;
 }
+
+export type FileAttachmentPreviewProps =
+  | (LocalFileAttachmentPreviewProps & { variant?: "tile" })
+  | (LocalFileAttachmentPreviewProps & {
+    variant: "chip";
+    onOpen: (file: File, trigger: HTMLButtonElement) => void;
+  })
+  | {
+    variant: "row";
+    item: ChatAttachmentItem;
+    index: number;
+    onOpen: (item: ChatAttachmentItem, trigger: HTMLButtonElement) => void;
+  };
 
 function getFileTypeIcon(file: File): string {
   const { type } = file;
@@ -92,12 +106,15 @@ function FileTypeIcon({ label }: { label: string }) {
   );
 }
 
-export function FileAttachmentPreview({
-  initialImageOpen,
-  file,
-  status,
-  onRemove,
-}: FileAttachmentPreviewProps) {
+export function FileAttachmentPreview(props: FileAttachmentPreviewProps) {
+  if (props.variant === "row") {
+    return <RemoteAttachmentRow {...props} />;
+  }
+  if (props.variant === "chip") {
+    return <LocalAttachmentChip {...props} />;
+  }
+
+  const { initialImageOpen, file, status, onRemove } = props;
   const isImage = file.type.startsWith("image/");
   const fileTypeLabel = isImage ? "" : getFileTypeIcon(file);
 
@@ -196,4 +213,89 @@ export function FileAttachmentPreview({
       </button>
     </div>
   );
+}
+
+function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttachmentPreviewProps & {
+  variant: "chip";
+  onOpen: (file: File, trigger: HTMLButtonElement) => void;
+}) {
+  const statusText = status === "uploading" ? "업로드 중" : status === "error" ? "업로드 실패" : null;
+  const metadata = [getFileTypeIcon(file), formatFileSize(file.size), statusText].filter(Boolean).join(" · ");
+
+  return (
+    <div className="flex max-w-full min-w-0 items-center gap-2 rounded border border-border bg-muted p-2" data-chat-attachment-chip>
+      <button
+        type="button"
+        data-chat-attachment-chip-view
+        onClick={event => onOpen(file, event.currentTarget)}
+        title={file.name}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="chat-image-filename chat-attachment-name min-w-0 flex-1" title={file.name}>{file.name}</span>
+        <span className="chat-image-metadata shrink-0">{metadata}</span>
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="shrink-0 rounded-full border border-border bg-background/80 p-1 outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+        aria-label="Remove file"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="8"
+          height="8"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-foreground/70"
+        >
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function RemoteAttachmentRow({ item, index, onOpen }: Extract<FileAttachmentPreviewProps, { variant: "row" }>) {
+  const name = item.name ?? "첨부 파일";
+  const metadata = [item.mimeType, item.byteSize === null ? null : formatFileSize(item.byteSize)]
+    .filter(Boolean)
+    .join(" · ");
+  const availabilityText = item.availability === "missing"
+    ? "원본을 찾을 수 없습니다"
+    : item.availability === "unavailable"
+      ? "현재 사용할 수 없습니다"
+      : item.availability === "unresolved"
+        ? "원본을 확인할 수 없습니다"
+        : null;
+
+  return (
+    <button
+      type="button"
+      data-chat-attachment-index={index}
+      data-chat-attachment-key={item.key}
+      title={name}
+      aria-label={name}
+      onClick={event => onOpen(item, event.currentTarget)}
+      className="flex w-full min-w-0 items-center gap-3 rounded border border-border bg-muted p-2 text-left text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className="chat-image-filename chat-attachment-name min-w-0 flex-1" title={name}>{name}</span>
+      {(metadata || availabilityText) && (
+        <span className="flex min-w-0 flex-col items-end">
+          {metadata && <span className="chat-image-metadata max-w-full truncate">{metadata}</span>}
+          {availabilityText && <span className="chat-image-metadata max-w-full truncate">{availabilityText}</span>}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
