@@ -27,6 +27,7 @@ interface Props {
   inputAccessibilityLabel?: string;
   sendAccessibilityLabel?: string;
   sendDisabled?: boolean;
+  hasAttachments?: boolean;
   input: string;
   onChangeInput: (text: string) => void;
   onPickAttachment: () => void;
@@ -65,6 +66,7 @@ export function ChatComposer({
   inputAccessibilityLabel,
   sendAccessibilityLabel = '메시지 보내기',
   sendDisabled = false,
+  hasAttachments = false,
   onInputRef,
   selection,
   onSelectionChange,
@@ -82,7 +84,8 @@ export function ChatComposer({
 
   const t = useTokens();
   const styles = React.useMemo(() => makeStyles(t), [t]);
-  const canSend = input.trim().length > 0 && !hasPendingOptimistic && !disabled && !sendDisabled;
+  const canSend = (input.trim().length > 0 || hasAttachments)
+    && !hasPendingOptimistic && !disabled && !sendDisabled && !uploading;
   const controlsDisabled = uploading || disabled;
   const { fontScale } = useWindowDimensions();
   const composer = createSessionVisualRoles(t).chat.composer;

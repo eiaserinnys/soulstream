@@ -24,6 +24,8 @@ export interface UseChatSendFlowDeps {
   session: Pick<Session, 'status'> | undefined;
   /** 전송·복원에 필요한 첨부 path와 선택 이름. 첨부 lifecycle에는 의존하지 않는다. */
   attachments: ReadonlyArray<{ path: string; name?: string }>;
+  /** 모든 첨부가 업로드되어 전송할 수 있는 상태인지 나타낸다. */
+  attachmentsReady: boolean;
   /** 실제 전송을 시작한 직후 첨부 목록을 비운다. */
   clearAttachments: () => void;
   /**
@@ -70,7 +72,7 @@ export interface UseChatSendFlowResult {
   /**
    * 사용자가 입력한 텍스트를 송신한다.
    *
-   * @param text 호출자(ChatBody)가 input state를 그대로 전달. trim 결과 빈 문자열이면 silent no-op.
+   * @param text 호출자가 전달한 본문. 비어 있어도 전송 준비된 첨부가 있으면 보낸다.
    * @param onCleared 실제 송신을 시작하며 입력창을 비울 때 호출.
    * @param flowId 입력창 비우기 전 현재 compose flow ID.
    */
@@ -106,6 +108,7 @@ export function useChatSendFlow(
     sessionId,
     session,
     attachments,
+    attachmentsReady,
     clearAttachments,
     scrollToBottom,
     disabled = false,
@@ -134,7 +137,7 @@ export function useChatSendFlow(
     usageFlowId?: string | null,
   ): Promise<void> {
     const msg = text.trim();
-    if (!msg) return;
+    if (!attachmentsReady || (!msg && attachments.length === 0)) return;
     if (!api) {
       setSendError(CHAT_SEND_ERROR_MESSAGES.apiUnavailable);
       return;
