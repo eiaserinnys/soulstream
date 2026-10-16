@@ -4,7 +4,9 @@ import { PersistentReportService, type PublishPersistentReports } from "../sessi
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
-import { attachmentRefsOf, collectCardAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
+import { attachmentRefIds, attachmentRefsOf, collectCardAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
+import { requireCardAttachmentTx } from "./card_attachment_policy.js";
+import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_http.js";
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx } from "./card_attachment_legacy_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
@@ -236,7 +238,10 @@ export class CardControlPlaneService {
       evidence:params.evidence,caveat:params.caveat,reopen_reason:params.reopenReason},async(sql,card,eventId)=>{
       assertAssignedCardSession(card,params);
       const items=reportItemRule(card.items ?? [],params.itemId,input,at);
-      await this.patch(sql,card,{items:sql.json(items)},params,eventId);
+      await linkItemEvidenceTx(sql,card,params.itemId,params.actorSessionId!,input.evidence);
+      const refs=collectCardAttachmentRefs({request:card.request,attachments:card.attachments,items,
+        previousRefs:attachmentRefsOf(card.attachment_refs),previousItems:card.items ?? []});
+      await this.patch(sql,card,{items:sql.json(items),attachment_refs:sql.json(refs)},params,eventId);
     });
   }
   async confirmCardItem(params: CardMutationParams & { itemId: number; confirmed: boolean }) {
@@ -550,5 +555,30 @@ function assertAssignedCardSession(card:CardRow,params:CardMutationParams):void 
   if (params.actorKind !== "agent" || !params.actorSessionId
     || card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId)
     throw invalid("Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
+}
+/**
+ * 새 증거 ID는 생산자·등록 scope까지 검사한다. 같은 항목에 이미 저장되어 카드 ref에 남은 같은 ID/type는
+ * 생산 세션이 사라진 뒤에도 유지할 수 있어야 하므로 committed와 이미지 정책만 다시 본다.
+ */
+async function linkItemEvidenceTx(sql:RepositorySql,card:CardRow,itemId:number,sessionId:string,evidence:readonly CardItemEvidence[] | undefined):Promise<void> {
+  if (evidence === undefined) return;
+  const stored=(card.items ?? []).find(item=>item.id === itemId)?.evidence ?? [];
+  const keptRefIds=attachmentRefIds(attachmentRefsOf(card.attachment_refs));
+  for (const proof of evidence) {
+    if (proof.attachment_id === undefined) continue;
+    const kept=keptRefIds.has(proof.attachment_id)
+      && stored.some(old=>old.attachment_id === proof.attachment_id && old.type === proof.type);
+    if (!kept) await requireCardAttachmentTx(sql,card,{sessionId},proof.attachment_id,proof.type);
+    else await assertKeptEvidenceUsableTx(sql,proof.attachment_id,proof.type);
+  }
+}
+async function assertKeptEvidenceUsableTx(sql:RepositorySql,id:string,type:"image" | "link"):Promise<void> {
+  const row=(await sql<{upload_status:string;mime_type:string}[]>`SELECT upload_status,mime_type FROM file_assets
+    WHERE id=${id} AND storage_purpose='attachment' AND garbage_collected_at IS NULL LIMIT 1`)[0];
+  if (!row) throw Object.assign(new Error("첨부를 찾을 수 없습니다."),{statusCode:404,code:"ATTACHMENT_NOT_FOUND"});
+  if (row.upload_status !== "committed")
+    throw Object.assign(new Error("아직 커밋되지 않은 첨부입니다."),{statusCode:409,code:"ATTACHMENT_NOT_COMMITTED"});
+  if (type === "image" && previewInfo(normalizedMimeType(row.mime_type)).kind !== "image")
+    throw Object.assign(new Error("이미지 첨부가 아닙니다."),{statusCode:422,code:"ATTACHMENT_IMAGE_REQUIRED"});
 }
 function invalid(message:string) { return Object.assign(new Error(message),{ statusCode:422,code:"INVALID_CARD_REQUEST" }); }
