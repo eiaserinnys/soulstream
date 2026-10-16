@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { isUuid } from "../http/uuid.js";
-import type { AttachmentReadActor } from "./attachment_read_service.js";
+import type {
+  AttachmentCommitRepository,
+  AttachmentStorageBinding,
+  OwnedAttachmentCommitService,
+  UploadRegistration,
+} from "./attachment_commit_contract.js";
+import type { AttachmentReadActor, AttachmentReadService } from "./attachment_read_service.js";
 
 // Upload contract header: the only explicitly accepted value selects the id-v1
 // contract; an absent header defers to the ticket's own contract (legacy default).
@@ -16,6 +22,26 @@ export type UploadMode = "legacy" | "id-v1";
 export type UserUploadActor = Extract<AttachmentReadActor, { kind: "user" }>;
 
 export type LegacyUploadResult = { path: string; filename: string; size: number; content_type: string };
+
+// Port for the owned upload HTTP boundary. The route layer injects one and the
+// live provider supplies the authorization, registration and storage wiring.
+export type AttachmentUploadOptions = {
+  readonly resolveActor: (request: FastifyRequest) => Promise<UserUploadActor | null>;
+  readonly requireRegistration: (
+    request: FastifyRequest,
+    input: {
+      readonly actor: UserUploadActor;
+      readonly sessionId: string;
+      readonly folderId: string | null;
+      readonly mode: UploadMode;
+      readonly small: boolean;
+    },
+  ) => Promise<UploadRegistration>;
+  readonly commits: OwnedAttachmentCommitService;
+  readonly repository: AttachmentCommitRepository;
+  readonly resolveBinding: () => Promise<AttachmentStorageBinding | null>;
+  readonly ownerMetadata: AttachmentReadService["metadata"];
+};
 
 export class AttachmentUploadHttpError extends Error {
   constructor(
