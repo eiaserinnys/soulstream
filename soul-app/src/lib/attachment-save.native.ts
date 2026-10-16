@@ -8,7 +8,12 @@ import {
 } from './auth-scope';
 
 export type AttachmentSaveResult = 'shared' | 'cancelled';
-export type AttachmentSaveInput = { view: AttachmentView; scope: AuthScopeSnapshot; anchor?: number };
+export type AttachmentSaveInput = {
+  view: AttachmentView;
+  scope: AuthScopeSnapshot;
+  signal?: AbortSignal;
+  anchor?: number;
+};
 export type AttachmentSaveErrorCode =
   | 'INVALID_ATTACHMENT_URL'
   | 'DOWNLOAD_FAILED'
@@ -48,11 +53,11 @@ function attachmentSaveHeaders(scope: AuthScopeSnapshot): Record<string, string>
   return scope.jwt ? { Authorization: `Bearer ${scope.jwt}` } : {};
 }
 
-export async function saveAttachmentOriginal({ view, scope, anchor }: AttachmentSaveInput): Promise<AttachmentSaveResult> {
+export async function saveAttachmentOriginal({ view, scope, signal, anchor }: AttachmentSaveInput): Promise<AttachmentSaveResult> {
   if (Platform.OS !== 'ios') {
     throw new AttachmentSaveError('UNSUPPORTED_PLATFORM', '이 기기에서는 첨부 파일을 저장할 수 없습니다.');
   }
-  if (!isAuthScopeCurrent(scope)) return 'cancelled';
+  if (signal?.aborted || !isAuthScopeCurrent(scope)) return 'cancelled';
 
   const url = resolveAttachmentOriginalUrl(view, scope);
   if (!FileSystem.cacheDirectory) {
@@ -69,6 +74,7 @@ export async function saveAttachmentOriginal({ view, scope, anchor }: Attachment
     const result = await FileSystem.downloadAsync(url, destination, {
       headers: attachmentSaveHeaders(scope),
     });
+    if (signal?.aborted || !isAuthScopeCurrent(scope)) return 'cancelled';
 
     if (result.status < 200 || result.status >= 300) {
       if (result.status === 401) clearAuthForScope(scope);
@@ -79,7 +85,7 @@ export async function saveAttachmentOriginal({ view, scope, anchor }: Attachment
     if (!info.exists || info.isDirectory || (view.byteSize !== null && info.size !== view.byteSize)) {
       throw new AttachmentSaveError('DOWNLOAD_FAILED', '내려받은 첨부 파일을 확인할 수 없습니다.');
     }
-    if (!isAuthScopeCurrent(scope)) return 'cancelled';
+    if (signal?.aborted || !isAuthScopeCurrent(scope)) return 'cancelled';
 
     try {
       const shareOptions = anchor === undefined ? undefined : { anchor };

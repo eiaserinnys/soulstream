@@ -6,7 +6,12 @@ import {
 } from './auth-scope';
 
 export type AttachmentSaveResult = 'shared' | 'cancelled';
-export type AttachmentSaveInput = { view: AttachmentView; scope: AuthScopeSnapshot; anchor?: number };
+export type AttachmentSaveInput = {
+  view: AttachmentView;
+  scope: AuthScopeSnapshot;
+  signal?: AbortSignal;
+  anchor?: number;
+};
 export type AttachmentSaveErrorCode =
   | 'INVALID_ATTACHMENT_URL'
   | 'DOWNLOAD_FAILED'
@@ -46,28 +51,31 @@ function attachmentSaveHeaders(scope: AuthScopeSnapshot): Record<string, string>
   return scope.jwt ? { Authorization: `Bearer ${scope.jwt}` } : {};
 }
 
-export async function saveAttachmentOriginal({ view, scope }: AttachmentSaveInput): Promise<AttachmentSaveResult> {
-  if (!isAuthScopeCurrent(scope)) return 'cancelled';
+export async function saveAttachmentOriginal({ view, scope, signal }: AttachmentSaveInput): Promise<AttachmentSaveResult> {
+  if (signal?.aborted || !isAuthScopeCurrent(scope)) return 'cancelled';
 
   let response: Response;
   try {
     response = await fetch(resolveAttachmentOriginalUrl(view, scope), {
       headers: attachmentSaveHeaders(scope),
+      ...(signal ? { signal } : {}),
     });
   } catch (error) {
+    if (signal?.aborted) return 'cancelled';
     throw new AttachmentSaveError('DOWNLOAD_FAILED', '첨부 다운로드에 실패했습니다.');
   }
+  if (signal?.aborted || !isAuthScopeCurrent(scope)) return 'cancelled';
   if (!response.ok) {
     if (response.status === 401) clearAuthForScope(scope);
     throw new AttachmentSaveError('DOWNLOAD_FAILED', `첨부 다운로드에 실패했습니다 (${response.status}).`);
   }
-  if (!isAuthScopeCurrent(scope)) return 'cancelled';
+  if (signal?.aborted || !isAuthScopeCurrent(scope)) return 'cancelled';
 
   const blob = await response.blob();
   if (view.byteSize !== null && blob.size !== view.byteSize) {
     throw new AttachmentSaveError('DOWNLOAD_FAILED', '내려받은 첨부 파일을 확인할 수 없습니다.');
   }
-  if (!isAuthScopeCurrent(scope)) return 'cancelled';
+  if (signal?.aborted || !isAuthScopeCurrent(scope)) return 'cancelled';
 
   const objectUrl = URL.createObjectURL(blob);
   try {

@@ -6,6 +6,7 @@ export type AttachmentSaveResult = 'shared' | 'cancelled';
 export type AttachmentSaveInput = {
   view: AttachmentView;
   scope: AuthScopeSnapshot;
+  signal?: AbortSignal;
   anchor?: number;
 };
 

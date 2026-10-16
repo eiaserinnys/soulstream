@@ -109,6 +109,18 @@ test('다운로드 도중 auth scope가 바뀌면 공유하지 않고 임시 파
   expect(FileSystem.deleteAsync).toHaveBeenCalledTimes(1);
 });
 
+test('native 다운로드 도중 취소되면 결과를 공유하지 않고 임시 파일을 지운다', async () => {
+  const controller = new AbortController();
+  jest.mocked(FileSystem.downloadAsync).mockImplementation(async (url, destination, options) => {
+    controller.abort();
+    return { uri: destination, status: 200, headers: {}, mimeType: 'text/plain' };
+  });
+
+  await expect(saveAttachmentOriginal({ view, scope, signal: controller.signal })).resolves.toBe('cancelled');
+  expect(Share.share).not.toHaveBeenCalled();
+  expect(FileSystem.deleteAsync).toHaveBeenCalledTimes(1);
+});
+
 test('외부 origin과 unavailable 첨부는 다운로드하거나 공유하지 않는다', async () => {
   const external = { ...view, source: { ...view.source, originalUrl: 'https://other.test/private.txt' } } as AttachmentView;
   const unavailable = { ...view, source: { kind: 'unavailable', availability: 'missing' } } as AttachmentView;
