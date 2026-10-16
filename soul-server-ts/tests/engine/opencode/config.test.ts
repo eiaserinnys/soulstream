@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 import { prepareOpenCodeSession } from "../../../src/engine/opencode/config.js";
 import { makeTempDirSync } from "../../helpers/temp_dir.js";
 
@@ -111,5 +112,56 @@ describe("OpenCode session configuration", () => {
     });
     const config = JSON.parse(readFileSync(prepared.configPath, "utf8")) as Record<string, unknown>;
     expect(config.mcp).toBeUndefined();
+  });
+
+  it("applies the example allowlist in order and omits explicitly empty MCP servers", async () => {
+    const example = readFileSync(join(process.cwd(), "config/model-catalog.yaml.example"), "utf8");
+    const preset = parseModelCatalogYaml(example).presets.find(
+      (entry) => entry.id === "opencode-deepseek-v4.1-flash-free",
+    );
+    const allowlist = preset?.mcp_tool_allowlist?.roselin;
+    const soulstreamTools = allowlist?.soulstream;
+    expect(soulstreamTools).toHaveLength(55);
+    expect(allowlist?.serendipity).toEqual([]);
+
+    const prepared = await prepareOpenCodeSession({
+      workspaceDir: "/workspace",
+      model: "opencode/deepseek-v4.1-flash-free",
+      sessionDirectory: makeTempDirSync("opencode-allowlist-"),
+      agentSessionId: "session-allowlist-398",
+      useMcp: true,
+      internalMcpUrl: "http://127.0.0.1:4206/mcp",
+      opencodeMcpToolAllowlist: allowlist,
+      resolvedMcpServers: [
+        { type: "streamable_http", name: "soulstream", url: "https://obsolete.example/mcp", headers: { Authorization: "header-secret" } },
+        { type: "streamable_http", name: "serendipity", headers: { Authorization: "must-not-be-read" } },
+        { type: "streamable_http", name: "exa", url: "https://exa.example/mcp" },
+        { type: "stdio", name: "atom", command: "node", args: ["atom.mjs"] },
+      ],
+      processEnv: {},
+    });
+    const config = JSON.parse(readFileSync(prepared.configPath, "utf8")) as {
+      mcp?: Record<string, unknown>;
+      permission?: Record<string, string>;
+    };
+    const expectedPermissionKeys = [
+      "*", "question", "plan_exit", "soulstream_*",
+      ...soulstreamTools!.map((name) => `soulstream_${name}`),
+    ];
+
+    expect(new Set(soulstreamTools).size).toBe(55);
+    expect(config.permission && Object.keys(config.permission)).toEqual(expectedPermissionKeys);
+    expect(config.permission).toMatchObject({
+      "*": "allow",
+      question: "deny",
+      plan_exit: "deny",
+      "soulstream_*": "deny",
+      soulstream_get_session_name: "allow",
+      soulstream_reflect_cluster_brief: "allow",
+    });
+    expect(soulstreamTools!.every((name) => config.permission?.[`soulstream_${name}`] === "allow")).toBe(true);
+    expect(config.mcp).toMatchObject({ soulstream: { type: "remote" }, exa: { type: "remote" }, atom: { type: "local" } });
+    expect(config.mcp).not.toHaveProperty("serendipity");
+    expect(config).not.toHaveProperty("tools");
   });
 });

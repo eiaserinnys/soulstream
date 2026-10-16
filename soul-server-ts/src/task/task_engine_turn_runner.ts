@@ -23,7 +23,11 @@ import {
 } from "../model_preset_env.js";
 
 import type { Task } from "./task_models.js";
-import { effectiveTaskBackend } from "./task_model_preset.js";
+import {
+  effectiveTaskBackend,
+  resolveOpenCodeMcpToolAllowlist,
+  type ModelPresetResolver,
+} from "./task_model_preset.js";
 import { resolveTurnReasoningEffort } from "./session_effort_storage.js";
 
 export interface TaskEngineTurnInput {
@@ -40,6 +44,7 @@ export interface TaskEngineTurnInput {
 export interface TaskEngineTurnRunnerDeps {
   snapshotPersistence: TaskAgentsSnapshotPersistencePort;
   scheduleToolHandler?: ScheduleToolUseHandler;
+  modelCatalog?: ModelPresetResolver;
 }
 
 export interface TaskAgentsSnapshotPersistencePort {
@@ -107,6 +112,11 @@ export class TaskEngineTurnRunner {
     const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
     const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
     const effectiveModel = task.model ?? agent.model;
+    const opencodeMcpToolAllowlist = resolveOpenCodeMcpToolAllowlist(
+      task,
+      agent,
+      this.deps.modelCatalog,
+    );
     const hasResolvedPreset = task.modelPresetBackend !== undefined;
     const extraEnv = engine.backendId === "claude"
       ? buildClaudeExtraEnv({
@@ -158,6 +168,9 @@ export class TaskEngineTurnRunner {
         ? { disallowedTools: effectiveDisallowedTools }
         : {}),
       ...(task.useMcp !== undefined ? { useMcp: task.useMcp } : {}),
+      ...(opencodeMcpToolAllowlist !== undefined
+        ? { opencodeMcpToolAllowlist }
+        : {}),
       ...(effectiveClaudePermissionMode !== undefined
         ? { claudePermissionMode: effectiveClaudePermissionMode }
         : {}),

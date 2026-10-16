@@ -1,11 +1,12 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Writable } from "node:stream";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenCodeEngineAdapter } from "../../../src/engine/opencode/adapter.js";
 
-function fixture() {
+function fixture(extraEvents: unknown[] = []) {
   const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
   const workspaceDir = join(root, "workspace");
   const sessionDirectory = join(root, "session");
@@ -28,6 +29,7 @@ const env = {
   prompt,
   args,
 };
+for (const event of ${JSON.stringify(extraEvents)}) console.log(JSON.stringify(event));
 console.log(JSON.stringify({ type: 'text', sessionID, part: { type: 'text', text: JSON.stringify(env) } }));
 console.log(JSON.stringify({ type: 'step_finish', sessionID, part: { type: 'step-finish', reason: 'stop', cost: 0.25 } }));
 `);
@@ -110,6 +112,102 @@ describe("OpenCodeEngineAdapter", () => {
     } finally {
       await engine.close();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("warns once per out-of-allowlist call without logging arguments, errors, or headers", async () => {
+    const blocked = {
+      type: "tool_use",
+      sessionID: "ses_adapter_398",
+      part: {
+        type: "tool",
+        tool: "invalid",
+        callID: "blocked-call",
+        state: {
+          status: "error",
+          input: { tool: "soulstream_hidden", secret: "ARGUMENT_SECRET" },
+          error: "ERROR_SECRET",
+        },
+      },
+    };
+    const allowedTool = (tool: string, callID: string, status: string) => ({
+      type: "tool_use",
+      sessionID: "ses_adapter_398",
+      part: {
+        type: "tool",
+        tool,
+        callID,
+        state: {
+          status,
+          input: { harmless: true },
+          ...(status === "error" ? { error: "ordinary argument error" } : { output: "ok" }),
+        },
+      },
+    });
+    const paths = fixture([
+      blocked,
+      blocked,
+      allowedTool("soulstream_other", "direct-call", "error"),
+      allowedTool("soulstream_get_session_name", "allowed-call", "completed"),
+      allowedTool("soulstream_get_session_name", "argument-error-call", "error"),
+      {
+        type: "tool_use",
+        sessionID: "ses_adapter_398",
+        part: {
+          type: "tool",
+          tool: "invalid",
+          callID: "unrelated-call",
+          state: { status: "error", input: { tool: "exa_hidden" }, error: "not-ours" },
+        },
+      },
+    ]);
+    const logLines: string[] = [];
+    const destination = new Writable({
+      write(chunk, _encoding, callback) {
+        logLines.push(String(chunk));
+        callback();
+      },
+    });
+    const engine = new OpenCodeEngineAdapter({
+      ...paths,
+      agentId: "roselin",
+      processEnv: {},
+      internalMcpUrl: "http://127.0.0.1:4206/mcp",
+      resolvedMcpServers: [{
+        type: "streamable_http",
+        name: "soulstream",
+        url: "http://127.0.0.1:4206/mcp",
+        headers: { Authorization: "HEADER_SECRET" },
+      }],
+    }, pino({ level: "warn" }, destination));
+    try {
+      const events = await collect(engine, {
+        ...input,
+        opencodeMcpToolAllowlist: { soulstream: ["get_session_name"] },
+      });
+      const warnings = logLines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((line) => line.msg === "OpenCode MCP tool call is outside the configured allowlist");
+
+      expect(warnings).toHaveLength(2);
+      expect(warnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          agentId: "roselin",
+          agentSessionId: "session-adapter-398",
+          backendSessionId: "ses_adapter_398",
+          toolName: "soulstream_hidden",
+        }),
+        expect.objectContaining({ toolName: "soulstream_other" }),
+      ]));
+      expect(logLines.join("\n")).not.toContain("ARGUMENT_SECRET");
+      expect(logLines.join("\n")).not.toContain("ERROR_SECRET");
+      expect(logLines.join("\n")).not.toContain("HEADER_SECRET");
+      expect(events.filter((event) => event.type === "tool_start")).toHaveLength(5);
+      expect(events.some((event) => event.type === "tool_result" && event.is_error)).toBe(true);
+    } finally {
+      await engine.close();
+      destination.end();
+      rmSync(paths.root, { recursive: true, force: true });
     }
   });
 });

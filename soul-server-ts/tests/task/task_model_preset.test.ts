@@ -11,6 +11,7 @@ import {
 import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
+  resolveOpenCodeMcpToolAllowlist,
 } from "../../src/task/task_model_preset.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -47,6 +48,50 @@ const kimiPreset: ModelPreset = {
 };
 
 describe("task model preset runtime", () => {
+  it("resolves the current agent allowlist only for an OpenCode backend", () => {
+    const allowlist = { soulstream: ["get_session_name"], serendipity: [] };
+    const resolve = vi.fn().mockReturnValue({
+      id: "opencode-test",
+      label: "OpenCode Test",
+      backend: "opencode",
+      model: "opencode/test",
+      mcp_tool_allowlist: { roselin: allowlist, other: { soulstream: ["list_sessions"] } },
+    } satisfies ModelPreset);
+    const catalog = { resolve };
+    const task = makeTask({ modelPreset: "opencode-test", modelPresetBackend: "opencode" });
+
+    expect(resolveOpenCodeMcpToolAllowlist(task, agent, catalog)).toEqual(allowlist);
+    expect(resolve).toHaveBeenCalledWith("opencode-test");
+    expect(task).not.toHaveProperty("mcp_tool_allowlist");
+    expect(resolveOpenCodeMcpToolAllowlist(task, { ...agent, id: "other" }, catalog)).toEqual({
+      soulstream: ["list_sessions"],
+    });
+  });
+
+  it.each(["claude", "codex"] as const)(
+    "does not resolve or forward the allowlist for the %s backend",
+    (backend) => {
+      const resolve = vi.fn();
+      const task = makeTask({ modelPreset: "opencode-test", modelPresetBackend: backend });
+
+      expect(resolveOpenCodeMcpToolAllowlist(task, agent, { resolve })).toBeUndefined();
+      expect(resolve).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns no allowlist when the selected profile has no entry", () => {
+    const resolve = vi.fn().mockReturnValue({
+      id: "opencode-test",
+      label: "OpenCode Test",
+      backend: "opencode",
+      model: "opencode/test",
+      mcp_tool_allowlist: { other: { soulstream: ["list_sessions"] } },
+    } satisfies ModelPreset);
+    const task = makeTask({ modelPreset: "opencode-test", modelPresetBackend: "opencode" });
+
+    expect(resolveOpenCodeMcpToolAllowlist(task, agent, { resolve })).toBeUndefined();
+  });
+
   it("restores backend and env from a persisted preset while preserving the persisted model", () => {
     const task = makeTask({
       modelPreset: "kimi-2",

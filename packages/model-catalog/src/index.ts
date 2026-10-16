@@ -24,6 +24,7 @@ export type AgentBackend = (typeof MODEL_BACKENDS)[number];
 export type ReasoningEffort = (typeof MODEL_REASONING_EFFORTS)[number];
 
 const ReasoningEffortSchema = z.enum(MODEL_REASONING_EFFORTS);
+const NonEmptyMcpNameSchema = z.string().trim().min(1);
 
 export const ModelPresetSchema = z.object({
   id: z.string().trim().min(1, "model preset id required"),
@@ -31,6 +32,10 @@ export const ModelPresetSchema = z.object({
   backend: AgentBackendSchema,
   model: z.string().trim().min(1, "model preset model required"),
   env: z.record(z.string(), z.string()).optional(),
+  mcp_tool_allowlist: z.record(
+    NonEmptyMcpNameSchema,
+    z.record(NonEmptyMcpNameSchema, z.array(NonEmptyMcpNameSchema)),
+  ).optional(),
   usage_model_id: z.string().trim().min(1).optional(),
   supported_efforts: z.array(ReasoningEffortSchema).nonempty().optional(),
   default_effort: ReasoningEffortSchema.optional(),

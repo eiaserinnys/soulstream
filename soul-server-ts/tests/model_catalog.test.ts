@@ -64,9 +64,17 @@ describe("ModelCatalog", () => {
       usage_provider: null,
     });
     expect(preset?.supported_efforts).toBeUndefined();
+    expect(preset).not.toHaveProperty("mcp_tool_allowlist");
     expect(catalog.resolve("opencode-deepseek-v4.1-flash-free")).toMatchObject({
       model: "opencode/deepseek-v4.1-flash-free",
+      mcp_tool_allowlist: {
+        roselin: {
+          soulstream: expect.any(Array),
+          serendipity: [],
+        },
+      },
     });
+    expect((catalog.resolve("opencode-deepseek-v4.1-flash-free").mcp_tool_allowlist?.roselin?.soulstream)).toHaveLength(55);
   });
 
   it("encodes the effort policy, leaving Kimi on the backend default", () => {
@@ -149,11 +157,18 @@ presets:
     label: Claude - Fable
     backend: claude
     model: fable
+    mcp_tool_allowlist:
+      roselin:
+        soulstream: [get_session_name]
+        serendipity: []
 `,
       (catalogPath) => {
         const catalog = new ModelCatalog(catalogPath);
         const readFile = vi.spyOn(fs, "readFileSync");
         expect(catalog.resolve("claude-fable").model).toBe("fable");
+        expect(catalog.resolve("claude-fable").mcp_tool_allowlist).toEqual({
+          roselin: { soulstream: ["get_session_name"], serendipity: [] },
+        });
         expect(catalog.resolve("claude-fable").model).toBe("fable");
         expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(1);
 
@@ -165,6 +180,9 @@ presets:
     label: Claude - Fable
     backend: claude
     model: claude-fable-5[1m]
+    mcp_tool_allowlist:
+      roselin:
+        soulstream: [get_session_name, list_sessions]
 `,
           "utf-8",
         );
@@ -172,6 +190,9 @@ presets:
         fs.utimesSync(catalogPath, changedMtime / 1_000, changedMtime / 1_000);
 
         expect(catalog.resolve("claude-fable").model).toBe("claude-fable-5[1m]");
+        expect(catalog.resolve("claude-fable").mcp_tool_allowlist).toEqual({
+          roselin: { soulstream: ["get_session_name", "list_sessions"] },
+        });
         expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(2);
         readFile.mockRestore();
       },

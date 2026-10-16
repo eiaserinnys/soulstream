@@ -22,6 +22,7 @@ import {
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
+import type { ModelPresetResolver } from "../../src/task/task_model_preset.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const agent: AgentProfile = {
@@ -71,12 +72,12 @@ function makeEngine(
   };
 }
 
-function makeSubject() {
+function makeSubject(modelCatalog?: ModelPresetResolver) {
   const snapshotPersistence = {
     persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
     persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
   };
-  const runner = new TaskEngineTurnRunner({ snapshotPersistence });
+  const runner = new TaskEngineTurnRunner({ snapshotPersistence, modelCatalog });
   return { runner, snapshotPersistence };
 }
 
@@ -98,6 +99,43 @@ describe("TaskEngineTurnRunner", () => {
         process.env[key] = original;
       }
     }
+  });
+
+  it("passes an OpenCode preset allowlist for that profile on each turn only", async () => {
+    const allowlist = { soulstream: ["get_session_name"], serendipity: [] };
+    const modelCatalog: ModelPresetResolver = {
+      resolve: vi.fn().mockReturnValue({
+        id: "opencode-test",
+        label: "OpenCode Test",
+        backend: "opencode",
+        model: "opencode/test",
+        mcp_tool_allowlist: { roselin: allowlist },
+      }),
+    };
+
+    async function capturedAllowlist(backend: AgentProfile["backend"], agentId = "roselin") {
+      const task = makeTask({
+        modelPreset: "opencode-test",
+        modelPresetBackend: backend,
+      });
+      let captured: EngineExecuteParams | undefined;
+      const engine = makeEngine((params) => { captured = params; });
+      const { runner } = makeSubject(modelCatalog);
+
+      await drain(runner.executeTurn({
+        task,
+        agent: { ...agent, id: agentId },
+        runner: createInProcessTaskRunnerRuntime(engine),
+        input: { prompt: "turn" },
+      }));
+      return captured?.opencodeMcpToolAllowlist;
+    }
+
+    expect(await capturedAllowlist("opencode")).toEqual(allowlist);
+    expect(await capturedAllowlist("claude")).toBeUndefined();
+    expect(await capturedAllowlist("codex")).toBeUndefined();
+    expect(await capturedAllowlist("opencode", "other-agent")).toBeUndefined();
+    expect(modelCatalog.resolve).toHaveBeenCalledTimes(2);
   });
 
   it.each([

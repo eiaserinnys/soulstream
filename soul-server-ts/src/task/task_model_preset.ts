@@ -27,6 +27,16 @@ export function resolveModelPresetSelection(
   return modelCatalog.resolve(presetId);
 }
 
+export function resolveOpenCodeMcpToolAllowlist(
+  task: Pick<Task, "model" | "modelPreset" | "modelPresetBackend">,
+  agent: AgentProfile,
+  modelCatalog?: ModelPresetResolver,
+): Record<string, string[]> | undefined {
+  if (effectiveTaskBackend(task, agent) !== "opencode") return undefined;
+  const preset = resolveModelPresetSelection(task, agent, modelCatalog);
+  return preset?.mcp_tool_allowlist?.[agent.id];
+}
+
 /**
  * Rebuilds non-persisted preset runtime state for hydrated sessions.
  *

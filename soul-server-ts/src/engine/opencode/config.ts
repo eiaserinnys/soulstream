@@ -20,6 +20,7 @@ export interface PrepareOpenCodeSessionOptions {
   allowedTools?: string[];
   disallowedTools?: string[];
   useMcp?: boolean;
+  opencodeMcpToolAllowlist?: Record<string, string[]>;
   resolvedMcpServers?: ResolvedMcpServer[];
   internalMcpUrl?: string;
   processEnv: NodeJS.ProcessEnv;
@@ -57,12 +58,21 @@ function childEnvironment(
   return env;
 }
 
+function sanitizeOpenCodeMcpName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+export function openCodeMcpToolName(serverName: string, toolName: string): string {
+  return `${sanitizeOpenCodeMcpName(serverName)}_${sanitizeOpenCodeMcpName(toolName)}`;
+}
+
 function openCodeMcpServers(options: PrepareOpenCodeSessionOptions): Record<string, OpenCodeMcpServer> | undefined {
   if (options.useMcp === false) return undefined;
   const servers: Record<string, OpenCodeMcpServer> = {};
   for (const server of options.resolvedMcpServers ?? []) {
     const name = server.name;
     if (!name) throw new Error("OpenCode MCP server name is required");
+    if (options.opencodeMcpToolAllowlist?.[name]?.length === 0) continue;
     if (server.type === "stdio") {
       if (!server.command || server.full_command) {
         throw new Error(`OpenCode MCP server ${name} requires command and args`);
@@ -92,6 +102,25 @@ function openCodeMcpServers(options: PrepareOpenCodeSessionOptions): Record<stri
   return Object.keys(servers).length > 0 ? servers : undefined;
 }
 
+function openCodePermissions(
+  allowlist: Record<string, string[]> | undefined,
+): Record<string, "allow" | "deny"> {
+  const permission: Record<string, "allow" | "deny"> = {
+    "*": "allow",
+    question: "deny",
+    plan_exit: "deny",
+  };
+  for (const [serverName, tools] of Object.entries(allowlist ?? {})) {
+    if (tools.length === 0) continue;
+    const serverPrefix = sanitizeOpenCodeMcpName(serverName);
+    permission[`${serverPrefix}_*`] = "deny";
+    for (const toolName of tools) {
+      permission[openCodeMcpToolName(serverName, toolName)] = "allow";
+    }
+  }
+  return permission;
+}
+
 function configuration(
   options: PrepareOpenCodeSessionOptions,
   instructionPath: string | undefined,
@@ -101,7 +130,7 @@ function configuration(
     small_model: options.model,
     share: "disabled",
     autoupdate: false,
-    permission: { "*": "allow", question: "deny", plan_exit: "deny" },
+    permission: openCodePermissions(options.opencodeMcpToolAllowlist),
   };
   const mcp = openCodeMcpServers(options);
   if (mcp) config.mcp = mcp;
