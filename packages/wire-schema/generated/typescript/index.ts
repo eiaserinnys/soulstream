@@ -495,6 +495,8 @@ export interface SSEEventSession {
  */
 export interface SSEEventInterventionSent {
   type: "intervention_sent";
+  attachment_ids?: string[];
+  attachment_count?: number;
   [k: string]: unknown;
 }
 /**
@@ -519,6 +521,8 @@ export interface SSEEventSessionNotification {
  */
 export interface SSEEventUserMessage {
   type: "user_message";
+  attachment_ids?: string[];
+  attachment_count?: number;
   [k: string]: unknown;
 }
 /**
@@ -1959,6 +1963,12 @@ export interface CreateSession {
    */
   notify_completion?: boolean;
   attachment_paths?: string[];
+  attachment_ids?: string[];
+  attachment_bindings?: {
+    attachment_id: string;
+    node_id: string;
+    path: string;
+  }[];
   /**
    * Reasoning effort accept-set. Legacy values (minimal) stay readable; new sessions are validated against the selected model preset's advertised supported_efforts. Missing means the preset default, then the backend default.
    */
@@ -2028,6 +2038,12 @@ export interface Intervene {
   user?: string;
   requestId?: string;
   attachment_paths?: string[];
+  attachment_ids?: string[];
+  attachment_bindings?: {
+    attachment_id: string;
+    node_id: string;
+    path: string;
+  }[];
   /**
    * Live intervention ride-along context items.
    */
@@ -2060,6 +2076,12 @@ export interface EnsureSessionRunning {
   delivery_id: string;
   requestId?: string;
   attachment_paths?: string[];
+  attachment_ids?: string[];
+  attachment_bindings?: {
+    attachment_id: string;
+    node_id: string;
+    path: string;
+  }[];
   caller_info?: CallerInfo;
 }
 export interface EnsureSessionRunningAck {
