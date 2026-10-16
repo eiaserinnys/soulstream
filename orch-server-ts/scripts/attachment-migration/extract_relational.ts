@@ -11,7 +11,6 @@ import {
   type RelationalSourceTable,
 } from "./inventory_contract.js";
 
-const STATEMENT_TIMEOUT = "5000ms";
 const FILE_ROUTE = "/api/attachments/files";
 
 type SqlRow = Record<string, unknown>;
@@ -34,16 +33,17 @@ const READERS: ReadonlyArray<{ table: RelationalSourceTable; readPage: TableRead
 
 export async function* extractRelationalSources(
   sql: InventorySql,
-  options: { pageSize: number; cutoff: string },
+  options: { pageSize: number; cutoff: string; statementTimeoutMs?: number },
 ): AsyncIterable<LegacySource> {
   if (!Number.isInteger(options.pageSize) || options.pageSize < 1) throw new TypeError("pageSize must be a positive integer");
+  const timeoutMs = requireStatementTimeout(options.statementTimeoutMs);
   const cutoff = parseInventoryCutoff(options.cutoff);
   const cutoffDate = new Date(cutoff);
 
   for (const reader of READERS) {
     let after: string | null = null;
     while (true) {
-      const page = await readPage(sql, (tx) => reader.readPage(tx, cutoffDate, after, options.pageSize));
+      const page = await readPage(sql, (tx) => reader.readPage(tx, cutoffDate, after, options.pageSize), timeoutMs);
       if (page.length === 0) break;
       for (const row of page) {
         const createdAt = readDate(row, "created_at", reader.table);
@@ -206,17 +206,28 @@ function makeSources(table: RelationalSourceTable, row: SqlRow, cutoffMs: number
     card_id: null, data: pick(row, ["folder_id", "membership_kind", "item_type", "item_id", "metadata"]) }];
 }
 
-async function readPage(sql: InventorySql, query: (transaction: InventorySql) => Promise<SqlRow[]>): Promise<SqlRow[]> {
+async function readPage(sql: InventorySql, query: (transaction: InventorySql) => Promise<SqlRow[]>, timeoutMs: number): Promise<SqlRow[]> {
   try {
     return await sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION READ ONLY`;
-      await transaction`SELECT set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true)`;
+      await transaction`SELECT set_config('statement_timeout', ${`${timeoutMs}ms`}, true)`;
       return query(transaction);
     });
   } catch (error) {
     if (isInventoryError(error)) throw error;
+    if (isQueryTimeout(error)) throw inventoryError("INVENTORY_QUERY_TIMEOUT", "relational source page query timed out", error);
     throw inventoryError("INVENTORY_DB_READ_FAILED", "relational source page query failed", error);
   }
+}
+
+function requireStatementTimeout(value: number | undefined): number {
+  const timeout = value ?? 5_000;
+  if (!Number.isSafeInteger(timeout) || timeout < 1) throw new TypeError("statementTimeoutMs must be a positive integer");
+  return timeout;
+}
+
+function isQueryTimeout(error: unknown): boolean {
+  return isRecord(error) && error.code === "57014";
 }
 
 async function readCardsPage(sql: InventorySql, cutoff: Date, after: string | null, pageSize: number): Promise<SqlRow[]> {

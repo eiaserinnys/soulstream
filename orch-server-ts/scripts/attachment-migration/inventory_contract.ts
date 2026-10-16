@@ -18,6 +18,8 @@ export const INVENTORY_ERROR_CODES = Object.freeze({
   alias_conflict: "INVENTORY_ALIAS_CONFLICT",
   owner_unverified: "INVENTORY_OWNER_UNVERIFIED",
   output_failed: "INVENTORY_OUTPUT_FAILED",
+  coverage_incomplete: "INVENTORY_COVERAGE_INCOMPLETE",
+  duplicate_part: "INVENTORY_DUPLICATE_PART",
 } as const);
 
 export const FILE_OBSERVATION_STATUS = Object.freeze({
@@ -36,6 +38,12 @@ export const INVENTORY_EVENT_PROGRESS_STATE = Object.freeze({
   page: "page",
   complete: "complete",
   source_changed: "source_changed",
+  incomplete: "incomplete",
+} as const);
+
+export const INVENTORY_EXPORT_PART_KIND = Object.freeze({
+  relational: "relational",
+  events: "events",
 } as const);
 
 export const INVENTORY_CUTOFF_POLICY = Object.freeze({
@@ -94,6 +102,7 @@ export type InventoryRunBundleMetadata = {
   relational_coverage_complete: boolean;
   event_session_ids: string[];
   alias_snapshot_complete: boolean;
+  coverage_complete?: boolean;
   stages: Partial<Record<InventoryStageName, InventoryStageTiming>>;
 };
 
@@ -108,6 +117,28 @@ export type InventorySessionCoverage = {
   observed_at: string;
   ended_at?: string;
   error_code?: (typeof INVENTORY_ERROR_CODES)[keyof typeof INVENTORY_ERROR_CODES];
+  coverage_issue?: string;
+};
+
+export type InventoryExportPart = {
+  record_type: "export_part";
+  schema_version: typeof INVENTORY_SCHEMA_VERSION;
+  part_kind: (typeof INVENTORY_EXPORT_PART_KIND)[keyof typeof INVENTORY_EXPORT_PART_KIND];
+  cutoff: string;
+  started_at: string;
+  ended_at: string;
+  coverage_complete: boolean;
+  session_ids?: string[];
+  alias_snapshot_complete?: boolean;
+};
+
+export type InventorySessionList = {
+  record_type: "session_list";
+  schema_version: typeof INVENTORY_SCHEMA_VERSION;
+  cutoff: string;
+  started_at: string;
+  ended_at: string;
+  session_ids: string[];
 };
 
 export type InventoryAliasSnapshot = {
