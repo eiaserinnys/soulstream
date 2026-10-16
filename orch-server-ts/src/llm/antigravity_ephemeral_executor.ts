@@ -103,6 +103,8 @@ export class NodeAntigravityExecProcess implements AntigravityExecProcessPort {
       let firstStdoutAt: number | undefined;
       let timingReported = false;
       let stdout = "";
+      let pendingStdout = "";
+      let resultReceived = false;
       let stderr = "";
       let timedOut = false;
       let cancelled = false;
@@ -131,7 +133,24 @@ export class NodeAntigravityExecProcess implements AntigravityExecProcessPort {
       if (signal?.aborted) onAbort();
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => { firstStdoutAt ??= performance.now(); stdout += chunk; });
+      child.stdout.on("data", (chunk: string) => {
+        firstStdoutAt ??= performance.now();
+        stdout += chunk;
+        pendingStdout += chunk;
+        let newline: number;
+        while ((newline = pendingStdout.indexOf("\n")) >= 0) {
+          const line = pendingStdout.slice(0, newline);
+          pendingStdout = pendingStdout.slice(newline + 1);
+          let event: unknown;
+          try { event = JSON.parse(line); }
+          catch { continue; } // parseOutput owns validation of the complete output.
+          if (!resultReceived && isRecord(event) && event.event === "result") {
+            resultReceived = true;
+            clearTimeout(timer);
+            kill();
+          }
+        }
+      });
       child.stderr.on("data", (chunk: string) => { stderr += chunk; });
       child.once("spawn", () => { spawnedAt = performance.now(); });
       child.once("error", error => {
@@ -141,7 +160,8 @@ export class NodeAntigravityExecProcess implements AntigravityExecProcessPort {
       });
       child.once("close", exitCode => {
         cleanup(); reportTiming(exitCode);
-        if (cancelled) reject(cancelledError());
+        if (resultReceived) resolve({ stdout, stderr, exitCode: 0 });
+        else if (cancelled) reject(cancelledError());
         else if (timedOut) reject(new AntigravityAttemptError("ANTIGRAVITY_TIMEOUT", `agy timed out after ${timeoutMs}ms`));
         else resolve({ stdout, stderr, exitCode });
       });
