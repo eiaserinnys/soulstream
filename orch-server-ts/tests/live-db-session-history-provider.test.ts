@@ -13,6 +13,8 @@ type SqlCall = {
   values: unknown[];
 };
 
+type SqlFragmentMock = SqlCall & { readonly __sqlFragmentMock: true };
+
 describe("live DB session history provider", () => {
   it("reads viewport, last id, and raw events using the canonical DB queries", async () => {
     const harness = createSqlHarness((text) => {
@@ -413,6 +415,97 @@ describe("live DB session history provider", () => {
     expect(timelineQueries[1]?.values).toContainEqual(["user_message"]);
   });
 
+  it("includes attachment complete events for assistant timelines and preserves legacy attachment fields", async () => {
+    const createdAt = new Date("2026-10-17T00:00:00.000Z");
+    const harness = createSqlHarness((text) => {
+      if (text.includes("SELECT EXISTS")) return [{ exists: true }];
+      if (text.includes("event_type = ANY")) {
+        return [{
+          id: 42,
+          parent_event_id: null,
+          event_type: "complete",
+          payload: { attachment_ids: ["asset-42"] },
+          created_at: createdAt,
+        }];
+      }
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({ sql: harness.sql })
+      .sessionHistoryProvider;
+
+    const [defaultMessages] = await provider.readTimeline("sess-with-assistant", null, 10);
+    const [assistantMessages] = await provider.readTimeline(
+      "sess-with-assistant",
+      null,
+      10,
+      ["assistant_message"],
+    );
+    await provider.readTimeline("sess-with-assistant", null, 10, ["tool_result"]);
+
+    const timelineQueries = harness.calls.filter((call) =>
+      call.text.includes("event_type = ANY"),
+    );
+    expect(timelineQueries[0]?.values[1]).toEqual(SESSION_TIMELINE_EVENT_TYPES);
+    expect(timelineQueries[1]?.values[1]).toEqual(["assistant_message"]);
+    expect(timelineQueries[2]?.values[1]).toEqual(["tool_result"]);
+    expect(timelineQueries[0]?.text).toContain("event_type = 'complete'");
+    expect(timelineQueries[1]?.text).toContain("event_type = 'complete'");
+    expect(timelineQueries[2]?.text).not.toContain("event_type = 'complete'");
+    expect(defaultMessages).toEqual([
+      expect.objectContaining({
+        id: 42,
+        event_type: "complete",
+        payload: { attachment_ids: ["asset-42"] },
+      }),
+    ]);
+    expect(assistantMessages).toEqual(defaultMessages);
+  });
+
+  it("keeps complete attachment fields while converting legacy output to assistant_message", async () => {
+    const createdAt = new Date("2026-10-17T00:00:00.000Z");
+    const payload = {
+      result: "legacy output",
+      attachment_ids: ["asset-legacy"],
+      attachments: ["/legacy/one.txt"],
+      attachment_paths: ["/legacy/two.txt"],
+      attachment_count: 2,
+      node_id: "node-legacy",
+    };
+    const harness = createSqlHarness((text) => {
+      if (text.includes("SELECT EXISTS")) return [{ exists: false }];
+      if (text.includes("event_type = ANY")) {
+        return [{
+          id: 19,
+          parent_event_id: null,
+          event_type: "complete",
+          payload,
+          created_at: createdAt,
+        }];
+      }
+      return [];
+    });
+    const provider = createLiveDbCatalogRepository({ sql: harness.sql })
+      .sessionHistoryProvider;
+
+    const [messages] = await provider.readTimeline("sess-legacy", null, 10);
+
+    expect(messages).toEqual([
+      expect.objectContaining({
+        id: 19,
+        event_type: "assistant_message",
+        payload: {
+          type: "assistant_message",
+          content: "legacy output",
+          attachment_ids: ["asset-legacy"],
+          attachments: ["/legacy/one.txt"],
+          attachment_paths: ["/legacy/two.txt"],
+          attachment_count: 2,
+          node_id: "node-legacy",
+        },
+      }),
+    ]);
+  });
+
   it("reads a matched full conversation turn plus adjacent turns without tool events consuming the window", async () => {
     const createdAt = new Date("2026-09-20T00:00:00.000Z");
     const harness = createSqlHarness((text) => {
@@ -574,10 +667,16 @@ function createSqlHarness(
   rowsFor: (text: string, values: unknown[]) => readonly Record<string, unknown>[] = () => [],
 ) {
   const calls: SqlCall[] = [];
-  const sql = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
-    const text = strings.join("?");
-    calls.push({ text, values });
-    return rowsFor(text, values);
+  const sql = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = interpolateSql(strings, values);
+    if (
+      query.text.trimStart().startsWith("/* timeline_event_filter_fragment */") ||
+      query.text.trimStart().startsWith("/* complete_attachment_clause */")
+    ) {
+      return { ...query, __sqlFragmentMock: true } satisfies SqlFragmentMock;
+    }
+    calls.push(query);
+    return Promise.resolve(rowsFor(query.text, query.values));
   }) as unknown as LivePostgresSql;
 
   return {
@@ -586,4 +685,29 @@ function createSqlHarness(
     normalizedCalls: () =>
       calls.map((call) => call.text.replace(/\s+/g, " ").trim()),
   };
+}
+
+function interpolateSql(
+  strings: TemplateStringsArray,
+  values: unknown[],
+): SqlCall {
+  let text = strings[0] ?? "";
+  const flattenedValues: unknown[] = [];
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (isSqlFragmentMock(value)) {
+      text += value.text;
+      flattenedValues.push(...value.values);
+    } else {
+      text += "?";
+      flattenedValues.push(value);
+    }
+    text += strings[index + 1] ?? "";
+  }
+  return { text, values: flattenedValues };
+}
+
+function isSqlFragmentMock(value: unknown): value is SqlFragmentMock {
+  return typeof value === "object" && value !== null &&
+    "__sqlFragmentMock" in value && value.__sqlFragmentMock === true;
 }

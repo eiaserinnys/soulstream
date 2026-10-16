@@ -84,6 +84,83 @@ describe("attachment read service", () => {
     expect(download.get("content-disposition")).toMatch(/^attachment;/);
   });
 
+  it("classifies only explicit plain text and code MIME types as text previews", async () => {
+    const textMimeTypes = [
+      "text/plain",
+      "text/markdown",
+      "application/json",
+      "text/javascript",
+      "application/javascript",
+      "text/typescript",
+      "application/typescript",
+      "text/x-python",
+      "text/x-script.python",
+      "text/x-shellscript",
+      "text/x-csrc",
+      "text/x-c++src",
+      "text/x-java-source",
+      "text/css",
+      "text/csv",
+    ];
+    const infoMimeTypes = [
+      "text/x-unknown",
+      "text/html",
+      "application/xhtml+xml",
+      "image/svg+xml",
+      "image/heic",
+      "image/heif",
+      "audio/mpeg",
+      "application/pdf",
+      "application/octet-stream",
+    ];
+
+    for (const mimeType of textMimeTypes) {
+      const asset = { ...committedAsset, originalName: "source.bin", mimeType };
+      const { service } = makeService({ asset });
+      await expect(service.metadata(
+        { kind: "user", email: "owner@example.com" },
+        asset.id,
+        { type: "owner" },
+      )).resolves.toMatchObject({
+        descriptor: { preview_kind: "text", preview_mime_type: "text/plain" },
+      });
+    }
+
+    for (const mimeType of infoMimeTypes) {
+      const asset = { ...committedAsset, originalName: "script.py", mimeType };
+      const { service } = makeService({ asset });
+      await expect(service.metadata(
+        { kind: "user", email: "owner@example.com" },
+        asset.id,
+        { type: "owner" },
+      )).resolves.toMatchObject({
+        descriptor: { preview_kind: "info", preview_mime_type: null },
+      });
+    }
+  });
+
+  it("keeps original MIME and complete download bytes for text preview files", async () => {
+    const content = "print('attachment')\n";
+    const asset = {
+      ...committedAsset,
+      originalName: "script.py",
+      mimeType: "text/x-python",
+      byteSize: new TextEncoder().encode(content).byteLength,
+    };
+    const { service } = makeService({ asset, read: async () => new Response(content) });
+
+    const response = await service.content(
+      { kind: "user", email: "owner@example.com" },
+      asset.id,
+      { type: "owner" },
+      { method: "GET", download: true },
+    );
+
+    expect(response.headers.get("content-type")).toBe("text/x-python");
+    expect(response.headers.get("content-disposition")).toMatch(/^attachment;/);
+    expect(await response.text()).toBe(content);
+  });
+
   it("rejects MIME parameter header injection and keeps risky MIME as an attachment", () => {
     const headers = responseHeaders({
       originalName: "page.html",
