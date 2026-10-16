@@ -104,7 +104,7 @@ function ChatImageThumbnail({
           {openFailedImage ? (
             <button
               type="button"
-              className="chat-image-status outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="chat-image-status cursor-zoom-in outline-none"
               aria-label={filename ? `첨부 열기: ${filename}` : "첨부 열기"}
               onClick={event => onOpen(galleryIndex, event.currentTarget)}
             >

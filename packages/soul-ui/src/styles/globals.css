@@ -1266,7 +1266,7 @@ pre[data-markdown-code-layout="document"] {
 }
 
 .chat-image-run {
-  width: 100%;
+  width: min(100%, calc(2 * var(--chat-attachment-thumbnail-max-size) + var(--v3-space-3)));
   margin-block-start: var(--v3-space-3);
 }
 .chat-image-run[data-chat-image-role="assistant"] {
@@ -1274,7 +1274,7 @@ pre[data-markdown-code-layout="document"] {
   margin-inline-end: auto;
 }
 .chat-image-run[data-chat-image-role="user"] {
-  max-width: min(var(--chat-attachment-user-max-width), calc(2 * var(--chat-attachment-thumbnail-max-size) + var(--v3-space-3)));
+  max-width: var(--chat-attachment-user-max-width);
   margin-inline-start: auto;
 }
 .chat-attachment-rows {
@@ -1352,6 +1352,14 @@ pre[data-markdown-code-layout="document"] {
   aspect-ratio: 1 / 1;
   overflow: hidden;
   border-radius: var(--chat-attachment-radius);
+}
+.chat-image-thumbnail-frame:has(:focus-visible)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 calc(var(--spacing) / 2) var(--ring);
 }
 .chat-image-frame > .chat-image-status {
   display: block;

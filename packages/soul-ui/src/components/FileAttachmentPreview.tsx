@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import {Dialog,DialogPopup,DialogTitle} from "./ui/dialog";
 import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
 import { formatFileSize } from "../lib/format-file-size";
+import { Button } from "./ui/button";
 
 interface LocalFileAttachmentPreviewProps {
   initialImageOpen?: boolean;
@@ -273,17 +274,17 @@ function RemoteAttachmentRow({ item, index, onOpen }: Extract<FileAttachmentPrev
   const metadata = availabilityText ?? (item.byteSize === null ? null : formatFileSize(item.byteSize));
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
       data-chat-attachment-index={index}
       data-chat-attachment-key={item.key}
       title={name}
       aria-label={name}
       onClick={event => onOpen(item, event.currentTarget)}
-      className="chat-attachment-row flex w-full min-w-0 items-center gap-3 border border-border bg-muted p-2 text-left text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+      className="chat-attachment-row w-full min-w-0 justify-start gap-3 p-2 text-left"
     >
       <span className="chat-image-filename chat-attachment-name min-w-0 flex-1" title={name}>{name}</span>
       {metadata && <span className="chat-image-metadata shrink-0">{metadata}</span>}
-    </button>
+    </Button>
   );
 }
