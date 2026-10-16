@@ -30,6 +30,10 @@ import {
   type AgentAttachmentRouteOptions,
 } from "./attachments/agent_attachment_routes.js";
 import {
+  registerWorkerAttachmentRoutes,
+  type WorkerAttachmentRouteOptions,
+} from "./attachments/worker_attachment_routes.js";
+import {
   registerBoardYjsHostProxyRoutes,
   type BoardYjsHostProxyRouteOptions,
 } from "./board/board_yjs_host_proxy.js";
@@ -199,6 +203,7 @@ export type CreateAppOptions = {
   authRoutes?: AuthRouteOptions;
   attachmentRoutes?: AttachmentRouteOptions;
   agentAttachmentRoutes?: AgentAttachmentRouteOptions;
+  workerAttachmentRoutes?: WorkerAttachmentRouteOptions;
   folderRoutes?: FolderRouteOptions;
   cardDispatchSettingsRoutes?:CardDispatchSettingsRouteOptions;
   cardOrchestrationRoutes?:CardOrchestrationRouteOptions;
@@ -389,6 +394,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.agentAttachmentRoutes !== undefined) {
     registerAgentAttachmentRoutes(app, options.agentAttachmentRoutes);
+  }
+  if (options.workerAttachmentRoutes !== undefined) {
+    registerWorkerAttachmentRoutes(app, options.workerAttachmentRoutes);
   }
   if (options.userBackgroundRoutes !== undefined) {
     registerUserBackgroundRoutes(app, options.userBackgroundRoutes);

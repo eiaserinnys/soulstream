@@ -546,6 +546,7 @@ export async function createLiveProductionApplication(
       uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
       findSessionNode: dbCatalogRepository.findSessionOwnerNodeId,
+      dbSqlResolver: sqlResolver,
       agentAttachmentRegistration: {
         authBearerToken: config.auth_bearer_token,
         environment: config.environment,
@@ -1026,6 +1027,7 @@ export function buildProductionRouteOptions(
     authRoutes: providers.authRoutes,
     attachmentRoutes: providers.attachmentRoutes,
     ...(providers.agentAttachmentRoutes === undefined ? {} : { agentAttachmentRoutes: providers.agentAttachmentRoutes }),
+    ...(providers.workerAttachmentRoutes === undefined ? {} : { workerAttachmentRoutes: providers.workerAttachmentRoutes }),
     boardAssetRoutes: providers.boardAssetRoutes,
     boardItemRoutes: {
       ...providers.boardItemRoutes,

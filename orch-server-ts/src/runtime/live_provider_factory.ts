@@ -5,6 +5,11 @@ import { createLiveMultipartAttachmentOptions } from "./live_multipart_attachmen
 import type { MultipartAttachmentOptions } from "../attachments/multipart_attachment_routes.js";
 import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js";
 import type { AgentAttachmentRouteOptions } from "../attachments/agent_attachment_routes.js";
+import type { WorkerAttachmentRouteOptions } from "../attachments/worker_attachment_routes.js";
+import { createWorkerAttachmentAccess } from "../attachments/worker_attachment_access.js";
+import { createWorkerAttachmentRead } from "../attachments/worker_attachment_read.js";
+import { createLiveWorkerAttachmentRepository } from "./live_worker_attachment_repository.js";
+import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import { createAgentAttachmentRegistration } from "../attachments/agent_attachment_registration.js";
 import { createOwnedAttachmentCommitService } from "../attachments/attachment_commit_service.js";
 import type { CreateOwnedAttachmentCommitServiceOptions } from "../attachments/attachment_commit_contract.js";
@@ -132,6 +137,7 @@ export type LiveOrchestratorProviderBundle = {
     "provider" | "accessProvider" | "transport" | "multipart" | "assetRead" | "assetUpload"
   >;
   readonly agentAttachmentRoutes?: AgentAttachmentRouteOptions;
+  readonly workerAttachmentRoutes?: WorkerAttachmentRouteOptions;
   readonly authRoutes: Pick<
     AuthRouteOptions,
     | "configProvider"
@@ -185,6 +191,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
   readonly resolveAttachmentStorage?: CreateOwnedAttachmentCommitServiceOptions["resolveAttachmentBinding"];
   readonly resolveReadStorage?: CreateLiveAttachmentReadOptions["resolveReadStorage"];
+  readonly dbSqlResolver?: LiveDbSqlResolver;
   readonly readPageAttachmentEvidence?: CreateLiveAttachmentReadOptions["readPageAttachmentEvidence"];
   readonly findSessionNode?: (sessionId: string) => Promise<string | null>;
   readonly agentAttachmentRegistration?: {
@@ -339,6 +346,28 @@ export function createLiveOrchestratorProviderBundle(
           readAsset: (id) => options.dependencies.dbCatalogRepository.attachmentReadRepository.getAsset(id),
         }),
       };
+  const workerAttachmentRoutes = (() => {
+    const registration = options.agentAttachmentRegistration;
+    const sqlResolver = options.dbSqlResolver;
+    const resolveReadStorage = options.resolveReadStorage;
+    if (registration === undefined || sqlResolver === undefined || resolveReadStorage === undefined) {
+      return undefined;
+    }
+    const repository = createLiveWorkerAttachmentRepository(sqlResolver);
+    return {
+      authBearerToken: registration.authBearerToken,
+      environment: registration.environment,
+      service: createWorkerAttachmentRead({
+        access: createWorkerAttachmentAccess({
+          repository,
+          findSession: repository.findSession,
+          findDelivery: repository.findDelivery,
+        }),
+        repository,
+        resolveReadStorage,
+      }),
+    };
+  })();
   const sessionStreamEventFilter = createSessionStreamEventFilter({
     accessProvider: sessionResourceAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
@@ -384,6 +413,7 @@ export function createLiveOrchestratorProviderBundle(
       ...(attachmentMultipartOptions === undefined ? {} : { multipart: attachmentMultipartOptions }),
     },
     ...(agentAttachmentRoutes === undefined ? {} : { agentAttachmentRoutes }),
+    ...(workerAttachmentRoutes === undefined ? {} : { workerAttachmentRoutes }),
     authRoutes: {
       configProvider: configProviders.authRoutes.configProvider,
       httpClient: createLiveAuthHttpClient(),

@@ -66,6 +66,12 @@ describe("route coverage completeness gate", () => {
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length + tsOnlyRouteKeys.length);
     expect(registeredRouteKeys).toContain("POST /api/attachments/agent-register");
+    expect(registeredRouteKeys).toContain(
+      "GET /api/attachments/worker/{attachment_id}/metadata",
+    );
+    expect(registeredRouteKeys).toContain(
+      "GET /api/attachments/worker/{attachment_id}/content",
+    );
     expect(registry.entries.map((entry) => entry.key)).toEqual(
       expect.arrayContaining([...browserRouteKeys, reviewRouteKey, folderCreateRouteKey]),
     );
@@ -163,6 +169,11 @@ function createAllOptInRouteApp() {
     authRoutes: inert,
     attachmentRoutes: { assetRead: inert, multipart: inert },
     agentAttachmentRoutes: { authBearerToken: "test-token", environment: "test", register: inert },
+    workerAttachmentRoutes: {
+      authBearerToken: "test-token",
+      environment: "test",
+      service: { metadata: inert, content: inert },
+    },
     boardAssetRoutes: inert,
     boardItemRoutes: inert,
     boardYjsRoutes: { createService: () => ({ close: async () => undefined }) as never },
