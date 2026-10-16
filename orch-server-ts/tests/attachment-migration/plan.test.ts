@@ -58,6 +58,12 @@ describe("legacy attachment plan", () => {
     expect(plan.identities[0]?.owner).toMatchObject({ status: "unverified", reason: expect.stringContaining("conflict") });
     expect(plan.identities[0]?.status).toBe(INVENTORY_PLAN_STATUS.owner_unverified);
     expect(plan.identities[0]?.proposed_asset_id).toBeUndefined();
+    expect(plan.summary.unconfirmed_count).toBe(1);
+    expect(plan.summary.unconfirmed).toEqual([
+      expect.objectContaining({ subject: "node-a:shared.png", status: INVENTORY_PLAN_STATUS.owner_unverified }),
+    ]);
+    expect(plan.coverage_complete).toBe(false);
+    expect(plan.summary.exit_code).toBe(2);
   });
 
   it("uses a private proposal when the same verified owner has different source scopes", () => {
@@ -129,7 +135,7 @@ describe("legacy attachment plan", () => {
   });
 
   it.each(["card_request", "card_item", "item_history", "report", "comment", "note", "message"] as const)(
-    "proposes a private ref from %s source evidence when owner provenance is absent",
+    "separates the owner-null private proposal from unconfirmed coverage for %s source evidence",
     (sourceKind) => {
       const reference = sourceFor(sourceKind);
       const file = observed("card.png", [reference], { source_refs: [] });
@@ -146,6 +152,11 @@ describe("legacy attachment plan", () => {
       expect(plan.identities[0]?.references[0]?.session_id).toBe(sourceKind === "message" ? "actual-session" : undefined);
       expect(plan.summary.proposed_message_refs).toBe(sourceKind === "message" ? 1 : 0);
       expect(plan.summary.proposed_card_refs).toBe(sourceKind === "message" ? 0 : 1);
+      expect(plan.summary.owner_null_proposal_count).toBe(1);
+      expect(plan.summary.unconfirmed_count).toBe(0);
+      expect(plan.summary.unconfirmed).toEqual([]);
+      expect(plan.coverage_complete).toBe(true);
+      expect(plan.summary.exit_code).toBe(0);
     },
   );
 

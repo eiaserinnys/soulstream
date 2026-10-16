@@ -414,13 +414,9 @@ function resolve(group: Group, file: FileObservation | undefined, alias: Invento
     : { status: STATUS.unconfirmed_node, coverage: false, action: "wait_for_node_scan", proposed: false };
   if (file.status !== FILE.observed || !file.eligible_candidate || !file.coverage_complete) return { status: STATUS.unconfirmed_path, coverage: false, action: "resolve_observation", proposed: false };
   if (unreferenced) return { status: STATUS.unreferenced_preservation_candidate, coverage: true, action: "preserve_without_references", proposed: false };
-  if (group.owner.status !== "verified") return {
-    status: STATUS.owner_unverified,
-    coverage: false,
-    action: group.ownerConflict ? "resolve_conflicting_owner_provenance" : "propose_private_attachment_asset_and_alias",
-    proposed: !group.ownerConflict,
-    error: ERROR.owner_unverified,
-  };
+  if (group.owner.status !== "verified") return group.ownerConflict
+    ? { status: STATUS.owner_unverified, coverage: false, action: "resolve_conflicting_owner_provenance", proposed: false, error: ERROR.owner_unverified }
+    : { status: STATUS.owner_unverified, coverage: true, action: "propose_private_attachment_asset_and_alias", proposed: true };
   return { status: STATUS.verified_source, coverage: true, action: "propose_attachment_asset_and_alias", proposed: true };
 }
 
@@ -491,7 +487,8 @@ function summarize(metadata: InventoryRunBundleMetadata, complete: boolean, iden
     ...nodes.filter((node) => !node.coverage_complete).map((node) => ({ subject: node.node_id, status: node.status, reason: node.error_code })),
     ...sessions.filter((row) => !row.coverage_complete).map((row) => ({ subject: row.session_id, status: row.state, reason: row.error_code })),
     ...metadata.event_session_ids.filter((id) => !sessions.some((row) => row.session_id === id)).map((id) => ({ subject: id, status: "not_reported", reason: ERROR.manifest_mismatch })),
-    ...identities.filter((item) => item.status !== STATUS.unreferenced_preservation_candidate && !item.coverage_complete)
+    ...identities.filter((item) => item.status !== STATUS.unreferenced_preservation_candidate &&
+      !(item.proposed_asset_id !== undefined && item.proposed_owner === null) && !item.coverage_complete)
       .map((item) => ({ subject: `${item.legacy_node_id}:${item.normalized_path}`, status: item.status })),
   ];
   const sourceRefs: Record<string, number> = {};

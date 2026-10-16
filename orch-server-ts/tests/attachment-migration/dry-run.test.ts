@@ -104,6 +104,8 @@ describe("attachment migration dry-run output", () => {
       expect(report).toContain("- preservation_target_count / preservation_target_bytes: 2 / 32");
       expect(report).toContain("- ref_connectable_message_count / ref_connectable_card_count: 1 / 1");
       expect(report).toContain("- owner_null_proposal_count: 1");
+      expect(report).toContain("## owner null 비공개 보관 제안");
+      expect(report).toContain("- 제안 수: 1");
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
