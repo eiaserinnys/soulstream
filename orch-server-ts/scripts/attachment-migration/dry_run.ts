@@ -106,7 +106,15 @@ export async function readDryRunInputs(sourcePath: string, nodePath: string): Pr
 async function main(args: string[]): Promise<void> {
   const options = parseArgs(args);
   const input = await readDryRunInputs(options.sources, options.nodes);
-  const plan = buildLegacyAttachmentPlan({ ...input, allowedOrigins: options.allowedOrigins });
+  const nodeStage = input.nodeCoverage.filter((row): row is NodeScanSummary => row.record_type === "summary");
+  const stages = nodeStage.length === 0 ? input.metadata.stages : {
+    ...input.metadata.stages,
+    node_scan: {
+      started_at: nodeStage.map((row) => row.started_at).sort()[0]!,
+      ended_at: nodeStage.map((row) => row.ended_at).sort().at(-1)!,
+    },
+  };
+  const plan = buildLegacyAttachmentPlan({ ...input, metadata: { ...input.metadata, stages }, allowedOrigins: options.allowedOrigins });
   const summary = await writeDryRun(plan, options.output);
   console.log(`${INVENTORY_PLAN_MARKER} ${JSON.stringify(summary)}`);
   process.exitCode = summary.exit_code;

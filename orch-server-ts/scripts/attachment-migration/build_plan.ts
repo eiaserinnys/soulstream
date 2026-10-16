@@ -66,8 +66,9 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
   const nodeById = new Map(nodes.map((node) => [node.node_id, node]));
   const sessions = latestSessions(input.sessionCoverage ?? []);
   const sessionById = new Map(sessions.map((session) => [session.session_id, session]));
-  let complete = input.metadata.relational_coverage_complete && input.metadata.alias_snapshot_complete;
+  let complete = input.metadata.relational_coverage_complete && input.metadata.alias_snapshot_complete && input.metadata.coverage_complete !== false;
   if (!complete) errors.add(ERROR.manifest_mismatch);
+  if (input.metadata.coverage_complete === false) errors.add(ERROR.coverage_incomplete);
   for (const stage of ["relational", "events", "node_scan"] as const) {
     if (input.metadata.stages[stage] === undefined) {
       complete = false;

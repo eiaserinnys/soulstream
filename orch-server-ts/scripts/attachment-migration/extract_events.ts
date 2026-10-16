@@ -14,7 +14,6 @@ import {
   type LegacySource,
 } from "./inventory_contract.js";
 
-const STATEMENT_TIMEOUT = "5000ms";
 const MANAGED_NOTE_PREFIX = "[첨부 파일 로컬 경로: ";
 
 type SqlRow = Record<string, unknown>;
@@ -37,11 +36,13 @@ export async function* extractSessionAttachmentSources(
   options: {
     pageSize: number;
     cutoff: string;
+    statementTimeoutMs?: number;
     after?: EventExtractionCursor;
     onProgress: (progress: EventExtractionProgress) => void | Promise<void>;
   },
 ): AsyncIterable<LegacySource> {
   if (!Number.isInteger(options.pageSize) || options.pageSize < 1) throw new TypeError("pageSize must be a positive integer");
+  const timeoutMs = requireStatementTimeout(options.statementTimeoutMs);
   const cutoff = parseInventoryCutoff(options.cutoff);
   const cutoffDate = new Date(cutoff);
   const orderedSessions = [...new Set(sessionIds)];
@@ -61,7 +62,7 @@ export async function* extractSessionAttachmentSources(
       : { sessionId, eventId: 0 };
 
     while (true) {
-      const page = await readEventPage(sql, sessionId, cursor.eventId, cutoffDate, options.pageSize);
+      const page = await readEventPage(sql, sessionId, cursor.eventId, cutoffDate, options.pageSize, timeoutMs);
       if (page.length === 0 || page.some((row) => row.found_session_id === null)) {
         await reportProgress(options.onProgress, {
           session_id: sessionId,
@@ -234,11 +235,11 @@ function trailingManagedPathNotes(value: unknown): string[] {
   return notes;
 }
 
-async function readEventPage(sql: InventorySql, sessionId: string, afterEventId: number, cutoff: Date, pageSize: number): Promise<EventPageRow[]> {
+async function readEventPage(sql: InventorySql, sessionId: string, afterEventId: number, cutoff: Date, pageSize: number, timeoutMs: number): Promise<EventPageRow[]> {
   try {
     return await sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION READ ONLY`;
-      await transaction`SELECT set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true)`;
+      await transaction`SELECT set_config('statement_timeout', ${`${timeoutMs}ms`}, true)`;
       return await transaction<EventPageRow[]>`
         SELECT requested.session_id AS requested_session_id,
           source_session.session_id AS found_session_id,
@@ -264,6 +265,12 @@ async function readEventPage(sql: InventorySql, sessionId: string, afterEventId:
     if (isQueryTimeout(error)) throw inventoryError(INVENTORY_ERROR_CODES.query_timeout, `event page query timed out for ${sessionId}`, error);
     throw inventoryError("INVENTORY_DB_READ_FAILED", `event page query failed for ${sessionId}`, error);
   }
+}
+
+function requireStatementTimeout(value: number | undefined): number {
+  const timeout = value ?? 5_000;
+  if (!Number.isSafeInteger(timeout) || timeout < 1) throw new TypeError("statementTimeoutMs must be a positive integer");
+  return timeout;
 }
 
 async function reportProgress(
