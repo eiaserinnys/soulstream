@@ -202,8 +202,21 @@ function createHistoryProvider(
     readConversationContext: async () => null,
     readTimeline: async () => [[], null],
     readTimelineTrace: async () => null,
-    readStory: async () => ({ session_id: "sess-1", messages: [] }),
-    readTurnSummaries: async () => ({ summaries: [], next_cursor: null }),
+    readStory: async () => ({
+      highlight: null,
+      narrative: null,
+      unfolded_turn_summaries: [],
+      narrative_through_event_id: null,
+      fold_count: 0,
+      updated_at: null,
+    }),
+    readTurnSummaries: async () => ({
+      session_id: "sess-1",
+      mode: "count",
+      total_count: 0,
+      digested_count: 0,
+      undigested_count: 0,
+    }),
     readLastEventId: async () => 0,
     streamEventsRaw: () => ({
       async *[Symbol.asyncIterator]() {},

@@ -53,6 +53,13 @@ function activeTask(): Record<string, unknown> {
   };
 }
 
+function activeTaskWithCommand(commandId: string): Record<string, unknown> {
+  return {
+    ...activeTask(),
+    runner: { dispatcher: { activeExecutionCommandId: () => commandId } },
+  };
+}
+
 async function callTool(client: Client, args: Record<string, unknown>, callerSessionId?: string) {
   return withMcpRequestContext(
     callerSessionId ? { callerSessionId } : {},
@@ -164,6 +171,23 @@ describe("publish_chat_ui", () => {
       revision: 1,
       text: "**선택지**\n\n정리된 선택지",
     });
+  });
+
+  it("stamps the active dispatcher command on a chat UI publication", async () => {
+    const publisher = vi.fn(async () => ({ eventId: 41 }));
+    const client = await createClient(makeRuntime({
+      publisher,
+      task: activeTaskWithCommand("dispatcher-command-1"),
+    }));
+
+    await callTool(client, {
+      publication_key: "summary",
+      document: validDocument,
+    }, "session-1");
+
+    const event = publisher.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(event.output_command_id).toBe("dispatcher-command-1");
+    expect(event._dedupe_key).toEqual(expect.stringMatching(/^chat-ui:ui_/));
   });
 
   it("derives stable identities from session, publication key, and canonical document", async () => {

@@ -162,7 +162,12 @@ describe("runner process detach/reconnect E2E", () => {
     }));
     expect(second.map((frame) => frame.payload)).toEqual([
       { type: "session", session_id: "backend-session-e2e" },
-      { type: "assistant_message", content: "execution-2", timestamp: 3 },
+      {
+        type: "assistant_message",
+        content: "execution-2",
+        timestamp: 3,
+        output_command_id: expect.stringMatching(/^execute:[0-9a-f-]{36}$/),
+      },
     ]);
     expect(batches.flatMap((batch) => batch.events).some((event) =>
       event.event_type === "claude_runtime_hook_event"
