@@ -67,7 +67,10 @@ describe("RunnerProcessDispatcher", () => {
       ready: Promise.resolve(),
       spawnedProcess: spawned,
       spawnInput: { sessionId: "session-a" },
-      options: { spawner: { retireTerminalRegistration } },
+      options: {
+        spawner: { retireTerminalRegistration },
+        logger: { info: vi.fn() },
+      },
       activeExecution: undefined,
       closed: false,
       inFlightFrameHandlers: new Set(),
@@ -250,7 +253,7 @@ describe("RunnerProcessDispatcher", () => {
       outbox: { close: vi.fn() },
       options: {
         offlineExisting: true,
-        logger: { warn: vi.fn() },
+        logger: { info: vi.fn(), warn: vi.fn() },
         handleHostCall: async (
           _call: unknown,
           registerPostResponse: (continuation: () => Promise<void>) => void,
@@ -293,6 +296,40 @@ describe("RunnerProcessDispatcher", () => {
     expect(() => mux.register(
       new EventOutboxPump(emptyStore("runner-stream"), vi.fn()),
     )).not.toThrow();
+  });
+
+  it("logs host resource release when spawn input is unavailable", async () => {
+    const info = vi.fn();
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    Object.assign(dispatcher, {
+      instanceId: "dispatcher-without-spawn",
+      spawnInput: undefined,
+      socketPath: undefined,
+      options: { logger: { info } },
+      connection: undefined,
+      pumpInitialization: undefined,
+      finishActiveRunnerObservation: undefined,
+      unregisterPump: undefined,
+      outbox: undefined,
+      stoppedRunnerWriter: undefined,
+      stoppedRunnerWriterLock: undefined,
+      inFlightFrameHandlers: new Set<Promise<void>>(),
+    });
+    const releaser = dispatcher as unknown as {
+      releaseHostResources(reason: "close"): Promise<void>;
+    };
+
+    await expect(releaser.releaseHostResources("close")).resolves.toBeUndefined();
+
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith({
+      dispatcherId: "dispatcher-without-spawn",
+      sessionId: undefined,
+      socketPath: undefined,
+      reason: "close",
+      hadConnection: false,
+    }, "Runner host IPC connection released");
   });
 
   it("waits for an exact Claude runtime observation before detached follow-up admission", async () => {

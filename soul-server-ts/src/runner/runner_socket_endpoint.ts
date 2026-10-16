@@ -11,6 +11,12 @@ export interface ConnectRunnerSocketOptions {
   retryDelayMs?: number;
   /** Missing socket is expected only while a freshly spawned child starts listening. */
   retryOnMissingSocket?: boolean;
+  onAttemptFailed?(failure: {
+    attempt: number;
+    code: string | undefined;
+    message: string;
+    remainingMs: number;
+  }): void;
   onFrameDropped?(drop: RunnerDroppedFrame): void;
 }
 
@@ -90,9 +96,11 @@ export async function connectRunnerSocket(
   }
   const deadlineAt = Date.now() + deadlineMs;
   let lastError: Error | undefined;
+  let attempt = 0;
   for (;;) {
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs <= 0) break;
+    attempt += 1;
     try {
       return new RunnerIpcConnection(
         await connectOnce(socketPath, Math.min(options.timeoutMs, remainingMs)),
@@ -100,6 +108,13 @@ export async function connectRunnerSocket(
       );
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      options.onAttemptFailed?.({
+        attempt,
+        code: typeof code === "string" ? code : undefined,
+        message: lastError.message,
+        remainingMs: Math.max(0, deadlineAt - Date.now()),
+      });
       if (!isRetryableSocketError(error, options.retryOnMissingSocket === true)) {
         throw lastError;
       }

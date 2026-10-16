@@ -108,6 +108,45 @@ describe("runner socket ownership", () => {
     await endpoint.close();
   });
 
+  it.skipIf(process.platform === "win32")(
+    "reports a transient socket connect failure before retrying successfully",
+    async () => {
+      const socketPath = await temporarySocketPath();
+      await writeFile(socketPath, "not a unix socket");
+      const endpoint = new RunnerSocketEndpoint(socketPath, async () => {}, vi.fn());
+      const failures: Array<{
+        attempt: number;
+        code: string | undefined;
+        message: string;
+        remainingMs: number;
+      }> = [];
+      let listening: Promise<void> | undefined;
+
+      try {
+        const connection = await connectRunnerSocket(socketPath, {
+          timeoutMs: 100,
+          deadlineMs: 250,
+          retryDelayMs: 10,
+          onAttemptFailed: (failure) => {
+            failures.push(failure);
+            listening ??= endpoint.listen();
+          },
+        });
+
+        await listening;
+        expect(failures).toHaveLength(1);
+        expect(failures[0]).toMatchObject({
+          attempt: 1,
+          code: "ECONNREFUSED",
+        });
+        expect(failures[0]?.remainingMs).toBeGreaterThan(0);
+        connection.close();
+      } finally {
+        await endpoint.close();
+      }
+    },
+  );
+
   it("permits exactly one writer lock holder", async () => {
     const lockPath = await temporaryPath("runner.lock");
     const first = await RunnerWriterLock.acquire(lockPath);
