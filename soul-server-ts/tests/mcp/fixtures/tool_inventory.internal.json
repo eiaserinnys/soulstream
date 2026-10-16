@@ -6326,6 +6326,27 @@
     "name": "request_session_generation_rollover"
   },
   {
+    "description": "현재 세션에 연결된 첨부를 이 노드의 로컬 파일로 준비합니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "attachment_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachment_id"
+      ],
+      "type": "object"
+    },
+    "name": "resolve_attachment"
+  },
+  {
     "annotations": {
       "destructiveHint": true
     },
