@@ -305,7 +305,10 @@ async function signedFetch(
   ].join(", ");
   const request: RequestInit & { duplex?: "half" } = {
     method: input.method,
-    headers: { ...headers, authorization },
+    // Ask for the stored bytes as-is. fetch otherwise advertises gzip, R2 then
+    // compresses text objects and drops content-length, which breaks size checks
+    // and byte-exact reads. Left unsigned so an edge rewrite cannot break SigV4.
+    headers: { ...headers, authorization, "accept-encoding": "identity" },
     redirect: "error",
     signal: input.signal,
   };
