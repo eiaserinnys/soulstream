@@ -54,7 +54,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
   const locked = pending || retryingSnapshot;
   const [uploadId] = useState(() => Crypto.randomUUID());
   const files = useChatAttachments({ api, sessionId: uploadId, nodeId: selection.effectiveNodeId ?? undefined,
-    disabled: locked, reuploadOnNodeChange: true });
+    folderId, disabled: locked, reuploadOnNodeChange: true });
   const scroll = useRef<ScrollView>(null);
   const canSave = !!api && draft.ready && !pending && files.attachmentsReady && !!folderId
     && !!title.trim() && (!files.attachments.length || !!selection.effectiveNodeId);

@@ -170,6 +170,7 @@ function SessionSuccessionSheetContent({
     api,
     sessionId: attachmentSessionId,
     nodeId: selection.effectiveNodeId ?? undefined,
+    folderId: folder.folderId,
     disabled: !visible || submitting || !selection.effectiveNodeId,
     reuploadOnNodeChange: true,
   });
