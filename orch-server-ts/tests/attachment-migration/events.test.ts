@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { extractSessionAttachmentSources } from "../../scripts/attachment-migration/extract_events.js";
+import { buildLegacyAttachmentPlan } from "../../scripts/attachment-migration/build_plan.js";
 import {
+  FILE_OBSERVATION_STATUS,
   INVENTORY_EVENT_PROGRESS_STATE,
+  INVENTORY_PLAN_STATUS,
   INVENTORY_SCHEMA_VERSION,
+  type FileObservation,
   type EventExtractionProgress,
+  type InventoryNodeCoverage,
+  type InventoryRunBundleMetadata,
+  type InventorySessionCoverage,
 } from "../../scripts/attachment-migration/inventory_contract.js";
 
 const CUTOFF = "2026-10-17T00:00:00.000Z";
@@ -21,7 +28,7 @@ describe("session event attachment inventory", () => {
       page("session-a", "historical-node", [event(7, "user_message", payload, CUTOFF)]),
       page("session-a", "historical-node", [event(8, "assistant_message", { attachments: descriptors }, CUTOFF)]),
       page("session-a", "historical-node", []),
-    ]), ["session-a"], { pageSize: 1, cutoff: CUTOFF }));
+    ]), ["session-a"], { pageSize: 1, cutoff: CUTOFF, onProgress: () => undefined }));
 
     expect(sources).toHaveLength(2);
     expect(sources[0]).toMatchObject({
@@ -95,6 +102,88 @@ describe("session event attachment inventory", () => {
     });
   });
 
+  it("carries explicit caller ownership from extracted event into a proposed plan", async () => {
+    const sessionId = "session-owner";
+    const callerEmail = ["inventory-owner", "example.test"].join("@");
+    const sources = await collect(extractSessionAttachmentSources(fakeSql([
+      page(sessionId, "node-a", [event(31, "user_message", {
+        attachments: ["message.png"],
+        caller_info: { source: "browser", email: callerEmail },
+      }, CUTOFF)]),
+    ]), [sessionId], { pageSize: 10, cutoff: CUTOFF, onProgress: () => undefined }));
+    const source = sources[0]!;
+    const observation: FileObservation = {
+      record_type: "file",
+      schema_version: INVENTORY_SCHEMA_VERSION,
+      node_id: "node-a",
+      status: FILE_OBSERVATION_STATUS.observed,
+      known_source_paths: ["message.png"],
+      incoming_relative_path: "message.png",
+      physical_path: "/srv/incoming/message.png",
+      source_refs: [{ source_kind: source.source_kind, source_table: source.source_table, source_pk: source.source_pk, source_pointer: "/payload/attachments/0", session_id: sessionId }],
+      size_bytes: 12,
+      bytes_read: 12,
+      mtime_ms: new Date(CUTOFF).getTime(),
+      mtime: CUTOFF,
+      sha256: "a".repeat(64),
+      after_cutoff: false,
+      eligible_candidate: true,
+      coverage_complete: true,
+    };
+    const nodeCoverage: InventoryNodeCoverage = {
+      record_type: "node_coverage",
+      schema_version: INVENTORY_SCHEMA_VERSION,
+      node_id: "node-a",
+      status: "scanned",
+      coverage_complete: true,
+      observed_at: CUTOFF,
+    };
+    const metadata: InventoryRunBundleMetadata = {
+      record_type: "run_metadata",
+      schema_version: INVENTORY_SCHEMA_VERSION,
+      scan_id: "scan-event-owner",
+      baseline_sha: "88cab796",
+      cutoff: CUTOFF,
+      expected_node_ids: ["node-a"],
+      relational_coverage_complete: true,
+      event_session_ids: [sessionId],
+      alias_snapshot_complete: true,
+      stages: {
+        relational: { started_at: CUTOFF, ended_at: CUTOFF },
+        events: { started_at: CUTOFF, ended_at: CUTOFF },
+        node_scan: { started_at: CUTOFF, ended_at: CUTOFF },
+      },
+    };
+    const sessionCoverage: InventorySessionCoverage = {
+      record_type: "session_coverage",
+      schema_version: INVENTORY_SCHEMA_VERSION,
+      session_id: sessionId,
+      state: "complete",
+      cursor: { sessionId, eventId: 31 },
+      coverage_complete: true,
+      started_at: CUTOFF,
+      observed_at: CUTOFF,
+      ended_at: CUTOFF,
+    };
+
+    const plan = buildLegacyAttachmentPlan({
+      sources,
+      observations: [observation],
+      assets: [],
+      aliases: [],
+      nodeCoverage: [nodeCoverage],
+      metadata,
+      sessionCoverage: [sessionCoverage],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(plan.identities).toHaveLength(1);
+    expect(plan.identities[0]?.status).toBe(INVENTORY_PLAN_STATUS.verified_source);
+    expect(plan.identities[0]?.owner.status).toBe("verified");
+    expect(plan.identities[0]?.proposed_asset_id).toBeDefined();
+    expect(plan.summary.proposed_message_refs).toBe(1);
+  });
+
   it("uses only the source session ID and applies keyset plus cutoff before paging", async () => {
     const sql = fakeSql([
       page("source-session", "source-node", [event(5, "user_message", { attachments: ["/incoming/x.png"] }, CUTOFF)]),
@@ -103,6 +192,7 @@ describe("session event attachment inventory", () => {
       pageSize: 10,
       cutoff: CUTOFF,
       after: { sessionId: "source-session", eventId: 4 },
+      onProgress: () => undefined,
     }));
 
     expect(sources[0]!.session_id).toBe("source-session");
@@ -120,6 +210,7 @@ describe("session event attachment inventory", () => {
     await expect(collect(extractSessionAttachmentSources(sql, ["session-a"], {
       pageSize: 1,
       cutoff: "2026-10-17T09:00:00+09:00",
+      onProgress: () => undefined,
     }))).rejects.toThrow(/UTC/);
     expect(sql.statements).toEqual([]);
   });

@@ -39,6 +39,7 @@ type Input = {
   nodeCoverage: readonly NodeInput[];
   metadata: InventoryRunBundleMetadata;
   sessionCoverage?: readonly InventorySessionCoverage[];
+  allowedOrigins?: readonly string[];
 };
 type Occurrence = { node: string; path: string; target: LegacyTarget; source: LegacySource; owner: InventoryOwnerEvidence };
 type Group = { node: string; path: string; owner: InventoryOwnerEvidence; refs: InventoryPlanReference[] };
@@ -105,7 +106,7 @@ export function buildLegacyAttachmentPlan(input: Input): InventoryPlan {
     const owner = getOwner(effective);
     const sourceTargets = effective.source_kind === "message"
       ? getEventTargets(effective, direct, assetById, anomalies)
-      : collectLegacySourceTargets(effective);
+      : collectLegacySourceTargets(effective, { allowedOrigins: input.allowedOrigins });
     for (const target of sourceTargets) {
       if (target.classification !== "legacy_path") {
         ambiguous.push({ source_pk: effective.source_pk, pointer: target.pointer, raw_url: target.raw_url, raw_path: target.raw_path, reason: target.reason });

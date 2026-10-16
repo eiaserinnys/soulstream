@@ -38,7 +38,7 @@ export async function* extractSessionAttachmentSources(
     pageSize: number;
     cutoff: string;
     after?: EventExtractionCursor;
-    onProgress?: (progress: EventExtractionProgress) => void | Promise<void>;
+    onProgress: (progress: EventExtractionProgress) => void | Promise<void>;
   },
 ): AsyncIterable<LegacySource> {
   if (!Number.isInteger(options.pageSize) || options.pageSize < 1) throw new TypeError("pageSize must be a positive integer");
@@ -104,6 +104,7 @@ export async function* extractSessionAttachmentSources(
                 event_id: eventId,
                 event_type: eventType,
                 source_node_id: row.source_node_id,
+                ...eventOwnerEvidence(row.attachment_payload, sessionId),
                 attachment_candidates: candidates,
               },
             };
@@ -266,10 +267,21 @@ async function readEventPage(sql: InventorySql, sessionId: string, afterEventId:
 }
 
 async function reportProgress(
-  callback: ((progress: EventExtractionProgress) => void | Promise<void>) | undefined,
+  callback: (progress: EventExtractionProgress) => void | Promise<void>,
   progress: EventExtractionProgress,
 ): Promise<void> {
-  await callback?.(progress);
+  await callback(progress);
+}
+
+function eventOwnerEvidence(payload: unknown, sessionId: string): Record<string, unknown> {
+  if (!isRecord(payload) || !isRecord(payload.caller_info)) return {};
+  const email = payload.caller_info.email;
+  if (typeof email !== "string" || email.trim().length === 0) return {};
+  return {
+    owner_kind: "user_email",
+    owner_key: email.trim(),
+    registration_scope: { type: "session", id: sessionId },
+  };
 }
 
 function readEventId(value: unknown): number {

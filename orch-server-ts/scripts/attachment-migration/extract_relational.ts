@@ -72,7 +72,7 @@ export function collectLegacySourceTargets(
     for (const target of rawTargets) {
       const parsed = classifyTarget(target.raw, options.allowedOrigins ?? []);
       if (parsed === null) continue;
-      targets.push(withPointer(parsed, pointer, target.offset, source.source_kind === "note"));
+      targets.push(withPointer(parsed, pointer, target.offset));
     }
   };
   const addEvidence = (value: unknown, pointer: string): void => {
@@ -82,7 +82,7 @@ export function collectLegacySourceTargets(
       if (!isRecord(entry)) throw inventoryError("INVENTORY_INVALID_SOURCE", `${pointer}/${index} must be an object`);
       if (typeof entry.url === "string") {
         const parsed = classifyTarget(entry.url, options.allowedOrigins ?? []);
-        if (parsed !== null) targets.push(withPointer(parsed, `${pointer}/${index}/url`, null, source.source_kind === "note"));
+        if (parsed !== null) targets.push(withPointer(parsed, `${pointer}/${index}/url`, null));
       }
     });
   };
@@ -160,7 +160,7 @@ function makeSources(table: RelationalSourceTable, row: SqlRow, cutoffMs: number
   if (table === "cards") {
     const attachments = requireArray(row.attachments, "cards.attachments");
     const items = requireArray(row.items, "cards.items");
-    const request = readString(row, "request", table);
+    const request = readText(row, "request", table);
     const cardId = readString(row, "id", table);
     const ownerData = pick(row, ["folder_id", "node_id", "created_session_id", "updated_session_id", "assignee_session_id", "assignee_user_id"]);
     return [
@@ -276,6 +276,12 @@ function readString(row: SqlRow, key: string, table: RelationalSourceTable): str
   return value;
 }
 
+function readText(row: SqlRow, key: string, table: RelationalSourceTable): string {
+  const value = row[key];
+  if (typeof value !== "string") throw inventoryError("INVENTORY_INVALID_SOURCE", `${table}.${key} must be text`);
+  return value;
+}
+
 function readNullableString(row: SqlRow, key: string, table: RelationalSourceTable): string | null {
   const value = row[key];
   if (value === null || value === undefined) return null;
@@ -340,7 +346,7 @@ function markdownTargets(body: string): Array<{ raw: string; offset: number }> {
 
 function htmlTargets(body: string): Array<{ raw: string; offset: number }> {
   const targets: Array<{ raw: string; offset: number }> = [];
-  for (const match of body.matchAll(/\b(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+  for (const match of stripFencedBlocks(body).matchAll(/\b(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
     const value = match[1] ?? match[2];
     if (value !== undefined) targets.push({ raw: value.replace(/&amp;/g, "&"), offset: match.index ?? 0 });
   }
@@ -390,10 +396,7 @@ function withPointer(
   target: Omit<LegacyTarget, "pointer">,
   pointer: string,
   offset: number | null,
-  managedNote: boolean,
 ): LegacyTarget {
-  if (managedNote && target.classification === "legacy_path")
-    return { ...target, classification: "ambiguous_url", reason: "managed_note_unverified", pointer };
   return { ...target, pointer, ...(offset === null ? {} : { body_offset: offset }) };
 }
 

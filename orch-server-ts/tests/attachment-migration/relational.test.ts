@@ -75,6 +75,19 @@ describe("attachment inventory relational source parsing", () => {
     expect(collectLegacySourceTargets(value, { allowedOrigins: sameOrigin })).toEqual([]);
   });
 
+  it("ignores HTML targets inside Markdown code fences", () => {
+    const value = source("report", {
+      format: "html",
+      body: [
+        "```html",
+        '<img src="/api/attachments/files?nodeId=node-a&path=example.png">',
+        "```",
+      ].join("\n"),
+    }, { source_table: "card_reports", source_pk: "report-fenced-html" });
+
+    expect(collectLegacySourceTargets(value, { allowedOrigins: sameOrigin })).toEqual([]);
+  });
+
   it("records one occurrence and its original body offset for a Markdown angle target", () => {
     const request = [
       "```",
@@ -130,10 +143,25 @@ describe("attachment inventory relational source parsing", () => {
       .toMatchObject([{ pointer: "/payload_json/attachments/0/path", legacy_node_id: "node-a" }]);
   });
 
-  it("keeps unverified managed-note URLs as ambiguous", () => {
+  it("classifies regular card note Markdown links as legacy references", () => {
     const note = source("note", { body: "![x](/api/attachments/files?nodeId=node-a&path=note.png)" }, { source_table: "card_comments", source_pk: "note-1" });
     expect(collectLegacySourceTargets(note, { allowedOrigins: sameOrigin }))
-      .toMatchObject([{ classification: "ambiguous_url", reason: "managed_note_unverified" }]);
+      .toMatchObject([{ classification: "legacy_path", legacy_node_id: "node-a", normalized_path: "note.png" }]);
+  });
+
+  it("extracts an empty card request without stopping relational inventory", async () => {
+    const sources = await collect(extractRelationalSources(relationalSql([{
+      id: "empty-request-card",
+      request: "",
+      attachments: [],
+      items: [],
+      created_at: new Date(CUTOFF),
+      updated_at: new Date(CUTOFF),
+    }]) as never, { pageSize: 10, cutoff: CUTOFF }));
+    const requestSource = sources.find((value) => value.source_kind === "card_request");
+
+    expect(requestSource).toMatchObject({ source_pk: "empty-request-card", data: { request: "" } });
+    expect(collectLegacySourceTargets(requestSource!)).toEqual([]);
   });
 
   it("rejects invalid page size and non-UTC cutoff before opening a database transaction", async () => {
@@ -149,4 +177,16 @@ async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const items: T[] = [];
   for await (const item of iterable) items.push(item);
   return items;
+}
+
+function relationalSql(cardRows: Array<Record<string, unknown>>) {
+  const query = (async (strings: TemplateStringsArray) => {
+    const statement = strings.join(" ");
+    return (/\bFROM\s+cards\b/i.test(statement) ? cardRows : []) as never;
+  }) as unknown as {
+    <T extends readonly Record<string, unknown>[] = Array<Record<string, unknown>>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T>;
+    begin<T>(callback: (transaction: ReturnType<typeof relationalSql>) => Promise<T>): Promise<T>;
+  };
+  query.begin = async <T>(callback: (transaction: typeof query) => Promise<T>) => callback(query);
+  return query;
 }

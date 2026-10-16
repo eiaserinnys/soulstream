@@ -106,7 +106,7 @@ export async function readDryRunInputs(sourcePath: string, nodePath: string): Pr
 async function main(args: string[]): Promise<void> {
   const options = parseArgs(args);
   const input = await readDryRunInputs(options.sources, options.nodes);
-  const plan = buildLegacyAttachmentPlan(input);
+  const plan = buildLegacyAttachmentPlan({ ...input, allowedOrigins: options.allowedOrigins });
   const summary = await writeDryRun(plan, options.output);
   console.log(`${INVENTORY_PLAN_MARKER} ${JSON.stringify(summary)}`);
   process.exitCode = summary.exit_code;
@@ -230,7 +230,7 @@ async function hashFile(filePath: string): Promise<string> {
   return hash.digest("hex");
 }
 
-function parseArgs(args: string[]): { sources: string; nodes: string; output: string } {
+function parseArgs(args: string[]): { sources: string; nodes: string; output: string; allowedOrigins: string[] } {
   const result: Record<string, string> = {};
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
@@ -241,8 +241,17 @@ function parseArgs(args: string[]): { sources: string; nodes: string; output: st
   const sources = result["--sources"];
   const nodes = result["--nodes"];
   const output = result["--output"];
-  if (!sources || !nodes || !output || Object.keys(result).length !== 3) throw new TypeError("usage: dry_run.ts --sources <JSONL> --nodes <JSONL> --output <directory>");
-  return { sources, nodes, output };
+  const allowedOriginsJson = result["--allowed-origins"];
+  if (!sources || !nodes || !output || allowedOriginsJson === undefined || Object.keys(result).length !== 4) {
+    throw new TypeError("usage: dry_run.ts --sources <JSONL> --nodes <JSONL> --output <directory> --allowed-origins <JSON array>");
+  }
+  let allowedOrigins: unknown;
+  try { allowedOrigins = JSON.parse(allowedOriginsJson); }
+  catch { throw new TypeError("--allowed-origins must be a JSON array of origins"); }
+  if (!Array.isArray(allowedOrigins) || allowedOrigins.some((origin) => typeof origin !== "string")) {
+    throw new TypeError("--allowed-origins must be a JSON array of origins");
+  }
+  return { sources, nodes, output, allowedOrigins };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }

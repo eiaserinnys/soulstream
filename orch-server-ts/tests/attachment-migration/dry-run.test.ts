@@ -69,7 +69,7 @@ describe("attachment migration dry-run output", () => {
     await writeFile(nodesPath, [observation(source), nodeCoverage()].map((row) => JSON.stringify(row)).join("\n") + "\n");
 
     try {
-      const result = spawnSync("pnpm", ["exec", "tsx", cliPath, "--sources", sourcesPath, "--nodes", nodesPath, "--output", outputDir], {
+      const result = spawnSync("pnpm", ["exec", "tsx", cliPath, "--sources", sourcesPath, "--nodes", nodesPath, "--output", outputDir, "--allowed-origins", "[]"], {
         cwd: process.cwd(),
         encoding: "utf8",
         timeout: 60_000,
@@ -79,6 +79,49 @@ describe("attachment migration dry-run output", () => {
       const summary = JSON.parse(await readFile(path.join(outputDir, "summary.json"), "utf8"));
       expect(summary).toMatchObject({ coverage_complete: false, exit_code: 2, db_mutation_count: 0, r2_put_count: 0, readback_verified: true });
       expect(summary.unconfirmed).toEqual(expect.arrayContaining([expect.objectContaining({ subject: "node-missing", status: "not_reported" })]));
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+
+  it("forwards CLI allowed origins through the planner for absolute internal URLs", async () => {
+    const origin = "https://inventory.example.test";
+    const source: LegacySource = {
+      ...legacySource(),
+      source_kind: "card_request",
+      source_table: "cards",
+      source_pk: "absolute-card",
+      source_pointer: "/",
+      data: {
+        request: `![image](${origin}/api/attachments/files?nodeId=node-a&path=image.png)`,
+        attachments: [],
+        owner_kind: "agent_session",
+        owner_key: "session-a",
+        registration_scope: { type: "session", id: "session-a" },
+      },
+    };
+    const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-dry-run-origin-"));
+    const sourcesPath = path.join(temp, "sources.jsonl");
+    const nodesPath = path.join(temp, "nodes.jsonl");
+    const outputDir = path.join(temp, "output");
+    await writeFile(sourcesPath, [metadata(), source].map((row) => JSON.stringify(row)).join("\n") + "\n");
+    await writeFile(nodesPath, [observation(source), nodeCoverage()].map((row) => JSON.stringify(row)).join("\n") + "\n");
+
+    try {
+      const result = spawnSync("pnpm", [
+        "exec", "tsx", cliPath,
+        "--sources", sourcesPath,
+        "--nodes", nodesPath,
+        "--output", outputDir,
+        "--allowed-origins", JSON.stringify([origin]),
+      ], { cwd: process.cwd(), encoding: "utf8", timeout: 60_000 });
+
+      expect(result.status).toBe(0);
+      const summary = JSON.parse(await readFile(path.join(outputDir, "summary.json"), "utf8"));
+      const manifest = (await readFile(path.join(outputDir, "manifest.jsonl"), "utf8"))
+        .trimEnd().split("\n").map((line) => JSON.parse(line));
+      expect(summary).toMatchObject({ coverage_complete: true, proposed_assets: 1, proposed_aliases: 1 });
+      expect(manifest.some((record) => record.normalized_path === "image.png" && record.status === "verified_source")).toBe(true);
     } finally {
       await rm(temp, { recursive: true, force: true });
     }
