@@ -172,6 +172,9 @@ describe("central R2 settings", () => {
     expect(init.body).toBeUndefined();
     const headers = new Headers(init.headers);
     expect(headers.get("range")).toBe("bytes=0-6");
+    // R2 gzips text objects and drops content-length unless identity is asked for;
+    // the header stays out of SignedHeaders (asserted below).
+    expect(headers.get("accept-encoding")).toBe("identity");
     expect(headers.get("authorization")).toMatch(
       /^AWS4-HMAC-SHA256 Credential=access\/\d{8}\/auto\/s3\/aws4_request, SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, Signature=[a-f0-9]{64}$/,
     );
