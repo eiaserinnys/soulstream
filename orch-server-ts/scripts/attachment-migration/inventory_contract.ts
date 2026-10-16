@@ -1,11 +1,30 @@
 export const INVENTORY_SCHEMA_VERSION = 1 as const;
 export const RELATIONAL_SOURCES_EXPORTED = "RELATIONAL_SOURCES_EXPORTED" as const;
 export const EVENTS_EXPORTED = "EVENTS_EXPORTED" as const;
+export const NODE_INVENTORY_RECORDED = "NODE_INVENTORY_RECORDED" as const;
 
 export const INVENTORY_ERROR_CODES = Object.freeze({
+  invalid_source: "INVENTORY_INVALID_SOURCE",
   event_shape_invalid: "INVENTORY_EVENT_SHAPE_INVALID",
   source_changed: "INVENTORY_SOURCE_CHANGED",
   query_timeout: "INVENTORY_QUERY_TIMEOUT",
+  root_unconfirmed: "INVENTORY_ROOT_UNCONFIRMED",
+  path_denied: "INVENTORY_PATH_DENIED",
+  not_regular: "INVENTORY_NOT_REGULAR",
+  source_absent: "INVENTORY_SOURCE_ABSENT",
+  file_changed: "INVENTORY_FILE_CHANGED",
+  hash_interrupted: "INVENTORY_HASH_INTERRUPTED",
+} as const);
+
+export const FILE_OBSERVATION_STATUS = Object.freeze({
+  observed: "observed",
+  after_cutoff: "after_cutoff",
+  unstable: "unstable",
+  path_denied: "path_denied",
+  not_regular: "not_regular",
+  source_absent: "source_absent",
+  root_unconfirmed: "root_unconfirmed",
+  hash_interrupted: "hash_interrupted",
 } as const);
 
 export const INVENTORY_EVENT_TYPES = ["user_message", "intervention_sent", "complete", "assistant_message"] as const;
@@ -68,6 +87,61 @@ export type EventExtractionProgress = {
   ended_at?: string;
   error_code?: (typeof INVENTORY_ERROR_CODES)[keyof typeof INVENTORY_ERROR_CODES];
 };
+
+export type FileSourceReference = {
+  source_kind: LegacySourceKind;
+  source_table: RelationalSourceTable;
+  source_pk: string;
+  source_pointer: string;
+  session_id?: string | null;
+  card_id?: string | null;
+};
+
+export type ExplicitFileSource = {
+  node_id: string;
+  path: string;
+  physical_path?: string;
+  source_ref: FileSourceReference;
+};
+
+export type FileObservationStatus = (typeof FILE_OBSERVATION_STATUS)[keyof typeof FILE_OBSERVATION_STATUS];
+export type FileObservation = {
+  record_type: "file";
+  schema_version: typeof INVENTORY_SCHEMA_VERSION;
+  node_id: string;
+  status: FileObservationStatus;
+  known_source_paths: string[];
+  incoming_relative_path?: string;
+  physical_path?: string;
+  source_refs: FileSourceReference[];
+  size_bytes?: number;
+  bytes_read?: number;
+  mtime_ms?: number;
+  mtime?: string;
+  sha256?: string;
+  after_cutoff: boolean;
+  eligible_candidate: boolean;
+  coverage_complete: boolean;
+  error_code?: (typeof INVENTORY_ERROR_CODES)[keyof typeof INVENTORY_ERROR_CODES];
+};
+
+export type NodeScanSummary = {
+  record_type: "summary";
+  schema_version: typeof INVENTORY_SCHEMA_VERSION;
+  node_id: string;
+  cutoff: string;
+  started_at: string;
+  ended_at: string;
+  coverage_complete: boolean;
+  file_count: number;
+  bytes_hashed: number;
+  hashes_completed: number;
+  after_cutoff_count: number;
+  status_counts: Partial<Record<FileObservationStatus, number>>;
+  error_code?: (typeof INVENTORY_ERROR_CODES)[keyof typeof INVENTORY_ERROR_CODES];
+};
+
+export type NodeScanOutputRecord = FileObservation | NodeScanSummary;
 
 export type LegacySource = {
   schema_version: typeof INVENTORY_SCHEMA_VERSION;
