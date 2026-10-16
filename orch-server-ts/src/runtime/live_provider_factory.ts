@@ -84,6 +84,7 @@ import {
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
 import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
 import { createLiveAttachmentRouteProviders } from "./live_attachment_route_provider.js";
+import { createLiveAttachmentUploadOptions } from "./live_attachment_upload_provider.js";
 import { createLiveAttachmentInputAdmission } from "../attachments/live_attachment_input_admission.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
 import {
@@ -128,7 +129,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly atomRoutes: AtomRouteOptions;
   readonly attachmentRoutes: Pick<
     AttachmentRouteOptions,
-    "provider" | "accessProvider" | "transport" | "multipart" | "assetRead"
+    "provider" | "accessProvider" | "transport" | "multipart" | "assetRead" | "assetUpload"
   >;
   readonly agentAttachmentRoutes?: AgentAttachmentRouteOptions;
   readonly authRoutes: Pick<
@@ -182,7 +183,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly uiEventRepository: UiEventRepository;
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
-  readonly resolveAttachmentStorage?: MultipartAttachmentOptions["resolveStorage"];
+  readonly resolveAttachmentStorage?: CreateOwnedAttachmentCommitServiceOptions["resolveAttachmentBinding"];
   readonly resolveReadStorage?: CreateLiveAttachmentReadOptions["resolveReadStorage"];
   readonly readPageAttachmentEvidence?: CreateLiveAttachmentReadOptions["readPageAttachmentEvidence"];
   readonly findSessionNode?: (sessionId: string) => Promise<string | null>;
@@ -278,6 +279,47 @@ export function createLiveOrchestratorProviderBundle(
         folderProvider: options.dependencies.dbCatalogRepository.folderRouteProvider,
       })
     : undefined;
+  if (options.resolveAttachmentStorage !== undefined && attachmentReadOptions === undefined) {
+    throw new Error(
+      "resolveAttachmentStorage requires attachment read storage and page evidence",
+    );
+  }
+  const commitBinding = options.resolveAttachmentStorage ??
+    options.agentAttachmentRegistration?.resolveAttachmentBinding;
+  const commits = commitBinding === undefined
+    ? undefined
+    : createOwnedAttachmentCommitService({
+        repository: options.dependencies.dbCatalogRepository.attachmentCommitRepository,
+        resolveAttachmentBinding: commitBinding,
+      });
+  if (options.agentAttachmentRegistration !== undefined && commits === undefined) {
+    throw new Error("agentAttachmentRegistration requires attachment storage binding");
+  }
+  const attachmentUploadOptions = options.resolveAttachmentStorage === undefined
+    ? undefined
+    : createLiveAttachmentUploadOptions({
+        resolveEmail: authenticatedUserResolvers.resolveEmail,
+        readOptions: attachmentReadOptions!,
+        repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
+        access: sessionResourceAccessProvider,
+        commits: commits!,
+        commitRepository: options.dependencies.dbCatalogRepository.attachmentCommitRepository,
+        resolveBinding: options.resolveAttachmentStorage,
+      });
+  const attachmentMultipartOptions = options.resolveAttachmentStorage === undefined
+    ? undefined
+    : {
+        ...createLiveMultipartAttachmentOptions({
+          resolveStorage: options.resolveAttachmentStorage,
+          configProvider: options.dependencies.configProvider,
+          resolveEmail: authenticatedUserResolvers.resolveEmail,
+          repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
+          access: sessionResourceAccessProvider,
+          registry: options.runtimeServices.registry,
+          bridge: options.runtimeServices.sessionBridge,
+        }),
+        uploads: attachmentUploadOptions!,
+      };
   const attachmentInputAdmission = attachmentReadOptions === undefined || options.findSessionNode === undefined
     ? undefined
     : createLiveAttachmentInputAdmission({
@@ -293,10 +335,7 @@ export function createLiveOrchestratorProviderBundle(
         environment: options.agentAttachmentRegistration.environment,
         register: createAgentAttachmentRegistration({
           sql: options.agentAttachmentRegistration.sql,
-          commit: createOwnedAttachmentCommitService({
-            repository: options.dependencies.dbCatalogRepository.attachmentCommitRepository,
-            resolveAttachmentBinding: options.agentAttachmentRegistration.resolveAttachmentBinding,
-          }),
+          commit: commits!,
           readAsset: (id) => options.dependencies.dbCatalogRepository.attachmentReadRepository.getAsset(id),
         }),
       };
@@ -341,13 +380,8 @@ export function createLiveOrchestratorProviderBundle(
     attachmentRoutes: {
       ...attachmentProviders,
       ...(attachmentReadOptions === undefined ? {} : { assetRead: attachmentReadOptions }),
-      ...(options.resolveAttachmentStorage ? { multipart: createLiveMultipartAttachmentOptions({
-        resolveStorage: options.resolveAttachmentStorage, configProvider: options.dependencies.configProvider,
-        resolveEmail: authenticatedUserResolvers.resolveEmail,
-        repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
-        access: sessionResourceAccessProvider, registry: options.runtimeServices.registry,
-        bridge: options.runtimeServices.sessionBridge,
-      }) } : {}),
+      ...(attachmentUploadOptions === undefined ? {} : { assetUpload: attachmentUploadOptions }),
+      ...(attachmentMultipartOptions === undefined ? {} : { multipart: attachmentMultipartOptions }),
     },
     ...(agentAttachmentRoutes === undefined ? {} : { agentAttachmentRoutes }),
     authRoutes: {

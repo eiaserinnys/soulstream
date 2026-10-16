@@ -2,6 +2,7 @@ import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createApp,
   createLiveOrchestratorProviderBundle,
   createOrchestratorRuntimeServices,
   liveFactoryImplementedProviderPaths,
@@ -12,6 +13,19 @@ import {
   type NodeConnectionSnapshot,
   type LiveProviderWiringInventoryEntry,
 } from "../src/index.js";
+import * as attachmentCommitServiceModule from "../src/attachments/attachment_commit_service.js";
+import type {
+  AttachmentCommitRepository,
+  OwnedAttachmentUpload,
+} from "../src/attachments/attachment_commit_contract.js";
+import type { AttachmentAssetRow } from "../src/attachments/attachment_read_service.js";
+import type {
+  AttachmentAccessProvider,
+  AttachmentNode,
+  AttachmentRouteProvider,
+  AttachmentTransport,
+  AttachmentRouteOptions,
+} from "../src/attachments/attachment_routes.js";
 import type { UiEventRepository } from "../src/ui-events/ui_event_routes.js";
 import { UI_EVENT_COLLECTION_DISABLED } from "../src/ui-events/ui_event_settings.js";
 
@@ -126,6 +140,186 @@ describe("live provider factory boundary", () => {
     await expect(reader!.service.metadata(actor, "attachment-test", { type: "owner" }))
       .resolves.toMatchObject({ upload_status: "committed" });
     expect(resolveReadStorage).not.toHaveBeenCalled();
+  });
+
+  it("shares one commit service between user upload, multipart, and agent registration", () => {
+    const createCommit = vi.spyOn(
+      attachmentCommitServiceModule,
+      "createOwnedAttachmentCommitService",
+    );
+    try {
+      const dependencies = createLiveDependencies();
+      const runtimeServices = createRuntimeServices(dependencies);
+      const resolveAttachmentStorage = vi.fn(async () => null);
+      const bundle = createLiveOrchestratorProviderBundle({
+        dependencies,
+        runtimeServices,
+        usageSummaryRoutes: createUsageSummaryRoutes(),
+        uiEventRepository: createInertUiEventRepository(),
+        resolveAttachmentStorage,
+        resolveReadStorage: async () => null,
+        readPageAttachmentEvidence: async () => null,
+        agentAttachmentRegistration: {
+          authBearerToken: "test-token",
+          environment: "test",
+          sql: {} as never,
+          resolveAttachmentBinding: resolveAttachmentStorage,
+        },
+      });
+      const routes = bundle.attachmentRoutes as AttachmentRouteOptions;
+
+      expect(createCommit).toHaveBeenCalledTimes(1);
+      expect(routes.assetUpload).toBeDefined();
+      expect(routes.multipart?.uploads).toBe(routes.assetUpload);
+      expect(createCommit.mock.results[0]?.value).toBe(routes.assetUpload?.commits);
+    } finally {
+      createCommit.mockRestore();
+    }
+  });
+
+  it("rejects a write binding without the read resolver and page evidence callback", () => {
+    const dependencies = createLiveDependencies();
+    const runtimeServices = createRuntimeServices(dependencies);
+
+    expect(() => createLiveOrchestratorProviderBundle({
+      dependencies,
+      runtimeServices,
+      usageSummaryRoutes: createUsageSummaryRoutes(),
+      uiEventRepository: createInertUiEventRepository(),
+      resolveAttachmentStorage: async () => null,
+    })).toThrow(/attachment.*read|read.*attachment/i);
+  });
+
+  it("commits a user legacy upload to R2 before warming the worker cache and alias", async () => {
+    const harness = createOwnedUploadHarness();
+    try {
+      const token = await harness.bundle.authRoutes.jwt.issueToken({
+        email: "writer@example.com",
+        name: "Writer",
+      });
+      const body = ownedUploadBody({ session_id: "c8f310da-5f36-4c59-a5d1-888e9bcf158d" });
+      const response = await harness.app.inject({
+        method: "POST",
+        url: "/api/attachments/sessions?nodeId=worker-1",
+        headers: {
+          ...body.headers,
+          cookie: `soul_dashboard_auth=${token}`,
+        },
+        payload: body.payload,
+      });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.json()).toEqual({
+        path: "/incoming/session/photo.png",
+        filename: "photo.png",
+        size: 4,
+        content_type: "image/png",
+      });
+      expect(harness.events).toEqual([
+        "r2-put",
+        "r2-verify",
+        "commit",
+        "cache",
+        "alias",
+      ]);
+    } finally {
+      await harness.app.close();
+    }
+  });
+
+  it("commits id-v1 while its node is offline and keeps service bearer uploads on the worker path", async () => {
+    const harness = createOwnedUploadHarness();
+    try {
+      const token = await harness.bundle.authRoutes.jwt.issueToken({
+        email: "writer@example.com",
+        name: "Writer",
+      });
+      const idV1Body = ownedUploadBody({
+        session_id: "8a1f4d39-0e92-4c03-87d4-25d78e5b2460",
+        folder_id: "folder-a",
+      });
+      const idV1 = await harness.app.inject({
+        method: "POST",
+        url: "/api/attachments/sessions?nodeId=offline",
+        headers: {
+          ...idV1Body.headers,
+          cookie: `soul_dashboard_auth=${token}`,
+          "x-soulstream-attachment-contract": "id-v1",
+        },
+        payload: idV1Body.payload,
+      });
+
+      expect(idV1.statusCode).toBe(201);
+      expect(idV1.headers["x-soulstream-attachment-contract"]).toBe("id-v1");
+      expect(idV1.json()).toEqual({
+        attachment: expect.objectContaining({ attachment_id: expect.any(String) }),
+      });
+      expect(harness.getNode).not.toHaveBeenCalled();
+      const ownedCommits = harness.insertOwnedPending.mock.calls.length;
+
+      const serviceBody = ownedUploadBody({ session_id: "legacy-service-session" });
+      const serviceUpload = await harness.app.inject({
+        method: "POST",
+        url: "/api/attachments/sessions?nodeId=worker-1",
+        headers: {
+          ...serviceBody.headers,
+          authorization: "Bearer test-token",
+        },
+        payload: serviceBody.payload,
+      });
+
+      expect(serviceUpload.statusCode).toBe(201);
+      expect(serviceUpload.json()).toMatchObject({ path: "/incoming/session/photo.png" });
+      expect(harness.insertOwnedPending).toHaveBeenCalledTimes(ownedCommits);
+    } finally {
+      await harness.app.close();
+    }
+  });
+
+  it("keeps page attachment reads authenticated and checks the stored page reference", async () => {
+    let hasStoredRef = false;
+    const readPageAttachmentEvidence = vi.fn(async (pageId: string, attachmentId: string) => ({
+      scope: { type: "page" as const, id: pageId },
+      folderId: null,
+      hasStoredRef: hasStoredRef && attachmentId === "attachment-test",
+    }));
+    const harness = createOwnedUploadHarness({ readPageAttachmentEvidence });
+    try {
+      const routes = harness.bundle.attachmentRoutes as AttachmentRouteOptions;
+      expect(routes.assetRead).toBeDefined();
+      expect(routes.multipart?.uploads).toBe(routes.assetUpload);
+
+      const anonymous = await harness.app.inject({
+        method: "GET",
+        url: "/api/attachments/attachment-test?context_type=page&context_id=page-1",
+      });
+      expect(anonymous.statusCode).toBe(401);
+
+      const token = await harness.bundle.authRoutes.jwt.issueToken({
+        email: "reader@example.com",
+        name: "Reader",
+      });
+      const request = {
+        method: "GET" as const,
+        url: "/api/attachments/attachment-test?context_type=page&context_id=page-1",
+        headers: { cookie: `soul_dashboard_auth=${token}` },
+      };
+      expect((await harness.app.inject(request)).statusCode).toBe(403);
+      hasStoredRef = true;
+      const readable = await harness.app.inject(request);
+
+      expect(readable.statusCode).toBe(200);
+      expect(readable.json()).toMatchObject({
+        descriptor: { attachment_id: "attachment-test" },
+        upload_status: "committed",
+      });
+      expect(readPageAttachmentEvidence).toHaveBeenLastCalledWith(
+        "page-1",
+        "attachment-test",
+      );
+    } finally {
+      await harness.app.close();
+    }
   });
 
   it("returns implemented runtime and config route providers when the inventory is fully implemented", async () => {
@@ -512,6 +706,200 @@ function createRuntimeServices(dependencies: LiveProviderDependencies) {
     enableSessionBackgroundScheduleRoutes: true,
     sseReplayOnlyForTests: true,
   });
+}
+
+function createOwnedUploadHarness(options: {
+  readPageAttachmentEvidence?: (
+    pageId: string,
+    attachmentId: string,
+  ) => Promise<{ scope: { type: "page"; id: string }; folderId: string | null; hasStoredRef: boolean } | null>;
+} = {}) {
+  const events: string[] = [];
+  let upload: OwnedAttachmentUpload | null = null;
+  let storedObject = Buffer.alloc(0);
+  const insertOwnedPending = vi.fn(async (input: Parameters<AttachmentCommitRepository["insertOwnedPending"]>[0]) => {
+    upload = {
+      attachmentId: input.attachmentId,
+      storageKey: input.storageKey,
+      owner: input.owner,
+      registration: input.registration,
+      originalName: input.originalName,
+      mimeType: input.mimeType,
+      byteSize: input.byteSize,
+      storageEndpoint: input.location.endpoint,
+      storageBucket: input.location.bucket,
+      checksumSha256: null,
+      uploadStatus: "pending" as const,
+      multipartUploadId: null,
+      createdAt: new Date(),
+      garbageCollectedAt: null,
+    };
+    return upload;
+  });
+  const commitRepository: AttachmentCommitRepository = {
+    insertOwnedPending,
+    getOwnedUpload: vi.fn(async (attachmentId, owner) => {
+      const current = upload;
+      return current !== null && current.attachmentId === attachmentId && current.owner.kind === owner.kind && current.owner.key === owner.key
+        ? current
+        : null;
+    }),
+    setMultipartUploadId: vi.fn(async () => null),
+    commitVerified: vi.fn(async ({ checksumSha256 }) => {
+      if (upload === null) return null;
+      upload = { ...upload, checksumSha256, uploadStatus: "committed" };
+      events.push("commit");
+      return upload;
+    }),
+    clearPendingMultipart: vi.fn(async () => false),
+    findLegacyAliasForAsset: vi.fn(async () => null),
+    findLegacyAliasForUpload: vi.fn(async () => null),
+    insertLegacyAlias: vi.fn(async (input) => {
+      events.push("alias");
+      return { ...input, availability: "resolved" as const };
+    }),
+  };
+  const storage = {
+    putObject: vi.fn(async ({ body }: { body: Uint8Array }) => {
+      storedObject = Buffer.from(body);
+      events.push("r2-put");
+    }),
+    openObject: vi.fn(async () => {
+      events.push("r2-verify");
+      return new Response(storedObject, {
+        status: 200,
+        headers: { "content-length": String(storedObject.length) },
+      });
+    }),
+  };
+  const binding = {
+    storage,
+    identity: "attachment-r2-test",
+    location: { endpoint: "https://r2.example.test", bucket: "attachments" },
+  };
+  const baseDependencies = createLiveDependencies();
+  const dependencies: LiveProviderDependencies = {
+    ...baseDependencies,
+    dbCatalogRepository: {
+      ...baseDependencies.dbCatalogRepository,
+      attachmentCommitRepository: commitRepository,
+      attachmentReadRepository: {
+        ...baseDependencies.dbCatalogRepository.attachmentReadRepository,
+        getAsset: vi.fn(async (id): Promise<AttachmentAssetRow | null> => {
+          const current = upload;
+          if (current !== null && current.attachmentId === id) {
+            return {
+              id,
+              storageKey: current.storageKey,
+              storagePurpose: "attachment",
+              storageEndpoint: current.storageEndpoint,
+              storageBucket: current.storageBucket,
+              ownerKind: current.owner.kind,
+              ownerKey: current.owner.key,
+              registrationScope: current.registration.registrationScope,
+              sourceSessionId: current.registration.sourceSessionId,
+              originalName: current.originalName,
+              mimeType: current.mimeType,
+              byteSize: current.byteSize,
+              width: null,
+              height: null,
+              checksumSha256: current.checksumSha256,
+              uploadStatus: current.uploadStatus,
+            };
+          }
+          if (id !== "attachment-test") return null;
+          return {
+            id,
+            storageKey: "private/object",
+            storagePurpose: "attachment",
+            storageEndpoint: "https://r2.example.test",
+            storageBucket: "attachments",
+            ownerKind: "user_email",
+            ownerKey: "attachment@example.com",
+            registrationScope: null,
+            sourceSessionId: null,
+            originalName: "readme.txt",
+            mimeType: "text/plain",
+            byteSize: 4,
+            width: null,
+            height: null,
+            checksumSha256: null,
+            uploadStatus: "committed",
+          };
+        }),
+      },
+      adminUsersRepository: {
+        ...baseDependencies.dbCatalogRepository.adminUsersRepository,
+        findUserByEmail: vi.fn(async (email) => email === "writer@example.com"
+          ? { email, isAdmin: false, allowedFolderIds: ["folder-a"] }
+          : null),
+      },
+      sessionResourceAccessRepository: {
+        ...baseDependencies.dbCatalogRepository.sessionResourceAccessRepository,
+        getSessionAccessRecord: vi.fn(async () => null),
+        listFoldersForAccess: vi.fn(async () => [{ id: "folder-a" }]),
+      },
+    },
+  };
+  const runtimeServices = createRuntimeServices(dependencies);
+  const resolveAttachmentStorage = vi.fn(async () => binding as never);
+  const resolveReadStorage = vi.fn(async () => binding as never);
+  const readPageAttachmentEvidence = options.readPageAttachmentEvidence ?? (async () => null);
+  const bundle = createLiveOrchestratorProviderBundle({
+    dependencies,
+    runtimeServices,
+    usageSummaryRoutes: createUsageSummaryRoutes(),
+    uiEventRepository: createInertUiEventRepository(),
+    resolveAttachmentStorage,
+    resolveReadStorage,
+    readPageAttachmentEvidence,
+  });
+  const node: AttachmentNode = { id: "worker-1", host: "127.0.0.1", port: 4105 };
+  const getNode = vi.fn(async (nodeId: string) => nodeId === "offline" ? null : node);
+  const accessProvider: AttachmentAccessProvider = {
+    async resolveAccess() { return { restricted: false }; },
+    async requireSessionAccess() {},
+  };
+  const transport: AttachmentTransport = {
+    async uploadAttachment(_node, input) {
+      for await (const _chunk of input.chunks) void _chunk;
+      events.push("cache");
+      return {
+        path: "/incoming/session/photo.png",
+        filename: input.filename,
+        size: input.expectedSize ?? 4,
+        content_type: input.contentType,
+      };
+    },
+    async legacyUploadAttachment() { throw new Error("unused"); },
+    async deleteSessionAttachments() { return {}; },
+    async downloadAttachment() { return {}; },
+  };
+  const app = createApp({
+    config,
+    attachmentRoutes: {
+      ...bundle.attachmentRoutes,
+      provider: { getNode },
+      accessProvider,
+      transport,
+    } as AttachmentRouteOptions,
+  });
+  return { app, bundle, events, getNode, commitRepository, insertOwnedPending };
+}
+
+function ownedUploadBody(fields: Record<string, string>) {
+  const boundary = "----factory-owned-upload-test";
+  const parts: Buffer[] = [];
+  for (const [name, value] of Object.entries(fields)) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+  }
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="photo.png"\r\nContent-Type: image/png\r\n\r\n`));
+  parts.push(Buffer.from("data"));
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  return {
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat(parts),
+  };
 }
 
 function createLiveDependencies(): LiveProviderDependencies {
