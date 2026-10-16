@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { FastifyRequest } from "fastify";
 
 import {
   createApp,
@@ -14,6 +15,73 @@ const config = parseOrchServerConfig({
 });
 
 describe("production auth guard", () => {
+  it("allows a worker service bearer without a cookie", async () => {
+    const serviceBearer = "attachment-service-token";
+    const metadata = vi.fn(async () => ({
+      descriptor: {
+        attachment_id: "asset-1",
+        name: "report.txt",
+        mime_type: "text/plain",
+        byte_size: 4,
+        checksum_sha256: "c".repeat(64),
+        width: null,
+        height: null,
+        preview_kind: "text" as const,
+        preview_mime_type: "text/plain",
+      },
+      upload_status: "committed" as const,
+    }));
+    const resolveTokenAccess = vi.fn(async (request: FastifyRequest) =>
+      request.headers.authorization === `Bearer ${serviceBearer}` &&
+        request.headers.cookie === undefined
+        ? { ok: true as const }
+        : {
+            ok: false as const,
+            statusCode: 401,
+            detail: "Authorization header required",
+          },
+    );
+    const app = createApp({
+      config: parseOrchServerConfig({
+        environment: "production",
+        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+        authBearerToken: serviceBearer,
+      }),
+      productionAuth: { resolveTokenAccess },
+      workerAttachmentRoutes: {
+        authBearerToken: serviceBearer,
+        environment: "production",
+        service: {
+          metadata,
+          content: vi.fn(async () => new Response("content")),
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/attachments/worker/asset-1/metadata?session_id=session-1&mode=input",
+      headers: {
+        authorization: `Bearer ${serviceBearer}`,
+        "x-soulstream-node-id": "node-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      descriptor: { attachment_id: "asset-1" },
+      upload_status: "committed",
+    });
+    expect(metadata).toHaveBeenCalledWith({
+      attachmentId: "asset-1",
+      sessionId: "session-1",
+      nodeId: "node-1",
+      mode: "input",
+    });
+    expect(resolveTokenAccess).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
   it("allows the service bearer without a cookie and rejects a JWT at the agent route", async () => {
     const serviceBearer = "attachment-service-token";
     const checksum = "c".repeat(64);
