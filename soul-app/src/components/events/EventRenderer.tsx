@@ -9,6 +9,8 @@ import { ChatInputRequest } from '../chat/ChatInputRequest';
 import { ChatToolApprovalRequest } from '../chat/ChatToolApprovalRequest';
 import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
+import { MessageAttachments } from '../MessageAttachments';
+import { useMessageAttachments } from '../../hooks/useMessageAttachments';
 
 export type ChatMessageSession = Pick<Session,
   'agentSessionId' | 'nodeId' | 'agentName' | 'agentPortraitUrl' | 'displayName' | 'userName' | 'userPortraitUrl'>;
@@ -80,6 +82,9 @@ export function EventRenderer({
         />
       );
     case 'assistant_message':
+      if (event.data.attachment_output === true) {
+        return <OutputAttachmentMessage event={event} sessionId={sessionId} presentation={presentation} />;
+      }
       return <ChatUiMessage event={event} presentation={presentation} narration={narration} session={session}
         selectionModel={selectionModel} onSelectionDone={onSelectionDone} />;
     case 'text_delta':
@@ -180,4 +185,18 @@ export function EventRenderer({
     default:
       return null;
   }
+}
+
+function OutputAttachmentMessage({ event, sessionId, presentation }: {
+  event: SessionEvent;
+  sessionId: string;
+  presentation: 'default' | 'manuscript';
+}) {
+  const { items } = useMessageAttachments({
+    event,
+    readContext: { type: 'session', id: sessionId },
+  });
+  return items.length > 0
+    ? <MessageAttachments items={items} role="assistant" presentation={presentation} />
+    : null;
 }
