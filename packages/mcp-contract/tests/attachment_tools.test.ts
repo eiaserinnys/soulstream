@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { attachmentTools, registerAttachmentInputSchema } from "../src/attachment_tools.ts";
+import {
+  attachmentTools,
+  registerAttachmentInputSchema,
+  resolveAttachmentInputSchema,
+} from "../src/attachment_tools.ts";
 import { cardTools } from "../src/card_tools.ts";
 
 describe("attachment tool contract", () => {
@@ -16,6 +20,24 @@ describe("attachment tool contract", () => {
       destructiveHint: false,
       idempotentHint: false,
     });
+  });
+
+  it("exposes a strict current attached-ref resolution contract", () => {
+    const resolveTool = attachmentTools.resolve_attachment;
+    expect(resolveTool).toMatchObject({
+      name: "resolve_attachment",
+      audience: "internal",
+      timeoutMs: 300000,
+      config: {
+        description: "현재 세션에 연결된 첨부를 이 노드의 로컬 파일로 준비합니다.",
+      },
+      strictInputSchema: true,
+    });
+    expect(Object.keys(resolveTool.config.inputSchema)).toEqual(["attachment_id"]);
+    expect(resolveAttachmentInputSchema.safeParse({ attachment_id: "asset-1" }).success).toBe(true);
+    expect(resolveAttachmentInputSchema.safeParse({ attachment_id: "asset-1", session_id: "sess-1" }).success).toBe(false);
+    expect(resolveAttachmentInputSchema.safeParse({ attachment_id: "" }).success).toBe(false);
+    expect(registerAttachmentInputSchema.safeParse({ local_path: "/tmp/a.png" }).success).toBe(true);
   });
 
   it("keeps model arguments to path, name, mime type and a card scope", () => {

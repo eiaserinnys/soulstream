@@ -175,4 +175,76 @@ describe("EventReadRepository.listUserMessages (real Postgres)", () => {
       input_id: null, purpose: null, attachment_ids: [], attachments: [], attachment_count: 0,
     });
   });
+
+  it("uses stored attachment counts only when they fit normalized references", async () => {
+    await h.sql`INSERT INTO sessions(session_id, display_name, node_id, agent_id)
+      VALUES ('sess-attachment-count', 'Attachment count', 'eiaserinnys', 'roselin')`;
+    await put("sess-attachment-count", 20, "user_message", at("03:00:00.000"), {
+      ...message("browser", ""),
+      attachment_ids: ["asset-id-only"],
+      attachments: [],
+      attachment_count: 1,
+    });
+    await put("sess-attachment-count", 21, "user_message", at("03:01:00.000"), {
+      ...message("browser", "same file"),
+      attachment_ids: ["asset-same", "asset-same"],
+      attachments: ["/legacy/same-file", "/legacy/same-file"],
+      attachment_count: 1,
+    });
+    await put("sess-attachment-count", 22, "user_message", at("03:02:00.000"), {
+      ...message("browser", "two files"),
+      attachment_ids: ["asset-unknown"],
+      attachments: ["/legacy/unknown"],
+      attachment_count: 2,
+    });
+    await put("sess-attachment-count", 23, "user_message", at("03:03:00.000"), {
+      ...message("browser", "legacy only"),
+      attachment_ids: [],
+      attachments: ["/legacy/only"],
+      attachment_count: 1,
+    });
+    await put("sess-attachment-count", 24, "user_message", at("03:04:00.000"), {
+      ...message("browser", "old payload"),
+      attachment_ids: ["asset-old"],
+      attachments: ["/legacy/old"],
+    });
+    await put("sess-attachment-count", 25, "user_message", at("03:05:00.000"), {
+      ...message("browser", "invalid count"),
+      attachment_ids: ["asset-invalid"],
+      attachments: ["/legacy/invalid"],
+      attachment_count: 1.5,
+    });
+    await put("sess-attachment-count", 26, "user_message", at("03:06:00.000"), {
+      ...message("browser", "long body"),
+      attachment_ids: ["asset-long-count"],
+      attachments: ["/legacy/long-count"],
+      attachment_count: 2,
+    });
+
+    const { rows, total } = await repository.listUserMessages(query({
+      since: at("03:00:00.000"),
+      until: at("04:00:00.000"),
+      maxTextChars: 4,
+    }));
+    expect(total).toBe(7);
+    const byEventId = new Map(rows.map((row) => [row.event_id, row]));
+    expect(byEventId.get(20)).toMatchObject({
+      text: "", text_chars: 0, attachment_ids: ["asset-id-only"], attachments: [], attachment_count: 1,
+    });
+    expect(byEventId.get(21)).toMatchObject({
+      attachment_ids: ["asset-same"], attachments: ["/legacy/same-file"], attachment_count: 1,
+    });
+    expect(byEventId.get(22)).toMatchObject({
+      attachment_ids: ["asset-unknown"], attachments: ["/legacy/unknown"], attachment_count: 2,
+    });
+    expect(byEventId.get(23)).toMatchObject({
+      attachment_ids: [], attachments: ["/legacy/only"], attachment_count: 1,
+    });
+    expect(byEventId.get(24)?.attachment_count).toBe(1);
+    expect(byEventId.get(25)?.attachment_count).toBe(1);
+    expect(byEventId.get(26)).toMatchObject({
+      text: "long", text_chars: 9,
+      attachment_ids: ["asset-long-count"], attachments: ["/legacy/long-count"], attachment_count: 2,
+    });
+  });
 });

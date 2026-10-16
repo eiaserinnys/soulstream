@@ -88,6 +88,7 @@ type UserMessageSqlRow = Omit<
   text_chars: number | string;
   attachment_ids: unknown;
   attachments: unknown;
+  stored_attachment_count: unknown;
 };
 
 export class EventSearchDeadlineError extends Error {
@@ -226,15 +227,16 @@ export class EventReadRepository {
         left(coalesce(m.payload->>'text', ''), ${query.maxTextChars}) AS text,
         char_length(coalesce(m.payload->>'text', '')) AS text_chars,
         m.payload->'attachment_ids' AS attachment_ids,
-        m.payload->'attachments' AS attachments
+        m.payload->'attachments' AS attachments,
+        m.payload->'attachment_count' AS stored_attachment_count
       FROM matched m
       LEFT JOIN sessions s ON s.session_id = m.session_id
       ORDER BY m.created_at, m.session_id, m.id
       LIMIT ${query.limit} OFFSET ${query.offset}
     `;
-    const rows: UserMessageRow[] = rawRows.map(({ attachment_ids, attachments, ...row }) => ({
+    const rows: UserMessageRow[] = rawRows.map(({ attachment_ids, attachments, stored_attachment_count, ...row }) => ({
       ...row,
-      ...projectInputAttachments({ attachment_ids, attachments }),
+      ...projectInputAttachments({ attachment_ids, attachments, attachment_count: stored_attachment_count }),
       event_id: Number(row.event_id),
       text_chars: Number(row.text_chars),
     }));

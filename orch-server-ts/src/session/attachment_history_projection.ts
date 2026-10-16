@@ -7,13 +7,23 @@ export interface InputAttachmentProjection {
 export function projectInputAttachments(input: {
   attachment_ids?: unknown;
   attachments?: unknown;
+  attachment_count?: unknown;
 }): InputAttachmentProjection {
   const attachmentIds = uniqueNonEmptyStrings(input.attachment_ids);
   const attachments = uniqueNonEmptyStrings(input.attachments);
+  const storedAttachmentCount = input.attachment_count;
+  const useStoredAttachmentCount = typeof storedAttachmentCount === "number"
+    && Number.isSafeInteger(storedAttachmentCount)
+    && (attachmentIds.length > 0
+      ? storedAttachmentCount >= attachmentIds.length
+        && storedAttachmentCount <= attachmentIds.length + attachments.length
+      : storedAttachmentCount === attachments.length);
   return {
     attachment_ids: attachmentIds,
     attachments,
-    attachment_count: attachmentIds.length > 0 ? attachmentIds.length : attachments.length,
+    attachment_count: useStoredAttachmentCount
+      ? storedAttachmentCount
+      : attachmentIds.length > 0 ? attachmentIds.length : attachments.length,
   };
 }
 
