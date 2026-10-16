@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { publishInterventionSent } from "../../src/task/task_intervention_events.js";
+import { buildInterventionSentEvent } from "../../src/task/task_intervention_events.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -120,5 +121,69 @@ describe("publishInterventionSent", () => {
       expect.objectContaining({ sessionId: "sess-1" }),
       "intervention_sent handleSideEffects failed",
     );
+  });
+
+  it("propagates intervention_sent enqueue failures", async () => {
+    const logger = { warn: vi.fn() } as unknown as Logger;
+    const enqueueEvent = vi.fn().mockRejectedValue(new Error("outbox down"));
+    const task = makeTask();
+
+    await expect(
+      publishInterventionSent(
+        task,
+        { text: "accepted", user: "alice" },
+        {
+          broadcaster: {} as SessionBroadcaster,
+          logger,
+          persistence: {
+            enqueueEvent,
+            handleSideEffects: vi.fn(),
+          } as unknown as EventPersistence,
+        },
+      ),
+    ).rejects.toThrow("outbox down");
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-1" }),
+      "intervention_sent persistence failed",
+    );
+  });
+});
+
+describe("buildInterventionSentEvent attachment identity", () => {
+  it("dedupes attachment ids and counts an admitted binding once", () => {
+    const event = buildInterventionSentEvent({
+      text: "",
+      user: "alice",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a", "att-a"],
+      attachmentBindings: [
+        { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+      ],
+    });
+
+    expect(event.text).toBe("");
+    expect(event.attachment_ids).toEqual(["att-a"]);
+    expect(event.attachment_count).toBe(1);
+    expect(event.attachments).toEqual(["/tmp/a.png"]);
+  });
+
+  it("counts an unbound legacy path alongside attachment ids", () => {
+    const event = buildInterventionSentEvent({
+      text: "hi",
+      user: "alice",
+      attachmentPaths: ["/tmp/b.png"],
+      attachmentIds: ["att-a"],
+    });
+
+    expect(event.attachment_count).toBe(2);
+  });
+
+  it("omits attachment identity keys for a plain message", () => {
+    const event = buildInterventionSentEvent({ text: "hi", user: "alice" });
+
+    expect(event.attachment_ids).toBeUndefined();
+    expect(event.attachment_count).toBeUndefined();
+    expect(event.attachments).toBeUndefined();
   });
 });
