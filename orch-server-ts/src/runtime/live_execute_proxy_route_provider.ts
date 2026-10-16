@@ -1,5 +1,10 @@
+// Over 500 lines on purpose: the execute proxy's new/resume paths, the shared attachment
+// admission step and the error mapping stay together until the production admission
+// callback lands (#245); splitting them earlier would only move the pieces apart.
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+
+import type { FastifyRequest } from "fastify";
 
 import {
   ExecuteProxyRouteError,
@@ -11,6 +16,7 @@ import {
   type ExecuteProxyNewProviderRequest,
   type ExecuteProxyResumeProviderRequest,
 } from "../execute/execute_proxy_routes.js";
+import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
 import type {
   CreateSessionNodeCommandPayload,
   InMemoryNodeRegistry,
@@ -39,6 +45,17 @@ import {
 
 const EXECUTE_PROXY_KEEPALIVE_MS = 30_000;
 
+/** The request is the only actor carrier; it is undefined when the provider is called directly. */
+export type ExecuteAttachmentAdmission = (
+  request: FastifyRequest | undefined,
+  input: {
+    sessionId: string;
+    nodeId: string;
+    attachmentIds?: string[];
+    attachmentPaths?: string[];
+  },
+) => Promise<AdmittedAttachmentInput>;
+
 export type LiveExecuteProxyRouteProviderOptions = {
   readonly registry: InMemoryNodeRegistry;
   readonly router: SessionCommandRouter;
@@ -47,6 +64,7 @@ export type LiveExecuteProxyRouteProviderOptions = {
   readonly timeoutMs?: number;
   readonly createSessionReconcileTimeoutMs?: number;
   readonly generateSessionId?: () => string;
+  readonly admitAttachmentInput?: ExecuteAttachmentAdmission;
   readonly modelPresetAvailability?: Pick<
     ModelPresetAvailabilityService,
     "requireAvailable"
@@ -59,7 +77,7 @@ export function createLiveExecuteProxyRouteProvider(
   const generateSessionId = options.generateSessionId ?? randomUUID;
 
   return {
-    executeNew: async (payload) => {
+    executeNew: async (payload, request) => {
       const agentSessionId = generateSessionId();
       const queue = new SessionEventQueue(
         options.sessionEventHub,
@@ -78,12 +96,19 @@ export function createLiveExecuteProxyRouteProvider(
             selected.modelPresetId,
           );
         }
+        const admitted = await admitExecuteAttachments(options, request, {
+          sessionId: agentSessionId,
+          resolveNodeId: () => selected.node.nodeId,
+          attachmentIds: payload.attachment_ids,
+          attachmentPaths: payload.attachment_paths,
+        });
         const commandPayload = createSessionCommandPayload({
           payload,
           agentSessionId,
           backend: selected.backend,
           profileId: selected.profileId,
           modelPresetId: selected.modelPresetId,
+          admitted,
         });
         const command = options.registry.createCommand(
           selected.node.nodeId,
@@ -131,14 +156,21 @@ export function createLiveExecuteProxyRouteProvider(
         throw mapCommandError(error, createErrorStatus(error));
       }
     },
-    executeResume: async (payload) => {
+    executeResume: async (payload, request) => {
       const queue = new SessionEventQueue(
         options.sessionEventHub,
         payload.agent_session_id,
       );
       try {
+        const admitted = await admitExecuteAttachments(options, request, {
+          sessionId: payload.agent_session_id,
+          resolveNodeId: async () =>
+            (await options.router.requireNodeForExistingSession(payload.agent_session_id)).nodeId,
+          attachmentIds: payload.attachment_ids,
+          attachmentPaths: payload.attachment_paths,
+        });
         const routed = await options.router.routeExistingSessionPendingCommand(
-          interveneCommandPayload(payload),
+          interveneCommandPayload(payload, admitted),
           { timeoutMs: options.timeoutMs },
         );
         const result = await options.bridge.sendPendingCommand(routed);
@@ -156,6 +188,50 @@ export function createLiveExecuteProxyRouteProvider(
       }
     },
   };
+}
+
+/**
+ * Admits attachment ids and paths against the node that will run the command.
+ * Returns undefined when there is nothing to admit, or when only legacy paths
+ * arrive without a callback, so those callers keep their current behavior.
+ */
+async function admitExecuteAttachments(
+  options: LiveExecuteProxyRouteProviderOptions,
+  request: FastifyRequest | undefined,
+  input: {
+    sessionId: string;
+    /** Called only when the callback will run, so a 503 or a legacy path never looks up an owner. */
+    resolveNodeId: () => string | Promise<string>;
+    attachmentIds?: string[];
+    attachmentPaths?: string[];
+  },
+): Promise<AdmittedAttachmentInput | undefined> {
+  const attachmentIds = input.attachmentIds?.length ? input.attachmentIds : undefined;
+  const attachmentPaths = input.attachmentPaths?.length ? input.attachmentPaths : undefined;
+  if (attachmentIds === undefined && attachmentPaths === undefined) return undefined;
+  if (options.admitAttachmentInput === undefined) {
+    if (attachmentIds === undefined) return undefined;
+    throw new ExecuteProxyRouteError(503, { error: {
+      code: "ATTACHMENT_INPUT_UNAVAILABLE",
+      message: "Attachment input is unavailable",
+    } });
+  }
+  const nodeId = await input.resolveNodeId();
+  try {
+    return await options.admitAttachmentInput(request, {
+      sessionId: input.sessionId,
+      nodeId,
+      ...(attachmentIds === undefined ? {} : { attachmentIds }),
+      ...(attachmentPaths === undefined ? {} : { attachmentPaths }),
+    });
+  } catch (error) {
+    const { code, statusCode } = error as { code?: unknown; statusCode?: unknown };
+    if (typeof code !== "string" || typeof statusCode !== "number") throw error;
+    throw new ExecuteProxyRouteError(statusCode, { error: {
+      code,
+      message: error instanceof Error ? error.message : code,
+    } });
+  }
 }
 
 function streamResult(params: {
@@ -208,8 +284,9 @@ function createSessionCommandPayload(params: {
   backend: string;
   profileId: string;
   modelPresetId?: string;
+  admitted?: AdmittedAttachmentInput;
 }): CreateSessionNodeCommandPayload {
-  const { payload, agentSessionId, backend, profileId, modelPresetId } = params;
+  const { payload, agentSessionId, backend, profileId, modelPresetId, admitted } = params;
   const command: CreateSessionNodeCommandPayload = {
     type: "create_session",
     agentSessionId,
@@ -238,11 +315,17 @@ function createSessionCommandPayload(params: {
   if (payload.extra_context_items !== undefined) {
     command.extra_context_items = payload.extra_context_items;
   }
+  if (payload.attachment_paths?.length) command.attachment_paths = payload.attachment_paths;
+  if (admitted?.attachment_ids.length) command.attachment_ids = admitted.attachment_ids;
+  if (admitted?.attachment_bindings.length) {
+    command.attachment_bindings = admitted.attachment_bindings;
+  }
   return command;
 }
 
 function interveneCommandPayload(
   payload: ExecuteProxyResumeProviderRequest,
+  admitted?: AdmittedAttachmentInput,
 ): InterveneNodeCommandPayload {
   const command: InterveneNodeCommandPayload = {
     type: "intervene",
@@ -252,6 +335,10 @@ function interveneCommandPayload(
   };
   if (payload.attachment_paths !== undefined) {
     command.attachment_paths = payload.attachment_paths;
+  }
+  if (admitted?.attachment_ids.length) command.attachment_ids = admitted.attachment_ids;
+  if (admitted?.attachment_bindings.length) {
+    command.attachment_bindings = admitted.attachment_bindings;
   }
   if (payload.caller_info !== undefined) {
     command.caller_info = payload.caller_info;

@@ -3,6 +3,7 @@ import type {
   DeliveryIntent,
   DeliveryMetadataWireFields,
 } from "../session/session_action_command_payloads.js";
+import { parseAttachmentIds } from "../session/session_action_command_payloads.js";
 import {
   MODEL_REASONING_EFFORTS,
   type ReasoningEffort,
@@ -41,12 +42,15 @@ export type ExecuteProxyNewProviderRequest = {
   reasoningEffort?: ReasoningEffort;
   caller_info: ExecuteProxyCallerInfo;
   extra_context_items?: ExecuteProxyContextItem[];
+  attachment_ids?: string[];
+  attachment_paths?: string[];
 };
 
 export type ExecuteProxyResumeProviderRequest = DeliveryMetadataWireFields & {
   agent_session_id: string;
   prompt: string;
   attachment_paths?: string[];
+  attachment_ids?: string[];
   caller_info?: ExecuteProxyCallerInfo;
   extra_context_items?: ExecuteProxyContextItem[];
 };
@@ -101,6 +105,11 @@ export function parseExecuteProxyPayload(
     "attachment_paths",
   );
   if (!attachmentPaths.ok) return attachmentPaths;
+  // Bindings are server-made; parseAttachmentIds rejects a request that carries them.
+  const attachmentIds = parseAttachmentIds(object.value);
+  if (!attachmentIds.ok) {
+    return { ok: false, statusCode: 422, detail: attachmentIds.message };
+  }
   const callerInfo = optionalObject(object.value, "caller_info");
   if (!callerInfo.ok) return callerInfo;
   const deliveryMetadata = parseDeliveryMetadata(object.value);
@@ -113,6 +122,7 @@ export function parseExecuteProxyPayload(
       ...deliveryMetadata.value,
     };
     if (attachmentPaths.value !== undefined) resumeValue.attachment_paths = attachmentPaths.value;
+    if (attachmentIds.value !== undefined) resumeValue.attachment_ids = attachmentIds.value;
     if (callerInfo.value !== undefined) resumeValue.caller_info = callerInfo.value;
     if (contextItems.value !== undefined) resumeValue.extra_context_items = contextItems.value;
     return { ok: true, value: { mode: "resume", value: resumeValue } };
@@ -155,6 +165,8 @@ export function parseExecuteProxyPayload(
     newValue.reasoningEffort = optionalFields.value.reasoningEffort;
   }
   if (contextItems.value !== undefined) newValue.extra_context_items = contextItems.value;
+  if (attachmentPaths.value !== undefined) newValue.attachment_paths = attachmentPaths.value;
+  if (attachmentIds.value !== undefined) newValue.attachment_ids = attachmentIds.value;
   return { ok: true, value: { mode: "new", value: newValue } };
 }
 
@@ -206,7 +218,12 @@ function isDeliveryIntent(value: string): value is DeliveryIntent {
 
 type NewExecuteOptionalFields = Omit<
   ExecuteProxyNewProviderRequest,
-  "prompt" | "profile" | "caller_info" | "extra_context_items"
+  | "prompt"
+  | "profile"
+  | "caller_info"
+  | "extra_context_items"
+  | "attachment_ids"
+  | "attachment_paths"
 >;
 
 function parseNewExecuteOptionalFields(

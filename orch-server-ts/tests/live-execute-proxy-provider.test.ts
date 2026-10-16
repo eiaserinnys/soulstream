@@ -8,6 +8,7 @@ import {
   SessionCommandRouter,
   SessionCommandTransportBridge,
   createLiveExecuteProxyRouteProvider,
+  type ExecuteAttachmentAdmission,
   type ExecuteProxyResult,
 } from "../src/index.js";
 import {
@@ -583,9 +584,264 @@ describe("live execute proxy provider", () => {
       vi.useRealTimers();
     }
   });
+
+  describe("attachment input admission for new sessions", () => {
+    type Admit = ExecuteAttachmentAdmission;
+    const binding = { attachment_id: "att-9", node_id: "node-codex", path: "/incoming/pending/a.png" };
+
+    function codexHarness(admit?: Admit) {
+      const harness = createHarness({ admitAttachmentInput: admit });
+      const connectionId = harness.registerNode({
+        nodeId: "node-codex",
+        agents: [{ id: "codex-agent", backend: "codex" }],
+        supportedBackends: ["codex"],
+      });
+      const sent = harness.attachTransport("node-codex", connectionId, (message) => {
+        harness.receive("node-codex", connectionId, {
+          type: "session_created", requestId: message.requestId, agentSessionId: message.agentSessionId,
+        });
+        harness.receive("node-codex", connectionId, {
+          type: "event", agentSessionId: message.agentSessionId, event: { type: "complete", result: "done" },
+        });
+      });
+      return { ...harness, sent };
+    }
+
+    const base = { prompt: "", profile: "codex-agent", caller_info: { source: "execute-proxy", user_id: "owner" } };
+
+    it("admits ids on the selected node before the command and sends ids without empty keys", async () => {
+      const admit = vi.fn<Admit>(async () =>
+        ({ attachment_ids: ["att-1"], attachment_paths: [], attachment_bindings: [] }));
+      const { provider, sent } = codexHarness(admit);
+      const request = { id: "request-1" } as never;
+
+      const result = await provider.executeNew({ ...base, attachment_ids: ["att-1"] }, request);
+
+      expect(admit).toHaveBeenCalledWith(request, { sessionId: "generated-session", nodeId: "node-codex", attachmentIds: ["att-1"] });
+      expect(sent[0]).toMatchObject({ type: "create_session", prompt: "", attachment_ids: ["att-1"] });
+      expect(sent[0]).not.toHaveProperty("attachment_bindings");
+      expect(sent[0]).not.toHaveProperty("attachment_paths");
+      await expect(resultBody(result)).resolves.toContain('"agent_session_id":"generated-session"');
+    });
+
+    it("keeps the original paths and carries the resolved id and binding", async () => {
+      const admit: Admit = async () => ({
+        attachment_ids: ["att-9"], attachment_paths: [binding.path], attachment_bindings: [binding],
+      });
+      const { provider, sent } = codexHarness(admit);
+
+      await provider.executeNew({ ...base, attachment_paths: [binding.path] });
+
+      expect(sent[0]).toMatchObject({
+        attachment_paths: [binding.path], attachment_ids: ["att-9"], attachment_bindings: [binding],
+      });
+    });
+
+    it("forwards unresolved legacy paths without ids when the callback finds no alias", async () => {
+      const admit: Admit = async () => ({ attachment_ids: [], attachment_paths: [binding.path], attachment_bindings: [] });
+      const { provider, sent } = codexHarness(admit);
+
+      await provider.executeNew({ ...base, attachment_paths: [binding.path] });
+
+      expect(sent[0]!.attachment_paths).toEqual([binding.path]);
+      expect(sent[0]).not.toHaveProperty("attachment_ids");
+      expect(sent[0]).not.toHaveProperty("attachment_bindings");
+    });
+
+    it("forwards paths for a legacy caller and omits the attachment keys without attachments", async () => {
+      const { provider, sent } = codexHarness();
+
+      await provider.executeNew({ ...base, attachment_paths: [binding.path] });
+      await provider.executeNew({ ...base });
+
+      expect(sent[0]!.attachment_paths).toEqual([binding.path]);
+      expect(sent[1]).not.toHaveProperty("attachment_paths");
+      expect(sent[1]).not.toHaveProperty("attachment_ids");
+    });
+
+    it("rejects with the admission status and code without creating a node command", async () => {
+      const admit: Admit = async () => {
+        throw Object.assign(new Error("Attachment not found"), { code: "ATTACHMENT_NOT_FOUND", statusCode: 404 });
+      };
+      const { provider, sent, registry, sessionEventHub } = codexHarness(admit);
+      const createCommand = vi.spyOn(registry, "createCommand");
+      const unsubscribe = observeUnsubscribe(sessionEventHub);
+
+      await expect(provider.executeNew({ ...base, attachment_ids: ["missing"] })).rejects.toMatchObject({
+        statusCode: 404,
+        detail: { error: { code: "ATTACHMENT_NOT_FOUND", message: "Attachment not found" } },
+      });
+      expect(createCommand).not.toHaveBeenCalled();
+      expect(sent).toHaveLength(0);
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    });
+
+    it("passes an undefined request through so the callback can answer 401 for a direct call", async () => {
+      const admit: Admit = async (request) => {
+        if (request === undefined) {
+          throw Object.assign(new Error("Attachment actor is required"), { code: "ATTACHMENT_UNAUTHENTICATED", statusCode: 401 });
+        }
+        return { attachment_ids: ["att-1"], attachment_paths: [], attachment_bindings: [] };
+      };
+      const { provider, sent } = codexHarness(admit);
+
+      await expect(provider.executeNew({ ...base, attachment_ids: ["att-1"] })).rejects.toMatchObject({
+        statusCode: 401,
+        detail: { error: { code: "ATTACHMENT_UNAUTHENTICATED" } },
+      });
+      expect(sent).toHaveLength(0);
+    });
+
+    it("answers 503 for ids without a callback", async () => {
+      const { provider, sent } = codexHarness();
+
+      await expect(provider.executeNew({ ...base, attachment_ids: ["att-1"] })).rejects.toMatchObject({
+        statusCode: 503,
+        detail: { error: { code: "ATTACHMENT_INPUT_UNAVAILABLE" } },
+      });
+      expect(sent).toHaveLength(0);
+    });
+  });
+
+  describe("attachment input admission for resumed sessions", () => {
+    type Admit = ExecuteAttachmentAdmission;
+    const binding = { attachment_id: "att-9", node_id: "node-a", path: "/incoming/pending/a.png" };
+
+    function resumeHarness(
+      admit?: Admit,
+      extra: { findSessionOwnerNodeId?: (id: string) => Promise<string | null>; seedOwner?: boolean } = {},
+    ) {
+      const harness = createHarness({
+        admitAttachmentInput: admit,
+        findSessionOwnerNodeId: extra.findSessionOwnerNodeId,
+      });
+      const connectionId = harness.registerNode({
+        nodeId: "node-a",
+        agents: [{ id: "claude-agent", backend: "claude" }],
+        supportedBackends: ["claude"],
+      });
+      if (extra.seedOwner !== false) {
+        harness.registry.sessionCache.upsertFromSessionCreated({
+          nodeId: "node-a",
+          connectionId,
+          message: { type: "session_created", session: { agent_session_id: "sess-existing", status: "running" } },
+          nowMs: 1_700_000_000_000,
+        });
+      }
+      const sent = harness.attachTransport("node-a", connectionId, (message) => {
+        harness.receive("node-a", connectionId, {
+          type: "intervene_ack", requestId: message.requestId, status: "ok", outcome: "queued",
+        });
+        harness.receive("node-a", connectionId, {
+          type: "event", agentSessionId: "sess-existing", payload: { type: "complete", result: "resumed" }, eventId: 11,
+        });
+      });
+      return { ...harness, sent };
+    }
+
+    const base = { agent_session_id: "sess-existing", prompt: "" };
+
+    it("admits ids against the owner node and carries them in the intervene command", async () => {
+      const admit = vi.fn<Admit>(async () =>
+        ({ attachment_ids: ["att-1"], attachment_paths: [], attachment_bindings: [] }));
+      const { provider, sent } = resumeHarness(admit);
+      const request = { id: "request-1" } as never;
+
+      const result = await provider.executeResume({ ...base, attachment_ids: ["att-1"] }, request);
+
+      expect(admit).toHaveBeenCalledWith(request, { sessionId: "sess-existing", nodeId: "node-a", attachmentIds: ["att-1"] });
+      expect(sent[0]).toMatchObject({ type: "intervene", text: "", attachment_ids: ["att-1"] });
+      expect(sent[0]).not.toHaveProperty("attachment_bindings");
+      expect(sent[0]).not.toHaveProperty("attachment_paths");
+      await expect(resultBody(result)).resolves.toContain('"node_id":"node-a"');
+    });
+
+    it("keeps the original paths and carries the resolved id and binding", async () => {
+      const admit: Admit = async () => ({
+        attachment_ids: ["att-9"], attachment_paths: [binding.path], attachment_bindings: [binding],
+      });
+      const { provider, sent } = resumeHarness(admit);
+
+      await provider.executeResume({ ...base, attachment_paths: [binding.path] });
+
+      expect(sent[0]).toMatchObject({
+        attachment_paths: [binding.path], attachment_ids: ["att-9"], attachment_bindings: [binding],
+      });
+    });
+
+    it("rejects with the admission status and code without creating a node command", async () => {
+      const admit: Admit = async () => {
+        throw Object.assign(new Error("Attachment upload is not committed"), { code: "ATTACHMENT_NOT_COMMITTED", statusCode: 409 });
+      };
+      const { provider, sent, registry, sessionEventHub } = resumeHarness(admit);
+      const createCommand = vi.spyOn(registry, "createCommand");
+      const unsubscribe = observeUnsubscribe(sessionEventHub);
+
+      await expect(provider.executeResume({ ...base, attachment_ids: ["att-1"] })).rejects.toMatchObject({
+        statusCode: 409,
+        detail: { error: { code: "ATTACHMENT_NOT_COMMITTED" } },
+      });
+      expect(createCommand).not.toHaveBeenCalled();
+      expect(sent).toHaveLength(0);
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    });
+
+    it("passes an undefined request through so the callback can answer 401 for a direct call", async () => {
+      const admit: Admit = async (request) => {
+        if (request === undefined) {
+          throw Object.assign(new Error("Attachment actor is required"), { code: "ATTACHMENT_UNAUTHENTICATED", statusCode: 401 });
+        }
+        return { attachment_ids: [], attachment_paths: [], attachment_bindings: [] };
+      };
+      const { provider, sent } = resumeHarness(admit);
+
+      await expect(provider.executeResume({ ...base, attachment_ids: ["att-1"] })).rejects.toMatchObject({
+        statusCode: 401,
+        detail: { error: { code: "ATTACHMENT_UNAUTHENTICATED" } },
+      });
+      expect(sent).toHaveLength(0);
+    });
+
+    it("answers 503 for ids without a callback and keeps legacy paths unchanged", async () => {
+      const { provider, sent } = resumeHarness();
+
+      await expect(provider.executeResume({ ...base, attachment_ids: ["att-1"] })).rejects.toMatchObject({
+        statusCode: 503,
+        detail: { error: { code: "ATTACHMENT_INPUT_UNAVAILABLE" } },
+      });
+      expect(sent).toHaveLength(0);
+
+      await provider.executeResume({ ...base, attachment_paths: [binding.path] });
+      expect(sent[0]).toMatchObject({ type: "intervene", attachment_paths: [binding.path] });
+      expect(sent[0]).not.toHaveProperty("attachment_ids");
+    });
+
+    it("does not call the callback without attachments", async () => {
+      const admit = vi.fn<Admit>();
+      const { provider, sent } = resumeHarness(admit);
+
+      await provider.executeResume({ ...base, prompt: "continue" });
+
+      expect(admit).not.toHaveBeenCalled();
+      expect(sent[0]).toMatchObject({ type: "intervene", text: "continue" });
+    });
+
+    it("keeps the missing-owner response and never reaches the callback", async () => {
+      const admit = vi.fn<Admit>();
+      const { provider, sent } = resumeHarness(admit, { seedOwner: false, findSessionOwnerNodeId: async () => null });
+
+      await expect(provider.executeResume({ ...base, attachment_ids: ["att-1"] })).rejects.toMatchObject({
+        statusCode: 404,
+        detail: { error: { code: "SESSION_OWNER_MISSING" } },
+      });
+      expect(admit).not.toHaveBeenCalled();
+      expect(sent).toHaveLength(0);
+    });
+  });
 });
 
 function createHarness(options: {
+  admitAttachmentInput?: ExecuteAttachmentAdmission;
   timeoutMs?: number;
   createSessionReconcileTimeoutMs?: number;
   findSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
@@ -614,6 +870,7 @@ function createHarness(options: {
     createSessionReconcileTimeoutMs: options.createSessionReconcileTimeoutMs,
     generateSessionId: () => "generated-session",
     modelPresetAvailability: options.modelPresetAvailability,
+    admitAttachmentInput: options.admitAttachmentInput,
   });
 
   return {
