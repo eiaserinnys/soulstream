@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AttachmentR2Storage } from "../runtime/live_board_asset_storage.js";
+import type { AttachmentUploadOptions } from "./attachment_upload_http.js";
+import { ownedMultipartInit } from "./owned_multipart_init.js";
 import {
   ATTACHMENT_TICKET_SECONDS, LARGE_ATTACHMENT_MAX_SIZE, LARGE_ATTACHMENT_PART_SIZE,
   issueAttachmentTicket, verifyAttachmentTicket, type AttachmentUploadTicket,
@@ -18,6 +20,7 @@ export interface MultipartAttachmentOptions {
   getNode(nodeId: string): Promise<{ capabilities?: Record<string, unknown> } | null>;
   importAttachment(nodeId: string, input: AttachmentImportInput, signal: AbortSignal): Promise<unknown>;
   abortImport(nodeId: string, uploadId: string): Promise<unknown>;
+  uploads?: AttachmentUploadOptions;
 }
 class UploadError extends Error {
   constructor(message: string, readonly statusCode = 400) { super(message); }
@@ -30,6 +33,7 @@ export const multipartAttachmentRouteAuthRequirements = {
 };
 export function registerMultipartAttachmentRoutes(app: FastifyInstance, options: MultipartAttachmentOptions): void {
   app.post(`${prefix}/init`, async (request, reply) => {
+    if (options.uploads) return ownedMultipartInit(request, reply, { ...options, uploads: options.uploads });
     try {
       const nodeId = requestNodeId(request);
       const email = await authenticatedEmail(request);
