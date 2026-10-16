@@ -86,6 +86,7 @@ export class OpenCodeEngineAdapter implements EnginePort {
     const mapper = new OpenCodeEventMapper(model);
     const warnedCallIds = new Set<string>();
     let backendSessionId: string | undefined;
+    let sessionEventPublished = false;
     let process: ReturnType<typeof launchOpenCodeProcess> | undefined;
     try {
       if (!this.options.executablePath) {
@@ -147,7 +148,10 @@ export class OpenCodeEngineAdapter implements EnginePort {
               toolName: outOfAllowlist,
             }, "OpenCode MCP tool call is outside the configured allowlist");
           }
-          for (const mappedEvent of mapper.accept(event)) yield engineEventFrame(mappedEvent);
+          for (const mappedEvent of mapper.accept(event)) {
+            if (mappedEvent.type === "session") sessionEventPublished = true;
+            yield engineEventFrame(mappedEvent);
+          }
         } catch (error) {
           for (const event of mapper.fail(error)) yield engineEventFrame(event);
           process.interrupt();
@@ -155,6 +159,12 @@ export class OpenCodeEngineAdapter implements EnginePort {
       }
       const exit = await process.done;
       if (exit.error) {
+        if (exit.rateLimitSessionId && !sessionEventPublished) {
+          for (const event of mapper.accept({ type: "session", sessionID: exit.rateLimitSessionId })) {
+            if (event.type === "session") sessionEventPublished = true;
+            yield engineEventFrame(event);
+          }
+        }
         for (const event of mapper.fail(exit.error)) yield engineEventFrame(event);
       } else {
         for (const event of mapper.finish(exit.code, exit.signal, process.interrupted)) {
