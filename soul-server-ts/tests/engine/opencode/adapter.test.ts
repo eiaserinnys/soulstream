@@ -39,6 +39,40 @@ writeFileSync(executablePath, `#!/bin/sh\nexec ${shellQuote(process.execPath)} $
   return { root, workspaceDir, sessionDirectory, executablePath };
 }
 
+function rateLimitFixture(options: Record<string, unknown>) {
+  const root = mkdtempSync(join(tmpdir(), "opencode-rate-limit-"));
+  const workspaceDir = join(root, "workspace");
+  const sessionDirectory = join(root, "session");
+  const executablePath = join(root, "fake-opencode.sh");
+  const fixturePath = new URL("./fixtures/rate-limit-cli.mjs", import.meta.url).pathname;
+  const startedPath = join(root, "child-started");
+  const signalPath = join(root, "child-interrupted");
+  mkdirSync(workspaceDir, { recursive: true });
+  mkdirSync(sessionDirectory, { recursive: true });
+  const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  writeFileSync(executablePath, `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(fixturePath)} "$@"\n`, { mode: 0o700 });
+  chmodSync(executablePath, 0o700);
+  writeFileSync(join(sessionDirectory, "rate-limit-fixture.json"), JSON.stringify({
+    ...options,
+    startedPath,
+    signalPath,
+  }));
+  return { root, workspaceDir, sessionDirectory, executablePath, startedPath, signalPath };
+}
+
+async function waitForFile(path: string) {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    try {
+      readFileSync(path);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error(`Timed out waiting for fixture marker: ${path}`);
+}
+
 const input = {
   agentSessionId: "session-adapter-398",
   prompt: "첫 요청",
@@ -74,7 +108,7 @@ describe("OpenCodeEngineAdapter", () => {
         xdgDataHome: join(paths.sessionDirectory, "xdg", "data"),
         instructionText: "adapter instructions",
         prompt: "첫 요청",
-        args: ["run", "--pure", "--format", "json", "--model", "opencode/deepseek-v4.1-flash-free"],
+        args: ["--print-logs", "--log-level", "ERROR", "run", "--pure", "--format", "json", "--model", "opencode/deepseek-v4.1-flash-free"],
       });
       expect(complete).toMatchObject({ type: "complete", turn_cost_usd: 0.25 });
     } finally {
@@ -93,7 +127,7 @@ describe("OpenCodeEngineAdapter", () => {
       const assistant = events.find((event) => event.type === "assistant_message");
       expect(events.find((event) => event.type === "session")).toMatchObject({ session_id: "ses_resume_398" });
       expect(assistant?.type === "assistant_message" ? JSON.parse(assistant.content) : null).toMatchObject({
-        args: ["run", "--pure", "--format", "json", "--model", "opencode/deepseek-v4.1-flash-free", "--session", "ses_resume_398"],
+        args: ["--print-logs", "--log-level", "ERROR", "run", "--pure", "--format", "json", "--model", "opencode/deepseek-v4.1-flash-free", "--session", "ses_resume_398"],
       });
       expect(readFileSync(join(paths.sessionDirectory, "opencode", "system-prompt.md"), "utf8")).toBe("adapter instructions");
     } finally {
@@ -112,6 +146,83 @@ describe("OpenCodeEngineAdapter", () => {
     } finally {
       await engine.close();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces a stderr-only rate limit once and interrupts the waiting CLI without exposing stderr", async () => {
+    const paths = rateLimitFixture({ mode: "rate-limit", small: false, splitChunks: true, duplicate: true });
+    const logLines: string[] = [];
+    const destination = new Writable({
+      write(chunk, _encoding, callback) {
+        logLines.push(String(chunk));
+        callback();
+      },
+    });
+    const engine = new OpenCodeEngineAdapter({
+      ...paths,
+      agentId: "roselin",
+      processEnv: {},
+    }, pino({ level: "warn" }, destination));
+    try {
+      const events = await collect(engine);
+      expect(readFileSync(paths.signalPath, "utf8")).toBe("SIGINT");
+      expect(events.filter((event) => event.type === "error")).toMatchObject([
+        {
+          type: "error",
+          fatal: true,
+          message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
+        },
+      ]);
+      expect(events.some((event) => event.type === "complete")).toBe(false);
+      expect(JSON.stringify(events)).not.toContain("FAKE_STDERR_SECRET");
+      expect(logLines.join("\n")).not.toContain("FAKE_STDERR_SECRET");
+    } finally {
+      await engine.close();
+      destination.end();
+      rmSync(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("ignores the same rate-limit error from a small model request", async () => {
+    const paths = rateLimitFixture({ mode: "complete", small: true });
+    const engine = new OpenCodeEngineAdapter({
+      ...paths,
+      agentId: "roselin",
+      processEnv: {},
+    }, pino({ level: "silent" }));
+    try {
+      const events = await collect(engine);
+      expect(events.some((event) => event.type === "error" && event.fatal)).toBe(false);
+      expect(events).toMatchObject([
+        { type: "session", session_id: "ses_rate_limit_fixture" },
+        { type: "assistant_message", content: "small request completed" },
+        { type: "complete", status: "completed", result: "small request completed" },
+      ]);
+    } finally {
+      await engine.close();
+      rmSync(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps user cancellation deferred until the first stdout event", async () => {
+    const paths = rateLimitFixture({ mode: "cancel-before-stdout" });
+    const engine = new OpenCodeEngineAdapter({
+      ...paths,
+      agentId: "roselin",
+      processEnv: {},
+    }, pino({ level: "silent" }));
+    try {
+      const result = collect(engine);
+      await waitForFile(paths.startedPath);
+      expect(await engine.interrupt()).toBe(true);
+      const events = await result;
+      expect(events.some((event) => event.type === "session" && event.session_id === "ses_cancel_fixture")).toBe(true);
+      expect(events.some((event) => event.type === "error" && event.fatal)).toBe(false);
+      expect(events.some((event) => event.type === "complete")).toBe(false);
+      expect(readFileSync(paths.signalPath, "utf8")).toBe("SIGINT");
+    } finally {
+      await engine.close();
+      rmSync(paths.root, { recursive: true, force: true });
     }
   });
 
