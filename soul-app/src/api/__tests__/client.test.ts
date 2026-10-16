@@ -9,6 +9,8 @@ jest.mock('expo-file-system', () => ({
     constructor(uri: string) {
       this.uri = uri;
     }
+    readonly exists = true;
+    readonly size = 3;
     get name(): string {
       return this.uri.split('/').pop() ?? '';
     }
@@ -1127,16 +1129,18 @@ describe('client.uploadAttachment', () => {
     const fetchMock = makeFetchMock({ path: '/server/a.txt' });
     const appendSpy = jest.spyOn(FormData.prototype, 'append');
     const api = createApiClient(BASE);
+    const signal = new AbortController().signal;
 
     const res = await api.uploadAttachment('sess-1', 'node/1', {
       uri: 'file:///tmp/a.txt',
       name: 'a.txt',
-    });
+    }, { folderId: 'folder-1', signal });
 
     expect(res.path).toBe('/server/a.txt');
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(`${BASE}/api/attachments/sessions?nodeId=node%2F1`);
     expect((init as RequestInit).method).toBe('POST');
+    expect((init as RequestInit).signal).toBe(signal);
 
     const headers = (init as RequestInit).headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer test-jwt');
@@ -1144,9 +1148,10 @@ describe('client.uploadAttachment', () => {
 
     const form = (init as RequestInit).body as any;
     expect(form).toBeInstanceOf(FormData);
-    expect(appendSpy.mock.calls).toHaveLength(2);
+    expect(appendSpy.mock.calls).toHaveLength(3);
     expect(appendSpy.mock.calls[0]).toEqual(['session_id', 'sess-1']);
-    const [field, filePart] = appendSpy.mock.calls[1];
+    expect(appendSpy.mock.calls[1]).toEqual(['folder_id', 'folder-1']);
+    const [field, filePart] = appendSpy.mock.calls[2];
     expect(field).toBe('file');
     // Expo fetch는 RN식 { uri } 조각을 거부한다 — bytes()를 가진 조각이어야 한다.
     expect(filePart).not.toHaveProperty('uri');
