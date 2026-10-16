@@ -100,6 +100,7 @@ describe("production auth guard", () => {
         preview_mime_type: "text/plain",
       },
     }));
+    const validateSessionOutput = vi.fn(async () => ({ attachment_ids: ["asset-1"] }));
     const app = createApp({
       config: parseOrchServerConfig({
         environment: "production",
@@ -111,6 +112,7 @@ describe("production auth guard", () => {
         authBearerToken: serviceBearer,
         environment: "production",
         register,
+        validateSessionOutput,
       },
     } as unknown as CreateAppOptions);
 
@@ -136,6 +138,27 @@ describe("production auth guard", () => {
     expect(jwtResponse.statusCode).toBe(401);
     expect(jwtResponse.json()).toMatchObject({ code: "ATTACHMENT_UNAUTHORIZED" });
     expect(resolveTokenAccess).toHaveBeenCalledTimes(2);
+
+    const validationRequest = (authorization?: string) => app.inject({
+      method: "POST",
+      url: "/api/attachments/agent-output/validate",
+      headers: {
+        ...(authorization === undefined ? {} : { authorization }),
+        "content-type": "application/json",
+        "x-soulstream-agent-session-id": "session-1",
+        "x-soulstream-node-id": "node-1",
+        "x-soulstream-output-command-id": "command-1",
+      },
+      payload: { attachment_ids: ["asset-1"] },
+    });
+    const unauthenticatedValidation = await validationRequest();
+    expect(unauthenticatedValidation.statusCode).toBe(401);
+    expect(validateSessionOutput).not.toHaveBeenCalled();
+
+    const serviceValidation = await validationRequest(`Bearer ${serviceBearer}`);
+    expect(serviceValidation.statusCode).toBe(200);
+    expect(serviceValidation.json()).toEqual({ attachment_ids: ["asset-1"] });
+    expect(validateSessionOutput).toHaveBeenCalledOnce();
 
     await app.close();
   });
