@@ -23,6 +23,21 @@ export function createLiveAttachmentCommitRepository(
     return aliasFromRow(rows[0]);
   }
 
+  async function findLegacyAliasForUpload(
+    attachmentId: string,
+    nodeId: string,
+  ): Promise<AttachmentLegacyAlias | null> {
+    const sql = await sqlResolver.resolveSql();
+    const rows = await sql`
+      SELECT node_id, normalized_path, asset_id, original_path, availability
+      FROM attachment_legacy_aliases
+      WHERE asset_id = ${attachmentId} AND node_id = ${nodeId} AND availability = 'resolved'
+      ORDER BY normalized_path
+      LIMIT 1
+    `;
+    return aliasFromRow(rows[0]);
+  }
+
   async function getOwnedUpload(
     attachmentId: string,
     owner: UploadOwner,
@@ -129,6 +144,10 @@ export function createLiveAttachmentCommitRepository(
 
     async findLegacyAliasForAsset(nodeId, normalizedPath) {
       return findLegacyAliasForAsset(nodeId, normalizedPath);
+    },
+
+    async findLegacyAliasForUpload(attachmentId, nodeId) {
+      return findLegacyAliasForUpload(attachmentId, nodeId);
     },
 
     async insertLegacyAlias(input) {

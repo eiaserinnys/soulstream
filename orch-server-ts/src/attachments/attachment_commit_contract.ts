@@ -104,6 +104,7 @@ export type AttachmentCommitRepository = {
     readonly expectedUploadId: string;
   }) => Promise<boolean>;
   readonly findLegacyAliasForAsset: (nodeId: string, normalizedPath: string) => Promise<AttachmentLegacyAlias | null>;
+  readonly findLegacyAliasForUpload: (attachmentId: string, nodeId: string) => Promise<AttachmentLegacyAlias | null>;
   readonly insertLegacyAlias: (input: {
     readonly nodeId: string;
     readonly normalizedPath: string;

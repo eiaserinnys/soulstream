@@ -191,4 +191,35 @@ describe("live attachment commit repository", () => {
       originalPath: "C:\\out\\report.txt",
     })).resolves.toMatchObject({ assetId: "asset-a", availability: "resolved" });
   });
+
+  it("finds a legacy upload alias by resolved asset and node only", async () => {
+    const alias = {
+      node_id: "node-a",
+      normalized_path: "C:/out/report.txt",
+      asset_id: "asset-a",
+      original_path: "C:\\out\\report.txt",
+      availability: "resolved",
+    };
+    const harness = createSqlHarness(() => [alias]);
+    const repository = createLiveAttachmentCommitRepository(harness.resolver);
+
+    await expect(
+      repository.findLegacyAliasForUpload("asset-a", "node-a"),
+    ).resolves.toMatchObject({ assetId: "asset-a", normalizedPath: "C:/out/report.txt" });
+    const query = harness.calls[0]!;
+    expect(query.text).toContain("asset_id");
+    expect(query.text).toContain("node_id");
+    expect(query.text).toContain("availability = 'resolved'");
+    expect(query.text).toContain("ORDER BY normalized_path");
+    expect(query.text).toContain("LIMIT 1");
+    expect(query.values).toContain("asset-a");
+    expect(query.values).toContain("node-a");
+  });
+
+  it("treats a missing legacy upload alias as absent", async () => {
+    const harness = createSqlHarness(() => []);
+    const repository = createLiveAttachmentCommitRepository(harness.resolver);
+
+    await expect(repository.findLegacyAliasForUpload("asset-a", "node-a")).resolves.toBeNull();
+  });
 });

@@ -102,6 +102,7 @@ function createHarness(initialRow: OwnedAttachmentUpload | null = null) {
     }),
     clearPendingMultipart: vi.fn(async () => { currentRow = currentRow && { ...currentRow, multipartUploadId: null }; return true; }),
     findLegacyAliasForAsset: vi.fn(async () => null),
+    findLegacyAliasForUpload: vi.fn(async () => null),
     insertLegacyAlias: vi.fn(async () => null),
   };
   const binding = { storage, identity: "binding-v1", location };
