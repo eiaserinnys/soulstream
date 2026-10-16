@@ -6,6 +6,8 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pino from "pino";
 
 import type { ThreadEvent } from "@openai/codex-sdk";
@@ -14,6 +16,15 @@ import {
   SCRATCH_WORKSPACE_DIR_ENV,
   SOULSTREAM_AGENT_ID_ENV,
 } from "../../src/engine/scratch_workspace_env.js";
+
+const MATERIALIZED_IMAGE_PATH = join(
+  tmpdir(),
+  "soulstream-attachment-model-input-boundary-245",
+  "session-1",
+  "assets",
+  "asset-image",
+  "screen.png",
+);
 
 // vi.hoisted로 mock 함수들을 hoist하여 vi.mock factory에서 접근 가능하게 함.
 const { mockStartThread, mockResumeThread, mockRunStreamed, mockCodexCtor } = vi.hoisted(
@@ -433,6 +444,42 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
         { type: "text", text: "이 이미지 설명해줘" },
         { type: "local_image", path: "/tmp/a.png" },
         { type: "local_image", path: "/tmp/b.webp" },
+      ],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("forwards the materialized cache path as a local_image input", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-cache-image" },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 1,
+            cached_input_tokens: 0,
+            output_tokens: 1,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter({ workspaceDir: "/tmp/work" }, silentLogger());
+    for await (const _ of engine.execute({
+      prompt: "Inspect this image",
+      imageAttachmentPaths: [MATERIALIZED_IMAGE_PATH],
+    })) {
+      // drain
+    }
+
+    expect(mockRunStreamed).toHaveBeenCalledWith(
+      [
+        { type: "text", text: "Inspect this image" },
+        { type: "local_image", path: MATERIALIZED_IMAGE_PATH },
       ],
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
