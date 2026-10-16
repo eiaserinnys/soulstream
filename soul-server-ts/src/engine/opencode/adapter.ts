@@ -113,7 +113,7 @@ export class OpenCodeEngineAdapter implements EnginePort {
         ...(this.options.internalMcpUrl ? { internalMcpUrl: this.options.internalMcpUrl } : {}),
         processEnv: this.options.processEnv,
       });
-      const args = ["run", "--pure", "--format", "json", "--model", model];
+      const args = ["--print-logs", "--log-level", "ERROR", "run", "--pure", "--format", "json", "--model", model];
       if (params.resumeSessionId) args.push("--session", params.resumeSessionId);
       process = launchOpenCodeProcess({
         executablePath: this.options.executablePath,
