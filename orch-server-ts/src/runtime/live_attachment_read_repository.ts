@@ -93,7 +93,7 @@ export function createLiveAttachmentReadRepository(
     async listLegacyCandidateScopes(asset) {
       const sql = await sqlResolver.resolveSql();
       const reference = sql.json([{ attachment_id: asset.id }]);
-      const [cards, boardItems] = await Promise.all([
+      const [cards, boardItems, eventSessions] = await Promise.all([
         sql`
           SELECT c.id
           FROM cards c
@@ -112,6 +112,15 @@ export function createLiveAttachmentReadRepository(
           FROM board_items
           WHERE item_type = 'asset' AND item_id = ${asset.id}
         `,
+        sql`
+          SELECT DISTINCT s.session_id AS id
+          FROM events e
+          INNER JOIN sessions s ON s.session_id = e.session_id
+          WHERE e.event_type IN ('user_message', 'intervention_sent', 'complete', 'assistant_message')
+            AND jsonb_typeof(e.payload->'attachment_ids') = 'array'
+            AND COALESCE(e.payload->'attachment_ids' @> ${sql.json([asset.id])}::jsonb, FALSE)
+          ORDER BY s.session_id
+        `,
       ]);
       const scopes: AttachmentScope[] = [
         ...cards.flatMap((row) => {
@@ -121,6 +130,10 @@ export function createLiveAttachmentReadRepository(
         ...boardItems.flatMap((row) => {
           const id = nullableString(row.id);
           return id === null ? [] : [{ type: "board_item" as const, id }];
+        }),
+        ...eventSessions.flatMap((row) => {
+          const id = nullableString(row.id);
+          return id === null ? [] : [{ type: "session" as const, id }];
         }),
       ];
       const registrationScope = attachmentScopeFromRegistrationScope(asset.registrationScope);

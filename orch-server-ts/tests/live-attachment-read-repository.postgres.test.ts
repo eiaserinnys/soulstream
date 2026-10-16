@@ -145,6 +145,58 @@ describePostgres("live attachment read repository PostgreSQL contract", () => {
     })).resolves.toContainEqual({ type: "card", id: "card-live" });
   });
 
+  it("lists existing event-ref sessions in session_id order without losing them when the source is deleted", async () => {
+    await harness.sql`
+      INSERT INTO sessions (session_id, folder_id)
+      VALUES
+        ('candidate-source-session', 'attachment-folder'),
+        ('candidate-registration-session', 'attachment-folder'),
+        ('candidate-target-z', 'attachment-folder'),
+        ('candidate-target-a', 'attachment-folder')
+    `;
+    await insertAsset("legacy-event-asset", {
+      registrationScope: { type: "session", id: "candidate-registration-session" },
+      sourceSessionId: "candidate-source-session",
+    });
+    await harness.sql`
+      INSERT INTO events (session_id, id, event_type, payload)
+      VALUES
+        ('candidate-target-z', 1, 'user_message', ${harness.sql.json({ attachment_ids: ["legacy-event-asset"] })}::jsonb),
+        ('candidate-target-a', 2, 'assistant_message', ${harness.sql.json({ attachment_ids: ["legacy-event-asset"] })}::jsonb),
+        ('candidate-target-a', 3, 'complete', ${harness.sql.json({ attachment_ids: ["legacy-event-asset"] })}::jsonb)
+    `;
+    const asset = {
+      id: "legacy-event-asset",
+      storageKey: "private/legacy-event-asset",
+      storagePurpose: "attachment",
+      storageEndpoint: "https://r2.example.test",
+      storageBucket: "private-attachments",
+      ownerKind: null,
+      ownerKey: null,
+      registrationScope: { type: "session", id: "candidate-registration-session" },
+      sourceSessionId: "candidate-source-session",
+      originalName: "legacy-event-asset.png",
+      mimeType: "image/png",
+      byteSize: 8,
+      width: null,
+      height: null,
+      checksumSha256: null,
+      uploadStatus: "committed" as const,
+    };
+
+    const candidates = await repository.listLegacyCandidateScopes(asset);
+    expect(candidates.filter((scope) => scope.type === "session")).toEqual([
+      { type: "session", id: "candidate-target-a" },
+      { type: "session", id: "candidate-target-z" },
+      { type: "session", id: "candidate-registration-session" },
+      { type: "session", id: "candidate-source-session" },
+    ]);
+
+    await harness.sql`DELETE FROM sessions WHERE session_id = 'candidate-source-session'`;
+    await expect(repository.listLegacyCandidateScopes(asset))
+      .resolves.toContainEqual({ type: "session", id: "candidate-target-a" });
+  });
+
   async function insertAsset(
     id: string,
     options: {
