@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+
 import type {
   AutoResumeCallback,
   AutoResumeTransition,
@@ -54,6 +56,8 @@ export interface AddInterventionParams {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  attachmentIds?: string[];
+  attachmentBindings?: AttachmentPathBinding[];
   purpose?: "cache_keepalive";
   context?: ContextItem[];
   source?: string;
@@ -161,6 +165,8 @@ export class TaskInterventionRoute {
       user: request.user,
       callerInfo: request.callerInfo,
       attachmentPaths: request.attachmentPaths,
+      attachmentIds: request.attachmentIds,
+      attachmentBindings: request.attachmentBindings,
       purpose: request.purpose,
       context: request.context,
       source: request.source,
@@ -444,6 +450,8 @@ function hydrateStoredDeliveryMessage(
     rateLimitType: canonical.rateLimitType,
     resetsAt: canonical.resetsAt,
     attachmentPaths: canonical.attachmentPaths,
+    attachmentIds: canonical.attachmentIds,
+    attachmentBindings: canonical.attachmentBindings,
     context: canonical.context,
     followupKey: canonical.followupKey,
     followupAttempt: canonical.followupAttempt,

@@ -9,6 +9,7 @@ import type {
   ReasoningEffort,
 } from "../engine/protocol.js";
 import { appendAttachmentPathNotes } from "../task/attachment_path_note.js";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type {
   AddInterventionResult,
   TaskManager,
@@ -46,6 +47,8 @@ export interface CreateSessionRuntimeParams {
   callerInfo?: CallerInfo;
   notifyCompletion?: boolean;
   attachmentPaths?: string[];
+  attachmentIds?: string[];
+  attachmentBindings?: AttachmentPathBinding[];
   extraContextItems?: ContextItem[];
   model?: string | null;
   modelPreset?: string | null;
@@ -70,6 +73,8 @@ export interface InterveneRuntimeParams {
   user?: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  attachmentIds?: string[];
+  attachmentBindings?: AttachmentPathBinding[];
   extraContextItems?: ContextItem[];
   deliveryId?: string;
   deliveryIntent?: DeliveryIntent;
@@ -232,6 +237,8 @@ export class TaskRuntimeCommands {
       systemPrompt: params.systemPrompt,
       contextItems: params.extraContextItems,
       attachmentPaths: params.attachmentPaths,
+      attachmentIds: params.attachmentIds,
+      attachmentBindings: params.attachmentBindings,
       pageAnchor: params.pageAnchor,
     });
 
@@ -248,6 +255,8 @@ export class TaskRuntimeCommands {
         user: params.user ?? "upstream",
         callerInfo: params.callerInfo,
         attachmentPaths: params.attachmentPaths,
+        attachmentIds: params.attachmentIds,
+        attachmentBindings: params.attachmentBindings,
         context: params.extraContextItems,
         deliveryId: params.deliveryId,
         deliveryIntent: params.deliveryIntent,
@@ -273,6 +282,7 @@ export class TaskRuntimeCommands {
       agentSessionId: params.agentSessionId, text: params.text,
       user: params.user ?? "upstream", callerInfo:params.callerInfo,
       attachmentPaths:params.attachmentPaths,deliveryId:params.deliveryId,
+      attachmentIds:params.attachmentIds,attachmentBindings:params.attachmentBindings,
       deliveryIntent:"durable_next_turn",source:"card_execution",
       completionId:params.deliveryId,relationKey:params.deliveryId,
     }, (task,activation)=>this.startResumedTask(task,activation));

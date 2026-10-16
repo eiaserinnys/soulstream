@@ -6,6 +6,7 @@ import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
@@ -84,6 +85,10 @@ export interface CreateTaskParams {
   contextItems?: ContextItem[];
   /** 첫 turn user_message.attachments와 engine image 입력 분리에 사용할 원본 첨부 경로. */
   attachmentPaths?: string[];
+  /** 첫 turn user_message.attachment_ids에 실을 첨부 자산 ID. */
+  attachmentIds?: string[];
+  /** 첨부 ID를 노드 로컬 경로에 연결하는 원본 binding. */
+  attachmentBindings?: AttachmentPathBinding[];
 }
 
 export interface TaskCreationDeps {
@@ -186,6 +191,8 @@ export class TaskCreation {
       systemPrompt: params.systemPrompt,
       contextItems: params.contextItems,
       attachmentPaths: params.attachmentPaths,
+      attachmentIds: params.attachmentIds,
+      attachmentBindings: params.attachmentBindings,
       worktreeId: params.worktreeId,
       createdAt: now,
       lastEventId: 0,

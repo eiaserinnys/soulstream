@@ -59,6 +59,7 @@ function createRuntime(opts: {
   agentRegistry?: Pick<AgentRegistry, "get">;
   createTask?: TaskManager["createTask"];
   addIntervention?: TaskManager["addIntervention"];
+  ensureRunning?: TaskManager["ensureRunning"];
   startNewExecution?: TaskExecutor["startNewExecution"];
   presets?: ModelPreset[];
   agentProfileSource?: NewSessionAgentProfileSource;
@@ -69,7 +70,8 @@ function createRuntime(opts: {
   const taskManager = {
     createTask: opts.createTask ?? vi.fn(async (params) => makeTask(params)),
     addIntervention: opts.addIntervention ?? vi.fn(),
-  } as Pick<TaskManager, "createTask" | "addIntervention">;
+    ensureRunning: opts.ensureRunning ?? vi.fn(),
+  } as Pick<TaskManager, "createTask" | "addIntervention" | "ensureRunning">;
   const taskExecutor = {
     startNewExecution: opts.startNewExecution ?? vi.fn(),
   } as Pick<TaskExecutor, "startNewExecution">;
@@ -418,6 +420,51 @@ describe("TaskRuntimeCommands.createSession", () => {
     expect(taskManager.createTask).not.toHaveBeenCalled();
     expect(taskExecutor.startNewExecution).not.toHaveBeenCalled();
   });
+
+  it("preserves attachment ids and bindings on the created session task", async () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+      { attachment_id: "att-b", node_id: "node-1", path: "/tmp/b.txt" },
+    ];
+    const { runtime, taskManager } = createRuntime();
+
+    const task = await runtime.createSession({
+      agentSessionId: "sess-ids",
+      prompt: "inspect",
+      profileId: codexAgent.id,
+      attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
+      attachmentIds: ["att-a", "att-b"],
+      attachmentBindings: bindings,
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att-a", "att-b"],
+        attachmentBindings: bindings,
+      }),
+    );
+    // The ids/bindings handed to the manager survive onto the created Task.
+    expect(task.attachmentIds).toEqual(["att-a", "att-b"]);
+    expect(task.attachmentBindings).toEqual(bindings);
+  });
+
+  it("keeps the legacy no-attachment-ids request unchanged", async () => {
+    const { runtime, taskManager } = createRuntime();
+
+    await runtime.createSession({
+      agentSessionId: "sess-no-ids",
+      prompt: "inspect",
+      profileId: codexAgent.id,
+      attachmentPaths: ["/tmp/a.png"],
+    });
+
+    const calledParams = taskManager.createTask.mock.calls[0]?.[0] as {
+      attachmentIds?: string[];
+      attachmentBindings?: unknown[];
+    };
+    expect(calledParams.attachmentIds).toBeUndefined();
+    expect(calledParams.attachmentBindings).toBeUndefined();
+  });
 });
 
 describe("TaskRuntimeCommands.intervene", () => {
@@ -536,6 +583,57 @@ describe("TaskRuntimeCommands.intervene", () => {
     ).rejects.toBeInstanceOf(UnknownAgentProfileError);
 
     expect(taskExecutor.startNewExecution).not.toHaveBeenCalled();
+  });
+
+  it("forwards attachment ids and bindings to addIntervention", async () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+    const addIntervention = vi.fn(async () => ({ delivered: true }));
+    const { runtime, taskManager } = createRuntime({ addIntervention });
+
+    await runtime.intervene({
+      agentSessionId: "sess-ids",
+      text: "continue",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: bindings,
+    });
+
+    expect(taskManager.addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }),
+      expect.any(Function),
+    );
+  });
+});
+
+describe("TaskRuntimeCommands.ensureSessionRunning", () => {
+  it("forwards attachment ids and bindings to ensureRunning", async () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+    const ensureRunning = vi.fn(async () => ({ state: "started", execution: {} }));
+    const { runtime, taskManager } = createRuntime({ ensureRunning });
+
+    await runtime.ensureSessionRunning({
+      agentSessionId: "sess-ids",
+      text: "start",
+      deliveryId: "delivery-1",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: bindings,
+    });
+
+    expect(taskManager.ensureRunning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }),
+      expect.any(Function),
+    );
   });
 });
 
