@@ -1,6 +1,8 @@
 import { cn } from "../../lib/cn";
 import { memo, useRef, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
+import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
+import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
@@ -14,6 +16,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   header,
   children,
   attachments,
+  representedAttachments,
+  readContext,
   portraitUrl,
   bubbleProps,
   presentation = "default",
@@ -25,6 +29,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   header?: ReactNode;
   children?: ReactNode;
   attachments?: ReactNode;
+  representedAttachments?: readonly ChatAttachmentItem[];
+  readContext?: AttachmentReadContext;
   portraitUrl?: string | null;
   bubbleProps?: HTMLAttributes<HTMLDivElement>;
   presentation?: "default" | "manuscript";
@@ -101,7 +107,9 @@ export const AssistantMessage = memo(function AssistantMessage({
             <MarkdownContent
               content={msg.content}
               enableBlockquoteCopy
-              chatImages={manuscript ? { role: "assistant" } : undefined}
+              chatImages={readContext
+                ? { role: "assistant", representedAttachments, readContext }
+                : manuscript ? { role: "assistant" } : undefined}
             />
           )}
           </div>

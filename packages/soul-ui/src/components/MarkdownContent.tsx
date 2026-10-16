@@ -17,11 +17,14 @@ import "highlight.js/styles/github-dark.css";
 import { MarkdownImage } from "./MarkdownImage";
 import { useInternalLinkClick } from "./InternalLinkProvider";
 import { ChatImageAttachments, ChatImageViewer } from "./chat/ChatImageAttachments";
+import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
+import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
 import {
   buildStructuredChatImageItems,
   chatImageMetadataKey,
   createChatMarkdownImageModel,
   createChatMarkdownImageRemarkPlugin,
+  contextualizeChatMarkdownImageSrc,
   type ChatImageMetadata,
   type ChatImageRole,
 } from "../lib/chat-markdown-images";
@@ -38,6 +41,8 @@ interface MarkdownContentProps {
     role: ChatImageRole;
     attachmentPaths?: readonly string[];
     nodeId?: string;
+    representedAttachments?: readonly ChatAttachmentItem[];
+    readContext?: AttachmentReadContext;
   };
 }
 
@@ -351,12 +356,24 @@ export function MarkdownContent({
   const viewerTriggerRef = useRef<HTMLElement | null>(null);
   const viewerWasOpenRef = useRef(false);
   const attachments = useMemo(
-    () => buildStructuredChatImageItems(chatImages?.attachmentPaths, chatImages?.nodeId),
-    [chatImages?.attachmentPaths, chatImages?.nodeId],
+    () => buildStructuredChatImageItems(
+      chatImages?.attachmentPaths,
+      chatImages?.nodeId,
+      chatImages?.readContext,
+      chatImages?.representedAttachments,
+    ),
+    [chatImages?.attachmentPaths, chatImages?.nodeId, chatImages?.readContext, chatImages?.representedAttachments],
   );
   const imageModel = useMemo(
-    () => chatImages ? createChatMarkdownImageModel(chatImages.role, attachments) : null,
-    [attachments, chatImages?.role],
+    () => chatImages && !onImageClick
+      ? createChatMarkdownImageModel(
+        chatImages.role,
+        attachments,
+        chatImages.representedAttachments,
+        chatImages.readContext,
+      )
+      : null,
+    [attachments, chatImages?.readContext, chatImages?.representedAttachments, chatImages?.role, onImageClick],
   );
   const openViewer = useCallback((index: number, trigger: HTMLElement) => {
     viewerTriggerRef.current = trigger;
@@ -395,7 +412,21 @@ export function MarkdownContent({
     const layoutComponents = codeBlockLayout === "document"
       ? { ...baseComponents, pre: documentCodeBlock }
       : baseComponents;
-    const imageComponents = onImageClick ? { ...layoutComponents, img: ({src,alt}: {src?:string;alt?:string}) => <MarkdownImage src={src} alt={alt??""} onOpen={onImageClick}/> } : layoutComponents;
+    const imageComponents = onImageClick || chatImages?.readContext
+      ? {
+        ...layoutComponents,
+        img: ({ src, alt }: { src?: string; alt?: string }) => {
+          const imageSrc = src ? contextualizeChatMarkdownImageSrc(src, chatImages?.readContext) : src;
+          return (
+            <MarkdownImage
+              src={imageSrc}
+              alt={alt ?? ""}
+              onOpen={onImageClick ? (_openedSrc, openedAlt) => onImageClick(src ?? _openedSrc, openedAlt) : undefined}
+            />
+          );
+        },
+      }
+      : layoutComponents;
     const chatComponents = imageModel ? {
       ...imageComponents,
       div: ({ children, node, ...props }: HTMLAttributes<HTMLDivElement> & { node?: unknown }) => {
@@ -425,7 +456,7 @@ export function MarkdownContent({
     return sourceLinkComponent
       ? { ...blockquoteComponents, a: sourceLinkComponent }
       : blockquoteComponents;
-  }, [codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer, sourceLinkComponent]);
+  }, [chatImages?.readContext, codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer, sourceLinkComponent]);
 
   const markdown = (
     <ReactMarkdown

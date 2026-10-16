@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import { ChatUiControllerProvider, FileAttachmentPreview } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import { ChatAttachments } from "@seosoyoung/soul-ui/components/chat/ChatAttachments";
@@ -212,7 +212,7 @@ export function ChatAttachmentReviewSamples() {
     {
       id: "connected-default-user",
       role: "user",
-      content: "일반 채팅의 첨부입니다.",
+      content: "일반 채팅의 첨부입니다.\n\n![첨부 행과 같은 이미지](/api/attachments/review-user-image/content?context_type=session&context_id=attachment-review-connected)\n\n본문 설명 ![외부 이미지](https://images.example/ordinary.png) 뒤 설명\n\n![이전 경로](/api/attachments/files?nodeId=eiaserinnys&path=%2Fincoming%2Finline-only.png)",
       treeNodeId: "connected-default-user",
       treeNodeType: "user_message",
       eventId: 201,
@@ -241,7 +241,7 @@ export function ChatAttachmentReviewSamples() {
     {
       id: "connected-manuscript-user",
       role: "user",
-      content: "PAS 사용자 첨부입니다.",
+      content: "PAS 사용자 첨부입니다.\n\n![첨부 행과 같은 이미지](/api/attachments/review-manuscript-image/content?context_type=session&context_id=attachment-review-connected)",
       treeNodeId: "connected-manuscript-user",
       treeNodeType: "user_message",
       eventId: 204,
@@ -327,7 +327,7 @@ export function ChatAttachmentReviewSamples() {
   const [viewerItems, setViewerItems] = useState(items);
   const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const originalFetch = window.fetch;
     const reviewFetch: typeof window.fetch = (input, init) => {
       const url = input instanceof Request

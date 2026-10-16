@@ -110,6 +110,53 @@ describe("ChatMessageItem presentation", () => {
     expect(manuscriptHtml).not.toContain("chat-image-metadata");
   });
 
+  it("renders a default row's same internal Markdown image only through its attachment row", async () => {
+    const sessionId = "inline-session";
+    const message = makeMessage("user", "inline-duplicate", {
+      content: "![same image](/api/attachments/inline-asset/content?context_type=session&context_id=inline-session)",
+      eventId: 901,
+      attachmentIds: ["inline-asset"],
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const rawUrl = input instanceof Request ? input.url : String(input);
+      if (!rawUrl.includes(`/api/sessions/${sessionId}/events/901/attachments`)) {
+        throw new Error(`Unexpected request: ${rawUrl}`);
+      }
+      return new Response(JSON.stringify({
+        event_id: 901,
+        items: [{
+          kind: "asset",
+          descriptor: {
+            attachment_id: "inline-asset",
+            name: "same.png",
+            mime_type: "image/png",
+            byte_size: 4,
+            checksum_sha256: null,
+            width: 1,
+            height: 1,
+            preview_kind: "image",
+            preview_mime_type: "image/png",
+          },
+          read_context: { type: "session", id: sessionId },
+          legacy_sources: [],
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root?.render(createElement(ChatMessageItem, { msg: message, sessionId }));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    const row = host.querySelector<HTMLElement>('[data-tree-node-id="root-inline-duplicate"]')!;
+    expect(row.querySelectorAll('img[src*="inline-asset"]').length).toBe(1);
+    expect(row.querySelector('[data-chat-attachment-rows]')).toBeNull();
+    expect(row.querySelectorAll('[data-chat-image-index]')).toHaveLength(1);
+  });
+
   it("opens the message gallery at the clicked image, navigates, and restores focus without moving scroll", () => {
     const msg = makeMessage("assistant", "gallery", {
       content: "첫 설명입니다.\n\n![첫 이미지](/first.png)\n\n사이 설명입니다.\n\n![둘째 이미지](/second.png)",

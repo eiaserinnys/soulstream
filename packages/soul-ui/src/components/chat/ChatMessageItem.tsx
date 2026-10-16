@@ -90,7 +90,14 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
   let body: ReactNode;
   switch (msg.role) {
     case "user":
-      body = <UserMessage msg={msg} llmContext={llmContext} presentation={presentation} attachments={attachmentSlot} />;
+      body = <UserMessage
+        msg={msg}
+        llmContext={llmContext}
+        presentation={presentation}
+        attachments={attachmentSlot}
+        representedAttachments={attachmentItems}
+        readContext={sessionId ? { type: "session", id: sessionId } : undefined}
+      />;
       break;
     case "intervention":
       body = <InterventionMessage msg={msg} presentation={presentation} attachments={attachmentSlot} />;
@@ -100,10 +107,27 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       body = msg.treeNodeType === "thinking"
         ? <ThinkingMessage msg={msg} presentation={presentation} />
         : msg.ui !== undefined
-          ? <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={false} contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"} attachments={attachmentSlot}>
+          ? <AssistantMessage
+            msg={msg}
+            llmContext={llmContext}
+            presentation={presentation}
+            narration={false}
+            contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"}
+            attachments={attachmentSlot}
+            representedAttachments={attachmentItems}
+            readContext={sessionId ? { type: "session", id: sessionId } : undefined}
+          >
             <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} />
           </AssistantMessage>
-          : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={narration} attachments={attachmentSlot} />;
+          : <AssistantMessage
+            msg={msg}
+            llmContext={llmContext}
+            presentation={presentation}
+            narration={narration}
+            attachments={attachmentSlot}
+            representedAttachments={attachmentItems}
+            readContext={sessionId ? { type: "session", id: sessionId } : undefined}
+          />;
       break;
     case "tool":
       body = <ToolMessage msg={msg} />;
