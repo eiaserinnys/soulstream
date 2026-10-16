@@ -91,7 +91,16 @@ describe("card item evidence attachment ids", () => {
     expect(stored.attachment_refs).toStrictEqual([{ attachment_id: "img-b" }]);
     expect(stored.version).toBe(before.version + 1);
     const detail = await cards.getCard(cardId);
-    expect(detail!.card.items[0]!.evidence).toStrictEqual([proof("img-b")]);
+    const contentUrl = "/api/attachments/img-b/content?context_type=card&context_id=" + encodeURIComponent(cardId);
+    expect(detail!.card.items[0]!.evidence[0]).toStrictEqual({
+      type: "image", label: "화면", url: contentUrl, attachment_id: "img-b",
+      descriptor: {
+        attachment_id: "img-b", name: "img-b.png", mime_type: "image/png", byte_size: 8,
+        checksum_sha256: null, width: null, height: null, preview_kind: "image", preview_mime_type: "image/png",
+      },
+      read_context: { type: "card", id: cardId }, previewUrl: contentUrl,
+      originalUrl: contentUrl + "&download=true",
+    });
     expect(detail!.card.attachment_refs).toStrictEqual([{ attachment_id: "img-b" }]);
   });
 

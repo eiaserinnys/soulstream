@@ -2,6 +2,7 @@ import type { CardRow, FolderRow, FolderSnapshot, FolderOperationRow, SqlClient,
 import { normalizeOperation } from "./card_models.js";
 import { projectCardActivity } from "../card_latest_activity.js";
 import { completedCardCursor, type CompletedCardQuery } from "../completed_card_query.js";
+import { projectCardAttachmentRows } from "../card_attachment_projection.js";
 
 export class CardRepositoryRead {
   constructor(protected readonly sql: SqlClient) {}
@@ -52,15 +53,20 @@ export class CardRepositoryRead {
   async getCard(cardId: string): Promise<CardRow | null> {
     return (await this.sql<CardRow[]>`SELECT * FROM cards WHERE id=${cardId}`)[0] ?? null;
   }
-  projectCards(cards: readonly CardRow[]) { return projectCardActivity(this.sql, cards); }
+  async projectCards(cards: readonly CardRow[]) {
+    const withActivity = await projectCardActivity(this.sql, cards);
+    return projectCardAttachmentRows(this.sql, withActivity);
+  }
   async listReports(cardId: string) {
-    return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_reports WHERE card_id=${cardId} ORDER BY created_at DESC,id DESC`;
+    const rows = await this.sql<Record<string, unknown>[]>`SELECT * FROM card_reports WHERE card_id=${cardId} ORDER BY created_at DESC,id DESC`;
+    return this.projectSourceRows(cardId, rows);
   }
   async listQuestions(cardId: string) {
     return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_questions WHERE card_id=${cardId} ORDER BY asked_at,id`;
   }
   async listComments(cardId: string) {
-    return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND kind<>'note' ORDER BY created_at,id`;
+    const rows = await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND kind<>'note' ORDER BY created_at,id`;
+    return this.projectSourceRows(cardId, rows);
   }
   async listCardNotes(cardId: string, limit=20, before?:string) {
     const cursor=before === undefined ? null : (await this.sql<{id:string;created_at:Date}[]>`
@@ -73,12 +79,13 @@ export class CardRepositoryRead {
         AND (${cursor?.id ?? null}::text IS NULL OR (created_at,id)<(${cursor?.created_at ?? null}::timestamptz,${cursor?.id ?? null}::text))
       ORDER BY created_at DESC,id DESC LIMIT ${limit+1}`;
     const hasMore=rows.length>limit;
-    const notes=rows.slice(0,limit);
+    const notes=await this.projectSourceRows(cardId, rows.slice(0,limit));
     return {notes,nextCursor:hasMore && notes.length>0 ? String(notes.at(-1)!.id) : null};
   }
   async listAllCardNotes(cardId:string) {
-    return await this.sql<Record<string,unknown>[]>`SELECT * FROM card_comments
+    const rows = await this.sql<Record<string,unknown>[]>`SELECT * FROM card_comments
       WHERE card_id=${cardId} AND kind='note' ORDER BY created_at,id`;
+    return this.projectSourceRows(cardId, rows);
   }
   async listCardNowHistory(cardId:string) {
     const rows=await this.sql<{payload_json:Record<string,unknown>;created_at:Date}[]>`SELECT payload_json,created_at FROM folder_operations
@@ -106,7 +113,8 @@ export class CardRepositoryRead {
     return rows.map(row=>row.item_id);
   }
   async getComment(cardId: string, commentId: string) {
-    return (await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND id=${commentId}`)[0] ?? null;
+    const row = (await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND id=${commentId}`)[0] ?? null;
+    return row ? (await this.projectSourceRows(cardId, [row]))[0]! : null;
   }
   async markCommentDelivered(cardId: string, commentId: string) {
     const rows = await this.sql`UPDATE card_comments SET delivered_at=NOW()
@@ -124,5 +132,9 @@ export class CardRepositoryRead {
   async listOperations(folderId: string, limit=50, offset=0) {
     return (await this.sql<FolderOperationRow[]>`SELECT * FROM folder_operations WHERE folder_id=${folderId}
       ORDER BY created_at DESC,id DESC LIMIT ${limit} OFFSET ${offset}`).map(normalizeOperation);
+  }
+
+  private async projectSourceRows(cardId: string, rows: Record<string, unknown>[]) {
+    return projectCardAttachmentRows(this.sql, rows, cardId);
   }
 }
