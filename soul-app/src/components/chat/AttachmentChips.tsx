@@ -41,7 +41,11 @@ export function AttachmentChips({
     idx: number,
     frameStyle?: StyleProp<ViewStyle>,
   ) => (
-    <View key={`${attachment.path}-${idx}`} style={[styles.attachmentTouchFrame, frameStyle]}>
+    <View key={`${attachment.path}-${idx}`} style={[readOnly ? {
+      height: t.controlHeight.chip,
+      maxWidth: '100%',
+      justifyContent: 'center',
+    } : styles.attachmentTouchFrame, frameStyle]}>
       <View style={presentation === 'manuscript'
         ? [styles.attachmentChip, {
             backgroundColor: t.persistentSession.paper,

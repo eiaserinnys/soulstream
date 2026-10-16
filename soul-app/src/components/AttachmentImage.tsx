@@ -96,12 +96,13 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   </>;
 }
 
-export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID }: {
+export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID, followsText = true }: {
   images: ChatRefinedGalleryItem[];
   viewerImages?: ChatRefinedGalleryItem[];
   startIndex?: number;
   role: 'assistant' | 'user';
   testID: string;
+  followsText?: boolean;
 }) {
   const t = useTokens();
   const device = useDeviceType();
@@ -145,7 +146,7 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
       alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
       flexDirection: 'column',
       gap: attachment.gridGap,
-      marginTop: role === 'user' ? -t.uiSpacing.sm : t.spacing.lg,
+      marginTop: role === 'user' ? followsText ? -t.uiSpacing.sm : 0 : t.spacing.lg,
       marginBottom: role === 'user' ? t.spacing.lg : t.uiSpacing.md,
     }}
   >

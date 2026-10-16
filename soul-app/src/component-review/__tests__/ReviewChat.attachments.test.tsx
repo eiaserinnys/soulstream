@@ -1,7 +1,9 @@
 import React from 'react';
-import { fireEvent, render, within } from '@testing-library/react-native';
+import { fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { Image, StyleSheet } from 'react-native';
 import { ChatComposer } from '../../components/chat/ChatComposer';
+import { getChatRowHorizontalInset } from '../../components/chat/ChatBody.styles';
+import { useTokens } from '../../theme';
 import { useSettingsStore } from '../../store/settingsStore';
 import { ReviewChat } from '../ReviewChat';
 
@@ -26,7 +28,7 @@ test('첨부만 보낸 메시지 표본은 UserMessage에 이미지와 TXT를 �
   const screen = render(<ReviewChat />);
   const sample = screen.getByTestId('review-chat-attachment-only-user-message');
   expect(within(sample).queryByTestId('user-message-text')).toBeNull();
-  expect(within(sample).getByText('첨부.txt')).toBeTruthy();
+  expect(within(sample).getByText('2026-10-17 서버 로그 전체.txt')).toBeTruthy();
   expect(within(sample).getByLabelText('첨부 이미지 1')).toBeTruthy();
   expect(within(sample).queryByLabelText('첨부 이미지 2')).toBeNull();
 });
@@ -40,7 +42,8 @@ test('첨부만 전송 표본은 chips와 composer를 같은 간격 없는 그�
   expect(group.props.style).toMatchObject({ gap: 0 });
   expect(children[0]?.props.testID).toBe('review-chat-composer-generated-row');
   expect(children[1]?.type).toBe(ChatComposer);
-  expect(StyleSheet.flatten(children[0]?.props.style)).toMatchObject({ paddingHorizontal: 0, paddingTop: 0 });
+  const inset = getChatRowHorizontalInset(renderHook(() => useTokens()).result.current);
+  expect(StyleSheet.flatten(children[0]?.props.style)).toMatchObject({ paddingHorizontal: inset, paddingTop: 0 });
 });
 
 test('첨부 업로드 중 표본은 입력한 본문을 유지하고 첨부 칩을 보이지 않는다', async () => {

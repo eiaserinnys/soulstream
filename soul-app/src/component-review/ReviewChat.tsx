@@ -5,7 +5,7 @@ import { ChatBody } from '../components/chat/ChatBody';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { AttachmentChips } from '../components/chat/AttachmentChips';
 import { ChatInterruptButton } from '../components/chat/ChatInterruptButton';
-import { makeStyles } from '../components/chat/ChatBody.styles';
+import { getChatRowHorizontalInset, makeStyles } from '../components/chat/ChatBody.styles';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { SystemEvent } from '../components/events/SystemEvent';
@@ -34,7 +34,7 @@ const options = [
   { value: 'interrupting', label: '정지 중' },
   { value: 'disabled', label: '비활성' },
 ] as const;
-const attachmentOnlyTextPath = '/component-review/첨부.txt';
+const attachmentOnlyTextPath = '/component-review/2026-10-17 서버 로그 전체.txt';
 const assignedCardPreview = formatAssignedCardContextSnapshot({
   capturedAt: '2026-10-02T01:00:00.000Z',
   cards: [{
@@ -328,7 +328,7 @@ export function ReviewChat() {
       <SettingsSegmentedControl<typeof options[number]['value']> id="review-composer-state" value={state} onChange={setState} options={options} />
       <View testID="review-chat-composer-input-group" style={{ gap: 0 }}>
         {composerAttachments.length > 0 ? (
-          <View testID="review-chat-composer-generated-row" style={[styles.generatedTextRow, { paddingHorizontal: 0, paddingTop: 0 }]}>
+          <View testID="review-chat-composer-generated-row" style={[styles.generatedTextRow, { paddingHorizontal: getChatRowHorizontalInset(t), paddingTop: 0 }]}>
             <View style={styles.generatedAttachmentSlot}>
               <AttachmentChips
                 attachments={composerAttachments}

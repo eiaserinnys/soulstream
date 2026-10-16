@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Image } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AssistantMessage } from '../AssistantMessage';
 import { UserMessage } from '../UserMessage';
@@ -199,4 +199,33 @@ test('세 장 gallery는 두 열을 유지하고 원래 viewer 전체 순서로 
   fireEvent.press(screen.getByTestId('three-image-gallery-image-2'));
   expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('4 / 4');
   expect(screen.getByTestId('chat-image-viewer-image').props.source.uri).toBe(viewerImages[3].source.uri);
+});
+
+test.each([
+  ['/incoming/one.png'],
+  ['/incoming/one.png', '/incoming/2026-10-17 서버 로그 전체.txt'],
+  ['/incoming/one.png', '/incoming/two.png'],
+])('원고형 이미지의 가용 너비는 본문과 칩 유무에 의존하지 않는다: %j', async (...attachments) => {
+  const layout = async (text: string) => {
+    const screen = render(<SafeAreaProvider><UserMessage presentation="manuscript"
+      session={{ nodeId: 'eiaserinnys' }}
+      event={{ id: 'image-width', type: 'user_message', data: { text, attachments } }}
+    /></SafeAreaProvider>);
+    await act(async () => { await Promise.resolve(); });
+    const result = {
+      bubble: StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style),
+      gallery: StyleSheet.flatten(screen.getByTestId('user-chat-image-gallery').props.style),
+      image: StyleSheet.flatten(screen.getByTestId('user-chat-image-gallery-image-0').props.style),
+    };
+    screen.unmount();
+    return result;
+  };
+  const attachmentOnly = await layout('');
+  const withBody = await layout('첨부 이미지와 함께 보내는 충분히 긴 본문입니다.');
+  expect(attachmentOnly.bubble).toMatchObject({ width: '100%' });
+  expect(withBody.bubble).toMatchObject({ width: '100%' });
+  expect(attachmentOnly.gallery).toMatchObject({ marginTop: 0 });
+  expect(withBody.gallery.marginTop).toBeLessThan(0);
+  expect({ ...attachmentOnly.gallery, marginTop: withBody.gallery.marginTop }).toEqual(withBody.gallery);
+  expect(attachmentOnly.image).toEqual(withBody.image);
 });
