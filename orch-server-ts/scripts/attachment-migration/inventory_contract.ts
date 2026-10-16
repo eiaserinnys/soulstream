@@ -1,5 +1,19 @@
 export const INVENTORY_SCHEMA_VERSION = 1 as const;
 export const RELATIONAL_SOURCES_EXPORTED = "RELATIONAL_SOURCES_EXPORTED" as const;
+export const EVENTS_EXPORTED = "EVENTS_EXPORTED" as const;
+
+export const INVENTORY_ERROR_CODES = Object.freeze({
+  event_shape_invalid: "INVENTORY_EVENT_SHAPE_INVALID",
+  source_changed: "INVENTORY_SOURCE_CHANGED",
+  query_timeout: "INVENTORY_QUERY_TIMEOUT",
+} as const);
+
+export const INVENTORY_EVENT_TYPES = ["user_message", "intervention_sent", "complete", "assistant_message"] as const;
+export const INVENTORY_EVENT_PROGRESS_STATE = Object.freeze({
+  page: "page",
+  complete: "complete",
+  source_changed: "source_changed",
+} as const);
 
 export const INVENTORY_CUTOFF_POLICY = Object.freeze({
   relational_created_at: "less_than_or_equal",
@@ -24,7 +38,8 @@ export type RelationalSourceTable =
   | "card_comments"
   | "folder_operations"
   | "file_assets"
-  | "board_items";
+  | "board_items"
+  | "events";
 
 export type LegacySourceKind =
   | "card_request"
@@ -33,7 +48,26 @@ export type LegacySourceKind =
   | "comment"
   | "note"
   | "item_history"
-  | "existing_asset";
+  | "existing_asset"
+  | "message";
+
+export type EventExtractionCursor = { sessionId: string; eventId: number };
+export type EventAttachmentCandidate = {
+  pointer: string;
+  kind: "input_path" | "attachment_id" | "output_descriptor" | "managed_path_note";
+  value: string | Record<string, unknown>;
+  verified?: boolean;
+};
+export type EventExtractionProgress = {
+  session_id: string;
+  state: (typeof INVENTORY_EVENT_PROGRESS_STATE)[keyof typeof INVENTORY_EVENT_PROGRESS_STATE];
+  cursor: EventExtractionCursor;
+  coverage_complete: boolean;
+  started_at: string;
+  observed_at: string;
+  ended_at?: string;
+  error_code?: (typeof INVENTORY_ERROR_CODES)[keyof typeof INVENTORY_ERROR_CODES];
+};
 
 export type LegacySource = {
   schema_version: typeof INVENTORY_SCHEMA_VERSION;
@@ -71,7 +105,8 @@ export type LegacyTarget = {
 export type InventoryErrorCode =
   | "INVENTORY_INVALID_SOURCE"
   | "INVENTORY_AMBIGUOUS_URL"
-  | "INVENTORY_DB_READ_FAILED";
+  | "INVENTORY_DB_READ_FAILED"
+  | (typeof INVENTORY_ERROR_CODES)[keyof typeof INVENTORY_ERROR_CODES];
 
 export function parseInventoryCutoff(value: string): string {
   const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,3}))?Z$/.exec(value);
