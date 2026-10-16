@@ -63,6 +63,8 @@ export interface RunningInterventionTransitionDeps {
  * producer intent and backend never select a different conversation path.
  */
 export class RunningInterventionTransition {
+  private readonly deliveryTails = new WeakMap<Task, Promise<void>>();
+
   constructor(private readonly deps: RunningInterventionTransitionDeps) {}
 
   async deliver(
@@ -88,6 +90,19 @@ export class RunningInterventionTransition {
   }
 
   private async deliverAfterTurnBarrier(
+    task: Task,
+    message: InterventionMessage,
+    options: { queueIfUndelivered?: boolean },
+  ): Promise<RunningInterventionResult> {
+    const previousTail = this.deliveryTails.get(task) ?? Promise.resolve();
+    const delivery = previousTail
+      .catch(() => undefined)
+      .then(() => this.deliverInOrder(task, message, options));
+    this.deliveryTails.set(task, delivery.then(() => undefined, () => undefined));
+    return delivery;
+  }
+
+  private async deliverInOrder(
     task: Task,
     message: InterventionMessage,
     options: { queueIfUndelivered?: boolean },
