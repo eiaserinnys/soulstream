@@ -1,4 +1,5 @@
 import React from 'react';
+import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
 import { View } from 'react-native';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
@@ -10,14 +11,16 @@ export function PlannerMarkdownText({
   testID,
   variant = 'planner',
   textAlign,
+  readContext,
 }: {
   markdown: string;
   testID?: string;
   variant?: 'planner' | 'card' | 'note';
   textAlign?: 'left';
+  readContext?: AttachmentReadContext;
 }) {
   const t = useTokens();
-  const openContentLink = useOpenContentLink();
+  const openContentLink = useOpenContentLink(readContext);
   const markdownStyle = variant === 'card' ? cardMarkdownStyle(t) : plannerMarkdownStyle(t, variant === 'note');
   const alignedStyle = textAlign ? {
     ...markdownStyle,
