@@ -49,6 +49,10 @@ export type PersistentSessionHistoryEntry =
   | (PersistentSessionHistoryEntryBase & {
       readonly event_type: "assistant_message";
       readonly kind: "assistant";
+      readonly attachment_ids: string[];
+      readonly attachment_count: number;
+      readonly attachment_output?: true;
+      readonly output_command_id?: string;
       readonly parent_event_id?: string | number;
     })
   | (PersistentSessionHistoryEntryBase & {

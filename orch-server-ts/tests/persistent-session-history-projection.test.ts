@@ -132,6 +132,43 @@ describe("projectPersistentSessionHistoryEntry", () => {
     expect(entry).not.toHaveProperty("text_delta");
   });
 
+  it("projects assistant output attachment IDs and markers even when content is empty", () => {
+    const entry = projectPersistentSessionHistoryEntry(row("assistant_message", {
+      content: "",
+      attachment_ids: ["asset-1", "asset-2", "asset-1", "", 17],
+      attachments: ["/legacy/path.png"],
+      attachment_output: true,
+      output_command_id: "command-1",
+    }), 2000);
+
+    expect(entry).toMatchObject({
+      event_type: "assistant_message",
+      kind: "assistant",
+      text: "",
+      text_chars: 0,
+      truncated: false,
+      attachment_ids: ["asset-1", "asset-2"],
+      attachment_count: 2,
+      attachment_output: true,
+      output_command_id: "command-1",
+    });
+    expect(entry).not.toHaveProperty("attachments");
+  });
+
+  it("only forwards true output markers and string command IDs", () => {
+    const entry = projectPersistentSessionHistoryEntry(row("assistant_message", {
+      content: "answer",
+      attachment_ids: ["asset-1", "asset-1"],
+      attachment_output: false,
+      output_command_id: 17,
+    }), 2000);
+
+    expect(entry).toMatchObject({ attachment_ids: ["asset-1"], attachment_count: 1 });
+    expect(entry).not.toHaveProperty("attachment_output");
+    expect(entry).not.toHaveProperty("output_command_id");
+    expect(entry).not.toHaveProperty("attachments");
+  });
+
   it.each(["legacy-parent", 23])("preserves payload-only assistant parent reference %s", (parentEventId) => {
     const entry = projectPersistentSessionHistoryEntry(row("assistant_message", {
       content: "nested final",
