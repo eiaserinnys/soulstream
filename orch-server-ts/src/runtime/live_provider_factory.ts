@@ -3,6 +3,11 @@ import type { AtomRouteOptions } from "../atom/atom_routes.js";
 import { createLiveMultipartAttachmentOptions } from "./live_multipart_attachment_provider.js";
 import type { MultipartAttachmentOptions } from "../attachments/multipart_attachment_routes.js";
 import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js";
+import type { AgentAttachmentRouteOptions } from "../attachments/agent_attachment_routes.js";
+import { createAgentAttachmentRegistration } from "../attachments/agent_attachment_registration.js";
+import { createOwnedAttachmentCommitService } from "../attachments/attachment_commit_service.js";
+import type { CreateOwnedAttachmentCommitServiceOptions } from "../attachments/attachment_commit_contract.js";
+import type { RepositorySql } from "../cards/control_plane/card_types.js";
 import { createLiveAttachmentReadOptions } from "./live_attachment_read_provider.js";
 import type { CreateLiveAttachmentReadOptions } from "./live_attachment_read_provider.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
@@ -123,6 +128,7 @@ export type LiveOrchestratorProviderBundle = {
     AttachmentRouteOptions,
     "provider" | "accessProvider" | "transport" | "multipart" | "assetRead"
   >;
+  readonly agentAttachmentRoutes?: AgentAttachmentRouteOptions;
   readonly authRoutes: Pick<
     AuthRouteOptions,
     | "configProvider"
@@ -177,6 +183,12 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly resolveAttachmentStorage?: MultipartAttachmentOptions["resolveStorage"];
   readonly resolveReadStorage?: CreateLiveAttachmentReadOptions["resolveReadStorage"];
   readonly readPageAttachmentEvidence?: CreateLiveAttachmentReadOptions["readPageAttachmentEvidence"];
+  readonly agentAttachmentRegistration?: {
+    readonly authBearerToken: string;
+    readonly environment: string;
+    readonly sql: RepositorySql;
+    readonly resolveAttachmentBinding: CreateOwnedAttachmentCommitServiceOptions["resolveAttachmentBinding"];
+  };
 };
 
 type LiveUsageSummaryRouteOptions = Omit<UsageSummaryRouteOptions, "service"> & {
@@ -252,6 +264,20 @@ export function createLiveOrchestratorProviderBundle(
     dashboardAccessProvider,
     sessionResourceAccessProvider,
   });
+  const agentAttachmentRoutes = options.agentAttachmentRegistration === undefined
+    ? undefined
+    : {
+        authBearerToken: options.agentAttachmentRegistration.authBearerToken,
+        environment: options.agentAttachmentRegistration.environment,
+        register: createAgentAttachmentRegistration({
+          sql: options.agentAttachmentRegistration.sql,
+          commit: createOwnedAttachmentCommitService({
+            repository: options.dependencies.dbCatalogRepository.attachmentCommitRepository,
+            resolveAttachmentBinding: options.agentAttachmentRegistration.resolveAttachmentBinding,
+          }),
+          readAsset: (id) => options.dependencies.dbCatalogRepository.attachmentReadRepository.getAsset(id),
+        }),
+      };
   const sessionStreamEventFilter = createSessionStreamEventFilter({
     accessProvider: sessionResourceAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
@@ -313,6 +339,7 @@ export function createLiveOrchestratorProviderBundle(
         bridge: options.runtimeServices.sessionBridge,
       }) } : {}),
     },
+    ...(agentAttachmentRoutes === undefined ? {} : { agentAttachmentRoutes }),
     authRoutes: {
       configProvider: configProviders.authRoutes.configProvider,
       httpClient: createLiveAuthHttpClient(),

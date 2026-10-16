@@ -7,6 +7,7 @@ import { adminUsersRouteAuthRequirements } from "../admin/admin_users_routes.js"
 import { cardDispatchSettingsRouteAuthRequirements } from "../cards/card_dispatch_settings_routes.js";
 import { atomRouteAuthRequirements } from "../atom/atom_routes.js";
 import { attachmentRouteAuthRequirements } from "../attachments/attachment_routes.js";
+import { agentAttachmentRouteAuthRequirements } from "../attachments/agent_attachment_routes.js";
 import { authRouteAuthRequirements } from "../auth/auth_routes.js";
 import { boardAssetRouteAuthRequirements } from "../board/board_asset_routes.js";
 import { boardItemRouteAuthRequirements } from "../board/board_item_routes.js";
@@ -53,7 +54,7 @@ export const routeCoverageOwners = [
   {owner:"cards.orchestration",authRequirements:{...cardOrchestrationRouteAuthRequirements,...cardOrchestrationDecisionRouteAuthRequirements}},
   { owner: "admin.users", authRequirements: { ...adminUsersRouteAuthRequirements, ...r2SettingsRouteAuthRequirements } },
   { owner: "atom", authRequirements: atomRouteAuthRequirements },
-  { owner: "attachments", authRequirements: attachmentRouteAuthRequirements },
+  { owner: "attachments", authRequirements: { ...attachmentRouteAuthRequirements, ...agentAttachmentRouteAuthRequirements } },
   { owner: "auth", authRequirements: authRouteAuthRequirements },
   { owner: "board.assets", authRequirements: boardAssetRouteAuthRequirements },
   { owner: "board.items", authRequirements: boardItemRouteAuthRequirements },
@@ -109,6 +110,7 @@ export const tsOnlyRouteKeys = [
   "POST /api/attachments/sessions/multipart/init",
   "POST /api/attachments/sessions/multipart/complete",
   "POST /api/attachments/sessions/multipart/abort",
+  "POST /api/attachments/agent-register",
   "GET /api/attachments/{attachment_id}",
   "GET /api/attachments/{attachment_id}/content",
   "HEAD /api/attachments/{attachment_id}/content",
