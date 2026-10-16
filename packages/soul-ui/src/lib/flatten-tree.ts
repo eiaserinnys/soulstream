@@ -30,7 +30,9 @@ import type {
   PersistentJevCandidatesNode,
   PersistentInstructionRecordedNode,
   PersistentInstructionRecordedData,
+  AttachmentEventSignalFields,
 } from "@shared/types";
+import { mapAttachmentMessageSignals, sameAttachmentMessageSignals } from "./attachment-event-signals";
 import { extractNodeEventId } from "./event-tree-id";
 import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
 import { placeAssignedCardContextsAtInputAnchors } from "./assigned-card-context-projection";
@@ -42,7 +44,7 @@ import { formatTurnCompleteStats, TURN_COMPLETE_LABEL } from "./turn-usage-forma
 export { extractEventId } from "./event-tree-id";
 
 /** Chat 탭에 표시되는 메시지 단위 */
-export interface ChatMessage {
+export interface ChatMessage extends AttachmentEventSignalFields {
   id: string;
   role: "user" | "assistant" | "tool" | "system" | "system_message" | "notification" | "intervention" | "input_request" | "tool_approval" | "away_summary";
   /** 메인 표시 텍스트 */
@@ -119,10 +121,8 @@ export interface ChatMessage {
   approvalMessage?: string;
   /** user_message 전용: 구조화된 맥락 항목 배열 */
   contextItems?: ContextItem[];
-  /** user_message 전용: 기존 이벤트가 보낸 구조화 첨부 경로. */
-  attachmentPaths?: string[];
-  /** user_message 전용: 첨부 원본의 노드 ID. */
-  attachmentNodeId?: string;
+  /** complete 표시용 파생 ID 배열. wire/node의 durable ref와 분리한다. */
+  attachmentDisplayIds?: readonly string[];
   /** user_message 전용: 에이전트 발신자 메타데이터 (caller_info.source==="agent"에서 도출) */
   agentInfo?: {
     source: "agent";
@@ -260,6 +260,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
         && a.persistentInstructionRecorded.capReached === b.persistentInstructionRecorded.capReached
       )
     )
+    && sameAttachmentMessageSignals(a, b)
   );
 }
 
@@ -375,8 +376,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         treeNodeId: n.id,
         treeNodeType: n.type,
         contextItems: n.context,
-        attachmentPaths: n.attachmentPaths,
-        attachmentNodeId: n.attachmentNodeId,
+        ...mapAttachmentMessageSignals(n),
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
         inputId: n.inputId,
@@ -432,6 +432,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
+        ...mapAttachmentMessageSignals(n),
         inputId: n.inputId,
         cacheKeepalive: n.cacheKeepalive,
       };
@@ -549,6 +550,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
           sessionCostUsd: n.sessionCostUsd,
           sessionCostPartial: n.sessionCostPartial,
         } : {}),
+        ...mapAttachmentMessageSignals(n, true),
         treeNodeId: node.id,
         treeNodeType: node.type,
       };
@@ -579,6 +581,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         model: n.model,
         provider: n.provider,
         ui: n.ui,
+        ...mapAttachmentMessageSignals(n),
         treeNodeId: n.id,
         treeNodeType: n.type,
       };

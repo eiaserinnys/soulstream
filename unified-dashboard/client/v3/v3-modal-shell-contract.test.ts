@@ -31,6 +31,7 @@ const sharedV3DialogConsumers = [
 ] as const;
 
 const soulUiDialogConsumers = [
+  "../../../packages/soul-ui/src/components/AttachmentViewer.tsx",
   "../../../packages/soul-ui/src/components/FileAttachmentPreview.tsx",
   "../../../packages/soul-ui/src/components/FolderContextMenu.tsx",
   "../../../packages/soul-ui/src/components/FolderDialog.tsx",

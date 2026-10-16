@@ -286,6 +286,12 @@ export const dialoguesInventory = [
     name: "모바일 세션 액션 시트",
     component: "SessionContextMenu",
   },
+  {
+    section: "overlays",
+    id: "chat-attachments",
+    name: "채팅 첨부 미리보기",
+    component: "AttachmentViewer",
+  },
 ] as const;
 export type DialogueId = (typeof dialoguesInventory)[number]["id"];
 export const dialoguesSections = [

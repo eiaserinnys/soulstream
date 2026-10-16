@@ -39,6 +39,14 @@ interface BaseNode {
   subtreeHeight?: number;
 }
 
+/** Attachment event fields kept from durable message payloads. */
+export interface AttachmentEventSignalFields {
+  attachmentIds?: string[];
+  attachmentCount?: number;
+  attachmentPaths?: string[];
+  attachmentNodeId?: string;
+}
+
 /** 가상 세션 루트 노드 */
 export interface SessionNode extends BaseNode {
   type: "session";
@@ -53,13 +61,9 @@ export interface SessionNode extends BaseNode {
 }
 
 /** 사용자 메시지 노드 */
-export interface UserMessageNode extends BaseNode {
+export interface UserMessageNode extends BaseNode, AttachmentEventSignalFields {
   type: "user_message";
   inputId?: string;
-  /** user_message event의 기존 구조화 첨부 경로. */
-  attachmentPaths?: string[];
-  /** 첨부 원본의 노드 ID. 이벤트에 실제 값이 있을 때만 보존한다. */
-  attachmentNodeId?: string;
   cacheKeepalive?: boolean;
   user: string;
   context?: ContextItem[];
@@ -99,7 +103,7 @@ export interface SessionNotificationNode extends BaseNode {
 }
 
 /** 인터벤션 노드 */
-export interface InterventionNode extends BaseNode {
+export interface InterventionNode extends BaseNode, AttachmentEventSignalFields {
   type: "intervention";
   inputId?: string;
   cacheKeepalive?: boolean;
@@ -193,7 +197,7 @@ export interface CompactNode extends BaseNode {
 }
 
 /** 세션 완료 노드 */
-export interface CompleteNode extends BaseNode {
+export interface CompleteNode extends BaseNode, AttachmentEventSignalFields {
   type: "complete";
   usage?: TokenUsage;
   totalCostUsd?: number;
@@ -252,7 +256,7 @@ export interface ToolApprovalNodeDef extends BaseNode {
 }
 
 /** LLM 프록시 어시스턴트 응답 노드 */
-export interface AssistantMessageNode extends BaseNode {
+export interface AssistantMessageNode extends BaseNode, AttachmentEventSignalFields {
   type: "assistant_message";
   ui?: unknown;
   model?: string;
