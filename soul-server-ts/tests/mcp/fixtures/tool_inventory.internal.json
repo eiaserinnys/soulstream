@@ -6116,29 +6116,58 @@
         },
         "evidence": {
           "items": {
-            "additionalProperties": false,
-            "properties": {
-              "label": {
-                "type": "string"
-              },
-              "type": {
-                "enum": [
-                  "image",
-                  "link"
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "attachment_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "image",
+                      "link"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "label",
+                  "attachment_id"
                 ],
-                "type": "string"
+                "type": "object"
               },
-              "url": {
-                "minLength": 1,
-                "type": "string"
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "image",
+                      "link"
+                    ],
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "label",
+                  "url"
+                ],
+                "type": "object"
               }
-            },
-            "required": [
-              "type",
-              "url",
-              "label"
-            ],
-            "type": "object"
+            ]
           },
           "type": "array"
         },

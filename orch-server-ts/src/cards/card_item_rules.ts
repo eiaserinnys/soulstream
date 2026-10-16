@@ -1,6 +1,9 @@
 export type CardItemDisplay = "todo" | "doing" | "reported" | "changed" | "fix" | "confirmed" | "dropped";
 export type CardItemState = "todo" | "doing" | "done" | "dropped";
-export type CardItemEvidence = { type: "image" | "link"; url: string; label: string };
+export type CardItemEvidence = { type: "image" | "link"; label: string } & (
+  | { attachment_id: string; url?: never }
+  | { url: string; attachment_id?: never }
+);
 export type CardItemSource = { commentId: string; kind: "comment" | "spoken"; at: string };
 export type CardItem = {
   id: number;
