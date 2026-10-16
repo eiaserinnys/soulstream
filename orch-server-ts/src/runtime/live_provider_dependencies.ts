@@ -19,6 +19,7 @@ import type { SessionReviewAcknowledgeRepository } from "../session/session_revi
 import type { AgentProfileRepository } from "../node/agent_profile_routes.js";
 import type { ContextBundleRepository } from "../node/context_bundle_routes.js";
 import type { AttachmentReadRepository } from "../attachments/attachment_read_service.js";
+import type { AttachmentCommitRepository } from "../attachments/attachment_commit_contract.js";
 
 export const liveProviderDependencyCategories = [
   "dbCatalogRepository",
@@ -39,6 +40,7 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly folderCountsProvider: LiveFolderProvider;
   readonly boardAssetRouteProvider: BoardAssetRouteProvider;
   readonly attachmentReadRepository: AttachmentReadRepository;
+  readonly attachmentCommitRepository: AttachmentCommitRepository;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
