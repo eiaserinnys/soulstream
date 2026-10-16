@@ -110,11 +110,14 @@ export function registerMultipartAttachmentRoutes(app: FastifyInstance, options:
     const email = await authenticatedEmail(request);
     const ticket = verifyAttachmentTicket(text(body.ticket, "ticket"), await options.resolveSecret());
     if (!ticket) throw new UploadError("첨부 업로드 ticket이 만료되었거나 올바르지 않습니다", 403);
+    if (ticket.responseContract !== undefined || typeof ticket.nodeId !== "string") {
+      throw new UploadError("이 경로에서는 id-v1 첨부 ticket을 사용할 수 없습니다", 409);
+    }
     if (ticket.sub !== email || ticket.nodeId !== nodeId) throw new UploadError("첨부 업로드 ticket의 사용자 또는 노드가 다릅니다", 403);
     await options.requireAccess(request, ticket.sessionId, ticket.folderId);
     const binding = await requireStorage();
     if (binding.identity !== ticket.settingsIdentity) throw new UploadError("첨부 저장소 설정이 변경되었습니다. 다시 업로드해 주세요", 409);
-    return { ticket, storage: binding.storage };
+    return { ticket: { ...ticket, nodeId: ticket.nodeId }, storage: binding.storage };
   }
 }
 function object(value: unknown): Record<string, unknown> {

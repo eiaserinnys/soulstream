@@ -23,7 +23,7 @@ export function registerMultipartFormParser(app: FastifyInstance): void {
   if (multipartParserApps.has(app)) return;
   app.addContentTypeParser(
     /^multipart\/form-data(?:;.*)?$/i,
-    { bodyLimit: 100 * 1024 * 1024, parseAs: "buffer" },
+    { bodyLimit: 101 * 1024 * 1024, parseAs: "buffer" },
     (_request, body, done) => {
       done(null, body);
     },
