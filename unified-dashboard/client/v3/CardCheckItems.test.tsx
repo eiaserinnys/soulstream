@@ -169,6 +169,27 @@ it("replaces a thumbnail whose bytes fail to load with the failure text",async()
  expect(row.querySelector('[data-evidence-type="image"] img[src="/broken.png"]')).toBeNull();
  expect([...row.querySelectorAll(".v3-card-check-item-no-image")].map(node=>node.textContent)).toEqual(["파일을 불러오지 못했습니다"]);
  expect(row.querySelector('[data-evidence-type="image"] img[src="/ready.png"]')).not.toBeNull();
+ const imageRow=row.querySelector('[data-evidence-type="image"]')!;
+ expect(imageRow.lastElementChild?.textContent).toBe("파일을 불러오지 못했습니다");
+});
+it("collapses several failed attachments in one row into one failure text at the row end",async()=>{
+ await act(()=>root.render(<CardCheckItems items={[item(12,"reported",{evidence:[
+  idEvidence("image","","지워진 화면","gone-1",null,"","missing"),
+  idEvidence("image","/ok.png","정상 화면","ok-1","/ok.png","/ok.png&download=true"),
+  idEvidence("image","","올리는 중","gone-2",null,"","unavailable"),
+  idEvidence("link","","지워진 파일","gone-3",null,"","missing"),
+  {type:"link",url:"https://example.test/a",label:"외부 링크"},
+  idEvidence("link","","올리는 중인 파일","gone-4",null,"","unavailable"),
+ ]})]} onConfirmChange={vi.fn()} onTargetItem={vi.fn()}/>));
+ const row=container.querySelector<HTMLElement>('[data-item-id="12"]')!;
+ const imageRow=row.querySelector('[data-evidence-type="image"]')!;
+ const linkRow=row.querySelector('[data-evidence-type="link"]')!;
+ expect(imageRow.querySelectorAll(".v3-card-check-item-no-image")).toHaveLength(1);
+ expect(imageRow.lastElementChild?.textContent).toBe("파일을 불러오지 못했습니다");
+ expect(imageRow.querySelectorAll("img")).toHaveLength(1);
+ expect(linkRow.querySelectorAll(".v3-card-check-item-no-image")).toHaveLength(1);
+ expect(linkRow.lastElementChild?.textContent).toBe("파일을 불러오지 못했습니다");
+ expect(linkRow.querySelectorAll("a")).toHaveLength(1);
 });
 it("hides a failed preview in the viewer and keeps only the caption error",async()=>{
  const onClose=vi.fn();
@@ -176,6 +197,7 @@ it("hides a failed preview in the viewer and keeps only the caption error",async
  await act(()=>document.body.querySelector<HTMLImageElement>('[role="dialog"] img')!.dispatchEvent(new Event("error")));
  expect(document.body.querySelector('[role="dialog"] img')).toBeNull();
  expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("파일을 불러오지 못했습니다");
+ expect(document.body.querySelector('[role="dialog"] figure')?.hasAttribute("data-image-failed")).toBe(true);
 });
 it("shows preview load errors in the caption and clears them for a new source",async()=>{
  const onClose=vi.fn();

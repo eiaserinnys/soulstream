@@ -25,6 +25,13 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
  const showBody=readOnly||expanded||dropped;
  const images=item.evidence.filter(evidence=>evidence.type==="image");
  const links=item.evidence.filter(evidence=>evidence.type==="link");
+ // Failed evidence of one kind collapses into a single failure text at the row end,
+ // the way "캡처 없음" sits, instead of repeating it next to every attachment.
+ const imageFailureCount=images.filter(evidence=>{
+  const src=evidence.previewUrl??evidence.url;
+  return Boolean(evidence.availability)||(Boolean(src)&&failedImages.has(src));
+ }).length;
+ const linkFailureCount=links.filter(evidence=>Boolean(evidence.availability)).length;
  const missingEvidence=item.evidence.length===0&&(display==="reported"||display==="changed");
  const when=[item.reportedAt?formatTime(item.reportedAt):null,
   item.from?`${formatTime(item.createdAt)} ${item.from.kind==="spoken"?"대화에서 추가":"커멘트에서 추가"}`:item.reportedAt?null:formatTime(item.createdAt)].filter(Boolean).join(", ");
@@ -52,18 +59,19 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
      {images.map((evidence,index)=>{
       const key=evidence.attachment_id?`${evidence.attachment_id}:${index}`:`${evidence.url}:${index}`;
       const src=evidence.previewUrl??evidence.url;
-      if(evidence.availability||(src&&failedImages.has(src)))return <span key={key} className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>;
-      return src?<figure key={key} title={evidence.label}>
+      if(evidence.availability||!src||failedImages.has(src))return null;
+      return <figure key={key} title={evidence.label}>
        <MarkdownImage variant="card-evidence" src={src} alt={evidence.label} onOpen={onOpenImage} onError={markImageFailed}/>
-      </figure>:null;
+      </figure>;
      })}
+     {imageFailureCount>0?<span className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>:null}
      {missingEvidence?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
     </div>:null}
     {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=>{
      const key=evidence.attachment_id?`${evidence.attachment_id}:${index}`:`${evidence.url}:${index}`;
-     if(evidence.availability)return <span key={key} className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>;
+     if(evidence.availability)return null;
      return <a key={key} href={evidence.originalUrl??evidence.url} target="_blank" rel="noreferrer" title={evidence.label} onClick={internalLinkClick}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>;
-    })}</div>:null}
+    })}{linkFailureCount>0?<span className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>:null}</div>:null}
     {!readOnly?<div className="v3-card-check-item-foot">
      {metadata}
      {!dropped?<button type="button" className="v3-card-check-item-target" onClick={onTargetItem}>고칠 점 남기기</button>:null}
