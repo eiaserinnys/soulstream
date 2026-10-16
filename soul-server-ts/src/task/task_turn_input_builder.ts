@@ -12,6 +12,7 @@ import type { PersistentCheckpointStats } from "../context/persistent_checkpoint
 import { formatContextItems } from "../context/prompt_assembler.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
+import { appendAttachmentPathNotes } from "./attachment_path_note.js";
 import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { dequeueNextTurnInterventions } from "./task_intervention_queue.js";
@@ -21,17 +22,27 @@ import { effectiveTaskBackend } from "./task_model_preset.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 import type { TurnOrigin } from "../engine/protocol.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
-import { prepareGenerationTurnInput } from "./generation_turn_input.js";
+import {
+  buildBoundedBackendRolloverPrompt,
+  composeBackendRolloverInterventions,
+  copyAttachmentSource,
+  createInterventionAttachmentSource,
+  createTaskAttachmentSource,
+  prepareGenerationTurnInput,
+  truncateWithNotice,
+  type BackendRolloverReplayBase,
+} from "./generation_turn_input.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
+import {
+  type AttachmentTurnSource,
+  type PreparedAttachmentInput,
+  type PrepareAttachmentInput,
+} from "./prepare_attachment_input.js";
 
 export const CLAUDE_ROLLOVER_PROMPT_MAX_CHARS = 80_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS = 60_000;
 export const CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS = 100_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS = 50_000;
-const CLAUDE_ROLLOVER_REPLAY_INPUT_MAX_CHARS = 40_000;
-const CLAUDE_ROLLOVER_CONTEXT_MAX_CHARS = 20_000;
-const CLAUDE_ROLLOVER_HISTORY_BLOCK_MAX_CHARS = 14_000;
-
 export interface TaskTurnInput {
   prompt: string;
   /** Original initial user text, before dynamic context assembly; only for rollover replay. */
@@ -43,6 +54,8 @@ export interface TaskTurnInput {
   runnerInterventionIds?: string[];
   turnOrigin?: TurnOrigin;
   interventions?: InterventionMessage[];
+  /** Raw initial attachment source retained so a backend rollover can rebuild cache files. */
+  attachmentSource?: AttachmentTurnSource;
   backendSessionRolloverFrom?: string;
   generationRollover?: boolean;
   generationCheckpointStats?: PersistentCheckpointStats;
@@ -52,6 +65,8 @@ export interface TaskTurnInputBuilderDeps {
   contextBuilder?: ExecutionContextBuilder;
   initialMessagePublisher: TaskInitialMessagePublisherPort;
   logger: Logger;
+  prepareAttachmentInput?: PrepareAttachmentInput;
+  waitForAttachmentRefs?: (sessionId: string) => Promise<unknown>;
 }
 
 export interface TaskInitialMessagePublisherPort {
@@ -77,7 +92,8 @@ export class TaskTurnInputBuilder {
       if (context.contextManifest) {
         await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, context.contextManifest);
       }
-      return prepareGenerationTurnInput(task, agent, context, interventions);
+      const preparedInterventions = await this.prepareInterventionCopies(task, interventions);
+      return prepareGenerationTurnInput(task, agent, context, preparedInterventions, interventions);
     }
     if (task.interventionQueue.length > 0) {
       return this.prepareFollowupTurnInput(
@@ -100,7 +116,18 @@ export class TaskTurnInputBuilder {
     }
     this.recordInitialContextInjection(task);
 
-    return this.prepareNewTaskTurnInput(task, agent, ctx, inputUuid);
+    const attachmentSource = createTaskAttachmentSource(task);
+    const preparedAttachmentInput = attachmentSource
+      ? await this.prepareAttachmentSources([attachmentSource]).then((prepared) => prepared[0])
+      : undefined;
+    return this.prepareNewTaskTurnInput(
+      task,
+      agent,
+      ctx,
+      inputUuid,
+      preparedAttachmentInput,
+      attachmentSource,
+    );
   }
 
   async prepareFollowupTurnInput(
@@ -133,7 +160,8 @@ export class TaskTurnInputBuilder {
       this.recordFollowupContextInjection(task, currentCallerInfo);
     }
 
-    const composed = composeInterventionTurnPrompt(interventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})));
+    const preparedInterventions = await this.prepareInterventionCopies(task, interventions);
+    const composed = composeInterventionTurnPrompt(preparedInterventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})));
     const contextItems = ctx?.contextItems ?? [];
     const followupContextItems = isCacheKeepaliveInput(firstIntervention)
       ? contextItems.filter((item) => item.key !== "assigned_cards")
@@ -174,15 +202,31 @@ export class TaskTurnInputBuilder {
     task.needsFullContextReinjection = false;
     this.recordFollowupContextInjection(task, currentCallerInfo);
 
-    const replayBase = failedInput.interventions
-      ? composeInterventionTurnPrompt(failedInput.interventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})))
-      : {
-          // Rebuild from original user text, not the assembled input. No user text is parsed or removed.
-          prompt: failedInput.originalPrompt ?? failedInput.prompt,
-          imageAttachmentPaths: failedInput.imageAttachmentPaths,
-        };
+    let replayBase: BackendRolloverReplayBase;
+    let attachmentSource = failedInput.attachmentSource;
+    if (failedInput.interventions !== undefined) {
+      const preparedInterventions = await this.prepareInterventionCopies(task, failedInput.interventions);
+      replayBase = composeBackendRolloverInterventions(preparedInterventions);
+    } else if (attachmentSource) {
+      attachmentSource = copyAttachmentSource(attachmentSource);
+      const prepared = (await this.prepareAttachmentSources([attachmentSource]))[0]!;
+      replayBase = {
+        prompt: prepared.text,
+        imageAttachmentPaths: prepared.imageAttachmentPaths,
+        attachmentNotePaths: prepared.attachmentPaths,
+      };
+    } else {
+      replayBase = {
+        // Legacy replay has no durable attachment source to rebuild.
+        prompt: failedInput.originalPrompt ?? failedInput.prompt,
+        imageAttachmentPaths: failedInput.imageAttachmentPaths,
+      };
+    }
     return {
-      prompt: buildBoundedBackendRolloverPrompt(replayBase.prompt, ctx),
+      prompt: buildBoundedBackendRolloverPrompt(replayBase.prompt, ctx, {
+        maxChars: CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
+        maxEstimatedTokens: CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
+      }, replayBase.attachmentNotePaths),
       originalPrompt: replayBase.prompt,
       imageAttachmentPaths: replayBase.imageAttachmentPaths,
       ...(ctx.effectiveSystemPrompt !== undefined
@@ -211,8 +255,50 @@ export class TaskTurnInputBuilder {
       ...(failedInput.interventions !== undefined
         ? { interventions: failedInput.interventions }
         : {}),
+      ...(attachmentSource !== undefined ? { attachmentSource } : {}),
       backendSessionRolloverFrom,
     };
+  }
+
+  private async prepareAttachmentSources(
+    sources: readonly AttachmentTurnSource[],
+  ): Promise<Array<PreparedAttachmentInput | undefined>> {
+    if (!sources.some((source) => (source.attachmentIds?.length ?? 0) > 0)) {
+      return sources.map(() => undefined);
+    }
+    const prepare = this.deps.prepareAttachmentInput;
+    if (!prepare) throw new Error("ATTACHMENT_INPUT_UNAVAILABLE");
+    await this.deps.waitForAttachmentRefs?.(sources[0]!.sessionId);
+
+    const prepared: Array<PreparedAttachmentInput | undefined> = [];
+    for (const source of sources) {
+      prepared.push((source.attachmentIds?.length ?? 0) > 0 ? await prepare(source) : undefined);
+    }
+    return prepared;
+  }
+
+  private async prepareInterventionCopies(
+    task: Task,
+    interventions: InterventionMessage[],
+  ): Promise<InterventionMessage[]> {
+    const sourceEntries = interventions.flatMap((message, index) => {
+      const source = createInterventionAttachmentSource(task.agentSessionId, message);
+      return source ? [{ index, source }] : [];
+    });
+    if (sourceEntries.length === 0) return interventions;
+
+    const prepared = await this.prepareAttachmentSources(sourceEntries.map(({ source }) => source));
+    const preparedByIndex = new Map<number, PreparedAttachmentInput>();
+    sourceEntries.forEach(({ index }, preparedIndex) => {
+      const value = prepared[preparedIndex];
+      if (value) preparedByIndex.set(index, value);
+    });
+    return interventions.map((message, index) => {
+      const value = preparedByIndex.get(index);
+      return value
+        ? { ...message, text: value.text, attachmentPaths: value.attachmentPaths }
+        : message;
+    });
   }
 
   private async buildBackendRolloverContext(
@@ -268,13 +354,22 @@ export class TaskTurnInputBuilder {
     agent: AgentProfile,
     ctx: PreparedContext | undefined,
     inputUuid?: string,
+    preparedAttachmentInput?: PreparedAttachmentInput,
+    attachmentSource?: AttachmentTurnSource,
   ): TaskTurnInput {
-    const imageAttachmentPaths = splitAttachmentPaths(task.attachmentPaths).imagePaths;
+    const rawText = attachmentSource?.text ?? task.prompt;
+    const currentPaths = preparedAttachmentInput?.attachmentPaths ?? task.attachmentPaths ?? [];
+    const promptText = preparedAttachmentInput
+      ? appendAttachmentPathNotes(preparedAttachmentInput.text, currentPaths)
+      : task.prompt;
+    const imageAttachmentPaths = preparedAttachmentInput?.imageAttachmentPaths
+      ?? splitAttachmentPaths(task.attachmentPaths).imagePaths;
+    const replayFields = attachmentSource ? { attachmentSource, originalPrompt: rawText } : { originalPrompt: task.prompt };
     const backend = effectiveTaskBackend(task, agent);
     if (!ctx) {
       return {
-        prompt: task.prompt,
-        originalPrompt: task.prompt,
+        prompt: promptText,
+        ...replayFields,
         imageAttachmentPaths,
         ...(backend === "antigravity" || backend === "opencode" ? { systemPrompt: "" } : {}),
         ...(inputUuid ? { inputUuid } : {}),
@@ -284,11 +379,11 @@ export class TaskTurnInputBuilder {
 
     if (["claude", "antigravity", "opencode"].includes(backend)) {
       return {
-        originalPrompt: task.prompt,
+        ...replayFields,
         prompt: composeFirstTurnPrompt({
           effectiveSystemPrompt: undefined,
           combinedContextItems: ctx.combinedContextItems,
-          assembledPrompt: task.prompt,
+          assembledPrompt: promptText,
         }),
         imageAttachmentPaths,
         ...(inputUuid ? { inputUuid } : {}),
@@ -302,10 +397,10 @@ export class TaskTurnInputBuilder {
     }
 
     return {
-      originalPrompt: task.prompt,
+      ...replayFields,
       prompt: composeFirstTurnPrompt({
         ...ctx,
-      assembledPrompt: task.prompt,
+      assembledPrompt: promptText,
       }),
       imageAttachmentPaths,
       ...(inputUuid ? { inputUuid } : {}),
@@ -364,68 +459,4 @@ function appendContextBlock(prompt: string, contextItems: FollowupContext["conte
   const contextBlock = formatContextItems(contextItems);
   if (!contextBlock) return prompt;
   return `${prompt}\n\n${contextBlock}`;
-}
-
-function buildBoundedBackendRolloverPrompt(
-  replayPrompt: string,
-  context: BackendRolloverContext,
-): string {
-  const excerpt = context.currentSessionExcerpt;
-  const includedTurns = excerpt?.turns.length ?? 0;
-  const coverage = excerpt
-    ? `${includedTurns.toLocaleString("en-US")} recent conversation records were carried from `
-      + `${excerpt.totalEvents.toLocaleString("en-US")} total session events; `
-      + "older or omitted context "
-      + "may be missing."
-    : "No prior conversation excerpt was available; all backend-only conversation context "
-      + "may be missing.";
-  const notice = [
-    "<claude_backend_rollover>",
-    "The previous Claude backend session exceeded its context window and was replaced.",
-    coverage,
-    "Before making irreversible changes, re-check the current task, files, and external state.",
-    "</claude_backend_rollover>",
-  ].join("\n");
-  const history = excerpt && excerpt.turns.length > 0
-    ? truncateWithNotice(
-        `<recent_session_history>\n${JSON.stringify(excerpt.turns, null, 2)}\n`
-          + "</recent_session_history>",
-        CLAUDE_ROLLOVER_HISTORY_BLOCK_MAX_CHARS,
-        "recent session history",
-      )
-    : "";
-  const boundedReplay = truncateWithNotice(
-    replayPrompt,
-    CLAUDE_ROLLOVER_REPLAY_INPUT_MAX_CHARS,
-    "replayed input",
-  );
-  const assignedBlock = formatContextItems(context.contextItems.filter(item=>item.key === "assigned_cards"));
-  const remainingContext = truncateWithNotice(
-    formatContextItems(context.contextItems.filter(item=>item.key !== "assigned_cards")),
-    CLAUDE_ROLLOVER_CONTEXT_MAX_CHARS - assignedBlock.length - (assignedBlock ? 2 : 0),
-    "dynamic context",
-  );
-  const contextBlock = [remainingContext, assignedBlock].filter(Boolean).join("\n\n");
-  const sections = [
-    notice,
-    history,
-    `<replayed_input>\n${boundedReplay}\n</replayed_input>`,
-    contextBlock,
-  ].filter((value) => value.length > 0);
-  return truncateClaudeTextToEstimatedTokens(
-    truncateWithNotice(
-      sections.join("\n\n"),
-      CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
-      "rollover prompt",
-    ),
-    CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
-    "rollover prompt",
-  );
-}
-
-function truncateWithNotice(value: string, limit: number, label: string): string {
-  if (value.length <= limit) return value;
-  const suffix = `\n[${label} truncated by ${value.length - limit} characters]`;
-  if (suffix.length >= limit) return value.slice(0, limit);
-  return `${value.slice(0, limit - suffix.length)}${suffix}`;
 }
