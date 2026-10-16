@@ -70,15 +70,15 @@ export function createWorkerAttachmentInputRuntime(
   orchProxyConfig: OrchProxyConfig,
   persistence: Pick<EventPersistence, "waitForSessionAck">,
 ) {
-  const prepareAttachmentInput = createAttachmentInputPreparer(
-    createAttachmentMaterializer({
-      incomingDir: env.INCOMING_FILE_DIR,
-      nodeId: env.SOULSTREAM_NODE_ID,
-      orch: orchProxyConfig,
-      fetch: globalThis.fetch,
-    }),
-  );
+  const attachmentMaterializer = createAttachmentMaterializer({
+    incomingDir: env.INCOMING_FILE_DIR,
+    nodeId: env.SOULSTREAM_NODE_ID,
+    orch: orchProxyConfig,
+    fetch: globalThis.fetch,
+  });
+  const prepareAttachmentInput = createAttachmentInputPreparer(attachmentMaterializer);
   return {
+    attachmentMaterializer,
     prepareAttachmentInput,
     waitForAttachmentRefs: (sessionId: string) =>
       persistence.waitForSessionAck(sessionId),

@@ -377,6 +377,7 @@ export async function composeWorkerRuntime(
   }
   const mcpRuntime: McpRuntime = {
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),
+    attachmentMaterializer: attachmentInputRuntime.attachmentMaterializer,
     producedAttachments: createProducedAttachmentRegistration(
       { incomingDir: env.INCOMING_FILE_DIR, orch: orchProxyConfig, fetch: globalThis.fetch }),
     nodeId: env.SOULSTREAM_NODE_ID,

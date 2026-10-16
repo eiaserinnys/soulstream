@@ -25,6 +25,11 @@ const attachmentResult = {
   },
 };
 
+const resolvedAttachmentResult = {
+  ...attachmentResult,
+  local_path: "/incoming/trusted-session/assets/attachment-1/report.txt",
+};
+
 function activeTask(params: {
   commandId?: string | null;
   workspaceDir?: string | null;
@@ -47,6 +52,7 @@ function activeTask(params: {
 function makeRuntime(params: {
   task?: ReturnType<typeof activeTask> | null;
   service?: { register: ReturnType<typeof vi.fn> };
+  materializer?: { materialize: ReturnType<typeof vi.fn> };
 } = {}): McpRuntime {
   return {
     nodeId: "node-1",
@@ -59,6 +65,7 @@ function makeRuntime(params: {
     catalogService: {},
     logger: pino({ level: "silent" }),
     ...(params.service ? { producedAttachments: params.service } : {}),
+    ...(params.materializer ? { attachmentMaterializer: params.materializer } : {}),
   } as unknown as McpRuntime;
 }
 
@@ -73,10 +80,15 @@ async function createClient(runtime: McpRuntime): Promise<Client> {
   return client;
 }
 
-async function callTool(client: Client, input: Record<string, unknown>, callerSessionId?: string) {
+async function callTool(
+  client: Client,
+  input: Record<string, unknown>,
+  callerSessionId?: string,
+  toolName = "register_attachment",
+) {
   return withMcpRequestContext(
     callerSessionId ? { callerSessionId } : {},
-    () => client.callTool({ name: "register_attachment", arguments: input }),
+    () => client.callTool({ name: toolName, arguments: input }),
   );
 }
 
@@ -190,5 +202,80 @@ describe("register_attachment", () => {
     const failure = await callTool(failureClient, { local_path: "outside.txt" }, "trusted-session");
     expect(failure.isError).toBe(true);
     expect(errorText(failure)).toContain("ATTACHMENT_PATH_DENIED");
+  });
+});
+
+describe("resolve_attachment", () => {
+  it("uses the trusted caller and materializes one attachment in resolve mode", async () => {
+    const materialize = vi.fn(async () => resolvedAttachmentResult);
+    const task = activeTask({ commandId: null });
+    const runtime = makeRuntime({ task, materializer: { materialize } });
+    const client = await createClient(runtime);
+
+    const result = await callTool(
+      client,
+      { attachment_id: "attachment-1" },
+      "trusted-session",
+      "resolve_attachment",
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual(resolvedAttachmentResult);
+    expect(runtime.taskManager.getTask).toHaveBeenCalledWith("trusted-session");
+    expect(materialize).toHaveBeenCalledOnce();
+    expect(materialize.mock.calls[0]?.[0]).toEqual({
+      sessionId: "trusted-session",
+      attachmentId: "attachment-1",
+      mode: "resolve",
+    });
+    expect(task.runner.dispatcher.activeExecutionCommandId).not.toHaveBeenCalled();
+  });
+
+  it("rejects caller and registration scope fields from the request body", async () => {
+    const materialize = vi.fn(async () => resolvedAttachmentResult);
+    const client = await createClient(makeRuntime({ task: activeTask(), materializer: { materialize } }));
+
+    const result = await callTool(client, {
+      attachment_id: "attachment-1",
+      caller_session_id: "forged-session",
+      registration_scope: { type: "session", id: "forged-session" },
+    }, "trusted-session", "resolve_attachment");
+
+    expect(result.isError).toBe(true);
+    expect(materialize).not.toHaveBeenCalled();
+  });
+
+  it("requires a trusted caller, an existing task, and a materializer", async () => {
+    const materialize = vi.fn(async () => resolvedAttachmentResult);
+    const noCallerRuntime = makeRuntime({ task: activeTask(), materializer: { materialize } });
+    const noCallerClient = await createClient(noCallerRuntime);
+    const noCaller = await callTool(noCallerClient, { attachment_id: "attachment-1" }, undefined, "resolve_attachment");
+    expect(noCaller.isError).toBe(true);
+    expect(errorText(noCaller)).toContain("ATTACHMENT_UNAUTHENTICATED");
+    expect(noCallerRuntime.taskManager.getTask).not.toHaveBeenCalled();
+
+    const noTaskClient = await createClient(makeRuntime({ task: null, materializer: { materialize } }));
+    const noTask = await callTool(noTaskClient, { attachment_id: "attachment-1" }, "trusted-session", "resolve_attachment");
+    expect(noTask.isError).toBe(true);
+    expect(errorText(noTask)).toContain("SESSION_NOT_FOUND");
+
+    const unavailableClient = await createClient(makeRuntime({ task: activeTask() }));
+    const unavailable = await callTool(unavailableClient, { attachment_id: "attachment-1" }, "trusted-session", "resolve_attachment");
+    expect(unavailable.isError).toBe(true);
+    expect(errorText(unavailable)).toContain("ATTACHMENT_INPUT_UNAVAILABLE");
+    expect(materialize).not.toHaveBeenCalled();
+  });
+
+  it("preserves central reference denial codes", async () => {
+    const materialize = vi.fn(async () => {
+      throw Object.assign(new Error("Attachment access denied"), { code: "ATTACHMENT_ACCESS_DENIED" });
+    });
+    const client = await createClient(makeRuntime({ task: activeTask(), materializer: { materialize } }));
+
+    const result = await callTool(client, { attachment_id: "attachment-1" }, "trusted-session", "resolve_attachment");
+
+    expect(result.isError).toBe(true);
+    expect(errorText(result)).toContain("ATTACHMENT_ACCESS_DENIED");
+    expect(errorText(result)).toContain("Attachment access denied");
   });
 });
