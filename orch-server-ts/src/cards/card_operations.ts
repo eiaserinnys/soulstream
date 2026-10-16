@@ -10,7 +10,10 @@ const assignee=z.object({ kind:z.enum(["agent","human","session"]).nullable(),ag
 const mutation=z.object({ expectedVersion:z.number().int().positive(),idempotencyKey:id,reason:z.string().nullable().optional() });
 const append=z.object({ idempotencyKey:id });
 const itemId=z.number().int().positive();
-const evidence=z.array(z.object({type:z.enum(["image","link"]),url:id,label:z.string()}).strict());
+const evidence=z.array(z.union([
+  z.object({type:z.enum(["image","link"]),label:z.string(),attachment_id:id}).strict(),
+  z.object({type:z.enum(["image","link"]),label:z.string(),url:id}).strict(),
+]));
 export const cardOperationSchemas={
   create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),

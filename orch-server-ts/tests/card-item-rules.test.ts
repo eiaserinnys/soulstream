@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { cardOperationSchemas } from "../src/cards/card_operations.js";
 import {
   addCardItem,
   assertShortCardText,
@@ -134,6 +135,19 @@ describe("reportCardItem", () => {
     );
   });
 
+  it("keeps attachment_id evidence as given without adding a url, and still applies the count and label limits", () => {
+    const evidence = [
+      { type: "image" as const, label: "화면", attachment_id: "att-1" },
+      { type: "link" as const, label: "외부", url: "https://example.com" },
+    ];
+    const stored = reportCardItem([item()], 1, { state: "doing", evidence }, at)[0]!.evidence;
+    expect(stored).toStrictEqual(evidence);
+    expect(Object.hasOwn(stored[0]!, "url")).toBe(false);
+    const withId = (i: number) => ({ type: "image" as const, label: `증거 ${i}`, attachment_id: `att-${i}` });
+    expectInvalid(() => reportCardItem([item()], 1, { state: "doing", evidence: Array.from({ length: 5 }, (_, i) => withId(i)) }, at), "증거는 넷까지입니다");
+    expectInvalid(() => reportCardItem([item()], 1, { state: "doing", evidence: [{ ...withId(1), label: "가".repeat(41) }] }, at), "evidence.label은 40자까지입니다. 지금 41자입니다");
+  });
+
   it("requires a result for done and dropped, increments revisions only for done", () => {
     expectInvalid(() => reportCardItem([item()], 1, { state: "done" }, at), "결과 한 줄(result)이 필요합니다");
     expectInvalid(() => reportCardItem([item()], 1, { state: "dropped", result: " " }, at), "결과 한 줄(result)이 필요합니다");
@@ -236,5 +250,30 @@ describe("card now projections", () => {
     expect(questionCardNow(null, "추가 질문", at, "session-1")).toBeNull();
     expect(questionCardNow(existing, "추가 질문", at, "session-1")).toMatchObject({ turn: "user", ask: "추가 질문" });
     expect(questionCardNow(existing, "가".repeat(60) + "나", at, "session-1")?.ask).toBe("가".repeat(59) + "…");
+  });
+});
+
+describe("report_card_item evidence operation schema", () => {
+  const base = { idempotencyKey: "key", itemId: 1, state: "done" as const, result: "확인 완료" };
+  const parse = (evidence: unknown[]) => cardOperationSchemas.report_card_item.safeParse({ ...base, evidence });
+
+  it("accepts either an attachment_id or a url per entry and keeps the entry as given", () => {
+    const evidence = [
+      { type: "image", label: "화면", attachment_id: "att-1" },
+      { type: "link", label: "외부", url: "https://example.com" },
+    ];
+    const parsed = parse(evidence);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.evidence).toStrictEqual(evidence);
+  });
+
+  it("rejects entries with both ids, neither, an empty id, or an unknown key", () => {
+    for (const entry of [
+      { type: "image", label: "둘 다", attachment_id: "att-1", url: "https://example.com" },
+      { type: "image", label: "없음" },
+      { type: "image", label: "빈 ID", attachment_id: "" },
+      { type: "link", label: "빈 URL", url: "" },
+      { type: "image", label: "알 수 없는 키", attachment_id: "att-1", extra: true },
+    ]) expect(parse([entry]).success).toBe(false);
   });
 });

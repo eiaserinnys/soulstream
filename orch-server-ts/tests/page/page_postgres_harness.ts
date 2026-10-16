@@ -525,8 +525,25 @@ CREATE TABLE folder_operations (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 CREATE UNIQUE INDEX uq_folder_ops_idem ON folder_operations(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE TABLE file_assets (
+      id TEXT PRIMARY KEY,
+      storage_key TEXT NOT NULL UNIQUE,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      byte_size BIGINT NOT NULL,
+      width INTEGER,
+      height INTEGER,
+      duration_seconds DOUBLE PRECISION,
+      checksum_sha256 TEXT,
+      upload_status TEXT NOT NULL DEFAULT 'pending',
+      multipart_upload_id TEXT,
+      garbage_collected_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/116_card_execution_requests.sql",import.meta.url),"utf8"));
+  await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/122_attachment_storage_contract.sql",import.meta.url),"utf8"));
 }
 
 async function assertSafeExternalDatabase(url: string): Promise<void> {

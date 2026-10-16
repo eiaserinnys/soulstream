@@ -12,6 +12,7 @@ import {
   sessionCommandRouteAuthRequirements,
   type CreateSessionNodeCommandPayload,
   type NodeRegistrationPayload,
+  type SessionCommandRouteOptions,
 } from "../src/index.js";
 import { ModelPresetAvailabilityError } from
   "../src/model/model_preset_availability.js";
@@ -96,6 +97,174 @@ describe("session command HTTP route harness", () => {
       expect(sent[0]!.attachment_paths).toEqual(["/node-b/draft/image.png"]);
       expect(sent[0]).not.toHaveProperty("attachmentPaths");
     } finally { await app.close(); }
+  });
+
+  describe("attachment input admission on create", () => {
+    type Admit = NonNullable<SessionCommandRouteOptions["admitAttachmentInput"]>;
+    type AdmitInput = Parameters<Admit>[1];
+
+    function createAdmissionHarness(admit?: Admit) {
+      const harness = createHarness();
+      const connectionId = registerNode(harness.registry);
+      const sent: Array<Record<string, unknown>> = [];
+      harness.transports.attach({ nodeId: "fake-node", connectionId, transport: { send: (data) => {
+        const message = JSON.parse(data) as Record<string, unknown>;
+        sent.push(message);
+        harness.registry.receiveNodeMessage({ nodeId: "fake-node", connectionId }, {
+          type: "session_created", requestId: message.requestId, agentSessionId: message.agentSessionId,
+        });
+      } } });
+      const seenBodies: Array<{ body: Record<string, unknown>; snapshot: string }> = [];
+      const createSessionLifecycle = { prepare: async ({ body }: { body: Record<string, unknown> }) => {
+        seenBodies.push({ body, snapshot: JSON.stringify(body) });
+        return { payload: body };
+      } };
+      const app = createApp({ config, sessionCommandRoutes: {
+        router: harness.router,
+        bridge: harness.bridge,
+        createSessionLifecycle,
+        ...(admit === undefined ? {} : { admitAttachmentInput: admit }),
+      } });
+      return { ...harness, app, sent, seenBodies };
+    }
+
+    function admitting(
+      result: Awaited<ReturnType<Admit>>,
+      calls: Array<{ caller: unknown; input: AdmitInput }> = [],
+    ): Admit {
+      return async (caller, input) => { calls.push({ caller, input }); return result; };
+    }
+
+    const profile = "claude-roselin";
+
+    it("admits ID-only input on the selected node and sends only the new keys to the worker", async () => {
+      const calls: Array<{ caller: unknown; input: AdmitInput }> = [];
+      const { app, sent, seenBodies, router } = createAdmissionHarness(admitting(
+        { attachment_ids: ["att-1"], attachment_paths: [], attachment_bindings: [] }, calls,
+      ));
+      const createSession = vi.spyOn(router, "createSession");
+      try {
+        const posted = { prompt: "", profile, attachment_ids: ["att-1"] };
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: posted });
+
+        expect(response.statusCode).toBe(201);
+        expect(response.json()).toEqual({ agentSessionId: sent[0]!.agentSessionId, nodeId: "fake-node", prompt: "" });
+        expect(calls).toHaveLength(1);
+        expect(calls[0]!.caller).toHaveProperty("headers");
+        expect(calls[0]!.input).toEqual({ sessionId: sent[0]!.agentSessionId, nodeId: "fake-node", attachmentIds: ["att-1"] });
+        expect(createSession.mock.calls[0]![0]).toMatchObject({ nodeId: "fake-node", profile });
+        expect(sent[0]).toMatchObject({ type: "create_session", prompt: "", attachment_ids: ["att-1"] });
+        expect(sent[0]).not.toHaveProperty("attachment_bindings");
+        expect(sent[0]).not.toHaveProperty("attachment_paths");
+        expect(sent[0]).not.toHaveProperty("attachmentIds");
+        expect(seenBodies[0]!.body).toEqual(posted);
+        expect(JSON.stringify(seenBodies[0]!.body)).toBe(seenBodies[0]!.snapshot);
+      } finally { await app.close(); }
+    });
+
+    it("keeps the original path and carries the alias-resolved id and binding", async () => {
+      const path = "/incoming/pending/large.zip";
+      const binding = { attachment_id: "att-9", node_id: "fake-node", path };
+      const calls: Array<{ caller: unknown; input: AdmitInput }> = [];
+      const { app, sent } = createAdmissionHarness(admitting(
+        { attachment_ids: ["att-9"], attachment_paths: [path], attachment_bindings: [binding] }, calls,
+      ));
+      try {
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello", profile, attachmentPaths: [path], attachmentIds: ["att-9"],
+        } });
+
+        expect(response.statusCode).toBe(201);
+        expect(calls[0]!.input).toMatchObject({ nodeId: "fake-node", attachmentIds: ["att-9"], attachmentPaths: [path] });
+        expect(sent[0]).toMatchObject({ attachment_paths: [path], attachment_ids: ["att-9"], attachment_bindings: [binding] });
+        expect(sent[0]).not.toHaveProperty("attachmentPaths");
+      } finally { await app.close(); }
+    });
+
+    it("omits empty id keys when a path has no alias", async () => {
+      const path = "/incoming/pending/plain.txt";
+      const { app, sent } = createAdmissionHarness(admitting(
+        { attachment_ids: [], attachment_paths: [path], attachment_bindings: [] },
+      ));
+      try {
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello", profile, attachment_paths: [path],
+        } });
+
+        expect(response.statusCode).toBe(201);
+        expect(sent[0]!.attachment_paths).toEqual([path]);
+        expect(sent[0]).not.toHaveProperty("attachment_ids");
+        expect(sent[0]).not.toHaveProperty("attachment_bindings");
+      } finally { await app.close(); }
+    });
+
+    it("maps an admission rejection to its status without creating a node command", async () => {
+      const admit: Admit = async () => {
+        throw Object.assign(new Error("Attachment not found"), { code: "ATTACHMENT_NOT_FOUND", statusCode: 404 });
+      };
+      const { app, sent, registry } = createAdmissionHarness(admit);
+      const createCommand = vi.spyOn(registry, "createCommand");
+      try {
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello", profile, attachment_ids: ["missing"],
+        } });
+
+        expect(response.statusCode).toBe(404);
+        expect(response.json()).toEqual({ error: { code: "ATTACHMENT_NOT_FOUND", message: "Attachment not found" } });
+        expect(createCommand).not.toHaveBeenCalled();
+        expect(sent).toHaveLength(0);
+      } finally { await app.close(); }
+    });
+
+    it("rejects externally supplied bindings before any admission", async () => {
+      const calls: Array<{ caller: unknown; input: AdmitInput }> = [];
+      const { app, sent } = createAdmissionHarness(admitting(
+        { attachment_ids: [], attachment_paths: [], attachment_bindings: [] }, calls,
+      ));
+      try {
+        for (const key of ["attachment_bindings", "attachmentBindings"]) {
+          const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+            prompt: "hello", profile, attachment_ids: ["att-1"], [key]: [],
+          } });
+          expect(response.statusCode).toBe(400);
+        }
+        expect(calls).toHaveLength(0);
+        expect(sent).toHaveLength(0);
+      } finally { await app.close(); }
+    });
+
+    it("answers 503 for ids without an admission callback and leaves path-only input unchanged", async () => {
+      const { app, sent } = createAdmissionHarness();
+      try {
+        const unavailable = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello", profile, attachment_ids: ["att-1"],
+        } });
+        expect(unavailable.statusCode).toBe(503);
+        expect(unavailable.json().error.code).toBe("ATTACHMENT_INPUT_UNAVAILABLE");
+        expect(sent).toHaveLength(0);
+
+        const legacy = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello", profile, attachment_paths: ["/incoming/pending/plain.txt"],
+        } });
+        expect(legacy.statusCode).toBe(201);
+        expect(sent[0]!.attachment_paths).toEqual(["/incoming/pending/plain.txt"]);
+      } finally { await app.close(); }
+    });
+
+    it("still requires a prompt for page-anchored creates that carry attachments", async () => {
+      const { app, sent } = createAdmissionHarness(admitting(
+        { attachment_ids: ["att-1"], attachment_paths: [], attachment_bindings: [] },
+      ));
+      try {
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "", profile, attachment_ids: ["att-1"],
+          pageAnchor: { pageId: "page-1", blockId: "block-1", expectedVersion: 1 },
+        } });
+
+        expect(response.statusCode).toBe(400);
+        expect(sent).toHaveLength(0);
+      } finally { await app.close(); }
+    });
   });
 
   it("keeps session command routes disabled on the default app", async () => {

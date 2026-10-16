@@ -175,7 +175,7 @@ describe("Execute proxy and push route harnesses", () => {
       reasoningEffort: "high",
       caller_info: callerInfo,
       extra_context_items: contextItems,
-    });
+    }, expect.anything());
     expect(provider.executeResume).not.toHaveBeenCalled();
 
     await app.close();
@@ -226,7 +226,7 @@ describe("Execute proxy and push route harnesses", () => {
     expect(response.statusCode).toBe(200);
     expect(provider.executeNew).toHaveBeenCalledWith(expect.not.objectContaining({
       model_preset: expect.anything(),
-    }));
+    }), expect.anything());
     await app.close();
   });
 
@@ -251,7 +251,7 @@ describe("Execute proxy and push route harnesses", () => {
         source: "execute-proxy",
         user_agent: "vitest-agent",
       }),
-    }));
+    }), expect.anything());
 
     await app.close();
   });
@@ -272,7 +272,7 @@ describe("Execute proxy and push route harnesses", () => {
     });
     expect(provider.executeNew).toHaveBeenLastCalledWith(expect.objectContaining({
       caller_info: expect.objectContaining({ ip: "203.0.113.42" }),
-    }));
+    }), expect.anything());
 
     await app.inject({
       method: "POST",
@@ -283,7 +283,7 @@ describe("Execute proxy and push route harnesses", () => {
     });
     expect(provider.executeNew).toHaveBeenLastCalledWith(expect.objectContaining({
       caller_info: expect.objectContaining({ ip: "198.51.100.7" }),
-    }));
+    }), expect.anything());
 
     await app.close();
   });
@@ -361,7 +361,7 @@ describe("Execute proxy and push route harnesses", () => {
       source: "claude_runtime_followup",
       relation_key: "runtime_task:task-1:done",
       delivery_attempt_token: "runtime:node-a",
-    });
+    }, expect.anything());
     expect(provider.executeNew).not.toHaveBeenCalled();
 
     await app.inject({
@@ -377,7 +377,7 @@ describe("Execute proxy and push route harnesses", () => {
       agent_session_id: "sess-existing",
       prompt: "continue again",
       attachment_paths: ["uploads/alt.png"],
-    });
+    }, expect.anything());
 
     await app.close();
   });

@@ -394,21 +394,25 @@ function isOwner(actor: AttachmentReadActor, asset: AttachmentAssetRow): boolean
     normalizeEmail(actor.ownerEmail).length > 0;
 }
 
-function projectMetadata(asset: AttachmentAssetRow): AttachmentMetadataResponse {
+export function projectAttachmentDescriptor(asset: AttachmentAssetRow): AttachmentDescriptor {
   const mimeType = normalizedMimeType(asset.mimeType);
   const preview = previewInfo(mimeType);
   return {
-    descriptor: {
-      attachment_id: asset.id,
-      name: asset.originalName,
-      mime_type: asset.mimeType,
-      byte_size: asset.byteSize,
-      checksum_sha256: asset.checksumSha256,
-      width: asset.width,
-      height: asset.height,
-      preview_kind: preview.kind,
-      preview_mime_type: preview.mimeType,
-    },
+    attachment_id: asset.id,
+    name: asset.originalName,
+    mime_type: asset.mimeType,
+    byte_size: asset.byteSize,
+    checksum_sha256: asset.checksumSha256,
+    width: asset.width,
+    height: asset.height,
+    preview_kind: preview.kind,
+    preview_mime_type: preview.mimeType,
+  };
+}
+
+function projectMetadata(asset: AttachmentAssetRow): AttachmentMetadataResponse {
+  return {
+    descriptor: projectAttachmentDescriptor(asset),
     upload_status: asset.uploadStatus,
   };
 }

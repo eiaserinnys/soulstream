@@ -12,6 +12,14 @@ import {
   normalizeAttachmentLegacyPath,
 } from "./attachment_read_service.js";
 import { registerMultipartAttachmentRoutes, multipartAttachmentRouteAuthRequirements, type MultipartAttachmentOptions } from "./multipart_attachment_routes.js";
+import {
+  AttachmentUploadHttpError,
+  readUploadMode,
+  sendUploadFailure,
+  type AttachmentUploadOptions,
+  type UploadMode,
+} from "./attachment_upload_http.js";
+import { tryOwnedSmallUpload } from "./owned_attachment_small_route.js";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -24,6 +32,7 @@ import {
 export const MAX_ATTACHMENT_SIZE_BYTES = 100 * 1024 * 1024;
 export const LEGACY_ATTACHMENT_MAX_SIZE_BYTES = 8 * 1024 * 1024;
 export const ATTACHMENT_UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024;
+const MULTIPART_OVERHEAD_LIMIT_BYTES = 1024 * 1024;
 
 export type AttachmentNode = {
   id?: string;
@@ -113,6 +122,7 @@ export type AttachmentTransport = {
 export type AttachmentRouteOptions = {
   assetRead?: AttachmentReadRouteOptions;
   multipart?: MultipartAttachmentOptions;
+  assetUpload?: AttachmentUploadOptions;
   provider: AttachmentRouteProvider;
   accessProvider: AttachmentAccessProvider;
   transport: AttachmentTransport;
@@ -168,10 +178,40 @@ export function registerAttachmentRoutes(
   if (options.assetRead) registerAttachmentReadRoutes(app, options.assetRead);
 
   app.post<{ Params: UploadParams }>("/api/attachments/sessions", async (request, reply) => {
-    const nodeId = requiredQueryString(request, "nodeId");
-    if (!nodeId.ok) return validationError(reply, nodeId);
     const form = parseMultipartForm(request);
     if (!form.ok) return validationError(reply, form);
+
+    const file = form.value.file;
+    if (file.content.length > MAX_ATTACHMENT_SIZE_BYTES) {
+      return reply.code(400).send({
+        detail: `파일이 너무 큽니다 (${Math.floor(file.content.length / 1024 / 1024)}MB > 100MB)`,
+      });
+    }
+    if (Buffer.isBuffer(request.body) && request.body.length - file.content.length > MULTIPART_OVERHEAD_LIMIT_BYTES) {
+      return sendUploadFailure(
+        reply,
+        new AttachmentUploadHttpError(413, "invalid_upload", "multipart 본문이 너무 큽니다"),
+      );
+    }
+
+    if (options.assetUpload) {
+      let mode: UploadMode;
+      try {
+        mode = readUploadMode(request);
+      } catch (error) {
+        return sendUploadFailure(reply, error);
+      }
+      const handled = await tryOwnedSmallUpload(request, reply, {
+        uploads: options.assetUpload,
+        form: form.value,
+        mode,
+        cache: (nodeId, sessionId, cacheFile) => legacyOwnedUploadCache(options, nodeId, sessionId, cacheFile),
+      });
+      if (handled) return reply;
+    }
+
+    const nodeId = requiredQueryString(request, "nodeId");
+    if (!nodeId.ok) return validationError(reply, nodeId);
     const node = await resolveNode(options.provider, nodeId.value);
     if (!node.ok) return attachmentError(reply, node.error);
 
@@ -182,13 +222,6 @@ export function registerAttachmentRoutes(
     const accessEmail = accessEmailFromCallerInfo(form.value.fields.get("caller_info") ?? null);
     const access = await ensureSessionAccess(options, request, sessionId, accessEmail);
     if (!access.ok) return attachmentError(reply, access.error);
-
-    const file = form.value.file;
-    if (file.content.length > MAX_ATTACHMENT_SIZE_BYTES) {
-      return reply.code(400).send({
-        detail: `파일이 너무 큽니다 (${Math.floor(file.content.length / 1024 / 1024)}MB > 100MB)`,
-      });
-    }
 
     try {
       const result = await uploadWithFallback(options, node.value, sessionId, file);
@@ -359,6 +392,38 @@ async function* iterAttachmentChunks(content: Buffer): AsyncIterable<Buffer> {
   for (let offset = 0; offset < content.length; offset += ATTACHMENT_UPLOAD_CHUNK_SIZE_BYTES) {
     yield content.subarray(offset, offset + ATTACHMENT_UPLOAD_CHUNK_SIZE_BYTES);
   }
+}
+
+// Warm the worker cache for a committed owned upload in legacy mode. A missing
+// node is a transport failure (503), and an empty file never falls back to the
+// empty-base64 legacy command: an unsupported chunked command becomes 409.
+async function legacyOwnedUploadCache(
+  options: AttachmentRouteOptions,
+  nodeId: string,
+  sessionId: string,
+  file: MultipartFile,
+): Promise<unknown> {
+  const node = await resolveNode(options.provider, nodeId);
+  if (!node.ok) {
+    throw new AttachmentTransportConnectionError(`Node '${nodeId}' not found`);
+  }
+  if (file.content.length === 0) {
+    try {
+      return await options.transport.uploadAttachment(node.value, {
+        sessionId,
+        filename: file.filename,
+        contentType: file.contentType,
+        expectedSize: 0,
+        chunks: iterAttachmentChunks(file.content),
+      });
+    } catch (error) {
+      if (isChunkedUploadUnsupported(errorMessage(error))) {
+        throw new AttachmentUploadHttpError(409, "cache_unsupported", "노드가 첨부 캐시를 지원하지 않습니다");
+      }
+      throw error;
+    }
+  }
+  return await uploadWithFallback(options, node.value, sessionId, file);
 }
 
 function requiredQueryString(request: FastifyRequest, name: string): Validation<string> {
