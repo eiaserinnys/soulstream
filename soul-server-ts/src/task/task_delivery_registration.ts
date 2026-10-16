@@ -77,6 +77,8 @@ function buildRegistration(
       completionId: params.completionId,
       relationKey: params.relationKey,
       attachmentPaths: params.attachmentPaths,
+      attachmentIds: params.attachmentIds,
+      attachmentBindings: params.attachmentBindings,
       context: params.context,
       callerInfo: params.callerInfo,
       rateLimitType: params.rateLimitType,
