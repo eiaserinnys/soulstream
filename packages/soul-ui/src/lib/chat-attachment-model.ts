@@ -1,0 +1,185 @@
+import type {
+  AttachmentReadContext,
+  SessionEventAttachmentResponse,
+  SessionEventAttachmentView,
+} from "@soulstream/wire-schema/attachments";
+import { orchestratorFetch } from "./orchestrator-connection";
+
+export type ChatAttachmentSource =
+  | { kind: "asset"; attachmentId: string; context: AttachmentReadContext }
+  | { kind: "legacy"; nodeId: string; path: string; context: AttachmentReadContext }
+  | { kind: "local"; file: File }
+  | { kind: "markdown-image"; src: string; alt: string }
+  | { kind: "unavailable"; attachmentId?: string; path?: string; context: AttachmentReadContext };
+
+export interface ChatAttachmentItem {
+  key: string;
+  name: string | null;
+  mimeType: string | null;
+  byteSize: number | null;
+  previewKind: "image" | "text" | "info";
+  availability: "ready" | "unresolved" | "missing" | "unavailable";
+  previewUrl: string | null;
+  originalUrl: string | null;
+  legacySources: { node_id: string; path: string }[];
+  source: ChatAttachmentSource;
+}
+
+export class ChatAttachmentRequestError extends Error {
+  constructor(readonly status: number) {
+    super("Chat attachment request failed");
+    this.name = "ChatAttachmentRequestError";
+  }
+}
+
+export function attachmentContentUrl(
+  attachmentId: string,
+  context: AttachmentReadContext,
+  download = false,
+): string {
+  const params = contextParams(context);
+  if (download) params.push("download=true");
+  return `/api/attachments/${encodeURIComponent(attachmentId)}/content?${params.join("&")}`;
+}
+
+export function contextualLegacyUrl(
+  nodeId: string,
+  path: string,
+  context: AttachmentReadContext,
+  download = false,
+): string {
+  const params = [
+    `nodeId=${encodeURIComponent(nodeId)}`,
+    `path=${encodeURIComponent(path)}`,
+    ...contextParams(context),
+  ];
+  if (download) params.push("download=true");
+  return `/api/attachments/files?${params.join("&")}`;
+}
+
+export async function loadChatAttachments(input: {
+  sessionId: string;
+  eventId: number;
+  signal?: AbortSignal;
+}): Promise<SessionEventAttachmentResponse> {
+  if (!Number.isSafeInteger(input.eventId) || input.eventId <= 0) {
+    throw new ChatAttachmentRequestError(400);
+  }
+  let response: Response;
+  try {
+    response = await orchestratorFetch(fetch, sessionEventAttachmentUrl(input.sessionId, input.eventId), {
+      credentials: "same-origin",
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    });
+  } catch (error) {
+    if (input.signal?.aborted) throw error;
+    throw new ChatAttachmentRequestError(0);
+  }
+  if (!response.ok) throw new ChatAttachmentRequestError(response.status);
+  const body: unknown = await response.json().catch(() => null);
+  if (!isSessionEventAttachmentResponse(body, input.eventId)) {
+    throw new ChatAttachmentRequestError(0);
+  }
+  return body;
+}
+
+export function projectChatAttachmentItems(
+  projection: SessionEventAttachmentResponse,
+): ChatAttachmentItem[] {
+  return projection.items.map((view) => projectItem(view));
+}
+
+function projectItem(view: SessionEventAttachmentView): ChatAttachmentItem {
+  switch (view.kind) {
+    case "asset": {
+      const { descriptor, read_context: context } = view;
+      const contentUrl = attachmentContentUrl(descriptor.attachment_id, context);
+      return {
+        key: `asset:${descriptor.attachment_id}`,
+        name: descriptor.name,
+        mimeType: descriptor.mime_type,
+        byteSize: descriptor.byte_size,
+        previewKind: descriptor.preview_kind,
+        availability: "ready",
+        previewUrl: descriptor.preview_kind === "info" ? null : contentUrl,
+        originalUrl: attachmentContentUrl(descriptor.attachment_id, context, true),
+        legacySources: view.legacy_sources,
+        source: { kind: "asset", attachmentId: descriptor.attachment_id, context },
+      };
+    }
+    case "legacy": {
+      const { node_id: nodeId, path, read_context: context } = view;
+      const url = view.availability === "missing"
+        ? null
+        : contextualLegacyUrl(nodeId, path, context);
+      return {
+        key: `legacy:${JSON.stringify([nodeId, path])}`,
+        name: view.name,
+        mimeType: view.mime_type,
+        byteSize: view.byte_size,
+        previewKind: previewKindFromMime(view.mime_type),
+        availability: view.availability,
+        previewUrl: url !== null && view.mime_type !== null && previewKindFromMime(view.mime_type) !== "info"
+          ? url
+          : null,
+        originalUrl: url === null ? null : contextualLegacyUrl(nodeId, path, context, true),
+        legacySources: [],
+        source: { kind: "legacy", nodeId, path, context },
+      };
+    }
+    case "unavailable":
+      return {
+        key: `asset:${view.attachment_id}`,
+        name: null,
+        mimeType: null,
+        byteSize: null,
+        previewKind: "info",
+        availability: "unavailable",
+        previewUrl: null,
+        originalUrl: null,
+        legacySources: [],
+        source: { kind: "unavailable", attachmentId: view.attachment_id, context: view.read_context },
+      };
+    case "unavailable_legacy":
+      return {
+        key: `legacy-unavailable:${JSON.stringify(view.path)}`,
+        name: view.name,
+        mimeType: null,
+        byteSize: null,
+        previewKind: "info",
+        availability: "unavailable",
+        previewUrl: null,
+        originalUrl: null,
+        legacySources: [],
+        source: { kind: "unavailable", path: view.path, context: view.read_context },
+      };
+  }
+}
+
+function contextParams(context: AttachmentReadContext): string[] {
+  return context.type === "owner"
+    ? ["context_type=owner"]
+    : [`context_type=${encodeURIComponent(context.type)}`, `context_id=${encodeURIComponent(context.id)}`];
+}
+
+function sessionEventAttachmentUrl(sessionId: string, eventId: number): string {
+  return `/api/sessions/${encodeURIComponent(sessionId)}/events/${eventId}/attachments`;
+}
+
+function previewKindFromMime(mimeType: string | null): ChatAttachmentItem["previewKind"] {
+  if (mimeType?.startsWith("image/")) return "image";
+  if (mimeType?.startsWith("text/")) return "text";
+  return "info";
+}
+
+function isSessionEventAttachmentResponse(
+  value: unknown,
+  eventId: number,
+): value is SessionEventAttachmentResponse {
+  return typeof value === "object"
+    && value !== null
+    && "event_id" in value
+    && value.event_id === eventId
+    && "items" in value
+    && Array.isArray(value.items);
+}
