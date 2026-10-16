@@ -375,14 +375,10 @@ export async function composeWorkerRuntime(
   } else {
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
-  const producedAttachments = createProducedAttachmentRegistration({
-    incomingDir: env.INCOMING_FILE_DIR,
-    orch: orchProxyConfig,
-    fetch: globalThis.fetch,
-  });
   const mcpRuntime: McpRuntime = {
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),
-    producedAttachments,
+    producedAttachments: createProducedAttachmentRegistration(
+      { incomingDir: env.INCOMING_FILE_DIR, orch: orchProxyConfig, fetch: globalThis.fetch }),
     nodeId: env.SOULSTREAM_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
