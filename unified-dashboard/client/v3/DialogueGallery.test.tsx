@@ -33,10 +33,10 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
 
-it("covers all 55 actual variants exactly once in the requested shape groups", () => {
+it("covers all 56 actual variants exactly once in the requested shape groups", () => {
   const ids = webDialogueGroups.flatMap(group => group.ids);
-  expect(ids).toHaveLength(55);
-  expect(new Set(ids).size).toBe(55);
+  expect(ids).toHaveLength(56);
+  expect(new Set(ids).size).toBe(56);
   expect([...ids].sort()).toEqual(dialoguesInventory.map(item => item.id).sort());
 });
 it("mounts actual iframe documents only at the visible boundary and searches names", async () => {

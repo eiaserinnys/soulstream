@@ -1,14 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  Dialog,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
-import { Button } from "../ui/button";
+import { AttachmentViewer } from "../AttachmentViewer";
 import { MarkdownImage } from "../MarkdownImage";
 import {
   chatImageMetadataKey,
@@ -204,61 +195,27 @@ export function ChatImageViewer({
   onOpenChange(open: boolean): void;
   onIndexChange(index: number): void;
 }) {
-  const image = gallery[index];
-  const [failedSource, setFailedSource] = useState<string | null>(null);
-  if (!image) return null;
-
-  const metadata = metadataByImage[chatImageMetadataKey(image)];
-  const filename = image.filename ?? metadata?.filename ?? getChatImageFilename(image.src);
-  const meta = imageMetaText(image.mimeType ?? metadata?.mimeType, image.bytes ?? metadata?.bytes);
-  const multiImage = gallery.length > 1;
-
+  const items = gallery.map(image => {
+    const metadata = metadataByImage[chatImageMetadataKey(image)];
+    return {
+      key: `markdown-image:${image.id}:${image.src}`,
+      name: image.filename ?? metadata?.filename ?? getChatImageFilename(image.src),
+      mimeType: image.mimeType ?? metadata?.mimeType ?? null,
+      byteSize: image.bytes ?? metadata?.bytes ?? null,
+      previewKind: "image" as const,
+      availability: "ready" as const,
+      previewUrl: image.src,
+      originalUrl: null,
+      legacySources: [],
+      source: { kind: "markdown-image" as const, src: image.src, alt: image.alt },
+    };
+  });
   return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogPopup className="image-viewer-popup chat-image-viewer-popup">
-        <DialogHeader className="chat-image-viewer-header">
-          <DialogTitle className="chat-image-viewer-title">{filename ?? "이미지"}</DialogTitle>
-          {meta && <p className="chat-image-viewer-metadata">{meta}</p>}
-        </DialogHeader>
-        <DialogPanel scrollFade={false} scrollable={false} className="chat-image-viewer-panel">
-          {failedSource === image.src ? (
-            <span className="chat-image-status" role="status">이미지를 불러오지 못했습니다.</span>
-          ) : (
-            <MarkdownImage
-              src={image.src}
-              alt={image.alt}
-              variant="chatRefined"
-              loading="eager"
-              className="chat-image-viewer-image"
-              onLoad={src => setFailedSource(current => current === src ? null : current)}
-              onError={src => setFailedSource(src)}
-            />
-          )}
-        </DialogPanel>
-        {multiImage && (
-          <DialogFooter className="chat-image-viewer-footer">
-            <Button
-              aria-label="이전 이미지"
-              variant="ghost"
-              size="icon"
-              disabled={index === 0}
-              onClick={() => onIndexChange(index - 1)}
-            >
-              <ChevronLeft aria-hidden="true" />
-            </Button>
-            <span className="chat-image-viewer-count" aria-live="polite">{index + 1}/{gallery.length}</span>
-            <Button
-              aria-label="다음 이미지"
-              variant="ghost"
-              size="icon"
-              disabled={index === gallery.length - 1}
-              onClick={() => onIndexChange(index + 1)}
-            >
-              <ChevronRight aria-hidden="true" />
-            </Button>
-          </DialogFooter>
-        )}
-      </DialogPopup>
-    </Dialog>
+    <AttachmentViewer
+      items={items}
+      index={gallery[index] ? index : null}
+      onIndexChange={onIndexChange}
+      onClose={() => onOpenChange(false)}
+    />
   );
 }
