@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AttachmentR2Storage } from "../runtime/live_board_asset_storage.js";
 import type { AttachmentUploadOptions } from "./attachment_upload_http.js";
 import { ownedMultipartInit } from "./owned_multipart_init.js";
+import { ownedMultipartAbort, ownedMultipartComplete } from "./owned_multipart_finish.js";
 import {
   ATTACHMENT_TICKET_SECONDS, LARGE_ATTACHMENT_MAX_SIZE, LARGE_ATTACHMENT_PART_SIZE,
   issueAttachmentTicket, verifyAttachmentTicket, type AttachmentUploadTicket,
@@ -61,6 +62,7 @@ export function registerMultipartAttachmentRoutes(app: FastifyInstance, options:
     } catch (error) { return fail(reply, error); }
   });
   app.post(`${prefix}/complete`, async (request, reply) => {
+    if (options.uploads) return ownedMultipartComplete(request, reply, { ...options, uploads: options.uploads }, completedParts);
     const controller = new AbortController();
     const onClose = () => { if (!reply.raw.writableFinished) controller.abort(); };
     reply.raw.on("close", onClose);
@@ -85,6 +87,7 @@ export function registerMultipartAttachmentRoutes(app: FastifyInstance, options:
     finally { reply.raw.off("close", onClose); }
   });
   app.post(`${prefix}/abort`, async (request, reply) => {
+    if (options.uploads) return ownedMultipartAbort(request, reply, { ...options, uploads: options.uploads });
     try {
       const { ticket, storage } = await verifyRequest(request, object(request.body));
       await Promise.allSettled([
