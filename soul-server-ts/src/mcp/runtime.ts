@@ -13,6 +13,7 @@ import type { CatalogService } from "../catalog/catalog_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
+import type { createAttachmentMaterializer } from "../attachments/attachment_materializer.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { ChildCompletionConsumptionRecorder } from "../task/child_completion_consumption.js";
 import type { TaskExecutor } from "../task/task_executor.js";
@@ -40,6 +41,7 @@ export interface ChatUiPublisher {
 export interface McpRuntime {
   persistentReports?: Pick<import("../control_plane/persistent_report_host_client.js").PersistentReportHostClient, "put" | "remove">;
   producedAttachments?: ReturnType<typeof createProducedAttachmentRegistration>;
+  attachmentMaterializer?: ReturnType<typeof createAttachmentMaterializer>;
   nodeId: string;
   agentsConfigPath: string;
   db: SessionDB;

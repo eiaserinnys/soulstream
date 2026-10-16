@@ -33,6 +33,7 @@ import { ScheduleDispatcher } from "../schedule/schedule_dispatcher.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
+import { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { createAttachmentMaterializer } from "../attachments/attachment_materializer.js";
 import {
   createAttachmentInputPreparer,
@@ -65,23 +66,30 @@ export interface TaskRuntimeCompositionParams {
   sessionMutations?: Pick<SessionMutationHost, "setModelSelection">;
 }
 
-export function createWorkerAttachmentInputRuntime(
+export function createWorkerAttachmentRuntime(
   env: Pick<Env, "INCOMING_FILE_DIR" | "SOULSTREAM_NODE_ID">,
   orchProxyConfig: OrchProxyConfig,
   persistence: Pick<EventPersistence, "waitForSessionAck">,
 ) {
-  const prepareAttachmentInput = createAttachmentInputPreparer(
-    createAttachmentMaterializer({
-      incomingDir: env.INCOMING_FILE_DIR,
-      nodeId: env.SOULSTREAM_NODE_ID,
-      orch: orchProxyConfig,
-      fetch: globalThis.fetch,
-    }),
-  );
+  const attachmentMaterializer = createAttachmentMaterializer({
+    incomingDir: env.INCOMING_FILE_DIR,
+    nodeId: env.SOULSTREAM_NODE_ID,
+    orch: orchProxyConfig,
+    fetch: globalThis.fetch,
+  });
+  const prepareAttachmentInput = createAttachmentInputPreparer(attachmentMaterializer);
+  const producedAttachments = createProducedAttachmentRegistration({
+    incomingDir: env.INCOMING_FILE_DIR,
+    orch: orchProxyConfig,
+    fetch: globalThis.fetch,
+  });
   return {
-    prepareAttachmentInput,
-    waitForAttachmentRefs: (sessionId: string) =>
-      persistence.waitForSessionAck(sessionId),
+    mcpRuntime: { attachmentMaterializer, producedAttachments },
+    taskRuntime: {
+      prepareAttachmentInput,
+      waitForAttachmentRefs: (sessionId: string) =>
+        persistence.waitForSessionAck(sessionId),
+    },
   };
 }
 

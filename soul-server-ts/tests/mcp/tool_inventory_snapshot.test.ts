@@ -106,6 +106,19 @@ describe("advertised MCP tool inventory", () => {
     expect(Object.keys(registerAttachment!.inputSchema.properties).sort()).toEqual([
       "local_path", "mime_type", "name", "target_scope",
     ]);
+    const resolveAttachment = internal.find(tool => tool.name === "resolve_attachment");
+    expect(resolveAttachment).toMatchObject({
+      name: "resolve_attachment",
+      description: "현재 세션에 연결된 첨부를 이 노드의 로컬 파일로 준비합니다.",
+      inputSchema: {
+        properties: { attachment_id: expect.any(Object) },
+        required: ["attachment_id"],
+        additionalProperties: false,
+      },
+    });
+    expect(Object.keys(resolveAttachment!.inputSchema.properties)).toEqual(["attachment_id"]);
+    for (const name of ["mode", "delivery_id", "credential"])
+      expect(resolveAttachment!.inputSchema.properties).not.toHaveProperty(name);
 
     const reportItem = internal.find(tool => tool.name === "report_card_item")!;
     const evidenceVariants = (reportItem.inputSchema.properties.evidence as {
@@ -132,7 +145,7 @@ describe("advertised MCP tool inventory", () => {
         required: ["label", "type", "url"],
       },
     ]);
-    expect(internal).toHaveLength(131);
+    expect(internal).toHaveLength(132);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });

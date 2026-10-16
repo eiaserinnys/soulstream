@@ -1,5 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { attachmentTools, errorResult, jsonResult, registerAttachmentInputSchema } from "@soulstream/mcp-contract";
+import {
+  attachmentTools,
+  errorResult,
+  jsonResult,
+  registerAttachmentInputSchema,
+  resolveAttachmentInputSchema,
+} from "@soulstream/mcp-contract";
 import { z } from "zod";
 import { getCurrentMcpCallerSessionId } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
@@ -47,6 +53,34 @@ export function registerAttachmentTools(server: McpServer, runtime: McpRuntime):
         outputCommandId,
         workspaceDir,
         profileWorkspaceDir: task.agentProfileSnapshot?.workspace_dir,
+      }, extra.signal);
+      return jsonResult(result);
+    } catch (error) {
+      const code = errorCode(error);
+      return errorResult(`${code ? `${code}: ` : ""}${errorMessage(error)}`);
+    }
+  });
+
+  const resolveDefinition = attachmentTools.resolve_attachment;
+  server.registerTool(resolveDefinition.name, {
+    ...resolveDefinition.config,
+    inputSchema: z.object(resolveDefinition.config.inputSchema).strict(),
+  }, async (input, extra) => {
+    try {
+      const parsedInput = resolveAttachmentInputSchema.parse(input);
+      const sessionId = getCurrentMcpCallerSessionId();
+      if (!sessionId) return errorResult("ATTACHMENT_UNAUTHENTICATED: 호출 세션 정보를 찾을 수 없습니다.");
+
+      const task = runtime.taskManager.getTask(sessionId);
+      if (!task) return errorResult("SESSION_NOT_FOUND: 호출 세션을 찾을 수 없습니다.");
+
+      const materializer = runtime.attachmentMaterializer;
+      if (!materializer) return errorResult("ATTACHMENT_INPUT_UNAVAILABLE: 첨부 준비 서비스를 사용할 수 없습니다.");
+
+      const result = await materializer.materialize({
+        sessionId,
+        attachmentId: parsedInput.attachment_id,
+        mode: "resolve",
       }, extra.signal);
       return jsonResult(result);
     } catch (error) {
