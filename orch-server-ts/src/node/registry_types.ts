@@ -1,3 +1,5 @@
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+
 import type {
   NodeCommandRequestIdGenerator,
   PendingNodeCommands,
@@ -29,6 +31,8 @@ export type CreateSessionNodeCommandPayload =
     model?: string | null;
     model_preset?: string | null;
     attachment_paths?: string[];
+    attachment_ids?: string[];
+    attachment_bindings?: AttachmentPathBinding[];
   };
 
 export type SessionOwner = CachedNodeSession & {
