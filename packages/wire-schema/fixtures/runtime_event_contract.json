@@ -147,5 +147,39 @@
         "recovery": "none"
       }
     ]
+  },
+  "sessionOutputEvents": {
+    "marker": {
+      "type": "assistant_message",
+      "content": "",
+      "attachment_ids": ["asset-output-1"],
+      "attachment_output": true,
+      "output_command_id": "command-output-1"
+    },
+    "complete": {
+      "type": "complete",
+      "output_command_id": "command-output-1"
+    },
+    "textStart": {
+      "type": "text_start",
+      "output_command_id": "command-output-1"
+    },
+    "textDelta": {
+      "type": "text_delta",
+      "output_command_id": "command-output-1"
+    },
+    "textEnd": {
+      "type": "text_end",
+      "output_command_id": "command-output-1"
+    }
+  },
+  "legacySessionOutputEvents": {
+    "assistant": {
+      "type": "assistant_message",
+      "text": "legacy response"
+    },
+    "complete": {
+      "type": "complete"
+    }
   }
 }

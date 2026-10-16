@@ -112,6 +112,7 @@ export const tsOnlyRouteKeys = [
   "POST /api/attachments/sessions/multipart/complete",
   "POST /api/attachments/sessions/multipart/abort",
   "POST /api/attachments/agent-register",
+  "POST /api/attachments/agent-output/validate",
   "GET /api/attachments/{attachment_id}",
   "GET /api/attachments/{attachment_id}/content",
   "HEAD /api/attachments/{attachment_id}/content",
