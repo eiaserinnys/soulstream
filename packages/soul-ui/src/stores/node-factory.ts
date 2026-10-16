@@ -36,6 +36,7 @@ import type {
 } from "@shared/types";
 import { formatRetryingErrorHistory } from "@shared/sse-events";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
+import { mapAttachmentEventSignals } from "../lib/attachment-event-signals";
 import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
 import { isCacheKeepaliveInput } from "../lib/persistent-cache-keepalive";
 import { isPersistentJevCandidatesDebugEvent } from "../lib/persistent-jev-candidates";
@@ -129,8 +130,7 @@ export function createNodeFromEvent(
       return makeNode(`user-msg-${eventId}`, "user_message", content, {
         completed: true,
         user: e.user ?? e.client_id ?? "llm-proxy",
-        ...(e.attachments !== undefined ? { attachmentPaths: e.attachments } : {}),
-        ...(e.node_id !== undefined ? { attachmentNodeId: e.node_id } : {}),
+        ...mapAttachmentEventSignals(e),
         context: e.context,
         agentInfo: agentInfoFromCi ?? agentInfoLegacy,
         callerInfo: ci,
@@ -190,6 +190,7 @@ export function createNodeFromEvent(
       return makeNode(`intervention-${eventId}`, "intervention", e.text, {
         completed: true,
         user: e.user,
+        ...mapAttachmentEventSignals(e),
         // Phase A context 정본 (Y-7, atom d7a1ad86 차단): user_message 분기(L100)와 대칭.
         // wire의 e.context를 노드에 박아 flatten-tree → ChatMessage.contextItems → InterventionMessage
         // ContextBlock으로 forward.
@@ -260,6 +261,7 @@ export function createNodeFromEvent(
           turnCostUsd: e.turn_cost_usd,
           sessionCostUsd: e.session_cost_usd,
           sessionCostPartial: e.session_cost_partial,
+          ...mapAttachmentEventSignals(e),
         },
       );
     }
@@ -397,6 +399,7 @@ export function createNodeFromEvent(
         provider: e.provider,
         usage: e.usage,
         timestamp: e.timestamp,
+        ...mapAttachmentEventSignals(e),
       });
     }
 

@@ -46,6 +46,10 @@ export interface InterventionSentEvent {
   type: "intervention_sent";
   user: string;
   text: string;
+  attachment_ids?: string[];
+  attachment_count?: number;
+  attachments?: string[];
+  node_id?: string;
   purpose?: unknown;
   payload?: { purpose?: unknown };
   /** 준비된 모델 입력과 공개 입력 행을 정확히 결합하는 식별자. */
@@ -128,6 +132,8 @@ export interface UserMessageEvent {
   user?: string;
   /** 기존 durable user_message에 포함될 수 있는 구조화 첨부 경로. */
   attachments?: string[];
+  attachment_ids?: string[];
+  attachment_count?: number;
   /** 첨부 파일이 저장된 세션 노드. 과거/외부 이벤트에 있을 때만 보존한다. */
   node_id?: string;
   /** Claude 세션: 구조화된 맥락 항목 배열 (Phase 2에서 렌더링) */
@@ -199,6 +205,9 @@ export interface CompleteEvent {
   type: "complete";
   result: string;
   attachments: string[];
+  attachment_ids?: string[];
+  attachment_count?: number;
+  node_id?: string;
   claude_session_id?: string;
   /** 토큰 사용량 (Codex turn.completed 등) */
   usage?: {
@@ -795,6 +804,10 @@ export interface InputRequestRespondedEvent {
 export interface AssistantMessageEvent extends Partial<Pick<LiveTextEventMetadata, "streamIdentity">> {
   type: "assistant_message";
   content: string;
+  attachment_ids?: string[];
+  attachment_count?: number;
+  attachments?: string[];
+  node_id?: string;
   /** Published chat UI envelope carried by the existing assistant_message event. */
   ui?: unknown;
   usage?: { input_tokens: number; output_tokens: number };

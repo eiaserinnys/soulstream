@@ -984,6 +984,45 @@ describe("flattenTree", () => {
     expect((message as unknown as { attachmentNodeId?: string }).attachmentNodeId)
       .toBe("eiaserinnys");
   });
+
+  it("forwards attachment signals for all message event nodes and derives complete display IDs", () => {
+    const attachmentIds = ["asset-1"];
+    const attachmentPaths = ["/incoming/first.png"];
+    const signalFields = {
+      attachmentIds,
+      attachmentCount: 2,
+      attachmentPaths,
+      attachmentNodeId: "eiaserinnys",
+    };
+    const messages = flattenTree(makeSession([
+      { ...makeUserMessage("u-empty", ""), ...signalFields },
+      {
+        type: "intervention",
+        id: "intervention-1",
+        content: "continue",
+        completed: true,
+        children: [],
+        ...signalFields,
+      },
+      { ...makeComplete("complete-1", "done"), ...signalFields },
+      { ...makeAssistantMessage(1), ...signalFields },
+    ] as EventTreeNode[]));
+
+    expect(messages).toHaveLength(4);
+    for (const message of messages) {
+      expect(message).toMatchObject({
+        attachmentIds,
+        attachmentCount: 2,
+        attachmentPaths,
+        attachmentNodeId: "eiaserinnys",
+      });
+      expect(message.attachmentIds).toBe(attachmentIds);
+      expect(message.attachmentPaths).toBe(attachmentPaths);
+    }
+    expect(messages[0]?.content).toBe("");
+    expect(messages[2]?.role).toBe("system");
+    expect(messages[2]?.attachmentDisplayIds).toBe(attachmentIds);
+  });
 });
 
 // === Identity 보존 캐시 ===
@@ -1029,6 +1068,25 @@ describe("flattenTree identity 보존", () => {
     const changed = flattenTree(tree);
     expect(changed[0]).not.toBe(same[0]);
     expect(changed[0].ui).toBe(nextUi);
+  });
+
+  it("attachment IDs reference가 바뀌면 내용이 같아도 새 메시지를 만든다", () => {
+    const node = {
+      ...makeUserMessage("u-attachment", "same text"),
+      attachmentIds: ["asset-old"],
+      attachmentCount: 1,
+    } as UserMessageNode & { attachmentIds: string[]; attachmentCount: number };
+    const tree = makeSession([node]);
+
+    const before = flattenTree(tree);
+    const same = flattenTree(tree);
+    expect(same[0]).toBe(before[0]);
+
+    node.attachmentIds = ["asset-new"];
+    const changed = flattenTree(tree);
+
+    expect(changed[0]).not.toBe(same[0]);
+    expect(changed[0]?.attachmentIds).toEqual(["asset-new"]);
   });
 
   it("자식 push로 트리를 mutate한 후 — 변경되지 않은 노드는 동일 reference, 새 노드만 새 reference", () => {

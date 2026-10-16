@@ -149,6 +149,38 @@ describe("createNodeFromEvent", () => {
       expect(node.attachmentNodeId).toBe("eiaserinnys");
     });
 
+    it("preserves attachment event signals for user, intervention, assistant, and complete", () => {
+      const attachmentIds = ["asset-1"];
+      const attachments = ["/incoming/first.png"];
+      const signals = {
+        attachment_ids: attachmentIds,
+        attachment_count: 2,
+        attachments,
+        node_id: "eiaserinnys",
+      };
+      const events = [
+        { type: "user_message", text: "", ...signals },
+        { type: "intervention_sent", text: "continue", ...signals },
+        { type: "assistant_message", content: "answer", ...signals },
+        { type: "complete", result: "done", ...signals },
+      ] as unknown as SoulSSEEvent[];
+
+      const nodes = events.map((event, index) => createNodeFromEvent(event, 220 + index)!);
+
+      for (const node of nodes) {
+        expect(node).toMatchObject({
+          attachmentIds,
+          attachmentCount: 2,
+          attachmentPaths: attachments,
+          attachmentNodeId: "eiaserinnys",
+        });
+        expect((node as unknown as { attachmentIds: string[] }).attachmentIds).toBe(attachmentIds);
+        expect((node as unknown as { attachmentPaths: string[] }).attachmentPaths).toBe(attachments);
+      }
+      expect(nodes[0]?.content).toBe("");
+      expect((nodes[3] as CompleteNode).type).toBe("complete");
+    });
+
     it.each([
       [{ purpose: "cache_keepalive" }, true],
       [{ payload: { purpose: "cache_keepalive" } }, true],
