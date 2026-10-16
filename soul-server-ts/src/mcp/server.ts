@@ -30,6 +30,7 @@ import { registerOrchestratorTools } from "./orchestrator_tools.js";
 import { registerExternalLlmTools } from "./tools/external_llm.js";
 import { registerChatUiTools } from "./tools/chat_ui.js";
 import { registerPersistentReportTools } from "./tools/persistent_report.js";
+import { registerAttachmentTools } from "./tools/attachments.js";
 
 export function buildMcpServer(runtime: McpRuntime): McpServer {
   const server = new McpServer({
@@ -58,5 +59,6 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerExternalLlmTools(inventoryServer, runtime);
   registerChatUiTools(inventoryServer, runtime);
   registerPersistentReportTools(inventoryServer, runtime);
+  registerAttachmentTools(inventoryServer, runtime);
   return server;
 }

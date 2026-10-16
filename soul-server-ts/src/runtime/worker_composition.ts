@@ -1,6 +1,7 @@
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
+import { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
 import { CatalogService } from "../catalog/catalog_service.js";
@@ -376,6 +377,8 @@ export async function composeWorkerRuntime(
   }
   const mcpRuntime: McpRuntime = {
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),
+    producedAttachments: createProducedAttachmentRegistration(
+      { incomingDir: env.INCOMING_FILE_DIR, orch: orchProxyConfig, fetch: globalThis.fetch }),
     nodeId: env.SOULSTREAM_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,

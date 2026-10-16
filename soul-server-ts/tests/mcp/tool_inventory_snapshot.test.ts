@@ -101,7 +101,38 @@ describe("advertised MCP tool inventory", () => {
       expect(internal.find(tool=>tool.name===name)).toBeDefined();
     for (const name of ["put_report_entry", "remove_report_entry"])
       expect(internal.find(tool => tool.name === name)).toBeDefined();
-    expect(internal).toHaveLength(130);
+    const registerAttachment = internal.find(tool => tool.name === "register_attachment");
+    expect(registerAttachment).toBeDefined();
+    expect(Object.keys(registerAttachment!.inputSchema.properties).sort()).toEqual([
+      "local_path", "mime_type", "name", "target_scope",
+    ]);
+
+    const reportItem = internal.find(tool => tool.name === "report_card_item")!;
+    const evidenceVariants = (reportItem.inputSchema.properties.evidence as {
+      items: { anyOf: Array<{
+        additionalProperties?: boolean;
+        properties: Record<string, unknown>;
+        required?: string[];
+      }> };
+    }).items.anyOf;
+    expect(evidenceVariants).toHaveLength(2);
+    expect(evidenceVariants.map(variant => ({
+      additionalProperties: variant.additionalProperties,
+      properties: Object.keys(variant.properties).sort(),
+      required: [...(variant.required ?? [])].sort(),
+    }))).toEqual([
+      {
+        additionalProperties: false,
+        properties: ["attachment_id", "label", "type"],
+        required: ["attachment_id", "label", "type"],
+      },
+      {
+        additionalProperties: false,
+        properties: ["label", "type", "url"],
+        required: ["label", "type", "url"],
+      },
+    ]);
+    expect(internal).toHaveLength(131);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });
