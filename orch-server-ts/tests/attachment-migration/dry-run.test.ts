@@ -57,6 +57,58 @@ describe("attachment migration dry-run output", () => {
     }
   });
 
+  it("reports preservation targets separately from message/card refs and private proposals", async () => {
+    const message = legacySource();
+    const card: LegacySource = {
+      ...legacySource(),
+      source_kind: "card_request",
+      source_table: "cards",
+      source_pk: "card-source",
+      source_pointer: "/",
+      card_id: "card-source",
+      data: { request: "", attachments: [{ nodeId: "node-a", path: "image.png" }] },
+    };
+    const orphan = {
+      ...observation(card),
+      known_source_paths: [],
+      incoming_relative_path: "orphan.png",
+      physical_path: "/srv/incoming/orphan.png",
+      source_refs: [],
+      size_bytes: 27,
+      bytes_read: 27,
+    };
+    const plan = buildLegacyAttachmentPlan({
+      sources: [message, card],
+      observations: [observation(message), orphan],
+      assets: [],
+      aliases: [],
+      nodeCoverage: [nodeCoverage()],
+      metadata: metadata(),
+    });
+    const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-dry-run-summary-"));
+    const outputDir = path.join(temp, "output");
+
+    try {
+      await writeDryRun(plan, outputDir);
+      const summary = JSON.parse(await readFile(path.join(outputDir, "summary.json"), "utf8"));
+      const report = await readFile(path.join(outputDir, "report.md"), "utf8");
+
+      expect(summary).toMatchObject({
+        preservation_target_count: 2,
+        preservation_target_bytes: 32,
+        preservation_target_unknown_count: 0,
+        ref_connectable_message_count: 1,
+        ref_connectable_card_count: 1,
+        owner_null_proposal_count: 1,
+      });
+      expect(report).toContain("- preservation_target_count / preservation_target_bytes: 2 / 32");
+      expect(report).toContain("- ref_connectable_message_count / ref_connectable_card_count: 1 / 1");
+      expect(report).toContain("- owner_null_proposal_count: 1");
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+
   it("runs the JSONL CLI, reports its marker, and returns exit 2 for incomplete node coverage", async () => {
     const source = legacySource();
     const bundle = metadata();

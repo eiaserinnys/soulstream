@@ -62,6 +62,8 @@ describe("node attachment inventory CLI contract", () => {
         record_type: "summary",
         schema_version: INVENTORY_SCHEMA_VERSION,
         node_id: "node-a",
+        incoming_root: incoming,
+        incoming_census_complete: true,
         cutoff: "2027-01-01T00:00:00.000Z",
         coverage_complete: true,
         file_count: 1,
@@ -70,6 +72,49 @@ describe("node attachment inventory CLI contract", () => {
       });
       expect(summary.started_at).toMatch(/^\d{4}-\d\d-\d\dT/);
       expect(summary.ended_at).toMatch(/^\d{4}-\d\d-\d\dT/);
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+
+  it("marks incoming census complete when one explicitly listed source is absent", async () => {
+    const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-scan-explicit-missing-"));
+    const allowed = path.join(temp, "allowed");
+    const incoming = path.join(allowed, "incoming");
+    const missing = path.join(allowed, "archived", "missing.png");
+    const output = path.join(temp, "inventory.jsonl");
+    await mkdir(incoming, { recursive: true });
+    await writeFile(path.join(incoming, "present.png"), "image");
+    await writeFile(path.join(temp, "sources.json"), JSON.stringify([{
+      node_id: "node-a",
+      path: missing,
+      source_ref: { source_kind: "card_request", source_table: "cards", source_pk: "card-a", source_pointer: "/attachments/0/path" },
+    }]));
+    await writeFile(path.join(temp, "roots.json"), JSON.stringify([allowed]));
+
+    try {
+      const result = spawnSync(process.execPath, [
+        scannerPath,
+        "--node-id", "node-a",
+        "--incoming-root", incoming,
+        "--sources", path.join(temp, "sources.json"),
+        "--allowed-roots", path.join(temp, "roots.json"),
+        "--cutoff", "2027-01-01T00:00:00.000Z",
+        "--output", output,
+      ], { encoding: "utf8" });
+
+      expect(result.status).toBe(2);
+      const records = (await readFile(output, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line) as NodeScanOutputRecord);
+      const summary = records.find((record) => record.record_type === "summary");
+      const missingFile = records.find((record) => record.record_type === "file" && record.status === FILE_OBSERVATION_STATUS.source_absent);
+      expect(summary).toMatchObject({
+        record_type: "summary",
+        coverage_complete: false,
+        incoming_root: incoming,
+        incoming_census_complete: true,
+        status_counts: { observed: 1, source_absent: 1 },
+      });
+      expect(missingFile).toMatchObject({ status: FILE_OBSERVATION_STATUS.source_absent, physical_path: missing, coverage_complete: false });
     } finally {
       await rm(temp, { recursive: true, force: true });
     }

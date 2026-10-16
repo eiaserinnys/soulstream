@@ -333,6 +333,7 @@ async function main() {
   const output = await open(outputPath, "wx", 0o600);
   const summaryStats = createSummaryStats();
   let fatalError;
+  let incomingCensusComplete = true;
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   process.once("SIGINT", interrupt);
@@ -346,6 +347,8 @@ async function main() {
       signal: controller.signal,
     })) {
       addObservation(summaryStats, observation);
+      if ((observation.status === FILE_STATUS.root_unconfirmed && observation.physical_path === incomingRoot) ||
+          (observation.incoming_relative_path !== undefined && !observation.coverage_complete)) incomingCensusComplete = false;
       await writeLine(output, observation);
       if (observation.status === FILE_STATUS.hash_interrupted) break;
     }
@@ -355,7 +358,8 @@ async function main() {
   } finally {
     process.removeListener("SIGINT", interrupt);
   }
-  const summary = buildSummary(args.nodeId, cutoff, startedAt, summaryStats, fatalError);
+  const confirmedIncomingRoot = incomingCensusComplete && fatalError === undefined ? incomingCanonical : undefined;
+  const summary = buildSummary(args.nodeId, cutoff, startedAt, summaryStats, fatalError, confirmedIncomingRoot, confirmedIncomingRoot !== undefined);
   await writeLine(output, summary);
   await output.close();
   process.stdout.write(`${NODE_INVENTORY_RECORDED} files=${summary.file_count} bytes=${summary.bytes_hashed} coverage_complete=${summary.coverage_complete}\n`);
@@ -413,11 +417,13 @@ function addObservation(stats, observation) {
   if (!observation.coverage_complete || INCOMPLETE_STATUSES.has(observation.status)) stats.coverageComplete = false;
 }
 
-function buildSummary(nodeId, cutoff, startedAt, stats, fatalError) {
+function buildSummary(nodeId, cutoff, startedAt, stats, fatalError, incomingRoot, incomingCensusComplete) {
   return {
     record_type: "summary",
     schema_version: SCHEMA_VERSION,
     node_id: nodeId,
+    ...(incomingRoot === undefined ? {} : { incoming_root: incomingRoot }),
+    incoming_census_complete: incomingCensusComplete,
     cutoff,
     started_at: startedAt,
     ended_at: new Date().toISOString(),
