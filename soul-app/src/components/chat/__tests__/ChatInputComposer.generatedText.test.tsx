@@ -29,6 +29,7 @@ jest.mock('../../../hooks/useChatAttachments', () => ({
   useChatAttachments: () => ({
     attachments: mockAttachments,
     uploading: mockUploading,
+    attachmentsReady: !mockUploading,
     pickAttachment: jest.fn(),
     removeAttachment: mockRemoveAttachment,
     clearAttachments: mockClearAttachments,
