@@ -1,5 +1,4 @@
 import { defineConfig, devices } from "@playwright/test";
-import { realpathSync } from "node:fs";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -15,10 +14,9 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:4199",
   },
   webServer: {
-    command: "node \"" + realpathSync("node_modules/vite/bin/vite.js") + "\" --host 127.0.0.1 --port 4199 --strictPort",
+    command: "node e2e/chat-attachments-download-server.mjs",
     url: "http://127.0.0.1:4199",
     reuseExistingServer: false,
-    env: { VITE_API_BASE: "http://127.0.0.1:5200" },
     timeout: 60_000,
   },
 });

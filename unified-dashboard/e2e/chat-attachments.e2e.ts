@@ -1,5 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { expect, test, type Download, type Page, type Request, type Response } from "@playwright/test";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   installChatAttachmentReadRoutes,
@@ -13,6 +14,40 @@ import { chatUiSession, installChatUiRoutes, openChatUi } from "./chat-ui-fixtur
 
 const output = path.resolve("../../../.local/artifacts/20261017-b2-16-attachment-chat");
 mkdirSync(output, { recursive: true });
+const downloadTracePath = path.join(output, "download-http-trace.ndjson");
+
+type DownloadHttpTrace = {
+  method: string;
+  url: string;
+  requestStartedAt: number;
+  responseCompletedAt: number;
+  requestHeaders: { cookiePresent: boolean; authorizationPresent: boolean; range: string | null };
+  status: number;
+  responseHeaders: Record<string, string>;
+  responseBytes: number;
+};
+
+type DownloadVerification = {
+  issue: string | null;
+  response: DownloadHttpTrace | null;
+};
+
+function readDownloadHttpTrace(): DownloadHttpTrace[] {
+  try {
+    return readFileSync(downloadTracePath, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as DownloadHttpTrace);
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+function expectedContentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  const encoded = encodeURIComponent(filename).replace(/['()*]/g, character =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
 
 async function capture(page: Page, name: string, fullPage = true) {
   await page.evaluate(() => document.fonts.ready);
@@ -27,47 +62,103 @@ async function verifyDownload(
   page: Page,
   buttonName: string,
   expected: Buffer,
+  expectedFilename: string,
   requests: Awaited<ReturnType<typeof installChatAttachmentReadRoutes>>,
-) {
+): Promise<DownloadVerification> {
   const requestStart = requests.length;
+  const downloadTraceStart = readDownloadHttpTrace().length;
+  const pageEvents: Array<{ name: string; at: number }> = [];
+  const isAttachmentDownload = (url: string) => {
+    const parsed = new URL(url);
+    return parsed.pathname.startsWith("/api/attachments/")
+      && parsed.searchParams.get("download") === "true";
+  };
+  const onRequest = (request: Request) => {
+    if (isAttachmentDownload(request.url())) pageEvents.push({ name: `request:${request.method()}`, at: Date.now() });
+  };
+  const onResponse = (response: Response) => {
+    if (isAttachmentDownload(response.url())) pageEvents.push({ name: `response:${response.status()}`, at: Date.now() });
+  };
+  const onDownload = (download: Download) => {
+    if (isAttachmentDownload(download.url())) pageEvents.push({ name: `download:${download.suggestedFilename()}`, at: Date.now() });
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  page.on("download", onDownload);
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("button", { name: buttonName, exact: true }).click(),
   ]);
-  const sourceUrl = download.url();
-  // Fetch the same download URL in-page so the fixture can expose and assert the full response body.
-  const fetched = await page.evaluate(async url => {
-    const response = await fetch(url, { credentials: "same-origin" });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const chunks: string[] = [];
-    for (let offset = 0; offset < bytes.length; offset += 8192) {
-      chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)));
-    }
-    return {
-      status: response.status,
-      contentType: response.headers.get("content-type"),
-      contentLength: response.headers.get("content-length"),
-      contentBase64: btoa(chunks.join("")),
-    };
-  }, sourceUrl);
-  expect(fetched.status).toBe(200);
-  const fullResponses = requests.slice(requestStart).filter(request => request.method === "GET"
-    && request.range === null
-    && new URL(request.url).searchParams.get("download") === "true");
-  expect(fullResponses.length).toBeGreaterThan(0);
-  const fullResponse = fullResponses[fullResponses.length - 1]!;
-  const bytes = fullResponse.body!;
-  expect(Buffer.from(fetched.contentBase64, "base64")).toEqual(expected);
-  expect(bytes).toEqual(expected);
-  expect(fetched.contentType).toBe(fullResponse.responseHeaders?.["content-type"]);
-  expect(fetched.contentLength).toBe(fullResponse.responseHeaders?.["content-length"]);
   const filename = download.suggestedFilename();
+  expect(filename).toBe(expectedFilename);
+  let savedPath: string | null;
+  try {
+    savedPath = await download.path();
+  } catch (error) {
+    const failure = await download.failure();
+    const httpRequests = readDownloadHttpTrace().slice(downloadTraceStart);
+    const relevantRequests = requests.slice(requestStart).map(request => ({
+      method: request.method,
+      range: request.range,
+      responseStatus: request.responseStatus,
+      cookieHeaderPresent: request.cookieHeaderPresent,
+      authorizationHeaderPresent: request.authorizationHeaderPresent,
+      headers: request.responseHeaders,
+    }));
+    console.info("chat attachment download trace", JSON.stringify({
+      filename,
+      events: httpRequests.flatMap(request => [
+        { name: `request:${request.method}`, at: request.requestStartedAt },
+        { name: `response:${request.status}`, at: request.responseCompletedAt },
+      ]).concat(pageEvents).sort((left, right) => left.at - right.at).map(event => event.name),
+      httpRequests,
+      requests: relevantRequests,
+      failure,
+      pathError: String(error),
+    }));
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+    page.off("download", onDownload);
+    return { issue: `${filename}: ${failure ?? String(error)}`, response: httpRequests.at(-1) ?? null };
+  }
+  page.off("request", onRequest);
+  page.off("response", onResponse);
+  page.off("download", onDownload);
+  expect(savedPath).not.toBeNull();
+  if (savedPath === null) throw new Error("Playwright download completed without a saved file path");
+  const bytes = readFileSync(savedPath);
+  expect(bytes.byteLength).toBe(expected.byteLength);
+  const sha256 = (value: Buffer) => createHash("sha256").update(value).digest("hex");
+  expect(sha256(bytes)).toBe(sha256(expected));
+  const httpRequests = readDownloadHttpTrace().slice(downloadTraceStart);
+  const downloadResponse = httpRequests.find(request => request.method === "GET"
+    && new URL(request.url, "http://attachment-fixture.local").searchParams.get("download") === "true") ?? null;
+  expect(downloadResponse).not.toBeNull();
+  expect(downloadResponse?.status).toBe(200);
+  expect(downloadResponse?.responseBytes).toBe(expected.byteLength);
+  expect(downloadResponse?.responseHeaders["content-type"]).toBe("text/plain");
+  expect(downloadResponse?.responseHeaders["content-length"]).toBe(String(expected.byteLength));
+  expect(downloadResponse?.responseHeaders["content-disposition"]).toBe(expectedContentDisposition(expectedFilename));
   writeFileSync(path.join(output, filename), bytes);
-  return { filename, bytes };
+  const timeline = httpRequests.flatMap(request => [
+    { name: `request:${request.method}`, at: request.requestStartedAt },
+    { name: `response:${request.status}`, at: request.responseCompletedAt },
+  ]).concat(pageEvents).concat({ name: `saved:${filename}`, at: Date.now() })
+    .sort((left, right) => left.at - right.at);
+  console.info("chat attachment download trace", JSON.stringify({
+    filename,
+    events: timeline.map(event => event.name),
+    httpRequests,
+    pageRequests: requests.slice(requestStart).map(request => ({ method: request.method, range: request.range, responseStatus: request.responseStatus })),
+    savedBytes: bytes.byteLength,
+    sha256: sha256(bytes),
+  }));
+  return { issue: null, response: downloadResponse };
 }
 
 test("connected sample deduplicates Markdown images and supports mixed attachment navigation, preview and save", async ({ page }) => {
   const errors: string[] = [];
+  const downloadIssues: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   const requests = await installChatAttachmentReadRoutes(page);
   const sample = await openAttachmentSample(page, 1440, "light");
@@ -118,15 +209,9 @@ test("connected sample deduplicates Markdown images and supports mixed attachmen
   expect(legacyPreview?.responseHeaders?.["content-length"]).toBe("20");
   expect(legacyPreview?.responseHeaders?.["content-range"]).toBe("bytes 0-19/20");
   await capture(page, "sample-wide-light-modal-legacy");
-  const legacyDownload = await verifyDownload(page, "원본 저장", legacyTextBytes, requests);
-  expect(legacyDownload.filename).toBe("참고.txt");
-  expect(legacyDownload.bytes.byteLength).toBe(20);
-  const legacyFullResponse = requests.find(request => request.method === "GET"
-    && new URL(request.url).pathname === "/api/attachments/files"
-    && new URL(request.url).searchParams.get("download") === "true"
-    && new URL(request.url).searchParams.get("context_id") === "attachment-review-connected");
-  expect(legacyFullResponse?.responseHeaders?.["content-type"]).toBe("text/plain");
-  expect(legacyFullResponse?.responseHeaders?.["content-length"]).toBe("20");
+  const legacyDownload = await verifyDownload(page, "원본 저장", legacyTextBytes, "참고.txt", requests);
+  if (legacyDownload.issue !== null) downloadIssues.push(legacyDownload.issue);
+  const legacyFullResponse = legacyDownload.response;
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -143,29 +228,37 @@ test("connected sample deduplicates Markdown images and supports mixed attachmen
   const preview = largeDialog.locator("pre");
   expect(await preview.evaluate(element => element.textContent?.length)).toBe(1_048_576);
   expect((await preview.textContent())?.startsWith("A".repeat(64))).toBe(true);
-  const largeDownload = await verifyDownload(page, "원본 저장", largeTextBytes, requests);
-  expect(largeDownload.filename).toBe("큰_텍스트.txt");
-  expect(largeDownload.bytes.byteLength).toBe(largeTextSize);
+  const largeDownload = await verifyDownload(page, "원본 저장", largeTextBytes, "큰_텍스트.txt", requests);
+  if (largeDownload.issue !== null) downloadIssues.push(largeDownload.issue);
   const largeRange = requests.find(request => request.url.includes("/api/attachments/review-large-text/content")
     && request.range === "bytes=0-1048575");
   expect(largeRange).toBeDefined();
   expect(largeRange?.responseHeaders?.["content-type"]).toBe("text/plain");
   expect(largeRange?.responseHeaders?.["content-length"]).toBe("1048576");
   expect(largeRange?.responseHeaders?.["content-range"]).toBe("bytes 0-1048575/1048586");
-  const largeFullResponse = requests.find(request => request.url.includes("/api/attachments/review-large-text/content")
-    && request.method === "GET"
-    && new URL(request.url).searchParams.get("download") === "true");
-  expect(largeFullResponse?.responseHeaders?.["content-type"]).toBe("text/plain");
-  expect(largeFullResponse?.responseHeaders?.["content-length"]).toBe(String(largeTextSize));
   expect(requests.some(request => request.url.includes("/api/attachments/review-large-text/content")
     && request.method === "HEAD"
     && new URL(request.url).searchParams.get("download") === "true")).toBe(true);
-  expect(requests.some(request => request.url.includes("/api/attachments/review-large-text/content")
-    && request.method === "GET"
-    && new URL(request.url).searchParams.get("download") === "true")).toBe(true);
+  const largeFullResponse = largeDownload.response;
+  expect(largeFullResponse?.method).toBe("GET");
+  expect(largeFullResponse?.status).toBe(200);
+  expect(largeFullResponse?.responseBytes).toBe(largeTextSize);
+  expect(largeFullResponse?.responseHeaders["content-type"]).toBe("text/plain");
+  expect(largeFullResponse?.responseHeaders["content-length"]).toBe(String(largeTextSize));
+  const legacyResponse = legacyFullResponse;
+  expect(legacyResponse?.method).toBe("GET");
+  expect(legacyResponse?.status).toBe(200);
+  expect(legacyResponse?.responseBytes).toBe(legacyTextBytes.byteLength);
+  expect(legacyResponse?.responseHeaders["content-type"]).toBe("text/plain");
+  expect(legacyResponse?.responseHeaders["content-length"]).toBe("20");
+  expect(legacyResponse?.responseHeaders["content-disposition"])
+    .toBe('attachment; filename="__.txt"; filename*=UTF-8\'\'%EC%B0%B8%EA%B3%A0.txt');
+  expect(largeFullResponse?.responseHeaders["content-disposition"])
+    .toBe('attachment; filename="_____.txt"; filename*=UTF-8\'\'%ED%81%B0_%ED%85%8D%EC%8A%A4%ED%8A%B8.txt');
   await page.keyboard.press("Escape");
   await expect(largeDialog).toBeHidden();
   expect(errors).toEqual([]);
+  expect(downloadIssues).toEqual([]);
 });
 
 test("connected attachment failures map correctly, retry, and keep another session's read context", async ({ page }) => {

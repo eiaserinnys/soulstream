@@ -14,6 +14,9 @@ export interface AttachmentRequest {
   url: string;
   method: string;
   range: string | null;
+  responseStatus?: number;
+  cookieHeaderPresent?: boolean;
+  authorizationHeaderPresent?: boolean;
   body?: Buffer;
   responseHeaders?: Record<string, string>;
 }
@@ -45,6 +48,26 @@ function responseHeaders(mime: string, bytes: Buffer, extra: Record<string, stri
   };
 }
 
+function attachmentResponseHeaders(
+  mime: string,
+  bytes: Buffer,
+  filename: string,
+  download: boolean,
+  extra: Record<string, string> = {},
+) {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  const disposition = !download && (mime === "text/plain" || mime.startsWith("image/"))
+    ? "inline"
+    : "attachment";
+  return responseHeaders(mime, bytes, {
+    "cache-control": "private, no-store",
+    "content-disposition": `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    "vary": "Cookie, Authorization",
+    "x-content-type-options": "nosniff",
+    ...extra,
+  });
+}
+
 export async function installChatAttachmentReadRoutes(page: Page): Promise<AttachmentRequest[]> {
   const requests: AttachmentRequest[] = [];
   await page.addInitScript(() => {
@@ -67,14 +90,26 @@ export async function installChatAttachmentReadRoutes(page: Page): Promise<Attac
     const request = route.request();
     const url = new URL(request.url());
     const range = request.headers().range ?? null;
-    const record: AttachmentRequest = { url: request.url(), method: request.method(), range };
+    const requestHeaders = await request.allHeaders();
+    const record: AttachmentRequest = {
+      url: request.url(),
+      method: request.method(),
+      range,
+      cookieHeaderPresent: requestHeaders.cookie !== undefined,
+      authorizationHeaderPresent: requestHeaders.authorization !== undefined,
+    };
     requests.push(record);
+
+    const fulfill = (options: Parameters<typeof route.fulfill>[0]) => {
+      record.responseStatus = options.status ?? 200;
+      return route.fulfill(options);
+    };
 
     const legacy = url.pathname === "/api/attachments/files";
     const missingImage = url.pathname === "/api/attachments/review-failed-image/content";
     const inlineImage = legacy && url.searchParams.get("path")?.endsWith("inline-only.png");
     if (missingImage || (legacy && !inlineImage && url.searchParams.get("path") !== "/incoming/참고.txt")) {
-      return route.fulfill({
+      return fulfill({
         status: 404,
         headers: { "content-type": "text/plain", "content-length": "0" },
         body: "",
@@ -88,34 +123,36 @@ export async function installChatAttachmentReadRoutes(page: Page): Promise<Attac
         ? legacyTextBytes
         : assetBytes(attachmentId);
     const mime = inlineImage ? "image/png" : legacy ? "text/plain" : assetMime(attachmentId);
-    const disposition = url.searchParams.has("download")
-      ? { "content-disposition": "attachment; filename*=UTF-8''" + encodeURIComponent(legacy ? "참고.txt" : attachmentId + ".bin") }
-      : {};
+    const filename = legacy
+      ? url.searchParams.get("path")?.split("/").pop() ?? "attachment"
+      : attachmentId === "review-large-text"
+        ? "큰_텍스트.txt"
+        : attachmentId + ".bin";
+    const disposition = attachmentResponseHeaders(mime, bytes, filename, url.searchParams.get("download") === "true");
 
     if (request.method() === "HEAD") {
-      record.responseHeaders = responseHeaders(mime, bytes, disposition);
-      return route.fulfill({ status: 200, headers: record.responseHeaders });
+      record.responseHeaders = disposition;
+      return fulfill({ status: 200, headers: record.responseHeaders });
     }
     if (range !== null) {
       const parsed = range.match(/^bytes=(\d+)-(\d+)$/);
-      if (!parsed) return route.fulfill({ status: 416, body: "" });
+      if (!parsed) return fulfill({ status: 416, body: "" });
       const start = Number(parsed[1]);
       const end = Math.min(Number(parsed[2]), bytes.byteLength - 1);
       const body = bytes.subarray(start, end + 1);
       record.body = Buffer.from(body);
-      record.responseHeaders = responseHeaders(mime, body, {
+      record.responseHeaders = attachmentResponseHeaders(mime, body, filename, url.searchParams.get("download") === "true", {
         "content-range": "bytes " + start + "-" + end + "/" + bytes.byteLength,
-        ...disposition,
       });
-      return route.fulfill({
+      return fulfill({
         status: 206,
         headers: record.responseHeaders,
         body,
       });
     }
     record.body = Buffer.from(bytes);
-    record.responseHeaders = responseHeaders(mime, bytes, disposition);
-    return route.fulfill({
+    record.responseHeaders = disposition;
+    return fulfill({
       status: 200,
       headers: record.responseHeaders,
       body: bytes,
