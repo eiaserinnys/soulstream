@@ -5,6 +5,9 @@ import { ChatAttachments } from "@seosoyoung/soul-ui/components/chat/ChatAttachm
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
+import { ChatInputAccessories } from "@seosoyoung/soul-ui/components/chat/ChatInputAccessories";
+import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
+import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
@@ -326,6 +329,15 @@ export function ChatAttachmentReviewSamples() {
   const [index, setIndex] = useState<number | null>(null);
   const [viewerItems, setViewerItems] = useState(items);
   const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
+  const [draft, setDraft] = useState("첨부를 취소해도 이 초안은 남습니다.");
+  const [pendingFiles, setPendingFiles] = useState(() => [
+    { id: "ready", file: new File(["완료"], "회의자료_고객요청사항_최종검토본.pdf", { type: "application/pdf" }), status: "done" as const },
+    { id: "uploading", file: new File(["업로드"], "화면설계_첨부_버튼과_프리뷰_수정본.pdf", { type: "application/pdf" }), status: "uploading" as const },
+    { id: "error", file: new File(["실패"], "번역검토_세부원문_수정요청_목록.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), status: "error" as const },
+  ]);
+  const pendingItems = useMemo(() => pendingFiles.map(({ id, file }) => localItem(file, "info", `pending:${id}`)), [pendingFiles]);
+  const attachmentOnlyFile = useMemo(() => new File(["자료"], "답변에_포함할_추가_자료.pdf", { type: "application/pdf" }), []);
+  const attachmentOnlyItems = useMemo(() => [localItem(attachmentOnlyFile, "info", "attachment-only")], [attachmentOnlyFile]);
 
   useLayoutEffect(() => {
     const originalFetch = window.fetch;
@@ -363,6 +375,16 @@ export function ChatAttachmentReviewSamples() {
     setReturnFocus(trigger);
     setIndex(next);
   };
+
+  const pendingChips = <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{pendingFiles.map(file => (
+    <FileAttachmentPreview key={file.id} variant="chip" file={file.file} status={file.status}
+      onOpen={(next, trigger) => { const itemIndex = pendingItems.findIndex(item => item.source.kind === "local" && item.source.file === next); if (itemIndex >= 0) openAt(pendingItems, itemIndex, trigger); }}
+      onRemove={() => setPendingFiles(current => current.filter(item => item.id !== file.id))} />
+  ))}</div>;
+  const attachmentOnlyChip = <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <FileAttachmentPreview variant="chip" file={attachmentOnlyFile} status="done"
+      onOpen={(_, trigger) => openAt(attachmentOnlyItems, 0, trigger)} onRemove={() => {}} />
+  </div>;
 
   return (
     <main className="v3-components-main glass-strong glass-chrome" style={chatTypographyStyle}>
@@ -418,6 +440,20 @@ export function ChatAttachmentReviewSamples() {
             <p>첨부 파일입니다.</p>
             <ChatAttachments items={chatItems.assistant} role="assistant" onOpen={(next, trigger) => openAt(chatItems.assistant, next, trigger)} />
           </AssistantMessage>
+        </section>
+        <section className="flex flex-col gap-2" aria-label="대기 중인 첨부와 초안">
+          <div className="v3-type-section">대기 중인 첨부 · 초안</div>
+          <ChatInputAccessories attachments={pendingChips} />
+          <ChatInputComposer>
+            <ChatInputEditor text={draft} onChangeText={setDraft} onSend={() => {}} placeholder="" buttonLabel="전송" modeIcon="" modeLabel="" borderColor="" buttonVariant="default" disabled={pendingFiles.some(file => file.status !== "done")} textareaDisabled={false} />
+          </ChatInputComposer>
+        </section>
+        <section className="flex flex-col gap-2" aria-label="첨부만 전송">
+          <div className="v3-type-section">첨부만 전송</div>
+          <ChatInputAccessories attachments={attachmentOnlyChip} />
+          <ChatInputComposer>
+            <ChatInputEditor text="" onChangeText={() => {}} onSend={() => {}} placeholder="" buttonLabel="전송" modeIcon="" modeLabel="" borderColor="" buttonVariant="default" disabled={false} textareaDisabled={false} />
+          </ChatInputComposer>
         </section>
         <section className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">기존 첨부 타일</p>

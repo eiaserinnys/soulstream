@@ -15,6 +15,8 @@ import { Loader2, Square } from "lucide-react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useChatFlattenTree, useChatStore } from "../stores/chat-store-scope";
 import { FileAttachmentPreview } from "./FileAttachmentPreview";
+import { AttachmentViewer } from "./AttachmentViewer";
+import { isSafeRasterPreviewMimeType, type ChatAttachmentItem } from "../lib/chat-attachment-model";
 import { useFileUpload } from "../hooks/useFileUpload";
 import { buildLlmHistory } from "./chat/buildLlmHistory";
 import { resolveChatInputMode } from "./chat/chatInputMode";
@@ -135,6 +137,13 @@ export function ChatInput({
     uploadUrl: effectiveFileUploadUrl ?? "",
     sessionId: activeSessionKey ?? "",
   });
+  const [attachmentViewer, setAttachmentViewer] = useState<{ fileId: string; trigger: HTMLButtonElement } | null>(null);
+  const localAttachmentItems = useMemo<ChatAttachmentItem[]>(() => files.map(({ id, file }) => ({
+    key: `local:${id}`, name: file.name, mimeType: file.type || null, byteSize: file.size,
+    previewKind: isSafeRasterPreviewMimeType(file.type) ? "image" : "info", availability: "ready",
+    previewUrl: null, originalUrl: null, legacySources: [], source: { kind: "local", file },
+  })), [files]);
+  const canSendAttachmentOnly = Boolean(effectiveFileUploadUrl && isReady && uploadedPaths.length > 0);
 
   // submit 디스패처 훅 — sending / error / abort 관리 + 전략 호출
   const { sending, error, reset, send, retry } = useChatInputSend({
@@ -258,8 +267,9 @@ export function ChatInput({
 
   const sendMessage = useCallback(() => {
     if (effectiveFileUploadUrl && !isReady) return;
+    if (!text.trim() && !canSendAttachmentOnly) return;
     void send(text);
-  }, [send, text, effectiveFileUploadUrl, isReady]);
+  }, [send, text, effectiveFileUploadUrl, isReady, canSendAttachmentOnly]);
 
   const interruptSession = useCallback(async () => {
     if (!activeSessionKey || interrupting) return;
@@ -332,10 +342,13 @@ export function ChatInput({
 
   const uploadError = files.find(file => file.status === "error")?.errorMessage;
   const fileUploadDisabled = effectiveFileUploadUrl ? isUploading || !isReady : false;
-  const isDisabled = sending || pendingChatSend !== undefined || !text.trim() || additionalDisabled || fileUploadDisabled;
+  const isDisabled = sending || pendingChatSend !== undefined || (!text.trim() && !canSendAttachmentOnly) || additionalDisabled || fileUploadDisabled;
   const textareaDisabled = additionalDisabled;
   const showInterrupt = status === "running";
   const interruptDisabled = interrupting || additionalDisabled || !activeSessionKey;
+  const attachmentViewerIndex = attachmentViewer
+    ? files.findIndex(file => file.id === attachmentViewer.fileId)
+    : -1;
 
   const mode = resolveChatInputMode({
     isFinished,
@@ -348,8 +361,13 @@ export function ChatInput({
       {files.map((f) => (
         <FileAttachmentPreview
           key={f.id}
+          variant="chip"
           file={f.file}
           status={f.status}
+          onOpen={(file, trigger) => {
+            const selected = files.find(entry => entry.file === file);
+            if (selected) setAttachmentViewer({ fileId: selected.id, trigger });
+          }}
           onRemove={() => removeFile(f.id)}
         />
       ))}
@@ -423,6 +441,7 @@ export function ChatInput({
         changeText(t);
       }}
       onSendImmediate={async (t) => {
+        if (effectiveFileUploadUrl && !isReady) return;
         await send(t);
       }}
     />
@@ -455,6 +474,14 @@ export function ChatInput({
           {error || interruptError || uploadError}
         </div>
       )}
+
+      <AttachmentViewer
+        items={localAttachmentItems}
+        index={attachmentViewerIndex < 0 ? null : attachmentViewerIndex}
+        onIndexChange={index => setAttachmentViewer(current => current ? { ...current, fileId: files[index]?.id ?? current.fileId } : null)}
+        onClose={() => setAttachmentViewer(null)}
+        returnFocus={attachmentViewer?.trigger}
+      />
 
       {effectiveFileUploadUrl && (
         <input
