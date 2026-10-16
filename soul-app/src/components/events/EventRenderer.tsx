@@ -51,6 +51,7 @@ export function EventRenderer({
         <UserMessage
           event={event}
           presentation={presentation}
+          readContext={{ type: 'session', id: sessionId }}
           session={session}
           variant="normal"
           pendingStatus={pending.pendingStatus}
@@ -68,6 +69,7 @@ export function EventRenderer({
         <UserMessage
           event={event}
           presentation={presentation}
+          readContext={{ type: 'session', id: sessionId }}
           session={session}
           variant="intervention"
           pendingStatus={pending.pendingStatus}

@@ -23,9 +23,12 @@ import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticStatus } from '../../store/chatStore';
 import { extractUserText } from './eventActions';
 import { AttachmentChips } from '../chat/AttachmentChips';
+import { MessageAttachments } from '../MessageAttachments';
 import { makeStyles as makeChatBodyStyles } from '../chat/ChatBody.styles';
 import { removeGeneratedAttachmentPathNotes } from '../../lib/attachment-message-match';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
+import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
+import { getMessageAttachmentSignals, useMessageAttachments } from '../../hooks/useMessageAttachments';
 
 interface Props {
   messageKind?: React.ReactNode;
@@ -45,6 +48,7 @@ interface Props {
   onRetry?: () => void;
   onRestore?: () => void;
   presentation?: 'default' | 'manuscript';
+  readContext?: AttachmentReadContext;
 }
 
 /**
@@ -107,6 +111,7 @@ export function UserMessage({
   onRetry,
   onRestore,
   presentation = 'default',
+  readContext,
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -122,16 +127,21 @@ export function UserMessage({
   const caller = useMemo(() => extractMessageCaller(event), [event]);
 
   const attachments = useMemo(() => extractAttachments(event), [event]);
+  const attachmentSignals = useMemo(() => getMessageAttachmentSignals(event), [event]);
+  const { items: projectedAttachments } = useMessageAttachments({ event, readContext });
+  const fallbackPaths = projectedAttachments.length === 0
+    ? attachments.length > 0 ? attachments : attachmentSignals.paths
+    : [];
   const originalText = (event as PendingOptimisticEvent).originalText;
-  const content = removeGeneratedAttachmentPathNotes(extractUserText(event), attachments, originalText);
+  const content = removeGeneratedAttachmentPathNotes(extractUserText(event), attachmentSignals.paths, originalText);
 
   // Phase 2: 첨부 다운로드는 *세션의 node_id*로 cross-node 라우팅 (resolveAttachmentNodeId).
   // 둘 다 없으면 첨부 미표시 — graceful (design-principles §8 실패 격리).
   const nodeId = resolveAttachmentNodeId(session, event);
-  const attachmentEntries = useMemo(() => attachments.map((path) => ({
+  const attachmentEntries = useMemo(() => fallbackPaths.map((path) => ({
     path,
     uri: buildAttachmentUri(serverUrl, nodeId, path),
-  })).filter((entry): entry is { path: string; uri: string } => entry.uri !== null), [attachments, nodeId, serverUrl]);
+  })).filter((entry): entry is { path: string; uri: string } => entry.uri !== null), [fallbackPaths, nodeId, serverUrl]);
   const imageAttachmentEntries = useMemo(
     () => attachmentEntries.filter(({ path }) => isChatImageAttachmentPath(path)),
     [attachmentEntries],
@@ -148,7 +158,7 @@ export function UserMessage({
     : [], [imageAttachmentEntries, jwt, presentation, serverUrl]);
   const manuscriptImagesWithMetadata = useChatImageMetadata(manuscriptImageItems, serverUrl ?? '');
   // 빈 말풍선 방지 — 본문 텍스트와 첨부 둘 다 없으면 렌더 생략.
-  if (!content && !children && attachments.length === 0) return null;
+  if (!content && !children && !attachmentSignals.hasSignal) return null;
   const beforeTextEntries = presentation === 'manuscript'
     ? attachmentEntries.filter(({ path }) => !isChatImageAttachmentPath(path))
     : attachmentEntries;
@@ -187,7 +197,12 @@ export function UserMessage({
       >
         {messageKind}
         {children}
-        {beforeTextEntries.length > 0 && (
+        {projectedAttachments.length > 0 ? (
+          <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
+            ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
+            <MessageAttachments items={projectedAttachments} role="user" presentation={presentation} />
+          </View>
+        ) : beforeTextEntries.length > 0 && (
           <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
             ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
             {beforeTextEntries.map(({ path, uri }, attachmentIndex) => {

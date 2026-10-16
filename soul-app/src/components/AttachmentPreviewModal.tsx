@@ -19,6 +19,7 @@ export type AttachmentOriginalSaveHandler = (
   view: AttachmentView,
   anchor?: number,
 ) => Promise<'shared' | 'cancelled' | void>;
+export type AttachmentTextContent = { text: string; truncated: boolean };
 
 type PreviewState =
   | { kind: 'loading' }
@@ -40,29 +41,35 @@ export async function saveAttachmentOriginalView(
   return saver.saveAttachmentOriginal({ view, scope, anchor });
 }
 
-export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0, onClose, onSaveOriginal }: {
+export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0, onClose, onSaveOriginal, textContent }: {
   item: AttachmentView;
   items?: readonly AttachmentView[];
   initialIndex?: number;
   onClose(): void;
   onSaveOriginal?: AttachmentOriginalSaveHandler;
+  textContent?: AttachmentTextContent;
 }) {
   const scope = captureAuthScope();
   return <View testID="attachment-preview-modal">
     <ImageViewerModal variant="chatRefined" items={items} initialIndex={initialIndex} onClose={onClose}
       sources={items.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
         ? attachmentImageSource({ ...entry, source: entry.source }, scope.serverUrl, scope.jwt) : {})}
-      renderAttachment={(entry) => <AttachmentPreviewContent key={entry.key} item={entry} />}
+      renderAttachment={(entry) => <AttachmentPreviewContent key={entry.key} item={entry}
+        {...(entry.key === item.key && textContent ? { textContent } : {})} />}
       onSaveOriginal={async (index, anchor) => { await (onSaveOriginal ?? saveAttachmentOriginalView)(items[index], anchor); }} />
   </View>;
 }
 
-function AttachmentPreviewContent({ item }: { item: AttachmentView }) {
+function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView; textContent?: AttachmentTextContent }) {
   const t = useTokens();
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const [state, setState] = useState<PreviewState>(() => initialPreviewState(item));
   const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
+    if (textContent) {
+      setState({ kind: 'text', ...textContent });
+      return;
+    }
     if (item.previewKind !== 'text' || item.source.kind !== 'ready' || item.byteSize === 0) {
       setState(initialPreviewState(item));
       return;
@@ -79,7 +86,7 @@ function AttachmentPreviewContent({ item }: { item: AttachmentView }) {
         if (!controller.signal.aborted) setState(readFailureState(error));
       });
     return () => controller.abort();
-  }, [item, retryKey]);
+  }, [item, retryKey, textContent]);
 
   return <View style={{ flex: 1, width: '100%', padding: t.spacing.md, alignItems: 'center', justifyContent: 'center' }}>
     {renderPreviewState(state, t, attachment)}
