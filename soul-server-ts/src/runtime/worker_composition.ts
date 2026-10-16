@@ -1,7 +1,6 @@
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
-import { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
 import { CatalogService } from "../catalog/catalog_service.js";
@@ -47,7 +46,7 @@ import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
-import { composeTaskRuntime, createWorkerAttachmentInputRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
+import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
@@ -144,7 +143,7 @@ export async function composeWorkerRuntime(
     processEnv: process.env,
     modelCatalog,
   });
-  const orchProxyConfig = buildOrchProxyConfig(env), attachmentInputRuntime = createWorkerAttachmentInputRuntime(env, orchProxyConfig, persistence);
+  const orchProxyConfig = buildOrchProxyConfig(env), attachmentRuntime = createWorkerAttachmentRuntime(env, orchProxyConfig, persistence);
   const orchHostClientDeps = { orch: orchProxyConfig, logger };
   const observePersistentResume = createPersistentJevObserver({
     orch: orchProxyConfig,
@@ -261,7 +260,7 @@ export async function composeWorkerRuntime(
     claudeSessionClientRegistry,
     modelCatalog,
     sessionMutations,
-    observePersistentResume, attachmentInputRuntime.prepareAttachmentInput,
+    observePersistentResume, attachmentRuntime.taskRuntime.prepareAttachmentInput,
   );
   worktreeService = composeWorktreeService(env, orchHostClientDeps, () =>
     listActiveTaskWorkspaceDirs(taskManager.listTasks(),
@@ -314,7 +313,7 @@ export async function composeWorkerRuntime(
     persistence,
     broadcaster,
     scheduleService,
-    providerUsage, ...attachmentInputRuntime,
+    providerUsage, ...attachmentRuntime.taskRuntime,
     orchProxyConfig,
     transientEventLogAggregator,
     ...(claudeRuntime.transcriptReceipt
@@ -376,10 +375,8 @@ export async function composeWorkerRuntime(
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
   const mcpRuntime: McpRuntime = {
+    ...attachmentRuntime.mcpRuntime,
     persistentReports: new PersistentReportHostClient(orchHostClientDeps),
-    attachmentMaterializer: attachmentInputRuntime.attachmentMaterializer,
-    producedAttachments: createProducedAttachmentRegistration(
-      { incomingDir: env.INCOMING_FILE_DIR, orch: orchProxyConfig, fetch: globalThis.fetch }),
     nodeId: env.SOULSTREAM_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
