@@ -171,6 +171,20 @@ describe("card item evidence attachment ids", () => {
     expect(await refIds(cardId)).toEqual([]);
   });
 
+  it("stores url evidence that points at another owner's attachment without making a ref, while the same id as attachment_id is denied", async () => {
+    const cardId = await makeCard();
+    await cardScopedAsset("img-foreign", cardId, { owner: "session-c" });
+    const viaUrl = { type: "image" as const, label: "남의 첨부", url: `/api/attachments/img-foreign/content?context_type=card&context_id=${cardId}` };
+
+    await cards.reportCardItem({ ...assignee, cardId, itemId: 1, state: "done", result: "URL 증거를 달았습니다", evidence: [viaUrl], idempotencyKey: key() });
+    const stored = await storedCard(cardId);
+    expect(stored.items[0]!.evidence).toStrictEqual([viaUrl]);
+    expect(stored.attachment_refs).toStrictEqual([]);
+
+    await expect(report(cardId, 1, [proof("img-foreign")])).rejects.toMatchObject({ statusCode: 403, code: "ATTACHMENT_LINK_DENIED" });
+    expect(await storedCard(cardId)).toStrictEqual(stored);
+  });
+
   describe("after the producing session is deleted", () => {
     const storage = { openObject: vi.fn(async () => new Response(ORIGINAL_BYTES)) };
     const binding: AttachmentReadStorageBinding = { storage, identity: "item-reader", location: { endpoint: ENDPOINT, bucket: BUCKET } };

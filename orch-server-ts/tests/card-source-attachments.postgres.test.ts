@@ -33,15 +33,15 @@ describe("card source attachment reference parsing and indexing", () => {
     const refs = collectCardAttachmentRefs({
       request: `그림 ![x](${ownerUrl("req-1")})`,
       attachments: [{ attachment_id: "att-1" }, { name: "no id" }],
-      items: [{ id: 1, evidence: [{ type: "image", url: ownerUrl("item-1"), label: "x" }] }],
+      items: [{ id: 1, evidence: [{ type: "image", attachment_id: "item-1", label: "x" }] }],
       previousRefs: [
         { attachment_id: "item-1" },
         { attachment_id: "item-gone" },
         { attachment_id: "legacy", legacy_url: "/old/path.png" },
       ],
       previousItems: [
-        { id: 1, evidence: [{ type: "image", url: ownerUrl("item-1"), label: "x" }] },
-        { id: 2, evidence: [{ type: "image", url: ownerUrl("item-gone"), label: "y" }] },
+        { id: 1, evidence: [{ type: "image", attachment_id: "item-1", label: "x" }] },
+        { id: 2, evidence: [{ type: "image", attachment_id: "item-gone", label: "y" }] },
       ],
     });
     expect(refs).toEqual([

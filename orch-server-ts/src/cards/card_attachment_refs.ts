@@ -206,6 +206,8 @@ function classifyQuery(query: string): { cardScoped: boolean; cardId: string | n
   return "invalid";
 }
 
+// 항목 증거에서 카드 ref가 되는 것은 report_card_item이 검증한 attachment_id variant뿐이다.
+// url variant는 검증을 거치지 않으므로 내부 첨부 URL처럼 보여도 ref를 만들지 않는다.
 function itemAttachmentIds(item: unknown): string[] {
   if (!isRecord(item)) return [];
   const evidence = Array.isArray(item.evidence) ? item.evidence : [];
@@ -214,10 +216,6 @@ function itemAttachmentIds(item: unknown): string[] {
     if (!isRecord(entry)) continue;
     if (typeof entry.attachment_id === "string" && entry.attachment_id.length > 0)
       ids.push(entry.attachment_id);
-    if (typeof entry.url === "string") {
-      const classified = classifyTarget(entry.url);
-      if (typeof classified === "object") ids.push(classified.id);
-    }
   }
   return ids;
 }
