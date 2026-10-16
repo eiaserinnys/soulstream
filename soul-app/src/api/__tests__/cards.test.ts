@@ -1,5 +1,7 @@
 import { createApiClient } from '../client';
 import { useAuthStore } from '../../store/authStore';
+import { toCardAttachmentView } from '../../lib/attachment-view';
+import type { CardAttachmentAssetEvidence, CardAttachmentEvidence } from '../cardTypes';
 
 // serializeCardRow/getToday response shape. No snake_case card/session keys.
 export const cardFixture = {
@@ -66,6 +68,31 @@ test('카드 확인 항목 응답과 예전 서버의 필드 생략을 보존한
   expect(fetch.mock.calls.map(([url]) => url)).toEqual([
     'https://cards.test/api/cards/card%2F1', 'https://cards.test/api/cards/card%2F1',
   ]);
+});
+
+test('카드 항목은 legacy evidence와 C-10 ready/missing evidence를 같은 순서로 보존한다', async () => {
+  const descriptor = { attachment_id: 'asset/1', name: '화면.png', mime_type: 'image/png', byte_size: 24,
+    checksum_sha256: null, width: 120, height: 80, preview_kind: 'image', preview_mime_type: 'image/webp' } as const;
+  const legacy: CardAttachmentEvidence = { type: 'link', label: '기존 링크', url: 'https://example.test/report' };
+  const ready: CardAttachmentEvidence = { type: 'image', label: '화면', url: '/api/attachments/asset%2F1/content?context_type=card&context_id=card%2F1',
+    attachment_id: 'asset/1', descriptor, read_context: { type: 'card', id: 'card/1' },
+    previewUrl: '/api/attachments/asset%2F1/content?context_type=card&context_id=card%2F1',
+    originalUrl: '/api/attachments/asset%2F1/content?context_type=card&context_id=card%2F1&download=true' };
+  const missing: CardAttachmentEvidence = { type: 'link', label: '없는 파일', url: '', attachment_id: 'asset/missing',
+    read_context: { type: 'card', id: 'card/1' }, availability: 'missing', previewUrl: null, originalUrl: '' };
+  const item = { id: 2, title: '증거', state: 'doing', result: null, evidence: [legacy, ready, missing], caveat: null,
+    rev: 0, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: '', reportedAt: null, display: 'doing' };
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(response({ ...detail, card: { ...cardFixture, items: [item] } }));
+
+  const result = await createApiClient('https://cards.test').getCard(cardFixture.id);
+  const evidence = result.card.items?.[0].evidence;
+
+  expect(evidence).toEqual([legacy, ready, missing]);
+  expect(toCardAttachmentView(evidence![1] as CardAttachmentAssetEvidence))
+    .toMatchObject({ key: 'asset/1', source: { kind: 'ready', attachmentId: 'asset/1' } });
+  expect(toCardAttachmentView(evidence![2] as CardAttachmentAssetEvidence))
+    .toMatchObject({ key: 'asset/missing', source: { kind: 'unavailable', availability: 'missing' } });
+  expect(fetch.mock.calls[0][0]).toBe('https://cards.test/api/cards/card%2F1');
 });
 
 test('항목 확인은 인코딩된 카드 경로와 confirmed 본문만 보내고 변경 envelope을 돌려준다', async () => {

@@ -2,6 +2,23 @@ import type { ApiRequestContext } from './clientCore';
 import { File } from 'expo-file-system';
 import { appendNativeUploadFile, type NativeUploadFile } from './nativeUpload';
 import { NATIVE_MULTIPART_THRESHOLD_BYTES, uploadNativeMultipart } from './nativeMultipartUpload';
+import type { AttachmentDescriptor, AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
+import { attachmentContentUrl, MAX_ATTACHMENT_TEXT_BYTES } from '../lib/attachment-view';
+
+export interface AttachmentMetadataResponse {
+  descriptor: AttachmentDescriptor;
+  upload_status: string;
+}
+
+export type AttachmentReadErrorKind = 'unauthorized' | 'denied' | 'not-found' | 'conflict' | 'retryable' | 'preview-failed';
+
+export class AttachmentReadError extends Error {
+  readonly name = 'AttachmentReadError';
+
+  constructor(readonly kind: AttachmentReadErrorKind, readonly status?: number) {
+    super(`Attachment preview failed${status === undefined ? '' : ` (HTTP ${status})`}`);
+  }
+}
 
 export function createAttachmentEndpoints({
   base,
@@ -9,6 +26,44 @@ export function createAttachmentEndpoints({
   readJson,
 }: ApiRequestContext) {
   return {
+    getAttachmentMetadata: async (
+      id: string,
+      context: AttachmentReadContext,
+      signal?: AbortSignal,
+    ): Promise<AttachmentMetadataResponse> => {
+      const query = contextQuery(context);
+      const url = `${base}/api/attachments/${encodeURIComponent(id)}${query ? `?${query}` : ''}`;
+      const response = await authFetch(url, signal === undefined ? {} : { signal });
+      return readJson<AttachmentMetadataResponse>(response, 'getAttachmentMetadata');
+    },
+    readAttachmentText: async (
+      id: string,
+      context: AttachmentReadContext,
+      signal?: AbortSignal,
+    ): Promise<{ text: string; truncated: boolean }> => {
+      const url = `${base}${attachmentContentUrl(id, context)}`;
+      let response: Response;
+      try {
+        response = await authFetch(url, {
+          headers: { Range: `bytes=0-${MAX_ATTACHMENT_TEXT_BYTES - 1}` },
+          ...(signal === undefined ? {} : { signal }),
+        });
+      } catch (error) {
+        if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+        throw new AttachmentReadError('retryable');
+      }
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw attachmentReadError(response.status);
+      }
+      try {
+        return await readBoundedText(response, MAX_ATTACHMENT_TEXT_BYTES);
+      } catch (error) {
+        if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+        if (error instanceof AttachmentReadError) throw error;
+        throw new AttachmentReadError('preview-failed');
+      }
+    },
     // 첨부 파일 업로드 (multipart). multipart Content-Type은 boundary 때문에 fetch가 자동 부착한다.
     uploadAttachment: async (
       sessionId: string,
@@ -53,4 +108,90 @@ export function createAttachmentEndpoints({
       ).then((r) => readJson(r, 'uploadAttachment'));
     },
   };
+}
+
+function contextQuery(context: AttachmentReadContext): string {
+  if (context.type === 'owner') return '';
+  return new URLSearchParams({ context_type: context.type, context_id: context.id }).toString();
+}
+
+function attachmentReadError(status: number): AttachmentReadError {
+  if (status === 401) return new AttachmentReadError('unauthorized', status);
+  if (status === 403) return new AttachmentReadError('denied', status);
+  if (status === 404) return new AttachmentReadError('not-found', status);
+  if (status === 409) return new AttachmentReadError('conflict', status);
+  if (status >= 500) return new AttachmentReadError('retryable', status);
+  return new AttachmentReadError('preview-failed', status);
+}
+
+async function readBoundedText(response: Response, maximumBytes: number): Promise<{ text: string; truncated: boolean }> {
+  const body = response.body;
+  if (!body || typeof body.getReader !== 'function') {
+    const contentLength = numericHeader(response.headers.get('content-length'));
+    if (contentLength !== null && contentLength > maximumBytes) {
+      throw new AttachmentReadError('preview-failed', response.status);
+    }
+    const text = body ? await response.text() : '';
+    const bytes = new TextEncoder().encode(text);
+    const truncated = bytes.byteLength > maximumBytes || rangeExceedsLimit(response, maximumBytes);
+    const limited = bytes.subarray(0, maximumBytes);
+    const decoder = new TextDecoder('utf-8');
+    return {
+      text: decoder.decode(limited, truncated ? { stream: true } : undefined),
+      truncated,
+    };
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let text = '';
+  let bytesRead = 0;
+  let truncated = rangeExceedsLimit(response, maximumBytes);
+  try {
+    while (bytesRead < maximumBytes) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      const remaining = maximumBytes - bytesRead;
+      if (chunk.value.byteLength > remaining) {
+        text += decoder.decode(chunk.value.subarray(0, remaining), { stream: true });
+        bytesRead += remaining;
+        truncated = true;
+        await reader.cancel().catch(() => undefined);
+        break;
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+      bytesRead += chunk.value.byteLength;
+    }
+
+    if (!truncated && bytesRead === maximumBytes) {
+      const next = await reader.read();
+      if (!next.done && next.value.byteLength > 0) {
+        truncated = true;
+        await reader.cancel().catch(() => undefined);
+      }
+    }
+    const contentLength = numericHeader(response.headers.get('content-length'));
+    if (contentLength !== null && contentLength > bytesRead) truncated = true;
+    if (!truncated) text += decoder.decode();
+    return { text, truncated };
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function rangeExceedsLimit(response: Response, maximumBytes: number): boolean {
+  if (response.status !== 206) return false;
+  const value = response.headers.get('content-range');
+  const match = value?.match(/^bytes\s+\d+-(\d+)\/(\d+|\*)$/i);
+  if (!match) return true;
+  const end = Number(match[1]);
+  const total = match[2] === '*' ? null : Number(match[2]);
+  return (Number.isFinite(total) && total !== null && total > end + 1)
+    || end + 1 > maximumBytes;
+}
+
+function numericHeader(value: string | null): number | null {
+  if (value === null || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }

@@ -1,5 +1,32 @@
 import type { CatalogFolder, Session } from './types';
 import type { CardColor } from '../../../packages/wire-schema/src/card_colors';
+import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/attachments';
+
+export type CardAttachmentAssetEvidence =
+  | {
+    type: 'image' | 'link';
+    label: string;
+    url: string;
+    attachment_id: string;
+    descriptor: AttachmentDescriptor;
+    read_context: { type: 'card'; id: string };
+    previewUrl: string | null;
+    originalUrl: string;
+  }
+  | {
+    type: 'image' | 'link';
+    label: string;
+    url: '';
+    attachment_id: string;
+    read_context: { type: 'card'; id: string };
+    availability: 'missing' | 'unavailable';
+    previewUrl: null;
+    originalUrl: '';
+  };
+
+export type CardAttachmentEvidence =
+  | { type: 'image' | 'link'; url: string; label: string }
+  | CardAttachmentAssetEvidence;
 
 export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'review' | 'done' | 'cancelled';
 export interface CardAttachment {
@@ -14,7 +41,7 @@ export interface CardCheckItem {
   title: string;
   state: 'todo' | 'doing' | 'done' | 'dropped';
   result: string | null;
-  evidence: Array<{ type: 'image' | 'link'; url: string; label: string }>;
+  evidence: CardAttachmentEvidence[];
   caveat: string | null;
   rev: number;
   confirmed: { at: string; rev: number } | null;
