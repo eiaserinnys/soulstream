@@ -197,7 +197,9 @@ export class TaskRuntimeCommands {
       agent,
       this.deps.modelCatalog,
     );
-    const prompt = appendAttachmentPathNotes(params.prompt, params.attachmentPaths);
+    const prompt = params.attachmentIds && params.attachmentIds.length > 0
+      ? params.prompt
+      : appendAttachmentPathNotes(params.prompt, params.attachmentPaths);
     await this.authorizeWorker(params.agentSessionId, params.orchestrationAdmission, params.cardId ?? null);
     const task = await this.deps.taskManager.createTask({
       agentSessionId: params.agentSessionId,
@@ -251,7 +253,9 @@ export class TaskRuntimeCommands {
     return await this.deps.taskManager.addIntervention(
       {
         agentSessionId: params.agentSessionId,
-        text: appendAttachmentPathNotes(params.text, params.attachmentPaths),
+        text: params.attachmentIds && params.attachmentIds.length > 0
+          ? params.text
+          : appendAttachmentPathNotes(params.text, params.attachmentPaths),
         user: params.user ?? "upstream",
         callerInfo: params.callerInfo,
         attachmentPaths: params.attachmentPaths,

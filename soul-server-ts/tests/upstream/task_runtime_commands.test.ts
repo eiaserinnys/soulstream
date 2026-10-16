@@ -442,6 +442,7 @@ describe("TaskRuntimeCommands.createSession", () => {
 
     expect(taskManager.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
+        prompt: "inspect",
         attachmentIds: ["att-a", "att-b"],
         attachmentBindings: bindings,
       }),
@@ -605,6 +606,7 @@ describe("TaskRuntimeCommands.intervene", () => {
 
     expect(taskManager.addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({
+        text: "continue",
         attachmentIds: ["att-a"],
         attachmentBindings: bindings,
       }),
@@ -724,7 +726,7 @@ describe("upstream command families accept attachment-only input", () => {
 
     expect(taskManager.addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: "[첨부 파일 로컬 경로: /tmp/a.png]",
+        text: "",
         attachmentIds: ["att-a"],
         attachmentBindings: bindings,
       }),

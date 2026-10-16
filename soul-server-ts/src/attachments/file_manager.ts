@@ -487,7 +487,7 @@ function buildFsSafeTimestamp(): string {
   return new Date().toISOString().replace(/:/g, "-");
 }
 
-function sanitizeOriginalFilename(filename: string): string {
+export function sanitizeOriginalFilename(filename: string): string {
   const base = path.basename((filename || "unnamed").replace(/\\/g, "/"));
   const sanitized = base
     .replace(/[\x00-\x1F\x7F<>:"\/\\|?*]/g, "_")

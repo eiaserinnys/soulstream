@@ -64,6 +64,8 @@ function makeSubject(options: {
   }>;
   initialMessagePublisher?: Partial<{ publishInitialMessages: ReturnType<typeof vi.fn>;
     publishContextManifestBestEffort: ReturnType<typeof vi.fn> }>;
+  prepareAttachmentInput?: ReturnType<typeof vi.fn>;
+  waitForAttachmentRefs?: ReturnType<typeof vi.fn>;
 } = {}) {
   const contextBuilder = {
     build: vi.fn().mockResolvedValue(makeContext()),
@@ -105,6 +107,8 @@ function makeSubject(options: {
     contextBuilder: contextBuilder as unknown as ExecutionContextBuilderPort,
     initialMessagePublisher: initialMessagePublisher as unknown as TaskInitialMessagePublisherPort,
     logger,
+    prepareAttachmentInput: options.prepareAttachmentInput,
+    waitForAttachmentRefs: options.waitForAttachmentRefs,
   });
 
   return {
@@ -116,6 +120,102 @@ function makeSubject(options: {
 }
 
 describe("TaskTurnInputBuilder", () => {
+  it("waits for initial attachment refs and prepares an execution copy", async () => {
+    const order: string[] = [];
+    const task = makeTask({
+      prompt: "",
+      attachmentIds: ["asset-1"],
+      attachmentPaths: ["/legacy/photo.png"],
+      attachmentBindings: [{ attachment_id: "asset-1", path: "/legacy/photo.png" }],
+      executionRegistration: {
+        registrationId: "registration-initial",
+        executionCommandId: "command:initial",
+      },
+    });
+    const prepareAttachmentInput = vi.fn(async (source) => {
+      order.push("prepare");
+      return {
+        text: source.text,
+        attachmentPaths: ["/cache/photo.png", "/cache/report.txt"],
+        imageAttachmentPaths: ["/cache/photo.png"],
+      };
+    });
+    const { builder } = makeSubject({
+      waitForAttachmentRefs: vi.fn(async () => {
+        order.push("ack");
+      }),
+      prepareAttachmentInput,
+    });
+    const original = { prompt: task.prompt, ids: task.attachmentIds, paths: task.attachmentPaths };
+    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+    expect(order).toEqual(["ack", "prepare"]);
+    expect(prepareAttachmentInput).toHaveBeenCalledWith(expect.objectContaining({
+      text: "",
+      attachmentIds: ["asset-1"],
+      deliveryId: "command:initial",
+    }));
+    expect(input.originalPrompt).toBe("");
+    expect(input.prompt).toContain("[첨부 파일 로컬 경로: /cache/photo.png]");
+    expect(input.prompt).not.toContain("/legacy/photo.png");
+    expect(input.imageAttachmentPaths).toEqual(["/cache/photo.png"]);
+    expect(input.attachmentSource).toMatchObject({ text: "", attachmentIds: ["asset-1"] });
+    expect(task.prompt).toBe(original.prompt);
+    expect(task.attachmentIds).toBe(original.ids);
+    expect(task.attachmentPaths).toBe(original.paths);
+  });
+
+  it("prepares follow-up copies but returns the original intervention", async () => {
+    const interventions = [{ text: "이 파일도 확인해줘", user: "u", deliveryId: "delivery-followup",
+      attachmentIds: ["asset-2"], attachmentPaths: ["/legacy/report.pdf"],
+      attachmentBindings: [{ attachment_id: "asset-2", path: "/legacy/report.pdf" }] }];
+    const prepareAttachmentInput = vi.fn().mockResolvedValue({
+      text: interventions[0]!.text,
+      attachmentPaths: ["/cache/report.pdf"], imageAttachmentPaths: [],
+    });
+    const waitForAttachmentRefs = vi.fn(async () => undefined);
+    const { builder } = makeSubject({ prepareAttachmentInput, waitForAttachmentRefs });
+
+    const input = await builder.prepareFollowupTurnInput(makeTask(), claudeAgent, interventions);
+
+    expect(prepareAttachmentInput.mock.calls[0]?.[0]).toMatchObject({ attachmentIds: ["asset-2"], deliveryId: "delivery-followup" });
+    expect(input.prompt).toContain("[첨부 파일 로컬 경로: /cache/report.pdf]");
+    expect(input.prompt).not.toContain("/legacy/report.pdf");
+    expect(input.interventions).toBe(interventions);
+    expect(interventions[0]?.attachmentPaths).toEqual(["/legacy/report.pdf"]);
+  });
+
+  it("re-materializes the initial source on backend rollover", async () => {
+    const source = { sessionId: "sess-turn-input", text: "원본 요청", attachmentIds: ["asset-3"],
+      attachmentPaths: ["/legacy/photo.png"], attachmentBindings: [{ attachment_id: "asset-3", path: "/legacy/photo.png" }] };
+    const paths = ["/cache/first/photo.png", "/cache/second/photo.png"];
+    const prepareAttachmentInput = vi.fn(async (input) => ({
+      text: input.text,
+      attachmentPaths: [paths[prepareAttachmentInput.mock.calls.length - 1]!],
+      imageAttachmentPaths: [paths[prepareAttachmentInput.mock.calls.length - 1]!],
+    }));
+    const { builder } = makeSubject({ prepareAttachmentInput });
+    const failedInput = { prompt: "previous runtime prompt", originalPrompt: "원본 요청",
+      imageAttachmentPaths: ["/old-cache/photo.png"], attachmentSource: source };
+    const first = await builder.prepareBackendRolloverTurnInput(makeTask(), claudeAgent, failedInput, "backend-old");
+    const second = await builder.prepareBackendRolloverTurnInput(makeTask(), claudeAgent, first, "backend-next");
+    expect(prepareAttachmentInput).toHaveBeenCalledTimes(2);
+    expect(second.prompt).toContain("/cache/second/photo.png");
+    expect(second.prompt).not.toContain("/old-cache/photo.png");
+    expect(second.imageAttachmentPaths).toEqual(["/cache/second/photo.png"]);
+    expect(second.attachmentSource?.text).toBe("원본 요청");
+  });
+
+  it("rejects ID-managed initial inputs when preparation is not configured", async () => {
+    const task = makeTask({ attachmentIds: ["asset-4"] });
+    const { builder } = makeSubject();
+
+    await expect(builder.prepareInitialTurnInput(task, claudeAgent))
+      .rejects.toThrow("ATTACHMENT_INPUT_UNAVAILABLE");
+    const failure = new Error("prepare failed");
+    const { builder: failingBuilder } = makeSubject({ prepareAttachmentInput: vi.fn().mockRejectedValue(failure) });
+    await expect(failingBuilder.prepareInitialTurnInput(task, claudeAgent)).rejects.toBe(failure);
+  });
+
   it("waits for creation effects before first-turn context build", async () => {
     let finishCreationEffects!: () => void;
     const creationEffects = new Promise<void>((resolve) => {
@@ -209,6 +309,9 @@ describe("TaskTurnInputBuilder", () => {
           { key: "assigned_cards", label: "stale", content: "stale assigned cards" },
           { key: "delivery_context", label: "Delivery", content: "delivery facts" },
         ],
+        attachmentIds: ["generation-id"],
+        attachmentPaths: ["/legacy/generation.png"],
+        attachmentBindings: [{ attachment_id: "generation-id", path: "/legacy/generation.png" }],
       }],
     });
     const manifest = { compiler_version: "phase-a.v1", spec_hash: "generation-spec",
@@ -219,7 +322,14 @@ describe("TaskTurnInputBuilder", () => {
       broadcaster: {} as never,
       logger: { warn: vi.fn() } as unknown as Logger,
     });
+    const prepareAttachmentInput = vi.fn().mockResolvedValue({
+      text: "이번 요청", attachmentPaths: ["/cache/generation.png"],
+      imageAttachmentPaths: ["/cache/generation.png"],
+    });
+    const waitForAttachmentRefs = vi.fn().mockResolvedValue(undefined);
     const { builder, contextBuilder, initialMessagePublisher } = makeSubject({
+      prepareAttachmentInput,
+      waitForAttachmentRefs,
       initialMessagePublisher: { publishContextManifestBestEffort: vi.fn(
         (task, manifest) => manifestPublisher.publishContextManifestBestEffort(task, manifest),
       ) },
@@ -243,6 +353,7 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.systemPrompt).toBe("system instructions");
     expect(input.prompt).toContain("session facts");
     expect(input.prompt).toContain("이번 요청");
+    expect(input.prompt).toContain("[첨부 파일 로컬 경로: /cache/generation.png]");
     expect(input.prompt).toContain("delivery facts");
     expect(input.prompt).not.toContain("system instructions");
     expect(input.prompt).not.toContain("stale assigned cards");
@@ -258,6 +369,12 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.generationCheckpointStats).toMatchObject({
       estimatedTokens: 321,
       chars: 987,
+    });
+    expect(waitForAttachmentRefs).toHaveBeenCalledWith(task.agentSessionId);
+    expect(prepareAttachmentInput).toHaveBeenCalledTimes(1);
+    expect(input.imageAttachmentPaths).toEqual(["/cache/generation.png"]);
+    expect(input.interventions?.[0]).toMatchObject({
+      attachmentIds: ["generation-id"], attachmentPaths: ["/legacy/generation.png"],
     });
     expect(task.interventionQueue).toEqual([]);
     expect(task.needsFullContextReinjection).toBe(false);

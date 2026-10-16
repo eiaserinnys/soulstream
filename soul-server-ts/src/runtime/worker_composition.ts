@@ -47,7 +47,7 @@ import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
-import { composeTaskRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
+import { composeTaskRuntime, createWorkerAttachmentInputRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
@@ -144,7 +144,7 @@ export async function composeWorkerRuntime(
     processEnv: process.env,
     modelCatalog,
   });
-  const orchProxyConfig = buildOrchProxyConfig(env);
+  const orchProxyConfig = buildOrchProxyConfig(env), attachmentInputRuntime = createWorkerAttachmentInputRuntime(env, orchProxyConfig, persistence);
   const orchHostClientDeps = { orch: orchProxyConfig, logger };
   const observePersistentResume = createPersistentJevObserver({
     orch: orchProxyConfig,
@@ -261,7 +261,7 @@ export async function composeWorkerRuntime(
     claudeSessionClientRegistry,
     modelCatalog,
     sessionMutations,
-    observePersistentResume,
+    observePersistentResume, attachmentInputRuntime.prepareAttachmentInput,
   );
   worktreeService = composeWorktreeService(env, orchHostClientDeps, () =>
     listActiveTaskWorkspaceDirs(taskManager.listTasks(),
@@ -314,7 +314,7 @@ export async function composeWorkerRuntime(
     persistence,
     broadcaster,
     scheduleService,
-    providerUsage,
+    providerUsage, ...attachmentInputRuntime,
     orchProxyConfig,
     transientEventLogAggregator,
     ...(claudeRuntime.transcriptReceipt

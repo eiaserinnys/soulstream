@@ -56,6 +56,7 @@ import {
 } from "./claude_runtime_control.js";
 import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
 import { resolveModelPresetSelection } from "./task_model_preset.js";
+import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 import {
   resolveEffortPreset,
   resolveReasoningEffortForCreate,
@@ -119,6 +120,7 @@ export class TaskManager {
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
     sessionMutations?: SessionMutationHost,
     observePersistentResume?: PersistentResumeObserver,
+    prepareAttachmentInput?: PrepareAttachmentInput,
   ) {
     this.sessionMutations = sessionMutations ?? createMissingSessionMutationHost();
     this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
@@ -192,6 +194,7 @@ export class TaskManager {
       broadcaster,
       logger,
       persistence,
+      ...(prepareAttachmentInput ? { prepareAttachmentInput } : {}),
     });
     this.autoResumeTransition = new AutoResumeTransition({
       logger,

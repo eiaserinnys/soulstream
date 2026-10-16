@@ -10,7 +10,8 @@ import { resolveTurnLoopTransition } from "../../src/task/task_turn_loop_transit
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "../../src/task/task_delivery_turn_receipt.js";
-import type { Task } from "../../src/task/task_models.js";
+import type { InterventionMessage, Task } from "../../src/task/task_models.js";
+import type { PrepareAttachmentInput } from "../../src/task/prepare_attachment_input.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
@@ -45,6 +46,20 @@ function makeBroadcaster(
   emitEventEnvelope = vi.fn().mockResolvedValue(undefined),
 ): SessionBroadcaster {
   return { emitEventEnvelope } as unknown as SessionBroadcaster;
+}
+
+function makeManagedInterventionMessage(): InterventionMessage {
+  return {
+    text: "read the attached file",
+    user: "worker",
+    callerInfo: { source: "agent", agent_id: "worker" },
+    attachmentPaths: ["/tmp/incoming/a.png"],
+    attachmentIds: ["att-a"],
+    attachmentBindings: [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/incoming/a.png" },
+    ],
+    deliveryId: "delivery-a",
+  };
 }
 
 describe("RunningInterventionTransition", () => {
@@ -963,5 +978,525 @@ describe("active intervention assigned cards",()=>{
     expect(prompt).toContain("하위 보고");
     expect(prompt).not.toContain("assigned_cards");
     expect(prompt).not.toContain("stale");
+  });
+});
+
+describe("managed attachment intervention delivery", () => {
+  it("waits for acceptance ack and preparation before tool-boundary injection", async () => {
+    const order: string[] = [];
+    let releasePreparation!: () => void;
+    const preparationGate = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    persistenceDouble.enqueueEvent.mockImplementation(async () => {
+      order.push("acceptance");
+      return { source_seq: 1 };
+    });
+    persistenceDouble.waitForSessionAck.mockImplementation(async () => {
+      order.push("ack");
+      return 1;
+    });
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async (input) => {
+      order.push("prepare-start");
+      await preparationGate;
+      order.push("prepare-complete");
+      expect(input).toEqual({
+        sessionId: "s1",
+        text: "read the attached file",
+        attachmentIds: ["att-a"],
+        attachmentPaths: ["/tmp/incoming/a.png"],
+        attachmentBindings: [
+          { attachment_id: "att-a", node_id: "node-1", path: "/tmp/incoming/a.png" },
+        ],
+        deliveryId: "delivery-a",
+      });
+      return {
+        text: input.text,
+        attachmentPaths: ["/tmp/cache/current.png"],
+        imageAttachmentPaths: ["/tmp/cache/current.png"],
+      };
+    });
+    const intervene = vi.fn();
+    const injectAtToolBoundary = vi.fn(async () => {
+      order.push("engine");
+      return { status: "delivered" as const, mechanism: "active_turn" as const };
+    });
+    const register = vi.fn().mockResolvedValue(undefined);
+    const task = makeRunningTask({
+      activeDeliveryTurnReceipt: { register } as never,
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+      prepareAttachmentInput,
+    });
+    const message = makeManagedInterventionMessage();
+    const originalMessage = structuredClone(message);
+    const delivery = transition.deliver(task, message);
+
+    await vi.waitFor(
+      () => expect(prepareAttachmentInput).toHaveBeenCalledOnce(),
+      { timeout: 250 },
+    );
+    expect(order).toEqual(["acceptance", "ack", "prepare-start"]);
+    expect(injectAtToolBoundary).not.toHaveBeenCalled();
+    expect(intervene).not.toHaveBeenCalled();
+    releasePreparation();
+
+    await expect(delivery).resolves.toEqual({ delivered: true });
+    expect(order).toEqual(["acceptance", "ack", "prepare-start", "prepare-complete", "engine"]);
+    expect(injectAtToolBoundary).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "read the attached file\n\n[첨부 파일 로컬 경로: /tmp/cache/current.png]",
+      imageAttachmentPaths: ["/tmp/cache/current.png"],
+      inputUuid: buildDeliveryInputUuid("delivery-a"),
+    }));
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "read the attached file",
+        attachments: ["/tmp/incoming/a.png"],
+        attachment_ids: ["att-a"],
+      }),
+      undefined,
+      "registration:s1",
+    );
+    expect(register).toHaveBeenCalledWith(originalMessage);
+    expect(message).toEqual(originalMessage);
+  });
+
+  it("propagates preparation failures without calling the engine or changing original IDs", async () => {
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async () => {
+      throw new Error("materializer failed");
+    });
+    const intervene = vi.fn().mockResolvedValue({ status: "delivered", mechanism: "active_turn" });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+      prepareAttachmentInput,
+    });
+    const message = makeManagedInterventionMessage();
+    const originalMessage = structuredClone(message);
+
+    await expect(transition.deliver(task, message)).rejects.toThrow("materializer failed");
+
+    expect(prepareAttachmentInput).toHaveBeenCalledOnce();
+    expect(intervene).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([]);
+    expect(message).toEqual(originalMessage);
+  });
+
+  it("uses the delivery ID and publishes acceptance only after a deferred live delivery succeeds", async () => {
+    const order: string[] = [];
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    persistenceDouble.enqueueEvent.mockImplementation(async () => {
+      order.push("acceptance");
+      return { source_seq: 1 };
+    });
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async (input) => {
+      order.push("prepare");
+      expect(input.deliveryId).toBe("delivery-a");
+      return {
+        text: input.text,
+        attachmentPaths: ["/tmp/cache/current.png"],
+        imageAttachmentPaths: ["/tmp/cache/current.png"],
+      };
+    });
+    const intervene = vi.fn(async () => {
+      order.push("engine");
+      return { status: "delivered" as const, mechanism: "active_turn" as const };
+    });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+      prepareAttachmentInput,
+    });
+
+    await expect(
+      transition.deliver(task, makeManagedInterventionMessage(), { queueIfUndelivered: false }),
+    ).resolves.toEqual({ delivered: true });
+
+    expect(order).toEqual(["prepare", "engine", "acceptance"]);
+    expect(persistenceDouble.waitForSessionAck).not.toHaveBeenCalled();
+    expect(intervene).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "read the attached file\n\n[첨부 파일 로컬 경로: /tmp/cache/current.png]",
+      imageAttachmentPaths: ["/tmp/cache/current.png"],
+    }));
+  });
+
+  it("requires a delivery ID before materializing a deferred attachment with no event reference", async () => {
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async (input) => ({
+      text: input.text,
+      attachmentPaths: ["/tmp/cache/current.png"],
+      imageAttachmentPaths: ["/tmp/cache/current.png"],
+    }));
+    const intervene = vi.fn().mockResolvedValue({ status: "delivered", mechanism: "active_turn" });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+      prepareAttachmentInput,
+    });
+    const message = makeManagedInterventionMessage();
+    delete message.deliveryId;
+
+    await expect(
+      transition.deliver(task, message, { queueIfUndelivered: false }),
+    ).rejects.toThrow("ATTACHMENT_DELIVERY_AUTHORIZATION_REQUIRED");
+
+    expect(prepareAttachmentInput).not.toHaveBeenCalled();
+    expect(intervene).not.toHaveBeenCalled();
+    expect(persistenceDouble.enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not materialize attachments while queue-only defers them to the next turn", async () => {
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async (input) => ({
+      text: input.text,
+      attachmentPaths: ["/tmp/cache/current.png"],
+      imageAttachmentPaths: ["/tmp/cache/current.png"],
+    }));
+    const task = makeRunningTask();
+    const message = makeManagedInterventionMessage();
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+      prepareAttachmentInput,
+    });
+
+    await expect(transition.queueOnly(task, message)).resolves.toMatchObject({
+      delivered: false,
+      queued: true,
+      consumeWhen: "next_turn",
+    });
+
+    expect(prepareAttachmentInput).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([message]);
+  });
+
+  it("fails managed input when the attachment preparation dependency is unavailable", async () => {
+    const intervene = vi.fn().mockResolvedValue({ status: "delivered", mechanism: "active_turn" });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+
+    await expect(transition.deliver(task, makeManagedInterventionMessage()))
+      .rejects.toThrow("ATTACHMENT_INPUT_UNAVAILABLE");
+
+    expect(intervene).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("delivers a delayed attachment intervention before a later plain intervention", async () => {
+    let releasePreparation!: () => void;
+    const preparationGate = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    const engineOrder: string[] = [];
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async (input) => {
+      await preparationGate;
+      return {
+        text: input.text,
+        attachmentPaths: ["/tmp/cache/a.png"],
+        imageAttachmentPaths: ["/tmp/cache/a.png"],
+      };
+    });
+    const injectAtToolBoundary = vi.fn(async (input: { prompt: string }) => {
+      engineOrder.push(input.prompt.includes("/tmp/cache/a.png") ? "A" : "B");
+      return { status: "delivered" as const, mechanism: "active_turn" as const };
+    });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene: vi.fn(),
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+      prepareAttachmentInput,
+    });
+
+    const deliveryA = transition.deliver(task, makeManagedInterventionMessage());
+    await vi.waitFor(
+      () => expect(prepareAttachmentInput).toHaveBeenCalledOnce(),
+      { timeout: 250 },
+    );
+    const deliveryB = transition.deliver(task, {
+      text: "plain intervention B",
+      user: "worker",
+      callerInfo: { source: "agent", agent_id: "worker" },
+      deliveryId: "delivery-b",
+    }, { queueIfUndelivered: false });
+
+    expect(injectAtToolBoundary).not.toHaveBeenCalled();
+    releasePreparation();
+    await expect(Promise.all([deliveryA, deliveryB])).resolves.toEqual([
+      { delivered: true },
+      { delivered: true },
+    ]);
+    expect(engineOrder).toEqual(["A", "B"]);
+  });
+
+  it("continues with the next intervention when preparation fails", async () => {
+    let rejectPreparation!: (error: Error) => void;
+    const preparationGate = new Promise<void>((_resolve, reject) => {
+      rejectPreparation = reject;
+    });
+    const engineOrder: string[] = [];
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async () => {
+      await preparationGate;
+      return { text: "unreachable", attachmentPaths: [], imageAttachmentPaths: [] };
+    });
+    const intervene = vi.fn(async (input: { prompt: string }) => {
+      engineOrder.push(input.prompt);
+      return { status: "delivered" as const, mechanism: "active_turn" as const };
+    });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+      prepareAttachmentInput,
+    });
+
+    const deliveryA = transition.deliver(task, makeManagedInterventionMessage());
+    await vi.waitFor(
+      () => expect(prepareAttachmentInput).toHaveBeenCalledOnce(),
+      { timeout: 250 },
+    );
+    const failedA = expect(deliveryA).rejects.toThrow("materialize A failed");
+    const deliveryB = transition.deliver(task, {
+      text: "plain intervention B",
+      user: "worker",
+      callerInfo: { source: "agent", agent_id: "worker" },
+      deliveryId: "delivery-b",
+    }, { queueIfUndelivered: false });
+
+    expect(intervene).not.toHaveBeenCalled();
+    rejectPreparation(new Error("materialize A failed"));
+    await failedA;
+    await expect(deliveryB).resolves.toEqual({ delivered: true });
+    expect(intervene).toHaveBeenCalledOnce();
+    expect(engineOrder).toHaveLength(1);
+    expect(engineOrder[0]).toContain("plain intervention B");
+  });
+
+  it("keeps two attachment interventions in order with their own prepared paths", async () => {
+    let releasePreparation!: () => void;
+    const preparationGate = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    const preparedIds: string[] = [];
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async (input) => {
+      const attachmentId = input.attachmentIds?.[0];
+      preparedIds.push(attachmentId ?? "missing");
+      if (attachmentId === "att-a") await preparationGate;
+      const path = `/tmp/cache/${attachmentId}.png`;
+      return {
+        text: input.text,
+        attachmentPaths: [path],
+        imageAttachmentPaths: [path],
+      };
+    });
+    const engineInputs: Array<{ prompt: string; paths?: string[] }> = [];
+    const intervene = vi.fn(async (input: { prompt: string; imageAttachmentPaths?: string[] }) => {
+      engineInputs.push({ prompt: input.prompt, paths: input.imageAttachmentPaths });
+      return { status: "delivered" as const, mechanism: "active_turn" as const };
+    });
+    const task = makeRunningTask({
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+      prepareAttachmentInput,
+    });
+    const messageA = makeManagedInterventionMessage();
+    const messageB: InterventionMessage = {
+      ...makeManagedInterventionMessage(),
+      text: "read attachment B",
+      attachmentPaths: ["/tmp/incoming/b.png"],
+      attachmentIds: ["att-b"],
+      attachmentBindings: [
+        { attachment_id: "att-b", node_id: "node-1", path: "/tmp/incoming/b.png" },
+      ],
+      deliveryId: "delivery-b",
+    };
+
+    const deliveryA = transition.deliver(task, messageA);
+    await vi.waitFor(
+      () => expect(prepareAttachmentInput).toHaveBeenCalledOnce(),
+      { timeout: 250 },
+    );
+    const deliveryB = transition.deliver(task, messageB);
+
+    expect(preparedIds).toEqual(["att-a"]);
+    releasePreparation();
+    await expect(Promise.all([deliveryA, deliveryB])).resolves.toEqual([
+      { delivered: true },
+      { delivered: true },
+    ]);
+    expect(preparedIds).toEqual(["att-a", "att-b"]);
+    expect(engineInputs).toHaveLength(2);
+    expect(engineInputs[0]?.prompt).toContain("/tmp/cache/att-a.png");
+    expect(engineInputs[0]?.paths).toEqual(["/tmp/cache/att-a.png"]);
+    expect(engineInputs[1]?.prompt).toContain("/tmp/cache/att-b.png");
+    expect(engineInputs[1]?.paths).toEqual(["/tmp/cache/att-b.png"]);
+  });
+
+  it("delivers the next intervention without waiting for the prior turn to finish", async () => {
+    let finishTurn!: () => void;
+    let turnFinished = false;
+    const priorTurn = new Promise<boolean>((resolve) => {
+      finishTurn = () => {
+        turnFinished = true;
+        resolve(false);
+      };
+    });
+    let releasePreparation!: () => void;
+    const preparationGate = new Promise<void>((resolve) => {
+      releasePreparation = resolve;
+    });
+    const engineOrder: string[] = [];
+    const prepareAttachmentInput: PrepareAttachmentInput = vi.fn(async (input) => {
+      await preparationGate;
+      return {
+        text: input.text,
+        attachmentPaths: ["/tmp/cache/a.png"],
+        imageAttachmentPaths: ["/tmp/cache/a.png"],
+      };
+    });
+    const injectAtToolBoundary = vi.fn(async (input: { prompt: string }) => {
+      engineOrder.push(input.prompt.includes("/tmp/cache/a.png") ? "A" : "B");
+      return { status: "delivered" as const, mechanism: "active_turn" as const };
+    });
+    const task = makeRunningTask({
+      interruptRequest: priorTurn,
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene: vi.fn(),
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+      prepareAttachmentInput,
+    });
+
+    const deliveryA = transition.deliver(task, makeManagedInterventionMessage());
+    await vi.waitFor(
+      () => expect(prepareAttachmentInput).toHaveBeenCalledOnce(),
+      { timeout: 250 },
+    );
+    const deliveryB = transition.deliver(task, {
+      text: "plain intervention B",
+      user: "worker",
+      callerInfo: { source: "agent", agent_id: "worker" },
+      deliveryId: "delivery-b",
+    }, { queueIfUndelivered: false });
+    const deliveries = Promise.all([deliveryA, deliveryB]);
+
+    releasePreparation();
+    try {
+      await vi.waitFor(
+        () => expect(engineOrder).toEqual(["A", "B"]),
+        { timeout: 250 },
+      );
+      expect(turnFinished).toBe(false);
+    } finally {
+      finishTurn();
+    }
+    await expect(deliveries).resolves.toEqual([
+      { delivered: true },
+      { delivered: true },
+    ]);
+    await priorTurn;
+    expect(turnFinished).toBe(true);
   });
 });

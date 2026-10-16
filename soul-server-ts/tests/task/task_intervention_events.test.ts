@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { buildUserMessageEvent } from "../../src/task/task_user_message_events.js";
 import { publishInterventionSent } from "../../src/task/task_intervention_events.js";
 import { buildInterventionSentEvent } from "../../src/task/task_intervention_events.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
@@ -185,5 +186,49 @@ describe("buildInterventionSentEvent attachment identity", () => {
     expect(event.attachment_ids).toBeUndefined();
     expect(event.attachment_count).toBeUndefined();
     expect(event.attachments).toBeUndefined();
+  });
+});
+
+describe("managed attachment path note normalization", () => {
+  const bindings = [
+    { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    { attachment_id: "att-b", node_id: "node-1", path: "/tmp/b.txt" },
+  ];
+  const attachmentPaths = ["/tmp/a.png", "/tmp/b.txt"];
+
+  it("strips only the trailing managed note block from user_message text", () => {
+    const event = buildUserMessageEvent({
+      text:
+        "inspect these\n\n" +
+        "[첨부 파일 로컬 경로: /tmp/a.png]\n" +
+        "[첨부 파일 로컬 경로: /tmp/b.txt]",
+      inputId: "input-1",
+      attachmentPaths,
+      attachmentIds: ["att-a", "att-b"],
+      attachmentBindings: bindings,
+    });
+
+    expect(event.text).toBe("inspect these");
+    expect(event.input_id).toBe("input-1");
+    expect(event.attachment_ids).toEqual(["att-a", "att-b"]);
+    expect(event.attachment_count).toBe(2);
+    expect(event.attachments).toEqual(attachmentPaths);
+  });
+
+  it("strips a note-only intervention to empty text and preserves attachment fields", () => {
+    const event = buildInterventionSentEvent({
+      text: "[첨부 파일 로컬 경로: /tmp/a.png]",
+      user: "alice",
+      deliveryId: "delivery-1",
+      attachmentPaths: [attachmentPaths[0]!],
+      attachmentIds: ["att-a"],
+      attachmentBindings: [bindings[0]!],
+    });
+
+    expect(event.text).toBe("");
+    expect(event.input_id).toBe(buildDeliveryInputUuid("delivery-1"));
+    expect(event.attachment_ids).toEqual(["att-a"]);
+    expect(event.attachment_count).toBe(1);
+    expect(event.attachments).toEqual(["/tmp/a.png"]);
   });
 });

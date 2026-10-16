@@ -7,6 +7,7 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 
 import type { CallerInfo, Task } from "./task_models.js";
+import { stripManagedAttachmentPathNotes } from "./prepare_attachment_input.js";
 
 export interface UserMessageEventPublisherDeps {
   logger: Logger;
@@ -27,6 +28,7 @@ export interface UserMessageEventInput {
 
 export function buildUserMessageEvent(input: UserMessageEventInput): Record<string, unknown> {
   const contextItems = withoutSessionContextSourceMarkers(input.contextItems);
+  const attachmentIds = dedupeAttachmentIds(input.attachmentIds);
   const event: Record<string, unknown> = {
     type: "user_message",
     user:
@@ -34,7 +36,9 @@ export function buildUserMessageEvent(input: UserMessageEventInput): Record<stri
       input.callerInfo?.user_id ??
       input.user ??
       "unknown",
-    text: input.text,
+    text: attachmentIds.length > 0
+      ? stripManagedAttachmentPathNotes(input.text, input.attachmentBindings ?? [])
+      : input.text,
     timestamp: Date.now() / 1000,
   };
   if (input.inputId) {
@@ -49,7 +53,6 @@ export function buildUserMessageEvent(input: UserMessageEventInput): Record<stri
   if (input.attachmentPaths && input.attachmentPaths.length > 0) {
     event.attachments = input.attachmentPaths;
   }
-  const attachmentIds = dedupeAttachmentIds(input.attachmentIds);
   if (attachmentIds.length > 0) {
     event.attachment_ids = attachmentIds;
     event.attachment_count = inputAttachmentCount(

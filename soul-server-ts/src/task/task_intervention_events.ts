@@ -7,6 +7,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 import { buildDeliveryInputUuid } from "./delivery_identity.js";
 import { dedupeAttachmentIds, inputAttachmentCount } from "./task_user_message_events.js";
+import { stripManagedAttachmentPathNotes } from "./prepare_attachment_input.js";
 
 export interface InterventionEventPublisherDeps {
   broadcaster: SessionBroadcaster;
@@ -17,10 +18,13 @@ export interface InterventionEventPublisherDeps {
 export function buildInterventionSentEvent(
   message: InterventionMessage,
 ): Record<string, unknown> {
+  const attachmentIds = dedupeAttachmentIds(message.attachmentIds);
   const interventionEvent: Record<string, unknown> = {
     type: "intervention_sent",
     user: message.user,
-    text: message.text,
+    text: attachmentIds.length > 0
+      ? stripManagedAttachmentPathNotes(message.text, message.attachmentBindings ?? [])
+      : message.text,
     timestamp: Date.now() / 1000,
   };
   if (message.deliveryId) {
@@ -36,7 +40,6 @@ export function buildInterventionSentEvent(
   if (message.attachmentPaths && message.attachmentPaths.length > 0) {
     interventionEvent.attachments = message.attachmentPaths;
   }
-  const attachmentIds = dedupeAttachmentIds(message.attachmentIds);
   if (attachmentIds.length > 0) {
     interventionEvent.attachment_ids = attachmentIds;
     interventionEvent.attachment_count = inputAttachmentCount(
