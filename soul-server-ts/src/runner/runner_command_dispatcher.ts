@@ -34,6 +34,14 @@ import {
 } from "./in_process_frame_channel.js";
 import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 
+const OUTPUT_COMMAND_EVENT_TYPES = new Set([
+  "assistant_message",
+  "text_start",
+  "text_delta",
+  "text_end",
+  "complete",
+]);
+
 /**
  * The host-side command boundary for one runner instance.
  *
@@ -300,16 +308,29 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   ): AsyncIterable<RunnerEventFrame> {
     try {
       for await (const frame of channel) {
-        if (frame.kind === "engine_event" && this.sessionCost) {
-          this.sessionCost = stampSessionCost(frame.payload, this.sessionCost);
+        let eventFrame = frame;
+        if (frame.kind === "engine_event") {
+          const payload = frame.payload;
+          if (this.sessionCost) {
+            this.sessionCost = stampSessionCost(payload, this.sessionCost);
+          }
+          if (
+            typeof payload.type === "string"
+            && OUTPUT_COMMAND_EVENT_TYPES.has(payload.type)
+          ) {
+            eventFrame = {
+              ...frame,
+              payload: { ...payload, output_command_id: commandId },
+            };
+          }
         }
         if (
-          isLogicalTurnCompleteFrame(frame)
+          isLogicalTurnCompleteFrame(eventFrame)
           && this.activeExecuteCommandId === commandId
         ) {
           this.activeExecuteCommandId = undefined;
         }
-        yield frame;
+        yield eventFrame;
       }
     } finally {
       this.eventStreams.delete(commandId);
