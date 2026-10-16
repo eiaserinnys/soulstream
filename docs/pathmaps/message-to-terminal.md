@@ -6,7 +6,7 @@
 
 `config.ts`의 선택 설정 `AGY_CLI_PATH` → `llm/antigravity_cli_path.ts`의 PATH → HOME/.local/bin/agy 순으로 실행 파일을 찾는다. 파일이 없으면 서버는 기동하고 해당 백엔드 요청만 503 `ANTIGRAVITY_UNAVAILABLE`로 끝난다. 실행기는 호출별 임시 cwd에 schema와 로그를 두고, sandbox·stream-json·disable-slash-commands 옵션으로 agy를 실행한다. 정리한 환경과 사용자 입력 한 줄을 전달하고 stdin을 닫는다. 시간 초과에는 자식 프로세스 트리를 종료하고 close를 기다린 뒤 임시 디렉터리를 지운다.
 
-NDJSON의 init.model과 최종 SUCCESS 결과를 읽는다. output_schema가 있으면 structured_output 객체를 JSON 문자열로, 없으면 response를 content로 돌려준다. 응답은 기존 `{content, model, latency_ms, attempts, usage?}`이며 usage는 input_tokens/output_tokens다. result 오류·error_message 스텝·stderr의 429/RESOURCE_EXHAUSTED/quota/rate limit은 429 `ANTIGRAVITY_RATE_LIMITED`로 보존하고 재시도하지 않는다. timeout은 504, 깨진 NDJSON이나 SUCCESS의 누락 출력은 502 `ANTIGRAVITY_INVALID_OUTPUT`, 나머지 실행 실패는 502 `ANTIGRAVITY_EXEC_FAILED`다. 모델 폴백은 호출자 XOPS가 소유한다. 세션·러너·DB 기록 경로는 이 단발 요청에 관여하지 않는다.
+NDJSON의 init.model과 최종 SUCCESS 결과를 읽는다. output_schema가 있으면 structured_output을 JSON 문자열로, 없으면 response를 content로 돌려준다. 응답은 기존 `{content, model, latency_ms, attempts, usage?}`이며 usage는 input_tokens/output_tokens다. result 오류·error_message 스텝·stderr의 429/RESOURCE_EXHAUSTED/quota/rate limit은 429 `ANTIGRAVITY_RATE_LIMITED`로 보존하고 재시도하지 않는다. timeout은 504, 깨진 NDJSON이나 SUCCESS의 누락 출력은 502 `ANTIGRAVITY_INVALID_OUTPUT`, 나머지 실행 실패는 502 `ANTIGRAVITY_EXEC_FAILED`다. 모델 폴백은 호출자 XOPS가 소유한다. 세션·러너·DB 기록 경로는 이 단발 요청에 관여하지 않는다.
 
 ## PAS 지금의 보고 (#270 R1/R2)
 

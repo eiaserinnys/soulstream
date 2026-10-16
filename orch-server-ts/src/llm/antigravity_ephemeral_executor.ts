@@ -71,11 +71,11 @@ function parseOutput(stdout: string, stderr: string, exitCode: number | null,
     throw new AntigravityAttemptError("ANTIGRAVITY_EXEC_FAILED", `agy exited ${exitCode}, status ${String(result?.status)}: ${failureText.slice(-1000)}`);
   }
   const content = structured
-    ? (isRecord(result.structured_output) ? JSON.stringify(result.structured_output) : undefined)
+    ? (result.structured_output === undefined ? undefined : JSON.stringify(result.structured_output))
     : result.response;
   if (typeof content !== "string" || !content.trim()) {
     throw new AntigravityAttemptError("ANTIGRAVITY_INVALID_OUTPUT", structured
-      ? "agy SUCCESS result has no structured_output object" : "agy SUCCESS result has no response");
+      ? "agy SUCCESS result has no structured_output" : "agy SUCCESS result has no response");
   }
   const usage: { input_tokens?: number; output_tokens?: number } = {};
   if (isRecord(result.usage)) {

@@ -53,6 +53,14 @@ describe("Antigravity ephemeral executor", () => {
     await expect(executor.generate(request)).resolves.toMatchObject({ content: "plain reply", model: request.model });
   });
 
+  it("serializes a present structured output when the schema root is an array", async () => {
+    const executor = new AntigravityEphemeralExecutor({ agyPath: "agy", processPort: {
+      execute: async () => ({ stdout: success({ structured_output: ["ok"] }), stderr: "", exitCode: 0 }),
+    } });
+    await expect(executor.generate({ ...request, outputSchema: { type: "array", items: { type: "string" } } }))
+      .resolves.toMatchObject({ content: '["ok"]' });
+  });
+
   it.each([
     { stdout: success({ status: "ERROR", error: "RESOURCE_EXHAUSTED original" }), stderr: "", exitCode: 0 },
     { stdout: JSON.stringify({ event: "step_update", step_update: { step_type: "error_message", text_delta: "quota original" } }), stderr: "", exitCode: 1 },
