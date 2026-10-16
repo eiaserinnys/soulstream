@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import type { AttachmentPathBinding } from "./attachments.js";
+
 export interface CanonicalDeliveryPayloadInput {
   text: string;
   user: string;
@@ -7,6 +9,8 @@ export interface CanonicalDeliveryPayloadInput {
   completionId: string;
   relationKey: string;
   attachmentPaths?: ReadonlyArray<string> | null;
+  attachmentIds?: ReadonlyArray<string> | null;
+  attachmentBindings?: ReadonlyArray<AttachmentPathBinding> | null;
   context?: unknown;
   callerInfo?: unknown;
   rateLimitType?: string;
@@ -29,6 +33,12 @@ export function buildCanonicalDeliveryPayload(
     text: input.text,
     user: input.user,
     attachment_paths: arrayOrNull(input.attachmentPaths),
+    ...(input.attachmentIds != null && input.attachmentIds.length > 0
+      ? { attachment_ids: [...input.attachmentIds] }
+      : {}),
+    ...(input.attachmentBindings != null && input.attachmentBindings.length > 0
+      ? { attachment_bindings: [...input.attachmentBindings] }
+      : {}),
     context: input.context ?? null,
     caller_info: input.callerInfo ?? null,
     ...(input.rateLimitType !== undefined

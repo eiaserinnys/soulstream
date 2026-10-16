@@ -26,6 +26,18 @@ export interface AttachmentRef {
   attachment_id: string;
 }
 
+export type AttachmentPathBinding = {
+  attachment_id: string;
+  node_id: string;
+  path: string;
+};
+
+export type AttachmentInputFields = {
+  attachmentIds?: readonly string[];
+  attachmentPaths?: readonly string[];
+  attachmentBindings?: readonly AttachmentPathBinding[];
+};
+
 export type AttachmentProjection =
   | {
       kind: "asset";

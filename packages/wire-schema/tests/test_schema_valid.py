@@ -915,3 +915,75 @@ def test_antigravity_usage_provider_is_advertised():
     preset = schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"]
     assert "antigravity" in preset["properties"]["usage_provider"]["enum"]
     assert 'usage_provider: "claude" | "codex" | "antigravity" | null' in GENERATED_TS_PATH.read_text(encoding="utf-8")
+
+
+def test_attachment_identity_fields_are_optional_on_commands_and_events() -> None:
+    schema = _load_schema()
+    validator = jsonschema.Draft202012Validator(schema)
+    binding = {"attachment_id": "asset-1", "node_id": "node-1", "path": "inbox/a.png"}
+
+    commands = [
+        {
+            "type": "create_session",
+            "prompt": "hi",
+            "attachment_ids": ["asset-1"],
+            "attachment_bindings": [binding],
+        },
+        {
+            "type": "intervene",
+            "agentSessionId": "session-a",
+            "text": "hi",
+            "attachment_ids": ["asset-1"],
+            "attachment_bindings": [binding],
+        },
+        {
+            "type": "ensure_session_running",
+            "agentSessionId": "session-a",
+            "text": "hi",
+            "delivery_id": "delivery-1",
+            "attachment_ids": ["asset-1"],
+            "attachment_bindings": [binding],
+        },
+    ]
+    for command in commands:
+        # The fields are optional; rows without them stay valid.
+        validator.validate({key: value for key, value in command.items() if not key.startswith("attachment_")})
+        validator.validate(command)
+
+    for event_type in ("user_message", "intervention_sent"):
+        validator.validate({
+            "type": "event",
+            "agentSessionId": "session-a",
+            "event": {
+                "type": event_type,
+                "attachment_ids": ["asset-1"],
+                "attachment_count": 1,
+            },
+        })
+
+    for command in commands:
+        # A binding entry with a wrong field type is rejected.
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate({
+                **command,
+                "attachment_bindings": [{"attachment_id": 5, "node_id": "node-1", "path": "inbox/a.png"}],
+            })
+        # A binding entry with an extra field is rejected (additionalProperties: false).
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate({
+                **command,
+                "attachment_bindings": [{**binding, "credential": "secret"}],
+            })
+
+    for name in ("CreateSession", "Intervene", "EnsureSessionRunning"):
+        props = schema["$defs"][name]["properties"]
+        assert props["attachment_ids"] == {"type": "array", "items": {"type": "string"}}
+        binding_items = props["attachment_bindings"]["items"]
+        assert binding_items["required"] == ["attachment_id", "node_id", "path"]
+        assert binding_items["additionalProperties"] is False
+
+    for name in ("SSEEventUserMessage", "SSEEventInterventionSent"):
+        props = schema["$defs"][name]["properties"]
+        assert props["attachment_ids"] == {"type": "array", "items": {"type": "string"}}
+        assert props["attachment_count"] == {"type": "integer", "minimum": 0}
+
