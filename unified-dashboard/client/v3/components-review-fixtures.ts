@@ -36,6 +36,23 @@ export const reviewCardItems: CardCheckItem[] = [
   { id: 9, title: "긴 설명도 자연스럽게 줄바꿈하며 읽을 수 있습니다", state: "todo", result: "화면이 좁아도 전송 버튼과 다른 글을 밀지 않도록 내용을 나누어 확인합니다.", evidence: [], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: null, display: "todo" },
   { id: 10, title: "처음 확인한 항목 둘", state: "done", result: "확인함 묶음 안에 표시합니다.", evidence: [], caveat: null, rev: 1, confirmed: { at: now, rev: 1 }, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: now, display: "confirmed" },
   { id: 11, title: "처음 확인한 항목 셋", state: "done", result: "확인함 묶음에 세 항목이 모입니다.", evidence: [], caveat: null, rev: 1, confirmed: { at: now, rev: 1 }, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: now, display: "confirmed" },
+  // #245 C-12 review states: server-projected card attachments (normal image, internal
+  // file link, an image whose bytes fail to load, and missing/unavailable rows).
+  { id: 12, title: "다른 노드에서 붙인 첨부가 보입니다", state: "done", result: "카드 주소로 읽은 첨부와 실패 상태입니다.", evidence: [
+    { type: "image", label: "등록한 화면", url: "/icon-192.png", attachment_id: "review-image",
+      descriptor: { attachment_id: "review-image", name: "screen.png", mime_type: "image/png", byte_size: 4096, checksum_sha256: null, width: 192, height: 192, preview_kind: "image", preview_mime_type: "image/png" },
+      read_context: { type: "card", id: "components-card" }, previewUrl: "/icon-192.png", originalUrl: "/icon-192.png" },
+    { type: "image", label: "읽기 실패 화면", url: "/review-missing-preview.png", attachment_id: "review-broken",
+      descriptor: { attachment_id: "review-broken", name: "broken.png", mime_type: "image/png", byte_size: 4096, checksum_sha256: null, width: null, height: null, preview_kind: "image", preview_mime_type: "image/png" },
+      read_context: { type: "card", id: "components-card" }, previewUrl: "/review-missing-preview.png", originalUrl: "/review-missing-preview.png" },
+    { type: "image", label: "지워진 화면", url: "", attachment_id: "review-missing",
+      read_context: { type: "card", id: "components-card" }, availability: "missing", previewUrl: null, originalUrl: "" },
+    { type: "link", label: "보고 파일", url: "/components", attachment_id: "review-file",
+      descriptor: { attachment_id: "review-file", name: "report.txt", mime_type: "text/plain", byte_size: 512, checksum_sha256: null, width: null, height: null, preview_kind: "text", preview_mime_type: "text/plain" },
+      read_context: { type: "card", id: "components-card" }, previewUrl: null, originalUrl: "/components" },
+    { type: "link", label: "올리는 중인 파일", url: "", attachment_id: "review-pending",
+      read_context: { type: "card", id: "components-card" }, availability: "unavailable", previewUrl: null, originalUrl: "" },
+  ], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: now, display: "reported" },
 ];
 
 export const reviewNow: CardNow = {
