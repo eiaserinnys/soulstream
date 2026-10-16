@@ -131,6 +131,31 @@ describe("createAttachmentMaterializer", () => {
     expect(fetchImpl.mock.calls.filter(([url]) => new URL(String(url)).pathname.endsWith("/content"))).toHaveLength(3);
   });
 
+  it("does not return a verified cache path after cancellation", async () => {
+    const bytes = Buffer.from("cache hit");
+    const descriptor = descriptorFor("cache.txt", "text/plain", bytes);
+    const controller = new AbortController();
+    let metadataCalls = 0;
+    const fetchImpl = vi.fn<typeof globalThis.fetch>(async (request) => {
+      const url = new URL(String(request));
+      if (url.pathname.endsWith("/metadata")) {
+        metadataCalls += 1;
+        if (metadataCalls === 2) controller.abort();
+        return Response.json({ descriptor, upload_status: "committed" });
+      }
+      if (url.pathname.endsWith("/content")) return new Response(bytes);
+      throw new Error(`Unexpected attachment URL: ${url.pathname}`);
+    });
+    const { materializer } = await makeMaterializer(fetchImpl);
+    await materializer.materialize(input());
+
+    await expect(materializer.materialize(input(), controller.signal)).rejects.toMatchObject({
+      code: "ATTACHMENT_MATERIALIZATION_FAILED",
+      statusCode: 500,
+    });
+    expect(fetchImpl.mock.calls.filter(([url]) => new URL(String(url)).pathname.endsWith("/content"))).toHaveLength(1);
+  });
+
   it("accepts a zero-byte source and verifies its empty SHA-256", async () => {
     const bytes = Buffer.alloc(0);
     const descriptor = descriptorFor("empty.bin", "application/octet-stream", bytes);

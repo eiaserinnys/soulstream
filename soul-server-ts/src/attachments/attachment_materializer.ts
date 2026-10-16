@@ -79,7 +79,7 @@ export function createAttachmentMaterializer(options: {
         }
         const cacheDir = path.dirname(localPath);
         await mkdir(cacheDir, { recursive: true });
-        if (await hasVerifiedCache(localPath, descriptor)) {
+        if (await hasVerifiedCache(localPath, descriptor, signal)) {
           return { attachment_id: input.attachmentId, local_path: localPath, descriptor };
         }
 
@@ -194,16 +194,23 @@ function cacheFilename(name: string, mimeType: string): string {
   return filenameType === undefined ? filename : `${filename}.data`;
 }
 
-async function hasVerifiedCache(filePath: string, descriptor: AttachmentDescriptor): Promise<boolean> {
+async function hasVerifiedCache(
+  filePath: string,
+  descriptor: AttachmentDescriptor,
+  signal: AbortSignal,
+): Promise<boolean> {
   try {
+    signal.throwIfAborted();
     const info = await lstat(filePath);
     if (!info.isFile() || info.size !== descriptor.byte_size) return false;
     const hash = createHash("sha256");
     let byteCount = 0;
-    for await (const chunk of createReadStream(filePath)) {
+    for await (const chunk of createReadStream(filePath, { signal })) {
+      signal.throwIfAborted();
       byteCount += chunk.byteLength;
       hash.update(chunk);
     }
+    signal.throwIfAborted();
     return byteCount === descriptor.byte_size && hash.digest("hex") === descriptor.checksum_sha256!.toLowerCase();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
