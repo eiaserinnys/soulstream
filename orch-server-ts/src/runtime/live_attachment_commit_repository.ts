@@ -56,9 +56,11 @@ export function createLiveAttachmentCommitRepository(
   return {
     async insertOwnedPending(input: OwnedAttachmentPendingInput) {
       const sql = await sqlResolver.resolveSql();
+      // postgres.js encodes a ::jsonb parameter itself; a pre-stringified scope
+      // would be stored as a JSON string and never match on read-back.
       const registrationScope = input.registration.registrationScope === null
         ? null
-        : JSON.stringify(input.registration.registrationScope);
+        : sql.json(input.registration.registrationScope);
       const rows = await sql`
         INSERT INTO file_assets (
           id, storage_key, storage_purpose, storage_endpoint, storage_bucket,
