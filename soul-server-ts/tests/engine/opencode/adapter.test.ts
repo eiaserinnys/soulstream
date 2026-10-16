@@ -173,12 +173,71 @@ describe("OpenCodeEngineAdapter", () => {
           message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
         },
       ]);
+      expect(events.map((event) => event.type)).toEqual(["error"]);
       expect(events.some((event) => event.type === "complete")).toBe(false);
       expect(JSON.stringify(events)).not.toContain("FAKE_STDERR_SECRET");
       expect(logLines.join("\n")).not.toContain("FAKE_STDERR_SECRET");
     } finally {
       await engine.close();
       destination.end();
+      rmSync(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("publishes the session ID from a rate-limit log before its fatal event", async () => {
+    const paths = rateLimitFixture({
+      mode: "rate-limit",
+      small: false,
+      logSessionId: "ses_rate_limit_logfmt",
+      duplicate: true,
+    });
+    const engine = new OpenCodeEngineAdapter({
+      ...paths,
+      agentId: "roselin",
+      processEnv: {},
+    }, pino({ level: "silent" }));
+    try {
+      const events = await collect(engine);
+      expect(events.map((event) => event.type)).toEqual(["session", "error"]);
+      expect(events[0]).toMatchObject({ type: "session", session_id: "ses_rate_limit_logfmt" });
+      expect(events[1]).toMatchObject({
+        type: "error",
+        fatal: true,
+        message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
+      });
+      expect(events.filter((event) => event.type === "error")).toHaveLength(1);
+      expect(events.some((event) => event.type === "complete")).toBe(false);
+    } finally {
+      await engine.close();
+      rmSync(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not publish a second session event when stdout already supplied one", async () => {
+    const paths = rateLimitFixture({
+      mode: "stdout-session-rate-limit",
+      small: false,
+      logSessionId: "ses_rate_limit_logfmt",
+      stdoutSessionID: "ses_stdout_fixture",
+      duplicate: true,
+    });
+    const engine = new OpenCodeEngineAdapter({
+      ...paths,
+      agentId: "roselin",
+      processEnv: {},
+    }, pino({ level: "silent" }));
+    try {
+      const events = await collect(engine);
+      expect(events.map((event) => event.type)).toEqual(["session", "assistant_message", "error"]);
+      expect(events.filter((event) => event.type === "session")).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: "session", session_id: "ses_stdout_fixture" });
+      expect(events.at(-1)).toMatchObject({
+        type: "error",
+        fatal: true,
+        message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
+      });
+    } finally {
+      await engine.close();
       rmSync(paths.root, { recursive: true, force: true });
     }
   });

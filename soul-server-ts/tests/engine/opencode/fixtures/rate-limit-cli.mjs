@@ -5,7 +5,7 @@ const options = JSON.parse(readFileSync(
   join(dirname(process.env.OPENCODE_CONFIG), "rate-limit-fixture.json"),
   "utf8",
 ));
-const sessionID = "ses_rate_limit_fixture";
+const sessionID = options.stdoutSessionID ?? "ses_rate_limit_fixture";
 if (options.startedPath) writeFileSync(options.startedPath, "started");
 
 if (options.mode === "cancel-before-stdout") {
@@ -23,9 +23,14 @@ if (options.mode === "cancel-before-stdout") {
   setInterval(() => {}, 1000);
 } else {
   const errorText = `${options.errorType ?? "AI_RetryError"}: Rate limit exceeded; key=FAKE_STDERR_SECRET`;
-  const logLine = `level=ERROR message="stream error" small=${options.small} error.error=${JSON.stringify(errorText)}`;
+  const sessionField = options.logSessionId ? ` session.id=${options.logSessionId}` : "";
+  const logLine = `level=ERROR message="stream error"${sessionField} small=${options.small} error.error=${JSON.stringify(errorText)}`;
 
-  if (options.mode === "rate-limit") {
+  if (options.mode === "stdout-session-rate-limit") {
+    process.stdout.write(`${JSON.stringify({ type: "text", sessionID, part: { type: "text", text: "partial" } })}\n`);
+  }
+
+  if (options.mode === "rate-limit" || options.mode === "stdout-session-rate-limit") {
     process.on("SIGINT", () => {
       writeFileSync(options.signalPath, "SIGINT");
       process.exit(130);
@@ -42,7 +47,7 @@ if (options.mode === "cancel-before-stdout") {
   }
   if (options.duplicate) process.stderr.write(`${logLine}\n`);
 
-  if (options.mode === "rate-limit") {
+  if (options.mode === "rate-limit" || options.mode === "stdout-session-rate-limit") {
     setTimeout(() => process.exit(0), 5000);
     setInterval(() => {}, 1000);
   } else {

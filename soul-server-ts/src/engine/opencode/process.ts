@@ -10,20 +10,21 @@ export interface OpenCodeExit {
   code: number | null;
   signal: NodeJS.Signals | null;
   error?: string;
+  rateLimitSessionId?: string;
 }
 
 const RATE_LIMIT_FAILURE = "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.";
 
-function isOpenCode119RateLimitLogLine(line: string): boolean {
+function parseOpenCode119RateLimitLogLine(line: string): { sessionId?: string } | undefined {
   const fields = new Map<string, string>();
   let offset = 0;
   while (offset < line.length) {
     while (line[offset] === " " || line[offset] === "\t") offset += 1;
     if (offset === line.length) break;
     const equalsAt = line.indexOf("=", offset);
-    if (equalsAt < 0) return false;
+    if (equalsAt < 0) return undefined;
     const key = line.slice(offset, equalsAt);
-    if (!/^[A-Za-z][A-Za-z0-9_.-]*$/.test(key)) return false;
+    if (!/^[A-Za-z][A-Za-z0-9_.-]*$/.test(key)) return undefined;
     offset = equalsAt + 1;
 
     let value: string;
@@ -44,28 +45,32 @@ function isOpenCode119RateLimitLogLine(line: string): boolean {
       }
       try {
         const parsed: unknown = JSON.parse(line.slice(valueStart, offset));
-        if (typeof parsed !== "string") return false;
+        if (typeof parsed !== "string") return undefined;
         value = parsed;
       } catch {
-        return false;
+        return undefined;
       }
-      if (line[offset] !== undefined && line[offset] !== " " && line[offset] !== "\t") return false;
+      if (line[offset] !== undefined && line[offset] !== " " && line[offset] !== "\t") return undefined;
     } else {
       const valueStart = offset;
       while (offset < line.length && line[offset] !== " " && line[offset] !== "\t") offset += 1;
-      if (valueStart === offset) return false;
+      if (valueStart === offset) return undefined;
       value = line.slice(valueStart, offset);
     }
     fields.set(key, value);
   }
 
   const errorText = fields.get("error.error");
-  return fields.get("level") === "ERROR"
+  const isRateLimit = fields.get("level") === "ERROR"
     && fields.get("message") === "stream error"
     && fields.get("small") === "false"
     && errorText !== undefined
     && (errorText.startsWith("AI_APICallError") || errorText.startsWith("AI_RetryError"))
     && errorText.includes("Rate limit exceeded");
+  if (!isRateLimit) return undefined;
+
+  const sessionId = fields.get("session.id");
+  return sessionId?.startsWith("ses_") ? { sessionId } : {};
 }
 
 /** Uses the runner's Antigravity process-group interrupt and descendant cleanup contract. */
@@ -89,6 +94,7 @@ export function launchOpenCodeProcess(options: {
   let initialized = false;
   let closed = false;
   let rateLimitDetected = false;
+  let rateLimitSessionId: string | undefined;
   let descendants: ReturnType<typeof snapshotAntigravityDescendants> = [];
   const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
   const iterator = lines[Symbol.asyncIterator]();
@@ -106,7 +112,12 @@ export function launchOpenCodeProcess(options: {
       } catch {
         failure ??= "OpenCode tool descendant cleanup failed";
       }
-      resolve({ code, signal, ...(failure ? { error: failure } : {}) });
+      resolve({
+        code,
+        signal,
+        ...(failure ? { error: failure } : {}),
+        ...(rateLimitSessionId ? { rateLimitSessionId } : {}),
+      });
     });
   });
 
@@ -136,8 +147,11 @@ export function launchOpenCodeProcess(options: {
 
   const stderrLines = createInterface({ input: child.stderr, crlfDelay: Infinity });
   stderrLines.on("line", (line) => {
-    if (rateLimitDetected || !isOpenCode119RateLimitLogLine(line)) return;
+    if (rateLimitDetected) return;
+    const match = parseOpenCode119RateLimitLogLine(line);
+    if (!match) return;
     rateLimitDetected = true;
+    rateLimitSessionId = match.sessionId;
     failure = RATE_LIMIT_FAILURE;
     markInitialized();
     interrupt();

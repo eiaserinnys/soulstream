@@ -68,6 +68,7 @@ describe("buildDurableRunnerEvent", () => {
     expect(requiresBackendSessionId("claude")).toBe(true);
     expect(requiresBackendSessionId("codex")).toBe(true);
     expect(requiresBackendSessionId("antigravity")).toBe(true);
+    expect(requiresBackendSessionId("opencode")).toBe(true);
     expect(requiresBackendSessionId("openai-agents")).toBe(false);
   });
   it("removes internal dedupe metadata before the durable frame crosses IPC", () => {
@@ -160,6 +161,41 @@ describe("RunnerChildRuntime startup", () => {
 });
 
 describe("RunnerChildRuntime backend session rotation", () => {
+  it("persists an OpenCode fatal after the rate-limit session frame bootstraps the runner", async () => {
+    const fatal = {
+      type: "error",
+      fatal: true,
+      message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
+      model: "opencode/deepseek-v4.1-flash-free",
+      timestamp: 1,
+    } as SSEEventPayload;
+    const { runtime, sessionId } = await createRotationRuntime(null, [], "opencode");
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    const command = executeCommandFrame("opencode-rate-limit", {
+      agentSessionId: sessionId,
+      prompt: "retry after the limit clears",
+    });
+    child.activeCommandId = command.commandId;
+    const preBootstrap = { frames: [] as RunnerEventFrame[], bytes: 0 };
+    try {
+      await child.prepareExecution(command);
+      await child.forwardRunnerFrame(
+        engineEventFrame({ type: "session", session_id: "ses_rate_limit_runner" }),
+        preBootstrap,
+      );
+      await child.forwardRunnerFrame(engineEventFrame(fatal), preBootstrap);
+
+      await expect(child.outbox.readBootstrap()).resolves.toMatchObject({
+        payload: { backend_session_id: "ses_rate_limit_runner" },
+      });
+      expect((await child.outbox.readBatch())?.events.map((event) => event.payload.type))
+        .toEqual(["session", "error"]);
+      expect((await child.outbox.readBatch())?.events[1]?.payload).toMatchObject(fatal);
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
   it.each([true, false])("records a naturally ended fatal=%s stream in the lifecycle and end frame", async (fatal) => {
     const error = { type: "error", message: "provider rejected model", fatal, timestamp: 1 } as SSEEventPayload;
     const { runtime, sessionId } = await createRotationRuntime("backend-session-old", [error]);
@@ -331,7 +367,11 @@ type RunnerChildRuntimeRotationHarness = {
   ): Promise<void>;
 };
 
-async function createRotationRuntime(backendSessionId: string | null, events: SSEEventPayload[] = []): Promise<{
+async function createRotationRuntime(
+  backendSessionId: string | null,
+  events: SSEEventPayload[] = [],
+  backend: RunnerChildConfig["backend"] = "codex",
+): Promise<{
   runtime: RunnerChildRuntime;
   sessionId: string;
 }> {
@@ -353,11 +393,11 @@ async function createRotationRuntime(backendSessionId: string | null, events: SS
   const config: RunnerChildConfig = {
     schemaVersion: 1,
     sessionId,
-    backend: "codex",
+    backend,
     agent: {
       id: "rotation-agent",
       name: "Rotation Agent",
-      backend: "codex",
+      backend,
       workspace_dir: stateDirectory,
     },
     paths,
