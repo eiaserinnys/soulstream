@@ -15,7 +15,7 @@ import { LabeledDivider } from '../components/chat/LabeledDivider';
 import { AttachmentImage, ChatRefinedImageGallery } from '../components/AttachmentImage';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { GlassButton } from '../components/GlassSurface';
-import { message, sessions } from './fixtures';
+import { message, reviewComposerAttachment, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
 import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
 import type { SessionEvent } from '../api/types';
@@ -29,7 +29,8 @@ import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints'
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
-  { value: 'uploading', label: '첨부 중' }, { value: 'interrupting', label: '정지 중' },
+  { value: 'uploading', label: '첨부 업로드 중' }, { value: 'attachment-only', label: '첨부만 전송' },
+  { value: 'interrupting', label: '정지 중' },
   { value: 'disabled', label: '비활성' },
 ] as const;
 const assignedCardPreview = formatAssignedCardContextSnapshot({
@@ -309,6 +310,10 @@ export function ReviewChat() {
   const [selection, setSelection] = useState(false);
   const [failure, setFailure] = useState(true);
   const [attachment, setAttachment] = useState(false);
+  const composerAttachments = state === 'uploading'
+    ? [{ ...reviewComposerAttachment, path: '' }]
+    : state === 'attachment-only' ? [reviewComposerAttachment] : [];
+  const composerInput = state === 'sending' || state === 'uploading' || state === 'attachment-only' ? '' : input;
   const sample = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('sample')
     : null;
@@ -321,8 +326,11 @@ export function ReviewChat() {
     </ReviewSection>
     <ReviewSection testID="review-chat-composer" title="입력창 · 빈 입력·여러 줄·전송·첨부·정지·비활성">
       <SettingsSegmentedControl<typeof options[number]['value']> id="review-composer-state" value={state} onChange={setState} options={options} />
-      <ChatComposer input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
+      <AttachmentChips attachments={composerAttachments} styles={styles} textSecondaryColor={t.colors.textSecondary}
+        textMutedColor={t.colors.textMuted} onRemove={() => setState('normal')} disabled={state === 'disabled'} />
+      <ChatComposer input={composerInput} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
         onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
+        hasAttachments={composerAttachments.length > 0} sendDisabled={state === 'uploading'}
         sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
         interruptControls={state === 'interrupting' ? <ChatInterruptButton
           interrupting={state === 'interrupting'} styles={styles} accentTextColor={t.colors.accentText}

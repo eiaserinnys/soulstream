@@ -33,6 +33,10 @@ export const sessions: Session[] = [
       kind: 'input_request', requestedAt: time, title: '공개 질문 예시', body: '확인해주세요.',
       requiresDetail: false }] },
 ];
+export const reviewComposerAttachment = {
+  path: '/component-review/attachment-only.txt',
+  name: '검수용 첨부.txt',
+};
 export const entryShellFolders: CatalogFolder[] = Array.from({ length: 20 }, (_, index) => ({
   ...folders[0], id: `public-shell-folder-${index}`,
   name: `공개 예시 폴더 ${String(index + 1).padStart(2, '0')}`,
