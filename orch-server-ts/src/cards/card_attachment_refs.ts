@@ -61,23 +61,38 @@ export async function validateCardSourceRefsTx(
   return refs;
 }
 
-// 호출자가 이미 검증한 source의 파생 색인이다. 이 함수 자체는 권한을 만들지 않는다.
-export function collectCardAttachmentRefs(input: {
+type CollectInput = {
   request: string;
   attachments: readonly unknown[];
   items: readonly unknown[];
   previousRefs: readonly unknown[];
   previousItems: readonly unknown[];
-}): AttachmentRef[] {
-  const currentIds = new Set<string>();
-  for (const id of cardAttachmentIdLinks(input.request)) currentIds.add(id);
+};
+
+// 호출자가 이미 같은 트랜잭션에서 검증한 source의 파생 색인이다. 이 함수 자체는 권한을 만들지 않는다.
+export function collectCardAttachmentRefs(input: CollectInput): AttachmentRef[] {
+  return mergeCardAttachmentRefs(input, true);
+}
+
+// 항목 변경 경로용이다. 저장된 request/attachments는 이번 요청에서 검증되지 않았으므로 새 ref를 만들지 않고,
+// 기존 ref가 항목 사용이 끝났다는 이유만으로 지워지지 않게 보호하는 데만 쓴다.
+// 새 ref는 호출자가 방금 검증한 항목 증거(attachment_id)에서만 만든다.
+export function collectCardItemAttachmentRefs(input: CollectInput): AttachmentRef[] {
+  return mergeCardAttachmentRefs(input, false);
+}
+
+function mergeCardAttachmentRefs(input: CollectInput, deriveFromSources: boolean): AttachmentRef[] {
+  const sourceIds = new Set<string>();
+  for (const id of cardAttachmentIdLinks(input.request)) sourceIds.add(id);
   for (const attachment of input.attachments) {
     if (isRecord(attachment) && typeof attachment.attachment_id === "string")
-      currentIds.add(attachment.attachment_id);
+      sourceIds.add(attachment.attachment_id);
   }
+  const itemIds = new Set<string>();
   for (const item of input.items) {
-    for (const id of itemAttachmentIds(item)) currentIds.add(id);
+    for (const id of itemAttachmentIds(item)) itemIds.add(id);
   }
+  const currentIds = new Set([...sourceIds, ...itemIds]);
 
   const previousItemIds = new Set<string>();
   for (const item of input.previousItems) {
@@ -97,7 +112,7 @@ export function collectCardAttachmentRefs(input: {
     if (Object.keys(existing).length === 1 && Object.keys(ref).length > 1) chosen.set(id, ref);
   };
 
-  for (const id of currentIds) add(id, { attachment_id: id });
+  for (const id of deriveFromSources ? currentIds : itemIds) add(id, { attachment_id: id });
   for (const ref of input.previousRefs) {
     if (!isRecord(ref)) continue;
     const id = typeof ref.attachment_id === "string" ? ref.attachment_id : "";

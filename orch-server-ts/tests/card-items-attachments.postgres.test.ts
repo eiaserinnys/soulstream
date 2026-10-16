@@ -185,22 +185,46 @@ describe("card item evidence attachment ids", () => {
     expect(await storedCard(cardId)).toStrictEqual(stored);
   });
 
-  describe("after the producing session is deleted", () => {
-    const storage = { openObject: vi.fn(async () => new Response(ORIGINAL_BYTES)) };
-    const binding: AttachmentReadStorageBinding = { storage, identity: "item-reader", location: { endpoint: ENDPOINT, bucket: BUCKET } };
-    const reader: AttachmentReadActor = { kind: "user", email: "reader@example.com" };
-    const readerFor = (cardId: string, allow: boolean) => createAttachmentReadService({
-      repository: createLiveAttachmentReadRepository(createLiveDbSqlResolver({ sql: h.liveSql })),
-      access: {
-        requireScope: async (_actor, scope) => {
-          if (allow && scope.type === "card" && scope.id === cardId) return;
-          throw new AttachmentReadError("ATTACHMENT_ACCESS_DENIED", "denied", 403);
-        },
+  const storage = { openObject: vi.fn(async () => new Response(ORIGINAL_BYTES)) };
+  const binding: AttachmentReadStorageBinding = { storage, identity: "item-reader", location: { endpoint: ENDPOINT, bucket: BUCKET } };
+  const reader: AttachmentReadActor = { kind: "user", email: "reader@example.com" };
+  const readerFor = (cardId: string, allow: boolean) => createAttachmentReadService({
+    repository: createLiveAttachmentReadRepository(createLiveDbSqlResolver({ sql: h.liveSql })),
+    access: {
+      requireScope: async (_actor, scope) => {
+        if (allow && scope.type === "card" && scope.id === cardId) return;
+        throw new AttachmentReadError("ATTACHMENT_ACCESS_DENIED", "denied", 403);
       },
-      resolveReadStorage: async () => binding,
-      readPageAttachmentEvidence: async () => null,
-    });
+    },
+    resolveReadStorage: async () => binding,
+    readPageAttachmentEvidence: async () => null,
+  });
 
+  it("does not turn an unverified stored request url into a card ref when an item is reported", async () => {
+    const cardId = await makeCard();
+    await cardScopedAsset("img-foreign", cardId, { owner: "session-c" });
+    // 이 기능 전에 저장된, 검증되지 않은 request 본문이 타인 소유 첨부를 가리키고 ref는 비어 있는 옛 상태.
+    await h.sql`UPDATE cards SET request=${"옛 요청 ![x](/api/attachments/img-foreign/content)"}, attachment_refs=${h.sql.json([])} WHERE id=${cardId}`;
+    await expect(readerFor(cardId, true).metadata(reader, "img-foreign", { type: "card", id: cardId })).rejects.toMatchObject({ statusCode: 403 });
+
+    await report(cardId, 1);
+    expect((await storedCard(cardId)).attachment_refs).toStrictEqual([]);
+    await expect(readerFor(cardId, true).metadata(reader, "img-foreign", { type: "card", id: cardId })).rejects.toMatchObject({ statusCode: 403 });
+    await expect(readerFor(cardId, true).content(reader, "img-foreign", { type: "card", id: cardId }, { method: "GET" })).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it("keeps a verified request ref when an item that used the same id stops using it", async () => {
+    const cardId = await makeCard();
+    await cardScopedAsset("img-shared", cardId, { owner: "session-a" });
+    await h.sql`UPDATE cards SET request=${"요청 ![x](/api/attachments/img-shared/content)"}, attachment_refs=${h.sql.json([{ attachment_id: "img-shared" }])} WHERE id=${cardId}`;
+
+    await report(cardId, 1, [proof("img-shared")]);
+    expect(await refIds(cardId)).toEqual(["img-shared"]);
+    await report(cardId, 1, []);
+    expect(await refIds(cardId)).toEqual(["img-shared"]);
+  });
+
+  describe("after the producing session is deleted", () => {
     async function linkedThenProducerDeleted() {
       const cardId = await makeCard();
       await joinCard("session-b", cardId);

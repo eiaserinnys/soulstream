@@ -4,7 +4,7 @@ import { PersistentReportService, type PublishPersistentReports } from "../sessi
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
-import { attachmentRefIds, attachmentRefsOf, collectCardAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
+import { attachmentRefIds, attachmentRefsOf, collectCardAttachmentRefs, collectCardItemAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
 import { requireCardAttachmentTx } from "./card_attachment_policy.js";
 import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_http.js";
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx } from "./card_attachment_legacy_refs.js";
@@ -239,7 +239,7 @@ export class CardControlPlaneService {
       assertAssignedCardSession(card,params);
       const items=reportItemRule(card.items ?? [],params.itemId,input,at);
       await linkItemEvidenceTx(sql,card,params.itemId,params.actorSessionId!,input.evidence);
-      const refs=collectCardAttachmentRefs({request:card.request,attachments:card.attachments,items,
+      const refs=collectCardItemAttachmentRefs({request:card.request,attachments:card.attachments,items,
         previousRefs:attachmentRefsOf(card.attachment_refs),previousItems:card.items ?? []});
       await this.patch(sql,card,{items:sql.json(items),attachment_refs:sql.json(refs)},params,eventId);
     });
