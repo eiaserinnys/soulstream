@@ -44,6 +44,7 @@ export type CardDispatcherOptions = {
     resolveTarget: (card: CardRow, modelPreset?: string | null) => CardTarget;
     launch: (input: CardLaunch) => Promise<unknown>;
     sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}, changeDelivery?:CardChangeDelivery, attachments?:readonly CardAttachment[]) => Promise<void>;
+    prepareAttachments?: (card: CardRow, targetNodeId: string) => Promise<void>;
     deliveryExists: (deliveryId: string) => Promise<boolean>;
     notify: (input: CardNotification) => Promise<unknown>;
     warn: (message: string) => void;
@@ -223,7 +224,12 @@ export class CardDispatcher {
             if ((occupancy[target.nodeId] ?? 0) >= (settings.nodeConcurrency[target.nodeId] ?? settings.nodeConcurrency.default))
                 continue;
             if (session && isUsageLimitTermination(session)) {
-                try { cardAttachmentPaths(card.attachments ?? [], session.node_id!); } catch(error) {
+                try {
+                    if (this.options.prepareAttachments)
+                        await this.options.prepareAttachments(card, session.node_id!);
+                    else
+                        cardAttachmentPaths(card.attachments ?? [], session.node_id!);
+                } catch(error) {
                     await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:card.id,expectedVersion:card.version,status:"blocked",blockedKind:"no_report",blockedDetail:String(error)});
                     continue;
                 }

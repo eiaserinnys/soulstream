@@ -41,6 +41,9 @@ async function register(
   const canonical = buildCanonicalDeliveryPayload({
     text: payload.text, user: payload.user, source: payload.source!,
     relationKey: payload.relation_key!, completionId: payload.completion_id!,
+    attachmentPaths: payload.attachment_paths,
+    attachmentIds: payload.attachment_ids,
+    attachmentBindings: payload.attachment_bindings,
     callerInfo: payload.caller_info,
   });
   return await repository.register({
