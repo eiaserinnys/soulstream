@@ -1,4 +1,5 @@
 import { memo } from "react";
+import type { ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
@@ -18,7 +19,7 @@ import { computeInterventionDisplay } from "./InterventionMessage.helpers";
  * InterventionMessage.helpers의 computeInterventionDisplay로 추출 (design-principles
  * §1 깊이 + §10 인터페이스가 테스트 표면).
  */
-export const InterventionMessage = memo(function InterventionMessage({ msg, presentation = "default" }: { msg: ChatMessage; presentation?: "default" | "manuscript" }) {
+export const InterventionMessage = memo(function InterventionMessage({ msg, presentation = "default", attachments }: { msg: ChatMessage; presentation?: "default" | "manuscript"; attachments?: ReactNode }) {
   // 세션-수준 caller_info avatar_url — 메시지 단위 caller_info 부재 시 fallback.
   const callerAvatarUrl = useChatStore((s) =>
     extractCallerAvatarUrl(s.activeSessionSummary?.metadata),
@@ -41,6 +42,7 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
           )}
         </div>}
         <div data-slot="chat-body" className={manuscript ? "whitespace-pre-wrap text-base text-muted-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "whitespace-pre-wrap break-words text-base leading-snug text-white"}>{msg.content}</div>
+        {attachments}
         {/* Phase A context 정본 (Y-9, atom d7a1ad86 차단): UserMessage.tsx:82-84와 대칭으로
             wire의 context_items를 ContextBlock으로 표시 — 첫 턴/auto-resume/running intervention
             세 경로 모두 동일 UX 표면. */}

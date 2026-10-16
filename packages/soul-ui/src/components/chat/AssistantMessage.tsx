@@ -13,6 +13,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   llmContext,
   header,
   children,
+  attachments,
   portraitUrl,
   bubbleProps,
   presentation = "default",
@@ -23,6 +24,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   llmContext?: LlmContext;
   header?: ReactNode;
   children?: ReactNode;
+  attachments?: ReactNode;
   portraitUrl?: string | null;
   bubbleProps?: HTMLAttributes<HTMLDivElement>;
   presentation?: "default" | "manuscript";
@@ -104,6 +106,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           )}
           </div>
         )}
+        {attachments}
       </div>
     </div>
   );

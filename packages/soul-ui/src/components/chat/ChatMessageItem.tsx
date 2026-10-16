@@ -1,6 +1,11 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
+import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
+import { useChatAttachments } from "../../hooks/useChatAttachments";
+import { AttachmentViewer } from "../AttachmentViewer";
+import { Button } from "../ui/button";
+import { ChatAttachments } from "./ChatAttachments";
 import type { LlmContext } from "./hooks";
 import { UserMessage } from "./UserMessage";
 import { AssistantMessage } from "./AssistantMessage";
@@ -31,23 +36,56 @@ function shouldAnimateEnter(key: string): boolean {
 
 /** 메시지 타입에 따라 적절한 컴포넌트로 라우팅 */
 export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId, presentation = "default", narration = false }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string; presentation?: "default" | "manuscript"; narration?: boolean }) {
+  const hasAttachmentSignal = msg.role === "user" || msg.role === "intervention" || msg.role === "assistant"
+    ? Boolean(msg.attachmentIds?.length || msg.attachmentPaths?.length || msg.attachmentCount || msg.attachmentDisplayIds?.length)
+    : false;
+  const eventId = Number.isSafeInteger(msg.eventId) && (msg.eventId ?? 0) > 0 ? msg.eventId! : 0;
+  const attachmentState = useChatAttachments({
+    sessionId: sessionId ?? "",
+    eventId,
+    enabled: Boolean(sessionId && eventId && hasAttachmentSignal),
+  });
+  const [viewer, setViewer] = useState<{ index: number; trigger: HTMLElement } | null>(null);
+  const attachmentRole = msg.role === "assistant" ? "assistant" : "user";
+  let attachmentSlot: ReactNode = null;
+  if (attachmentState.items.length > 0) {
+    attachmentSlot = <ChatAttachments
+      items={attachmentState.items}
+      role={attachmentRole}
+      onOpen={(index, trigger) => setViewer({ index, trigger })}
+    />;
+  } else if (attachmentState.loading) {
+    attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-state="loading">
+      <div className="chat-image-frame"><span className="chat-image-status" role="status">첨부 불러오는 중…</span></div>
+    </div>;
+  } else if (attachmentState.error) {
+    const retryable = attachmentState.error === "첨부 정보를 불러오지 못했습니다. 다시 시도해 주세요."
+      || attachmentState.error === "연결을 확인한 뒤 첨부를 다시 불러와 주세요.";
+    attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-state="error">
+      <div className="chat-image-frame">
+        <span className="chat-image-status" role="status">{attachmentState.error}</span>
+        {retryable && <Button variant="outline" size="sm" onClick={attachmentState.reload}>다시 시도</Button>}
+      </div>
+    </div>;
+  }
+
   let body: ReactNode;
   switch (msg.role) {
     case "user":
-      body = <UserMessage msg={msg} llmContext={llmContext} presentation={presentation} />;
+      body = <UserMessage msg={msg} llmContext={llmContext} presentation={presentation} attachments={attachmentSlot} />;
       break;
     case "intervention":
-      body = <InterventionMessage msg={msg} presentation={presentation} />;
+      body = <InterventionMessage msg={msg} presentation={presentation} attachments={attachmentSlot} />;
       break;
     case "assistant":
       // thinking 노드와 text 노드를 독립 컴포넌트로 분리
       body = msg.treeNodeType === "thinking"
         ? <ThinkingMessage msg={msg} presentation={presentation} />
         : msg.ui !== undefined
-          ? <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={false} contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"}>
+          ? <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={false} contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"} attachments={attachmentSlot}>
             <ChatUiMessage ui={msg.ui} content={msg.content} presentation={presentation} />
           </AssistantMessage>
-          : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={narration} />;
+          : <AssistantMessage msg={msg} llmContext={llmContext} presentation={presentation} narration={narration} attachments={attachmentSlot} />;
       break;
     case "tool":
       body = <ToolMessage msg={msg} />;
@@ -77,5 +115,14 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
   if (body == null) return null;
 
   const animate = shouldAnimateEnter(msg.id);
-  return <div className={animate ? "message-enter" : undefined} data-slot={presentation === "manuscript" ? "chat-manuscript-message" : undefined} data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}>{body}</div>;
+  return <div className={animate ? "message-enter" : undefined} data-slot={presentation === "manuscript" ? "chat-manuscript-message" : undefined} data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}>
+    {body}
+    <AttachmentViewer
+      items={attachmentState.items}
+      index={viewer?.index ?? null}
+      onIndexChange={index => setViewer(current => current ? { ...current, index } : null)}
+      onClose={() => setViewer(null)}
+      returnFocus={viewer?.trigger}
+    />
+  </div>;
 });

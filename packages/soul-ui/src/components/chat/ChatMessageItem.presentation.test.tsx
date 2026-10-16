@@ -4,12 +4,15 @@ import { act } from "react";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { MarkdownImage } from "../MarkdownImage";
 import { ChatMessageItem } from "./ChatMessageItem";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
+import { ChatUiControllerProvider } from "../chat-ui/ChatUiControllerProvider";
+import { isSupportedChatUiPublication } from "../chat-ui/ChatUiMessage";
+import { envelope } from "../chat-ui/chat-ui.test-fixture";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,6 +35,7 @@ describe("ChatMessageItem presentation", () => {
   afterEach(() => {
     if (root !== null) act(() => root?.unmount());
     host?.remove();
+    vi.unstubAllGlobals();
     root = null;
     host = null;
   });
@@ -350,5 +354,91 @@ describe("ChatMessageItem presentation", () => {
     expect(html.indexOf("응답을 마치지 못했습니다.")).toBeLessThan(
       html.indexOf('data-slot="collapsible-caption"'),
     );
+  });
+
+  it("loads message attachments in default, manuscript, intervention, assistant, and rich rows using each row's session", async () => {
+    expect(isSupportedChatUiPublication(envelope)).toBe(true);
+    const scenarios = [
+      { id: "default-user", role: "user" as const, presentation: "default" as const, eventId: 101, sessionId: "ordinary-session" },
+      { id: "default-intervention", role: "intervention" as const, presentation: "default" as const, eventId: 102, sessionId: "ordinary-session" },
+      { id: "default-assistant", role: "assistant" as const, presentation: "default" as const, eventId: 103, sessionId: "ordinary-session" },
+      { id: "default-rich", role: "assistant" as const, presentation: "default" as const, eventId: 104, sessionId: "ordinary-session", rich: true },
+      { id: "manuscript-user", role: "user" as const, presentation: "manuscript" as const, eventId: 105, sessionId: "pas-session" },
+      { id: "manuscript-intervention", role: "intervention" as const, presentation: "manuscript" as const, eventId: 106, sessionId: "pas-session" },
+      { id: "manuscript-assistant", role: "assistant" as const, presentation: "manuscript" as const, eventId: 107, sessionId: "overlay-session" },
+      { id: "manuscript-rich", role: "assistant" as const, presentation: "manuscript" as const, eventId: 108, sessionId: "overlay-session", rich: true },
+    ];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const rawUrl = input instanceof Request ? input.url : String(input);
+      const url = new URL(rawUrl, window.location.origin);
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)\/events\/(\d+)\/attachments$/);
+      if (!match) throw new Error(`Unexpected request: ${url.pathname}`);
+      const sessionId = decodeURIComponent(match[1]!);
+      const eventId = Number(match[2]);
+      const asset = (suffix: string, name: string, mimeType: string, previewKind: "image" | "info") => ({
+        kind: "asset" as const,
+        descriptor: {
+          attachment_id: `asset-${eventId}-${suffix}`,
+          name,
+          mime_type: mimeType,
+          byte_size: 4,
+          checksum_sha256: null,
+          width: previewKind === "image" ? 1 : null,
+          height: previewKind === "image" ? 1 : null,
+          preview_kind: previewKind,
+          preview_mime_type: previewKind === "image" ? mimeType : null,
+        },
+        read_context: { type: "session" as const, id: sessionId },
+        legacy_sources: [],
+      });
+      const body = {
+        event_id: eventId,
+        items: [
+          asset("image", `${eventId}.png`, "image/png", "image"),
+          asset("file", `${eventId}.zip`, "application/zip", "info"),
+        ],
+      };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root?.render(
+        <ChatUiControllerProvider sessionId="pas-session">
+          {scenarios.map(scenario => {
+            const msg = makeMessage(scenario.role, scenario.id, {
+              eventId: scenario.eventId,
+              attachmentIds: [`asset-${scenario.eventId}-image`, `asset-${scenario.eventId}-file`],
+              ...(scenario.rich ? { ui: envelope } : {}),
+            });
+            return <ChatMessageItem key={scenario.id} msg={msg} sessionId={scenario.sessionId} presentation={scenario.presentation} />;
+          })}
+        </ChatUiControllerProvider>,
+      );
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    for (const scenario of scenarios) {
+      const row = host.querySelector<HTMLElement>(`[data-tree-node-id="root-${scenario.id}"]`)!;
+      expect(row).toBeTruthy();
+      expect(row.querySelector(`.chat-image-run[data-chat-image-role="${scenario.role === "assistant" ? "assistant" : "user"}"]`)).not.toBeNull();
+      expect(row.querySelector("[data-chat-attachment-rows]")).not.toBeNull();
+      expect(row.classList.contains("justify-end")).toBe(scenario.role !== "assistant");
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(scenarios.length);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/sessions/overlay-session/events/107/attachments"))).toBe(true);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/sessions/pas-session/events/105/attachments"))).toBe(true);
+    expect(host.querySelector('[data-tree-node-id="root-default-rich"] [data-slot="chat-ui"]')).not.toBeNull();
+
+    const trigger = host.querySelector<HTMLImageElement>('[data-tree-node-id="root-default-user"] [data-chat-image-index] img[role="button"]')!;
+    await act(async () => trigger.click());
+    let dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
+    expect(dialog.textContent).toContain("101.png");
+    await act(async () => dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
+    expect(document.activeElement).toBe(trigger);
+    expect(document.body.querySelector('[data-slot="dialog-popup"]')).toBeNull();
   });
 });
