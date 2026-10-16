@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import pino from "pino";
@@ -5,6 +6,7 @@ import { AgentRegistry } from "../../src/agent_registry.js";
 import { withMcpRequestContext } from "../../src/mcp/request_context.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { buildMcpServer } from "../../src/mcp/server.js";
+import { EventAcknowledgementTimeoutError } from "../../src/upstream/event_outbox_pump.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const openClients: Client[] = [];
@@ -34,12 +36,15 @@ function activeTask(params: {
   commandId?: string | null;
   workspaceDir?: string | null;
   engineWorkspaceDir?: string;
+  registrationId?: string | null;
 } = {}) {
   return {
     // Only worktree executions set resolvedWorkspaceDir; null models a plain session.
     resolvedWorkspaceDir: params.workspaceDir === null ? undefined : params.workspaceDir ?? "/workspace",
     agentProfileSnapshot: { workspace_dir: "/profile-workspace" },
-    executionRegistration: { registrationId: "registration-1", executionCommandId: "stale-command" },
+    executionRegistration: params.registrationId === null
+      ? undefined
+      : { registrationId: params.registrationId ?? "registration-1", executionCommandId: "stale-command" },
     runner: {
       engine: { workspaceDir: params.engineWorkspaceDir ?? "/engine-workspace" },
       dispatcher: {
@@ -51,8 +56,9 @@ function activeTask(params: {
 
 function makeRuntime(params: {
   task?: ReturnType<typeof activeTask> | null;
-  service?: { register: ReturnType<typeof vi.fn> };
+  service?: { register: ReturnType<typeof vi.fn>; validateSessionOutput?: ReturnType<typeof vi.fn> };
   materializer?: { materialize: ReturnType<typeof vi.fn> };
+  publisher?: { publish: ReturnType<typeof vi.fn> };
 } = {}): McpRuntime {
   return {
     nodeId: "node-1",
@@ -66,6 +72,7 @@ function makeRuntime(params: {
     logger: pino({ level: "silent" }),
     ...(params.service ? { producedAttachments: params.service } : {}),
     ...(params.materializer ? { attachmentMaterializer: params.materializer } : {}),
+    ...(params.publisher ? { chatUiPublisher: params.publisher } : {}),
   } as unknown as McpRuntime;
 }
 
@@ -107,8 +114,9 @@ afterEach(async () => {
 describe("register_attachment", () => {
   it("uses the trusted caller, active dispatcher command, and task workspace", async () => {
     const register = vi.fn(async () => attachmentResult);
+    const publish = vi.fn(async () => ({ eventId: 17 }));
     const task = activeTask();
-    const client = await createClient(makeRuntime({ task, service: { register } }));
+    const client = await createClient(makeRuntime({ task, service: { register }, publisher: { publish } }));
     const input = {
       local_path: "reports/report.txt",
       name: "report.txt",
@@ -130,6 +138,7 @@ describe("register_attachment", () => {
       profileWorkspaceDir: "/profile-workspace",
     });
     expect(task.runner.dispatcher.activeExecutionCommandId).toHaveBeenCalledOnce();
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("uses the running engine workspace when the session has no worktree", async () => {
@@ -202,6 +211,212 @@ describe("register_attachment", () => {
     const failure = await callTool(failureClient, { local_path: "outside.txt" }, "trusted-session");
     expect(failure.isError).toBe(true);
     expect(errorText(failure)).toContain("ATTACHMENT_PATH_DENIED");
+  });
+});
+
+describe("attach_session_output", () => {
+  it("validates normalized IDs with trusted execution and publishes the durable marker without a workspace", async () => {
+    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const task = activeTask({ workspaceDir: null, engineWorkspaceDir: "   " });
+    const client = await createClient(makeRuntime({
+      task,
+      service: { register: vi.fn(), validateSessionOutput },
+      publisher: { publish },
+    }));
+
+    const result = await callTool(
+      client,
+      { attachment_ids: ["att-1", "att-2", "att-1"] },
+      "trusted-session",
+      "attach_session_output",
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({
+      status: "committed",
+      event_id: "73",
+      output_command_id: "output-command-1",
+      attachment_ids: ["att-1", "att-2"],
+    });
+    expect(validateSessionOutput).toHaveBeenCalledOnce();
+    expect(validateSessionOutput.mock.calls[0]?.[0]).toEqual({ attachment_ids: ["att-1", "att-2"] });
+    expect(validateSessionOutput.mock.calls[0]?.[1]).toEqual({
+      sessionId: "trusted-session",
+      nodeId: "node-1",
+      outputCommandId: "output-command-1",
+    });
+    expect(task.runner.dispatcher.activeExecutionCommandId).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenCalledOnce();
+    const [sessionId, event, registrationId] = publish.mock.calls[0]!;
+    expect(sessionId).toBe("trusted-session");
+    expect(registrationId).toBe("registration-1");
+    expect(event).toMatchObject({
+      type: "assistant_message",
+      content: "",
+      attachment_ids: ["att-1", "att-2"],
+      attachment_output: true,
+      output_command_id: "output-command-1",
+      _dedupe_key: `session-output:${createHash("sha256")
+        .update(JSON.stringify(["trusted-session", "output-command-1", ["att-1", "att-2"]]))
+        .digest("hex")}`,
+    });
+  });
+
+  it("rejects forged provenance and unauthenticated callers before validation", async () => {
+    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const client = await createClient(makeRuntime({
+      task: activeTask(),
+      service: { register: vi.fn(), validateSessionOutput },
+      publisher: { publish },
+    }));
+
+    const forged = await callTool(client, {
+      attachment_ids: ["att-1"],
+      caller_session_id: "forged-session",
+      node_id: "forged-node",
+      output_command_id: "forged-command",
+    }, "trusted-session", "attach_session_output");
+    const unauthenticated = await callTool(client, { attachment_ids: ["att-1"] }, undefined, "attach_session_output");
+
+    expect(forged.isError).toBe(true);
+    expect(unauthenticated.isError).toBe(true);
+    expect(errorText(unauthenticated)).toContain("ATTACHMENT_UNAUTHENTICATED");
+    expect(validateSessionOutput).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("requires an active command and registration, and reports missing services explicitly", async () => {
+    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const baseService = { register: vi.fn(), validateSessionOutput };
+    const input = { attachment_ids: ["att-1"] };
+
+    const noTask = await createClient(makeRuntime({ task: null, service: baseService, publisher: { publish: vi.fn() } }));
+    const noTaskResult = await callTool(noTask, input, "trusted-session", "attach_session_output");
+    expect(errorText(noTaskResult)).toContain("ATTACHMENT_ACTIVE_EXECUTION_REQUIRED");
+
+    const noCommandTask = activeTask({ commandId: null });
+    const noCommand = await createClient(makeRuntime({ task: noCommandTask, service: baseService, publisher: { publish: vi.fn() } }));
+    const noCommandResult = await callTool(noCommand, input, "trusted-session", "attach_session_output");
+    expect(errorText(noCommandResult)).toContain("ATTACHMENT_ACTIVE_EXECUTION_REQUIRED");
+
+    const noRegistration = await createClient(makeRuntime({
+      task: activeTask({ registrationId: null }),
+      service: baseService,
+      publisher: { publish: vi.fn() },
+    }));
+    const noRegistrationResult = await callTool(noRegistration, input, "trusted-session", "attach_session_output");
+    expect(errorText(noRegistrationResult)).toContain("ATTACHMENT_ACTIVE_EXECUTION_REQUIRED");
+
+    const noValidator = await createClient(makeRuntime({ task: activeTask(), publisher: { publish: vi.fn() } }));
+    const noValidatorResult = await callTool(noValidator, input, "trusted-session", "attach_session_output");
+    expect(errorText(noValidatorResult)).toContain("ATTACHMENT_REGISTRATION_UNAVAILABLE");
+
+    const noPublisher = await createClient(makeRuntime({
+      task: activeTask(),
+      service: baseService,
+    }));
+    const noPublisherResult = await callTool(noPublisher, input, "trusted-session", "attach_session_output");
+    expect(errorText(noPublisherResult)).toContain("ATTACHMENT_REGISTRATION_UNAVAILABLE");
+    expect(validateSessionOutput).not.toHaveBeenCalled();
+  });
+
+  it("does not publish when validation rejects or returns a different ID sequence", async () => {
+    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const denied = vi.fn(async () => {
+      throw Object.assign(new Error("다른 실행의 첨부입니다."), { code: "ATTACHMENT_PRODUCER_MISMATCH" });
+    });
+    const deniedClient = await createClient(makeRuntime({
+      task: activeTask(),
+      service: { register: vi.fn(), validateSessionOutput: denied },
+      publisher: { publish },
+    }));
+    const deniedResult = await callTool(
+      deniedClient,
+      { attachment_ids: ["att-1", "att-2"] },
+      "trusted-session",
+      "attach_session_output",
+    );
+    expect(errorText(deniedResult)).toContain("ATTACHMENT_PRODUCER_MISMATCH");
+    expect(publish).not.toHaveBeenCalled();
+
+    const mismatched = vi.fn(async () => ({ attachment_ids: ["att-2", "att-1"] }));
+    const mismatchedClient = await createClient(makeRuntime({
+      task: activeTask(),
+      service: { register: vi.fn(), validateSessionOutput: mismatched },
+      publisher: { publish },
+    }));
+    const mismatchedResult = await callTool(
+      mismatchedClient,
+      { attachment_ids: ["att-1", "att-2"] },
+      "trusted-session",
+      "attach_session_output",
+    );
+    expect(errorText(mismatchedResult)).toContain("ATTACHMENT_REGISTRATION_UNAVAILABLE");
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("does not publish if the active command or registration changes during validation", async () => {
+    const publish = vi.fn(async () => ({ eventId: 73 }));
+    const commandTask = activeTask();
+    commandTask.runner.dispatcher.activeExecutionCommandId = vi.fn()
+      .mockReturnValueOnce("output-command-1")
+      .mockReturnValueOnce("output-command-2");
+    const commandValidator = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const commandClient = await createClient(makeRuntime({
+      task: commandTask,
+      service: { register: vi.fn(), validateSessionOutput: commandValidator },
+      publisher: { publish },
+    }));
+    const commandResult = await callTool(
+      commandClient,
+      { attachment_ids: ["att-1"] },
+      "trusted-session",
+      "attach_session_output",
+    );
+    expect(errorText(commandResult)).toContain("ATTACHMENT_OUTPUT_EXECUTION_CHANGED");
+    expect(publish).not.toHaveBeenCalled();
+
+    const registrationTask = activeTask();
+    const registrationValidator = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => {
+      registrationTask.executionRegistration = { registrationId: "registration-2", executionCommandId: "new-command" };
+      return { attachment_ids };
+    });
+    const registrationClient = await createClient(makeRuntime({
+      task: registrationTask,
+      service: { register: vi.fn(), validateSessionOutput: registrationValidator },
+      publisher: { publish },
+    }));
+    const registrationResult = await callTool(
+      registrationClient,
+      { attachment_ids: ["att-1"] },
+      "trusted-session",
+      "attach_session_output",
+    );
+    expect(errorText(registrationResult)).toContain("ATTACHMENT_OUTPUT_EXECUTION_CHANGED");
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("returns delivery_unconfirmed on ACK timeout and leaves registration without an output event", async () => {
+    const validateSessionOutput = vi.fn(async ({ attachment_ids }: { attachment_ids: string[] }) => ({ attachment_ids }));
+    const publish = vi.fn(async () => { throw new EventAcknowledgementTimeoutError(1, 30_000); });
+    const client = await createClient(makeRuntime({
+      task: activeTask(),
+      service: { register: vi.fn(), validateSessionOutput },
+      publisher: { publish },
+    }));
+
+    const result = await callTool(
+      client,
+      { attachment_ids: ["att-1"] },
+      "trusted-session",
+      "attach_session_output",
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ status: "delivery_unconfirmed", output_key: expect.any(String) });
+    expect(publish).toHaveBeenCalledOnce();
   });
 });
 
