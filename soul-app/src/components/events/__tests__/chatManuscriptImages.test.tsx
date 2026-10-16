@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { Image, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AssistantMessage } from '../AssistantMessage';
@@ -7,6 +7,7 @@ import { UserMessage } from '../UserMessage';
 import { ChatRefinedImageGallery } from '../../AttachmentImage';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
+import { createSessionVisualRoles, useTokens } from '../../../theme';
 
 const serverUrl = 'https://soulstream.eiaserinnys.me';
 const firstImage = `${serverUrl}/api/attachments/files?nodeId=eiaserinnys&path=%2Fhome%2Feias%2Fmigration%2Fnetcup-core-bootstrap%2Fprod-state%2Fincoming%2F60668e34-f8b1-4e53-9a8e-c5ff304337e1%2F2026-10-08T15-42-19.069Z-pas247-preview-iphone-light-story-settings-0d5b93a9cf014a8d9a9c76a4d203d60e.png`;
@@ -224,7 +225,11 @@ test.each([
   const withBody = await layout('첨부 이미지와 함께 보내는 충분히 긴 본문입니다.');
   expect(attachmentOnly.bubble).toMatchObject({ width: '100%' });
   expect(withBody.bubble).toMatchObject({ width: '100%' });
-  expect(attachmentOnly.gallery).toMatchObject({ marginTop: 0 });
+  const tokens = renderHook(() => useTokens()).result.current;
+  const hasChips = attachments.some(path => path.endsWith('.txt'));
+  expect(attachmentOnly.gallery.marginTop).toBe(hasChips
+    ? createSessionVisualRoles(tokens).chat.attachment.gridGap
+    : 0);
   expect(withBody.gallery.marginTop).toBeLessThan(0);
   expect({ ...attachmentOnly.gallery, marginTop: withBody.gallery.marginTop }).toEqual(withBody.gallery);
   expect(attachmentOnly.image).toEqual(withBody.image);

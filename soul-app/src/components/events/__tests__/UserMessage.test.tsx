@@ -1,8 +1,9 @@
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, renderHook } from '@testing-library/react-native';
 import { Image, StyleSheet } from 'react-native';
 import type { Session, SessionEvent } from '../../../api/types';
 import { UserMessage } from '../UserMessage';
 import { useSettingsStore } from '../../../store/settingsStore';
+import { createSessionVisualRoles, useTokens } from '../../../theme';
 
 const attachmentSession: Session = { agentSessionId: 's', nodeId: 'node-1', displayName: null, status: 'idle', createdAt: '', updatedAt: '' };
 
@@ -23,6 +24,29 @@ test('user message는 평상시에 selectable=false다', () => {
   const { getByTestId } = render(<UserMessage event={event} />);
 
   expect(getByTestId('user-message-text').props.selectable).toBe(false);
+});
+
+test('본문만 있는 원고형과 기본 말풍선은 기존 스타일을 유지한다', () => {
+  const t = renderHook(() => useTokens()).result.current;
+  const roles = createSessionVisualRoles(t);
+  for (const presentation of ['default', 'manuscript'] as const) {
+    const screen = render(<UserMessage presentation={presentation}
+      event={{ id: 'text-only-style', type: 'user_message', data: { text: '본문만 있는 메시지' } }} />);
+    expect(StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style)).toEqual(
+      presentation === 'manuscript' ? { flexShrink: 1, alignSelf: 'flex-end' } : {
+        flexShrink: 1, backgroundColor: t.colors.accent, borderRadius: t.radius.lg,
+        borderBottomRightRadius: 4, paddingHorizontal: roles.chat.bubblePaddingHorizontal,
+        paddingVertical: roles.chat.bubblePaddingVertical, maxWidth: roles.chat.bubbleMaxWidth,
+      },
+    );
+    expect(StyleSheet.flatten(screen.getByTestId('user-message-text').props.style)).toEqual({
+      color: presentation === 'manuscript' ? t.colors.textMuted : t.colors.accentText,
+      fontSize: t.chatFontSize.body,
+      lineHeight: t.chatFontSize.body * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio),
+      ...(presentation === 'manuscript' ? { textAlign: 'right' } : {}),
+    });
+    screen.unmount();
+  }
 });
 
 test('채팅 첨부 탭도 같은 뷰어에서 다른 첨부로 스와이프한다', () => {

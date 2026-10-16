@@ -182,7 +182,7 @@ export function UserMessage({
       <View
         testID="user-message-bubble"
         style={[children == null ? bubbleStyle : [bubbleStyle, { backgroundColor: t.colors.accentTint }],
-          manuscriptImageItems.length > 0 && styles.manuscriptImageBubble,
+          ...(manuscriptImageItems.length > 0 ? [styles.manuscriptImageBubble] : []),
           pendingStatus === 'sending' && styles.pendingSendingBubble]}
       >
         {messageKind}
@@ -235,7 +235,7 @@ export function UserMessage({
         {manuscriptImageItems.length > 0 ? <ChatRefinedImageGallery
           role="user"
           images={manuscriptImagesWithMetadata}
-          followsText={!!content}
+          precedingContent={content ? 'text' : beforeTextEntries.length > 0 ? 'attachments' : 'none'}
           testID="user-chat-image-gallery"
         /> : null}
         {pendingStatus === 'sending' ? (
