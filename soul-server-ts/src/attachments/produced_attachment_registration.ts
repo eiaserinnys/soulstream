@@ -10,6 +10,7 @@ import { inferContentType, isPathUnderBase } from "./file_manager.js";
 
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 const REGISTER_PATH = "/api/attachments/agent-register";
+const VALIDATE_SESSION_OUTPUT_PATH = "/api/attachments/agent-output/validate";
 const REQUEST_TIMEOUT_MS = 300_000;
 const UNAVAILABLE = "ATTACHMENT_REGISTRATION_UNAVAILABLE";
 
@@ -26,6 +27,10 @@ export type ProducedAttachmentExecution = {
   outputCommandId: string;
   workspaceDir: string;
   profileWorkspaceDir?: string;
+};
+
+export type ValidateSessionOutputInput = {
+  attachment_ids: readonly string[];
 };
 
 export class ProducedAttachmentError extends Error {
@@ -50,6 +55,11 @@ export function createProducedAttachmentRegistration(options: {
     execution: ProducedAttachmentExecution,
     signal?: AbortSignal,
   ): Promise<{ attachment_id: string; descriptor: AttachmentDescriptor }>;
+  validateSessionOutput(
+    input: ValidateSessionOutputInput,
+    execution: Pick<ProducedAttachmentExecution, "sessionId" | "nodeId" | "outputCommandId">,
+    signal?: AbortSignal,
+  ): Promise<{ attachment_ids: string[] }>;
 } {
   const incomingRoot = path.resolve(options.incomingDir);
 
@@ -115,7 +125,53 @@ export function createProducedAttachmentRegistration(options: {
     return { attachment_id: result.attachment_id, descriptor: result.descriptor };
   }
 
-  return { register };
+  async function validateSessionOutput(
+    input: ValidateSessionOutputInput,
+    execution: Pick<ProducedAttachmentExecution, "sessionId" | "nodeId" | "outputCommandId">,
+    signal?: AbortSignal,
+  ): Promise<{ attachment_ids: string[] }> {
+    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await options.fetch(`${options.orch.baseUrl}${VALIDATE_SESSION_OUTPUT_PATH}`, {
+        method: "POST",
+        headers: {
+          ...options.orch.headers,
+          "content-type": "application/json",
+          "x-soulstream-agent-session-id": execution.sessionId,
+          "x-soulstream-node-id": execution.nodeId,
+          "x-soulstream-output-command-id": execution.outputCommandId,
+        },
+        body: JSON.stringify({ attachment_ids: [...input.attachment_ids] }),
+        signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
+      });
+    } catch {
+      throw new ProducedAttachmentError(UNAVAILABLE, 503, "중앙 첨부 검증 서비스에 연결하지 못했습니다.");
+    }
+
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const failure = (payload ?? {}) as { code?: unknown; detail?: unknown };
+      throw new ProducedAttachmentError(
+        typeof failure.code === "string" ? failure.code : UNAVAILABLE,
+        response.status,
+        typeof failure.detail === "string" ? failure.detail : `중앙 첨부 검증이 실패했습니다 (HTTP ${response.status}).`,
+      );
+    }
+
+    const result = payload as { attachment_ids?: unknown } | null;
+    if (
+      !Array.isArray(result?.attachment_ids) ||
+      result.attachment_ids.length !== input.attachment_ids.length ||
+      result.attachment_ids.some((id, index) => typeof id !== "string" || id !== input.attachment_ids[index])
+    ) {
+      throw new ProducedAttachmentError(UNAVAILABLE, 503, "중앙 첨부 검증 응답이 요청과 일치하지 않습니다.");
+    }
+    return { attachment_ids: [...result.attachment_ids] as string[] };
+  }
+
+  return { register, validateSessionOutput };
 }
 
 async function resolveAllowedFile(

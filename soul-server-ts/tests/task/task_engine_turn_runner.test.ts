@@ -409,7 +409,12 @@ describe("TaskEngineTurnRunner", () => {
       runner.executeTurn({ task, agent, runner: createInProcessTaskRunnerRuntime(engine), input: { prompt: "turn" } }),
     );
 
-    expect(events).toEqual([{ type: "complete", result: "done", timestamp: 1 }]);
+    expect(events).toEqual([{
+      type: "complete",
+      result: "done",
+      timestamp: 1,
+      output_command_id: expect.stringMatching(/^execute:[0-9a-f-]{36}$/),
+    }]);
     expect(sendControlFrame).not.toHaveBeenCalled();
   });
 

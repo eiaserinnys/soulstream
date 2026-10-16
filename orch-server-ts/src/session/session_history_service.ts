@@ -11,6 +11,7 @@ import {
   SESSION_TIMELINE_EVENT_TYPES,
   type SessionTimelineEventType,
 } from "@soulstream/wire-schema";
+import type { SessionEventAttachmentResponse } from "@soulstream/wire-schema/attachments";
 
 export { SESSION_TIMELINE_EVENT_TYPES } from "@soulstream/wire-schema";
 export type { SessionTimelineEventType } from "@soulstream/wire-schema";
@@ -78,6 +79,10 @@ export type SessionHistoryProvider = {
     query: SessionTurnSummaryQuery,
   ) => Promise<SessionTurnSummaryResponse>;
   readLastEventId: (sessionId: string) => Promise<number>;
+  readEventAttachments?: (
+    sessionId: string,
+    eventId: number,
+  ) => Promise<SessionEventAttachmentResponse | null>;
   streamEventsRaw: (
     sessionId: string,
     afterId: number,

@@ -113,8 +113,8 @@ describe("agent attachment registration", () => {
       checksum_sha256: CHECKSUM,
       width: null,
       height: null,
-      preview_kind: "info",
-      preview_mime_type: null,
+      preview_kind: "text",
+      preview_mime_type: "text/plain",
     });
   });
 

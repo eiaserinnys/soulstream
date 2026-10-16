@@ -2524,6 +2524,9 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "assistant_message" },
+        "attachment_ids": { "type": "array", "items": { "type": "string" } },
+        "attachment_output": { "const": true },
+        "output_command_id": { "type": "string" },
         "ui": {
           "type": "object",
           "required": ["schema_version", "ui_id", "hash", "revision", "document"],
@@ -2904,7 +2907,10 @@
       "description": "SSE: 턴 종료.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "complete" } }
+      "properties": {
+        "type": { "const": "complete" },
+        "output_command_id": { "type": "string" }
+      }
     },
     "SSEEventError": {
       "type": "object",
@@ -2968,21 +2974,30 @@
       "description": "SSE: text 블록 시작.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "text_start" } }
+      "properties": {
+        "type": { "const": "text_start" },
+        "output_command_id": { "type": "string" }
+      }
     },
     "SSEEventTextDelta": {
       "type": "object",
       "description": "SSE: text delta.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "text_delta" } }
+      "properties": {
+        "type": { "const": "text_delta" },
+        "output_command_id": { "type": "string" }
+      }
     },
     "SSEEventTextEnd": {
       "type": "object",
       "description": "SSE: text 블록 종료.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "text_end" } }
+      "properties": {
+        "type": { "const": "text_end" },
+        "output_command_id": { "type": "string" }
+      }
     },
     "SSEEventTextSnapshot": {
       "type": "object",

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  attachSessionOutputInputSchema,
+  type AttachSessionOutputResult,
   attachmentTools,
   registerAttachmentInputSchema,
   resolveAttachmentInputSchema,
@@ -38,6 +40,55 @@ describe("attachment tool contract", () => {
     expect(resolveAttachmentInputSchema.safeParse({ attachment_id: "asset-1", session_id: "sess-1" }).success).toBe(false);
     expect(resolveAttachmentInputSchema.safeParse({ attachment_id: "" }).success).toBe(false);
     expect(registerAttachmentInputSchema.safeParse({ local_path: "/tmp/a.png" }).success).toBe(true);
+  });
+
+  it("exposes explicit output attachment input and idempotent internal tool metadata", () => {
+    const outputTool = attachmentTools.attach_session_output;
+    expect(outputTool).toMatchObject({
+      name: "attach_session_output",
+      audience: "internal",
+      strictInputSchema: true,
+      timeoutMs: 300000,
+      config: {
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+        },
+      },
+    });
+    expect(Object.keys(outputTool.config.inputSchema)).toEqual(["attachment_ids"]);
+    expect(attachSessionOutputInputSchema.safeParse({ attachment_ids: ["asset-1"] }).success).toBe(true);
+    expect(attachSessionOutputInputSchema.safeParse({ attachment_ids: [] }).success).toBe(false);
+    expect(attachSessionOutputInputSchema.safeParse({ attachment_ids: [""] }).success).toBe(false);
+    expect(attachSessionOutputInputSchema.safeParse({
+      attachment_ids: ["asset-1"],
+      output_command_id: "caller-controlled",
+    }).success).toBe(false);
+    expect(attachSessionOutputInputSchema.safeParse({
+      attachment_ids: ["asset-1"],
+      local_path: "/tmp/a.png",
+      url: "https://example.test/a.png",
+      target_scope: { type: "card", id: "card-1" },
+    }).success).toBe(false);
+  });
+
+  it("keeps both committed and unconfirmed output results in the shared type", () => {
+    const committed: AttachSessionOutputResult = {
+      status: "committed",
+      event_id: "event-1",
+      output_command_id: "command-1",
+      attachment_ids: ["asset-1"],
+    };
+    const deliveryUnconfirmed: AttachSessionOutputResult = {
+      status: "delivery_unconfirmed",
+      output_key: "output-key-1",
+      output_command_id: "command-1",
+      attachment_ids: ["asset-1"],
+    };
+
+    expect(committed.status).toBe("committed");
+    expect(deliveryUnconfirmed.status).toBe("delivery_unconfirmed");
   });
 
   it("keeps model arguments to path, name, mime type and a card scope", () => {

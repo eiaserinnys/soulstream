@@ -14,11 +14,29 @@ export const resolveAttachmentInputSchema = z.object({
   attachment_id: id,
 }).strict();
 
+export const attachSessionOutputInputSchema = z.object({
+  attachment_ids: z.array(id).min(1),
+}).strict();
+
 export type ResolveAttachmentResult = {
   attachment_id: string;
   local_path: string;
   descriptor: AttachmentDescriptor;
 };
+
+export type AttachSessionOutputResult =
+  | {
+      status: "committed";
+      event_id: string;
+      output_command_id: string;
+      attachment_ids: string[];
+    }
+  | {
+      status: "delivery_unconfirmed";
+      output_key: string;
+      output_command_id: string;
+      attachment_ids: string[];
+    };
 
 export const attachmentTools = {
   register_attachment: {
@@ -39,6 +57,17 @@ export const attachmentTools = {
     config: {
       description: "현재 세션에 연결된 첨부를 이 노드의 로컬 파일로 준비합니다.",
       inputSchema: resolveAttachmentInputSchema.shape,
+    },
+    audience: "internal",
+    strictInputSchema: true,
+  },
+  attach_session_output: {
+    name: "attach_session_output",
+    timeoutMs: 300000,
+    config: {
+      description: "현재 실행에서 등록된 첨부 ID를 세션 응답에 명시적으로 연결합니다.",
+      inputSchema: attachSessionOutputInputSchema.shape,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     audience: "internal",
     strictInputSchema: true,

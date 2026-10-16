@@ -6,18 +6,27 @@ import type {
   AgentAttachmentRegistrationInput,
 } from "./agent_attachment_registration.js";
 import { bindAttachmentReadAbortSignal } from "./attachment_read_routes.js";
+import type { TrustedAttachmentProducer } from "../cards/card_attachment_policy.js";
+
+export type SessionOutputAttachmentValidation = (input: {
+  readonly producer: TrustedAttachmentProducer;
+  readonly attachmentIds: readonly string[];
+}) => Promise<{ readonly attachment_ids: string[] }>;
 
 export type AgentAttachmentRouteOptions = {
   readonly authBearerToken: string;
   readonly environment: string;
   readonly register: AgentAttachmentRegistration;
+  readonly validateSessionOutput?: SessionOutputAttachmentValidation;
 };
 
 export const agentAttachmentRouteAuthRequirements = {
   "POST /api/attachments/agent-register": true,
+  "POST /api/attachments/agent-output/validate": true,
 } as const;
 
 const REGISTER_PATH = "/api/attachments/agent-register";
+const VALIDATE_OUTPUT_PATH = "/api/attachments/agent-output/validate";
 const MAX_ATTACHMENT_BYTES = 104857600;
 const SESSION_HEADER = "x-soulstream-agent-session-id";
 const NODE_HEADER = "x-soulstream-node-id";
@@ -105,7 +114,79 @@ export function registerAgentAttachmentRoutes(
         }
       },
     );
+
+    instance.post(VALIDATE_OUTPUT_PATH, async (request, reply) => {
+      if (options.validateSessionOutput === undefined) {
+        return reply.code(503).send({
+          code: "ATTACHMENT_VALIDATION_UNAVAILABLE",
+          detail: "세션 출력 첨부 검증을 사용할 수 없습니다.",
+        });
+      }
+
+      let parsed: OutputValidationRequest;
+      try {
+        parsed = parseOutputValidationRequest(request);
+      } catch (error) {
+        return fail(reply, error);
+      }
+
+      try {
+        const result = await options.validateSessionOutput({
+          producer: parsed.producer,
+          attachmentIds: parsed.attachmentIds,
+        });
+        return reply.code(200).send({ attachment_ids: result.attachment_ids });
+      } catch (error) {
+        return fail(reply, error);
+      }
+    });
   });
+}
+
+type OutputValidationRequest = {
+  readonly producer: TrustedAttachmentProducer;
+  readonly attachmentIds: readonly string[];
+};
+
+function parseOutputValidationRequest(request: FastifyRequest): OutputValidationRequest {
+  const producer = {
+    sessionId: requiredOutputHeader(request.headers[SESSION_HEADER]),
+    nodeId: requiredOutputHeader(request.headers[NODE_HEADER]),
+    outputCommandId: requiredOutputHeader(request.headers[COMMAND_HEADER]),
+  };
+  const body = request.body;
+  if (
+    typeof body !== "object"
+    || body === null
+    || Array.isArray(body)
+    || Object.keys(body).length !== 1
+    || !Object.hasOwn(body, "attachment_ids")
+  ) {
+    throw invalidOutput("본문은 attachment_ids만 포함해야 합니다.");
+  }
+
+  const attachmentIds = (body as { attachment_ids?: unknown }).attachment_ids;
+  if (
+    !Array.isArray(attachmentIds)
+    || attachmentIds.length === 0
+    || attachmentIds.some((attachmentId) => typeof attachmentId !== "string" || attachmentId.length === 0)
+  ) {
+    throw invalidOutput("비어 있지 않은 attachment_ids가 필요합니다.");
+  }
+
+  return { producer, attachmentIds };
+}
+
+function requiredOutputHeader(value: string | string[] | undefined): string {
+  const header = Array.isArray(value) ? value[0] : value;
+  if (typeof header !== "string" || header.trim().length === 0) {
+    throw invalidOutput("세션 출력 생산 헤더가 필요합니다.");
+  }
+  return header.trim();
+}
+
+function invalidOutput(message: string): AgentAttachmentRequestError {
+  return new AgentAttachmentRequestError("ATTACHMENT_INVALID_OUTPUT", 422, message);
 }
 
 type RegistrationRequest = {

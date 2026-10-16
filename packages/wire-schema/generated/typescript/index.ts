@@ -530,6 +530,9 @@ export interface SSEEventUserMessage {
  */
 export interface SSEEventAssistantMessage {
   type: "assistant_message";
+  attachment_ids?: string[];
+  attachment_output?: true;
+  output_command_id?: string;
   ui?: {
     schema_version: 1;
     ui_id: string;
@@ -736,6 +739,7 @@ export interface PersistentJevTopRawScores {
  */
 export interface SSEEventComplete {
   type: "complete";
+  output_command_id?: string;
   [k: string]: unknown;
 }
 /**
@@ -793,6 +797,7 @@ export interface SSEEventThinking {
  */
 export interface SSEEventTextStart {
   type: "text_start";
+  output_command_id?: string;
   [k: string]: unknown;
 }
 /**
@@ -800,6 +805,7 @@ export interface SSEEventTextStart {
  */
 export interface SSEEventTextDelta {
   type: "text_delta";
+  output_command_id?: string;
   [k: string]: unknown;
 }
 /**
@@ -807,6 +813,7 @@ export interface SSEEventTextDelta {
  */
 export interface SSEEventTextEnd {
   type: "text_end";
+  output_command_id?: string;
   [k: string]: unknown;
 }
 /**

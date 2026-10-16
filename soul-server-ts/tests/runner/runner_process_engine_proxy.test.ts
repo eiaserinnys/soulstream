@@ -1,12 +1,25 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { runnerCommandResultFrame } from "../../src/runner/frame_protocol.js";
+import type { EngineUserInput } from "../../src/engine/protocol.js";
 import { RunnerIpcRequestTimeoutError } from
   "../../src/runner/runner_ipc_connection.js";
 import { RunnerProcessEngineProxy } from
   "../../src/runner/runner_process_engine_proxy.js";
 import { RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
+
+const MATERIALIZED_IMAGE_PATH = join(
+  tmpdir(),
+  "soulstream-attachment-model-input-boundary-245",
+  "session-1",
+  "assets",
+  "asset-image",
+  "screen.png",
+);
 
 describe("RunnerProcessEngineProxy", () => {
   it("returns a validated compact context usage value from the child", async () => {
@@ -163,6 +176,42 @@ describe("RunnerProcessEngineProxy", () => {
       "detachedClaudeRuntimeActivity",
       [],
     );
+  });
+
+  it("preserves image paths in both live-input invoke frames", async () => {
+    const request = vi.fn(async (frame: { commandId: string }) =>
+      runnerCommandResultFrame(frame.commandId, {
+        status: "ok",
+        data: { status: "delivered", mechanism: "active_turn" },
+      })
+    );
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as RunnerProcessDispatcher;
+    Object.assign(dispatcher, {
+      ready: Promise.resolve(),
+      spawnInput: { sessionId: "session-1", claudeRuntimeTurnTimeoutMs: 1_800_000 },
+      connection: { request },
+      options: {},
+      requestLifetimes: new Map(),
+    });
+    const proxy = new RunnerProcessEngineProxy("claude", "/workspace", dispatcher);
+    const input: EngineUserInput = {
+      prompt: "Inspect the current attachment",
+      imageAttachmentPaths: [MATERIALIZED_IMAGE_PATH],
+      inputUuid: "delivery-input",
+      turnOrigin: { kind: "user_message", id: "delivery-1" },
+    };
+
+    await expect(proxy.intervene(input)).resolves.toMatchObject({ status: "delivered" });
+    await expect(proxy.injectAtToolBoundary(input)).resolves.toMatchObject({ status: "delivered" });
+
+    const frames = request.mock.calls.map(([frame]) =>
+      frame as { capability: string; args: unknown[] },
+    );
+    expect(frames).toHaveLength(2);
+    expect(frames.map(({ capability, args }) => ({ capability, args }))).toEqual([
+      { capability: "intervene", args: [input] },
+      { capability: "injectAtToolBoundary", args: [input] },
+    ]);
   });
 
   it("normalizes a pre-contract child response during a rolling restart", async () => {

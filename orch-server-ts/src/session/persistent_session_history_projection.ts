@@ -43,11 +43,18 @@ export function projectPersistentSessionHistoryEntry(
     }
     case "assistant_message": {
       const parentEventId = row.parent_event_id ?? parentEventIdValue(payload.parent_event_id);
+      const attachments = projectInputAttachments(payload);
       return {
         ...common,
         event_type: "assistant_message",
         kind: "assistant",
         ...projectText(payload.content, maxTextChars),
+        attachment_ids: attachments.attachment_ids,
+        attachment_count: attachments.attachment_ids.length,
+        ...(payload.attachment_output === true ? { attachment_output: true } : {}),
+        ...(typeof payload.output_command_id === "string"
+          ? { output_command_id: payload.output_command_id }
+          : {}),
         ...(parentEventId === null ? {} : { parent_event_id: parentEventId }),
       };
     }

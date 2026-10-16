@@ -140,6 +140,8 @@ import {
   registerSessionHistoryRoutes,
   type SessionHistoryRouteOptions,
 } from "./session/session_history_routes.js";
+import { registerSessionEventAttachmentRoutes } from
+  "./session/session_event_attachment_routes.js";
 import {
   registerPersistentSessionSettingsRoutes,
   type PersistentSessionSettingsRouteOptions,
@@ -350,6 +352,7 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sessionHistoryRoutes !== undefined) {
     registerSessionHistoryRoutes(app, options.sessionHistoryRoutes);
+    registerSessionEventAttachmentRoutes(app, options.sessionHistoryRoutes);
   }
   if (options.sessionSnapshotRoutes !== undefined) {
     registerSessionSnapshotRoutes(app, options.sessionSnapshotRoutes);

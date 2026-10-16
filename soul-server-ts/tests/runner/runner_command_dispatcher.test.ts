@@ -76,7 +76,11 @@ describe("RunnerCommandDispatcher", () => {
       result: { status: "ok" },
     });
     await expect(drain(dispatcher.events("execute-1"))).resolves.toEqual([
-      engineEventFrame({ type: "complete", timestamp: 1 }),
+      engineEventFrame({
+        type: "complete",
+        timestamp: 1,
+        output_command_id: "execute-1",
+      }),
     ]);
     expect(executeToFrameChannel).toHaveBeenCalledWith(
       expect.objectContaining(sourceParams),
@@ -148,6 +152,85 @@ describe("RunnerCommandDispatcher", () => {
 
     expect(frame).toMatchObject({ kind: "engine_event", payload: event });
     expect(frame).not.toHaveProperty("payload.session_cost_usd");
+  });
+
+  it("stamps trusted output command ids on assistant and text events before complete clears the command", async () => {
+    const eventTypes = [
+      "assistant_message",
+      "text_start",
+      "text_delta",
+      "text_end",
+      "complete",
+    ];
+    const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine({
+      async executeToFrameChannel(_params, channel) {
+        for (const type of eventTypes) {
+          await channel.emit(engineEventFrame({
+            type,
+            output_command_id: "engine-command-spoof",
+            content: "event content",
+            usage: { input_tokens: 7 },
+            ...(type === "complete" ? { turn_cost_usd: 0.5 } : {}),
+            timestamp: 1,
+          }, { claudeResultReceipt: { inputUuid: "input-1" } }));
+        }
+      },
+    }));
+
+    const commandId = "dispatcher-command-1";
+    await expect(dispatcher.dispatch(executeCommandFrame(commandId, {
+      agentSessionId: "session-1",
+      prompt: "hello",
+      sessionCost: { usd: 10, partial: false },
+    }))).resolves.toMatchObject({ result: { status: "ok" } });
+    const frames = await drain(dispatcher.events(commandId));
+
+    expect(frames.map(frame => frame.kind === "engine_event" ? frame.payload.type : null))
+      .toEqual(eventTypes);
+    for (const frame of frames) {
+      expect(frame).toMatchObject({
+        kind: "engine_event",
+        payload: {
+          output_command_id: commandId,
+          content: "event content",
+          usage: { input_tokens: 7 },
+        },
+      });
+    }
+    expect(frames.at(-1)).toMatchObject({
+      metadata: { claudeResultReceipt: { inputUuid: "input-1" } },
+      payload: { session_cost_usd: 10.5 },
+    });
+    expect(dispatcher.activeExecutionCommandId()).toBeUndefined();
+  });
+
+  it("keeps consecutive execute output command ids separate", async () => {
+    const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine({
+      async *execute() {
+        yield {
+          type: "assistant_message",
+          output_command_id: "engine-command-spoof",
+          content: "reply",
+          timestamp: 1,
+        } as SSEEventPayload;
+        yield { type: "complete", timestamp: 2 } as SSEEventPayload;
+      },
+    }));
+
+    const run = async (commandId: string) => {
+      await dispatcher.dispatch(executeCommandFrame(commandId, {
+        agentSessionId: "session-1",
+        prompt: "hello",
+      }));
+      return drain(dispatcher.events(commandId));
+    };
+    const first = await run("dispatcher-command-1");
+    const second = await run("dispatcher-command-2");
+
+    expect(first.map(frame => frame.kind === "engine_event" ? frame.payload.output_command_id : null))
+      .toEqual(["dispatcher-command-1", "dispatcher-command-1"]);
+    expect(second.map(frame => frame.kind === "engine_event" ? frame.payload.output_command_id : null))
+      .toEqual(["dispatcher-command-2", "dispatcher-command-2"]);
   });
 
   it("returns a correlated error for an execute DTO that is not JSON", async () => {
