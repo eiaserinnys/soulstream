@@ -9,6 +9,7 @@ import {
   type CardMcpSectionPage,
 } from "./control_plane/card_mcp_read_repository.js";
 import type { SqlClient } from "./control_plane/card_types.js";
+import { projectCardAttachmentRows } from "./card_attachment_projection.js";
 
 const CARD_STATUSES = ["todo", "queued", "blocked", "running", "review", "done", "cancelled"] as const;
 const TOKEN_FINGERPRINT_KINDS = [
@@ -202,6 +203,14 @@ function serializePage(
   };
 }
 
+function paginateProjectedText(text: string, offset: number, limit: number): CardMcpSectionPage {
+  const characters = [...text];
+  const pageText = characters.slice(offset, offset + limit).join("");
+  const nextOffset = offset + [...pageText].length;
+  const truncated = nextOffset < characters.length;
+  return { kind: "text", text: pageText, nextOffset: truncated ? nextOffset : null, truncated };
+}
+
 export class CardMcpReadService {
   private readonly repository: CardMcpReadRepository;
 
@@ -265,25 +274,63 @@ export class CardMcpReadService {
       const changed = previous ? changedKinds(previous, current.fingerprints) : null;
       if (previous && changed?.length === 0) return { id: cardId, unchanged: true, changeToken };
 
+      const shouldReadQuestions = previous === null || changed?.includes("questions") === true;
+      let questionPage: CardMcpSectionPage | null = null;
+      if (shouldReadQuestions) {
+        const cursor = sectionCursors.get("questions");
+        questionPage = await this.repository.readQuestionPage(
+          sql, cardId, limit, cursor && "timestamp" in cursor ? cursor : null,
+        );
+        if (questionPage.kind !== "items") throw new Error("Question query returned a text page");
+      }
+
+      const sectionPages = new Map<CardMcpReadKind, CardMcpSectionPage>();
+      for (const kind of include) {
+        if (previous && !changed?.includes(kind)) continue;
+        const cursor = sectionCursors.get(kind) ?? null;
+        sectionPages.set(kind, await this.repository.readSectionPage(sql, cardId, kind, limit, textLimit, cursor));
+      }
+
+      const returnCard = previous === null || changed?.includes("card") === true;
+      const projectionRows: Record<string, unknown>[] = [];
+      const currentCardIndex = returnCard && Array.isArray(current.card.items)
+        ? projectionRows.push({ ...current.card, attachment_refs: current.attachmentRefs }) - 1
+        : -1;
+      const requestSourceIndex = new Map<CardMcpReadKind, number>();
+      const recordSourceIndexes = new Map<CardMcpReadKind, number[]>();
+      for (const [kind, page] of sectionPages) {
+        if (kind === "request" && page.kind === "text") {
+          requestSourceIndex.set(kind, projectionRows.push({
+            id: cardId, body: page.text, attachment_refs: current.attachmentRefs, format: "markdown",
+          }) - 1);
+        } else if ((kind === "comments" || kind === "notes" || kind === "reports") && page.kind === "items") {
+          recordSourceIndexes.set(kind, page.items.map((row) => {
+            if (typeof row.body !== "string") return -1;
+            return projectionRows.push(row) - 1;
+          }));
+        }
+      }
+
+      const projectedRows = await projectCardAttachmentRows(sql, projectionRows, cardId);
+      const projectedCard = currentCardIndex < 0
+        ? current.card
+        : (({ attachment_refs: _attachmentRefs, ...card }) => card)(projectedRows[currentCardIndex]!);
+
       const result: Record<string, unknown> = {};
       if (previous) {
         result.id = cardId;
         result.unchanged = false;
         result.changed = changed;
         result.available = current.available;
-        if (changed?.includes("card")) result.card = serializeCardRow(current.card);
+        if (returnCard) result.card = serializeCardRow(projectedCard);
       } else {
-        result.card = serializeCardRow(current.card);
+        result.card = serializeCardRow(projectedCard);
         result.available = current.available;
       }
       result.changeToken = changeToken;
 
-      const shouldReadQuestions = previous === null || changed?.includes("questions") === true;
-      if (shouldReadQuestions) {
-        const cursor = sectionCursors.get("questions");
-        const page = await this.repository.readQuestionPage(
-          sql, cardId, limit, cursor && "timestamp" in cursor ? cursor : null,
-        );
+      if (questionPage !== null) {
+        const page = questionPage;
         if (page.kind !== "items") throw new Error("Question query returned a text page");
         result.questions = {
           items: page.items.map((row) => serializeCardRow(row)),
@@ -294,10 +341,25 @@ export class CardMcpReadService {
       }
 
       const sectionResults: Record<string, unknown> = {};
-      for (const kind of include) {
-        if (previous && !changed?.includes(kind)) continue;
-        const cursor = sectionCursors.get(kind) ?? null;
-        const page = await this.repository.readSectionPage(sql, cardId, kind, limit, textLimit, cursor);
+      for (const [kind, rawPage] of sectionPages) {
+        let page = rawPage;
+        if (kind === "request" && rawPage.kind === "text") {
+          const sourceIndex = requestSourceIndex.get(kind)!;
+          const text = String(projectedRows[sourceIndex]!.body ?? "");
+          const cursor = sectionCursors.get(kind);
+          page = paginateProjectedText(text, cursor && "offset" in cursor ? cursor.offset : 0, textLimit);
+        } else if ((kind === "comments" || kind === "notes" || kind === "reports") && rawPage.kind === "items") {
+          const indexes = recordSourceIndexes.get(kind) ?? [];
+          page = {
+            ...rawPage,
+            items: rawPage.items.map((row, index) => {
+              const sourceIndex = indexes[index] ?? -1;
+              const projectedRow = sourceIndex < 0 ? row : projectedRows[sourceIndex]!;
+              const { attachment_refs: _attachmentRefs, ...serialized } = projectedRow;
+              return serialized;
+            }),
+          };
+        }
         sectionResults[kind] = serializePage(kind, page, cardId, previous !== null);
       }
       if (Object.keys(sectionResults).length > 0) result.sections = sectionResults;

@@ -31,6 +31,7 @@ export interface CardMcpListRow extends Record<string, unknown> {
 
 export interface CardMcpCurrent {
   card: Record<string, unknown>;
+  attachmentRefs: unknown;
   available: {
     request: boolean; brief: boolean; attachments: boolean;
     comments: number; notes: number; reports: number; sessions: number; now_history: number;
@@ -112,14 +113,14 @@ export class CardMcpReadRepository {
     sql: RepositorySql, cardId: string, kind: CardMcpReadKind, limit: number, textLimit: number,
     cursor: CardMcpCursorPosition | null,
   ): Promise<CardMcpSectionPage> {
-    if (kind === "request" || kind === "brief") {
+    if (kind === "request") {
+      const row = (await sql<{ text: string }[]>`SELECT request AS text FROM cards WHERE id=${cardId}`)[0];
+      return { kind: "text", text: row?.text ?? "", nextOffset: null, truncated: false };
+    }
+
+    if (kind === "brief") {
       const offset = cursor && "offset" in cursor ? cursor.offset : 0;
-      const [page] = kind === "request"
-        ? await sql<{ text: string; total: number }[]>`
-            SELECT substr(request,${offset + 1}::int,${textLimit}::int) AS text,char_length(request)::int AS total
-            FROM cards WHERE id=${cardId}
-          `
-        : await sql<{ text: string; total: number }[]>`
+      const [page] = await sql<{ text: string; total: number }[]>`
             SELECT substr(brief,${offset + 1}::int,${textLimit}::int) AS text,char_length(brief)::int AS total
             FROM cards WHERE id=${cardId}
           `;
@@ -152,7 +153,7 @@ export class CardMcpReadRepository {
     if (kind === "comments" || kind === "notes") {
       const notesOnly = kind === "notes";
       return this.readRecordPage(limit, () => sql<RecordCursorRow[]>`
-        SELECT id,card_id,author_kind,author_id,session_id,kind,body,item_id,delivered_at,created_at,
+        SELECT id,card_id,author_kind,author_id,session_id,kind,body,item_id,delivered_at,created_at,attachment_refs,
           created_at::text AS cursor_time,id AS cursor_id
         FROM card_comments
         WHERE card_id=${cardId} AND (${notesOnly}::boolean AND kind='note' OR NOT ${notesOnly}::boolean AND kind<>'note')
@@ -163,7 +164,7 @@ export class CardMcpReadRepository {
     }
     if (kind === "reports") {
       return this.readRecordPage(limit, () => sql<RecordCursorRow[]>`
-        SELECT id,card_id,title,format,body,session_id,created_at,created_at::text AS cursor_time,id AS cursor_id
+        SELECT id,card_id,title,format,body,session_id,created_at,attachment_refs,created_at::text AS cursor_time,id AS cursor_id
         FROM card_reports
         WHERE card_id=${cardId}
           AND (${afterTime}::text IS NULL OR
@@ -208,7 +209,7 @@ export class CardMcpReadRepository {
     const row = (await sql<{
       id: string; number: number | null; folder_id: string; title: string; status: string; archived: boolean; version: number;
       assignee_kind: string | null; assignee_agent_id: string | null; assignee_session_id: string | null; assignee_user_id: string | null;
-      now: unknown; items: unknown; blocked_kind: string | null; blocked_detail: string | null;
+      now: unknown; items: unknown; attachment_refs: unknown; blocked_kind: string | null; blocked_detail: string | null;
       request_available: boolean; brief_available: boolean; attachments_available: boolean;
       comments_count: number; notes_count: number; reports_count: number; sessions_count: number; now_history_count: number;
       fp_card: string; fp_request: string; fp_brief: string; fp_attachments: string; fp_questions: string;
@@ -216,7 +217,7 @@ export class CardMcpReadRepository {
       fp_now_history: string;
     }[]>`
       SELECT c.id,c.number,c.folder_id,c.title,c.status,c.archived,c.version,
-        c.assignee_kind,c.assignee_agent_id,c.assignee_session_id,c.assignee_user_id,c.now,c.items,c.blocked_kind,c.blocked_detail,
+        c.assignee_kind,c.assignee_agent_id,c.assignee_session_id,c.assignee_user_id,c.now,c.items,c.attachment_refs,c.blocked_kind,c.blocked_detail,
         (c.request<>'') AS request_available,(c.brief<>'') AS brief_available,
         (c.attachments<>'[]'::jsonb) AS attachments_available,
         (SELECT count(*)::int FROM card_comments WHERE card_id=c.id AND kind<>'note') AS comments_count,
@@ -228,9 +229,11 @@ export class CardMcpReadRepository {
           'id',c.id,'number',c.number,'folder_id',c.folder_id,'title',c.title,'status',c.status,'archived',c.archived,
           'version',c.version,'assignee_kind',c.assignee_kind,'assignee_agent_id',c.assignee_agent_id,
           'assignee_session_id',c.assignee_session_id,'assignee_user_id',c.assignee_user_id,'now',c.now,'items',c.items,
+          'attachment_refs',c.attachment_refs,
           'blocked_kind',c.blocked_kind,'blocked_detail',c.blocked_detail
         )::text) AS fp_card,
-        md5(c.request) AS fp_request,md5(c.brief) AS fp_brief,md5(c.attachments::text) AS fp_attachments,
+        md5(jsonb_build_object('request',c.request,'attachment_refs',c.attachment_refs)::text) AS fp_request,
+        md5(c.brief) AS fp_brief,md5(c.attachments::text) AS fp_attachments,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',q.id,'card_id',q.card_id,'session_id',q.session_id,
           'text',q.text,'options',q.options,'answer',q.answer,'asked_at',q.asked_at,
           'answered_at',q.answered_at,'answered_by',q.answered_by) ORDER BY q.id COLLATE "C")::text
@@ -241,14 +244,14 @@ export class CardMcpReadRepository {
           FROM card_questions q WHERE q.card_id=c.id),'[]')) AS fp_questions_history,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',cc.id,'card_id',cc.card_id,'author_kind',cc.author_kind,
           'author_id',cc.author_id,'session_id',cc.session_id,'kind',cc.kind,'body',cc.body,'item_id',cc.item_id,
-          'delivered_at',cc.delivered_at,'created_at',cc.created_at) ORDER BY cc.id COLLATE "C")::text
+          'delivered_at',cc.delivered_at,'created_at',cc.created_at,'attachment_refs',cc.attachment_refs) ORDER BY cc.id COLLATE "C")::text
           FROM card_comments cc WHERE cc.card_id=c.id AND cc.kind<>'note'),'[]')) AS fp_comments,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',cc.id,'card_id',cc.card_id,'author_kind',cc.author_kind,
           'author_id',cc.author_id,'session_id',cc.session_id,'kind',cc.kind,'body',cc.body,'item_id',cc.item_id,
-          'delivered_at',cc.delivered_at,'created_at',cc.created_at) ORDER BY cc.id COLLATE "C")::text
+          'delivered_at',cc.delivered_at,'created_at',cc.created_at,'attachment_refs',cc.attachment_refs) ORDER BY cc.id COLLATE "C")::text
           FROM card_comments cc WHERE cc.card_id=c.id AND cc.kind='note'),'[]')) AS fp_notes,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'card_id',r.card_id,'title',r.title,'format',r.format,
-          'body',r.body,'session_id',r.session_id,'created_at',r.created_at) ORDER BY r.id COLLATE "C")::text
+          'body',r.body,'session_id',r.session_id,'created_at',r.created_at,'attachment_refs',r.attachment_refs) ORDER BY r.id COLLATE "C")::text
           FROM card_reports r WHERE r.card_id=c.id),'[]')) AS fp_reports,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('session_id',s.session_id,'card_id',s.card_id,
           'display_name',s.display_name,'node_id',s.node_id,'agent_id',s.agent_id,'status',s.status,
@@ -268,6 +271,7 @@ export class CardMcpReadRepository {
         assignee_user_id: row.assignee_user_id, now: row.now, items: row.items,
         blocked_kind: row.blocked_kind, blocked_detail: row.blocked_detail,
       },
+      attachmentRefs: row.attachment_refs,
       available: {
         request: row.request_available, brief: row.brief_available, attachments: row.attachments_available,
         comments: row.comments_count, notes: row.notes_count, reports: row.reports_count,
