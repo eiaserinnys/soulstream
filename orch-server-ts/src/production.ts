@@ -540,6 +540,7 @@ export async function createLiveProductionApplication(
       runtimeServices,
       uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
+      findSessionNode: dbCatalogRepository.findSessionOwnerNodeId,
       agentAttachmentRegistration: {
         authBearerToken: config.auth_bearer_token,
         environment: config.environment,

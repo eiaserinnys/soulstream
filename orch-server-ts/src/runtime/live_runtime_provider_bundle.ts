@@ -12,6 +12,7 @@ import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
 import type { LiveCallerInfoResolver } from "./live_authenticated_user_resolver.js";
 import { LiveProviderFactoryError } from "./live_provider_factory_inventory.js";
+import type { LiveAttachmentInputAdmission } from "../attachments/live_attachment_input_admission.js";
 
 export type LiveRuntimeProviderBundle = {
   readonly boardYjsHostProxyRoutes:
@@ -46,6 +47,7 @@ export function buildLiveRuntimeProviderBundle(
   sessionSnapshotRoutes:
     OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"],
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
+  admitAttachmentInput?: LiveAttachmentInputAdmission["forRequest"],
 ): LiveRuntimeProviderBundle {
   const sessionHistoryRoutes = requireRuntimeRouteOption(
     services.routeOptions.sessionHistoryRoutes,
@@ -72,6 +74,7 @@ export function buildLiveRuntimeProviderBundle(
           bodyCallerInfo,
           services.registry.findSessionOwner(targetSessionId)?.nodeId ?? "",
         ),
+      ...(admitAttachmentInput === undefined ? {} : { admitAttachmentInput }),
     },
     sessionBackgroundScheduleRoutes: requireRuntimeRouteOption(
       services.routeOptions.sessionBackgroundScheduleRoutes,
@@ -82,6 +85,7 @@ export function buildLiveRuntimeProviderBundle(
       ...services.routeOptions.sessionCommandRoutes,
       createSessionLifecycle: sessionCreateLifecycle,
       modelPresetAvailability,
+      ...(admitAttachmentInput === undefined ? {} : { admitAttachmentInput }),
     },
     sessionHistoryRoutes: { ...sessionHistoryRoutes, accessProvider },
     sessionSnapshotRoutes,
