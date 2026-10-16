@@ -110,7 +110,7 @@ describe("AttachmentViewer", () => {
     expect(anchorClick).toHaveBeenCalledOnce();
   });
 
-  it("shows info metadata without attempting a preview and disables save for missing data", async () => {
+  it("keeps missing info separate from previews and hides unavailable original save", async () => {
     const info = attachment({
       name: "archive.svg",
       mimeType: "image/svg+xml",
@@ -125,11 +125,11 @@ describe("AttachmentViewer", () => {
 
     const dialog = document.body.querySelector("[role=dialog]");
     expect(dialog?.textContent).toContain("archive.svg");
-    expect(dialog?.textContent).toContain("image/svg+xml");
+    expect(dialog?.textContent).not.toContain("image/svg+xml");
     expect(dialog?.textContent).toContain("찾을 수 없습니다");
     expect(dialog?.querySelector("pre, img")).toBeNull();
     const save = [...((dialog?.querySelectorAll("button")) ?? [])].find(button => button.textContent?.includes("원본 저장"));
-    expect(save?.hasAttribute("disabled")).toBe(true);
+    expect(save).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -144,14 +144,16 @@ describe("AttachmentViewer", () => {
     const dialog = document.body.querySelector("[role=dialog]")!;
     const previous = dialog.querySelector<HTMLButtonElement>('[aria-label="이전 첨부"]')!;
     const next = dialog.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!;
-    expect(previous.disabled).toBe(true);
+    expect(previous.getAttribute("aria-disabled")).toBe("true");
+    expect(previous.disabled).toBe(false);
     expect(dialog.textContent).toContain("1/3");
     await act(async () => next.click());
     expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("second.svg");
     await act(async () => document.body.querySelector("[role=dialog]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
     expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("3/3");
     const lastNext = document.body.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!;
-    expect(lastNext.disabled).toBe(true);
+    expect(lastNext.getAttribute("aria-disabled")).toBe("true");
+    expect(lastNext.disabled).toBe(false);
     await act(async () => document.body.querySelector("[role=dialog]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
     expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("3/3");
   });
@@ -176,19 +178,72 @@ describe("AttachmentViewer", () => {
 
   it("retries a failed text preview and returns focus to the trigger on Escape", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValueOnce(rangeResponse("다시 읽음"));
     vi.stubGlobal("fetch", fetchMock);
     const item = attachment({ byteSize: new TextEncoder().encode("다시 읽음").byteLength });
     await act(async () => root.render(<ViewerHarness items={[item]} initialIndex={null} />));
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
     await act(async () => trigger.click());
-    expect(document.body.textContent).toContain("첨부를 읽을 수 없습니다");
+    expect(document.body.textContent).toContain("첨부를 불러오지 못했습니다");
     const retry = [...document.body.querySelectorAll("button")].find(button => button.textContent?.includes("다시 시도"));
     await act(async () => retry?.click());
     expect(document.body.textContent).toContain("다시 읽음");
     await act(async () => document.body.querySelector("[role=dialog]")?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(document.body.querySelector("[role=dialog]")).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it.each([403, 404])("does not offer retry for text HTTP %s", async status => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status })));
+    await act(async () => root.render(<ViewerHarness items={[attachment({ byteSize: 1 })]} />));
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).not.toContain("다시 시도");
+    expect(dialog.querySelector('.chat-attachment-state')).not.toBeNull();
+  });
+
+  it.each([403, 404, 503, "network"] as const)("offers image retry only for recoverable failure %s", async failure => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      if (failure === "network") throw new TypeError("Failed to fetch");
+      return new Response(null, { status: failure });
+    }));
+    await act(async () => root.render(<ViewerHarness items={[
+      attachment({ name: "photo.png", previewKind: "image", previewUrl: "/photo.png" }),
+    ]} />));
+    await act(async () => document.body.querySelector("img")!.dispatchEvent(new Event("error")));
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain("이미지를 불러오지 못했습니다.");
+    expect(dialog.textContent?.includes("다시 시도")).toBe(failure === 503 || failure === "network");
+  });
+
+  it("shows empty text and an extension icon for info without extra prose", async () => {
+    await act(async () => root.render(<ViewerHarness items={[
+      attachment(), attachment({ key: "svg", name: "vector.svg", mimeType: "image/svg+xml", previewKind: "info", previewUrl: null }),
+    ]} />));
+    expect(document.body.querySelector('.chat-attachment-state')?.textContent).toBe("빈 파일");
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!.click());
+    expect(document.body.querySelector('.chat-attachment-state')?.textContent).toBe("SVG");
+  });
+
+  it("uses size-only shared metadata and keeps focus inside at both navigation ends", async () => {
+    const items = [
+      attachment({ key: "first", previewKind: "info", byteSize: 1_048_576, name: "first.zip" }),
+      attachment({ key: "missing", availability: "missing", originalUrl: null, previewUrl: null }),
+    ];
+    await act(async () => root.render(<ViewerHarness items={items} initialIndex={null} />));
+    const trigger = container.querySelector<HTMLButtonElement>('button')!;
+    trigger.focus();
+    await act(async () => trigger.click());
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(dialog.querySelector('.chat-image-viewer-metadata')?.textContent).toBe("1.0 MB");
+    const next = dialog.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!;
+    next.focus();
+    await act(async () => next.click());
+    expect(document.activeElement).toBe(next);
+    expect(next.disabled).toBe(false);
+    expect(next.getAttribute('aria-disabled')).toBe('true');
+    await act(async () => next.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+    expect(dialog.textContent).toContain('1/2');
   });
 });

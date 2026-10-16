@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "./ui/button";
 import {
@@ -11,6 +11,8 @@ import {
   DialogPopup,
   DialogTitle,
 } from "./ui/dialog";
+import { FileTypeIcon } from "./FileAttachmentPreview";
+import { formatFileSize } from "../lib/format-file-size";
 import { MarkdownImage } from "./MarkdownImage";
 import { downloadAttachmentOriginal, downloadLocalAttachmentOriginal } from "../lib/attachment-download";
 import { readAttachmentText, readLocalAttachmentText, type AttachmentTextPreview } from "../lib/attachment-text-preview";
@@ -21,13 +23,11 @@ import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
 type TextState =
   | { key: string; state: "loading" }
   | { key: string; state: "ready"; result: AttachmentTextPreview }
-  | { key: string; state: "error"; message: string };
+  | { key: string; state: "error"; message: string; retryable: boolean };
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kilobytes = bytes / 1024;
-  if (kilobytes < 100) return `${kilobytes.toFixed(1)} KB`;
-  return `${Math.round(kilobytes)} KB`;
+function canRetryError(error: unknown): boolean {
+  return error instanceof TypeError || (error instanceof AttachmentTextPreviewError
+    && error.status !== null && error.status >= 500);
 }
 
 function textErrorMessage(error: unknown): string {
@@ -65,6 +65,8 @@ export function AttachmentViewer({
   const previewKey = item
     ? JSON.stringify([item.key, item.previewUrl, item.byteSize, localFile?.name, localFile?.size])
     : "";
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [imageRetryKey, setImageRetryKey] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [textState, setTextState] = useState<TextState | null>(null);
   const [imageFailureKey, setImageFailureKey] = useState<string | null>(null);
@@ -95,7 +97,7 @@ export function AttachmentViewer({
           : item.availability === "unavailable"
             ? "첨부를 사용할 수 없습니다."
             : textErrorMessage(error);
-        setTextState({ key: previewKey, state: "error", message });
+        setTextState({ key: previewKey, state: "error", message, retryable: canRetryError(error) });
       }
     });
 
@@ -112,33 +114,46 @@ export function AttachmentViewer({
     return () => URL.revokeObjectURL(url);
   }, [item?.key, item?.previewKind, item?.previewUrl, localFile, previewKey]);
 
+  const imageSource = item?.previewUrl
+    ?? (item?.source.kind === "markdown-image" ? item.source.src : undefined)
+    ?? (localImage?.key === previewKey ? localImage.url : undefined);
+
+  // Image error events omit the HTTP status. Probe only a failed remote source
+  // to offer retry for server/network failures, never for forbidden/missing files.
+  useEffect(() => {
+    if (imageFailureKey !== previewKey || !imageSource || imageSource.startsWith("blob:")) return;
+    const controller = new AbortController();
+    void fetch(imageSource, { method: "HEAD", credentials: "same-origin", signal: controller.signal })
+      .then(async response => {
+        if (!controller.signal.aborted) setImageRetryKey(response.status >= 500 ? previewKey : null);
+        await response.body?.cancel();
+      }).catch(error => {
+        if (!controller.signal.aborted && error instanceof TypeError) setImageRetryKey(previewKey);
+      });
+    return () => controller.abort();
+  }, [imageFailureKey, imageSource, previewKey]);
+
   useEffect(() => {
     setImageFailureKey(null);
+    setImageRetryKey(null);
     setImageAttempt(0);
     setSaveFailure(null);
   }, [previewKey]);
 
   if (!item || index === null) return null;
 
-  const metadata = [item.mimeType, item.byteSize === null ? undefined : formatBytes(item.byteSize)]
-    .filter((part): part is string => Boolean(part));
+  const metadata = item.byteSize === null ? null : formatFileSize(item.byteSize);
   const canPreview = item.availability !== "missing" && item.availability !== "unavailable";
-  const canRetryPreview = canPreview && (localFile !== undefined || item.previewUrl !== null);
-  const localSource = item.source.kind === "local";
-  const canSave = item.availability !== "missing" && item.availability !== "unavailable"
-    && (localSource || item.originalUrl !== null);
-  const showSave = canSave || item.availability === "missing" || item.availability === "unavailable";
+  const canSave = canPreview && (localFile !== undefined || item.originalUrl !== null);
   const multiItem = items.length > 1;
   const imageGallery = items.every(attachment => attachment.source.kind === "markdown-image");
   const saveMessage = saveFailure?.key === previewKey ? saveFailure.message : null;
   const text = textState?.key === previewKey ? textState : null;
-  const imageSource = item.previewUrl
-    ?? (item.source.kind === "markdown-image" ? item.source.src : undefined)
-    ?? (localImage?.key === previewKey ? localImage.url : undefined);
+  const extension = item.name?.includes(".") ? item.name.split(".").pop()!.toUpperCase() : "FILE";
 
   const changeIndex = (next: number) => {
-    if (!multiItem) return;
-    onIndexChange(Math.max(0, Math.min(items.length - 1, next)));
+    if (!multiItem || next < 0 || next >= items.length || next === index) return;
+    onIndexChange(next);
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!multiItem) return;
@@ -167,13 +182,15 @@ export function AttachmentViewer({
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
       <DialogPopup
-        className="image-viewer-popup chat-image-viewer-popup"
+        ref={popupRef}
+        initialFocus={popupRef}
+        className="v3-surface image-viewer-popup chat-image-viewer-popup"
         {...(returnFocus ? { finalFocus: () => returnFocus } : {})}
         onKeyDown={handleKeyDown}
       >
         <DialogHeader className="chat-image-viewer-header">
           <DialogTitle className="chat-image-viewer-title">{item.name ?? "첨부 파일"}</DialogTitle>
-          {metadata.length > 0 && <p className="chat-image-viewer-metadata">{metadata.join(" ")}</p>}
+          {metadata && <p className="chat-image-viewer-metadata">{metadata}</p>}
         </DialogHeader>
         <DialogPanel
           scrollFade={false}
@@ -181,14 +198,14 @@ export function AttachmentViewer({
           className="chat-image-viewer-panel"
         >
           {item.availability === "missing" ? (
-            <span className="chat-image-status" role="status">첨부를 찾을 수 없습니다.</span>
+            <div className="chat-attachment-state chat-image-status" role="status">첨부를 찾을 수 없습니다.</div>
           ) : item.availability === "unavailable" ? (
-            <span className="chat-image-status" role="status">첨부를 사용할 수 없습니다.</span>
+            <div className="chat-attachment-state chat-image-status" role="status">첨부를 사용할 수 없습니다.</div>
           ) : item.previewKind === "image" ? (
             imageFailureKey === previewKey || !imageSource ? (
-              <div className="chat-image-status" role="status">
+              <div className="chat-attachment-state chat-image-status" role="status">
                 <span>{imageFailureKey === previewKey ? "이미지를 불러오지 못했습니다." : "이미지 미리보기를 사용할 수 없습니다."}</span>
-                {canRetryPreview && <Button variant="outline" size="sm" onClick={() => {
+                {imageRetryKey === previewKey && <Button variant="outline" size="sm" onClick={() => {
                   setImageFailureKey(null);
                   setImageAttempt(value => value + 1);
                 }}>다시 시도</Button>}
@@ -207,48 +224,52 @@ export function AttachmentViewer({
             )
           ) : item.previewKind === "text" ? (
             !canPreview ? null : text?.state === "loading" || text === null ? (
-              <span className="chat-image-status" role="status">미리보기를 불러오는 중…</span>
+              <div className="chat-attachment-state chat-image-status" role="status">미리보기를 불러오는 중…</div>
             ) : text.state === "error" ? (
-              <div className="chat-image-status" role="status">
+              <div className="chat-attachment-state chat-image-status" role="status">
                 <span>{text.message}</span>
-                {canRetryPreview && <Button variant="outline" size="sm" onClick={() => setRetryCount(value => value + 1)}>다시 시도</Button>}
+                {text.retryable && <Button variant="outline" size="sm" onClick={() => setRetryCount(value => value + 1)}>다시 시도</Button>}
               </div>
+            ) : text.result.text.length === 0 ? (
+              <div className="chat-attachment-state chat-image-status" role="status">빈 파일</div>
             ) : (
               <>
                 <pre className="whitespace-pre-wrap break-words">{text.result.text}</pre>
                 {text.result.truncated && <p className="chat-image-status" role="status">파일이 커서 앞부분만 표시합니다.</p>}
               </>
             )
-          ) : null}
+          ) : <div className="chat-attachment-state" role="status"><FileTypeIcon label={extension} /></div>}
         </DialogPanel>
-        {(multiItem || showSave || saveMessage) && (
+        {(multiItem || canSave || saveMessage) && (
           <DialogFooter className="chat-image-viewer-footer">
-            {showSave && (
-              <Button variant="outline" size="sm" disabled={!canSave || saving} onClick={() => void saveOriginal()}>
-                <Download aria-hidden="true" />
-                {saving ? "저장 중…" : "원본 저장"}
-              </Button>
-            )}
-            {saveMessage && <span className="chat-image-status" role="status">{saveMessage}</span>}
             {multiItem && (
-              <>
+              <div className="chat-image-viewer-navigation">
                 <Button
                   aria-label={imageGallery ? "이전 이미지" : "이전 첨부"}
                   variant="ghost"
                   size="icon"
-                  disabled={index === 0}
+                  className="aria-disabled:opacity-64"
+                  aria-disabled={index === 0}
                   onClick={() => changeIndex(index - 1)}
                 ><ChevronLeft aria-hidden="true" /></Button>
-                <span className="chat-image-viewer-count" aria-live="polite">{index + 1}/{items.length}</span>
+                <span className="chat-image-viewer-count" style={{ width: `${String(items.length).length * 2 + 1}ch` }} aria-live="polite">{index + 1}/{items.length}</span>
                 <Button
                   aria-label={imageGallery ? "다음 이미지" : "다음 첨부"}
                   variant="ghost"
                   size="icon"
-                  disabled={index === items.length - 1}
+                  className="aria-disabled:opacity-64"
+                  aria-disabled={index === items.length - 1}
                   onClick={() => changeIndex(index + 1)}
                 ><ChevronRight aria-hidden="true" /></Button>
-              </>
+              </div>
             )}
+            {canSave && (
+              <Button variant="outline" size="sm" className="chat-image-viewer-save max-sm:size-9 max-sm:px-0" aria-label={saving ? "저장 중…" : "원본 저장"} disabled={saving} onClick={() => void saveOriginal()}>
+                <Download aria-hidden="true" />
+                <span className="max-sm:sr-only">{saving ? "저장 중…" : "원본 저장"}</span>
+              </Button>
+            )}
+            {saveMessage && <span className="chat-image-status chat-image-viewer-save-error" role="status">{saveMessage}</span>}
           </DialogFooter>
         )}
       </DialogPopup>

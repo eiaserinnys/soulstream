@@ -132,8 +132,8 @@ describe("ChatAttachments", () => {
     expect(rows.map(row => row.getAttribute("data-chat-attachment-key")))
       .toEqual(["missing", "notes", "unavailable"]);
     expect(rows.map(row => row.getAttribute("data-chat-attachment-index"))).toEqual(["1", "2", "4"]);
-    expect(rows[0].textContent).toContain("원본을 찾을 수 없습니다");
-    expect(rows[2].textContent).toContain("현재 사용할 수 없습니다");
+    expect(rows[0].textContent).toContain("찾을 수 없음");
+    expect(rows[2].textContent).toContain("사용 불가");
     expect(rows[2].textContent).not.toContain("0 B");
     expect(container.querySelectorAll("[data-chat-image-index], [data-chat-attachment-index]")).toHaveLength(items.length);
     for (const index of [0, 2]) {
@@ -161,12 +161,12 @@ describe("ChatAttachments", () => {
     const failedImage = container.querySelector<HTMLImageElement>('[data-chat-image-index="1"] img')!;
     await act(async () => failedImage.dispatchEvent(new Event("error")));
     expect(container.querySelector('[data-chat-image-index="1"] [role="status"]')?.textContent)
-      .toContain("불러오지 못했습니다");
+      .toContain("불러오지 못함");
     expect(container.querySelector('[data-chat-attachment-index="1"]')).toBeNull();
     const failedCard = container.querySelector('[data-chat-image-index="1"]')!;
     expect(failedCard.textContent).toContain("failed.png");
-    expect(failedCard.textContent).toContain("image/png");
-    expect(failedCard.textContent).toContain("1.0 KB");
+    expect(failedCard.querySelector('.chat-image-metadata')).toBeNull();
+    expect(failedCard.querySelector('.chat-image-thumbnail-frame')).not.toBeNull();
     const failedButton = failedCard.querySelector<HTMLButtonElement>("button")!;
     expect(failedButton).not.toBeNull();
     expect(failedButton?.getAttribute("aria-label")).toContain("failed.png");
@@ -178,6 +178,17 @@ describe("ChatAttachments", () => {
     expect(clickableImage).toBeDefined();
     await act(async () => clickableImage.click());
     expect(onOpen).toHaveBeenCalledWith(2, clickableImage);
+  });
+
+  it("shows only size in a row while preserving the full document filename", async () => {
+    await act(async () => root.render(<ChatAttachments items={[attachment('doc', {
+      name: '긴 문서 이름.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      previewKind: 'info', previewUrl: null, byteSize: 1_048_576,
+    })]} role="user" onOpen={() => {}} />));
+    const row = container.querySelector('[data-chat-attachment-index="0"]')!;
+    expect(row.querySelector('.chat-image-metadata')?.textContent).toBe('1.0 MB');
+    expect(row.textContent).not.toContain('application/');
+    expect(row.querySelector('.chat-attachment-name')?.textContent).toBe('긴 문서 이름.docx');
   });
 
   it("keeps the default local tile and separates chip viewing from removal", async () => {

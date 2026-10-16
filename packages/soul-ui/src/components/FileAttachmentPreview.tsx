@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import {Dialog,DialogPopup,DialogTitle} from "./ui/dialog";
 import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
+import { formatFileSize } from "../lib/format-file-size";
 
 interface LocalFileAttachmentPreviewProps {
   initialImageOpen?: boolean;
@@ -80,7 +81,7 @@ function ImagePreview({ file, initialOpen = false }: ImagePreviewProps) {
   );
 }
 
-function FileTypeIcon({ label }: { label: string }) {
+export function FileTypeIcon({ label }: { label: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-1 w-full h-full px-1">
       {/* File icon SVG */}
@@ -262,16 +263,14 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
 
 function RemoteAttachmentRow({ item, index, onOpen }: Extract<FileAttachmentPreviewProps, { variant: "row" }>) {
   const name = item.name ?? "첨부 파일";
-  const metadata = [item.mimeType, item.byteSize === null ? null : formatFileSize(item.byteSize)]
-    .filter(Boolean)
-    .join(" · ");
   const availabilityText = item.availability === "missing"
-    ? "원본을 찾을 수 없습니다"
+    ? "찾을 수 없음"
     : item.availability === "unavailable"
-      ? "현재 사용할 수 없습니다"
+      ? "사용 불가"
       : item.availability === "unresolved"
-        ? "원본을 확인할 수 없습니다"
+        ? "확인 불가"
         : null;
+  const metadata = availabilityText ?? (item.byteSize === null ? null : formatFileSize(item.byteSize));
 
   return (
     <button
@@ -281,21 +280,10 @@ function RemoteAttachmentRow({ item, index, onOpen }: Extract<FileAttachmentPrev
       title={name}
       aria-label={name}
       onClick={event => onOpen(item, event.currentTarget)}
-      className="flex w-full min-w-0 items-center gap-3 rounded border border-border bg-muted p-2 text-left text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+      className="chat-attachment-row flex w-full min-w-0 items-center gap-3 border border-border bg-muted p-2 text-left text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="chat-image-filename chat-attachment-name min-w-0 flex-1" title={name}>{name}</span>
-      {(metadata || availabilityText) && (
-        <span className="flex min-w-0 flex-col items-end">
-          {metadata && <span className="chat-image-metadata max-w-full truncate">{metadata}</span>}
-          {availabilityText && <span className="chat-image-metadata max-w-full truncate">{availabilityText}</span>}
-        </span>
-      )}
+      {metadata && <span className="chat-image-metadata shrink-0">{metadata}</span>}
     </button>
   );
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

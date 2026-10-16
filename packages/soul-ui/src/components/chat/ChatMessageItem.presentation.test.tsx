@@ -103,6 +103,7 @@ describe("ChatMessageItem presentation", () => {
     expect(manuscriptHtml).toContain("nodeId=eiaserinnys&amp;path=%2Fincoming%2Ffirst.png");
     expect(manuscriptHtml).toContain("nodeId=eiaserinnys&amp;path=%2Fincoming%2Fsecond.webp");
     expect(manuscriptHtml).not.toContain("notes.txt");
+    expect(manuscriptHtml).not.toContain("chat-image-metadata");
   });
 
   it("opens the message gallery at the clicked image, navigates, and restores focus without moving scroll", () => {
@@ -122,11 +123,11 @@ describe("ChatMessageItem presentation", () => {
 
     let dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
     expect(dialog.textContent).toContain("2/2");
-    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="다음 이미지"]')?.disabled).toBe(true);
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="다음 이미지"]')?.getAttribute('aria-disabled')).toBe('true');
     act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')!.click());
     dialog = document.body.querySelector<HTMLElement>('[data-slot="dialog-popup"]')!;
     expect(dialog.textContent).toContain("1/2");
-    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')?.disabled).toBe(true);
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="이전 이미지"]')?.getAttribute('aria-disabled')).toBe('true');
 
     act(() => dialog.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
 
@@ -197,7 +198,7 @@ describe("ChatMessageItem presentation", () => {
     expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지 불러오는 중…");
     act(() => image.dispatchEvent(new Event("error")));
 
-    expect(host.querySelector(".chat-image-status")?.textContent).toBe("이미지를 불러오지 못했습니다.");
+    expect(host.querySelector(".chat-image-status")?.textContent).toBe("불러오지 못함");
     expect(host.textContent).toContain("설명은 남아 있습니다.");
     expect(host.querySelector('img[src="/missing.png"]')).toBeNull();
   });

@@ -1274,8 +1274,16 @@ pre[data-markdown-code-layout="document"] {
   margin-inline-end: auto;
 }
 .chat-image-run[data-chat-image-role="user"] {
-  max-width: var(--chat-attachment-user-max-width);
+  max-width: min(var(--chat-attachment-user-max-width), calc(2 * var(--chat-attachment-thumbnail-max-size) + var(--v3-space-3)));
   margin-inline-start: auto;
+}
+.chat-attachment-rows {
+  gap: var(--v3-space-3);
+}
+.chat-attachment-row {
+  height: calc(var(--spacing) * 10);
+  border-radius: var(--chat-attachment-radius);
+  font: var(--v3-type-body) var(--v3-font-family);
 }
 .chat-image-grid {
   display: grid;
@@ -1413,6 +1421,7 @@ pre[data-markdown-code-layout="document"] {
   flex-shrink: 0;
 }
 .chat-image-viewer-header {
+  padding-inline-end: calc(var(--v3-action-size) + var(--v3-space-2));
   gap: var(--chat-attachment-filename-gap);
   min-width: 0;
 }
@@ -1427,14 +1436,14 @@ pre[data-markdown-code-layout="document"] {
      Use the larger mobile bottom inset and the existing line-height ceilings. */
   --image-viewer-block-reserve: calc(var(--spacing) * 20 + var(--font-size-xl--line-height) + var(--font-size-sm--line-height) + var(--chat-attachment-filename-gap));
 }
-.chat-image-viewer-popup[data-slot="dialog-popup"]:has([data-slot="dialog-footer"]) {
+.chat-image-viewer-popup[data-slot="dialog-popup"]:is(:has([data-slot="dialog-footer"]), :has(.chat-attachment-state)) {
   width: calc(100dvw - 2rem);
   height: calc(100dvh - 2 * var(--image-viewer-block-margin));
   --image-viewer-block-reserve: calc(var(--spacing) * 37 + var(--font-size-xl--line-height) + var(--font-size-sm--line-height) + var(--chat-attachment-filename-gap) + var(--image-viewer-rim));
 }
-.chat-image-viewer-popup:has([data-slot="dialog-footer"]) > [data-slot="dialog-panel-scroll"],
-.chat-image-viewer-popup:has([data-slot="dialog-footer"]) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel,
-.chat-image-viewer-popup:has([data-slot="dialog-footer"]) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
+.chat-image-viewer-popup:is(:has([data-slot="dialog-footer"]), :has(.chat-attachment-state)) > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup:is(:has([data-slot="dialog-footer"]), :has(.chat-attachment-state)) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel,
+.chat-image-viewer-popup:is(:has([data-slot="dialog-footer"]), :has(.chat-attachment-state)) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
   flex: 1 1 auto;
 }
 .chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] {
@@ -1466,12 +1475,45 @@ pre[data-markdown-code-layout="document"] {
   max-width: 100%;
   place-self: center;
 }
-.chat-image-viewer-footer {
-  flex-direction: row;
+.chat-attachment-state {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--v3-space-3);
 }
+.chat-attachment-state > :only-child {
+  height: auto;
+  width: auto;
+}
+.chat-image-viewer-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+.chat-image-viewer-navigation {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+.chat-image-viewer-count {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.chat-image-viewer-save {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+.chat-image-viewer-save-error {
+  grid-column: 1 / -1;
+}
+
 
 /* Approved dialog content only; the shared DialogPopup owns its glass frame,
    header/footer insets, focus treatment and responsive button sizes. */

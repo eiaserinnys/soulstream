@@ -41,7 +41,7 @@ export function ChatAttachments({
       />
       {fileItems.length > 0 && (
         <div
-          className="chat-image-run flex flex-col gap-2"
+          className="chat-image-run chat-attachment-rows flex flex-col"
           data-chat-image-role={role}
           data-chat-attachment-rows
         >

@@ -127,6 +127,11 @@ export function ChatAttachmentReviewSamples() {
       user: [reviewImage("user-image-one", "사용자 이미지 1.png"), firstNote, reviewImage("user-image-two", "사용자 이미지 2.png"), secondNote, longArchive, missing],
       assistant: [
         reviewImage("assistant-image", "응답 이미지.png"),
+        {
+          ...reviewImage("assistant-failed-image", "불러오지 못한 이미지.png"),
+          previewUrl: "/__review-attachment/missing.png",
+          source: { kind: "markdown-image", src: "/__review-attachment/missing.png", alt: "불러오지 못한 이미지" },
+        } satisfies ChatAttachmentItem,
         ...items.slice(1),
       ],
       tile: new File(["기존 타일 표본"], "existing-attachment.pdf", { type: "application/pdf" }),

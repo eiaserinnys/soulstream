@@ -77,18 +77,6 @@ function useImageMetadata(
   }, [image.id, image.src, image.filename, image.mimeType, image.bytes, onMetadata]);
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const kilobytes = bytes / 1024;
-  if (kilobytes < 100) return `${kilobytes.toFixed(1)} KB`;
-  return `${Math.round(kilobytes)} KB`;
-}
-
-function imageMetaText(mimeType?: string, bytes?: number): string | undefined {
-  const parts = [mimeType, bytes !== undefined ? formatBytes(bytes) : undefined].filter(Boolean);
-  return parts.length ? parts.join(" ") : undefined;
-}
-
 function ChatImageThumbnail({
   image,
   galleryIndex,
@@ -107,26 +95,25 @@ function ChatImageThumbnail({
   const [failedSource, setFailedSource] = useState<string | null>(null);
   useImageMetadata(image, onMetadata);
   const filename = image.filename ?? metadata?.filename ?? getChatImageFilename(image.src);
-  const mimeType = image.mimeType ?? metadata?.mimeType;
-  const bytes = image.bytes ?? metadata?.bytes;
-  const meta = imageMetaText(mimeType, bytes);
   const failed = failedSource === image.src;
 
   return (
     <figure className="chat-image-card" data-chat-image-index={galleryIndex}>
       {failed ? (
-        openFailedImage ? (
-          <button
-            type="button"
-            className="chat-image-status outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={filename ? `첨부 열기: ${filename}` : "첨부 열기"}
-            onClick={event => onOpen(galleryIndex, event.currentTarget)}
-          >
-            <span role="status">이미지를 불러오지 못했습니다.</span>
-          </button>
-        ) : (
-          <span className="chat-image-status" role="status">이미지를 불러오지 못했습니다.</span>
-        )
+        <div className="chat-image-thumbnail-frame bg-muted">
+          {openFailedImage ? (
+            <button
+              type="button"
+              className="chat-image-status outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={filename ? `첨부 열기: ${filename}` : "첨부 열기"}
+              onClick={event => onOpen(galleryIndex, event.currentTarget)}
+            >
+              <span role="status">불러오지 못함</span>
+            </button>
+          ) : (
+            <span className="chat-image-status" role="status">불러오지 못함</span>
+          )}
+        </div>
       ) : (
         <MarkdownImage
           src={image.src}
@@ -140,10 +127,9 @@ function ChatImageThumbnail({
           onError={src => setFailedSource(src)}
         />
       )}
-      {(filename || meta) && (
+      {filename && (
         <figcaption className="chat-image-caption">
-          {filename && <span className="chat-image-filename" title={filename}>{filename}</span>}
-          {meta && <span className="chat-image-metadata">{meta}</span>}
+          <span className="chat-image-filename" title={filename}>{filename}</span>
         </figcaption>
       )}
     </figure>
