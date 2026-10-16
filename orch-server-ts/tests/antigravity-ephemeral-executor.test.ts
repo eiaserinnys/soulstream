@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 import {
   AntigravityEphemeralExecutor,
@@ -115,5 +116,27 @@ describe("Antigravity ephemeral executor", () => {
     await expect(port.execute({ command: process.execPath, args: ["-e", "process.stdin.resume(); setTimeout(() => {}, 1000)"],
       cwd: tmpdir(), env: process.env as Record<string, string> }, "", 40)).rejects.toMatchObject({ code: "ANTIGRAVITY_TIMEOUT" });
     expect(onProcessTiming).toHaveBeenCalledWith(expect.objectContaining({ timedOut: true }));
+  });
+
+  it("returns and reaps a lingering child within two seconds after its complete result line", async () => {
+    const onProcessTiming = vi.fn();
+    const port = new NodeAntigravityExecProcess({ onProcessTiming });
+    const script = `
+      const line = JSON.stringify({event: "result", result: {status: "SUCCESS"}, pid: process.pid}) + "\\n";
+      process.stdout.write(line.slice(0, 10));
+      setTimeout(() => process.stdout.write(line.slice(10)), 20);
+      setTimeout(() => {}, 30_000);
+    `;
+    const startedAt = performance.now();
+    const result = await port.execute({ command: process.execPath, args: ["-e", script],
+      cwd: tmpdir(), env: process.env as Record<string, string> }, "", 2_000);
+
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    expect(result.exitCode).toBe(0);
+    const event = JSON.parse(result.stdout.trim());
+    expect(event).toMatchObject({ event: "result", result: { status: "SUCCESS" } });
+    expect(result.stdout.endsWith("\n")).toBe(true);
+    expect(() => process.kill(event.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
+    expect(onProcessTiming).toHaveBeenCalledWith(expect.objectContaining({ timedOut: false, cancelled: false }));
   });
 });
