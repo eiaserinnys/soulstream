@@ -53,3 +53,33 @@ export type AttachmentProjection =
       byte_size: number | null;
       availability: "unresolved" | "missing";
     };
+
+type SessionAttachmentReadContext = Extract<AttachmentReadContext, { type: "session" }>;
+
+export type SessionEventAttachmentView =
+  | (Extract<AttachmentProjection, { kind: "asset" }> & {
+      read_context: SessionAttachmentReadContext;
+      legacy_sources: { node_id: string; path: string }[];
+    })
+  | (Extract<AttachmentProjection, { kind: "legacy" }> & {
+      read_context: SessionAttachmentReadContext;
+    })
+  | {
+      kind: "unavailable";
+      attachment_id: string;
+      name: null;
+      availability: "unavailable";
+      read_context: SessionAttachmentReadContext;
+    }
+  | {
+      kind: "unavailable_legacy";
+      path: string;
+      name: string;
+      availability: "unavailable";
+      read_context: SessionAttachmentReadContext;
+    };
+
+export interface SessionEventAttachmentResponse {
+  event_id: number;
+  items: SessionEventAttachmentView[];
+}
