@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { submitIntervention } from "./submitIntervention";
 import { SubmitInterventionHttpError } from "./submitIntervention";
 import { createChatSessionStore, useDashboardStore } from "../../stores/dashboard-store";
+import { reportMessageContext } from "../../shared/persistent-report";
+import type { PersistentReportEntry } from "../../shared/session-types";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import {
   useChatInputSend,
@@ -168,6 +170,45 @@ describe("useChatInputSend pending message", () => {
       <Harness args={args} actions={actions} onSendError={onSendError} onSendFailure={onSendFailure} />,
     ));
   }
+
+  it.each(['예산 확인: 응 대신 보류합니다', '다른 글\n\n예산 확인: 응', '예산 확인: 응\n추가 글'])('sends visible context rather than a reply for %s', async text => {
+    const entry: PersistentReportEntry = { key: 'budget', kind: 'ask', title: '예산 확인', card_numbers: [], context: '', action: '', options: ['응'], state: 'open', answer: '', updated_at: 'first' };
+    args.getMessageContext = value => reportMessageContext([entry], 'budget', { key: 'budget', option: '응', line: '예산 확인: 응' }, value);
+    vi.mocked(submitIntervention).mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
+    render();
+    await act(async () => latest!.send(text));
+    expect(vi.mocked(submitIntervention).mock.calls[0][0].contextItems).toEqual([{ key: 'persistent_report_visible', content: { key: 'budget', title: '예산 확인' } }]);
+    expect(useDashboardStore.getState().pendingChatSends['session-1']?.persistentReportSource).toBeUndefined();
+  });
+
+  it.each(['reply', 'cancel'] as const)('acknowledges the retained report %s marker through the ordinary chat retry', async kind => {
+    const contextItems = [{ key: kind === 'reply' ? 'persistent_report_reply' : 'persistent_report_visible', content: { key: 'report-a', option: '응' } }];
+    const failed: PendingChatSend = { id: 'report-retry', status: 'failed', text: '확인: 응', messageText: '확인: 응', attachmentPaths: [], attachments: [], mode: 'intervention', contextItems,
+      persistentReportOperation: { key: 'report-a', updatedAt: 'first', kind } };
+    useDashboardStore.getState().setPendingChatSend('session-1', failed);
+    vi.mocked(submitIntervention).mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
+    render();
+    await act(async () => latest!.retry('session-1', failed));
+    expect(useDashboardStore.getState().pendingChatSends['session-1']).toMatchObject({ id: failed.id, persistentReportOperation: { ...failed.persistentReportOperation, acknowledged: true } });
+    expect(vi.mocked(submitIntervention).mock.calls[0][0]).toMatchObject({ contextItems });
+  });
+
+  it.each([false, true])('captures report context and preserves it through retry (resume=%s)', async isFinished => {
+    args.isFinished = isFinished;
+    const contextItems = [{ key: 'persistent_report_reply', content: { key: 'report-a', option: '응' } }];
+    args.getMessageContext = vi.fn().mockReturnValue({ contextItems });
+    vi.mocked(submitIntervention).mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
+    render();
+    await act(async () => { await latest!.send('확인: 응'); });
+    const pending = useDashboardStore.getState().pendingChatSends['session-1'];
+    expect(pending.contextItems).toEqual(contextItems);
+    expect(pending.status).toBe('failed');
+    args.getMessageContext = vi.fn().mockReturnValue({});
+    render();
+    await act(async () => { await latest!.retry('session-1', pending); });
+    expect(vi.mocked(submitIntervention).mock.calls[1][0]).toMatchObject({ contextItems, attachmentPaths: ['/tmp/evidence.png'] });
+    expect(args.getMessageContext).not.toHaveBeenCalled();
+  });
 
   it("clears the composer immediately, keeps it editable, and shows a sending bubble", async () => {
     const request = deferred<{

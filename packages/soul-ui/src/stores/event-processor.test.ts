@@ -11,6 +11,8 @@ import { processEventsBatch, processEventSingle } from "./event-processor";
 import { createProcessingContext } from "./processing-context";
 import type { SoulSSEEvent } from "@shared/types";
 import { flattenTree } from "../lib/flatten-tree";
+import { groupManuscriptMessages, groupMessages } from "../lib/grouping";
+import { buildChatTimelineItems } from "../components/chat/ChatView.thinking-indicator";
 
 function makeUserMessageEvent(eventId: number): { event: SoulSSEEvent; eventId: number } {
   return {
@@ -68,6 +70,19 @@ function makeCompleteEvent(eventId: number): { event: SoulSSEEvent; eventId: num
       type: "complete",
       result: "Turn completed",
       attachments: [],
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function makeToolStartEvent(eventId: number, toolUseId: string): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "tool_start",
+      timestamp: eventId,
+      tool_use_id: toolUseId,
+      tool_name: "Read",
+      tool_input: { file_path: toolUseId + ".ts" },
     } as unknown as SoulSSEEvent,
     eventId,
   };
@@ -497,6 +512,23 @@ describe("processEventsBatch — prompt_suggestion", () => {
 describe("processEventsBatch — app-server final assistant message", () => {
   it("live final assistant_message replaces the streaming text node instead of creating a duplicate bubble", () => {
     const ctx = createProcessingContext();
+    const ui = {
+      schema_version: 1,
+      revision: 1,
+      ui_id: "ui_dfee7bbffdfbdc6da160cea6005ebfdd",
+      hash: "a9a314dbbfd5e9a70a851cbb25a79a7767fbdf204f3d513c6e66ca6252c92ed2",
+      document: {
+        schema_version: 1,
+        title: "Hello final",
+        body: [],
+        fields: {},
+        computed: {},
+        data: {},
+        sources: {},
+        assumptions: [],
+        units: {},
+      },
+    };
     const result = processEventsBatch(
       [
         {
@@ -520,8 +552,18 @@ describe("processEventsBatch — app-server final assistant message", () => {
         },
         {
           event: {
-            type: "text_delta",
+            type: "assistant_message",
             timestamp: 3,
+            content: "Hello final",
+            tool_use_id: "item-1",
+            ui,
+          } as unknown as SoulSSEEvent,
+          eventId: 9,
+        },
+        {
+          event: {
+            type: "text_delta",
+            timestamp: 4,
             text: "lo",
             tool_use_id: "item-1",
             _live_only: true,
@@ -531,7 +573,7 @@ describe("processEventsBatch — app-server final assistant message", () => {
         {
           event: {
             type: "assistant_message",
-            timestamp: 4,
+            timestamp: 5,
             content: "Hello final",
             tool_use_id: "item-1",
             _final_for_live_stream: true,
@@ -541,7 +583,7 @@ describe("processEventsBatch — app-server final assistant message", () => {
         {
           event: {
             type: "text_end",
-            timestamp: 4,
+            timestamp: 5,
             tool_use_id: "item-1",
             _live_only: true,
           } as unknown as SoulSSEEvent,
@@ -556,14 +598,56 @@ describe("processEventsBatch — app-server final assistant message", () => {
     );
 
     const messages = flattenTree(result.root);
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
+    expect(messages).toHaveLength(2);
+    const uiMessage = messages.find((message) => message.treeNodeType === "assistant_message");
+    const finalText = messages.find((message) => message.treeNodeType === "text");
+    expect(uiMessage).toMatchObject({
+      role: "assistant",
+      content: "Hello final",
+      treeNodeType: "assistant_message",
+    });
+    expect(uiMessage?.ui).toBe(ui);
+    expect(finalText).toMatchObject({
       role: "assistant",
       content: "Hello final",
       isStreaming: false,
       treeNodeType: "text",
     });
-    expect((result.root?.children ?? [])).toHaveLength(1);
+    expect((result.root?.children ?? [])).toHaveLength(2);
+  });
+
+  it("keeps same-content UI and ordinary assistant messages as separate nodes", () => {
+    const ui = {
+      schema_version: 1,
+      revision: 1,
+      ui_id: "ui_same-content",
+      hash: "same-content-hash",
+      document: { schema_version: 1, title: "Answer" },
+    };
+    const result = processEventsBatch(
+      [
+        {
+          event: { type: "assistant_message", content: "Answer", ui } as unknown as SoulSSEEvent,
+          eventId: 20,
+        },
+        {
+          event: { type: "assistant_message", content: "Answer" } as unknown as SoulSSEEvent,
+          eventId: 21,
+        },
+      ],
+      createProcessingContext(),
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    const messages = flattenTree(result.root);
+    expect(messages).toHaveLength(2);
+    expect(messages.map((message) => message.content)).toEqual(["Answer", "Answer"]);
+    expect(messages[0].id).not.toBe(messages[1].id);
+    expect(messages[0].ui).toBe(ui);
+    expect(messages[1].ui).toBeUndefined();
   });
 
   it("id 없는 live-only text_start는 과거 이벤트보다 뒤에 붙는다", () => {
@@ -729,6 +813,232 @@ describe("processEventsBatch — app-server final assistant message", () => {
       content: "Hello final",
       treeNodeType: "assistant_message",
     });
+  });
+});
+
+describe("processEventsBatch — 빈 live text 투영", () => {
+  it("빈 start/end 다섯 개를 숨기고 응답·완료와 인접 도구 묶음을 보존한다", () => {
+    const ctx = createProcessingContext();
+    const emptyStreamStarts = Array.from({ length: 5 }, (_, index) => {
+      const streamIdentity = "argon-empty-" + (index + 1);
+      return {
+        event: {
+          type: "text_start",
+          timestamp: index * 2,
+          streamIdentity,
+          liveSeq: 0,
+          liveTextMode: "replace",
+        } as SoulSSEEvent,
+        eventId: 0,
+      };
+    });
+    const emptyStreamEnds = Array.from({ length: 5 }, (_, index) => ({
+      event: {
+        type: "text_end",
+        timestamp: index * 2 + 1,
+        streamIdentity: "argon-empty-" + (index + 1),
+        liveSeq: 1,
+        liveTextMode: "append",
+      } as SoulSSEEvent,
+      eventId: 0,
+    }));
+
+    const startPhase = processEventsBatch(
+      [makeToolStartEvent(1, "tool-before"), ...emptyStreamStarts],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+    const startMessages = flattenTree(startPhase.root);
+    expect(startMessages.filter((message) => message.treeNodeType === "text")).toHaveLength(0);
+    expect(buildChatTimelineItems(groupMessages(startMessages), startMessages, "running").at(-1)).toEqual({
+      type: "thinking-indicator",
+    });
+
+    const emptyPhase = processEventsBatch(
+      [...emptyStreamEnds, makeToolStartEvent(2, "tool-after")],
+      ctx,
+      startPhase.root,
+      "sess-1",
+      null,
+      startPhase.maxEventId,
+    );
+    const emptyMessages = flattenTree(emptyPhase.root);
+    const defaultGrouped = groupMessages(emptyMessages);
+    const manuscriptGrouped = groupManuscriptMessages(emptyMessages);
+
+    expect(emptyMessages.filter((message) => message.treeNodeType === "text")).toHaveLength(0);
+    expect(defaultGrouped.find((item) => item.type === "tool-group")).toMatchObject({
+      type: "tool-group",
+      messages: [{ toolName: "Read" }, { toolName: "Read" }],
+    });
+    expect(manuscriptGrouped.find((item) => item.type === "activity-group")).toMatchObject({
+      type: "activity-group",
+      messages: [{ toolName: "Read" }, { toolName: "Read" }],
+    });
+    const orderedHistory = processEventsBatch(
+      [
+        makeToolStartEvent(10, "history-tool-before"),
+        {
+          event: { type: "text_start", timestamp: 11 } as SoulSSEEvent,
+          eventId: 11,
+        },
+        {
+          event: { type: "text_end", timestamp: 12 } as SoulSSEEvent,
+          eventId: 12,
+        },
+        makeToolStartEvent(13, "history-tool-after"),
+      ],
+      createProcessingContext(),
+      null,
+      "sess-1",
+      null,
+      0,
+      true,
+    );
+    const orderedHistoryMessages = flattenTree(orderedHistory.root);
+    expect(groupMessages(orderedHistoryMessages).find((item) => item.type === "tool-group")).toMatchObject({
+      type: "tool-group",
+      messages: [{ toolName: "Read" }, { toolName: "Read" }],
+    });
+    expect(groupManuscriptMessages(orderedHistoryMessages).find((item) => item.type === "activity-group")).toMatchObject({
+      type: "activity-group",
+      messages: [{ toolName: "Read" }, { toolName: "Read" }],
+    });
+    expect(buildChatTimelineItems(defaultGrouped, emptyMessages, "running").at(-1)).toEqual({
+      type: "thinking-indicator",
+    });
+
+    const normalText = processEventsBatch(
+      [
+        {
+          event: {
+            type: "text_start",
+            timestamp: 20,
+            streamIdentity: "argon-normal",
+            liveSeq: 0,
+            liveTextMode: "replace",
+          } as SoulSSEEvent,
+          eventId: 0,
+        },
+        {
+          event: {
+            type: "text_delta",
+            timestamp: 21,
+            streamIdentity: "argon-normal",
+            liveSeq: 1,
+            liveTextMode: "append",
+            text: "  Argon response ✨  ",
+          } as SoulSSEEvent,
+          eventId: 0,
+        },
+      ],
+      ctx,
+      emptyPhase.root,
+      "sess-1",
+      null,
+      emptyPhase.maxEventId,
+    );
+    const streamingMessages = flattenTree(normalText.root);
+    expect(streamingMessages.filter((message) => message.treeNodeType === "text")).toMatchObject([
+      { content: "  Argon response ✨  ", isStreaming: true },
+    ]);
+    expect(buildChatTimelineItems(groupMessages(streamingMessages), streamingMessages, "running")
+      .some((item) => item.type === "thinking-indicator")).toBe(false);
+
+    const endedText = processEventsBatch(
+      [{
+        event: {
+          type: "text_end",
+          timestamp: 22,
+          streamIdentity: "argon-normal",
+          liveSeq: 2,
+          liveTextMode: "append",
+        } as SoulSSEEvent,
+        eventId: 0,
+      }],
+      ctx,
+      normalText.root,
+      "sess-1",
+      null,
+      normalText.maxEventId,
+    );
+    const endedMessages = flattenTree(endedText.root);
+    expect(endedMessages.filter((message) => message.treeNodeType === "text")).toMatchObject([
+      { content: "  Argon response ✨  ", isStreaming: false },
+    ]);
+    expect(buildChatTimelineItems(groupMessages(endedMessages), endedMessages, "running").at(-1)).toEqual({
+      type: "thinking-indicator",
+    });
+
+    const complete = processEventsBatch(
+      [
+        {
+          event: {
+            type: "assistant_message",
+            content: "  Argon response ✨  ",
+            timestamp: 23,
+            streamIdentity: "argon-normal",
+            _final_for_live_stream: true,
+          } as SoulSSEEvent,
+          eventId: 3,
+        },
+        makeCompleteEvent(4),
+      ],
+      ctx,
+      endedText.root,
+      "sess-1",
+      null,
+      endedText.maxEventId,
+    );
+    const completedMessages = flattenTree(complete.root);
+    expect(completedMessages.filter((message) => message.treeNodeType === "text")).toMatchObject([
+      { content: "  Argon response ✨  ", isStreaming: false },
+    ]);
+    expect(completedMessages.filter((message) => message.treeNodeType === "complete")).toHaveLength(1);
+    expect(buildChatTimelineItems(groupMessages(completedMessages), completedMessages, "completed")
+      .some((item) => item.type === "thinking-indicator")).toBe(false);
+  });
+
+  it("빈 snapshot은 투영하지 않고, 비공백 snapshot과 durable history의 완료를 보존한다", () => {
+    const snapshot = processEventsBatch(
+      [{
+        event: {
+          type: "text_snapshot",
+          throughLiveSeq: 5,
+          streams: [
+            { streamIdentity: "snapshot-empty", text: "  \n", updatedAt: "2026-10-15T00:00:00Z" },
+            { streamIdentity: "snapshot-visible", text: " Snapshot response ✨ ", updatedAt: "2026-10-15T00:00:01Z" },
+          ],
+        } as unknown as SoulSSEEvent,
+        eventId: 0,
+      }],
+      createProcessingContext(),
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    expect(flattenTree(snapshot.root).filter((message) => message.treeNodeType === "text").map((message) => message.content)).toEqual([
+      " Snapshot response ✨ ",
+    ]);
+
+    const history = processEventsBatch(
+      [makeAssistantMessageEvent(10, "Stored response"), makeCompleteEvent(11)],
+      createProcessingContext(),
+      null,
+      "sess-1",
+      null,
+      0,
+      true,
+    );
+    expect(flattenTree(history.root).map((message) => [message.treeNodeType, message.content])).toEqual([
+      ["assistant_message", "Stored response"],
+      ["complete", "턴 완료"],
+    ]);
   });
 });
 

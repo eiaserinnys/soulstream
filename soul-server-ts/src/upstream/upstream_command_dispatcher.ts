@@ -18,6 +18,7 @@ export function createUpstreamCommandDispatcher(input: {
     agentRegistry: deps.agentRegistry,
     taskManager: deps.taskManager,
     taskExecutor: deps.taskExecutor,
+    providerUsage: deps.providerUsage,
     attachmentStore: deps.attachmentStore,
     claudeAuth: deps.claudeAuth,
     sessionDb: deps.sessionDb,

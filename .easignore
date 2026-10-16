@@ -4,6 +4,20 @@
 # EAS copy filtering checks parent directory paths without trailing slashes.
 !/packages
 /packages/*
+!/packages/chat-ui
+/packages/chat-ui/*
+!/packages/chat-ui/package.json
+!/packages/chat-ui/src
+/packages/chat-ui/src/*
+!/packages/chat-ui/src/index.ts
+!/packages/chat-ui/src/types.ts
+!/packages/chat-ui/src/validate.ts
+!/packages/chat-ui/src/validate_structure.ts
+!/packages/chat-ui/src/validate_utils.ts
+!/packages/chat-ui/src/evaluate.ts
+!/packages/chat-ui/src/controller.ts
+!/packages/chat-ui/src/text.ts
+!/packages/chat-ui/src/canonical.ts
 !/packages/soul-ui
 /packages/soul-ui/*
 !/packages/soul-ui/src
@@ -15,20 +29,25 @@
 /packages/soul-ui/src/lib/*
 !/packages/soul-ui/src/lib/safe-error-detail.ts
 !/packages/soul-ui/src/lib/turn-usage-format.ts
+!/packages/soul-ui/src/lib/usage-summary.ts
 !/packages/soul-ui/src/lib/persistent-turn-usage.ts
 !/packages/soul-ui/src/lib/persistent-session-layout.ts
 !/packages/soul-ui/src/lib/standalone-image-line.ts
+!/packages/soul-ui/src/lib/internal-link.ts
+!/packages/soul-ui/src/lib/markdown-document-heading.ts
 !/packages/wire-schema
 /packages/wire-schema/*
 !/packages/wire-schema/src
 /packages/wire-schema/src/*
 !/packages/wire-schema/src/card_colors.ts
 !/packages/wire-schema/src/persistent_jev_candidates.ts
+!/packages/wire-schema/src/persistent_report.ts
 
 # .easignore replaces all .gitignore files, including soul-app/.gitignore.
 node_modules/
 .expo/
 dist/
+/soul-app/dist-mockups/
 build/
 web-build/
 expo-env.d.ts

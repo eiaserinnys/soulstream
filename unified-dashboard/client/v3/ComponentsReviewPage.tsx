@@ -41,6 +41,10 @@ import { SwayCharacterReviewSample } from "./SwayCharacterReviewSample";
 import { PersistentSessionTaskListReviewSample } from "./PersistentSessionTaskListReviewSample";
 import { PersistentSessionPortraitToggleReviewSample } from "./PersistentSessionPortraitToggleReviewSample";
 import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSample";
+import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
+import { ChatUiReviewSample } from './ChatUiReviewSample';
+import { PersistentReportReviewSample } from './PersistentReportReviewSample';
+import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -132,6 +136,9 @@ export function ComponentsReviewPage() {
             <div className="v3-components-samples">
               <Sample name="RichSessionRow / RunRowFrame" state="기본 · 행 클릭 · 포커스">
                 <div className="v3-run-list"><RichSessionRow session={reviewSession} onOpen={() => open("세션")}/></div>
+              </Sample>
+              <Sample name="RichSessionRow / RunRowFrame" state="Antigravity · backend 이름">
+                <div className="v3-run-list"><RichSessionRow session={{ ...reviewSession, agentSessionId: "components-antigravity", backend: "antigravity", modelLabel: undefined }} onOpen={() => open("Antigravity 세션")}/></div>
               </Sample>
               <Sample name="RichSessionRow" state="small · 긴 한국어 제목">
                 <div className="v3-run-list"><RichSessionRow size="small" session={{ ...reviewSession, agentSessionId: "components-small", displayName: reviewTitle }} onOpen={() => open("small 세션")}/></div>
@@ -228,9 +235,20 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
+            <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 확인했어"><PersistentReportReviewSample /></Sample>
+            <Sample name="PersistentReportDeck" state="PAS 말풍선 · 1440"><PersistentReportReviewSample bubble /></Sample>
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">
               <CardTimeline card={reviewCard} detail={{ ...reviewDetail, comments }} portraitUrl="/system-portrait.png" userPortraitUrl={null}
                 onAnswer={() => open("질문 응답")} pending={false}/>
+            </Sample>
+            <Sample name="AssistantMessage contentLayout" state="일반 · structured · PAS">
+              <ChatUiMessageReviewSample />
+            </Sample>
+            <Sample name="ChatUiMessage · 일반" state="첫 조각 · 글 대체 · 실제 발행본">
+              <ChatUiReviewSample presentation="default" />
+            </Sample>
+            <Sample name="ChatUiMessage · PAS" state="첫 조각 · 글 대체 · 실제 발행본">
+              <ChatUiReviewSample presentation="manuscript" />
             </Sample>
             <Sample name="SystemMessage / CollapsibleCaption / LabeledDivider" state="기존 요약 · 접힘/펼침 · 말줄임 · 가운데 라벨">
               <div data-testid="caption-comparison">
@@ -287,6 +305,9 @@ export function ComponentsReviewPage() {
           <Sample name="CardHandoffView / CardComposer / ChatInputComposer / ChatInputEditor" state="선택행 위 · 한 줄 → 여러 줄 · 전송 · 로컬 첨부">
               <CardHandoffSample key={inputSampleVersion} onSend={send}/>
             </Sample>
+            <Sample name="ChatInputAccessories" state="첨부 있음/없음 · 긴 파일명 · 되돌리기와 전송">
+              <ChatInputAccessoriesReviewSample />
+            </Sample>
           </section>
           <section id="components-controls" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>선택과 설정</h3></div>
@@ -300,6 +321,7 @@ export function ComponentsReviewPage() {
             </Sample>
             <ComponentsReviewControls/>
             <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
+            <Sample name="PersistentSessionWeeklyUsage" state="1101px 이상 · 노드 3/2/0개 게이지 · 노드 이동 · 대기 · 조회 실패 · 갱신 지연"><PersistentSessionWeeklyUsageReviewSample/></Sample>
             <Sample name="PersistentSessionInstructions" state="빈 목록 · 항목 여럿 · 편집 중 · 상한 안내"><PersistentSessionInstructionsReviewSample/></Sample>
             <Sample name="PersistentSessionPortraitToggle" state="표시 · 숨김"><PersistentSessionPortraitToggleReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>
@@ -311,7 +333,7 @@ export function ComponentsReviewPage() {
             </div>
             <div className="v3-components-samples">
             <Sample name="SwayCharacter" state="원본 WebGL · 정지 이미지 · 표시 끔"><SwayCharacterReviewSample/></Sample>
-            <Sample name="PersistentSessionScreen" state="운영 전화면 · 독립 세션과 전송"><PersistentSessionScreenReviewSample/></Sample>
+            <Sample name="PersistentSessionScreen" state="운영 전화면 · 우하단 사용량 · 작업 목록 동시 펼침 · 실제 PAS 대화"><PersistentSessionScreenReviewSample/></Sample>
             <Sample name="FolderDescriptionPanel / DialogPopup" state="폴더 설명 · 대화상자">
               <FolderDescriptionPanel markdown={description} onSave={async body => { setDescription(body); open("설명 저장"); }}/>
               <Dialog open={panelOpen} onOpenChange={setPanelOpen}><DialogPopup>

@@ -1,21 +1,54 @@
 import { rm } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import type { Logger } from "pino";
 
 import {
   inspectRunnerDurableState,
+  probeRunnerDurableRetention,
   readRunnerRegistrationForDeletion,
+  type RunnerDurableRetentionProbe,
   type RunnerRegistration,
   type RunnerRegistrationScan,
 } from "./runner_process_registry.js";
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
+import type { RunnerSessionMutationLockObservationContext } from "./runner_session_mutation_lock.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import {
+  assertOwnedSessionDirectory,
+  countRetainedReasons,
+  hasCentralDeletionOverride,
+  hasProvenEmptyPrebootstrapEvidence,
+  sameRegistrationGeneration,
+  terminalCandidateReason,
+} from "./runner_session_gc_predicates.js";
 
 export interface RunnerSessionGarbageCollectorDependencies {
   now(): number;
-  withMutationLock<T>(sessionDirectory: string, operation: () => Promise<T>): Promise<T>;
-  refresh(registration: RunnerRegistration): Promise<RunnerRegistration>;
-  inspect(registration: RunnerRegistration): ReturnType<typeof inspectRunnerDurableState>;
+  monotonicNow(): number;
+  withMutationLock<T>(
+    sessionDirectory: string,
+    operation: () => Promise<T>,
+    observationContext?: RunnerSessionMutationLockObservationContext,
+  ): Promise<T>;
+  refresh(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<RunnerRegistration>;
+  inspect(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): ReturnType<typeof inspectRunnerDurableState>;
+  probeRetention(
+    registration: RunnerRegistration,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<RunnerDurableRetentionProbe>;
   removeDirectory(path: string): Promise<void>;
+}
+
+interface RunnerSessionGcDiagnostics {
+  retentionProbeDecisions: Record<string, number>;
+  durableInspectionCount: number;
+  mutationLockCallbackEntries: number;
 }
 
 export interface RunnerSessionGcResult {
@@ -43,8 +76,66 @@ export class RunnerSessionGarbageCollector {
   async collect(
     scan: RunnerRegistrationScan,
     policy?: RunnerSessionGarbageCollectionPolicy,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<RunnerSessionGcResult> {
+    const startedAtMonotonicMs = this.deps.monotonicNow();
+    const startedAtMs = this.deps.now();
+    let measuredDurationMs: number | undefined;
+    const durationMs = () => {
+      measuredDurationMs ??= Math.max(
+        0,
+        this.deps.monotonicNow() - startedAtMonotonicMs,
+      );
+      return measuredDurationMs;
+    };
+    const diagnostics: RunnerSessionGcDiagnostics = {
+      retentionProbeDecisions: {},
+      durableInspectionCount: 0,
+      mutationLockCallbackEntries: 0,
+    };
+    try {
+      return await this.collectSweep(
+        scan,
+        startedAtMs,
+        durationMs,
+        diagnostics,
+        policy,
+        phaseObservation,
+      );
+    } catch (error) {
+      const elapsedMs = durationMs();
+      const failure = phaseObservation?.failureFor(error);
+      try {
+        this.logger.warn({
+          err: error,
+          startedAtMs,
+          durationMs: elapsedMs,
+          ...(failure ? { failurePhase: failure.phase, failureElapsedMs: failure.elapsedMs } : {}),
+          ...(phaseObservation ? {
+            phaseDurationsMs: phaseDurationsWithOtherMs(phaseObservation, elapsedMs),
+            database: phaseObservation.databaseSummary(),
+            databaseAndPhaseDurationsOverlap: true,
+            nestedMutationTimingOverlapsAcquire: true,
+          } : {}),
+          ...diagnostics,
+        }, "runner session GC sweep failed");
+      } catch {
+        // Preserve the original collection failure if reporting also fails.
+      }
+      throw error;
+    }
+  }
+
+  private async collectSweep(
+    scan: RunnerRegistrationScan,
+    startedAtMs: number,
+    durationMs: () => number,
+    diagnostics: RunnerSessionGcDiagnostics,
+    policy?: RunnerSessionGarbageCollectionPolicy,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<RunnerSessionGcResult> {
     const result: RunnerSessionGcResult = { removed: [], retained: [] };
+    let lastFailure: unknown;
     for (const registration of scan.registrations) {
       const candidateReason = terminalCandidateReason(
         registration,
@@ -55,15 +146,24 @@ export class RunnerSessionGarbageCollector {
         result.retained.push({ sessionId: registration.config.sessionId, reason: candidateReason });
         continue;
       }
+      const observationArgs: [] | [RunnerSessionMutationLockObservationContext] = phaseObservation
+        ? [{ phaseObservation, sessionId: registration.config.sessionId }]
+        : [];
       await this.deps.withMutationLock(
         registration.config.paths.sessionDirectory,
         async () => {
+          diagnostics.mutationLockCallbackEntries += 1;
           try {
             assertOwnedSessionDirectory(
               this.stateDirectory,
               registration.config.paths.sessionDirectory,
             );
-            const fresh = await this.deps.refresh(registration);
+            const refresh = () => this.deps.refresh(registration, phaseObservation);
+            const fresh = phaseObservation
+              ? await phaseObservation.runAsync("freshRegistration", {
+                sessionId: registration.config.sessionId,
+              }, refresh)
+              : await refresh();
             const freshReason = terminalCandidateReason(
               fresh,
               this.deps.now(),
@@ -73,9 +173,67 @@ export class RunnerSessionGarbageCollector {
               result.retained.push({ sessionId: registration.config.sessionId, reason: freshReason });
               return;
             }
-            const inspection = await this.deps.inspect(fresh);
+            const probe = () => this.deps.probeRetention(fresh, phaseObservation);
+            const retentionProbe = phaseObservation
+              ? await phaseObservation.runAsync("durableRetentionProbe", {
+                sessionId: registration.config.sessionId,
+              }, probe)
+              : await probe();
+            const probeReason = retentionProbe.localRetentionReason;
+            const probeDecision = probeReason ?? "full_inspection_required";
+            diagnostics.retentionProbeDecisions[probeDecision] =
+              (diagnostics.retentionProbeDecisions[probeDecision] ?? 0) + 1;
+            if (!sameRegistrationGeneration(fresh, retentionProbe.registration)) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: "registration_changed",
+              });
+              return;
+            }
+            const probeTerminalReason = terminalCandidateReason(
+              retentionProbe.registration,
+              this.deps.now(),
+              this.retentionMs,
+            );
+            if (probeTerminalReason) {
+              result.retained.push({
+                sessionId: registration.config.sessionId,
+                reason: probeTerminalReason,
+              });
+              return;
+            }
+            let deletedSessionEvidence = false;
+            if (probeReason) {
+              if (!hasCentralDeletionOverride(retentionProbe.registration, policy)) {
+                result.retained.push({
+                  sessionId: registration.config.sessionId,
+                  reason: probeReason,
+                });
+                return;
+              }
+              deletedSessionEvidence = await isDeletedCentralSessionEvidence(
+                retentionProbe.registration,
+                policy,
+                phaseObservation,
+                "initial",
+              );
+              if (!deletedSessionEvidence) {
+                result.retained.push({
+                  sessionId: registration.config.sessionId,
+                  reason: probeReason,
+                });
+                return;
+              }
+            }
+            diagnostics.durableInspectionCount += 1;
+            const inspect = () => this.deps.inspect(retentionProbe.registration, phaseObservation);
+            const inspection = phaseObservation
+              ? await phaseObservation.runAsync("durableInspection", {
+                sessionId: registration.config.sessionId,
+              }, inspect)
+              : await inspect();
             const hydrated = inspection.registration;
-            if (!sameRegistrationGeneration(fresh, hydrated)) {
+            if (!sameRegistrationGeneration(retentionProbe.registration, hydrated)) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
                 reason: "registration_changed",
@@ -94,10 +252,14 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            const deletedSessionEvidence = await isDeletedCentralSessionEvidence(
-              hydrated,
-              policy,
-            );
+            if (!probeReason) {
+              deletedSessionEvidence = await isDeletedCentralSessionEvidence(
+                hydrated,
+                policy,
+                phaseObservation,
+                "initial",
+              );
+            }
             if (!deletedSessionEvidence) {
               if (!hydrated.lifecycle) {
                 result.retained.push({
@@ -135,7 +297,12 @@ export class RunnerSessionGarbageCollector {
                 }
               }
             }
-            const latest = await this.deps.refresh(hydrated);
+            const refreshLatest = () => this.deps.refresh(hydrated, phaseObservation);
+            const latest = phaseObservation
+              ? await phaseObservation.runAsync("freshRegistration", {
+                sessionId: registration.config.sessionId,
+              }, refreshLatest)
+              : await refreshLatest();
             if (!sameRegistrationGeneration(hydrated, latest)) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
@@ -154,7 +321,12 @@ export class RunnerSessionGarbageCollector {
             }
             if (
               deletedSessionEvidence
-              && !await isDeletedCentralSessionEvidence(latest, policy)
+              && !await isDeletedCentralSessionEvidence(
+                latest,
+                policy,
+                phaseObservation,
+                "beforeDelete",
+              )
             ) {
               result.retained.push({
                 sessionId: registration.config.sessionId,
@@ -162,7 +334,16 @@ export class RunnerSessionGarbageCollector {
               });
               return;
             }
-            await this.deps.removeDirectory(latest.config.paths.sessionDirectory);
+            const removeDirectory = () => this.deps.removeDirectory(
+              latest.config.paths.sessionDirectory,
+            );
+            if (phaseObservation) {
+              await phaseObservation.runAsync("removeDirectory", {
+                sessionId: latest.config.sessionId,
+              }, removeDirectory);
+            } else {
+              await removeDirectory();
+            }
             result.removed.push(latest.config.sessionId);
             const prebootstrap = hydrated.bootstrap === null;
             this.logger.info(
@@ -183,6 +364,7 @@ export class RunnerSessionGarbageCollector {
               "removed expired terminal runner session state",
             );
           } catch (error) {
+            lastFailure = error;
             result.retained.push({
               sessionId: registration.config.sessionId,
               reason: "evidence_unreadable",
@@ -193,8 +375,13 @@ export class RunnerSessionGarbageCollector {
             );
           }
         },
+        ...observationArgs,
       );
     }
+    const elapsedMs = durationMs();
+    const phaseDurationsMs = phaseObservation
+      ? phaseDurationsWithOtherMs(phaseObservation, elapsedMs)
+      : undefined;
     this.logger.info(
       {
         inspected: scan.registrations.length,
@@ -204,6 +391,22 @@ export class RunnerSessionGarbageCollector {
         retainedByReason: countRetainedReasons(result.retained),
         retainedSessions: result.retained,
         unreadableRegistrations: scan.errors.length,
+        startedAtMs,
+        durationMs: elapsedMs,
+        ...diagnostics,
+        ...(phaseObservation ? {
+          phaseDurationsMs,
+          database: phaseObservation.databaseSummary(),
+          databaseAndPhaseDurationsOverlap: true,
+          nestedMutationTimingOverlapsAcquire: true,
+          ...(lastFailure !== undefined
+            && phaseObservation.failureFor(lastFailure)
+            ? {
+              failurePhase: phaseObservation.failureFor(lastFailure)!.phase,
+              failureElapsedMs: phaseObservation.failureFor(lastFailure)!.elapsedMs,
+            }
+            : {}),
+        } : {}),
       },
       "runner session GC sweep completed",
     );
@@ -214,77 +417,54 @@ export class RunnerSessionGarbageCollector {
 async function isDeletedCentralSessionEvidence(
   registration: RunnerRegistration,
   policy: RunnerSessionGarbageCollectionPolicy | undefined,
+  phaseObservation?: RunnerPhaseObservation,
+  label: "initial" | "beforeDelete" = "initial",
 ): Promise<boolean> {
   if (!policy || !registration.retiredAt || registration.pidAlive) return false;
-  return !await policy.centralSessionExists(registration.config.sessionId);
+  const lookup = () => policy.centralSessionExists(registration.config.sessionId);
+  const exists = phaseObservation
+    ? await phaseObservation.runAsync("centralSessionLookup", {
+      sessionId: registration.config.sessionId,
+      label,
+    }, lookup)
+    : await lookup();
+  return !exists;
 }
 
-function hasProvenEmptyPrebootstrapEvidence(
-  inspection: Awaited<ReturnType<typeof inspectRunnerDurableState>>,
-): boolean {
-  return inspection.durableRecordCount === 0
-    && inspection.unacknowledgedIpcFrameCount === 0
-    && inspection.pendingInterventionCount === 0;
-}
-
-function terminalCandidateReason(
-  registration: RunnerRegistration,
-  nowMs: number,
-  retentionMs: number,
-): string | null {
-  if (registration.retiredAt) {
-    const retiredAt = Date.parse(registration.retiredAt);
-    if (!Number.isFinite(retiredAt)) return "retirement_timestamp_invalid";
-    if (nowMs - retiredAt < retentionMs) return "retention_window";
-    return null;
-  }
-  if (registration.pid === null) return "pid_evidence_missing";
-  if (registration.pidAlive) return "live_runner";
-  const lifecycle = registration.lifecycle;
-  if (!lifecycle) return "lifecycle_missing";
-  if (lifecycle.execution_state === "running") return "running_lifecycle";
-  const terminalAt = Date.parse(lifecycle.progress_at);
-  if (!Number.isFinite(terminalAt)) return "terminal_timestamp_invalid";
-  if (nowMs - terminalAt < retentionMs) return "retention_window";
-  return null;
-}
-
-function countRetainedReasons(
-  retained: RunnerSessionGcResult["retained"],
+function phaseDurationsWithOtherMs(
+  phaseObservation: RunnerPhaseObservation,
+  durationMs: number,
 ): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const item of retained) counts[item.reason] = (counts[item.reason] ?? 0) + 1;
-  return counts;
-}
-
-function assertOwnedSessionDirectory(stateDirectory: string, sessionDirectory: string): void {
-  const state = resolve(stateDirectory);
-  const session = resolve(sessionDirectory);
-  if (session === state || resolve(dirname(session)) !== state) {
-    throw new Error(`runner session directory escaped state root: ${sessionDirectory}`);
-  }
+  const phaseDurationsMs = { ...phaseObservation.phaseDurationsMs() };
+  const disjointPhases = [
+    "mutationQueueWait",
+    "mutationAcquire",
+    "mutationRelease",
+    "freshRegistration",
+    "durableRetentionProbe",
+    "durableInspection",
+    "centralSessionLookup",
+    "removeDirectory",
+  ];
+  const measuredMs = disjointPhases.reduce(
+    (total, phase) => total + (phaseDurationsMs[phase] ?? 0),
+    0,
+  );
+  phaseDurationsMs.otherMs = Math.max(0, durationMs - measuredMs);
+  return phaseDurationsMs;
 }
 
 function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
   return {
     now: Date.now,
+    monotonicNow: () => performance.now(),
     withMutationLock: withRunnerSessionMutationLock,
-    refresh: async (registration) => await readRunnerRegistrationForDeletion(
+    refresh: async (registration, phaseObservation) => await readRunnerRegistrationForDeletion(
       registration.config.paths.sessionDirectory,
+      phaseObservation,
     ),
     inspect: inspectRunnerDurableState,
+    probeRetention: probeRunnerDurableRetention,
     removeDirectory: async (path) => await rm(path, { recursive: true }),
   };
-}
-
-function sameRegistrationGeneration(
-  left: RunnerRegistration,
-  right: RunnerRegistration,
-): boolean {
-  return left.config.sessionId === right.config.sessionId
-    && left.config.codeSha === right.config.codeSha
-    && left.config.paths.sessionDirectory === right.config.paths.sessionDirectory
-    && (left.registrationId ?? null) === (right.registrationId ?? null)
-    && left.pid === right.pid
-    && (left.pidStartIdentity ?? null) === (right.pidStartIdentity ?? null);
 }

@@ -429,7 +429,7 @@ describe('client.getProviderUsage', () => {
             },
           ],
         },
-        gemini: { status: 'not_configured', source: '', planType: null, quotas: [] },
+        antigravity: { status: 'not_configured', source: '', planType: null, quotas: [] },
       },
     });
     const api = createApiClient(BASE);

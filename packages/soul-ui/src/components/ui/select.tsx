@@ -126,7 +126,7 @@ function SelectPopup({
         alignItemWithTrigger={alignItemWithTrigger}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-[calc(var(--v3-layer-modal,50)+1)] select-none"
+        className="z-[calc(var(--v3-layer-modal,50)+1)] select-none max-w-(--available-width)"
         data-slot="select-positioner"
         side={side}
         sideOffset={sideOffset}
@@ -194,7 +194,7 @@ function SelectItem({
           <path d="M5.252 12.7 10.2 18.63 18.748 5.37" />
         </svg>
       </SelectPrimitive.ItemIndicator>
-      <SelectPrimitive.ItemText className="col-start-2 min-w-0">
+      <SelectPrimitive.ItemText className="col-start-2 min-w-0 break-keep">
         {children}
       </SelectPrimitive.ItemText>
     </SelectPrimitive.Item>

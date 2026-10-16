@@ -1,5 +1,8 @@
 import type { SessionEvent } from '../../api/types';
-import { mergeAppendOnlyStreamingDelta } from '../../lib/streamingDeltaEvent';
+import {
+  isAssistantUiPublication,
+  mergeAppendOnlyStreamingDelta,
+} from '../../lib/streamingDeltaEvent';
 import type { StreamingSlotKind } from '../../store/chatStore';
 
 export const STREAMING_DELTA_FLUSH_MS = 50;
@@ -141,8 +144,11 @@ export function cancelStreamingDeltaBuffer(
 
 export function streamingSlotTransitionForEvent(
   type: string,
-  _data: unknown,
+  data: unknown,
 ): { finalize: StreamingSlotKind[]; clear: StreamingSlotKind[] } {
+  if (isAssistantUiPublication(type, data)) {
+    return { finalize: [], clear: [] };
+  }
   if (streamingDeltaKind(type)) {
     return { finalize: [], clear: [] };
   }

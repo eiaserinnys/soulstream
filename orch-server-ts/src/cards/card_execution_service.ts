@@ -61,7 +61,7 @@ function beforeSendFailure(workId:string,message:string,code:string):ConfirmedCo
   return {failureId:`${workId}:before_send:${code}`,message,evidence:{kind:"before_send",code}};
 }
 function isErrorAck(response:NodeCommandResponse):boolean{return response.type==="error"||response.status==="error";}
-export type ExecutionInput = {sessionId:string;requestId:string;cardId:string;target:ExecutionTarget;callerSource:"browser"|"system"};
+export type ExecutionInput = {sessionId:string;requestId:string;cardId:string;target:ExecutionTarget;callerSource:"browser"|"system";actor:Pick<FolderActorParams,"actorKind"|"actorSessionId"|"actorUserId">};
 export interface CardExecutionOptions {
   sql:SqlClient;cards:CardControlPlaneService;
   validate(card:CardRow):Promise<ExecutionTarget>;
@@ -174,7 +174,9 @@ export class CardExecutionService {
       if(owner)return;
     }
     await this.options.sql`UPDATE card_execution_requests SET sent=TRUE WHERE id=${row.id}`;
-    const input={requestId:row.id,sessionId:row.session_id,cardId:row.card_id,target:row.target,callerSource:actor.actorKind==="user"?"browser" as const:"system" as const};
+    const input={requestId:row.id,sessionId:row.session_id,cardId:row.card_id,target:row.target,
+      callerSource:actor.actorKind==="user"?"browser" as const:"system" as const,
+      actor:{actorKind:actor.actorKind,actorSessionId:actor.actorSessionId,actorUserId:actor.actorUserId}};
     try{
       if(row.mode==='create') await this.options.launch(input);
       else {

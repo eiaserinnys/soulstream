@@ -3,6 +3,7 @@ import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../src/mcp/types.js";
 import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
 import { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
+import { ModelPresetAvailabilityError } from "../src/model/model_preset_availability.js";
 import { describe, expect, it, vi } from "vitest";
 import type { CallToolResult } from "@soulstream/mcp-contract";
 import {
@@ -28,6 +29,12 @@ function setup() {
   const commandPayloads: Record<string, unknown>[] = [];
   const modelChanges: string[] = [];
   let callerEmail = "owner@example.com";
+  let limitRejected = false;
+  const requireAvailable = vi.fn((_nodeId: string, _presetId: string, options?: { allowLimitRejected?: boolean }) => {
+    if (limitRejected && options?.allowLimitRejected !== true) {
+      throw new ModelPresetAvailabilityError("MODEL_PRESET_UNAVAILABLE", "provider rejected the preset");
+    }
+  });
   const makeRow = (sessionId: string, persistent = true) => ({
     session_id: sessionId,
     session_type: "claude",
@@ -101,7 +108,7 @@ function setup() {
         supported_efforts: ["high", "medium"],
         default_effort: "high",
       }),
-      requireAvailable: () => undefined,
+      requireAvailable,
     } as never,
     profiles: { listAgentProfiles: async () => ({ "agent-1": { name: "Agent One" } }) },
   } as never);
@@ -114,10 +121,32 @@ function setup() {
       principal: "internal", callerSessionId, nodeId: "node-1",
     }) as Promise<CallToolResult>;
   return { rows, accessCalls, commandPayloads, modelChanges, makeRow, service, resolveSessionOwner, call,
+    requireAvailable,
+    setLimitRejected: (value: boolean) => { limitRejected = value; },
     setCallerEmail: (email: string) => { callerEmail = email; } };
 }
 
 describe("update_persistent_session_settings MCP tool", () => {
+  it("allows a rejected preset for an existing default change but not for new PAS creation", async () => {
+    const h = setup();
+    h.rows.set("mcp-session", h.makeRow("mcp-session"));
+    h.setLimitRejected(true);
+
+    const updated = await h.service.update({} as never, "mcp-session", {
+      settings: { default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" } },
+    });
+    expect(updated.model_change).toBe("next_execution_start");
+    expect(h.commandPayloads).toHaveLength(1);
+    expect(h.requireAvailable).toHaveBeenNthCalledWith(1, "node-1", "codex-6.1-sol", { allowLimitRejected: true });
+
+    await expect(h.service.create({} as never, {
+      display_name: "New PAS",
+      agent_id: "agent-1",
+      settings: { default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" } },
+    }, { warn: vi.fn() })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_MODEL_PRESET" });
+    expect(h.requireAvailable).toHaveBeenNthCalledWith(2, "eiaserinnys", "codex-6.1-sol", undefined);
+  });
+
   it("uses the PUT service update path, verifies caller access, and returns the stored settings", async () => {
     const h = setup();
     const putRow = h.makeRow("put-session");

@@ -174,6 +174,7 @@ describe("emitSessionUpdated", () => {
     });
     expect(msg.last_event_id).toBeUndefined();
     expect(msg.last_message).toBeUndefined();
+    expect(msg.persistent_report).toBeUndefined();
   });
 
   it("completedAt 부재 시 now 사용", async () => {

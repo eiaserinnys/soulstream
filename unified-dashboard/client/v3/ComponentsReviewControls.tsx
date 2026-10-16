@@ -7,11 +7,16 @@ import type { NodeModelPresetCatalog } from "../lib/use-node-model-preset-catalo
 import "./v3-context-succession.css";
 
 const agents: AgentInfo[] = [{ id: "roselin", name: "로젤린" }, { id: "seosoyoung", name: "서소영" }];
+const rejectedTodayResetAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 const catalog: NodeModelPresetCatalog = {
   nodeId: "components-local", status: "ready", presets: [
+    { id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: "2026-10-20T16:54:02Z", observed_at: "2026-10-14T00:00:00Z", quota_label: "7일" } },
+    { id: "gemini-4-argon", label: "Gemini - 4 Argon", backend: "antigravity", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: "2026-10-20T16:54:02Z", observed_at: "2026-10-14T00:00:00Z", quota_label: "7일" } },
     { id: "sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
     { id: "exhausted-sol", label: "Sol (사용량 소진 예시)", backend: "codex", available: true, reason: "quota_exhausted", reason_label: "7일 사용량 제한", resets_at: null, usage_warning: false },
-    { id: "unavailable", label: "사용 불가 샘플", backend: "codex", available: false, reason: "disabled", reason_label: "사용 불가", resets_at: null, usage_warning: false },
+    { id: "rejected-opus", label: "Claude - Opus", backend: "claude", available: false, reason: "limit_rejected", reason_label: "5시간 한도 거부 중", resets_at: rejectedTodayResetAt, usage_warning: false },
+    { id: "rejected-fable", label: "Claude - Fable", backend: "claude", available: false, reason: "limit_rejected", reason_label: "7일 한도 거부 중", resets_at: "2030-01-02T03:04:00.000Z", usage_warning: false },
+    { id: "unavailable-astra", label: "Codex - 6 Astra", backend: "codex", available: false, reason: "disabled", reason_label: "사용 불가", resets_at: null, usage_warning: false },
   ],
 };
 const fields: SettingField[] = [

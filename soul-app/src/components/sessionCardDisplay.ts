@@ -14,6 +14,7 @@ export interface SessionCardCallerDecision {
 const BACKEND_FALLBACK_LABELS: Record<string, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  antigravity: 'Antigravity',
   'openai-agents': 'OpenAI Agents',
 };
 

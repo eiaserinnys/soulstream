@@ -6,6 +6,7 @@ import type {
   RunnerReleaseDescriptor,
   RunnerReleaseMaterializer,
 } from "./runner_release_materializer.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import {
   ProcessOwnershipDirectoryLock,
   defaultProcessOwnershipLockDependencies,
@@ -57,6 +58,65 @@ export class RunnerReleasePool {
   }
 
   async listReadyReleases(): Promise<RunnerReleaseDescriptor[]> {
+    return await this.listReleases(async (release) => await this.isReady(release));
+  }
+
+  async listReleaseCandidates(): Promise<RunnerReleaseDescriptor[]> {
+    return await this.listReleases(async (release) => await this.hasReadyMarker(release));
+  }
+
+  async removeReleaseLocked(release: RunnerReleaseDescriptor): Promise<void> {
+    this.assertDescriptor(release);
+    await this.materializer.remove(release);
+  }
+
+  async verifyReleaseLocked(release: RunnerReleaseDescriptor): Promise<void> {
+    this.assertDescriptor(release);
+    await this.materializer.verify(release);
+  }
+
+  async withReleaseLock<T>(
+    releaseId: string,
+    operation: () => Promise<T>,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<T> {
+    assertOpaqueReleaseId(releaseId);
+    const acquire = () => ProcessOwnershipDirectoryLock.acquire({
+        path: join(this.releasesDirectory, ".locks", releaseId),
+        timeoutMs: this.lockTimeoutMs,
+        heldMessage: `runner release lock timed out: ${releaseId}`,
+        deps: this.deps,
+      });
+    const lock = phaseObservation
+      ? await phaseObservation.runAsync("releaseLock", { label: releaseId }, acquire)
+      : await acquire();
+    try {
+      return await operation();
+    } finally {
+      await lock.release();
+    }
+  }
+
+  async withReleaseLocks<T>(
+    releaseIds: string[],
+    operation: () => Promise<T>,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<T> {
+    const ordered = [...new Set(releaseIds)].sort();
+    const acquire = async (index: number): Promise<T> => {
+      if (index >= ordered.length) return await operation();
+      return await this.withReleaseLock(
+        ordered[index]!,
+        async () => await acquire(index + 1),
+        phaseObservation,
+      );
+    };
+    return await acquire(0);
+  }
+
+  private async listReleases(
+    ready: (release: RunnerReleaseDescriptor) => Promise<boolean>,
+  ): Promise<RunnerReleaseDescriptor[]> {
     let entries;
     try {
       entries = await readdir(this.releasesDirectory, { withFileTypes: true });
@@ -69,7 +129,7 @@ export class RunnerReleasePool {
       if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
       try {
         const release = this.describe(entry.name);
-        if (await this.isReady(release)) releases.push(release);
+        if (await ready(release)) releases.push(release);
       } catch {
         // Unknown directories are not owned by this pool and are never deleted.
       }
@@ -77,38 +137,19 @@ export class RunnerReleasePool {
     return releases;
   }
 
-  async removeReleaseLocked(release: RunnerReleaseDescriptor): Promise<void> {
-    this.assertDescriptor(release);
-    await this.materializer.remove(release);
-  }
-
-  async withReleaseLock<T>(releaseId: string, operation: () => Promise<T>): Promise<T> {
-    assertOpaqueReleaseId(releaseId);
-    const lock = await ProcessOwnershipDirectoryLock.acquire({
-      path: join(this.releasesDirectory, ".locks", releaseId),
-      timeoutMs: this.lockTimeoutMs,
-      heldMessage: `runner release lock timed out: ${releaseId}`,
-      deps: this.deps,
-    });
-    try {
-      return await operation();
-    } finally {
-      await lock.release();
-    }
-  }
-
-  async withReleaseLocks<T>(releaseIds: string[], operation: () => Promise<T>): Promise<T> {
-    const ordered = [...new Set(releaseIds)].sort();
-    const acquire = async (index: number): Promise<T> => {
-      if (index >= ordered.length) return await operation();
-      return await this.withReleaseLock(ordered[index]!, async () => await acquire(index + 1));
-    };
-    return await acquire(0);
-  }
-
   private async isReady(release: RunnerReleaseDescriptor): Promise<boolean> {
     try {
       await this.materializer.verify(release);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  private async hasReadyMarker(release: RunnerReleaseDescriptor): Promise<boolean> {
+    try {
+      await this.materializer.checkReadyMarker(release);
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;

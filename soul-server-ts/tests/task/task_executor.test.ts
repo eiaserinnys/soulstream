@@ -1518,14 +1518,14 @@ describe("TaskExecutor.startNewExecution", () => {
     );
   });
 
-  it("Claude fatal error event 후 throw → error event를 남기고 task status=error로 finalize", async () => {
+  it.each([true, false])("fatal error event (throws=%s) persists the error and finalizes as error_aborted", async (throws) => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
       async *execute(): AsyncIterable<SSEEventPayload> {
         yield { type: "error", message: "claude boom", fatal: true, timestamp: 1 } as SSEEventPayload;
-        throw new Error("claude boom");
+        if (throws) throw new Error("claude boom");
       },
       async interrupt() { return true; },
       async close() {},
@@ -3016,14 +3016,24 @@ describe("TaskExecutor runner process boundary", () => {
             : null,
         },
       } as unknown as RunnerRegistration;
+      const phaseObservation = { marker: "recovery-scan" } as never;
 
       await executor.recoverRegisteredRunner(
         task,
         registration,
         "execute-old",
         "offline",
+        undefined,
+        phaseObservation,
       );
 
+      expect(processFactory.recover).toHaveBeenCalledWith(
+        task,
+        registration,
+        expect.anything(),
+        "offline",
+        phaseObservation,
+      );
       expect(task.status).toBe(expectedStatus);
       expect(recoveredTerminal).toHaveBeenCalledOnce();
       expect(recoveredTerminal).toHaveBeenCalledWith(

@@ -95,7 +95,7 @@ export function createDialogueApi(): ApiClient {
     startClaudeAuth: async () => { throw new Error('공개 예시에서는 실제 계정 로그인을 시작하지 않습니다.'); },
     submitClaudeCode: async () => { token = true; return { ok: true }; },
     deleteClaudeToken: async () => { token = false; return { ok: true }; },
-    getProviderUsage: async () => ({ generatedAt: new Date().toISOString(), providers: Object.fromEntries(['claude', 'codex', 'gemini'].map(provider => [provider, { status: 'not_configured', source: 'public-fixture', planType: null, quotas: [] }])) }),
+    getProviderUsage: async () => ({ generatedAt: new Date().toISOString(), providers: Object.fromEntries(['claude', 'codex', 'antigravity'].map(provider => [provider, { status: 'not_configured', source: 'public-fixture', planType: null, quotas: [] }])) }),
     listRecurringJobs: async () => ({ jobs: [] }),
     listClaudeBackgroundTasks: async (sessionId: string) => ({ sessionId, sessionState: 'idle', runtimeSessionId: null, updatedAt: 1, tasks: [reviewTask] }),
     getClaudeBackgroundTaskOutput: async (sessionId: string, taskId: string) => ({ ...reviewTaskOutput, sessionId, taskId }),

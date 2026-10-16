@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
+import { AgentBackendSchema, MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
 import {
   stripRunnerJsonUndefined,
   withRunnerJsonContract as withJsonContract,
@@ -138,7 +138,7 @@ export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("k
 ]));
 
 const RunnerRunStateSnapshotSchema = z.object({
-  backendId: z.enum(["codex", "claude", "openai-agents"]),
+  backendId: AgentBackendSchema,
   serialized: z.string().nullable(),
   pendingApprovalId: z.string().nullable().optional(),
   previousResponseId: z.string().nullable().optional(),
@@ -147,7 +147,7 @@ const RunnerRunStateSnapshotSchema = z.object({
 }).passthrough();
 
 const RunnerSessionItemsSnapshotSchema = z.object({
-  backendId: z.enum(["codex", "claude", "openai-agents"]),
+  backendId: AgentBackendSchema,
   items: z.array(z.json()),
 }).passthrough();
 

@@ -170,7 +170,7 @@ describe("central owned agents through REST and real MCP HTTP", () => {
         timezone: "UTC", schedule_expressions: ["0 9 * * *"], node_id: "node", agent_id: "roselin", model_preset: "model", folder_id: "allowed" };
       const created = await own.callTool({ name: "create_recurring_job", arguments: { ...input, owner_email: other, caller_session_id: "fake" } }) as any;
       expect(created.isError).not.toBe(true); const id = created.structuredContent.job.job_id;
-      expect(created.structuredContent.job.owner_email).toBe(owner); expect(modelCheck).toHaveBeenCalledWith("node", "model");
+      expect(created.structuredContent.job.owner_email).toBe(owner); expect(modelCheck).toHaveBeenCalledWith("node", "model", { allowLimitRejected: true });
       const stored = await jobs.findJobForOwner(id, owner);
       expect(stored?.executionCaller).toMatchObject({ source: "dot", email: owner, external_agent_id: agent.id, agent_id: agent.id });
       expect(await peer.callTool({ name: "get_recurring_job", arguments: { job_id: id } })).toMatchObject({ isError: true, structuredContent: { error: expect.stringContaining("not found") } });

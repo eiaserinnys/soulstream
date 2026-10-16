@@ -7,7 +7,7 @@ interface Props {
   nodeId: string;
 }
 
-type ProviderName = "claude" | "codex" | "gemini";
+type ProviderName = "claude" | "codex" | "antigravity";
 
 type ProviderQuota = {
   id: string;
@@ -40,7 +40,7 @@ type ProviderUsageSnapshot = {
 const PROVIDER_LABELS: Record<ProviderName, string> = {
   claude: "Claude Code",
   codex: "Codex",
-  gemini: "Gemini",
+  antigravity: "Antigravity",
 };
 
 function formatResetsAt(epochSeconds: number | null): string | null {
@@ -71,7 +71,7 @@ function formatQuotaAmount(quota: ProviderQuota): string | null {
 }
 
 function ProviderUsageChart({ usage }: { usage: ProviderUsageSnapshot }) {
-  const providers = Object.entries(usage.providers) as [ProviderName, ProviderLimits][];
+  const providers = Object.entries(usage.providers).filter(([provider]) => provider !== "gemini") as [ProviderName, ProviderLimits][];
 
   if (providers.length === 0) {
     return (

@@ -148,7 +148,12 @@ describe("R36 delete_session lifecycle lab", () => {
       silentLogger(),
       {
         now: () => now,
-        withMutationLock: async <T>(_path: string, operation: () => Promise<T>) =>
+        monotonicNow: () => now,
+        withMutationLock: async <T>(
+          _path: string,
+          operation: () => Promise<T>,
+          _observationContext,
+        ) =>
           await operation(),
         refresh: async (candidate) => registrations.get(candidate.config.sessionId)!,
         inspect: async (candidate) => ({
@@ -159,6 +164,10 @@ describe("R36 delete_session lifecycle lab", () => {
           durableRecordCount: 3,
           unacknowledgedIpcFrameCount: 1,
           pendingInterventionCount: 0,
+        }),
+        probeRetention: async (candidate) => ({
+          registration: candidate,
+          localRetentionReason: null,
         }),
         removeDirectory: async (path) => {
           const sessionId = path.slice("/state/".length);

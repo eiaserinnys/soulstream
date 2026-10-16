@@ -1,9 +1,9 @@
 import React from 'react';
 import { View } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 export function PlannerMarkdownText({
   markdown,
@@ -17,6 +17,7 @@ export function PlannerMarkdownText({
   textAlign?: 'left';
 }) {
   const t = useTokens();
+  const openContentLink = useOpenContentLink();
   const markdownStyle = variant === 'card' ? cardMarkdownStyle(t) : plannerMarkdownStyle(t, variant === 'note');
   const alignedStyle = textAlign ? {
     ...markdownStyle,
@@ -33,7 +34,7 @@ export function PlannerMarkdownText({
         markdownStyle={alignedStyle}
         containerStyle={textAlign ? { width: '100%', textAlign } : undefined}
         selectable
-        onLinkPress={({ url }) => { void WebBrowser.openBrowserAsync(url); }}
+        onLinkPress={({ url }) => { void openContentLink(url); }}
       />
     </View>
   );

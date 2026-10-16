@@ -12,6 +12,7 @@ import type { AgentBackend } from "@soulstream/model-catalog";
 import type { ReasoningEffort } from "@soulstream/model-catalog";
 
 import {
+  antigravityTransportEfforts,
   claudeTransportEfforts,
   codexTransportEfforts,
 } from "./engine/effort_boundary.js";
@@ -64,7 +65,7 @@ export interface AdvertisedModelPreset {
    * Internal server-to-server join metadata. Public model preset APIs strip it.
    * null means the preset uses its own API-key endpoint and has no usage overlay.
    */
-  usage_provider: "claude" | "codex" | null;
+  usage_provider: "claude" | "codex" | "antigravity" | null;
   usage_model_id?: string;
   /**
    * Advertised effort levels. Absent means this preset has no effort control;
@@ -147,7 +148,7 @@ export class ModelCatalog {
       const usesAnthropicApiKey = Boolean(preset.env?.[ANTHROPIC_API_KEY_ENV]);
       const usageProvider = usesAnthropicApiKey
         ? null
-        : preset.backend === "claude" || preset.backend === "codex"
+        : preset.backend === "claude" || preset.backend === "codex" || preset.backend === "antigravity"
           ? preset.backend
           : null;
       const advertisedEfforts = toAdvertisedEfforts(preset.supported_efforts);
@@ -284,5 +285,6 @@ export function nodeEffortCapabilities(
   return {
     claude: claudeTransportEfforts(),
     codex: codexTransportEfforts(codexAdapterMode),
+    antigravity: antigravityTransportEfforts(),
   };
 }

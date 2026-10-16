@@ -1,0 +1,53 @@
+.chat-ui {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-4);
+  min-width: 0;
+  font-size: var(--chat-font-size);
+  line-height: var(--chat-line-height);
+}
+.chat-ui :is(h1, h2, h3, p) { margin: 0; overflow-wrap: anywhere; }
+.chat-ui :is(h1, h2, h3) { font: inherit; font-weight: 700; }
+.chat-ui :is([data-slot="button"], [data-slot="input-control"], [data-slot="input"], [data-slot="select-trigger"]) {
+  font-size: var(--chat-font-size);
+}
+.chat-ui [data-slot="button"] { font: inherit; }
+/* v3-planner applies its focus treatment only to native form controls. */
+.v3-shell .chat-ui a[data-slot="button"]:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 calc(var(--spacing) / 2) var(--background),
+    0 0 0 var(--spacing) var(--ring);
+}
+.chat-ui fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.chat-ui legend { margin-bottom: var(--v3-space-2); }
+.chat-ui-node { min-width: 0; max-width: 100%; }
+.chat-ui-group.chat-ui-stack { display: flex; flex-direction: column; gap: var(--v3-space-4); }
+.chat-ui-group:is(.chat-ui-row, .chat-ui-wrap), .chat-ui-actions, .chat-ui-choice, .chat-ui-between {
+  display: flex; align-items: center; gap: var(--v3-space-2);
+}
+.chat-ui-group:is(.chat-ui-row, .chat-ui-wrap), .chat-ui-actions { flex-wrap: wrap; }
+.chat-ui-between { justify-content: space-between; }
+.chat-ui-field { display: flex; flex-direction: column; gap: var(--v3-space-2); min-width: 0; }
+.chat-ui-choice label { min-width: 0; overflow-wrap: anywhere; }
+.chat-ui .chat-ui-entity { width: 100%; justify-content: space-between; white-space: normal; text-align: left; }
+.chat-ui-entity > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.chat-ui-entity > span:last-child { flex-shrink: 0; }
+.chat-ui .chat-ui-meta, .chat-ui-meta,
+:is(.v3-chat-pane, .v3-chat-surface) [data-slot="chat-body"] .chat-ui p.chat-ui-meta {
+  font: var(--v3-type-meta) var(--v3-font-family);
+  color: var(--v3-text-secondary);
+}
+.chat-ui .chat-ui-source {
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+  text-decoration: underline;
+  text-underline-offset: var(--v3-space-1);
+  overflow-wrap: anywhere;
+}
+.chat-ui-source-disclosure > [data-slot="button"] { align-self: flex-start; }
+.chat-ui-source-disclosure > .chat-ui-source { padding-inline: 0; }
+.chat-ui-action-note { flex-basis: 100%; width: 100%; }
+.chat-ui-select-options [data-slot="select-item"] { font-size: inherit; line-height: inherit; }
+.chat-ui-select-options { scrollbar-width: none; }
+.chat-ui-select-options::-webkit-scrollbar { display: none; }

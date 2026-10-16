@@ -392,6 +392,7 @@ export function createNodeFromEvent(
       const e = event as AssistantMessageEvent;
       return makeNode(`asst-msg-${eventId}`, "assistant_message", e.content, {
         completed: true,
+        ui: e.ui,
         model: e.model,
         provider: e.provider,
         usage: e.usage,

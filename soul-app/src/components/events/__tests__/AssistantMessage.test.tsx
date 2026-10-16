@@ -20,16 +20,23 @@ jest.mock('@expo/vector-icons/Ionicons', () => {
 jest.mock('expo-web-browser', () => ({
   openBrowserAsync: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../../theme/useDeviceType', () => ({
+  useDeviceType: () => 'phone',
+  deviceTypeToBaseKey: (type: string) => type === 'phone' ? 'phone' : 'tablet',
+}));
 
 import { render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as ContentLinkHook from '../../../hooks/useOpenContentLink';
 import {
   AssistantMessage,
   extractText,
   shouldRenderAsPlainStreamingText,
 } from '../AssistantMessage';
 import type { Session, SessionEvent } from '../../../api/types';
+import { LIGHT_COLORS } from '../../../theme/colors';
+import { PHONE_CHAT_TYPOGRAPHY } from '../../../theme';
 
 const ev = (type: string, data: any): SessionEvent => ({
   id: '1',
@@ -167,6 +174,22 @@ describe('AssistantMessage selection entry', () => {
     expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith('https://example.com');
   });
 
+  test('내부 문서 링크는 앱 콘텐츠 링크 핸들러에 전달한다', async () => {
+    const openContentLink = jest.fn();
+    jest.spyOn(ContentLinkHook, 'useOpenContentLink').mockReturnValue(openContentLink);
+    const { getByTestId } = render(
+      <AssistantMessage
+        event={ev('assistant_message', { content: '[문서](https://soulstream.test/api/markdown-documents/doc-1)' })}
+        session={session()}
+      />,
+    );
+
+    await getByTestId('assistant-markdown').props.onLinkPress({
+      url: 'https://soulstream.test/api/markdown-documents/doc-1',
+    });
+    expect(openContentLink).toHaveBeenCalledWith('https://soulstream.test/api/markdown-documents/doc-1');
+  });
+
   test('streaming cumulative text_delta assistant bubble은 native markdown에 넣지 않는다', () => {
     const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => {});
     const { getByTestId, queryByTestId } = render(
@@ -184,6 +207,31 @@ describe('AssistantMessage selection entry', () => {
     );
   });
 
+  test('원고형 진행 안내 assistant 글은 메타 크기와 보조 색을 쓰고 마지막 답은 유지한다', () => {
+    const streaming = render(<AssistantMessage presentation="manuscript" narration
+      event={ev('text_delta', { text: '두 건을 나눠 맡깁니다.' })} />);
+    expect(StyleSheet.flatten(streaming.getByTestId('assistant-streaming-text').props.style)).toMatchObject({
+      color: LIGHT_COLORS.textSecondary,
+      fontSize: PHONE_CHAT_TYPOGRAPHY.meta,
+      lineHeight: PHONE_CHAT_TYPOGRAPHY.meta * 1.6,
+    });
+
+    const progress = render(<AssistantMessage presentation="manuscript" narration
+      event={ev('assistant_message', { content: '두 건을 나눠 맡깁니다.' })} />);
+    const progressStyle = progress.getByTestId('assistant-markdown').props.markdownStyle.paragraph;
+    expect(progressStyle).toMatchObject({
+      color: LIGHT_COLORS.textSecondary,
+      fontSize: PHONE_CHAT_TYPOGRAPHY.meta,
+      lineHeight: PHONE_CHAT_TYPOGRAPHY.meta * 1.6,
+    });
+
+    const final = render(<AssistantMessage presentation="manuscript"
+      event={ev('assistant_message', { content: '확인 결과입니다.' })} />);
+    const finalStyle = final.getByTestId('assistant-markdown').props.markdownStyle.paragraph;
+    expect(finalStyle.color).toBe(LIGHT_COLORS.textPrimary);
+    expect(finalStyle.fontSize).toBe(PHONE_CHAT_TYPOGRAPHY.body);
+  });
+
   test('live-only streaming assistant bubble도 native markdown에 넣지 않는다', () => {
     const { getByTestId, queryByTestId } = render(
       <AssistantMessage
@@ -199,4 +247,21 @@ describe('AssistantMessage selection entry', () => {
     expect(getByTestId('assistant-streaming-text').props.children).toBe('chunk');
     expect(queryByTestId('assistant-markdown')).toBeNull();
   });
+});
+
+
+test('structured children inherit the ordinary row inset; timeline callers explicitly opt out', () => {
+  const event = ev('assistant_message', { text: '같은 줄' });
+  const screen = render(<AssistantMessage event={event} />);
+  const row = () => {
+    let node = screen.getByTestId('assistant-message-bubble').parent;
+    while (node && StyleSheet.flatten(node.props.style)?.marginHorizontal === undefined) node = node.parent;
+    return StyleSheet.flatten(node!.props.style);
+  };
+  const ordinary = row().marginHorizontal;
+  expect(ordinary).toBeGreaterThan(0);
+  screen.rerender(<AssistantMessage event={event}><Text>구조화 내용</Text></AssistantMessage>);
+  expect(row().marginHorizontal).toBe(ordinary);
+  screen.rerender(<AssistantMessage event={event} rowInset="none"><Text>타임라인 내용</Text></AssistantMessage>);
+  expect(row().marginHorizontal).toBe(0);
 });

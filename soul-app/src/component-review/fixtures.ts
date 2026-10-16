@@ -6,6 +6,7 @@ import { reviewSessionEventsUrl } from './chat-fixtures';
 
 // Invented public data only. No IDs or assets from an actual account.
 const time = '2026-10-01T00:00:00Z';
+const rejectedTodayResetAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 export const folders: CatalogFolder[] = [
   { id: 'public-project', name: '공개 예시 프로젝트', parentFolderId: null, sortOrder: 0,
     projectPageId: null, settings: {}, archived: false, status: 'open', version: 1 },
@@ -22,6 +23,8 @@ export const sessions: Session[] = [
     reviewState: 'needs_review', createdAt: time, updatedAt: time },
   { agentSessionId: 'public-idle', displayName: '대기 중인 공개 예시 세션',
     status: 'idle', agentName: '예시 에이전트', createdAt: time, updatedAt: time },
+  { agentSessionId: 'public-antigravity', displayName: 'Antigravity 공개 예시 세션',
+    status: 'idle', agentName: '예시 에이전트', backend: 'antigravity', createdAt: time, updatedAt: time },
   { agentSessionId: 'public-error', displayName: '오류가 표시된 공개 예시 세션',
     status: 'error', agentName: '예시 에이전트', createdAt: time, updatedAt: time },
   { agentSessionId: 'public-attention', displayName: '사용자 응답이 필요한 공개 예시 세션',
@@ -251,10 +254,16 @@ export function createReviewApi(state: FixtureState = 'normal', options: { assig
       { id: 'public-other-agent', name: '다른 예시 에이전트', default_preset: 'public-model' },
     ] }),
     listModelPresets: async () => read({ model_presets: state === 'empty' ? [] : [
+    { id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: "2026-10-20T16:54:02Z", observed_at: "2026-10-14T00:00:00Z", quota_label: "7일" } },
+    { id: "gemini-4-argon", label: "Gemini - 4 Argon", backend: "antigravity", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false, weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: "2026-10-20T16:54:02Z", observed_at: "2026-10-14T00:00:00Z", quota_label: "7일" } },
       { id: 'public-model', label: '사용 가능한 예시 모델', backend: 'codex', available: true,
         reason: null, reason_label: null, resets_at: null, usage_warning: false },
       { id: 'public-exhausted-model', label: '사용량 소진 예시 모델', backend: 'codex', available: true,
         reason: 'quota_exhausted', reason_label: '7일 사용량 제한', resets_at: null, usage_warning: false },
+      { id: 'public-rejected-model', label: '거부 중 예시 모델', backend: 'codex', available: false,
+        reason: 'limit_rejected', reason_label: '5시간 한도 거부 중', resets_at: rejectedTodayResetAt, usage_warning: false },
+      { id: 'public-rejected-weekly-model', label: 'Claude - Fable', backend: 'claude', available: false,
+        reason: 'limit_rejected', reason_label: '7일 한도 거부 중', resets_at: '2030-01-02T03:04:00.000Z', usage_warning: false },
       { id: 'public-unavailable-model', label: '사용 불가 예시 모델', backend: 'codex', available: false,
         reason: 'limit', reason_label: '공개 예시: 사용량 한도', resets_at: null, usage_warning: false },
     ] }),

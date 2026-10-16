@@ -22,6 +22,15 @@ const PAS_REVIEW_FOLLOWUP_DELIVERY_ID = "00000000-0000-4000-8000-000000002252";
 const PAS_REVIEW_AGENT_INPUT_ID = "pas251-projection-agent-report";
 const PAS_REVIEW_HUMAN_INPUT_ID = "pas251-projection-human-image";
 const PAS_REVIEW_ASSISTANT_RESPONSE = "PAS 응답: 첨부 이미지를 확인했습니다.";
+const NARRATION_REVIEW_INPUT_ID = "pas-narration-review-input";
+const ARGON_REVIEW_EMPTY_STREAM_IDS = Array.from({ length: 5 }, (_, index) => "argon-empty-" + (index + 1));
+const ARGON_REVIEW_EMPTY_TEXT_NODE_IDS = ARGON_REVIEW_EMPTY_STREAM_IDS.map(id => "text-" + id);
+const ARGON_REVIEW_RESPONSE_STREAM_ID = "argon-review-response";
+const ARGON_REVIEW_RESPONSE = "Argon의 정상 응답입니다. 원문을 보존합니다 ✨";
+const ARGON_REVIEW_COMPLETE_TOTAL_COST = 0.385;
+
+export const DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full max-w-[520px] bg-background";
+export const MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden";
 
 function makeMessage(role: ChatMessage["role"], id: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return {
@@ -224,8 +233,82 @@ function ManuscriptColumn() {
         caller_info: { source: "browser", display_name: "디렉터님" },
       },
       { type: "assistant_message", content: PAS_REVIEW_ASSISTANT_RESPONSE },
+      { type: "user_message", user: "User", text: "진행 안내와 완료 답변을 확인해줘.", input_id: NARRATION_REVIEW_INPUT_ID },
+      { type: "thinking", thinking: "두 타임라인의 표시를 확인했습니다." },
+      { type: "assistant_message", content: "두 건을 나눠 맡깁니다." },
+      { type: "tool_start", tool_use_id: "review-read-a", tool_name: "Read", tool_input: { file_path: "packages/soul-ui/src/components/chat/ChatView.tsx" } },
+      { type: "tool_result", tool_use_id: "review-read-a", tool_name: "Read", result: "현재 타임라인을 확인했습니다." },
+      { type: "tool_start", tool_use_id: "review-read-b", tool_name: "Read", tool_input: { file_path: "soul-app/src/components/chat/ChatEventList.tsx" } },
+      { type: "tool_result", tool_use_id: "review-read-b", tool_name: "Read", result: "앱 타임라인을 확인했습니다." },
+      { type: "assistant_message", content: "두 경로의 순서와 표시를 확인했습니다." },
     ] as SoulSSEEvent[];
+    const narrationInputIndex = events.findIndex(event => event.type === "user_message" && event.input_id === NARRATION_REVIEW_INPUT_ID);
+    const thinkingEvent = events.find((event): event is Extract<SoulSSEEvent, { type: "thinking" }> => event.type === "thinking");
+    if (thinkingEvent) thinkingEvent.parent_event_id = String(narrationInputIndex + 1);
     store.processEvents(events.map((event, index) => ({ event, eventId: index + 1 })));
+    const argonLiveEvents: SoulSSEEvent[] = [
+      ...ARGON_REVIEW_EMPTY_STREAM_IDS.flatMap((streamIdentity, index) => [
+        {
+          type: "text_start",
+          timestamp: index * 2,
+          streamIdentity,
+          liveSeq: 0,
+          liveTextMode: "replace",
+        } as SoulSSEEvent,
+        {
+          type: "text_end",
+          timestamp: index * 2 + 1,
+          streamIdentity,
+          liveSeq: 1,
+          liveTextMode: "append",
+        } as SoulSSEEvent,
+      ]),
+      {
+        type: "text_start",
+        timestamp: 20,
+        streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+        liveSeq: 0,
+        liveTextMode: "replace",
+      },
+      {
+        type: "text_delta",
+        timestamp: 21,
+        streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+        liveSeq: 1,
+        liveTextMode: "append",
+        text: ARGON_REVIEW_RESPONSE,
+      },
+      {
+        type: "text_end",
+        timestamp: 22,
+        streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+        liveSeq: 2,
+        liveTextMode: "append",
+      },
+    ];
+    store.processEvents(argonLiveEvents.map(event => ({ event, eventId: 0 })));
+    const argonFinalEventId = events.length + 1;
+    store.processEvents([
+      {
+        event: {
+          type: "assistant_message",
+          content: ARGON_REVIEW_RESPONSE,
+          streamIdentity: ARGON_REVIEW_RESPONSE_STREAM_ID,
+          _final_for_live_stream: true,
+        },
+        eventId: argonFinalEventId,
+      },
+      {
+        event: {
+          type: "complete",
+          result: "Argon 응답 완료",
+          attachments: [],
+          usage: { input_tokens: 385, output_tokens: 5 },
+          total_cost_usd: ARGON_REVIEW_COMPLETE_TOTAL_COST,
+        },
+        eventId: argonFinalEventId + 1,
+      },
+    ]);
     setReady(true);
     return () => {
       useDashboardStore.setState(state => {
@@ -250,7 +333,7 @@ function ManuscriptColumn() {
       mode: "resume", reason: "전달을 확인하지 못했습니다",
     } : null);
   };
-  return <div className="w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden">
+  return <div className={MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME}>
     <div className="flex flex-wrap gap-2 pb-3 text-xs text-muted-foreground">
       <button onClick={() => showPending(null)}>원고형</button>
       <button onClick={() => showPending("sending")}>전송 중</button>
@@ -283,11 +366,14 @@ export function PersistentManuscriptChatReviewSample() {
       || message.deliveryId === PAS_REVIEW_FOLLOWUP_DELIVERY_ID
       || message.inputId === PAS_REVIEW_AGENT_INPUT_ID
       || message.inputId === PAS_REVIEW_HUMAN_INPUT_ID
-      || message.content === PAS_REVIEW_ASSISTANT_RESPONSE),
+      || message.content === PAS_REVIEW_ASSISTANT_RESPONSE
+      || ARGON_REVIEW_EMPTY_TEXT_NODE_IDS.includes(message.treeNodeId ?? "")
+      || message.treeNodeId === "text-" + ARGON_REVIEW_RESPONSE_STREAM_ID
+      || (message.treeNodeType === "complete" && message.totalCostUsd === ARGON_REVIEW_COMPLETE_TOTAL_COST)),
     [tree],
   );
   return <div className="flex w-full flex-col items-center gap-4 overflow-x-hidden lg:flex-row lg:items-start lg:justify-center" data-testid="persistent-manuscript-chat-review">
-    <div className="w-full max-w-[520px] bg-background" style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
+    <div className={DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME} style={chatTypographyStyle} data-testid="default-review-column" data-chat-presentation="default">
       <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
       {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
       {rawReviewMessages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId={REVIEW_SESSION} />)}

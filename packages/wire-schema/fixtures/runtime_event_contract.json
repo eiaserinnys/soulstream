@@ -5,7 +5,14 @@
       "event_type": "assistant_message",
       "payload": {
         "type": "assistant_message",
-        "text": "final answer"
+        "text": "final answer",
+        "ui": {
+          "schema_version": 1,
+          "ui_id": "ui_contract",
+          "hash": "contract-hash",
+          "revision": 1,
+          "document": { "schema_version": 1, "body": [] }
+        }
       },
       "searchable_text": "final answer",
       "created_at": "2026-09-22T00:00:00.000Z",

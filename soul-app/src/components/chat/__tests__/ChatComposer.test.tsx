@@ -156,6 +156,41 @@ describe('ChatComposer', () => {
     expect(box.paddingBottom).toBeGreaterThan(0);
   });
 
+  test('generated-text focus uses the approved accent surface, passes a one-time selection and clears it on selection change', () => {
+    jest.replaceProperty(Platform, 'OS', 'web');
+    const measurementRef = { current: null as any };
+    jest.spyOn(inputMeasurement, 'useTextInputContentHeight').mockImplementation(() => ({
+      ref: measurementRef,
+      contentHeight: 48,
+      onContentSizeChange: undefined,
+    }));
+    const tokens = renderHook(() => useTokens()).result.current;
+    const selection = { start: 8, end: 8 };
+    const onSelectionChange = jest.fn();
+    const screen = render(<ChatComposer
+      input="생성 글"
+      onChangeInput={jest.fn()}
+      onPickAttachment={jest.fn()}
+      onSend={jest.fn()}
+      uploading={false}
+      sending={false}
+      voiceControls={null}
+      focusAccent
+      selection={selection}
+      onSelectionChange={onSelectionChange}
+    />);
+    const field = screen.getByTestId('chat-composer-text-input');
+
+    expect(field.props.selection).toEqual(selection);
+    fireEvent(field, 'selectionChange', { nativeEvent: { selection: { start: 2, end: 2 } } });
+    expect(onSelectionChange).toHaveBeenCalledWith({ nativeEvent: { selection: { start: 2, end: 2 } } });
+    fireEvent(field, 'focus');
+
+    expect(StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style).borderColor)
+      .toBe(tokens.colors.accent);
+    expect(StyleSheet.flatten(field.props.style)).toMatchObject({ outlineStyle: 'solid', outlineWidth: 0 });
+  });
+
   test('reports the composer box and row rectangles for anchor-relative baseline measurement', () => {
     const onComposerBoxLayout = jest.fn();
     const props: any = {

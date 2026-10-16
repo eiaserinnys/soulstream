@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchNodeModelPresets,
+  modelPresetUnavailableReason,
   modelPresetOptionLabel,
   modelPresetSelectionState,
 } from "./model-presets";
@@ -24,8 +25,72 @@ describe("model preset presentation", () => {
     expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
     expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
   });
+
+  it("shows and blocks an actually rejected model while keeping a 0% model selectable", () => {
+    const rejected = {
+      ...availablePreset,
+      id: "preset-rejected",
+      available: false,
+      reason: "limit_rejected",
+      reason_label: "5시간 한도 거부 중",
+      resets_at: "2030-01-02T03:04:00.000Z",
+    };
+    const exhausted = {
+      ...availablePreset,
+      id: "preset-exhausted",
+      reason: "quota_exhausted",
+      reason_label: "7일 사용량 제한",
+      resets_at: "2030-01-02T03:04:00.000Z",
+    };
+
+    expect(modelPresetOptionLabel(rejected, () => "12:20"))
+      .toBe("프리셋 A (5시간 한도 거부 중) · 12:20 해제");
+    expect(modelPresetSelectionState(rejected.id, [rejected], true).valid).toBe(false);
+    expect(modelPresetOptionLabel(exhausted)).toBe(exhausted.label);
+    expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
+  });
+
+  it("formats the unavailable reason for a picker row without repeating the model name", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 12, 8, 0));
+    const rejected = {
+      ...availablePreset,
+      available: false,
+      reason: "limit_rejected",
+      reason_label: "7일 한도 거부 중",
+      resets_at: new Date(2026, 9, 15, 13, 19).toISOString(),
+    };
+
+    expect(modelPresetUnavailableReason(rejected)).toBe("7일 한도 거부 중 · 10/15 13:19 해제");
+    expect(modelPresetUnavailableReason({ ...rejected, resets_at: null }))
+      .toBe("7일 한도 거부 중");
+    expect(modelPresetUnavailableReason(availablePreset)).toBeNull();
+    expect(modelPresetUnavailableReason({ ...rejected, reason_label: null })).toBeNull();
+  });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("formats reset dates in local time only when the reset day differs from today", () => {
+    const now = new Date(2026, 9, 12, 8, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const resetLabel = (date: Date) => modelPresetOptionLabel({
+      ...availablePreset,
+      available: false,
+      reason: "limit_rejected",
+      reason_label: "7일 한도 거부 중",
+      resets_at: date.toISOString(),
+    });
+
+    expect(resetLabel(new Date(2026, 9, 12, 13, 19)))
+      .toBe("프리셋 A (7일 한도 거부 중) · 13:19 해제");
+    expect(resetLabel(new Date(2026, 9, 13, 1, 30)))
+      .toBe("프리셋 A (7일 한도 거부 중) · 10/13 01:30 해제");
+    expect(resetLabel(new Date(2026, 9, 15, 13, 19)))
+      .toBe("프리셋 A (7일 한도 거부 중) · 10/15 13:19 해제");
   });
 
   it("renders only server labels plus a locally formatted reset time", () => {
@@ -95,4 +160,18 @@ describe("model preset presentation", () => {
       headers: { Accept: "application/json" },
     });
   });
+});
+
+it("uses existing warning and exhausted labels for Antigravity without showing headroom numbers", () => {
+  const antigravity = { ...availablePreset, id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity",
+    weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: null, observed_at: null, quota_label: "7일" } };
+  const delayed = { ...antigravity, usage_warning: true };
+  expect(modelPresetOptionLabel(delayed)).toBe("Gemini - 3.8 Flash (사용량 확인 지연)");
+  expect(modelPresetSelectionState(delayed.id, [delayed], true).valid).toBe(true);
+  const exhausted = { ...antigravity, reason: "quota_exhausted", reason_label: "7일 사용량 제한" };
+  expect(modelPresetOptionLabel(exhausted)).toBe("Gemini - 3.8 Flash");
+  expect(modelPresetSelectionState(exhausted.id, [exhausted], true).valid).toBe(true);
+  const unconfigured = { ...antigravity, available: false, reason: "auth_not_configured", reason_label: "인증 미설정" };
+  expect(modelPresetOptionLabel(unconfigured)).toBe("Gemini - 3.8 Flash (인증 미설정)");
+  expect(modelPresetSelectionState(unconfigured.id, [unconfigured], true).valid).toBe(false);
 });

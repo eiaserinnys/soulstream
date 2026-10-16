@@ -67,7 +67,8 @@ export function backendSessionRotationEffect(
 }
 
 export function requiresBackendSessionId(backend: RunnerChildConfig["backend"]): boolean {
-  return backend === "claude" || backend === "codex";
+  return backend === "claude" || backend === "codex"
+    || backend === "antigravity" || backend === "opencode";
 }
 
 export async function setRunnerOomScore(

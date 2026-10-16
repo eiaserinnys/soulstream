@@ -62,7 +62,8 @@ function makeSubject(options: {
     buildBackendRolloverContext: ReturnType<typeof vi.fn>;
     buildGenerationContext: ReturnType<typeof vi.fn>;
   }>;
-  initialMessagePublisher?: { publishInitialMessages: ReturnType<typeof vi.fn> };
+  initialMessagePublisher?: Partial<{ publishInitialMessages: ReturnType<typeof vi.fn>;
+    publishContextManifestBestEffort: ReturnType<typeof vi.fn> }>;
 } = {}) {
   const contextBuilder = {
     build: vi.fn().mockResolvedValue(makeContext()),
@@ -94,8 +95,10 @@ function makeSubject(options: {
     }),
     ...options.contextBuilder,
   };
-  const initialMessagePublisher = options.initialMessagePublisher ?? {
+  const initialMessagePublisher = {
     publishInitialMessages: vi.fn().mockResolvedValue(undefined),
+    publishContextManifestBestEffort: vi.fn().mockResolvedValue(undefined),
+    ...options.initialMessagePublisher,
   };
   const logger = { warn: vi.fn() } as unknown as Logger;
   const builder = new TaskTurnInputBuilder({
@@ -130,7 +133,8 @@ describe("TaskTurnInputBuilder", () => {
     expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
   });
 
-  it("prepares a new Claude turn by publishing initial messages and splitting systemPrompt from prompt text", async () => {
+  it.each(["claude", "antigravity", "opencode"] as const)("prepares a new %s turn by splitting systemPrompt from prompt text", async (backend) => {
+    const agent = { ...claudeAgent, backend };
     const ctx = makeContext();
     const task = makeTask({
       attachmentPaths: ["/tmp/incoming/sess/screen.png", "/tmp/incoming/sess/readme.txt"],
@@ -139,9 +143,9 @@ describe("TaskTurnInputBuilder", () => {
       contextBuilder: { build: vi.fn().mockResolvedValue(ctx) },
     });
 
-    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const input = await builder.prepareInitialTurnInput(task, agent);
 
-    expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
+    expect(contextBuilder.build).toHaveBeenCalledWith(task, agent);
     expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(task, ctx);
     expect(input.systemPrompt).toBe("system instructions");
     expect(input.prompt).toContain("<session_context>");
@@ -149,6 +153,12 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).not.toContain("system instructions");
     expect(input.prompt.endsWith("사용자 요청")).toBe(true);
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/screen.png"]);
+  });
+
+  it.each(["antigravity", "claude", "opencode"] as const)("preserves the approved empty-instruction first turn for %s", async backend => {
+    const { builder } = makeSubject({ contextBuilder: { build: vi.fn().mockResolvedValue({ ...makeContext(), effectiveSystemPrompt: undefined }) } });
+    const input = await builder.prepareInitialTurnInput(makeTask(), { ...claudeAgent, backend });
+    expect(input.systemPrompt).toBe(backend === "antigravity" || backend === "opencode" ? "" : undefined);
   });
 
   it("binds the initial public message, prepared context, and engine input to one registered input UUID", async () => {
@@ -201,10 +211,28 @@ describe("TaskTurnInputBuilder", () => {
         ],
       }],
     });
-    const { builder, contextBuilder, initialMessagePublisher } = makeSubject();
+    const manifest = { compiler_version: "phase-a.v1", spec_hash: "generation-spec",
+      source_count: 0, total_chars: 12, total_token_estimate: 3, sources: [] };
+    const enqueueEvent = vi.fn().mockResolvedValue(undefined);
+    const manifestPublisher = new TaskInitialMessagePublisher({
+      persistence: { enqueueEvent } as never,
+      broadcaster: {} as never,
+      logger: { warn: vi.fn() } as unknown as Logger,
+    });
+    const { builder, contextBuilder, initialMessagePublisher } = makeSubject({
+      initialMessagePublisher: { publishContextManifestBestEffort: vi.fn(
+        (task, manifest) => manifestPublisher.publishContextManifestBestEffort(task, manifest),
+      ) },
+    });
+    const context = await contextBuilder.buildGenerationContext();
+    contextBuilder.buildGenerationContext.mockClear();
+    contextBuilder.buildGenerationContext.mockResolvedValue({ ...context, contextManifest: manifest });
 
     const input = await builder.prepareInitialTurnInput(task, claudeAgent);
 
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledTimes(1);
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledWith(task, manifest);
+    expect(enqueueEvent.mock.calls).toEqual([[task.agentSessionId, { type: "context_manifest", ...manifest }]]);
     expect(contextBuilder.buildGenerationContext).toHaveBeenCalledWith(
       task,
       claudeAgent,
@@ -296,7 +324,8 @@ describe("TaskTurnInputBuilder", () => {
     );
     const builder = new TaskTurnInputBuilder({
       contextBuilder,
-      initialMessagePublisher: { publishInitialMessages: vi.fn().mockResolvedValue(undefined) },
+      initialMessagePublisher: { publishInitialMessages: vi.fn().mockResolvedValue(undefined),
+        publishContextManifestBestEffort: vi.fn().mockResolvedValue(undefined) },
       logger,
     });
     const task = makeTask({
@@ -800,7 +829,7 @@ describe("TaskTurnInputBuilder", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it("compact 후 첫 후속 턴은 full context를 한 번만 재주입한다", async () => {
+  it.each(["claude", "opencode"] as const)("compact 후 %s 첫 후속 턴은 full context를 한 번만 재주입한다", async backend => {
     const task = makeTask({
       needsFullContextReinjection: true,
       interventionQueue: [{ text: "after compact", user: "u" }],
@@ -817,11 +846,12 @@ describe("TaskTurnInputBuilder", () => {
       },
     });
 
-    const first = await builder.prepareInitialTurnInput(task, claudeAgent);
+    const agent = { ...claudeAgent, backend };
+    const first = await builder.prepareInitialTurnInput(task, agent);
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
-      claudeAgent,
+      agent,
       expect.objectContaining({ includeFullContext: true }),
     );
     expect(first.systemPrompt).toBe("full system");
@@ -831,13 +861,13 @@ describe("TaskTurnInputBuilder", () => {
     task.interventionQueue.push({ text: "regular", user: "u" });
     await builder.prepareFollowupTurnInput(
       task,
-      claudeAgent,
+      agent,
       [task.interventionQueue.shift()!],
     );
 
     expect(contextBuilder.buildFollowupContext).toHaveBeenLastCalledWith(
       task,
-      claudeAgent,
+      agent,
       expect.objectContaining({ includeFullContext: false }),
     );
   });
@@ -864,5 +894,20 @@ describe("rollover assigned-card slot",()=>{
     },"previous");
     expect(input.prompt).toContain("fresh card");expect(input.prompt).not.toContain("stale card");
     expect(input.prompt.match(/<assigned_cards>/g)).toHaveLength(1);expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
+  });
+});
+
+describe("Antigravity follow-up system contract", () => {
+  it("ordinary resume keeps instructions in the native conversation and does not prepend them", async () => {
+    const { builder } = makeSubject();
+    const input = await builder.prepareInitialTurnInput(makeTask({ codexThreadId: "agy-id", modelPresetBackend: "antigravity", interventionQueue: [{ text: "다음 요청", user: "u" }] }), claudeAgent);
+    expect(input.systemPrompt).toBeUndefined();
+    expect(input.prompt).not.toContain("system instructions");
+    expect(input.prompt).toContain("다음 요청");
+  });
+  it("without a native ID ordinary follow-up still omits systemPrompt (reported host limitation)", async () => {
+    const { builder } = makeSubject();
+    const input = await builder.prepareInitialTurnInput(makeTask({ modelPresetBackend: "antigravity", interventionQueue: [{ text: "다시", user: "u" }] }), claudeAgent);
+    expect(input.systemPrompt).toBeUndefined();
   });
 });

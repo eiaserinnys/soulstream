@@ -99,7 +99,9 @@ describe("advertised MCP tool inventory", () => {
     });
     for(const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"])
       expect(internal.find(tool=>tool.name===name)).toBeDefined();
-    expect(internal).toHaveLength(125);
+    for (const name of ["put_report_entry", "remove_report_entry"])
+      expect(internal.find(tool => tool.name === name)).toBeDefined();
+    expect(internal).toHaveLength(130);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });

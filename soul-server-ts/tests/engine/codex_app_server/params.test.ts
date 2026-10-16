@@ -8,19 +8,18 @@ import {
 
 describe("Codex app-server parameter builders", () => {
   it("builds thread/start params with current wire defaults", () => {
-    expect(
-      buildThreadStartParams(
-        {
-          prompt: "hello",
-          model: "  gpt-5.5  ",
-          systemPrompt: "base instructions",
-        },
-        "/work",
-      ),
-    ).toEqual({
+    const params = buildThreadStartParams(
+      {
+        prompt: "hello",
+        model: "  gpt-5.5  ",
+        systemPrompt: "base instructions",
+      },
+      "/work",
+    );
+
+    expect(params).toEqual({
       model: "gpt-5.5",
       modelProvider: null,
-      serviceTier: null,
       cwd: "/work",
       runtimeWorkspaceRoots: ["/work"],
       approvalPolicy: "never",
@@ -41,25 +40,25 @@ describe("Codex app-server parameter builders", () => {
       experimentalRawEvents: false,
       persistExtendedHistory: false,
     });
+    expect(JSON.stringify(params)).not.toContain('"serviceTier"');
   });
 
   it("builds thread/resume params with resume id and nullable model/system defaults", () => {
-    expect(
-      buildThreadResumeParams(
-        {
-          prompt: "resume",
-          resumeSessionId: "thread-existing",
-          model: "   ",
-        },
-        "/work",
-      ),
-    ).toEqual({
+    const params = buildThreadResumeParams(
+      {
+        prompt: "resume",
+        resumeSessionId: "thread-existing",
+        model: "   ",
+      },
+      "/work",
+    );
+
+    expect(params).toEqual({
       threadId: "thread-existing",
       history: null,
       path: null,
       model: null,
       modelProvider: null,
-      serviceTier: null,
       cwd: "/work",
       runtimeWorkspaceRoots: ["/work"],
       approvalPolicy: "never",
@@ -73,6 +72,7 @@ describe("Codex app-server parameter builders", () => {
       excludeTurns: false,
       persistExtendedHistory: false,
     });
+    expect(JSON.stringify(params)).not.toContain('"serviceTier"');
   });
 
   it("routes soulstream MCP through the internal listener with the current session header", () => {
@@ -208,18 +208,18 @@ describe("Codex app-server parameter builders", () => {
   });
 
   it("builds turn/start params with input attachments and reasoning effort policy", () => {
-    expect(
-      buildTurnStartParams(
-        "thread-1",
-        {
-          prompt: "inspect",
-          imageAttachmentPaths: ["/tmp/a.png", "/tmp/b.png"],
-          model: "gpt-5.5",
-          reasoningEffort: "high",
-        },
-        "/work",
-      ),
-    ).toEqual({
+    const params = buildTurnStartParams(
+      "thread-1",
+      {
+        prompt: "inspect",
+        imageAttachmentPaths: ["/tmp/a.png", "/tmp/b.png"],
+        model: "gpt-5.5",
+        reasoningEffort: "high",
+      },
+      "/work",
+    );
+
+    expect(params).toEqual({
       threadId: "thread-1",
       input: [
         { type: "text", text: "inspect", text_elements: [] },
@@ -235,13 +235,13 @@ describe("Codex app-server parameter builders", () => {
       sandboxPolicy: { type: "dangerFullAccess" },
       permissions: null,
       model: "gpt-5.5",
-      serviceTier: null,
       effort: "high",
       summary: null,
       personality: null,
       outputSchema: null,
       collaborationMode: null,
     });
+    expect(JSON.stringify(params)).not.toContain('"serviceTier"');
   });
 
   it("drops reasoning effort for non-reasoning models without changing the model", () => {

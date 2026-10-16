@@ -70,7 +70,13 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
     }
     try {
       if (!api) throw new Error('서버에 연결해 주세요.');
+      const reportState = useSessionStore.getState();
       const result = await api.listPersistentSessions();
+      for (const session of result.sessions) {
+        if (session.persistent_report === undefined) continue;
+        useSessionStore.getState().applyPersistentReport(session.session_id, session.persistent_report,
+          { snapshot: reportState.persistentReportsBySession[session.session_id], generation: reportState.scopeGeneration });
+      }
       setSessions(result.sessions); setDefaults(result.create_defaults);
       if (mode === 'portrait') return;
       if (pending.current !== mode) return;

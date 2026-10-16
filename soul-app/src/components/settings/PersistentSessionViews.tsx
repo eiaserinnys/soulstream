@@ -8,6 +8,7 @@ import {
   type PersistentSessionResource,
 } from '../../api/client';
 import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
+import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
 import type { PersistentSessionSettingsPatch, PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import { useSessionStore } from '../../store/sessionStore';
 import { useChatStore } from '../../store/chatStore';
@@ -454,7 +455,7 @@ export function PersistentSessionEditor({
         <Text style={styles.label}>프로필</Text>
         <OptionRow label="프로필" selected={draft.agentId} options={agents.map((agent) => ({ id: agent.id, label: agent.name ?? agent.id }))} onSelect={(agentId) => update({ agentId })} emptyLabel="선택 가능한 프로필이 없습니다." />
         <Text style={styles.label}>기본 모델</Text>
-        <OptionRow label="기본 모델" selected={draft.modelPreset} options={presets.map((preset) => ({ id: preset.id, label: preset.label, available: preset.available, reason: preset.reason_label }))} onSelect={chooseModel} emptyLabel="선택 가능한 모델이 없습니다." />
+        <OptionRow label="기본 모델" selected={draft.modelPreset} options={presets.map((preset) => ({ id: preset.id, label: preset.label, available: preset.available, reason: formatModelPresetUnavailableReason(preset) }))} onSelect={chooseModel} emptyLabel="선택 가능한 모델이 없습니다." />
         {modelError ? <Text accessibilityRole="alert" style={styles.error}>{modelError}</Text> : null}
         {!draft.modelPreset && !loadingTargets ? <Notice text="기본 모델을 선택해야 저장할 수 있습니다." /> : null}
       </Group>

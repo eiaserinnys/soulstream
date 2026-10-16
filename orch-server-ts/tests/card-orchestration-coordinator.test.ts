@@ -110,7 +110,7 @@ function harness(state = durableState(), options: {
     resolveTarget: () => ({ nodeId: "node", agentId: "worker", modelPreset: "worker-preset", available: true, reason: null }),
     selectOrchestrator: async candidates => {
       const provider = { status: "auto" as const, source: "claude-api", sourceKind: "remote" as const, observedAt: state.quotaObservedAt, weeklyRemainingPercent: state.quotaRemaining, weeklyResetAt: null, shortRemainingPercent: state.quotaRemaining, shortResetAt: null, quotas: [{ id: "claude:5h", label: "5시간", window: "5h", model: null, remainingPercent: state.quotaRemaining, resetAt: null, purpose: "execution" as const }] };
-      const snapshot = { generatedAt: state.quotaObservedAt, collectedAt: state.quotaObservedAt, nodes: [{ nodeId: "node", fetchedAt: state.quotaObservedAt, stale: false, staleSince: null, providers: { claude: provider, codex: null, gemini: null } }] };
+      const snapshot = { generatedAt: state.quotaObservedAt, collectedAt: state.quotaObservedAt, nodes: [{ nodeId: "node", fetchedAt: state.quotaObservedAt, stale: false, staleSince: null, providers: { claude: provider, codex: null, antigravity: null } }] };
       for (const candidate of candidates) {
         const usage = strictOrchestrationUsage(candidate.nodeId, { usage_provider: "claude", usage_model_id: "opus" }, snapshot, new Date(Date.parse("2026-10-01T12:00:00Z") + state.now), candidate.minimumRemainingPercent);
         if (usage.available) return { candidate, reason: null, instructionsRevision: state.instructionsRevision };
@@ -259,7 +259,7 @@ describe("card orchestration logical-input cost and durable replay", () => {
 describe("validated advertised preset accessor", () => {
   it("exposes provider scope without ordinary permissive availability and rejects missing/offline nodes", () => {
     const preset = { id: "claude-opus", label: "Opus", backend: "claude", available: true, usage_provider: "claude", usage_model_id: "opus" };
-    const service = new ModelPresetAvailabilityService({ getConnectedNode: id => id === "node" ? { nodeId: "node", modelPresets: [preset] } as NodeConnectionSnapshot : undefined }, { getSummary: () => ({ generatedAt: "", collectedAt: null, nodes: [] }) });
+    const service = new ModelPresetAvailabilityService({ getConnectedNode: id => id === "node" ? { nodeId: "node", modelPresets: [preset] } as NodeConnectionSnapshot : undefined }, { getSummary: () => ({ generatedAt: "", collectedAt: null, nodes: [] }), getLimitRejection: () => null });
     expect(service.resolveStaticForNode("node", "claude-opus")).toEqual(preset);
     expect(() => service.resolveStaticForNode("node", "missing")).toThrow("not advertised");
     expect(() => service.resolveStaticForNode("offline", "claude-opus")).toThrow("not advertised");

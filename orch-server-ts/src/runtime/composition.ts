@@ -89,6 +89,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   onNodeEventSinkError?: (error: unknown, sinkIndex: number) => void;
   additionalNodeEventSinks?: readonly NodeRegistryEventSink[];
   eventIngress?: NodeWsRouteOptions["eventIngress"];
+  onCommittedProviderEvent?: NodeWsRouteOptions["onCommittedProviderEvent"];
   releaseActivationReceipts?: NodeWsRouteOptions["releaseActivationReceipts"];
   sessionForegroundObservers?: SessionHistoryRouteOptions["foregroundObservers"];
 };
@@ -191,6 +192,9 @@ export function createOrchestratorRuntimeServices(
       ...(options.eventIngress === undefined
         ? {}
         : { eventIngress: options.eventIngress }),
+      ...(options.onCommittedProviderEvent === undefined
+        ? {}
+        : { onCommittedProviderEvent: options.onCommittedProviderEvent }),
       ...(options.releaseActivationReceipts === undefined
         ? {}
         : { releaseActivationReceipts: options.releaseActivationReceipts }),

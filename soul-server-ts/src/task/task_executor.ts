@@ -42,6 +42,7 @@ import {
 } from "../runner/task_runner_runtime.js";
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
+import type { RunnerPhaseObservation } from "../runner/runner_phase_observation.js";
 
 import { assertGenericTaskExecution } from "./task_orchestration_purpose.js";
 import type { CompletionNotifier } from "./completion_notifier.js";
@@ -147,6 +148,7 @@ export interface RunnerProcessRuntimeFactory {
     registration: RunnerRegistration,
     snapshots: RunnerSnapshotPersistence,
     mode?: "adopt" | "replay" | "offline",
+    phaseObservation?: RunnerPhaseObservation,
   ): TaskRunnerRuntime;
 }
 
@@ -1146,6 +1148,7 @@ export class TaskExecutor {
     commandId: string | undefined,
     mode: "adopt" | "replay" | "offline",
     onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
+    phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
     assertGenericTaskExecution(task, registration.config?.agent?.id);
     const config = registration.config;
@@ -1154,6 +1157,7 @@ export class TaskExecutor {
       registration,
       this.snapshotPersistenceFor(task),
       mode,
+      phaseObservation,
     );
     if (!runner) throw new Error("runner process recovery factory unavailable");
     const onPendingFramesReplayed = onAttemptCreated?.(runner);

@@ -234,6 +234,12 @@ export const dialoguesInventory = [
   },
   {
     section: "overlays",
+    id: "card-image-screen",
+    name: "카드 화면 캡처 확대",
+    component: "CardTimeline",
+  },
+  {
+    section: "overlays",
     id: "file-image",
     name: "첨부 이미지 확대",
     component: "FileAttachmentPreview",
@@ -255,6 +261,12 @@ export const dialoguesInventory = [
     id: "document-overlay",
     name: "보드 문서 편집기 확대",
     component: "FolderDocumentOverlay / MarkdownDocumentPanel",
+  },
+  {
+    section: "overlays",
+    id: "document-reader",
+    name: "링크 문서 읽기",
+    component: "DocumentReaderDialog",
   },
   {
     section: "overlays",

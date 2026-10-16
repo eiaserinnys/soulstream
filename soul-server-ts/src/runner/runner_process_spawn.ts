@@ -147,6 +147,8 @@ export class RunnerProcessSpawner {
       snapshotPath: input.snapshotPath,
       codexAdapterMode: input.codexAdapterMode,
       ...(input.codexCliPath ? { codexCliPath: input.codexCliPath } : {}),
+      ...(input.antigravityCliPath ? { antigravityCliPath: input.antigravityCliPath } : {}),
+      ...(input.opencodeCliPath ? { opencodeCliPath: input.opencodeCliPath } : {}),
       codexDetachedResultRetentionMs: input.codexDetachedResultRetentionMs,
       claudeRuntimeV2Enabled: input.claudeRuntimeV2Enabled,
       claudeRuntimeIdleTtlMs: input.claudeRuntimeIdleTtlMs,

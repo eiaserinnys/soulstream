@@ -72,6 +72,85 @@ describe("NodeEventIngressController", () => {
     expect(publish).not.toHaveBeenCalled();
   });
 
+  it("observes only committed fresh provider events before broadcasting and keeps ACK on callback failure", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "error";
+    value.events[0]!.payload = {
+      type: "error",
+      error_code: "claude_rate_limit_stop_failure",
+      rate_limit_type: "five_hour",
+      resets_at: "2026-08-06T01:00:00.000Z",
+    };
+    const order: string[] = [];
+    const sent: Array<Record<string, unknown>> = [];
+    const errors: unknown[] = [];
+    const onCommittedProviderEvent = vi.fn(() => {
+      order.push("observe");
+      throw new Error("observer failed");
+    });
+    const controller = createController({
+      nodeId: "authenticated-node",
+      committer: {
+        commitBatch: vi.fn(async (nodeId: string) => {
+          order.push(`commit-${nodeId}`);
+          return [{ envelope: value.events[0]!, eventId: 101, duplicateReceipt: false }];
+        }),
+      },
+      onCommittedProviderEvent,
+      publish: () => order.push("broadcast"),
+      send: (frame: Record<string, unknown>) => {
+        if (frame.type === "event_append_ack") order.push("ack");
+        sent.push(frame);
+      },
+      logError: (error: unknown) => errors.push(error),
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(onCommittedProviderEvent).toHaveBeenCalledWith({
+      nodeId: "authenticated-node",
+      eventType: "error",
+      payload: value.events[0]!.payload,
+      createdAt: "2026-08-06T00:00:00.000Z",
+    });
+    expect(order).toEqual(["commit-authenticated-node", "observe", "broadcast", "ack"]);
+    expect(errors).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ type: "event_append_ack", acked_through: 1 });
+  });
+
+  it("does not observe duplicate receipts or dead-lettered provider errors", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "error";
+    value.events[0]!.payload = { type: "error", error_code: "codex_usage_limit_exceeded" };
+    const onCommittedProviderEvent = vi.fn();
+    const duplicate = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!, eventId: 101, duplicateReceipt: true,
+        }]),
+      },
+      onCommittedProviderEvent,
+    });
+    duplicate.enqueue(value as unknown as Record<string, unknown>);
+    await duplicate.drain();
+
+    const deadLetter = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          outcome: "dead_lettered" as const,
+          envelope: value.events[0]!,
+          deadLetter: { code: "INVALID", reason: "invalid", rejectedAt: "2026-08-06T00:00:00.000Z", path: "payload" },
+        }]),
+      },
+      onCommittedProviderEvent,
+    });
+    deadLetter.enqueue(value as unknown as Record<string, unknown>);
+    await deadLetter.drain();
+
+    expect(onCommittedProviderEvent).not.toHaveBeenCalled();
+  });
+
   it("ingests one amplified structured result and its assistant/complete tail exactly once", async () => {
     const result = amplifiedStructuredToolResult();
     const resultJson = JSON.stringify(result);

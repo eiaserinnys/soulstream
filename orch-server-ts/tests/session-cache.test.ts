@@ -7,6 +7,22 @@ import {
 } from "../src/index.js";
 
 describe("PerNodeSessionCache retention", () => {
+  it("preserves a newer central report over an already-running DB seed", () => {
+    const cache = new PerNodeSessionCache();
+    cache.upsertFromSessionUpdated({nodeId:"n",connectionId:"c",message:{agent_session_id:"pas",status:"running",persistent_report:[]},nowMs:100});
+    cache.patchPersistentReport("pas", [{key:"new",title:"최신 보고"}], 300);
+    cache.seedNodeSessions({nodeId:"n",connectionId:"c",sessions:[{agent_session_id:"pas",status:"running",persistent_report:[]}],snapshotStartedAtMs:200,nowMs:400});
+    expect(cache.findSession("pas")?.payload.persistent_report).toEqual([{key:"new",title:"최신 보고"}]);
+  });
+  it("keeps central reports through worker status patches and accepts an empty board", () => {
+    const cache=new PerNodeSessionCache();
+    cache.upsertFromSessionUpdated({nodeId:'n',connectionId:'c',message:{agent_session_id:'pas',status:'running'},nowMs:1});
+    cache.patchPersistentReport('pas',[{key:'r',title:'보고'}]);
+    cache.upsertFromSessionUpdated({nodeId:'n',connectionId:'c',message:{agent_session_id:'pas',status:'completed'},nowMs:2});
+    expect(cache.findSession('pas')?.payload.persistent_report).toEqual([{key:'r',title:'보고'}]);
+    cache.patchPersistentReport('pas',[]);
+    expect(cache.findSession('pas')?.payload.persistent_report).toEqual([]);
+  });
   it("seeds durable DB sessions without overwriting newer WebSocket state", () => {
     const cache = new PerNodeSessionCache();
     cache.upsertFromSessionUpdated({

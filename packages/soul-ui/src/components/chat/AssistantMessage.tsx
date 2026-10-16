@@ -8,7 +8,27 @@ import { useGlassSurface } from "../LiquidGlassProvider";
 import type { LlmContext } from "./hooks";
 
 /** text 노드: 일반 텍스트 표시 */
-export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript" }) {
+export const AssistantMessage = memo(function AssistantMessage({
+  msg,
+  llmContext,
+  header,
+  children,
+  portraitUrl,
+  bubbleProps,
+  presentation = "default",
+  contentLayout = "text",
+  narration = false,
+}: {
+  msg: ChatMessage;
+  llmContext?: LlmContext;
+  header?: ReactNode;
+  children?: ReactNode;
+  portraitUrl?: string | null;
+  bubbleProps?: HTMLAttributes<HTMLDivElement>;
+  presentation?: "default" | "manuscript";
+  narration?: boolean;
+  contentLayout?: "text" | "structured";
+}) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const manuscript = presentation === "manuscript";
   const webglActive = useGlassSurface(bubbleRef, { enabled: !manuscript });
@@ -26,6 +46,12 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
     : agentName ?? "Assistant";
   const displayId = isLlm ? null : activeSession?.agentId ?? null;
   const hasPortrait = isLlm ? false : !!agentPortraitUrl;
+  const bubbleClassName = manuscript
+    ? "w-full min-w-0 text-foreground"
+    : cn(
+      contentLayout === "structured" ? "w-full min-w-0 max-w-[86%]" : "max-w-[86%]",
+      "rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]",
+    );
 
   // 토큰 사용량 (assistant_message 노드에 usage가 있을 때 인라인 표시)
   const tokenInfo = msg.usage
@@ -33,7 +59,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
     : null;
 
   return (
-    <div className={manuscript ? "flex" : "flex gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
+    <div className={manuscript ? "flex" : "flex gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined} data-chat-narration={manuscript && narration ? "true" : undefined}>
       {!manuscript && <ProfileAvatar
         role="assistant"
         hasPortrait={hasPortrait}
@@ -44,7 +70,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
         ref={bubbleRef}
         {...bubbleProps}
         data-slot="chat-message-bubble"
-        className={cn(manuscript ? "w-full min-w-0 text-foreground" : "max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]", bubbleProps?.className)}
+        className={cn(bubbleClassName, bubbleProps?.className)}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         {!manuscript && (header ?? <div className="mb-1 flex items-baseline gap-1.5">

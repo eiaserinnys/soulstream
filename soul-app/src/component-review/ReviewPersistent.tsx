@@ -8,6 +8,7 @@ import { ReviewSection } from './ReviewSection';
 import { useTokens } from '../theme';
 import { ReviewPersistentFullscreen } from './ReviewPersistentFullscreen';
 import { ReviewPersistentButtons } from './ReviewPersistentButtons';
+import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
 
 const { summaryCard } = persistentReviewCards;
 
@@ -30,7 +31,8 @@ function recordReviewOpen(cardId: string) {
 export function ReviewPersistent() {
   const sample = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('sample');
   return sample === 'buttons' ? <ReviewPersistentButtons />
-    : sample === 'screen' || sample === 'entry' || sample === 'startup' ? <ReviewPersistentFullscreen /> : <PersistentParts />;
+    : sample === 'usage-parts' ? <PersistentSessionWeeklyUsageReviewSample />
+    : sample === 'screen' || sample === 'report' || sample === 'entry' || sample === 'startup' || sample === 'usage' ? <ReviewPersistentFullscreen /> : <PersistentParts />;
 }
 
 function PersistentParts() {

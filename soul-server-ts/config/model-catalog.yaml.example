@@ -137,3 +137,22 @@ presets:
       ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
       ANTHROPIC_API_KEY: "${KIMI_API_KEY}"
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"
+
+  - id: gemini-3.8-flash
+    label: "Gemini - 3.8 Flash"
+    backend: antigravity
+    model: gemini-3.8-flash
+    supported_efforts: [low, medium, high]
+    default_effort: low
+
+  - id: gemini-4-argon
+    label: "Gemini - 4 Argon"
+    backend: antigravity
+    model: gemini-4-argon
+    supported_efforts: [low, medium, high]
+    default_effort: high
+
+  - id: opencode-deepseek-v4.1-flash-free
+    label: "OpenCode - DeepSeek V4.1 Flash Free"
+    backend: opencode
+    model: opencode/deepseek-v4.1-flash-free

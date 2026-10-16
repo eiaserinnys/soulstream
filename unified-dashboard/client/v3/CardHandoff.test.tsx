@@ -19,7 +19,7 @@ vi.mock("@seosoyoung/soul-ui", async original => ({
 }));
 vi.mock("@seosoyoung/soul-ui/components/LiquidGlassCard", () => ({LiquidGlassCard: ({webglSurface, ...props}: HTMLAttributes<HTMLDivElement> & {webglSurface: boolean}) => createElement("div", props)}));
 
-vi.mock("./CardExecutionPicker", () => ({ CardExecutionPicker: ({selection,onChange}:any) => createElement("button",{onClick:()=>onChange({...selection,nodeId:"other"}),type:"button"},"테스트 노드") }));
+vi.mock("./CardExecutionPicker", () => ({ useCardExecutionPicker: ({selection,onChange}:any) => ({agent:null,model:null,valid:true,unavailableMessage:null,view:{selection,onChange}}), CardExecutionPickerView: ({selection,onChange}:any) => createElement("button",{onClick:()=>onChange({...selection,nodeId:"other"}),type:"button"},"테스트 노드") }));
 const sessionCreate=vi.hoisted(()=>vi.fn().mockResolvedValue({agentSessionId:"new"}));
 vi.mock("../lib/session-create",()=>({createDashboardSession:sessionCreate}));
 vi.mock("@tanstack/react-query",()=>({useQueryClient:()=>({})}));

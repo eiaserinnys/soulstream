@@ -128,13 +128,13 @@ export interface NodeRegister {
   model_presets?: {
     id: string;
     label: string;
-    backend: "claude" | "codex" | "openai-agents";
+    backend: "claude" | "codex" | "openai-agents" | "antigravity" | "opencode";
     available: boolean;
     reason?: "env_unresolved";
     /**
      * orch 사용량 오버레이용 내부 조인 키. API-key endpoint preset은 null.
      */
-    usage_provider: "claude" | "codex" | null;
+    usage_provider: "claude" | "codex" | "antigravity" | null;
     /**
      * 모델 범위 쿼터 조인용 내부 식별자.
      */
@@ -526,6 +526,15 @@ export interface SSEEventUserMessage {
  */
 export interface SSEEventAssistantMessage {
   type: "assistant_message";
+  ui?: {
+    schema_version: 1;
+    ui_id: string;
+    hash: string;
+    revision: 1;
+    document: {
+      [k: string]: unknown;
+    };
+  };
   [k: string]: unknown;
 }
 /**

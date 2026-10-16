@@ -2,6 +2,7 @@ import React from 'react';
 import type { SessionEvent, Session } from '../../api/types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
+import { ChatUiMessage } from '../chat-ui/ChatUiMessage';
 import { ThinkingEvent } from './ThinkingEvent';
 import { SystemEvent } from './SystemEvent';
 import { ChatInputRequest } from '../chat/ChatInputRequest';
@@ -23,6 +24,7 @@ interface Props {
   onRetryPending?: (eventId: string) => void;
   onRestorePending?: (eventId: string) => void;
   presentation?: 'default' | 'manuscript';
+  narration?: boolean;
 }
 
 export function EventRenderer({
@@ -34,6 +36,7 @@ export function EventRenderer({
   onRetryPending,
   onRestorePending,
   presentation = 'default',
+  narration = false,
 }: Props) {
   const pending = event as PendingOptimisticEvent;
   const pendingActions = pending.pendingStatus === 'failed'
@@ -75,11 +78,14 @@ export function EventRenderer({
         />
       );
     case 'assistant_message':
+      return <ChatUiMessage event={event} presentation={presentation} narration={narration} session={session}
+        selectionModel={selectionModel} onSelectionDone={onSelectionDone} />;
     case 'text_delta':
       return (
         <AssistantMessage
           event={event}
           presentation={presentation}
+          narration={narration}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}
@@ -103,6 +109,7 @@ export function EventRenderer({
         <AssistantMessage
           event={event}
           presentation={presentation}
+          narration={narration}
           session={session}
           selectionModel={selectionModel}
           onSelectionDone={onSelectionDone}

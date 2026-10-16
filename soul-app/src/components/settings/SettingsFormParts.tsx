@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 
 import { useTextInputContentHeight } from '../chat/useTextInputContentHeight';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -14,19 +14,26 @@ export function useSettingsFormStyles() {
   return useMemo(() => makeStyles(t), [t]);
 }
 
-export function SettingsInput({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
+export function SettingsInput({ label, variant, presentation = 'default', ...props }: { label: string; variant?: 'chat'; presentation?: 'default' | 'manuscript' } & React.ComponentProps<typeof TextInput>) {
   const t = useTokens(); const styles = useSettingsFormStyles();
   const [focused, setFocused] = useState(false);
   const { fontScale } = useWindowDimensions();
-  const lineHeight = t.foundation.typography.body.lineHeight * fontScale;
+  const chatTypography = variant === 'chat'
+    ? { fontSize: t.chatFontSize.body, lineHeight: t.chatFontSize.body * t.lineHeightRatio }
+    : undefined;
+  const baseLineHeight = variant === 'chat'
+    ? t.chatFontSize.body * t.lineHeightRatio
+    : t.foundation.typography.body.lineHeight;
+  const lineHeight = baseLineHeight * fontScale;
   const measurement = useTextInputContentHeight(props.multiline ? props.value ?? '' : '', lineHeight);
   const singleLine = Math.max(t.hitTarget.min, lineHeight + t.spacing.sm * 2 + styles.input.borderWidth * 2);
   const height = Math.max(singleLine, props.value ? measurement.contentHeight + styles.input.borderWidth * 2 : 0);
   const expanded = height > singleLine;
-  return <View><Text style={styles.label}>{label}</Text><TextInput {...props} accessibilityLabel={label}
+  const showLabel = variant !== 'chat' || label.length > 0;
+  return <View>{showLabel ? <Text style={[styles.label, chatTypography]}>{label}</Text> : null}<TextInput {...props} accessibilityLabel={variant === 'chat' ? props.accessibilityLabel ?? label : label}
     ref={props.multiline ? measurement.ref : undefined} onContentSizeChange={props.multiline ? measurement.onContentSizeChange : undefined}
-    scrollEnabled={props.multiline ? false : undefined} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-    style={[styles.input, props.multiline && { height, paddingVertical: expanded ? t.spacing.sm : (singleLine - lineHeight - styles.input.borderWidth * 2) / 2, textAlignVertical: expanded ? 'top' : 'center' }, focused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
+    scrollEnabled={props.multiline ? false : undefined} onFocus={event => { setFocused(true); props.onFocus?.(event); }} onBlur={event => { setFocused(false); props.onBlur?.(event); }}
+    style={[styles.input, chatTypography, variant === 'chat' && presentation === 'manuscript' && { borderColor: t.persistentSession.line }, variant === 'chat' && Platform.OS === 'web' ? { outlineStyle: 'solid', outlineWidth: 0 } : undefined, props.multiline && { height, paddingVertical: expanded ? t.spacing.sm : (singleLine - lineHeight - styles.input.borderWidth * 2) / 2, textAlignVertical: expanded ? 'top' : 'center' }, focused && { borderColor: t.colors.accent, backgroundColor: t.colors.accentTint }]}
     placeholderTextColor={t.colors.textPlaceholder} /></View>;
 }
 

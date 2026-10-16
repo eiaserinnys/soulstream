@@ -20,6 +20,7 @@ import {
   RunnerIpcConnection,
   RunnerIpcRequestTimeoutError,
 } from "../../src/runner/runner_ipc_connection.js";
+import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import { buildDurableRunnerEvent } from
   "../../src/runner/runner_child_runtime_helpers.js";
 import {
@@ -690,6 +691,208 @@ describe("RunnerProcessDispatcher", () => {
     await dispatcher.close();
     writer.close();
     await endpoint.close();
+  });
+
+  it("does not accept execute when another pump owns the bootstrap stream", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    const bootstrap = await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-17T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    const execute = vi.fn();
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      if (frame.kind === "execute") execute();
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+      if (frame.kind === "execute") {
+        await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
+      }
+    }, vi.fn());
+    await endpoint.listen();
+    const mux = new EventOutboxPumpMux(
+      new EventOutboxPump(emptyStore("node-stream"), vi.fn()),
+    );
+    const unregisterExistingPump = mux.register(
+      new EventOutboxPump(emptyStore(bootstrap.stream_id), vi.fn()),
+    );
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawnedProcessForTest(paths),
+      pumpMux: mux,
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    try {
+      await dispatcher.prepareExecutionIdentity("owner-test");
+      await expect(collect(dispatcher.executeFrames({
+        agentSessionId: "session-a",
+        prompt: "hello",
+      }))).rejects.toThrow(`Durable event stream already registered: ${bootstrap.stream_id}`);
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      await dispatcher.close();
+      unregisterExistingPump();
+      writer.close();
+      await endpoint.close();
+    }
+  });
+
+  it("waits for delayed bootstrap preparation before accepting execute", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-17T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    let resolveBootstrapReadStarted!: () => void;
+    const bootstrapReadStarted = new Promise<void>((resolve) => {
+      resolveBootstrapReadStarted = resolve;
+    });
+    let releaseBootstrapRead!: () => void;
+    const bootstrapReadGate = new Promise<void>((resolve) => {
+      releaseBootstrapRead = resolve;
+    });
+    const execute = vi.fn();
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      if (frame.kind === "execute") execute();
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+      if (frame.kind === "execute") {
+        await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
+      }
+    }, vi.fn());
+    await endpoint.listen();
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawnedProcessForTest(paths),
+      openParentOutbox: async (databasePath, sessionId, options) => {
+        const outbox = await RunnerParentOutbox.open(databasePath, sessionId, options);
+        const readBootstrap = outbox.readBootstrap.bind(outbox);
+        vi.spyOn(outbox, "readBootstrap").mockImplementation(async () => {
+          resolveBootstrapReadStarted();
+          await bootstrapReadGate;
+          return await readBootstrap();
+        });
+        return outbox;
+      },
+      pumpMux: new EventOutboxPumpMux(
+        new EventOutboxPump(emptyStore("node-stream"), vi.fn()),
+      ),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+    await dispatcher.prepareExecutionIdentity("owner-test");
+    const stream = dispatcher.executeFrames({
+      agentSessionId: "session-a",
+      prompt: "hello",
+    });
+    const streamResult = collect(stream);
+
+    try {
+      await bootstrapReadStarted;
+      expect(execute).not.toHaveBeenCalled();
+      releaseBootstrapRead();
+      await expect(streamResult).resolves.toEqual([]);
+      expect(execute).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseBootstrapRead();
+      await streamResult.catch(() => undefined);
+      await dispatcher.close();
+      writer.close();
+      await endpoint.close();
+    }
+  });
+
+  it("executes the first turn without a bootstrap and registers it after bootstrap appears", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    const execute = vi.fn();
+    let createdBootstrap: { stream_id: string } | undefined;
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      await endpoint.currentConnection!.send(
+        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+      );
+      if (frame.kind !== "execute") return;
+      execute();
+      createdBootstrap = await writer.initializeBootstrap({
+        session_id: "session-a",
+        created_at: "2026-08-17T00:00:00.000Z",
+        resume: {
+          schema_version: 1,
+          backend_session_id: "backend-a",
+          cwd: "/workspace/a",
+          codex_home: "/home/test/.codex",
+          rollout_root: "/home/test/.codex/sessions",
+          code_sha: "sha-a",
+          snapshot_path: "/release/sha-a/soul-server-ts",
+        },
+      });
+      await endpoint.currentConnection!.send(outboxAvailableControlFrame(1));
+      await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
+    }, vi.fn());
+    await endpoint.listen();
+    const mux = new EventOutboxPumpMux(
+      new EventOutboxPump(emptyStore("node-stream"), vi.fn()),
+    );
+    const registerPump = vi.spyOn(mux, "register");
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: spawnedProcessForTest(paths),
+      pumpMux: mux,
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+
+    try {
+      await dispatcher.prepareExecutionIdentity("owner-test");
+      await expect(collect(dispatcher.executeFrames({
+        agentSessionId: "session-a",
+        prompt: "hello",
+      }))).resolves.toEqual([]);
+      await vi.waitFor(() => expect(registerPump).toHaveBeenCalledTimes(1));
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(registerPump).toHaveBeenCalledWith(
+        expect.objectContaining({ streamId: createdBootstrap!.stream_id }),
+      );
+    } finally {
+      await dispatcher.close();
+      writer.close();
+      await endpoint.close();
+    }
   });
 
   it("replays a durable child frame, preserves source lineage, and compacts after both ACKs", async () => {

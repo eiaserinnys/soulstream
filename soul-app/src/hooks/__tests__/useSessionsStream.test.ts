@@ -410,3 +410,23 @@ test('session_created promotes its complete row into the feed', () => {
   expect(useSessionStore.getState().feedMembership.created).toBe('candidate');
   expect(useSessionStore.getState().feedSessionIds).toContain('created');
 });
+
+
+test('report updates arrive without a cached session and explicit empty clears while omission preserves', async () => {
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockResolvedValue(jsonResponse({ sessions: [session('pas', { status: 'running' })] }));
+  mountWithEmptySnapshot();
+  const entries = [{ key: 'ask-one', kind: 'ask', title: '예산', card_numbers: [270], context: '맥락', action: '답해 주세요', options: ['응'], state: 'open', answer: '', updated_at: '2026-10-13T00:00:00Z' }];
+  emit('session_updated', { agent_session_id: 'pas', persistent_report: entries }, '101');
+  expect((useSessionStore.getState() as any).persistentReportsBySession?.pas?.entries).toEqual(entries);
+  emit('session_updated', { agent_session_id: 'pas', status: 'running' }, '102');
+  expect((useSessionStore.getState() as any).persistentReportsBySession?.pas?.entries).toEqual(entries);
+  emit('session_updated', { agent_session_id: 'pas', persistent_report: [] }, '103');
+  expect((useSessionStore.getState() as any).persistentReportsBySession?.pas?.entries).toEqual([]);
+  await waitFor(() => expect(useSessionStore.getState().sessions.pas?.status).toBe('running'));
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const requested = new URL(fetchMock.mock.calls[0][0]);
+  expect(requested.pathname).toBe('/api/sessions');
+  expect(requested.searchParams.getAll('session_id')).toEqual(['pas']);
+  expect((useSessionStore.getState() as any).persistentReportsBySession?.pas?.entries).toEqual([]);
+});

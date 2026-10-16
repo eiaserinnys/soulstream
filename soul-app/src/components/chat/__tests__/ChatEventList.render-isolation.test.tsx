@@ -8,6 +8,9 @@ import type { ChatRenderItem, PersistentDisplayProjectionSettings } from '../gro
 import { ChatEventList } from '../ChatEventList';
 import { useChatBottomFollow } from '../useChatBottomFollow';
 import { useChatRenderItems } from '../useChatRenderItems';
+import { ChatUiControllerProvider, useChatUiController } from '../../chat-ui/ChatUiControllerProvider';
+import { readChatUiPublication } from '../../chat-ui/chatUiPublication';
+import { chatUiFixtureEvent } from '../../../component-review/chat-ui-fixtures';
 
 const mockFlatListState = {
   props: null as Record<string, any> | null,
@@ -17,6 +20,7 @@ const mockFlatListState = {
   recordInteraction: jest.fn(),
 };
 const mockRenderOrder: string[] = [];
+const mockNarrationByEvent = new Map<string, boolean | undefined>();
 
 jest.mock('react-native/Libraries/Lists/FlatList', () => {
   const ReactModule = jest.requireActual('react');
@@ -48,8 +52,9 @@ jest.mock('react-native/Libraries/Lists/FlatList', () => {
 });
 
 jest.mock('../../events/EventRenderer', () => ({
-  EventRenderer: ({ event }: { event: SessionEvent }) => {
+  EventRenderer: ({ event, narration }: { event: SessionEvent; narration?: boolean }) => {
     mockRenderOrder.push(`event:${event.id}`);
+    mockNarrationByEvent.set(event.id, narration);
     return null;
   },
 }));
@@ -64,7 +69,11 @@ jest.mock('../../events/TurnSummaryCaption', () => ({
   },
 }));
 jest.mock('../TypingIndicator', () => ({ TypingIndicator: () => null }));
+jest.mock('../ManuscriptActivitySegment', () => ({ ManuscriptActivitySegment: () => null }));
 jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
+jest.mock('../../../hooks/useOpenContentLink', () => ({
+  useOpenContentLink: () => jest.fn(),
+}));
 jest.mock('../ChatNewMessageButton', () => ({ ChatNewMessageButton: () => null }));
 jest.mock('../LabeledDivider', () => {
   const ReactModule = jest.requireActual('react');
@@ -92,6 +101,29 @@ const ev = (
 ): SessionEvent => ({ id, type, data });
 
 const noop = () => {};
+test('UI values and notices under the real provider do not render ordinary rows again', () => {
+  const ui = chatUiFixtureEvent('normal');
+  const publication = readChatUiPublication(ui.data);
+  if (publication.kind !== 'rich') throw Error('공개 UI fixture가 필요합니다.');
+  let controller!: ReturnType<typeof useChatUiController>;
+  function Controls() { controller = useChatUiController(publication as Extract<typeof publication, { kind: 'rich' }>); return null; }
+  render(<ChatUiControllerProvider sessionId="sess-a" appendGeneratedText={() => ({ ok: true })}>
+    <Controls />
+    <Harness events={[
+      ev('plain', 'assistant_message', { content: '일반 글' }),
+      ev('user', 'user_message', { text: '사용자 글' }),
+      ev('tool', 'tool_start', { tool_name: 'Read', tool_use_id: 'read' }),
+      ui,
+    ]} />
+  </ChatUiControllerProvider>);
+  const counts = () => ['event:plain', 'event:user', 'tool:tool'].map(key => mockRenderOrder.filter(value => value === key).length);
+  const before = counts();
+  expect(before.every(count => count > 0)).toBe(true);
+  act(() => controller.set('seats', 12));
+  expect(counts()).toEqual(before);
+  act(() => { void controller.action('reset', { type: 'reset' }); });
+  expect(counts()).toEqual(before);
+});
 function Harness({
   events,
   sessionId = 'sess-a',
@@ -114,6 +146,7 @@ function Harness({
     streamingSlots,
     sessionStatus: 'running',
     persistentDisplaySettings,
+    presentation,
   });
   const follow = useChatBottomFollow({
     flatListRef,
@@ -151,7 +184,40 @@ function Harness({
 describe('chat row render isolation', () => {
   const base = [ev('1', 'user_message', { text: '질문' }), ev('2', 'assistant_message', { text: '이전 답변' }),
     ev('3', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'exec_command' })];
-  beforeEach(() => { mockRenderOrder.length = 0; });
+  beforeEach(() => { mockRenderOrder.length = 0; mockNarrationByEvent.clear(); });
+
+  it('dims manuscript prose only after its next chronological tool activity arrives', () => {
+    const progress = ev('progress', 'assistant_message', { text: '두 건을 나눠 맡깁니다.' });
+    const view = render(<Harness events={[progress]} presentation="manuscript" />);
+    expect(mockNarrationByEvent.get('progress')).toBe(false);
+
+    view.rerender(<Harness events={[
+      progress,
+      ev('tool', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'Read' }),
+      ev('final', 'assistant_message', { text: '확인 결과입니다.' }),
+    ]} presentation="manuscript" />);
+
+    expect(mockNarrationByEvent.get('progress')).toBe(true);
+    expect(mockNarrationByEvent.get('final')).toBe(false);
+  });
+
+  it('does not dim assistant rows carrying a UI publication', () => {
+    render(<Harness events={[
+      ev('ui', 'assistant_message', { text: '구조화 화면', ui: { version: 1 } }),
+      ev('tool', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'Read' }),
+    ]} presentation="manuscript" />);
+
+    expect(mockNarrationByEvent.get('ui')).toBe(false);
+  });
+
+  it('recognizes a thinking event as the next chronological manuscript item', () => {
+    render(<Harness events={[
+      ev('progress', 'assistant_message', { text: '먼저 읽어 보겠습니다.' }),
+      ev('thinking', 'thinking_delta', { thinking: '결과를 검토합니다.' }),
+    ]} presentation="manuscript" />);
+
+    expect(mockNarrationByEvent.get('progress')).toBe(true);
+  });
 
   it('keeps the manuscript FlatList mounted when the new-message button appears', () => {
     mockFlatListState.mounts = 0;

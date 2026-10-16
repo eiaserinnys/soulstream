@@ -34,7 +34,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupManuscriptMessages, groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
-import { ChatManuscriptList, ChatManuscriptFooter, manuscriptItemSpacingClass } from "./ChatManuscriptList";
+import { ChatManuscriptList, ChatManuscriptFooter, isManuscriptNarration, manuscriptItemSpacingClass } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
@@ -59,8 +59,12 @@ import { buildChatTimelineItems, type ChatTimelineItem } from "./ChatView.thinki
 import { ChatHistoryStatus } from "./ChatHistoryStatus";
 import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import type { PendingChatSendActions } from "./pending-chat-send";
+import { ChatUiControllerProvider, ChatUiOperationsBridge } from "../chat-ui/ChatUiControllerProvider";
+import type { ChatUiComposerHandle, RegisterGeneratedTextActions } from "../chat-ui/chat-ui-composer";
 
 export interface ChatViewProps {
+  registerChatUiOperations?: import('../chat-ui/chat-ui-composer').RegisterChatUiOperations;
+  registerGeneratedTextActions?: RegisterGeneratedTextActions;
   chatInputDisabled?: boolean;
   fileUploadUrl?: string;
   historyEnabled?: boolean;
@@ -122,6 +126,8 @@ function ChatViewContent({
   presentation = "default",
   composerAnchorRef,
   onSessionChange,
+  registerGeneratedTextActions: registerExternalGeneratedActions,
+  registerChatUiOperations,
 }: Omit<ChatViewProps, "storeScope"> = {}) {
   const tree = useChatStore((s) => s.tree);
   const treeVersion = useChatStore((s) => s.treeVersion);
@@ -140,6 +146,13 @@ function ChatViewContent({
   const focusEventRequestId = useChatStore((s) => s.focusEventRequestId);
   const chatStore = useChatStoreApi();
   const flattenMessages = useChatFlattenTree();
+  const generatedTextActionsRef = useRef<ChatUiComposerHandle | null>(null);
+  const registerGeneratedTextActions = useCallback<RegisterGeneratedTextActions>(handle => {
+    generatedTextActionsRef.current = handle;
+    registerExternalGeneratedActions?.(handle);
+  }, [registerExternalGeneratedActions]);
+  const appendGeneratedText = useCallback<ChatUiComposerHandle['appendGeneratedText']>((sessionId, text) =>
+    generatedTextActionsRef.current?.appendGeneratedText(sessionId, text) ?? { ok: false, reason: "unavailable" }, []);
   const pendingSendActionsRef = useRef<PendingChatSendActions | null>(null);
   const registerPendingSendActions = useCallback((actions: PendingChatSendActions | null) => {
     pendingSendActionsRef.current = actions;
@@ -727,6 +740,8 @@ function ChatViewContent({
   }
 
   return (
+    <ChatUiControllerProvider sessionId={activeSessionKey} appendGeneratedText={appendGeneratedText}>
+    <ChatUiOperationsBridge register={registerChatUiOperations} />
     <div
       data-slot="chat-root"
       data-chat-font-size={chatFontSize}
@@ -824,6 +839,10 @@ function ChatViewContent({
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(index, item) => {
           const message = item.type === "single" ? item.msg : null;
+          const narration = isManuscript && isManuscriptNarration(
+            item,
+            timelineItems[index - firstItemIndex + 1],
+          );
           const toolGroupKey = (item.type === "tool-group" || item.type === "activity-group") && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)
             : undefined;
@@ -840,6 +859,7 @@ function ChatViewContent({
               <VirtualizedItem
                 item={item}
                 presentation={presentation}
+                narration={narration}
                 llmContext={llmContext}
                 sessionId={activeSessionKey ?? undefined}
                 toolGroupKey={toolGroupKey}
@@ -942,8 +962,10 @@ function ChatViewContent({
         additionalDisabled={chatInputDisabled}
         fileUploadUrl={fileUploadUrl}
         registerPendingSendActions={registerPendingSendActions}
+        registerGeneratedTextActions={registerGeneratedTextActions}
         onSessionChange={onSessionChange}
       />
     </div>
+    </ChatUiControllerProvider>
   );
 }

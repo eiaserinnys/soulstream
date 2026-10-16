@@ -15,6 +15,7 @@ import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownImage } from "./MarkdownImage";
+import { useInternalLinkClick } from "./InternalLinkProvider";
 import { ChatImageAttachments, ChatImageViewer } from "./chat/ChatImageAttachments";
 import {
   buildStructuredChatImageItems,
@@ -30,6 +31,7 @@ interface MarkdownContentProps {
   content: string;
   compact?: boolean;
   linkTone?: "default" | "onUserBubble";
+  sourceLinkComponent?: NonNullable<Components["a"]>;
   enableBlockquoteCopy?: boolean;
   codeBlockLayout?: "bounded" | "document";
   chatImages?: {
@@ -43,17 +45,26 @@ const defaultAnchorClass = "text-accent-blue hover:underline";
 const userBubbleAnchorClass =
   "text-white underline decoration-white/70 underline-offset-2 hover:decoration-white";
 
-const createAnchorComponent = (className: string): NonNullable<Components["a"]> =>
-  ({ children, ...props }) => (
-    <a
-      className={className}
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    >
-      {children}
-    </a>
-  );
+const createAnchorComponent = (className: string): NonNullable<Components["a"]> => {
+  const AnchorComponent: NonNullable<Components["a"]> = ({ children, onClick, ...props }) => {
+    const internalLinkClick = useInternalLinkClick();
+    return (
+      <a
+        className={className}
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+        onClick={(event) => {
+          onClick?.(event);
+          internalLinkClick(event);
+        }}
+      >
+        {children}
+      </a>
+    );
+  };
+  return AnchorComponent;
+};
 
 const defaultAnchor = createAnchorComponent(defaultAnchorClass);
 const userBubbleAnchor = createAnchorComponent(userBubbleAnchorClass);
@@ -330,6 +341,7 @@ export function MarkdownContent({
   onImageClick,
   compact = false,
   linkTone = "default",
+  sourceLinkComponent,
   enableBlockquoteCopy = false,
   codeBlockLayout = "bounded",
   chatImages,
@@ -410,8 +422,10 @@ export function MarkdownContent({
     const blockquoteComponents = enableBlockquoteCopy
       ? { ...chatComponents, blockquote: createCopyableBlockquote(compact) }
       : chatComponents;
-    return blockquoteComponents;
-  }, [codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer]);
+    return sourceLinkComponent
+      ? { ...blockquoteComponents, a: sourceLinkComponent }
+      : blockquoteComponents;
+  }, [codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer, sourceLinkComponent]);
 
   const markdown = (
     <ReactMarkdown

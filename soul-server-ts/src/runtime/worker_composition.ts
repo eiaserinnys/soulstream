@@ -1,3 +1,4 @@
+import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
@@ -20,6 +21,7 @@ import {
 import { SessionDataHostClient } from "../control_plane/session_data_host_client.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
+import { PersistentReportHostClient } from "../control_plane/persistent_report_host_client.js";
 import { DbClaudeSessionStore } from "../engine/claude_session_store.js";
 import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
 import { LlmExecutor } from "../llm/executor.js";
@@ -62,7 +64,7 @@ export type { WorkerComposition, WorkerCompositionParams } from "./worker_compos
 export async function composeWorkerRuntime(
   params: WorkerCompositionParams,
 ): Promise<WorkerComposition> {
-  const { env, logger, agentRegistry, mcpConfigService, codexCliPath, agentProfileSource } = params;
+  const { env, logger, agentRegistry, mcpConfigService, codexCliPath, antigravityCliPath, agentProfileSource } = params;
   const modelCatalog =
     params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
   let upstreamAdapter: UpstreamAdapter | null = null;
@@ -87,7 +89,15 @@ export async function composeWorkerRuntime(
     { store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH) },
     logger,
   );
-  const providerUsage = new ProviderUsageService({ claudeAuth, modelCatalog, logger });
+  const providerUsage = new ProviderUsageService({
+    claudeAuth, modelCatalog, logger,
+    antigravity: {
+      cliPath: antigravityCliPath?.path,
+      environment: antigravityEnvironment(process.env),
+      // Required by the existing process-runner startup configuration.
+      stateDirectory: env.SOUL_RUNNER_STATE_DIR!,
+    },
+  });
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {
     logger.error({ err: error }, "Durable event outbox pump failed");
@@ -261,6 +271,8 @@ export async function composeWorkerRuntime(
     env,
     logger,
     codexCliPath,
+    antigravityCliPath,
+    antigravityProcessEnv: process.env,
     codexProcessEnv: process.env,
     buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
     claudeSessionStore,
@@ -268,7 +280,7 @@ export async function composeWorkerRuntime(
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
   const runnerProcess = await composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
-    env, logger, mcpConfigService, codexCliPath,
+    env, logger, mcpConfigService, codexCliPath, antigravityCliPath,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
@@ -321,6 +333,9 @@ export async function composeWorkerRuntime(
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,
+    ...(params.nodeStallMonitor
+      ? { nodeStallMonitor: params.nodeStallMonitor }
+      : {}),
     ...(claudeRuntime.backgroundLifecycle
       ? {
         terminalizeClaudeBackgroundTasks: (sessionId, execution) =>
@@ -360,6 +375,7 @@ export async function composeWorkerRuntime(
     logger.info("LLM proxy skipped: no provider API keys configured");
   }
   const mcpRuntime: McpRuntime = {
+    persistentReports: new PersistentReportHostClient(orchHostClientDeps),
     nodeId: env.SOULSTREAM_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
@@ -376,6 +392,17 @@ export async function composeWorkerRuntime(
     catalogService,
     logger,
     orch: orchProxyConfig,
+    chatUiPublisher: {
+      publish: async (sessionId, event, registrationId) => {
+        const { eventId } = await persistence.enqueueEventAndWaitForSessionAck(
+          sessionId,
+          event,
+          undefined,
+          registrationId,
+        );
+        return { eventId };
+      },
+    },
     ...(worktreeService ? { worktreeService } : {}),
   };
   const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);
@@ -414,6 +441,7 @@ export async function composeWorkerRuntime(
       worker: params,
       taskManager,
       taskExecutor: taskRuntime.taskExecutor,
+      providerUsage,
       attachmentStore,
       claudeAuth,
       sessionDb: db,

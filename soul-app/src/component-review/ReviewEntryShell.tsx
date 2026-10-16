@@ -3,7 +3,8 @@ import { Platform, ScrollView, Text, View, type AlertButton } from 'react-native
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
 import { TabNavigator } from '../navigation/TabNavigator';
-import { SplitLayout } from '../components/split/SplitLayout';
+import { TabletNavigator } from '../navigation/TabletNavigator';
+import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { useDeviceType } from '../theme';
 import { useTokens } from '../theme';
 import { AppModalSurface } from '../components/AppModalSurface';
@@ -56,7 +57,9 @@ export function ReviewEntryShell() {
     ...DefaultTheme,
     colors: { ...DefaultTheme.colors, background: t.colors.background },
   };
-  return <View style={{ flex: 1 }}><NavigationContainer theme={navigationTheme}>{device === 'phone' ? <PersistentSessionProvider><TabNavigator /></PersistentSessionProvider> : <SplitLayout />}</NavigationContainer>
+  return <View style={{ flex: 1 }}><NavigationContainer theme={navigationTheme}><PersistentSessionProvider>
+    <ContentLinkProvider>{device === 'phone' ? <TabNavigator /> : <TabletNavigator />}</ContentLinkProvider>
+  </PersistentSessionProvider></NavigationContainer>
     <EntryShellAlertHarness />
   </View>;
 }

@@ -6,6 +6,8 @@ import type {
 import type { Logger } from "pino";
 
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
+import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
+import { OpenCodeEngineAdapter } from "../engine/opencode/adapter.js";
 import {
   ClaudeEngineAdapter,
   ClaudeSdkClient,
@@ -30,6 +32,28 @@ export function createRunnerChildEngine(
   host: RunnerHostRequestClient,
   logger: Logger,
 ): EnginePort {
+  if (config.backend === "antigravity") {
+    return new AntigravityEngineAdapter({
+      workspaceDir: config.agent.workspace_dir,
+      agentId: config.agent.id,
+      sessionDirectory: config.paths.sessionDirectory,
+      executablePath: config.antigravityCliPath,
+      processEnv: process.env,
+      resolvedMcpServers: config.resolvedMcpServers,
+      internalMcpUrl: config.internalMcpUrl,
+    }, logger);
+  }
+  if (config.backend === "opencode") {
+    return new OpenCodeEngineAdapter({
+      workspaceDir: config.agent.workspace_dir,
+      agentId: config.agent.id,
+      sessionDirectory: config.paths.sessionDirectory,
+      executablePath: config.opencodeCliPath,
+      processEnv: process.env,
+      resolvedMcpServers: config.resolvedMcpServers,
+      internalMcpUrl: config.internalMcpUrl,
+    }, logger);
+  }
   if (config.backend === "codex") {
     if (config.codexAdapterMode === "app-server") {
       return new CodexAppServerEngineAdapter({
@@ -68,6 +92,9 @@ export function createRunnerChildEngine(
     }, logger);
   }
 
+  if (config.backend !== "claude") {
+    throw new Error(`Unsupported backend "${config.backend}" in runner child`);
+  }
   const sessionStore = new HostSessionStore(host);
   const registry = config.claudeRuntimeV2Enabled
     ? new ClaudeSessionClientRegistry(

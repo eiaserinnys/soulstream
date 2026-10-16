@@ -446,6 +446,46 @@ describe("list_user_messages", () => {
   });
 });
 
+describe("turn usage read tools", () => {
+  it("registers both internal read tools and forwards their arguments through the orchestrator host", async () => {
+    const listTurnUsage = vi.fn(async () => ({ rows: [], total: 0 }));
+    const summarizeTurnUsage = vi.fn(async () => []);
+    const client = await createClient(makeRuntime({ db: { listTurnUsage, summarizeTurnUsage } }));
+
+    const listed = await client.callTool({
+      name: "list_turn_usage",
+      arguments: { session_id: "sess-1", limit: 2 },
+    });
+    const summarized = await client.callTool({
+      name: "summarize_turn_usage",
+      arguments: { since: "2026-10-05T00:00:00Z", until: "2026-10-06T00:00:00Z" },
+    });
+
+    expect(listed.structuredContent).toMatchObject({
+      session_id: "sess-1",
+      total: 0,
+      limit: 2,
+      turns: [],
+    });
+    expect(summarized.structuredContent).toMatchObject({
+      since: "2026-10-05T00:00:00.000Z",
+      until: "2026-10-06T00:00:00.000Z",
+      totals: { sessions: 0, new_sessions: 0, turns: 0, turns_without_usage: 0 },
+      by_agent_model: [],
+      top_sessions: [],
+    });
+    expect(listTurnUsage).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "sess-1",
+      cursor: 0,
+      limit: 2,
+    }));
+    expect(summarizeTurnUsage).toHaveBeenCalledWith({
+      since: new Date("2026-10-05T00:00:00.000Z"),
+      until: new Date("2026-10-06T00:00:00.000Z"),
+    });
+  });
+});
+
 describe("get_session_summary child completion", () => {
   it("fails closed when the durable relation cannot be recorded", async () => {
     const recordObservedBatch =

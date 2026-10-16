@@ -248,23 +248,38 @@ export class PersistentSessionSettingsService {
     const samePreset = existing?.model_preset === requested.model_preset;
     return this.normalizeModel(nodeId, requested, {
       requireAvailable: !samePreset,
+      allowLimitRejected: true,
       keepEffort: samePreset ? existing?.reasoning_effort ?? null : undefined,
     });
   }
 
   private async normalizeNewDefaultModel(nodeId: string, requested: PersistentModelSelection) {
-    return this.normalizeModel(nodeId, requested, { requireAvailable: true, keepEffort: undefined });
+    return this.normalizeModel(nodeId, requested, {
+      requireAvailable: true,
+      allowLimitRejected: false,
+      keepEffort: undefined,
+    });
   }
 
   private normalizeModel(
     nodeId: string,
     requested: PersistentModelSelection,
-    options: { requireAvailable: boolean; keepEffort: string | null | undefined },
+    options: {
+      requireAvailable: boolean;
+      allowLimitRejected: boolean;
+      keepEffort: string | null | undefined;
+    },
   ): PersistentModelSelection {
     let preset: ReturnType<ModelPresetAvailabilityService["resolveStaticForNode"]>;
     try {
       preset = this.deps.presets.resolveStaticForNode(nodeId, requested.model_preset);
-      if (options.requireAvailable) this.deps.presets.requireAvailable(nodeId, requested.model_preset);
+      if (options.requireAvailable) {
+        this.deps.presets.requireAvailable(
+          nodeId,
+          requested.model_preset,
+          options.allowLimitRejected ? { allowLimitRejected: true } : undefined,
+        );
+      }
     } catch (error) {
       if (error instanceof ModelPresetAvailabilityError) {
         throw new PersistentSessionApiError(422, "INVALID_MODEL_PRESET", error.message);

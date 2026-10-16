@@ -18,7 +18,8 @@ it('entry shell first-row lookup returns the same public list data', async () =>
   const firstRow = entryShellSessions[0];
   expect(firstRow).toMatchObject({ ...sessions[0], agentSessionId: 'public-shell-session-0', displayName: '담당 카드에 연결된 공개 세션', folderId: 'public-shell-folder-0' });
   expect(entryShellSessions).toHaveLength(20);
-  expect(sessions).toHaveLength(5);
+  expect(sessions).toHaveLength(6);
+  expect(sessions).toContainEqual(expect.objectContaining({ agentSessionId: 'public-antigravity', backend: 'antigravity' }));
   expect(await createApiClient().getSessionsByIds([firstRow.agentSessionId])).toEqual([firstRow]);
 });
 

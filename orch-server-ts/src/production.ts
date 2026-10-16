@@ -1,4 +1,5 @@
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
+import type { PublishPersistentReports } from "./session/persistent_report_service.js";
 import { OwnedAgentService } from "./owned-agents/service.js";
 import { createSessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
@@ -89,6 +90,8 @@ import { createLiveUiEventRepository } from "./runtime/live_ui_event_repository.
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import { createCardOrchestrationAccess } from "./cards/card_orchestration_access.js";
 import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
+import { CardDispatchRepository } from "./cards/card_dispatch_repository.js";
+import { BoardYjsSqlResolver } from "./board-yjs/board_yjs_sql.js";
 import { relayCanonicalErrorTx } from "./cards/card_work_error_delivery.js";
 import type { RepositorySql } from "./cards/control_plane/card_types.js";
 import type { CardDispatcher } from "./cards/card_dispatcher.js";
@@ -258,11 +261,13 @@ export async function createLiveProductionApplication(
     },
     repository: new SessionDeletionRepository(sqlResolver),
   });
+  let publishPersistentReports: PublishPersistentReports = () => undefined;
   const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(
     sqlResolver,
     sessionDeletionService,
     searchDbConnectionFactory,
     reportSearchCancelError,
+    updates => publishPersistentReports(updates),
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
@@ -381,10 +386,12 @@ export async function createLiveProductionApplication(
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
   let recurringJobScheduler: RecurringJobScheduler | undefined;
   let cardDispatcher: CardDispatcher | undefined;
+  let usageSummaryService: UsageSummaryService | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
     eventIngress: eventIngressCommitter,
+    onCommittedProviderEvent: (input) => usageSummaryService!.observeProviderExecution(input),
     releaseActivationReceipts: new ReleaseActivationReceiptRepository(sqlResolver),
     findSessionOwnerNodeId: dbCatalogRepository.findSessionOwnerNodeId,
     findRescuableSessionOwnerNodeId:
@@ -470,6 +477,12 @@ export async function createLiveProductionApplication(
       sessionIds,
       movedBoardItem ? { [movedBoardItem.id]: movedBoardItem } : {},
     );
+  publishPersistentReports = updates => {
+    for (const update of updates) {
+      registry.sessionCache.patchPersistentReport(update.agent_session_id, update.persistent_report);
+      runtimeServices.sessionBroadcaster.append({ type: "session_updated", agent_session_id: update.agent_session_id, persistent_report: update.persistent_report });
+    }
+  };
   publishReconciledSessionUpdate = (update) => {
     const message = {
       type: "session_updated",
@@ -511,7 +524,7 @@ export async function createLiveProductionApplication(
     configProvider,
     systemPortraitAssets: createSystemPortraitAssets(),
   };
-  const usageSummaryService = new UsageSummaryService({
+  usageSummaryService = new UsageSummaryService({
     registry: runtimeServices.registry,
     bridge: runtimeServices.sessionBridge,
     pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,
@@ -528,6 +541,31 @@ export async function createLiveProductionApplication(
       resolveAttachmentStorage: () => createR2StorageResolver(
         async () => await sqlResolver.resolveSql() as unknown as SqlClient,
       ).resolveBinding("attachment"),
+      resolveReadStorage: () => createR2StorageResolver(
+        async () => await sqlResolver.resolveSql() as unknown as SqlClient,
+      ).resolveBinding("attachment"),
+      readPageAttachmentEvidence: async (pageId, attachmentId) => {
+        if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
+        const page = await pageYjsService.getBrowserPage(pageId);
+        const hasStoredRef = page.blocks.some((block) => {
+          const properties = block.properties;
+          if (
+            properties.attachment_id === attachmentId ||
+            properties.assetId === attachmentId
+          ) return true;
+          return Array.isArray(properties.attachment_refs) &&
+            properties.attachment_refs.some((reference) =>
+              typeof reference === "object" && reference !== null &&
+              !Array.isArray(reference) &&
+              (reference as Record<string, unknown>).attachment_id === attachmentId
+            );
+        });
+        return {
+          scope: { type: "page", id: pageId },
+          folderId: null,
+          hasStoredRef,
+        };
+      },
     });
   } catch (error) {
     await dbCatalogRepository.close();
@@ -561,10 +599,13 @@ export async function createLiveProductionApplication(
   const ownedAgentRepository = new SqlOwnedAgentRepository(sqlResolver);
   const ownedAgentService = new OwnedAgentService(ownedAgentRepository,
     dbCatalogRepository.adminUsersRepository.findUserByEmail, config.mcp_external_ingress_bearer_token);
+  const cardExecutionOwnerResolver = new BoardYjsSqlResolver(sqlResolver);
+  const cardExecutionOwnerRepository = new CardDispatchRepository(() => cardExecutionOwnerResolver.resolveSql());
   const resolveSessionOwner = createSessionOwnerResolver({
     getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
     findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
     findExternalAgent: ownedAgentService.findAgent,
+    findCardExecutionUser: id => cardExecutionOwnerRepository.cardExecutionActorUser(id),
   });
   const orchestrationAccess = createCardOrchestrationAccess({
     getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
@@ -574,8 +615,11 @@ export async function createLiveProductionApplication(
   cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
     availability:providers.modelPresetAvailability,notifier:pushNotifier,admin:providers.adminUsersRoutes.provider,
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
+    onReportsChanged: updates => publishPersistentReports(updates),
     usageSnapshot: () => usageSummaryService.getSummary(),
     validateFolder: orchestrationAccess.validateFolder,
+    resolveSessionOwner,
+    findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
     ensureSystemFolder: async input => {
       if (!folderProjectIdentityService) throw new Error("Folder identity service is unavailable");
       await folderProjectIdentityService.create({
@@ -1070,6 +1114,9 @@ export function buildProductionRouteOptions(
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,
+      acceptPersistentReportReply: async (sessionId, contextItems, callerInfo) => {
+        await (await persistenceRepositoryProvider()).persistentReports!.acceptReply(sessionId,contextItems,callerInfo);
+      },
       deliveryRepositoryProvider: async () =>
         (await persistenceRepositoryProvider()).deliveries,
     },
@@ -1087,6 +1134,8 @@ export function buildProductionRouteOptions(
     sessionCatalogRoutes: providers.sessionCatalogRoutes,
     persistentSessionRoutes: {
       service: persistentSessionSettingsService,
+      reports: { remove: async (sessionId,key) => (await persistenceRepositoryProvider()).persistentReports!.remove(sessionId,key) },
+      requireSessionAccess: sessionAccessProvider.requireSessionAccess,
     },
     sessionCommandRoutes: providers.runtime.sessionCommandRoutes,
     sessionHistoryRoutes: providers.runtime.sessionHistoryRoutes,

@@ -11,6 +11,7 @@ import {
   resolveClaudeExecutableFromPath,
 } from "./engine/claude_executable_path.js";
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
+import { resolveAntigravityCliPath } from "./engine/antigravity_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
 import {
@@ -137,9 +138,20 @@ async function main(): Promise<void> {
     "soul-server-ts starting (orchestrator-hosted persistence)",
   );
 
-  const hasClaudeBackend = agentRegistry.supportedBackends().includes("claude");
-  const hasCodexBackend = agentRegistry.supportedBackends().includes("codex");
-  if (hasClaudeBackend && !env.CLAUDE_AUTH_TOKEN_PATH) {
+  const configuredBackends = new Set([
+    ...agentRegistry.supportedBackends(),
+    ...modelCatalog.list().map((preset) => preset.backend),
+  ]);
+  const hasClaudeBackend = configuredBackends.has("claude");
+  const hasCodexBackend = configuredBackends.has("codex");
+  if (configuredBackends.has("opencode")) {
+    if (env.OPENCODE_CLI_PATH) {
+      logger.info("OpenCode CLI path configured");
+    } else {
+      logger.warn("OPENCODE_CLI_PATH is unset; OpenCode turns will fail explicitly");
+    }
+  }
+  if (agentRegistry.supportedBackends().includes("claude") && !env.CLAUDE_AUTH_TOKEN_PATH) {
     console.error(
       "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
     );
@@ -174,6 +186,15 @@ async function main(): Promise<void> {
     }
   }
 
+  const antigravityCliPath = resolveAntigravityCliPath(process.env);
+  if (configuredBackends.has("antigravity")) {
+    if (antigravityCliPath) {
+      logger.info({ source: antigravityCliPath.source, path: antigravityCliPath.path }, "Antigravity CLI path resolved");
+    } else {
+      logger.warn("Antigravity CLI not found via AGY_CLI_PATH, PATH, or HOME; Antigravity turns will fail explicitly");
+    }
+  }
+
   const hostBundleDirectory = dirname(fileURLToPath(import.meta.url));
   const releaseManifest = await loadAndVerifyReleaseManifest({
     manifestPath: join(hostBundleDirectory, "release-manifest.json"),
@@ -192,6 +213,7 @@ async function main(): Promise<void> {
       agentRegistry,
       mcpConfigService,
       codexCliPath,
+      antigravityCliPath,
       modelCatalog,
       agentProfileSource,
       nodeStallMonitor,

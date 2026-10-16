@@ -16,8 +16,10 @@ import {
   type RecurringJobWrite,
 } from '../../api/client';
 import { ApiHttpError } from '../../api/clientCore';
+import type { ModelPresetAvailability } from '../../api/nodeEndpoints';
 import { useSessionStore } from '../../store/sessionStore';
 import { useTokens } from '../../theme';
+import { formatModelPresetUnavailableReason } from '../sheets/newSessionSelection';
 import { SettingsOptionRow as OptionRow } from './SettingsOptionRow';
 import { useSettingsSaveScope, confirmSettingsDiscard } from './SettingsWorkspaceContext';
 import { safeErrorDetail } from '../../../../packages/soul-ui/src/lib/safe-error-detail';
@@ -125,7 +127,7 @@ export function RecurringJobEditor({
   const [loadingTargets, setLoadingTargets] = useState(false);
   const [nodes, setNodes] = useState<Array<{ nodeId: string }>>([]);
   const [agents, setAgents] = useState<Array<{ id: string; name: string | null }>>([]);
-  const [presets, setPresets] = useState<Array<{ id: string; label: string; available: boolean; reason_label?: string | null }>>([]);
+  const [presets, setPresets] = useState<ModelPresetAvailability[]>([]);
   const folders = useSessionStore((state) => state.catalog.folders);
   const [previewTimezone, setPreviewTimezone] = useState('Asia/Seoul');
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -292,7 +294,7 @@ export function RecurringJobEditor({
     {targetsError || nodesError ? <View><Text accessibilityRole="alert" style={styles.error}>{targetsError ?? nodesError}</Text><Action label="다시 시도" onPress={() => setTargetsReload(value => value + 1)}/></View> : null}
     <Text style={styles.label}>실행 노드</Text><OptionRow label="실행 노드" selected={draft.nodeId} options={nodes.map((node) => ({ id: node.nodeId, label: node.nodeId }))} onSelect={chooseNode} emptyLabel="연결된 노드 없음" />
     <Text style={styles.label}>실행 에이전트</Text><OptionRow label="실행 에이전트" selected={draft.agentId} options={agents.map((agent) => ({ id: agent.id, label: agent.name ?? agent.id }))} onSelect={(agentId) => update({ agentId })} emptyLabel="노드를 선택하세요" />
-    <Text style={styles.label}>모델</Text><OptionRow label="모델" selected={draft.modelPreset ?? ''} options={[{ id: '', label: '에이전트 기본값' }, ...presets.map((preset) => ({ id: preset.id, label: preset.label, available: preset.available, reason: preset.reason_label }))]} onSelect={(modelPreset) => update({ modelPreset: modelPreset || null })} emptyLabel="에이전트 기본값" />
+    <Text style={styles.label}>모델</Text><OptionRow label="모델" selected={draft.modelPreset ?? ''} options={[{ id: '', label: '에이전트 기본값' }, ...presets.map((preset) => ({ id: preset.id, label: preset.label, available: preset.available, reason: formatModelPresetUnavailableReason(preset) }))]} onSelect={(modelPreset) => update({ modelPreset: modelPreset || null })} emptyLabel="에이전트 기본값" />
     <Text style={styles.label}>결과 폴더</Text><OptionRow label="결과 폴더" selected={draft.folderId} options={folders.map((folder) => ({ id: folder.id, label: folder.name }))} onSelect={(folderId) => update({ folderId })} emptyLabel="선택 가능한 폴더가 없습니다." />
     <Text style={styles.help}>선택한 폴더에 결과 세션을 저장합니다.</Text>
     </Group>

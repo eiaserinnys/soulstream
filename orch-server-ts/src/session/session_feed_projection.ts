@@ -8,6 +8,7 @@ export const SESSION_FEED_PROMPT_LIMIT = 200;
 
 const FEED_SUMMARY_KEYS = [
   "agentSessionId",
+  "persistentReport",
   "status",
   "reviewRequired",
   "reviewState",
@@ -47,6 +48,7 @@ const FEED_SUMMARY_KEYS = [
 ] as const;
 
 const FEED_UPDATE_FIELDS = [
+  ["persistent_report", "persistent_report", "persistentReport"],
   ["card_id", "card_id", "cardId"],
   ["status", "status"],
   ["updated_at", "updated_at", "updatedAt"],

@@ -27,3 +27,12 @@ it("keeps fixture mutations local and refuses unimplemented endpoints", async ()
   expect(saved.users.some((user: {email:string}) => user.email === "new@sample.invalid")).toBe(true);
   await expect(api.request("/api/unimplemented", {method:"DELETE"})).rejects.toThrow("샘플 API");
 });
+it("preserves the empty usage node and adds a separate three-provider usage node", async () => {
+  const api = createDialoguesApi();
+  expect(api.config.nodes.has("sample-node")).toBe(true);
+  expect(await (await api.request("/api/nodes/sample-node/provider-usage")).json()).toEqual({ providers: [] });
+  expect(api.config.nodes.has("sample-usage-node")).toBe(true);
+  const usage = await (await api.request("/api/nodes/sample-usage-node/provider-usage")).json();
+  expect(Object.keys(usage.providers)).toEqual(["claude", "codex", "antigravity"]);
+  expect(usage.providers.antigravity.quotas.map((quota: { label: string; window: string }) => [quota.label, quota.window])).toEqual([["5시간", "5h"], ["7일", "7d"]]);
+});

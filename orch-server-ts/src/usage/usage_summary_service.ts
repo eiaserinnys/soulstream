@@ -1,3 +1,5 @@
+// Collection and wire parsing remain together for this compatibility fix; their
+// existing contract tests cover both paths without a separate module refactor.
 import type {
   NodeCommandResponse,
   PendingNodeCommand,
@@ -5,10 +7,17 @@ import type {
 } from "../node/pending_commands.js";
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
+import {
+  getProviderLimitRejection,
+  observeProviderExecution,
+  type ProviderExecutionEvent,
+  type ProviderLimitProvider,
+  type ProviderLimitRejection,
+} from "./provider_limit_rejection.js";
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
 
-export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "gemini"] as const;
+export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "antigravity"] as const;
 
 export type UsageSummaryProviderName = (typeof USAGE_SUMMARY_PROVIDER_NAMES)[number];
 
@@ -116,6 +125,11 @@ type ProviderQuota = {
   readonly purpose?: "execution" | "code_review" | "other";
 };
 
+const NOT_CONFIGURED_PROVIDER_LIMITS: ProviderLimits = {
+  status: "not_configured", weeklyUsedPercent: null, weeklyResetAt: null,
+  shortUsedPercent: null, shortResetAt: null, quotas: [],
+};
+
 type MutableNodeState = {
   readonly nodeId: string;
   snapshot: ProviderUsageSnapshot | null;
@@ -133,6 +147,7 @@ export class UsageSummaryService {
   private readonly onCollected: UsageSummaryServiceOptions["onCollected"];
   private readonly onWarning: (message: string, error?: unknown) => void;
   private readonly nodes = new Map<string, MutableNodeState>();
+  private readonly providerLimitRejections = new Map<string, ProviderLimitRejection>();
   private collectedAt: string | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
   private activeCollection: Promise<void> | undefined;
@@ -192,6 +207,28 @@ export class UsageSummaryService {
     };
   }
 
+  observeProviderExecution(input: ProviderExecutionEvent): void {
+    observeProviderExecution({
+      memory: this.providerLimitRejections,
+      sharedAccountGroups: this.sharedAccountGroups,
+      event: input,
+      now: this.now(),
+    });
+  }
+
+  getLimitRejection(
+    nodeId: string,
+    provider: ProviderLimitProvider,
+  ): ProviderLimitRejection | null {
+    return getProviderLimitRejection({
+      memory: this.providerLimitRejections,
+      sharedAccountGroups: this.sharedAccountGroups,
+      nodeId,
+      provider,
+      now: this.now(),
+    });
+  }
+
   private async runCollection(): Promise<void> {
     const cycleStartedAt = this.now().toISOString();
     const connectedNodes = this.registry.listConnectedNodes();
@@ -235,13 +272,13 @@ export class UsageSummaryService {
           }
           return request;
         };
-        const [claude, codex, gemini] = await Promise.all([
+        const [claude, codex, antigravity] = await Promise.all([
           requiredProvider("claude"),
           requiredProvider("codex"),
-          requiredProvider("gemini"),
+          requiredProvider("antigravity"),
         ]);
         const snapshot: ProviderUsageSnapshot = {
-          providers: { claude, codex, gemini },
+          providers: { claude, codex, antigravity },
         };
         state.snapshot = snapshot;
         state.fetchedAt = this.now().toISOString();
@@ -265,7 +302,12 @@ export class UsageSummaryService {
   ): Map<string, Promise<ProviderLimits>> {
     const requests = new Map<string, Promise<ProviderLimits>>();
     for (const node of connectedNodes) {
+      const supportsAntigravity = node.supportedBackends.includes("antigravity");
+      if (!supportsAntigravity) {
+        requests.set(providerRequestKey(node.nodeId, "antigravity"), Promise.resolve(NOT_CONFIGURED_PROVIDER_LIMITS));
+      }
       const ownedProviders = USAGE_SUMMARY_PROVIDER_NAMES.filter((provider) =>
+        (provider !== "antigravity" || supportsAntigravity) &&
         (providerOwners.get(providerRequestKey(node.nodeId, provider)) ?? node.nodeId)
           === node.nodeId,
       );
@@ -354,11 +396,11 @@ function summarizeNode(state: MutableNodeState): UsageSummaryNode {
     stale: state.staleSince !== null,
     staleSince: state.staleSince,
     providers: state.snapshot === null
-      ? { claude: null, codex: null, gemini: null }
+      ? { claude: null, codex: null, antigravity: null }
       : {
           claude: summarizeProvider(state.snapshot.providers.claude),
           codex: summarizeProvider(state.snapshot.providers.codex),
-          gemini: summarizeProvider(state.snapshot.providers.gemini),
+          antigravity: summarizeProvider(state.snapshot.providers.antigravity),
         },
   };
 }
@@ -389,7 +431,9 @@ function parseProviderUsageSnapshot(value: unknown): ProviderUsageSnapshot {
     providers: {
       claude: parseProviderLimits(providers.claude, "claude"),
       codex: parseProviderLimits(providers.codex, "codex"),
-      gemini: parseProviderLimits(providers.gemini, "gemini"),
+      antigravity: providers.antigravity === undefined
+        ? NOT_CONFIGURED_PROVIDER_LIMITS
+        : parseProviderLimits(providers.antigravity, "antigravity"),
     },
   };
 }

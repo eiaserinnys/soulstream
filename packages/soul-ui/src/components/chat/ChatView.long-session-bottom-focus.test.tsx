@@ -1011,11 +1011,20 @@ describe("ChatView long-session initial bottom focus", () => {
       } as unknown as SoulSSEEvent,
       1000,
     );
+    useDashboardStore.getState().processEvent(
+      {
+        type: "text_delta",
+        text: "first visible content",
+        timestamp: 1,
+      } as unknown as SoulSSEEvent,
+      1001,
+    );
     ({ container, root } = await renderChatView());
     flushSync(() => {
       (virtuosoMock.props?.atBottomStateChange as ((value: boolean) => void))?.(true);
     });
     await flushPassiveEffects();
+    expect(virtuosoData()).toHaveLength(1);
     const beforeLength = virtuosoData().length;
     const beforeKey = itemKeyAt(0);
     virtuosoMock.scrollToIndex.mockClear();
@@ -1024,10 +1033,10 @@ describe("ChatView long-session initial bottom focus", () => {
       useDashboardStore.getState().processEvent(
         {
           type: "text_delta",
-          text: "streaming content grew",
-          timestamp: 1,
+          text: " streaming content grew",
+          timestamp: 2,
         } as unknown as SoulSSEEvent,
-        1001,
+        1002,
       );
     });
     await flushPassiveEffects();

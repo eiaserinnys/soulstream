@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { flattenTree, clearFlattenTreeCache, extractEventId, type ChatMessage } from "./flatten-tree";
+import { flattenTree, clearFlattenTreeCache, extractEventId } from "./flatten-tree";
 import type {
   AssistantMessageNode,
   CompactNode,
@@ -518,6 +518,51 @@ describe("flattenTree", () => {
     expect(msgs[1].isStreaming).toBe(false);
   });
 
+  it("빈 text는 완료 여부와 관계없이 표시하지 않고, 내용 도착 후 원문을 보존한다", () => {
+    const pendingEmpty = makeText("txt-pending-empty", " \t\n", { textCompleted: false });
+    const completedEmpty = makeText("txt-completed-empty", "  \n", { textCompleted: true });
+    const visible = makeText("txt-visible", "  응답 ✨!  ", { textCompleted: true });
+    const tree = makeSession([pendingEmpty, completedEmpty, visible]);
+
+    expect(flattenTree(tree).map((message) => message.content)).toEqual(["  응답 ✨!  "]);
+
+    expect(tree.children).toEqual([pendingEmpty, completedEmpty, visible]);
+    pendingEmpty.content = "  늦게 도착한 응답 ✨  ";
+    expect(flattenTree(tree).map((message) => message.content)).toEqual([
+      "  늦게 도착한 응답 ✨  ",
+      "  응답 ✨!  ",
+    ]);
+  });
+
+  it("빈 text만 숨기며 구조화 assistant_message는 유지한다", () => {
+    const ui = {
+      schema_version: 1,
+      revision: 1,
+      ui_id: "ui-empty-content",
+      hash: "empty-content-hash",
+      document: { schema_version: 1, title: "Structured response", body: [], fields: {}, computed: {}, data: {}, sources: {}, assumptions: [], units: {} },
+    };
+    const assistantMessage: AssistantMessageNode = {
+      type: "assistant_message",
+      id: "assistant-ui-empty",
+      content: "",
+      completed: true,
+      children: [],
+      ui,
+    };
+    const [message] = flattenTree(makeSession([
+      makeText("txt-empty", " \n"),
+      assistantMessage,
+    ]));
+
+    expect(message).toMatchObject({
+      id: "assistant-ui-empty",
+      content: "",
+      treeNodeType: "assistant_message",
+      ui,
+    });
+  });
+
   it("스트리밍 중인 text 노드", () => {
     const tree = makeSession([
       makeUserMessage("u1", "hi", [
@@ -963,6 +1008,27 @@ describe("flattenTree identity 보존", () => {
     for (let i = 0; i < first.length; i++) {
       expect(first[i]).toBe(second[i]);
     }
+  });
+
+  it("assistant UI reference가 같으면 메시지를 재사용하고 바뀌면 새 메시지를 만든다", () => {
+    const firstUi = { schema_version: 1, revision: 1, ui_id: "ui-1", hash: "hash-1", document: {} };
+    const node = {
+      ...makeAssistantMessage(120),
+      ui: firstUi,
+    };
+    const tree = makeSession([node]);
+
+    const first = flattenTree(tree);
+    const same = flattenTree(tree);
+    expect(first[0]).toBe(same[0]);
+    expect(first[0].ui).toBe(firstUi);
+
+    const nextUi = { schema_version: 1, revision: 1, ui_id: "ui-2", hash: "hash-2", document: {} };
+    node.ui = nextUi;
+
+    const changed = flattenTree(tree);
+    expect(changed[0]).not.toBe(same[0]);
+    expect(changed[0].ui).toBe(nextUi);
   });
 
   it("자식 push로 트리를 mutate한 후 — 변경되지 않은 노드는 동일 reference, 새 노드만 새 reference", () => {

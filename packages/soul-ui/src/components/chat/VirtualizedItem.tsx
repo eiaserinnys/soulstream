@@ -21,6 +21,7 @@ import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 export type VirtualizedItemProps = {
   item: ChatTimelineItem;
   presentation?: "default" | "manuscript";
+  narration?: boolean;
   llmContext?: LlmContext;
   sessionId?: string;
   toolGroupKey?: string;
@@ -33,6 +34,7 @@ export type VirtualizedItemProps = {
 function VirtualizedItemImpl({
   item,
   presentation = "default",
+  narration = false,
   llmContext,
   sessionId,
   toolGroupKey,
@@ -62,6 +64,7 @@ function VirtualizedItemImpl({
         <VirtualizedItemImpl
           item={item.anchor}
           presentation={presentation}
+          narration={narration}
           llmContext={llmContext}
           sessionId={sessionId}
           toolGroupKey={toolGroupKey}
@@ -77,6 +80,7 @@ function VirtualizedItemImpl({
             llmContext={llmContext}
             sessionId={sessionId}
             presentation={presentation}
+            narration={false}
           />
         ))}
       </>
@@ -106,7 +110,7 @@ function VirtualizedItemImpl({
     );
   }
   return (
-    <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} presentation={presentation} />
+    <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} presentation={presentation} narration={narration} />
   );
 }
 
@@ -122,6 +126,7 @@ function VirtualizedItemImpl({
  */
 export function arePropsEqual(prev: VirtualizedItemProps, next: VirtualizedItemProps): boolean {
   if (prev.presentation !== next.presentation) return false;
+  if (prev.narration !== next.narration) return false;
   if (prev.llmContext !== next.llmContext) return false;
   if (prev.sessionId !== next.sessionId) return false;
   if (prev.toolGroupKey !== next.toolGroupKey) return false;

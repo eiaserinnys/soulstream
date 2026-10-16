@@ -97,7 +97,7 @@ test.each([
         available: false,
         reason: 'server-reason',
         reason_label: '서버 사용량 제한',
-        resets_at: '2030-01-02T03:04:00.000Z',
+        resets_at: new Date(2030, 0, 2, 3, 4).toISOString(),
         usage_warning: false,
       }],
     }),
@@ -165,7 +165,7 @@ test.each([
     expect.objectContaining({
       options: [
         '자동 선택',
-        expect.stringMatching(/^서버 모델 \(서버 사용량 제한\) · \d{2}:\d{2} 해제$/),
+        '서버 모델 (서버 사용량 제한) · 1/2 03:04 해제',
         '취소',
       ],
       disabledButtonIndices: [1],

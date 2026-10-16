@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -20,10 +19,16 @@ import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import type { MessageSelectionModel } from './message-selection-model';
 import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
 import { CopyableAssistantMarkdown } from './CopyableAssistantMarkdown';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 interface Props {
   bubbleWidth?: 'content' | 'fill';
+  /** 바깥 줄 여백을 소유한 타임라인만 none을 지정한다. */
+  rowInset?: 'default' | 'none';
   messageKind?: React.ReactNode;
+  /** 표시 전용 글 대체. 저장 이벤트와 메뉴 연결은 호출자가 소유한다. */
+  textOverride?: string;
+  notice?: React.ReactNode;
   children?: React.ReactNode;
   event: SessionEvent;
   /** 좌측 에이전트 아바타에 사용할 세션 메타. 없으면 아바타 미표시. */
@@ -31,6 +36,7 @@ interface Props {
   selectionModel?: MessageSelectionModel | null;
   onSelectionDone?: () => void;
   presentation?: 'default' | 'manuscript';
+  narration?: boolean;
 }
 
 let loggedStreamingPlainTextFallback = false;
@@ -46,29 +52,29 @@ export function shouldRenderAsPlainStreamingText(event: SessionEvent): boolean {
   return event.type === 'text_delta' || (event.data as any)?._live_only === true;
 }
 
-function openAssistantLink({ url }: { url: string }) {
-  WebBrowser.openBrowserAsync(url).catch((err) => {
-    console.warn('[AssistantMessage] openBrowserAsync failed:', err);
-  });
-}
-
 export function AssistantMessage({
   event,
   session,
   bubbleWidth = 'content',
+  rowInset = 'default',
   messageKind,
+  textOverride,
+  notice,
   children,
   selectionModel,
   onSelectionDone,
   presentation = 'default',
+  narration = false,
 }: Props) {
   const t = useTokens();
+  const manuscriptNarration = presentation === 'manuscript' && narration;
   const { styles, markdownStyle, markdownInputStyle } = useMemo(
-    () => makeStyles(t, presentation),
-    [t, presentation],
+    () => makeStyles(t, presentation, manuscriptNarration),
+    [t, presentation, manuscriptNarration],
   );
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
+  const openContentLink = useOpenContentLink();
 
   // 메시지 발신자 신원 — 위임 에이전트가 응답한 경우 caller에 source=agent가 들어온다.
   // assistant 응답은 본인 picture와 무관하므로 profile=null로 호출하여 caller.avatar_url
@@ -78,7 +84,7 @@ export function AssistantMessage({
   // 단일 \n을 GFM hard break로 변환 — 라이브러리가 md4cFlags hard-break를
   // JS로 노출하지 않아 컴포넌트 내부 렌더 직전 사전처리로 동등 효과를 낸다.
   // useMemo는 React Hooks rules에 따라 early-return *위*에 배치한다.
-  const text = extractText(event);
+  const text = textOverride ?? extractText(event);
   const renderedText = useMemo(
     () => normalizeMarkdownBreaks(text),
     [text],
@@ -92,7 +98,7 @@ export function AssistantMessage({
       '[AssistantMessage] rendering streaming assistant text with plain Text fallback',
     );
   }, [renderAsPlainStreamingText]);
-  if (!renderedText && !children) return null;
+  if (!renderedText && !children && !notice) return null;
 
   const { uri: avatarUri, useBearer } = pickUserAvatarUri(
     caller,
@@ -110,7 +116,7 @@ export function AssistantMessage({
   return (
     <View style={presentation === 'manuscript'
       ? styles.manuscriptRow
-      : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
+      : rowInset === 'none' ? [styles.row, { marginHorizontal: 0 }] : styles.row}>
       {presentation === 'manuscript' ? null : avatarUri ? (
         <Image
           source={{
@@ -135,7 +141,8 @@ export function AssistantMessage({
           (빌드 13부터 정본 — 자체 LinkSheet/WebView는 Google OAuth 정책으로 Gmail 차단되어 폐기.)
         */}
         {messageKind}
-        {children ?? (selectionModel && onSelectionDone ? (
+        {notice}
+        {selectionModel && onSelectionDone ? (
           <MessageTextSelectionView
             model={selectionModel}
             onDone={onSelectionDone}
@@ -144,7 +151,7 @@ export function AssistantMessage({
             markdownStyle={markdownInputStyle}
             {...(presentation === 'manuscript' ? { actionColor: t.colors.textPrimary } : {})}
           />
-        ) : renderAsPlainStreamingText ? (
+        ) : children ?? (renderAsPlainStreamingText ? (
           <Text
             testID="assistant-streaming-text"
             selectable={false}
@@ -156,7 +163,7 @@ export function AssistantMessage({
           <CopyableAssistantMarkdown
             markdown={renderedText}
             markdownStyle={markdownStyle}
-            onLinkPress={openAssistantLink}
+            onLinkPress={({ url }) => { void openContentLink(url); }}
             presentation={presentation}
             serverUrl={serverUrl}
             jwt={jwt}
@@ -170,12 +177,14 @@ export function AssistantMessage({
   );
 }
 
-function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
+function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', narration: boolean) {
   const AVATAR = t.avatarSize.message;
   const c = t.colors;
   const roles = createSurfaceRoles(t);
   const sessionRoles = createSessionVisualRoles(t);
-  const baseMarkdownStyle = createAssistantMarkdownStyle(t);
+  const baseMarkdownStyle = createAssistantMarkdownStyle(t, narration);
+  const markdownFontSize = narration ? t.chatFontSize.meta : t.chatFontSize.body;
+  const markdownTextColor = narration ? c.textSecondary : c.textPrimary;
   return {
     styles: StyleSheet.create({
       row: {
@@ -219,9 +228,9 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
         fontSize: t.chatFontSize.meta,
       },
       streamingText: {
-        color: c.textPrimary,
-        fontSize: t.chatFontSize.body,
-        lineHeight: t.chatFontSize.body * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio),
+        color: markdownTextColor,
+        fontSize: markdownFontSize,
+        lineHeight: markdownFontSize * (presentation === 'manuscript' ? 1.6 : t.lineHeightRatio),
       },
       manuscriptBubble: {
         flexShrink: 1,
@@ -231,16 +240,16 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     markdownStyle: presentation === 'manuscript'
       ? {
           ...baseMarkdownStyle,
-          paragraph: { ...baseMarkdownStyle.paragraph, lineHeight: t.chatFontSize.body * 1.6 },
-          list: { ...baseMarkdownStyle.list, lineHeight: t.chatFontSize.body * 1.6 },
+          paragraph: { ...baseMarkdownStyle.paragraph, lineHeight: markdownFontSize * 1.6 },
+          list: { ...baseMarkdownStyle.list, lineHeight: markdownFontSize * 1.6 },
         }
       : baseMarkdownStyle,
     markdownInputStyle: {
-      strong: { color: c.textPrimary },
-      em: { color: c.textPrimary },
+      strong: { color: markdownTextColor },
+      em: { color: markdownTextColor },
       link: { color: c.link, underline: true },
       spoiler: {
-        color: c.textPrimary,
+        color: markdownTextColor,
         backgroundColor: c.surface,
       },
     },

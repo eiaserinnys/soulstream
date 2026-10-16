@@ -56,6 +56,7 @@ export interface TaskTurnInputBuilderDeps {
 
 export interface TaskInitialMessagePublisherPort {
   publishInitialMessages(task: Task, ctx?: PreparedContext, inputId?: string): Promise<void>;
+  publishContextManifestBestEffort(task: Task, manifest: NonNullable<PreparedContext["contextManifest"]>): Promise<void>;
 }
 
 export class TaskTurnInputBuilder {
@@ -73,6 +74,9 @@ export class TaskTurnInputBuilder {
       const context = inputUuid
         ? await contextBuilder.buildGenerationContext(task, agent, inputUuid)
         : await contextBuilder.buildGenerationContext(task, agent);
+      if (context.contextManifest) {
+        await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, context.contextManifest);
+      }
       return prepareGenerationTurnInput(task, agent, context, interventions);
     }
     if (task.interventionQueue.length > 0) {
@@ -136,7 +140,7 @@ export class TaskTurnInputBuilder {
       : contextItems;
     const prompt = appendContextBlock(composed.prompt, followupContextItems);
     const systemPrompt =
-      effectiveTaskBackend(task, agent) === "claude" && includeFullContext
+      ["claude", "antigravity", "opencode"].includes(effectiveTaskBackend(task, agent)) && includeFullContext
         ? ctx?.effectiveSystemPrompt
         : undefined;
     const runnerInterventionIds = interventions
@@ -266,17 +270,19 @@ export class TaskTurnInputBuilder {
     inputUuid?: string,
   ): TaskTurnInput {
     const imageAttachmentPaths = splitAttachmentPaths(task.attachmentPaths).imagePaths;
+    const backend = effectiveTaskBackend(task, agent);
     if (!ctx) {
       return {
         prompt: task.prompt,
         originalPrompt: task.prompt,
         imageAttachmentPaths,
+        ...(backend === "antigravity" || backend === "opencode" ? { systemPrompt: "" } : {}),
         ...(inputUuid ? { inputUuid } : {}),
         turnOrigin: { kind: "initial_prompt" },
       };
     }
 
-    if (effectiveTaskBackend(task, agent) === "claude") {
+    if (["claude", "antigravity", "opencode"].includes(backend)) {
       return {
         originalPrompt: task.prompt,
         prompt: composeFirstTurnPrompt({
@@ -286,7 +292,9 @@ export class TaskTurnInputBuilder {
         }),
         imageAttachmentPaths,
         ...(inputUuid ? { inputUuid } : {}),
-        ...(ctx.effectiveSystemPrompt !== undefined
+        ...(backend === "antigravity" || backend === "opencode"
+          ? { systemPrompt: ctx.effectiveSystemPrompt ?? "" }
+          : ctx.effectiveSystemPrompt !== undefined
           ? { systemPrompt: ctx.effectiveSystemPrompt }
           : {}),
         turnOrigin: { kind: "initial_prompt" },

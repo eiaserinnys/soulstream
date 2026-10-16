@@ -17,6 +17,7 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { MarkdownContent } from "./MarkdownContent";
 import { MarkdownImage } from "./MarkdownImage";
+import { SourceLink } from "./SourceLink";
 
 const render = (markdown: string): string =>
   renderToStaticMarkup(
@@ -86,6 +87,20 @@ describe("MarkdownContent — remark-breaks plugin", () => {
 
     expect(html).toContain("text-white underline decoration-white/70 underline-offset-2");
     expect(html).not.toContain("text-accent-blue hover:underline");
+  });
+
+  test("source link injection replaces anchors only when supplied and preserves the href", () => {
+    const markdown = "[원문](https://example.com/reference)";
+    const existing = renderMarkdownContent(markdown);
+    const injected = renderMarkdownContent(markdown, {
+      sourceLinkComponent: SourceLink,
+    });
+
+    expect(existing).toContain("text-accent-blue hover:underline");
+    expect(existing).not.toContain("focus-visible:ring-2");
+    expect(injected).toContain('href="https://example.com/reference"');
+    expect(injected).toContain("inline-block w-fit");
+    expect(injected).toContain("focus-visible:ring-2");
   });
 
   test("case 7: document fenced code expands vertically with separate horizontal overflow", () => {

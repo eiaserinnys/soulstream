@@ -67,6 +67,7 @@ describe("buildDurableRunnerEvent", () => {
   it("waits for resume material only on ID-bearing backends", () => {
     expect(requiresBackendSessionId("claude")).toBe(true);
     expect(requiresBackendSessionId("codex")).toBe(true);
+    expect(requiresBackendSessionId("antigravity")).toBe(true);
     expect(requiresBackendSessionId("openai-agents")).toBe(false);
   });
   it("removes internal dedupe metadata before the durable frame crosses IPC", () => {
@@ -159,6 +160,29 @@ describe("RunnerChildRuntime startup", () => {
 });
 
 describe("RunnerChildRuntime backend session rotation", () => {
+  it.each([true, false])("records a naturally ended fatal=%s stream in the lifecycle and end frame", async (fatal) => {
+    const error = { type: "error", message: "provider rejected model", fatal, timestamp: 1 } as SSEEventPayload;
+    const { runtime, sessionId } = await createRotationRuntime("backend-session-old", [error]);
+    const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
+    const command = executeCommandFrame("fatal-turn", {
+      agentSessionId: sessionId, prompt: "continue", resumeSessionId: "backend-session-old",
+    });
+    const send = vi.spyOn(child, "sendRequired").mockResolvedValue(undefined);
+    try {
+      await child.dispatcher.dispatch(command);
+      await child.drainExecution(command);
+      expect(child.lifecycle.read()).toMatchObject({ execution_state: fatal ? "failed" : "completed" });
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: "execution_ended",
+        ...(fatal ? { error: { code: "execution_failed", message: error.message } } : {}),
+      }));
+      expect((await child.outbox.readBatch())?.events.map((event) => event.payload)).toContainEqual(
+        expect.objectContaining({ type: "error", fatal, message: error.message }),
+      );
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
   it("preserves the preparation error and old lifecycle when rollover uses an obsolete native ID", async () => {
     const { runtime, sessionId } = await createRotationRuntime("backend-session-fresh");
     const child = runtime as unknown as RunnerChildRuntimeRotationHarness;
@@ -292,6 +316,7 @@ describe("RunnerChildRuntime backend session rotation", () => {
 });
 
 type RunnerChildRuntimeRotationHarness = {
+  dispatcher: { dispatch(frame: unknown): Promise<unknown> };
   activeCommandId?: string;
   outbox: RunnerSqliteEventOutbox;
   lifecycle: { read(): unknown };
@@ -306,7 +331,7 @@ type RunnerChildRuntimeRotationHarness = {
   ): Promise<void>;
 };
 
-async function createRotationRuntime(backendSessionId: string | null): Promise<{
+async function createRotationRuntime(backendSessionId: string | null, events: SSEEventPayload[] = []): Promise<{
   runtime: RunnerChildRuntime;
   sessionId: string;
 }> {
@@ -349,7 +374,9 @@ async function createRotationRuntime(backendSessionId: string | null): Promise<{
     rolloutRoot: null,
   };
   const runtime = new RunnerChildRuntime(config, pino({ level: "silent" }), {
-    createEngine: () => rotationEngine(config.backend, stateDirectory),
+    createEngine: () => ({ ...rotationEngine(config.backend, stateDirectory),
+      async *execute() { yield* events; },
+    }),
   });
   await runtime.start();
   return { runtime, sessionId };

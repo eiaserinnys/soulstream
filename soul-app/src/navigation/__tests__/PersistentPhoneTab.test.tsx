@@ -53,10 +53,10 @@ test('iPhone PAS 카드는 기존 PhoneCardDetail stack 경로를 사용하고 P
   const tabs = getBottomTabCaptures()[0];
   for (const tab of tabs.screens) render(<PersistentSessionProvider>{React.createElement(tab.component)}</PersistentSessionProvider>);
   const feed = getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'Feed')!;
-  expect(feed.screens.map(s => s.name)).toEqual(['Feed', 'Search', 'Chat']);
-  expect(feed.screens[2].options.gestureEnabled).toBe(false);
+  expect(feed.screens.map(s => s.name)).toEqual(['Feed', 'Search', 'CardDetail', 'MarkdownDocument', 'Chat']);
+  expect(feed.screens.find(s => s.name === 'Chat')?.options.gestureEnabled).toBe(false);
   const pas = getNativeStackCaptures().find(stack => stack.screens[0]?.name === 'PersistentSession')!;
-  expect(pas.screens.map(s => s.name)).toEqual(['PersistentSession', 'CardDetail']);
+  expect(pas.screens.map(s => s.name)).toEqual(['PersistentSession', 'CardDetail', 'MarkdownDocument']);
   expect(pas.screens[1].component).toBe(PhoneCardDetail);
   expect((pas.navigatorProps?.screenOptions as any).contentStyle).toEqual(createSurfaceRoles(renderHook(() => useTokens()).result.current).canvas.tokenStyle);
   const navigation = { addListener: jest.fn(() => () => {}), getParent: jest.fn(), goBack: jest.fn(), navigate: jest.fn() };

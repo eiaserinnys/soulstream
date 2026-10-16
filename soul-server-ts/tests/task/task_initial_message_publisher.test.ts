@@ -64,6 +64,12 @@ function makeSubject(options: {
 }
 
 describe("TaskInitialMessagePublisher", () => {
+  it("keeps the board snapshot out of events but preserves user reply contexts", async () => {
+    const {publisher,enqueueEvent}=makeSubject();
+    const reply={key:'persistent_report_reply',content:{key:'r1',option:'진행'}};
+    await publisher.publishInitialMessages(makeTask(),{assembledPrompt:'사용자 요청',combinedContextItems:[{key:'persistent_report',content:'현재 판'},reply]});
+    expect(enqueueEvent.mock.calls.find(c=>c[1].type==='user_message')?.[1].context).toEqual([reply]);
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-23T03:00:00.000Z"));

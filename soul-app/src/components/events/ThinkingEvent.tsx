@@ -53,9 +53,9 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     manuscriptText: {
       alignSelf: 'stretch',
       marginVertical: sessionRoles.chat.messageGap / 2,
-      color: c.textPrimary,
-      fontSize: t.chatFontSize.body,
-      lineHeight: t.chatFontSize.body * 1.6,
+      color: c.textSecondary,
+      fontSize: t.chatFontSize.meta,
+      lineHeight: t.chatFontSize.meta * 1.6,
     },
     wrapper: {
       // ToolEvent와 동일하게 어시스턴트 말풍선 본문 시작 지점에 좌측 정렬한다.

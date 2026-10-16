@@ -40,6 +40,7 @@ export interface PreparedContextAssemblyInput {
   assignedCardItem: ContextItem | null;
   predecessorSummaryItem: ContextItem | null;
   generationCheckpointItem: ContextItem | null;
+  persistentReportItem?: ContextItem | null;
   nativeSessionId: string | null;
   cogitoContextItem: ContextItem | null;
   workingDir?: string;
@@ -67,6 +68,7 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
   });
 
   const combinedContextItems: ContextItem[] = [soulstreamItem];
+  if (args.persistentReportItem) combinedContextItems.push(args.persistentReportItem);
   if (args.pageContextItem) combinedContextItems.push(args.pageContextItem);
   if (args.boardWorkspaceItem) combinedContextItems.push(args.boardWorkspaceItem);
   const checkpointContextItem = args.generationCheckpointItem ?? args.predecessorSummaryItem;

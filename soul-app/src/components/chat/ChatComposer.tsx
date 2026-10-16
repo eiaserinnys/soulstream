@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   type LayoutChangeEvent,
   type LayoutRectangle,
+  type TextInputProps,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -18,6 +19,8 @@ import { CompactTouchTarget } from '../CompactTouchTarget';
 import { createSessionVisualRoles, useTokens } from '../../theme';
 import { ADD_GLYPH_INSET_RATIO, makeStyles } from './ChatBody.styles';
 import { AttachmentPickerButton } from './AttachmentPickerButton';
+
+export const CHAT_COMPOSER_MAX_LENGTH = 4000;
 
 interface Props {
   placeholder?: string;
@@ -37,6 +40,9 @@ interface Props {
   minimumBottomPadding?: number;
   embedded?: boolean;
   onInputRef?: (input: TextInput | null) => void;
+  focusAccent?: boolean;
+  selection?: TextInputProps['selection'];
+  onSelectionChange?: TextInputProps['onSelectionChange'];
   onComposerBoxLayout?: (box: LayoutRectangle, row: LayoutRectangle) => void;
   presentation?: 'default' | 'manuscript';
 }
@@ -54,14 +60,18 @@ export function ChatComposer({
   voiceControls,
   minimumBottomPadding = 0,
   embedded = false,
+  focusAccent = false,
   placeholder = '메시지 입력...',
   inputAccessibilityLabel,
   sendAccessibilityLabel = '메시지 보내기',
   sendDisabled = false,
   onInputRef,
+  selection,
+  onSelectionChange,
   onComposerBoxLayout,
   presentation = 'default',
 }: Props) {
+  const [focusAccentActive, setFocusAccentActive] = React.useState(false);
   React.useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined' || document.getElementById('chat-composer-placeholder-style')) return;
     const style = document.createElement('style');
@@ -132,7 +142,9 @@ export function ChatComposer({
       <ComposerSurface
         presentation={presentation}
         testID="chat-composer-box"
-        style={composerSurfaceStyle}
+        style={focusAccent && focusAccentActive
+          ? [composerSurfaceStyle, { borderColor: t.colors.accent }]
+          : composerSurfaceStyle}
         onLayout={onComposerBoxLayout ? handleComposerSurfaceLayout : undefined}
       >
         <View
@@ -171,10 +183,16 @@ export function ChatComposer({
                 measurement.ref.current = input;
                 onInputRef?.(input);
               }}
+              onFocus={focusAccent ? () => setFocusAccentActive(true) : undefined}
+              onBlur={focusAccent ? () => setFocusAccentActive(false) : undefined}
+              selection={selection}
+              onSelectionChange={onSelectionChange}
               onContentSizeChange={measurement.onContentSizeChange}
               testID="chat-composer-text-input"
               // Empty iOS inputs collapse immediately; text keeps native intrinsic growth.
-              style={[styles.composerTextInput, {
+              style={[styles.composerTextInput, ...(focusAccent && Platform.OS === 'web'
+                ? [{ outlineStyle: 'solid' as const, outlineWidth: 0 }]
+                : []), {
                 ...(Platform.OS === 'ios'
                   ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
                   : { height: inputHeight }),
@@ -200,7 +218,7 @@ export function ChatComposer({
               multiline
               {...(Platform.OS === 'web' ? { rows: 1 } : {})}
               scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
-              maxLength={4000}
+              maxLength={CHAT_COMPOSER_MAX_LENGTH}
               autoCorrect={false}
               spellCheck={false}
               textAlignVertical={multilineExpanded ? 'top' : 'center'}

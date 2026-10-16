@@ -27,6 +27,7 @@ const factoryEnv = {
   CLAUDE_SESSION_RUNTIME_V2_ENABLED: false,
   MCP_INTERNAL_PORT: 4206,
   MCP_PATH: "/mcp",
+  SOUL_RUNNER_STATE_DIR: "/tmp/soulstream-factory-state",
 };
 
 describe("createEngineFactory", () => {
@@ -36,6 +37,7 @@ describe("createEngineFactory", () => {
       env: factoryEnv,
       logger,
       codexProcessEnv: {},
+      antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
       claudeSessionStore: sessionStore,
       mcpConfigService: new McpConfigService({
@@ -76,6 +78,7 @@ describe("createEngineFactory", () => {
       env: factoryEnv,
       logger,
       codexProcessEnv: {},
+      antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
       claudeSessionStore: sessionStore,
       mcpConfigService: new McpConfigService({
@@ -110,6 +113,7 @@ describe("createEngineFactory", () => {
       env: factoryEnv,
       logger,
       codexProcessEnv: {},
+      antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
       claudeSessionStore: sessionStore,
       mcpConfigService: new McpConfigService({

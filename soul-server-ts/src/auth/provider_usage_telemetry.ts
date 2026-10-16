@@ -6,7 +6,7 @@ export const PROVIDER_USAGE_REQUEST_TIMEOUT_MS = 14_000;
 export const PROVIDER_USAGE_SLOW_REQUEST_THRESHOLD_MS = 5_000;
 
 export type ProviderUsageLogger = Pick<Logger, "debug" | "info" | "warn">;
-export type ProviderUsageProvider = "claude" | "codex" | "gemini";
+export type ProviderUsageProvider = "claude" | "codex" | "antigravity";
 
 export interface ProviderUsageAttempt {
   endpoint: string;

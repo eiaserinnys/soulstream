@@ -9,6 +9,9 @@ import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
 } from "../src/usage/usage_summary_service.js";
+import type { ProviderLimitRejection } from "../src/usage/provider_limit_rejection.js";
+import { ModelPresetAvailabilityService } from "../src/model/model_preset_availability.js";
+import type { NodeConnectionSnapshot } from "../src/node/registry_types.js";
 
 const preset: StaticModelPreset = {
   id: "claude-fable",
@@ -48,7 +51,7 @@ function summary(
         fetchedAt: now.toISOString(),
         stale,
         staleSince: stale ? now.toISOString() : null,
-        providers: { claude, codex: null, gemini: null },
+        providers: { claude, codex: null, antigravity: null },
       },
     ],
   };
@@ -61,11 +64,11 @@ function quotaSummary(
   const providers = {
     claude: null,
     codex: null,
-    gemini: null,
+    antigravity: null,
   } as {
     claude: UsageSummaryProvider | null;
     codex: UsageSummaryProvider | null;
-    gemini: UsageSummaryProvider | null;
+    antigravity: UsageSummaryProvider | null;
   };
   providers[providerName] = provider({ quotas: [quota] });
   return {
@@ -120,6 +123,67 @@ describe("resolvePresetAvailability", () => {
       reason_label: "미인증",
       usage_warning: false,
     });
+  });
+
+  it("uses a fresh provider authentication failure before a remembered rejection", () => {
+    expect(resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(provider({ status: "not_configured" })),
+      now,
+      rejection("2026-07-28T04:00:00.000Z", "five_hour"),
+    )).toMatchObject({
+      available: false,
+      reason: "not_authenticated",
+      reason_label: "미인증",
+    });
+  });
+
+  it.each([
+    ["fresh usage", summary(provider()), "한도 거부 중"],
+    ["stale usage", summary(provider(), true), "한도 거부 중"],
+    ["missing provider", summary(null, true), "한도 거부 중"],
+    ["provider error", summary(provider({ status: "error" })), "한도 거부 중"],
+  ] as const)("blocks a live rejection despite %s", (_label, usage, expectedLabel) => {
+    expect(resolvePresetAvailability(
+      "node-a",
+      preset,
+      usage,
+      now,
+      rejection("2026-07-28T04:00:00.000Z", "unknown"),
+    )).toMatchObject({
+      available: false,
+      reason: "limit_rejected",
+      reason_label: expectedLabel,
+      resets_at: "2026-07-28T04:00:00.000Z",
+      usage_warning: false,
+    });
+  });
+
+  it.each([
+    ["five_hour", "5시간 한도 거부 중"],
+    ["seven_day", "7일 한도 거부 중"],
+    ["seven_day_primary", "7일 한도 거부 중"],
+    ["custom", "한도 거부 중"],
+    [null, "한도 거부 중"],
+  ] as const)("labels the %s provider rejection", (rateLimitType, expected) => {
+    expect(resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(null, true),
+      now,
+      rejection("2026-07-28T04:00:00.000Z", rateLimitType),
+    ).reason_label).toBe(expected);
+  });
+
+  it("expires a remembered rejection when now equals resetAt", () => {
+    expect(resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(provider()),
+      now,
+      rejection(now.toISOString(), "five_hour"),
+    )).toMatchObject({ available: true, reason: null, usage_warning: false });
   });
 
   it("allows an active matching quota and exposes its reset as ISO", () => {
@@ -179,7 +243,7 @@ describe("resolvePresetAvailability", () => {
                 resetAt,
               }],
             }),
-            gemini: null,
+            antigravity: null,
           },
         }],
       },
@@ -337,7 +401,7 @@ describe("resolvePresetAvailability", () => {
               },
             ],
           }),
-          gemini: null,
+          antigravity: null,
         },
       }],
     };
@@ -462,4 +526,64 @@ describe("resolvePresetAvailability", () => {
       usage_warning: true,
     });
   });
+});
+
+describe("ModelPresetAvailabilityService limit rejection", () => {
+  it("keeps availability false for settings callers and reports the reset in the create error", () => {
+    const activeRejection = rejection("2026-07-28T04:00:00.000Z", "five_hour");
+    const service = new ModelPresetAvailabilityService(
+      {
+        getConnectedNode: () => ({ nodeId: "node-a", modelPresets: [preset] } as unknown as NodeConnectionSnapshot),
+      },
+      {
+        getSummary: () => summary(provider()),
+        getLimitRejection: () => activeRejection,
+      },
+      () => now,
+    );
+
+    expect(service.listForNode("node-a")?.[0]).toMatchObject({
+      available: false,
+      reason: "limit_rejected",
+      reason_label: "5시간 한도 거부 중",
+      resets_at: "2026-07-28T04:00:00.000Z",
+    });
+    expect(() => service.requireAvailable("node-a", preset.id)).toThrowError(
+      `Model preset '${preset.id}' is unavailable on node node-a: 5시간 한도 거부 중 (resets_at: 2026-07-28T04:00:00.000Z)`,
+    );
+    expect(service.requireAvailable("node-a", preset.id, { allowLimitRejected: true }))
+      .toMatchObject({ available: false, reason: "limit_rejected" });
+  });
+});
+
+function rejection(rejectedUntil: string, rateLimitType: string | null): ProviderLimitRejection {
+  return { rejectedUntil, rateLimitType, observedAt: "2026-07-28T02:59:00.000Z" };
+}
+
+it("uses Antigravity group quotas for both presets and existing availability states", () => {
+  const usage = summary(null);
+  const agy = provider({ quotas: [{ id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, remainingPercent: 90, resetAt: now.getTime()/1000 + 86400 }] });
+  const nodes = [{ ...usage.nodes[0]!, providers: { ...usage.nodes[0]!.providers, antigravity: agy } }];
+  for (const id of ["gemini-3.8-flash", "gemini-4-argon"]) {
+    const agyPreset = { ...preset, id, backend: "antigravity" as const, usage_provider: "antigravity" as const, usage_model_id: id };
+    const result = resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes }, now);
+    expect(result.available).toBe(true);
+    expect(result.weekly_headroom?.headroom).toEqual(expect.any(Number));
+    expect(resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes: [{ ...nodes[0]!, stale: true }] }, now).usage_warning).toBe(true);
+    expect(resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes: [{ ...nodes[0]!, providers: { ...nodes[0]!.providers, antigravity: provider({ status: "not_configured" }) } }] }, now).available).toBe(false);
+    expect(resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes: [{ ...nodes[0]!, providers: { ...nodes[0]!.providers, antigravity: provider({ quotas: [{ ...agy.quotas[0]!, remainingPercent: 0 }] }) } }] }, now).available).toBe(true);
+  }
+});
+
+it("accepts advertised Antigravity presets in the shared node-list API availability service", () => {
+  const usage = summary(null);
+  const antigravity = provider({ quotas: [{ id: "antigravity:gemini:weekly", label: "7일", window: "7d", model: null, remainingPercent: 90, resetAt: now.getTime() / 1000 + 86400 }] });
+  const presets = ["gemini-3.8-flash", "gemini-4-argon"].map(id => ({ ...preset, id, backend: "antigravity", usage_provider: "antigravity", usage_model_id: id }));
+  const service = new ModelPresetAvailabilityService(
+    { getConnectedNode: () => ({ nodeId: "node-a", modelPresets: presets } as unknown as NodeConnectionSnapshot) },
+    { getSummary: () => ({ ...usage, nodes: [{ ...usage.nodes[0]!, providers: { ...usage.nodes[0]!.providers, antigravity } }] }), getLimitRejection: () => null },
+    () => now,
+  );
+  expect(service.listForNode("node-a")).toEqual(presets.map(p => expect.objectContaining({ id: p.id, backend: "antigravity", available: true, weekly_headroom: expect.objectContaining({ headroom: expect.any(Number), remaining_percent: 90 }) })));
+  expect(service.requireAvailable("node-a", "gemini-4-argon").id).toBe("gemini-4-argon");
 });

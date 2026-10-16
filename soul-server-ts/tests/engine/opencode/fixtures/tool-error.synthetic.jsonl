@@ -1,0 +1,1 @@
+{"type":"tool_use","timestamp":1760520000000,"sessionID":"ses_synthetic_398","part":{"id":"prt_tool_error_398","messageID":"msg_tool_error_398","sessionID":"ses_synthetic_398","type":"tool","callID":"call_tool_error_398","tool":"read","state":{"status":"error","input":{"filePath":"probe.txt"},"error":"synthetic read failure","time":{"start":1760520000000,"end":1760520000001}}}}

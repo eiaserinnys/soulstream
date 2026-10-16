@@ -21,6 +21,8 @@
     "LLM_ANTHROPIC_API_KEY": { "owner": "llm", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "CODEX_API_KEY": { "owner": "codex", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "CODEX_CLI_PATH": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "AGY_CLI_PATH": { "owner": "antigravity", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "OPENCODE_CLI_PATH": { "owner": "opencode", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CODEX_ADAPTER_MODE": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "CODEX_APP_SERVER_REQUEST_TIMEOUT_MS": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },
     "CODEX_APP_SERVER_STARTUP_TIMEOUT_MS": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },

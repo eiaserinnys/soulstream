@@ -896,3 +896,22 @@ def test_event_ingress_rejection_codes_are_schema_generated() -> None:
     assert all(code.startswith("EVENT_INGRESS_") for code in declared)
     assert len(declared) == len(set(declared))
     assert _load_generated_string_set("EVENT_INGRESS_REJECTION_CODES") == set(declared)
+
+
+def test_antigravity_backend_node_registration() -> None:
+    schema = json.loads(SCHEMA_PATH.read_text())
+    validator = jsonschema.Draft202012Validator(schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"])
+    validator.validate({"id": "gemini-3.8-flash", "label": "Gemini - 3.8 Flash", "backend": "antigravity", "available": True, "usage_provider": None})
+    assert list(validator.iter_errors({"id": "x", "label": "x", "backend": "unknown", "available": True, "usage_provider": None}))
+
+def test_opencode_backend_node_registration() -> None:
+    schema = json.loads(SCHEMA_PATH.read_text())
+    validator = jsonschema.Draft202012Validator(schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"])
+    validator.validate({"id": "opencode-deepseek-v4.1-flash-free", "label": "OpenCode - DeepSeek V4.1 Flash Free", "backend": "opencode", "available": True, "usage_provider": None})
+    assert '"opencode"' in GENERATED_TS_PATH.read_text(encoding="utf-8").split("backend:", 1)[1].split(";", 1)[0]
+
+def test_antigravity_usage_provider_is_advertised():
+    schema = _load_schema()
+    preset = schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"]
+    assert "antigravity" in preset["properties"]["usage_provider"]["enum"]
+    assert 'usage_provider: "claude" | "codex" | "antigravity" | null' in GENERATED_TS_PATH.read_text(encoding="utf-8")

@@ -18,6 +18,7 @@ import {
   buildRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
+import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_path.js";
 import type { IdempotentClaudeSessionStore } from "../engine/claude_session_store.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
@@ -43,6 +44,7 @@ import type {
 import type { RunnerRegistration } from "./runner_process_registry.js";
 import type { RunnerReleasePool } from "./runner_release_pool.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import type { ReleaseManifestV1 } from "../release/release_manifest.js";
 import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 
@@ -62,7 +64,7 @@ type RunnerEnv = Pick<Env,
   | "CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS"
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
->;
+> & Partial<Pick<Env, "OPENCODE_CLI_PATH">>;
 
 export interface RunnerProcessRuntimeFactoryOptions {
   env: RunnerEnv;
@@ -71,6 +73,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
   sessionStore: IdempotentClaudeSessionStore;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
+  antigravityCliPath?: AntigravityCliPathResolution;
   releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
   releaseManifest?: ReleaseManifestV1;
   nodeStallMonitor?: Pick<
@@ -111,6 +114,7 @@ export function createRunnerProcessRuntimeFactory(
     spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
     runnerProcess: SpawnedRunnerProcess | Promise<SpawnedRunnerProcess> | null,
     recoveryMode?: "adopt" | "replay" | "offline",
+    phaseObservation?: RunnerPhaseObservation,
   ) => {
     const dispatcher = new RunnerProcessDispatcher({
       spawn,
@@ -120,6 +124,7 @@ export function createRunnerProcessRuntimeFactory(
       pumpMux: options.pumpMux,
       logger: options.logger,
       ...(options.nodeStallMonitor ? { nodeStallMonitor: options.nodeStallMonitor } : {}),
+      ...(phaseObservation ? { phaseObservation } : {}),
       handleHostCall: async (call, registerPostResponse) => await applyRunnerHostCall(
         call,
         task,
@@ -161,6 +166,10 @@ export function createRunnerProcessRuntimeFactory(
       snapshotPath: release.runnerModuleRoot,
       codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
       codexCliPath: options.codexCliPath?.path,
+      antigravityCliPath: options.antigravityCliPath?.path,
+      ...(backend === "opencode" && options.env.OPENCODE_CLI_PATH
+        ? { opencodeCliPath: options.env.OPENCODE_CLI_PATH }
+        : {}),
       codexDetachedResultRetentionMs:
         options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
       codexAppServerRequestTimeoutMs:
@@ -189,7 +198,13 @@ export function createRunnerProcessRuntimeFactory(
   }) as RunnerProcessRuntimeFactory;
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
-  factory.recover = (task, registration, snapshots, mode = "adopt") => {
+  factory.recover = (
+    task,
+    registration,
+    snapshots,
+    mode = "adopt",
+    phaseObservation,
+  ) => {
     const config = registration.config;
     const spawnInput = spawnInputFromConfig(
       stateDirectory,
@@ -206,6 +221,7 @@ export function createRunnerProcessRuntimeFactory(
       spawnInput,
       mode === "offline" ? null : adoptRegisteredRunner(spawner, registration),
       mode,
+      phaseObservation,
     );
   };
   return factory;
@@ -244,6 +260,8 @@ function spawnInputFromConfig(
     snapshotPath: config.snapshotPath,
     codexAdapterMode: config.codexAdapterMode,
     ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),
+    ...(config.antigravityCliPath ? { antigravityCliPath: config.antigravityCliPath } : {}),
+    ...(config.opencodeCliPath ? { opencodeCliPath: config.opencodeCliPath } : {}),
     codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
     claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,

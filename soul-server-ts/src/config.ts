@@ -53,6 +53,10 @@ export const EnvSchema = z
      * 사용자 npm 전역 설치 위치를 탐색하고, 그래도 없으면 SDK 기본 경로에 맡긴다.
      */
     CODEX_CLI_PATH: z.string().optional(),
+    /** Optional account-authenticated Antigravity CLI pin. Resolved without execution. */
+    AGY_CLI_PATH: z.string().optional(),
+    /** Optional OpenCode CLI executable; required only when an OpenCode turn runs. */
+    OPENCODE_CLI_PATH: z.string().min(1).optional(),
     /**
      * Codex backend adapter 선택. 설정 기본값은 기존 SDK/exec 경로이며,
      * eias-linegames 운영 환경은 app-server를 명시 설정해 사용 중이다.

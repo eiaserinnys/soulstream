@@ -424,6 +424,141 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("create_agent_session은 명시 preset이 limit_rejected면 작업 생성 전에 오류를 반환", async () => {
+    const capture = await createOrchCapture(200, () => ({
+      body: {
+        model_presets: [
+          {
+            id: "claude-explicit",
+            available: false,
+            reason: "limit_rejected",
+            reason_label: "한도 거부 중",
+            resets_at: "2026-10-12T04:00:00.000Z",
+          },
+          {
+            id: "claude-default",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+          },
+        ],
+      },
+    }));
+    try {
+      const runtime = makeRuntime(
+        { queued: true, queuePosition: 1 },
+        capture.orch,
+        [{ ...claudeAgent, default_preset: "claude-default" }],
+      );
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_agent_session",
+        arguments: {
+          agent_id: "claude-roselin",
+          prompt: "hi",
+          model_preset: "claude-explicit",
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error:
+          "Model preset 'claude-explicit' is unavailable on node node-test: 한도 거부 중 (resets_at: 2026-10-12T04:00:00.000Z)",
+      });
+      expect(runtime.createTask).not.toHaveBeenCalled();
+      expect(runtime.startNewExecution).not.toHaveBeenCalled();
+      expect(capture.requests).toHaveLength(1);
+      expect(capture.requests[0]).toMatchObject({
+        method: "GET",
+        url: "/api/nodes/node-test/model-presets",
+        body: "",
+      });
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("create_agent_session은 명시 preset이 없으면 프로필 기본 preset을 사전 확인한다", async () => {
+    const capture = await createOrchCapture(200, () => ({
+      body: {
+        model_presets: [{
+          id: "codex-default",
+          available: false,
+          reason: "limit_rejected",
+          reason_label: "7일 한도 거부 중",
+          resets_at: "2026-10-13T04:00:00.000Z",
+        }],
+      },
+    }));
+    try {
+      const runtime = makeRuntime(
+        { queued: true, queuePosition: 1 },
+        capture.orch,
+        [{ ...codexAgent, default_preset: "codex-default" }],
+      );
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_agent_session",
+        arguments: { agent_id: "codex-default", prompt: "hi" },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error:
+          "Model preset 'codex-default' is unavailable on node node-test: 7일 한도 거부 중 (resets_at: 2026-10-13T04:00:00.000Z)",
+      });
+      expect(runtime.createTask).not.toHaveBeenCalled();
+      expect(runtime.startNewExecution).not.toHaveBeenCalled();
+      expect(capture.requests).toHaveLength(1);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("create_agent_session은 quota_exhausted라도 available이면 기존 생성 경로를 탄다", async () => {
+    const capture = await createOrchCapture(200, () => ({
+      body: {
+        model_presets: [{
+          id: "codex-available",
+          available: true,
+          reason: "quota_exhausted",
+          reason_label: "사용량 한도 초과",
+          resets_at: "2026-10-13T04:00:00.000Z",
+        }],
+      },
+    }));
+    try {
+      const runtime = makeRuntime(
+        { queued: true, queuePosition: 1 },
+        capture.orch,
+        [{ ...codexAgent, default_preset: "codex-default" }],
+      );
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_agent_session",
+        arguments: {
+          agent_id: "codex-default",
+          prompt: "hi",
+          model_preset: "codex-available",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(runtime.createTask).toHaveBeenCalledTimes(1);
+      expect(runtime.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ modelPreset: "codex-available" }),
+      );
+      expect(runtime.startNewExecution).toHaveBeenCalledTimes(1);
+      expect(capture.requests).toHaveLength(1);
+    } finally {
+      await capture.close();
+    }
+  });
+
   it("create_agent_session은 명시 profile을 프로필 소스에서 한 번만 조회한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },

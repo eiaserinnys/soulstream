@@ -16,6 +16,8 @@ const SESSION_CACHE_PAYLOAD_KEYS = [
   "client_id",
   "clientId",
   "metadata",
+  "persistent_report",
+  "persistentReport",
   "display_name",
   "displayName",
   "title",

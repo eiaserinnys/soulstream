@@ -176,7 +176,7 @@ export class RuntimeSessionEventHub {
     if (stream === null) return event;
 
     const sessionKey = liveTextSessionKey(sessionId);
-    const mode = stream.source === "codex_app_server" ? "append" : "replace";
+    const mode = stream.source === "codex_sdk" ? "replace" : "append";
     const updatedAt = eventTimestamp(payload);
 
     if (eventType === "text_start") {
@@ -511,7 +511,7 @@ function isLiveTextEvent(
 
 function liveTextIdentity(
   payload: Record<string, unknown>,
-): { id: string; source: "codex_sdk" | "codex_app_server" } | null {
+): { id: string; source: "codex_sdk" | "codex_app_server" | "antigravity" } | null {
   const itemId = nonEmptyString(
     payload.item_id ?? payload.itemId ?? payload.tool_use_id ?? payload.toolUseId,
   );
@@ -519,10 +519,11 @@ function liveTextIdentity(
   const rawType = nonEmptyString(payload.raw_event_type ?? payload.rawEventType) ?? "";
   const threadId = nonEmptyString(payload.thread_id ?? payload.threadId);
   const turnId = nonEmptyString(payload.turn_id ?? payload.turnId);
-  const source = rawType.includes("/") || threadId !== null || turnId !== null
-    ? "codex_app_server" as const
-    : "codex_sdk" as const;
-  const parts = source === "codex_app_server"
+  const source = rawType.startsWith("antigravity/") ? "antigravity" as const
+    : rawType.includes("/") || threadId !== null || turnId !== null
+      ? "codex_app_server" as const
+      : "codex_sdk" as const;
+  const parts = source !== "codex_sdk"
     ? [threadId ?? "", turnId ?? "", itemId]
     : [itemId];
   return {

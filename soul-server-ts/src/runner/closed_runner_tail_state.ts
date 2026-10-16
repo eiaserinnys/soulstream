@@ -16,6 +16,7 @@ import {
 } from "./sqlite_event_outbox_database.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
 import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
+import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export type ClosedRunnerTailState = {
   status: "empty_prebootstrap";
@@ -38,21 +39,50 @@ export type ClosedRunnerTailState = {
 export function readClosedRunnerTailState(
   databasePath: string,
   expectedSessionId: string,
+  phaseObservation?: RunnerPhaseObservation,
 ): ClosedRunnerTailState {
   let database: DatabaseSync | undefined;
   try {
-    database = openRunnerSqliteReadOnlyDatabase(databasePath);
-    requireRunnerSqliteWal(database);
-    const version = readRunnerSchemaVersion(database);
-    assertRunnerReadOnlySchema(database, version);
-    const latestDurableSourceSeq = latestRunnerSequence(database);
-    const row = database.prepare(`
-      SELECT * FROM runner_event_outbox WHERE record_kind = 'bootstrap'
-    `).get() as unknown as RunnerEventOutboxRow | undefined;
-    if (!row) {
-      if (latestDurableSourceSeq !== 0) {
-        throw new Error("runner bootstrap is missing before the durable append head");
+    database = openRunnerSqliteReadOnlyDatabase(databasePath, phaseObservation
+      ? {
+        phaseObservation,
+        sessionId: expectedSessionId,
+        label: "closed runner tail open",
       }
+      : undefined);
+    const snapshot = () => {
+      requireRunnerSqliteWal(database!);
+      const version = readRunnerSchemaVersion(database!);
+      assertRunnerReadOnlySchema(database!, version);
+      const latestDurableSourceSeq = latestRunnerSequence(database!);
+      const row = database!.prepare(`
+        SELECT * FROM runner_event_outbox WHERE record_kind = 'bootstrap'
+      `).get() as unknown as RunnerEventOutboxRow | undefined;
+      if (!row) {
+        if (latestDurableSourceSeq !== 0) {
+          throw new Error("runner bootstrap is missing before the durable append head");
+        }
+        return { kind: "empty" as const };
+      }
+      if (row.source_seq !== 1) throw new Error("runner bootstrap record must be source_seq 1");
+      assertRunnerAckCheckpoint(row);
+      const bootstrap = runnerRowToBootstrap(row);
+      if (bootstrap.session_id !== expectedSessionId) {
+        throw new Error("runner bootstrap session differs from registration");
+      }
+      if (latestDurableSourceSeq < 1) {
+        throw new Error("runner durable append head precedes bootstrap");
+      }
+      return { kind: "bootstrap" as const, bootstrap, latestDurableSourceSeq };
+    };
+    const read = phaseObservation
+      ? phaseObservation.runSync("dbRead", {
+        sessionId: expectedSessionId,
+        databasePath,
+        label: "closed runner tail snapshot",
+      }, snapshot)
+      : snapshot();
+    if (read.kind === "empty") {
       return {
         status: "empty_prebootstrap",
         streamId: null,
@@ -61,22 +91,21 @@ export function readClosedRunnerTailState(
         acknowledgedThrough: null,
       };
     }
+    const { bootstrap, latestDurableSourceSeq } = read;
     // Compaction deletes only record_kind='event', so bootstrap identity remains
     // available. The append head must come from sqlite_sequence rather than MAX:
     // deleting an acknowledged prefix must never make the durable head regress.
-    if (row.source_seq !== 1) throw new Error("runner bootstrap record must be source_seq 1");
-    assertRunnerAckCheckpoint(row);
-    const bootstrap = runnerRowToBootstrap(row);
-    if (bootstrap.session_id !== expectedSessionId) {
-      throw new Error("runner bootstrap session differs from registration");
-    }
-    if (latestDurableSourceSeq < 1) {
-      throw new Error("runner durable append head precedes bootstrap");
-    }
     const acknowledgedThrough = readRunnerHostAcknowledgedThrough(
       runnerHostStatePath(databasePath),
       bootstrap.stream_id,
       bootstrap.session_id,
+      phaseObservation
+        ? {
+          phaseObservation,
+          sessionId: expectedSessionId,
+          label: "closed runner host ACK",
+        }
+        : undefined,
     );
     if (acknowledgedThrough !== null && acknowledgedThrough > latestDurableSourceSeq) {
       throw new Error("runner host ACK exceeds durable runner source_seq");

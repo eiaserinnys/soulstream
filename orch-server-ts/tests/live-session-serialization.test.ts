@@ -22,6 +22,10 @@ const callerIdentityFixture = JSON.parse(
 };
 
 describe("serializeSessionRow predecessor contract", () => {
+  it("projects report metadata and the explicit central cache value", () => {
+    expect(serializeSessionRow({session_id:'pas',metadata:[{type:'persistent_report',value:{entries:[{key:'r',title:'보고'}]}}]})).toHaveProperty('persistentReport',[{key:'r',title:'보고'}]);
+    expect(serializeSessionRow({session_id:'pas',persistent_report:[],metadata:[{type:'persistent_report',value:{entries:[{key:'stale'}]}}]})).toHaveProperty('persistentReport',[]);
+  });
   it("exposes the authoritative cardId and handles unlinked sessions", () => {
     expect(serializeSessionRow({ session_id: "linked", card_id: "card-one" })).toMatchObject({ cardId: "card-one" });
     expect(serializeSessionRow({ session_id: "unlinked" })).toMatchObject({ cardId: null });

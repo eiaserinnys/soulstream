@@ -267,7 +267,7 @@ export function persistentSessionQuotaRows(resource: PersistentSession, presets:
     groups.set(key, group);
   }
   return [...groups].map(([key, group]) => {
-    const provider = group.backend === "claude" ? "Claude" : group.backend === "codex" ? "Codex" : group.backend;
+    const provider = group.backend === "claude" ? "Claude" : group.backend === "codex" ? "Codex" : group.backend === "antigravity" ? "Antigravity" : group.backend;
     const metadata = [
       group.resetsAt ? `초기화 ${displayTime(group.resetsAt)}` : null,
       group.observedAt ? `관측 ${displayTime(group.observedAt)}` : null,

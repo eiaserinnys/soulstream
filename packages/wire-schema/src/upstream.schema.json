@@ -336,7 +336,7 @@
               "label": { "type": "string" },
               "backend": {
                 "type": "string",
-                "enum": ["claude", "codex", "openai-agents"]
+                "enum": ["claude", "codex", "openai-agents", "antigravity", "opencode"]
               },
               "available": { "type": "boolean" },
               "reason": {
@@ -345,7 +345,7 @@
               },
               "usage_provider": {
                 "type": ["string", "null"],
-                "enum": ["claude", "codex", null],
+                "enum": ["claude", "codex", "antigravity", null],
                 "description": "orch 사용량 오버레이용 내부 조인 키. API-key endpoint preset은 null."
               },
               "usage_model_id": {
@@ -2480,7 +2480,20 @@
       "description": "SSE: 어시스턴트 메시지 완료본.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "assistant_message" } }
+      "properties": {
+        "type": { "const": "assistant_message" },
+        "ui": {
+          "type": "object",
+          "required": ["schema_version", "ui_id", "hash", "revision", "document"],
+          "properties": {
+            "schema_version": { "const": 1 },
+            "ui_id": { "type": "string" },
+            "hash": { "type": "string" },
+            "revision": { "const": 1 },
+            "document": { "type": "object", "additionalProperties": true }
+          }
+        }
+      }
     },
     "SSEEventTurnSummary": {
       "type": "object",

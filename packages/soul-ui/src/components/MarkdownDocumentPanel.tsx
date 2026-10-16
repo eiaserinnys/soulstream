@@ -470,7 +470,10 @@ export function MarkdownDocumentPanel({
           <div
             className="prose prose-sm min-h-full max-w-none cursor-text dark:prose-invert"
             data-v3-selectable-content="true"
-            onClick={enterEditMode}
+            onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest("a")) return;
+              enterEditMode();
+            }}
             data-testid="markdown-read-body"
           >
             <MarkdownContent content={body || "Empty document"} codeBlockLayout="document" />

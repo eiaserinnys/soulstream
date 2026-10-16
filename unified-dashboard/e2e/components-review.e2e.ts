@@ -2,8 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
+import { waitForStableLayout } from "./layout-stability";
 
 const output = path.resolve("../../../.local/artifacts/20261001-components-full-page");
+const argonOutput = path.resolve("../../../.local/artifacts/20261015-argon385");
 const phase = process.env.COMPONENTS_REVIEW_PHASE;
 if (!phase) throw new Error("COMPONENTS_REVIEW_PHASE is required");
 
@@ -73,10 +75,21 @@ for (const width of [1440, 390]) {
     });
     await page.goto("/components");
     const review = page.getByTestId("components-review");
+    // Page-level actions update this notice; chat samples own separate statuses.
+    const notice = review.locator(":scope > .v3-detail-scroll > .v3-task-detail-layout > .v3-task-detail-content > p[role=status]");
+    const rows = review.locator("#components-rows");
+    const sessionSample = rows.locator('[data-component="RichSessionRow / RunRowFrame"]').filter({
+      has: page.getByText("RichSessionRow / RunRowFrame · 기본 · 행 클릭 · 포커스", { exact: true }),
+    });
+    const cardSample = rows.locator('[data-component="CardRowView / RunRowFrame"]');
+    const documentSample = rows.locator('[data-component="InlineMarkdownCard"]');
+    const timelineSample = review.locator('#components-bubbles [data-component="CardTimeline / UserMessage / AssistantMessage"]');
+    const handoffSample = review.locator("#components-input").getByTestId("card-handoff-review-sample");
     await expect(review).toBeVisible();
-    await expect(review.locator(".v3-detail-section-head > h3")).toHaveText([
-      "목록 행", "섹션 머리와 캡", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
+    await expect(review.locator('section[id^="components-"] > .v3-detail-section-head > h3')).toHaveText([
+      "목록 행", "말풍선과 첨부", "입력창", "선택과 설정", "패널 표면",
     ]);
+    await expect(review.locator('#components-heads .v3-detail-section-head > h3').filter({ hasText: "섹션 머리와 캡" })).toHaveText("섹션 머리와 캡");
     await page.reload();
     await expect(review).toBeVisible();
     await expect(page.locator(".v3-navigation, .v3-session-panel, .v3-planner, .v3-global-toolbar")).toHaveCount(0);
@@ -93,21 +106,24 @@ for (const width of [1440, 390]) {
     expect(viewport.scrollWidth).toBe(viewport.clientWidth);
     expect(viewport.documentWidth).toBe(width);
     await capture(page, `components-${width}-rows`);
-    await review.locator(".v3-run-open").first().focus();
+    await sessionSample.locator(".v3-run-open").focus();
     await page.keyboard.press("Enter");
-    await expect(review.locator("p[role=status]")).toHaveText("세션 샘플을 열었습니다.");
+    await expect(notice).toHaveText("세션 샘플을 열었습니다.");
     await capture(page, `components-${width}-focus`);
-    await review.locator(".v3-card-row .v3-run-open").first().click();
-    await expect(review.locator("p[role=status]")).toHaveText("카드 샘플을 열었습니다.");
-    await review.locator("[data-testid=v3-task-components-parent]").click();
-    await expect(review.locator("p[role=status]")).toHaveText("상위 폴더 샘플을 열었습니다.");
-    await review.locator("[data-board-kind=markdown] .v3-inline-board-expand").click();
-    await expect(review.getByRole("button", { name: "검수 문서 편집", exact: true }).first()).toBeVisible();
+    await cardSample.getByRole("button", { name: "카드 카드 행 기본 열기", exact: true }).click();
+    await expect(notice).toHaveText("카드 샘플을 열었습니다.");
+    await rows.getByTestId("v3-task-components-parent").click();
+    await expect(notice).toHaveText("상위 폴더 샘플을 열었습니다.");
+    await documentSample.locator(".v3-inline-board-expand").click();
+    await expect(documentSample.locator('button.v3-description-content[aria-label="검수 문서 편집"]')).toBeVisible();
     await capture(page, `components-${width}-documents`);
-    await review.getByRole("button", { name: "샘플 별표", exact: true }).click();
-    await expect(review.getByRole("button", { name: "샘플 별표", exact: true })).toHaveAttribute("aria-pressed", "true");
+    const star = review.locator("#components-heads").getByRole("button", { name: "샘플 별표", exact: true });
+    await star.click();
+    await expect(star).toHaveAttribute("aria-pressed", "true");
 
-    const geometry = async () => review.evaluate(el => {
+    const geometry = async () => {
+      await waitForStableLayout(handoffSample, ["[data-slot=chat-input-body]", "[data-testid=send-button]"]);
+      return review.evaluate(el => {
       const box = (node: Element | null) => {
         if (!node) return null;
         const r = node.getBoundingClientRect(), s = getComputedStyle(node);
@@ -118,12 +134,16 @@ for (const width of [1440, 390]) {
       };
       return { page: box(el), header: box(el.querySelector("header")),
         firstCap: box(el.querySelector("header .dashboard-icon-cap")), lastCap: box(el.querySelector("header .v3-folder-header-actions")),
-        sections: [...el.querySelectorAll(".v3-detail-section")].map(section => ({ section: box(section), head: box(section.querySelector(".v3-detail-section-head")) })),
-        rows: [...el.querySelectorAll(".v3-run-row")].map(row => ({ self: box(row), open: box(row.querySelector(".v3-run-open")),
+        sections: [...el.querySelectorAll('section[id^="components-"] > .v3-detail-section-head')].map(head => ({ section: box(head.parentElement), head: box(head) })),
+        rows: [...el.querySelectorAll('#components-rows [data-component^="RichSessionRow"] .v3-run-row, #components-rows [data-component="CardRowView / RunRowFrame"] .v3-run-row')].map(row => ({ self: box(row), open: box(row.querySelector(".v3-run-open")),
           avatar: box(row.querySelector(".v3-run-avatar")), copy: box(row.querySelector(".v3-run-copy")), trailing: box(row.querySelector(".v3-run-trailing")) })),
-        input: box(el.querySelector("[data-slot=chat-input-body]")), send: box(el.querySelector("[data-testid=send-button]")),
-        chip: box(el.querySelector(".v3-card-handoff-chip")), composer: box(el.querySelector("[data-slot=chat-input-composer]")) };
-    });
+        inputSection: box(el.querySelector("#components-input")),
+        input: box(el.querySelector('[data-testid="card-handoff-review-sample"] [data-slot=chat-input-body]')),
+        send: box(el.querySelector('[data-testid="card-handoff-review-sample"] [data-testid=send-button]')),
+        chip: box(el.querySelector('[data-testid="card-handoff-review-sample"] .v3-card-handoff-chip')),
+        composer: box(el.querySelector('[data-testid="card-handoff-review-sample"] [data-slot=chat-input-composer]')) };
+      });
+    };
     const initial = await geometry();
     for (const row of initial.rows) {
       const sum = row.self!.bt + row.self!.bb + row.open!.pt + row.open!.pb
@@ -134,35 +154,35 @@ for (const width of [1440, 390]) {
 
     await review.locator("#components-bubbles").scrollIntoViewIfNeeded();
     await capture(page, `components-${width}-bubbles`);
-    await review.getByRole("button", { name: "검수 이미지", exact: true }).click();
+    await timelineSample.getByRole("button", { name: "검수 이미지", exact: true }).click();
     await expect(page.getByRole("dialog").getByRole("img", { name: "검수 이미지" })).toBeVisible();
     await capture(page, `components-${width}-image`);
     await page.keyboard.press("Escape");
-    const attachment = review.getByRole("link", { name: "샘플 첨부 열기" });
+    const attachment = timelineSample.getByRole("link", { name: "샘플 첨부 열기" });
     await expect(attachment).toHaveAttribute("href", "/icon-512.png");
     const popup = page.waitForEvent("popup");
     await attachment.click();
     const opened = await popup; await expect(opened).toHaveURL(/icon-512\.png$/); await opened.close();
 
-    await review.getByRole("button", { name: "샘플 폴더 선택" }).click();
+    await handoffSample.getByRole("button", { name: "샘플 폴더 선택", exact: true }).click();
     await expect(page.getByRole("tabpanel", { name: "별표" })).toBeVisible();
     await capture(page, `components-${width}-picker`);
-    await page.locator(".v3-folder-picker .v3-project-nav-link").last().click();
-    const input = review.getByLabel("검수 메시지");
+    await page.locator(".v3-folder-picker").getByRole("button", { name: "👩‍💻 검수 폴더", exact: true }).click();
+    const input = handoffSample.getByLabel("검수 메시지", { exact: true });
     await input.fill("한 줄\n두 줄\n세 줄\n네 줄");
     await capture(page, `components-${width}-input`);
     const multiline = await geometry();
     expect(multiline.input!.h).toBeGreaterThan(initial.input!.h);
     expect(multiline.send!.h).toBe(initial.send!.h);
-    expect(multiline.send!.right).toBeLessThanOrEqual(multiline.sections[3].section!.right);
-    expect(multiline.composer!.w).toBe(multiline.sections[3].section!.w);
-    await review.locator("input[type=file]").setInputFiles({ name: "샘플.txt", mimeType: "text/plain", buffer: Buffer.from("샘플 첨부") });
-    await expect(review.getByTitle("샘플.txt")).toBeVisible();
-    await review.getByRole("button", { name: "샘플 전송", exact: true }).click();
+    expect(multiline.send!.right).toBeLessThanOrEqual(multiline.inputSection!.right);
+    expect(multiline.composer!.w).toBe(multiline.inputSection!.w);
+    await handoffSample.locator("input[type=file]").setInputFiles({ name: "샘플.txt", mimeType: "text/plain", buffer: Buffer.from("샘플 첨부") });
+    await expect(handoffSample.getByTitle("샘플.txt")).toBeVisible();
+    await handoffSample.getByRole("button", { name: "샘플 전송", exact: true }).click();
     await expect(input).toHaveValue("");
-    await expect(review.locator("p[role=status]")).toHaveText("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
-    await expect(review.locator('[data-card-entry="커멘트"]')).toHaveCount(1);
-    await review.getByRole("button", { name: "샘플 패널 열기" }).click();
+    await expect(notice).toHaveText("샘플 메시지를 페이지의 말풍선에 추가했습니다.");
+    await expect(timelineSample.locator('[data-card-entry="커멘트"]')).toHaveCount(1);
+    await review.locator("#components-surfaces").getByRole("button", { name: "샘플 패널 열기", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "패널 표면 샘플" })).toBeVisible();
     await capture(page, `components-${width}-surface`);
     await page.keyboard.press("Escape");
@@ -227,6 +247,7 @@ for (const width of [1440, 390]) {
     if (width === 390) expect(frameAfter.signature).toBe(frameBefore.signature);
     else expect(frameAfter.signature).not.toBe(frameBefore.signature);
 
+    await waitForStableLayout(activity, ["[data-slot=chat-activity-row]", "[data-slot=chat-thinking-indicator]"]);
     const geometry = await activity.evaluate(element => {
       const box = (selector: string) => {
         const rect = element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
@@ -253,6 +274,44 @@ for (const width of [1440, 390]) {
     await expect(defaultToolRow).toBeVisible();
     await defaultToolRow.screenshot({ path: path.join(w13CaptureRoot, `${w13Stamp}-w13-default-after-${width}.png`), animations: "disabled" });
     writeFileSync(path.join(w13CaptureRoot, `${w13Stamp}-w13-geometry-${width}.json`), JSON.stringify(geometry, null, 2));
+
+    const argonReview = page.getByTestId("persistent-manuscript-chat-review");
+    const argonManuscript = argonReview.getByTestId("manuscript-review-column");
+    const emptyRows = defaultChat.locator('[data-tree-node-id^="text-argon-empty-"]');
+    const manuscriptEmptyRows = argonManuscript.locator('[data-tree-node-id^="text-argon-empty-"]');
+    const expectedEmptyRows = phase === "before" ? 5 : 0;
+    await expect(emptyRows).toHaveCount(expectedEmptyRows);
+    await expect(manuscriptEmptyRows).toHaveCount(expectedEmptyRows);
+
+    const responseRow = defaultChat.locator('[data-tree-node-id="text-argon-review-response"]');
+    const manuscriptChat = argonManuscript.locator('[data-slot="chat-root"]');
+    const manuscriptResponseRow = manuscriptChat.locator('[data-tree-node-id="text-argon-review-response"]');
+    await expect(responseRow).toContainText("Argon의 정상 응답입니다.");
+    await expect(manuscriptResponseRow).toContainText("Argon의 정상 응답입니다.");
+    await expect(manuscriptChat.locator('[data-slot="chat-thinking-indicator"]')).toHaveCount(0);
+    mkdirSync(argonOutput, { recursive: true });
+    if (expectedEmptyRows > 0) {
+      const firstEmptyRow = emptyRows.first();
+      await firstEmptyRow.scrollIntoViewIfNeeded();
+      await firstEmptyRow.screenshot({
+        path: path.join(argonOutput, phase + "-default-empty-row-" + width + ".png"),
+        animations: "disabled",
+      });
+    }
+    await responseRow.scrollIntoViewIfNeeded();
+    await responseRow.screenshot({
+      path: path.join(argonOutput, phase + "-default-response-" + width + ".png"),
+      animations: "disabled",
+    });
+    await manuscriptResponseRow.scrollIntoViewIfNeeded();
+    await defaultChat.screenshot({
+      path: path.join(argonOutput, phase + "-default-" + width + ".png"),
+      animations: "disabled",
+    });
+    await manuscriptChat.screenshot({
+      path: path.join(argonOutput, phase + "-manuscript-" + width + ".png"),
+      animations: "disabled",
+    });
 
     const closedGroup = activity.locator("[data-slot=manuscript-activity-toggle]").nth(1);
     await closedGroup.click();
