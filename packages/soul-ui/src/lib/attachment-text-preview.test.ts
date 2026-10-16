@@ -102,6 +102,17 @@ describe("attachment text preview", () => {
     });
   });
 
+  it("rejects a partial response without Content-Range", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("x", {
+      status: 206,
+      headers: { "Content-Length": "1" },
+    })));
+
+    await expect(readAttachmentText({ url: "/missing-range.txt", byteSize: 1 })).rejects.toMatchObject({
+      code: "TEXT_PREVIEW_INVALID_RESPONSE",
+    });
+  });
+
   it("reads local files through the same byte cap", async () => {
     const file = new File([new Uint8Array(TEXT_PREVIEW_MAX_BYTES + 10).fill(0x62)], "large.txt");
     await expect(readLocalAttachmentText(file)).resolves.toMatchObject({

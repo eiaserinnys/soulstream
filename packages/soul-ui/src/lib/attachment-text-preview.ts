@@ -91,7 +91,7 @@ function validateByteSize(byteSize: number): void {
 
 function validateRangeResponse(response: Response, byteSize: number, expectedBytes: number): void {
   if (!response.ok || response.status !== 206) throw invalidResponse(response.status);
-  const range = response.headers.get("Content-Range")?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+  const range = response.headers.get("Content-Range")?.match(/^bytes (\d+)-(\d+)\/(\d+)$/) ?? null;
   const expectedEnd = expectedBytes - 1;
   if (range === null
       || Number(range[1]) !== 0

@@ -107,9 +107,9 @@ describe("attachment original download", () => {
       expect(revokeObjectURL).toHaveBeenCalledWith("blob:http://localhost/local-file");
       expect(order).toEqual(["create", "click", "revoke"]);
     } finally {
-      if (originalCreateObjectURL === undefined) delete (URL as typeof URL & { createObjectURL?: unknown }).createObjectURL;
+      if (originalCreateObjectURL === undefined) delete (URL as unknown as Partial<Record<string, unknown>>).createObjectURL;
       else Object.defineProperty(URL, "createObjectURL", originalCreateObjectURL);
-      if (originalRevokeObjectURL === undefined) delete (URL as typeof URL & { revokeObjectURL?: unknown }).revokeObjectURL;
+      if (originalRevokeObjectURL === undefined) delete (URL as unknown as Partial<Record<string, unknown>>).revokeObjectURL;
       else Object.defineProperty(URL, "revokeObjectURL", originalRevokeObjectURL);
     }
   });

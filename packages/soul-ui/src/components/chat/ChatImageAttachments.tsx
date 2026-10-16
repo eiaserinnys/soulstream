@@ -199,7 +199,7 @@ export function ChatImageViewer({
     const metadata = metadataByImage[chatImageMetadataKey(image)];
     return {
       key: `markdown-image:${image.id}:${image.src}`,
-      name: image.filename ?? metadata?.filename ?? getChatImageFilename(image.src),
+      name: image.filename ?? metadata?.filename ?? getChatImageFilename(image.src) ?? null,
       mimeType: image.mimeType ?? metadata?.mimeType ?? null,
       byteSize: image.bytes ?? metadata?.bytes ?? null,
       previewKind: "image" as const,
