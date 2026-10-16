@@ -937,19 +937,31 @@ export class ProductionFullSliceHarness {
       await delay(25);
     }
     this.throwIfWorkerFailed();
-    const identity = this.sessionId
-      ? await readRunnerRegistrationIdentity(
-        runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
-      )
-      : null;
-    const identityDiagnostic = identity
-      ? {
-        registrationId: identity.registrationId,
-        pid: identity.pid,
-        hasStartIdentity: identity.startIdentity !== null,
-        retiredAt: identity.retiredAt ?? "none",
-      }
-      : "missing";
+    let identityDiagnostic: {
+      registrationId: string;
+      pid: number;
+      hasStartIdentity: boolean;
+      retiredAt: string;
+    } | { readError: string } | "missing";
+    try {
+      const identity = this.sessionId
+        ? await readRunnerRegistrationIdentity(
+          runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
+        )
+        : null;
+      identityDiagnostic = identity
+        ? {
+          registrationId: identity.registrationId,
+          pid: identity.pid,
+          hasStartIdentity: identity.startIdentity !== null,
+          retiredAt: identity.retiredAt ?? "none",
+        }
+        : "missing";
+    } catch (error) {
+      identityDiagnostic = {
+        readError: error instanceof Error ? error.message : String(error),
+      };
+    }
     throw new Error(
       `Timed out waiting for ${label}; scenario=${this.scenario}; backend=${this.backend}; `
       + `sessionId=${this.sessionId || "none"}; runnerIdentity=${JSON.stringify(identityDiagnostic)}`,
