@@ -170,6 +170,20 @@ describe("card attachment evidence projection", () => {
     expect(mcp.card.items[0].evidence).toStrictEqual(evidence);
   });
 
+  it("projects titled inline links that the source-ref validator accepts", async () => {
+    const cardId = await makeCard();
+    await insertAsset("titled-image", cardId);
+    const rawContent = "/api/attachments/titled-image/content?context_type=owner";
+    const sourceBody = '![image](' + rawContent + ' "화면") and [file](<' + rawContent + '> \'원본\')';
+    const refs = [{ attachment_id: "titled-image" }];
+    await h.sql`UPDATE cards SET request=${sourceBody},attachment_refs=${h.sql.json(refs)}::jsonb WHERE id=${cardId}`;
+
+    const detail = await cards.getCard(cardId);
+    const cardContent = CARD_CONTENT(cardId, "titled-image");
+    expect(detail!.card.request).toBe('![image](' + cardContent + ' "화면") and [file](<' + cardContent + '> \'원본\')');
+    expect(detail!.card.request).not.toContain("context_type=owner");
+  });
+
   it("projects only source-ref URLs before request clipping and fingerprints source refs", async () => {
     const cardId = await makeCard();
     await insertAsset("source-image", cardId);

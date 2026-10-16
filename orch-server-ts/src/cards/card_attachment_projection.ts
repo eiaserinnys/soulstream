@@ -204,9 +204,12 @@ function rewriteMarkdownLine(line: string, cardId: string, ids: ReadonlySet<stri
     return wrapped ? `<${content}>` : content;
   };
 
+  // Same destination grammar as the source-ref validator (card_attachment_refs
+  // sourceTargets): an inline link may carry a title before ")", so the
+  // closing paren is not part of the match.
   return line
-    .replace(/(!?\[[^\]\n]*\]\(\s*)(<[^<>\n]*>|[^()\s]+)(\s*\))/g,
-      (_whole, prefix: string, destination: string, suffix: string) => prefix + rewrite(destination) + suffix)
+    .replace(/(!?\[[^\]\n]*\]\(\s*)(<[^<>\n]*>|[^()\s]+)/g,
+      (_whole, prefix: string, destination: string) => prefix + rewrite(destination))
     .replace(/^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(\S+)/,
       (_whole, prefix: string, destination: string) => prefix + rewrite(destination))
     .replace(/<([^<>\s]+)>/g,
