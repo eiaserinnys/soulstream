@@ -118,7 +118,7 @@ function ViewerImagePage({ source, index, name, caption, viewport, failed, failu
         showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
         <Image testID={imageTestID ?? `image-viewer-image-${index}`} source={source} style={imageArea} resizeMode="contain"
           accessible accessibilityLabel={name || `이미지 ${index + 1}`} onError={onError} />
-        {failed ? <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
+        {failed ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
           <Text style={{ ...roleStyles.metadata, color: roleStyles.textMuted, textAlign: 'center' }}>{failureMessage}</Text>
         </View> : null}
       </ScrollView>

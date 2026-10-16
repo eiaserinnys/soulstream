@@ -57,7 +57,7 @@ beforeEach(() => {
     uri: 'file:///cache/attachment-save/file.txt', status: 200, headers: {}, mimeType: 'text/plain',
   });
   jest.mocked(FileSystem.getInfoAsync).mockResolvedValue({
-    exists: true, isDirectory: false, uri: 'file:///cache/attachment-save/file.txt', size: 3,
+    exists: true, isDirectory: false, uri: 'file:///cache/attachment-save/file.txt', size: 3, modificationTime: 0,
   });
   jest.mocked(FileSystem.deleteAsync).mockResolvedValue(undefined);
   jest.mocked(Share.share).mockResolvedValue({ action: Share.sharedAction });
@@ -79,7 +79,7 @@ test('원본 URL과 캡처된 JWT로 내려받고 파일 URI와 iPad anchor를 �
 test('0바이트 원본을 그대로 공유하고 OS 시트 취소는 cancelled로 돌려준다', async () => {
   const emptyView = { ...view, byteSize: 0 };
   jest.mocked(FileSystem.getInfoAsync).mockResolvedValue({
-    exists: true, isDirectory: false, uri: 'file:///cache/empty.txt', size: 0,
+    exists: true, isDirectory: false, uri: 'file:///cache/empty.txt', size: 0, modificationTime: 0,
   });
   jest.mocked(Share.share).mockResolvedValue({ action: Share.dismissedAction });
 
