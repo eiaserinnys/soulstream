@@ -19,8 +19,8 @@ function samePaths(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((path, index) => path === right[index]);
 }
 
-function generatedPathNotes(pending: PendingOptimisticEvent, paths: readonly string[]): Set<string> {
-  const originalLines = new Set((pending.originalText ?? '').trim().split(/\r?\n/));
+function generatedPathNotes(paths: readonly string[], originalText?: string): Set<string> {
+  const originalLines = new Set((originalText ?? '').trim().split(/\r?\n/));
   return new Set(paths
     .filter((path) => path.trim().length > 0)
     .map((path) => `${ATTACHMENT_PATH_NOTE_PREFIX}${path}]`)
@@ -39,6 +39,14 @@ function removeGeneratedPathNotes(text: string, notes: ReadonlySet<string>): str
   if (!removed) return text;
   while (remaining.at(-1) === '') remaining.pop();
   return remaining.join('\n');
+}
+
+export function removeGeneratedAttachmentPathNotes(
+  text: string,
+  paths: readonly string[],
+  originalText?: string,
+): string {
+  return removeGeneratedPathNotes(text, generatedPathNotes(paths, originalText));
 }
 
 /** Match a pending user message against its durable event, including B9 path-note removal. */
@@ -66,7 +74,7 @@ export function matchesAttachmentPending(
     return false;
   }
 
-  const notes = generatedPathNotes(pending, pendingPaths);
+  const notes = generatedPathNotes(pendingPaths, pending.originalText);
   return removeGeneratedPathNotes(pendingText, notes)
     === removeGeneratedPathNotes(eventText, notes);
 }

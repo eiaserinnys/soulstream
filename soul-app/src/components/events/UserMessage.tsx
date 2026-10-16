@@ -22,6 +22,10 @@ import { MessageTextSelectionView } from './MessageTextSelectionView';
 import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticStatus } from '../../store/chatStore';
 import { extractUserText } from './eventActions';
+import { AttachmentChips } from '../chat/AttachmentChips';
+import { makeStyles as makeChatBodyStyles } from '../chat/ChatBody.styles';
+import { removeGeneratedAttachmentPathNotes } from '../../lib/attachment-message-match';
+import type { PendingOptimisticEvent } from '../../store/chatStore';
 
 interface Props {
   messageKind?: React.ReactNode;
@@ -106,6 +110,7 @@ export function UserMessage({
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const chatStyles = useMemo(() => makeChatBodyStyles(t), [t]);
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
   // caller_info v1 (atom ed3a216d): 본인 JWT의 google picture를 자기 메시지 아바타로
@@ -116,8 +121,9 @@ export function UserMessage({
   // 아닌 발신자라는 뜻이며 본인 picture를 덮어 표시하면 안 된다 (결함 4 본질).
   const caller = useMemo(() => extractMessageCaller(event), [event]);
 
-  const content = extractUserText(event);
   const attachments = useMemo(() => extractAttachments(event), [event]);
+  const originalText = (event as PendingOptimisticEvent).originalText;
+  const content = removeGeneratedAttachmentPathNotes(extractUserText(event), attachments, originalText);
 
   // Phase 2: 첨부 다운로드는 *세션의 node_id*로 cross-node 라우팅 (resolveAttachmentNodeId).
   // 둘 다 없으면 첨부 미표시 — graceful (design-principles §8 실패 격리).
@@ -126,25 +132,27 @@ export function UserMessage({
     path,
     uri: buildAttachmentUri(serverUrl, nodeId, path),
   })).filter((entry): entry is { path: string; uri: string } => entry.uri !== null), [attachments, nodeId, serverUrl]);
-  const attachmentSources = attachmentEntries.map(({ uri }) => ({
+  const imageAttachmentEntries = useMemo(
+    () => attachmentEntries.filter(({ path }) => isChatImageAttachmentPath(path)),
+    [attachmentEntries],
+  );
+  const imageAttachmentSources = imageAttachmentEntries.map(({ uri }) => ({
     uri,
     ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}),
   }));
   const manuscriptImageItems = useMemo(() => presentation === 'manuscript'
-    ? attachmentEntries.filter(({ path }) => isChatImageAttachmentPath(path)).map(({ uri }) => ({
+    ? imageAttachmentEntries.map(({ uri }) => ({
         source: chatImageSource(uri, serverUrl, jwt),
         filename: getChatAttachmentFilename(uri),
       }))
-    : [], [attachmentEntries, jwt, presentation, serverUrl]);
+    : [], [imageAttachmentEntries, jwt, presentation, serverUrl]);
   const manuscriptImagesWithMetadata = useChatImageMetadata(manuscriptImageItems, serverUrl ?? '');
   // 빈 말풍선 방지 — 본문 텍스트와 첨부 둘 다 없으면 렌더 생략.
   if (!content && !children && attachments.length === 0) return null;
-  const beforeTextSources = presentation === 'manuscript'
-    ? attachmentEntries.filter(({ path }) => !isChatImageAttachmentPath(path)).map(({ uri }) => ({
-        uri,
-        ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}),
-      }))
-    : attachmentSources;
+  const beforeTextEntries = presentation === 'manuscript'
+    ? attachmentEntries.filter(({ path }) => !isChatImageAttachmentPath(path))
+    : attachmentEntries;
+  let imageIndex = 0;
 
   const bubbleStyle = presentation === 'manuscript'
     ? styles.manuscriptBubble
@@ -177,11 +185,28 @@ export function UserMessage({
       >
         {messageKind}
         {children}
-        {beforeTextSources.length > 0 && (
+        {beforeTextEntries.length > 0 && (
           <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
             ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
-            {beforeTextSources.map((source, idx) => <AttachmentImage key={`${idx}-${source.uri}`}
-              source={source} sources={beforeTextSources} index={idx} accessibilityLabel={`첨부 이미지 ${idx + 1}`} />)}
+            {beforeTextEntries.map(({ path, uri }, attachmentIndex) => {
+              if (uri && isChatImageAttachmentPath(path)) {
+                const idx = imageIndex++;
+                return <AttachmentImage key={`${idx}-${uri}`}
+                  source={imageAttachmentSources[idx]!} sources={imageAttachmentSources} index={idx}
+                  accessibilityLabel={`첨부 이미지 ${idx + 1}`} />;
+              }
+              return <AttachmentChips
+                key={`${attachmentIndex}-${path}`}
+                attachments={[{ path, name: getChatAttachmentFilename(uri ?? path) }]}
+                styles={chatStyles}
+                containerStyle={[chatStyles.attachmentRow, { paddingHorizontal: 0, paddingTop: 0 }]}
+                textSecondaryColor={t.colors.textSecondary}
+                textMutedColor={t.colors.textMuted}
+                onRemove={() => {}}
+                readOnly
+                {...(presentation === 'manuscript' ? { presentation } : {})}
+              />;
+            })}
           </View>
         )}
         {children == null && content ? (

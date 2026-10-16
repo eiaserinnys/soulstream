@@ -36,6 +36,51 @@ test('채팅 첨부 탭도 같은 뷰어에서 다른 첨부로 스와이프한�
   expect(screen.queryByTestId('image-viewer-pages')).toBeNull();
 });
 
+test.each([
+  ['확정 메시지', undefined],
+  ['전송 중 메시지', 'sending'],
+] as const)('%s는 관리 경로 줄을 숨기고 이미지와 TXT를 첨부로 표시한다', (_label, pendingStatus) => {
+  useSettingsStore.setState({ serverUrl: 'https://chat.test' });
+  const imagePath = '/tmp/photo.png';
+  const textPath = '/tmp/report.txt';
+  const text = `[첨부 파일 로컬 경로: ${imagePath}]\n[첨부 파일 로컬 경로: ${textPath}]`;
+  const event: SessionEvent = {
+    id: 'attachment-only', type: 'user_message',
+    data: { text, attachments: [imagePath, textPath], node_id: 'node-1' },
+  };
+  const screen = render(<UserMessage event={event} session={attachmentSession} pendingStatus={pendingStatus} />);
+
+  expect(screen.queryByTestId('user-message-text')).toBeNull();
+  expect(screen.getByLabelText('첨부 이미지 1')).toBeTruthy();
+  expect(screen.queryByLabelText('첨부 이미지 2')).toBeNull();
+  expect(screen.getByText('report.txt')).toBeTruthy();
+  expect(screen.queryByLabelText('report.txt 첨부 제거')).toBeNull();
+  expect(event.data.text).toBe(text);
+});
+
+test('첨부 경로와 다른 경로를 적은 사용자 문구는 표시에서 보존한다', () => {
+  const attachmentPath = '/tmp/report.txt';
+  const userText = '[첨부 파일 로컬 경로: /tmp/another.txt]';
+  const screen = render(<UserMessage event={{
+    id: 'similar-user-text', type: 'user_message',
+    data: { text: `${userText}\n\n[첨부 파일 로컬 경로: ${attachmentPath}]`, attachments: [attachmentPath] },
+  }} />);
+
+  expect(screen.getByTestId('user-message-text').props.children).toBe(userText);
+});
+
+test('pending 원문에 직접 쓴 첨부 경로와 같은 문구는 표시에서 보존한다', () => {
+  const attachmentPath = '/tmp/report.txt';
+  const userText = `[첨부 파일 로컬 경로: ${attachmentPath}]`;
+  const event = {
+    id: 'authored-path-note', type: 'user_message',
+    data: { text: userText, attachments: [attachmentPath] }, originalText: userText,
+  } as SessionEvent & { originalText: string };
+  const screen = render(<UserMessage event={event} pendingStatus="sending" />);
+
+  expect(screen.getByTestId('user-message-text').props.children).toBe(userText);
+});
+
 test('pending user message는 전송 상태를 말풍선에 표시하고 실패 액션을 연결한다', () => {
   const onRetry = jest.fn();
   const onRestore = jest.fn();

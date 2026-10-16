@@ -1,7 +1,7 @@
 import type { SessionEvent } from '../../api/types';
 import type { PendingOptimisticEvent } from '../chatStore';
 import { useChatStore } from '../chatStore';
-import { matchesAttachmentPending } from '../../lib/attachment-message-match';
+import { matchesAttachmentPending, removeGeneratedAttachmentPathNotes } from '../../lib/attachment-message-match';
 
 const SID = 'attachment-optimistic-test';
 const NODE_ID = 'node-1';
@@ -51,6 +51,15 @@ function reset(): void {
   useChatStore.getState().clearSession(SID);
   useChatStore.setState({ pendingOptimisticBySession: {} });
 }
+
+describe('removeGeneratedAttachmentPathNotes', () => {
+  it('removes only notes for attached paths and preserves a pending user-authored note', () => {
+    const generated = note(PATHS[0]!);
+    const similar = note('/incoming/other.txt');
+    expect(removeGeneratedAttachmentPathNotes(`${generated}\n${similar}`, [PATHS[0]!])).toBe(similar);
+    expect(removeGeneratedAttachmentPathNotes(generated, [PATHS[0]!], generated)).toBe(generated);
+  });
+});
 
 describe('matchesAttachmentPending', () => {
   it.each([
