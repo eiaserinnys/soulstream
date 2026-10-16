@@ -41,12 +41,13 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
   const [pending, setPending] = useState(false);
   const submitting = React.useRef(false);
   const attachments = useChatAttachments({ api, sessionId: uploadId, nodeId: value.nodeId ?? settings.nodeId ?? undefined,
-    disabled: pending });
+    folderId: value.folderId, disabled: pending, reuploadOnNodeChange: true });
   const labels = useNewSessionSelection({ visible: true, api, folders, settingsNodeId: settings.nodeId,
     defaultFolderId: value.folderId, defaultNodeId: value.nodeId ?? settings.nodeId,
     defaultAgentId: value.agentId, defaultModelPresetId: value.modelPreset, preserveAgentOnNodeChange: true });
   const disabled = pending || attachments.uploading || !draft.ready;
-  const canSend = !!api && !!text.trim() && !!value.folderId && !!value.agentId && !labels.modelPresetSelectionInvalid && !disabled;
+  const canSend = !!api && !!text.trim() && !!value.folderId && !!value.agentId
+    && !labels.modelPresetSelectionInvalid && attachments.attachmentsReady && !disabled;
   const submit = async () => {
     if (!api || !canSend) return;
     if (submitting.current) return;

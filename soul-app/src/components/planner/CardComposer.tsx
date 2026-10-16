@@ -39,7 +39,7 @@ function FolderCardComposer({ api, folderId, onCreated }: { api: ApiClient | nul
   const { run, pending } = useCardActions(api);
   const [uploadId, setUploadId] = useState(() => Crypto.randomUUID());
   const attachments = useChatAttachments({ api, sessionId: uploadId, nodeId: value.nodeId ?? settings.nodeId ?? undefined,
-    disabled: pending, reuploadOnNodeChange: true });
+    folderId: value.folderId, disabled: pending, reuploadOnNodeChange: true });
   const locked = pending || !attachments.attachmentsReady || !draft.ready;
   const submit = async () => {
     if (!api || !text.trim() || locked) return;

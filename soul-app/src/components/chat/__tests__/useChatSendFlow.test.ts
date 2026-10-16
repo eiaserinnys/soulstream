@@ -67,6 +67,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('idle'),
         attachments: [],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -101,6 +102,7 @@ describe('useChatSendFlow', () => {
       sessionId: SID,
       session: makeSession(),
       attachments: [],
+      attachmentsReady: true,
       clearAttachments: jest.fn(),
       scrollToBottom: jest.fn(),
       onUsageEvent,
@@ -131,6 +133,7 @@ describe('useChatSendFlow', () => {
       sessionId: SID,
       session: makeSession(),
       attachments: [],
+      attachmentsReady: true,
       clearAttachments: jest.fn(),
       scrollToBottom: jest.fn(),
       onUsageEvent,
@@ -164,6 +167,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('idle'),
         attachments: [],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -178,6 +182,63 @@ describe('useChatSendFlow', () => {
     expect(useChatStore.getState().pendingOptimisticBySession[SID]).toBeUndefined();
   });
 
+  test.each(['running', 'idle'] as const)('%s 상태에서 준비된 첨부만 한 번 전송한다', async (status) => {
+    const api = makeApi();
+    const clearAttachments = jest.fn();
+    const onCleared = jest.fn();
+    const scrollToBottom = jest.fn();
+    const { result, unmount } = renderHook(() => useChatSendFlow({
+      api: api as any,
+      sessionId: SID,
+      session: makeSession(status),
+      attachments: [{ path: '/tmp/attachment.png', name: 'attachment.png' }],
+      attachmentsReady: true,
+      clearAttachments,
+      scrollToBottom,
+    }));
+
+    await act(async () => result.current.handleSend('', onCleared));
+
+    expect(api.intervene).toHaveBeenCalledTimes(1);
+    expect(api.intervene).toHaveBeenCalledWith(SID, '[첨부 파일 로컬 경로: /tmp/attachment.png]', ['/tmp/attachment.png']);
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(clearAttachments).toHaveBeenCalledTimes(1);
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().pendingOptimisticBySession[SID]).toMatchObject({
+      attachmentItems: [{ path: '/tmp/attachment.png', name: 'attachment.png' }],
+      data: {
+        attachments: ['/tmp/attachment.png'],
+        node_id: 'node-1',
+      },
+    });
+    unmount();
+    reset();
+  });
+
+  test('첨부 업로드가 준비되지 않으면 본문이 있어도 전송 전 상태를 보존한다', async () => {
+    const api = makeApi();
+    const clearAttachments = jest.fn();
+    const onCleared = jest.fn();
+    const scrollToBottom = jest.fn();
+    const { result } = renderHook(() => useChatSendFlow({
+      api: api as any,
+      sessionId: SID,
+      session: makeSession('idle'),
+      attachments: [{ path: '/tmp/uploading.png', name: 'uploading.png' }],
+      attachmentsReady: false,
+      clearAttachments,
+      scrollToBottom,
+    }));
+
+    await act(async () => result.current.handleSend('보낼 본문', onCleared));
+
+    expect(api.intervene).not.toHaveBeenCalled();
+    expect(onCleared).not.toHaveBeenCalled();
+    expect(clearAttachments).not.toHaveBeenCalled();
+    expect(scrollToBottom).not.toHaveBeenCalled();
+    expect(useChatStore.getState().pendingOptimisticBySession[SID]).toBeUndefined();
+  });
+
   test('offline disabled는 이유를 노출하고 초안·첨부를 보존한다', async () => {
     const api = makeApi();
     const scrollToBottom = jest.fn();
@@ -188,6 +249,7 @@ describe('useChatSendFlow', () => {
       sessionId: SID,
       session: makeSession('running'),
       attachments: [{ path: '/tmp/offline.png' }],
+      attachmentsReady: true,
       clearAttachments,
       scrollToBottom,
       disabled: true,
@@ -214,6 +276,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('running'),
         attachments: [],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
         disabled,
@@ -245,6 +308,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession(),
         attachments: [{ path: '/tmp/api-not-ready.png' }],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -272,6 +336,7 @@ describe('useChatSendFlow', () => {
         sessionId: undefined,
         session: undefined,
         attachments: [{ path: '/tmp/session-missing.png' }],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -319,6 +384,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('idle'),
         attachments: [],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -359,6 +425,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('running'),
         attachments: [{ path: '/tmp/a.png' }],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -407,6 +474,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('running'),
         attachments: [{ path: '/tmp/a.png' }],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom: jest.fn(),
       })
@@ -434,6 +502,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('running'), // 실제 시나리오: 첫 송신 후 status가 running으로 전환된 상태
         attachments: [],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -458,6 +527,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('idle'),
         attachments: [{ path: '/tmp/a.png' }, { path: '/tmp/b.pdf' }],
+        attachmentsReady: true,
         clearAttachments,
         scrollToBottom,
       })
@@ -484,6 +554,7 @@ describe('useChatSendFlow', () => {
         sessionId: SID,
         session: makeSession('running'),
         attachments: [],
+        attachmentsReady: true,
         clearAttachments: jest.fn(),
         scrollToBottom,
       })
@@ -505,6 +576,7 @@ describe('useChatSendFlow', () => {
       sessionId: SID,
       session: makeSession(),
       attachments: [{ path: '/tmp/a.png', name: 'a.png' }],
+      attachmentsReady: true,
       clearAttachments,
       scrollToBottom: jest.fn(),
     }));
@@ -542,6 +614,7 @@ describe('useChatSendFlow', () => {
       sessionId: SID,
       session: makeSession(),
       attachments: [],
+      attachmentsReady: true,
       clearAttachments: jest.fn(),
       scrollToBottom: jest.fn(),
     }));
@@ -569,6 +642,7 @@ describe('useChatSendFlow', () => {
       sessionId: SID,
       session: makeSession(),
       attachments: [],
+      attachmentsReady: true,
       clearAttachments: jest.fn(),
       scrollToBottom: jest.fn(),
     }));
@@ -601,12 +675,17 @@ describe('useChatSendFlow', () => {
       sessionId: SID,
       session: makeSession(),
       attachments: [{ path: '/tmp/a.png', name: 'photo.png' }],
+      attachmentsReady: true,
       clearAttachments: jest.fn(),
       scrollToBottom: jest.fn(),
       onUsageEvent,
     }));
     await act(async () => result.current.handleSend('실패한 초안', jest.fn(), 'compose-retry'));
     const failed = useChatStore.getState().pendingOptimisticBySession[SID] as any;
+    expect(failed.data).toMatchObject({
+      attachments: ['/tmp/a.png'],
+      node_id: 'node-1',
+    });
     await act(async () => result.current.retryPendingOptimistic(failed.id));
 
     expect(api.intervene).toHaveBeenNthCalledWith(
@@ -654,7 +733,7 @@ test('optimistic chat clearing removes the submitted draft at send start and pre
   const api = makeApi({ intervene: jest.fn(() => new Promise(resolve => { confirm = resolve; })) });
   const hook = renderHook(() => {
     const draft = usePersistentDraft('chat', ['node-1', SID], '');
-    return { draft, send: useChatSendFlow({ api: api as any, sessionId: SID, session: makeSession(), attachments: [],
+    return { draft, send: useChatSendFlow({ api: api as any, sessionId: SID, session: makeSession(), attachments: [], attachmentsReady: true,
       clearAttachments: jest.fn(), scrollToBottom: jest.fn() }) };
   });
   act(() => hook.result.current.draft.setValue('전송할 원문'));

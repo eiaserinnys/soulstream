@@ -2,6 +2,8 @@ jest.mock('expo-crypto', () => { let serial = 0; return { randomUUID: jest.fn(()
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jest.fn(), launchImageLibraryAsync: jest.fn() }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import React from 'react';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { ActionSheetIOS, Alert, Modal, ScrollView } from 'react-native';
@@ -51,6 +53,10 @@ test('실제 선택기와 첨부를 사용하며 실패 뒤 모든 입력을 보
   fireEvent.press(screen.getByLabelText('실행 대상 확인'));
   await act(async () => fireEvent.press(screen.getByLabelText('첨부 추가')));
   expect(screen.getByTestId('card-request-image-0')).toBeTruthy();
+  expect(api.uploadAttachment).toHaveBeenCalledTimes(1);
+  expect(api.uploadAttachment.mock.calls[0][1]).toBe('node-2');
+  expect(api.uploadAttachment.mock.calls[0][3].folderId).toBe('folder-1');
+  expect(api.uploadAttachment.mock.calls[0][3].signal).toBeInstanceOf(AbortSignal);
   await act(async () => fireEvent.press(screen.getByLabelText('카드 저장')));
   expect(screen.getByText('카드를 저장하지 못했습니다. 입력을 유지했습니다. 다시 저장해 주세요.')).toBeTruthy();
   expect(alert).not.toHaveBeenCalled();
@@ -65,6 +71,26 @@ test('실제 선택기와 첨부를 사용하며 실패 뒤 모든 입력을 보
     attachments: [{ nodeId: 'node-2', path: '/tmp/upload.png', name: '원본 사진.png', mimeType: 'image/png' }], idempotencyKey: expect.any(String) });
   expect(api.createCard.mock.calls[1][0]).toEqual(api.createCard.mock.calls[0][0]);
   expect(close).toHaveBeenCalledTimes(1);
+});
+
+test('초안 첨부 네 호출부가 선택 폴더를 전달하고 노드 전환 재업로드를 유지한다', () => {
+  const source = (file: string) => readFileSync(join(__dirname, '..', file), 'utf8');
+  const hookOptions = (file: string) => {
+    const text = source(file);
+    const start = text.indexOf('useChatAttachments({');
+    const end = text.indexOf('});', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    return text.slice(start, end);
+  };
+
+  expect(hookOptions('CardComposer.tsx')).toContain('folderId: value.folderId');
+  expect(hookOptions('TodayCardComposer.tsx')).toContain('folderId: value.folderId');
+  expect(hookOptions('CardCreateSheet.tsx')).toContain('folderId,');
+  expect(hookOptions('SessionSuccessionSheet.tsx')).toContain('folderId: folder.folderId');
+  for (const file of ['CardComposer.tsx', 'TodayCardComposer.tsx', 'CardCreateSheet.tsx', 'SessionSuccessionSheet.tsx']) {
+    expect(hookOptions(file)).toContain('reuploadOnNodeChange: true');
+  }
 });
 
 

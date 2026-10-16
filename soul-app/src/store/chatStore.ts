@@ -22,6 +22,7 @@ import {
   invalidateClaudeRuntimeLists,
   noteClaudeRuntimeListEvent,
 } from './claudeRuntimeListLifecycleStore';
+import { matchesAttachmentPending } from '../lib/attachment-message-match';
 
 export type { ClaudeRuntimeView } from './claudeRuntimeProjection';
 
@@ -442,18 +443,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const slot = state.pendingOptimisticBySession[sessionId];
 
       // 시나리오 A — 진짜가 늦게 도착: incoming에 user-class real(user_message OR
-      // intervention_sent)이 있고 슬롯 항목과 텍스트가 일치하면 슬롯 비움 (type-agnostic).
+      // intervention_sent)이 있고 같은 발화·첨부면 슬롯 비움 (type-agnostic).
       // type을 비교하지 않는 이유: 옵티미스틱은 "사용자가 이 텍스트를 보냈다"의 placeholder.
       // 서버가 RUNNING 여부에 따라 intervention_sent / user_message 중 어느 쪽을 emit하든
-      // 동일한 사용자 발화이므로 text 일치만으로 dedup하는 것이 정본을 하나로 유지하는
-      // 형태(§3) + race·잘못된 추측에도 안전.
+      // 첨부가 없는 발화는 기존 텍스트 동치를 유지하고, 첨부 발화는 본문과 path 목록을
+      // 대조해 ID 확정 이벤트의 관리 path note 제거에도 대응한다.
       let nextSlot: PendingOptimisticEvent | undefined = slot;
       if (slot) {
-        const slotText = extractText(slot);
         for (const e of events) {
           if (
             isRealUserMessage(e) &&
-            extractText(e) === slotText
+            matchesAttachmentPending(slot, e)
           ) {
             nextSlot = undefined;
             break;
@@ -813,7 +813,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         for (const e of existing) {
           if (
             isRealUserMessage(e) &&
-            extractText(e) === text
+            matchesAttachmentPending(event, e)
           ) {
             return state;
           }

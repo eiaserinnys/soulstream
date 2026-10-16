@@ -14,6 +14,7 @@ interface Props {
   textSecondaryColor: string;
   textMutedColor: string;
   onRemove: (index: number) => void;
+  readOnly?: boolean;
   disabled?: boolean;
   presentation?: 'default' | 'manuscript';
   containerStyle?: StyleProp<ViewStyle>;
@@ -26,6 +27,7 @@ export function AttachmentChips({
   textSecondaryColor,
   textMutedColor,
   onRemove,
+  readOnly = false,
   disabled = false,
   presentation = 'default',
   containerStyle,
@@ -39,7 +41,11 @@ export function AttachmentChips({
     idx: number,
     frameStyle?: StyleProp<ViewStyle>,
   ) => (
-    <View key={`${attachment.path}-${idx}`} style={[styles.attachmentTouchFrame, frameStyle]}>
+    <View key={`${attachment.path}-${idx}`} style={[readOnly ? {
+      height: t.controlHeight.chip,
+      maxWidth: '100%',
+      justifyContent: 'center',
+    } : styles.attachmentTouchFrame, frameStyle]}>
       <View style={presentation === 'manuscript'
         ? [styles.attachmentChip, {
             backgroundColor: t.persistentSession.paper,
@@ -55,19 +61,21 @@ export function AttachmentChips({
         <Text style={styles.attachmentName} numberOfLines={1}>
           {attachment.name}
         </Text>
-        <View style={styles.attachmentRemoveSpacer} />
+        {!readOnly ? <View style={styles.attachmentRemoveSpacer} /> : null}
       </View>
-      <CompactTouchTarget
-        testID={`chat-attachment-remove-${idx}`}
-        onPress={() => onRemove(idx)}
-        disabled={disabled}
-        accessibilityState={{ disabled }}
-        accessibilityLabel={`${attachment.name} 첨부 제거`}
-        frameStyle={styles.attachmentRemoveFrame}
-        surfaceStyle={styles.attachmentRemove}
-      >
-        <Ionicons name="close" color={textMutedColor} size={DESIGN_ICON_SIZE.standard} />
-      </CompactTouchTarget>
+      {!readOnly ? (
+        <CompactTouchTarget
+          testID={`chat-attachment-remove-${idx}`}
+          onPress={() => onRemove(idx)}
+          disabled={disabled}
+          accessibilityState={{ disabled }}
+          accessibilityLabel={`${attachment.name} 첨부 제거`}
+          frameStyle={styles.attachmentRemoveFrame}
+          surfaceStyle={styles.attachmentRemove}
+        >
+          <Ionicons name="close" color={textMutedColor} size={DESIGN_ICON_SIZE.standard} />
+        </CompactTouchTarget>
+      ) : null}
     </View>
   );
   const hasTrailingAccessory = trailingAccessory !== undefined && trailingAccessory !== null;

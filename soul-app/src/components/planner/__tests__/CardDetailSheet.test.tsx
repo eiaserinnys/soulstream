@@ -479,7 +479,8 @@ test.each([false, true])('첨부 업로드·삭제·실패 복원은 입력창 �
   expect(screen.getByPlaceholderText('커멘트').props.editable).toBe(false);
   await act(async () => selection.resolve(picked));
   await waitFor(() => expect(screen.getByLabelText('capture.png 첨부 제거')).toBeTruthy());
-  expect(api.uploadAttachment).toHaveBeenCalledWith('s1', 'node-1', expect.objectContaining({ name: 'capture.png' }));
+  expect(api.uploadAttachment).toHaveBeenCalledWith('s1', 'node-1', expect.objectContaining({ name: 'capture.png' }),
+    { folderId: undefined, signal: expect.any(AbortSignal) });
   fireEvent.press(screen.getByLabelText('capture.png 첨부 제거'));
   expect(screen.queryByLabelText('capture.png 첨부 제거')).toBeNull();
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-attach-button')));

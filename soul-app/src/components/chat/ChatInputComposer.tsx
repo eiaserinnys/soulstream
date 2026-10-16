@@ -235,6 +235,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   const {
     attachments,
     uploading,
+    attachmentsReady,
     pickAttachment,
     removeAttachment,
     clearAttachments,
@@ -258,6 +259,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     sessionId,
     session: sendSession,
     attachments,
+    attachmentsReady,
     clearAttachments,
     disabled: inputDisabled,
     scrollToBottom: requestBottomFollow,
@@ -441,6 +443,8 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
       onPickAttachment={pickAttachment}
       onSend={() => handleSend(input, clearComposerInput, composeFlowRef.current?.flowId ?? null)}
       uploading={uploading}
+      hasAttachments={attachmentsReady && attachments.length > 0}
+      sendDisabled={!attachmentsReady}
       sending={sending}
       hasPendingOptimistic={hasPendingOptimistic}
       disabled={inputDisabled}

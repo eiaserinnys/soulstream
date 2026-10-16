@@ -162,7 +162,8 @@ test('오늘 첨부는 채팅 picker·upload 경로와 세션 생성의 attachme
   const api = { uploadAttachment: jest.fn().mockResolvedValue({ path: '/tmp/사진.png' }), createSession: jest.fn().mockResolvedValue({ agentSessionId: 'new' }) };
   const screen = render(<CardComposer today api={api as any} />);
   await act(async () => fireEvent.press(screen.getByLabelText('첨부 추가')));
-  expect(api.uploadAttachment).toHaveBeenCalledWith(expect.any(String), 'node-1', { uri: 'file://photo.png', name: '사진.png', type: 'image/png' });
+  expect(api.uploadAttachment).toHaveBeenCalledWith(expect.any(String), 'node-1', { uri: 'file://photo.png', name: '사진.png', type: 'image/png' },
+    { folderId: 'folder-1', signal: expect.any(AbortSignal) });
   expect(screen.getByText('사진.png')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('사진.png 첨부 제거'));
   expect(screen.queryByText('사진.png')).toBeNull();
@@ -172,6 +173,24 @@ test('오늘 첨부는 채팅 picker·upload 경로와 세션 생성의 attachme
   expect(api.createSession).toHaveBeenCalledWith(expect.objectContaining({ prompt: '  그림을 봐주세요  \n\n[첨부 파일 로컬 경로: /tmp/사진.png]', attachmentPaths: ['/tmp/사진.png'] }));
   expect(screen.getByLabelText('세션 첫 메시지').props.value).toBe('');
   expect(screen.queryByText('사진.png')).toBeNull();
+});
+
+test('오늘 첨부 업로드가 503으로 실패하면 본문이 있어도 전송을 막는다', async () => {
+  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_options, callback) => { void callback(1); });
+  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({ canceled: false, assets: [{ uri: 'file://report.txt', name: '보고서.txt', mimeType: 'text/plain' }] } as any);
+  const api = { uploadAttachment: jest.fn().mockRejectedValue(new Error('HTTP 503')), createSession: jest.fn() };
+  const screen = render(<CardComposer today api={api as any} />);
+
+  await act(async () => fireEvent.press(screen.getByLabelText('첨부 추가')));
+  fireEvent.changeText(screen.getByLabelText('세션 첫 메시지'), '보고서를 확인해줘');
+
+  expect(screen.getByLabelText('세션 시작').props.accessibilityState.disabled).toBe(true);
+  await act(async () => {
+    screen.UNSAFE_getByType(ChatComposer).props.onSend();
+    await Promise.resolve();
+  });
+  expect(api.createSession).not.toHaveBeenCalled();
 });
 
 test('오늘 입력은 첨부와 함께 비우고 실패 시 복원해 첨부를 포함해 다시 보낸다', async () => {
@@ -250,7 +269,8 @@ test('폴더 카드 입력은 원문과 구조화 첨부를 분리하고 성공 
   expect(React.Children.toArray(contentRow.props.children).map((child: any) => child.props.testID))
     .toEqual(['chat-composer-attach-slot', 'chat-composer-input-row', 'chat-composer-controls-row']);
   await act(async () => fireEvent.press(screen.getByLabelText('첨부 추가')));
-  expect(api.uploadAttachment).toHaveBeenCalledWith('draft-upload-id', 'node-1', expect.objectContaining({ name: '사진.png' }));
+  expect(api.uploadAttachment).toHaveBeenCalledWith('draft-upload-id', 'node-1', expect.objectContaining({ name: '사진.png' }),
+    { folderId: 'folder-1', signal: expect.any(AbortSignal) });
   expect(screen.getByText('사진.png')).toBeTruthy();
   fireEvent.changeText(screen.getByLabelText('맡길 일'), '첨부를 봐주세요');
   await act(async () => fireEvent.press(screen.getByLabelText('카드 맡기기')));

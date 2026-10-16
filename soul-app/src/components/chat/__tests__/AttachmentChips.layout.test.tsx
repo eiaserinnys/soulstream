@@ -47,3 +47,21 @@ test('attachment-only callers retain the existing frame and row styles', () => {
   expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style)).toEqual(styles.attachmentRow);
   expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style).alignItems).toBeUndefined();
 });
+
+test.each(['default', 'manuscript'] as const)('%s read-only chips fit the chip height and full available width without a remove control', presentation => {
+  const tokens = renderHook(() => useTokens()).result.current;
+  const styles = makeStyles(tokens);
+  const screen = render(<AttachmentChips
+    attachments={[{ path: '/file', name: '보고서.txt' }]}
+    styles={styles} textSecondaryColor="#000" textMutedColor="#000" onRemove={() => {}} readOnly presentation={presentation}
+  />);
+
+  expect(screen.getByText('보고서.txt')).toBeTruthy();
+  expect(screen.queryByLabelText('보고서.txt 첨부 제거')).toBeNull();
+  expect(screen.queryByTestId('chat-attachment-remove-0')).toBeNull();
+  const frame = screen.UNSAFE_getAllByType(View)[1];
+  expect(StyleSheet.flatten(frame.props.style)).toMatchObject({
+    height: tokens.controlHeight.chip, maxWidth: '100%',
+  });
+  expect(StyleSheet.flatten(frame.props.style).minHeight ?? 0).toBeLessThanOrEqual(tokens.controlHeight.chip);
+});

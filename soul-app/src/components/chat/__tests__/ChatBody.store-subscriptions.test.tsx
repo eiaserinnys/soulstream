@@ -18,6 +18,7 @@ const mockRenderRealtimeVoiceControls = jest.fn((_props: unknown) => null);
 const mockUseChatAttachments = jest.fn((_options?: unknown) => ({
   attachments: [],
   uploading: false,
+  attachmentsReady: true,
   pickAttachment: jest.fn(),
   removeAttachment: jest.fn(),
   clearAttachments: jest.fn(),

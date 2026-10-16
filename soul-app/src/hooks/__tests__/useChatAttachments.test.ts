@@ -10,6 +10,12 @@ jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn(),
   launchImageLibraryAsync: jest.fn(),
 }));
+jest.mock('expo-file-system', () => ({
+  File: jest.fn().mockImplementation((uri: string) => ({
+    exists: true,
+    size: uri === 'file://large' ? 64 * 1024 * 1024 : 3,
+  })),
+}));
 
 const safeFallback = '민감한 정보가 포함될 수 있어 오류 원문은 표시하지 않습니다.';
 
@@ -22,12 +28,12 @@ test('카드 옵션은 원본과 MIME을 보존하여 노드 변경 시 재업�
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   const api = { uploadAttachment: jest.fn().mockResolvedValueOnce({ path: '/a' }).mockResolvedValueOnce({ path: '/b' }).mockRejectedValueOnce(new Error('노드 업로드 실패')) };
   const file = { uri: 'file://image', name: '원본.png', type: 'image/png' };
-  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId, reuploadOnNodeChange: true }), { initialProps: { nodeId: 'a' } });
+  const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId, folderId: 'folder-1', reuploadOnNodeChange: true }), { initialProps: { nodeId: 'a' } });
   await act(async () => result.current.uploadAttachment(file));
   expect(result.current.attachments[0]).toMatchObject({ path: '/a', nodeId: 'a', mimeType: 'image/png', originalFile: file });
   rerender({ nodeId: 'b' });
   await waitFor(() => expect(result.current.attachments[0]).toMatchObject({ path: '/b', nodeId: 'b' }));
-  expect(api.uploadAttachment).toHaveBeenLastCalledWith('draft', 'b', file);
+  expect(api.uploadAttachment).toHaveBeenLastCalledWith('draft', 'b', file, expect.objectContaining({ folderId: 'folder-1', signal: expect.any(AbortSignal) }));
   rerender({ nodeId: 'c' });
   await waitFor(() => expect(result.current.uploading).toBe(false));
   expect(result.current.attachmentsReady).toBe(false);
@@ -43,13 +49,62 @@ test('옵션 기본값은 노드를 바꿔도 재업로드하지 않으며 clear
   const { result, rerender } = renderHook(({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'draft', nodeId }), { initialProps: { nodeId: 'a' } });
   let uploading!: Promise<void>;
   act(() => { uploading = result.current.uploadAttachment({ uri: 'file://file', name: '파일' }); });
+  const options = api.uploadAttachment.mock.calls[0][3];
+  expect(options).toEqual(expect.objectContaining({ folderId: undefined, signal: expect.any(AbortSignal) }));
   act(() => result.current.clearAttachments());
+  expect(options.signal.aborted).toBe(true);
   await act(async () => { pending.resolve({ path: '/a' }); await uploading; });
   expect(result.current.attachments).toEqual([]);
   await act(async () => result.current.uploadAttachment({ uri: 'file://file', name: '파일' }));
   rerender({ nodeId: 'b' });
   expect(api.uploadAttachment).toHaveBeenCalledTimes(2);
   expect(result.current.attachments[0].mimeType).toBe('application/octet-stream');
+});
+
+test('폴더가 없는 큰 카드 첨부는 multipart 초기화 전에 거부하고 작은 첨부는 허용한다', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+  const api = { uploadAttachment: jest.fn().mockResolvedValue({ path: '/small' }) };
+  const { result } = renderHook(() => useChatAttachments({
+    api: api as never,
+    sessionId: 'draft',
+    nodeId: 'node-a',
+    reuploadOnNodeChange: true,
+  }));
+
+  await act(async () => result.current.uploadAttachment({ uri: 'file://small', name: 'small.txt' }));
+  expect(api.uploadAttachment).toHaveBeenCalledWith('draft', 'node-a', expect.objectContaining({ uri: 'file://small' }), expect.objectContaining({ folderId: undefined }));
+  api.uploadAttachment.mockClear();
+
+  await act(async () => result.current.uploadAttachment({ uri: 'file://large', name: 'large.bin' }));
+  expect(api.uploadAttachment).not.toHaveBeenCalled();
+  expect(result.current.error).toContain('폴더');
+  expect(alert).toHaveBeenCalledWith('첨부 실패', expect.stringContaining('폴더'));
+});
+
+test('노드 변경과 unmount는 진행 중 업로드를 취소하고 늦은 응답을 버린다', async () => {
+  const pending = deferred<{ path: string }>();
+  const api = { uploadAttachment: jest.fn().mockReturnValue(pending.promise) };
+  const { result, rerender, unmount } = renderHook(
+    ({ nodeId }: { nodeId: string }) => useChatAttachments({ api: api as never, sessionId: 'session', nodeId }),
+    { initialProps: { nodeId: 'node-a' } },
+  );
+  let uploading!: Promise<void>;
+  act(() => { uploading = result.current.uploadAttachment({ uri: 'file://pending', name: 'pending.txt' }); });
+  const signal = api.uploadAttachment.mock.calls[0][3].signal as AbortSignal;
+  rerender({ nodeId: 'node-b' });
+  expect(signal.aborted).toBe(true);
+  await act(async () => { pending.resolve({ path: '/stale' }); await uploading; });
+  expect(result.current.attachments).toEqual([]);
+
+  let secondSignal!: AbortSignal;
+  const pendingAfterUnmount = deferred<{ path: string }>();
+  api.uploadAttachment.mockReturnValueOnce(pendingAfterUnmount.promise);
+  act(() => { uploading = result.current.uploadAttachment({ uri: 'file://pending-2', name: 'pending-2.txt' }); });
+  secondSignal = api.uploadAttachment.mock.calls.at(-1)?.[3].signal;
+  unmount();
+  expect(secondSignal.aborted).toBe(true);
+  pendingAfterUnmount.resolve({ path: '/stale-after-unmount' });
+  await uploading;
 });
 
 test('재업로드 중 제거와 연속 노드 변경은 옛 응답을 현재 목록으로 되살리지 않는다', async () => {

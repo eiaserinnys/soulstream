@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert as RNAlert } from 'react-native';
+import { File } from 'expo-file-system';
 import { ActionSheetIOS, DocumentPicker, ImagePicker } from './attachmentPickers';
 import type { ApiClient } from '../api/client';
 import type { NativeUploadFile } from '../api/nativeUpload';
+import { NATIVE_MULTIPART_THRESHOLD_BYTES } from '../api/nativeMultipartUpload';
 import { safeErrorDetail } from '../../../packages/soul-ui/src/lib/safe-error-detail';
 
 export interface ChatAttachment {
@@ -22,6 +24,8 @@ interface UseChatAttachmentsArgs {
   sessionId: string | undefined;
   /** 세션이 속한 노드 ID (session?.nodeId). undefined면 사용자 알림 후 종료. */
   nodeId: string | undefined;
+  /** Draft card folder that owns native multipart uploads. */
+  folderId?: string;
   /** current-open session이 offline인 동안 picker와 direct upload를 모두 막는다. */
   disabled?: boolean;
   /** Optional display URL for consumers outside chat; upload transport stays the same. */
@@ -41,8 +45,7 @@ export interface UseChatAttachmentsResult {
   removeAttachment: (idx: number) => void;
   restoreAttachments: (attachments: ChatAttachment[]) => void;
   /**
-   * 첨부 목록을 비운다. `useCallback(..., [])`로 안정 참조이므로
-   * 호출자(마운트 effect, handleSend)가 deps에 추가하지 않아도 클로저 손실이 없다.
+   * 첨부 목록을 비운다. 안정 참조이므로 호출자가 effect deps에 안전하게 포함할 수 있다.
    */
   clearAttachments: () => void;
 }
@@ -56,7 +59,7 @@ export interface UseChatAttachmentsResult {
 export function useChatAttachments(
   args: UseChatAttachmentsArgs,
 ): UseChatAttachmentsResult {
-  const { api, sessionId, nodeId, disabled = false, mapUploadedPath, reuploadOnNodeChange = false } = args;
+  const { api, sessionId, nodeId, folderId, disabled = false, mapUploadedPath, reuploadOnNodeChange = false } = args;
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
 
@@ -65,12 +68,25 @@ export function useChatAttachments(
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
   const pickerPending = useRef(false);
-  useEffect(() => () => { generation.current++; }, []);
+  const activeUploads = useRef(new Set<AbortController>());
+  const cancelActiveUploads = useCallback(() => {
+    for (const controller of activeUploads.current) controller.abort();
+    activeUploads.current.clear();
+  }, []);
+  useEffect(() => () => { generation.current++; cancelActiveUploads(); }, [cancelActiveUploads]);
   const currentNode = useRef(nodeId);
   if (currentNode.current !== nodeId) {
     currentNode.current = nodeId;
-    if (reuploadOnNodeChange) { generation.current++; pickerPending.current = false; }
+    generation.current++;
+    pickerPending.current = false;
+    cancelActiveUploads();
   }
+  const previousNode = useRef(nodeId);
+  useEffect(() => {
+    if (previousNode.current === nodeId) return;
+    previousNode.current = nodeId;
+    setUploading(false);
+  }, [nodeId]);
 
   useEffect(() => {
     if (!reuploadOnNodeChange || !api || !sessionId || !nodeId) return;
@@ -78,13 +94,26 @@ export function useChatAttachments(
     if (!files.length) return;
     const revision = generation.current;
     let active = true;
+    const controllers = new Set<AbortController>();
     setUploading(true); setError(null);
     void (async () => {
       try {
         // All responses belong to one node revision. Removal is checked again at commit.
         const uploaded: Array<{ item: ChatAttachment; path: string }> = [];
         for (const item of files) {
-          const response = await api.uploadAttachment(sessionId, nodeId, item.originalFile!);
+          const controller = new AbortController();
+          controllers.add(controller);
+          activeUploads.current.add(controller);
+          let response: Awaited<ReturnType<ApiClient['uploadAttachment']>>;
+          try {
+            response = await api.uploadAttachment(sessionId, nodeId, item.originalFile!, {
+              folderId,
+              signal: controller.signal,
+            });
+          } finally {
+            controllers.delete(controller);
+            activeUploads.current.delete(controller);
+          }
           if (!active || revision !== generation.current) return;
           if (!response.path) throw new Error('서버 응답에 경로가 없습니다.');
           uploaded.push({ item, path: response.path });
@@ -99,10 +128,17 @@ export function useChatAttachments(
         setError(message); RNAlert.alert('첨부 실패', message);
       } finally { if (active && revision === generation.current) setUploading(false); }
     })();
-    return () => { active = false; };
+    return () => {
+      active = false;
+      for (const controller of controllers) {
+        controller.abort();
+        activeUploads.current.delete(controller);
+      }
+      controllers.clear();
+    };
     // Only a node transition starts reupload. Failure/removal does not auto retry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, sessionId, nodeId, reuploadOnNodeChange]);
+  }, [api, sessionId, nodeId, folderId, reuploadOnNodeChange]);
 
   const uploadAttachment = useCallback(
     async (file: AttachmentUploadInput) => {
@@ -115,14 +151,25 @@ export function useChatAttachments(
         );
         return;
       }
+      if (reuploadOnNodeChange && !folderId && new File(file.uri).size >= NATIVE_MULTIPART_THRESHOLD_BYTES) {
+        const message = '큰 파일을 올리려면 카드가 속한 폴더가 필요합니다.';
+        setError(message);
+        RNAlert.alert('첨부 실패', message);
+        return;
+      }
       setUploading(true);
       setError(null);
       const revision = generation.current;
+      const controller = new AbortController();
+      activeUploads.current.add(controller);
       const draftFile: ChatAttachment = { path: '', name: file.name, nodeId: '',
         mimeType: file.type || 'application/octet-stream', originalFile: file };
       if (reuploadOnNodeChange) setAttachments((prev) => [...prev, draftFile]);
       try {
-        const res = await api.uploadAttachment(sessionId, targetNodeId, file);
+        const res = await api.uploadAttachment(sessionId, targetNodeId, file, {
+          folderId,
+          signal: controller.signal,
+        });
         const path = (res as any)?.path;
         if (typeof path !== 'string' || !path) {
           throw new Error('서버 응답에 경로가 없습니다.');
@@ -138,10 +185,11 @@ export function useChatAttachments(
         setError(message);
         RNAlert.alert('첨부 실패', message);
       } finally {
+        activeUploads.current.delete(controller);
         if (revision === generation.current) setUploading(false);
       }
     },
-    [api, sessionId, nodeId, mapUploadedPath, reuploadOnNodeChange],
+    [api, sessionId, nodeId, folderId, mapUploadedPath, reuploadOnNodeChange],
   );
 
   const pickAttachment = useCallback(() => {
@@ -210,8 +258,8 @@ export function useChatAttachments(
   }, []);
 
   const clearAttachments = useCallback(() => {
-    generation.current++; pickerPending.current = false; setAttachments([]); setUploading(false); setError(null);
-  }, []);
+    generation.current++; pickerPending.current = false; cancelActiveUploads(); setAttachments([]); setUploading(false); setError(null);
+  }, [cancelActiveUploads]);
   const restoreAttachments = useCallback((restored: ChatAttachment[]) => {
     setAttachments((current) => [...restored, ...current]);
   }, []);

@@ -5,7 +5,7 @@ import { ChatBody } from '../components/chat/ChatBody';
 import { ChatComposer } from '../components/chat/ChatComposer';
 import { AttachmentChips } from '../components/chat/AttachmentChips';
 import { ChatInterruptButton } from '../components/chat/ChatInterruptButton';
-import { makeStyles } from '../components/chat/ChatBody.styles';
+import { getChatRowHorizontalInset, makeStyles } from '../components/chat/ChatBody.styles';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { SystemEvent } from '../components/events/SystemEvent';
@@ -15,7 +15,7 @@ import { LabeledDivider } from '../components/chat/LabeledDivider';
 import { AttachmentImage, ChatRefinedImageGallery } from '../components/AttachmentImage';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { GlassButton } from '../components/GlassSurface';
-import { message, sessions } from './fixtures';
+import { message, reviewComposerAttachment, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
 import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
 import type { SessionEvent } from '../api/types';
@@ -26,12 +26,15 @@ import { ToolEvent } from '../components/events/ToolEvent';
 import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
+import { appendAttachmentPathNotes } from '../utils/attachmentPathNotes';
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
-  { value: 'uploading', label: '첨부 중' }, { value: 'interrupting', label: '정지 중' },
+  { value: 'uploading', label: '첨부 업로드 중' }, { value: 'attachment-only', label: '첨부만 전송' },
+  { value: 'interrupting', label: '정지 중' },
   { value: 'disabled', label: '비활성' },
 ] as const;
+const attachmentOnlyTextPath = '/component-review/2026-10-17 서버 로그 전체.txt';
 const assignedCardPreview = formatAssignedCardContextSnapshot({
   capturedAt: '2026-10-02T01:00:00.000Z',
   cards: [{
@@ -309,6 +312,8 @@ export function ReviewChat() {
   const [selection, setSelection] = useState(false);
   const [failure, setFailure] = useState(true);
   const [attachment, setAttachment] = useState(false);
+  const composerAttachments = state === 'attachment-only' ? [reviewComposerAttachment] : [];
+  const composerInput = state === 'sending' || state === 'attachment-only' ? '' : input;
   const sample = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('sample')
     : null;
@@ -321,15 +326,33 @@ export function ReviewChat() {
     </ReviewSection>
     <ReviewSection testID="review-chat-composer" title="입력창 · 빈 입력·여러 줄·전송·첨부·정지·비활성">
       <SettingsSegmentedControl<typeof options[number]['value']> id="review-composer-state" value={state} onChange={setState} options={options} />
-      <ChatComposer input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
-        onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
-        sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
-        interruptControls={state === 'interrupting' ? <ChatInterruptButton
-          interrupting={state === 'interrupting'} styles={styles} accentTextColor={t.colors.accentText}
-          textPrimaryColor={t.colors.textPrimary} disabled
-          onPress={() => {}}
-        /> : null}
-        inputAccessibilityLabel="공개 예시 메시지" />
+      <View testID="review-chat-composer-input-group" style={{ gap: 0 }}>
+        {composerAttachments.length > 0 ? (
+          <View testID="review-chat-composer-generated-row" style={[styles.generatedTextRow, { paddingHorizontal: getChatRowHorizontalInset(t), paddingTop: 0 }]}>
+            <View style={styles.generatedAttachmentSlot}>
+              <AttachmentChips
+                attachments={composerAttachments}
+                styles={styles}
+                containerStyle={[styles.attachmentRow, { paddingHorizontal: 0, paddingTop: 0 }]}
+                textSecondaryColor={t.colors.textSecondary}
+                textMutedColor={t.colors.textMuted}
+                onRemove={() => setState('normal')}
+                disabled={state === 'disabled'}
+              />
+            </View>
+          </View>
+        ) : null}
+        <ChatComposer input={composerInput} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
+          onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
+          hasAttachments={composerAttachments.length > 0} sendDisabled={state === 'uploading'}
+          sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
+          interruptControls={state === 'interrupting' ? <ChatInterruptButton
+            interrupting={state === 'interrupting'} styles={styles} accentTextColor={t.colors.accentText}
+            textPrimaryColor={t.colors.textPrimary} disabled
+            onPress={() => {}}
+          /> : null}
+          inputAccessibilityLabel="공개 예시 메시지" />
+      </View>
       {attachment ? <AttachmentImage source={require('../../assets/icon.png')} accessibilityLabel="공개 예시 첨부 열기" /> : null}
       {sent ? <UserMessage event={message('user_message', sent)} /> : null}
     </ReviewSection>
@@ -347,6 +370,19 @@ export function ReviewChat() {
       {failure ? <UserMessage event={message('user_message', '다시 보낼 공개 예시 메시지')}
         pendingStatus="failed" failureReason="공개 예시: 전송하지 못했습니다."
         onRetry={() => setFailure(false)} onRestore={() => { setInput('다시 보낼 공개 예시 메시지'); setFailure(false); }} /> : null}
+    </ReviewSection>
+    <ReviewSection title="첨부만 보낸 사용자 메시지 · 이미지 1, TXT 1">
+      <View testID="review-chat-attachment-only-user-message">
+        <UserMessage session={sessions[0]} event={{
+          id: 'review-chat-attachment-only',
+          type: 'user_message',
+          data: {
+            text: appendAttachmentPathNotes('', [pasImagePaths[0], attachmentOnlyTextPath]),
+            attachments: [pasImagePaths[0], attachmentOnlyTextPath],
+            node_id: 'public-node',
+          },
+        }} />
+      </View>
     </ReviewSection>
     <ReviewSection title="에이전트 말풍선 · Markdown·스트리밍·텍스트 선택">
       <GlassButton onPress={() => setSelection((value) => !value)} accessibilityLabel="답변 텍스트 선택">

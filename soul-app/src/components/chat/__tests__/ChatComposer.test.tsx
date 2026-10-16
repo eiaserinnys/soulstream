@@ -23,6 +23,7 @@ function renderComposer(
   sending = false,
   hasPendingOptimistic = false,
   uploading = false,
+  hasAttachments = false,
 ) {
   const onChangeInput = jest.fn();
   const onPickAttachment = jest.fn();
@@ -36,6 +37,7 @@ function renderComposer(
       uploading={uploading}
       sending={sending}
       hasPendingOptimistic={hasPendingOptimistic}
+      hasAttachments={hasAttachments}
       disabled={disabled}
       voiceControls={<Text testID="voice-control">mic</Text>}
     />,
@@ -701,5 +703,19 @@ describe('ChatComposer', () => {
     expect(attachmentButton.props.accessibilityState.disabled).toBe(false);
     fireEvent.press(attachmentButton);
     expect(sending.onPickAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  test('준비된 첨부만으로 보낼 수 있고 업로드 중에는 전송을 막는다', () => {
+    const attachmentOnly = renderComposer('', false, false, false, false, true);
+    const send = attachmentOnly.getByTestId('chat-composer-send-button');
+    expect(send.props.accessibilityState.disabled).toBe(false);
+    fireEvent.press(send);
+    expect(attachmentOnly.onSend).toHaveBeenCalledTimes(1);
+
+    const uploading = renderComposer('', false, false, false, true, true);
+    const blockedSend = uploading.getByTestId('chat-composer-send-button');
+    expect(blockedSend.props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(blockedSend);
+    expect(uploading.onSend).not.toHaveBeenCalled();
   });
 });

@@ -13,7 +13,7 @@ import { createApiClient } from '../client';
 import { useAuthStore } from '../../store/authStore';
 
 jest.mock('expo-file-system', () => {
-  const files: Record<string, { bytes: number[]; type: string }> = {
+  const files: Record<string, { bytes: number[]; type: string; size?: number }> = {
     'file:///cache/DocumentPicker/notes.txt': {
       bytes: Array.from('hello attachment', (c) => c.charCodeAt(0)),
       type: 'text/plain',
@@ -21,6 +21,15 @@ jest.mock('expo-file-system', () => {
     'file:///cache/ImagePicker/9F2C0A.jpg': {
       bytes: [0xff, 0xd8, 0xff, 0xe0],
       type: 'image/jpeg',
+    },
+    'file:///cache/empty.txt': {
+      bytes: [],
+      type: 'text/plain',
+    },
+    'file:///cache/large.bin': {
+      bytes: [],
+      type: 'application/octet-stream',
+      size: 64 * 1024 * 1024,
     },
   };
   class File {
@@ -34,13 +43,20 @@ jest.mock('expo-file-system', () => {
     get type(): string {
       return files[this.uri]?.type ?? '';
     }
+    get exists(): boolean {
+      return files[this.uri] !== undefined;
+    }
+    get size(): number {
+      const file = files[this.uri];
+      return file?.size ?? file?.bytes.length ?? 0;
+    }
     async bytes(): Promise<Uint8Array> {
       const file = files[this.uri];
       if (!file) throw new Error(`missing fixture file: ${this.uri}`);
       return new Uint8Array(file.bytes);
     }
   }
-  return { File };
+  return { File, FileMode: { ReadOnly: 'r' } };
 });
 
 const BASE = 'http://test.example';
@@ -110,6 +126,64 @@ describe('upload multipart — Expo fetch 직렬화 계약', () => {
         )
         + `--${BOUNDARY}--\r\n`,
     );
+  });
+
+  it('작은 업로드는 선택된 folder_id를 path FormData에 포함한다', async () => {
+    const fetchMock = mockJsonFetch({ path: '/server/notes.txt' });
+    const api = createApiClient(BASE);
+
+    await api.uploadAttachment('sess-1', 'node-1', {
+      uri: 'file:///cache/DocumentPicker/notes.txt',
+      name: 'meeting-notes.txt',
+    }, { folderId: 'folder-1' });
+
+    expect(await serializeSentBody(fetchMock)).toBe(
+      part(['content-disposition: form-data; name="session_id"'], 'sess-1')
+        + part(['content-disposition: form-data; name="folder_id"'], 'folder-1')
+        + part(
+          [
+            'content-disposition: form-data; name="file"; filename="meeting-notes.txt"',
+            'content-type: text/plain',
+          ],
+          'hello attachment',
+        )
+        + `--${BOUNDARY}--\r\n`,
+    );
+  });
+
+  it('0바이트 파일은 기존 path FormData 업로드를 사용한다', async () => {
+    const fetchMock = mockJsonFetch({ path: '/server/empty.txt' });
+    const api = createApiClient(BASE);
+
+    await api.uploadAttachment('sess-1', 'node-1', {
+      uri: 'file:///cache/empty.txt',
+      name: 'empty.txt',
+    });
+
+    expect(await serializeSentBody(fetchMock)).toBe(
+      part(['content-disposition: form-data; name="session_id"'], 'sess-1')
+        + part(
+          [
+            'content-disposition: form-data; name="file"; filename="empty.txt"',
+            'content-type: text/plain',
+          ],
+          '',
+        )
+        + `--${BOUNDARY}--\r\n`,
+    );
+  });
+
+  it('64MiB 경계부터 multipart init으로 분기한다', async () => {
+    const fetchMock = mockJsonFetch({ ticket: 'upload-ticket', partSize: 16 * 1024 * 1024, parts: [] });
+    const api = createApiClient(BASE);
+
+    await expect(api.uploadAttachment('sess-1', 'node-1', {
+      uri: 'file:///cache/large.bin',
+      name: 'large.bin',
+      type: 'application/octet-stream',
+    })).rejects.toThrow(/part 개수/);
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`${BASE}/api/attachments/sessions/multipart/init?nodeId=node-1`);
   });
 
   it('uploadUserBackground 본문은 호출자의 이름·MIME을 우선한다', async () => {

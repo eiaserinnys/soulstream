@@ -13,15 +13,21 @@ const mockClearAttachments = jest.fn();
 const mockHandleSend = jest.fn();
 const mockRetryPendingOptimistic = jest.fn();
 const mockRestorePendingOptimistic = jest.fn();
+let mockDraftValue = '초안';
+let mockAttachments: Array<{ path: string; name?: string }> = [];
+let mockAttachmentsReady = true;
+let mockUploading = false;
+let mockSendFlowDeps: any;
 
 jest.mock('../../../hooks/usePersistentDraft', () => ({
-  usePersistentDraft: () => ({ ready: true, value: '초안', setValue: mockSetDraft, clear: mockClearDraft }),
+  usePersistentDraft: () => ({ ready: true, value: mockDraftValue, setValue: mockSetDraft, clear: mockClearDraft }),
 }));
 
 jest.mock('../../../hooks/useChatAttachments', () => ({
   useChatAttachments: () => ({
-    attachments: [],
-    uploading: false,
+    attachments: mockAttachments,
+    attachmentsReady: mockAttachmentsReady,
+    uploading: mockUploading,
     pickAttachment: jest.fn(),
     removeAttachment: jest.fn(),
     clearAttachments: mockClearAttachments,
@@ -36,14 +42,17 @@ jest.mock('../../../store/nodeConnectivityStore', () => ({
 
 jest.mock('../useChatSendFlow', () => ({
   CHAT_SEND_ERROR_MESSAGES: { disabled: '메시지를 보낼 수 없습니다.' },
-  useChatSendFlow: () => ({
-    sending: false,
-    hasPendingOptimistic: false,
-    sendError: null,
-    handleSend: mockHandleSend,
-    retryPendingOptimistic: mockRetryPendingOptimistic,
-    restorePendingOptimistic: mockRestorePendingOptimistic,
-  }),
+  useChatSendFlow: (deps: any) => {
+    mockSendFlowDeps = deps;
+    return {
+      sending: false,
+      hasPendingOptimistic: false,
+      sendError: null,
+      handleSend: mockHandleSend,
+      retryPendingOptimistic: mockRetryPendingOptimistic,
+      restorePendingOptimistic: mockRestorePendingOptimistic,
+    };
+  },
 }));
 
 function renderChatInputComposer(
@@ -83,11 +92,46 @@ describe('ChatInputComposer interrupt progress', () => {
     mockHandleSend.mockReset();
     mockRetryPendingOptimistic.mockReset();
     mockRestorePendingOptimistic.mockReset();
+    mockDraftValue = '초안';
+    mockAttachments = [];
+    mockAttachmentsReady = true;
+    mockUploading = false;
+    mockSendFlowDeps = undefined;
   });
 
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();
+  });
+
+  test.each(['running', 'idle'])('%s 상태에서 준비된 첨부만 보내고 준비 상태를 전송 훅에 전달한다', (sessionStatus) => {
+    mockDraftValue = '';
+    mockAttachments = [{ path: '/tmp/attachment.png', name: 'attachment.png' }];
+    mockAttachmentsReady = true;
+    const screen = renderChatInputComposer(sessionStatus);
+    const send = screen.getByTestId('chat-composer-send-button');
+
+    expect(mockSendFlowDeps.attachmentsReady).toBe(true);
+    expect(send.props.accessibilityState.disabled).toBe(false);
+    fireEvent.press(send);
+    expect(mockHandleSend).toHaveBeenCalledTimes(1);
+    expect(mockHandleSend).toHaveBeenCalledWith('', expect.any(Function), null);
+  });
+
+  test('업로드 중에는 본문이 있어도 전송과 첨부 정리를 시작하지 않는다', () => {
+    mockDraftValue = '보낼 본문';
+    mockAttachments = [{ path: '/tmp/attachment.png', name: 'attachment.png' }];
+    mockAttachmentsReady = false;
+    mockUploading = true;
+    const screen = renderChatInputComposer('idle');
+    const send = screen.getByTestId('chat-composer-send-button');
+    const clearCallsBeforePress = mockClearAttachments.mock.calls.length;
+
+    expect(mockSendFlowDeps.attachmentsReady).toBe(false);
+    expect(send.props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(send);
+    expect(mockHandleSend).not.toHaveBeenCalled();
+    expect(mockClearAttachments).toHaveBeenCalledTimes(clearCallsBeforePress);
   });
 
   test('Fabric layout event 재사용 뒤에도 anchor 사각형을 보존한다', () => {
