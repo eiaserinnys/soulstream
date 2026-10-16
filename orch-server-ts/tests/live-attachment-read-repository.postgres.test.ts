@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
@@ -16,26 +15,6 @@ describePostgres("live attachment read repository PostgreSQL contract", () => {
 
   beforeAll(async () => {
     harness = await createPagePostgresHarness();
-    await harness.sql.unsafe(`
-      CREATE TABLE file_assets (
-        id TEXT PRIMARY KEY,
-        storage_key TEXT NOT NULL UNIQUE,
-        original_name TEXT NOT NULL,
-        mime_type TEXT NOT NULL,
-        byte_size BIGINT NOT NULL,
-        width INTEGER,
-        height INTEGER,
-        checksum_sha256 TEXT,
-        upload_status TEXT NOT NULL DEFAULT 'pending',
-        garbage_collected_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await harness.sql.unsafe(await readFile(
-      new URL("../../packages/db-schema/sql/migrations/122_attachment_storage_contract.sql", import.meta.url),
-      "utf8",
-    ));
     await harness.sql`INSERT INTO folders (id, name) VALUES ('attachment-folder', 'Attachment test')`;
     repository = createLiveAttachmentReadRepository(
       createLiveDbSqlResolver({ sql: harness.liveSql }),

@@ -3,6 +3,8 @@ import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
+import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
+import { attachmentRefsOf, collectCardAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
@@ -147,10 +149,12 @@ export class CardControlPlaneService {
         const position=await this.position(sql,params.folderId,null);
         const queuePosition=params.queue ? await this.position(sql,null,null) : null;
         if (assignee.assignee_session_id) await assertSingleCardAssignee(sql,assignee.assignee_session_id,id);
-        await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,brief,attachments,status,
+        await validateCardSourceRefsTx(sql,{cardId:id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.request,existingRefs:[]});
+        const refs=collectCardAttachmentRefs({request:params.request,attachments:params.attachments ?? [],items:[],previousRefs:[],previousItems:[]});
+        await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,brief,attachments,attachment_refs,status,
           assignee_kind,assignee_agent_id,assignee_session_id,assignee_user_id,node_id,model_preset,
           created_session_id,created_event_id,updated_session_id,updated_event_id)
-          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${params.brief ?? ""},${sql.json(params.attachments ?? [])},${params.queue ? "queued" : "todo"},
+          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${params.brief ?? ""},${sql.json(params.attachments ?? [])},${sql.json(refs)},${params.queue ? "queued" : "todo"},
           ${assignee.assignee_kind},${assignee.assignee_agent_id},${assignee.assignee_session_id},${assignee.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
           ${params.actorSessionId},${eventId},${params.actorSessionId},${eventId})`;
       } };
@@ -262,8 +266,11 @@ export class CardControlPlaneService {
       const length=codePointLength(params.text);
       if (length === 0) throw invalid("note.text은 비워 둘 수 없습니다");
       if (length > 4000) throw invalid(`note.text은 4000자까지입니다. 지금 ${length}자입니다`);
-      await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body)
-        VALUES(${noteId},${card.id},'agent',NULL,${params.actorSessionId},'note',${params.text})`;
+      const existingRefs=attachmentRefsOf(card.attachment_refs);
+      await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.text,existingRefs});
+      const refs=collectCardAttachmentRefs({request:params.text,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []});
+      await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,attachment_refs)
+        VALUES(${noteId},${card.id},'agent',NULL,${params.actorSessionId},'note',${params.text},${sql.json(refs)})`;
     });
     const note=await this.repo.getComment(params.cardId,noteId);
     if (!note) throw new Error("Card note was not stored");
@@ -299,8 +306,14 @@ export class CardControlPlaneService {
   async addReport(params: CardMutationParams & { title:string; format:"markdown" | "html"; body:string }) {
     return this.mutateCard(params,"add_card_report",{ title:params.title,format:params.format,body:params.body },async (sql,card) => {
       if ((card.items ?? []).length > 0) throw invalid("결과는 항목에 다세요(report_card_item)");
-      await sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id)
-        VALUES(${randomUUID()},${card.id},${params.title},${params.format},${params.body},${params.actorSessionId})`;
+      const existingRefs=attachmentRefsOf(card.attachment_refs);
+      let refs:AttachmentRef[]=[];
+      if (params.format === "markdown") {
+        await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.body,existingRefs});
+        refs=collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []});
+      }
+      await sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,attachment_refs)
+        VALUES(${randomUUID()},${card.id},${params.title},${params.format},${params.body},${params.actorSessionId},${sql.json(refs)})`;
     });
   }
   async addComment(params: AddCommentParams) {
@@ -422,9 +435,12 @@ export class CardControlPlaneService {
     }
     if (params.itemId !== undefined && !(card.items ?? []).some(item=>item.id===params.itemId))
       throw invalid("항목을 찾을 수 없습니다");
+    const existingRefs=attachmentRefsOf(card.attachment_refs);
+    await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.body,existingRefs});
+    const refs=collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []});
     if (Object.keys(claim).length) await this.patch(sql,card,claim,params,eventId);
-    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id)
-      VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null})`;
+    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,attachment_refs)
+      VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null},${sql.json(refs)})`;
     if (params.itemId !== undefined && !reply) {
       const items=openCardItemFix(card.items ?? [],params.itemId);
       await this.patch(sql,card,{items:sql.json(items)},params,eventId);
