@@ -535,6 +535,11 @@ export async function createLiveProductionApplication(
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
   try {
+    const attachmentStorageResolver = createR2StorageResolver(
+      async () => await sqlResolver.resolveSql() as unknown as SqlClient,
+    );
+    const resolveAttachmentBinding = () =>
+      attachmentStorageResolver.resolveBinding("attachment");
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
@@ -545,16 +550,10 @@ export async function createLiveProductionApplication(
         authBearerToken: config.auth_bearer_token,
         environment: config.environment,
         sql: await sqlResolver.resolveSql() as unknown as RepositorySql,
-        resolveAttachmentBinding: () => createR2StorageResolver(
-          async () => await sqlResolver.resolveSql() as unknown as SqlClient,
-        ).resolveBinding("attachment"),
+        resolveAttachmentBinding,
       },
-      resolveAttachmentStorage: () => createR2StorageResolver(
-        async () => await sqlResolver.resolveSql() as unknown as SqlClient,
-      ).resolveBinding("attachment"),
-      resolveReadStorage: () => createR2StorageResolver(
-        async () => await sqlResolver.resolveSql() as unknown as SqlClient,
-      ).resolveBinding("attachment"),
+      resolveAttachmentStorage: resolveAttachmentBinding,
+      resolveReadStorage: resolveAttachmentBinding,
       readPageAttachmentEvidence: async (pageId, attachmentId) => {
         if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
         const page = await pageYjsService.getBrowserPage(pageId);
