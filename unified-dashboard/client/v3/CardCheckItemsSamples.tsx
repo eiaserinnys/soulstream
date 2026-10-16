@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@seosoyoung/soul-ui";
-import { reviewCardItems, reviewNow, reviewNowHistory, reviewNotes, reviewSession } from "./components-review-fixtures";
+import { reviewAttachmentCardItem, reviewCardItems, reviewNow, reviewNowHistory, reviewNotes, reviewSession } from "./components-review-fixtures";
 import { CardCheckItems } from "./CardCheckItems";
 import { CardNowPanel } from "./CardNowPanel";
 import { CardNotes } from "./CardNotes";
@@ -8,7 +8,7 @@ import "./v3-card-check-items.css";
 
 
 export function CardCheckItemsSamples() {
- const [items,setItems]=useState(reviewCardItems);
+ const [items,setItems]=useState(()=>[...reviewCardItems,reviewAttachmentCardItem]);
  const [target,setTarget]=useState<number|null>(null);
  const [notice,setNotice]=useState("샘플 조작은 이 화면 안에서만 바뀝니다.");
  const activeCount=items.filter(item=>item.display!=="confirmed"&&item.display!=="dropped").length;
@@ -16,7 +16,7 @@ export function CardCheckItemsSamples() {
  const confirm=async(itemId:number,confirmed:boolean)=>{
   setItems(current=>current.map(item=>item.id===itemId?confirmed?{...item,state:"done",confirmed:{at:new Date().toISOString(),rev:item.rev},display:"confirmed"}:{...item,state:"doing",confirmed:null,display:"changed",reopened:"샘플에서 확인을 풀었습니다."}:item));
  };
- const comments=reviewCardItems.map(item=>item.id);
+ const comments=items.map(item=>item.id);
  return <div className="v3-card-check-items-samples" data-testid="card-check-items-samples">
   <p role="status" className="v3-components-label">{notice}</p>
   <div className="v3-card-check-items-sample-layout">
