@@ -7,6 +7,11 @@ import {
   CodexEphemeralExecutionError,
   type CodexEphemeralExecutor,
 } from "./codex_ephemeral_executor.js";
+import {
+  ANTIGRAVITY_REASONING_EFFORTS,
+  AntigravityEphemeralExecutionError,
+  type AntigravityEphemeralExecutor,
+} from "./antigravity_ephemeral_executor.js";
 
 export const EPHEMERAL_LLM_EXTERNAL_CONCURRENCY_LIMIT = 1;
 export const EPHEMERAL_LLM_MAX_TIMEOUT_MS = 120_000;
@@ -15,6 +20,7 @@ export type EphemeralLlmRouteOptions = {
   readonly authBearerToken: string;
   readonly environment?: string;
   readonly generator: Pick<CodexEphemeralExecutor, "generate">;
+  readonly antigravityGenerator?: Pick<AntigravityEphemeralExecutor, "generate">;
 };
 
 export const ephemeralLlmRouteAuthRequirements = {
@@ -22,6 +28,7 @@ export const ephemeralLlmRouteAuthRequirements = {
 } as const;
 
 const requestSchema = z.object({
+  backend: z.enum(["codex", "antigravity"]).default("codex"),
   prompt: z.string().trim().min(1),
   model: z.string().trim().min(1),
   reasoning_effort: z.enum(CODEX_REASONING_EFFORTS).default("medium"),
@@ -30,7 +37,12 @@ const requestSchema = z.object({
     .default(EPHEMERAL_LLM_MAX_TIMEOUT_MS),
   max_attempts: z.number().int().min(1).max(3).default(1),
   purpose: z.string().trim().min(1).max(100).optional(),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.backend === "antigravity" &&
+    !ANTIGRAVITY_REASONING_EFFORTS.some(effort => effort === value.reasoning_effort)) {
+    context.addIssue({ code: "custom", path: ["reasoning_effort"], message: "Antigravity supports low, medium, or high effort" });
+  }
+});
 
 export function registerEphemeralLlmRoutes(
   app: FastifyInstance,
@@ -60,7 +72,7 @@ export function registerEphemeralLlmRoutes(
       );
     }
     try {
-      const result = await options.generator.generate({
+      const params = {
         prompt: parsed.data.prompt,
         model: parsed.data.model,
         reasoningEffort: parsed.data.reasoning_effort,
@@ -70,7 +82,18 @@ export function registerEphemeralLlmRoutes(
         ...(parsed.data.output_schema === undefined
           ? {}
           : { outputSchema: parsed.data.output_schema }),
-      });
+      };
+      let result;
+      if (parsed.data.backend === "antigravity") {
+        if (!options.antigravityGenerator) {
+          return errorReply(reply, 503, "ANTIGRAVITY_UNAVAILABLE", "Antigravity generator is unavailable");
+        }
+        // The backend-specific effort was validated above, before entering either executor.
+        result = await options.antigravityGenerator.generate({ ...params,
+          reasoningEffort: parsed.data.reasoning_effort as typeof ANTIGRAVITY_REASONING_EFFORTS[number] });
+      } else {
+        result = await options.generator.generate(params);
+      }
       return reply.send({
         content: result.content,
         model: result.model,
@@ -79,7 +102,7 @@ export function registerEphemeralLlmRoutes(
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       });
     } catch (error) {
-      if (error instanceof CodexEphemeralExecutionError) {
+      if (error instanceof CodexEphemeralExecutionError || error instanceof AntigravityEphemeralExecutionError) {
         request.log.warn(
           {
             code: error.code,
@@ -108,9 +131,10 @@ export function registerEphemeralLlmRoutes(
   });
 }
 
-function statusForCode(code: CodexEphemeralExecutionError["code"]): number {
-  if (code === "CODEX_UNAVAILABLE") return 503;
-  if (code === "CODEX_TIMEOUT") return 504;
+function statusForCode(code: CodexEphemeralExecutionError["code"] | AntigravityEphemeralExecutionError["code"]): number {
+  if (code === "CODEX_UNAVAILABLE" || code === "ANTIGRAVITY_UNAVAILABLE") return 503;
+  if (code === "CODEX_TIMEOUT" || code === "ANTIGRAVITY_TIMEOUT") return 504;
+  if (code === "ANTIGRAVITY_RATE_LIMITED") return 429;
   return 502;
 }
 

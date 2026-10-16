@@ -1,5 +1,13 @@
 # 메시지 도착에서 종단까지
 
+## 단발 LLM 요청 (카드 #418, S1)
+
+외부 서비스의 `POST /api/llm/ephemeral`은 `orch-server-ts/src/llm/ephemeral_llm_routes.ts`에서 서비스 Bearer와 strict 요청 스키마를 검증한다. `backend` 생략 또는 `codex`는 기존 `generator` → `CodexEphemeralExecutor`로, `antigravity`는 `antigravityGenerator` → `AntigravityEphemeralExecutor`로 흐른다. 안티그래비티 effort는 low/medium/high만 허용한다. `production.ts`가 두 실행기를 각각 생성하므로 동시 실행 한도 1은 백엔드별로 독립이다.
+
+`config.ts`의 선택 설정 `AGY_CLI_PATH` → `llm/antigravity_cli_path.ts`의 PATH → HOME/.local/bin/agy 순으로 실행 파일을 찾는다. 파일이 없으면 서버는 기동하고 해당 백엔드 요청만 503 `ANTIGRAVITY_UNAVAILABLE`로 끝난다. 실행기는 호출별 임시 cwd에 schema와 로그를 두고, sandbox·stream-json·disable-slash-commands 옵션으로 agy를 실행한다. 정리한 환경과 사용자 입력 한 줄을 전달하고 stdin을 닫는다. 시간 초과에는 자식 프로세스 트리를 종료하고 close를 기다린 뒤 임시 디렉터리를 지운다.
+
+NDJSON의 init.model과 최종 SUCCESS 결과를 읽는다. output_schema가 있으면 structured_output을 JSON 문자열로, 없으면 response를 content로 돌려준다. 응답은 기존 `{content, model, latency_ms, attempts, usage?}`이며 usage는 input_tokens/output_tokens다. result 오류·error_message 스텝·stderr의 429/RESOURCE_EXHAUSTED/quota/rate limit은 429 `ANTIGRAVITY_RATE_LIMITED`로 보존하고 재시도하지 않는다. timeout은 504, 깨진 NDJSON이나 SUCCESS의 누락 출력은 502 `ANTIGRAVITY_INVALID_OUTPUT`, 나머지 실행 실패는 502 `ANTIGRAVITY_EXEC_FAILED`다. 모델 폴백은 호출자 XOPS가 소유한다. 세션·러너·DB 기록 경로는 이 단발 요청에 관여하지 않는다.
+
 ## PAS 지금의 보고 (#270 R1/R2)
 
 웹 R2의 판 수신은 `session-types`/`mappers`/`stream-events` → `buildSessionUpdates` → `useSessionStreamCacheSync`의 보고 투영 → `persistentReports`다. SSE는 세션 query hydration barrier와 독립적으로 먼저 판 identity를 기록한다. PAS list/get 응답은 요청 시작 때의 판 identity가 여전히 같은 경우에만 반영하며, 생략은 보존하고 []는 비운다.
