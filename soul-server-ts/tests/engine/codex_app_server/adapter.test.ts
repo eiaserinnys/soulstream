@@ -1,3 +1,6 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import type { Logger } from "pino";
@@ -26,6 +29,15 @@ import type {
   TurnSteerResponse,
 } from "../../../src/engine/codex_app_server/protocol.js";
 import type { SSEEventPayload } from "../../../src/engine/protocol.js";
+
+const MATERIALIZED_IMAGE_PATH = join(
+  tmpdir(),
+  "soulstream-attachment-model-input-boundary-245",
+  "session-1",
+  "assets",
+  "asset-image",
+  "screen.png",
+);
 
 class FakeClient implements CodexAppServerClientPort {
   public readonly initialize = vi.fn(
@@ -237,6 +249,26 @@ async function drainFailure(
 }
 
 describe("CodexAppServerEngineAdapter", () => {
+  it("forwards the materialized cache path as a localImage startTurn input", async () => {
+    const { adapter, client } = makeAdapter();
+    const execution = drain(adapter.execute({
+      prompt: "Inspect this image",
+      imageAttachmentPaths: [MATERIALIZED_IMAGE_PATH],
+    }));
+
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledOnce());
+
+    expect(client.startTurn.mock.calls[0]?.[0].input).toEqual([
+      { type: "text", text: "Inspect this image", text_elements: [] },
+      { type: "localImage", path: MATERIALIZED_IMAGE_PATH },
+    ]);
+    client.emit({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: turn("turn-1") },
+    });
+    await execution;
+  });
+
   it("emits one ordered usage-limit stop pair and throws the fatal message", async () => {
     const client = new FakeClient();
     const threadId = "01a0c607-e635-71d1-905a-f0aac395a1ec";
