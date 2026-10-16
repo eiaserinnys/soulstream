@@ -743,4 +743,67 @@ describe("TaskDeliveryLedgerGate", () => {
     expect(markUncertain).not.toHaveBeenCalled();
   });
 
+  it("keeps the stored canonical ids when resuming from an existing row", async () => {
+    const deliveryId = "c1c1c1c1-c1c1-41c1-81c1-c1c1c1c1c1c1";
+    const storedPayload = {
+      text: "stored text",
+      user: "system",
+      attachment_paths: ["/tmp/stored.png"],
+      attachment_ids: ["stored-id"],
+      attachment_bindings: [
+        { attachment_id: "stored-id", node_id: "node-1", path: "/tmp/stored.png" },
+      ],
+    };
+    const existing = {
+      ...row(deliveryId, "pending"),
+      relation_key: "runtime-relation-stored",
+      completion_id: "runtime-completion-stored",
+      intent: "runtime_followup" as const,
+      target_session_id: "caller-1",
+      payload_hash: "stored-canonical-hash",
+      payload: storedPayload,
+    };
+    const register = vi.fn().mockResolvedValue({
+      row: existing,
+      inserted: false,
+      conflict: false,
+    });
+    const claimAttemptForTarget = vi.fn(async () => row(deliveryId, "claimed"));
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register,
+      claimAttemptForTarget,
+      beginDispatch: vi.fn(),
+      get: vi.fn().mockResolvedValue(existing),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain: vi.fn(),
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await gate.admit({
+      agentSessionId: "caller-1",
+      text: "runtime replay",
+      user: "system",
+      deliveryId,
+      deliveryIntent: "runtime_followup",
+      completionId: "runtime-completion-stored",
+      relationKey: "runtime-relation-stored",
+      source: "claude_runtime_task_followup",
+      // A source cache path re-resolved after alias activation must not overwrite
+      // the ids already persisted on the delivery row.
+      attachmentPaths: ["/tmp/source.png"],
+      attachmentIds: ["source-id"],
+      attachmentBindings: [
+        { attachment_id: "source-id", node_id: "node-2", path: "/tmp/source.png" },
+      ],
+    });
+
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({
+      payloadHash: "stored-canonical-hash",
+      payload: storedPayload,
+    }));
+  });
+
 });

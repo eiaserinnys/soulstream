@@ -299,6 +299,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       callerInfo: storedMessage?.callerInfo ??
         { source: "system" as const, display_name: "Soulstream" },
       attachmentPaths: storedMessage?.attachmentPaths,
+      attachmentIds: storedMessage?.attachmentIds,
+      attachmentBindings: storedMessage?.attachmentBindings,
       context: storedMessage?.context,
       source: durable?.source ?? CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
       followupAttempt: 1,

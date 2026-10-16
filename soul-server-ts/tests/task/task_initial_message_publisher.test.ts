@@ -339,4 +339,74 @@ describe("TaskInitialMessagePublisher", () => {
     expect(handleSideEffects).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   });
+
+  it("dedupes attachment ids and counts an admitted binding once", async () => {
+    const task = makeTask({
+      prompt: "",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a", "att-a", "att-b"],
+      attachmentBindings: [
+        { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+      ],
+    });
+    const { publisher, enqueueEvent } = makeSubject();
+
+    await publisher.publishInitialMessages(task);
+
+    const event = enqueueEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    )?.[1] as Record<string, unknown>;
+    expect(event.text).toBe("");
+    expect(event.attachment_ids).toEqual(["att-a", "att-b"]);
+    // unique ids {att-a, att-b}=2; path /tmp/a.png is covered by admitted att-a.
+    expect(event.attachment_count).toBe(2);
+    expect(event.attachments).toEqual(["/tmp/a.png"]);
+  });
+
+  it("counts an unbound legacy path alongside attachment ids", async () => {
+    const task = makeTask({
+      attachmentPaths: ["/tmp/b.png"],
+      attachmentIds: ["att-a"],
+    });
+    const { publisher, enqueueEvent } = makeSubject();
+
+    await publisher.publishInitialMessages(task);
+
+    const event = enqueueEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    )?.[1] as Record<string, unknown>;
+    expect(event.attachment_ids).toEqual(["att-a"]);
+    // unique id att-a=1 + unbound path /tmp/b.png=1.
+    expect(event.attachment_count).toBe(2);
+  });
+
+  it("counts a legacy path that duplicates an admitted binding once", async () => {
+    const task = makeTask({
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: [
+        { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+      ],
+    });
+    const { publisher, enqueueEvent } = makeSubject();
+
+    await publisher.publishInitialMessages(task);
+
+    const event = enqueueEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    )?.[1] as Record<string, unknown>;
+    expect(event.attachment_count).toBe(1);
+  });
+
+  it("omits attachment identity keys when the task carries none", async () => {
+    const { publisher, enqueueEvent } = makeSubject();
+
+    await publisher.publishInitialMessages(makeTask({ attachmentPaths: ["/tmp/a.png"] }));
+
+    const event = enqueueEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    )?.[1] as Record<string, unknown>;
+    expect(event.attachment_ids).toBeUndefined();
+    expect(event.attachment_count).toBeUndefined();
+  });
 });

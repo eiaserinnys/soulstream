@@ -35,6 +35,106 @@ describe("canonical delivery payload", () => {
     }
   });
 
+  it("round-trips attachment ids and bindings through the canonical payload", () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+    const canonical = buildCanonicalDeliveryPayload({
+      text: "look",
+      user: "",
+      source: "user_message",
+      completionId: "message:ids",
+      relationKey: "user_message:session:ids",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: bindings,
+    });
+
+    expect(canonical.payload).toMatchObject({
+      attachment_ids: ["att-a"],
+      attachment_bindings: bindings,
+    });
+    expect(readCanonicalDeliveryPayload(canonical.payload)).toMatchObject({
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: bindings,
+    });
+  });
+
+  it("keeps a stable hash for the same ids and changes it when ids change", () => {
+    const build = (attachmentId: string) => buildCanonicalDeliveryPayload({
+      text: "look",
+      user: "system",
+      source: "user_message",
+      completionId: "message:hash",
+      relationKey: "user_message:session:hash",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: [attachmentId],
+      attachmentBindings: [
+        { attachment_id: attachmentId, node_id: "node-1", path: "/tmp/a.png" },
+      ],
+    });
+
+    const first = build("att-a");
+    const again = build("att-a");
+    const changed = build("att-b");
+
+    expect(again.payloadHash).toBe(first.payloadHash);
+    expect(changed.payloadHash).not.toBe(first.payloadHash);
+  });
+
+  it("treats undefined and empty id inputs as the legacy no-attachment payload", () => {
+    const base = {
+      text: "look",
+      user: "system",
+      source: "user_message",
+      completionId: "message:legacy",
+      relationKey: "user_message:session:legacy",
+      attachmentPaths: ["/tmp/a.png"],
+    };
+    const legacy = buildCanonicalDeliveryPayload(base);
+    const empty = buildCanonicalDeliveryPayload({
+      ...base,
+      attachmentIds: [],
+      attachmentBindings: [],
+    });
+
+    expect(legacy.payload).not.toHaveProperty("attachment_ids");
+    expect(legacy.payload).not.toHaveProperty("attachment_bindings");
+    expect(empty.payload).toEqual(legacy.payload);
+    expect(empty.payloadHash).toBe(legacy.payloadHash);
+  });
+
+  it("reuses a stored payload with ids at the same hash", () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+    const identity = {
+      text: "look",
+      user: "system",
+      source: "user_message",
+      completionId: "message:stored",
+      relationKey: "user_message:session:stored",
+    };
+    const stored = buildCanonicalDeliveryPayload({
+      ...identity,
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: bindings,
+    });
+
+    const reread = readCanonicalDeliveryPayload(stored.payload);
+    const rebuilt = buildCanonicalDeliveryPayload({
+      ...identity,
+      attachmentPaths: reread.attachmentPaths,
+      attachmentIds: reread.attachmentIds,
+      attachmentBindings: reread.attachmentBindings,
+    });
+
+    expect(rebuilt.payload).toEqual(stored.payload);
+    expect(rebuilt.payloadHash).toBe(stored.payloadHash);
+  });
+
   it("round-trips runtime follow-up identity without relation_key reuse", () => {
     const canonical = buildCanonicalDeliveryPayload({
       text: "background task finished",

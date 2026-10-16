@@ -2,6 +2,7 @@ import type { OrchestrationWorkerAdmission } from "./task_runtime_commands.js";
 import type { Logger } from "pino";
 import { parsePersistentSettingsPatch, type PersistentSettingsPatch } from "@soulstream/wire-schema/persistent-session-settings";
 import { parsePersistentInstructionsApplyPayload } from "@soulstream/wire-schema/persistent-session-instructions";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
@@ -38,6 +39,8 @@ interface CreateSessionCmd extends CommandLike {
   notify_completion?: boolean;
   notifyCompletion?: boolean;
   attachment_paths?: string[];
+  attachment_ids?: string[];
+  attachment_bindings?: AttachmentPathBinding[];
   extra_context_items?: ContextItem[];
   model?: string | null;
   model_preset?: string | null;
@@ -309,6 +312,20 @@ function reviewOutcomeMessage(outcome: string): string {
 }
 
 /**
+ * 빈 text라도 첨부(IDs/paths)가 있으면 정상 입력으로 본다. 누락/비문자열 text는
+ * 거부한다. 텍스트 본문과 기존 path note 동작은 그대로 보존한다.
+ */
+function hasPromptInput(
+  text: unknown,
+  attachmentIds?: readonly string[],
+  attachmentPaths?: readonly string[],
+): boolean {
+  if (typeof text !== "string") return false;
+  if (text.length > 0) return true;
+  return (attachmentIds?.length ?? 0) > 0 || (attachmentPaths?.length ?? 0) > 0;
+}
+
+/**
  * `create_session` 명령.
  *
  * TaskRuntimeCommands owns profile lookup, task creation, attachment context,
@@ -319,7 +336,7 @@ async function handleCreateSession(
   deps: SessionCommandFamilyDeps,
   cmd: CreateSessionCmd,
 ): Promise<void> {
-  if (!cmd.agentSessionId || !cmd.prompt) {
+  if (!cmd.agentSessionId || !hasPromptInput(cmd.prompt, cmd.attachment_ids, cmd.attachment_paths)) {
     throw new CommandDispatchError("create_session requires agentSessionId and prompt");
   }
   const profileId = cmd.profile;
@@ -352,6 +369,8 @@ async function handleCreateSession(
       systemPrompt: cmd.systemPrompt,
       extraContextItems: cmd.extra_context_items,
       attachmentPaths: cmd.attachment_paths,
+      attachmentIds: cmd.attachment_ids,
+      attachmentBindings: cmd.attachment_bindings,
       pageAnchor: cmd.pageAnchor,
     });
   } catch (err) {

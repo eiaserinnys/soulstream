@@ -16,6 +16,7 @@ import type { OrchestrationPurpose } from "./task_orchestration_purpose.js";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionLifecycleStatus } from "@soulstream/wire-schema";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 import type {
   BackendId,
@@ -221,6 +222,8 @@ export interface InterventionMessage {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  attachmentIds?: string[];
+  attachmentBindings?: AttachmentPathBinding[];
   /** Durable scheduler marker copied into intervention_sent/user_message payloads. */
   purpose?: "cache_keepalive";
   /**
@@ -504,6 +507,10 @@ export interface Task {
 
   /** 첫 turn user_message.attachments와 engine image 입력 분리에 사용할 원본 첨부 경로. */
   attachmentPaths?: string[];
+  /** 첫 turn user_message.attachment_ids에 실을 첨부 자산 ID. */
+  attachmentIds?: string[];
+  /** 첨부 ID를 노드 로컬 경로에 연결하는 원본 binding. */
+  attachmentBindings?: AttachmentPathBinding[];
 
   /**
    * B-6 context_builder: 사용자/위임자가 지정한 system_prompt. Python `task_models.Task.system_prompt`

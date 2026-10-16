@@ -4,12 +4,15 @@ export {
   type CanonicalDeliveryPayloadInput,
 } from "@soulstream/wire-schema/delivery";
 import type { ContextItem } from "../context/prompt_assembler.js";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { CallerInfo } from "./task_models.js";
 
 export interface CanonicalDeliveryMessage {
   text: string;
   user: string;
   attachmentPaths?: string[];
+  attachmentIds?: string[];
+  attachmentBindings?: AttachmentPathBinding[];
   context?: ContextItem[];
   callerInfo?: CallerInfo;
   rateLimitType?: string;
@@ -27,6 +30,8 @@ export function readCanonicalDeliveryPayload(
     text: requiredString(payload.text, "text"),
     user: requiredString(payload.user, "user"),
     attachmentPaths: stringArray(payload.attachment_paths),
+    attachmentIds: stringArray(payload.attachment_ids),
+    attachmentBindings: bindingArray(payload.attachment_bindings),
     context: contextItems(payload.context),
     callerInfo: callerInfo(payload.caller_info),
     rateLimitType: optionalString(payload.rate_limit_type),
@@ -65,6 +70,28 @@ function stringArray(value: unknown): string[] | undefined {
 
 function contextItems(value: unknown): ContextItem[] | undefined {
   return Array.isArray(value) ? value as ContextItem[] : undefined;
+}
+
+function bindingArray(value: unknown): AttachmentPathBinding[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const bindings: AttachmentPathBinding[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const candidate = item as Record<string, unknown>;
+    if (
+      typeof candidate.attachment_id !== "string"
+      || typeof candidate.node_id !== "string"
+      || typeof candidate.path !== "string"
+    ) {
+      continue;
+    }
+    bindings.push({
+      attachment_id: candidate.attachment_id,
+      node_id: candidate.node_id,
+      path: candidate.path,
+    });
+  }
+  return bindings.length > 0 ? bindings : undefined;
 }
 
 function callerInfo(value: unknown): CallerInfo | undefined {

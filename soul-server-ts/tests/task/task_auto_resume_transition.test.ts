@@ -537,6 +537,93 @@ describe("AutoResumeTransition", () => {
     });
   });
 
+  it("carries attachment ids and bindings into the auto-resume user_message", async () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+    const task = makeTerminalTask({
+      attachmentPaths: ["/tmp/old.png"],
+      attachmentIds: ["old-id"],
+      attachmentBindings: [
+        { attachment_id: "old-id", node_id: "node-old", path: "/tmp/old.png" },
+      ],
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_registration",
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+
+    await expect(
+      transition.resume(task, {
+        text: "next turn",
+        user: "u",
+        attachmentPaths: ["/tmp/a.png"],
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }, onResume),
+    ).resolves.toEqual({ autoResumed: true });
+
+    expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "user_message",
+        text: "next turn",
+        attachment_ids: ["att-a"],
+        attachment_count: 1,
+        attachments: ["/tmp/a.png"],
+      }),
+    );
+    expect(task.attachmentIds).toEqual(["att-a"]);
+    expect(task.attachmentBindings).toEqual(bindings);
+  });
+
+  it("clears the previous turn attachments when the resume message has none", async () => {
+    const task = makeTerminalTask({
+      attachmentPaths: ["/tmp/old.png"],
+      attachmentIds: ["old-id"],
+      attachmentBindings: [
+        { attachment_id: "old-id", node_id: "node-old", path: "/tmp/old.png" },
+      ],
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "execution_registration",
+    });
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+    const onResume = vi.fn((
+      resumedTask: Task,
+      activation: NonNullable<Task["executionActivation"]>,
+    ) => {
+      resumedTask.status = "running";
+      resumedTask.executionActivation = undefined;
+      activation.resolve();
+    });
+
+    await expect(
+      transition.resume(task, { text: "plain next turn", user: "u" }, onResume),
+    ).resolves.toEqual({ autoResumed: true });
+
+    expect(task.attachmentPaths).toEqual([]);
+    expect(task.attachmentIds).toEqual([]);
+    expect(task.attachmentBindings).toEqual([]);
+    const [sessionId, event] = persistenceDouble.enqueueEvent.mock.calls[0]!;
+    expect(sessionId).toBe("s1");
+    expect(event).not.toHaveProperty("attachment_ids");
+  });
+
   it("keeps the local task on the canonical terminal row when resume CAS is rejected", async () => {
     const task = makeTerminalTask({
       status: "interrupted",

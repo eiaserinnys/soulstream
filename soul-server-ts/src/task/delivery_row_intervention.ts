@@ -27,6 +27,8 @@ export function deliveryRowToInterventionParams(
     rateLimitType: message.rateLimitType,
     resetsAt: message.resetsAt,
     attachmentPaths: message.attachmentPaths,
+    attachmentIds: message.attachmentIds,
+    attachmentBindings: message.attachmentBindings,
     context: message.context,
     source: row.source,
     deliveryId: row.delivery_id,

@@ -16,6 +16,9 @@ import {
 } from "../../src/task/task_models.js";
 import type { ModelPreset } from "../../src/model_catalog.js";
 import type { NewSessionAgentProfileSource } from "../../src/agent_profile_source.js";
+import { CommandDispatchError } from "../../src/upstream/command_family.js";
+import { createSessionCommandFamily } from "../../src/upstream/session_command_family.js";
+import { createInterventionCommandFamily } from "../../src/upstream/intervention_command_family.js";
 
 const logger = pino({ level: "silent" });
 
@@ -59,6 +62,7 @@ function createRuntime(opts: {
   agentRegistry?: Pick<AgentRegistry, "get">;
   createTask?: TaskManager["createTask"];
   addIntervention?: TaskManager["addIntervention"];
+  ensureRunning?: TaskManager["ensureRunning"];
   startNewExecution?: TaskExecutor["startNewExecution"];
   presets?: ModelPreset[];
   agentProfileSource?: NewSessionAgentProfileSource;
@@ -69,7 +73,8 @@ function createRuntime(opts: {
   const taskManager = {
     createTask: opts.createTask ?? vi.fn(async (params) => makeTask(params)),
     addIntervention: opts.addIntervention ?? vi.fn(),
-  } as Pick<TaskManager, "createTask" | "addIntervention">;
+    ensureRunning: opts.ensureRunning ?? vi.fn(),
+  } as Pick<TaskManager, "createTask" | "addIntervention" | "ensureRunning">;
   const taskExecutor = {
     startNewExecution: opts.startNewExecution ?? vi.fn(),
   } as Pick<TaskExecutor, "startNewExecution">;
@@ -418,6 +423,51 @@ describe("TaskRuntimeCommands.createSession", () => {
     expect(taskManager.createTask).not.toHaveBeenCalled();
     expect(taskExecutor.startNewExecution).not.toHaveBeenCalled();
   });
+
+  it("preserves attachment ids and bindings on the created session task", async () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+      { attachment_id: "att-b", node_id: "node-1", path: "/tmp/b.txt" },
+    ];
+    const { runtime, taskManager } = createRuntime();
+
+    const task = await runtime.createSession({
+      agentSessionId: "sess-ids",
+      prompt: "inspect",
+      profileId: codexAgent.id,
+      attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
+      attachmentIds: ["att-a", "att-b"],
+      attachmentBindings: bindings,
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att-a", "att-b"],
+        attachmentBindings: bindings,
+      }),
+    );
+    // The ids/bindings handed to the manager survive onto the created Task.
+    expect(task.attachmentIds).toEqual(["att-a", "att-b"]);
+    expect(task.attachmentBindings).toEqual(bindings);
+  });
+
+  it("keeps the legacy no-attachment-ids request unchanged", async () => {
+    const { runtime, taskManager } = createRuntime();
+
+    await runtime.createSession({
+      agentSessionId: "sess-no-ids",
+      prompt: "inspect",
+      profileId: codexAgent.id,
+      attachmentPaths: ["/tmp/a.png"],
+    });
+
+    const calledParams = taskManager.createTask.mock.calls[0]?.[0] as {
+      attachmentIds?: string[];
+      attachmentBindings?: unknown[];
+    };
+    expect(calledParams.attachmentIds).toBeUndefined();
+    expect(calledParams.attachmentBindings).toBeUndefined();
+  });
 });
 
 describe("TaskRuntimeCommands.intervene", () => {
@@ -536,6 +586,193 @@ describe("TaskRuntimeCommands.intervene", () => {
     ).rejects.toBeInstanceOf(UnknownAgentProfileError);
 
     expect(taskExecutor.startNewExecution).not.toHaveBeenCalled();
+  });
+
+  it("forwards attachment ids and bindings to addIntervention", async () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+    const addIntervention = vi.fn(async () => ({ delivered: true }));
+    const { runtime, taskManager } = createRuntime({ addIntervention });
+
+    await runtime.intervene({
+      agentSessionId: "sess-ids",
+      text: "continue",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: bindings,
+    });
+
+    expect(taskManager.addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }),
+      expect.any(Function),
+    );
+  });
+});
+
+describe("TaskRuntimeCommands.ensureSessionRunning", () => {
+  it("forwards attachment ids and bindings to ensureRunning", async () => {
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+    const ensureRunning = vi.fn(async () => ({ state: "started", execution: {} }));
+    const { runtime, taskManager } = createRuntime({ ensureRunning });
+
+    await runtime.ensureSessionRunning({
+      agentSessionId: "sess-ids",
+      text: "start",
+      deliveryId: "delivery-1",
+      attachmentPaths: ["/tmp/a.png"],
+      attachmentIds: ["att-a"],
+      attachmentBindings: bindings,
+    });
+
+    expect(taskManager.ensureRunning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }),
+      expect.any(Function),
+    );
+  });
+});
+
+describe("upstream command families accept attachment-only input", () => {
+  function sessionFamily(runtime: TaskRuntimeCommands, send = vi.fn()) {
+    return {
+      send,
+      handlers: createSessionCommandFamily({
+        send,
+        logger,
+        taskManager: {} as never,
+        taskRuntimeCommands: runtime,
+        sessionListCommands: {} as never,
+      }),
+    };
+  }
+
+  function interventionFamily(runtime: TaskRuntimeCommands, send = vi.fn()) {
+    return createInterventionCommandFamily({
+      send,
+      deliveryCommands: {} as never,
+      taskRuntimeCommands: runtime,
+    });
+  }
+
+  it("create_session passes an empty prompt through when attachment ids are present", async () => {
+    const { runtime, taskManager } = createRuntime();
+    const { handlers } = sessionFamily(runtime);
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+
+    await handlers.create_session!({
+      type: "create_session",
+      agentSessionId: "sess-ids",
+      prompt: "",
+      profile: codexAgent.id,
+      attachment_ids: ["att-a"],
+      attachment_bindings: bindings,
+    } as never);
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "",
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }),
+    );
+  });
+
+  it("create_session still rejects a missing or non-string prompt even with attachments", async () => {
+    const { runtime, taskManager } = createRuntime();
+    const { handlers } = sessionFamily(runtime);
+
+    for (const prompt of [undefined, null, 7]) {
+      await expect(
+        handlers.create_session!({
+          type: "create_session",
+          agentSessionId: "sess-ids",
+          prompt,
+          profile: codexAgent.id,
+          attachment_ids: ["att-a"],
+        } as never),
+      ).rejects.toBeInstanceOf(CommandDispatchError);
+    }
+    expect(taskManager.createTask).not.toHaveBeenCalled();
+  });
+
+  it("intervene forwards attachment ids for an empty text", async () => {
+    const addIntervention = vi.fn(async () => ({ delivered: true }));
+    const { runtime, taskManager } = createRuntime({ addIntervention });
+    const handlers = interventionFamily(runtime);
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+
+    await handlers.intervene!({
+      type: "intervene",
+      agentSessionId: "sess-ids",
+      text: "",
+      attachment_paths: ["/tmp/a.png"],
+      attachment_ids: ["att-a"],
+      attachment_bindings: bindings,
+    } as never);
+
+    expect(taskManager.addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "[첨부 파일 로컬 경로: /tmp/a.png]",
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it("intervene rejects a non-string text", async () => {
+    const { runtime, taskManager } = createRuntime();
+    const handlers = interventionFamily(runtime);
+
+    await expect(
+      handlers.intervene!({
+        type: "intervene",
+        agentSessionId: "sess-ids",
+        text: 7,
+        attachment_ids: ["att-a"],
+      } as never),
+    ).rejects.toBeInstanceOf(CommandDispatchError);
+    expect(taskManager.addIntervention).not.toHaveBeenCalled();
+  });
+
+  it("ensure_session_running forwards attachment ids for an empty text", async () => {
+    const ensureRunning = vi.fn(async () => ({ state: "started", execution: {} }));
+    const { runtime, taskManager } = createRuntime({ ensureRunning });
+    const handlers = interventionFamily(runtime);
+    const bindings = [
+      { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" },
+    ];
+
+    await handlers.ensure_session_running!({
+      type: "ensure_session_running",
+      agentSessionId: "sess-ids",
+      text: "",
+      delivery_id: "delivery-1",
+      attachment_paths: ["/tmp/a.png"],
+      attachment_ids: ["att-a"],
+      attachment_bindings: bindings,
+    } as never);
+
+    expect(taskManager.ensureRunning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "",
+        attachmentIds: ["att-a"],
+        attachmentBindings: bindings,
+      }),
+      expect.any(Function),
+    );
   });
 });
 
