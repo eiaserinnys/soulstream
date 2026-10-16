@@ -293,7 +293,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.abortRequestLifetimes(new Error("Runner execution generation record rejected"));
     const cleanupErrors: unknown[] = [];
     try {
-      await this.releaseHostResources();
+      await this.releaseHostResources("rollback_execution");
     } catch (error) {
       cleanupErrors.push(error);
     }
@@ -341,7 +341,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner closed"));
     if (this.options.offlineExisting) {
-      await this.releaseHostResources();
+      await this.releaseHostResources("close");
       return;
     }
     let retirement: {
@@ -375,7 +375,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     } finally {
       const closeRetirement = retirement;
       try {
-        await this.releaseHostResources();
+        await this.releaseHostResources("close");
       } finally {
         if (closeRetirement) {
           const spawner = this.options.spawner ?? new RunnerProcessSpawner();
@@ -413,7 +413,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner terminal registration retired"));
     try {
-      await this.releaseHostResources();
+      await this.releaseHostResources("retire");
     } finally {
       await spawner.retireTerminalRegistration(
         spawned.paths,
@@ -471,7 +471,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     if (this.closed) return;
     this.closed = true;
     this.abortRequestLifetimes(new Error("Runner host detached"));
-    await this.releaseHostResources();
+    await this.releaseHostResources("detach");
   }
 
   async sendControlFrame(frame: RunnerControlFrame): Promise<boolean> {
@@ -581,7 +581,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         );
       } catch (error) {
         try {
-          await this.releaseHostResources();
+          await this.releaseHostResources("offline_init_failed");
         } catch (cleanupError) {
           throw new AggregateError(
             [asError(error), asError(cleanupError)],
@@ -652,7 +652,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   ): Promise<never> {
     const cleanupErrors: unknown[] = [];
     try {
-      await this.releaseHostResources();
+      await this.releaseHostResources("rollback_spawn");
     } catch (error) {
       cleanupErrors.push(error);
     }
@@ -708,6 +708,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       onPendingFramesReplayed?.();
       await this.reconcileActiveLifecycleTerminal(commandId);
     } catch (error) {
+      this.options.logger.warn({
+        err: error,
+        ...this.diagnosticContext(),
+        commandId,
+      }, "Runner execution start failed");
       stream.fail(asError(error));
       if (this.activeExecution?.stream === stream) {
         this.clearActiveExecution(commandId);
@@ -736,6 +741,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       }
       await this.replayPendingFrames();
     } catch (error) {
+      this.options.logger.warn({
+        err: error,
+        ...this.diagnosticContext(),
+        commandId,
+      }, "Runner execution start failed");
       stream.fail(asError(error));
       this.clearActiveExecution(commandId);
     }
@@ -845,6 +855,16 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       deadlineMs: RUNNER_SOCKET_CONNECT_DEADLINE_MS,
       retryDelayMs: RUNNER_SOCKET_CONNECT_RETRY_MS,
       retryOnMissingSocket,
+      onAttemptFailed: ({ attempt, code, message, remainingMs }) => {
+        if (code === "ENOENT") return;
+        this.options.logger.warn({
+          ...this.runnerIdentityContext(socketPath),
+          attempt,
+          code,
+          remainingMs,
+          errorMessage: message,
+        }, "Runner socket connect attempt failed");
+      },
       onFrameDropped: (drop) => this.logDroppedFrame(drop),
     });
     this.attachConnection(connection, socketPath);
@@ -860,7 +880,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private attachConnection(connection: RunnerIpcConnection, socketPath: string): void {
-    this.connection?.close();
+    if (this.connection) {
+      this.options.logger.info(
+        { ...this.runnerIdentityContext(socketPath) },
+        "Runner host IPC connection replaced",
+      );
+      this.connection.close();
+    }
     this.connection = connection;
     const connectedAtMs = (this.options.now ?? Date.now)();
     connection.onFrame(async (frame) => await this.trackFrameHandler(frame));
@@ -962,6 +988,18 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         this.spawnInput.sessionId,
       ).sessionDirectory,
       socketPath,
+    };
+  }
+
+  private diagnosticContext(): {
+    dispatcherId: string;
+    sessionId: string | undefined;
+    socketPath: string | undefined;
+  } {
+    return {
+      dispatcherId: this.instanceId,
+      sessionId: this.spawnInput?.sessionId,
+      socketPath: this.socketPath,
     };
   }
 
@@ -1315,7 +1353,20 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
   }
 
-  private async releaseHostResources(): Promise<void> {
+  private async releaseHostResources(
+    reason:
+      | "close"
+      | "detach"
+      | "retire"
+      | "rollback_execution"
+      | "rollback_spawn"
+      | "offline_init_failed",
+  ): Promise<void> {
+    this.options.logger.info({
+      ...this.diagnosticContext(),
+      reason,
+      hadConnection: this.connection !== undefined,
+    }, "Runner host IPC connection released");
     // A socket attach can start pump initialization concurrently with terminal
     // cleanup. Let that single initializer settle before taking ownership of
     // its unregister handle, otherwise it could register after cleanup.

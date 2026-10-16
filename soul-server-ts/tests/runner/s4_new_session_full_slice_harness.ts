@@ -937,7 +937,35 @@ export class ProductionFullSliceHarness {
       await delay(25);
     }
     this.throwIfWorkerFailed();
-    throw new Error(`Timed out waiting for ${label}`);
+    let identityDiagnostic: {
+      registrationId: string;
+      pid: number;
+      hasStartIdentity: boolean;
+      retiredAt: string;
+    } | { readError: string } | "missing";
+    try {
+      const identity = this.sessionId
+        ? await readRunnerRegistrationIdentity(
+          runnerProcessPaths(this.stateDirectory, this.sessionId).sessionDirectory,
+        )
+        : null;
+      identityDiagnostic = identity
+        ? {
+          registrationId: identity.registrationId,
+          pid: identity.pid,
+          hasStartIdentity: identity.startIdentity !== null,
+          retiredAt: identity.retiredAt ?? "none",
+        }
+        : "missing";
+    } catch (error) {
+      identityDiagnostic = {
+        readError: error instanceof Error ? error.message : String(error),
+      };
+    }
+    throw new Error(
+      `Timed out waiting for ${label}; scenario=${this.scenario}; backend=${this.backend}; `
+      + `sessionId=${this.sessionId || "none"}; runnerIdentity=${JSON.stringify(identityDiagnostic)}`,
+    );
   }
 }
 
@@ -1007,6 +1035,7 @@ function isFullSliceDiagnosticFile(fileName: string): boolean {
   return fileName === "worker.log"
     || fileName === "fixture.log"
     || fileName === "runner.log"
+    || fileName === "runner-identity.json"
     || fileName === "runner-lifecycle.json"
     || (fileName.startsWith("engine-boundary-") && fileName.endsWith(".json"))
     || (fileName.startsWith("ghost-running-") && fileName.endsWith(".json"));
