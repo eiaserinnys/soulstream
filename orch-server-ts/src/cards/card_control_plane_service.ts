@@ -5,6 +5,7 @@ import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
 import { attachmentRefsOf, collectCardAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
+import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx } from "./card_attachment_legacy_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
@@ -150,7 +151,8 @@ export class CardControlPlaneService {
         const queuePosition=params.queue ? await this.position(sql,null,null) : null;
         if (assignee.assignee_session_id) await assertSingleCardAssignee(sql,assignee.assignee_session_id,id);
         await validateCardSourceRefsTx(sql,{cardId:id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.request,existingRefs:[]});
-        const refs=collectCardAttachmentRefs({request:params.request,attachments:params.attachments ?? [],items:[],previousRefs:[],previousItems:[]});
+        const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:id,assigneeSessionId:assignee.assignee_session_id,actor:params,body:params.request,format:"markdown",attachments:params.attachments ?? []});
+        const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:params.request,attachments:params.attachments ?? [],items:[],previousRefs:[],previousItems:[]}),legacyRefs);
         await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,brief,attachments,attachment_refs,status,
           assignee_kind,assignee_agent_id,assignee_session_id,assignee_user_id,node_id,model_preset,
           created_session_id,created_event_id,updated_session_id,updated_event_id)
@@ -268,7 +270,8 @@ export class CardControlPlaneService {
       if (length > 4000) throw invalid(`note.text은 4000자까지입니다. 지금 ${length}자입니다`);
       const existingRefs=attachmentRefsOf(card.attachment_refs);
       await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.text,existingRefs});
-      const refs=collectCardAttachmentRefs({request:params.text,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []});
+      const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:params.text,format:"markdown"});
+      const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:params.text,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []}),legacyRefs);
       await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,attachment_refs)
         VALUES(${noteId},${card.id},'agent',NULL,${params.actorSessionId},'note',${params.text},${sql.json(refs)})`;
     });
@@ -312,6 +315,8 @@ export class CardControlPlaneService {
         await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.body,existingRefs});
         refs=collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []});
       }
+      const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:params.body,format:params.format});
+      refs=mergeCardSourceAttachmentRefs(refs,legacyRefs);
       await sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,attachment_refs)
         VALUES(${randomUUID()},${card.id},${params.title},${params.format},${params.body},${params.actorSessionId},${sql.json(refs)})`;
     });
@@ -437,7 +442,8 @@ export class CardControlPlaneService {
       throw invalid("항목을 찾을 수 없습니다");
     const existingRefs=attachmentRefsOf(card.attachment_refs);
     await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.body,existingRefs});
-    const refs=collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []});
+    const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:params.body,format:"markdown"});
+    const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []}),legacyRefs);
     if (Object.keys(claim).length) await this.patch(sql,card,claim,params,eventId);
     await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,attachment_refs)
       VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null},${sql.json(refs)})`;
