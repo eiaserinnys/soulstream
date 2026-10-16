@@ -20,7 +20,9 @@ export function registerAttachmentTools(server: McpServer, runtime: McpRuntime):
     }
 
     const task = runtime.taskManager.getTask(sessionId);
-    const workspaceDir = task?.resolvedWorkspaceDir;
+    // Only worktree executions set resolvedWorkspaceDir; a plain session runs in
+    // its engine's workspace (same order as listActiveTaskWorkspaceDirs).
+    const workspaceDir = task?.resolvedWorkspaceDir ?? task?.runner?.engine.workspaceDir;
     const outputCommandId = task?.runner?.dispatcher.activeExecutionCommandId?.();
     if (
       !task ||
