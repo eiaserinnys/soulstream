@@ -120,7 +120,7 @@ test('conversation retry preserves cancellation identity through sending, failur
   const h = renderHook(({ entries }: { entries: PersistentReportEntry[] }) => ({
     report: usePersistentReportSend('pas', api, entries, server, 'completed', jest.fn()),
     conversation: useChatSendFlow({ api, sessionId: 'pas', session: { status: 'completed' },
-      attachments: [], clearAttachments: jest.fn(), scrollToBottom: jest.fn() }),
+      attachments: [], attachmentsReady: true, clearAttachments: jest.fn(), scrollToBottom: jest.fn() }),
   }), { initialProps: { entries: server } });
   await act(async () => h.result.current.report.cancel(answered));
   const failed = useChatStore.getState().pendingOptimisticBySession.pas;
@@ -195,7 +195,7 @@ test.each(['restore', 'delete'] as const)('an old matching cancel in history can
   const h = renderHook(() => ({
     report: usePersistentReportSend('pas', api, server, server, 'completed', jest.fn()),
     conversation: useChatSendFlow({ api, sessionId: 'pas', session: { status: 'completed' },
-      attachments: [], clearAttachments: jest.fn(), scrollToBottom: jest.fn() }),
+      attachments: [], attachmentsReady: true, clearAttachments: jest.fn(), scrollToBottom: jest.fn() }),
   }));
   await act(async () => h.result.current.report.cancel(answered));
   expect(h.result.current.report.cancelSent(answered)).toBe(false);
