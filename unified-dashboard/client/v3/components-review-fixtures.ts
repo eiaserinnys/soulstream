@@ -36,9 +36,12 @@ export const reviewCardItems: CardCheckItem[] = [
   { id: 9, title: "긴 설명도 자연스럽게 줄바꿈하며 읽을 수 있습니다", state: "todo", result: "화면이 좁아도 전송 버튼과 다른 글을 밀지 않도록 내용을 나누어 확인합니다.", evidence: [], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: null, display: "todo" },
   { id: 10, title: "처음 확인한 항목 둘", state: "done", result: "확인함 묶음 안에 표시합니다.", evidence: [], caveat: null, rev: 1, confirmed: { at: now, rev: 1 }, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: now, display: "confirmed" },
   { id: 11, title: "처음 확인한 항목 셋", state: "done", result: "확인함 묶음에 세 항목이 모입니다.", evidence: [], caveat: null, rev: 1, confirmed: { at: now, rev: 1 }, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: now, display: "confirmed" },
-  // #245 C-12 review states: server-projected card attachments (normal image, internal
-  // file link, an image whose bytes fail to load, and missing/unavailable rows).
-  { id: 12, title: "다른 노드에서 붙인 첨부가 보입니다", state: "done", result: "카드 주소로 읽은 첨부와 실패 상태입니다.", evidence: [
+];
+
+// #245 C-12 review states: server-projected card attachments (normal image, internal
+// file link, an image whose bytes fail to load, and missing/unavailable rows).
+// Kept out of reviewCardItems so list-card samples keep their item counts.
+export const reviewAttachmentCardItem: CardCheckItem = { id: 12, title: "다른 노드에서 붙인 첨부가 보입니다", state: "done", result: "카드 주소로 읽은 첨부와 실패 상태입니다.", evidence: [
     { type: "image", label: "등록한 화면", url: "/icon-192.png", attachment_id: "review-image",
       descriptor: { attachment_id: "review-image", name: "screen.png", mime_type: "image/png", byte_size: 4096, checksum_sha256: null, width: 192, height: 192, preview_kind: "image", preview_mime_type: "image/png" },
       read_context: { type: "card", id: "components-card" }, previewUrl: "/icon-192.png", originalUrl: "/icon-192.png" },
@@ -52,8 +55,7 @@ export const reviewCardItems: CardCheckItem[] = [
       read_context: { type: "card", id: "components-card" }, previewUrl: null, originalUrl: "/components" },
     { type: "link", label: "올리는 중인 파일", url: "", attachment_id: "review-pending",
       read_context: { type: "card", id: "components-card" }, availability: "unavailable", previewUrl: null, originalUrl: "" },
-  ], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: now, display: "reported" },
-];
+  ], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: now, reportedAt: now, display: "reported" };
 
 export const reviewNow: CardNow = {
   text: "요청된 카드 화면을 확인하고 있습니다.", turn: "user", ask: "보고된 결과 두 개를 확인해 주세요.",
