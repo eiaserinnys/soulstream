@@ -1,12 +1,24 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, type ImageSourcePropType, type ImageURISource } from 'react-native';
+import React, { useRef, useState } from 'react';
+import {
+  findNodeHandle,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  type ImageSourcePropType,
+} from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { AttachmentView } from '../lib/attachment-view';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { MODAL_BACKDROP_COLOR } from '../theme/surfaceRoles';
 import { GlassButton, GlassSurface } from './GlassSurface';
+import { ImageViewerPages } from './ImageViewerPages';
 
-export function ImageViewerModal(props: {
+export type ImageViewerModalProps = {
   captions?: readonly string[];
   sources: ImageSourcePropType[];
   initialIndex: number;
@@ -15,19 +27,20 @@ export function ImageViewerModal(props: {
   filenames?: readonly string[];
   alts?: readonly string[];
   metadataLabels?: readonly string[];
-}) {
+  items?: readonly AttachmentView[];
+  onSaveOriginal?(index: number, anchor?: number): Promise<void>;
+};
+
+export function ImageViewerModal(props: ImageViewerModalProps) {
   return props.variant === 'chatRefined'
     ? <ChatRefinedImageViewerModal {...props} />
     : <DefaultImageViewerModal {...props} />;
 }
 
-function DefaultImageViewerModal({ sources, initialIndex, onClose, captions }: {
-  captions?: readonly string[];
-  sources: ImageSourcePropType[]; initialIndex: number; onClose(): void;
-}) {
+function DefaultImageViewerModal({ sources, initialIndex, onClose, captions, items, onSaveOriginal }: ImageViewerModalProps) {
   const t = useTokens();
-  const window = useWindowDimensions();
-  const [viewport, setViewport] = useState({ width: window.width, height: window.height });
+  const [currentIndex, setCurrentIndex] = useState(clampIndex(initialIndex, sources.length));
+  const viewerCaptions = captions ?? items?.map((item) => item.name);
   return <Modal visible transparent presentationStyle="overFullScreen" onRequestClose={onClose}>
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: MODAL_BACKDROP_COLOR }}>
@@ -36,35 +49,20 @@ function DefaultImageViewerModal({ sources, initialIndex, onClose, captions }: {
             <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>×</Text>
           </GlassButton>
         </View>
-        <View style={{ flex: 1, marginVertical: t.spacing.md }} onLayout={({ nativeEvent: { layout } }) => setViewport({ width: layout.width, height: layout.height })}>
-          <ScrollView testID="image-viewer-pages" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-            contentOffset={{ x: initialIndex * viewport.width, y: 0 }}>
-            {sources.map((source, index) => captions?.[index] ? <CaptionedImagePage key={index} source={source} caption={captions[index]} index={index} viewport={viewport} /> : <ScrollView key={index} testID="image-viewer-zoom"
-              style={{ width: viewport.width, height: viewport.height }}
-              contentContainerStyle={{ width: viewport.width, height: viewport.height }}
-              minimumZoomScale={1} maximumZoomScale={3} centerContent bouncesZoom
-              showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-              <Image source={source} style={viewport} resizeMode="contain" accessibilityLabel={`이미지 ${index + 1}`} />
-            </ScrollView>)}
-          </ScrollView>
+        <View style={{ flex: 1, marginVertical: t.spacing.md }}>
+          <ImageViewerPages sources={sources} items={items} captions={viewerCaptions} currentIndex={currentIndex}
+            onIndexChange={setCurrentIndex} style={{ flex: 1, marginVertical: t.spacing.md }} />
         </View>
+        <ImageViewerFooter sources={sources} items={items} currentIndex={currentIndex}
+          onIndexChange={setCurrentIndex} onSaveOriginal={onSaveOriginal} />
       </SafeAreaView>
     </SafeAreaProvider>
   </Modal>;
 }
 
-function ChatRefinedImageViewerModal(props: {
-  sources: ImageSourcePropType[];
-  initialIndex: number;
-  onClose(): void;
-  variant?: 'default' | 'chatRefined';
-  filenames?: readonly string[];
-  alts?: readonly string[];
-  metadataLabels?: readonly string[];
-}) {
-  const { sources, initialIndex, onClose } = props;
+function ChatRefinedImageViewerModal(props: ImageViewerModalProps) {
   const t = useTokens();
-  return <Modal visible transparent presentationStyle="overFullScreen" onRequestClose={onClose}>
+  return <Modal visible transparent presentationStyle="overFullScreen" onRequestClose={props.onClose}>
     <SafeAreaProvider>
       <View testID="chat-image-viewer-viewport" style={{ flex: 1 }}>
         <Pressable
@@ -72,7 +70,7 @@ function ChatRefinedImageViewerModal(props: {
           accessibilityLabel="이미지 미리보기 닫기"
           testID="chat-image-viewer-backdrop"
           style={[StyleSheet.absoluteFill, { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }]}
-          onPress={onClose}
+          onPress={props.onClose}
         />
         <ChatRefinedImageViewerContent {...props} />
       </View>
@@ -80,29 +78,23 @@ function ChatRefinedImageViewerModal(props: {
   </Modal>;
 }
 
-function ChatRefinedImageViewerContent({ sources, initialIndex, onClose, filenames = [], alts = [], metadataLabels = [] }: {
-  sources: ImageSourcePropType[];
-  initialIndex: number;
-  onClose(): void;
-  variant?: 'default' | 'chatRefined';
-  filenames?: readonly string[];
-  alts?: readonly string[];
-  metadataLabels?: readonly string[];
-}) {
+function ChatRefinedImageViewerContent({
+  sources,
+  initialIndex,
+  onClose,
+  filenames,
+  alts,
+  items,
+  onSaveOriginal,
+}: ImageViewerModalProps) {
   const t = useTokens();
   const device = useDeviceType();
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const attachment = createSessionVisualRoles(t).chat.attachment;
-  const [currentIndex, setCurrentIndex] = useState(Math.min(Math.max(initialIndex, 0), sources.length - 1));
-  const imageSource = sources[currentIndex] as ImageURISource;
-  const filename = filenames[currentIndex] ?? '';
-  const metadataLabel = metadataLabels[currentIndex] ?? '';
-  const alt = alts[currentIndex] ?? filename;
-  const hasNavigation = sources.length > 1;
-  const moveTo = (nextIndex: number) => {
-    if (nextIndex >= 0 && nextIndex < sources.length) setCurrentIndex(nextIndex);
-  };
+  const [currentIndex, setCurrentIndex] = useState(clampIndex(initialIndex, sources.length));
+  const filename = filenames?.[currentIndex] ?? items?.[currentIndex]?.name ?? '';
+  const alt = alts?.[currentIndex] ?? filename;
 
   return <SafeAreaView testID="chat-image-viewer-content" pointerEvents="box-none" edges={['top', 'bottom', 'left', 'right']} style={{
       flex: 1,
@@ -119,15 +111,10 @@ function ChatRefinedImageViewerContent({ sources, initialIndex, onClose, filenam
         <View style={{ padding: t.spacing.md, gap: t.spacing.md }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: t.spacing.md }}>
             <View style={{ flex: 1, minWidth: 0, paddingTop: t.spacing.xs }}>
-              {filename ? <Text numberOfLines={2} style={{
+              {filename ? <Text numberOfLines={1} ellipsizeMode="tail" style={{
                 ...attachment.metadata,
                 color: attachment.textMuted,
               }}>{filename}</Text> : null}
-              {metadataLabel ? <Text numberOfLines={1} style={{
-                ...attachment.metadata,
-                color: attachment.textMuted,
-                marginTop: t.uiSpacing.xs,
-              }}>{metadataLabel}</Text> : null}
             </View>
             <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
               accessibilityLabel="이미지 미리보기 닫기" testID="chat-image-viewer-close" onPress={onClose}>
@@ -145,51 +132,76 @@ function ChatRefinedImageViewerContent({ sources, initialIndex, onClose, filenam
             borderColor: attachment.border,
             backgroundColor: attachment.surface,
           }}>
-            <Image
-              testID="chat-image-viewer-image"
-              source={imageSource}
-              style={{ width: '100%', height: '100%', borderRadius: attachment.radius }}
-              resizeMode="contain"
-              accessibilityLabel={alt || filename || `이미지 ${currentIndex + 1}`}
-            />
+            <ImageViewerPages sources={sources} items={items} currentIndex={currentIndex}
+              onIndexChange={setCurrentIndex} style={{ width: '100%', height: '100%' }}
+              activeImageTestID="chat-image-viewer-image" />
           </View>
-          {hasNavigation ? <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: t.spacing.xs }}>
-            <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
-              accessibilityLabel="이전 이미지" testID="chat-image-viewer-previous"
-              disabled={currentIndex === 0} onPress={() => moveTo(currentIndex - 1)}>
-              <Ionicons name="chevron-back" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
-            </GlassButton>
-            <Text testID="chat-image-viewer-index" style={{
-              ...attachment.metadata,
-              color: attachment.textMuted,
-              minWidth: t.foundation.minHeight.secondary,
-              textAlign: 'center',
-            }}>{currentIndex + 1} / {sources.length}</Text>
-            <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
-              accessibilityLabel="다음 이미지" testID="chat-image-viewer-next"
-              disabled={currentIndex === sources.length - 1} onPress={() => moveTo(currentIndex + 1)}>
-              <Ionicons name="chevron-forward" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
-            </GlassButton>
-          </View> : null}
+          <ImageViewerFooter sources={sources} items={items} currentIndex={currentIndex}
+            onIndexChange={setCurrentIndex} onSaveOriginal={onSaveOriginal} />
         </View>
       </GlassSurface>
     </SafeAreaView>;
 }
 
-function CaptionedImagePage({ source, caption, index, viewport }: {
-  source: ImageSourcePropType; caption: string; index: number; viewport: { width: number; height: number };
+function ImageViewerFooter({ sources, items, currentIndex, onIndexChange, onSaveOriginal }: {
+  sources: readonly ImageSourcePropType[];
+  items?: readonly AttachmentView[];
+  currentIndex: number;
+  onIndexChange(index: number): void;
+  onSaveOriginal?: (index: number, anchor?: number) => Promise<void>;
 }) {
   const t = useTokens();
-  const [imageArea, setImageArea] = useState(viewport);
-  return <View style={viewport}>
-    <View style={{ flex: 1 }} onLayout={({ nativeEvent: { layout } }) => setImageArea({ width: layout.width, height: layout.height })}>
-      <ScrollView testID="image-viewer-zoom" style={{ flex: 1 }} contentContainerStyle={imageArea}
-        minimumZoomScale={1} maximumZoomScale={3} centerContent bouncesZoom
-        showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}>
-        <Image source={source} style={imageArea} resizeMode="contain" accessibilityLabel={`이미지 ${index + 1}`} />
-      </ScrollView>
+  const hasNavigation = sources.length > 1;
+  const canSave = !!onSaveOriginal && (!items || items[currentIndex]?.source.kind === 'ready');
+  if (!hasNavigation && !canSave) return null;
+  return <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.spacing.xs }}>
+    <View style={{ flex: 1 }} />
+    {hasNavigation ? <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: t.spacing.xs }}>
+      <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
+        accessibilityLabel="이전 이미지" testID={testIDFor('previous')} disabled={currentIndex === 0}
+        onPress={() => onIndexChange(Math.max(0, currentIndex - 1))}>
+        <Ionicons name="chevron-back" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
+      </GlassButton>
+      <Text testID={testIDFor('index')} style={{
+        ...createSessionVisualRoles(t).chat.attachment.metadata,
+        color: createSessionVisualRoles(t).chat.attachment.textMuted,
+        minWidth: t.foundation.minHeight.secondary,
+        textAlign: 'center',
+      }}>{currentIndex + 1} / {sources.length}</Text>
+      <GlassButton iconOnly size="card" borderRadius={t.foundation.radius.round}
+        accessibilityLabel="다음 이미지" testID={testIDFor('next')} disabled={currentIndex === sources.length - 1}
+        onPress={() => onIndexChange(Math.min(sources.length - 1, currentIndex + 1))}>
+        <Ionicons name="chevron-forward" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
+      </GlassButton>
+    </View> : <View style={{ flex: 1 }} />}
+    <View style={{ flex: 1, alignItems: 'flex-end' }}>
+      {canSave ? <ImageSaveButton index={currentIndex} onSaveOriginal={onSaveOriginal!} /> : null}
     </View>
-    <Text testID={`image-viewer-caption-${index}`} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary,
-      backgroundColor: t.colors.surface, textAlign: 'center', padding: t.spacing.md }}>{caption}</Text>
   </View>;
+}
+
+function ImageSaveButton({ index, onSaveOriginal }: {
+  index: number;
+  onSaveOriginal(index: number, anchor?: number): Promise<void>;
+}) {
+  const t = useTokens();
+  const anchorRef = useRef<View | null>(null);
+  const save = () => {
+    const anchor = Platform.OS === 'ios' ? findNodeHandle(anchorRef.current) ?? undefined : undefined;
+    void onSaveOriginal(index, anchor);
+  };
+  return <View ref={anchorRef} collapsable={false}>
+    <GlassButton size="card" accessibilityLabel="원본 저장" testID="chat-image-viewer-save-original" onPress={save}>
+      <Ionicons name="download-outline" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
+      <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>원본 저장</Text>
+    </GlassButton>
+  </View>;
+}
+
+function testIDFor(name: 'previous' | 'index' | 'next'): string {
+  return `chat-image-viewer-${name}`;
+}
+
+function clampIndex(index: number, count: number): number {
+  return Math.min(Math.max(index, 0), Math.max(0, count - 1));
 }

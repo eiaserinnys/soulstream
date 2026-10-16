@@ -8,7 +8,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TouchableWithoutFeedback,
   View,
   useWindowDimensions,
   type ImageSourcePropType,
@@ -16,6 +15,7 @@ import {
 } from 'react-native';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import { getAttachmentImageSize } from '../lib/attachment-image-size';
+import type { AttachmentView } from '../lib/attachment-view';
 import { ImageViewerModal } from './ImageViewerModal';
 
 /** The thumbnail is the existing chat attachment Image, with a viewer on tap. */
@@ -63,7 +63,7 @@ export function useChatImageMetadata(
   }));
 }
 
-export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, mimeType, byteSize, chatImageRole = 'assistant', filenames, alts, mimeTypes, byteSizes }: {
+export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, chatImageRole = 'assistant', filenames, alts, items, onSaveOriginal }: {
   source: ImageSourcePropType; sources?: ImageSourcePropType[]; index?: number; testID?: string; accessibilityLabel: string;
   captions?: readonly string[];
   variant?: 'default' | 'cardCheckItem' | 'chatRefined';
@@ -76,33 +76,50 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   alts?: readonly string[];
   mimeTypes?: readonly (string | undefined)[];
   byteSizes?: readonly (number | undefined)[];
+  items?: readonly AttachmentView[];
+  onSaveOriginal?(index: number, anchor?: number): Promise<void>;
 }) {
   const t = useTokens();
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const [open, setOpen] = useState(false);
+  const defaultTriggerRef = useRef<any>(null);
   if (variant === 'chatRefined') {
     return <ChatRefinedAttachment source={source} sources={sources} index={index} testID={testID}
       accessibilityLabel={accessibilityLabel} filename={filename} alt={alt} role={chatImageRole}
-      mimeType={mimeType} byteSize={byteSize} filenames={filenames} alts={alts}
-      mimeTypes={mimeTypes} byteSizes={byteSizes} />;
+      filenames={filenames} alts={alts} items={items} onSaveOriginal={onSaveOriginal} />;
   }
   const dimensions = variant === 'cardCheckItem' ? { width: 104, height: 60 } : attachment.thumbnailFrameSize;
+  const closeViewer = () => {
+    setOpen(false);
+    requestAnimationFrame(() => {
+      if (Platform.OS === 'web') {
+        defaultTriggerRef.current?.focus?.({ preventScroll: true });
+        return;
+      }
+      const target = findNodeHandle(defaultTriggerRef.current);
+      if (target != null) AccessibilityInfo.setAccessibilityFocus(target);
+    });
+  };
   return <>
-    <TouchableWithoutFeedback onPress={() => setOpen(true)} accessibilityRole="button">
+    <Pressable ref={defaultTriggerRef} onPress={() => setOpen(true)} accessibilityRole="button" accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => pressed ? { opacity: 0.82 } : undefined}>
       <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border }}
-        resizeMode="cover" accessible accessibilityLabel={accessibilityLabel} />
-    </TouchableWithoutFeedback>
-    {open ? <ImageViewerModal sources={sources} captions={captions} initialIndex={index} onClose={() => setOpen(false)} /> : null}
+        resizeMode="cover" accessible={false} />
+    </Pressable>
+    {open ? <ImageViewerModal sources={sources} captions={captions} items={items} onSaveOriginal={onSaveOriginal}
+      initialIndex={index} onClose={closeViewer} /> : null}
   </>;
 }
 
-export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID, precedingContent = 'text' }: {
+export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID, precedingContent = 'text', items, onSaveOriginal }: {
   images: ChatRefinedGalleryItem[];
   viewerImages?: ChatRefinedGalleryItem[];
   startIndex?: number;
   role: 'assistant' | 'user';
   testID: string;
   precedingContent?: 'text' | 'attachments' | 'none';
+  items?: readonly AttachmentView[];
+  onSaveOriginal?(index: number, anchor?: number): Promise<void>;
 }) {
   const t = useTokens();
   const device = useDeviceType();
@@ -135,6 +152,8 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
       alts={viewerImages.map((entry) => entry.alt ?? '')}
       mimeTypes={viewerImages.map((entry) => entry.mimeType)}
       byteSizes={viewerImages.map((entry) => entry.byteSize)}
+      items={items}
+      onSaveOriginal={onSaveOriginal}
       accessibilityLabel={`${image.filename} 크게 보기`}
       testID={`${testID}-image-${index}`}
     />
@@ -184,7 +203,7 @@ export function isChatImageAttachmentPath(path: string): boolean {
   return /\.(?:png|jpe?g|gif|webp|heic|avif)$/i.test(path);
 }
 
-function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLabel, filename, alt, mimeType, byteSize, role, filenames, alts, mimeTypes, byteSizes }: {
+function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLabel, filename, alt, role, filenames, alts, items, onSaveOriginal }: {
   source: ImageSourcePropType;
   sources: ImageSourcePropType[];
   index: number;
@@ -192,13 +211,11 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
   accessibilityLabel: string;
   filename?: string;
   alt?: string;
-  mimeType?: string;
-  byteSize?: number;
   role: 'assistant' | 'user';
   filenames?: readonly string[];
   alts?: readonly string[];
-  mimeTypes?: readonly (string | undefined)[];
-  byteSizes?: readonly (number | undefined)[];
+  items?: readonly AttachmentView[];
+  onSaveOriginal?(index: number, anchor?: number): Promise<void>;
 }) {
   const t = useTokens();
   const attachment = createSessionVisualRoles(t).chat.attachment;
@@ -232,7 +249,6 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
   }, [headersKey, imageSource, uri]);
 
   const handleError = () => setImageInfo({ uri, headersKey, aspectRatio: null, failed: true });
-  const metadataLabel = formatChatImageMetadata(mimeType, byteSize);
   const frameStyle = {
     width: '100%' as const,
     maxWidth: attachment.thumbnailFrameSize.width,
@@ -259,7 +275,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={currentInfo.failed ? '이미지를 불러오지 못했습니다.' : undefined}
       accessibilityState={{ expanded: open }}
-      style={{
+      style={({ pressed }) => ({
         width: '100%',
         maxWidth: attachment.thumbnailFrameSize.width,
         maxHeight: attachment.thumbnailFrameSize.height,
@@ -271,7 +287,8 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
         borderColor: attachment.border,
         backgroundColor: attachment.surface,
         overflow: 'hidden',
-      }}
+        opacity: pressed ? 0.82 : 1,
+      })}
     >
       {currentInfo.failed ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ ...attachment.metadata, color: attachment.textMuted, textAlign: 'center' }}>
@@ -294,13 +311,6 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       marginTop: attachment.filenameGap,
       textAlign: role === 'user' ? 'right' : 'left',
     }}>{filename}</Text> : null}
-    {metadataLabel ? <Text numberOfLines={1} ellipsizeMode="tail" style={{
-      ...attachment.metadata,
-      ...frameStyle,
-      color: attachment.textMuted,
-      marginTop: t.uiSpacing.xs,
-      textAlign: role === 'user' ? 'right' : 'left',
-    }}>{metadataLabel}</Text> : null}
     {open ? <ImageViewerModal
       sources={sources}
       initialIndex={index}
@@ -308,7 +318,8 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       variant="chatRefined"
       filenames={filenames ?? sources.map((entry) => getChatAttachmentFilename((entry as ImageURISource).uri ?? ''))}
       alts={alts ?? sources.map(() => alt ?? '')}
-      metadataLabels={sources.map((_, sourceIndex) => formatChatImageMetadata(mimeTypes?.[sourceIndex], byteSizes?.[sourceIndex]))}
+      items={items}
+      onSaveOriginal={onSaveOriginal}
     /> : null}
   </>;
 }

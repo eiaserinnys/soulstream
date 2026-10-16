@@ -32,6 +32,21 @@ test('full-screen image modal owns its safe area outside the header and scrollin
   expect(onClose).toHaveBeenCalledTimes(1);
 });
 
+test('기본 뷰어는 기존 가로 페이징과 이미지 확대 스크롤 계약을 유지한다', () => {
+  const screen = render(<ImageViewerModal
+    sources={[{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }]}
+    initialIndex={1}
+    onClose={jest.fn()}
+  />);
+
+  const pages = screen.getByTestId('image-viewer-pages');
+  expect(pages.props).toMatchObject({ horizontal: true, pagingEnabled: true });
+  expect(pages.props.contentOffset.x).toBeGreaterThan(0);
+  const zoomPages = screen.getAllByTestId('image-viewer-zoom');
+  expect(zoomPages).toHaveLength(2);
+  expect(zoomPages[0].props).toMatchObject({ minimumZoomScale: 1, maximumZoomScale: 3, centerContent: true });
+});
+
 test('chat refined viewer closes from its backdrop while inner controls stay inside', async () => {
   const onClose = jest.fn();
   const sources = [{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }];
@@ -76,6 +91,32 @@ test('chat refined viewer closes from its backdrop while inner controls stay ins
 
   fireEvent.press(screen.getByTestId('chat-image-viewer-backdrop'));
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('원고형 뷰어는 스와이프와 버튼이 같은 페이지를 바꾸고 현재 원본을 저장한다', () => {
+  const onSaveOriginal = jest.fn().mockResolvedValue(undefined);
+  const sources = [{ uri: 'https://test/one.png' }, { uri: 'https://test/two.png' }];
+  const items = [
+    { key: 'one', name: 'one.png', source: { kind: 'ready' } },
+    { key: 'two', name: 'two.png', source: { kind: 'ready' } },
+  ] as any;
+  const screen = render(<ImageViewerModal
+    variant="chatRefined"
+    sources={sources}
+    items={items}
+    initialIndex={0}
+    onClose={jest.fn()}
+    filenames={['one.png', 'two.png']}
+    onSaveOriginal={onSaveOriginal}
+  />);
+
+  fireEvent(screen.getByTestId('image-viewer-pages'), 'momentumScrollEnd', {
+    nativeEvent: { contentOffset: { x: 390, y: 0 }, layoutMeasurement: { width: 390 } },
+  });
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 2');
+  expect(screen.getByTestId('chat-image-viewer-image').props.source).toBe(sources[1]);
+  fireEvent.press(screen.getByTestId('chat-image-viewer-save-original'));
+  expect(onSaveOriginal).toHaveBeenCalledWith(1, undefined);
 });
 
 test('closing an attachment leaves its original thumbnail available', () => {
