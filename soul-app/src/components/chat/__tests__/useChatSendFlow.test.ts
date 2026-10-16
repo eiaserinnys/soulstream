@@ -206,6 +206,10 @@ describe('useChatSendFlow', () => {
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
     expect(useChatStore.getState().pendingOptimisticBySession[SID]).toMatchObject({
       attachmentItems: [{ path: '/tmp/attachment.png', name: 'attachment.png' }],
+      data: {
+        attachments: ['/tmp/attachment.png'],
+        node_id: 'node-1',
+      },
     });
     unmount();
     reset();
@@ -678,6 +682,10 @@ describe('useChatSendFlow', () => {
     }));
     await act(async () => result.current.handleSend('실패한 초안', jest.fn(), 'compose-retry'));
     const failed = useChatStore.getState().pendingOptimisticBySession[SID] as any;
+    expect(failed.data).toMatchObject({
+      attachments: ['/tmp/a.png'],
+      node_id: 'node-1',
+    });
     await act(async () => result.current.retryPendingOptimistic(failed.id));
 
     expect(api.intervene).toHaveBeenNthCalledWith(

@@ -21,7 +21,7 @@ export interface UseChatSendFlowDeps {
   /** 현재 세션 ID. undefined면 세션 식별 오류를 노출한다. */
   sessionId: string | undefined;
   /** 현재 세션 객체. status에 따라 optimistic variant 결정 (서버 분기 거울, chatStore.pickOptimisticVariant 참조). */
-  session: Pick<Session, 'status'> | undefined;
+  session: Pick<Session, 'status' | 'nodeId'> | undefined;
   /** 전송·복원에 필요한 첨부 path와 선택 이름. 첨부 lifecycle에는 의존하지 않는다. */
   attachments: ReadonlyArray<{ path: string; name?: string }>;
   /** 모든 첨부가 업로드되어 전송할 수 있는 상태인지 나타낸다. */
@@ -171,8 +171,14 @@ export function useChatSendFlow(
       paths.length > 0 ? paths : undefined
     );
     const variant = pickOptimisticVariant(session?.status);
+    const optimisticEvent = createOptimisticUserEvent(messageText, variant);
     const optimistic: PendingOptimisticEvent = {
-      ...createOptimisticUserEvent(messageText, variant),
+      ...optimisticEvent,
+      data: {
+        ...optimisticEvent.data,
+        ...(paths.length > 0 ? { attachments: paths } : {}),
+        ...(session?.nodeId ? { node_id: session.nodeId } : {}),
+      },
       pendingStatus: 'sending',
       originalText: text,
       attachmentItems,
