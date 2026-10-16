@@ -25,12 +25,18 @@ const attachmentResult = {
   },
 };
 
-function activeTask(params: { commandId?: string | null; workspaceDir?: string } = {}) {
+function activeTask(params: {
+  commandId?: string | null;
+  workspaceDir?: string | null;
+  engineWorkspaceDir?: string;
+} = {}) {
   return {
-    resolvedWorkspaceDir: params.workspaceDir ?? "/workspace",
+    // Only worktree executions set resolvedWorkspaceDir; null models a plain session.
+    resolvedWorkspaceDir: params.workspaceDir === null ? undefined : params.workspaceDir ?? "/workspace",
     agentProfileSnapshot: { workspace_dir: "/profile-workspace" },
     executionRegistration: { registrationId: "registration-1", executionCommandId: "stale-command" },
     runner: {
+      engine: { workspaceDir: params.engineWorkspaceDir ?? "/engine-workspace" },
       dispatcher: {
         activeExecutionCommandId: vi.fn(() => params.commandId === null ? undefined : params.commandId ?? "output-command-1"),
       },
@@ -112,6 +118,21 @@ describe("register_attachment", () => {
       profileWorkspaceDir: "/profile-workspace",
     });
     expect(task.runner.dispatcher.activeExecutionCommandId).toHaveBeenCalledOnce();
+  });
+
+  it("uses the running engine workspace when the session has no worktree", async () => {
+    const register = vi.fn(async () => attachmentResult);
+    const task = activeTask({ workspaceDir: null, engineWorkspaceDir: "/home/agent/workspace" });
+    const client = await createClient(makeRuntime({ task, service: { register } }));
+
+    const result = await callTool(client, { local_path: "proof.png" }, "trusted-session");
+
+    expect(result.isError).not.toBe(true);
+    expect(register).toHaveBeenCalledOnce();
+    expect(register.mock.calls[0]?.[1]).toMatchObject({
+      outputCommandId: "output-command-1",
+      workspaceDir: "/home/agent/workspace",
+    });
   });
 
   it("rejects caller supplied provenance fields under the strict input schema", async () => {
