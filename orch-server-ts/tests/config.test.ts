@@ -97,6 +97,7 @@ describe("orch-server-ts config scaffold", () => {
       claude_oauth_client_id: "claude-client",
       claude_oauth_callback_url: "https://example.com/claude/callback",
       codex_cli_path: null,
+      antigravity_cli_path: null,
       model_catalog_path: null,
       typesafe_api_key: "",
       turn_summary_openai_key: "turn-summary-key",

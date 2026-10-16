@@ -33,6 +33,8 @@ import {
 } from "./config.js";
 import { registerDashboardServing } from "./dashboard/dashboard_serving.js";
 import { CodexEphemeralExecutor } from "./llm/codex_ephemeral_executor.js";
+import { AntigravityEphemeralExecutor } from "./llm/antigravity_ephemeral_executor.js";
+import { resolveAntigravityCliPath } from "./llm/antigravity_cli_path.js";
 import type { EphemeralLlmRouteOptions } from "./llm/ephemeral_llm_routes.js";
 import { InMemoryNodeRegistry, type NodeRegistryEvent } from "./node/registry.js";
 import { resolveRegisteredAgentId } from "./node/agent_profile_lookup.js";
@@ -589,10 +591,15 @@ export async function createLiveProductionApplication(
   const ephemeralProcessEnv = overrides.turnSummaryProcessEnv ?? process.env;
   const ephemeralCodexPath = overrides.turnSummaryCodexPath ??
     resolveCodexCliPath(config.codex_cli_path, ephemeralProcessEnv)?.path;
+  const ephemeralAntigravityPath = resolveAntigravityCliPath(config.antigravity_cli_path, ephemeralProcessEnv)?.path;
   const ephemeralLlmRoutes: EphemeralLlmRouteOptions = {
     authBearerToken: appConfig.authBearerToken,
     generator: new CodexEphemeralExecutor({
       ...(ephemeralCodexPath === undefined ? {} : { codexPath: ephemeralCodexPath }),
+      processEnv: ephemeralProcessEnv,
+    }),
+    antigravityGenerator: new AntigravityEphemeralExecutor({
+      ...(ephemeralAntigravityPath === undefined ? {} : { agyPath: ephemeralAntigravityPath }),
       processEnv: ephemeralProcessEnv,
     }),
   };

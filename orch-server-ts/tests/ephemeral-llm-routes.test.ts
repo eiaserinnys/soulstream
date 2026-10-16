@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AntigravityEphemeralExecutionError } from "../src/llm/antigravity_ephemeral_executor.js";
 
 import {
   CodexEphemeralExecutionError,
@@ -14,6 +15,57 @@ const config = parseOrchServerConfig({
 });
 
 describe("ephemeral LLM routes", () => {
+  it.each([undefined, "codex", "antigravity"] as const)("selects backend %s with the existing response contract", async (backend) => {
+    const result = { content: '{"reply":"hello"}', model: "chosen", latencyMs: 12, attempts: 1,
+      spawnDurationMs: 10, peakConcurrentSpawns: 1, usage: { input_tokens: 3, output_tokens: 2 } };
+    const generate = vi.fn(async () => result);
+    const antigravityGenerate = vi.fn(async () => result);
+    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token",
+      generator: { generate }, antigravityGenerator: { generate: antigravityGenerate } } });
+    const response = await app.inject({ method: "POST", url: "/api/llm/ephemeral",
+      headers: { authorization: "Bearer service-token" },
+      payload: { prompt: "hello", model: "gemini-4-argon", ...(backend ? { backend } : {}),
+        output_schema: { type: "object" }, reasoning_effort: "high" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ content: result.content, model: result.model, latency_ms: 12, attempts: 1, usage: result.usage });
+    expect(backend === "antigravity" ? antigravityGenerate : generate).toHaveBeenCalledWith({
+      prompt: "hello", model: "gemini-4-argon", reasoningEffort: "high", outputSchema: { type: "object" },
+      timeoutMs: 120_000, maxAttempts: 1, concurrencyLimit: 1,
+    });
+    expect(backend === "antigravity" ? generate : antigravityGenerate).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it.each(["minimal", "xhigh", "max"])("rejects unsupported Antigravity effort %s", async (effort) => {
+    const generate = vi.fn();
+    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate },
+      antigravityGenerator: { generate } } });
+    const response = await app.inject({ method: "POST", url: "/api/llm/ephemeral",
+      headers: { authorization: "Bearer service-token" }, payload: {
+        prompt: "hello", model: "gemini-4-argon", backend: "antigravity", reasoning_effort: effort,
+      } });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ detail: { error: { code: "INVALID_EPHEMERAL_LLM_REQUEST" } } });
+    expect(generate).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it.each([
+    ["ANTIGRAVITY_UNAVAILABLE", 503], ["ANTIGRAVITY_TIMEOUT", 504], ["ANTIGRAVITY_RATE_LIMITED", 429],
+    ["ANTIGRAVITY_INVALID_OUTPUT", 502], ["ANTIGRAVITY_EXEC_FAILED", 502],
+  ] as const)("maps %s to HTTP %s", async (code, status) => {
+    const generate = vi.fn(async () => { throw new AntigravityEphemeralExecutionError(code, "quota original", {
+      attempts: 1, latencyMs: 10, spawnDurationMs: 10, peakConcurrentSpawns: 1,
+    }); });
+    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate },
+      antigravityGenerator: { generate } } });
+    const response = await app.inject({ method: "POST", url: "/api/llm/ephemeral",
+      headers: { authorization: "Bearer service-token" }, payload: { prompt: "hello", model: "gemini-4-argon", backend: "antigravity" } });
+    expect(response.statusCode).toBe(status);
+    expect(response.json()).toEqual({ detail: { error: { code, message: "quota original" } } });
+    await app.close();
+  });
+
   it("requires the configured service bearer token", async () => {
     const generate = vi.fn();
     const app = createApp({
