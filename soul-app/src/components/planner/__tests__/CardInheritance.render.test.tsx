@@ -105,7 +105,8 @@ test('커멘트 입력은 ChatComposer이고 업로드 URL을 본문으로 전�
   expect(screen.getByTestId('chat-composer-input-row').props.collapsable).toBe(false);
   expect(screen.getByTestId('chat-composer-controls-row').props.collapsable).toBe(false);
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-attach-button')));
-  expect(api.uploadAttachment).toHaveBeenCalledWith('root', 'node-1', expect.objectContaining({ name: '사진.png' }));
+  expect(api.uploadAttachment).toHaveBeenCalledWith('root', 'node-1', expect.objectContaining({ name: '사진.png' }),
+    { folderId: undefined, signal: expect.any(AbortSignal) });
   fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '본문');
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-send-button')));
   expect(api.addCardComment).toHaveBeenCalledWith(card.id, expect.objectContaining({ body: '본문\n\n![사진.png](https://cards.test/api/attachments/files?nodeId=node-1&path=%2Ftmp%2F%EC%82%AC%EC%A7%84.png)' }));

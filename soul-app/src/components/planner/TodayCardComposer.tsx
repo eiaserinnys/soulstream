@@ -46,7 +46,8 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
     defaultFolderId: value.folderId, defaultNodeId: value.nodeId ?? settings.nodeId,
     defaultAgentId: value.agentId, defaultModelPresetId: value.modelPreset, preserveAgentOnNodeChange: true });
   const disabled = pending || attachments.uploading || !draft.ready;
-  const canSend = !!api && !!text.trim() && !!value.folderId && !!value.agentId && !labels.modelPresetSelectionInvalid && !disabled;
+  const canSend = !!api && !!text.trim() && !!value.folderId && !!value.agentId
+    && !labels.modelPresetSelectionInvalid && attachments.attachmentsReady && !disabled;
   const submit = async () => {
     if (!api || !canSend) return;
     if (submitting.current) return;
