@@ -1,11 +1,13 @@
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { buildLegacyAttachmentPlan } from "../../scripts/attachment-migration/build_plan.js";
 import {
   FILE_OBSERVATION_STATUS,
+  INVENTORY_PLAN_STATUS,
   INVENTORY_SCHEMA_VERSION,
   NODE_INVENTORY_RECORDED,
   type NodeScanOutputRecord,
@@ -14,6 +16,54 @@ import {
 const scannerPath = fileURLToPath(new URL("../../scripts/attachment-migration/scan_node.mjs", import.meta.url));
 
 describe("node attachment inventory CLI contract", () => {
+  it.each(["blocked", "."])("keeps an existing file under unreadable directory %s unconfirmed from CLI through planner", async (directory) => {
+    const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-scan-denied-"));
+    const incoming = path.join(temp, "incoming");
+    const blocked = path.join(incoming, directory);
+    const present = path.join(blocked, "present.png");
+    const output = path.join(temp, "inventory.jsonl");
+    const cutoff = "2027-01-01T00:00:00.000Z";
+    await mkdir(blocked, { recursive: true });
+    await writeFile(present, "present");
+    await writeFile(path.join(temp, "sources.json"), "[]");
+    await writeFile(path.join(temp, "roots.json"), JSON.stringify([temp]));
+    await chmod(blocked, 0o000);
+    try {
+      const result = spawnSync(process.execPath, [
+        scannerPath, "--node-id", "node-a", "--incoming-root", incoming,
+        "--sources", path.join(temp, "sources.json"), "--allowed-roots", path.join(temp, "roots.json"),
+        "--cutoff", cutoff, "--output", output,
+      ], { encoding: "utf8" });
+      expect(result.status).toBe(2);
+      const records = (await readFile(output, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line) as NodeScanOutputRecord);
+      const plan = buildLegacyAttachmentPlan({
+        sources: [{
+          schema_version: INVENTORY_SCHEMA_VERSION, source_kind: "card_request", source_table: "cards",
+          source_pk: "card-a", source_pointer: "/", row_sha256: "a".repeat(64), created_at: cutoff,
+          changed_after_cutoff: false, card_id: "card-a", data: { attachments: [{ nodeId: "node-a", path: present }] },
+        }],
+        observations: records.filter((record) => record.record_type === "file"),
+        nodeCoverage: records.filter((record) => record.record_type === "summary"),
+        assets: [], aliases: [],
+        metadata: {
+          record_type: "run_metadata", schema_version: INVENTORY_SCHEMA_VERSION, scan_id: "denied-census",
+          baseline_sha: "1fe5a517", cutoff, expected_node_ids: ["node-a"], event_session_ids: [],
+          relational_coverage_complete: true, alias_snapshot_complete: true,
+          stages: { relational: { started_at: cutoff, ended_at: cutoff }, events: { started_at: cutoff, ended_at: cutoff }, node_scan: { started_at: cutoff, ended_at: cutoff } },
+        },
+      });
+      expect(plan.identities).toHaveLength(1);
+      expect(plan.identities[0]?.status).toBe(INVENTORY_PLAN_STATUS.unconfirmed_node);
+      expect(plan.coverage_complete).toBe(false);
+      expect(plan.summary.exit_code).toBe(2);
+      expect(records.find((record) => record.record_type === "summary")).toMatchObject({ incoming_census_complete: false });
+      expect(records.find((record) => record.record_type === "summary")).not.toHaveProperty("incoming_root");
+    } finally {
+      await chmod(blocked, 0o700);
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+
   it("streams JSONL records using the shared inventory contract", async () => {
     const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-scan-contract-"));
     const allowed = path.join(temp, "allowed");

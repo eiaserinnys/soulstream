@@ -85,36 +85,9 @@ export async function* scanNodeSources({ nodeId, incomingRoot, explicitSources, 
     group.sourceRefs.push(source.source_ref);
   }
 
-  if (incomingReal !== null) {
-    for await (const entry of enumerate(incomingReal)) {
-      if (entry.error) {
-        yield diagnostic(nodeId, FILE_STATUS.path_denied, ERROR_CODES.path_denied, undefined, [], entry.path);
-        continue;
-      }
-      let canonical;
-      try {
-        canonical = await realpath(entry.path);
-      } catch {
-        yield diagnostic(nodeId, FILE_STATUS.source_absent, ERROR_CODES.source_absent, undefined, [], entry.path, entry.relativePath);
-        continue;
-      }
-      if (!isAllowed(canonical, rootRealPaths)) {
-        yield diagnostic(nodeId, FILE_STATUS.path_denied, ERROR_CODES.path_denied, undefined, [], canonical, entry.relativePath);
-        continue;
-      }
-      const group = explicitGroups.get(canonical);
-      yield await observeFile({
-        nodeId,
-        path: canonical,
-        incomingRelativePath: entry.relativePath,
-        knownSourcePaths: group?.knownSourcePaths ?? [],
-        sourceRefs: group?.sourceRefs ?? [],
-        cutoffDate,
-        signal,
-      });
-      explicitGroups.delete(canonical);
-    }
-  }
+  const completedIncomingRoot = incomingReal === null ? undefined : yield* scanIncomingSources({
+    nodeId, incomingReal, rootRealPaths, explicitGroups, cutoffDate, signal,
+  });
 
   for (const group of explicitGroups.values()) {
     const incomingRelativePath = incomingReal !== null && isPathWithin(incomingReal, group.path)
@@ -129,6 +102,54 @@ export async function* scanNodeSources({ nodeId, incomingRoot, explicitSources, 
       cutoffDate,
       signal,
     });
+  }
+
+  // Only natural exhaustion publishes a census result. return()/throw() cannot
+  // turn a partially consumed traversal into evidence of absence.
+  return completedIncomingRoot === undefined || signal?.aborted
+    ? { incoming_census_complete: false }
+    : { incoming_census_complete: true, incoming_root: completedIncomingRoot };
+}
+
+async function* scanIncomingSources({ nodeId, incomingReal, rootRealPaths, explicitGroups, cutoffDate, signal }) {
+  let complete = true;
+  for await (const entry of enumerateIncomingSources(incomingReal, explicitGroups)) {
+    let observation;
+    if (entry.error) {
+      observation = diagnostic(nodeId, FILE_STATUS.path_denied, ERROR_CODES.path_denied, undefined, [], entry.path);
+    } else {
+      let canonical;
+      try {
+        canonical = await realpath(entry.path);
+      } catch {
+        observation = diagnostic(nodeId, FILE_STATUS.source_absent, ERROR_CODES.source_absent, undefined, [], entry.path, entry.relativePath);
+      }
+      if (canonical !== undefined) {
+        if (!isAllowed(canonical, rootRealPaths)) {
+          observation = diagnostic(nodeId, FILE_STATUS.path_denied, ERROR_CODES.path_denied, undefined, [], canonical, entry.relativePath);
+        } else {
+          const group = explicitGroups.get(canonical);
+          observation = await observeFile({
+            nodeId, path: canonical, incomingRelativePath: entry.relativePath,
+            knownSourcePaths: group?.knownSourcePaths ?? [], sourceRefs: group?.sourceRefs ?? [], cutoffDate, signal,
+          });
+          explicitGroups.delete(canonical);
+        }
+      }
+    }
+    // Every census outcome passes this latch, including directory diagnostics
+    // with no incoming_relative_path. Explicit sources outside census do not.
+    complete = complete && observation.coverage_complete;
+    yield observation;
+  }
+  return complete && !signal?.aborted ? incomingReal : undefined;
+}
+
+async function* enumerateIncomingSources(root, explicitGroups) {
+  yield* enumerate(root);
+  // Explicit incoming sources not seen in enumeration still belong to census.
+  for (const group of explicitGroups.values()) {
+    if (isPathWithin(root, group.path)) yield { path: group.path, relativePath: path.relative(root, group.path) };
   }
 }
 
@@ -333,22 +354,21 @@ async function main() {
   const output = await open(outputPath, "wx", 0o600);
   const summaryStats = createSummaryStats();
   let fatalError;
-  let incomingCensusComplete = true;
+  let census;
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   process.once("SIGINT", interrupt);
+  const scanner = scanNodeSources({
+    nodeId: args.nodeId, incomingRoot, explicitSources, allowedRoots, cutoff, signal: controller.signal,
+  });
   try {
-    for await (const observation of scanNodeSources({
-      nodeId: args.nodeId,
-      incomingRoot,
-      explicitSources,
-      allowedRoots,
-      cutoff,
-      signal: controller.signal,
-    })) {
+    while (true) {
+      const { value: observation, done } = await scanner.next();
+      if (done) {
+        census = observation;
+        break;
+      }
       addObservation(summaryStats, observation);
-      if (observation.status === FILE_STATUS.root_unconfirmed ||
-          (observation.incoming_relative_path !== undefined && !observation.coverage_complete)) incomingCensusComplete = false;
       await writeLine(output, observation);
       if (observation.status === FILE_STATUS.hash_interrupted) break;
     }
@@ -356,9 +376,10 @@ async function main() {
     fatalError = error;
     process.stderr.write(`${error.message}\n`);
   } finally {
+    await scanner.return();
     process.removeListener("SIGINT", interrupt);
   }
-  const confirmedIncomingRoot = incomingCensusComplete && fatalError === undefined ? incomingCanonical : undefined;
+  const confirmedIncomingRoot = fatalError === undefined ? census?.incoming_root : undefined;
   const summary = buildSummary(args.nodeId, cutoff, startedAt, summaryStats, fatalError, confirmedIncomingRoot, confirmedIncomingRoot !== undefined);
   await writeLine(output, summary);
   await output.close();
@@ -427,7 +448,7 @@ function buildSummary(nodeId, cutoff, startedAt, stats, fatalError, incomingRoot
     cutoff,
     started_at: startedAt,
     ended_at: new Date().toISOString(),
-    coverage_complete: stats.coverageComplete && fatalError === undefined,
+    coverage_complete: stats.coverageComplete && incomingCensusComplete && fatalError === undefined,
     file_count: stats.fileCount,
     bytes_hashed: stats.bytesHashed,
     hashes_completed: stats.hashesCompleted,

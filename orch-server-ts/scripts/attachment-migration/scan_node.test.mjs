@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, open, rename, symlink, truncate, utimes, writeFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, open, rename, symlink, truncate, utimes, writeFile, rm } from "node:fs/promises";
+import { writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -32,6 +33,104 @@ async function collect(options) {
   for await (const record of scanNodeSources(options)) records.push(record);
   return records;
 }
+
+async function collectCensus(options) {
+  const scanner = scanNodeSources(options);
+  const records = [];
+  while (true) {
+    const { value, done } = await scanner.next();
+    if (done) return { records, census: value };
+    records.push(value);
+  }
+}
+
+test("keeps census incomplete when an incoming directory cannot be listed", async () => {
+  await withRoots(async ({ allowed, incoming }) => {
+    const blocked = path.join(incoming, "blocked");
+    await mkdir(blocked);
+    await writeFile(path.join(blocked, "present.png"), "present");
+    await chmod(blocked, 0o000);
+    try {
+      const { records, census } = await collectCensus({ nodeId: "node-a", incomingRoot: incoming, explicitSources: [], allowedRoots: [allowed], cutoff });
+      assert.equal(records[0].status, FILE_OBSERVATION_STATUS.path_denied);
+      assert.equal(records[0].incoming_relative_path, undefined);
+      assert.deepEqual(census, { incoming_census_complete: false });
+    } finally {
+      await chmod(blocked, 0o700);
+    }
+  });
+});
+
+test("keeps census incomplete when the incoming root does not exist", async () => {
+  await withRoots(async ({ allowed, incoming }) => {
+    const { census } = await collectCensus({ nodeId: "node-a", incomingRoot: path.join(incoming, "missing"), explicitSources: [], allowedRoots: [allowed], cutoff });
+    assert.deepEqual(census, { incoming_census_complete: false });
+  });
+});
+
+test("keeps census incomplete when an incoming file changes during hashing", async () => {
+  await withRoots(async ({ allowed, incoming }) => {
+    const file = path.join(incoming, "changing.txt");
+    await writeFile(file, "before");
+    const signal = {
+      aborted: false,
+      addEventListener() { writeFileSync(file, "changed while hashing"); },
+      removeEventListener() {},
+    };
+    const { records, census } = await collectCensus({ nodeId: "node-a", incomingRoot: incoming, explicitSources: [], allowedRoots: [allowed], cutoff, signal });
+    assert.equal(records[0].status, FILE_OBSERVATION_STATUS.unstable);
+    assert.deepEqual(census, { incoming_census_complete: false });
+  });
+});
+
+test("keeps census incomplete for file access denial and a broken incoming symlink", async () => {
+  await withRoots(async ({ allowed, incoming }) => {
+    const file = path.join(incoming, "denied.txt");
+    await writeFile(file, "denied");
+    await chmod(file, 0o000);
+    await symlink(path.join(incoming, "missing"), path.join(incoming, "broken-link"));
+    try {
+      const { records, census } = await collectCensus({ nodeId: "node-a", incomingRoot: incoming, explicitSources: [], allowedRoots: [allowed], cutoff });
+      assert.deepEqual(new Set(records.map((record) => record.status)), new Set([FILE_OBSERVATION_STATUS.path_denied, FILE_OBSERVATION_STATUS.source_absent]));
+      assert.deepEqual(census, { incoming_census_complete: false });
+    } finally {
+      await chmod(file, 0o600);
+    }
+  });
+});
+
+test("keeps census incomplete after a hash interruption and an abort of empty census", async () => {
+  await withRoots(async ({ allowed, incoming }) => {
+    const controller = new AbortController();
+    controller.abort();
+    const options = { nodeId: "node-a", incomingRoot: incoming, explicitSources: [], allowedRoots: [allowed], cutoff, signal: controller.signal };
+    const empty = await collectCensus(options);
+    assert.deepEqual(empty.census, { incoming_census_complete: false });
+    await writeFile(path.join(incoming, "file.txt"), "present");
+    const interrupted = await collectCensus(options);
+    assert.equal(interrupted.records[0].status, FILE_OBSERVATION_STATUS.hash_interrupted);
+    assert.deepEqual(interrupted.census, { incoming_census_complete: false });
+  });
+});
+
+test("does not publish completed census when the consumer stops traversal early", async () => {
+  await withRoots(async ({ allowed, incoming }) => {
+    await writeFile(path.join(incoming, "a.txt"), "a");
+    await writeFile(path.join(incoming, "b.txt"), "b");
+    const scanner = scanNodeSources({ nodeId: "node-a", incomingRoot: incoming, explicitSources: [], allowedRoots: [allowed], cutoff });
+    assert.equal((await scanner.next()).done, false);
+    assert.deepEqual(await scanner.return(), { value: undefined, done: true });
+  });
+});
+
+test("publishes completed census only at EOF, including an empty root", async () => {
+  await withRoots(async ({ allowed, incoming }) => {
+    const options = { nodeId: "node-a", incomingRoot: incoming, explicitSources: [], allowedRoots: [allowed], cutoff };
+    assert.deepEqual((await collectCensus(options)).census, { incoming_census_complete: true, incoming_root: incoming });
+    await writeFile(path.join(incoming, "file.txt"), "present");
+    assert.deepEqual((await collectCensus(options)).census, { incoming_census_complete: true, incoming_root: incoming });
+  });
+});
 
 test("censuses small, empty, and Korean-named files with streaming hashes", async () => {
   await withRoots(async ({ allowed, incoming }) => {
