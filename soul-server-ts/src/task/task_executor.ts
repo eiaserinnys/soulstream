@@ -274,6 +274,7 @@ export class TaskExecutor {
     this.engineTurnRunner = new TaskEngineTurnRunner({
       snapshotPersistence: this.agentsSnapshotPersistence,
       scheduleToolHandler,
+      modelCatalog: this.modelCatalog,
     });
     this.deliveryConsumption = deliveryConsumptionRecorder
       ? new TaskDeliveryConsumption(deliveryConsumptionRecorder, this.logger)

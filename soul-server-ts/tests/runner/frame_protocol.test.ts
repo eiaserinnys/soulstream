@@ -31,6 +31,10 @@ const frames: RunnerFrame[] = [
       sessionCost: { usd: 17.288251, partial: false },
       sessionItems: [{ role: "user", content: "hello" }],
       claudeAutoMemoryEnabled: false,
+      opencodeMcpToolAllowlist: {
+        soulstream: ["get_session_name", "list_sessions"],
+        serendipity: [],
+      },
     },
   },
   {
@@ -275,6 +279,30 @@ describe("runner frame protocol", () => {
     expect(RunnerFrameSchema.safeParse({
       ...execute,
       params: { ...execute?.params, claudeAutoMemoryEnabled: "false" },
+    }).success).toBe(false);
+  });
+
+  it("round-trips OpenCode MCP allowlists and rejects empty names", () => {
+    const execute = frames.find(
+      (frame): frame is Extract<RunnerFrame, { kind: "execute" }> => frame.kind === "execute",
+    );
+    expect(execute).toBeDefined();
+    expect(RunnerFrameSchema.parse(execute)).toMatchObject({
+      params: {
+        opencodeMcpToolAllowlist: {
+          soulstream: ["get_session_name", "list_sessions"],
+          serendipity: [],
+        },
+      },
+    });
+
+    expect(RunnerFrameSchema.safeParse({
+      ...execute,
+      params: { ...execute?.params, opencodeMcpToolAllowlist: { "": ["tool"] } },
+    }).success).toBe(false);
+    expect(RunnerFrameSchema.safeParse({
+      ...execute,
+      params: { ...execute?.params, opencodeMcpToolAllowlist: { soulstream: [""] } },
     }).success).toBe(false);
   });
 

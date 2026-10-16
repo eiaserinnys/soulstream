@@ -12,9 +12,37 @@ import type {
   SSEEventPayload,
 } from "../protocol.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
-import { prepareOpenCodeSession } from "./config.js";
+import { openCodeMcpToolName, prepareOpenCodeSession } from "./config.js";
 import { OpenCodeEventMapper, parseOpenCodeEvent } from "./events.js";
 import { launchOpenCodeProcess } from "./process.js";
+
+function originalToolName(event: ReturnType<typeof parseOpenCodeEvent>): string | undefined {
+  const part = event.part;
+  if (!part) return undefined;
+  if (part.tool !== "invalid") return part.tool;
+  const input = part.state?.input;
+  if (!input || typeof input !== "object" || !("tool" in input)
+    || typeof input.tool !== "string") return undefined;
+  return input.tool;
+}
+
+function outOfAllowlistToolName(
+  event: ReturnType<typeof parseOpenCodeEvent>,
+  allowlist: Record<string, string[]>,
+): string | undefined {
+  if (event.type !== "tool_use") return undefined;
+  const toolName = originalToolName(event);
+  if (!toolName) return undefined;
+  for (const [serverName, allowedTools] of Object.entries(allowlist)) {
+    const serverPrefix = openCodeMcpToolName(serverName, "");
+    if (!toolName.startsWith(serverPrefix)) continue;
+    if (allowedTools.some((allowed) => openCodeMcpToolName(serverName, allowed) === toolName)) {
+      return undefined;
+    }
+    return toolName;
+  }
+  return undefined;
+}
 
 export interface OpenCodeAdapterOptions {
   workspaceDir: string;
@@ -56,6 +84,8 @@ export class OpenCodeEngineAdapter implements EnginePort {
     this.executing = true;
     const model = params.model || "";
     const mapper = new OpenCodeEventMapper(model);
+    const warnedCallIds = new Set<string>();
+    let backendSessionId: string | undefined;
     let process: ReturnType<typeof launchOpenCodeProcess> | undefined;
     try {
       if (!this.options.executablePath) {
@@ -74,6 +104,9 @@ export class OpenCodeEngineAdapter implements EnginePort {
         ...(params.allowedTools !== undefined ? { allowedTools: params.allowedTools } : {}),
         ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),
         ...(params.useMcp !== undefined ? { useMcp: params.useMcp } : {}),
+        ...(params.opencodeMcpToolAllowlist !== undefined
+          ? { opencodeMcpToolAllowlist: params.opencodeMcpToolAllowlist }
+          : {}),
         ...(this.options.resolvedMcpServers !== undefined
           ? { resolvedMcpServers: this.options.resolvedMcpServers }
           : {}),
@@ -99,7 +132,22 @@ export class OpenCodeEngineAdapter implements EnginePort {
       for await (const line of process.events) {
         process.markInitialized();
         try {
-          for (const event of mapper.accept(parseOpenCodeEvent(line))) yield engineEventFrame(event);
+          const event = parseOpenCodeEvent(line);
+          if (event.sessionID) backendSessionId = event.sessionID;
+          const outOfAllowlist = params.opencodeMcpToolAllowlist
+            ? outOfAllowlistToolName(event, params.opencodeMcpToolAllowlist)
+            : undefined;
+          const callID = event.part?.callID;
+          if (outOfAllowlist && typeof callID === "string" && !warnedCallIds.has(callID)) {
+            warnedCallIds.add(callID);
+            this.logger.warn({
+              agentId: this.options.agentId,
+              agentSessionId: params.agentSessionId,
+              backendSessionId,
+              toolName: outOfAllowlist,
+            }, "OpenCode MCP tool call is outside the configured allowlist");
+          }
+          for (const mappedEvent of mapper.accept(event)) yield engineEventFrame(mappedEvent);
         } catch (error) {
           for (const event of mapper.fail(error)) yield engineEventFrame(event);
           process.interrupt();

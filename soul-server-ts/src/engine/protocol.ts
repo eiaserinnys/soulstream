@@ -163,6 +163,8 @@ export interface EngineExecuteParams {
   maxTurns?: number;
   /** 요청별 MCP 사용 여부. Claude 어댑터는 false면 명시 mcpServers 로딩을 생략. Codex 무시. */
   useMcp?: boolean;
+  /** Per-profile MCP tool restrictions for OpenCode only. */
+  opencodeMcpToolAllowlist?: Record<string, string[]>;
   /** Claude Agent SDK permissionMode. 없으면 현행 bypassPermissions 동작을 유지한다. */
   claudePermissionMode?: ClaudePermissionMode;
   /** agents.yaml의 `claude_auto_memory_enabled` — false면 Claude SDK `settings.autoMemoryEnabled=false`로 forward. Codex 무시. */

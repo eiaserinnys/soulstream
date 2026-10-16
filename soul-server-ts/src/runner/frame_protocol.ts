@@ -58,6 +58,10 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   disallowedTools: z.array(z.string()).optional(),
   maxTurns: z.number().int().positive().optional(),
   useMcp: z.boolean().optional(),
+  opencodeMcpToolAllowlist: z.record(
+    z.string().min(1),
+    z.array(z.string().min(1)),
+  ).optional(),
   claudePermissionMode: z.enum([
     "default",
     "acceptEdits",
