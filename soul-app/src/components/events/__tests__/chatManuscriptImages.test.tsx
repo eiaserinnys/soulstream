@@ -99,6 +99,11 @@ test('원고형 사용자 메시지는 이미지 첨부만 본문 뒤에 원래 
     expect.stringContaining('path=%2Fincoming%2Ffirst.png'),
     { Authorization: 'Bearer component-test-jwt' },
   ));
+  for (const label of ['first.png 크게 보기', 'second.webp 크게 보기']) {
+    expect(screen.getAllByRole('button', { name: label })).toHaveLength(1);
+    expect(screen.UNSAFE_getAllByType(Image)
+      .filter(({ props }) => props.accessibilityLabel === label)).toHaveLength(0);
+  }
 
   const bubbleChildren = React.Children.toArray(
     screen.getByTestId('user-message-bubble').props.children,

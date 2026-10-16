@@ -7,9 +7,18 @@ import { createSessionVisualRoles, useTokens } from '../../../theme';
 
 const attachmentSession: Session = { agentSessionId: 's', nodeId: 'node-1', displayName: null, status: 'idle', createdAt: '', updatedAt: '' };
 
+function expectButtonLabelsOnly(screen: ReturnType<typeof render>, labels: readonly string[]) {
+  const images = screen.UNSAFE_getAllByType(Image);
+  for (const label of labels) {
+    expect(screen.getAllByRole('button', { name: label })).toHaveLength(1);
+    expect(images.filter(({ props }) => props.accessibilityLabel === label)).toHaveLength(0);
+  }
+}
+
 test('채팅 말풍선과 첨부의 시각 속성 snapshot은 불변이다', () => {
   useSettingsStore.setState({ serverUrl: 'https://chat.test' });
   const screen = render(<UserMessage event={{ id: 'snapshot', type: 'user_message', data: { text: '사진 두 장', attachments: ['/tmp/one.png', '/tmp/two.png'] } }} session={attachmentSession} />);
+  expectButtonLabelsOnly(screen, ['첨부 이미지 1', '첨부 이미지 2']);
   expect({ bubble: StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style),
     text: screen.getByTestId('user-message-text').props.children,
     images: screen.UNSAFE_getAllByType(Image).map(({ props }) => ({ source: props.source, style: StyleSheet.flatten(props.style), resizeMode: props.resizeMode, accessibilityLabel: props.accessibilityLabel })) }).toMatchSnapshot();
