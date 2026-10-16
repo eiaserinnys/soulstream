@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, FileAttachmentPreview } from "@seosoyoung/soul-ui";
+import { FileAttachmentPreview } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import { ChatAttachments } from "@seosoyoung/soul-ui/components/chat/ChatAttachments";
+import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
+import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
+import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import "./components-review.css";
 
 const sampleContext = { type: "session" as const, id: "attachment-review-sample" };
 
@@ -52,6 +56,7 @@ function failingTextItem(key: string, name: string, path: string): ChatAttachmen
 }
 
 export function ChatAttachmentReviewSamples() {
+  const { chatTypographyStyle } = useChatTypography();
   const items = useMemo(() => {
     const emptyText = new File([], "empty.txt", { type: "text/plain" });
     const largeText = new File([new Uint8Array(1_048_586).fill(65)], "large.txt", { type: "text/plain" });
@@ -122,11 +127,11 @@ export function ChatAttachmentReviewSamples() {
       user: [reviewImage("user-image-one", "사용자 이미지 1.png"), firstNote, reviewImage("user-image-two", "사용자 이미지 2.png"), secondNote, longArchive, missing],
       assistant: [
         reviewImage("assistant-image", "응답 이미지.png"),
-        localItem(new File(['{"ok":true}'], "manifest.json", { type: "application/json" }), "text", "assistant-json"),
+        ...items.slice(1),
       ],
       tile: new File(["기존 타일 표본"], "existing-attachment.pdf", { type: "application/pdf" }),
     };
-  }, []);
+  }, [items]);
   const [index, setIndex] = useState<number | null>(null);
   const [viewerItems, setViewerItems] = useState(items);
   const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
@@ -156,15 +161,19 @@ export function ChatAttachmentReviewSamples() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col gap-4 p-6">
+    <main className="v3-components-main glass-strong glass-chrome" style={chatTypographyStyle}>
       <div className="flex flex-col gap-4">
         <section>
-          <p className="text-sm text-muted-foreground">사용자</p>
-          <ChatAttachments items={chatItems.user} role="user" onOpen={(next, trigger) => openAt(chatItems.user, next, trigger)} />
+          <UserMessage msg={{ id: "attachment-review-user", role: "user", treeNodeId: "attachment-review-user", treeNodeType: "user_message", content: "첨부 파일을 확인해 주세요." }} presentation="manuscript">
+            <p>첨부 파일을 확인해 주세요.</p>
+            <ChatAttachments items={chatItems.user} role="user" onOpen={(next, trigger) => openAt(chatItems.user, next, trigger)} />
+          </UserMessage>
         </section>
         <section>
-          <p className="text-sm text-muted-foreground">Assistant</p>
-          <ChatAttachments items={chatItems.assistant} role="assistant" onOpen={(next, trigger) => openAt(chatItems.assistant, next, trigger)} />
+          <AssistantMessage msg={{ id: "attachment-review-assistant", role: "assistant", treeNodeId: "attachment-review-assistant", treeNodeType: "assistant_message", content: "첨부 파일입니다." }} presentation="manuscript">
+            <p>첨부 파일입니다.</p>
+            <ChatAttachments items={chatItems.assistant} role="assistant" onOpen={(next, trigger) => openAt(chatItems.assistant, next, trigger)} />
+          </AssistantMessage>
         </section>
         <section className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">기존 첨부 타일</p>
@@ -172,13 +181,6 @@ export function ChatAttachmentReviewSamples() {
             <FileAttachmentPreview file={chatItems.tile} status="done" onRemove={() => {}} />
           </div>
         </section>
-        <div className="flex flex-wrap gap-2">
-          {items.map((item, itemIndex) => (
-            <Button key={item.key} variant="outline" onClick={event => openAt(items, itemIndex, event.currentTarget)}>
-              {item.name ?? "첨부 파일"}
-            </Button>
-          ))}
-        </div>
       </div>
       <AttachmentViewer
         items={viewerItems}
