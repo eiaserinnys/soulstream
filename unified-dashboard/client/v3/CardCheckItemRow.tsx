@@ -44,12 +44,21 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
     {item.result?<p className="v3-card-check-item-result">{item.result}</p>:null}
     {item.caveat?<p className="v3-card-check-item-caveat"><TriangleAlert className="h-3 w-3" aria-hidden="true"/><span>{item.caveat}</span></p>:null}
     {images.length>0||missingEvidence?<div className="v3-card-check-item-evidence" data-evidence-type="image">
-     {images.map((evidence,index)=><figure key={`${evidence.url}:${index}`} title={evidence.label}>
-      <MarkdownImage variant="card-evidence" src={evidence.url} alt={evidence.label} onOpen={onOpenImage}/>
-     </figure>)}
+     {images.map((evidence,index)=>{
+      const key=evidence.attachment_id?`${evidence.attachment_id}:${index}`:`${evidence.url}:${index}`;
+      if(evidence.availability)return <span key={key} className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>;
+      const src=evidence.previewUrl??evidence.url;
+      return src?<figure key={key} title={evidence.label}>
+       <MarkdownImage variant="card-evidence" src={src} alt={evidence.label} onOpen={onOpenImage}/>
+      </figure>:null;
+     })}
      {missingEvidence?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
     </div>:null}
-    {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=><a key={`${evidence.url}:${index}`} href={evidence.url} target="_blank" rel="noreferrer" title={evidence.label} onClick={internalLinkClick}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>)}</div>:null}
+    {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=>{
+     const key=evidence.attachment_id?`${evidence.attachment_id}:${index}`:`${evidence.url}:${index}`;
+     if(evidence.availability)return <span key={key} className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>;
+     return <a key={key} href={evidence.originalUrl??evidence.url} target="_blank" rel="noreferrer" title={evidence.label} onClick={internalLinkClick}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>;
+    })}</div>:null}
     {!readOnly?<div className="v3-card-check-item-foot">
      {metadata}
      {!dropped?<button type="button" className="v3-card-check-item-target" onClick={onTargetItem}>고칠 점 남기기</button>:null}
