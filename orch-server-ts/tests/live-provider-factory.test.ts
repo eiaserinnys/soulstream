@@ -650,6 +650,16 @@ function createLiveDependencies(): LiveProviderDependencies {
         getSqlScopeEvidence: vi.fn(async () => null),
         listLegacyCandidateScopes: vi.fn(async () => []),
       },
+      attachmentCommitRepository: {
+        insertOwnedPending: vi.fn(async () => null),
+        getOwnedUpload: vi.fn(async () => null),
+        setMultipartUploadId: vi.fn(async () => null),
+        commitVerified: vi.fn(async () => null),
+        clearPendingMultipart: vi.fn(async () => false),
+        findLegacyAliasForAsset: vi.fn(async () => null),
+        findLegacyAliasForUpload: vi.fn(async () => null),
+        insertLegacyAlias: vi.fn(async () => null),
+      },
       boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
