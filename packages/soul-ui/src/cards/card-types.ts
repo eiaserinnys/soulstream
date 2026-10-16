@@ -1,4 +1,5 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
+import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 export type {CardAttachment} from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 export type { CardColor } from "@soulstream/wire-schema/card-colors";
@@ -7,7 +8,17 @@ import type { CardStatus } from "@soulstream/wire-schema";
 export type { CardStatus } from "@soulstream/wire-schema";
 export interface CardActivity { kind: "instruction" | "report"; body: string; createdAt: string; format: "markdown" | "html" }
 export type CardItemDisplay = "todo" | "doing" | "reported" | "changed" | "fix" | "confirmed" | "dropped";
-export interface CardItemEvidence { type: "image" | "link"; url: string; label: string }
+export interface CardItemEvidence {
+  type: "image" | "link";
+  url: string;
+  label: string;
+  attachment_id?: string;
+  descriptor?: AttachmentDescriptor;
+  read_context?: { type: "card"; id: string };
+  previewUrl?: string | null;
+  originalUrl?: string;
+  availability?: "missing" | "unavailable";
+}
 export interface CardCheckItem {
   id: number; title: string; state: "todo" | "doing" | "done" | "dropped"; result: string | null;
   evidence: CardItemEvidence[]; caveat: string | null; rev: number; confirmed: { at: string; rev: number } | null;
