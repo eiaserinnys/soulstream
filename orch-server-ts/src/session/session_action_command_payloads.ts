@@ -1,5 +1,6 @@
 import type { RequestResponseNodeCommandPayload } from "../node/pending_commands.js";
 import type { ControlCommandType } from "@soulstream/wire-schema";
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -42,6 +43,8 @@ export type InterveneNodeCommandPayload =
     text: string;
     user: string;
     attachment_paths?: string[];
+    attachment_ids?: string[];
+    attachment_bindings?: AttachmentPathBinding[];
     extra_context_items?: JsonObject[];
     caller_info?: JsonObject;
   };
@@ -109,6 +112,8 @@ export function intervenePayload(
   const user = optionalString(body.user) ?? "";
   const attachmentPaths = parseAttachmentPaths(body);
   if (!attachmentPaths.ok) return attachmentPaths;
+  const attachmentIds = parseAttachmentIds(body);
+  if (!attachmentIds.ok) return attachmentIds;
   const contextItems = optionalObjectArrayAlias(body, [
     "context_items",
     "contextItems",
@@ -128,6 +133,9 @@ export function intervenePayload(
   };
   if (attachmentPaths.value !== undefined && attachmentPaths.value.length > 0) {
     payload.attachment_paths = attachmentPaths.value;
+  }
+  if (attachmentIds.value !== undefined && attachmentIds.value.length > 0) {
+    payload.attachment_ids = attachmentIds.value;
   }
   if (contextItems.value !== undefined && contextItems.value.length > 0) {
     payload.extra_context_items = contextItems.value;
@@ -331,6 +339,30 @@ function optionalObject(
 
 export function parseAttachmentPaths(body: JsonObject) {
   return optionalStringArrayAlias(body, ["attachmentPaths", "attachment_paths"]);
+}
+
+/**
+ * Reads attachmentIds and attachment_ids; when both are present they must agree.
+ * Bindings are server-made, so a request body that carries them is rejected.
+ */
+export function parseAttachmentIds(body: JsonObject): ParseResult<string[] | undefined> {
+  if (body.attachment_bindings !== undefined || body.attachmentBindings !== undefined) {
+    return { ok: false, message: "attachment_bindings is not accepted in requests" };
+  }
+  const lists: string[][] = [];
+  for (const field of ["attachmentIds", "attachment_ids"]) {
+    const value = body[field];
+    if (value === undefined) continue;
+    if (!Array.isArray(value) || value.some((id) => typeof id !== "string" || id.length === 0)) {
+      return { ok: false, message: `${field} must be an array of non-empty strings` };
+    }
+    lists.push([...new Set<string>(value)]);
+  }
+  const [first, second] = lists;
+  if (second !== undefined && (first!.length !== second.length || first!.some((id, i) => id !== second[i]))) {
+    return { ok: false, message: "attachmentIds and attachment_ids must match" };
+  }
+  return { ok: true, value: first };
 }
 
 function optionalStringArrayAlias(

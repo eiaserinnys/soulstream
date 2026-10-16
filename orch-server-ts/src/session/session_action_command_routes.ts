@@ -1,6 +1,7 @@
 import type { ServiceCaller } from "../auth/service_caller.js";
 import { randomUUID } from "node:crypto";
 
+import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -41,9 +42,23 @@ export type SessionActionCallerInfoResolver = (
   targetSessionId: string,
 ) => Promise<JsonObject> | JsonObject;
 
+export type SessionActionAttachmentAdmission = (
+  caller: FastifyRequest | ServiceCaller,
+  input: {
+    sessionId: string;
+    attachmentIds?: string[];
+    attachmentPaths?: string[];
+  },
+) => Promise<{
+  attachment_ids: string[];
+  attachment_paths: string[];
+  attachment_bindings: AttachmentPathBinding[];
+}>;
+
 export type SessionActionCommandRouteOptions =
   SessionActionCommandDispatchOptions & {
     resolveCallerInfo?: SessionActionCallerInfoResolver;
+    admitAttachmentInput?: SessionActionAttachmentAdmission;
     reviewAcknowledgeFallback?: SessionReviewAcknowledgeFallback;
     deliveryRepositoryProvider?: () => Promise<Pick<SessionDeliveryRepository, "register">>;
     acceptPersistentReportReply?: (sessionId: string, context: unknown, callerInfo: JsonObject | undefined) => Promise<void>;
@@ -189,7 +204,9 @@ export async function executeSessionIntervention(
   if (options.resolveCallerInfo !== undefined) {
     payload.value.caller_info = await options.resolveCallerInfo(caller, payload.value.caller_info, targetSessionId);
   }
-  const durable = await admitDurableHumanIntervention(options, payload.value);
+  const admitted = await admitAttachmentInput(options, caller, payload.value);
+  if ("response" in admitted) return admitted.response;
+  const durable = await admitDurableHumanIntervention(options, admitted.payload);
   if (durable.conflict) return { status: 409, body: { error: {
     code: "DELIVERY_IDENTITY_CONFLICT", message: `Delivery identity conflict: ${durable.deliveryId}`, deliveryId: durable.deliveryId,
   } } };
@@ -199,6 +216,42 @@ export async function executeSessionIntervention(
     if ("log" in caller) caller.log.warn({ err: error }, "Report answer update failed; delivering the user message");
   }
   return executeInterveneCommand(options, durable.payload, durable.deliveryId);
+}
+
+async function admitAttachmentInput(
+  options: SessionActionCommandRouteOptions,
+  caller: FastifyRequest | ServiceCaller,
+  payload: InterveneNodeCommandPayload,
+): Promise<{ payload: InterveneNodeCommandPayload } | { response: SessionActionResponse }> {
+  const attachmentIds = payload.attachment_ids;
+  const attachmentPaths = payload.attachment_paths;
+  if (attachmentIds === undefined && attachmentPaths === undefined) return { payload };
+  if (options.admitAttachmentInput === undefined) {
+    if (attachmentIds === undefined) return { payload };
+    return { response: { status: 503, body: { error: {
+      code: "ATTACHMENT_INPUT_UNAVAILABLE", message: "Attachment input is unavailable",
+    } } } };
+  }
+  try {
+    const admitted = await options.admitAttachmentInput(caller, {
+      sessionId: payload.agentSessionId,
+      ...(attachmentIds === undefined ? {} : { attachmentIds }),
+      ...(attachmentPaths === undefined ? {} : { attachmentPaths }),
+    });
+    const admittedPayload: InterveneNodeCommandPayload = { ...payload };
+    if (admitted.attachment_paths.length > 0) admittedPayload.attachment_paths = admitted.attachment_paths;
+    if (admitted.attachment_ids.length > 0) admittedPayload.attachment_ids = admitted.attachment_ids;
+    if (admitted.attachment_bindings.length > 0) {
+      admittedPayload.attachment_bindings = admitted.attachment_bindings;
+    }
+    return { payload: admittedPayload };
+  } catch (error) {
+    const { code, statusCode } = error as { code?: unknown; statusCode?: unknown };
+    if (typeof code !== "string" || typeof statusCode !== "number") throw error;
+    return { response: { status: statusCode, body: { error: {
+      code, message: error instanceof Error ? error.message : code,
+    } } } };
+  }
 }
 
 async function admitDurableHumanIntervention(
@@ -240,6 +293,8 @@ async function admitDurableHumanIntervention(
     completionId,
     relationKey,
     attachmentPaths: payload.attachment_paths,
+    attachmentIds: payload.attachment_ids,
+    attachmentBindings: payload.attachment_bindings,
     context: payload.extra_context_items,
     callerInfo: payload.caller_info,
   });
