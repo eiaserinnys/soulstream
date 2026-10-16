@@ -128,6 +128,8 @@ export class AutoResumeTransition {
           user: message.user,
           callerInfo: message.callerInfo ?? task.callerInfo,
           attachmentPaths: message.attachmentPaths,
+          attachmentIds: message.attachmentIds,
+          attachmentBindings: message.attachmentBindings,
           contextItems: message.context,
           purpose: message.purpose,
         });
@@ -402,6 +404,8 @@ function prepareTaskForAutoResume(
     task.callerInfo = message.callerInfo;
   }
   task.attachmentPaths = message.attachmentPaths ?? [];
+  task.attachmentIds = message.attachmentIds ?? [];
+  task.attachmentBindings = message.attachmentBindings ?? [];
   task.contextItems = message.context ?? [];
   task.status = status;
   task.reviewState = reviewStateAfterFollowup(task.reviewState ?? "not_required");
