@@ -27,7 +27,7 @@ export function CardImageViewer({ image, onClose }: { image: CardImageSelection 
   return <Dialog open={Boolean(image)} onOpenChange={open => { if (!open) onClose(); }}>
     <DialogPopup className="v3-surface image-viewer-popup">
       <DialogTitle className="sr-only">{image?.alt || "이미지"}</DialogTitle>
-      {image ? <figure className="v3-card-image-expanded"><img src={image.src} alt={image.alt} className="max-w-full object-contain" onError={()=>setFailedSrc(image.src)}/>{image.alt||imageFailed?<figcaption>{imageFailed?"파일을 불러오지 못했습니다":image.alt}</figcaption>:null}</figure> : null}
+      {image ? <figure className="v3-card-image-expanded">{imageFailed?null:<img src={image.src} alt={image.alt} className="max-w-full object-contain" onError={()=>setFailedSrc(image.src)}/>}{image.alt||imageFailed?<figcaption>{imageFailed?"파일을 불러오지 못했습니다":image.alt}</figcaption>:null}</figure> : null}
     </DialogPopup>
   </Dialog>;
 }

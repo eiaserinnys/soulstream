@@ -158,6 +158,25 @@ it("shows unavailable evidence in the existing empty-image surface and keeps oth
  expect(row.querySelectorAll('[data-evidence-type="link"] a')).toHaveLength(1);
  expect(row.textContent).not.toContain("private-name.png");
 });
+it("replaces a thumbnail whose bytes fail to load with the failure text",async()=>{
+ await act(()=>root.render(<CardCheckItems items={[item(11,"reported",{evidence:[
+  idEvidence("image","/broken.png","읽기 실패 화면","broken-image","/broken.png","/broken.png&download=true"),
+  idEvidence("image","/ready.png","등록한 화면","ready-image","/ready.png","/ready.png&download=true"),
+ ]})]} onConfirmChange={vi.fn()} onTargetItem={vi.fn()}/>));
+ const row=container.querySelector<HTMLElement>('[data-item-id="11"]')!;
+ const broken=row.querySelector<HTMLImageElement>('[data-evidence-type="image"] img[src="/broken.png"]')!;
+ await act(()=>broken.dispatchEvent(new Event("error")));
+ expect(row.querySelector('[data-evidence-type="image"] img[src="/broken.png"]')).toBeNull();
+ expect([...row.querySelectorAll(".v3-card-check-item-no-image")].map(node=>node.textContent)).toEqual(["파일을 불러오지 못했습니다"]);
+ expect(row.querySelector('[data-evidence-type="image"] img[src="/ready.png"]')).not.toBeNull();
+});
+it("hides a failed preview in the viewer and keeps only the caption error",async()=>{
+ const onClose=vi.fn();
+ await act(()=>root.render(<CardImageViewer image={{src:"/gone.png",alt:"없는 이미지"}} onClose={onClose}/>));
+ await act(()=>document.body.querySelector<HTMLImageElement>('[role="dialog"] img')!.dispatchEvent(new Event("error")));
+ expect(document.body.querySelector('[role="dialog"] img')).toBeNull();
+ expect(document.body.querySelector('[role="dialog"] figcaption')?.textContent).toBe("파일을 불러오지 못했습니다");
+});
 it("shows preview load errors in the caption and clears them for a new source",async()=>{
  const onClose=vi.fn();
  const render=(src:string,alt:string)=>root.render(<CardImageViewer image={{src,alt}} onClose={onClose}/>);

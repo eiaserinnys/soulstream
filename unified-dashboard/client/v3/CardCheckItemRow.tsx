@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Checkbox, useInternalLinkClick } from "@seosoyoung/soul-ui";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
@@ -14,6 +15,10 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
  readOnly?:boolean;
 }) {
  const internalLinkClick=useInternalLinkClick();
+ // An image whose bytes fail to load shows the same short failure text as a
+ // missing file instead of the browser's broken-image box.
+ const [failedImages,setFailedImages]=useState<ReadonlySet<string>>(()=>new Set());
+ const markImageFailed=(src:string)=>setFailedImages(current=>current.has(src)?current:new Set(current).add(src));
  const dropped=item.display==="dropped";
  const display=checked&&pending?"confirmed":item.display;
  const label=`${item.id} ${item.title}, ${displayLabels[display]}${display==="fix"?` ${item.fixOpen}`:""}`;
@@ -46,10 +51,10 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
     {images.length>0||missingEvidence?<div className="v3-card-check-item-evidence" data-evidence-type="image">
      {images.map((evidence,index)=>{
       const key=evidence.attachment_id?`${evidence.attachment_id}:${index}`:`${evidence.url}:${index}`;
-      if(evidence.availability)return <span key={key} className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>;
       const src=evidence.previewUrl??evidence.url;
+      if(evidence.availability||(src&&failedImages.has(src)))return <span key={key} className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>;
       return src?<figure key={key} title={evidence.label}>
-       <MarkdownImage variant="card-evidence" src={src} alt={evidence.label} onOpen={onOpenImage}/>
+       <MarkdownImage variant="card-evidence" src={src} alt={evidence.label} onOpen={onOpenImage} onError={markImageFailed}/>
       </figure>:null;
      })}
      {missingEvidence?<span className="v3-card-check-item-no-image">캡처 없음</span>:null}
