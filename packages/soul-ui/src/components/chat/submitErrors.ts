@@ -13,7 +13,14 @@ export function extractErrorMessage(
   if (typeof detail === "string") return detail;
   if (detail && typeof detail === "object") {
     const d = detail as Record<string, unknown>;
-    return (d.message ?? d.error ?? JSON.stringify(detail)) as string;
+    if (typeof d.message === "string") return d.message;
+    const nested = d.error;
+    if (typeof nested === "string") return nested;
+    if (nested && typeof nested === "object") {
+      const nestedMessage = (nested as Record<string, unknown>).message;
+      if (typeof nestedMessage === "string") return nestedMessage;
+    }
+    return JSON.stringify(detail);
   }
   const errMsg = body.error;
   if (errMsg && typeof errMsg === "object") {
