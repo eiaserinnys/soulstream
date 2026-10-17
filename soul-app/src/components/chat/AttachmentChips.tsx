@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { File } from 'expo-file-system';
-import { Platform, Pressable, Share, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Share, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ChatAttachment } from '../../hooks/useChatAttachments';
 import type { ChatBodyStyles } from './ChatBody.styles';
@@ -101,13 +101,13 @@ export function AttachmentChips({
         maxWidth: '100%',
         justifyContent: 'center',
       } : styles.attachmentTouchFrame, frameStyle]}>
-      {canPreview ? <Pressable
+      {canPreview ? <CompactTouchTarget
         testID={`chat-attachment-preview-${idx}`}
         accessibilityRole="button"
         accessibilityLabel={`${attachment.name} 미리보기`}
         onPress={() => { void openPreview(attachment); }}
-        style={chipStyle}
-      >{chipContents}</Pressable> : <View style={chipStyle}>{chipContents}</View>}
+        surfaceStyle={chipStyle}
+      >{chipContents}</CompactTouchTarget> : <View style={chipStyle}>{chipContents}</View>}
       {!readOnly ? (
         <CompactTouchTarget
           testID={`chat-attachment-remove-${idx}`}
