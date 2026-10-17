@@ -12,7 +12,7 @@ export type PublishPersistentReports = (updates: PersistentReportUpdate[]) => vo
 export type PersistentReportReplyDecision =
   | { action: "none" }
   | { action: "card"; cardId: string; questionId: string; option: string }
-  | { action: "card-acked" }
+  | { action: "card-acked"; cardId: string }
   | { action: "reject"; code: string; status: number; message: string };
 /** 카드 질문을 판에 올릴 때 쓰는 예약 key 접두사. `cq_` + 질문 UUID. */
 export const CARD_QUESTION_KEY_PREFIX = "cq_";
@@ -106,7 +106,7 @@ export class PersistentReportService {
     if (!question) return { errors: null, decision: { action: "none" } };
     if (question.withdrawn_at !== null) return rejectDecision("CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     if (question.answer !== null) return question.answer === option
-      ? { errors: null, decision: { action: "card-acked" } }
+      ? { errors: null, decision: { action: "card-acked", cardId: question.card_id } }
       : rejectDecision("CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     const options = question.options ?? [];
     if (options.length > 0 && !options.includes(option)) return rejectDecision("CARD_QUESTION_OPTION_INVALID", 422, "선택지에 없는 답입니다");

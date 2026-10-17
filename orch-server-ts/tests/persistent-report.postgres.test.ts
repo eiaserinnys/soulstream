@@ -190,7 +190,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect((await reports.get('pas')).some(e=>e.key===`cq_${questionId}`)).toBe(false);
     expect((await cards.getCard(cardId))!.questions.at(-1)!.answer).toBe('진행');
     expect(Number((await sql`SELECT COUNT(*) AS n FROM card_questions WHERE id=${questionId} AND answered_by='director@example.com'`)[0]!.n)).toBe(1);
-    expect(await reports.acceptReply('pas',context,{source:'browser'})).toEqual({action:'card-acked'});
+    expect(await reports.acceptReply('pas',context,{source:'browser'})).toEqual({action:'card-acked',cardId});
     expect(await reports.acceptReply('pas',[{key:'persistent_report_reply',content:{key:`cq_${questionId}`,option:'중단'}}],{source:'browser'}))
       .toMatchObject({action:'reject',code:'CARD_QUESTION_CLOSED',status:409});
     const otherId=(await cards.createCard({...human,folderId:'report-folder',title:'판 답2',request:''})).operation.target_id;

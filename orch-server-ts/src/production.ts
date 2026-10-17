@@ -94,7 +94,8 @@ import { createCardOrchestrationAccess } from "./cards/card_orchestration_access
 import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
 import { CardDispatchRepository } from "./cards/card_dispatch_repository.js";
 import { placeCardQuestionOnOwnerBoards, resolveCardOwnerEmail } from "./cards/card_question_board.js";
-import { mutateCardRouteBody, cardRouteErrorResponse } from "./cards/card_route_body.js";
+import { cardRouteErrorResponse } from "./cards/card_route_body.js";
+import { applyCardQuestionReply } from "./session/card_question_reply.js";
 import { dashboardFolderActor } from "./folders/folder_workspace_routes.js";
 import { BoardYjsSqlResolver } from "./board-yjs/board_yjs_sql.js";
 import { relayCanonicalErrorTx } from "./cards/card_work_error_delivery.js";
@@ -1160,19 +1161,16 @@ export function buildProductionRouteOptions(
           } } } } };
         if (decision.action === "reject")
           return { handled: false, failure: { status: decision.status, body: { detail: { error: { code: decision.code, message: decision.message } } } } };
-        if (decision.action === "card-acked") return { handled: true };
         if (!cardServiceProvider)
           return { handled: false, failure: { status: 503, body: { detail: { error: { code: "CARD_SERVICE_UNAVAILABLE" } } } } };
         try {
-          await sessionAccessProvider.requireSessionAccess({ request, sessionId });
-          await mutateCardRouteBody(
-            { cardServiceProvider, provider: providers.folderRoutes.provider },
-            "answer_card_question", decision.cardId,
-            { answer: decision.option, idempotencyKey: `report-answer:${decision.questionId}` },
-            () => providers.folderRoutes.accessProvider.resolveAccess(request),
-            () => dashboardFolderActor(request, providers.folderRoutes),
-            decision.questionId,
-          );
+          await applyCardQuestionReply(decision, {
+            sessionId, request,
+            requireSessionAccess: input => sessionAccessProvider.requireSessionAccess(input),
+            cardOptions: { cardServiceProvider, provider: providers.folderRoutes.provider },
+            resolveAccess: () => providers.folderRoutes.accessProvider.resolveAccess(request),
+            resolveActor: () => dashboardFolderActor(request, providers.folderRoutes),
+          });
         } catch (error) {
           return { handled: false, failure: cardRouteErrorResponse(error) };
         }

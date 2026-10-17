@@ -371,18 +371,10 @@ exports[`card orchestrator MCP roundtrip > preserves question no options 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"number\\": 1,\\n    \\"version\\": 2,\\n    \\"status\\": \\"blocked\\"\\n  },\\n  \\"guidance\\": \\"질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.\\"\\n}"
+      "text": "MCP error -32602: Input validation error: Invalid arguments for tool ask_card_question: [\\n  {\\n    \\"expected\\": \\"array\\",\\n    \\"code\\": \\"invalid_type\\",\\n    \\"path\\": [\\n      \\"options\\"\\n    ],\\n    \\"message\\": \\"Invalid input: expected array, received undefined\\"\\n  }\\n]"
     }
   ],
-  "structuredContent": {
-    "card": {
-      "id": "card-1",
-      "number": 1,
-      "version": 2,
-      "status": "blocked"
-    },
-    "guidance": "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다."
-  }
+  "isError": true
 }"
 `;
 
