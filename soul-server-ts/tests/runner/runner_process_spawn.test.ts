@@ -168,6 +168,7 @@ describe("RunnerProcessSpawner", () => {
       codeSha: "sha-a",
       snapshotPath: SNAPSHOT_PATH,
       runnerLeaseTimeoutMs: 120_000,
+      incomingFileDir: "/incoming",
       internalMcpUrl: "http://127.0.0.1:4206/mcp/internal",
       paths: { logPath: expect.stringMatching(/runner\.log$/) },
     });
@@ -864,6 +865,7 @@ async function input() {
   return {
     stateDirectory,
     sessionId: "session-a",
+    incomingFileDir: "/incoming",
     backend: "codex" as const,
     agent: {
       id: "agent-a",

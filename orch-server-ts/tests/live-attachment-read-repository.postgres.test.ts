@@ -65,7 +65,9 @@ describePostgres("live attachment read repository PostgreSQL contract", () => {
     await insertAsset("session-intervention");
     await insertAsset("session-complete");
     await insertAsset("session-assistant");
+    await insertAsset("session-tool-start");
     await insertAsset("session-tool-result");
+    await insertAsset("session-thinking");
     await insertAsset("session-object-only");
     await insertAsset("session-scalar-id");
     const payloads = [
@@ -73,7 +75,9 @@ describePostgres("live attachment read repository PostgreSQL contract", () => {
       ["intervention_sent", { attachment_ids: ["session-intervention"] }],
       ["complete", { attachment_ids: ["session-complete"] }],
       ["assistant_message", { attachment_ids: ["session-assistant"] }],
+      ["tool_start", { attachment_ids: ["session-tool-start"] }],
       ["tool_result", { attachment_ids: ["session-tool-result"] }],
+      ["thinking", { attachment_ids: ["session-thinking"] }],
       ["assistant_message", { attachments: [{ attachment_id: "session-object-only" }] }],
       ["user_message", { attachment_ids: "session-scalar-id" }],
     ] as const;
@@ -84,11 +88,14 @@ describePostgres("live attachment read repository PostgreSQL contract", () => {
       `;
     }
 
-    for (const id of ["session-user", "session-intervention", "session-complete", "session-assistant"]) {
+    for (const id of [
+      "session-user", "session-intervention", "session-complete", "session-assistant",
+      "session-tool-start", "session-tool-result", "session-thinking",
+    ]) {
       await expect(repository.getSqlScopeEvidence({ type: "session", id: "attachment-session" }, id))
         .resolves.toMatchObject({ hasStoredRef: true, folderId: "attachment-folder" });
     }
-    for (const id of ["session-tool-result", "session-object-only", "session-scalar-id"]) {
+    for (const id of ["session-object-only", "session-scalar-id"]) {
       await expect(repository.getSqlScopeEvidence({ type: "session", id: "attachment-session" }, id))
         .resolves.toMatchObject({ hasStoredRef: false });
     }

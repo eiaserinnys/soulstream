@@ -21,6 +21,7 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "../task/task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
+  EventOutboxAppendInput,
   EventOutbox,
   EventOutboxRecord,
   EventOutboxSessionEffect,
@@ -41,6 +42,11 @@ import {
   truncateJsonText,
 } from "./json_text.js";
 import { extractToolSearchableText } from "./tool_search_projection.js";
+import {
+  buildEventArchive,
+  truncateEventStrings,
+  type EventArchiveContent,
+} from "./event_payload_truncation.js";
 
 /**
  * State transitions wait far longer for their acknowledgement than ordinary
@@ -119,7 +125,8 @@ export class EventPersistence extends EventTransitionPublisher {
       throw new Error("transient live events must not be persisted");
     }
     const record = await this.outbox.append(
-      buildEventOutboxAppendInput(sessionId, event, explicitEffect, registrationId),
+      buildEventOutboxAppendInput(sessionId, event, explicitEffect, registrationId)
+        .appendInput,
     );
     this.latestPendingAckBySession.set(sessionId, record);
     return record;
@@ -276,7 +283,7 @@ export function buildEventOutboxAppendInput(
   event: SSEEventPayload,
   explicitEffect?: EventOutboxSessionEffect,
   registrationId?: string | null,
-): import("../upstream/event_outbox.js").EventOutboxAppendInput {
+): { appendInput: EventOutboxAppendInput; archive: EventArchiveContent | null } {
   if (!shouldPersistEvent(event)) {
     throw new Error("transient live events must not be persisted");
   }
@@ -284,19 +291,32 @@ export function buildEventOutboxAppendInput(
   const safeEvent = stripInternalPersistenceFields(
     sanitizeJsonValue(event),
   ) as SSEEventPayload;
-  const eventType = (safeEvent as { type: string }).type;
+  const truncated = truncateEventStrings(safeEvent);
+  const archive = buildEventArchive(truncated.truncatedFields);
+  const payload = truncated.payload as Record<string, unknown>;
+  if (archive) {
+    payload.truncation = {
+      original_bytes: Buffer.byteLength(archive.body, "utf8"),
+      attachment: null,
+    };
+  }
+  const persistedEvent = payload as SSEEventPayload;
+  const eventType = (persistedEvent as { type: string }).type;
   const createdAt = extractTimestamp(event) ?? new Date();
   return {
-    session_id: sessionId,
-    ...(registrationId === undefined
-      ? {}
-      : { registration_id: registrationId }),
-    event_type: eventType,
-    payload: safeEvent,
-    searchable_text: extractSearchableText(safeEvent),
-    created_at: createdAt.toISOString(),
-    semantic_dedupe_key: dedupeKey,
-    session_effect: explicitEffect ?? buildLastMessageEffect(safeEvent, createdAt),
+    appendInput: {
+      session_id: sessionId,
+      ...(registrationId === undefined
+        ? {}
+        : { registration_id: registrationId }),
+      event_type: eventType,
+      payload: persistedEvent,
+      searchable_text: extractSearchableText(persistedEvent),
+      created_at: createdAt.toISOString(),
+      semantic_dedupe_key: dedupeKey,
+      session_effect: explicitEffect ?? buildLastMessageEffect(persistedEvent, createdAt),
+    },
+    archive,
   };
 }
 

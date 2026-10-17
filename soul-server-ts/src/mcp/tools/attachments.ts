@@ -11,6 +11,7 @@ import { z } from "zod";
 import { getCurrentMcpCallerSessionId } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
 import { publishSessionOutputAttachment } from "../../attachments/session_output_attachment.js";
+import { resolveProducedAttachmentExecutionContext } from "../../attachments/produced_attachment_context.js";
 import { requireMcpMutationActor } from "./caller_session.js";
 
 export function registerAttachmentTools(server: McpServer, runtime: McpRuntime): void {
@@ -29,17 +30,12 @@ export function registerAttachmentTools(server: McpServer, runtime: McpRuntime):
     }
 
     const task = runtime.taskManager.getTask(sessionId);
-    // Only worktree executions set resolvedWorkspaceDir; a plain session runs in
-    // its engine's workspace (same order as listActiveTaskWorkspaceDirs).
-    const workspaceDir = task?.resolvedWorkspaceDir ?? task?.runner?.engine.workspaceDir;
-    const outputCommandId = task?.runner?.dispatcher.activeExecutionCommandId?.();
-    if (
-      !task ||
-      typeof workspaceDir !== "string" ||
-      !workspaceDir.trim() ||
-      typeof outputCommandId !== "string" ||
-      !outputCommandId.trim()
-    ) {
+    const execution = resolveProducedAttachmentExecutionContext(
+      task,
+      sessionId,
+      runtime.nodeId,
+    );
+    if (!execution) {
       return errorResult("ATTACHMENT_ACTIVE_EXECUTION_REQUIRED: 현재 실행의 출력 파일만 등록할 수 있습니다.");
     }
 
@@ -50,13 +46,7 @@ export function registerAttachmentTools(server: McpServer, runtime: McpRuntime):
 
     try {
       const parsedInput = registerAttachmentInputSchema.parse(input);
-      const result = await service.register(parsedInput, {
-        sessionId,
-        nodeId: runtime.nodeId,
-        outputCommandId,
-        workspaceDir,
-        profileWorkspaceDir: task.agentProfileSnapshot?.workspace_dir,
-      }, extra.signal);
+      const result = await service.register(parsedInput, execution, extra.signal);
       return jsonResult(result);
     } catch (error) {
       const code = errorCode(error);

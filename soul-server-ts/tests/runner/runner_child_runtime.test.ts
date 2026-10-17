@@ -6,6 +6,7 @@ import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
+import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import {
   engineEventFrame,
   executeCommandFrame,
@@ -71,7 +72,7 @@ describe("buildDurableRunnerEvent", () => {
     expect(requiresBackendSessionId("opencode")).toBe(true);
     expect(requiresBackendSessionId("openai-agents")).toBe(false);
   });
-  it("removes internal dedupe metadata before the durable frame crosses IPC", () => {
+  it("removes internal dedupe metadata before the durable frame crosses IPC", async () => {
     const event = {
       type: "assistant_message",
       content: "durable",
@@ -79,11 +80,116 @@ describe("buildDurableRunnerEvent", () => {
       _dedupe_key: "delivery:1",
     } as SSEEventPayload;
 
-    const durable = buildDurableRunnerEvent("session-a", event);
+    const durable = await buildDurableRunnerEvent("session-a", event);
 
     expect(durable.appendInput.semantic_dedupe_key).toBe("delivery:1");
     expect(durable.appendInput.payload).not.toHaveProperty("_dedupe_key");
     expect(durable.frame.payload).toEqual(durable.appendInput.payload);
+  });
+
+  it("truncates 3 MiB Codex command and file_change results and keeps the following assistant event", async () => {
+    const descriptor = {
+      attachment_id: "attachment-large",
+      name: "tool_result-0123456789abcdef.txt",
+      mime_type: "text/plain",
+      byte_size: 3 * 1024 * 1024,
+      checksum_sha256: "a".repeat(64),
+      width: null,
+      height: null,
+      preview_kind: "text",
+      preview_mime_type: "text/plain",
+    } satisfies AttachmentDescriptor;
+    const archive = vi.fn(async () => descriptor);
+    const commandResult = "c".repeat(3 * 1024 * 1024);
+    const fileChangeResult = JSON.stringify([{
+      path: "large.txt",
+      diff: "f".repeat(3 * 1024 * 1024),
+    }]);
+    const events = [
+      {
+        type: "tool_result",
+        tool_name: "command",
+        tool_use_id: "command-1",
+        result: commandResult,
+        attachment_ids: ["preexisting-attachment"],
+        is_error: false,
+        timestamp: 1,
+      },
+      {
+        type: "tool_result",
+        tool_name: "file_change",
+        tool_use_id: "file-change-1",
+        result: fileChangeResult,
+        is_error: false,
+        timestamp: 2,
+      },
+      { type: "assistant_message", content: "done", timestamp: 3 },
+    ] as unknown as SSEEventPayload[];
+
+    const durableEvents = [];
+    for (const event of events) {
+      durableEvents.push(await buildDurableRunnerEvent(
+        "session-a",
+        event,
+        undefined,
+        undefined,
+        archive,
+      ));
+    }
+
+    expect(durableEvents).toHaveLength(3);
+    for (const [index, durable] of durableEvents.slice(0, 2).entries()) {
+      expect(Buffer.byteLength(JSON.stringify(durable.appendInput), "utf8"))
+        .toBeLessThan(2 * 1024 * 1024);
+      expect(durable.appendInput.payload.truncation).toMatchObject({
+        attachment: descriptor,
+      });
+      expect(durable.appendInput.payload.attachment_ids).toEqual(index === 0
+        ? ["preexisting-attachment", descriptor.attachment_id]
+        : [descriptor.attachment_id]);
+      expect(durable.frame.payload).toEqual(durable.appendInput.payload);
+    }
+    expect(archive).toHaveBeenCalledTimes(2);
+    expect(durableEvents[2]?.appendInput.payload).not.toHaveProperty("truncation");
+    expect(durableEvents[2]?.appendInput.payload).not.toHaveProperty("attachment_ids");
+  });
+
+  it("keeps archiving failures out of the runner event path and continues with the next event", async () => {
+    const archive = vi.fn(async () => { throw new Error("archive unavailable"); });
+    const large = {
+      type: "tool_result",
+      tool_name: "command",
+      tool_use_id: "command-2",
+      result: "x".repeat(3 * 1024 * 1024),
+      is_error: false,
+      timestamp: 1,
+    } as unknown as SSEEventPayload;
+
+    const first = await buildDurableRunnerEvent("session-a", large, undefined, undefined, archive);
+    const second = await buildDurableRunnerEvent("session-a", {
+      type: "assistant_message",
+      content: "next event",
+      timestamp: 2,
+    } as SSEEventPayload, undefined, undefined, archive);
+
+    expect(first.appendInput.payload.truncation).toMatchObject({ attachment: null });
+    expect(first.appendInput.payload).not.toHaveProperty("attachment_ids");
+    expect(first.frame.payload).toEqual(first.appendInput.payload);
+    expect(second.appendInput.payload.content).toBe("next event");
+    expect(second.appendInput.payload).not.toHaveProperty("truncation");
+
+    const nullArchive = vi.fn(async () => null);
+    const nullResult = await buildDurableRunnerEvent("session-a", {
+      type: "tool_result",
+      tool_name: "command",
+      tool_use_id: "command-3",
+      result: "y".repeat(3 * 1024 * 1024),
+      attachment_ids: ["keep-existing"],
+      is_error: false,
+      timestamp: 3,
+    } as unknown as SSEEventPayload, undefined, undefined, nullArchive);
+    expect(nullResult.appendInput.payload.truncation).toMatchObject({ attachment: null });
+    expect(nullResult.appendInput.payload.attachment_ids).toEqual(["keep-existing"]);
   });
 
   it("raises the Linux runner OOM kill preference without affecting other platforms", async () => {
@@ -484,7 +590,7 @@ async function appendRotation(
     rotation.expectedBackendSessionId,
     rotation.backendSessionId,
   );
-  const durable = buildDurableRunnerEvent(sessionId, {
+  const durable = await buildDurableRunnerEvent(sessionId, {
     type: "session",
     session_id: rotation.backendSessionId,
   } as SSEEventPayload, effect);

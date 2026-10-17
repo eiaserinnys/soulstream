@@ -137,6 +137,7 @@ export class RunnerProcessSpawner {
     const config: RunnerChildConfig = {
       schemaVersion: 1,
       sessionId: input.sessionId,
+      ...(input.incomingFileDir ? { incomingFileDir: input.incomingFileDir } : {}),
       registrationId: registrationIdentity.registrationId,
       backend: input.backend,
       agent: input.agent,

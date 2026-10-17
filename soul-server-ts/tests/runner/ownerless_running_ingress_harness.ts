@@ -157,7 +157,7 @@ export class OwnerlessIngressHarness {
       review_state: "not_required",
       updated_at: now.toISOString(),
     } as EventOutboxSessionEffect;
-    const input = buildEventOutboxAppendInput(
+    const { appendInput: input } = buildEventOutboxAppendInput(
       sessionId,
       {
         type: "metadata",

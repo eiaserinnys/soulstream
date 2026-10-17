@@ -283,6 +283,7 @@ export async function composeWorkerRuntime(
     env, logger, mcpConfigService, codexCliPath, antigravityCliPath,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
+    producedAttachments: attachmentRuntime.mcpRuntime.producedAttachments,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
     reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),
     observeClaudeRuntime: claudeRuntime.backgroundLifecycle

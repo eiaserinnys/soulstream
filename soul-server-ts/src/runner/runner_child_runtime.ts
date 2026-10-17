@@ -27,7 +27,9 @@ import {
   runnerToolLeaseTransition,
   sessionIdEffect,
   setRunnerOomScore,
+  type RunnerEventArchive,
 } from "./runner_child_runtime_helpers.js";
+import { archiveRunnerEvent } from "./runner_event_archive.js";
 import { createRunnerChildEngine } from "./runner_child_engine_factory.js";
 import {
   RunnerHostRequestClient,
@@ -79,6 +81,15 @@ export class RunnerChildRuntime {
   private lock!: RunnerWriterLock;
   private dispatcher!: InProcessRunnerCommandDispatcher;
   private host!: RunnerHostRequestClient;
+  private readonly archiveEvent: RunnerEventArchive = async (input) =>
+    await archiveRunnerEvent({
+      ...input,
+      incomingFileDir: this.config.incomingFileDir,
+      sessionId: this.config.sessionId,
+      activeExecutionCommandId: this.activeCommandId,
+      host: this.host,
+      logger: this.logger,
+    });
   private readonly closedPromise: Promise<void>;
   private resolveClosed!: () => void;
   private closing = false;
@@ -240,6 +251,7 @@ export class RunnerChildRuntime {
         }
         return invoked.result.data;
       },
+      this.archiveEvent,
     );
     if (intervention) {
       await connection.send(intervention.result);
@@ -445,11 +457,12 @@ export class RunnerChildRuntime {
       await this.sendBestEffort(frame);
       return;
     }
-    const durableEvent = buildDurableRunnerEvent(
+    const durableEvent = await buildDurableRunnerEvent(
       this.config.sessionId,
       event,
       effect,
       frame.metadata,
+      this.archiveEvent,
     );
     const durable = await this.outbox.appendEngineFrame(
       durableEvent.appendInput,

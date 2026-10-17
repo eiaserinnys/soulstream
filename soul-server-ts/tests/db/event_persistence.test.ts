@@ -11,6 +11,7 @@ import {
   sanitizeJsonValue,
   shouldPersistEvent,
 } from "../../src/db/event_persistence.js";
+import { EVENT_STRING_MAX_BYTES } from "../../src/db/event_payload_truncation.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -152,7 +153,7 @@ describe("EventPersistence durable ingress", () => {
         ...(final === undefined ? {} : { final }),
       } as unknown as SSEEventPayload;
 
-      expect(buildEventOutboxAppendInput("sess-1", event).session_effect).toBeNull();
+      expect(buildEventOutboxAppendInput("sess-1", event).appendInput.session_effect).toBeNull();
     },
   );
 
@@ -165,7 +166,7 @@ describe("EventPersistence durable ingress", () => {
       timestamp: 1,
     } as unknown as SSEEventPayload;
 
-    expect(buildEventOutboxAppendInput("sess-1", event).session_effect).toMatchObject({
+    expect(buildEventOutboxAppendInput("sess-1", event).appendInput.session_effect).toMatchObject({
       kind: "last_message",
       last_message: {
         type: "assistant_message",
@@ -222,7 +223,7 @@ describe("EventPersistence durable ingress", () => {
       _dedupe_key: `chat-ui:${ui.ui_id}`,
     } as unknown as SSEEventPayload;
 
-    const input = buildEventOutboxAppendInput("sess-1", event, undefined, "registration-1");
+    const { appendInput: input } = buildEventOutboxAppendInput("sess-1", event, undefined, "registration-1");
 
     expect(input).toMatchObject({
       session_id: "sess-1",
@@ -237,6 +238,71 @@ describe("EventPersistence durable ingress", () => {
       },
     });
     expect(input.payload).not.toHaveProperty("_dedupe_key");
+  });
+
+  it("truncates a 3 MiB tool result before outbox serialization and returns its archive", () => {
+    const original = "x".repeat(3 * 1024 * 1024);
+    const event = {
+      type: "tool_result",
+      tool_name: "Bash",
+      tool_use_id: "tool-large",
+      result: original,
+      is_error: false,
+      timestamp: 1,
+    } as unknown as SSEEventPayload;
+
+    const { appendInput, archive } = buildEventOutboxAppendInput("sess-1", event);
+
+    expect(Buffer.byteLength(JSON.stringify(appendInput), "utf8")).toBeLessThan(2 * 1024 * 1024);
+    expect(Buffer.byteLength(appendInput.payload.result as string, "utf8"))
+      .toBe(EVENT_STRING_MAX_BYTES);
+    expect((appendInput.payload.result as string).endsWith("\n[잘림]")).toBe(true);
+    expect(appendInput.payload.truncation).toEqual({
+      original_bytes: Buffer.byteLength(archive!.body, "utf8"),
+      attachment: null,
+    });
+    expect(archive).toEqual({ body: original, mimeType: "text/plain", extension: "txt" });
+    expect(appendInput.searchable_text).not.toContain(original);
+  });
+
+  it("leaves small events without archive or truncation metadata", () => {
+    const result = buildEventOutboxAppendInput("sess-1", {
+      type: "tool_result",
+      tool_name: "Bash",
+      tool_use_id: "tool-small",
+      result: "small result",
+      is_error: false,
+      timestamp: 1,
+    } as unknown as SSEEventPayload);
+
+    expect(result.archive).toBeNull();
+    expect(result.appendInput.payload).not.toHaveProperty("truncation");
+  });
+
+  it("uses only the truncated append input on the host-direct enqueue path", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await ep.enqueueEvent("sess-1", {
+      type: "assistant_message",
+      content: "x".repeat(EVENT_STRING_MAX_BYTES + 1),
+      timestamp: 1,
+    } as unknown as SSEEventPayload);
+
+    expect(ingress.append).toHaveBeenCalledOnce();
+    const appendInput = ingress.append.mock.calls[0]?.[0];
+    expect(appendInput).not.toHaveProperty("archive");
+    expect(appendInput?.payload.truncation).toMatchObject({ attachment: null });
+    expect(Buffer.byteLength(JSON.stringify(appendInput), "utf8"))
+      .toBeLessThan(2 * 1024 * 1024);
   });
 
   it("sanitizes and fsync-enqueues persistent events without direct event DB calls", async () => {

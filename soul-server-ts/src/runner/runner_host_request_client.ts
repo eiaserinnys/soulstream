@@ -12,7 +12,8 @@ export type RunnerHostService =
   | "session_store"
   | "claude_runtime"
   | "detached_event"
-  | "snapshot";
+  | "snapshot"
+  | "event_archive";
 
 export interface RunnerHostRequestOptions {
   signal?: AbortSignal;

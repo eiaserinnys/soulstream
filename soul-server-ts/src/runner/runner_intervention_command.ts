@@ -5,7 +5,10 @@ import {
   type RunnerCommandFrame,
   type RunnerCommandResultFrame,
 } from "./frame_protocol.js";
-import { buildDurableRunnerEvent } from "./runner_child_runtime_helpers.js";
+import {
+  buildDurableRunnerEvent,
+  type RunnerEventArchive,
+} from "./runner_child_runtime_helpers.js";
 import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
 import type { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 
@@ -14,6 +17,7 @@ export async function handleRunnerInterventionCommand(
   outbox: RunnerSqliteEventOutbox,
   sessionId: string,
   applyIntervention: (input: Record<string, unknown>) => Promise<unknown>,
+  archiveEvent?: RunnerEventArchive,
 ): Promise<{
   result: RunnerCommandResultFrame;
   eventSourceSeq: number | null;
@@ -37,10 +41,13 @@ export async function handleRunnerInterventionCommand(
   if (command.kind !== "stage_intervention") return null;
   try {
     const event = command.event
-      ? buildDurableRunnerEvent(
+      ? (await buildDurableRunnerEvent(
           sessionId,
           command.event as SSEEventPayload,
-        ).appendInput
+          undefined,
+          undefined,
+          archiveEvent,
+        )).appendInput
       : undefined;
     const staged = await outbox.stageIntervention({
       interventionId: command.interventionId,

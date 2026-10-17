@@ -52,7 +52,10 @@ export function createLiveAttachmentReadRepository(
             COALESCE(EXISTS (
               SELECT 1 FROM events e
               WHERE e.session_id = s.session_id
-                AND e.event_type IN ('user_message', 'intervention_sent', 'complete', 'assistant_message')
+                AND e.event_type IN (
+                  'user_message', 'intervention_sent', 'complete', 'assistant_message',
+                  'tool_start', 'tool_result', 'thinking'
+                )
                 AND jsonb_typeof(e.payload->'attachment_ids') = 'array'
                 AND COALESCE(e.payload->'attachment_ids' @> ${sql.json([attachmentId])}::jsonb, FALSE)
             ), FALSE) AS has_stored_ref

@@ -114,7 +114,8 @@ export interface RunnerHostCall {
     | "session_store"
     | "claude_runtime"
     | "detached_event"
-    | "snapshot";
+    | "snapshot"
+    | "event_archive";
   operation: string;
   args: unknown[];
 }
