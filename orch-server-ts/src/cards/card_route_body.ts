@@ -52,7 +52,7 @@ export async function mutateCardRouteBody(options: CardRouteBodyOptions, operati
   const actor = await resolveActor();
   if (operation === "start_card_work" && actor.actorKind !== "agent")
     throw Object.assign(new Error("Trusted assignee session required"), { statusCode: 403 });
-  const operationBody = operation === "answer_card_question" || operation === "withdraw_card_question" ? { ...body, questionId }
+  const operationBody = operation === "answer_card_question" || operation === "withdraw_card_question" ? { ...body, ...(questionId === undefined ? {} : { questionId }) }
     : operation === "confirm_card_item" ? { ...body, itemId: Number(itemIdPath) } : body;
   const result = await executeCardOperation(service, operation, operationBody, cardId, actor);
   return { status: operation === "create_card" || operation === "add_card_report" || operation === "add_card_comment" || operation === "ask_card_question" ? 201 : 200, body: result };
