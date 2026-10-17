@@ -17,6 +17,7 @@ import { CardBoardWorkspace } from "./CardBoardWorkspace";
 import { PostItCardView } from "./PostItCard";
 import { FolderDocumentOverlay } from "./FolderDocumentOverlay";
 import { DocumentReaderDialog } from "./DocumentReaderDialog";
+import { CardAttachmentReviewSamples } from "./CardAttachmentReviewSamples";
 import { ChatAttachmentReviewSamples } from "./ChatAttachmentReviewSamples";
 import { V3ContextMenu } from "./V3ContextMenu";
 import { dialoguesFolders, dialoguesAssignment, createDialoguesApi } from "./dialogues-api";
@@ -67,6 +68,7 @@ export function DialoguesOverlaySamples({
       ),
     [],
   );
+  if (id === "card-attachments") return <CardAttachmentReviewSamples />;
   if (id === "chat-attachments") return <ChatAttachmentReviewSamples />;
   if (["atom-add", "atom-edit", "defaults-add", "defaults-edit"].includes(id))
     return (

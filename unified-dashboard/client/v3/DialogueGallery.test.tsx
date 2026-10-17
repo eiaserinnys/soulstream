@@ -33,11 +33,13 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
 
-it("covers all 56 actual variants exactly once in the requested shape groups", () => {
+it("covers all 57 actual variants exactly once in the requested shape groups", () => {
   const ids = webDialogueGroups.flatMap(group => group.ids);
-  expect(ids).toHaveLength(56);
-  expect(new Set(ids).size).toBe(56);
+  expect(ids).toHaveLength(57);
+  expect(new Set(ids).size).toBe(57);
   expect([...ids].sort()).toEqual(dialoguesInventory.map(item => item.id).sort());
+  expect(webDialogueGroups.find(group => group.id === "expand")?.ids).toContain("card-attachments");
+  expect(dialoguesInventory.find(item => item.id === "card-attachments")?.name).toBe("카드 첨부 미리보기");
 });
 it("mounts actual iframe documents only at the visible boundary and searches names", async () => {
   await act(async () => root.render(<DialogueGallery platform="web" description="실제 창" groups={[{id:"create", title:"생성", items:[{id:"one",title:"새 폴더",src:"/dialogues?sample=project-create"},{id:"two",title:"새 카드",src:"/dialogues?sample=card-create"}]}]}/>));
