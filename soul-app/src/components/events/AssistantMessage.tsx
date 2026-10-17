@@ -22,6 +22,8 @@ import { CopyableAssistantMarkdown } from './CopyableAssistantMarkdown';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
 interface Props {
+  /** 첨부 전용 출력도 같은 내용 시작선을 쓰되 말풍선과 아바타는 표시하지 않는다. */
+  attachmentsOnly?: boolean;
   bubbleWidth?: 'content' | 'fill';
   /** 바깥 줄 여백을 소유한 타임라인만 none을 지정한다. */
   rowInset?: 'default' | 'none';
@@ -53,6 +55,7 @@ export function shouldRenderAsPlainStreamingText(event: SessionEvent): boolean {
 }
 
 export function AssistantMessage({
+  attachmentsOnly = false,
   event,
   session,
   bubbleWidth = 'content',
@@ -117,7 +120,9 @@ export function AssistantMessage({
     <View style={presentation === 'manuscript'
       ? styles.manuscriptRow
       : rowInset === 'none' ? [styles.row, { marginHorizontal: 0 }] : styles.row}>
-      {presentation === 'manuscript' ? null : avatarUri ? (
+      {presentation === 'manuscript' ? null : attachmentsOnly ? (
+        <View style={[styles.avatar, { opacity: 0 }]} />
+      ) : avatarUri ? (
         <Image
           source={{
             uri: avatarUri,
@@ -132,9 +137,10 @@ export function AssistantMessage({
           <Text style={styles.avatarFallbackText}>{fallbackChar}</Text>
         </View>
       )}
-      <View testID="assistant-message-bubble" style={presentation === 'manuscript'
+      <View testID={attachmentsOnly ? 'assistant-attachment-content' : 'assistant-message-bubble'} style={presentation === 'manuscript'
         ? styles.manuscriptBubble
-        : bubbleWidth === 'fill' ? [styles.bubble, { flexGrow: 1 }] : styles.bubble}>
+        : attachmentsOnly ? [styles.bubbleLayout, { flexGrow: 1 }]
+          : bubbleWidth === 'fill' ? [styles.bubble, { flexGrow: 1 }] : styles.bubble}>
         {/*
           react-native-enriched-markdown — Software Mansion 제작 Fabric 네이티브 마크다운 렌더러.
           외부 링크는 SFSafariViewController(expo-web-browser.openBrowserAsync)로 통일.
@@ -169,7 +175,7 @@ export function AssistantMessage({
             jwt={jwt}
           />
         ))}
-        {tokenInfo ? (
+        {tokenInfo && !attachmentsOnly ? (
           <Text style={styles.tokenInfo}>{tokenInfo}</Text>
         ) : null}
       </View>
@@ -185,6 +191,12 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', nar
   const baseMarkdownStyle = createAssistantMarkdownStyle(t, narration);
   const markdownFontSize = narration ? t.chatFontSize.meta : t.chatFontSize.body;
   const markdownTextColor = narration ? c.textSecondary : c.textPrimary;
+  const bubbleLayout = {
+    flexShrink: 1,
+    paddingHorizontal: sessionRoles.chat.bubblePaddingHorizontal,
+    paddingVertical: sessionRoles.chat.bubblePaddingVertical,
+    maxWidth: sessionRoles.chat.bubbleMaxWidth,
+  };
   return {
     styles: StyleSheet.create({
       row: {
@@ -214,13 +226,11 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', nar
         fontSize: t.chatFontSize.meta,
         fontWeight: '600' as const,
       },
+      bubbleLayout,
       bubble: {
-        flexShrink: 1,
+        ...bubbleLayout,
         ...roles.glassDense.tokenStyle,
         borderBottomLeftRadius: 4,
-        paddingHorizontal: sessionRoles.chat.bubblePaddingHorizontal,
-        paddingVertical: sessionRoles.chat.bubblePaddingVertical,
-        maxWidth: sessionRoles.chat.bubbleMaxWidth,
       },
       tokenInfo: {
         marginTop: t.spacing.xs,

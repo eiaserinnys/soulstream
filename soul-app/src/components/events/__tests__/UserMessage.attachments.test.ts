@@ -7,6 +7,7 @@ import type { Session, SessionEvent } from '../../../api/types';
 import React from 'react';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { EventRenderer } from '../EventRenderer';
+import { AssistantMessage } from '../AssistantMessage';
 import { AttachmentChips } from '../../chat/AttachmentChips';
 import { useTokens } from '../../../theme';
 import { makeStyles } from '../../chat/ChatBody.styles';
@@ -168,6 +169,24 @@ test.each([
     event,
     readContext: { type: 'session', id: 'route-session' },
   });
+});
+
+test.each(['default', 'manuscript'] as const)('%s output attachments reuse the assistant content frame', (presentation) => {
+  const event: SessionEvent = { id: '42', type: 'assistant_message', data: {
+    content: '', attachment_output: true, attachment_ids: ['asset-1'],
+  } };
+  mockUseMessageAttachments.mockReturnValue({ items: [{
+    key: 'asset-1', name: '자료.txt', mimeType: 'text/plain', byteSize: 0, previewKind: 'text',
+    readContext: { type: 'session', id: 'route-session' },
+    source: { kind: 'unavailable', availability: 'unavailable' },
+  }], retry: jest.fn() });
+  const screen = render(React.createElement(EventRenderer, { event, sessionId: 'route-session', presentation }));
+  expect(screen.UNSAFE_getByType(AssistantMessage).props).toMatchObject({
+    event, presentation, attachmentsOnly: true,
+  });
+  expect(screen.getByTestId('assistant-attachment-content')).toBeTruthy();
+  expect(screen.queryByTestId('assistant-message-bubble')).toBeNull();
+  expect(screen.getByTestId('message-attachments')).toBeTruthy();
 });
 
 test('pending attachment preview trigger and remove trigger stay independent', async () => {

@@ -83,7 +83,7 @@ export function EventRenderer({
       );
     case 'assistant_message':
       if (event.data.attachment_output === true) {
-        return <OutputAttachmentMessage event={event} sessionId={sessionId} presentation={presentation} />;
+        return <OutputAttachmentMessage event={event} sessionId={sessionId} presentation={presentation} session={session} />;
       }
       return <ChatUiMessage event={event} presentation={presentation} narration={narration} session={session}
         selectionModel={selectionModel} onSelectionDone={onSelectionDone} />;
@@ -187,16 +187,19 @@ export function EventRenderer({
   }
 }
 
-function OutputAttachmentMessage({ event, sessionId, presentation }: {
+function OutputAttachmentMessage({ event, sessionId, presentation, session }: {
   event: SessionEvent;
   sessionId: string;
   presentation: 'default' | 'manuscript';
+  session?: ChatMessageSession;
 }) {
   const { items } = useMessageAttachments({
     event,
     readContext: { type: 'session', id: sessionId },
   });
   return items.length > 0
-    ? <MessageAttachments items={items} role="assistant" presentation={presentation} />
+    ? <AssistantMessage event={event} session={session} presentation={presentation} attachmentsOnly>
+        <MessageAttachments items={items} role="assistant" presentation={presentation} />
+      </AssistantMessage>
     : null;
 }
