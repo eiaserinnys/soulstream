@@ -7,6 +7,7 @@ export function buildAttachmentReviewApi(api: Partial<ApiClient>): ApiClient {
   return {
     ...api,
     getAttachmentMetadata: async (attachmentId: string, _readContext: AttachmentReadContext) => {
+      if (attachmentId === 'review-attachment-network') throw new TypeError('공개 표본: 연결 실패');
       const status = attachmentReviewFailureStatus(attachmentId);
       if (status !== null) throw metadataHttpError(status);
       const descriptor = attachmentReviewDescriptor(attachmentId);

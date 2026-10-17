@@ -22,7 +22,7 @@ export function parseCardRequest(request: string, serverUrl?: string) {
     const [, name, url] = match;
     const parsed = new URL(url, serverUrl);
     const path = parsed.searchParams.get('path') ?? parsed.pathname;
-    attachments.unshift({ name, url, image: /\.(png|jpe?g|gif|webp|heic|avif)$/i.test(path) });
+    attachments.unshift({ name, url, image: line.startsWith('![') || /\.(png|jpe?g|gif|webp|heic|avif)$/i.test(path) });
     lines.pop();
   }
   if (attachments.length && lines.at(-1) === '') lines.pop();

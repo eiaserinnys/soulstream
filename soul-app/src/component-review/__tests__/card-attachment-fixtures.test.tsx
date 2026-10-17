@@ -1,8 +1,8 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { AttachmentView } from '../../lib/attachment-view';
+import { AttachmentPreviewModal } from '../../components/AttachmentPreviewModal';
 import { PlannerMarkdownText } from '../../components/planner/PlannerMarkdownText';
-import { MessageAttachments } from '../../components/MessageAttachments';
 import { ContentLinkProvider } from '../../navigation/ContentLinkProvider';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -60,27 +60,27 @@ test('카드 첨부 표본은 C-10 증거와 보고 본문 내부 링크를 따�
 
   expect(screen.getByTestId('card-evidence-fixture')).toBeTruthy();
   expect(screen.getByTestId('card-body-attachment-fixture')).toBeTruthy();
-  expect(screen.getByText('카드 화면.png')).toBeTruthy();
-  expect(screen.getByText('카드 설명.txt')).toBeTruthy();
-  expect(screen.getByText('찾을 수 없음')).toBeTruthy();
+  expect(screen.getAllByLabelText('카드 화면.png').length).toBe(3);
+  expect(screen.getAllByText('카드 설명.txt').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('찾을 수 없음')).toHaveLength(2);
   expect(screen.getByLabelText('legacy-card-image.png')).toBeTruthy();
   expect(screen.getByText('외부 참고 링크')).toBeTruthy();
 
-  const evidenceAttachments = screen.UNSAFE_getAllByType(MessageAttachments)[0].props.items as AttachmentView[];
-  expect(evidenceAttachments.map((item) => item.key)).toEqual([
-    'review-card-image', 'review-card-image-two', 'review-card-text', 'review-attachment-denied', 'review-attachment-retryable', 'review-card-missing',
+  expect(screen.getAllByTestId('card-check-item-1-link')[0].props.accessibilityRole).toBe('link');
+  fireEvent.press(screen.getByTestId('card-check-item-1-evidence-0'));
+  const evidenceAttachments = screen.UNSAFE_getByType(AttachmentPreviewModal).props.items as AttachmentView[];
+  expect(evidenceAttachments.map((item) => item.name)).toEqual([
+    '카드 화면.png', '카드 두번째 화면.png', '없는 파일.png', 'legacy-card-image.png',
+    '카드 설명.txt', '권한 없는 파일.txt', '다시 읽을 파일.txt',
   ]);
-  expect(screen.getByTestId('card-check-item-1-link').props.accessibilityRole).toBe('link');
-
-  fireEvent.press(screen.getByTestId('message-attachments-images-image-0'));
-  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('1 / 6');
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('1 / 7');
   fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
-  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 6');
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 7');
   fireEvent.press(screen.getByTestId('chat-image-viewer-close'));
   expect(screen.getByTestId('card-check-item-1')).toBeTruthy();
 
   fireEvent.press(screen.getByTestId('card-fold-report-card-attachment-report'));
-  const reportMarkdown = screen.UNSAFE_getAllByType(PlannerMarkdownText)[0].props.markdown as string;
+  const reportMarkdown = screen.UNSAFE_getAllByType(PlannerMarkdownText).map(node => node.props.markdown).join('\n');
   expect(reportMarkdown).toContain('/api/attachments/review-card-report/content?context_type=card&context_id=review-card-attachments');
 
   fireEvent.press(screen.getByLabelText('새 카드 작성 표본 열기'));

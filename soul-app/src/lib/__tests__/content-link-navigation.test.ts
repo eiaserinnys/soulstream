@@ -62,6 +62,7 @@ function deps(href: string, overrides: Record<string, unknown> = {}) {
   const api = makeApi();
   const openImage = jest.fn();
   const openAttachment = jest.fn();
+  const resolvedAttachment = jest.fn();
   const openExternal = jest.fn();
   const alert = jest.fn();
   return {
@@ -84,6 +85,7 @@ function deps(href: string, overrides: Record<string, unknown> = {}) {
     api,
     openImage,
     openAttachment,
+    resolvedAttachment,
     openExternal,
     alert,
   };
@@ -101,6 +103,10 @@ test.each([
   const state = deps(href);
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.api.getMarkdownDocument).not.toHaveBeenCalled();
   expect(state.navigation.push).toHaveBeenCalledWith('MarkdownDocument', { documentId: 'doc-1' });
@@ -112,9 +118,13 @@ test('same-origin ID content links resolve metadata with URL context and open th
   const state = deps('https://soulstream.test/api/attachments/asset-1/content?context_type=card&context_id=card-1');
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.api.getAttachmentMetadata).toHaveBeenCalledWith('asset-1', context);
-  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({
+  expect(state.resolvedAttachment).toHaveBeenCalledWith(expect.objectContaining({
     key: 'asset-1', name: 'notes.txt', previewKind: 'text', readContext: context,
     source: {
       kind: 'ready', attachmentId: 'asset-1',
@@ -131,9 +141,13 @@ test('same-origin ID content links use the nearest attachment context when the U
   const state = deps('https://soulstream.test/api/attachments/asset-1/content', { readContext: context });
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.api.getAttachmentMetadata).toHaveBeenCalledWith('asset-1', context);
-  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({
+  expect(state.resolvedAttachment).toHaveBeenCalledWith(expect.objectContaining({
     readContext: context,
     source: expect.objectContaining({
       previewUrl: '/api/attachments/asset-1/content?context_type=session&context_id=session-7',
@@ -146,6 +160,10 @@ test('attachment content without URL or provider read context fails inside the a
   const state = deps('https://soulstream.test/api/attachments/asset-1/content');
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.api.getAttachmentMetadata).not.toHaveBeenCalled();
   expect(state.openAttachment).not.toHaveBeenCalled();
@@ -153,23 +171,32 @@ test('attachment content without URL or provider read context fails inside the a
   expect(state.alert).toHaveBeenCalledTimes(1);
 });
 
-test.each([403, 404, 503])('attachment metadata HTTP %i stays in the app and reports failure', async status => {
+test.each([403, 404, 503])('attachment metadata HTTP %i opens a lazy viewer and rejects its metadata task', async status => {
   const state = deps(
     'https://soulstream.test/api/attachments/asset-1/content?context_type=card&context_id=card-1',
     { api: makeApi({ getAttachmentMetadata: jest.fn().mockRejectedValue({ status }) }) },
   );
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.openExternal).not.toHaveBeenCalled();
-  expect(state.openAttachment).not.toHaveBeenCalled();
-  expect(state.alert).toHaveBeenCalledTimes(1);
+  expect(state.openAttachment).toHaveBeenCalledTimes(1);
+  await expect(state.openAttachment.mock.calls[0][0].loadMetadata()).rejects.toEqual({ status });
+  expect(state.alert).not.toHaveBeenCalled();
 });
 
 test('outside-origin attachment-like URL receives no internal metadata request', async () => {
   const state = deps('https://outside.test/api/attachments/asset-1/content?context_type=card&context_id=card-1');
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.api.getAttachmentMetadata).not.toHaveBeenCalled();
   expect(state.openAttachment).not.toHaveBeenCalled();
@@ -192,6 +219,10 @@ test('legacy same-origin image links use authenticated HEAD metadata and preserv
 
   try {
     await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
   } finally {
     global.fetch = originalFetch;
   }
@@ -200,7 +231,7 @@ test('legacy same-origin image links use authenticated HEAD metadata and preserv
     'https://soulstream.test/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fphoto.png&context_type=card&context_id=card-1',
     { method: 'HEAD', headers: { Authorization: 'Bearer fixture-jwt' } },
   );
-  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({
+  expect(state.resolvedAttachment).toHaveBeenCalledWith(expect.objectContaining({
     name: 'photo.png', mimeType: 'image/png', byteSize: 42, previewKind: 'image',
     readContext: { type: 'card', id: 'card-1' },
   }));
@@ -217,7 +248,11 @@ test.each([['svg', 'info'], ['heic', 'image']] as const)('legacy %s uses %s with
         ...(alias ? { 'x-attachment-id': 'asset-1' } : {}),
       }) });
       await openContentLinkNavigation(state.input);
-      expect(state.openAttachment).toHaveBeenLastCalledWith(expect.objectContaining({ previewKind }));
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
+      expect(state.resolvedAttachment).toHaveBeenLastCalledWith(expect.objectContaining({ previewKind }));
     }
   } finally { global.fetch = originalFetch; }
 });
@@ -227,6 +262,10 @@ test('현재 맨 위와 같은 문서는 두 번 push하지 않는다', async ()
   const state = deps('https://soulstream.test/?document=doc-1', { navigation });
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.api.getMarkdownDocument).not.toHaveBeenCalled();
   expect(state.navigation.push).not.toHaveBeenCalled();
@@ -236,6 +275,10 @@ test('세션은 phone의 기존 검색 세션 opener에 숫자 eventId를 전달
   const state = deps('https://soulstream.test/?session=session-1&event=42');
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(openPhoneSearchSession).toHaveBeenCalledWith(state.navigation, 'session-1', 42);
   expect(state.api.getCard).not.toHaveBeenCalled();
@@ -249,6 +292,10 @@ test('태블릿 Main의 세션 링크는 기존 workspace opener에 eventId를 �
   });
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(openPlannerSessionWorkspace).toHaveBeenCalledWith('session-2', 58, undefined, 'nav');
   expect(openTabletSessionFromRoot).not.toHaveBeenCalled();
@@ -260,6 +307,10 @@ test('태블릿의 stack 화면에서 세션 링크는 기존 root opener를 쓴
   });
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(openTabletSessionFromRoot).toHaveBeenCalledTimes(1);
   const [navigation, leavePersistent, sessionId, eventId, storyOpenRequestId, source] =
@@ -291,6 +342,10 @@ test('현재 맨 위와 같은 카드는 두 번 push하지 않는다', async ()
   const state = deps('https://soulstream.test/?card=card-1', { navigation });
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.navigation.push).not.toHaveBeenCalled();
   expect(state.api.getCard).not.toHaveBeenCalled();
@@ -300,6 +355,10 @@ test('폴더는 includeCompleted=false로 읽고 phone의 FolderTab workspace를
   const state = deps('https://soulstream.test/?folder=folder-1');
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.api.getPlannerFolder).toHaveBeenCalledWith('folder-1', { includeCompleted: false });
   expect(state.navigation.tabs.navigate).toHaveBeenCalledWith('FolderTab', {
@@ -327,6 +386,10 @@ test.each([
   const state = deps(href);
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   if (image) {
     expect(state.openImage).toHaveBeenCalledWith({
@@ -347,6 +410,10 @@ test.each([
   const state = deps(href);
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.openExternal).toHaveBeenCalledWith(new URL(href, 'https://soulstream.test').href);
   expect(state.navigation.push).not.toHaveBeenCalled();
@@ -356,6 +423,10 @@ test('내부 링크를 단독 렌더에서 열어도 browser를 호출하지 않
   const state = deps('https://soulstream.test/?document=doc-1', { navigation: null });
 
   await openContentLinkNavigation(state.input);
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
 
   expect(state.openExternal).not.toHaveBeenCalled();
   expect(state.alert).not.toHaveBeenCalled();
@@ -369,5 +440,9 @@ test('descriptor HEIC honors the server info preview kind', async () => {
     ...response.descriptor, name: 'IMG_0001.heic', mime_type: 'image/heic', preview_kind: 'info',
   } });
   await openContentLinkNavigation(state.input);
-  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({ name: 'IMG_0001.heic', previewKind: 'info' }));
+  if (state.openAttachment.mock.calls.length) {
+    const [view] = state.openAttachment.mock.calls.at(-1)!;
+    await view.loadMetadata().then(state.resolvedAttachment, () => {});
+  }
+  expect(state.resolvedAttachment).toHaveBeenCalledWith(expect.objectContaining({ name: 'IMG_0001.heic', previewKind: 'info' }));
 });

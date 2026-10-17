@@ -62,9 +62,10 @@ export function useChatImageMetadata(
   }));
 }
 
-export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, chatImageRole = 'assistant', filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign }: {
+export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, chatImageRole = 'assistant', filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign, unavailableMessage }: {
   source: ImageSourcePropType; sources?: ImageSourcePropType[]; index?: number; testID?: string; accessibilityLabel: string;
   captions?: readonly string[];
+  unavailableMessage?: string;
   captionColor?: string;
   contentAlign?: 'left' | 'right';
   variant?: 'default' | 'cardCheckItem' | 'chatRefined';
@@ -98,8 +99,9 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   return <>
     <Pressable ref={defaultTriggerRef} onPress={() => onOpen ? onOpen(closeViewer) : setOpen(true)} accessibilityRole="button" accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => ({ minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, opacity: pressed ? 0.82 : 1 })}>
-      <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border }}
-        resizeMode="cover" accessible={false} />
+      {unavailableMessage ? <View testID={testID} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border,
+        alignItems: 'center', justifyContent: 'center' }}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{unavailableMessage}</Text></View> : <Image testID={testID} source={source} style={{ ...dimensions, borderRadius: t.radius.md, backgroundColor: t.colors.border }}
+        resizeMode="cover" accessible={false} />}
     </Pressable>
     {open ? <ImageViewerModal sources={sources} captions={captions} items={items} onSaveOriginal={onSaveOriginal}
       initialIndex={index} onClose={closeViewer} /> : null}

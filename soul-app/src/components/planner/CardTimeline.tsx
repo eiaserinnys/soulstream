@@ -16,6 +16,9 @@ import { cardImageSource } from '../../lib/card-image-source';
 import { segmentCardReportImages } from '../../lib/card-report-images';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { extractCardBodyLinks } from '../../lib/card-body-attachments';
+import { parseExactAttachmentLink, scopedAttachmentUrl } from '../../lib/attachment-link-view';
+import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 type Entry = { id: string; kind: string; user: boolean; body: string; at: string; sessionId?: string | null;
@@ -105,14 +108,17 @@ function TimelineBody({ cardId, entry, target, expanded, onChooseAnswer }: { car
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const preview = report ? reportSummary(report) : entry.body;
   const fold = report || entry.kind === '지시';
-  const gallery = report ? reportImages(report).map((uri) => cardImageSource(uri, serverUrl, jwt)) : [];
+  const links = report ? extractCardBodyLinks(report.body) : [];
+  const openContentLink = useOpenContentLink({ type: 'card', id: cardId }, links);
+  const imageUrls = report ? reportImages(report) : [];
+  const gallery = imageUrls.map(uri => cardImageSource(scopedAttachmentUrl(uri, serverUrl, { type: 'card', id: cardId }), serverUrl, jwt));
   const images = gallery.slice(0, 2);
   const expandedMarkdown = expanded && report?.format === 'markdown';
   return <AttachmentReadContextProvider context={{ type: 'card', id: cardId }}><View style={styles.bodyStack}>
     {target ? <Text testID={`card-comment-item-target-${entry.id}`} numberOfLines={1} style={styles.commentTarget}>{target}</Text> : null}
     {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} attachments={entry.attachments} /> : !expandedMarkdown ? <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text> : null}
     {images.length && !expandedMarkdown ? <View style={styles.thumbnails}>{images.map((source, index) => <AttachmentImage key={source.uri}
-      testID={`card-report-thumbnail-${report!.id}-${index}`} source={source} sources={gallery} index={index} accessibilityLabel={`보고 캡처 ${index + 1}`} />)}</View> : null}
+      testID={`card-report-thumbnail-${report!.id}-${index}`} onOpen={parseExactAttachmentLink(imageUrls[index], serverUrl) ? restoreFocus => { void openContentLink(imageUrls[index], undefined, restoreFocus); } : undefined} source={source} sources={gallery} index={index} accessibilityLabel={`보고 캡처 ${index + 1}`} />)}</View> : null}
     {fold ? <Text style={styles.meta}>{expanded ? '접기' : report ? '자세히' : '더 보기'}</Text> : null}
     {expanded && report ? <CardReportView report={report} /> : null}
     {entry.question?.answer === null ? entry.question.options?.map((option) => <CompactTouchTarget key={option}

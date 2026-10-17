@@ -9,7 +9,8 @@ import type { AttachmentReadContext } from '../../../packages/wire-schema/src/at
 import { plannerFolderDetailToSummary } from '../api/plannerTypes';
 import { cardAttachmentUrl } from './card-attachments';
 import { cardImageSource } from './card-image-source';
-import { attachmentContentUrl, isLegacyAttachmentImage, type AttachmentView } from './attachment-view';
+import { isLegacyAttachmentImage, type AttachmentView } from './attachment-view';
+import { attachmentLinkView, parseExactAttachmentLink, type AttachmentLink } from './attachment-link-view';
 import {
   openPlannerFolderWorkspace,
   openPlannerSessionWorkspace,
@@ -41,7 +42,9 @@ export interface OpenContentLinkNavigationArgs {
   activeSessionId?: string | null;
   leavePersistent?: () => void;
   openImage?: (source: ImageURISource) => void;
-  openAttachment?: (view: AttachmentView) => void;
+  openAttachment?: (view: AttachmentView, items?: readonly AttachmentView[], initialIndex?: number) => void;
+  attachmentLinks?: readonly AttachmentLink[];
+  attachmentLabel?: string;
   readContext?: AttachmentReadContext;
   openExternal: (href: string) => Promise<unknown> | void;
   alert: (message: string) => void;
@@ -138,6 +141,8 @@ export async function openContentLinkNavigation({
   openImage,
   openAttachment,
   readContext,
+  attachmentLinks,
+  attachmentLabel,
   openExternal,
   alert,
 }: OpenContentLinkNavigationArgs): Promise<void> {
@@ -148,66 +153,26 @@ export async function openContentLinkNavigation({
     alert('첨부를 열 수 없습니다.');
     return;
   }
-  if (attachmentLink?.kind === 'id') {
-    const context = resolveAttachmentReadContext(attachmentLink.context, readContext);
-    if (!context) {
-      alert('첨부를 열 수 없습니다.');
-      return;
-    }
-    if (!api || !openAttachment) {
-      alert('첨부를 열 수 없습니다.');
-      return;
-    }
-    try {
-      const { descriptor } = await api.getAttachmentMetadata(attachmentLink.id, context);
-      const previewUrl = attachmentContentUrl(attachmentLink.id, context);
-      openAttachment({
-        key: attachmentLink.id,
-        name: descriptor.name,
-        mimeType: descriptor.mime_type || null,
-        byteSize: Number.isSafeInteger(descriptor.byte_size) && descriptor.byte_size >= 0 ? descriptor.byte_size : null,
-        previewKind: descriptor.preview_kind,
-        readContext: context,
-        source: {
-          kind: 'ready',
-          attachmentId: attachmentLink.id,
-          previewUrl,
-          originalUrl: attachmentContentUrl(attachmentLink.id, context, { download: true }),
-        },
+  if (attachmentLink?.kind === 'id' || attachmentLink?.kind === 'legacy') {
+    const options = { serverUrl, jwt, api, readContext };
+    const selected = attachmentLinkView({ href, label: attachmentLabel ?? '' }, options);
+    if (selected && openAttachment) {
+      const links = attachmentLinks?.length ? attachmentLinks : [{ href, label: attachmentLabel ?? '' }];
+      const entries = links.flatMap(link => {
+        const view = attachmentLinkView(link, options);
+        return view ? [{ href: new URL(link.href, serverUrl).href, view }] : [];
       });
-    } catch (error) {
-      if ((error as { status?: number } | null)?.status !== 401) alert('첨부를 열지 못했습니다.');
-    }
-    return;
-  }
-  if (attachmentLink?.kind === 'legacy') {
-    const context = resolveAttachmentReadContext(attachmentLink.context, readContext);
-    if (!context) {
-      if (isLegacyAttachmentImage(attachmentLink.path)) {
-        if (openImage) {
-          openImage(cardImageSource(cardAttachmentUrl(serverUrl, attachmentLink.nodeId, attachmentLink.path), serverUrl, jwt));
-        } else alert('이미지를 열지 못했습니다.');
-      } else {
-        await openExternal(attachmentLink.href);
-      }
+      const index = entries.findIndex(entry => entry.href === absoluteHref);
+      if (index >= 0) openAttachment(entries[index].view, entries.map(entry => entry.view), index);
+      else openAttachment(selected);
       return;
     }
-    if (!openAttachment) {
-      alert('첨부를 열 수 없습니다.');
-      return;
-    }
-    try {
-      const view = await readLegacyAttachmentView({
-        href: attachmentLink.href,
-        nodeId: attachmentLink.nodeId,
-        path: attachmentLink.path,
-        context,
-        jwt,
-      });
-      openAttachment(view);
-    } catch (error) {
-      if ((error as { status?: number } | null)?.status !== 401) alert('첨부를 열지 못했습니다.');
-    }
+    // Preserve standalone legacy opening when no read context was supplied.
+    if (attachmentLink.kind === 'legacy' && !readContext && !attachmentLink.context.context && !attachmentLink.context.invalid) {
+      if (!isLegacyAttachmentImage(attachmentLink.path)) await openExternal(attachmentLink.href);
+      else if (openImage) openImage(cardImageSource(cardAttachmentUrl(serverUrl, attachmentLink.nodeId, attachmentLink.path), serverUrl, jwt));
+      else alert('이미지를 열지 못했습니다.');
+    } else alert('첨부를 열 수 없습니다.');
     return;
   }
 
@@ -318,128 +283,4 @@ export async function openContentLinkNavigation({
   } catch (error) {
     alertUnlessUnauthorized(alert, target, error);
   }
-}
-
-type AttachmentLinkContext = { context: AttachmentReadContext | null; invalid: boolean };
-type ExactAttachmentLink =
-  | { kind: 'id'; id: string; context: AttachmentLinkContext }
-  | { kind: 'legacy'; nodeId: string; path: string; href: string; context: AttachmentLinkContext }
-  | { kind: 'invalid' };
-
-function parseExactAttachmentLink(href: string, serverUrl: string): ExactAttachmentLink | null {
-  let url: URL;
-  try {
-    url = new URL(href, serverUrl);
-    if (url.origin !== new URL(serverUrl).origin) return null;
-  } catch {
-    return null;
-  }
-
-  const idMatch = /^\/api\/attachments\/([^/]+)\/content$/.exec(url.pathname);
-  if (idMatch) {
-    let id: string;
-    try { id = decodeURIComponent(idMatch[1]); } catch { return { kind: 'invalid' }; }
-    if (!id || id.includes('/')) return { kind: 'invalid' };
-    return { kind: 'id', id, context: readContextFromUrl(url) };
-  }
-
-  if (url.pathname !== '/api/attachments/files') return null;
-  const nodeId = url.searchParams.get('nodeId');
-  const path = url.searchParams.get('path');
-  if (url.searchParams.getAll('nodeId').length !== 1 || url.searchParams.getAll('path').length !== 1
-    || !nodeId || !path) return { kind: 'invalid' };
-  return { kind: 'legacy', nodeId, path, href: url.href, context: readContextFromUrl(url) };
-}
-
-function readContextFromUrl(url: URL): AttachmentLinkContext {
-  const types = url.searchParams.getAll('context_type');
-  const ids = url.searchParams.getAll('context_id');
-  if (types.length === 0 && ids.length === 0) return { context: null, invalid: false };
-  if (types.length !== 1 || ids.length > 1) return { context: null, invalid: true };
-  const type = types[0];
-  const id = ids[0];
-  if (type === 'owner' && id === undefined) return { context: { type: 'owner' }, invalid: false };
-  if (!id) return { context: null, invalid: true };
-  if (type === 'session' || type === 'card' || type === 'page' || type === 'board_item') {
-    return { context: { type, id }, invalid: false };
-  }
-  return { context: null, invalid: true };
-}
-
-function resolveAttachmentReadContext(
-  fromUrl: AttachmentLinkContext,
-  fromProvider?: AttachmentReadContext,
-): AttachmentReadContext | null {
-  if (fromUrl.invalid) return null;
-  return fromUrl.context ?? fromProvider ?? null;
-}
-
-async function readLegacyAttachmentView({ href, nodeId, path, context, jwt }: {
-  href: string;
-  nodeId: string;
-  path: string;
-  context: AttachmentReadContext;
-  jwt: string | null;
-}): Promise<AttachmentView> {
-  const url = new URL(href);
-  if (context.type === 'owner') {
-    url.searchParams.delete('context_type');
-    url.searchParams.delete('context_id');
-  } else {
-    url.searchParams.set('context_type', context.type);
-    url.searchParams.set('context_id', context.id);
-  }
-  const response = await fetch(url.href, {
-    method: 'HEAD',
-    ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}),
-  });
-  if (!response.ok) throw { status: response.status };
-
-  const mimeType = response.headers.get('content-type')?.split(';', 1)[0].trim() || null;
-  const byteSizeHeader = response.headers.get('content-length');
-  const parsedSize = byteSizeHeader && /^\d+$/.test(byteSizeHeader) ? Number(byteSizeHeader) : null;
-  const name = filenameFromContentDisposition(response.headers.get('content-disposition')) || filenameFromPath(path);
-  const attachmentId = response.headers.get('x-attachment-id') || `${nodeId}:${path}`;
-  const kind = response.headers.get('x-attachment-id') ? previewKindForLegacy(mimeType, name) : legacyPreviewKind(mimeType, name);
-  const originalUrl = new URL(url.href);
-  originalUrl.searchParams.set('download', 'true');
-  return {
-    key: attachmentId,
-    name,
-    mimeType,
-    byteSize: parsedSize !== null && Number.isSafeInteger(parsedSize) ? parsedSize : null,
-    previewKind: kind,
-    readContext: context,
-    source: {
-      kind: 'ready',
-      attachmentId,
-      previewUrl: url.href,
-      originalUrl: originalUrl.href,
-    },
-  };
-}
-
-function legacyPreviewKind(mimeType: string | null, name: string): AttachmentView['previewKind'] {
-  return isLegacyAttachmentImage(name) ? 'image' : 'info';
-}
-
-function previewKindForLegacy(mimeType: string | null, name: string): AttachmentView['previewKind'] {
-  if (isLegacyAttachmentImage(name)) return 'image';
-  if (mimeType?.startsWith('text/') || /\.(?:txt|md|json)$/i.test(name)) return 'text';
-  return 'info';
-}
-
-function filenameFromPath(path: string): string {
-  const filename = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
-  try { return decodeURIComponent(filename); } catch { return filename; }
-}
-
-function filenameFromContentDisposition(value: string | null): string | null {
-  if (!value) return null;
-  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(value)?.[1]?.trim();
-  if (encoded) {
-    try { return decodeURIComponent(encoded.replace(/^"|"$/g, '')); } catch { return null; }
-  }
-  const plain = /filename\s*=\s*(?:"([^"]+)"|([^;]+))/i.exec(value);
-  return (plain?.[1] ?? plain?.[2])?.trim() || null;
 }

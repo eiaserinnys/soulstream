@@ -12,7 +12,7 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { cardFixture } from '../../../test-support/cards';
 import type { CardDetail } from '../../../api/cardTypes';
 import type { AttachmentReadContext } from '../../../../../packages/wire-schema/src/attachments';
-import { AttachmentReadContextProvider, useAttachmentReadContext } from '../../../navigation/ContentLinkProvider';
+import { AttachmentReadContextProvider, useAttachmentReadContext, useAttachmentBlockLinks } from '../../../navigation/ContentLinkProvider';
 import { useOpenContentLink } from '../../../hooks/useOpenContentLink';
 import { openContentLinkNavigation } from '../../../lib/content-link-navigation';
 
@@ -23,7 +23,7 @@ jest.mock('../PlannerMarkdownText', () => ({ PlannerMarkdownText: ({ markdown }:
   const React = require('react');
   const { Pressable, Text } = require('react-native');
   const { useOpenContentLink } = require('../../../hooks/useOpenContentLink');
-  const { useAttachmentReadContext } = jest.requireActual('../../../navigation/ContentLinkProvider');
+  const { useAttachmentReadContext, useAttachmentBlockLinks } = jest.requireActual('../../../navigation/ContentLinkProvider');
   const openContentLink = useOpenContentLink();
   const context = useAttachmentReadContext();
   const href = markdown.match(/\[[^\]]*\]\(([^)]+)\)/)?.[1];
@@ -42,7 +42,7 @@ const second = server + '/api/attachments/files?nodeId=n&path=%2Ftmp%2Ftwo.png';
 const third = 'https://other.test/three.png';
 const observedReadContexts: Array<AttachmentReadContext | undefined> = [];
 const metadataRequest = jest.fn();
-const openAttachment = jest.fn();
+const openAttachment = jest.fn((view) => { void view.loadMetadata?.().catch(() => {}); });
 const openExternal = jest.fn().mockResolvedValue(undefined);
 const alert = jest.fn();
 const detail: CardDetail = { card: cardFixture(), sessions: [], questions: [], comments: [], reports: [{
@@ -54,15 +54,17 @@ beforeEach(() => {
   metadataRequest.mockReset().mockResolvedValue({ descriptor: {
     name: 'body.txt', mime_type: 'text/plain', byte_size: 8, preview_kind: 'text',
   } });
-  openAttachment.mockReset();
+  openAttachment.mockClear();
   openExternal.mockReset().mockResolvedValue(undefined);
   alert.mockReset();
-  jest.mocked(useOpenContentLink).mockImplementation((readContext?: AttachmentReadContext) => {
+  jest.mocked(useOpenContentLink).mockImplementation((readContext?: AttachmentReadContext, links?: readonly { href: string; label: string }[]) => {
     const providerContext = useAttachmentReadContext();
+    const blockLinks = useAttachmentBlockLinks();
     const effectiveContext = readContext ?? providerContext;
     observedReadContexts.push(effectiveContext);
     return (href: string) => openContentLinkNavigation({
       href,
+      attachmentLinks: links ?? blockLinks,
       serverUrl: server,
       jwt: useAuthStore.getState().jwt,
       api: { getAttachmentMetadata: metadataRequest } as any,
@@ -80,17 +82,17 @@ beforeEach(() => {
 afterEach(() => useAuthStore.setState({ jwt: null }));
 const hasAuth = (source: any) => Boolean(source.headers?.Authorization);
 
-test('접힌 두 썸네일과 전체 확대 갤러리에 인증 source를 전달한다', () => {
+test('접힌 두 썸네일의 카드 인증 source와 공통 보기 목록을 전달한다', () => {
   const screen = render(<CardTimeline detail={detail} onChooseAnswer={() => {}} />);
   const thumbnails = screen.getAllByTestId(/card-report-thumbnail/);
   expect(thumbnails).toHaveLength(2);
   expect(thumbnails.map((image) => hasAuth(image.props.source))).toEqual([true, true]);
-  expect(thumbnails[0].props.source.uri).toBe(server + first);
+  expect(thumbnails[0].props.source.uri).toBe(server + first + '&context_type=card&context_id=card-1');
   fireEvent.press(thumbnails[0]);
-  const pages = within(screen.getByTestId('image-viewer-pages'));
-  const sources = pages.UNSAFE_getAllByType(Image).map((image) => image.props.source);
-  expect(sources.map(hasAuth)).toEqual([true, true, false]);
-  expect(sources.map((source) => source.uri)).toEqual([server + first, second, third]);
+  const [selected, items, index] = openAttachment.mock.calls[0] as any[];
+  expect(index).toBe(0);
+  expect(items.map((item: any) => item.name)).toEqual(['첫 사진', '둘째']);
+  expect(selected.readContext).toEqual({ type: 'card', id: 'card-1' });
 });
 
 test('펼친 보고는 글 순서를 유지하고 preview 없이 본문 이미지로 전체 확대한다', () => {
@@ -111,8 +113,7 @@ test.each([first, second])('웹 상대/앱 절대 커멘트 끝 첨부는 같은
   const image = screen.getByTestId('card-request-image-0');
   expect(hasAuth(image.props.source)).toBe(true);
   expect(image.props.source.uri.startsWith(server)).toBe(true);
-  fireEvent.press(image);
-  expect(within(screen.getByTestId('image-viewer-pages')).UNSAFE_getByType(Image).props.source).toEqual(image.props.source);
+  expect(image.props.source.uri).toContain('/api/attachments/files?');
 });
 
 test('외부 커멘트는 인증하지 않고 중간 이미지 원문은 유지한다', () => {
@@ -254,9 +255,9 @@ test('D13 문맥 없는 legacy /files 링크는 보고 카드 문맥을 HEAD에 
       `${server}/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fbody.txt&context_type=card&context_id=report-card`,
       expect.objectContaining({ method: 'HEAD' }),
     ));
-    expect(openAttachment).toHaveBeenCalledWith(expect.objectContaining({
+    expect(openAttachment.mock.calls[0][0]).toEqual(expect.objectContaining({
       readContext: { type: 'card', id: 'report-card' },
-      previewKind: 'info',
+      loadMetadata: expect.any(Function),
     }));
   } finally {
     global.fetch = originalFetch;

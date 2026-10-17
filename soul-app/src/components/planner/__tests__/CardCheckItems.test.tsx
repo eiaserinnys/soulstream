@@ -205,23 +205,18 @@ test('카드 증거 첨부는 같은 카드의 이미지·파일 순서로 공�
   ] })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
     onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
 
-  expect(screen.getByTestId('message-attachments')).toBeTruthy();
+  expect(screen.queryByTestId('message-attachments')).toBeNull();
+  const images = screen.getAllByTestId(/card-check-item-1-evidence-\d+$/);
+  expect(images).toHaveLength(3);
+  for (const image of images) expect(StyleSheet.flatten(image.props.style)).toMatchObject({ width: 104, height: 60 });
   expect(screen.getByText('외부 참고')).toBeTruthy();
   expect(screen.getByText('설명.txt')).toBeTruthy();
   expect(screen.getByText('없는 파일.txt')).toBeTruthy();
-  expect(screen.getByText('찾을 수 없음')).toBeTruthy();
-  expect(screen.getByText('다른 카드.png')).toBeTruthy();
-  expect(screen.getByText('사용할 수 없음')).toBeTruthy();
-  expect(jest.mocked(getAttachmentImageSize)).toHaveBeenCalled();
-  expect(jest.mocked(getAttachmentImageSize).mock.calls.every(([source]) => typeof source.uri === 'string' && source.uri.length > 0)).toBe(true);
-
-  fireEvent.press(screen.getByLabelText('설명.txt 열기'));
-  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 5');
-  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
-  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('3 / 5');
-  expect(screen.getAllByText('둘째 화면.png').length).toBeGreaterThan(1);
-  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
+  expect(screen.getByText('불러오지 못함')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('설명.txt'));
   expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('4 / 5');
+  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('5 / 5');
   expect(screen.getAllByText('찾을 수 없음').length).toBeGreaterThan(0);
   fireEvent.press(screen.getByTestId('chat-image-viewer-close'));
   expect(screen.getByTestId('card-check-item-1')).toBeTruthy();

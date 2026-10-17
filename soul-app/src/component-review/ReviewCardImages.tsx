@@ -92,20 +92,34 @@ export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverU
     reportedAt: at,
     display: 'reported',
   };
+  const orderItem: CardCheckItem = { ...evidence, id: 2, title: '섞인 순서 증거', evidence: [
+    cardAsset('review-card-text', '카드 설명.txt', 'text', 'link'),
+    cardAsset('review-card-image', '카드 화면.png', 'image'),
+    { type: 'image', url: '', label: '지워진 화면.png', attachment_id: 'review-card-missing',
+      read_context: cardContext, availability: 'missing', previewUrl: null, originalUrl: '' },
+    cardAsset('review-card-image-two', '카드 두번째 화면.png', 'image'),
+  ] };
+  const singleItem: CardCheckItem = { ...evidence, id: 3, title: '한 장 증거', evidence: [cardAsset('review-card-image', '카드 화면.png', 'image')] };
+  attachmentCard.request = `[요청 첫 파일][a]\n\n![요청 내부 화면](${cardContentUrl('review-card-image')})\n\n[요청 둘째 파일](${cardContentUrl('review-card-report')})\n\n[a]: ${cardContentUrl('review-card-text')}`;
   const attachmentReport: CardDetail = {
     card: attachmentCard,
     sessions: [],
     questions: [],
     reports: [{ id: 'card-attachment-report', cardId: attachmentCard.id, title: '첨부가 있는 보고', format: 'markdown', createdAt: at,
-      body: `카드 보고 본문 내부 파일입니다: [보고 설명.txt](${cardContentUrl('review-card-report')})` }],
-    comments: [],
+      body: `카드 보고 본문 내부 파일입니다: [보고 설명.txt](${cardContentUrl('review-card-report')})` },
+      { id: 'card-attachment-report-multi', cardId: attachmentCard.id, title: '여러 첨부 보고', format: 'markdown', createdAt: at,
+        body: `여러 내부 첨부가 있는 보고입니다.\n\n![내부 화면](${cardContentUrl('review-card-image')})\n\n파일 둘: [보고 설명.txt](${cardContentUrl('review-card-report')}) 그리고 [카드 설명.txt](${cardContentUrl('review-card-text')})\n\n[옛 파일](/api/attachments/files?nodeId=public-node&path=%2Freview%2Fnotes.txt)\n\n실패 링크: [없는 본문 파일](${cardContentUrl('review-card-missing')}) [권한 없는 본문 파일](${cardContentUrl('review-attachment-denied')}) [다시 읽을 파일.txt](${cardContentUrl('review-attachment-retryable')}) [네트워크 파일.txt](${cardContentUrl('review-attachment-network')})` }],
+    comments: [{ id: 'user-link-comment', cardId: attachmentCard.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment',
+      body: `사용자 커멘트입니다.\n\n[사용자 메모.txt](${cardContentUrl('review-card-text')})` , createdAt: '2026-10-02T00:03:00Z' },
+      { id: 'reference-comment', cardId: attachmentCard.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment',
+        body: `[커멘트 참조 파일][a]\n\n[a]: ${cardContentUrl('review-card-text')}\n\n![커멘트 내부 화면](${cardContentUrl('review-card-image')})\n\n![커멘트 legacy 화면](${url('reference-comment')})`, createdAt: '2026-10-02T00:04:00Z' }],
   };
   return <ContentLinkProvider><ScrollView testID="card-image-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={{ padding: t.foundation.pageInset, gap: t.uiSpacing.lg }} showsVerticalScrollIndicator={false}>
     <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>공개 fixture · RN web 배치와 조작 검수입니다. 네이티브 인증은 별도 계약으로 확인합니다.</Text>
     <View testID="card-evidence-fixture" style={{ gap: t.uiSpacing.sm }}>
       <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드 증거 첨부</Text>
-      <CardCheckItems cardId={attachmentCard.id} items={[evidence]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+      <CardCheckItems cardId={attachmentCard.id} items={[evidence, orderItem, singleItem]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
         onConfirm={async () => true} onSetTarget={() => {}} onRecentConfirmation={() => {}} paneWidth={680} />
     </View>
     <View testID="card-body-attachment-fixture" style={{ gap: t.uiSpacing.sm }}>

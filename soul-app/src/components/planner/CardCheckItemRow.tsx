@@ -1,16 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { CardAttachmentAssetEvidence, CardCheckItem, CardItemDisplay } from '../../api/cardTypes';
+import type { CardCheckItem, CardItemDisplay } from '../../api/cardTypes';
 import { formatCardTime } from '../../lib/card-check-item-summary';
 import { toCardAttachmentView, type AttachmentView } from '../../lib/attachment-view';
+import { attachmentLinkView, scopedAttachmentUrl } from '../../lib/attachment-link-view';
 import { cardImageSource } from '../../lib/card-image-source';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { AttachmentImage } from '../AttachmentImage';
-import { MessageAttachments } from '../MessageAttachments';
+import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 import { CardItemCheckbox } from '../CardItemCheckbox';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { StatusPulseDecorationLayer, withAlphaColor } from '../StatusPulseDecoration';
@@ -57,25 +58,38 @@ export function CardCheckItemRow({
   onSetTarget(item: CardCheckItem): void;
 }) {
   const t = useTokens();
-  const openContentLink = useOpenContentLink();
+  const openContentLink = useOpenContentLink({ type: 'card', id: cardId });
   const styles = useMemo(() => makeStyles(t), [t]);
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const [rowWidth, setRowWidth] = useState(0);
-  const assetEvidence = item.evidence.filter((evidence): evidence is CardAttachmentAssetEvidence => 'attachment_id' in evidence);
-  const attachmentItems: AttachmentView[] = assetEvidence.map((evidence) => {
+  const images = item.evidence.filter(evidence => evidence.type === 'image');
+  const links = item.evidence.filter(evidence => evidence.type === 'link');
+  const ordered = [...images, ...links];
+  const entries = ordered.map(evidence => {
+    if (!('attachment_id' in evidence)) return attachmentLinkView({ href: evidence.url, label: evidence.label },
+      { serverUrl, jwt, api: null, readContext: { type: 'card', id: cardId } });
     const view = toCardAttachmentView(evidence);
-    if (evidence.read_context.id === cardId) return view;
-    return {
-      ...view,
-      readContext: { type: 'card', id: cardId },
-      source: { kind: 'unavailable', availability: 'unavailable' },
+    return evidence.read_context.id === cardId ? view : {
+      ...view, readContext: { type: 'card' as const, id: cardId },
+      source: { kind: 'unavailable' as const, availability: 'unavailable' as const },
     };
   });
-  const legacyEvidence = item.evidence.filter((evidence) => !('attachment_id' in evidence) && evidence.url.length > 0);
-  const images = legacyEvidence.filter((evidence) => evidence.type === 'image');
-  const links = legacyEvidence.filter((evidence) => evidence.type === 'link');
-  const imageSources = images.map((evidence) => cardImageSource(evidence.url, serverUrl, jwt));
+  const attachmentItems = entries.filter((view): view is AttachmentView => view !== null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const restoreFocus = useRef<(() => void) | undefined>(undefined);
+  const openEvidence = (evidence: typeof ordered[number], restore?: () => void) => {
+    const view = entries[ordered.indexOf(evidence)];
+    if (view) {
+      restoreFocus.current = restore;
+      setSelected(attachmentItems.indexOf(view));
+    } else if (!('attachment_id' in evidence)) void openContentLink(evidence.url, evidence.label);
+  };
+  const imageSources = images.map(evidence => {
+    const view = entries[ordered.indexOf(evidence)];
+    return cardImageSource(view?.source.kind === 'ready' ? view.source.previewUrl ?? view.source.originalUrl
+      : scopedAttachmentUrl(evidence.url, serverUrl, { type: 'card', id: cardId }), serverUrl, jwt);
+  });
   const running = item.display === 'doing';
   const statusLabel = item.display === 'fix' ? `${DISPLAY_LABELS.fix} ${item.fixOpen}` : DISPLAY_LABELS[item.display];
   const color = statusColor(item, t);
@@ -161,13 +175,15 @@ export function CardCheckItemRow({
           </View> : null}
           {item.evidence.length ? (
             <View style={styles.evidence}>
-              {attachmentItems.length ? <MessageAttachments items={attachmentItems} role="assistant" /> : null}
               {images.length ? <View testID={`card-check-item-${item.id}-evidence-images`} style={styles.evidenceImages}>
                 {images.map((evidence, index) => (
-                  <View key={`${item.id}-${evidence.url}`} style={styles.imageEvidence}>
+                  <View key={`${item.id}-${'attachment_id' in evidence ? evidence.attachment_id : evidence.url}`} style={styles.imageEvidence}>
                     <AttachmentImage
                       testID={`card-check-item-${item.id}-evidence-${index}`}
                       accessibilityLabel={evidence.label || `항목 ${item.id} 증거 ${index + 1}`}
+                      onOpen={entries[index] ? restore => openEvidence(evidence, restore) : undefined}
+                      unavailableMessage={!entries[index]?.loadMetadata && entries[index]?.source.kind === 'unavailable'
+                        ? entries[index]?.source.availability === 'missing' ? '찾을 수 없음' : '불러오지 못함' : undefined}
                       source={imageSources[index]}
                       sources={imageSources}
                       captions={images.map((image) => image.label || '')}
@@ -180,13 +196,13 @@ export function CardCheckItemRow({
               {links.length ? <View testID={`card-check-item-${item.id}-evidence-links`} style={styles.evidenceLinks}>
                 {links.map((evidence) => (
                   <CompactTouchTarget
-                    key={`${item.id}-${evidence.url}`}
+                    key={`${item.id}-${'attachment_id' in evidence ? evidence.attachment_id : evidence.url}`}
                     testID={`card-check-item-${item.id}-link`}
                     accessibilityRole="link"
                     accessibilityLabel={evidence.label || evidence.url}
                     frameStyle={styles.linkFrame}
                     surfaceStyle={styles.linkSurface}
-                    onPress={() => { void openContentLink(evidence.url); }}
+                    onPress={() => openEvidence(evidence)}
                   >
                     <View style={styles.linkContent}>
                       <Ionicons testID={`card-check-item-${item.id}-link-icon`} name="open-outline" size={t.foundation.typography.meta.fontSize} color={t.colors.link} />
@@ -209,6 +225,8 @@ export function CardCheckItemRow({
           </View>
         </View>
       ) : null}
+      {selected !== null ? <AttachmentPreviewModal item={attachmentItems[selected]} items={attachmentItems} initialIndex={selected}
+        onClose={() => { setSelected(null); restoreFocus.current?.(); }} /> : null}
       {pending ? <Text accessibilityRole="text" style={styles.pending}>저장 중</Text> : null}
     </View>
   );
