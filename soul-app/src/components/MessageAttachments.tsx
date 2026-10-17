@@ -8,10 +8,11 @@ import { ChatRefinedImageGallery, type ChatRefinedGalleryItem } from './Attachme
 import { AttachmentPreviewModal } from './AttachmentPreviewModal';
 import { attachmentImageSource } from '../lib/attachment-image-source';
 
-export function MessageAttachments({ items, role, presentation = 'default' }: {
+export function MessageAttachments({ items, role, presentation = 'default', captionColor }: {
   items: readonly AttachmentView[];
   role: 'assistant' | 'user';
   presentation?: 'default' | 'manuscript';
+  captionColor?: string;
 }) {
   const t = useTokens();
   const device = useDeviceType();
@@ -50,6 +51,7 @@ export function MessageAttachments({ items, role, presentation = 'default' }: {
       role={role}
       testID="message-attachments-images"
       embedded
+      captionColor={captionColor}
       onOpenImage={(index, restore) => open(items.indexOf(images[index]), restore)}
     /> : null}
     {fileRows.length > 0 ? <View testID="message-attachments-file-rows" style={{

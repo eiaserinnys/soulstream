@@ -6,6 +6,7 @@ const http = require('node:http');
 const path = require('node:path');
 const { once } = require('node:events');
 const { loadedImageWithin, assertAssistantAlignment } = require('./attachment-capture-checks.cjs');
+const { measureAttachmentColors, assertAttachmentColors } = require('./attachment-capture-colors.cjs');
 
 const [playwrightPath, fixtureUrlInput, outputPath, browserPath] = process.argv.slice(2);
 if (!playwrightPath || !fixtureUrlInput || !outputPath) {
@@ -318,7 +319,7 @@ async function measureAndAssertAlignment(page, name) {
   return geometry;
 }
 
-async function captureConversation(browser, base, { name, width, height, presentation = 'default', mode = 'normal' }) {
+async function captureConversation(browser, base, { name, width, height, presentation = 'default', mode = 'normal', theme = 'light' }) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: true });
   await context.addCookies([
     { name: 'review', value: 'fixture', url: base },
@@ -343,18 +344,21 @@ async function captureConversation(browser, base, { name, width, height, present
   });
 
   const query = new URLSearchParams({ section: 'chatUiRenderer', sample: mode === 'missing' ? 'attachments-missing' : 'attachments', safeArea: 'fixture' });
+  query.set('theme', theme);
   if (presentation === 'manuscript') query.set('presentation', 'manuscript');
   await page.goto(`${base}${assetPrefix}index.html?${query}`);
   await waitForChat(page);
   await page.locator('[data-testid="user-message-bubble"]:visible')
     .filter({ has: page.locator('[data-testid="message-attachments-images"]') }).first().scrollIntoViewIfNeeded();
   const geometry = await measureAndAssertAlignment(page, name);
+  const colors = await page.evaluate(measureAttachmentColors);
+  const contrast = assertAttachmentColors(colors);
   if (mode === 'missing') {
     await page.getByText('사용할 수 없음', { exact: true }).scrollIntoViewIfNeeded();
   }
   const screenshot = path.join(output, `${name}.png`);
   await page.screenshot({ path: screenshot });
-  evidence.captures.push({ name, screenshot, geometry, presentation, mode,
+  evidence.captures.push({ name, screenshot, geometry, colors, contrast, presentation, mode, theme,
     safeAreaFixture: width >= 768 ? { top: 24, bottom: 20 } : { top: 47, bottom: 34 } });
 
   if (name === 'normal-phone') {
@@ -441,6 +445,8 @@ async function captureConversation(browser, base, { name, width, height, present
     browser = await chromium.launch({ headless: true, ...(browserPath ? { executablePath: browserPath } : {}) });
     await captureConversation(browser, base, { name: 'normal-phone', width: 390, height: 844 });
     await captureConversation(browser, base, { name: 'normal-tablet', width: 1024, height: 768 });
+    await captureConversation(browser, base, { name: 'normal-phone-dark', width: 390, height: 844, theme: 'dark' });
+    await captureConversation(browser, base, { name: 'normal-tablet-dark', width: 1024, height: 768, theme: 'dark' });
     await captureConversation(browser, base, { name: 'pas-phone', width: 390, height: 844, presentation: 'manuscript' });
     await captureConversation(browser, base, { name: 'pas-tablet', width: 1024, height: 768, presentation: 'manuscript' });
     await captureConversation(browser, base, { name: 'missing-phone', width: 390, height: 844, mode: 'missing' });

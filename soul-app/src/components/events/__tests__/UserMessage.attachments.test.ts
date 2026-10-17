@@ -5,6 +5,7 @@ import {
 } from '../UserMessage';
 import type { Session, SessionEvent } from '../../../api/types';
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { EventRenderer } from '../EventRenderer';
 import { AssistantMessage } from '../AssistantMessage';
@@ -21,7 +22,10 @@ jest.mock('../../../hooks/useMessageAttachments', () => ({
   useMessageAttachments: (...args: unknown[]) => mockUseMessageAttachments(...args),
 }));
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  useSettingsStore.setState({ appearance: 'system' });
+});
 
 /**
  * Phase 2 (atom 260513.02 — chat-inline-attachment): 사용자 발화 말풍선
@@ -187,6 +191,39 @@ test.each(['default', 'manuscript'] as const)('%s output attachments reuse the a
   expect(screen.getByTestId('assistant-attachment-content')).toBeTruthy();
   expect(screen.queryByTestId('assistant-message-bubble')).toBeNull();
   expect(screen.getByTestId('message-attachments')).toBeTruthy();
+});
+
+test.each([
+  ['light', 'user_message', 'default'], ['dark', 'user_message', 'default'],
+  ['light', 'intervention_sent', 'default'], ['dark', 'intervention_sent', 'default'],
+  ['light', 'user_message', 'manuscript'], ['dark', 'user_message', 'manuscript'],
+] as const)('%s %s %s attachment captions use their containing message text color', (appearance, type, presentation) => {
+  useSettingsStore.setState({ appearance });
+  mockUseMessageAttachments.mockReturnValue({ items: [{
+    key: 'photo', name: '검토 자료.png', mimeType: 'image/png', byteSize: 128, previewKind: 'image',
+    readContext: { type: 'session', id: 'route-session' },
+    source: { kind: 'ready', attachmentId: 'photo', previewUrl: '/api/attachments/photo/content',
+      originalUrl: '/api/attachments/photo/content?download=true' },
+  }], retry: jest.fn() });
+  const screen = render(React.createElement(EventRenderer, {
+    event: { id: '41', type, data: { text: '본문', attachment_ids: ['photo'] } },
+    sessionId: 'route-session', presentation,
+  }));
+  const caption = StyleSheet.flatten(screen.getByText('검토 자료.png').props.style);
+  const body = StyleSheet.flatten(screen.getByTestId('user-message-text').props.style);
+  expect(caption.color).toBe(body.color);
+  expect(caption.opacity ?? 1).toBe(1);
+});
+
+test.each(['sending', 'failed'] as const)('%s attachment message status keeps the body color', pendingStatus => {
+  mockUseMessageAttachments.mockReturnValue({ items: [], retry: jest.fn() });
+  const screen = render(React.createElement(EventRenderer, {
+    event: { id: 'pending', type: 'user_message', data: { text: '본문', attachment_ids: ['photo'] }, pendingStatus } as SessionEvent,
+    sessionId: 'route-session',
+  }));
+  const body = StyleSheet.flatten(screen.getByTestId('user-message-text').props.style);
+  const status = screen.getByTestId(pendingStatus === 'sending' ? 'pending-message-status' : 'pending-message-failure-reason');
+  expect(StyleSheet.flatten(status.props.style).color).toBe(body.color);
 });
 
 test('pending attachment preview trigger and remove trigger stay independent', async () => {

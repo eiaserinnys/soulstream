@@ -2,6 +2,18 @@ import { chatUiAttachmentReviewHistory, chatUiReviewHistory, chatUiReviewSseUrl,
 
 const sampleSearch = '?section=chatUiRenderer&sample=attachments';
 const { loadedImageWithin, assertAssistantAlignment } = require('../../../scripts/attachment-capture-checks.cjs');
+const { contrastRatio, assertAttachmentColors } = require('../../../scripts/attachment-capture-colors.cjs');
+
+it('rejects muted bubble captions, translucent file surfaces, and insufficient file contrast', () => {
+  expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21);
+  const colors = { body: { color: '#000000', background: '#ffffff' },
+    captions: [{ color: '#000000', opacity: 1 }], statuses: [],
+    fileText: [{ text: '자료.txt', color: '#000000', background: 'rgb(255, 255, 255)', opacity: 1 }] };
+  expect(() => assertAttachmentColors(colors)).not.toThrow();
+  expect(() => assertAttachmentColors({ ...colors, captions: [{ color: '#53575d', opacity: 1 }] })).toThrow(/matches message body/);
+  expect(() => assertAttachmentColors({ ...colors, fileText: [{ ...colors.fileText[0], background: 'rgba(255, 255, 255, 0.5)' }] })).toThrow(/surface is opaque/);
+  expect(() => assertAttachmentColors({ ...colors, fileText: [{ ...colors.fileText[0], color: '#ffffff' }] })).toThrow(/contrast 1/);
+});
 
 it('rejects an output gallery at the screen edge instead of the assistant text edge', () => {
   expect(() => assertAssistantAlignment('phone', 0, 68)).toThrow(/-68px/);

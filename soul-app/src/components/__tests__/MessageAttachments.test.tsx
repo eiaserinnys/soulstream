@@ -97,6 +97,17 @@ test('a file row opens the shared attachment preview modal', async () => {
   await waitFor(() => expect(screen.getByTestId('attachment-preview-modal')).toBeTruthy());
 });
 
+test.each([
+  ['assistant', 'default'], ['user', 'manuscript'],
+] as const)('%s %s keeps standard caption and file row colors', (role, presentation) => {
+  const tokens = renderHook(() => useTokens()).result.current;
+  const screen = render(<MessageAttachments items={[image('one', 'photo.png'), textFile('text', 'notes.txt')]}
+    role={role} presentation={presentation} />);
+  expect(StyleSheet.flatten(screen.getByText('photo.png').props.style).color).toBe(tokens.colors.textMuted);
+  expect(StyleSheet.flatten(screen.getByText('notes.txt').props.style).color).toBe(tokens.colors.textPrimary);
+  expect(StyleSheet.flatten(screen.getByText('0 B').props.style).color).toBe(tokens.colors.textMuted);
+});
+
 test('mixed attachments share one container gap and one viewer in message order', async () => {
   const tokens = renderHook(() => useTokens()).result.current;
   const items = [image('one', 'one.png'), textFile('text', 'notes.txt'), image('two', 'two.png')];

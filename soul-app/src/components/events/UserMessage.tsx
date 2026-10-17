@@ -200,7 +200,8 @@ export function UserMessage({
         {projectedAttachments.length > 0 ? (
           <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
             ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
-            <MessageAttachments items={projectedAttachments} role="user" presentation={presentation} />
+            <MessageAttachments items={projectedAttachments} role="user" presentation={presentation}
+              captionColor={presentation === 'default' ? textStyle.color : undefined} />
           </View>
         ) : beforeTextEntries.length > 0 && (
           <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
