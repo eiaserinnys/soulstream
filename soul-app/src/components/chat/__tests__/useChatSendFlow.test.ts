@@ -14,7 +14,7 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { renderHook, act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { ApiHttpError } from '../../../api/clientCore';
-import { useChatSendFlow } from '../useChatSendFlow';
+import { getSendFailureReason, useChatSendFlow } from '../useChatSendFlow';
 import { useChatStore } from '../../../store/chatStore';
 import type { Session } from '../../../api/types';
 
@@ -745,4 +745,13 @@ test('optimistic chat clearing removes the submitted draft at send start and pre
   await act(async () => { confirm({ delivered: true, outcome: 'delivered' }); await sending; });
   expect(hook.result.current.draft.value).toBe('새 입력');
   act(() => reset());
+});
+
+test('닫힌 질문 응답의 중첩 detail과 최상위 error에서 실패 사유를 읽는다', () => {
+  expect(getSendFailureReason(new ApiHttpError('[intervene] HTTP 409 Conflict', 409,
+    JSON.stringify({ detail: { error: { message: '이미 닫힌 질문입니다' } } }))))
+    .toBe('전송하지 못했습니다: 이미 닫힌 질문입니다');
+  expect(getSendFailureReason(new ApiHttpError('[intervene] HTTP 500', 500,
+    JSON.stringify({ error: { message: 'x' } }))))
+    .toBe('전송하지 못했습니다: x');
 });

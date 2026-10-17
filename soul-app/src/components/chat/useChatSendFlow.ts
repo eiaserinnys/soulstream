@@ -306,8 +306,13 @@ export function getSendFailureReason(error: unknown): string {
   if (error instanceof ApiHttpError) {
     let message = `HTTP ${error.status}`;
     try {
-      const body = JSON.parse(error.body) as { detail?: unknown };
+      const body = JSON.parse(error.body) as {
+        detail?: string | { error?: { message?: string } };
+        error?: { message?: string };
+      };
       if (typeof body.detail === 'string') message = body.detail;
+      else if (body.detail?.error?.message) message = body.detail.error.message;
+      else if (body.error?.message) message = body.error.message;
     } catch {
       // Non-JSON bodies use the stable HTTP status fallback.
     }

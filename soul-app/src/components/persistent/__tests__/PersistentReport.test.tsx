@@ -120,6 +120,33 @@ test('phone keyboard collapses context/buttons, keeps two-line action, and resto
   expect(screen.getByTestId('report-context')).toBeTruthy();
 });
 
+test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 그린다', () => {
+  const question = { ...reportReviewEntries[0], key: 'question', title: '카드 331번 확인', action: '', options: [] };
+  const empty = pager([question]);
+  expect(empty.queryByTestId('report-todo')).toBeNull();
+  const filled = pager([reportReviewEntries[2]]);
+  expect(filled.getByTestId('report-todo')).toBeTruthy();
+});
+
+test('compact에서 action이 빈 장은 질문 글을 두 줄로, action이 있으면 할 일을 보여 준다', () => {
+  const listeners: Record<string, () => void> = {};
+  jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
+    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+  });
+  const show = () => act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
+  const question = { ...reportReviewEntries[0], key: 'question', title: '카드 331번 확인', action: '', options: [],
+    context: '카드 331번 질문입니다. 확인해 주세요.' };
+  const asked = pager([question]);
+  show(); measurePersistentReports(asked);
+  expect(asked.getByTestId('report-context').props.numberOfLines).toBe(2);
+  expect(asked.getByTestId('report-context').props.children).toBe(question.context);
+  expect(asked.queryByTestId('report-todo')).toBeNull();
+  const todo = pager([reportReviewEntries[2]]);
+  show(); measurePersistentReports(todo);
+  expect(todo.getByTestId('report-todo').props.numberOfLines).toBe(2);
+  expect(todo.queryByTestId('report-context')).toBeNull();
+});
+
 test('current key survives additions and removals; current removal selects the next slot, then previous', () => {
   const store = useSessionStore.getState();
   act(() => store.applyPersistentReport('pas', reportReviewEntries));
