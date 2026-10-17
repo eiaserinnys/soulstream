@@ -16,6 +16,7 @@ import { cardImageSource } from '../../lib/card-image-source';
 import { segmentCardReportImages } from '../../lib/card-report-images';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 type Entry = { id: string; kind: string; user: boolean; body: string; at: string; sessionId?: string | null;
   itemId?: number | null; spoken?: boolean; report?: CardReport; question?: CardQuestion; attachments?: CardAttachment[] };
@@ -89,14 +90,14 @@ const TimelineMessage = React.memo(function TimelineMessage({ id, type, source, 
   const [expanded, setExpanded] = useState(false);
   const fold = !!entry.report || entry.kind === '지시';
   const label = expanded ? '접기' : entry.report ? '자세히' : '더 보기';
-  const body = <TimelineBody target={target} entry={entry} expanded={expanded} onChooseAnswer={onChooseAnswer} />;
+  const body = <TimelineBody cardId={cardId} target={target} entry={entry} expanded={expanded} onChooseAnswer={onChooseAnswer} />;
   const message = entry.user ? <UserMessage event={event} session={session} messageKind={kind}>{body}</UserMessage>
     : <AssistantMessage rowInset="none" event={event} session={session} messageKind={kind} bubbleWidth={entry.report ? 'fill' : 'content'}>{body}</AssistantMessage>;
   return fold ? <TouchableWithoutFeedback testID={`card-fold-${entry.id}`} accessibilityRole="button" accessibilityLabel={`${entry.id} ${label}`}
     onPress={() => setExpanded((old) => !old)}><View>{message}</View></TouchableWithoutFeedback> : message;
 });
 
-function TimelineBody({ entry, target, expanded, onChooseAnswer }: { entry: Entry; target?: string; expanded: boolean; onChooseAnswer(answer: string): void }) {
+function TimelineBody({ cardId, entry, target, expanded, onChooseAnswer }: { cardId: string; entry: Entry; target?: string; expanded: boolean; onChooseAnswer(answer: string): void }) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const report = entry.report;
@@ -107,7 +108,7 @@ function TimelineBody({ entry, target, expanded, onChooseAnswer }: { entry: Entr
   const gallery = report ? reportImages(report).map((uri) => cardImageSource(uri, serverUrl, jwt)) : [];
   const images = gallery.slice(0, 2);
   const expandedMarkdown = expanded && report?.format === 'markdown';
-  return <View style={styles.bodyStack}>
+  return <AttachmentReadContextProvider context={{ type: 'card', id: cardId }}><View style={styles.bodyStack}>
     {target ? <Text testID={`card-comment-item-target-${entry.id}`} numberOfLines={1} style={styles.commentTarget}>{target}</Text> : null}
     {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} attachments={entry.attachments} /> : !expandedMarkdown ? <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text> : null}
     {images.length && !expandedMarkdown ? <View style={styles.thumbnails}>{images.map((source, index) => <AttachmentImage key={source.uri}
@@ -116,7 +117,7 @@ function TimelineBody({ entry, target, expanded, onChooseAnswer }: { entry: Entr
     {expanded && report ? <CardReportView report={report} /> : null}
     {entry.question?.answer === null ? entry.question.options?.map((option) => <CompactTouchTarget key={option}
       accessibilityRole="button" accessibilityLabel={option} surfaceStyle={styles.option} onPress={() => onChooseAnswer(option)}><Text style={styles.link}>{option}</Text></CompactTouchTarget>) : null}
-  </View>;
+  </View></AttachmentReadContextProvider>;
 }
 
 export function reportImages(report: CardReport): string[] {

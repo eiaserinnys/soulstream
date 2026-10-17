@@ -10,15 +10,16 @@ import { AttachmentImage } from '../AttachmentImage';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { cardDetailStyles } from './CardDetail.styles';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
+import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
 
 /** Card messages use the same image surface as chat; file names remain links. */
 export function CardRequestView({ request, attachments: files = [], bodyStyle, numberOfLines, collapseBlankLines = false,
-  attachmentImageVariant = 'default' }: {
+  attachmentImageVariant = 'default', readContext }: {
   request: string; attachments?: readonly CardAttachment[]; bodyStyle?: TextStyle; numberOfLines?: number;
-  collapseBlankLines?: boolean; attachmentImageVariant?: 'default' | 'cardCheckItem';
+  collapseBlankLines?: boolean; attachmentImageVariant?: 'default' | 'cardCheckItem'; readContext?: AttachmentReadContext;
 }) {
   const t = useTokens();
-  const openContentLink = useOpenContentLink();
+  const openContentLink = useOpenContentLink(readContext);
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);

@@ -25,6 +25,7 @@ import { cardAskPreview, cardItemDisplayColor, EMPTY_PENDING_ITEM_CONFIRMATIONS,
 import { useCardStore } from '../../store/cardStore';
 import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 export function CardStatusChip({ card, title = false, board = false, detail = false, colors }: { card: CardDto; title?: boolean; board?: boolean; detail?: boolean; colors?: ColorScheme }) {
   const t = useTokens();
@@ -175,7 +176,7 @@ function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }
     <Pressable testID={`card-row-${card.id}-layout`} style={board ? undefined : styles.card} onPress={onOpen} accessibilityLabel={`${card.title} 카드 상세`}>
       {board ? <>
         <View style={styles.card}>{identityContent}</View>
-        <View testID={`card-${card.id}-board-body`} style={{ paddingHorizontal: styles.card.paddingHorizontal, paddingBottom: styles.card.paddingVertical, gap: t.uiSpacing.md }}>
+        <AttachmentReadContextProvider context={{ type: 'card', id: card.id }}><View testID={`card-${card.id}-board-body`} style={{ paddingHorizontal: styles.card.paddingHorizontal, paddingBottom: styles.card.paddingVertical, gap: t.uiSpacing.md }}>
           <CardRequestView request={card.request} attachments={card.attachments} />
           {card.now ? <Text testID={`card-${card.id}-now-preview`} style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }} numberOfLines={1}>{card.now.text}</Text>
             : card.latestActivity ? <View style={{ gap: t.uiSpacing.xs }}>
@@ -186,7 +187,7 @@ function StandardCardRow({ api, card, onOpen, today, queueIndex, board = false }
           {card.now?.turn === 'user' && askPreview ? <Text testID={`card-${card.id}-board-ask-preview`} accessibilityLabel={askPreview} style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }} numberOfLines={1}>
             {askPreview}
           </Text> : null}
-        </View>
+        </View></AttachmentReadContextProvider>
       </> : identityContent}
     </Pressable>
   </AppGlassCard>;

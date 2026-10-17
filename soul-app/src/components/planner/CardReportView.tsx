@@ -11,8 +11,15 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { AttachmentImage } from '../AttachmentImage';
 import { cardDetailStyles } from './CardDetail.styles';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 export function CardReportView({ report }: { report: CardReport }) {
+  return <AttachmentReadContextProvider context={{ type: 'card', id: report.cardId }}>
+    <CardReportContent report={report} />
+  </AttachmentReadContextProvider>;
+}
+
+function CardReportContent({ report }: { report: CardReport }) {
   const t = useTokens();
   const { width } = useWindowDimensions();
   const [height, setHeight] = useState(t.foundation.minHeight.memo);
