@@ -172,7 +172,7 @@ export async function backfillMessageRefsTx(
       return messageBackfillResult("unchanged", nextPayload);
     }
     await transaction`
-      UPDATE events SET payload=${transaction.json(nextPayload)}::jsonb
+      UPDATE events SET payload=${transaction.json(nextPayload as never)}::jsonb
       WHERE session_id=${source.session_id} AND id=${source.event_id}
     `;
     const saved = await transaction<SqlRow[]>`

@@ -42,10 +42,7 @@ export type CardBackfillOptions = MessageBackfillOptions;
 
 type CardSql = postgres.Sql;
 type SqlRow = Record<string, unknown>;
-type AliasSql = {
-  <T extends readonly SqlRow[] = SqlRow[]>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T>;
-  array(values: unknown[]): unknown;
-};
+type AliasSql = postgres.TransactionSql;
 type CardBackfillInput = { readonly cardId: string; readonly expectedVersion: number; readonly sources: readonly CardRefSource[]; readonly resolvedAliases: readonly ResolvedCardAlias[] };
 type CurrentRows = { card: SqlRow; reports: Map<string, SqlRow>; comments: Map<string, SqlRow>; operations: Map<string, SqlRow> };
 type ValidatedSource = { source: CardRefSource; attachmentId: string; legacyUrl: string };
@@ -114,7 +111,7 @@ export async function backfillCardRefsTx(sql: CardSql, input: CardBackfillInput)
       const next = mergeCardSourceAttachmentRefs(previous, refs);
       if (sameJson(previous, next)) continue;
       const saved = await transaction<SqlRow[]>`
-        UPDATE card_reports SET attachment_refs=${transaction.json(next)}::jsonb
+        UPDATE card_reports SET attachment_refs=${transaction.json(next as never)}::jsonb
         WHERE id=${reportId} AND card_id=${input.cardId} RETURNING id
       `;
       if (saved.length !== 1) throw new CardRefBackfillError(SOURCE_CHANGED, "report source changed while locked");
@@ -126,7 +123,7 @@ export async function backfillCardRefsTx(sql: CardSql, input: CardBackfillInput)
       const next = mergeCardSourceAttachmentRefs(previous, refs);
       if (sameJson(previous, next)) continue;
       const saved = await transaction<SqlRow[]>`
-        UPDATE card_comments SET attachment_refs=${transaction.json(next)}::jsonb
+        UPDATE card_comments SET attachment_refs=${transaction.json(next as never)}::jsonb
         WHERE id=${commentId} AND card_id=${input.cardId} RETURNING id
       `;
       if (saved.length !== 1) throw new CardRefBackfillError(SOURCE_CHANGED, "comment source changed while locked");
@@ -135,8 +132,8 @@ export async function backfillCardRefsTx(sql: CardSql, input: CardBackfillInput)
 
     if (cardChanged) {
       const saved = await transaction<SqlRow[]>`
-        UPDATE cards SET attachment_refs=${transaction.json(nextCardRefs)}::jsonb,
-          items=${transaction.json(nextItems)}::jsonb, version=version+1
+        UPDATE cards SET attachment_refs=${transaction.json(nextCardRefs as never)}::jsonb,
+          items=${transaction.json(nextItems as never)}::jsonb, version=version+1
         WHERE id=${input.cardId} AND version=${input.expectedVersion}
         RETURNING version, jsonb_typeof(attachment_refs) AS refs_type, jsonb_typeof(items) AS items_type
       `;
@@ -191,10 +188,11 @@ async function main(args: readonly string[]): Promise<void> {
         const snapshot = await withReadOnlyTransaction(sql, READ_QUERY_TIMEOUT_MS,
           (transaction) => readCurrentRows(transaction, cardId, candidates, false));
         const cardAliases = distinctAliases(candidates, aliases);
+        const cardAliasMap = new Map(cardAliases.map((alias) => [locationKey(alias.node_id, alias.normalized_path), alias] as const));
         const valid: ValidatedSource[] = [];
         for (const candidate of candidates) {
           try {
-            valid.push(...validateSources(cardId, [candidate], cardAliases, snapshot));
+            valid.push(...validateSources(cardId, [candidate], cardAliasMap, snapshot));
             report.push(sourceRecord(options.apply ? "pending_apply" : "planned", candidate));
           } catch (error) {
             report.push(sourceRecord(errorCode(error, SOURCE_CHANGED), candidate));
@@ -350,7 +348,7 @@ function transitionCurrentEvidence(itemsValue: unknown, validated: readonly Vali
         return pointer?.itemIndex === itemIndex && pointer.evidenceIndex === evidenceIndex;
       });
       if (!match || typeof entry.url !== "string") return entry;
-      const next = { ...entry, attachment_id: match.attachmentId };
+      const next: Record<string, unknown> = { ...entry, attachment_id: match.attachmentId };
       delete next.url;
       itemChanged = true;
       return next;

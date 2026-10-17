@@ -167,7 +167,7 @@ describe("message ref backfill PostgreSQL contract", () => {
     await harness.sql`INSERT INTO sessions (session_id, node_id) VALUES (${source.session_id}, 'node-a')`;
     await harness.sql`
       INSERT INTO events (session_id, id, event_type, payload, created_at)
-      VALUES (${source.session_id}, ${source.event_id}, ${source.event_type}, ${harness.sql.json(source.payload)}::jsonb, ${source.created_at})
+      VALUES (${source.session_id}, ${source.event_id}, ${source.event_type}, ${harness.sql.json(source.payload as never)}::jsonb, ${source.created_at})
     `;
 
     await expect(backfillMessageRefsTx(harness.liveSql as never, source, "stale-fingerprint", ["message-ref-asset"]))
