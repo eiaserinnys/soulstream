@@ -109,12 +109,14 @@ type PersistentToolBoundaryInjectionOptions = {
   input: EngineUserInput;
   active: ActiveForeground | null;
   runtime: ClaudeSessionRuntime<SDKUserMessage>;
+  logger: Logger;
 };
 
 export function injectPersistentToolBoundary({
   input,
   active,
   runtime,
+  logger,
 }: PersistentToolBoundaryInjectionOptions): boolean {
   if (!active || runtime.snapshot().foregroundPhase !== "generating") return false;
   const uuid = input.inputUuid ?? randomUUID();
@@ -123,11 +125,23 @@ export function injectPersistentToolBoundary({
     priority: "next",
     origin: { kind: "coordinator" },
   });
-  runtime.enqueueForegroundContinuation({
+  const admission = runtime.enqueueForegroundContinuation({
     uuid,
     payloadHash: hashSdkUserMessage(message),
     turnOwner: normalizePersistentTurnOwner(input.turnOrigin, uuid),
     message,
   });
+  if (admission.payloadMismatch) {
+    logger.warn(
+      {
+        uuid,
+        state: admission.state,
+        existingPayloadHash: admission.payloadMismatch.existingPayloadHash,
+        incomingPayloadHash: admission.payloadMismatch.incomingPayloadHash,
+        path: "tool_boundary",
+      },
+      "Claude input UUID re-sent with a different payload; keeping the first admission",
+    );
+  }
   return true;
 }

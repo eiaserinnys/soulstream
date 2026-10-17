@@ -68,6 +68,18 @@ export function startPersistentForegroundTurn({
     turnOwner: origin,
     message,
   });
+  if (admission.payloadMismatch) {
+    logger.warn(
+      {
+        uuid,
+        state: admission.state,
+        existingPayloadHash: admission.payloadMismatch.existingPayloadHash,
+        incomingPayloadHash: admission.payloadMismatch.incomingPayloadHash,
+        path: "foreground",
+      },
+      "Claude input UUID re-sent with a different payload; keeping the first admission",
+    );
+  }
   if (!admission.enqueued && (
     admission.state === "submitted"
     || admission.state === "merged"
