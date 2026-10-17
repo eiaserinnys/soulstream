@@ -50,7 +50,8 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
  const groupedIds=new Set(grouped.map(item=>item.id));
  const changeExpanded=(id:number)=>setExpandedIds(existing=>{const next=new Set(existing);if(next.has(id))next.delete(id);else next.add(id);return next;});
  const renderItem=(item:CardCheckItem)=>{
-  const attachments=item.evidence.flatMap(evidence=>{
+  const orderedEvidence=[...item.evidence.filter(evidence=>evidence.type==="image"),...item.evidence.filter(evidence=>evidence.type!=="image")];
+  const attachments=orderedEvidence.flatMap(evidence=>{
    const attachment=cardAttachmentSelectionFromEvidence(evidence);
    return attachment?[attachment]:[];
   });

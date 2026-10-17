@@ -1,5 +1,5 @@
 import type { CardItemEvidence } from "@seosoyoung/soul-ui/cards/card-types";
-import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import { attachmentContentUrl, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 export type AttachmentReadContext = Extract<ChatAttachmentItem["source"], { kind: "asset" }>["context"];
 
 export function cardAttachmentSelectionFromEvidence(_evidence: CardItemEvidence): ChatAttachmentItem | null {
@@ -11,7 +11,7 @@ export function cardAttachmentSelectionFromEvidence(_evidence: CardItemEvidence)
   if (_evidence.availability) {
     return {
       key: `asset:${attachmentId}`,
-      name: descriptor?.name ?? null,
+      name: descriptor?.name ?? _evidence.label,
       mimeType: descriptor?.mime_type ?? null,
       byteSize: descriptor?.byte_size ?? null,
       previewKind: descriptor?.preview_kind ?? "info",
@@ -31,7 +31,7 @@ export function cardAttachmentSelectionFromEvidence(_evidence: CardItemEvidence)
     byteSize: descriptor.byte_size,
     previewKind: descriptor.preview_kind,
     availability: "ready",
-    previewUrl: _evidence.previewUrl ?? null,
+    previewUrl: descriptor.preview_kind === "info" ? null : _evidence.previewUrl ?? attachmentContentUrl(attachmentId, context),
     originalUrl: _evidence.originalUrl ?? null,
     legacySources: [],
     source: { kind: "asset", attachmentId, context },
