@@ -23,8 +23,8 @@ describe("archiveRunnerEvent", () => {
     directories.push(incomingFileDir);
     const body = "private full tool result\n";
     const digest = createHash("sha256").update(body, "utf8").digest("hex").slice(0, 16);
-    const name = `tool_result-${digest}.txt`;
-    const localPath = join(incomingFileDir, "session-a", name);
+    const name = "도구 결과 전문.txt";
+    const localPath = join(incomingFileDir, "session-a", `tool_result-${digest}.txt`);
     const descriptor = {
       attachment_id: "attachment-1",
       name,
