@@ -13,6 +13,8 @@ import { SettingsOptionRow } from '../components/settings/SettingsOptionRow';
 import { SettingsModal } from '../components/settings/SettingsModal';
 import { ReviewNativeSettings } from './ReviewNativeSettings';
 import { CardStatusMenu } from '../components/planner/CardStatusMenu';
+import { AttachmentPreviewModal } from '../components/AttachmentPreviewModal';
+import { attachmentDialogueItems } from './ReviewAttachments';
 import { ImageViewerModal } from '../components/ImageViewerModal';
 import { DEFAULT_SEARCH_FILTERS } from '../store/searchStore';
 import { createSessionSuccessionFailureRecord } from '../lib/session-succession-diagnostics';
@@ -52,6 +54,7 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
       {opened === 'pas-settings' ? <ReviewNativeSettings entry="pas" onClose={close} /> : null}
       {opened === 'persistent-select' ? <ReviewPersistentEntry onOpen={() => saved('영구 세션 선택')} /> : null}
       {opened === 'card-status' ? <CardStatusMenu api={api} card={makeCard('todo')} onClose={close} /> : null}
+      {opened === 'attachment-preview' ? <AttachmentPreviewModal item={attachmentDialogueItems[0]} items={attachmentDialogueItems} onClose={close} /> : null}
       {opened === 'image-viewer' ? <ImageViewerModal sources={[require('../../assets/icon.png')]} initialIndex={0} onClose={close} /> : null}
       <ReviewDialogueOwners opened={opened} preview={preview} onClose={close} />
   </>;

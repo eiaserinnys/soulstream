@@ -46,14 +46,22 @@ function makeApi(overrides: Record<string, unknown> = {}) {
     getPlannerFolder: jest.fn().mockResolvedValue(folderDetail),
     getPage: jest.fn().mockResolvedValue({ page: { id: 'page-1', title: '페이지 제목' } }),
     getMarkdownDocument: jest.fn().mockResolvedValue(document),
+    getAttachmentMetadata: jest.fn().mockResolvedValue({
+      descriptor: {
+        attachment_id: 'asset-1', name: 'notes.txt', mime_type: 'text/plain', byte_size: 12,
+        checksum_sha256: null, width: null, height: null, preview_kind: 'text', preview_mime_type: 'text/plain',
+      },
+      upload_status: 'committed',
+    }),
     ...overrides,
-  } as unknown as Pick<ApiClient, 'getCard' | 'getPlannerFolder' | 'getPage' | 'getMarkdownDocument'>;
+  } as unknown as Pick<ApiClient, 'getCard' | 'getPlannerFolder' | 'getPage' | 'getMarkdownDocument' | 'getAttachmentMetadata'>;
 }
 
 function deps(href: string, overrides: Record<string, unknown> = {}) {
   const navigation = makeNavigation();
   const api = makeApi();
   const openImage = jest.fn();
+  const openAttachment = jest.fn();
   const openExternal = jest.fn();
   const alert = jest.fn();
   return {
@@ -67,6 +75,7 @@ function deps(href: string, overrides: Record<string, unknown> = {}) {
       activeSessionId: 'active-session',
       leavePersistent: jest.fn(),
       openImage,
+      openAttachment,
       openExternal,
       alert,
       ...overrides,
@@ -74,6 +83,7 @@ function deps(href: string, overrides: Record<string, unknown> = {}) {
     navigation,
     api,
     openImage,
+    openAttachment,
     openExternal,
     alert,
   };
@@ -95,6 +105,121 @@ test.each([
   expect(state.api.getMarkdownDocument).not.toHaveBeenCalled();
   expect(state.navigation.push).toHaveBeenCalledWith('MarkdownDocument', { documentId: 'doc-1' });
   expect(state.alert).not.toHaveBeenCalled();
+});
+
+test('same-origin ID content links resolve metadata with URL context and open the attachment host', async () => {
+  const context = { type: 'card' as const, id: 'card-1' };
+  const state = deps('https://soulstream.test/api/attachments/asset-1/content?context_type=card&context_id=card-1');
+
+  await openContentLinkNavigation(state.input);
+
+  expect(state.api.getAttachmentMetadata).toHaveBeenCalledWith('asset-1', context);
+  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({
+    key: 'asset-1', name: 'notes.txt', previewKind: 'text', readContext: context,
+    source: {
+      kind: 'ready', attachmentId: 'asset-1',
+      previewUrl: '/api/attachments/asset-1/content?context_type=card&context_id=card-1',
+      originalUrl: '/api/attachments/asset-1/content?context_type=card&context_id=card-1&download=true',
+    },
+  }));
+  expect(state.openExternal).not.toHaveBeenCalled();
+  expect(state.openImage).not.toHaveBeenCalled();
+});
+
+test('same-origin ID content links use the nearest attachment context when the URL has none', async () => {
+  const context = { type: 'session' as const, id: 'session-7' };
+  const state = deps('https://soulstream.test/api/attachments/asset-1/content', { readContext: context });
+
+  await openContentLinkNavigation(state.input);
+
+  expect(state.api.getAttachmentMetadata).toHaveBeenCalledWith('asset-1', context);
+  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({
+    readContext: context,
+    source: expect.objectContaining({
+      previewUrl: '/api/attachments/asset-1/content?context_type=session&context_id=session-7',
+    }),
+  }));
+  expect(state.openExternal).not.toHaveBeenCalled();
+});
+
+test('attachment content without URL or provider read context fails inside the app', async () => {
+  const state = deps('https://soulstream.test/api/attachments/asset-1/content');
+
+  await openContentLinkNavigation(state.input);
+
+  expect(state.api.getAttachmentMetadata).not.toHaveBeenCalled();
+  expect(state.openAttachment).not.toHaveBeenCalled();
+  expect(state.openExternal).not.toHaveBeenCalled();
+  expect(state.alert).toHaveBeenCalledTimes(1);
+});
+
+test.each([403, 404, 503])('attachment metadata HTTP %i stays in the app and reports failure', async status => {
+  const state = deps(
+    'https://soulstream.test/api/attachments/asset-1/content?context_type=card&context_id=card-1',
+    { api: makeApi({ getAttachmentMetadata: jest.fn().mockRejectedValue({ status }) }) },
+  );
+
+  await openContentLinkNavigation(state.input);
+
+  expect(state.openExternal).not.toHaveBeenCalled();
+  expect(state.openAttachment).not.toHaveBeenCalled();
+  expect(state.alert).toHaveBeenCalledTimes(1);
+});
+
+test('outside-origin attachment-like URL receives no internal metadata request', async () => {
+  const state = deps('https://outside.test/api/attachments/asset-1/content?context_type=card&context_id=card-1');
+
+  await openContentLinkNavigation(state.input);
+
+  expect(state.api.getAttachmentMetadata).not.toHaveBeenCalled();
+  expect(state.openAttachment).not.toHaveBeenCalled();
+  expect(state.openExternal).toHaveBeenCalledWith(state.input.href);
+});
+
+test('legacy same-origin image links use authenticated HEAD metadata and preserve their card context', async () => {
+  const originalFetch = global.fetch;
+  const fetchMock = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    headers: new Headers({
+      'content-type': 'image/png',
+      'content-length': '42',
+      'content-disposition': 'inline; filename="photo.png"',
+    }),
+  } as Response);
+  global.fetch = fetchMock;
+  const state = deps('/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fphoto.png&context_type=card&context_id=card-1');
+
+  try {
+    await openContentLinkNavigation(state.input);
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    'https://soulstream.test/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fphoto.png&context_type=card&context_id=card-1',
+    { method: 'HEAD', headers: { Authorization: 'Bearer fixture-jwt' } },
+  );
+  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({
+    name: 'photo.png', mimeType: 'image/png', byteSize: 42, previewKind: 'image',
+    readContext: { type: 'card', id: 'card-1' },
+  }));
+  expect(state.openExternal).not.toHaveBeenCalled();
+});
+
+test.each([['svg', 'info'], ['heic', 'image']] as const)('legacy %s uses %s without a descriptor, with or without an alias', async (extension, previewKind) => {
+  const originalFetch = global.fetch;
+  const state = deps(`/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fphoto.${extension}&context_type=card&context_id=card-1`);
+  try {
+    for (const alias of [false, true]) {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: new Headers({
+        'content-type': extension === 'svg' ? 'image/svg+xml' : 'image/heic',
+        ...(alias ? { 'x-attachment-id': 'asset-1' } : {}),
+      }) });
+      await openContentLinkNavigation(state.input);
+      expect(state.openAttachment).toHaveBeenLastCalledWith(expect.objectContaining({ previewKind }));
+    }
+  } finally { global.fetch = originalFetch; }
 });
 
 test('현재 맨 위와 같은 문서는 두 번 push하지 않는다', async () => {
@@ -234,4 +359,15 @@ test('내부 링크를 단독 렌더에서 열어도 browser를 호출하지 않
 
   expect(state.openExternal).not.toHaveBeenCalled();
   expect(state.alert).not.toHaveBeenCalled();
+});
+
+
+test('descriptor HEIC honors the server info preview kind', async () => {
+  const state = deps('/api/attachments/asset-1/content?context_type=card&context_id=card-1');
+  const response = await state.api.getAttachmentMetadata('asset-1', { type: 'card', id: 'card-1' });
+  (state.api.getAttachmentMetadata as jest.Mock).mockResolvedValue({ ...response, descriptor: {
+    ...response.descriptor, name: 'IMG_0001.heic', mime_type: 'image/heic', preview_kind: 'info',
+  } });
+  await openContentLinkNavigation(state.input);
+  expect(state.openAttachment).toHaveBeenCalledWith(expect.objectContaining({ name: 'IMG_0001.heic', previewKind: 'info' }));
 });
