@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { Pressable, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { CardReport } from '../../api/cardTypes';
 import { buildCustomViewBindings, renderCustomViewHtml } from '../../lib/custom-view-renderer';
@@ -40,11 +40,13 @@ function CardMarkdownReport({ report }: { report: CardReport }) {
   const segments = useMemo(() => segmentCardReportImages(report.body), [report.body]);
   const gallery = segments.flatMap((part) => part.kind === 'image' ? [cardImageSource(part.url, serverUrl, jwt)] : []);
   let imageIndex = 0;
-  return <View testID={`card-report-markdown-${report.id}`} style={styles.reportBodyStack}>{segments.map((part, index) => {
+  // Keep links and image interactions inside the expanded report, outside the timeline fold responder.
+  return <Pressable testID={`card-report-markdown-${report.id}`} accessible={false}
+    onPress={(event) => event.stopPropagation()} style={styles.reportBodyStack}>{segments.map((part, index) => {
     if (part.kind === 'markdown') return part.markdown.trim()
       ? <PlannerMarkdownText key={index} markdown={part.markdown} variant="card" textAlign="left" /> : null;
     const current = imageIndex++;
     return <AttachmentImage key={index} testID={`card-report-image-${report.id}-${current}`}
       source={gallery[current]} sources={gallery} index={current} accessibilityLabel={part.alt || `보고 캡처 ${current + 1}`} />;
-  })}</View>;
+  })}</Pressable>;
 }

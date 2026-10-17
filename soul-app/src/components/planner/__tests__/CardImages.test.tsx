@@ -98,7 +98,9 @@ test('펼친 보고는 글 순서를 유지하고 preview 없이 본문 이미�
   fireEvent.press(screen.getByTestId('card-fold-report-images'));
   expect(screen.queryAllByTestId(/card-report-thumbnail/)).toHaveLength(0);
   expect(screen.getAllByTestId(/card-report-image-images-/)).toHaveLength(3);
-  const parts = screen.getByTestId('card-report-markdown-images').props.children;
+  // Pressable's native View also contains a development-only PressabilityDebugView.
+  // Assert the production content children directly, with the same exact order.
+  const parts = screen.getByTestId('card-report-markdown-images').props.children[0];
   expect(parts.filter(Boolean).map((part: any) => part.props.markdown?.trim() ?? part.props.accessibilityLabel))
     .toEqual(['처음', '첫 사진', '사이', '둘째', '외부', '마지막']);
   fireEvent.press(screen.getByTestId('card-report-image-images-2'));
@@ -181,6 +183,31 @@ test('D13 문맥 없는 Markdown 링크는 보고 카드 문맥을 상속한다'
   }} />);
   fireEvent.press(screen.getByTestId('planner-markdown-text-link'));
   await waitFor(() => expect(metadataRequest).toHaveBeenCalledWith('contextless-file', { type: 'card', id: 'report-card' }));
+});
+
+test('보고 본문 누름은 바깥 접기로 전파되지 않고 링크를 다시 열 수 있다', async () => {
+  const linkDetail: CardDetail = { ...detail, reports: [{ ...detail.reports[0],
+    body: '[파일](/api/attachments/report-file/content)',
+  }] };
+  const screen = render(<CardTimeline detail={linkDetail} onChooseAnswer={() => {}} />);
+  const fold = () => screen.getByTestId('card-fold-report-images');
+  fireEvent.press(fold());
+  fireEvent.press(screen.getByTestId('planner-markdown-text-link'));
+  await waitFor(() => expect(openAttachment).toHaveBeenCalledTimes(1));
+
+  const stopPropagation = jest.fn();
+  // RN fireEvent climbs to the outer fold if the report has no responder boundary.
+  fireEvent.press(screen.getByTestId('card-report-markdown-images'), { stopPropagation });
+  expect(stopPropagation).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId('card-report-markdown-images')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('planner-markdown-text-link'));
+  await waitFor(() => expect(openAttachment).toHaveBeenCalledTimes(2));
+  expect(metadataRequest).toHaveBeenLastCalledWith('report-file', { type: 'card', id: 'card-1' });
+
+  fireEvent.press(fold());
+  expect(screen.queryByTestId('card-report-markdown-images')).toBeNull();
+  fireEvent.press(fold());
+  expect(screen.getByTestId('planner-markdown-text-link')).toBeTruthy();
 });
 
 test('D13 Markdown 링크 URL 문맥은 현재 보고 카드 문맥보다 우선한다', async () => {
