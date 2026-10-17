@@ -88,7 +88,7 @@ export function CardAttachmentReviewSamples() {
       comments: [{ id: "attachment-review-comment", cardId, authorKind: "user", authorId: "review-user", sessionId: null, kind: "comment", createdAt: "2026-10-05T04:00:00Z",
         body: `[세션 첨부](/api/attachments/${prefix}denied/content?context_type=session&context_id=review-session)` }],
     };
-    const unavailable: CardCheckItem = { ...item, id: 3, title: "사용 불가 자료", evidence: [evidence(assets[2]!, "unavailable")] };
+    const unavailable: CardCheckItem = { ...item, id: 3, title: "사용 불가 자료", evidence: [evidence(assets[1]!), evidence(assets[2]!, "unavailable")] };
     return { card, detail, items: [item, other, unavailable] };
   }, [assets]);
 
