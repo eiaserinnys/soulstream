@@ -5,13 +5,13 @@ import path from "node:path";
 import postgres from "postgres";
 import { pathToFileURL } from "node:url";
 
-import { normalizeAttachmentLegacyPath } from "../../src/attachments/attachment_read_service.js";
 import {
   INVENTORY_EVENT_TYPES,
   INVENTORY_SCHEMA_VERSION,
   type InventoryPlanIdentity,
   type InventoryPlanReference,
 } from "./inventory_contract.js";
+import { messageReferenceIsCurrent } from "./backfill_message_source_validation.js";
 
 export type MessageRefSource = {
   readonly session_id: string;
@@ -34,6 +34,7 @@ export type MessageBackfillOptions = {
   readonly approvedManifestSha256?: string;
   readonly limit?: number;
   readonly only?: string;
+  readonly allowedOrigins: readonly string[];
 };
 
 type MessageSql = postgres.Sql;
@@ -58,7 +59,6 @@ const ALIAS_UNRESOLVED = "ALIAS_UNRESOLVED";
 const SOURCE_CHANGED = "SOURCE_CHANGED";
 const MESSAGE_REF_CONFLICT = "MESSAGE_REF_CONFLICT";
 const ALLOWED_IDENTITY_STATUSES = new Set(["verified_source", "owner_unverified", "already_migrated"]);
-const MANAGED_NOTE_PREFIX = "[첨부 파일 로컬 경로: ";
 const READ_QUERY_TIMEOUT_MS = 30_000;
 
 export class MessageRefBackfillError extends Error {
@@ -84,12 +84,20 @@ export function parseMessageBackfillArgs(args: readonly string[]): MessageBackfi
     values[flag] = value;
     index += 2;
   }
-  const allowed = new Set(["--manifest", "--output", "--approved-manifest-sha256", "--limit", "--only"]);
+  const allowed = new Set(["--manifest", "--output", "--approved-manifest-sha256", "--limit", "--only", "--allowed-origins"]);
   if (Object.keys(values).some((flag) => !allowed.has(flag))) throw usageError();
   const manifest = values["--manifest"];
   const output = values["--output"];
   const approvedManifestSha256 = values["--approved-manifest-sha256"];
+  const allowedOriginsValue = values["--allowed-origins"];
   if (!manifest || !output) throw usageError();
+  if (allowedOriginsValue === undefined) throw usageError("--allowed-origins is required and must be a JSON array of origins");
+  let allowedOrigins: unknown;
+  try { allowedOrigins = JSON.parse(allowedOriginsValue); }
+  catch { throw usageError("--allowed-origins must be a JSON array of origins"); }
+  if (!Array.isArray(allowedOrigins) || allowedOrigins.some((origin) => typeof origin !== "string")) {
+    throw usageError("--allowed-origins must be a JSON array of origins");
+  }
   if (apply && (!approvedManifestSha256 || !/^[a-f\d]{64}$/i.test(approvedManifestSha256))) {
     throw new MessageRefBackfillError(APPROVAL_REQUIRED, "--apply requires --approved-manifest-sha256");
   }
@@ -102,6 +110,7 @@ export function parseMessageBackfillArgs(args: readonly string[]): MessageBackfi
     ...(approvedManifestSha256 === undefined ? {} : { approvedManifestSha256: approvedManifestSha256.toLowerCase() }),
     ...(limit === undefined ? {} : { limit }),
     ...(values["--only"] === undefined ? {} : { only: nonempty(values["--only"]!, "--only") }),
+    allowedOrigins: allowedOrigins as string[],
   };
 }
 
@@ -189,23 +198,27 @@ export async function backfillMessageRefsTx(
 }
 
 async function main(args: readonly string[]): Promise<void> {
-  const options = parseMessageBackfillArgs(args);
-  const input = await readManifest(options.manifest);
-  if (options.approvedManifestSha256 && options.approvedManifestSha256 !== input.manifestSha256) {
-    throw new MessageRefBackfillError(APPROVAL_REQUIRED, "approved manifest sha256 does not match the input file");
-  }
-  const identities = selectIdentities(input.identities, options);
+  parseMessageBackfillArgs(args);
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new TypeError("DATABASE_URL must be set in the environment");
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
   try {
-    const report = await executeBackfill(sql, identities, options, input.manifestSha256);
-    await writeJsonlReport(options.output, report);
+    const report = await runMessageBackfillCli(args, sql);
     const summary = report[0]!;
     console.log(`${summary.marker} ${JSON.stringify(summary)}`);
   } finally {
     await sql.end({ timeout: 2 });
   }
+}
+
+export async function runMessageBackfillCli(args: readonly string[], sql: MessageSql): Promise<OutputRecord[]> {
+  const options = parseMessageBackfillArgs(args);
+  const input = await readManifest(options.manifest);
+  if (options.approvedManifestSha256 && options.approvedManifestSha256 !== input.manifestSha256)
+    throw new MessageRefBackfillError(APPROVAL_REQUIRED, "approved manifest sha256 does not match the input file");
+  const report = await executeBackfill(sql, selectIdentities(input.identities, options), options, input.manifestSha256);
+  await writeJsonlReport(options.output, report);
+  return report;
 }
 
 async function executeBackfill(
@@ -255,7 +268,7 @@ async function executeBackfill(
       continue;
     }
     const valid = candidate.references.filter(({ identity, reference }) =>
-      messageReferenceIsCurrent(snapshot.payload, reference.pointer, identity.normalized_path));
+      messageReferenceIsCurrent(snapshot.payload, identity, reference, options.allowedOrigins));
     const stale = candidate.references.filter((item) => !valid.includes(item));
     for (const item of stale) report.push(sourceRecord(SOURCE_CHANGED, item.identity, item.reference));
     const ids = uniqueStrings(valid.map((item) => item.attachmentId));
@@ -388,39 +401,6 @@ export function selectIdentities(identities: readonly ManifestIdentity[], option
   return options.limit === undefined ? selected : selected.slice(0, options.limit);
 }
 
-function messageReferenceIsCurrent(payload: Record<string, unknown>, pointer: string, normalizedPath: string): boolean {
-  const parts = pointer.split("/").slice(1).map(unescapePointer);
-  if (parts[0] !== "payload") return false;
-  if ((parts[1] === "attachments" || parts[1] === "attachment_paths") && Number.isInteger(Number(parts[2]))) {
-    const value = arrayEntries(payload[parts[1]])[Number(parts[2])];
-    return typeof value === "string" && normalizePath(value) === normalizedPath;
-  }
-  if (parts[1] === "text" && parts[2] === "managed_path_notes" && Number.isInteger(Number(parts[3]))) {
-    const value = managedPathNotes(payload.text)[Number(parts[3])];
-    return value !== undefined && normalizePath(value) === normalizedPath;
-  }
-  return false;
-}
-
-function managedPathNotes(value: unknown): string[] {
-  if (typeof value !== "string") return [];
-  const lines = value.split(/\r?\n/);
-  const notes: string[] = [];
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]!;
-    if (!line.startsWith(MANAGED_NOTE_PREFIX) || !line.endsWith("]")) break;
-    const value = line.slice(MANAGED_NOTE_PREFIX.length, -1);
-    if (value.length === 0) break;
-    notes.unshift(value);
-  }
-  return notes;
-}
-
-function normalizePath(value: string): string {
-  try { return normalizeAttachmentLegacyPath(value); }
-  catch { return ""; }
-}
-
 function isMessageReference(reference: InventoryPlanReference): reference is MessageReference {
   return reference.source_kind === "message" && reference.source_table === "events" &&
     typeof reference.session_id === "string" && typeof reference.event_id === "number" && Number.isSafeInteger(reference.event_id) &&
@@ -481,12 +461,11 @@ function nonempty(value: string, name: string): string {
   if (value.length === 0) throw usageError(`${name} must be non-empty`);
   return value;
 }
-function unescapePointer(value: string): string { return value.replace(/~1/g, "/").replace(/~0/g, "~"); }
 export function errorCode(error: unknown, fallback: string): string {
   return isRecord(error) && typeof error.code === "string" ? error.code : fallback;
 }
 function usageError(detail?: string): TypeError {
-  return new TypeError(detail ?? "usage: backfill_message_refs.ts --manifest <JSONL> --output <JSONL> [--apply --approved-manifest-sha256 <SHA256>] [--limit N] [--only <identity_key>]");
+  return new TypeError(detail ?? "usage: backfill_message_refs.ts --manifest <JSONL> --output <JSONL> --allowed-origins <JSON array> [--apply --approved-manifest-sha256 <SHA256>] [--limit N] [--only <identity_key>]");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

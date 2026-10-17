@@ -35,18 +35,20 @@ describe("message attachment ref backfill", () => {
   });
 
   it("defaults to dry-run and requires both apply and the approved manifest hash for writes", () => {
-    const dryRun = parseMessageBackfillArgs(["--manifest", "manifest.jsonl", "--output", "report.jsonl"]);
+    const origins = JSON.stringify(["https://soulstream.eiaserinnys.me"]);
+    const dryRun = parseMessageBackfillArgs(["--manifest", "manifest.jsonl", "--output", "report.jsonl", "--allowed-origins", origins]);
     expect(dryRun.apply).toBe(false);
     expect(dryRun.limit).toBeUndefined();
     expect(dryRun.only).toBeUndefined();
+    expect(dryRun.allowedOrigins).toEqual(["https://soulstream.eiaserinnys.me"]);
     expect(() => parseMessageBackfillArgs([
-      "--manifest", "manifest.jsonl", "--output", "report.jsonl", "--apply",
+      "--manifest", "manifest.jsonl", "--output", "report.jsonl", "--allowed-origins", origins, "--apply",
     ])).toThrow(expect.objectContaining({ code: "APPROVAL_REQUIRED" }));
 
     const apply = parseMessageBackfillArgs([
-      "--manifest", "manifest.jsonl", "--output", "report.jsonl", "--apply",
+      "--manifest", "manifest.jsonl", "--output", "report.jsonl", "--allowed-origins", origins, "--apply",
       "--approved-manifest-sha256", "a".repeat(64), "--limit", "2", "--only", "identity-a",
     ]);
-    expect(apply).toMatchObject({ apply: true, approvedManifestSha256: "a".repeat(64), limit: 2, only: "identity-a" });
+    expect(apply).toMatchObject({ apply: true, allowedOrigins: ["https://soulstream.eiaserinnys.me"], approvedManifestSha256: "a".repeat(64), limit: 2, only: "identity-a" });
   });
 });

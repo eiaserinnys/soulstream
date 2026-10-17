@@ -4,13 +4,17 @@ import { backfillMessageRefsTx, messageSourceFingerprint, type MessageRefSource 
 import { createLiveAttachmentReadRepository } from "../../src/runtime/live_attachment_read_repository.js";
 import { readLiveSessionEventAttachments } from "../../src/runtime/live_session_event_attachments.js";
 import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
+import type { AttachmentReadActor } from "../../src/attachments/attachment_read_service.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../page/page_postgres_harness.js";
+import { createLiveTestAttachmentService } from "./live_attachment_access_fixture.js";
 
 describe("message ref backfill PostgreSQL contract", () => {
   let harness: PagePostgresHarness;
 
   beforeAll(async () => {
     harness = await createPagePostgresHarness();
+    await harness.sql`INSERT INTO folders (id, name) VALUES
+      ('message-ref-folder', '메시지 첨부 권한'), ('message-ref-other-folder', '다른 권한 폴더')`;
     await harness.sql`
       INSERT INTO file_assets (
         id, storage_key, storage_purpose, storage_endpoint, storage_bucket,
@@ -36,8 +40,8 @@ describe("message ref backfill PostgreSQL contract", () => {
       const sessionA = `message-ref-session-a-${eventType}`;
       const sessionB = `message-ref-session-b-${eventType}`;
       await harness.sql`
-        INSERT INTO sessions (session_id, node_id)
-        VALUES (${sessionA}, 'node-a'), (${sessionB}, 'node-a')
+        INSERT INTO sessions (session_id, node_id, folder_id)
+        VALUES (${sessionA}, 'node-a', 'message-ref-folder'), (${sessionB}, 'node-a', 'message-ref-folder')
       `;
       const payload = {
         text: "unchanged text",
@@ -53,8 +57,17 @@ describe("message ref backfill PostgreSQL contract", () => {
           (${sessionA}, ${eventId}, ${eventType}, ${harness.sql.json(payload)}::jsonb, 'original searchable text'),
           (${sessionB}, ${eventId}, ${eventType}, ${harness.sql.json(payload)}::jsonb, 'other session searchable text')
       `;
+      const searchVectorBefore = (await harness.sql<{ search_vector: string | null }[]>`
+        SELECT search_vector::text AS search_vector FROM events WHERE session_id=${sessionA} AND id=${eventId}
+      `)[0]!.search_vector;
       const resolver = createLiveDbSqlResolver({ sql: harness.liveSql });
       const readRepository = createLiveAttachmentReadRepository(resolver);
+      const readService = await createLiveTestAttachmentService(harness.liveSql, {
+        "reader@example.com": ["message-ref-folder"], "outsider@example.com": ["message-ref-other-folder"],
+      });
+      const reader: AttachmentReadActor = { kind: "user", email: "reader@example.com" };
+      await expect(readService.content(reader, "message-ref-asset", { type: "session", id: sessionA }, { method: "GET" }))
+        .rejects.toMatchObject({ code: "ATTACHMENT_ACCESS_DENIED", statusCode: 403 });
       const before = await readLiveSessionEventAttachments(resolver, sessionA, eventId);
       expect(before?.items).toEqual([
         {
@@ -91,10 +104,11 @@ describe("message ref backfill PostgreSQL contract", () => {
 
       expect(result.status).toBe("updated");
       const stored = (await harness.sql<{
-        session_id: string; id: number; event_type: string; searchable_text: string;
+        session_id: string; id: number; event_type: string; searchable_text: string; search_vector: string | null;
         payload: Record<string, unknown>; payload_kind: string;
       }[]>`
         SELECT session_id, id, event_type, searchable_text, payload,
+        search_vector::text AS search_vector,
           jsonb_typeof(payload->'attachment_ids') AS payload_kind
         FROM events WHERE session_id=${sessionA} AND id=${eventId}
       `)[0]!;
@@ -104,6 +118,7 @@ describe("message ref backfill PostgreSQL contract", () => {
       }).toEqual({
         session_id: sessionA, id: eventId, event_type: eventType, searchable_text: "original searchable text",
       });
+      expect(stored.search_vector).toBe(searchVectorBefore);
       expect(stored.payload).toEqual({
         ...payload,
         attachment_ids: ["existing-asset", "message-ref-asset"],
@@ -115,6 +130,10 @@ describe("message ref backfill PostgreSQL contract", () => {
       await expect(readRepository.getSqlScopeEvidence(
         { type: "session", id: sessionB }, "message-ref-asset",
       )).resolves.toMatchObject({ hasStoredRef: false });
+      await expect(readService.content(reader, "message-ref-asset", { type: "session", id: sessionA }, { method: "GET" }))
+        .resolves.toBeInstanceOf(Response);
+      await expect(readService.content({ kind: "user", email: "outsider@example.com" }, "message-ref-asset",
+        { type: "session", id: sessionA }, { method: "GET" })).rejects.toMatchObject({ statusCode: 403 });
       await expect(readLiveSessionEventAttachments(resolver, sessionA, eventId)).resolves.toEqual({
         event_id: eventId,
         items: [

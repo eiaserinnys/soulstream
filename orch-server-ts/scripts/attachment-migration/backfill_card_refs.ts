@@ -43,7 +43,7 @@ export type CardBackfillOptions = MessageBackfillOptions;
 type CardSql = postgres.Sql;
 type SqlRow = Record<string, unknown>;
 type AliasSql = postgres.TransactionSql;
-type CardBackfillInput = { readonly cardId: string; readonly expectedVersion: number; readonly sources: readonly CardRefSource[]; readonly resolvedAliases: readonly ResolvedCardAlias[] };
+type CardBackfillInput = { readonly cardId: string; readonly expectedVersion: number; readonly sources: readonly CardRefSource[]; readonly resolvedAliases: readonly ResolvedCardAlias[]; readonly allowedOrigins?: readonly string[] };
 type CurrentRows = { card: SqlRow; reports: Map<string, SqlRow>; comments: Map<string, SqlRow>; operations: Map<string, SqlRow> };
 type ValidatedSource = { source: CardRefSource; attachmentId: string; legacyUrl: string };
 type OutputRecord = Record<string, unknown>;
@@ -66,7 +66,7 @@ export class CardRefBackfillError extends Error {
 export function parseCardBackfillArgs(args: readonly string[]): CardBackfillOptions {
   try { return parseMessageBackfillArgs(args); }
   catch (error) {
-    if (error instanceof TypeError && error.message.startsWith("usage:")) throw usageError();
+    if (error instanceof TypeError && error.message.startsWith("usage:")) throw new TypeError("usage: backfill_card_refs.ts --manifest <JSONL> --output <JSONL> --allowed-origins <JSON array> [--apply --approved-manifest-sha256 <SHA256>] [--limit N] [--only <identity_key>]");
     throw error;
   }
 }
@@ -86,7 +86,7 @@ export async function backfillCardRefsTx(sql: CardSql, input: CardBackfillInput)
         throw new CardRefBackfillError(CARD_REF_UNVERIFIED, "resolved alias no longer points to a committed attachment");
       }
     }
-    const validated = validateSources(input.cardId, input.sources, aliases, currentRows);
+    const validated = validateSources(input.cardId, input.sources, aliases, currentRows, input.allowedOrigins ?? []);
     const cardRefs = attachmentRefsOf(currentRows.card.attachment_refs);
     const incomingCardRefs = validated
       .filter((item) => isCardRowRef(item.source.reference))
@@ -149,6 +149,19 @@ export async function backfillCardRefsTx(sql: CardSql, input: CardBackfillInput)
 }
 
 async function main(args: readonly string[]): Promise<void> {
+  parseCardBackfillArgs(args);
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new TypeError("DATABASE_URL must be set in the environment");
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
+  try {
+    const report = await runCardBackfillCli(args, sql);
+    console.log(`${String(report[0]!.marker)} ${JSON.stringify(report[0])}`);
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+}
+
+export async function runCardBackfillCli(args: readonly string[], sql: CardSql): Promise<OutputRecord[]> {
   const options = parseCardBackfillArgs(args);
   const input = await readManifest(options.manifest);
   if (options.approvedManifestSha256 && options.approvedManifestSha256 !== input.manifestSha256) {
@@ -165,63 +178,56 @@ async function main(args: readonly string[]): Promise<void> {
       cardSources.push(source);
     }
   }
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new TypeError("DATABASE_URL must be set in the environment");
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
-  try {
-    const aliases = await withReadOnlyTransaction(sql, READ_QUERY_TIMEOUT_MS,
-      (transaction) => readResolvedAliases(transaction, cardSources));
-    const byCard = new Map<string, CardRefSource[]>();
-    const report: OutputRecord[] = [];
-    for (const source of cardSources) {
-      const alias = aliases.get(locationKey(source.legacy_node_id, source.normalized_path));
-      if (!alias) {
-        report.push(sourceRecord(ALIAS_UNRESOLVED, source));
-        continue;
-      }
-      appendSource(byCard, source.reference.card_id!, source);
+  const aliases = await withReadOnlyTransaction(sql, READ_QUERY_TIMEOUT_MS,
+    (transaction) => readResolvedAliases(transaction, cardSources));
+  const byCard = new Map<string, CardRefSource[]>();
+  const report: OutputRecord[] = [];
+  for (const source of cardSources) {
+    const alias = aliases.get(locationKey(source.legacy_node_id, source.normalized_path));
+    if (!alias) {
+      report.push(sourceRecord(ALIAS_UNRESOLVED, source));
+      continue;
     }
-    let updated = 0;
-    let unchanged = 0;
-    for (const [cardId, candidates] of byCard) {
-      try {
-        const snapshot = await withReadOnlyTransaction(sql, READ_QUERY_TIMEOUT_MS,
-          (transaction) => readCurrentRows(transaction, cardId, candidates, false));
-        const cardAliases = distinctAliases(candidates, aliases);
-        const cardAliasMap = new Map(cardAliases.map((alias) => [locationKey(alias.node_id, alias.normalized_path), alias] as const));
-        const valid: ValidatedSource[] = [];
-        for (const candidate of candidates) {
-          try {
-            valid.push(...validateSources(cardId, [candidate], cardAliasMap, snapshot));
-            report.push(sourceRecord(options.apply ? "pending_apply" : "planned", candidate));
-          } catch (error) {
-            report.push(sourceRecord(errorCode(error, SOURCE_CHANGED), candidate));
-          }
-        }
-        if (!options.apply || valid.length === 0) continue;
-        const result = await backfillCardRefsTx(sql, {
-          cardId, expectedVersion: Number(snapshot.card.version),
-          sources: valid.map((item) => item.source), resolvedAliases: cardAliases,
-        });
-        if (result.status === "updated") updated += 1;
-        else unchanged += 1;
-        report.push({ record_type: "card", card_id: cardId, status: result.status, sources_verified: result.sources_verified });
-      } catch (error) {
-        report.push({ record_type: "card", card_id: cardId, code: errorCode(error, SOURCE_CHANGED) });
-      }
-    }
-    report.unshift({
-      record_type: "summary", marker: "CARD_REFS_BACKFILLED", apply: options.apply,
-      identities_selected: identities.length, source_refs_selected: cardSources.length,
-      cards_selected: byCard.size, cards_updated: updated, cards_unchanged: unchanged,
-      unresolved_aliases: report.filter((record) => record.code === ALIAS_UNRESOLVED).length,
-      manifest_sha256: input.manifestSha256,
-    });
-    await writeJsonlReport(options.output, report);
-    console.log(`${String(report[0]!.marker)} ${JSON.stringify(report[0])}`);
-  } finally {
-    await sql.end({ timeout: 2 });
+    appendSource(byCard, source.reference.card_id!, source);
   }
+  let updated = 0;
+  let unchanged = 0;
+  for (const [cardId, candidates] of byCard) {
+    try {
+      const snapshot = await withReadOnlyTransaction(sql, READ_QUERY_TIMEOUT_MS,
+        (transaction) => readCurrentRows(transaction, cardId, candidates, false));
+      const cardAliases = distinctAliases(candidates, aliases);
+      const cardAliasMap = new Map(cardAliases.map((alias) => [locationKey(alias.node_id, alias.normalized_path), alias] as const));
+      const valid: ValidatedSource[] = [];
+      for (const candidate of candidates) {
+        try {
+          valid.push(...validateSources(cardId, [candidate], cardAliasMap, snapshot, options.allowedOrigins));
+          report.push(sourceRecord(options.apply ? "pending_apply" : "planned", candidate));
+        } catch (error) {
+          report.push(sourceRecord(errorCode(error, SOURCE_CHANGED), candidate));
+        }
+      }
+      if (!options.apply || valid.length === 0) continue;
+      const result = await backfillCardRefsTx(sql, {
+        cardId, expectedVersion: Number(snapshot.card.version),
+        sources: valid.map((item) => item.source), resolvedAliases: cardAliases, allowedOrigins: options.allowedOrigins,
+      });
+      if (result.status === "updated") updated += 1;
+      else unchanged += 1;
+      report.push({ record_type: "card", card_id: cardId, status: result.status, sources_verified: result.sources_verified });
+    } catch (error) {
+      report.push({ record_type: "card", card_id: cardId, code: errorCode(error, SOURCE_CHANGED) });
+    }
+  }
+  report.unshift({
+    record_type: "summary", marker: "CARD_REFS_BACKFILLED", apply: options.apply,
+    identities_selected: identities.length, source_refs_selected: cardSources.length,
+    cards_selected: byCard.size, cards_updated: updated, cards_unchanged: unchanged,
+    unresolved_aliases: report.filter((record) => record.code === ALIAS_UNRESOLVED).length,
+    manifest_sha256: input.manifestSha256,
+  });
+  await writeJsonlReport(options.output, report);
+  return report;
 }
 
 async function readCurrentRows(
@@ -287,6 +293,7 @@ function validateSources(
   sources: readonly CardRefSource[],
   aliases: ReadonlyMap<string, ResolvedCardAlias>,
   currentRows: CurrentRows,
+  allowedOrigins: readonly string[],
 ): ValidatedSource[] {
   const result: ValidatedSource[] = [];
   for (const source of sources) {
@@ -303,7 +310,7 @@ function validateSources(
       source_pointer: reference.pointer, row_sha256: "current", created_at: new Date(0).toISOString(),
       changed_after_cutoff: false, card_id: reference.card_id, data: sourceData,
     } as LegacySource;
-    const targets = collectLegacySourceTargets(legacySource);
+    const targets = collectLegacySourceTargets(legacySource, { allowedOrigins });
     const target = targets.find((item) => targetMatches(item, source));
     if (!target && !isAlreadyTransitionedEvidence(reference, sourceData, attachmentId)) {
       throw new CardRefBackfillError(SOURCE_CHANGED, "source pointer no longer matches its original legacy reference");
@@ -318,8 +325,7 @@ function targetMatches(target: LegacyTarget, source: CardRefSource): boolean {
   const reference = source.reference;
   return target.classification === "legacy_path" && target.pointer === reference.pointer && target.legacy_node_id === source.legacy_node_id &&
     target.normalized_path === source.normalized_path &&
-    (reference.raw_url === undefined || target.raw_url === reference.raw_url) &&
-    (reference.raw_path === undefined || target.raw_path === reference.raw_path) &&
+    target.raw_url === reference.raw_url && target.raw_path === reference.raw_path &&
     (reference.body_offset === undefined || target.body_offset === reference.body_offset);
 }
 
@@ -483,10 +489,6 @@ function sameJson(left: unknown, right: unknown): boolean {
   return Object.is(left, right);
 }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
-function usageError(detail?: string): TypeError {
-  return new TypeError(detail ?? "usage: backfill_card_refs.ts --manifest <JSONL> --output <JSONL> [--apply --approved-manifest-sha256 <SHA256>] [--limit N] [--only <identity_key>]");
-}
-
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main(process.argv.slice(2)).catch((error: unknown) => {
     const code = errorCode(error, "CARD_REF_UNVERIFIED");

@@ -5,15 +5,9 @@ import {
   type CardRefSource,
   type ResolvedCardAlias,
 } from "../../scripts/attachment-migration/backfill_card_refs.js";
-import {
-  AttachmentReadError,
-  createAttachmentReadService,
-  type AttachmentReadActor,
-  type AttachmentReadStorageBinding,
-} from "../../src/attachments/attachment_read_service.js";
-import { createLiveAttachmentReadRepository } from "../../src/runtime/live_attachment_read_repository.js";
-import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
+import type { AttachmentReadActor } from "../../src/attachments/attachment_read_service.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../page/page_postgres_harness.js";
+import { createLiveTestAttachmentService } from "./live_attachment_access_fixture.js";
 
 const cardId = "card-ref-target";
 const requestUrl = legacyUrl("request.png");
@@ -23,6 +17,7 @@ const reportUrl = legacyUrl("report.png");
 const commentUrl = legacyUrl("comment.png");
 const noteUrl = legacyUrl("note.png");
 const historyUrl = legacyUrl("history.png");
+const approvedOrigin = "https://soulstream.eiaserinnys.me";
 const requestBody = `요청 ![첨부](${requestUrl})`;
 const resultBody = `결과 ![첨부](${resultUrl})`;
 const reportBody = `<p><img src="${reportUrl.replace(/&/g, "&amp;")}"></p>`;
@@ -39,7 +34,8 @@ describe("card ref backfill PostgreSQL contract", () => {
 
   beforeAll(async () => {
     harness = await createPagePostgresHarness();
-    await harness.sql`INSERT INTO folders (id, name) VALUES ('card-ref-folder', '첨부 ref 검증')`;
+    await harness.sql`INSERT INTO folders (id, name) VALUES
+      ('card-ref-folder', '첨부 ref 검증'), ('card-ref-other-folder', '다른 권한 폴더')`;
     await harness.sql`
       INSERT INTO sessions (session_id, node_id, folder_id)
       VALUES ('card-ref-producer', 'node-a', 'card-ref-folder'),
@@ -104,6 +100,12 @@ describe("card ref backfill PostgreSQL contract", () => {
   it("stores each source ref, transitions current evidence, preserves original bodies and gates card reads", async () => {
     const sources = cardSources();
     const resolvedAliases = aliases();
+    const service = await createLiveTestAttachmentService(harness.liveSql, {
+      "reader@example.com": ["card-ref-folder"], "outsider@example.com": ["card-ref-other-folder"],
+    });
+    const reader: AttachmentReadActor = { kind: "user", email: "reader@example.com" };
+    await expect(service.content(reader, "asset-shared", { type: "card", id: cardId }, { method: "GET" }))
+      .rejects.toMatchObject({ code: "ATTACHMENT_ACCESS_DENIED", statusCode: 403 });
     const result = await backfillCardRefsTx(harness.liveSql as never, {
       cardId, expectedVersion: 7, sources, resolvedAliases,
     });
@@ -163,25 +165,10 @@ describe("card ref backfill PostgreSQL contract", () => {
     expect(aliasRows[0]!.count).toBe(8);
 
     await harness.sql`DELETE FROM sessions WHERE session_id='card-ref-producer'`;
-    const resolver = createLiveDbSqlResolver({ sql: harness.liveSql });
-    const repository = createLiveAttachmentReadRepository(resolver);
-    const service = createAttachmentReadService({
-      repository,
-      access: {
-        requireScope: async (_actor, scope, evidence) => {
-          if (scope.type === "card" && scope.id === cardId && evidence.hasStoredRef) return;
-          throw new AttachmentReadError("ATTACHMENT_ACCESS_DENIED", "denied", 403);
-        },
-      },
-      resolveReadStorage: async (): Promise<AttachmentReadStorageBinding> => ({
-        storage: { openObject: async () => new Response(new Uint8Array([1, 2, 3])) },
-        identity: "card-ref-test", location: { endpoint: "https://r2.example.test", bucket: "private-attachments" },
-      }),
-      readPageAttachmentEvidence: async () => null,
-    });
-    const reader: AttachmentReadActor = { kind: "user", email: "reader@example.com" };
     const content = await service.content(reader, "asset-shared", { type: "card", id: cardId }, { method: "GET" });
     expect([...new Uint8Array(await content.arrayBuffer())]).toEqual([1, 2, 3]);
+    await expect(service.content({ kind: "user", email: "outsider@example.com" }, "asset-shared", { type: "card", id: cardId }, { method: "GET" }))
+      .rejects.toMatchObject({ statusCode: 403 });
     await expect(service.content(reader, "asset-shared", { type: "card", id: "card-ref-other" }, { method: "GET" }))
       .rejects.toMatchObject({ code: "ATTACHMENT_ACCESS_DENIED", statusCode: 403 });
   });
@@ -207,6 +194,37 @@ describe("card ref backfill PostgreSQL contract", () => {
       SELECT request, attachment_refs, version FROM cards WHERE id='card-ref-changed'
     `)[0]!;
     expect(changedCard).toEqual({ request: "요청이 바뀜", attachment_refs: [], version: 1 });
+  });
+
+  it("revalidates exact approved absolute URLs and rejects unapproved origins", async () => {
+    const approvedUrl = `${approvedOrigin}${legacyUrl("request.png")}`;
+    await insertBackfillCard("card-ref-approved-url", `![x](${approvedUrl})`, 1);
+    const approvedSource = reference("card_request", "cards", "card-ref-approved-url", "/request", "request.png", approvedUrl,
+      `![x](${approvedUrl})`.indexOf(approvedUrl));
+    const applied = await backfillCardRefsTx(harness.liveSql as never, {
+      cardId: "card-ref-approved-url", expectedVersion: 1, sources: [approvedSource], resolvedAliases: [aliases()[0]!],
+      allowedOrigins: [approvedOrigin],
+    });
+    expect(applied).toEqual({ status: "updated", sources_verified: 1 });
+    const approvedStored = (await harness.sql<{ request: string; attachment_refs: unknown; version: number }[]>`
+      SELECT request, attachment_refs, version FROM cards WHERE id='card-ref-approved-url'
+    `)[0]!;
+    expect(approvedStored).toEqual({
+      request: `![x](${approvedUrl})`, attachment_refs: [{ attachment_id: "asset-shared", legacy_url: legacyUrl("request.png") }], version: 2,
+    });
+
+    const externalUrl = `https://outside.example.test${legacyUrl("request.png")}`;
+    await insertBackfillCard("card-ref-external-url", `![x](${externalUrl})`, 1);
+    const externalSource = reference("card_request", "cards", "card-ref-external-url", "/request", "request.png", externalUrl,
+      `![x](${externalUrl})`.indexOf(externalUrl));
+    await expect(backfillCardRefsTx(harness.liveSql as never, {
+      cardId: "card-ref-external-url", expectedVersion: 1, sources: [externalSource], resolvedAliases: [aliases()[0]!],
+      allowedOrigins: [approvedOrigin],
+    })).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
+    const externalStored = (await harness.sql<{ request: string; attachment_refs: unknown; version: number }[]>`
+      SELECT request, attachment_refs, version FROM cards WHERE id='card-ref-external-url'
+    `)[0]!;
+    expect(externalStored).toEqual({ request: `![x](${externalUrl})`, attachment_refs: [], version: 1 });
   });
 
   async function insertBackfillCard(id: string, request: string, version: number): Promise<void> {
