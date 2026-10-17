@@ -88,7 +88,12 @@ describe('ToolEvent lazy trace detail', () => {
     const body = within(screen.getByTestId('tool-event-body'));
     expect(body.getByText('입력 앞부분')).toBeTruthy();
     expect(body.getByText('결과 앞부분')).toBeTruthy();
-    expect(screen.getAllByText('전문 열기')).toHaveLength(2);
+    const links = screen.getAllByText('전문 열기');
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link.props.accessibilityRole).toBe('link');
+      expect(StyleSheet.flatten(link.props.style).textDecorationLine).toBe('underline');
+    }
 
     fireEvent.press(screen.getAllByText('전문 열기')[0]);
     expect(screen.getByTestId('attachment-preview-modal').props).toMatchObject({

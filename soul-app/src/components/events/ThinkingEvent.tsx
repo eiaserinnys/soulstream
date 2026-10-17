@@ -5,7 +5,7 @@ import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../th
 import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 import { formatAttachmentByteSize } from '../AttachmentFileRow';
-import { descriptorAttachmentView } from '../../hooks/useMessageAttachments';
+import { openTruncatedAttachmentPreview } from '../../hooks/useMessageAttachments';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { stripTruncationSuffix } from '../../lib/event-truncation';
 
@@ -33,10 +33,11 @@ export function ThinkingEvent({ event, sessionId, presentation = 'default' }: Pr
     <Text testID="thinking-event-truncation-metadata" numberOfLines={1} style={styles.truncationMetadata}>
       {`잘림 · 전체 ${formatAttachmentByteSize(truncation.original_bytes)} · `}
       {truncation.attachment ? (
-        <Text onPress={() => setPreviewAttachment(descriptorAttachmentView(
-          truncation.attachment!,
-          { type: 'session', id: sessionId! },
-        ))}>
+        <Text
+          accessibilityRole="link"
+          style={{ textDecorationLine: 'underline' }}
+          onPress={() => openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment)}
+        >
           전문 열기
         </Text>
       ) : '전문 보관 실패'}
@@ -96,7 +97,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     },
     truncationMetadata: {
       ...sessionRoles.chat.attachment.metadata,
-      color: c.textSecondary,
+      color: c.textMuted,
       marginTop: t.spacing.xs,
     },
     wrapper: {

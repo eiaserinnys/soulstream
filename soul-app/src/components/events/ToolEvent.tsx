@@ -8,7 +8,7 @@ import { CompactTouchTarget } from '../CompactTouchTarget';
 import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 import { formatAttachmentByteSize } from '../AttachmentFileRow';
-import { descriptorAttachmentView } from '../../hooks/useMessageAttachments';
+import { openTruncatedAttachmentPreview } from '../../hooks/useMessageAttachments';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { stripTruncationSuffix } from '../../lib/event-truncation';
 
@@ -110,10 +110,8 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
             {' · '}
             <Text
               accessibilityRole="link"
-              onPress={() => setPreviewAttachment(descriptorAttachmentView(
-                attachment,
-                { type: 'session', id: sessionId! },
-              ))}
+              style={{ textDecorationLine: 'underline' }}
+              onPress={() => openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment)}
             >
               전문 열기
             </Text>

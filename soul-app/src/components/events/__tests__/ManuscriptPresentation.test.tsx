@@ -168,7 +168,12 @@ test('잘린 생각 본문은 메타 아래에서 전문을 열고 닫으며 원
   expect(thinking.queryByText('[잘림]')).toBeNull();
   expect(thinking.getByTestId('thinking-event-truncation-metadata')).toBeTruthy();
   expect(thinking.getByText(/잘림 · 전체 2\.0 KB ·/)).toBeTruthy();
-  fireEvent.press(thinking.getByText('전문 열기'));
+  const openLink = thinking.getByText('전문 열기');
+  expect(openLink.props.accessibilityRole).toBe('link');
+  expect(StyleSheet.flatten(openLink.props.style).textDecorationLine).toBe('underline');
+  expect(StyleSheet.flatten(thinking.getByTestId('thinking-event-truncation-metadata').props.style).color)
+    .toBe(LIGHT_COLORS.textMuted);
+  fireEvent.press(openLink);
   expect(thinking.getByTestId('attachment-preview-modal').props).toMatchObject({
     item: { key: 'thinking-full', readContext: { type: 'session', id: 'session-1' } },
     items: [{ key: 'thinking-full' }],

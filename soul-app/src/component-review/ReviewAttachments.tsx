@@ -6,6 +6,7 @@ import type { AttachmentView } from '../lib/attachment-view';
 import type { SessionEvent } from '../api/types';
 import { MessageAttachments } from '../components/MessageAttachments';
 import { AssistantMessage } from '../components/events/AssistantMessage';
+import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { ToolEvent } from '../components/events/ToolEvent';
 import { useTokens } from '../theme';
 import { ReviewSection } from './ReviewSection';
@@ -37,11 +38,28 @@ const toolStart: SessionEvent = {
   type: 'tool_start',
   data: { tool_name: 'Read', tool_input: '파일을 읽습니다.' },
 };
+const toolStartTruncated: SessionEvent = {
+  id: 'review-truncation-start-attached',
+  type: 'tool_start',
+  data: {
+    tool_name: 'Read',
+    tool_input: '파일을 읽습니다.\n[잘림]',
+    truncation,
+  },
+};
 const toolResult = (attachment: typeof truncatedAttachment | null): SessionEvent => ({
   id: 'review-truncation-result',
   type: 'tool_result',
   data: {
     result: '도구 결과의 앞부분입니다.\n[잘림]',
+    truncation: { original_bytes: truncation.original_bytes, attachment },
+  },
+});
+const thinkingEvent = (id: string, attachment: typeof truncatedAttachment | null): SessionEvent => ({
+  id,
+  type: 'thinking_delta',
+  data: {
+    thinking: '생각 앞부분입니다.\n[잘림]',
     truncation: { original_bytes: truncation.original_bytes, attachment },
   },
 });
@@ -84,7 +102,7 @@ export function ReviewAttachments() {
       <MessageAttachments items={fileItems} role="assistant" />
     </ReviewSection>
     <ReviewSection title="도구 결과 잘림 · 전문 보관" testID="review-attachments-truncation-attached">
-      <ToolEvent start={toolStart} result={toolResult(truncatedAttachment)} sessionId="review-truncation" api={null} />
+      <ToolEvent start={toolStartTruncated} result={toolResult(truncatedAttachment)} sessionId="review-truncation" api={null} />
     </ReviewSection>
     <ReviewSection title="도구 결과 잘림 · 보관 실패" testID="review-attachments-truncation-failed">
       <ToolEvent start={toolStart} result={toolResult(null)} sessionId="review-truncation" api={null} />
@@ -98,7 +116,19 @@ export function ReviewAttachments() {
           attachment_ids: [truncatedAttachment.attachment_id],
           truncation,
         },
-      }} />
+      }} sessionId="review-truncation" />
+    </ReviewSection>
+    <ReviewSection title="생각 잘림 · 기본형 · 전문 보관" testID="review-attachments-truncation-thinking-default-attached">
+      <ThinkingEvent event={thinkingEvent('review-truncation-thinking-default-attached', truncatedAttachment)} sessionId="review-truncation" />
+    </ReviewSection>
+    <ReviewSection title="생각 잘림 · 기본형 · 보관 실패" testID="review-attachments-truncation-thinking-default-failed">
+      <ThinkingEvent event={thinkingEvent('review-truncation-thinking-default-failed', null)} sessionId="review-truncation" />
+    </ReviewSection>
+    <ReviewSection title="생각 잘림 · 원고형 · 전문 보관" testID="review-attachments-truncation-thinking-manuscript-attached">
+      <ThinkingEvent presentation="manuscript" event={thinkingEvent('review-truncation-thinking-manuscript-attached', truncatedAttachment)} sessionId="review-truncation" />
+    </ReviewSection>
+    <ReviewSection title="생각 잘림 · 원고형 · 보관 실패" testID="review-attachments-truncation-thinking-manuscript-failed">
+      <ThinkingEvent presentation="manuscript" event={thinkingEvent('review-truncation-thinking-manuscript-failed', null)} sessionId="review-truncation" />
     </ReviewSection>
   </ScrollView>;
 }

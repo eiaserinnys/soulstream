@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -20,7 +20,10 @@ import type { MessageSelectionModel } from './message-selection-model';
 import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
 import { CopyableAssistantMarkdown } from './CopyableAssistantMarkdown';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
+import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 import { formatAttachmentByteSize } from '../AttachmentFileRow';
+import { openTruncatedAttachmentPreview } from '../../hooks/useMessageAttachments';
+import type { AttachmentView } from '../../lib/attachment-view';
 import { stripTruncationSuffix } from '../../lib/event-truncation';
 
 interface Props {
@@ -37,6 +40,7 @@ interface Props {
   event: SessionEvent;
   /** 좌측 에이전트 아바타에 사용할 세션 메타. 없으면 아바타 미표시. */
   session?: Pick<Session, 'agentName' | 'agentPortraitUrl' | 'displayName'>;
+  sessionId?: string;
   selectionModel?: MessageSelectionModel | null;
   onSelectionDone?: () => void;
   presentation?: 'default' | 'manuscript';
@@ -60,6 +64,7 @@ export function AssistantMessage({
   attachmentsOnly = false,
   event,
   session,
+  sessionId,
   bubbleWidth = 'content',
   rowInset = 'default',
   messageKind,
@@ -80,6 +85,7 @@ export function AssistantMessage({
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const jwt = useAuthStore((s) => s.jwt);
   const openContentLink = useOpenContentLink();
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentView | null>(null);
 
   // 메시지 발신자 신원 — 위임 에이전트가 응답한 경우 caller에 source=agent가 들어온다.
   // assistant 응답은 본인 picture와 무관하므로 profile=null로 호출하여 caller.avatar_url
@@ -181,14 +187,30 @@ export function AssistantMessage({
         ))}
         {truncation ? (
           <Text testID="assistant-truncation-metadata" numberOfLines={1} style={styles.truncationMetadata}>
-            {`잘림 · 전체 ${formatAttachmentByteSize(truncation.original_bytes)}`}
-            {truncation.attachment ? null : ' · 전문 보관 실패'}
+            {`잘림 · 전체 ${formatAttachmentByteSize(truncation.original_bytes)} · `}
+            {truncation.attachment ? (
+              <Text
+                accessibilityRole="link"
+                style={{ textDecorationLine: 'underline' }}
+                onPress={() => openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment)}
+              >
+                전문 열기
+              </Text>
+            ) : '전문 보관 실패'}
           </Text>
         ) : null}
         {tokenInfo && !attachmentsOnly ? (
           <Text style={styles.tokenInfo}>{tokenInfo}</Text>
         ) : null}
       </View>
+      {previewAttachment ? (
+        <AttachmentPreviewModal
+          item={previewAttachment}
+          items={[previewAttachment]}
+          initialIndex={0}
+          onClose={() => setPreviewAttachment(null)}
+        />
+      ) : null}
     </View>
   );
 }
