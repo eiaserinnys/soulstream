@@ -6,6 +6,7 @@ import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { CardCheckItemRow } from './CardCheckItemRow';
 
 export function CardCheckItems({
+  cardId,
   items,
   pendingConfirmations,
   initiallyConfirmedIds,
@@ -15,6 +16,7 @@ export function CardCheckItems({
   onRecentConfirmation,
   paneWidth,
 }: {
+  cardId: string;
   items: CardCheckItem[];
   pendingConfirmations: Record<number, { confirmed: boolean; requestId: string }>;
   initiallyConfirmedIds: readonly number[];
@@ -45,6 +47,7 @@ export function CardCheckItems({
     return (
       <CardCheckItemRow
         key={item.id}
+        cardId={cardId}
         item={item}
         checked={checked}
         pending={Boolean(pending)}

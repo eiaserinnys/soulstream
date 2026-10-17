@@ -1,14 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { CardCheckItem, CardItemDisplay } from '../../api/cardTypes';
+import type { CardAttachmentAssetEvidence, CardCheckItem, CardItemDisplay } from '../../api/cardTypes';
 import { formatCardTime } from '../../lib/card-check-item-summary';
+import { toCardAttachmentView, type AttachmentView } from '../../lib/attachment-view';
 import { cardImageSource } from '../../lib/card-image-source';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { AttachmentImage } from '../AttachmentImage';
+import { MessageAttachments } from '../MessageAttachments';
 import { CardItemCheckbox } from '../CardItemCheckbox';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { StatusPulseDecorationLayer, withAlphaColor } from '../StatusPulseDecoration';
@@ -35,6 +37,7 @@ function statusColor(item: CardCheckItem, t: ReturnType<typeof useTokens>): stri
 }
 
 export function CardCheckItemRow({
+  cardId,
   item,
   checked,
   pending,
@@ -43,6 +46,7 @@ export function CardCheckItemRow({
   onConfirm,
   onSetTarget,
 }: {
+  cardId: string;
   item: CardCheckItem;
   checked: boolean;
   pending: boolean;
@@ -58,8 +62,19 @@ export function CardCheckItemRow({
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const [rowWidth, setRowWidth] = useState(0);
-  const images = item.evidence.filter((evidence) => evidence.type === 'image');
-  const links = item.evidence.filter((evidence) => evidence.type === 'link');
+  const assetEvidence = item.evidence.filter((evidence): evidence is CardAttachmentAssetEvidence => 'attachment_id' in evidence);
+  const attachmentItems: AttachmentView[] = assetEvidence.map((evidence) => {
+    const view = toCardAttachmentView(evidence);
+    if (evidence.read_context.id === cardId) return view;
+    return {
+      ...view,
+      readContext: { type: 'card', id: cardId },
+      source: { kind: 'unavailable', availability: 'unavailable' },
+    };
+  });
+  const legacyEvidence = item.evidence.filter((evidence) => !('attachment_id' in evidence) && evidence.url.length > 0);
+  const images = legacyEvidence.filter((evidence) => evidence.type === 'image');
+  const links = legacyEvidence.filter((evidence) => evidence.type === 'link');
   const imageSources = images.map((evidence) => cardImageSource(evidence.url, serverUrl, jwt));
   const running = item.display === 'doing';
   const statusLabel = item.display === 'fix' ? `${DISPLAY_LABELS.fix} ${item.fixOpen}` : DISPLAY_LABELS[item.display];
@@ -146,6 +161,7 @@ export function CardCheckItemRow({
           </View> : null}
           {item.evidence.length ? (
             <View style={styles.evidence}>
+              {attachmentItems.length ? <MessageAttachments items={attachmentItems} role="assistant" /> : null}
               {images.length ? <View testID={`card-check-item-${item.id}-evidence-images`} style={styles.evidenceImages}>
                 {images.map((evidence, index) => (
                   <View key={`${item.id}-${evidence.url}`} style={styles.imageEvidence}>

@@ -2,10 +2,31 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import type { CardCheckItem } from '../../../api/cardTypes';
 import { summarizeCardItems } from '../../../lib/card-check-item-summary';
-import { CardCheckItems } from '../CardCheckItems';
+import { CardCheckItems as CardCheckItemsComponent } from '../CardCheckItems';
 import { StyleSheet } from 'react-native';
+import type { ComponentProps } from 'react';
 import { renderHook } from '@testing-library/react-native';
 import { useTokens } from '../../../theme';
+import { useAuthStore } from '../../../store/authStore';
+import { useSettingsStore } from '../../../store/settingsStore';
+import { getAttachmentImageSize } from '../../../lib/attachment-image-size';
+
+type TestCardCheckItemsProps = Omit<ComponentProps<typeof CardCheckItemsComponent>, 'cardId'> & { cardId?: string };
+function CardCheckItems(props: TestCardCheckItemsProps) {
+  const { cardId = 'card-test', ...rest } = props;
+  return <CardCheckItemsComponent {...rest} cardId={cardId} />;
+}
+
+afterEach(() => {
+  useAuthStore.setState({ jwt: null });
+  useSettingsStore.setState({ serverUrl: '' });
+  jest.mocked(getAttachmentImageSize).mockClear();
+  jest.mocked(getAttachmentImageSize).mockImplementation(() => new Promise(() => {}));
+});
+
+jest.mock('../../../lib/attachment-image-size', () => ({
+  getAttachmentImageSize: jest.fn(() => new Promise(() => {})),
+}));
 
 function item(id: number, display: CardCheckItem['display'], overrides: Partial<CardCheckItem> = {}): CardCheckItem {
   const state = display === 'doing' ? 'doing' : display === 'dropped' ? 'dropped' : display === 'reported' || display === 'changed' ? 'done' : 'todo';
@@ -152,4 +173,56 @@ test.each(['한 줄 못 본 것', '첫째 줄\n둘째 줄\n셋째 줄'])('경고
   expect(rendered.indexOf('실기기 미확인')).toBeLessThan(rendered.indexOf('card-check-item-1-evidence-images'));
   fireEvent.press(screen.getByLabelText('수정된 화면'));
   expect(screen.getByTestId('image-viewer-caption-0').props.children).toBe('수정된 화면');
+});
+
+test('카드 증거 첨부는 같은 카드의 이미지·파일 순서로 공통 보기 창을 연다', () => {
+  const server = 'https://cards.test';
+  jest.mocked(getAttachmentImageSize).mockClear();
+  useSettingsStore.setState({ serverUrl: server });
+  useAuthStore.setState({ jwt: 'test-jwt' });
+  const asset = (id: string, name: string, previewKind: 'image' | 'text', type: 'image' | 'link' = 'image', card = 'card-1') => ({
+    type,
+    label: name,
+    url: `/api/attachments/${encodeURIComponent(id)}/content?context_type=card&context_id=${encodeURIComponent(card)}`,
+    attachment_id: id,
+    descriptor: {
+      attachment_id: id, name, mime_type: previewKind === 'image' ? 'image/png' : 'text/plain', byte_size: 12,
+      checksum_sha256: null, width: previewKind === 'image' ? 10 : null, height: previewKind === 'image' ? 10 : null,
+      preview_kind: previewKind, preview_mime_type: previewKind === 'image' ? 'image/webp' : 'text/plain',
+    },
+    read_context: { type: 'card' as const, id: card },
+    previewUrl: `/api/attachments/${encodeURIComponent(id)}/content?context_type=card&context_id=${encodeURIComponent(card)}`,
+    originalUrl: `/api/attachments/${encodeURIComponent(id)}/content?context_type=card&context_id=${encodeURIComponent(card)}&download=true`,
+  });
+  const screen = render(<CardCheckItems cardId="card-1" items={[item(1, 'reported', { evidence: [
+    asset('image/one', '첫 화면.png', 'image'),
+    { type: 'link', url: 'https://outside.test/spec', label: '외부 참고' },
+    asset('text/one', '설명.txt', 'text', 'link'),
+    asset('image/two', '둘째 화면.png', 'image'),
+    { type: 'link', url: '', label: '없는 파일.txt', attachment_id: 'missing/one',
+      read_context: { type: 'card', id: 'card-1' }, availability: 'missing', previewUrl: null, originalUrl: '' },
+    asset('image/foreign', '다른 카드.png', 'image', 'image', 'card-2'),
+  ] })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+
+  expect(screen.getByTestId('message-attachments')).toBeTruthy();
+  expect(screen.getByText('외부 참고')).toBeTruthy();
+  expect(screen.getByText('설명.txt')).toBeTruthy();
+  expect(screen.getByText('없는 파일.txt')).toBeTruthy();
+  expect(screen.getByText('찾을 수 없음')).toBeTruthy();
+  expect(screen.getByText('다른 카드.png')).toBeTruthy();
+  expect(screen.getByText('사용할 수 없음')).toBeTruthy();
+  expect(jest.mocked(getAttachmentImageSize)).toHaveBeenCalled();
+  expect(jest.mocked(getAttachmentImageSize).mock.calls.every(([source]) => source.uri.length > 0)).toBe(true);
+
+  fireEvent.press(screen.getByLabelText('설명.txt 열기'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 5');
+  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('3 / 5');
+  expect(screen.getAllByText('둘째 화면.png').length).toBeGreaterThan(1);
+  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
+  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('4 / 5');
+  expect(screen.getAllByText('찾을 수 없음').length).toBeGreaterThan(0);
+  fireEvent.press(screen.getByTestId('chat-image-viewer-close'));
+  expect(screen.getByTestId('card-check-item-1')).toBeTruthy();
 });
