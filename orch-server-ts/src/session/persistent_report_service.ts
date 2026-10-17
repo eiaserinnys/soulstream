@@ -71,10 +71,13 @@ export class PersistentReportService {
           const related = (card?.number != null && entry.card_numbers.includes(card.number))
             || questions.some(q=>q.id === entry.question_id);
           if (!related) { next.push(entry); continue; }
-          const answered = entry.question_id ? (await sql<{answer:string | null}[]>`SELECT answer FROM card_questions WHERE id=${entry.question_id}`)[0]?.answer != null : false;
+          const question = entry.question_id
+            ? (await sql<{answer:string | null;withdrawn_at:Date | null}[]>`SELECT answer,withdrawn_at FROM card_questions WHERE id=${entry.question_id}`)[0]
+            : undefined;
+          const resolved = question?.answer != null || question?.withdrawn_at != null;
           const statuses = entry.card_numbers.length ? await sql<{number:number;status:string}[]>`SELECT number,status FROM cards WHERE number=ANY(${sql.array(entry.card_numbers)}::integer[])` : [];
           const finished = entry.card_numbers.length > 0 && statuses.length === new Set(entry.card_numbers).size && statuses.every(c=>c.status==='done'||c.status==='cancelled');
-          if (!answered && !finished) next.push(entry);
+          if (!resolved && !finished) next.push(entry);
         }
         entries.splice(0,entries.length,...next);
         return null;

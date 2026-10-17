@@ -130,6 +130,7 @@ export const cardHandlers = {
   ask_card_question: (o, a, c) => append(o.cards, "ask_card_question", a, c, {
     text: a.text, ...(a.options !== undefined ? { options: a.options } : {}),
   }, false, result => ({ ...compactMutation(result), guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." })),
+  withdraw_card_question: (o,a,c) => internalAppend(o.cards,"withdraw_card_question",a,c,{questionId:a.question_id,reason:a.reason}),
   move_card: (o, a, c) => append(o.cards, "move_card", a, c, {
     folderId: a.folder_id, ...(a.after_card_id !== undefined ? { afterCardId: a.after_card_id } : {}),
   }, true, result => ({ ...compactMutation(result), folderId: result.folderId })),

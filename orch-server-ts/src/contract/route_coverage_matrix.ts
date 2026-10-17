@@ -126,6 +126,7 @@ export const tsOnlyRouteKeys = [
   "GET /api/attachments/worker/{attachment_id}/metadata",
   "GET /api/attachments/worker/{attachment_id}/content",
   "POST /api/cards/{id}/start-work",
+  "POST /api/cards/{id}/questions/{qid}/withdraw",
   "POST /api/cards/{id}/execute",
   "POST /api/cards/{id}/items/{itemId}/confirm",
   "GET /api/cards/{id}/execution",

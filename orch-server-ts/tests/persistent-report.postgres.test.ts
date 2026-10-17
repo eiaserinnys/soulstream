@@ -38,7 +38,10 @@ describe("PAS reports on production PostgreSQL schema", () => {
       ('normal','report-folder','test-node','[]')`;
     const adapted = createBoardYjsSqlAdapter(sql as never);
     reports = new PersistentReportService(adapted, publish);
-    cards = new CardControlPlaneService(adapted, { appendEventTx: vi.fn() }, undefined, undefined, publish);
+    cards = new CardControlPlaneService(adapted, { appendEventTx: async (tx,p) => {
+      const rows = await tx<{id:number}[]>`SELECT event_append(${p.sessionId},${p.eventType},${p.payload},${p.searchableText},${p.createdAt},${p.dedupeKey ?? null}) AS id`;
+      return rows[0]!.id;
+    } }, undefined, undefined, publish);
   }, 90_000);
   afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
 
@@ -99,6 +102,13 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await reports.put('pas',{...entry('question'),question_id:question});
     await cards.answerQuestion({...human,cardId:first,questionId:String(question),answer:'진행'});
     expect((await reports.get('pas')).some(e=>e.key==='question')).toBe(false);
+
+    await sql`UPDATE cards SET assignee_kind='session',assignee_session_id='normal' WHERE id=${first}`;
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'normal',cardId:first,text:'철회할 질문'});
+    const withdrawn=(await cards.getCard(first))!.questions.find(q=>q.answer===null)!.id;
+    await reports.put('pas',{...entry('withdrawn'),question_id:String(withdrawn)});
+    await cards.withdrawQuestion({actorKind:'agent',actorSessionId:'normal',cardId:first,questionId:String(withdrawn),reason:'대화에서 결정됨'});
+    expect((await reports.get('pas')).some(e=>e.key==='withdrawn')).toBe(false);
   });
   it("DELETE enforces authenticated access, emits [] and never calls a model", async () => {
     for (const e of await reports.get('pas')) await reports.remove('pas',e.key);

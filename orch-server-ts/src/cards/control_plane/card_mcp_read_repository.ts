@@ -102,7 +102,7 @@ export class CardMcpReadRepository {
       SELECT id,card_id,session_id,text,options,asked_at,answer,answered_at,answered_by,
         asked_at::text AS cursor_time,id AS cursor_id
       FROM card_questions
-      WHERE card_id=${cardId} AND answer IS NULL
+      WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL
         AND (${cursor?.timestamp ?? null}::text IS NULL OR
           (asked_at,id COLLATE "C") < (${cursor?.timestamp ?? null}::text::timestamptz,${cursor?.id ?? null}::text COLLATE "C"))
       ORDER BY asked_at DESC,id COLLATE "C" DESC LIMIT ${limit + 1}
@@ -175,6 +175,7 @@ export class CardMcpReadRepository {
     if (kind === "questions_history") {
       return this.readRecordPage(limit, () => sql<RecordCursorRow[]>`
         SELECT id,card_id,session_id,text,options,answer,asked_at,answered_at,answered_by,
+          withdrawn_at,withdrawn_by_session_id,withdrawal_reason,
           asked_at::text AS cursor_time,id AS cursor_id
         FROM card_questions
         WHERE card_id=${cardId}
@@ -237,10 +238,11 @@ export class CardMcpReadRepository {
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',q.id,'card_id',q.card_id,'session_id',q.session_id,
           'text',q.text,'options',q.options,'answer',q.answer,'asked_at',q.asked_at,
           'answered_at',q.answered_at,'answered_by',q.answered_by) ORDER BY q.id COLLATE "C")::text
-          FROM card_questions q WHERE q.card_id=c.id AND q.answer IS NULL),'[]')) AS fp_questions,
+          FROM card_questions q WHERE q.card_id=c.id AND q.answer IS NULL AND q.withdrawn_at IS NULL),'[]')) AS fp_questions,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',q.id,'card_id',q.card_id,'session_id',q.session_id,
           'text',q.text,'options',q.options,'answer',q.answer,'asked_at',q.asked_at,'answered_at',q.answered_at,
-          'answered_by',q.answered_by) ORDER BY q.id COLLATE "C")::text
+          'answered_by',q.answered_by,'withdrawn_at',q.withdrawn_at,'withdrawn_by_session_id',q.withdrawn_by_session_id,
+          'withdrawal_reason',q.withdrawal_reason) ORDER BY q.id COLLATE "C")::text
           FROM card_questions q WHERE q.card_id=c.id),'[]')) AS fp_questions_history,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',cc.id,'card_id',cc.card_id,'author_kind',cc.author_kind,
           'author_id',cc.author_id,'session_id',cc.session_id,'kind',cc.kind,'body',cc.body,'item_id',cc.item_id,

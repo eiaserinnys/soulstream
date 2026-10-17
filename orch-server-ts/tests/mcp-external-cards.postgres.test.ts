@@ -148,7 +148,7 @@ describe("external MCP card writes", () => {
       "request_card_review", "ask_card_question", "move_card"] as const;
     expect(writes.map(name => cardTools[name].audience)).toEqual(writes.map(() => "all"));
     expect(cardTools.start_card_work.audience).toBe("internal");
-    for(const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"] as const)
+    for(const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes","withdraw_card_question"] as const)
       expect(cardTools[name].audience).toBe("internal");
   });
   it.each([
@@ -158,6 +158,7 @@ describe("external MCP card writes", () => {
     ["update_card_now",{now:"진행 중",turn:"agent"}],
     ["add_card_note",{text:"내부 기록"}],
     ["list_card_notes",{}],
+    ["withdraw_card_question",{question_id:"question",reason:"이미 결정됨"}],
   ] as const)("rejects external access to internal tool %s",async(tool,args)=>{
     const result=await call(tool,{card_id:"card",...args});
     expect(result.isError).toBe(true);

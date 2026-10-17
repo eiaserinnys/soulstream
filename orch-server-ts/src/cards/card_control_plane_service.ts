@@ -380,9 +380,35 @@ export class CardControlPlaneService {
     if (params.actorKind !== "user") throw invalid("Only a human may answer card questions");
     return this.mutateCard(params,"answer_card_question",{ question_id:params.questionId,answer:params.answer },async (sql,card,eventId) => {
       const rows=await sql`UPDATE card_questions SET answer=${params.answer},answered_at=NOW(),answered_by=${params.actorUserId ?? null}
-        WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL RETURNING id`;
-      if (!rows.length) throw invalid("Open question not found in card");
-      const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL LIMIT 1`;
+        WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
+      if (!rows.length) {
+        const question=(await sql<{withdrawn_at:Date | null}[]>`SELECT withdrawn_at FROM card_questions WHERE id=${params.questionId} AND card_id=${card.id}`)[0];
+        if (question?.withdrawn_at) throw invalid("철회된 질문에는 답할 수 없습니다");
+        throw invalid("Open question not found in card");
+      }
+      const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL LIMIT 1`;
+      if (!open.length && card.status === "blocked" && card.blocked_kind === "question")
+        await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
+    });
+  }
+  async withdrawQuestion(params: CardMutationParams & { questionId:string; reason:string }) {
+    const reason=params.reason.trim();
+    const length=codePointLength(reason);
+    if (!length) throw invalid("철회 사유를 입력하세요");
+    if (length > 200) throw invalid(`철회 사유는 200자까지입니다. 지금 ${length}자입니다`);
+    return this.mutateCard(params,"withdraw_card_question",{ question_id:params.questionId,reason },async (sql,card,eventId) => {
+      if (params.actorKind !== "agent" || card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId)
+        throw Object.assign(new Error("Only the current assignee session may withdraw a card question."),{ statusCode:403 });
+      const rows=await sql`UPDATE card_questions SET withdrawn_at=NOW(),withdrawn_by_session_id=${params.actorSessionId},withdrawal_reason=${reason}
+        WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
+      if (!rows.length) {
+        const question=(await sql<{answer:string | null;withdrawn_at:Date | null}[]>`SELECT answer,withdrawn_at FROM card_questions WHERE id=${params.questionId} AND card_id=${card.id}`)[0];
+        if (!question) throw invalid("Question not found in card");
+        if (question.answer !== null) throw invalid("Answered questions cannot be withdrawn");
+        if (question.withdrawn_at !== null) throw invalid("Question already withdrawn");
+        throw invalid("Question not found in card");
+      }
+      const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL LIMIT 1`;
       if (!open.length && card.status === "blocked" && card.blocked_kind === "question")
         await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
     });
@@ -509,7 +535,7 @@ export class CardControlPlaneService {
       afterCommit: async () => {
         const finished = previousStatus !== committedCard?.status
           && (committedCard?.status === "done" || committedCard?.status === "cancelled");
-        if (!this.reports || (operationType !== "answer_card_question" && !finished)) return;
+        if (!this.reports || (operationType !== "answer_card_question" && operationType !== "withdraw_card_question" && !finished)) return;
         try { await this.reports.pruneForCard(card.id); }
         catch (error) { this.warn(`PAS report pruning failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
