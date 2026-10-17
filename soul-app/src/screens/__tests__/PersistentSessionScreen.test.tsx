@@ -91,6 +91,75 @@ test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입�
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 1, connected: false });
 });
 
+test('phone report deck touch leaves page swipes to the deck and conversation swipes to the scene', () => {
+  mockDevice = 'phone';
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
+  });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-swipe', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-swipe', reportReviewEntries);
+  });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  const body = view.getByTestId('persistent-body-probe');
+  act(() => body.props.onComposerLayout(
+    { x: 0, y: 560, width: 350, height: 76 },
+    { x: 0, y: 20, width: 350, height: 56 },
+  ));
+  const pager = body.props.reportView as React.ReactElement<{ onDeckTouch?: (active: boolean) => void }> | null;
+  expect(pager).toBeTruthy();
+  expect(pager?.props.onDeckTouch).toEqual(expect.any(Function));
+
+  const screen = view.getByTestId('persistent-session-screen');
+  const touchEvent = (timestamp: number, x: number, previousX: number) => ({
+    nativeEvent: { touches: [{ identifier: 0, pageX: x, pageY: 0 }] },
+    touchHistory: {
+      indexOfSingleActiveTouch: 0,
+      mostRecentTimeStamp: timestamp,
+      numberActiveTouches: 1,
+      touchBank: [{
+        touchActive: true,
+        currentPageX: x,
+        currentPageY: 0,
+        currentTimeStamp: timestamp,
+        previousPageX: previousX,
+        previousPageY: 0,
+        previousTimeStamp: timestamp - 1,
+        startPageX: previousX,
+        startPageY: 0,
+        startTimeStamp: 1,
+      }],
+    },
+  });
+  const beginSwipe = (timestamp: number) => {
+    screen.props.onStartShouldSetResponderCapture(touchEvent(timestamp, 300, 300));
+  };
+  const moveShouldSet = (timestamp: number) => {
+    const event = touchEvent(timestamp, 228, 300);
+    screen.props.onMoveShouldSetResponderCapture(event);
+    return { event, shouldSet: screen.props.onMoveShouldSetResponder(event) };
+  };
+
+  act(() => pager?.props.onDeckTouch?.(true));
+  beginSwipe(1);
+  expect(moveShouldSet(2).shouldSet).toBe(false);
+  act(() => pager?.props.onDeckTouch?.(false));
+
+  beginSwipe(3);
+  const conversationSwipe = moveShouldSet(4);
+  expect(conversationSwipe.shouldSet).toBe(true);
+  screen.props.onResponderGrant(conversationSwipe.event);
+  const released = touchEvent(5, 150, 228);
+  screen.props.onResponderMove(released);
+  screen.props.onResponderRelease(released);
+  expect(store.getState().scene).toBe('cards');
+
+  view.unmount();
+  measure.mockRestore();
+});
+
 test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점을 유지한다', () => {
   mockDevice = 'tabletLandscape';
   const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
