@@ -89,7 +89,7 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     const afterFirstPass = await readMessagePayloads(rows);
     for (const [index, stored] of afterFirstPass.entries()) {
       expect(stored).toEqual({
-        ...rows[index]!.payload, attachment_ids: ["existing-asset", "cli-message-asset"], attachment_count: 3,
+        ...rows[index]!.payload, attachment_ids: ["existing-asset", "cli-message-asset"], attachment_count: 2,
       });
     }
     const rerun = await invokeMessage(manifest, ["--apply", "--approved-manifest-sha256", manifest.sha256]);
@@ -119,7 +119,7 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     expect(report[0]).toMatchObject({ apply: true, source_events_updated: 1 });
     expect(report.some((record) => record.code === "SOURCE_UNVERIFIED" && record.identity_key === "identity-message-105")).toBe(true);
     const [first, second] = await readMessagePayloads(rows);
-    expect(first).toEqual({ ...rows[0]!.payload, attachment_ids: ["cli-message-asset"], attachment_count: 2 });
+    expect(first).toEqual({ ...rows[0]!.payload, attachment_ids: ["cli-message-asset"], attachment_count: 1 });
     expect(second).toEqual(rows[1]!.payload);
   });
 
@@ -208,7 +208,8 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     `)[0]!;
     expect(stored.payload_type).toBe("object");
     expect(stored.ids_type).toBe("array");
-    expect(stored.payload).toEqual({ ...payload, attachment_ids: ["existing-asset", "cli-message-asset"], attachment_count: 4 });
+    // Both migrated paths resolve to cli-message-asset and the third is already bound: two distinct files.
+    expect(stored.payload).toEqual({ ...payload, attachment_ids: ["existing-asset", "cli-message-asset"], attachment_count: 2 });
   });
 
   it("revalidates exact approved card URLs and selects cards through the CLI", async () => {

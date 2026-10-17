@@ -126,16 +126,25 @@ export function messageSourceFingerprint(source: MessageRefSource): string {
   }));
 }
 
+export type ResolvedPathBinding = { readonly path: string; readonly attachment_id: string };
+
+/**
+ * Merge migrated IDs and recompute attachment_count with the user-message contract
+ * (unique IDs + unique legacy paths not covered by an ID binding). Live uploads apply their
+ * bindings at write time without storing them, so the paths this backfill resolved through an
+ * alias are passed in as bindings; the payload gains no new key.
+ */
 export function mergeMessageAttachmentPayload(
   payloadValue: Record<string, unknown>,
   resolvedIds: readonly string[],
+  resolvedBindings: readonly ResolvedPathBinding[] = [],
 ): Record<string, unknown> {
   const payload = asRecord(payloadValue);
   const ids = uniqueStrings([...stringEntries(payload.attachment_ids), ...resolvedIds]);
   const idSet = new Set(ids);
   const paths = new Set([...stringEntries(payload.attachments), ...stringEntries(payload.attachment_paths)]);
   const covered = new Set<string>();
-  for (const value of arrayEntries(payload.attachment_bindings)) {
+  for (const value of [...arrayEntries(payload.attachment_bindings), ...resolvedBindings]) {
     if (!isRecord(value)) continue;
     if (typeof value.attachment_id !== "string" || !idSet.has(value.attachment_id)) continue;
     if (typeof value.path === "string" && paths.has(value.path)) covered.add(value.path);
@@ -152,6 +161,7 @@ export async function backfillMessageRefsTx(
   source: MessageRefSource,
   expectedFingerprint: string,
   resolvedIds: readonly string[],
+  resolvedBindings: readonly ResolvedPathBinding[] = [],
 ): Promise<MessageBackfillResult> {
   const attachmentIds = uniqueStrings(resolvedIds);
   if (attachmentIds.length === 0) throw new MessageRefBackfillError(ALIAS_UNRESOLVED, "source has no resolved alias IDs");
@@ -176,7 +186,7 @@ export async function backfillMessageRefsTx(
       throw new MessageRefBackfillError(SOURCE_CHANGED, "message source changed after it was read");
     }
 
-    const nextPayload = mergeMessageAttachmentPayload(lockedSource.payload, attachmentIds);
+    const nextPayload = mergeMessageAttachmentPayload(lockedSource.payload, attachmentIds, resolvedBindings);
     if (stableJson(nextPayload) === stableJson(lockedSource.payload)) {
       return messageBackfillResult("unchanged", nextPayload);
     }
@@ -273,9 +283,12 @@ async function executeBackfill(
     for (const item of stale) report.push(sourceRecord(SOURCE_CHANGED, item.identity, item.reference));
     const ids = uniqueStrings(valid.map((item) => item.attachmentId));
     if (ids.length === 0) continue;
+    // The verified legacy path that resolved to each ID counts as covered by that ID.
+    const bindings = valid.flatMap((item) => typeof item.reference.raw_path === "string"
+      ? [{ path: item.reference.raw_path, attachment_id: item.attachmentId }] : []);
     if (options.apply) {
       try {
-        const result = await backfillMessageRefsTx(sql, snapshot, messageSourceFingerprint(snapshot), ids);
+        const result = await backfillMessageRefsTx(sql, snapshot, messageSourceFingerprint(snapshot), ids, bindings);
         if (result.status === "updated") updated += 1;
         else unchanged += 1;
         report.push({ record_type: "source", status: result.status, session_id: candidate.session_id, event_id: candidate.event_id });
