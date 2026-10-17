@@ -170,6 +170,12 @@ test("connected sample deduplicates Markdown images and supports mixed attachmen
   await expect(sample.locator('[data-tree-node-id="connected-textless-output"] [data-chat-attachment-rows]')).toBeVisible();
   await expect(sample.locator('[data-tree-node-id="connected-manuscript-user"] [data-chat-image-role="user"]')).toBeVisible();
   await expect(sample.locator('[data-tree-node-id="connected-manuscript-output"] [data-chat-attachment-rows]')).toBeVisible();
+  await expect(userRow.locator('.chat-image-caption').first()).toHaveCSS('text-align', 'left');
+  await expect(sample.locator('[data-tree-node-id="connected-manuscript-user"] .chat-image-caption').first()).toHaveCSS('text-align', 'right');
+  const failedFrame = userRow.locator('.chat-image-thumbnail-frame').filter({ hasText: '불러오지 못함' });
+  await expect(failedFrame).toBeVisible();
+  expect(await failedFrame.evaluate(el => getComputedStyle(el).backgroundColor)).toBe(await userRow.locator('.chat-attachment-row').first().evaluate(el => getComputedStyle(el).backgroundColor));
+  expect(await failedFrame.locator('.chat-image-status').evaluate(el => getComputedStyle(el).color)).toBe(await userRow.locator('.chat-attachment-name').first().evaluate(el => getComputedStyle(el).color));
 
   const richUi = sample.locator('[data-tree-node-id="connected-rich-output"] [data-slot="chat-ui"]');
   await expect(richUi).toBeVisible();

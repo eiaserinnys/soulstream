@@ -169,7 +169,7 @@ export function contextualizeChatMarkdownImageSrc(
 ): string {
   if (!readContext) return src;
   const url = sameOriginUrl(src);
-  if (!url || url.pathname !== "/api/attachments/files") return src;
+  if (!url || (url.pathname !== "/api/attachments/files" && !/^\/api\/attachments\/[^/]+\/content$/.test(url.pathname))) return src;
   if (url.searchParams.has("context_type") || url.searchParams.has("context_id")) return src;
   for (const parameter of attachmentReadContextParams(readContext)) {
     const separator = parameter.indexOf("=");

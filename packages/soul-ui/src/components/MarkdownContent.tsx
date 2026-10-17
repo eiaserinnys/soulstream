@@ -51,8 +51,8 @@ const defaultAnchorClass = "text-accent-blue hover:underline";
 const userBubbleAnchorClass =
   "text-white underline decoration-white/70 underline-offset-2 hover:decoration-white";
 
-const createAnchorComponent = (className: string): NonNullable<Components["a"]> => {
-  const AnchorComponent: NonNullable<Components["a"]> = ({ children, onClick, ...props }) => {
+const createAnchorComponent = (className: string, readContext?: AttachmentReadContext): NonNullable<Components["a"]> => {
+  const AnchorComponent: NonNullable<Components["a"]> = ({ children, onClick, href, ...props }) => {
     const internalLinkClick = useInternalLinkClick();
     return (
       <a
@@ -60,6 +60,7 @@ const createAnchorComponent = (className: string): NonNullable<Components["a"]> 
         target="_blank"
         rel="noopener noreferrer"
         {...props}
+        href={href ? contextualizeChatMarkdownImageSrc(href, readContext) : href}
         onClick={(event) => {
           onClick?.(event);
           internalLinkClick(event);
@@ -456,7 +457,9 @@ export function MarkdownContent({
       : chatComponents;
     return sourceLinkComponent
       ? { ...blockquoteComponents, a: sourceLinkComponent }
-      : blockquoteComponents;
+      : chatImages?.readContext
+        ? { ...blockquoteComponents, a: createAnchorComponent(linkTone === "onUserBubble" ? userBubbleAnchorClass : defaultAnchorClass, chatImages.readContext) }
+        : blockquoteComponents;
   }, [chatImages?.readContext, codeBlockLayout, compact, enableBlockquoteCopy, imageModel, linkTone, metadataByImage, onImageClick, onImageMetadata, openViewer, sourceLinkComponent]);
 
   const markdown = (

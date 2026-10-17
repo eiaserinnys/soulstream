@@ -77,8 +77,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       <div className="chat-image-frame"><span className="chat-image-status" role="status">첨부 불러오는 중…</span></div>
     </div>;
   } else if (attachmentState.error) {
-    const retryable = attachmentState.error === "첨부 정보를 불러오지 못했습니다. 다시 시도해 주세요."
-      || attachmentState.error === "연결을 확인한 뒤 첨부를 다시 불러와 주세요.";
+    const { retryable } = attachmentState;
     attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-tone={attachmentTone} data-chat-attachment-state="error">
       <div className="chat-image-frame">
         <span className="chat-image-status" role="status">{retryable ? "첨부 정보를 불러오지 못했습니다." : attachmentState.error}</span>

@@ -1300,8 +1300,11 @@ pre[data-markdown-code-layout="document"] {
 .chat-image-run[data-chat-attachment-tone="onUserBubble"] :is(.chat-image-caption, .chat-image-status) {
   @apply text-white;
 }
-.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-thumbnail-frame.bg-muted {
-  @apply bg-transparent;
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-thumbnail-frame:has(.chat-image-status) {
+  background-color: var(--popover);
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-thumbnail-frame .chat-image-status {
+  color: var(--foreground);
 }
 /* Keep outline controls opaque over the blue bubble in both themes. */
 .chat-image-run[data-chat-attachment-tone="onUserBubble"] [data-slot="button"] {
@@ -1359,6 +1362,14 @@ pre[data-markdown-code-layout="document"] {
 }
 .chat-image-run[data-chat-image-role="user"] .chat-image-caption {
   text-align: right;
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"],
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-card {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-caption {
+  text-align: left;
 }
 .chat-image-filename {
   overflow: hidden;

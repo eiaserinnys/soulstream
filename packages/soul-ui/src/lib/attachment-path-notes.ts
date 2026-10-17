@@ -12,8 +12,15 @@ export function removeRepresentedAttachmentPathNotes(text: string, items: readon
   const notes = new Set(collectAttachmentPathNotes(paths));
   if (notes.size === 0) return text;
   const lines = text.split(/\r?\n/);
-  const remaining = lines.filter(line => !notes.has(line));
-  if (remaining.length === lines.length) return text;
+  let start = lines.length;
+  while (start > 0) {
+    const line = lines[start - 1]!;
+    if (line !== "" && !(line.startsWith(ATTACHMENT_PATH_NOTE_PREFIX) && line.endsWith("]"))) break;
+    start -= 1;
+  }
+  const tail = lines.slice(start);
+  if (!tail.some(line => notes.has(line))) return text;
+  const remaining = [...lines.slice(0, start), ...tail.filter(line => !notes.has(line))];
   while (remaining.at(-1) === "") remaining.pop();
   return remaining.join("\n");
 }

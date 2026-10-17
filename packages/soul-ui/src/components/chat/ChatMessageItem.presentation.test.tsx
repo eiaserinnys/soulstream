@@ -40,6 +40,29 @@ describe("ChatMessageItem presentation", () => {
     host = null;
   });
 
+  it.each(["default", "manuscript"] as const)("scopes only internal attachment links to the row session (%s)", presentation => {
+    const msg = makeMessage("user", "links", { content: "[ID](/api/attachments/a/content?download=1#file) [경로](/api/attachments/files?nodeId=node&path=%2Fincoming%2Fa.txt) [외부](https://example.com/api/attachments/a/content) [세션](/sessions/other) [카드](/cards/card)" });
+    host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(createElement(ChatMessageItem, { msg, sessionId: "route-session", presentation }));
+    const links = [...host.querySelectorAll("a")].map(a => a.getAttribute("href"));
+    expect(links).toEqual([
+      "/api/attachments/a/content?download=1&context_type=session&context_id=route-session#file",
+      "/api/attachments/files?nodeId=node&path=%2Fincoming%2Fa.txt&context_type=session&context_id=route-session",
+      "https://example.com/api/attachments/a/content", "/sessions/other", "/cards/card",
+    ]);
+  });
+
+  it.each([400, 401, 403, 404, 422, 429, 500, 503])("shows retry only for a server failure (HTTP %s)", async status => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status })));
+    host = document.createElement("div");
+    root = createRoot(host);
+    await act(async () => root?.render(createElement(ChatMessageItem, {
+      msg: makeMessage("user", "failed-projection", { eventId: 42, attachmentIds: ["asset"] }), sessionId: "session",
+    })));
+    expect([...host.querySelectorAll("button")].some(button => button.textContent === "다시 시도")).toBe(status >= 500);
+    if (status === 400 || status === 422) expect(host.querySelector('[role="status"]')?.textContent).toBe("첨부 정보를 확인할 수 없습니다.");
+  });
+
   it("keeps the default bubbles and renders manuscript messages without avatars or bubbles", () => {
     const messages = [
       makeMessage("user", "user-1"),
