@@ -110,6 +110,18 @@ describe("persistent session task list", () => {
     expect(latestUnansweredTooltipQuestion(cardDetail(detail.card, [question("done", "2026-10-14T10:00:00Z", ["답"], "완료")]))).toBeNull();
   });
 
+  it("skips withdrawn unanswered questions in the PAS task tooltip", () => {
+    const card = baseCard("withdrawn-question", "blocked");
+    const open = question("open", "2026-10-14T09:00:00Z", ["계속"]);
+    const withdrawn = {
+      ...question("withdrawn", "2026-10-14T10:00:00Z", ["A안", "B안"]),
+      withdrawnAt: "2026-10-14T11:00:00Z",
+      withdrawalReason: "커멘트에서 결정됐습니다",
+    } as CardQuestion;
+
+    expect(latestUnansweredTooltipQuestion(cardDetail(card, [open, withdrawn]))).toEqual(open);
+  });
+
   it("loads blocked question detail on row focus only when cached details are missing or stale", async () => {
     enableTaskTooltips();
     const card = { ...baseCard("question-load", "blocked"), blockedKind: "question" as const,

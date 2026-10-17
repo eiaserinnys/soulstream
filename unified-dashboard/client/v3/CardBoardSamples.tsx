@@ -92,7 +92,10 @@ export function CardBoardSamples() {
     sessions:checkScenario==="many-sessions"?Array.from({length:75},(_,i)=>({sessionId:i===0?reviewSession.agentSessionId:`trim-session-${String(i).padStart(3,"0")}`,cardId:selectedCard.id,displayName:`검수 세션 ${i+1}`,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:"completed",createdAt:new Date(Date.parse(reviewCard.createdAt)+i*60000).toISOString(),updatedAt:reviewCard.updatedAt,callerSessionId:null})):
      [{sessionId:reviewSession.agentSessionId,cardId:selectedCard.id,displayName:reviewSession.displayName??null,nodeId:reviewCard.nodeId!,agentId:reviewCard.assigneeAgentId!,status:assignmentSession.status,createdAt:reviewCard.createdAt,updatedAt:reviewCard.updatedAt,callerSessionId:null}],
     comments:Array.from({length:conversation==="short"?1:20},(_,index)=>({id:`detail-comment-${index}`,cardId:selectedCard.id,authorKind:"user" as const,authorId:"sample",sessionId:null,kind:"comment" as const,body:`커멘트 ${index+1}: 탭을 바꾸어도 작성 중 문장과 첨부는 유지됩니다.`,createdAt:reviewCard.createdAt,...(selectedCard.items&&index===0?{itemId:5}:{})})),
-    questions:[{id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:"확인했습니다",askedAt:reviewCard.createdAt,answeredAt:reviewCard.createdAt}],
+    questions:[
+      {id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:null,askedAt:reviewCard.createdAt,answeredAt:null},
+      {id:"withdrawn-question",text:"어느 안으로 할까요?",options:["A안","B안"],answer:null,askedAt:reviewCard.createdAt,answeredAt:null,withdrawnAt:reviewCard.updatedAt,withdrawalReason:"커멘트에서 B안으로 정해져 거둡니다"},
+    ],
   }:undefined;
   const mobileTabsHost=selectedCard&&mobileMode?document.querySelector('.v3-shell.v3-components-page'):null;
   return <div className="v3-card-board-sample" data-testid="card-board-sample">

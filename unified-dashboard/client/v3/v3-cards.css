@@ -98,6 +98,7 @@
 .v3-card-bubble-kind { display: flex; gap: var(--v3-space-2); align-items: baseline; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-card-bubble-kind strong { font-weight: 700; }
 .v3-card-bubble-kind time { margin-left: auto; color: var(--v3-text-tertiary); }
+.v3-card-question-withdrawal { margin: var(--v3-space-1) 0 0; color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-card-three-lines { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .v3-card-report-title { font: inherit; font-weight: 600; }
 .v3-card-report-thumbnails { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); }

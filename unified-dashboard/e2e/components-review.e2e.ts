@@ -6,6 +6,8 @@ import { waitForStableLayout } from "./layout-stability";
 
 const output = path.resolve("../../../.local/artifacts/20261001-components-full-page");
 const argonOutput = path.resolve("../../../.local/artifacts/20261015-argon385");
+const withdrawalCaptureRoot = path.resolve("../../../.local/artifacts");
+const withdrawalCaptureStamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
 const phase = process.env.COMPONENTS_REVIEW_PHASE;
 if (!phase) throw new Error("COMPONENTS_REVIEW_PHASE is required");
 
@@ -192,6 +194,40 @@ for (const width of [1440, 390]) {
     await review.getByRole("button", { name: "대시보드로 돌아가기", exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(review).toHaveCount(0);
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`card question withdrawal review sample ${width}`, async ({ page }) => {
+    await prepare(page, width);
+    await page.route("**/api/auth/config", route => route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ authEnabled: true, devModeEnabled: false }) }));
+    await page.route("**/api/auth/status", route => route.fulfill({ contentType: "application/json",
+      body: JSON.stringify({ authenticated: true, user: { email: "qa@example.test", name: "QA", isAdmin: true } }) }));
+    await page.goto("/components");
+
+    const sample = page.getByTestId("card-board-sample");
+    await sample.locator('[data-card-id="board-size-comparison"] .v3-postit-open').first().click();
+    const detail = page.getByTestId("card-detail");
+    await expect(detail).toBeVisible();
+    await detail.getByRole("tab", { name: "커멘트" }).click();
+    const timeline = detail.locator(".v3-card-timeline");
+    const openQuestion = timeline.locator('[data-card-entry="질문"]').filter({ hasText: "내용을 확인했나요?" });
+    const withdrawnQuestion = timeline.locator('[data-card-entry="질문"]').filter({ hasText: "어느 안으로 할까요?" });
+    await expect(openQuestion).toBeVisible();
+    await expect(withdrawnQuestion).toBeVisible();
+    await expect(openQuestion.locator(".v3-card-answer-options button")).toHaveCount(1);
+    await expect(withdrawnQuestion.locator(".v3-card-bubble-kind")).toContainText("철회됨");
+    await expect(withdrawnQuestion.locator(".v3-card-question-withdrawal")).toHaveText("커멘트에서 B안으로 정해져 거둡니다");
+    await expect(withdrawnQuestion.locator(".v3-card-answer-options")).toHaveCount(0);
+    await openQuestion.scrollIntoViewIfNeeded();
+    await withdrawnQuestion.scrollIntoViewIfNeeded();
+
+    mkdirSync(withdrawalCaptureRoot, { recursive: true });
+    await page.screenshot({
+      path: path.join(withdrawalCaptureRoot, `${withdrawalCaptureStamp}-card-question-withdrawal-${width}.png`),
+      animations: "disabled",
+    });
   });
 }
 
