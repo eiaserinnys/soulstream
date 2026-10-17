@@ -153,6 +153,88 @@ describe("Codex app-server parameter builders", () => {
     ).toEqual(expectedConfig);
   });
 
+  it("forwards disallowed MCP tools to each configured server on start and resume", () => {
+    const mcpServers = [
+      {
+        type: "streamable_http" as const,
+        name: "soulstream",
+        url: "http://127.0.0.1:3105/mcp",
+      },
+      {
+        type: "streamable_http" as const,
+        name: "atom",
+        url: "http://127.0.0.1:4200/mcp",
+      },
+    ];
+    const internalMcpUrl = "http://127.0.0.1:3106/mcp/internal";
+    const disallowedTools = [
+      "mcp__soulstream__create_worktree",
+      "mcp__soulstream__list_worktrees",
+      "mcp__atom__delete_card",
+      "Bash",
+    ];
+    const expectedDisabledTools = {
+      mcp_servers: {
+        soulstream: {
+          disabled_tools: ["create_worktree", "list_worktrees"],
+        },
+        atom: {
+          disabled_tools: ["delete_card"],
+        },
+      },
+    };
+
+    const startParams = buildThreadStartParams(
+      {
+        prompt: "start",
+        agentSessionId: "agent-session-1",
+        disallowedTools,
+      },
+      "/work",
+      mcpServers,
+      internalMcpUrl,
+    );
+    const resumeParams = buildThreadResumeParams(
+      {
+        prompt: "resume",
+        resumeSessionId: "thread-existing",
+        agentSessionId: "agent-session-1",
+        disallowedTools,
+      },
+      "/work",
+      mcpServers,
+      internalMcpUrl,
+    );
+
+    expect(startParams.config).toMatchObject(expectedDisabledTools);
+    expect(resumeParams.config).toMatchObject(expectedDisabledTools);
+
+    const unrestrictedConfigs = [
+      buildThreadStartParams(
+        { prompt: "start", agentSessionId: "agent-session-1" },
+        "/work",
+        mcpServers,
+        internalMcpUrl,
+      ).config,
+      buildThreadResumeParams(
+        {
+          prompt: "resume",
+          resumeSessionId: "thread-existing",
+          agentSessionId: "agent-session-1",
+        },
+        "/work",
+        mcpServers,
+        internalMcpUrl,
+      ).config,
+    ];
+    for (const config of unrestrictedConfigs) {
+      expect(config).not.toHaveProperty(
+        "mcp_servers.soulstream.disabled_tools",
+      );
+      expect(config).not.toHaveProperty("mcp_servers.atom.disabled_tools");
+    }
+  });
+
   it("fails closed when a soulstream HTTP MCP server has no internal listener URL", () => {
     expect(() =>
       buildThreadStartParams(

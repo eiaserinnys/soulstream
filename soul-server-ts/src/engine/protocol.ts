@@ -157,7 +157,10 @@ export interface EngineExecuteParams {
    * Codex 어댑터는 무시 (Codex CLI에 turn-level 권한 표면 없음).
    */
   allowedTools?: string[];
-  /** agents.yaml의 `disallowed_tools` — Claude SDK `disallowedTools`로 forward. Codex 무시. */
+  /**
+   * Claude SDK `disallowedTools`로 forward. Codex는 `mcp__<서버>__<도구>` 항목을
+   * 그 MCP 서버의 `disabled_tools`로 넘긴다.
+   */
   disallowedTools?: string[];
   /** agents.yaml의 `max_turns` — Claude SDK `maxTurns`로 forward. Codex 무시. */
   maxTurns?: number;
