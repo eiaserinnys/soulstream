@@ -5,7 +5,7 @@
  * dashboard-store가 SSE 이벤트를 흡수하여 만드는 트리 표현의 source of truth입니다.
  */
 
-import type { CallerInfo, ContextItem, InputRequestQuestion } from "./sse-events";
+import type { CallerInfo, ContextItem, EventTruncation, InputRequestQuestion } from "./sse-events";
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import type { PersistentJevCandidate } from "../lib/persistent-jev-candidates";
 
@@ -137,6 +137,7 @@ export interface InterventionNode extends BaseNode, AttachmentEventSignalFields 
 /** Thinking (확장 사고) 노드 */
 export interface ThinkingNode extends BaseNode {
   type: "thinking";
+  truncation?: EventTruncation;
   /** 콘텐츠가 truncate 되었는지 여부 */
   isTruncated?: boolean;
   /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
@@ -144,12 +145,13 @@ export interface ThinkingNode extends BaseNode {
 }
 
 /** 텍스트 노드 */
-export interface TextNode extends BaseNode {
+export interface TextNode extends BaseNode, AttachmentEventSignalFields {
   type: "text";
   /** Durable final event ID after a transient live node is promoted in place. */
   eventId?: number;
   /** text_end 수신 여부 */
   textCompleted?: boolean;
+  truncation?: EventTruncation;
 }
 
 /** 도구 호출 노드 */
@@ -160,6 +162,8 @@ export interface ToolNode extends BaseNode {
   toolName: string;
   toolInput: Record<string, unknown> | string;
   toolResult?: string;
+  inputTruncation?: EventTruncation;
+  resultTruncation?: EventTruncation;
   /** compact timeline summary의 상세 trace 식별자 */
   toolTraceId?: string;
   isError?: boolean;
@@ -258,6 +262,7 @@ export interface ToolApprovalNodeDef extends BaseNode {
 /** LLM 프록시 어시스턴트 응답 노드 */
 export interface AssistantMessageNode extends BaseNode, AttachmentEventSignalFields {
   type: "assistant_message";
+  truncation?: EventTruncation;
   ui?: unknown;
   model?: string;
   provider?: string;

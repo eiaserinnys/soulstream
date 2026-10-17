@@ -46,4 +46,50 @@ describe("AssistantMessage content layout", () => {
     expect(renderBubble({ presentation: "manuscript", contentLayout: "structured" }))
       .toBe(renderBubble({ presentation: "manuscript", contentLayout: "text" }));
   });
+
+  it("strips the event suffix and shows assistant truncation size without a second link", () => {
+    const messageWithTruncation = {
+      ...message,
+      content: "응답 앞부분\n[잘림]",
+      truncation: { original_bytes: 1_048_576, attachment: null },
+    } as unknown as ChatMessage;
+    const markup = renderToStaticMarkup(createElement(AssistantMessage, {
+      msg: messageWithTruncation,
+      presentation: "manuscript",
+    }));
+
+    expect(markup).toContain("응답 앞부분");
+    expect(markup).not.toContain("[잘림]");
+    expect(markup).toContain("잘림 · 전체 1.0 MB · 전문 보관 실패");
+    expect(markup).not.toContain("전문 열기");
+  });
+
+  it("keeps assistant attachment access in the existing attachment row", () => {
+    const messageWithAttachment = {
+      ...message,
+      content: "응답 앞부분",
+      attachmentIds: ["assistant-full-content"],
+      truncation: {
+        original_bytes: 1_048_576,
+        attachment: {
+          attachment_id: "assistant-full-content",
+          name: "assistant-output.txt",
+          mime_type: "text/plain",
+          byte_size: 1_048_576,
+          checksum_sha256: null,
+          width: null,
+          height: null,
+          preview_kind: "text",
+          preview_mime_type: "text/plain",
+        },
+      },
+    } as unknown as ChatMessage;
+    const markup = renderToStaticMarkup(createElement(AssistantMessage, {
+      msg: messageWithAttachment,
+      presentation: "manuscript",
+    }));
+
+    expect(markup).toContain("잘림 · 전체 1.0 MB");
+    expect(markup).not.toContain("전문 열기");
+  });
 });

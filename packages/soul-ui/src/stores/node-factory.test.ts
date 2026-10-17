@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { createNodeFromEvent, applyUpdate } from "./node-factory";
+import { createNodeFromEvent, applyFinalAssistantMessageToLiveText, applyUpdate } from "./node-factory";
 import { createProcessingContext, makeNode, registerNode } from "./processing-context";
 import type { ProcessingContext } from "./processing-context";
 import type {
@@ -132,6 +132,66 @@ describe("createNodeFromEvent", () => {
         completed: true,
       });
       expect((node as AssistantMessageNode).ui).toBe(ui);
+    });
+
+    it("preserves truncation metadata on assistant, thinking, and tool input nodes", () => {
+      const attachment = {
+        attachment_id: "asset-full-content",
+        name: "full-content.txt",
+        mime_type: "text/plain",
+        byte_size: 900_000,
+        checksum_sha256: null,
+        width: null,
+        height: null,
+        preview_kind: "text",
+        preview_mime_type: "text/plain",
+      } as const;
+      const truncation = { original_bytes: 900_000, attachment };
+      const assistant = createNodeFromEvent({
+        type: "assistant_message",
+        content: "answer\n[잘림]",
+        truncation,
+        attachment_ids: ["asset-full-content"],
+      } as unknown as SoulSSEEvent, 271);
+      const thinking = createNodeFromEvent({
+        type: "thinking",
+        thinking: "reasoning\n[잘림]",
+        truncation,
+      } as unknown as SoulSSEEvent, 272);
+      const tool = createNodeFromEvent({
+        type: "tool_start",
+        timestamp: 1,
+        tool_name: "Read",
+        tool_input: "{\"large\": true}\n[잘림]",
+        truncation,
+      } as unknown as SoulSSEEvent, 273);
+
+      expect(assistant).toMatchObject({ truncation, attachmentIds: ["asset-full-content"] });
+      expect(thinking).toMatchObject({ truncation });
+      expect(tool).toMatchObject({ inputTruncation: truncation });
+    });
+
+    it("preserves assistant truncation and attachment signals when the final event promotes live text", () => {
+      const ctx = createProcessingContext();
+      const target = makeNode("app-server-agent-message:item-1", "text", "partial", {}) as TextNode;
+      ctx.nodeMap.set("app-server-agent-message:item-1", target);
+      const truncation = { original_bytes: 700_000, attachment: null };
+
+      const result = applyFinalAssistantMessageToLiveText({
+        type: "assistant_message",
+        content: "answer\n[잘림]",
+        tool_use_id: "item-1",
+        _final_for_live_stream: true,
+        truncation,
+        attachment_ids: ["asset-final-output"],
+      } as unknown as SoulSSEEvent, 274, ctx);
+
+      expect(result).toBe(target);
+      expect(target).toMatchObject({
+        content: "answer\n[잘림]",
+        truncation,
+        attachmentIds: ["asset-final-output"],
+      });
     });
 
     it("preserves existing user_message attachments and node_id for the view", () => {

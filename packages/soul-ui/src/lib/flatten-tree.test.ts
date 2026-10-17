@@ -1089,6 +1089,55 @@ describe("flattenTree identity 보존", () => {
     expect(changed[0]?.attachmentIds).toEqual(["asset-new"]);
   });
 
+  it("assistant, thinking, and tool truncation metadata survive flattening", () => {
+    const assistantTruncation = { original_bytes: 900_000, attachment: null };
+    const thinkingTruncation = { original_bytes: 400_000, attachment: null };
+    const inputTruncation = { original_bytes: 300_000, attachment: null };
+    const resultTruncation = { original_bytes: 800_000, attachment: null };
+    const assistant = {
+      ...makeAssistantMessage(810),
+      truncation: assistantTruncation,
+    } as AssistantMessageNode & { truncation: typeof assistantTruncation };
+    const thinking = {
+      ...makeThinking("thinking-811", "reasoning"),
+      truncation: thinkingTruncation,
+    } as ThinkingNode & { truncation: typeof thinkingTruncation };
+    const tool = {
+      ...makeTool("tool-812", "Read"),
+      inputTruncation,
+      resultTruncation,
+    } as ToolNode & {
+      inputTruncation: typeof inputTruncation;
+      resultTruncation: typeof resultTruncation;
+    };
+
+    const messages = flattenTree(makeSession([assistant, thinking, tool]));
+
+    expect(messages[0]?.truncation).toBe(assistantTruncation);
+    expect(messages[1]?.truncation).toBe(thinkingTruncation);
+    expect(messages[2]?.toolInputTruncation).toBe(inputTruncation);
+    expect(messages[2]?.toolResultTruncation).toBe(resultTruncation);
+  });
+
+  it("changes cached message identity when truncation metadata changes", () => {
+    const firstTruncation = { original_bytes: 800_000, attachment: null };
+    const assistant = {
+      ...makeAssistantMessage(813),
+      truncation: firstTruncation,
+    } as AssistantMessageNode & { truncation: typeof firstTruncation };
+    const tree = makeSession([assistant]);
+
+    const before = flattenTree(tree);
+    const same = flattenTree(tree);
+    expect(same[0]).toBe(before[0]);
+
+    assistant.truncation = { ...firstTruncation, original_bytes: 900_000 };
+    const changed = flattenTree(tree);
+
+    expect(changed[0]).not.toBe(same[0]);
+    expect(changed[0]?.truncation?.original_bytes).toBe(900_000);
+  });
+
   it("자식 push로 트리를 mutate한 후 — 변경되지 않은 노드는 동일 reference, 새 노드만 새 reference", () => {
     const userNode = makeUserMessage("u1", "hello", [
       makeThinking("t1", "thinking"),

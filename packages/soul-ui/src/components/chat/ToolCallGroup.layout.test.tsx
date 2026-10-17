@@ -5,7 +5,7 @@
 import { createElement, useState, type ComponentType } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { ToolCallGroup } from "./ToolCallGroup";
@@ -37,6 +37,13 @@ const ControlledToolCallGroup = ToolCallGroup as ComponentType<{
   messages: ChatMessage[];
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
+}>;
+
+const TruncationToolCallGroup = ToolCallGroup as ComponentType<{
+  messages: ChatMessage[];
+  expanded: boolean;
+  sessionId: string;
+  presentation?: "default" | "manuscript";
 }>;
 
 function ControlledGroupHost({ messages, rowKey }: { messages: ChatMessage[]; rowKey: string }) {
@@ -185,5 +192,93 @@ describe("ToolCallGroup compact header", () => {
     expect(view.querySelector("[data-slot='tool-call-group-toggle']")?.getAttribute("aria-expanded"))
       .toBe("true");
     expect(view.querySelectorAll("[data-slot='tool-call-item-toggle']")).toHaveLength(3);
+  });
+
+  it("opens a grouped truncated result attachment and returns focus to its link", async () => {
+    const attachment = {
+      attachment_id: "tool-result-full-content",
+      name: "tool-result.txt",
+      mime_type: "application/zip",
+      byte_size: 1_048_576,
+      checksum_sha256: null,
+      width: null,
+      height: null,
+      preview_kind: "info",
+      preview_mime_type: null,
+    } as const;
+    const messages = [
+      {
+        ...message(0, "done"),
+        toolResult: "결과 미리보기\n[잘림]",
+        toolResultTruncation: { original_bytes: 1_048_576, attachment },
+      },
+      message(1, "done"),
+    ] as unknown as ChatMessage[];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(TruncationToolCallGroup, {
+      messages,
+      expanded: true,
+      sessionId: "session-one",
+    })));
+    flushSync(() => container!.querySelector<HTMLButtonElement>("[data-slot='tool-call-item-toggle']")?.click());
+
+    const result = container.querySelector<HTMLElement>("[data-slot='chat-tool-body']");
+    expect(result?.textContent).toBe("결과 미리보기");
+    const link = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find(button => button.textContent?.includes("전문 열기"));
+    expect(link?.parentElement?.textContent).toContain("잘림 · 전체 1.0 MB · 전문 열기");
+    expect(link).toBeDefined();
+    flushSync(() => link!.click());
+
+    const dialog = await vi.waitFor(() => {
+      const found = document.body.querySelector<HTMLElement>("[role='dialog']");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(dialog.textContent).toContain("tool-result.txt");
+    expect([...dialog.querySelectorAll("button")].some(button => button.textContent?.includes("원본 저장"))).toBe(true);
+    flushSync(() => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    await vi.waitFor(() => expect(document.body.querySelector("[role='dialog']")).toBeNull());
+    expect(document.activeElement).toBe(link);
+  });
+
+  it("shows tool and thinking truncation metadata in manuscript activity", () => {
+    const tool = {
+      ...message(0, "done"),
+      toolInput: "입력 미리보기\n[잘림]",
+      toolResult: "결과 미리보기\n[잘림]",
+      toolInputTruncation: { original_bytes: 204_800, attachment: null },
+      toolResultTruncation: { original_bytes: 716_800, attachment: null },
+    } as unknown as ChatMessage;
+    const thinking = {
+      id: "thinking-truncated",
+      role: "assistant",
+      content: "생각 미리보기\n[잘림]",
+      thinkingContent: "생각 미리보기\n[잘림]",
+      treeNodeId: "thinking-truncated",
+      treeNodeType: "thinking",
+      truncation: { original_bytes: 409_600, attachment: null },
+    } as unknown as ChatMessage;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(TruncationToolCallGroup, {
+      messages: [tool, thinking],
+      presentation: "manuscript",
+      expanded: true,
+      sessionId: "session-one",
+    })));
+    flushSync(() => container!.querySelector<HTMLButtonElement>("[data-slot='tool-call-item-toggle']")?.click());
+
+    const toolBodies = [...container.querySelectorAll<HTMLElement>("[data-slot='chat-tool-body']")];
+    expect(toolBodies.map(body => body.textContent)).toEqual(["입력 미리보기", "결과 미리보기"]);
+    expect(container.textContent).toContain("입력 미리보기");
+    expect(container.textContent).not.toContain("[잘림]");
+    expect(container.textContent).toContain("잘림 · 전체 200.0 KB · 전문 보관 실패");
+    expect(container.textContent).toContain("잘림 · 전체 700.0 KB · 전문 보관 실패");
+    expect(container.textContent).toContain("잘림 · 전체 400.0 KB · 전문 보관 실패");
+    expect(container.textContent).not.toContain("[잘림]");
   });
 });

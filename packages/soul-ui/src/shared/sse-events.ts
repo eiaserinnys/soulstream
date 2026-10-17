@@ -12,6 +12,7 @@ import type {
   SSEEventTextSnapshot,
   SSEEventType as GeneratedSSEEventType,
 } from "@soulstream/wire-schema";
+import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import type {
   LiveTextEventMetadata,
   SessionHistoryResetReason,
@@ -34,6 +35,12 @@ export interface MemoryEvent {
   used_gb: number;
   total_gb: number;
   percent: number;
+}
+
+/** Oversized event content and its optional stored original. */
+export interface EventTruncation {
+  original_bytes: number;
+  attachment: AttachmentDescriptor | null;
 }
 
 export interface SessionEvent {
@@ -329,6 +336,7 @@ export interface ThinkingEvent {
   /** Codex app-server emits thinking item content as text. */
   text?: string;
   signature?: string;
+  truncation?: EventTruncation;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
@@ -366,6 +374,7 @@ export interface ToolStartEvent {
   tool_input: Record<string, unknown> | string;
   tool_input_preview?: string;
   tool_input_truncated?: boolean;
+  truncation?: EventTruncation;
   timeline_id?: string;
   has_trace?: boolean;
   status?: "running" | "completed" | "error";
@@ -386,6 +395,7 @@ export interface ToolResultEvent {
   result?: unknown;
   result_preview?: string;
   result_truncated?: boolean;
+  truncation?: EventTruncation;
   timeline_id?: string;
   has_trace?: boolean;
   status?: "completed" | "error";
@@ -805,6 +815,7 @@ export interface AssistantMessageEvent extends Partial<Pick<LiveTextEventMetadat
   type: "assistant_message";
   content: string;
   attachment_ids?: string[];
+  truncation?: EventTruncation;
   attachment_count?: number;
   attachments?: string[];
   node_id?: string;

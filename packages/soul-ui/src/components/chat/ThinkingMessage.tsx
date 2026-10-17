@@ -4,27 +4,33 @@ import { useLazyLoadContent } from "./hooks";
 import { CollapsibleContent } from "./CollapsibleContent";
 import { ShowFullContentButton } from "./ShowFullContentButton";
 import { MarkdownContent } from "../MarkdownContent";
+import { EventTruncationMetadata } from "./EventTruncationMetadata";
+import { stripEventTruncationSuffix } from "../../lib/event-truncation-display";
 
 /** thinking 노드: 3줄 미리보기 + 접기/펼치기 + truncation lazy load */
 export const ThinkingMessage = memo(function ThinkingMessage({
   msg,
   presentation = "default",
+  sessionId,
 }: {
   msg: ChatMessage;
   presentation?: "default" | "manuscript";
+  sessionId?: string;
 }) {
   const { displayContent, isTruncated, loading, error, loadFullContent } = useLazyLoadContent(msg);
+  const body = stripEventTruncationSuffix(displayContent ?? msg.content, msg.truncation);
 
   if (presentation === "manuscript") {
     return (
       <div className="flex" data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation="manuscript" data-chat-narration="true">
         <div className="w-full min-w-0 text-foreground">
           <div data-slot="chat-body" className="text-base text-foreground [line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]">
-            <MarkdownContent content={displayContent ?? msg.content} enableBlockquoteCopy />
+            <MarkdownContent content={body} enableBlockquoteCopy />
           </div>
-          {isTruncated && (
+          {isTruncated && !msg.truncation && (
             <ShowFullContentButton loading={loading} error={error} onClick={loadFullContent} />
           )}
+          <EventTruncationMetadata truncation={msg.truncation} sessionId={sessionId} eventId={msg.eventId} />
         </div>
       </div>
     );
@@ -34,10 +40,11 @@ export const ThinkingMessage = memo(function ThinkingMessage({
     <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
-        <CollapsibleContent content={displayContent ?? msg.content} label={"\u{1F4AD} Thinking"} />
-        {isTruncated && (
+        <CollapsibleContent content={body} label={"\u{1F4AD} Thinking"} />
+        {isTruncated && !msg.truncation && (
           <ShowFullContentButton loading={loading} error={error} onClick={loadFullContent} />
         )}
+        <EventTruncationMetadata truncation={msg.truncation} sessionId={sessionId} eventId={msg.eventId} />
       </div>
     </div>
   );

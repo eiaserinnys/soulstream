@@ -1,4 +1,5 @@
 import { removeRepresentedAttachmentPathNotes } from "../../lib/attachment-path-notes";
+import { stripEventTruncationSuffix } from "../../lib/event-truncation-display";
 import { memo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -59,7 +60,13 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     enabled: Boolean(sessionId && eventId && hasAttachmentSignal),
   });
   const attachmentItems = filterDisplayedAttachments(msg, attachmentState.items);
-  msg = { ...msg, content: removeRepresentedAttachmentPathNotes(msg.content, attachmentItems) };
+  msg = {
+    ...msg,
+    content: removeRepresentedAttachmentPathNotes(
+      stripEventTruncationSuffix(msg.content, msg.truncation),
+      attachmentItems,
+    ),
+  };
   const attachmentTone = presentation === "default" && msg.role !== "assistant" ? "onUserBubble" as const : undefined;
   const projectedOutputRow = msg.id.startsWith("output-attachments:");
   const [viewer, setViewer] = useState<{ index: number; trigger: HTMLElement } | null>(null);
@@ -108,11 +115,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     case "assistant":
       // thinking 노드와 text 노드를 독립 컴포넌트로 분리
       body = msg.treeNodeType === "thinking"
-        ? <ThinkingMessage msg={msg} presentation={presentation} />
+        ? <ThinkingMessage msg={msg} presentation={presentation} sessionId={sessionId} />
         : msg.ui !== undefined
           ? <AssistantMessage
             msg={msg}
             llmContext={llmContext}
+            sessionId={sessionId}
             presentation={presentation}
             narration={false}
             contentLayout={isSupportedChatUiPublication(msg.ui) ? "structured" : "text"}
@@ -125,6 +133,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
           : <AssistantMessage
             msg={msg}
             llmContext={llmContext}
+            sessionId={sessionId}
             presentation={presentation}
             narration={narration}
             attachments={attachmentSlot}
@@ -133,7 +142,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
           />;
       break;
     case "tool":
-      body = <ToolMessage msg={msg} />;
+      body = <ToolMessage msg={msg} sessionId={sessionId} />;
       break;
     case "system":
       body = <SystemMessage msg={msg} presentation={presentation} />;

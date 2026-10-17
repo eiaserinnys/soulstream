@@ -213,7 +213,8 @@ export function createNodeFromEvent(
         truncated ? thinking.slice(0, TRUNCATE_THRESHOLD) : thinking,
         {
           completed: true,
-          ...(truncated && { isTruncated: true, fullContentEventId: eventId }),
+          truncation: e.truncation,
+          ...(truncated && !e.truncation && { isTruncated: true, fullContentEventId: eventId }),
         },
       );
     }
@@ -241,6 +242,7 @@ export function createNodeFromEvent(
       return makeNode(`tool-${eventId}`, "tool", "", {
         toolName: e.tool_name,
         toolInput: e.tool_input,
+        inputTruncation: e.truncation,
         toolUseId: e.tool_use_id,
         toolTraceId: e.timeline_id,
         parentEventId: e.parent_event_id,
@@ -398,6 +400,7 @@ export function createNodeFromEvent(
         model: e.model,
         provider: e.provider,
         usage: e.usage,
+        truncation: e.truncation,
         timestamp: e.timestamp,
         ...mapAttachmentEventSignals(e),
       });
@@ -522,6 +525,8 @@ export function applyFinalAssistantMessageToLiveText(
   target.content = e.content;
   target.completed = true;
   target.textCompleted = true;
+  target.truncation = e.truncation;
+  Object.assign(target, mapAttachmentEventSignals(e));
   if (eventId > 0) {
     target.eventId = eventId;
     ctx.nodeMap.set(String(eventId), target);

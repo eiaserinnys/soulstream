@@ -3,6 +3,7 @@ import { ChatUiControllerProvider, FileAttachmentPreview } from "@seosoyoung/sou
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import { ChatAttachments } from "@seosoyoung/soul-ui/components/chat/ChatAttachments";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
+import { ToolCallGroup } from "@seosoyoung/soul-ui/components/chat/ToolCallGroup";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
 import { ChatInputAccessories } from "@seosoyoung/soul-ui/components/chat/ChatInputAccessories";
@@ -75,6 +76,7 @@ function connectedProjection(eventId: number, sessionId: string): SessionEventAt
     206: [connectedAsset("review-intervention-file", "개입 첨부.txt", "text/plain", "text", sessionId)],
     207: [connectedAsset("review-overlay-file", "선택 카드 자료.txt", "text/plain", "text", sessionId)],
     208: [connectedAsset("review-large-text", "큰_텍스트.txt", "text/plain", "text", sessionId, 1_048_586)],
+    209: [connectedAsset("review-assistant-truncated", "응답 전문.txt", "text/plain", "text", sessionId, 1_048_586)],
     301: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
     302: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
     304: [connectedAsset("review-complete-only", "완료 첨부.txt", "text/plain", "text", sessionId)],
@@ -328,6 +330,81 @@ export function ChatAttachmentReviewSamples() {
       attachmentIds: ["review-temporary-failure"],
     },
   ] as ChatMessage[], [connectedUi]);
+  const truncationSamples = useMemo(() => {
+    const toolAttachment = (attachmentId: string, name: string) => ({
+      attachment_id: attachmentId,
+      name,
+      mime_type: "text/plain",
+      byte_size: 1_048_586,
+      checksum_sha256: null,
+      width: null,
+      height: null,
+      preview_kind: "text" as const,
+      preview_mime_type: "text/plain",
+    });
+    const singleAttachment = toolAttachment("review-tool-single-full", "단독 도구 전문.txt");
+    const groupAttachment = toolAttachment("review-tool-group-full", "그룹 도구 전문.txt");
+    const assistantAttachment = toolAttachment("review-assistant-truncated", "응답 전문.txt");
+    return {
+      single: {
+        id: "truncation-single-tool",
+        role: "tool",
+        content: "Read · 완료",
+        treeNodeId: "truncation-single-tool",
+        treeNodeType: "tool",
+        toolName: "Read",
+        toolResult: "첫 부분\n[잘림]",
+        toolResultTruncation: { original_bytes: 1_048_586, attachment: singleAttachment },
+        eventId: 501,
+        fullContentEventId: 501,
+      } as ChatMessage,
+      group: [
+        {
+          id: "truncation-group-tool",
+          role: "tool",
+          content: "Read · 완료",
+          treeNodeId: "truncation-group-tool",
+          treeNodeType: "tool",
+          toolName: "Read",
+          toolResult: "첫 부분\n[잘림]",
+          toolResultTruncation: { original_bytes: 1_048_586, attachment: groupAttachment },
+          eventId: 502,
+          fullContentEventId: 502,
+        },
+        {
+          id: "truncation-group-tool-next",
+          role: "tool",
+          content: "Search · 완료",
+          treeNodeId: "truncation-group-tool-next",
+          treeNodeType: "tool",
+          toolName: "Search",
+          toolResult: "찾은 결과",
+          eventId: 503,
+        },
+      ] as ChatMessage[],
+      failed: {
+        id: "truncation-failed-tool",
+        role: "tool",
+        content: "Fetch · 완료",
+        treeNodeId: "truncation-failed-tool",
+        treeNodeType: "tool",
+        toolName: "Fetch",
+        toolResult: "첫 부분\n[잘림]",
+        toolResultTruncation: { original_bytes: 900_000, attachment: null },
+        eventId: 504,
+      } as ChatMessage,
+      assistant: {
+        id: "truncation-assistant",
+        role: "assistant",
+        content: "응답 첫 부분\n[잘림]",
+        treeNodeId: "truncation-assistant",
+        treeNodeType: "assistant_message",
+        eventId: 209,
+        attachmentIds: ["review-assistant-truncated"],
+        truncation: { original_bytes: 1_048_586, attachment: assistantAttachment },
+      } as ChatMessage,
+    };
+  }, []);
   const projectedOutputMessages = useMemo(() => projectChatOutputAttachments([
     {
       id: "review-output-response",
@@ -414,6 +491,29 @@ export function ChatAttachmentReviewSamples() {
           }));
         }
       }
+      const fullContentRequest = url.match(/^\/api\/attachments\/(review-tool-single-full|review-tool-group-full|review-assistant-truncated)\/content(?:\?|$)/);
+      if (fullContentRequest) {
+        const byteSize = 1_048_586;
+        if (init?.method === "HEAD") {
+          return Promise.resolve(new Response(null, {
+            status: 200,
+            headers: { "content-length": String(byteSize) },
+          }));
+        }
+        const bytes = new Uint8Array(byteSize).fill(65);
+        bytes.set(new TextEncoder().encode(`${fullContentRequest[1]} 전문\n`));
+        const range = new Headers(init?.headers).get("Range")?.match(/^bytes=(\d+)-(\d+)$/);
+        const start = Number(range?.[1] ?? 0);
+        const end = Math.min(Number(range?.[2] ?? (byteSize - 1)), byteSize - 1);
+        const content = bytes.slice(start, end + 1);
+        return Promise.resolve(new Response(content, {
+          status: 206,
+          headers: {
+            "Content-Range": `bytes ${start}-${end}/${byteSize}`,
+            "Content-Length": String(content.byteLength),
+          },
+        }));
+      }
       if (url.endsWith("/__review-attachment/403")) return Promise.resolve(new Response(null, { status: 403 }));
       if (url.endsWith("/__review-attachment/503")) return Promise.resolve(new Response(null, { status: 503 }));
       return originalFetch.call(window, input, init);
@@ -464,6 +564,19 @@ export function ChatAttachmentReviewSamples() {
               {projectedOutputMessages.map((msg) => (
                 <ChatMessageItem key={msg.treeNodeId} msg={msg} sessionId={connectedReviewSessionId} />
               ))}
+            </div>
+          </section>
+          <section className="flex flex-col gap-2" aria-label="잘린 이벤트 전문 연결">
+            <div className="v3-type-section">잘린 이벤트와 전문</div>
+            <div className="v3-chat-surface flex flex-col">
+              <ChatMessageItem msg={truncationSamples.single} sessionId={connectedReviewSessionId} />
+              <ToolCallGroup
+                messages={truncationSamples.group}
+                sessionId={connectedReviewSessionId}
+                expanded
+              />
+              <ChatMessageItem msg={truncationSamples.failed} sessionId={connectedReviewSessionId} />
+              <ChatMessageItem msg={truncationSamples.assistant} sessionId={connectedReviewSessionId} />
             </div>
           </section>
           <section className="flex flex-col gap-2" aria-label="다른 세션 첨부 문맥">

@@ -76,7 +76,14 @@ export function applyUpdate(
       if (found && (found.type === "tool" || found.type === "tool_use")) {
         const toolNode = found as ToolNode;
         const result = toolResultToText(e.result);
-        if (result.length > TRUNCATE_THRESHOLD) {
+        if (e.truncation) {
+          toolNode.toolResult = result.length > TRUNCATE_THRESHOLD
+            ? result.slice(0, TRUNCATE_THRESHOLD)
+            : result;
+          toolNode.resultTruncation = e.truncation;
+          toolNode.isTruncated = false;
+          toolNode.fullContentEventId = eventId;
+        } else if (result.length > TRUNCATE_THRESHOLD) {
           toolNode.toolResult = result.slice(0, TRUNCATE_THRESHOLD);
           toolNode.isTruncated = true;
           toolNode.fullContentEventId = eventId;
