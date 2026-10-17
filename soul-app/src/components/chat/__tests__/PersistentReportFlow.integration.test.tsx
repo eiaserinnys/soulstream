@@ -69,6 +69,16 @@ const ui = { ...chatUiFixtureEvent('normal'), id: '2' };
 const stored = { id: 2, event_type: ui.type, payload: ui.data, parent_event_id: 1, created_at: '2026-10-12T00:00:01Z' };
 const session = (id: string) => ({ agentSessionId: id, nodeId: 'public-node', status: 'completed' as const,
   displayName: '공개 예시', createdAt: '2026-10-12T00:00:00Z', updatedAt: '2026-10-12T00:00:00Z' });
+function jsonResponse(body: unknown): Response {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as unknown as Response;
+}
 beforeEach(async () => {
   jest.clearAllMocks();
   await useAuthStore.persist.rehydrate(); await useSettingsStore.persist.rehydrate(); await useDraftStore.persist.rehydrate();
@@ -85,6 +95,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => { jest.runOnlyPendingTimers(); });
   jest.useRealTimers();
+  jest.restoreAllMocks();
 });
 
 const report: PersistentReportEntry = { key: 'ask-one', kind: 'ask', title: '예산 확인', card_numbers: [270], context: '팀 예산을 확인해 주세요.', action: '어떻게 진행할까요?', options: ['응', '보류'], state: 'open', answer: '', updated_at: '2026-10-13T00:00:00Z' };
@@ -222,4 +233,47 @@ test('two consecutive dismissals with only one failure restore only the failed s
   expect(screen.queryByText('둘째 보고')).toBeNull();
   expect(screen.getByTestId('chat-composer-generated-notice-row')
     .findByProps({ testID: 'chat-ui-action-notice' }).props.children).toBe('보고를 내리지 못했어.');
+});
+
+test('PAS keeps the output-only attachment row while the report action still works', async () => {
+  const outputCommandId = 'execute:pas-output';
+  const outputMarker: SessionEvent = {
+    id: '51', type: 'assistant_message', data: {
+      content: '', attachment_ids: ['pas-output-file'], attachment_output: true,
+      output_command_id: outputCommandId,
+    },
+  };
+  const outputProjection = {
+    event_id: 51,
+    items: [{
+      kind: 'asset',
+      descriptor: {
+        attachment_id: 'pas-output-file', name: 'result.txt', mime_type: 'text/plain', byte_size: 12,
+        checksum_sha256: null, width: null, height: null, preview_kind: 'info', preview_mime_type: 'text/plain',
+      },
+      read_context: { type: 'session', id: 'one' },
+      legacy_sources: [],
+    }],
+  };
+  const fetch = jest.spyOn(global, 'fetch').mockResolvedValue(jsonResponse(outputProjection));
+  const answer: SessionEvent = {
+    id: '50', type: 'assistant_message', data: { content: '결과를 정리했어.', output_command_id: outputCommandId },
+  };
+  const complete: SessionEvent = {
+    id: '52', type: 'complete', data: {
+      attachment_ids: ['pas-output-file'], output_command_id: outputCommandId,
+    },
+  };
+  act(() => useChatStore.setState({ eventsBySession: { one: [answer, outputMarker, complete] } }));
+  const screen = await openReport({ ...report, options: [] });
+
+  await waitFor(() => expect(screen.getByTestId('message-attachments')).toBeTruthy());
+  expect(fetch).toHaveBeenCalledWith(
+    'https://public.test/api/sessions/one/events/51/attachments',
+    expect.objectContaining({ method: 'GET' }),
+  );
+  expect(screen.getByText('result.txt')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('확인했어')));
+  expect(mockApi.dismissPersistentReport).toHaveBeenCalledWith('one', 'ask-one');
+  expect(screen.queryByText('예산 확인')).toBeNull();
 });
