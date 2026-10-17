@@ -88,7 +88,7 @@ describe("card question withdrawal", () => {
       ('asker','running',${h.sql.json([])}),
       ('current-assignee','running',${h.sql.json([])})`;
     await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='asker' WHERE id=${cardId}`;
-    await cards.askQuestion({ actorKind: "agent", actorSessionId: "asker", cardId, text: "이대로 진행할까요?" });
+    await cards.askQuestion({ actorKind: "agent", actorSessionId: "asker", cardId, text: "이대로 진행할까요?", options: ["진행"] });
     const questionId = String((await cards.getCard(cardId))!.questions[0]!.id);
     await h.sql`UPDATE cards SET assignee_session_id='current-assignee' WHERE id=${cardId}`;
     await dispatcher.drain();
@@ -152,8 +152,8 @@ describe("card question withdrawal", () => {
     const cardId = await makeCard();
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running')`;
     await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
-    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "첫 질문" });
-    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "마지막 질문" });
+    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "첫 질문", options: ["진행"] });
+    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "마지막 질문", options: ["진행"] });
     const questions = (await cards.getCard(cardId))!.questions;
     const firstId = String(questions.find(question => question.text === "첫 질문")!.id);
     const lastId = String(questions.find(question => question.text === "마지막 질문")!.id);
@@ -168,7 +168,7 @@ describe("card question withdrawal", () => {
     const cardId = await makeCard();
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running'),('other','running')`;
     await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
-    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "기준 질문" });
+    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "기준 질문", options: ["진행"] });
     const questionId = String((await cards.getCard(cardId))!.questions[0]!.id);
     const input = { actorKind: "agent", actorSessionId: "owner", cardId, questionId, reason: "결정 완료" };
 
@@ -194,7 +194,7 @@ describe("card question withdrawal", () => {
       statusCode: expect.any(Number), message: "Answered questions cannot be withdrawn",
     });
 
-    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "철회 질문" });
+    await cards.askQuestion({ actorKind: "agent", actorSessionId: "owner", cardId, text: "철회 질문", options: ["진행"] });
     const withdrawnId = String((await cards.getCard(cardId))!.questions.find(question => question.text === "철회 질문")!.id);
     const withdrawnInput = { ...input, questionId: withdrawnId };
     await withdraw(withdrawnInput);

@@ -93,6 +93,10 @@ import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js"
 import { createCardOrchestrationAccess } from "./cards/card_orchestration_access.js";
 import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
 import { CardDispatchRepository } from "./cards/card_dispatch_repository.js";
+import { placeCardQuestionOnOwnerBoards, resolveCardOwnerEmail } from "./cards/card_question_board.js";
+import { cardRouteErrorResponse } from "./cards/card_route_body.js";
+import { applyCardQuestionReply } from "./session/card_question_reply.js";
+import { dashboardFolderActor } from "./folders/folder_workspace_routes.js";
 import { BoardYjsSqlResolver } from "./board-yjs/board_yjs_sql.js";
 import { relayCanonicalErrorTx } from "./cards/card_work_error_delivery.js";
 import type { RepositorySql } from "./cards/control_plane/card_types.js";
@@ -633,6 +637,20 @@ export async function createLiveProductionApplication(
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
     corsAllowedOrigins: config.cors_allowed_origins,
     onReportsChanged: updates => publishPersistentReports(updates),
+    onQuestionAsked: async ({cardId,questionId}) => {
+      const ownerEmail = await resolveCardOwnerEmail(cardId, {
+        cardCreatorActor: id => cardExecutionOwnerRepository.cardCreatorActor(id),
+        findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
+        resolveSessionOwner,
+      });
+      const outcome = await placeCardQuestionOnOwnerBoards({
+        questionId, ownerEmail, resolveSessionOwner,
+        listPersistentSessions: async () => (await persistenceRepositoryProvider()).sessionReads.listPersistentSessions(),
+        putQuestion: async (boardSessionId,qid) => (await persistenceRepositoryProvider()).persistentReports!.putQuestion(boardSessionId,qid),
+      });
+      if (outcome.placed.length === 0 || outcome.failed.length > 0)
+        context.warn(`카드 질문 ${questionId} 판 게시: 성공 ${outcome.placed.length}, 실패 ${outcome.failed.length}`);
+    },
     usageSnapshot: () => usageSummaryService.getSummary(),
     validateFolder: orchestrationAccess.validateFolder,
     resolveSessionOwner,
@@ -1133,8 +1151,29 @@ export function buildProductionRouteOptions(
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,
-      acceptPersistentReportReply: async (sessionId, contextItems, callerInfo) => {
-        await (await persistenceRepositoryProvider()).persistentReports!.acceptReply(sessionId,contextItems,callerInfo);
+      acceptPersistentReportReply: async (sessionId, contextItems, callerInfo, request) => {
+        const decision = await (await persistenceRepositoryProvider()).persistentReports!.acceptReply(sessionId,contextItems,callerInfo);
+        if (decision.action === "none") return { handled: false };
+        // 카드 질문 접수는 로그인한 사용자 요청에서만 한다. ServiceCaller/agent를 사용자로 승격시키지 않는다.
+        if (!("log" in request))
+          return { handled: false, failure: { status: 403, body: { detail: { error: {
+            code: "CARD_QUESTION_REPLY_FORBIDDEN", message: "카드 질문 답은 로그인한 사용자 요청에서만 접수됩니다",
+          } } } } };
+        if (!cardServiceProvider)
+          return { handled: false, failure: { status: 503, body: { detail: { error: { code: "CARD_SERVICE_UNAVAILABLE" } } } } };
+        try {
+          const failure = await applyCardQuestionReply(decision, {
+            sessionId, request,
+            requireSessionAccess: input => sessionAccessProvider.requireSessionAccess(input),
+            cardOptions: { cardServiceProvider, provider: providers.folderRoutes.provider },
+            resolveAccess: () => providers.folderRoutes.accessProvider.resolveAccess(request),
+            resolveActor: () => dashboardFolderActor(request, providers.folderRoutes),
+          });
+          if (failure) return { handled: false, failure };
+        } catch (error) {
+          return { handled: false, failure: cardRouteErrorResponse(error) };
+        }
+        return { handled: true };
       },
       deliveryRepositoryProvider: async () =>
         (await persistenceRepositoryProvider()).deliveries,

@@ -30,6 +30,7 @@ import type {
 import { CardDispatcher } from "./card_dispatcher.js";
 import { CardDispatchRepository } from "./card_dispatch_repository.js";
 import { createCardControlPlaneServiceProvider } from "./card_control_plane_runtime.js";
+import { resolveCardOwnerEmail } from "./card_question_board.js";
 import {
   readCardDispatchSettings,
   updateCardDispatchSettings,
@@ -62,6 +63,7 @@ export async function createCardDispatchRuntime(options: {
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   warn: (message: string) => void;
   onReportsChanged?: PublishPersistentReports;
+  onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>;
   corsAllowedOrigins?: readonly string[];
   onFolderHeaderUpdated: () => Promise<void>;
   usageSnapshot: () => UsageSummarySnapshot;
@@ -85,18 +87,12 @@ export async function createCardDispatchRuntime(options: {
       : null;
     return systemCallerInfo(owner?.ownerEmail ?? null);
   };
-  const queuedCallerInfo = async (cardId:string) => {
-    const creator = await cardDispatchRepository.cardCreatorActor(cardId);
-    if (creator?.actor_user_id) {
-      const user = await options.findUserByEmail(creator.actor_user_id);
-      return systemCallerInfo(user?.email ?? null);
-    }
-    if (creator?.actor_session_id) {
-      const owner = await options.resolveSessionOwner(creator.actor_session_id);
-      return systemCallerInfo(owner?.ownerEmail ?? null);
-    }
-    return systemCallerInfo(null);
-  };
+  const queuedCallerInfo = async (cardId:string) =>
+    systemCallerInfo(await resolveCardOwnerEmail(cardId, {
+      cardCreatorActor: id => cardDispatchRepository.cardCreatorActor(id),
+      findUserByEmail: options.findUserByEmail,
+      resolveSessionOwner: options.resolveSessionOwner,
+    }));
   const admitCardAttachmentSource = async (input: {
     cardId: string;
     sourceNodeId: string;
@@ -154,6 +150,7 @@ export async function createCardDispatchRuntime(options: {
     onMutation: (change) => dispatcher.acceptMutation(change),
     onReportsChanged: options.onReportsChanged,
     corsAllowedOrigins: options.corsAllowedOrigins,
+    onQuestionAsked: options.onQuestionAsked,
   });
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
     repository: cardDispatchRepository,

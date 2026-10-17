@@ -85,7 +85,7 @@ describe("card comments HTTP, storage, and delivery", () => {
     const cardId=await makeCard();
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running')`;
     await h.sql`UPDATE cards SET status='running',assignee_kind='session',assignee_session_id='owner' WHERE id=${cardId}`;
-    await cards.askQuestion({actorKind:'agent',actorSessionId:'owner',cardId,text:'어떻게 진행합니까?'});await dispatcher.drain();
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'owner',cardId,text:'어떻게 진행합니까?',options:['진행']});await dispatcher.drain();
     messages.mockClear();
     const question=(await cards.getCard(cardId))!.questions[0]!;
     const answer={...human,cardId,questionId:String(question.id),answer:'원래 흐름으로 진행합니다',idempotencyKey:key()};
@@ -99,7 +99,7 @@ describe("card comments HTTP, storage, and delivery", () => {
     const cardId=await makeCard();
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('old-owner','running'),('new-owner','running')`;
     await h.sql`UPDATE cards SET status='running',assignee_kind='session',assignee_session_id='old-owner' WHERE id=${cardId}`;
-    await cards.askQuestion({actorKind:'agent',actorSessionId:'old-owner',cardId,text:'이전 담당 질문'});await dispatcher.drain();
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'old-owner',cardId,text:'이전 담당 질문',options:['진행']});await dispatcher.drain();
     const question=(await cards.getCard(cardId))!.questions[0]!;
     await h.sql`INSERT INTO card_questions(id,card_id,session_id,text) VALUES ('remaining',${cardId},'old-owner','남은 질문')`;
     await h.sql`UPDATE cards SET assignee_session_id='new-owner' WHERE id=${cardId}`;

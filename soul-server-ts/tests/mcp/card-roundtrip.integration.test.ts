@@ -47,7 +47,7 @@ const cases: readonly [string, string, Record<string, unknown>, McpRequestContex
   ["work success", "start_card_work", status],
   ["review success", "request_card_review", { card_id: "card-1" }],
   ["question options", "ask_card_question", { card_id: "card-1", text: "판단?", options: ["진행", "중단"] }],
-  ["question no options", "ask_card_question", { card_id: "card-1", text: "판단?" }],
+  ["question no options", "ask_card_question", { card_id: "card-1", text: "판단?" }, context, true],
   ["move success", "move_card", { card_id: "card-1", folder_id: "cards-b", after_card_id: null }],
   ["get missing", "get_card", { card_id: "missing" }, context, true],
   ["mutation missing", "update_card_brief", { card_id: "missing", brief: "경과" }, context, true],

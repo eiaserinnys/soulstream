@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CARD_STATUSES } from "@soulstream/wire-schema";
 import { CARD_COLOR_KEYS } from "@soulstream/wire-schema/card-colors";
+import { cardQuestionOptionsSchema } from "@soulstream/mcp-contract";
 import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import type { FolderActorParams } from "./control_plane/card_types.js";
 import { serializeCardMutation, serializeCardRow } from "../folders/folder_contracts.js";
@@ -23,7 +24,7 @@ export const cardOperationSchemas={
   reorder_card_queue:mutation.extend({ afterCardId:id.nullable().optional() }),
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
   add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.enum(["spoken","reply"]).optional(),itemId:itemId.optional() }),
-  ask_card_question:append.extend({ text:id,options:z.array(id).nullable().optional() }),
+  ask_card_question:append.extend({ text:id,options:cardQuestionOptionsSchema }),
   withdraw_card_question:append.extend({ questionId:id,reason:id }),
   answer_card_question:append.extend({ questionId:id,answer:id }),
   set_card_items:append.extend({ items:z.array(z.object({title:id}).strict()) }),

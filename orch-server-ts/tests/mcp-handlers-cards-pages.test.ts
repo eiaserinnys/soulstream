@@ -168,6 +168,15 @@ describe("card MCP execution", () => {
       if (name === "ask_card_question") expect(JSON.stringify(result)).toContain("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     }
   });
+  it("rejects a card question unless options are 1~3 short choices", async () => {
+    const h = cardHarness();
+    for (const options of [undefined, [], ["가", "나", "다", "라"], ["가".repeat(13)], [""]])
+      expect((await call(h.options, "ask_card_question", { card_id: "card-1", text: "질문", ...(options === undefined ? {} : { options }) })).isError, JSON.stringify(options)).toBe(true);
+    expect(h.service.askQuestion).not.toHaveBeenCalled();
+    expect((await call(h.options, "ask_card_question", { card_id: "card-1", text: "질문 1", options: ["진행"] })).isError).not.toBe(true);
+    expect((await call(h.options, "ask_card_question", { card_id: "card-1", text: "질문 3", options: ["가".repeat(12), "짧음", "😀"] })).isError).not.toBe(true);
+    expect(h.service.askQuestion).toHaveBeenCalledTimes(2);
+  });
   it("forwards only R1 read fields and includes allowed descendant folders", async () => {
     const h = cardHarness([{ id: "folder-1" }, { id: "child-1", parentFolderId: "folder-1" }, { id: "folder-2" }],
       { restricted: true, allowedFolderIds: ["folder-1"] });
@@ -247,7 +256,7 @@ describe("card MCP execution", () => {
       ["start_card_work", { card_id: "card-1", expected_version: 3, idempotency_key: "start" }, { card }],
       ["request_card_review", { card_id: "card-1", ask: "확인해 주세요" }, { card }],
       ["update_card_now", { card_id: "card-1", now: "진행 중", turn: "agent" }, { card }],
-      ["ask_card_question", { card_id: "card-1", text: "질문" }, { card, guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." }],
+      ["ask_card_question", { card_id: "card-1", text: "질문", options: ["진행"] }, { card, guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." }],
       ["move_card", { card_id: "card-1", folder_id: "folder-2" }, { card, folderId: "folder-2" }],
       ["set_card_items", { card_id: "card-1", items: [{ title: "새 항목" }] },
         { card, items: [{ id: 1, title: "첫 번째", state: "done" }, { id: 7, title: "일곱 번째", state: "doing" }, { id: 3, title: "세 번째", state: "todo" }] }],

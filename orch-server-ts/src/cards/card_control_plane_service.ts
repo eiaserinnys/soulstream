@@ -11,7 +11,7 @@ import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx } from "./
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
-import { parseCardReference, type CardReferenceLookupResult } from "@soulstream/mcp-contract";
+import { parseCardReference, cardQuestionOptionsSchema, type CardReferenceLookupResult } from "@soulstream/mcp-contract";
 import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, readSessionReferences } from "./card_reference_repository.js";
 import type { SupervisedCardSnapshot } from "./supervised_card_context.js";
 import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
@@ -60,7 +60,8 @@ export class CardControlPlaneService {
     private readonly onMutation?: (change:CardMutationChange)=>void,
     onReportsChanged?: PublishPersistentReports,
     private readonly warn: (message: string) => void = console.warn,
-    corsAllowedOrigins: readonly string[] = []) {
+    corsAllowedOrigins: readonly string[] = [],
+    private readonly onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>) {
     this.repo=new CardRepository(repoSql, corsAllowedOrigins);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
     this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged) : undefined;
@@ -367,15 +368,23 @@ export class CardControlPlaneService {
     return {...result,card:savedCard,comment};
   }
   markCommentDelivered(cardId:string,commentId:string) { return this.repo.markCommentDelivered(cardId,commentId); }
-  async askQuestion(params: CardMutationParams & { text:string; options?:string[] | null }) {
-    return this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
+  async askQuestion(params: CardMutationParams & { text:string; options:string[] }) {
+    if (!cardQuestionOptionsSchema.safeParse(params.options).success)
+      throw invalid("options: 선택지는 1~3개, 각 12자 이하로 줄이고 설명은 질문 글에 쓰세요");
+    const questionId=randomUUID();
+    const result=await this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
       await sql`INSERT INTO card_questions(id,card_id,session_id,text,options)
-        VALUES(${randomUUID()},${card.id},${params.actorSessionId},${params.text},${sql.json(params.options ?? null)})`;
+        VALUES(${questionId},${card.id},${params.actorSessionId},${params.text},${sql.json(params.options ?? null)})`;
       const now=questionCardNow(card.now ?? null,params.text,new Date().toISOString(),params.actorSessionId);
       await this.patch(sql,card,{ status:"blocked",blocked_kind:"question",blocked_detail:params.text,queue_position_key:null,
         completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null,
         ...(now === null ? {} : {now:sql.json(now)}) },params,eventId);
     });
+    if (!result.idempotent && this.onQuestionAsked) {
+      try { await this.onQuestionAsked({ cardId:params.cardId,questionId }); }
+      catch (error) { this.warn(`카드 질문 판 게시 실패(카드 ${params.cardId}): ${String(error)}`); }
+    }
+    return result;
   }
   async answerQuestion(params: CardMutationParams & { questionId:string; answer:string }) {
     if (params.actorKind !== "user") throw invalid("Only a human may answer card questions");
