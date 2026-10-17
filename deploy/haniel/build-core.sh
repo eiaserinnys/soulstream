@@ -33,7 +33,7 @@ run_heavy_command() {
   (
     # Corepack reads packageManager from the current checkout root.
     cd "$app_dir"
-    timeout 900 flock "$lock_file" \
+    timeout 900 \
       env -i \
       HOME=/home/eias \
       USER=eias \
@@ -49,6 +49,13 @@ run_heavy_command() {
 run_heavy_pnpm() {
   run_heavy_command corepack pnpm "$@"
 }
+
+# Hold the host heavy-work lock once for the whole build: taking it per step
+# lets other verifications slip in between steps and makes the next step wait
+# again. Children inherit fd 9, so the lock holds until the last step finishes.
+printf 'Waiting for the host heavy-work lock %s\n' "$lock_file" >&2
+exec 9>"$lock_file"
+flock 9
 
 run_heavy_pnpm install --frozen-lockfile --prod=false
 run_heavy_pnpm --filter @soulstream/soul-server-ts exec env SOULSTREAM_RELEASE_ENV_FILE="$app_dir/.env.soul-server-ts" pnpm run build
