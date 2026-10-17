@@ -193,6 +193,9 @@ describe("PAS reports on production PostgreSQL schema", () => {
     const exact=await placed(exactTitle,exactText);
     expect(exact.title).toBe(exactTitle);
     expect(exact.context).toBe(exactText);
+    const spaceTitle='ㄱ'.repeat(22)+' '+'ㄴ'.repeat(7);
+    const spaced=await placed(spaceTitle,'질문');
+    expect(spaced.title).toBe('ㄱ'.repeat(22)+'…');
   });
   it("answers a card question from the board, acknowledges a same-option resend and rejects a conflict or invalid option", async () => {
     for (const e of await reports.get('pas')) await reports.remove('pas',e.key);

@@ -179,7 +179,7 @@ export async function writePersistentReportTx(sql: RepositorySql, row: Pick<Repo
 /** 길이가 바뀌는 글은 말줄임으로 끊는다. 코드포인트로 max를 넘으면 앞 max-1자 + 「…」, 아니면 원문. */
 function clip(text: string, max: number): string {
   const chars = [...text];
-  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : text;
+  return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : text;
 }
 
 function rejectDecision(cardId: string, code: string, status: number, message: string): { errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision } {
