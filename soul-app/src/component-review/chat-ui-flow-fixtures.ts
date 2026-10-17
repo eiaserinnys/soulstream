@@ -14,6 +14,7 @@ export function chatUiReviewHistory(search: string): HistoricalMessage[] {
   const params = new URLSearchParams(search);
   const example: ChatUiExample = params.get('example') === 'pas' ? 'pas' : params.get('example') === 'gallery' ? 'gallery' : 'normal';
   const sample = params.get('sample'); const state = params.get('state');
+  if (sample === 'selmod') return chatUiAttachmentWidthHistory();
   if (sample === 'attachments' || sample === 'attachments-missing') {
     return chatUiAttachmentReviewHistory();
   }
@@ -74,4 +75,20 @@ export function chatUiAttachmentReviewHistory(): HistoricalMessage[] {
       attachment_ids: ['review-chat-empty-text'],
     }, created_at: '2026-10-17T00:00:04Z' },
   ].reverse();
+}
+
+/** Three text lengths and the legacy adapter used by the existing attachment review harness. */
+function chatUiAttachmentWidthHistory(): HistoricalMessage[] {
+  const ids = ['review-chat-image-one', 'review-chat-image-two'];
+  return [...chatUiAttachmentReviewHistory(),
+    { id: 106, parent_event_id: 105, event_type: 'user_message', payload: {
+      text: '짧게', attachment_ids: ids,
+    }, created_at: '2026-10-17T00:00:05Z' },
+    { id: 107, parent_event_id: 106, event_type: 'user_message', payload: {
+      text: '예전 경로로 보낸 사진입니다.', attachments: ['/incoming/legacy-photo.png'], node_id: 'public-node',
+    }, created_at: '2026-10-17T00:00:06Z' },
+    { id: 108, parent_event_id: 107, event_type: 'user_message', payload: {
+      text: '이 긴 문장은 사용자 말풍선이 넓어질 때 첨부 묶음의 크기가 어떻게 달라지는지 보기 위한 표본 문장입니다.', attachment_ids: ids,
+    }, created_at: '2026-10-17T00:00:07Z' },
+  ].sort((a, b) => b.id - a.id);
 }

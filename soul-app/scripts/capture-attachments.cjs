@@ -444,11 +444,13 @@ async function captureConversation(browser, base, { name, width, height, present
     await verifyFixtureContracts(base);
     browser = await chromium.launch({ headless: true, ...(browserPath ? { executablePath: browserPath } : {}) });
     await captureConversation(browser, base, { name: 'normal-phone', width: 390, height: 844 });
-    await captureConversation(browser, base, { name: 'normal-tablet', width: 1024, height: 768 });
+    await captureConversation(browser, base, { name: 'normal-tablet', width: 1194, height: 834 });
     await captureConversation(browser, base, { name: 'normal-phone-dark', width: 390, height: 844, theme: 'dark' });
-    await captureConversation(browser, base, { name: 'normal-tablet-dark', width: 1024, height: 768, theme: 'dark' });
+    await captureConversation(browser, base, { name: 'normal-tablet-dark', width: 1194, height: 834, theme: 'dark' });
     await captureConversation(browser, base, { name: 'pas-phone', width: 390, height: 844, presentation: 'manuscript' });
-    await captureConversation(browser, base, { name: 'pas-tablet', width: 1024, height: 768, presentation: 'manuscript' });
+    await captureConversation(browser, base, { name: 'pas-tablet', width: 1194, height: 834, presentation: 'manuscript' });
+    await captureConversation(browser, base, { name: 'pas-phone-dark', width: 390, height: 844, presentation: 'manuscript', theme: 'dark' });
+    await captureConversation(browser, base, { name: 'pas-tablet-dark', width: 1194, height: 834, presentation: 'manuscript', theme: 'dark' });
     await captureConversation(browser, base, { name: 'missing-phone', width: 390, height: 844, mode: 'missing' });
     assert.deepEqual(evidence.externalRequests, []);
     assert.deepEqual(evidence.pageErrors, []);
