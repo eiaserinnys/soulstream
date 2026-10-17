@@ -6,7 +6,9 @@ import { createInterface } from "node:readline";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { normalizeAttachmentLegacyPath } from "../../src/attachments/attachment_read_service.js";
 import { buildLegacyAttachmentPlan } from "./build_plan.js";
+import { collectNodeSources } from "./node_sources.js";
 import {
   INVENTORY_ERROR_CODES as ERROR,
   INVENTORY_PLAN_MARKER,
@@ -26,6 +28,7 @@ import {
 
 type SourceRecord = LegacySource | InventoryRunBundleMetadata | InventoryAliasSnapshot | InventorySessionCoverage | InventoryAssetSnapshot;
 type NodeRecord = FileObservation | NodeScanSummary | InventoryNodeCoverage;
+type LegacyRootMapping = { legacy_root: string; physical_root: string };
 
 export async function writeDryRun(plan: InventoryPlan, outputDir: string): Promise<InventoryPlanSummary> {
   const manifestPath = path.join(outputDir, "manifest.jsonl");
@@ -105,7 +108,9 @@ export async function readDryRunInputs(sourcePath: string, nodePath: string): Pr
 
 async function main(args: string[]): Promise<void> {
   const options = parseArgs(args);
-  const input = await readDryRunInputs(options.sources, options.nodes);
+  let input = await readDryRunInputs(options.sources, options.nodes);
+  const legacyRootMap = options.legacyRootMap === undefined ? [] : await readLegacyRootMap(options.legacyRootMap);
+  if (legacyRootMap.length > 0) input = { ...input, observations: mapLegacyObservations(input, legacyRootMap, options.allowedOrigins) };
   const nodeStage = input.nodeCoverage.filter((row): row is NodeScanSummary => row.record_type === "summary");
   const stages = nodeStage.length === 0 ? input.metadata.stages : {
     ...input.metadata.stages,
@@ -246,7 +251,7 @@ async function hashFile(filePath: string): Promise<string> {
   return hash.digest("hex");
 }
 
-function parseArgs(args: string[]): { sources: string; nodes: string; output: string; allowedOrigins: string[] } {
+function parseArgs(args: string[]): { sources: string; nodes: string; output: string; allowedOrigins: string[]; legacyRootMap?: string } {
   const result: Record<string, string> = {};
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index];
@@ -258,8 +263,10 @@ function parseArgs(args: string[]): { sources: string; nodes: string; output: st
   const nodes = result["--nodes"];
   const output = result["--output"];
   const allowedOriginsJson = result["--allowed-origins"];
-  if (!sources || !nodes || !output || allowedOriginsJson === undefined || Object.keys(result).length !== 4) {
-    throw new TypeError("usage: dry_run.ts --sources <JSONL> --nodes <JSONL> --output <directory> --allowed-origins <JSON array>");
+  const legacyRootMap = result["--legacy-root-map"];
+  if (!sources || !nodes || !output || allowedOriginsJson === undefined ||
+      Object.keys(result).some((flag) => !["--sources", "--nodes", "--output", "--allowed-origins", "--legacy-root-map"].includes(flag))) {
+    throw new TypeError("usage: dry_run.ts --sources <JSONL> --nodes <JSONL> --output <directory> --allowed-origins <JSON array> [--legacy-root-map <JSON file>]");
   }
   let allowedOrigins: unknown;
   try { allowedOrigins = JSON.parse(allowedOriginsJson); }
@@ -267,7 +274,100 @@ function parseArgs(args: string[]): { sources: string; nodes: string; output: st
   if (!Array.isArray(allowedOrigins) || allowedOrigins.some((origin) => typeof origin !== "string")) {
     throw new TypeError("--allowed-origins must be a JSON array of origins");
   }
-  return { sources, nodes, output, allowedOrigins };
+  return { sources, nodes, output, allowedOrigins, ...(legacyRootMap === undefined ? {} : { legacyRootMap }) };
+}
+
+async function readLegacyRootMap(filePath: string): Promise<LegacyRootMapping[]> {
+  let value: unknown;
+  try { value = JSON.parse(await readFile(filePath, "utf8")); }
+  catch (error) { throw inventoryError(ERROR.manifest_mismatch, "legacy root map is not valid JSON", error); }
+  if (!Array.isArray(value) || value.some((item) => !isRecord(item))) {
+    throw inventoryError(ERROR.manifest_mismatch, "legacy root map must be a JSON array");
+  }
+  const seen = new Set<string>();
+  const mappings = value.map((item): LegacyRootMapping => {
+    if (typeof item.legacy_root !== "string" || typeof item.physical_root !== "string") {
+      throw inventoryError(ERROR.manifest_mismatch, "legacy root map entries must include legacy_root and physical_root");
+    }
+    const legacyRoot = normalizeAttachmentLegacyPath(item.legacy_root);
+    const physicalRoot = normalizeAttachmentLegacyPath(item.physical_root);
+    if (!isAbsolutePath(legacyRoot) || !isAbsolutePath(physicalRoot)) {
+      throw inventoryError(ERROR.manifest_mismatch, "legacy root map roots must be absolute paths");
+    }
+    const key = isWindowsPath(legacyRoot) ? legacyRoot.toLowerCase() : legacyRoot;
+    if (seen.has(key)) throw inventoryError(ERROR.manifest_mismatch, "legacy root map contains a duplicate legacy root");
+    seen.add(key);
+    return { legacy_root: legacyRoot, physical_root: physicalRoot };
+  });
+  return mappings.sort((left, right) => right.legacy_root.length - left.legacy_root.length);
+}
+
+function mapLegacyObservations(
+  input: Awaited<ReturnType<typeof readDryRunInputs>>,
+  mappings: readonly LegacyRootMapping[],
+  allowedOrigins: readonly string[],
+): FileObservation[] {
+  const sourcePathsByNode = new Map<string, Set<string>>();
+  for (const nodeId of input.metadata.expected_node_ids) {
+    for (const source of collectNodeSources(input.sources, nodeId, allowedOrigins)) {
+      if (mapLegacyPath(source.path, mappings) === undefined) continue;
+      const paths = sourcePathsByNode.get(nodeId) ?? new Set<string>();
+      paths.add(source.path);
+      sourcePathsByNode.set(nodeId, paths);
+    }
+  }
+  return input.observations.map((observation) => {
+    if (observation.physical_path === undefined) return observation;
+    const sourcePaths = sourcePathsByNode.get(observation.node_id);
+    if (sourcePaths === undefined) return observation;
+    const mappedPaths = [...sourcePaths].filter((sourcePath) => {
+      const mapped = mapLegacyPath(sourcePath, mappings);
+      return mapped !== undefined && samePhysicalPath(observation.physical_path!, mapped);
+    });
+    if (mappedPaths.length === 0) return observation;
+    return { ...observation, known_source_paths: [...new Set([...observation.known_source_paths, ...mappedPaths])] };
+  });
+}
+
+function mapLegacyPath(value: string, mappings: readonly LegacyRootMapping[]): string | undefined {
+  const candidate = normalizeAttachmentLegacyPath(value);
+  for (const mapping of mappings) {
+    const root = trimRootSeparator(mapping.legacy_root);
+    const windows = isWindowsPath(root);
+    const comparableRoot = windows ? root.toLowerCase() : root;
+    const comparableCandidate = windows ? candidate.toLowerCase() : candidate;
+    if (comparableCandidate === comparableRoot) return mapping.physical_root;
+    const prefix = root.endsWith("/") ? root : `${root}/`;
+    if (!comparableCandidate.startsWith(windows ? prefix.toLowerCase() : prefix)) continue;
+    const suffix = candidate.slice(prefix.length);
+    if (isWindowsPath(mapping.physical_root)) {
+      return normalizeAttachmentLegacyPath(path.win32.join(mapping.physical_root.replace(/\//g, "\\"), suffix.replace(/\//g, "\\")));
+    }
+    return normalizeAttachmentLegacyPath(`${mapping.physical_root.replace(/\/+$/, "")}/${suffix}`);
+  }
+  return undefined;
+}
+
+function samePhysicalPath(left: string, right: string): boolean {
+  const normalizedLeft = normalizeAttachmentLegacyPath(left);
+  const normalizedRight = normalizeAttachmentLegacyPath(right);
+  if (isWindowsPath(normalizedLeft) || isWindowsPath(normalizedRight)) {
+    return isWindowsPath(normalizedLeft) && isWindowsPath(normalizedRight) && normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+  return normalizedLeft === normalizedRight;
+}
+
+function trimRootSeparator(value: string): string {
+  if (value === "/" || /^[A-Za-z]:\/$/.test(value)) return value;
+  return value.replace(/\/+$/, "");
+}
+
+function isAbsolutePath(value: string): boolean {
+  return value.startsWith("/") || isWindowsPath(value);
+}
+
+function isWindowsPath(value: string): boolean {
+  return /^[A-Za-z]:\//.test(value) || value.startsWith("//");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
