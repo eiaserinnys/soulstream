@@ -271,6 +271,8 @@ function createCardChecksReviewApi(): ApiClient {
   const questions = [
     { id: 'public-answered-question', cardId: card.id, sessionId: cardChecksSessionId, text: '기존 질문입니다.', options: ['예', '아니요'], answer: '예', askedAt: '2026-10-04T20:30:00Z', answeredAt: '2026-10-04T20:45:00Z' },
     { id: 'public-open-question', cardId: card.id, sessionId: cardChecksSessionId, text: '아직 답을 보내지 않은 질문입니다.', options: ['확인했습니다'], answer: null, askedAt: '2026-10-04T22:30:00Z' },
+    { id: 'public-withdrawn-question', cardId: card.id, sessionId: cardChecksSessionId, text: '어느 안으로 할까요?', options: ['A안', 'B안'], answer: null,
+      askedAt: '2026-10-04T22:45:00Z', withdrawnAt: '2026-10-04T22:50:00Z', withdrawalReason: '커멘트에서 B안으로 정해져 거둡니다' },
   ];
   const notes = Array.from({ length: 15 }, (_, index) => ({
     id: `public-note-${index + 1}`, cardId: card.id, authorKind: 'agent' as const, authorId: 'public-agent',

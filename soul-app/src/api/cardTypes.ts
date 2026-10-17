@@ -116,6 +116,8 @@ export interface CardQuestion {
   answer: string | null;
   askedAt: string;
   answeredAt?: string | null;
+  withdrawnAt?: string | null;
+  withdrawalReason?: string | null;
 }
 export interface CardComment {
   id: string;
