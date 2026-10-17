@@ -74,6 +74,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
   const [reportPressed, setReportPressed] = useState(false);
   const [reportReady, setReportReady] = useState(false);
+  const reportTouch = React.useRef(false);
+  const onReportDeckTouch = React.useCallback((active: boolean) => { reportTouch.current = active; }, []);
   const display = useChatStore(state => session?.session_id
     ? state.persistentDisplaySettingsBySession[session.session_id]?.settings ?? null
     : null);
@@ -130,7 +132,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const pager = geometry ? <PersistentReportPager entries={reportSend.entries} index={report.index} api={api}
     sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} bubble={!!geometry?.reportBubble} maxHeight={geometry?.reportBubble?.maxHeight}
-    onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed}
+    onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
@@ -147,7 +149,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     return () => sub.remove();
   }, [active, back]);
   const gestures = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_event, state) => Math.abs(state.dx) > t.hitTarget.min && Math.abs(state.dx) > Math.abs(state.dy),
+    onMoveShouldSetPanResponder: (_event, state) => !reportTouch.current && Math.abs(state.dx) > t.hitTarget.min && Math.abs(state.dx) > Math.abs(state.dy),
     onPanResponderRelease: (_event, state) => host.store.getState().swipe(state.dx < 0 ? 'left' : 'right'),
   }), [host.store, t.hitTarget.min]);
   async function toggleCharacter() {
