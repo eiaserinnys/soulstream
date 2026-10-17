@@ -271,7 +271,7 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
   const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent'
     || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
     || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi' || params.get('section') === 'chatUiRenderer';
-  const fullHeightSample = cardChecks || chatUiComposerSample;
+  const fullHeightSample = cardChecks || chatUiComposerSample || params.get('section') === 'cardImages';
   if (!pasImageSample && !fullHeightSample && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 
   return {

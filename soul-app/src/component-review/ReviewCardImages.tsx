@@ -1,17 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import type { CardDetail } from '../api/cardTypes';
+import type { CardAttachmentAssetEvidence, CardCheckItem, CardDetail } from '../api/cardTypes';
 import { cardFixture } from '../test-support/cards';
 import { CardTimeline } from '../components/planner/CardTimeline';
+import { CardCheckItems } from '../components/planner/CardCheckItems';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { AttachmentImage } from '../components/AttachmentImage';
 import { Asset } from 'expo-asset';
 import { useTokens } from '../theme';
+import { attachmentContentUrl } from '../lib/attachment-view';
+import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
+import { CardCreateSheet } from '../components/planner/CardCreateSheet';
+import { GlassButton } from '../components/GlassSurface';
 
 /** Local public fixture using the production timeline and chat attachment. */
 export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverUrl: string; bundledImages?: boolean }) {
   const t = useTokens();
+  const [showCreatePreview, setShowCreatePreview] = useState(false);
   const url = (name: string) => '/api/attachments/files?' + new URLSearchParams({ nodeId: 'public-node', path: '/review/' + name + '.png' });
   // The normal gallery uses bundled public assets, without replacing its auth.
   // The local HTTP entry keeps protected fixture routes for contract capture.
@@ -37,9 +43,81 @@ export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverU
       body: '**이미지 없는 한국어 보고입니다.** 자세히를 눌러도 질문과 같은 넓은 말풍선 안에서 본문을 읽을 수 있어야 합니다.\n\n접힌 보고와 펼친 보고의 가로 폭을 비교합니다. 다시 접은 뒤에도 폭과 아바타, 본문 여백이 그대로 유지되는지 확인합니다.' }],
     comments: [{ id: 'width-comment', cardId: widthCard.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '확인했습니다.', createdAt: at }],
   };
-  return <ScrollView testID="card-image-review" style={{ flex: 1, backgroundColor: t.colors.background }}
+  const attachmentCard = cardFixture({ id: 'review-card-attachments', request: '카드 첨부 검수', status: 'review', assigneeAgentId: null, nodeId: 'public-node', createdAt: at });
+  const cardContext = { type: 'card' as const, id: attachmentCard.id };
+  const cardContentUrl = (id: string, download = false) => attachmentContentUrl(id, cardContext, { download });
+  const cardAsset = (id: string, name: string, previewKind: 'image' | 'text', type: 'image' | 'link' = 'image'): CardAttachmentAssetEvidence => ({
+    type,
+    label: name,
+    url: cardContentUrl(id),
+    attachment_id: id,
+    descriptor: {
+      attachment_id: id,
+      name,
+      mime_type: previewKind === 'image' ? 'image/png' : 'text/plain',
+      byte_size: previewKind === 'image' ? 1593049 : 37,
+      checksum_sha256: null,
+      width: previewKind === 'image' ? 64 : null,
+      height: previewKind === 'image' ? 64 : null,
+      preview_kind: previewKind,
+      preview_mime_type: previewKind === 'image' ? 'image/png' : 'text/plain',
+    },
+    read_context: cardContext,
+    previewUrl: previewKind === 'image' ? (id === 'review-card-image-two' ? absolute : firstAsset?.href ?? null) : null,
+    originalUrl: cardContentUrl(id, true),
+  });
+  const evidence: CardCheckItem = {
+    id: 1,
+    title: '화면 캡처',
+    state: 'done',
+    result: null,
+    evidence: [
+      cardAsset('review-card-image', '카드 화면.png', 'image'),
+      cardAsset('review-card-image-two', '카드 두번째 화면.png', 'image'),
+      cardAsset('review-card-text', '카드 설명.txt', 'text', 'link'),
+      cardAsset('review-attachment-denied', '권한 없는 파일.txt', 'text', 'link'),
+      cardAsset('review-attachment-retryable', '다시 읽을 파일.txt', 'text', 'link'),
+      { type: 'image', url: '', label: '없는 파일.png', attachment_id: 'review-card-missing',
+        read_context: cardContext, availability: 'missing', previewUrl: null, originalUrl: '' },
+      { type: 'image', url: url('legacy-card-image'), label: 'legacy-card-image.png' },
+      { type: 'link', url: 'https://example.invalid/card-reference', label: '외부 참고 링크' },
+    ],
+    caveat: null,
+    rev: 1,
+    confirmed: null,
+    fixOpen: 0,
+    reopened: null,
+    from: null,
+    createdAt: at,
+    reportedAt: at,
+    display: 'reported',
+  };
+  const attachmentReport: CardDetail = {
+    card: attachmentCard,
+    sessions: [],
+    questions: [],
+    reports: [{ id: 'card-attachment-report', cardId: attachmentCard.id, title: '첨부가 있는 보고', format: 'markdown', createdAt: at,
+      body: `카드 보고 본문 내부 파일입니다: [보고 설명.txt](${cardContentUrl('review-card-report')})` }],
+    comments: [],
+  };
+  return <ContentLinkProvider><ScrollView testID="card-image-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={{ padding: t.foundation.pageInset, gap: t.uiSpacing.lg }} showsVerticalScrollIndicator={false}>
     <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>공개 fixture · RN web 배치와 조작 검수입니다. 네이티브 인증은 별도 계약으로 확인합니다.</Text>
+    <View testID="card-evidence-fixture" style={{ gap: t.uiSpacing.sm }}>
+      <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드 증거 첨부</Text>
+      <CardCheckItems cardId={attachmentCard.id} items={[evidence]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+        onConfirm={async () => true} onSetTarget={() => {}} onRecentConfirmation={() => {}} paneWidth={680} />
+    </View>
+    <View testID="card-body-attachment-fixture" style={{ gap: t.uiSpacing.sm }}>
+      <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드 보고 본문</Text>
+      <CardTimeline detail={attachmentReport} onChooseAnswer={() => {}} />
+    </View>
+    <View testID="card-create-preview-fixture" style={{ gap: t.uiSpacing.sm }}>
+      <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드 만들기 미리보기</Text>
+      <GlassButton accessibilityLabel="새 카드 작성 표본 열기" size="card" onPress={() => setShowCreatePreview(true)}>
+        <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>새 카드 작성</Text>
+      </GlassButton>
+    </View>
     <View testID="review-report-width"><CardTimeline detail={widthDetail} onChooseAnswer={() => {}} /></View>
     <View testID="review-image-timeline"><CardTimeline detail={detail} onChooseAnswer={() => {}} /></View>
     <View testID="review-unchanged-chat">
@@ -48,5 +126,7 @@ export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverU
       </UserMessage>
       <AssistantMessage event={{ id: 'public-short-message', type: 'assistant_message', data: { text: '확인했습니다.' } }} />
     </View>
-  </ScrollView>;
+  </ScrollView>
+    {showCreatePreview ? <CardCreateSheet api={null} folderId="public-project" onClose={() => setShowCreatePreview(false)} /> : null}
+  </ContentLinkProvider>;
 }

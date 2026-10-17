@@ -2,6 +2,7 @@ import type { ApiClient } from '../api/client';
 import type { FeedPage } from '../api/feedPage';
 import { Alert, Platform, type AlertButton } from 'react-native';
 import type { CardCheckItem, CardComment, CardDetail, CardDto, CardMutationResult, CardPatch, CardStatus } from '../api/cardTypes';
+import { buildAttachmentReviewApi } from './attachment-review-api';
 import { Asset } from 'expo-asset';
 import {
   createReviewApi,
@@ -414,7 +415,7 @@ export function createCardColorReviewClient(mode: CardColorReviewMode = 'success
 }
 export function createApiClient(): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
-  if (section === 'attachments') return createAttachmentReviewApi();
+  if (section === 'attachments' || section === 'cardImages') return createAttachmentReviewApi();
   if (section === 'chatUiRenderer') return createChatUiFlowReviewApi(window.location.search);
   if (section === 'contentLinks' || section === 'contentLinkDocument') {
     const value = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('documentState');
@@ -440,17 +441,6 @@ export function createApiClient(): ApiClient {
   return api as unknown as ApiClient;
 }
 
-function createAttachmentReviewApi(): ApiClient {
-  return {
-    ...api,
-    readAttachmentText: async (attachmentId: string) => {
-      if (attachmentId === 'review-attachment-denied') throw { kind: 'denied', status: 403 };
-      if (attachmentId === 'review-attachment-retryable') throw { kind: 'retryable', status: 503 };
-      if (attachmentId === 'review-attachment-long') return { text: Array.from({ length: 300 }, (_, index) => `${index + 1}: 공개 검수용 서버 로그`).join('\n'), truncated: false };
-      if (attachmentId === 'review-attachment-empty') return { text: '', truncated: false };
-      if (attachmentId === 'review-attachment-markdown') return { text: '# 평문으로 표시되는 Markdown', truncated: false };
-      if (attachmentId === 'review-attachment-json') return { text: '{\n  "ready": true\n}', truncated: false };
-      return { text: '공개 검수용 TXT 내용입니다.', truncated: false };
-    },
-  } as unknown as ApiClient;
+export function createAttachmentReviewApi(): ApiClient {
+  return buildAttachmentReviewApi(api);
 }
