@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
+import { Button, Dialog, DialogPopup, DialogTitle } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 
 export interface CardImageSelection { src: string; alt: string; attachment?: ChatAttachmentItem }
+export interface CardAttachmentStatus { message: string; onRetry?(): void }
 
 /** Shared dialog surface for card timeline and check item evidence images. */
-export function CardImageViewer({ image, attachments, returnFocus, onClose }: { image: CardImageSelection | null; attachments?: readonly ChatAttachmentItem[]; returnFocus?: HTMLElement | null; onClose(): void }) {
+export function CardImageViewer({ image, attachments, attachmentStatus, returnFocus, onClose }: { image: CardImageSelection | null; attachments?: readonly ChatAttachmentItem[]; attachmentStatus?: Readonly<Record<string, CardAttachmentStatus>>; returnFocus?: HTMLElement | null; onClose(): void }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [attachmentCursor, setAttachmentCursor] = useState<{ key: string; index: number } | null>(null);
   const imageFailed = Boolean(image && failedSrc === image.src);
@@ -43,12 +44,14 @@ export function CardImageViewer({ image, attachments, returnFocus, onClose }: { 
   }, [image, onClose]);
 
   if (image?.attachment) {
+    const status=attachmentStatus?.[attachmentItems[attachmentIndex]!.key];
     return <AttachmentViewer
       items={attachmentItems}
       index={attachmentIndex}
       onIndexChange={index => setAttachmentCursor({ key: image.attachment!.key, index })}
       onClose={onClose}
       returnFocus={returnFocus}
+      panelContent={status?<div className="chat-attachment-state chat-image-status" role="status"><span>{status.message}</span>{status.onRetry?<Button variant="outline" size="sm" onClick={status.onRetry}>다시 시도</Button>:null}</div>:undefined}
     />;
   }
 

@@ -68,7 +68,7 @@ it("uses explicit session context for card body attachments and shows 403 withou
  const viewer=document.body.querySelector<HTMLElement>(".chat-image-viewer-popup")!;
  expect(fetchMock).toHaveBeenCalledTimes(1);
  expect(fetchMock).toHaveBeenCalledWith("/api/attachments/session-image?context_type=session&context_id=session-1",expect.objectContaining({credentials:"same-origin"}));
- expect(viewer.textContent).toContain("첨부를 사용할 수 없습니다.");
+ expect(viewer.textContent).toContain("첨부를 읽을 수 없습니다.");
  expect(viewer.querySelector("button")?.textContent).not.toContain("다시 시도");
  expect(fetchMock.mock.calls.some(([url])=>String(url).includes("/api/sessions/")||String(url).includes("/api/attachments/files"))).toBe(false);
 });
@@ -188,11 +188,94 @@ it("opens contextless legacy Markdown attachments in the current card context wh
  cardLink.focus();
  await act(async()=>{cardLink.click();await new Promise(resolve=>setTimeout(resolve,0));});
  const viewer=document.body.querySelector<HTMLElement>(".chat-image-viewer-popup")!;
- expect(viewer.querySelector(".chat-image-viewer-title")?.textContent).toBe("카드 파일");
+ expect(viewer.querySelector(".chat-image-viewer-title")?.textContent).toBe("card.txt");
  expect(fetchMock).toHaveBeenCalledWith(cardFileUrl,expect.objectContaining({method:"HEAD",credentials:"same-origin"}));
  await act(()=>document.body.querySelector("[role=dialog]")?.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
  await act(async()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));
  expect(document.activeElement).toBe(cardLink);
  await act(async()=>{sessionLink.click();await new Promise(resolve=>setTimeout(resolve,0));});
  expect(fetchMock).toHaveBeenCalledWith(explicitLegacy,expect.objectContaining({method:"HEAD",credentials:"same-origin"}));
+});
+
+const metadataResponse=(id:string,name:string)=>Response.json({descriptor:{attachment_id:id,name,mime_type:"text/plain",byte_size:0,checksum_sha256:null,width:null,height:null,preview_kind:"text",preview_mime_type:"text/plain"},upload_status:"committed"});
+const title=()=>document.body.querySelector(".chat-image-viewer-title")?.textContent;
+const next=()=>document.body.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!;
+const closeViewer=async()=>{await act(()=>document.body.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());};
+
+it("R2 uses the existing user bubble link tone for request, answer and user comment",async()=>{
+ const body="[첨부](/api/attachments/tone/content)";
+ await act(()=>root.render(<CardTimeline card={{...card,request:body}} detail={{...detail,questions:[{id:"q",text:body,options:null,answer:body,askedAt:card.createdAt,answeredAt:card.createdAt}],comments:[{...detail.comments![0]!,body}]}} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ for(const entry of ["지시","답","커멘트"]){
+  const link=container.querySelector(`[data-card-entry="${entry}"] a`)!;
+  expect(link.classList.contains("text-white")).toBe(true);
+  expect(link.classList.contains("underline")).toBe(true);
+  expect(link.classList.contains("text-accent-blue")).toBe(false);
+ }
+ expect(container.querySelector('[data-card-entry="질문"] a')?.classList.contains("text-accent-blue")).toBe(true);
+});
+
+it.each([503,"network"] as const)("R4 retries only the selected metadata after a transient failure (%s)",async failure=>{
+ let failed=true;
+ const fetchMock=vi.fn(async(input:RequestInfo|URL)=>{
+  if(failed){if(failure==="network")throw new TypeError("Failed to fetch");return new Response(null,{status:failure});}
+  return metadataResponse(String(input).includes("second")?"second":"first",String(input).includes("second")?"둘째.txt":"첫째.txt");
+ });
+ vi.stubGlobal("fetch",fetchMock);
+ await act(()=>root.render(<CardTimeline card={{...card,request:"[첫 파일](/api/attachments/first/content)\n\n[둘째 파일](/api/attachments/second/content)"}} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ await act(async()=>{container.querySelector<HTMLAnchorElement>('a')!.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ const retry=document.body.querySelector<HTMLButtonElement>('.chat-image-viewer-panel button');
+ expect(document.body.querySelector('.chat-image-viewer-panel [role="status"]')?.textContent).toContain("첨부를 불러오지 못했습니다.");
+ expect(retry?.textContent).toBe("다시 시도");
+ failed=false;const before=fetchMock.mock.calls.length;
+ await act(async()=>{retry!.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(title()).toBe("첫째.txt");
+ expect(fetchMock.mock.calls.length-before).toBe(1);
+ expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("/api/attachments/first?context_type=card&context_id=card-1");
+ expect(document.body.querySelector(".chat-image-viewer-panel button")).toBeNull();
+});
+
+it.each([401,403,404])("R4 keeps metadata %s terminal with no retry",async status=>{
+ vi.stubGlobal("fetch",vi.fn(async()=>new Response(null,{status})));
+ await act(()=>root.render(<CardTimeline card={{...card,request:"[첨부](/api/attachments/denied/content)"}} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ await act(async()=>{container.querySelector<HTMLAnchorElement>('a')!.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(document.body.querySelector('.chat-image-viewer-panel [role="status"]')?.textContent).toBe(status===404?"첨부를 찾을 수 없습니다.":"첨부를 읽을 수 없습니다.");
+ expect(document.body.querySelector(".chat-image-viewer-panel button")).toBeNull();
+});
+
+it("R6 includes full, collapsed and shortcut reference links in display order",async()=>{
+ vi.stubGlobal("fetch",vi.fn(async(input:RequestInfo|URL)=>{
+  const id=String(input).match(/attachments\/([^?]+)/)![1]!;return metadataResponse(id,`${id}.txt`);
+ }));
+ const request="[첫 파일][a]\n\n[둘 파일][]\n\n[셋 파일]\n\n[a]: /api/attachments/first/content\n[둘 파일]: /api/attachments/second/content\n[셋 파일]: /api/attachments/third/content\n\n`[코드][a]`";
+ await act(()=>root.render(<CardTimeline card={{...card,request}} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ await act(async()=>{container.querySelector<HTMLAnchorElement>('a')!.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(document.body.querySelector(".chat-image-viewer-count")?.textContent).toBe("1/3");
+ await act(async()=>{next().click();await new Promise(resolve=>setTimeout(resolve,0));});expect(title()).toBe("second.txt");
+ await act(async()=>{next().click();await new Promise(resolve=>setTimeout(resolve,0));});expect(title()).toBe("third.txt");
+});
+
+it("R7 opens the clicked legacy occurrence when the request also lists the same attachment",async()=>{
+ vi.stubGlobal("fetch",vi.fn(async()=>new Response(null,{status:200,headers:{"content-length":"0"}})));
+ const legacy="/api/attachments/files?nodeId=legacy-node&path=%2Fincoming%2Fnotes.txt";
+ const value={...card,request:`[기존 파일](${legacy})`,attachments:[{nodeId:"legacy-node",path:"/incoming/notes.txt",name:"notes.txt",mimeType:"text/plain"}]};
+ await act(()=>root.render(<CardTimeline card={value} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ const trigger=container.querySelector<HTMLAnchorElement>('.v3-card-report-thumbnails a')!;
+ await act(async()=>{trigger.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(document.body.querySelector(".chat-image-viewer-count")?.textContent).toBe("2/2");
+ expect(title()).toBe("notes.txt");
+ await closeViewer();
+ const link=container.querySelector<HTMLAnchorElement>('[data-card-entry="지시"] a')!;
+ await act(async()=>{link.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(document.body.querySelector(".chat-image-viewer-count")?.textContent).toBe("1/2");
+ expect(title()).toBe("notes.txt");
+});
+
+it("R8 opens the existing loading surface before metadata resolves",async()=>{
+ let resolve!: (response:Response)=>void;
+ vi.stubGlobal("fetch",vi.fn(()=>new Promise<Response>(done=>{resolve=done;})));
+ await act(()=>root.render(<CardTimeline card={{...card,request:"[첨부](/api/attachments/pending/content)"}} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ await act(()=>container.querySelector<HTMLAnchorElement>('a')!.click());
+ expect(document.body.querySelector('.chat-image-viewer-panel [role="status"]')?.textContent).toBe("미리보기를 불러오는 중…");
+ await act(async()=>{resolve(metadataResponse("pending","완료.txt"));await new Promise(done=>setTimeout(done,0));});
+ expect(title()).toBe("완료.txt");
 });
