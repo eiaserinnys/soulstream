@@ -52,7 +52,7 @@ const SAFE_TEXT_PREVIEW_MIME_TYPES = new Set([
 ]);
 
 export class ChatAttachmentRequestError extends Error {
-  constructor(readonly status: number) {
+  constructor(readonly status: number, readonly networkError = false) {
     super("Chat attachment request failed");
     this.name = "ChatAttachmentRequestError";
   }
@@ -99,7 +99,7 @@ export async function loadChatAttachments(input: {
     });
   } catch (error) {
     if (input.signal?.aborted) throw error;
-    throw new ChatAttachmentRequestError(0);
+    throw new ChatAttachmentRequestError(0, true);
   }
   if (!response.ok) throw new ChatAttachmentRequestError(response.status);
   const body: unknown = await response.json().catch(() => null);

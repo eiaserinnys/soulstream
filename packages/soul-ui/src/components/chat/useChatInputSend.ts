@@ -124,7 +124,8 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
   const send = useCallback(
     async (rawText: string) => {
       const sessionId = args.activeSessionKey;
-      if (!sessionId || !rawText.trim()) return;
+      const attachmentPaths = args.isLlmFinished || !args.fileUploadUrl ? [] : [...args.uploadedPaths];
+      if (!sessionId || (!rawText.trim() && attachmentPaths.length === 0)) return;
 
       const trimmed = rawText.trim();
       if (trimmed.length > MAX_MESSAGE_LENGTH) {
@@ -173,9 +174,6 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
       }
 
       if (args.getPendingChatSend(sessionId)) return;
-      const attachmentPaths = args.fileUploadUrl && args.uploadedPaths.length > 0
-        ? [...args.uploadedPaths]
-        : [];
       const messageText = appendAttachmentPathNotes(trimmed, attachmentPaths);
       const pending: PendingChatSend = {
         id: globalThis.crypto.randomUUID(),

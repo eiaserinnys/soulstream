@@ -37,6 +37,14 @@ describe("production input clipboard events", () => {
     expect((upload![1]!.body as FormData).get("session_id")).toBe("session-1");
     const uploaded = (upload![1]!.body as FormData).get("file") as File;
     expect(uploaded.name).toMatch(/^clipboard-.+\.png$/);
-    expect(container.querySelector('img[src="blob:test"]')).not.toBeNull();
+    if (surface === "chat") {
+      const chip = container.querySelector<HTMLElement>("[data-chat-attachment-chip]");
+      expect(chip).not.toBeNull();
+      expect(chip?.textContent).not.toContain(uploaded.name);
+      expect(chip?.querySelector('img[src="blob:test"]')).not.toBeNull();
+      expect(chip?.querySelector('[aria-label="첨부 이미지 보기"]')).not.toBeNull();
+    } else {
+      expect(container.querySelector('img[src="blob:test"]')).not.toBeNull();
+    }
   });
 });

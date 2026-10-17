@@ -24,6 +24,7 @@ import { useDashboardStore, type ChatSessionStoreScope } from "../../stores/dash
 import { DashboardIconCap } from "../DashboardIconCap";
 import { ChatStoreScopeProvider, useChatFlattenTree, useChatStore, useChatStoreApi } from "../../stores/chat-store-scope";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
+import { projectChatOutputAttachments } from "../../lib/chat-output-attachment-projection";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
 import { projectManuscriptMessages } from "../../lib/manuscript-agent-message-projection";
@@ -184,11 +185,15 @@ function ChatViewContent({
   const turnUsageMode = persistentSessionDisplaySettings?.sessionId === activeSessionKey
     ? persistentSessionDisplaySettings.turnUsageMode ?? "collapsed"
     : "collapsed";
-  const messages = useMemo(
+  const flattenedMessages = useMemo(
     () => isManuscript
       ? flattenMessages(tree, { includePersistentTurnUsage: true })
       : flattenMessages(tree),
     [flattenMessages, isManuscript, tree, treeVersion],
+  );
+  const messages = useMemo(
+    () => projectChatOutputAttachments(flattenedMessages),
+    [flattenedMessages],
   );
   const transcriptMessages = useMemo(
     () => {

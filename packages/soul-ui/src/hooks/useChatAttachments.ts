@@ -10,6 +10,7 @@ export interface UseChatAttachmentsResult {
   items: ChatAttachmentItem[];
   loading: boolean;
   error: string | null;
+  retryable: boolean;
   reload(): void;
 }
 
@@ -22,6 +23,7 @@ export function useChatAttachments(input: {
   const [items, setItems] = useState<ChatAttachmentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(false);
   const [reloadVersion, setReloadVersion] = useState(0);
   const reload = useCallback(() => setReloadVersion((version) => version + 1), []);
 
@@ -30,6 +32,7 @@ export function useChatAttachments(input: {
       setItems([]);
       setLoading(false);
       setError(null);
+      setRetryable(false);
       return;
     }
 
@@ -38,6 +41,7 @@ export function useChatAttachments(input: {
     setItems([]);
     setLoading(true);
     setError(null);
+    setRetryable(false);
 
     void loadChatAttachments({ sessionId, eventId, signal: controller.signal })
       .then((projection) => {
@@ -47,6 +51,9 @@ export function useChatAttachments(input: {
         if (active && !controller.signal.aborted) {
           setItems([]);
           setError(errorMessage(requestError));
+          setRetryable(requestError instanceof ChatAttachmentRequestError
+            ? requestError.networkError || requestError.status >= 500 && requestError.status < 600
+            : requestError instanceof TypeError);
         }
       })
       .finally(() => {
@@ -59,7 +66,7 @@ export function useChatAttachments(input: {
     };
   }, [enabled, eventId, reloadVersion, sessionId]);
 
-  return { items, loading, error, reload };
+  return { items, loading, error, retryable, reload };
 }
 
 function errorMessage(error: unknown): string {
@@ -68,6 +75,7 @@ function errorMessage(error: unknown): string {
   }
   switch (error.status) {
     case 400:
+    case 422:
       return "첨부 정보를 확인할 수 없습니다.";
     case 401:
       return "로그인 후 첨부를 확인할 수 있습니다.";
@@ -78,6 +86,8 @@ function errorMessage(error: unknown): string {
     case 503:
       return "첨부 정보를 불러오지 못했습니다. 다시 시도해 주세요.";
     default:
-      return "연결을 확인한 뒤 첨부를 다시 불러와 주세요.";
+      return error.status >= 500 && error.status < 600
+        ? "첨부 정보를 불러오지 못했습니다. 다시 시도해 주세요."
+        : "첨부 정보를 확인할 수 없습니다.";
   }
 }

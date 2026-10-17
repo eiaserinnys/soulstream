@@ -92,4 +92,25 @@ describe("useChatAttachments", () => {
     await act(() => latest.reload());
     expect(requests).toHaveLength(2);
   });
+
+  it.each([400, 401, 403, 404, 422, 429, 500, 503, 599])("exposes retryability from HTTP %s and clears it on reload", async status => {
+    await render("session-a");
+    await act(async () => requests[0]?.result.resolve(jsonResponse({}, status)));
+    expect(latest.retryable).toBe(status >= 500);
+    if (status === 400 || status === 422) expect(latest.error).toBe("첨부 정보를 확인할 수 없습니다.");
+    await act(() => latest.reload());
+    expect(latest.retryable).toBe(false);
+  });
+
+  it("allows a network failure to be retried", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await render("session-a");
+    expect(latest.retryable).toBe(true);
+  });
+
+  it("does not classify an invalid projection as a network failure", async () => {
+    await render("session-a");
+    await act(async () => requests[0]?.result.resolve(jsonResponse({})));
+    expect(latest.retryable).toBe(false);
+  });
 });

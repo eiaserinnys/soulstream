@@ -145,6 +145,7 @@ export function ChatImageAttachments({
   onMetadata,
   onOpen,
   openFailedImage,
+  tone,
 }: {
   gallery: ChatImageItem[];
   galleryIndexes: number[];
@@ -154,6 +155,7 @@ export function ChatImageAttachments({
   onMetadata(key: string, metadata: ChatImageMetadata): void;
   onOpen(index: number, trigger: HTMLElement): void;
   openFailedImage?: boolean;
+  tone?: "onUserBubble";
 }) {
   if (galleryIndexes.length === 0) return null;
   return (
@@ -162,6 +164,7 @@ export function ChatImageAttachments({
       data-chat-image-run={runId}
       data-chat-image-count={galleryIndexes.length}
       data-chat-image-role={role}
+      data-chat-attachment-tone={tone}
     >
       <div className="chat-image-grid">
         {galleryIndexes.map(index => {
