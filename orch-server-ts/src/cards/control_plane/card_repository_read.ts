@@ -5,7 +5,10 @@ import { completedCardCursor, type CompletedCardQuery } from "../completed_card_
 import { projectCardAttachmentRows } from "../card_attachment_projection.js";
 
 export class CardRepositoryRead {
-  constructor(protected readonly sql: SqlClient) {}
+  constructor(
+    protected readonly sql: SqlClient,
+    private readonly corsAllowedOrigins: readonly string[] = [],
+  ) {}
   transaction<T>(callback: (sql: RepositorySql) => Promise<T>): Promise<T> { return this.sql.begin(callback); }
   async getFolder(folderId: string): Promise<FolderRow | null> {
     return (await this.sql<FolderRow[]>`SELECT * FROM folders WHERE id=${folderId}`)[0] ?? null;
@@ -55,7 +58,7 @@ export class CardRepositoryRead {
   }
   async projectCards(cards: readonly CardRow[]) {
     const withActivity = await projectCardActivity(this.sql, cards);
-    return projectCardAttachmentRows(this.sql, withActivity);
+    return projectCardAttachmentRows(this.sql, withActivity, undefined, this.corsAllowedOrigins);
   }
   async listReports(cardId: string) {
     const rows = await this.sql<Record<string, unknown>[]>`SELECT * FROM card_reports WHERE card_id=${cardId} ORDER BY created_at DESC,id DESC`;
@@ -135,6 +138,6 @@ export class CardRepositoryRead {
   }
 
   private async projectSourceRows(cardId: string, rows: Record<string, unknown>[]) {
-    return projectCardAttachmentRows(this.sql, rows, cardId);
+    return projectCardAttachmentRows(this.sql, rows, cardId, this.corsAllowedOrigins);
   }
 }

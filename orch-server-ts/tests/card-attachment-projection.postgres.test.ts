@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardRepositoryRead } from "../src/cards/control_plane/card_repository_read.js";
-import { CardMcpReadService, type CardMcpGetInput } from "../src/cards/card_mcp_read.js";
+import type { CardMcpGetInput } from "../src/cards/card_mcp_read.js";
 import { collectCardLegacyLocations } from "../src/cards/card_attachment_legacy_refs.js";
 import { projectCardAttachmentRows } from "../src/cards/card_attachment_projection.js";
 import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
@@ -14,6 +14,7 @@ import { appendCardEventTx } from "./card-work-postgres-fixture.js";
 const FOLDER_ID = "attachment-projection";
 const ASSIGNEE = "projection-assignee";
 const MEMBER = "projection-member";
+const OWN_ORIGIN = "https://soulstream.eiaserinnys.me";
 const CARD_CONTENT = (cardId: string, id: string) =>
   "/api/attachments/" + encodeURIComponent(id) + "/content?context_type=card&context_id=" + encodeURIComponent(cardId);
 
@@ -41,12 +42,12 @@ describe("card attachment evidence projection", () => {
       [ASSIGNEE, MEMBER],
     );
     const sql = createBoardYjsSqlAdapter(h.liveSql);
-    cardRepository = new CardRepositoryRead(sql);
+    cardRepository = new CardRepositoryRead(sql, [OWN_ORIGIN]);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, {
       emitFolderUpdated: async () => {},
       emitCardUpdated: async (cardId) => { cardUpdates.push(cardId); },
-    });
-    reader = new CardMcpReadService(sql);
+    }, undefined, undefined, () => {}, [OWN_ORIGIN]);
+    reader = cards.mcpRead;
   }, 60_000);
 
   afterAll(async () => h?.cleanup());
@@ -263,6 +264,63 @@ describe("card attachment evidence projection", () => {
     expect(mcp.sections.request.text).toBe(expectedBody);
   });
 
+  it("projects absolute own-origin legacy URLs through REST and MCP while preserving other content", async () => {
+    const cardId = await makeCard();
+    const assetId = "absolute-legacy-asset";
+    const legacyPath = "/legacy/absolute.png";
+    await insertAsset(assetId, cardId);
+    await insertLegacyAlias("node-a", legacyPath, assetId, "resolved");
+    const query = new URLSearchParams({ nodeId: "node-a", path: legacyPath }).toString();
+    const ownUrl = OWN_ORIGIN + "/api/attachments/files?" + query;
+    const externalUrl = "https://external.example/api/attachments/files?" + query;
+    const otherPath = OWN_ORIGIN + "/api/attachments/not-files?" + query;
+    const normalizedOtherPath = OWN_ORIGIN + "/api/attachments/files/../files?" + query;
+    const tick = String.fromCharCode(96);
+    const body = [
+      "![own](" + ownUrl + ") [external](" + externalUrl + ") [other path](" + otherPath + ") [normalized other path](" + normalizedOtherPath + ")",
+      "inline code: " + tick + "![inline](" + ownUrl + ")" + tick,
+      "````markdown",
+      "```",
+      "![four-backtick fence](" + ownUrl + ")",
+      "````",
+      "~~~markdown",
+      "![tilde fence](" + ownUrl + ")",
+      "~~~",
+    ].join("\n");
+    const expectedBody = body.replace(ownUrl, CARD_CONTENT(cardId, assetId));
+    const reportBody = "![report](" + ownUrl + ")";
+    const expectedReportBody = "![report](" + CARD_CONTENT(cardId, assetId) + ")";
+    const htmlBody = "<img src=\"" + ownUrl + "\">";
+    const refs = [{ attachment_id: assetId }];
+    await h.sql`UPDATE cards SET request=${body},attachment_refs=${h.sql.json(refs)}::jsonb WHERE id=${cardId}`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,attachment_refs)
+      VALUES ('absolute-projection-report',${cardId},'보고','markdown',${reportBody},${ASSIGNEE},${h.sql.json(refs)}::jsonb),
+             ('absolute-projection-html',${cardId},'HTML','html',${htmlBody},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,session_id,attachment_refs)
+      VALUES ('absolute-projection-comment',${cardId},'agent','comment',${reportBody},${ASSIGNEE},${h.sql.json(refs)}::jsonb),
+             ('absolute-projection-note',${cardId},'agent','note',${reportBody},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+
+    const detail = await cards.getCard(cardId);
+    expect(detail!.card.request).toBe(expectedBody);
+    expect(detail!.reports.find((row) => row.id === "absolute-projection-report")!.body).toBe(expectedReportBody);
+    expect(detail!.reports.find((row) => row.id === "absolute-projection-html")!.body).toBe(htmlBody);
+    expect(detail!.comments.find((row) => row.id === "absolute-projection-comment")!.body).toBe(expectedReportBody);
+    expect(detail!.notes.find((row) => row.id === "absolute-projection-note")!.body).toBe(expectedReportBody);
+    const stored = await h.sql.unsafe("SELECT request FROM cards WHERE id=$1", [cardId]);
+    expect(stored[0]!.request).toBe(body);
+
+    const mcp = await reader.getCard(cardId, { include: ["request", "reports", "comments", "notes"] }, null);
+    expect(mcp.sections.request.text).toBe(expectedBody);
+    expect(mcp.sections.reports.items.find((row: Record<string, unknown>) => row.id === "absolute-projection-report")!.body)
+      .toBe(expectedReportBody);
+    expect(mcp.sections.reports.items.find((row: Record<string, unknown>) => row.id === "absolute-projection-html")!.body)
+      .toBe(htmlBody);
+    expect(mcp.sections.comments.items.find((row: Record<string, unknown>) => row.id === "absolute-projection-comment")!.body)
+      .toBe(expectedReportBody);
+    expect(mcp.sections.notes.items.find((row: Record<string, unknown>) => row.id === "absolute-projection-note")!.body)
+      .toBe(expectedReportBody);
+  });
+
   it("collects legacy URLs from the same Markdown regions that projection may rewrite", () => {
     const url = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fcode.png";
     const body = [
@@ -281,7 +339,7 @@ describe("card attachment evidence projection", () => {
   it("batches alias lookups across the complete card projection input", async () => {
     const cardId = "batch-card";
     const assetId = "batch-asset";
-    const legacyUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fshared.png";
+    const legacyUrl = OWN_ORIGIN + "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fshared.png";
     let aliasQueryCount = 0;
     const sql = Object.assign(
       (strings: TemplateStringsArray, ..._values: unknown[]) => {
@@ -304,7 +362,7 @@ describe("card attachment evidence projection", () => {
       attachment_refs: [{ attachment_id: assetId }],
     }));
 
-    const projected = await projectCardAttachmentRows(sql, rows);
+    const projected = await projectCardAttachmentRows(sql, rows, undefined, [OWN_ORIGIN]);
 
     expect(projected).toHaveLength(1270);
     expect(aliasQueryCount).toBe(1);

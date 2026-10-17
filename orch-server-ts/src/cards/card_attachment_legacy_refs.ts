@@ -20,6 +20,7 @@ export function collectCardLegacyLocations(input: {
   body: string;
   format: "markdown" | "html";
   attachments?: readonly unknown[];
+  allowedOrigins?: readonly string[];
 }): CardLegacyLocation[] {
   const order: string[] = [];
   const chosen = new Map<string, CardLegacyLocation>();
@@ -38,7 +39,7 @@ export function collectCardLegacyLocations(input: {
   if (input.format === "html") {
     for (const target of htmlTargets(input.body)) add(parseCardLegacyFileUrl(target));
   } else {
-    for (const target of markdownLegacyTargets(input.body)) add(target.location);
+    for (const target of markdownLegacyTargets(input.body, input.allowedOrigins ?? [])) add(target.location);
   }
   return order.map((key) => chosen.get(key)!);
 }
@@ -46,8 +47,9 @@ export function collectCardLegacyLocations(input: {
 export function rewriteMarkdownLegacySourceUrls(
   body: string,
   resolve: (location: CardLegacyLocation) => string | null,
+  allowedOrigins: readonly string[] = [],
 ): string {
-  const targets = markdownLegacyTargets(body);
+  const targets = markdownLegacyTargets(body, allowedOrigins);
   let result = body;
   for (const target of [...targets].reverse()) {
     const projected = resolve(target.location);
@@ -143,13 +145,13 @@ function userLegacyScopeAllowed(scope: unknown, cardId: string): boolean {
   if (scope.type === "card") return typeof scope.id === "string" && scope.id === cardId;
   return false;
 }
-function markdownLegacyTargets(body: string): MarkdownLegacyTarget[] {
+function markdownLegacyTargets(body: string, allowedOrigins: readonly string[]): MarkdownLegacyTarget[] {
   const codeRanges = markdownCodeRanges(body);
   const targets: MarkdownLegacyTarget[] = [];
   const seen = new Set<string>();
   const add = (start: number, end: number, raw: string): void => {
     if (codeRanges.some((range) => rangesOverlap(range, { start, end }))) return;
-    const location = parseCardLegacyFileUrl(raw);
+    const location = parseCardLegacyFileUrl(raw, allowedOrigins);
     if (location === null) return;
     const key = `${start}:${end}`;
     if (seen.has(key)) return;
@@ -184,14 +186,34 @@ function htmlTargets(body: string): string[] {
   }
   return targets;
 }
-export function parseCardLegacyFileUrl(raw: string): CardLegacyLocation | null {
+export function parseCardLegacyFileUrl(
+  raw: string,
+  allowedOrigins: readonly string[] = [],
+): CardLegacyLocation | null {
   let value = raw.trim();
   if (value.startsWith("<") && value.endsWith(">")) value = value.slice(1, -1);
   const hash = value.indexOf("#");
   if (hash >= 0) value = value.slice(0, hash);
-  const queryIndex = value.indexOf("?");
-  if (queryIndex < 0 || value.slice(0, queryIndex) !== LEGACY_FILE_PATH) return null;
-  const params = new URLSearchParams(value.slice(queryIndex + 1));
+
+  let query: string;
+  const relativePrefix = LEGACY_FILE_PATH + "?";
+  if (value.startsWith(relativePrefix)) {
+    query = value.slice(relativePrefix.length);
+  } else {
+    const absoluteTarget = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)?(?:\?[^#]*)?$/.exec(value);
+    if (absoluteTarget?.[1] !== LEGACY_FILE_PATH) return null;
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      return null;
+    }
+    if (url.origin === "null" || url.username.length > 0 || url.password.length > 0
+      || !allowedOrigins.includes(url.origin) || url.pathname !== LEGACY_FILE_PATH) return null;
+    query = url.search.slice(1);
+  }
+
+  const params = new URLSearchParams(query);
   const nodeIds = params.getAll("nodeId");
   const paths = params.getAll("path");
   if (nodeIds.length !== 1 || paths.length !== 1) return null;

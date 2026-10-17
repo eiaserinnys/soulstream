@@ -631,6 +631,7 @@ export async function createLiveProductionApplication(
   cardDispatchRuntime=await createCardDispatchRuntime({sqlResolver,router:runtimeServices.sessionRouter,bridge:runtimeServices.sessionBridge,
     availability:providers.modelPresetAvailability,notifier:pushNotifier,admin:providers.adminUsersRoutes.provider,
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
+    corsAllowedOrigins: config.cors_allowed_origins,
     onReportsChanged: updates => publishPersistentReports(updates),
     usageSnapshot: () => usageSummaryService.getSummary(),
     validateFolder: orchestrationAccess.validateFolder,

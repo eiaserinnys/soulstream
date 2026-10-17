@@ -62,6 +62,7 @@ export async function createCardDispatchRuntime(options: {
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   warn: (message: string) => void;
   onReportsChanged?: PublishPersistentReports;
+  corsAllowedOrigins?: readonly string[];
   onFolderHeaderUpdated: () => Promise<void>;
   usageSnapshot: () => UsageSummarySnapshot;
   ensureSystemFolder: (input: {
@@ -152,6 +153,7 @@ export async function createCardDispatchRuntime(options: {
     onFolderHeaderUpdated: options.onFolderHeaderUpdated,
     onMutation: (change) => dispatcher.acceptMutation(change),
     onReportsChanged: options.onReportsChanged,
+    corsAllowedOrigins: options.corsAllowedOrigins,
   });
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
     repository: cardDispatchRepository,

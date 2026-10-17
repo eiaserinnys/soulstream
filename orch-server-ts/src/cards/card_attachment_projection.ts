@@ -67,6 +67,7 @@ export async function projectCardAttachmentRows<T extends Record<string, unknown
   sql: RepositorySql,
   rows: readonly T[],
   cardId?: string,
+  allowedOrigins: readonly string[] = [],
 ): Promise<T[]> {
   const cardIds = rows.map((row) => cardId ?? stringValue(row.card_id) ?? stringValue(row.id));
   const refs = rows.map((row) => attachmentRefIds(attachmentRefsOf(row.attachment_refs)));
@@ -145,7 +146,11 @@ export async function projectCardAttachmentRows<T extends Record<string, unknown
 
   const locations = new Map<string, CardLegacyLocation>();
   for (const source of legacySources) {
-    for (const location of collectCardLegacyLocations({ body: source.body, format: "markdown" })) {
+    for (const location of collectCardLegacyLocations({
+      body: source.body,
+      format: "markdown",
+      allowedOrigins,
+    })) {
       locations.set(cardLegacyLocationKey(location), location);
     }
   }
@@ -157,7 +162,7 @@ export async function projectCardAttachmentRows<T extends Record<string, unknown
         || !source.sourceIds.has(alias.assetId)) return null;
       return "/api/attachments/" + encodeURIComponent(alias.assetId) + "/content?context_type=card&context_id=" +
         encodeURIComponent(source.cardId);
-    });
+    }, allowedOrigins);
   }
   return projectedRows as T[];
 }
