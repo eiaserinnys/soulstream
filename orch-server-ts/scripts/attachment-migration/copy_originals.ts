@@ -228,7 +228,7 @@ async function copySelectedEntries(entries: readonly CopyPlanEntry[], assets: re
         }
         const source = entry.legacy_node_id === localNodeId
           ? localFileSource(entry.physical_path)
-          : fetchLegacySource({ baseUrl: LEGACY_ORCH_URL, nodeId: entry.legacy_node_id, path: entry.normalized_path, bearerToken: process.env.AUTH_BEARER_TOKEN ?? "" });
+          : fetchLegacySource({ baseUrl: LEGACY_ORCH_URL, nodeId: entry.legacy_node_id, path: remoteSourcePath(entry), bearerToken: process.env.AUTH_BEARER_TOKEN ?? "" });
         result = await copyVerifiedSource(entry, source, binding);
         if (result.storage_key !== storageKey) throw copyFailure("COPY_HASH_MISMATCH", "copy receipt key does not match the approved identity");
       }
@@ -318,13 +318,36 @@ async function readReceipts(filePath: string): Promise<Map<string, CopyReceipt>>
   const receipts = new Map<string, CopyReceipt>();
   for (const line of body.split(/\r?\n/)) {
     if (!line) continue;
-    const row = JSON.parse(line) as CopyReceipt;
-    if (!row.identity_key || !row.attachment_id || !row.storage_key || typeof row.verified_at !== "string" || typeof row.result !== "string") {
-      throw new Error("INVENTORY_MANIFEST_MISMATCH: receipt JSONL row is invalid");
-    }
+    const row = parseReceiptRow(JSON.parse(line));
     receipts.set(row.identity_key, row);
   }
   return receipts;
+}
+
+/** Skipped and failed receipts carry no stored object, so only verified results must name a storage key. */
+export function parseReceiptRow(value: unknown): CopyReceipt {
+  const row = value as CopyReceipt;
+  const verified = row?.result === "copied" || row?.result === "existing_verified";
+  if (!row || !row.identity_key || !row.attachment_id || typeof row.storage_key !== "string" || (verified && !row.storage_key) ||
+      typeof row.verified_at !== "string" || typeof row.result !== "string") {
+    throw new Error("INVENTORY_MANIFEST_MISMATCH: receipt JSONL row is invalid");
+  }
+  return row;
+}
+
+/**
+ * Remote originals are read through the orch legacy route, which needs the node's absolute path. Referenced
+ * identities keep their legacy evidence path (the alias key); unreferenced incoming files are keyed by a path
+ * relative to the incoming root, so their scanned physical path is used instead.
+ */
+export function remoteSourcePath(entry: Pick<CopyPlanEntry, "normalized_path" | "physical_path">): string {
+  if (isAbsoluteNodePath(entry.normalized_path)) return entry.normalized_path;
+  if (entry.physical_path && isAbsoluteNodePath(entry.physical_path)) return entry.physical_path.replace(/\\/g, "/");
+  throw copyFailure("SOURCE_CHANGED", "remote manifest source path is missing or relative");
+}
+
+function isAbsoluteNodePath(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 }
 
 async function appendReceipt(filePath: string, value: CopyReceipt): Promise<void> {

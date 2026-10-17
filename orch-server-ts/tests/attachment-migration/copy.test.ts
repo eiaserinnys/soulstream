@@ -12,6 +12,8 @@ import {
   copyVerifiedSource,
   fetchLegacySource,
   localFileSource,
+  parseReceiptRow,
+  remoteSourcePath,
   validateManifestApproval,
   type CopyPlanEntry,
 } from "../../scripts/attachment-migration/copy_originals.js";
@@ -23,6 +25,31 @@ const storageLocation = { endpoint: "https://r2.example.test", bucket: "private-
 const cliPath = fileURLToPath(new URL("../../scripts/attachment-migration/copy_originals.ts", import.meta.url));
 
 describe("attachment migration original copy", () => {
+  it("reads remote originals by the legacy evidence path, or by the scanned absolute path for unreferenced files", () => {
+    expect(remoteSourcePath({ normalized_path: "D:/root/incoming/s/a.png", physical_path: "D:\\root\\incoming\\s\\a.png" }))
+      .toBe("D:/root/incoming/s/a.png");
+    expect(remoteSourcePath({ normalized_path: "/home/n/incoming/s/a.png", physical_path: undefined }))
+      .toBe("/home/n/incoming/s/a.png");
+    // Unreferenced incoming files are keyed relative to the incoming root; the orch legacy route needs an absolute path.
+    expect(remoteSourcePath({ normalized_path: "s/assets/x/note.txt", physical_path: "/home/n/incoming/s/assets/x/note.txt" }))
+      .toBe("/home/n/incoming/s/assets/x/note.txt");
+    expect(remoteSourcePath({ normalized_path: "s/a.png", physical_path: "D:\\root\\incoming\\s\\a.png" }))
+      .toBe("D:/root/incoming/s/a.png");
+    expect(() => remoteSourcePath({ normalized_path: "s/a.png", physical_path: "s/a.png" }))
+      .toThrow(expect.objectContaining({ code: "SOURCE_CHANGED" }));
+  });
+
+  it("reads back its own skipped and failed receipts but still requires a storage key for verified copies", () => {
+    const base = { identity_key: "i", attachment_id: "a", storage_endpoint: null, storage_bucket: null, byte_size: null, sha256: null,
+      verified_at: "2026-10-17T00:00:00.000Z" };
+    expect(parseReceiptRow({ ...base, storage_key: "", result: "skipped_unconfirmed" }).result).toBe("skipped_unconfirmed");
+    expect(parseReceiptRow({ ...base, storage_key: "", result: "failed(SOURCE_CHANGED)" }).result).toBe("failed(SOURCE_CHANGED)");
+    expect(() => parseReceiptRow({ ...base, storage_key: "", result: "copied" })).toThrow("receipt JSONL row is invalid");
+    expect(() => parseReceiptRow({ ...base, storage_key: "", result: "existing_verified" })).toThrow("receipt JSONL row is invalid");
+    expect(parseReceiptRow({ ...base, storage_key: "session-attachments/originals/a", result: "copied" }).storage_key)
+      .toBe("session-attachments/originals/a");
+  });
+
   it("streams and verifies a source before storing it under the attachment original key", async () => {
     const storage = memoryStorage();
     const receipt = await copyVerifiedSource(entry(), chunks(bytes), storageBinding(storage));
