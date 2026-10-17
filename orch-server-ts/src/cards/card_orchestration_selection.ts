@@ -4,7 +4,25 @@ import {
   type CandidateSnapshot,
   type OrchestrationDecision,
 } from "@soulstream/wire-schema/card-orchestration";
-import type { DispatchCard } from "./card_dispatch_repository.js";
+import type { CardDispatchRepository, DispatchCard } from "./card_dispatch_repository.js";
+import { isUsageLimitTermination } from "../session/session_limit_termination.js";
+type OwnerSession = Awaited<ReturnType<CardDispatchRepository["ownerSession"]>>;
+type ExecutionCard = Pick<DispatchCard, "status" | "blocked_kind" | "assignee_session_id">;
+export type ExecutionClassification =
+  | { mode: "dispatch" }
+  | { mode: "resume"; owner: NonNullable<OwnerSession> }
+  | { mode: "skip"; reason: "limit_owner_missing" | "limit_owner_not_resumable" | "card_not_dispatchable" };
+
+export function classifyExecution(card: ExecutionCard, owner: OwnerSession): ExecutionClassification {
+  if (card.status === "queued") return { mode: "dispatch" };
+  if (card.status === "blocked" && card.blocked_kind === "limit") {
+    if (!card.assignee_session_id || !owner) return { mode: "skip", reason: "limit_owner_missing" };
+    if (isUsageLimitTermination(owner)) return { mode: "resume", owner };
+    return { mode: "skip", reason: "limit_owner_not_resumable" };
+  }
+  return { mode: "skip", reason: "card_not_dispatchable" };
+}
+
 export function validateDecisionSnapshot(
   input: unknown,
   snapshot: readonly CandidateSnapshot[],
