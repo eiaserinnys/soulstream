@@ -213,7 +213,7 @@ test('카드 증거 첨부는 같은 카드의 이미지·파일 순서로 공�
   expect(screen.getByText('다른 카드.png')).toBeTruthy();
   expect(screen.getByText('사용할 수 없음')).toBeTruthy();
   expect(jest.mocked(getAttachmentImageSize)).toHaveBeenCalled();
-  expect(jest.mocked(getAttachmentImageSize).mock.calls.every(([source]) => source.uri.length > 0)).toBe(true);
+  expect(jest.mocked(getAttachmentImageSize).mock.calls.every(([source]) => typeof source.uri === 'string' && source.uri.length > 0)).toBe(true);
 
   fireEvent.press(screen.getByLabelText('설명.txt 열기'));
   expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 5');
