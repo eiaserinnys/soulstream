@@ -41,7 +41,7 @@ function CardMarkdownReport({ report }: { report: CardReport }) {
   const gallery = segments.flatMap((part) => part.kind === 'image' ? [cardImageSource(part.url, serverUrl, jwt)] : []);
   let imageIndex = 0;
   // Keep links and image interactions inside the expanded report, outside the timeline fold responder.
-  return <Pressable testID={`card-report-markdown-${report.id}`} accessible={false}
+  return <Pressable testID={`card-report-markdown-${report.id}`} accessible={false} focusable={false}
     onPress={(event) => event.stopPropagation()} style={styles.reportBodyStack}>{segments.map((part, index) => {
     if (part.kind === 'markdown') return part.markdown.trim()
       ? <PlannerMarkdownText key={index} markdown={part.markdown} variant="card" textAlign="left" /> : null;
