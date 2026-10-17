@@ -42,6 +42,31 @@ const textFile = (key: string, name: string): AttachmentView => ({
   },
 });
 
+test.each([
+  ['assistant', 'default', 'flex-start'], ['user', 'default', 'flex-start'], ['user', 'manuscript', 'flex-end'],
+] as const)('%s %s retry keeps intrinsic width with its status alignment', (role, presentation, alignment) => {
+  const tokens = renderHook(() => useTokens()).result.current;
+  const screen = render(<MessageAttachments items={[]} role={role} presentation={presentation}
+    failure={{ status: 503, message: '첨부를 불러오지 못했습니다', retryable: true }} onRetry={jest.fn()} />);
+  const status = StyleSheet.flatten(screen.getByTestId('message-attachment-read-status').props.style);
+  expect(status.alignItems).toBe(alignment);
+  const button = screen.getByLabelText('첨부 다시 시도');
+  expect(StyleSheet.flatten(button.props.style).minHeight).toBeGreaterThanOrEqual(tokens.hitTarget.min);
+});
+
+test.each([
+  ['assistant', 'default', 'flex-start', 'left'],
+  ['user', 'default', 'flex-start', 'left'],
+  ['user', 'manuscript', 'flex-end', 'right'],
+] as const)('%s %s gallery, captions and files follow their content start edge', (role, presentation, edge, textAlign) => {
+  const screen = render(<MessageAttachments items={[image('one', 'photo.png'), textFile('text', 'notes.txt')]}
+    role={role} presentation={presentation} />);
+  expect(StyleSheet.flatten(screen.getByTestId('message-attachments-images').props.style).alignSelf).toBe(edge);
+  expect(StyleSheet.flatten(screen.getByText('photo.png').props.style).textAlign).toBe(textAlign);
+  expect(StyleSheet.flatten(screen.getByTestId('message-attachments-images-image-0').props.style).alignSelf).toBe(edge);
+  expect(StyleSheet.flatten(screen.getByTestId('message-attachments-file-rows').props.style).alignSelf).toBe(edge);
+});
+
 test('image gallery keeps the old role margin unless a following file row needs the shared attachment gap', () => {
   const tokens = renderHook(() => useTokens()).result.current;
   const attachment = createSessionVisualRoles(tokens).chat.attachment;

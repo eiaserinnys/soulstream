@@ -22,6 +22,8 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
   const t = useTokens();
   const device = useDeviceType();
   const attachment = createSessionVisualRoles(t).chat.attachment;
+  const contentAlign = role === 'user' && presentation === 'manuscript' ? 'right' : 'left';
+  const contentEdge = contentAlign === 'right' ? 'flex-end' : 'flex-start';
   const restoreFocus = useRef<(() => void) | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const authScope = captureAuthScope();
@@ -51,10 +53,12 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
 
   if (items.length === 0 && !loading && !failure) return null;
   return <View testID="message-attachments" style={{ width: '100%', gap: attachment.gridGap }}>
-    {failure || (loading && items.length === 0) ? <View testID="message-attachment-read-status" style={{ gap: attachment.gridGap }}>
+    {failure || (loading && items.length === 0) ? <View testID="message-attachment-read-status" style={{
+      gap: attachment.gridGap, alignSelf: contentEdge, alignItems: contentEdge,
+    }}>
       <Text lineBreakStrategyIOS="hangul-word" style={{ ...attachment.metadata,
         ...(Platform.OS === 'web' ? { wordBreak: 'keep-all' as const } : {}),
-        color: captionColor ?? t.colors.textPrimary }}>{failure?.message ?? '불러오는 중…'}</Text>
+        color: captionColor ?? t.colors.textPrimary, textAlign: contentAlign }}>{failure?.message ?? '불러오는 중…'}</Text>
       {failure?.retryable && onRetry ? <GlassButton size="card" accessibilityLabel="첨부 다시 시도" onPress={onRetry}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text>
       </GlassButton> : null}
@@ -65,12 +69,13 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
       testID="message-attachments-images"
       embedded
       captionColor={captionColor}
+      contentAlign={contentAlign}
       onOpenImage={(index, restore) => open(items.indexOf(images[index]), restore)}
     /> : null}
     {fileRows.length > 0 ? <View testID="message-attachments-file-rows" style={{
       width: '100%',
       maxWidth,
-      alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
+      alignSelf: contentEdge,
       gap: attachment.gridGap,
     }}>
       {fileRows.map((item, index) => <AttachmentFileRow

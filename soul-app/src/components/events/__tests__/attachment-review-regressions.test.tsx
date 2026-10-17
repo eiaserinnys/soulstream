@@ -79,3 +79,23 @@ test.each(['default', 'manuscript'] as const)('%s attachment bubble reserves sha
   expect(children.findIndex(child => child.props.testID === 'user-message-text')).toBeLessThan(
     children.findIndex(child => child.props.testID === 'user-message-attachments'));
 });
+
+test.each(['default', 'manuscript'] as const)('%s phone body-to-attachment spacing equals the attachment grid gap', async presentation => {
+  jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 390, height: 844, scale: 1, fontScale: 1 });
+  jest.spyOn(global, 'fetch').mockResolvedValue(response(projection));
+  const screen = render(<EventRenderer event={user} sessionId="route-session" presentation={presentation} />);
+  await waitFor(() => expect(screen.getByText('빈 첨부.txt')).toBeTruthy());
+  expect(StyleSheet.flatten(screen.getByTestId('user-message-attachments').props.style).marginTop).toBe(
+    StyleSheet.flatten(screen.getByTestId('message-attachments').props.style).gap);
+});
+
+test.each([310, 352])('PAS reserves min(320, row width %s) without imposing the normal bubble maximum', async width => {
+  jest.spyOn(global, 'fetch').mockResolvedValue(response(projection));
+  const screen = render(<EventRenderer event={user} sessionId="route-session" presentation="manuscript" />);
+  await waitFor(() => expect(screen.getByText('빈 첨부.txt')).toBeTruthy());
+  const row = screen.UNSAFE_getAllByType(View).find(node => StyleSheet.flatten(node.props.style)?.justifyContent === 'flex-end')!;
+  fireEvent(row, 'layout', { nativeEvent: { layout: { width, height: 200 } } });
+  const style = StyleSheet.flatten(screen.getByTestId('user-message-bubble').props.style);
+  expect(style.minWidth).toBe(Math.min(320, width));
+  expect(style.maxWidth).toBeUndefined();
+});

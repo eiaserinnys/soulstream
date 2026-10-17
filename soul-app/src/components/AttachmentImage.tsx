@@ -62,10 +62,11 @@ export function useChatImageMetadata(
   }));
 }
 
-export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, chatImageRole = 'assistant', filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor }: {
+export function AttachmentImage({ source, sources = [source], index = 0, testID, accessibilityLabel, captions, variant = 'default', filename, alt, chatImageRole = 'assistant', filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign }: {
   source: ImageSourcePropType; sources?: ImageSourcePropType[]; index?: number; testID?: string; accessibilityLabel: string;
   captions?: readonly string[];
   captionColor?: string;
+  contentAlign?: 'left' | 'right';
   variant?: 'default' | 'cardCheckItem' | 'chatRefined';
   filename?: string;
   alt?: string;
@@ -87,7 +88,7 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   if (variant === 'chatRefined') {
     return <ChatRefinedAttachment source={source} sources={sources} index={index} testID={testID}
       accessibilityLabel={accessibilityLabel} filename={filename} alt={alt} role={chatImageRole}
-      filenames={filenames} alts={alts} items={items} onSaveOriginal={onSaveOriginal} onOpen={onOpen} byteSizes={byteSizes} captionColor={captionColor} />;
+      filenames={filenames} alts={alts} items={items} onSaveOriginal={onSaveOriginal} onOpen={onOpen} byteSizes={byteSizes} captionColor={captionColor} contentAlign={contentAlign} />;
   }
   const dimensions = variant === 'cardCheckItem' ? { width: 104, height: 60 } : attachment.thumbnailFrameSize;
   const closeViewer = () => {
@@ -105,7 +106,7 @@ export function AttachmentImage({ source, sources = [source], index = 0, testID,
   </>;
 }
 
-export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID, precedingContent = 'text', items, onSaveOriginal, followedByAttachments, embedded = false, onOpenImage, captionColor }: {
+export function ChatRefinedImageGallery({ images, viewerImages = images, startIndex = 0, role, testID, precedingContent = 'text', items, onSaveOriginal, followedByAttachments, embedded = false, onOpenImage, captionColor, contentAlign = role === 'user' ? 'right' : 'left' }: {
   images: ChatRefinedGalleryItem[];
   viewerImages?: ChatRefinedGalleryItem[];
   startIndex?: number;
@@ -117,6 +118,7 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
   followedByAttachments?: boolean;
   embedded?: boolean;
   captionColor?: string;
+  contentAlign?: 'left' | 'right';
   onOpenImage?(index: number, restoreFocus: () => void): void;
 }) {
   const t = useTokens();
@@ -144,6 +146,7 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
       chatImageRole={role}
       filename={image.filename}
       captionColor={captionColor}
+      contentAlign={contentAlign}
       alt={image.alt}
       mimeType={image.mimeType}
       byteSize={image.byteSize}
@@ -164,7 +167,7 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
     style={{
       width: '100%',
       maxWidth,
-      alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
+      alignSelf: contentAlign === 'right' ? 'flex-end' : 'flex-start',
       flexDirection: 'column',
       gap: attachment.gridGap,
       marginTop: embedded ? 0 : role === 'user' ? userLeadingGap : t.spacing.lg,
@@ -203,7 +206,7 @@ export function isChatImageAttachmentPath(path: string): boolean {
   return isLegacyAttachmentImage(path);
 }
 
-function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLabel, filename, alt, role, filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor }: {
+function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLabel, filename, alt, role, filenames, alts, items, onSaveOriginal, onOpen, byteSizes, captionColor, contentAlign = role === 'user' ? 'right' : 'left' }: {
   source: ImageSourcePropType;
   sources: ImageSourcePropType[];
   index: number;
@@ -211,6 +214,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
   accessibilityLabel: string;
   filename?: string;
   captionColor?: string;
+  contentAlign?: 'left' | 'right';
   alt?: string;
   role: 'assistant' | 'user';
   filenames?: readonly string[];
@@ -255,7 +259,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
   const frameStyle = {
     width: '100%' as const,
     maxWidth: attachment.thumbnailFrameSize.width,
-    alignSelf: role === 'user' ? 'flex-end' as const : 'flex-start' as const,
+    alignSelf: contentAlign === 'right' ? 'flex-end' as const : 'flex-start' as const,
   };
   const closeViewer = () => {
     setOpen(false);
@@ -275,7 +279,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
         width: '100%',
         maxWidth: attachment.thumbnailFrameSize.width,
         maxHeight: attachment.thumbnailFrameSize.height,
-        alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
+        alignSelf: contentAlign === 'right' ? 'flex-end' : 'flex-start',
         aspectRatio: 1,
         minHeight: t.hitTarget.min,
         borderRadius: attachment.radius,
@@ -307,7 +311,7 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       ...frameStyle,
       color: captionColor ?? attachment.textMuted,
       marginTop: attachment.filenameGap,
-      textAlign: role === 'user' ? 'right' : 'left',
+      textAlign: contentAlign,
     }}>{filename}</Text> : null}
     {open ? <ImageViewerModal
       sources={sources}

@@ -199,8 +199,8 @@ export function UserMessage({
         style={[children == null ? bubbleStyle : [bubbleStyle, { backgroundColor: t.colors.accentTint }],
           ...(manuscriptImageItems.length > 0 ? [styles.manuscriptImageBubble] : []),
           ...(attachmentSignals.hasSignal && rowWidth > 0 ? [{
-            minWidth: Math.min(attachmentMinimum, rowWidth * parseFloat(sessionRoles.chat.bubbleMaxWidth) / 100),
-            maxWidth: sessionRoles.chat.bubbleMaxWidth,
+            minWidth: Math.min(attachmentMinimum, presentation === 'manuscript'
+              ? rowWidth : rowWidth * parseFloat(sessionRoles.chat.bubbleMaxWidth) / 100),
           }] : []),
           pendingStatus === 'sending' && styles.pendingSendingBubble]}
       >
@@ -440,7 +440,7 @@ function makeStyles(t: DesignTokens) {
     },
     // 본문 다음 첨부까지 같은 간격을 유지한다.
     attachmentListWithText: {
-      marginTop: t.spacing.sm,
+      marginTop: sessionRoles.chat.attachment.gridGap,
     },
     avatar: {
       width: AVATAR,
