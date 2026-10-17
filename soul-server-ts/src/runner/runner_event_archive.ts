@@ -8,7 +8,7 @@ import type { Logger } from "pino";
 import type { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import type { RunnerEventArchiveInput } from "./runner_child_runtime_helpers.js";
 
-const EVENT_ARCHIVE_HOST_DEADLINE_MS = 30_000;
+export const EVENT_ARCHIVE_HOST_DEADLINE_MS = 30_000;
 
 export async function archiveRunnerEvent(
   input: RunnerEventArchiveInput & {

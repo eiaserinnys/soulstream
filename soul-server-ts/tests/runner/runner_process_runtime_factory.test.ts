@@ -492,6 +492,7 @@ describe("applyRunnerHostCall", () => {
         workspaceDir: "/workspace/resolved",
         profileWorkspaceDir: "/workspace/profile",
       },
+      expect.any(AbortSignal),
     );
 
     const fallbackTask = {
@@ -512,6 +513,7 @@ describe("applyRunnerHostCall", () => {
         outputCommandId: "command-fallback",
         workspaceDir: "/workspace/engine",
       }),
+      expect.any(AbortSignal),
     );
 
     const inactiveTask = {

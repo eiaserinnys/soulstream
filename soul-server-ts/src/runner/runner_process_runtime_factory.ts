@@ -49,6 +49,7 @@ import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import type { ReleaseManifestV1 } from "../release/release_manifest.js";
 import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 import { resolveProducedAttachmentExecutionContext } from "../attachments/produced_attachment_context.js";
+import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 
 type RunnerEnv = Pick<Env,
@@ -368,7 +369,13 @@ export async function applyRunnerHostCall(
     if (!service) {
       throw new Error("ATTACHMENT_REGISTRATION_UNAVAILABLE: produced attachment service is unavailable");
     }
-    const result = await service.register({ local_path: localPath, name, mime_type: mimeType }, execution);
+    // The runner stops waiting after the same deadline; stop the upload too so
+    // this host request does not hold the connection for the 300s service limit.
+    const result = await service.register(
+      { local_path: localPath, name, mime_type: mimeType },
+      execution,
+      AbortSignal.timeout(EVENT_ARCHIVE_HOST_DEADLINE_MS),
+    );
     return result.descriptor as AttachmentDescriptor;
   }
   const sessionId = asString(call.args[0], "runner host session id");
