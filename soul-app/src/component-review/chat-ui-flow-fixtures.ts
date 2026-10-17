@@ -14,6 +14,12 @@ export function chatUiReviewHistory(search: string): HistoricalMessage[] {
   const params = new URLSearchParams(search);
   const example: ChatUiExample = params.get('example') === 'pas' ? 'pas' : params.get('example') === 'gallery' ? 'gallery' : 'normal';
   const sample = params.get('sample'); const state = params.get('state');
+  if (sample === 'attachment-layout') {
+    const history = chatUiAttachmentWidthHistory();
+    const long = history.find(event => event.id === 108)!;
+    return [{ ...long, id: 109, payload: { text: long.payload.text } },
+      ...history.map(event => event.id === 106 ? { ...event, event_type: 'intervention_sent' } : event)];
+  }
   if (sample === 'selmod') return chatUiAttachmentWidthHistory();
   if (sample === 'attachments' || sample === 'attachments-missing') {
     return chatUiAttachmentReviewHistory();

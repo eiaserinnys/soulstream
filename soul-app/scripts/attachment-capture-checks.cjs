@@ -15,4 +15,13 @@ function assertAssistantAlignment(name, galleryLeft, bubbleContentLeft, toleranc
     `${name} output image gallery should align to assistant bubble content left edge: ${galleryLeft - bubbleContentLeft}px`);
 }
 
-module.exports = { loadedImageWithin, assertAssistantAlignment };
+function assertUserAttachmentAlignment(name, alignment, presentation = 'default') {
+  const edge = presentation === 'manuscript' ? 'Right' : 'Left';
+  for (const item of ['Gallery', 'FileRows']) {
+    const delta = alignment[`user${item}${edge}DeltaPx`];
+    assert.ok(Number.isFinite(delta) && Math.abs(delta) <= (alignment.tolerancePx ?? 1),
+      `${name} user ${item} must share the ${edge.toLowerCase()} content edge: ${delta}px`);
+  }
+}
+
+module.exports = { loadedImageWithin, assertAssistantAlignment, assertUserAttachmentAlignment };

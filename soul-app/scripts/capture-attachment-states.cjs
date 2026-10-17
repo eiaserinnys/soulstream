@@ -13,12 +13,13 @@ const evidence = { cases: {}, requests: [], errors: [], passed: false };
   const browser = await chromium.launch();
   try {
     for (const [size, viewport] of Object.entries({ tablet: { width: 1194, height: 834 }, phone: { width: 390, height: 844 } })) {
-      for (const presentation of ['default', 'manuscript']) {
+      for (const presentation of ['default', 'manuscript']) for (const theme of ['light', 'dark']) {
         for (const mode of ['server-error', 'denied', 'delay', 'fail']) {
-          const name = `${size}-${presentation}-${mode}`;
+          if (theme === 'dark' && ['delay', 'fail'].includes(mode)) continue;
+          const name = `${size}-${theme}-${presentation}-${mode}`;
           const cookies = ['delay', 'fail'].includes(mode) ? { 'img-mode': mode, 'img-delay': 4000 } : { 'fixture-mode': mode };
           const { context, page } = await newPage(browser, base, { viewport, hasTouch: true }, evidence.errors, cookies);
-          const query = new URLSearchParams({ section: 'chatUiRenderer', sample: 'attachments', safeArea: 'fixture', theme: 'light', presentation });
+          const query = new URLSearchParams({ section: 'chatUiRenderer', sample: 'attachments', safeArea: 'fixture', theme, presentation });
           await page.goto(`${base}/assets/ios-components/index.html?${query}`);
           const user = page.locator('[data-testid="user-message-bubble"]:visible').filter({ hasText: '검토 자료를 함께 보냅니다.' });
           await user.waitFor();
@@ -34,6 +35,24 @@ const evidence = { cases: {}, requests: [], errors: [], passed: false };
             const retry = user.getByRole('button', { name: '첨부 다시 시도', exact: true });
             result.retryCount = await retry.count();
             assert.equal(result.retryCount, mode === 'server-error' ? 1 : 0);
+            result.statuses = await page.evaluate(() => [...document.querySelectorAll('[data-testid="message-attachment-read-status"]')]
+              .filter(e => e.getBoundingClientRect().width > 0).map(e => {
+                const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, right: r.right, width: r.width, height: r.height }; };
+                const button = e.querySelector('[role="button"]');
+                const caption = e.querySelector('[dir="auto"]');
+                const userBubble = e.closest('[data-testid="user-message-bubble"]');
+                const owner = userBubble ?? e.closest('[data-testid="assistant-attachment-content"]');
+                const ownerStyle = getComputedStyle(owner);
+                const body = userBubble?.querySelector('[data-testid="user-message-text"]');
+                const bs = button ? getComputedStyle(button) : null;
+                const label = button?.querySelector('[dir="auto"]');
+                const naturalWidth = label ? rect(label).width + parseFloat(bs.paddingLeft) + parseFloat(bs.paddingRight)
+                  + parseFloat(bs.borderLeftWidth) + parseFloat(bs.borderRightWidth) : null;
+                return { user: !!userBubble, status: rect(e), caption: rect(caption), button: button ? rect(button) : null,
+                  body: body ? rect(body) : null, naturalWidth,
+                  contentLeft: rect(owner).x + parseFloat(ownerStyle.paddingLeft),
+                  contentRight: rect(owner).right - parseFloat(ownerStyle.paddingRight) };
+              }));
             result.before = await shot('');
             if (mode === 'server-error') {
               await context.addCookies([{ name: 'fixture-mode', value: 'normal', url: base }]);

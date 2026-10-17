@@ -5,7 +5,7 @@ const { statSync } = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { once } = require('node:events');
-const { loadedImageWithin, assertAssistantAlignment } = require('./attachment-capture-checks.cjs');
+const { loadedImageWithin, assertAssistantAlignment, assertUserAttachmentAlignment } = require('./attachment-capture-checks.cjs');
 const { measureAttachmentColors, assertAttachmentColors } = require('./attachment-capture-colors.cjs');
 
 const [playwrightPath, fixtureUrlInput, outputPath, browserPath] = process.argv.slice(2);
@@ -247,7 +247,7 @@ async function waitForChat(page) {
   await page.evaluate(() => document.fonts.ready);
 }
 
-async function measureAndAssertAlignment(page, name) {
+async function measureAndAssertAlignment(page, name, presentation) {
   const geometry = await page.evaluate(() => {
     const rect = element => {
       const value = element.getBoundingClientRect();
@@ -277,6 +277,9 @@ async function measureAndAssertAlignment(page, name) {
       ? {
           tolerancePx: 1,
           userRightLine: userContentLine.contentRight,
+          userLeftLine: userContentLine.contentLeft,
+          userGalleryLeftDeltaPx: rect(userGallery).x - userContentLine.contentLeft,
+          userFileRowsLeftDeltaPx: rect(userFileRows).x - userContentLine.contentLeft,
           userGalleryRightDeltaPx: rect(userGallery).right - userContentLine.contentRight,
           userFileRowsRightDeltaPx: rect(userFileRows).right - userContentLine.contentRight,
           userGalleryToFileRowsRightDeltaPx: rect(userGallery).right - rect(userFileRows).right,
@@ -305,10 +308,7 @@ async function measureAndAssertAlignment(page, name) {
   assert.ok(geometry.outputGallery, `${name} assistant output gallery not rendered`);
   assert.ok(geometry.userFileRows, `${name} user TXT row not rendered`);
   assert.ok(geometry.alignment, `${name} alignment reference lines not measured`);
-  assert.ok(Math.abs(geometry.alignment.userGalleryRightDeltaPx) <= tolerance,
-    `${name} user image gallery should align to bubble content right edge: ${geometry.alignment.userGalleryRightDeltaPx}px`);
-  assert.ok(Math.abs(geometry.alignment.userFileRowsRightDeltaPx) <= tolerance,
-    `${name} user TXT row should align to bubble content right edge: ${geometry.alignment.userFileRowsRightDeltaPx}px`);
+  assertUserAttachmentAlignment(name, geometry.alignment, presentation);
   assert.ok(Math.abs(geometry.alignment.userGalleryToFileRowsRightDeltaPx) <= tolerance,
     `${name} user image gallery and TXT row should share a right edge: ${geometry.alignment.userGalleryToFileRowsRightDeltaPx}px`);
   assertAssistantAlignment(name, geometry.outputGallery.x, geometry.assistantContentLine.contentLeft, tolerance);
@@ -350,7 +350,7 @@ async function captureConversation(browser, base, { name, width, height, present
   await waitForChat(page);
   await page.locator('[data-testid="user-message-bubble"]:visible')
     .filter({ has: page.locator('[data-testid="message-attachments-images"]') }).first().scrollIntoViewIfNeeded();
-  const geometry = await measureAndAssertAlignment(page, name);
+  const geometry = await measureAndAssertAlignment(page, name, presentation);
   const colors = await page.evaluate(measureAttachmentColors);
   const contrast = assertAttachmentColors(colors);
   if (mode === 'missing') {

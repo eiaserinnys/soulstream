@@ -1,8 +1,23 @@
 import { chatUiAttachmentReviewHistory, chatUiReviewHistory, chatUiReviewSseUrl, chatUiReviewSessionId } from '../chat-ui-flow-fixtures';
 
 const sampleSearch = '?section=chatUiRenderer&sample=attachments';
-const { loadedImageWithin, assertAssistantAlignment } = require('../../../scripts/attachment-capture-checks.cjs');
+const { loadedImageWithin, assertAssistantAlignment, assertUserAttachmentAlignment } = require('../../../scripts/attachment-capture-checks.cjs');
 const { contrastRatio, assertAttachmentColors } = require('../../../scripts/attachment-capture-colors.cjs');
+
+it('rejects right-only bubble alignment while preserving right-aligned PAS', () => {
+  const old = { userGalleryRightDeltaPx: 0, userFileRowsRightDeltaPx: 0,
+    userGalleryLeftDeltaPx: 200, userFileRowsLeftDeltaPx: 200 };
+  expect(() => assertUserAttachmentAlignment('bubble', old)).toThrow(/left content edge/);
+  expect(() => assertUserAttachmentAlignment('PAS', old, 'manuscript')).not.toThrow();
+  expect(() => assertUserAttachmentAlignment('bubble', { ...old, userGalleryLeftDeltaPx: 0, userFileRowsLeftDeltaPx: 0 })).not.toThrow();
+  expect(() => assertUserAttachmentAlignment('bubble', { ...old, userGalleryLeftDeltaPx: 0 })).toThrow(/FileRows/);
+});
+
+it('compares identical long text with and without attachments and includes an intervention', () => {
+  const history = chatUiReviewHistory('?sample=attachment-layout');
+  expect(history.find(event => event.id === 109)?.payload).toEqual({ text: history.find(event => event.id === 108)?.payload.text });
+  expect(history.find(event => event.id === 106)).toMatchObject({ event_type: 'intervention_sent', payload: { attachment_ids: expect.any(Array) } });
+});
 
 it('rejects muted bubble captions, translucent file surfaces, and insufficient file contrast', () => {
   expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21);
