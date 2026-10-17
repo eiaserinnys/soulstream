@@ -61,7 +61,7 @@ const ToolCallItem = memo(function ToolCallItem({
         </div>
       )}
       {expanded && (resultContent || msg.toolResultTruncation) && (
-        <div className="ml-5 mt-2">
+        <div className={cn("ml-5", msg.toolInputTruncation ? "mt-2" : "mt-0.5")}>
           <pre data-slot="chat-tool-body" className={cn(
             "text-xs bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
             msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
