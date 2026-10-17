@@ -59,11 +59,12 @@ export class CardControlPlaneService {
   constructor(private readonly repoSql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort,
     private readonly onMutation?: (change:CardMutationChange)=>void,
     onReportsChanged?: PublishPersistentReports,
-    private readonly warn: (message: string) => void = console.warn) {
-    this.repo=new CardRepository(repoSql);
+    private readonly warn: (message: string) => void = console.warn,
+    corsAllowedOrigins: readonly string[] = []) {
+    this.repo=new CardRepository(repoSql, corsAllowedOrigins);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
     this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged) : undefined;
-    this.mcpRead=new CardMcpReadService(repoSql);
+    this.mcpRead=new CardMcpReadService(repoSql, corsAllowedOrigins);
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
   getSupervisedCardContext(params: { sessionId: string; folderIds: string[] | null; cardLimit: number; questionLimit: number }): Promise<SupervisedCardSnapshot> {

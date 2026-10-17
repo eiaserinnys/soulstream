@@ -214,7 +214,10 @@ function paginateProjectedText(text: string, offset: number, limit: number): Car
 export class CardMcpReadService {
   private readonly repository: CardMcpReadRepository;
 
-  constructor(sql: SqlClient) {
+  constructor(
+    sql: SqlClient,
+    private readonly corsAllowedOrigins: readonly string[] = [],
+  ) {
     this.repository = new CardMcpReadRepository(sql);
   }
 
@@ -311,7 +314,7 @@ export class CardMcpReadService {
         }
       }
 
-      const projectedRows = await projectCardAttachmentRows(sql, projectionRows, cardId);
+      const projectedRows = await projectCardAttachmentRows(sql, projectionRows, cardId, this.corsAllowedOrigins);
       const projectedCard = currentCardIndex < 0
         ? current.card
         : (({ attachment_refs: _attachmentRefs, ...card }) => card)(projectedRows[currentCardIndex]!);
