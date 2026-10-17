@@ -169,6 +169,16 @@ test('direct answer preserves the real draft and has no undo, then failure/retry
   expect(screen.getByLabelText('응')).toBeTruthy();
   expect(mockListMount).toHaveBeenCalledTimes(1); expect(mockListUnmount).not.toHaveBeenCalled();
 });
+test('card answer ACK clears the pending slot without a synthetic chat event', async () => {
+  const screen = await openReport();
+  mockApi.intervene.mockResolvedValueOnce({ delivered: true, reason: 'card_question_answered' });
+  await act(async () => fireEvent.press(screen.getByLabelText('응')));
+  expect(mockApi.intervene).toHaveBeenCalledWith('one', '예산 확인: 응', undefined,
+    [{ key: 'persistent_report_reply', content: { key: 'ask-one', option: '응' } }]);
+  expect(useChatStore.getState().pendingOptimisticBySession.one).toBeUndefined();
+  expect(useChatStore.getState().eventsBySession.one ?? []).toHaveLength(0);
+  expect(screen.getByTestId('report-received')).toBeTruthy();
+});
 test('ordinary composer messages only carry visible report context', async () => {
   const screen = await openReport();
   fireEvent.changeText(screen.getByTestId('chat-composer-text-input'), '예산 확인: 응 대신 보류합니다');

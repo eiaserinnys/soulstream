@@ -14,6 +14,9 @@ import {
 // ChatAttachment 타입은 import하지 않는다. 전송 경로와 복원을 위한 path/name만 구조적으로
 // 받아 첨부 도메인의 lifecycle은 알지 않는다.
 
+/** 서버가 판의 카드 질문 답으로 접수했음을 알리는 이유. PAS 채팅 echo 없이 같은 요청 ID의 pending 슬롯을 정리한다. */
+export const CARD_QUESTION_ANSWERED_REASON = 'card_question_answered';
+
 export interface UseChatSendFlowDeps {
   getMessageContext?: (text: string) => ReportSendContext;
   /** API 클라이언트. null이면 재시도 가능한 준비 중 오류를 노출한다. */
@@ -259,6 +262,9 @@ export function useChatSendFlow(
           ...(pending.usageFlowId === undefined ? {} : { flowId: pending.usageFlowId }),
         });
         return;
+      }
+      if (verdict.reason === CARD_QUESTION_ANSWERED_REASON) {
+        useChatStore.getState().clearPendingOptimistic(sessionId, pending.id);
       }
       reportUsage(onUsageEvent, {
         kind: 'result',
