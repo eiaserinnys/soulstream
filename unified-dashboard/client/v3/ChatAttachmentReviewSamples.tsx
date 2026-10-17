@@ -1,14 +1,86 @@
-import { useEffect, useMemo, useState } from "react";
-import { FileAttachmentPreview } from "@seosoyoung/soul-ui";
+import { useLayoutEffect, useMemo, useState } from "react";
+import { ChatUiControllerProvider, FileAttachmentPreview } from "@seosoyoung/soul-ui";
 import { AttachmentViewer } from "@seosoyoung/soul-ui/components/AttachmentViewer";
 import { ChatAttachments } from "@seosoyoung/soul-ui/components/chat/ChatAttachments";
+import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
+import { ChatInputAccessories } from "@seosoyoung/soul-ui/components/chat/ChatInputAccessories";
+import { ChatInputComposer } from "@seosoyoung/soul-ui/components/chat/ChatInputComposer";
+import { ChatInputEditor } from "@seosoyoung/soul-ui/components/chat/ChatInputEditor";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
-import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import { projectChatAttachmentItems, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
+import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
+import { projectChatOutputAttachments } from "@seosoyoung/soul-ui/lib/chat-output-attachment-projection";
+import { reviewDocuments } from "./chat-ui-review-documents";
 import "./components-review.css";
 
+type SessionEventAttachmentResponse = Parameters<typeof projectChatAttachmentItems>[0];
+type SessionEventAttachmentView = SessionEventAttachmentResponse["items"][number];
+
 const sampleContext = { type: "session" as const, id: "attachment-review-sample" };
+const connectedReviewSessionId = "attachment-review-connected";
+const overlayReviewSessionId = "attachment-review-overlay";
+
+function connectedAsset(
+  attachmentId: string,
+  name: string,
+  mimeType: string,
+  previewKind: "image" | "text" | "info",
+  sessionId: string,
+  byteSize: number = 4096,
+): SessionEventAttachmentView {
+  return {
+    kind: "asset",
+    descriptor: {
+      attachment_id: attachmentId,
+      name,
+      mime_type: mimeType,
+      byte_size: byteSize,
+      checksum_sha256: null,
+      width: previewKind === "image" ? 1 : null,
+      height: previewKind === "image" ? 1 : null,
+      preview_kind: previewKind,
+      preview_mime_type: previewKind === "image" ? mimeType : null,
+    },
+    read_context: { type: "session", id: sessionId },
+    legacy_sources: [],
+  };
+}
+
+function connectedProjection(eventId: number, sessionId: string): SessionEventAttachmentResponse {
+  const itemsByEvent: Record<number, SessionEventAttachmentView[]> = {
+    201: [
+      connectedAsset("review-user-image", "사용자 이미지.png", "image/png", "image", sessionId),
+      connectedAsset("review-failed-image", "누락 이미지.png", "image/png", "image", sessionId),
+      connectedAsset("review-user-archive", "자료.zip", "application/zip", "info", sessionId),
+      {
+        kind: "legacy",
+        node_id: "eiaserinnys",
+        path: "/incoming/참고.txt",
+        name: "참고.txt",
+        mime_type: "text/plain",
+        byte_size: 20,
+        availability: "unresolved",
+        read_context: { type: "session", id: sessionId },
+      },
+    ],
+    202: [
+      connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId),
+      connectedAsset("review-output-note", "응답.txt", "text/plain", "text", sessionId),
+    ],
+    203: [connectedAsset("review-rich-file", "요약.json", "application/json", "text", sessionId)],
+    204: [connectedAsset("review-manuscript-image", "PAS 사용자 이미지.png", "image/png", "image", sessionId)],
+    205: [connectedAsset("review-manuscript-output", "PAS 응답.txt", "text/plain", "text", sessionId)],
+    206: [connectedAsset("review-intervention-file", "개입 첨부.txt", "text/plain", "text", sessionId)],
+    207: [connectedAsset("review-overlay-file", "선택 카드 자료.txt", "text/plain", "text", sessionId)],
+    208: [connectedAsset("review-large-text", "큰_텍스트.txt", "text/plain", "text", sessionId, 1_048_586)],
+    301: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
+    302: [connectedAsset("review-output-image", "응답 이미지.png", "image/png", "image", sessionId)],
+    304: [connectedAsset("review-complete-only", "완료 첨부.txt", "text/plain", "text", sessionId)],
+  };
+  return { event_id: eventId, items: itemsByEvent[eventId] ?? [] };
+}
 
 function localItem(file: File, previewKind: ChatAttachmentItem["previewKind"], key = `local:${file.name}`): ChatAttachmentItem {
   return {
@@ -137,11 +209,186 @@ export function ChatAttachmentReviewSamples() {
       tile: new File(["기존 타일 표본"], "existing-attachment.pdf", { type: "application/pdf" }),
     };
   }, [items]);
+  const connectedUi = useMemo(() => ({
+    schema_version: 1,
+    revision: 1,
+    ui_id: `ui_${"b".repeat(32)}`,
+    hash: "c".repeat(64),
+    document: reviewDocuments.normal,
+  }), []);
+  const connectedMessages = useMemo(() => [
+    {
+      id: "connected-default-user",
+      role: "user",
+      content: "일반 채팅의 첨부입니다.\n\n![첨부 행과 같은 이미지](/api/attachments/review-user-image/content?context_type=session&context_id=attachment-review-connected)\n\n본문 설명 ![외부 이미지](https://images.example/ordinary.png) 뒤 설명\n\n![이전 경로](/api/attachments/files?nodeId=eiaserinnys&path=%2Fincoming%2Finline-only.png)",
+      treeNodeId: "connected-default-user",
+      treeNodeType: "user_message",
+      eventId: 201,
+      attachmentIds: ["review-user-image", "review-user-archive"],
+      attachmentPaths: ["/incoming/참고.txt"],
+    },
+    {
+      id: "connected-textless-output",
+      role: "assistant",
+      content: "",
+      treeNodeId: "connected-textless-output",
+      treeNodeType: "assistant_message",
+      eventId: 202,
+      attachmentIds: ["review-output-image", "review-output-note"],
+    },
+    {
+      id: "connected-rich-output",
+      role: "assistant",
+      content: "표본 문서",
+      treeNodeId: "connected-rich-output",
+      treeNodeType: "assistant_message",
+      eventId: 203,
+      attachmentIds: ["review-rich-file"],
+      ui: connectedUi,
+    },
+    {
+      id: "connected-manuscript-user",
+      role: "user",
+      content: "PAS 사용자 첨부입니다.\n\n![첨부 행과 같은 이미지](/api/attachments/review-manuscript-image/content?context_type=session&context_id=attachment-review-connected)",
+      treeNodeId: "connected-manuscript-user",
+      treeNodeType: "user_message",
+      eventId: 204,
+      attachmentIds: ["review-manuscript-image"],
+    },
+    {
+      id: "connected-manuscript-output",
+      role: "assistant",
+      content: "PAS 응답 첨부입니다.",
+      treeNodeId: "connected-manuscript-output",
+      treeNodeType: "assistant_message",
+      eventId: 205,
+      attachmentIds: ["review-manuscript-output"],
+    },
+    {
+      id: "connected-intervention",
+      role: "intervention",
+      content: "개입 메시지 첨부입니다.",
+      treeNodeId: "connected-intervention",
+      treeNodeType: "intervention",
+      eventId: 206,
+      attachmentIds: ["review-intervention-file"],
+    },
+    {
+      id: "connected-large-text",
+      role: "assistant",
+      content: "앞부분만 확인하고 원본 전체를 저장할 수 있는 큰 텍스트 첨부입니다.",
+      treeNodeId: "connected-large-text",
+      treeNodeType: "assistant_message",
+      eventId: 208,
+      attachmentIds: ["review-large-text"],
+    },
+    {
+      id: "connected-error-401",
+      role: "user",
+      content: "로그인이 필요한 첨부입니다.",
+      treeNodeId: "connected-error-401",
+      treeNodeType: "user_message",
+      eventId: 401,
+      attachmentIds: ["review-login-required"],
+    },
+    {
+      id: "connected-error-404",
+      role: "user",
+      content: "찾을 수 없는 첨부입니다.",
+      treeNodeId: "connected-error-404",
+      treeNodeType: "user_message",
+      eventId: 404,
+      attachmentIds: ["review-not-found"],
+    },
+    {
+      id: "connected-error-403",
+      role: "user",
+      content: "권한이 없는 첨부입니다.",
+      treeNodeId: "connected-error-403",
+      treeNodeType: "user_message",
+      eventId: 403,
+      attachmentIds: ["review-forbidden"],
+    },
+    {
+      id: "connected-temporary-failure",
+      role: "assistant",
+      content: "일시 실패 상태입니다.",
+      treeNodeId: "connected-temporary-failure",
+      treeNodeType: "assistant_message",
+      eventId: 503,
+      attachmentIds: ["review-temporary-failure"],
+    },
+    {
+      id: "connected-user-temporary-failure",
+      role: "user",
+      content: "일시 실패 상태입니다.",
+      treeNodeId: "connected-user-temporary-failure",
+      treeNodeType: "user_message",
+      eventId: 503,
+      attachmentIds: ["review-temporary-failure"],
+    },
+  ] as ChatMessage[], [connectedUi]);
+  const projectedOutputMessages = useMemo(() => projectChatOutputAttachments([
+    {
+      id: "review-output-response",
+      role: "assistant",
+      content: "응답과 함께 전달된 파일입니다.",
+      treeNodeId: "review-output-response",
+      treeNodeType: "assistant_message",
+      eventId: 301,
+      attachmentIds: ["review-output-image"],
+    },
+    {
+      id: "review-output-complete-1",
+      role: "system",
+      content: "완료",
+      treeNodeId: "review-output-complete-1",
+      treeNodeType: "complete",
+      eventId: 302,
+      attachmentIds: ["review-output-image"],
+      captionStats: "턴 비용 $0.04",
+    },
+    {
+      id: "review-output-generation-2",
+      role: "system",
+      content: "새 세대",
+      treeNodeId: "review-output-generation-2",
+      treeNodeType: "generation_started",
+      eventId: 303,
+    },
+    {
+      id: "review-output-complete-2",
+      role: "system",
+      content: "완료",
+      treeNodeId: "review-output-complete-2",
+      treeNodeType: "complete",
+      eventId: 304,
+      attachmentIds: ["review-complete-only"],
+      captionStats: "턴 비용 $0.03",
+    },
+  ] as ChatMessage[]), []);
   const [index, setIndex] = useState<number | null>(null);
   const [viewerItems, setViewerItems] = useState(items);
   const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
+  const [draft, setDraft] = useState("첨부를 취소해도 이 초안은 남습니다.");
+  const [pendingFiles, setPendingFiles] = useState(() => [
+    { id: "ready", file: new File(["완료"], "회의자료_고객요청사항_최종검토본.pdf", { type: "application/pdf" }), status: "done" as const },
+    { id: "uploading", file: new File(["업로드"], "화면설계_첨부_버튼과_프리뷰_수정본.pdf", { type: "application/pdf" }), status: "uploading" as const },
+    { id: "error", file: new File(["실패"], "번역검토_세부원문_수정요청_목록.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), status: "error" as const },
+  ]);
+  const [pastedImage, setPastedImage] = useState<File | null>(null);
+  useLayoutEffect(() => {
+    let active = true;
+    void fetch("/icon-192.png").then(response => response.blob()).then(blob => {
+      if (active) setPastedImage(new File([blob], "clipboard-review.png", { type: "image/png" }));
+    });
+    return () => { active = false; };
+  }, []);
+  const pendingItems = useMemo(() => pendingFiles.map(({ id, file }) => localItem(file, "info", `pending:${id}`)), [pendingFiles]);
+  const attachmentOnlyFile = useMemo(() => new File(["자료"], "답변에_포함할_추가_자료.pdf", { type: "application/pdf" }), []);
+  const attachmentOnlyItems = useMemo(() => [localItem(attachmentOnlyFile, "info", "attachment-only")], [attachmentOnlyFile]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const originalFetch = window.fetch;
     const reviewFetch: typeof window.fetch = (input, init) => {
       const url = input instanceof Request
@@ -149,6 +396,24 @@ export function ChatAttachmentReviewSamples() {
         : input instanceof URL
           ? input.href
           : input;
+      const eventRequest = url.match(/\/api\/sessions\/([^/]+)\/events\/(\d+)\/attachments$/);
+      if (eventRequest) {
+        const sessionId = decodeURIComponent(eventRequest[1]!);
+        const eventId = Number(eventRequest[2]);
+        const requestAttribute = "data-review-event-" + eventId + "-requests";
+        const requestCount = Number(document.documentElement.getAttribute(requestAttribute) ?? "0") + 1;
+        document.documentElement.setAttribute(requestAttribute, String(requestCount));
+        if (eventId === 401) return Promise.resolve(new Response(null, { status: 401 }));
+        if (eventId === 403) return Promise.resolve(new Response(null, { status: 403 }));
+        if (eventId === 404) return Promise.resolve(new Response(null, { status: 404 }));
+        if (eventId === 503) return Promise.resolve(new Response(null, { status: 503 }));
+        if (sessionId === connectedReviewSessionId || sessionId === overlayReviewSessionId) {
+          return Promise.resolve(new Response(JSON.stringify(connectedProjection(eventId, sessionId)), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }));
+        }
+      }
       if (url.endsWith("/__review-attachment/403")) return Promise.resolve(new Response(null, { status: 403 }));
       if (url.endsWith("/__review-attachment/503")) return Promise.resolve(new Response(null, { status: 503 }));
       return originalFetch.call(window, input, init);
@@ -165,9 +430,60 @@ export function ChatAttachmentReviewSamples() {
     setIndex(next);
   };
 
+  const pendingChips = <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{pendingFiles.map(file => (
+    <FileAttachmentPreview key={file.id} variant="chip" file={file.file} status={file.status}
+      onOpen={(next, trigger) => { const itemIndex = pendingItems.findIndex(item => item.source.kind === "local" && item.source.file === next); if (itemIndex >= 0) openAt(pendingItems, itemIndex, trigger); }}
+      onRemove={() => setPendingFiles(current => current.filter(item => item.id !== file.id))} />
+  ))}{pastedImage && <FileAttachmentPreview variant="chip" file={pastedImage} status="done"
+    onOpen={(file, trigger) => openAt([localItem(file, "image")], 0, trigger)} onRemove={() => setPastedImage(null)} />}</div>;
+  const attachmentOnlyChip = <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <FileAttachmentPreview variant="chip" file={attachmentOnlyFile} status="done"
+      onOpen={(_, trigger) => openAt(attachmentOnlyItems, 0, trigger)} onRemove={() => {}} />
+  </div>;
+
   return (
     <main className="v3-components-main glass-strong glass-chrome" style={chatTypographyStyle}>
       <div className="flex flex-col gap-4">
+        <ChatUiControllerProvider sessionId={connectedReviewSessionId}>
+          <section className="flex flex-col gap-2" aria-label="실제 메시지 첨부 연결">
+            <div className="v3-type-section">연결된 메시지</div>
+            <div className="v3-chat-surface flex flex-col">
+              {connectedMessages.map((msg) => (
+                <ChatMessageItem
+                  key={msg.treeNodeId}
+                  msg={msg}
+                  sessionId={connectedReviewSessionId}
+                  presentation={msg.treeNodeId.includes("manuscript") ? "manuscript" : "default"}
+                />
+              ))}
+            </div>
+          </section>
+          <section className="flex flex-col gap-2" aria-label="응답 출력과 완료 캡션">
+            <div className="v3-type-section">응답 출력과 완료 캡션</div>
+            <div className="v3-chat-surface flex flex-col">
+              {projectedOutputMessages.map((msg) => (
+                <ChatMessageItem key={msg.treeNodeId} msg={msg} sessionId={connectedReviewSessionId} />
+              ))}
+            </div>
+          </section>
+          <section className="flex flex-col gap-2" aria-label="다른 세션 첨부 문맥">
+            <div className="v3-type-section">선택 카드 대화 문맥</div>
+            <div className="v3-chat-surface flex flex-col">
+              <ChatMessageItem
+                msg={{
+                  id: "connected-overlay-output",
+                  role: "user",
+                  content: "선택 카드 문맥의 첨부입니다.",
+                  treeNodeId: "connected-overlay-output",
+                  treeNodeType: "user_message",
+                  eventId: 207,
+                  attachmentIds: ["review-overlay-file"],
+                }}
+                sessionId={overlayReviewSessionId}
+              />
+            </div>
+          </section>
+        </ChatUiControllerProvider>
         <section>
           <UserMessage msg={{ id: "attachment-review-user", role: "user", treeNodeId: "attachment-review-user", treeNodeType: "user_message", content: "첨부 파일을 확인해 주세요." }} presentation="manuscript">
             <p>첨부 파일을 확인해 주세요.</p>
@@ -179,6 +495,20 @@ export function ChatAttachmentReviewSamples() {
             <p>첨부 파일입니다.</p>
             <ChatAttachments items={chatItems.assistant} role="assistant" onOpen={(next, trigger) => openAt(chatItems.assistant, next, trigger)} />
           </AssistantMessage>
+        </section>
+        <section className="flex flex-col gap-2" aria-label="대기 중인 첨부와 초안">
+          <div className="v3-type-section">대기 중인 첨부 · 초안</div>
+          <ChatInputAccessories attachments={pendingChips} />
+          <ChatInputComposer>
+            <ChatInputEditor text={draft} onChangeText={setDraft} onSend={() => {}} placeholder="" buttonLabel="전송" modeIcon="" modeLabel="" borderColor="" buttonVariant="default" disabled={pendingFiles.some(file => file.status !== "done")} textareaDisabled={false} />
+          </ChatInputComposer>
+        </section>
+        <section className="flex flex-col gap-2" aria-label="첨부만 전송">
+          <div className="v3-type-section">첨부만 전송</div>
+          <ChatInputAccessories attachments={attachmentOnlyChip} />
+          <ChatInputComposer>
+            <ChatInputEditor text="" onChangeText={() => {}} onSend={() => {}} placeholder="" buttonLabel="전송" modeIcon="" modeLabel="" borderColor="" buttonVariant="default" disabled={false} textareaDisabled={false} />
+          </ChatInputComposer>
         </section>
         <section className="flex flex-col gap-2">
           <p className="text-sm text-muted-foreground">기존 첨부 타일</p>

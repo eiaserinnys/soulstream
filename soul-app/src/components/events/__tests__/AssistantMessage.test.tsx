@@ -69,6 +69,13 @@ test('말풍선 폭은 기본 내용 폭을 유지하고 fill에서만 가용 �
   expect(StyleSheet.flatten(screen.getByTestId('assistant-message-bubble').props.style)).toEqual({ ...base, flexGrow: 1 });
 });
 
+test('attachment-only output keeps horizontal content inset without vertical bubble padding', () => {
+  const screen = render(<AssistantMessage attachmentsOnly event={ev('assistant_message', {})}><Text>첨부</Text></AssistantMessage>);
+  const style = StyleSheet.flatten(screen.getByTestId('assistant-attachment-content').props.style);
+  expect(style.paddingVertical).toBe(0);
+  expect(style.paddingHorizontal).toBeGreaterThan(0);
+});
+
 describe('extractText (F-G)', () => {
   test('text_start payload(빈 marker)는 빈 문자열을 반환한다', () => {
     // engine/types.py:88-114 TextDeltaEngineEvent.to_sse — text_start payload는 {type, timestamp, parent_event_id}만,

@@ -1,6 +1,8 @@
 import { cn } from "../../lib/cn";
 import { memo, useRef, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
+import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
+import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
@@ -13,6 +15,9 @@ export const AssistantMessage = memo(function AssistantMessage({
   llmContext,
   header,
   children,
+  attachments,
+  representedAttachments,
+  readContext,
   portraitUrl,
   bubbleProps,
   presentation = "default",
@@ -23,6 +28,9 @@ export const AssistantMessage = memo(function AssistantMessage({
   llmContext?: LlmContext;
   header?: ReactNode;
   children?: ReactNode;
+  attachments?: ReactNode;
+  representedAttachments?: readonly ChatAttachmentItem[];
+  readContext?: AttachmentReadContext;
   portraitUrl?: string | null;
   bubbleProps?: HTMLAttributes<HTMLDivElement>;
   presentation?: "default" | "manuscript";
@@ -70,7 +78,8 @@ export const AssistantMessage = memo(function AssistantMessage({
         ref={bubbleRef}
         {...bubbleProps}
         data-slot="chat-message-bubble"
-        className={cn(bubbleClassName, bubbleProps?.className)}
+        data-chat-attachment-role={!manuscript && attachments ? "assistant" : undefined}
+        className={cn(bubbleClassName, !manuscript && attachments && "chat-attachment-bubble", bubbleProps?.className)}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         {!manuscript && (header ?? <div className="mb-1 flex items-baseline gap-1.5">
@@ -99,11 +108,14 @@ export const AssistantMessage = memo(function AssistantMessage({
             <MarkdownContent
               content={msg.content}
               enableBlockquoteCopy
-              chatImages={manuscript ? { role: "assistant" } : undefined}
+              chatImages={readContext
+                ? { role: "assistant", layout: manuscript ? "gallery" : "inline", representedAttachments, readContext }
+                : manuscript ? { role: "assistant" } : undefined}
             />
           )}
           </div>
         )}
+        {attachments}
       </div>
     </div>
   );

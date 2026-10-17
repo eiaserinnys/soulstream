@@ -16,6 +16,7 @@ import { replaceEqualDeep } from '../../lib/structural-sharing';
 import { bottomFollowTargetKey } from './bottomFollow';
 import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
 import { projectCacheKeepaliveTurns } from './cacheKeepaliveProjection';
+import { projectOutputAttachments } from '../../lib/output-attachment-projection';
 
 const TYPING_RENDER_ITEM: ChatRenderItem = {
   kind: 'typing',
@@ -53,9 +54,10 @@ export function useChatRenderItems({
   const baseRenderItems = useMemo<ChatRenderItem[]>(
     () => {
       const grouped = groupChatEvents(displayEvents, snapshotStreams, persistentDisplaySettings);
+      const withOutputAttachments = projectOutputAttachments(grouped, displayEvents);
       const presented = presentation === 'manuscript'
-        ? projectPersistentTurnUsage(grouped, displayEvents, turnUsageMode)
-        : grouped;
+        ? projectPersistentTurnUsage(withOutputAttachments, displayEvents, turnUsageMode)
+        : withOutputAttachments;
       const placed = placePendingOptimistic(presented, pendingOptimistic);
       return presentation === 'manuscript'
         ? projectManuscriptMessages(placed)

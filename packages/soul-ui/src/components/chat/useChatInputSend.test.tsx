@@ -243,6 +243,42 @@ describe("useChatInputSend pending message", () => {
     expect(args.onAfterSend).toHaveBeenCalledOnce();
   });
 
+  it("sends ready attachment paths when the message body is empty", async () => {
+    vi.mocked(submitIntervention).mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
+    render();
+
+    await act(async () => {
+      await latest!.send("  ");
+    });
+
+    expect(submitIntervention).toHaveBeenCalledOnce();
+    expect(vi.mocked(submitIntervention).mock.calls[0]?.[0]).toMatchObject({
+      sessionKey: "session-1",
+      text: "[첨부 파일 로컬 경로: /tmp/evidence.png]",
+      attachmentPaths: ["/tmp/evidence.png"],
+    });
+    expect(useDashboardStore.getState().pendingChatSends["session-1"]).toMatchObject({
+      text: "",
+      messageText: "[첨부 파일 로컬 경로: /tmp/evidence.png]",
+      attachmentPaths: ["/tmp/evidence.png"],
+    });
+    expect(args.onBeforeSend).toHaveBeenCalledWith("[첨부 파일 로컬 경로: /tmp/evidence.png]");
+  });
+
+  it("does not send an empty message when no ready attachment path exists", async () => {
+    args.uploadedPaths = [];
+    args.uploadedAttachments = [];
+    vi.mocked(submitIntervention).mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
+    render();
+
+    await act(async () => {
+      await latest!.send(" \n ");
+    });
+
+    expect(submitIntervention).not.toHaveBeenCalled();
+    expect(useDashboardStore.getState().pendingChatSends["session-1"]).toBeUndefined();
+  });
+
   it("keeps failed text in a failed bubble and does not restore it into the composer", async () => {
     vi.mocked(submitIntervention).mockRejectedValue(new TypeError("fetch failed"));
     render();

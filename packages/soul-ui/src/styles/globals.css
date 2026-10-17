@@ -1280,6 +1280,43 @@ pre[data-markdown-code-layout="document"] {
 .chat-attachment-rows {
   gap: var(--v3-space-3);
 }
+/* Reserve the shared gallery width plus the standard bubble's inline insets
+   before image bytes arrive. The existing message max-width still bounds it. */
+.chat-attachment-bubble[data-slot="chat-message-bubble"][data-chat-attachment-role] {
+  max-width: 86%;
+}
+[data-chat-attachment-role="user"] {
+  min-width: min(86%, calc(min(var(--chat-attachment-user-max-width), calc(2 * var(--chat-attachment-thumbnail-max-size) + var(--v3-space-3))) + var(--v3-space-4) * 2));
+}
+[data-chat-attachment-role="assistant"] {
+  min-width: min(86%, calc(min(var(--chat-attachment-assistant-max-width), calc(2 * var(--chat-attachment-thumbnail-max-size) + var(--v3-space-3))) + var(--v3-space-4) * 2));
+}
+@media (max-width: 767px) {
+  /* The bubble already applied the phone bound against the outer row. */
+  [data-chat-attachment-role] .chat-image-run {
+    max-width: 100%;
+  }
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] :is(.chat-image-caption, .chat-image-status) {
+  @apply text-white;
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-thumbnail-frame:has(.chat-image-status) {
+  background-color: var(--popover);
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-thumbnail-frame .chat-image-status {
+  color: var(--foreground);
+}
+/* Keep outline controls opaque over the blue bubble in both themes. */
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] [data-slot="button"] {
+  background-color: var(--popover);
+  color: var(--foreground);
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] [data-slot="button"]:hover {
+  background-image: linear-gradient(var(--accent), var(--accent));
+}
+.chat-attachment-chip {
+  max-width: min(100%, var(--chat-attachment-user-max-width));
+}
 .chat-attachment-row {
   height: calc(var(--spacing) * 10);
   border-radius: var(--chat-attachment-radius);
@@ -1326,6 +1363,14 @@ pre[data-markdown-code-layout="document"] {
 .chat-image-run[data-chat-image-role="user"] .chat-image-caption {
   text-align: right;
 }
+.chat-image-run[data-chat-attachment-tone="onUserBubble"],
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-card {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+.chat-image-run[data-chat-attachment-tone="onUserBubble"] .chat-image-caption {
+  text-align: left;
+}
 .chat-image-filename {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1341,6 +1386,7 @@ pre[data-markdown-code-layout="document"] {
   display: inline-block;
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--muted-foreground);
+  word-break: keep-all;
 }
 .chat-image-frame {
   display: block;

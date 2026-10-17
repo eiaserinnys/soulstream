@@ -1,6 +1,8 @@
 import { cn } from "../../lib/cn";
 import { memo, type ReactNode, type HTMLAttributes } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
+import type { ChatAttachmentItem } from "../../lib/chat-attachment-model";
+import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
@@ -12,7 +14,7 @@ import {
   pickMessageAvatarUrl,
 } from "./userAvatarSelectors";
 
-export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, portraitUrl, bubbleProps, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript" }) {
+export const UserMessage = memo(function UserMessage({ msg, llmContext, header, children, attachments, representedAttachments, readContext, portraitUrl, bubbleProps, presentation = "default" }: { msg: ChatMessage; llmContext?: LlmContext; header?: ReactNode; children?: ReactNode; attachments?: ReactNode; representedAttachments?: readonly ChatAttachmentItem[]; readContext?: AttachmentReadContext; portraitUrl?: string | null; bubbleProps?: HTMLAttributes<HTMLDivElement>; presentation?: "default" | "manuscript" }) {
   // caller_info v1 (atom ed3a216d): 세션-수준 발신자 신원 avatar_url —
   // 메시지 단위 caller_info(msg.callerInfo) 부재 시 fallback. 4 source(browser/slack/agent/soul-app) 동일 entry.
   const callerAvatarUrl = useChatStore((s) =>
@@ -58,7 +60,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
 
   return (
     <div className={manuscript ? MANUSCRIPT_USER_ROW_CLASS_NAME : "flex justify-end gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-chat-user={manuscript ? "true" : undefined} data-chat-manuscript-user-row={manuscript ? "true" : undefined} data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
-      <div {...bubbleProps} data-slot="chat-message-bubble" className={cn(manuscript ? "w-full min-w-0 max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]", bubbleProps?.className)}>
+      <div {...bubbleProps} data-slot="chat-message-bubble" data-chat-attachment-role={!manuscript && attachments ? "user" : undefined} className={cn(!manuscript && attachments && "chat-attachment-bubble", manuscript ? "w-full min-w-0 max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]", bubbleProps?.className)}>
         {!manuscript && (header ?? <div className="mb-1 flex items-baseline justify-end gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {displayName}
@@ -75,14 +77,17 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
               content={msg.content}
               linkTone={manuscript ? undefined : "onUserBubble"}
               enableBlockquoteCopy
-              chatImages={manuscript ? {
-                role: "user",
-                attachmentPaths: msg.attachmentPaths,
-                nodeId: sessionNodeId ?? msg.attachmentNodeId,
-              } : undefined}
+              chatImages={readContext
+                ? { role: "user", layout: manuscript ? "gallery" : "inline", representedAttachments, readContext }
+                : manuscript ? {
+                  role: "user",
+                  attachmentPaths: msg.attachmentPaths,
+                  nodeId: sessionNodeId ?? msg.attachmentNodeId,
+                } : undefined}
             />
           )}
         </div>
+        {attachments}
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />
         )}

@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
-function pager(entries = reportReviewEntries) {
+function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void) {
   const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn((_text: string, _reply?: ReportReplyDraft) => ({ ok: true as const }));
   const api = { listCards: jest.fn().mockResolvedValue({ cards: [{ id: 'public-card', number: 270 }] }) } as any;
   function Harness() {
@@ -41,6 +41,7 @@ function pager(entries = reportReviewEntries) {
     return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={(_id, text, reply) => onAppend(text, reply)}>
       <PersistentReportPager entries={entries} index={index} api={api}
         onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()}
+        onDeckTouch={onDeckTouch}
         send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false,
           cancel: jest.fn(), sendOption: jest.fn() } as any} />
     </ChatUiControllerProvider>;
@@ -57,6 +58,18 @@ test('zero sheets renders nothing; one sheet has no page or arrows and see alway
   expect(screen.queryByTestId('report-nav')).toBeNull();
   fireEvent.press(screen.getByLabelText('확인했어'));
   expect(screen.onDismiss).toHaveBeenCalledWith('result');
+});
+
+test('report deck exposes touch start, end, and cancel to its owner', () => {
+  const onDeckTouch = jest.fn();
+  const screen = pager(reportReviewEntries, onDeckTouch);
+  const deck = screen.getByTestId('report-deck');
+
+  fireEvent(deck, 'touchStart');
+  fireEvent(deck, 'touchEnd');
+  fireEvent(deck, 'touchCancel');
+
+  expect(onDeckTouch.mock.calls).toEqual([[true], [false], [false]]);
 });
 
 test('phone swipes and adjustable page select one accessible sheet; tablet arrows and keyboard also page', () => {

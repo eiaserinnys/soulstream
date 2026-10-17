@@ -222,25 +222,36 @@ function LocalAttachmentChip({ file, status, onOpen, onRemove }: LocalFileAttach
   onOpen: (file: File, trigger: HTMLButtonElement) => void;
 }) {
   const statusText = status === "uploading" ? "업로드 중" : status === "error" ? "업로드 실패" : null;
-  const metadata = [getFileTypeIcon(file), formatFileSize(file.size), statusText].filter(Boolean).join(" · ");
+  const metadata = [formatFileSize(file.size), statusText].filter(Boolean).join(" · ");
+  const isImage = file.type.startsWith("image/");
+  const generatedImageName = isImage && file.name.startsWith("clipboard-");
+  const [objectUrl, setObjectUrl] = useState<string>();
+  useEffect(() => {
+    if (!isImage) return;
+    const url = URL.createObjectURL(file);
+    setObjectUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, isImage]);
 
   return (
-    <div className="flex max-w-full min-w-0 items-center gap-2 rounded border border-border bg-muted p-2" data-chat-attachment-chip>
+    <div className="chat-attachment-chip flex shrink-0 max-w-full min-w-0 items-center gap-2 rounded border border-border bg-muted p-2" data-chat-attachment-chip>
       <button
         type="button"
         data-chat-attachment-chip-view
         onClick={event => onOpen(file, event.currentTarget)}
         title={file.name}
+        aria-label={generatedImageName ? "첨부 이미지 보기" : file.name}
         className="flex min-w-0 flex-1 items-center gap-2 text-left text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="chat-image-filename chat-attachment-name min-w-0 flex-1" title={file.name}>{file.name}</span>
+        {isImage && <img src={objectUrl} alt="" className="size-8 shrink-0 rounded object-cover" />}
+        {!generatedImageName && <span className="chat-image-filename chat-attachment-name min-w-0 flex-1" title={file.name}>{file.name}</span>}
         <span className="chat-image-metadata shrink-0">{metadata}</span>
       </button>
       <button
         type="button"
         onClick={onRemove}
         className="shrink-0 rounded-full border border-border bg-background/80 p-1 outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-ring transition-colors"
-        aria-label="Remove file"
+        aria-label="첨부 제거"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

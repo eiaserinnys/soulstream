@@ -56,6 +56,15 @@ test('zero-byte text never requests content', () => {
   expect(mockReadAttachmentText).not.toHaveBeenCalled();
 });
 
+test('caller-provided local text is shown without a server read', async () => {
+  const screen = render(<AttachmentPreviewModal item={makeView()} onClose={() => {}}
+    textContent={{ text: 'local preview', truncated: true }} />);
+
+  await waitFor(() => expect(screen.getByText('local preview')).toBeTruthy());
+  expect(screen.getByText('앞부분만 표시')).toBeTruthy();
+  expect(mockReadAttachmentText).not.toHaveBeenCalled();
+});
+
 test('long text scrolls inside a fixed frame with the save action outside', async () => {
   mockReadAttachmentText.mockResolvedValue({ text: 'line\n'.repeat(300), truncated: false });
   const screen = render(<AttachmentPreviewModal item={makeView()} onClose={jest.fn()} />);

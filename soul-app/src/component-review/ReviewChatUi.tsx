@@ -31,10 +31,10 @@ export function ReviewChatUi() {
   const phone = useDeviceType() === 'phone';
   const manuscript = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('presentation') === 'manuscript';
   const [ready, setReady] = useState(false);
-  if (!phone && !manuscript) return <SafeAreaView style={{ flex: 1 }}>
+  if (!phone && !manuscript) return <SafeAreaView testID="review-chat-ui" style={{ flex: 1 }}>
     <ChatPane sessionId={chatUiReviewSessionId} onClose={() => {}} />
   </SafeAreaView>;
-  return <View style={{ flex: 1 }}><PersistentSessionProvider>
+  return <View testID="review-chat-ui" style={{ flex: 1 }}><PersistentSessionProvider>
     <NavigationContainer ref={navigation} theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: t.colors.background } }}
       onReady={() => setReady(true)}>
       {phone ? <TabNavigator /> : <TabletNavigator />}

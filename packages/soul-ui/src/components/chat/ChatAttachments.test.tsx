@@ -206,12 +206,29 @@ describe("ChatAttachments", () => {
       <FileAttachmentPreview variant="chip" file={file} status="done" onOpen={onOpen} onRemove={onRemove} />,
     ));
     const view = container.querySelector<HTMLButtonElement>("[data-chat-attachment-chip-view]")!;
-    const remove = container.querySelector<HTMLButtonElement>('[aria-label="Remove file"]')!;
+    const remove = container.querySelector<HTMLButtonElement>('[aria-label="첨부 제거"]')!;
     await act(async () => view.click());
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledWith(file, view);
     await act(async () => remove.click());
     expect(onRemove).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("shows chip size and state without a repeated type label", async () => {
+    await act(async () => root.render(<FileAttachmentPreview variant="chip" file={new File(["pdf"], "회의.pdf", { type: "application/pdf" })} status="uploading" onOpen={() => {}} onRemove={() => {}} />));
+    expect(container.querySelector('.chat-image-metadata')?.textContent).toBe('3 B · 업로드 중');
+    expect(container.querySelector('[aria-label="첨부 제거"]')).not.toBeNull();
+  });
+
+  it("shows pasted image pixels in a chip and releases its object URL", async () => {
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", class extends URL { static createObjectURL() { return "blob:chip"; } static revokeObjectURL = revoke; });
+    await act(async () => root.render(<FileAttachmentPreview variant="chip" file={new File(["image"], "clipboard-generated.png", { type: "image/png" })} status="error" onOpen={() => {}} onRemove={() => {}} />));
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:chip');
+    expect(container.querySelector('.chat-attachment-name')).toBeNull();
+    expect(container.textContent).toBe('5 B · 업로드 실패');
+    await act(async () => root.render(null));
+    expect(revoke).toHaveBeenCalledWith('blob:chip');
   });
 });

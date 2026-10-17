@@ -22,12 +22,12 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onReady, sessionId }: {
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId }: {
   entries: PersistentReportEntry[]; index: number; api: ApiClient | null;
   onSelect(index: number): void; onDismiss(key: string): Promise<boolean | void>;
   onFocusComposer(): void;
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
-  onReady?(ready: boolean): void; sessionId?: string;
+  onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
 }) {
   const t = useTokens();
   const { setNotice } = useChatUiActions();
@@ -127,6 +127,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
     pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
     style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
+    onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={bubble ? { height: bubbleHeight, flexShrink: 0,

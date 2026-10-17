@@ -9,6 +9,9 @@ import { ChatInputRequest } from '../chat/ChatInputRequest';
 import { ChatToolApprovalRequest } from '../chat/ChatToolApprovalRequest';
 import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
+import { MessageAttachments } from '../MessageAttachments';
+import { useMessageAttachments } from '../../hooks/useMessageAttachments';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 export type ChatMessageSession = Pick<Session,
   'agentSessionId' | 'nodeId' | 'agentName' | 'agentPortraitUrl' | 'displayName' | 'userName' | 'userPortraitUrl'>;
@@ -27,7 +30,13 @@ interface Props {
   narration?: boolean;
 }
 
-export function EventRenderer({
+export function EventRenderer(props: Props) {
+  return <AttachmentReadContextProvider context={{ type: 'session', id: props.sessionId }}>
+    <EventMessage {...props} />
+  </AttachmentReadContextProvider>;
+}
+
+function EventMessage({
   event,
   sessionId,
   session,
@@ -51,6 +60,7 @@ export function EventRenderer({
         <UserMessage
           event={event}
           presentation={presentation}
+          readContext={{ type: 'session', id: sessionId }}
           session={session}
           variant="normal"
           pendingStatus={pending.pendingStatus}
@@ -68,6 +78,7 @@ export function EventRenderer({
         <UserMessage
           event={event}
           presentation={presentation}
+          readContext={{ type: 'session', id: sessionId }}
           session={session}
           variant="intervention"
           pendingStatus={pending.pendingStatus}
@@ -78,6 +89,9 @@ export function EventRenderer({
         />
       );
     case 'assistant_message':
+      if (event.data.attachment_output === true) {
+        return <OutputAttachmentMessage event={event} sessionId={sessionId} presentation={presentation} session={session} />;
+      }
       return <ChatUiMessage event={event} presentation={presentation} narration={narration} session={session}
         selectionModel={selectionModel} onSelectionDone={onSelectionDone} />;
     case 'text_delta':
@@ -178,4 +192,22 @@ export function EventRenderer({
     default:
       return null;
   }
+}
+
+function OutputAttachmentMessage({ event, sessionId, presentation, session }: {
+  event: SessionEvent;
+  sessionId: string;
+  presentation: 'default' | 'manuscript';
+  session?: ChatMessageSession;
+}) {
+  const { items, phase, failure, retry } = useMessageAttachments({
+    event,
+    readContext: { type: 'session', id: sessionId },
+  });
+  return items.length > 0 || phase === 'loading' || phase === 'failed'
+    ? <AssistantMessage event={event} session={session} presentation={presentation} attachmentsOnly>
+        <MessageAttachments items={items} role="assistant" presentation={presentation}
+          loading={phase === 'loading'} failure={failure} onRetry={retry} />
+      </AssistantMessage>
+    : null;
 }

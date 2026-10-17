@@ -14,9 +14,11 @@ export function ChatAttachments({
   items,
   role,
   onOpen,
+  tone,
 }: {
   items: ChatAttachmentItem[];
   role: ChatImageRole;
+  tone?: "onUserBubble";
   onOpen(index: number, trigger: HTMLElement): void;
 }) {
   const runId = useId();
@@ -38,12 +40,14 @@ export function ChatAttachments({
         onMetadata={IGNORE_METADATA}
         onOpen={onOpen}
         openFailedImage
+        tone={tone}
       />
       {fileItems.length > 0 && (
         <div
           className="chat-image-run chat-attachment-rows flex flex-col"
           data-chat-image-role={role}
           data-chat-attachment-rows
+          data-chat-attachment-tone={tone}
         >
           {fileItems.map(({ item, index }) => (
             <FileAttachmentPreview
