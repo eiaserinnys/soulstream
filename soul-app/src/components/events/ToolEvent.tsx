@@ -1,11 +1,16 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { SessionEvent } from '../../api/types';
+import type { EventTruncation, SessionEvent } from '../../api/types';
 import type { ToolTraceResponse } from '../../api/client';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
+import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
+import { formatAttachmentByteSize } from '../AttachmentFileRow';
+import { descriptorAttachmentView } from '../../hooks/useMessageAttachments';
+import type { AttachmentView } from '../../lib/attachment-view';
+import { stripTruncationSuffix } from '../../lib/event-truncation';
 
 interface Props {
   /** 도구 호출 이벤트 (event_type === 'tool_start'). 항상 존재한다. */
@@ -44,6 +49,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
   const [trace, setTrace] = useState<ToolTraceResponse | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentView | null>(null);
 
   const startData = start.data as any;
   const resultData = result?.data as any;
@@ -62,14 +68,19 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
     : toolName;
 
   const inputText = useMemo(
-    () => formatBody(trace?.input ?? startData?.tool_input ?? startData?.input),
+    () => {
+      const body = formatBody(trace?.input ?? startData?.tool_input ?? startData?.input);
+      return startData?.truncation ? stripTruncationSuffix(body) : body;
+    },
     [trace, startData]
   );
   const resultText = useMemo(
-    () =>
-      formatBody(
+    () => {
+      const body = formatBody(
         trace?.result ?? resultData?.result ?? resultData?.content ?? resultData?.output,
-      ),
+      );
+      return resultData?.truncation ? stripTruncationSuffix(body) : body;
+    },
     [trace, resultData]
   );
   const progressText = useMemo(() => formatProgress(trace), [trace]);
@@ -86,6 +97,31 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
       setTraceLoading(false);
     }
   }, [api, sessionId, traceId, trace, traceLoading]);
+
+  const renderTruncationMetadata = (truncation: EventTruncation | undefined, testID: string) => {
+    if (!truncation) return null;
+    const attachment = truncation.attachment;
+    const size = formatAttachmentByteSize(truncation.original_bytes)!;
+    return (
+      <Text testID={testID} numberOfLines={1} style={styles.truncationMetadata}>
+        {`잘림 · 전체 ${size}`}
+        {attachment ? (
+          <>
+            {' · '}
+            <Text
+              accessibilityRole="link"
+              onPress={() => setPreviewAttachment(descriptorAttachmentView(
+                attachment,
+                { type: 'session', id: sessionId! },
+              ))}
+            >
+              전문 열기
+            </Text>
+          </>
+        ) : ' · 전문 보관 실패'}
+      </Text>
+    );
+  };
 
   const isError = resultData?.is_error === true;
   const statusIcon = presentation === 'manuscript'
@@ -151,6 +187,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
             ) : (
               <Text style={styles.empty}>없음</Text>
             )}
+            {renderTruncationMetadata(startData?.truncation, 'tool-event-input-truncation-metadata')}
             <Text style={[styles.sectionLabel, { marginTop: t.spacing.sm }]}>
               결과{!result ? ' (대기 중)' : isError ? ' (오류)' : ''}
             </Text>
@@ -161,6 +198,7 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
                 {result ? '없음' : '아직 도착하지 않음'}
               </Text>
             )}
+            {renderTruncationMetadata(resultData?.truncation, 'tool-event-result-truncation-metadata')}
             {traceLoading ? (
               <Text style={[styles.empty, { marginTop: t.spacing.sm }]}>상세 불러오는 중...</Text>
             ) : null}
@@ -202,6 +240,14 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
         }}
         activeOpacity={0.7}
       />
+      {previewAttachment ? (
+        <AttachmentPreviewModal
+          item={previewAttachment}
+          items={[previewAttachment]}
+          initialIndex={0}
+          onClose={() => setPreviewAttachment(null)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -324,6 +370,11 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     body: {
       backgroundColor: c.surfaceCode,
       padding: sessionRoles.chat.tool.bodyPadding,
+    },
+    truncationMetadata: {
+      ...sessionRoles.chat.attachment.metadata,
+      color: c.textSecondary,
+      marginTop: t.spacing.xs,
     },
     sectionLabel: {
       color: c.textMuted,

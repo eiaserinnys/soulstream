@@ -253,7 +253,7 @@ async function readLegacyAttachment(
   }
 }
 
-function descriptorAttachmentView(descriptor: AttachmentDescriptor, context: AttachmentReadContext): AttachmentView {
+export function descriptorAttachmentView(descriptor: AttachmentDescriptor, context: AttachmentReadContext): AttachmentView {
   const id = descriptor.attachment_id;
   return {
     key: id,

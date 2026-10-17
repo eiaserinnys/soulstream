@@ -1,29 +1,64 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import type { SessionEvent } from '../../api/types';
+import type { EventTruncation, SessionEvent } from '../../api/types';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
+import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
+import { formatAttachmentByteSize } from '../AttachmentFileRow';
+import { descriptorAttachmentView } from '../../hooks/useMessageAttachments';
+import type { AttachmentView } from '../../lib/attachment-view';
+import { stripTruncationSuffix } from '../../lib/event-truncation';
 
 interface Props {
   event: SessionEvent;
+  sessionId?: string;
   presentation?: 'default' | 'manuscript';
 }
 
-export function ThinkingEvent({ event, presentation = 'default' }: Props) {
+export function ThinkingEvent({ event, sessionId, presentation = 'default' }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
 
   const [expanded, setExpanded] = useState(false);
   const d = event.data as any;
-  const text =
+  const truncation: EventTruncation | undefined = d?.truncation;
+  const sourceText =
     (typeof d?.thinking === 'string' ? d.thinking : '') ||
     (typeof d?.delta === 'string' ? d.delta : '') ||
     '';
+  const text = truncation ? stripTruncationSuffix(sourceText) : sourceText;
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentView | null>(null);
 
-  if (!text) return null;
+  const truncationMetadata = truncation ? (
+    <Text testID="thinking-event-truncation-metadata" numberOfLines={1} style={styles.truncationMetadata}>
+      {`잘림 · 전체 ${formatAttachmentByteSize(truncation.original_bytes)} · `}
+      {truncation.attachment ? (
+        <Text onPress={() => setPreviewAttachment(descriptorAttachmentView(
+          truncation.attachment!,
+          { type: 'session', id: sessionId! },
+        ))}>
+          전문 열기
+        </Text>
+      ) : '전문 보관 실패'}
+    </Text>
+  ) : null;
+  const preview = previewAttachment ? (
+    <AttachmentPreviewModal
+      item={previewAttachment}
+      items={[previewAttachment]}
+      initialIndex={0}
+      onClose={() => setPreviewAttachment(null)}
+    />
+  ) : null;
+
+  if (!text && !truncation) return null;
 
   if (presentation === 'manuscript') {
-    return <Text testID="thinking-event-text" style={styles.manuscriptText}>{text}</Text>;
+    return <>
+      {text ? <Text testID="thinking-event-text" style={styles.manuscriptText}>{text}</Text> : null}
+      {truncationMetadata}
+      {preview}
+    </>;
   }
 
   return (
@@ -39,9 +74,11 @@ export function ThinkingEvent({ event, presentation = 'default' }: Props) {
       </TouchableOpacity>
       {expanded && (
         <View style={styles.body}>
-          <Text style={styles.text}>{text}</Text>
+          {text ? <Text style={styles.text}>{text}</Text> : null}
+          {truncationMetadata}
         </View>
       )}
+      {preview}
     </View>
   );
 }
@@ -56,6 +93,11 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       color: c.textSecondary,
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * 1.6,
+    },
+    truncationMetadata: {
+      ...sessionRoles.chat.attachment.metadata,
+      color: c.textSecondary,
+      marginTop: t.spacing.xs,
     },
     wrapper: {
       // ToolEvent와 동일하게 어시스턴트 말풍선 본문 시작 지점에 좌측 정렬한다.

@@ -8,6 +8,7 @@
 // llmProvider/llmModel/llmUsage 같은 web 전용 필드를 두지 않는다 (앱이 llm
 // 세션 채팅 UI 미지원). 필요 시 후속에서 확장.
 import type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
+import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/attachments';
 export type { PersistentReportEntry } from '../../../packages/wire-schema/src/persistent_report';
 export type MessageContextItem = { key: string; content: unknown };
 export type ReviewState = 'not_required' | 'needs_review' | 'acknowledged';
@@ -281,10 +282,20 @@ export type SessionEventType =
   | 'text_snapshot'
   | 'history_sync';
 
+export interface EventTruncation {
+  original_bytes: number;
+  attachment: AttachmentDescriptor | null;
+}
+
+export interface SessionEventData extends Record<string, unknown> {
+  truncation?: EventTruncation;
+  attachment_ids?: string[];
+}
+
 export interface SessionEvent {
   id: string; // SSE id 필드 — lastEventId로 사용
   type: SessionEventType; // SSE event 필드 (최상위 타입)
-  data: Record<string, unknown>; // SSE data JSON 파싱 결과
+  data: SessionEventData; // SSE data JSON 파싱 결과
 }
 
 export interface ClaudeRuntimeSessionStatePayload {

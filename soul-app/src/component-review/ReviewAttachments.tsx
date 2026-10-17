@@ -3,7 +3,10 @@ import { Asset } from 'expo-asset';
 import { ScrollView } from 'react-native';
 import type { AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
 import type { AttachmentView } from '../lib/attachment-view';
+import type { SessionEvent } from '../api/types';
 import { MessageAttachments } from '../components/MessageAttachments';
+import { AssistantMessage } from '../components/events/AssistantMessage';
+import { ToolEvent } from '../components/events/ToolEvent';
 import { useTokens } from '../theme';
 import { ReviewSection } from './ReviewSection';
 
@@ -17,6 +20,31 @@ const multipleImages = [
 ];
 const singleImage = [image('review-image-single', '표본 한 장 이미지.png', iconUri)];
 const failedImage = [image('review-image-failed', '불러오지 못하는 이미지.png', '/component-review/missing-attachment-image.png')];
+const truncatedAttachment = {
+  attachment_id: 'review-truncation-full',
+  name: '전체 도구 결과.txt',
+  mime_type: 'text/plain',
+  byte_size: 1_234_567,
+  checksum_sha256: null,
+  width: null,
+  height: null,
+  preview_kind: 'text' as const,
+  preview_mime_type: 'text/plain',
+};
+const truncation = { original_bytes: 1_234_567, attachment: truncatedAttachment };
+const toolStart: SessionEvent = {
+  id: 'review-truncation-start',
+  type: 'tool_start',
+  data: { tool_name: 'Read', tool_input: '파일을 읽습니다.' },
+};
+const toolResult = (attachment: typeof truncatedAttachment | null): SessionEvent => ({
+  id: 'review-truncation-result',
+  type: 'tool_result',
+  data: {
+    result: '도구 결과의 앞부분입니다.\n[잘림]',
+    truncation: { original_bytes: truncation.original_bytes, attachment },
+  },
+});
 
 const fileItems: AttachmentView[] = [
   textFile('review-attachment-text', '메모.txt', 348),
@@ -54,6 +82,23 @@ export function ReviewAttachments() {
     </ReviewSection>)}
     <ReviewSection title="파일 행과 프리뷰" testID="review-attachments-files">
       <MessageAttachments items={fileItems} role="assistant" />
+    </ReviewSection>
+    <ReviewSection title="도구 결과 잘림 · 전문 보관" testID="review-attachments-truncation-attached">
+      <ToolEvent start={toolStart} result={toolResult(truncatedAttachment)} sessionId="review-truncation" api={null} />
+    </ReviewSection>
+    <ReviewSection title="도구 결과 잘림 · 보관 실패" testID="review-attachments-truncation-failed">
+      <ToolEvent start={toolStart} result={toolResult(null)} sessionId="review-truncation" api={null} />
+    </ReviewSection>
+    <ReviewSection title="에이전트 응답 잘림" testID="review-attachments-truncation-assistant">
+      <AssistantMessage event={{
+        id: 'review-truncation-assistant',
+        type: 'assistant_message',
+        data: {
+          content: '에이전트 응답의 앞부분입니다.\n[잘림]',
+          attachment_ids: [truncatedAttachment.attachment_id],
+          truncation,
+        },
+      }} />
     </ReviewSection>
   </ScrollView>;
 }

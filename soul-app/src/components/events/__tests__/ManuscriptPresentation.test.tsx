@@ -20,6 +20,25 @@ jest.mock('../../../theme/useDeviceType', () => ({
   useDeviceType: () => 'phone',
   deviceTypeToBaseKey: (type: string) => type === 'phone' ? 'phone' : 'tablet',
 }));
+jest.mock('../../AttachmentPreviewModal', () => {
+  const React = require('react');
+  const { View, Text } = require('react-native');
+  return {
+    AttachmentPreviewModal: (props: any) => React.createElement(
+      View,
+      {
+        testID: 'attachment-preview-modal',
+        item: props.item,
+        items: props.items,
+        initialIndex: props.initialIndex,
+      },
+      React.createElement(Text, {
+        testID: 'attachment-preview-close',
+        onPress: props.onClose,
+      }, '닫기'),
+    ),
+  };
+});
 
 afterEach(() => jest.restoreAllMocks());
 
@@ -121,6 +140,55 @@ test('일반 채팅 Thinking 블록은 라벨과 개별 접힘을 유지한다',
   expect(thinking.queryByText('일반 채팅 생각 내용')).toBeNull();
   fireEvent.press(thinking.getByText('생각 중...'));
   expect(thinking.getByText('일반 채팅 생각 내용')).toBeTruthy();
+});
+
+test('잘린 생각 본문은 메타 아래에서 전문을 열고 닫으며 원고형은 보관 실패를 알린다', () => {
+  const descriptor = {
+    attachment_id: 'thinking-full',
+    name: '전체 생각.txt',
+    mime_type: 'text/plain',
+    byte_size: 2048,
+    checksum_sha256: null,
+    width: null,
+    height: null,
+    preview_kind: 'text' as const,
+    preview_mime_type: 'text/plain',
+  };
+  const thinking = render(<ThinkingEvent sessionId="session-1" event={{
+    id: 'thinking-truncated',
+    type: 'thinking_delta',
+    data: {
+      thinking: '생각 앞부분\n[잘림]',
+      truncation: { original_bytes: 2048, attachment: descriptor },
+    },
+  }} />);
+
+  fireEvent.press(thinking.getByText('생각 중...'));
+  expect(thinking.getByText('생각 앞부분')).toBeTruthy();
+  expect(thinking.queryByText('[잘림]')).toBeNull();
+  expect(thinking.getByTestId('thinking-event-truncation-metadata')).toBeTruthy();
+  expect(thinking.getByText(/잘림 · 전체 2\.0 KB ·/)).toBeTruthy();
+  fireEvent.press(thinking.getByText('전문 열기'));
+  expect(thinking.getByTestId('attachment-preview-modal').props).toMatchObject({
+    item: { key: 'thinking-full', readContext: { type: 'session', id: 'session-1' } },
+    items: [{ key: 'thinking-full' }],
+    initialIndex: 0,
+  });
+  fireEvent.press(thinking.getByTestId('attachment-preview-close'));
+  expect(thinking.queryByTestId('attachment-preview-modal')).toBeNull();
+  expect(thinking.getByText('생각 중...')).toBeTruthy();
+
+  const manuscript = render(<ThinkingEvent presentation="manuscript" sessionId="session-1" event={{
+    id: 'thinking-failed',
+    type: 'thinking_delta',
+    data: {
+      thinking: '원고 생각 앞부분\n[잘림]',
+      truncation: { original_bytes: 1024, attachment: null },
+    },
+  }} />);
+  expect(manuscript.getByText('원고 생각 앞부분')).toBeTruthy();
+  expect(manuscript.getByText(/잘림 · 전체 1\.0 KB · 전문 보관 실패/)).toBeTruthy();
+  expect(manuscript.queryByText('전문 열기')).toBeNull();
 });
 
 test('원고형 입력의 줄 간격과 높이는 기본 입력을 유지하고 멀티라인 왼쪽 여백은 0이다', () => {

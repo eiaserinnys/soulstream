@@ -20,6 +20,8 @@ import type { MessageSelectionModel } from './message-selection-model';
 import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
 import { CopyableAssistantMarkdown } from './CopyableAssistantMarkdown';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
+import { formatAttachmentByteSize } from '../AttachmentFileRow';
+import { stripTruncationSuffix } from '../../lib/event-truncation';
 
 interface Props {
   /** 첨부 전용 출력도 같은 내용 시작선을 쓰되 말풍선과 아바타는 표시하지 않는다. */
@@ -87,7 +89,9 @@ export function AssistantMessage({
   // 단일 \n을 GFM hard break로 변환 — 라이브러리가 md4cFlags hard-break를
   // JS로 노출하지 않아 컴포넌트 내부 렌더 직전 사전처리로 동등 효과를 낸다.
   // useMemo는 React Hooks rules에 따라 early-return *위*에 배치한다.
-  const text = textOverride ?? extractText(event);
+  const truncation = event.data.truncation;
+  const sourceText = textOverride ?? extractText(event);
+  const text = truncation ? stripTruncationSuffix(sourceText) : sourceText;
   const renderedText = useMemo(
     () => normalizeMarkdownBreaks(text),
     [text],
@@ -101,7 +105,7 @@ export function AssistantMessage({
       '[AssistantMessage] rendering streaming assistant text with plain Text fallback',
     );
   }, [renderAsPlainStreamingText]);
-  if (!renderedText && !children && !notice) return null;
+  if (!renderedText && !children && !notice && !truncation) return null;
 
   const { uri: avatarUri, useBearer } = pickUserAvatarUri(
     caller,
@@ -175,6 +179,12 @@ export function AssistantMessage({
             jwt={jwt}
           />
         ))}
+        {truncation ? (
+          <Text testID="assistant-truncation-metadata" numberOfLines={1} style={styles.truncationMetadata}>
+            {`잘림 · 전체 ${formatAttachmentByteSize(truncation.original_bytes)}`}
+            {truncation.attachment ? null : ' · 전문 보관 실패'}
+          </Text>
+        ) : null}
         {tokenInfo && !attachmentsOnly ? (
           <Text style={styles.tokenInfo}>{tokenInfo}</Text>
         ) : null}
@@ -236,6 +246,11 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript', nar
         marginTop: t.spacing.xs,
         color: c.textMuted,
         fontSize: t.chatFontSize.meta,
+      },
+      truncationMetadata: {
+        ...sessionRoles.chat.attachment.metadata,
+        color: c.textSecondary,
+        marginTop: t.spacing.xs,
       },
       streamingText: {
         color: markdownTextColor,

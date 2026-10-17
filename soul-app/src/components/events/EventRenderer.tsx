@@ -150,7 +150,7 @@ function EventMessage({
     case 'thinking_start':
     case 'thinking_delta':
     case 'thinking_end':
-      return <ThinkingEvent event={event} presentation={presentation} />;
+      return <ThinkingEvent event={event} sessionId={sessionId} presentation={presentation} />;
     case 'session_start':
       return null;
     case 'complete':
