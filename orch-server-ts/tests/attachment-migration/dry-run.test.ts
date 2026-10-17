@@ -181,6 +181,56 @@ describe("attachment migration dry-run output", () => {
     }
   });
 
+  it("maps a legacy root to its current physical root while retaining the legacy alias path", async () => {
+    const oldPath = "/old/incoming/image.png";
+    const physicalPath = "/srv/current-incoming/uploads/image.png";
+    const source = {
+      ...legacySource(),
+      data: {
+        ...legacySource().data,
+        attachment_candidates: [{ pointer: "/payload/attachments/0", kind: "input_path", value: oldPath }],
+      },
+    };
+    const file = {
+      ...observation(source),
+      known_source_paths: [],
+      incoming_relative_path: "uploads/image.png",
+      physical_path: physicalPath,
+      source_refs: [],
+    };
+    const temp = await mkdtemp(path.join(os.tmpdir(), "attachment-dry-run-root-map-"));
+    const sourcesPath = path.join(temp, "sources.jsonl");
+    const nodesPath = path.join(temp, "nodes.jsonl");
+    const rootMapPath = path.join(temp, "legacy-roots.json");
+    const outputDir = path.join(temp, "output");
+    await writeFile(sourcesPath, [metadata(), source].map((row) => JSON.stringify(row)).join("\n") + "\n");
+    await writeFile(nodesPath, [file, nodeCoverage()].map((row) => JSON.stringify(row)).join("\n") + "\n");
+    await writeFile(rootMapPath, JSON.stringify([{ legacy_root: "/old/incoming", physical_root: "/srv/current-incoming/uploads" }]));
+
+    try {
+      const result = spawnSync("pnpm", [
+        "exec", "tsx", cliPath,
+        "--sources", sourcesPath,
+        "--nodes", nodesPath,
+        "--output", outputDir,
+        "--allowed-origins", "[]",
+        "--legacy-root-map", rootMapPath,
+      ], { cwd: process.cwd(), encoding: "utf8", timeout: 60_000 });
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      const manifest = (await readFile(path.join(outputDir, "manifest.jsonl"), "utf8"))
+        .trimEnd().split("\n").map((line) => JSON.parse(line));
+      expect(manifest).toContainEqual(expect.objectContaining({
+        normalized_path: oldPath,
+        physical_path: physicalPath,
+        status: "verified_source",
+        sha256: "a".repeat(64),
+      }));
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+  });
+
   it("lets the planner extract file_assets once from the full relational source row", async () => {
     const fileAsset: LegacySource = {
       ...legacySource(),
