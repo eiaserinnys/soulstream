@@ -931,6 +931,7 @@ function createLiveDependencies(): LiveProviderDependencies {
       undigested_count: 0,
     })),
     readLastEventId: vi.fn(async () => 0),
+    readEvent: vi.fn(async () => null),
     streamEventsRaw: vi.fn(() => emptyRawEvents()),
   };
   return {

@@ -84,6 +84,7 @@ describe("session history/read-only route harness", () => {
 
     expect(sessionHistoryRouteAuthRequirements).toEqual({
       "GET /api/sessions/:session_id/events/viewport": true,
+      "GET /api/sessions/:session_id/events/:event_id": true,
       "GET /api/sessions/:session_id/messages": true,
       "GET /api/sessions/:session_id/conversation-context": true,
       "GET /api/sessions/:session_id/timeline": true,
@@ -151,6 +152,117 @@ describe("session history/read-only route harness", () => {
     expect(provider.readViewport).toHaveBeenCalledWith("sess-1", 1, 50);
     expect(provider.readLastEventId).not.toHaveBeenCalled();
     expect(provider.streamEventsRaw).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("returns the stored single event payload for the full-content view", async () => {
+    const event = {
+      type: "tool_result",
+      result: "full output",
+      tool_use_id: "tool-1",
+      is_error: false,
+    };
+    const readEvent = vi.fn(async () => ({ id: 42, event }));
+    const { app } = createHarness(createProvider({ readEvent }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events/42",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toContain("private");
+    expect(response.headers["cache-control"]).toContain("no-store");
+    expect(response.json()).toEqual({ id: 42, event });
+    expect(readEvent).toHaveBeenCalledWith("sess-1", 42);
+
+    const defaultApp = createApp({ config });
+    expect(
+      await defaultApp.inject({ method: "GET", url: "/api/sessions/sess-1/events/42" }),
+    ).toMatchObject({ statusCode: 404 });
+    await defaultApp.close();
+
+    await app.close();
+  });
+
+  it("validates the single event id before access and reports a missing event", async () => {
+    const readEvent = vi.fn(async () => null);
+    const accessProvider: SessionResourceAccessProvider = {
+      requireSessionAccess: vi.fn(async () => undefined),
+      requireFolderAccess: vi.fn(async () => undefined),
+      resolveAccess: vi.fn(async () => ({ restricted: false, allowedFolderIds: [] })),
+    };
+    const { app } = createHarness(createProvider({ readEvent }), accessProvider);
+
+    for (const rawEventId of ["abc", "0", "1.5", "9007199254740992"]) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/sessions/sess-1/events/${rawEventId}`,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: { code: "SESSION_EVENT_INVALID_ID" },
+      });
+    }
+    expect(accessProvider.requireSessionAccess).not.toHaveBeenCalled();
+    expect(readEvent).not.toHaveBeenCalled();
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events/43",
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toMatchObject({
+      error: { code: "SESSION_EVENT_NOT_FOUND" },
+    });
+    expect(readEvent).toHaveBeenCalledWith("sess-1", 43);
+
+    await app.close();
+  });
+
+  it("keeps the static viewport route ahead of the single event route", async () => {
+    const readViewport = vi.fn(async () => []);
+    const readEvent = vi.fn(async () => ({ id: 5, event: {} }));
+    const { app } = createHarness(createProvider({ readViewport, readEvent }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events/viewport?y_min=1&y_max=5",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(readViewport).toHaveBeenCalledWith("sess-1", 1, 5);
+    expect(readEvent).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("stops the single event read when session access denies the request", async () => {
+    const readEvent = vi.fn(async () => ({ id: 42, event: {} }));
+    const accessProvider: SessionResourceAccessProvider = {
+      requireSessionAccess: vi.fn(async () => {
+        throw new SessionResourceAccessError(
+          "SESSION_ACCESS_DENIED",
+          "Folder access denied",
+          403,
+        );
+      }),
+      requireFolderAccess: vi.fn(async () => undefined),
+      resolveAccess: vi.fn(async () => ({ restricted: true, allowedFolderIds: [] })),
+    };
+    const { app } = createHarness(createProvider({ readEvent }), accessProvider);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events/42",
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      error: { code: "SESSION_ACCESS_DENIED" },
+    });
+    expect(readEvent).not.toHaveBeenCalled();
 
     await app.close();
   });
@@ -507,6 +619,7 @@ describe("session history/read-only route harness", () => {
     const { app } = createHarness(provider, accessProvider);
 
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/events/viewport?y_min=1&y_max=5" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/events/42" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/messages" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/conversation-context" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline" });
@@ -515,11 +628,12 @@ describe("session history/read-only route harness", () => {
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/turn-summaries?mode=count" });
     await app.inject({ method: "GET", url: "/api/sessions/sess-1/events" });
 
-    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(8);
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(9);
     expect(accessProvider.requireSessionAccess).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "sess-1" }),
     );
     expect(provider.readViewport).toHaveBeenCalled();
+    expect(provider.readEvent).toHaveBeenCalled();
     expect(provider.readMessages).toHaveBeenCalled();
     expect(provider.readConversationContext).toHaveBeenCalled();
     expect(provider.readTimeline).toHaveBeenCalled();
@@ -1117,6 +1231,7 @@ function createProvider(
     readTimeline: vi.fn(async () => page([], null)),
     readTimelineTrace: vi.fn(async () => null),
     readStory: vi.fn(async () => emptyStory()),
+    readEvent: vi.fn(async () => null),
     readTurnSummaries: vi.fn(async (sessionId, query) => ({
       session_id: sessionId,
       mode: query.mode,

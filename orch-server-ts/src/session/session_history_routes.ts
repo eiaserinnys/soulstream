@@ -53,6 +53,7 @@ export type SessionHistoryForegroundObservers = {
 
 export const sessionHistoryRouteAuthRequirements = {
   "GET /api/sessions/:session_id/events/viewport": true,
+  "GET /api/sessions/:session_id/events/:event_id": true,
   "GET /api/sessions/:session_id/messages": true,
   "GET /api/sessions/:session_id/conversation-context": true,
   "GET /api/sessions/:session_id/timeline": true,
@@ -68,6 +69,10 @@ type SessionParams = {
 
 type TimelineTraceParams = SessionParams & {
   timeline_id: string;
+};
+
+type SessionEventParams = SessionParams & {
+  event_id: string;
 };
 
 type QueryParseResult<TValue> =
@@ -106,6 +111,32 @@ export function registerSessionHistoryRoutes(
 
     if (!(await ensureSessionAccess(options, request, reply))) return;
     return service.readViewport(sessionParams(request).session_id, yMin.value, yMax.value);
+  });
+
+  app.get("/api/sessions/:session_id/events/:event_id", async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const { session_id: sessionId, event_id: rawEventId } = sessionEventParams(request);
+    const eventId = positiveIntegerQueryValue(rawEventId, "event_id");
+    if (!eventId.ok) {
+      return reply.code(400).send({
+        error: {
+          code: "SESSION_EVENT_INVALID_ID",
+          message: "event_id must be a positive safe integer",
+        },
+      });
+    }
+
+    if (!(await ensureSessionAccess(options, request, reply))) return;
+    const record = await service.readEvent(sessionId, eventId.value);
+    if (record === null) {
+      return reply.code(404).send({
+        error: {
+          code: "SESSION_EVENT_NOT_FOUND",
+          message: `event를 찾을 수 없습니다: ${eventId.value}`,
+        },
+      });
+    }
+    return record;
   });
 
   app.get("/api/sessions/:session_id/messages", async (request, reply) => {
@@ -180,6 +211,10 @@ function sessionParams(request: FastifyRequest): SessionParams {
 
 function timelineTraceParams(request: FastifyRequest): TimelineTraceParams {
   return request.params as TimelineTraceParams;
+}
+
+function sessionEventParams(request: FastifyRequest): SessionEventParams {
+  return request.params as SessionEventParams;
 }
 
 function requiredPositiveIntegerQuery(query: unknown, key: string): QueryParseResult<number> {

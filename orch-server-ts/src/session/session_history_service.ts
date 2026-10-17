@@ -45,6 +45,11 @@ export type SessionHistoryReplayRange = {
   readonly throughId?: number;
 };
 
+export type SessionHistoryEventRecord = {
+  id: number;
+  event: unknown;
+};
+
 const REQUESTED_TIMELINE_EVENT_TYPE_SET = new Set<string>([
   ...SESSION_TIMELINE_EVENT_TYPES,
   "complete",
@@ -79,6 +84,10 @@ export type SessionHistoryProvider = {
     query: SessionTurnSummaryQuery,
   ) => Promise<SessionTurnSummaryResponse>;
   readLastEventId: (sessionId: string) => Promise<number>;
+  readEvent: (
+    sessionId: string,
+    eventId: number,
+  ) => Promise<SessionHistoryEventRecord | null>;
   readEventAttachments?: (
     sessionId: string,
     eventId: number,
@@ -160,6 +169,13 @@ export class SessionHistoryReadService {
 
   readLastEventId(sessionId: string): Promise<number> {
     return this.provider.readLastEventId(sessionId);
+  }
+
+  readEvent(
+    sessionId: string,
+    eventId: number,
+  ): Promise<SessionHistoryEventRecord | null> {
+    return this.provider.readEvent(sessionId, eventId);
   }
 
   streamEventsRaw(

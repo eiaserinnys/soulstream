@@ -83,6 +83,27 @@ describe("live DB session history provider", () => {
     ]);
   });
 
+  it("reads one stored event payload through event_read_one and returns null when it is missing", async () => {
+    const harness = createSqlHarness((text, values) =>
+      text.includes("event_read_one(") && values[1] === 7
+        ? [{ id: 7, payload: { type: "tool_result", result: "full output" } }]
+        : [],
+    );
+    const provider = createLiveDbCatalogRepository({
+      sql: harness.sql,
+    }).sessionHistoryProvider;
+
+    await expect(provider.readEvent("sess-1", 7)).resolves.toEqual({
+      id: 7,
+      event: { type: "tool_result", result: "full output" },
+    });
+    await expect(provider.readEvent("sess-1", 999)).resolves.toBeNull();
+    expect(harness.calls).toEqual([
+      { text: expect.stringContaining("event_read_one("), values: ["sess-1", 7] },
+      { text: expect.stringContaining("event_read_one("), values: ["sess-1", 999] },
+    ]);
+  });
+
   it("serializes messages, timeline tool pairs, and trace rows like Python", async () => {
     const createdAt = new Date("2026-07-09T00:00:00.000Z");
     const harness = createSqlHarness((text) => {

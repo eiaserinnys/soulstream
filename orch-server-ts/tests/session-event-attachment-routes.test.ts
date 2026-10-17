@@ -218,6 +218,7 @@ function createHistoryProvider(
       undigested_count: 0,
     }),
     readLastEventId: async () => 0,
+    readEvent: async () => null,
     streamEventsRaw: () => ({
       async *[Symbol.asyncIterator]() {},
     }),

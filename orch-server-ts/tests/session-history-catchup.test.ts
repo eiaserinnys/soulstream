@@ -123,6 +123,7 @@ function harness(rows: SessionHistoryRawEvent[]) {
     readTurnSummaries: vi.fn(async (session_id: string) => ({ session_id, mode: "count" as const, total_count: 0, digested_count: 0, undigested_count: 0 })),
     readConversationContext: vi.fn(async (session_id: string) => ({ session_id, anchor: "latest_conversation" as const, match_event_id: null, match_turn_number: null, turns: [] })),
     readLastEventId: vi.fn(async () => rows.at(-1)?.eventId ?? 0),
+    readEvent: vi.fn(async () => null),
     streamEventsRaw: vi.fn(async function* (_sid: string, afterId: number, range?: SessionHistoryReplayRange) {
       const selected = rows.filter((e) => e.eventId > afterId && (range?.throughId === undefined || e.eventId <= range.throughId));
       yield* range?.limit === undefined ? selected : selected.slice(0, range.limit);
