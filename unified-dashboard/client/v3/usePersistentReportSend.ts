@@ -41,7 +41,13 @@ export function usePersistentReportSend(sessionId: string, notify: (text: string
       const result = await transport({ sessionKey: sessionId, text: next.messageText, contextItems: next.contextItems });
       if (result.delivered === null) throw new Error(UNKNOWN_DELIVERY);
       const current = useDashboardStore.getState().pendingChatSends[sessionId];
-      if (current?.id === next.id && current.persistentReportOperation) state.setPendingChatSend(sessionId, { ...current, persistentReportOperation: { ...current.persistentReportOperation, acknowledged: true } });
+      if (current?.id === next.id) {
+        if (result.reason === 'card_question_answered') {
+          state.setPendingChatSend(sessionId, null);
+          return;
+        }
+        if (current.persistentReportOperation) state.setPendingChatSend(sessionId, { ...current, persistentReportOperation: { ...current.persistentReportOperation, acknowledged: true } });
+      }
       // The ordinary chat event reconciles this pending slot, as for composer sends.
     } catch (error) {
       const current = useDashboardStore.getState().pendingChatSends[sessionId];

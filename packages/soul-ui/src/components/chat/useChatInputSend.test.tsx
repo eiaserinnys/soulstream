@@ -399,4 +399,50 @@ describe("useChatInputSend pending message", () => {
     expect(useDashboardStore.getState().pendingChatSends["assigned-session"]?.status).toBe("sending");
     expect(useDashboardStore.getState().pendingChatSends["pas-session"]).toBeUndefined();
   });
+
+  it("clears the message slot when the server accepts a card question answer without a chat echo", async () => {
+    vi.mocked(submitIntervention).mockResolvedValue({
+      ok: true,
+      delivered: true,
+      reason: "card_question_answered",
+      consumeWhen: null,
+    });
+    render();
+
+    await act(async () => {
+      await latest!.send("draft to send");
+    });
+
+    expect(useDashboardStore.getState().pendingChatSends["session-1"]).toBeUndefined();
+    expect(args.onAfterSend).toHaveBeenCalledOnce();
+  });
+
+  it("clears the retried slot when a retried card question answer is accepted", async () => {
+    const failed: PendingChatSend = {
+      id: "report-retry-431",
+      status: "failed",
+      reason: "전달을 확인하지 못했습니다",
+      text: "확인: 응",
+      messageText: "확인: 응",
+      attachmentPaths: [],
+      attachments: [],
+      mode: "intervention",
+      contextItems: [{ key: "persistent_report_reply", content: { key: "report-a", option: "응" } }],
+      persistentReportOperation: { key: "report-a", updatedAt: "first", kind: "reply" },
+    };
+    useDashboardStore.getState().setPendingChatSend("session-1", failed);
+    vi.mocked(submitIntervention).mockResolvedValue({
+      ok: true,
+      delivered: true,
+      reason: "card_question_answered",
+      consumeWhen: null,
+    });
+    render();
+
+    await act(async () => {
+      await latest!.retry("session-1", failed);
+    });
+
+    expect(useDashboardStore.getState().pendingChatSends["session-1"]).toBeUndefined();
+  });
 });
