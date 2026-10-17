@@ -92,12 +92,13 @@ function EventMessage({
       if (event.data.attachment_output === true) {
         return <OutputAttachmentMessage event={event} sessionId={sessionId} presentation={presentation} session={session} />;
       }
-      return <ChatUiMessage event={event} presentation={presentation} narration={narration} session={session}
+      return <ChatUiMessage event={event} sessionId={sessionId} presentation={presentation} narration={narration} session={session}
         selectionModel={selectionModel} onSelectionDone={onSelectionDone} />;
     case 'text_delta':
       return (
         <AssistantMessage
           event={event}
+          sessionId={sessionId}
           presentation={presentation}
           narration={narration}
           session={session}
@@ -122,6 +123,7 @@ function EventMessage({
       return (
         <AssistantMessage
           event={event}
+          sessionId={sessionId}
           presentation={presentation}
           narration={narration}
           session={session}
@@ -150,7 +152,7 @@ function EventMessage({
     case 'thinking_start':
     case 'thinking_delta':
     case 'thinking_end':
-      return <ThinkingEvent event={event} presentation={presentation} />;
+      return <ThinkingEvent event={event} sessionId={sessionId} presentation={presentation} />;
     case 'session_start':
       return null;
     case 'complete':
@@ -205,7 +207,7 @@ function OutputAttachmentMessage({ event, sessionId, presentation, session }: {
     readContext: { type: 'session', id: sessionId },
   });
   return items.length > 0 || phase === 'loading' || phase === 'failed'
-    ? <AssistantMessage event={event} session={session} presentation={presentation} attachmentsOnly>
+    ? <AssistantMessage event={event} sessionId={sessionId} session={session} presentation={presentation} attachmentsOnly>
         <MessageAttachments items={items} role="assistant" presentation={presentation}
           loading={phase === 'loading'} failure={failure} onRetry={retry} />
       </AssistantMessage>

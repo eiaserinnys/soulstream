@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, within } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import { useSettingsStore } from '../../store/settingsStore';
 import { ReviewAttachments } from '../ReviewAttachments';
 
@@ -37,4 +37,38 @@ test('component review registers the production image and file attachment states
   expect(files.getByText('0 B')).toBeTruthy();
   expect(files.queryByText('text/plain')).toBeNull();
   expect(files.queryByText('application/octet-stream')).toBeNull();
+});
+
+test('component review registers truncated tool success, storage failure, and assistant states', () => {
+  const screen = render(<ReviewAttachments />);
+
+  const attached = within(screen.getByTestId('review-attachments-truncation-attached'));
+  fireEvent.press(attached.getByTestId('tool-event-header-touch'));
+  expect(attached.getByTestId('tool-event-input-truncation-metadata')).toBeTruthy();
+  expect(attached.getByTestId('tool-event-result-truncation-metadata')).toBeTruthy();
+  expect(attached.getAllByText(/잘림 · 전체 1\.2 MB ·/)).toHaveLength(2);
+  expect(attached.getAllByText('전문 열기')).toHaveLength(2);
+
+  const failed = within(screen.getByTestId('review-attachments-truncation-failed'));
+  fireEvent.press(failed.getByTestId('tool-event-header-touch'));
+  expect(failed.getByText(/잘림 · 전체 1\.2 MB · 전문 보관 실패/)).toBeTruthy();
+  expect(failed.queryByText('전문 열기')).toBeNull();
+
+  const assistant = within(screen.getByTestId('review-attachments-truncation-assistant'));
+  expect(assistant.getByText(/잘림 · 전체 1\.2 MB/)).toBeTruthy();
+  expect(assistant.getByText('전문 열기').props.accessibilityRole).toBe('link');
+
+  const thinkingDefaultAttached = within(screen.getByTestId('review-attachments-truncation-thinking-default-attached'));
+  fireEvent.press(thinkingDefaultAttached.getByText('생각 중...'));
+  expect(thinkingDefaultAttached.getByText('전문 열기').props.accessibilityRole).toBe('link');
+  const thinkingDefaultFailed = within(screen.getByTestId('review-attachments-truncation-thinking-default-failed'));
+  fireEvent.press(thinkingDefaultFailed.getByText('생각 중...'));
+  expect(thinkingDefaultFailed.getByText(/전문 보관 실패/)).toBeTruthy();
+  expect(thinkingDefaultFailed.queryByText('전문 열기')).toBeNull();
+
+  const thinkingManuscriptAttached = within(screen.getByTestId('review-attachments-truncation-thinking-manuscript-attached'));
+  expect(thinkingManuscriptAttached.getByText('전문 열기').props.accessibilityRole).toBe('link');
+  const thinkingManuscriptFailed = within(screen.getByTestId('review-attachments-truncation-thinking-manuscript-failed'));
+  expect(thinkingManuscriptFailed.getByText(/전문 보관 실패/)).toBeTruthy();
+  expect(thinkingManuscriptFailed.queryByText('전문 열기')).toBeNull();
 });

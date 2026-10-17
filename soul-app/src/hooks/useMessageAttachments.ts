@@ -7,7 +7,7 @@ import type {
 } from '../../../packages/wire-schema/src/attachments';
 import { ApiHttpError, createApiRequestContext } from '../api/clientCore';
 import { AttachmentReadError } from '../api/attachmentEndpoints';
-import type { SessionEvent } from '../api/types';
+import type { EventTruncation, SessionEvent } from '../api/types';
 import {
   attachmentContentUrl,
   isLegacyAttachmentImage,
@@ -253,7 +253,7 @@ async function readLegacyAttachment(
   }
 }
 
-function descriptorAttachmentView(descriptor: AttachmentDescriptor, context: AttachmentReadContext): AttachmentView {
+export function descriptorAttachmentView(descriptor: AttachmentDescriptor, context: AttachmentReadContext): AttachmentView {
   const id = descriptor.attachment_id;
   return {
     key: id,
@@ -271,6 +271,15 @@ function descriptorAttachmentView(descriptor: AttachmentDescriptor, context: Att
       originalUrl: attachmentContentUrl(id, context, { download: true }),
     },
   };
+}
+
+export function openTruncatedAttachmentPreview(
+  truncation: EventTruncation,
+  sessionId: string,
+  onOpen: (attachment: AttachmentView) => void,
+): void {
+  if (!truncation.attachment) return;
+  onOpen(descriptorAttachmentView(truncation.attachment, { type: 'session', id: sessionId }));
 }
 
 function unavailableAttachment(

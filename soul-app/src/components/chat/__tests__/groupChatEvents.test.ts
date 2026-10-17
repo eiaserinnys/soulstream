@@ -136,8 +136,10 @@ describe('groupChatEvents', () => {
   });
 
   it('tool_start와 같은 tool_use_id의 tool_result는 단일 그룹으로 묶는다 (핵심 매칭)', () => {
-    const start = ev('10', 'tool_start', { tool_use_id: 'tu_a' });
-    const result = ev('11', 'tool_result', { tool_use_id: 'tu_a', output: 'ok' });
+    const inputTruncation = { original_bytes: 2048, attachment: null };
+    const resultTruncation = { original_bytes: 4096, attachment: null };
+    const start = ev('10', 'tool_start', { tool_use_id: 'tu_a', truncation: inputTruncation });
+    const result = ev('11', 'tool_result', { tool_use_id: 'tu_a', output: 'ok', truncation: resultTruncation });
     const out = groupChatEvents([start, result]);
     expect(out).toHaveLength(1);
     expect(out[0]).toEqual({
@@ -146,6 +148,10 @@ describe('groupChatEvents', () => {
       result,
       key: 'tool-10',
     });
+    if (out[0].kind === 'tool') {
+      expect(out[0].start.data.truncation).toBe(inputTruncation);
+      expect(out[0].result?.data.truncation).toBe(resultTruncation);
+    }
   });
 
   it('tool_start의 tool_use_id가 data.id 키에 있어도 매칭한다 (id fallback)', () => {

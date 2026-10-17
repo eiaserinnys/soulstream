@@ -17,6 +17,26 @@ jest.mock('@expo/vector-icons/Ionicons', () => {
   return (props: any) => React.createElement(Text, props, props.name);
 });
 
+jest.mock('../../AttachmentPreviewModal', () => {
+  const React = require('react');
+  const { View, Text } = require('react-native');
+  return {
+    AttachmentPreviewModal: (props: any) => React.createElement(
+      View,
+      {
+        testID: 'attachment-preview-modal',
+        item: props.item,
+        items: props.items,
+        initialIndex: props.initialIndex,
+      },
+      React.createElement(Text, {
+        testID: 'attachment-preview-close',
+        onPress: props.onClose,
+      }, '닫기'),
+    ),
+  };
+});
+
 jest.mock('expo-web-browser', () => ({
   openBrowserAsync: jest.fn(() => Promise.resolve()),
 }));
@@ -25,7 +45,7 @@ jest.mock('../../../theme/useDeviceType', () => ({
   deviceTypeToBaseKey: (type: string) => type === 'phone' ? 'phone' : 'tablet',
 }));
 
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet, Text } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as ContentLinkHook from '../../../hooks/useOpenContentLink';
@@ -36,12 +56,24 @@ import {
 } from '../AssistantMessage';
 import type { Session, SessionEvent } from '../../../api/types';
 import { LIGHT_COLORS } from '../../../theme/colors';
-import { PHONE_CHAT_TYPOGRAPHY } from '../../../theme';
+import { PHONE_CHAT_TYPOGRAPHY, PHONE_FOUNDATION } from '../../../theme';
 
 const ev = (type: string, data: any): SessionEvent => ({
   id: '1',
   type: type as SessionEvent['type'],
   data,
+});
+
+const attachmentDescriptor = (id: string) => ({
+  attachment_id: id,
+  name: '전체 응답.txt',
+  mime_type: 'text/plain',
+  byte_size: 2048,
+  checksum_sha256: null,
+  width: null,
+  height: null,
+  preview_kind: 'text' as const,
+  preview_mime_type: 'text/plain',
 });
 
 const session = (overrides: Partial<Session> = {}): Session => ({
@@ -74,6 +106,90 @@ test('attachment-only output keeps horizontal content inset without vertical bub
   const style = StyleSheet.flatten(screen.getByTestId('assistant-attachment-content').props.style);
   expect(style.paddingVertical).toBe(0);
   expect(style.paddingHorizontal).toBeGreaterThan(0);
+});
+
+test('잘린 assistant 본문은 접미사를 숨기고 기본·원고 모드에서 전문을 연다', () => {
+  const event = ev('assistant_message', {
+    content: '응답 앞부분\n[잘림]',
+    attachment_ids: ['assistant-full'],
+    truncation: { original_bytes: 2048, attachment: attachmentDescriptor('assistant-full') },
+  });
+
+  for (const presentation of ['default', 'manuscript'] as const) {
+    const screen = render(<AssistantMessage event={event} sessionId="sess-1" presentation={presentation} />);
+    const body = screen.getByTestId('assistant-markdown').props.markdown as string;
+    expect(body).toContain('응답 앞부분');
+    expect(body).not.toContain('[잘림]');
+    expect(screen.getByTestId('assistant-truncation-metadata')).toBeTruthy();
+    expect(screen.getByText(/잘림 · 전체 2\.0 KB/)).toBeTruthy();
+    const openLink = screen.getByText('전문 열기');
+    expect(openLink.props.accessibilityRole).toBe('link');
+    expect(StyleSheet.flatten(openLink.props.style).textDecorationLine).toBe('underline');
+    fireEvent.press(openLink);
+    expect(screen.getByTestId('attachment-preview-modal').props).toMatchObject({
+      item: { key: 'assistant-full', readContext: { type: 'session', id: 'sess-1' } },
+      items: [{ key: 'assistant-full' }],
+      initialIndex: 0,
+    });
+    fireEvent.press(screen.getByTestId('attachment-preview-close'));
+    expect(screen.queryByTestId('attachment-preview-modal')).toBeNull();
+    expect(StyleSheet.flatten(screen.getByTestId('assistant-truncation-metadata').props.style)).toMatchObject({
+      color: LIGHT_COLORS.textSecondary,
+      ...PHONE_FOUNDATION.typography.meta,
+    });
+  }
+});
+
+test('textOverride와 children 경로도 잘림 메타를 본문 뒤에 남긴다', () => {
+  const event = ev('assistant_message', {
+    content: '저장 본문\n[잘림]',
+    truncation: { original_bytes: 1024, attachment: null },
+  });
+
+  const overridden = render(
+    <AssistantMessage event={event} textOverride={'대체 본문\n[잘림]'} />,
+  );
+  const overrideBody = overridden.getByTestId('assistant-markdown').props.markdown as string;
+  expect(overrideBody).toContain('대체 본문');
+  expect(overrideBody).not.toContain('[잘림]');
+  expect(overridden.getByTestId('assistant-truncation-metadata')).toBeTruthy();
+  expect(overridden.getByText(/잘림 · 전체 1\.0 KB · 전문 보관 실패/)).toBeTruthy();
+
+  const withChildren = render(
+    <AssistantMessage event={event}><Text>구조화 본문</Text></AssistantMessage>,
+  );
+  expect(withChildren.getByText('구조화 본문')).toBeTruthy();
+  expect(withChildren.getByTestId('assistant-truncation-metadata')).toBeTruthy();
+  expect(withChildren.getByText(/잘림 · 전체 1\.0 KB · 전문 보관 실패/)).toBeTruthy();
+});
+
+test('textOverride와 children 경로도 첨부 전문 링크를 제공한다', () => {
+  const event = ev('assistant_message', {
+    content: '저장 본문\n[잘림]',
+    truncation: { original_bytes: 2048, attachment: attachmentDescriptor('assistant-path-full') },
+  });
+
+  const overridden = render(
+    <AssistantMessage event={event} sessionId="sess-1" textOverride={'대체 본문\n[잘림]'} />,
+  );
+  expect(overridden.getByText('대체 본문')).toBeTruthy();
+  expect(overridden.getByText('전문 열기').props.accessibilityRole).toBe('link');
+  fireEvent.press(overridden.getByText('전문 열기'));
+  expect(overridden.getByTestId('attachment-preview-modal').props.item).toMatchObject({
+    key: 'assistant-path-full', readContext: { type: 'session', id: 'sess-1' },
+  });
+
+  const withChildren = render(
+    <AssistantMessage event={event} sessionId="sess-1"><Text>구조화 본문</Text></AssistantMessage>,
+  );
+  expect(withChildren.getByText('구조화 본문')).toBeTruthy();
+  expect(withChildren.getByText('전문 열기').props.accessibilityRole).toBe('link');
+});
+
+test('truncation이 없는 assistant 본문은 기존 접미사를 유지하고 메타를 추가하지 않는다', () => {
+  const screen = render(<AssistantMessage event={ev('assistant_message', { content: '기존 본문\n[잘림]' })} />);
+  expect(screen.getByTestId('assistant-markdown').props.markdown).toContain('[잘림]');
+  expect(screen.queryByTestId('assistant-truncation-metadata')).toBeNull();
 });
 
 describe('extractText (F-G)', () => {

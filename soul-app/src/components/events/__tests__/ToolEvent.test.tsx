@@ -1,7 +1,26 @@
 import { Appearance, StyleSheet, View } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('../../AttachmentPreviewModal', () => {
+  const React = require('react');
+  const { View, Text } = require('react-native');
+  return {
+    AttachmentPreviewModal: (props: any) => React.createElement(
+      View,
+      {
+        testID: 'attachment-preview-modal',
+        item: props.item,
+        items: props.items,
+        initialIndex: props.initialIndex,
+      },
+      React.createElement(Text, {
+        testID: 'attachment-preview-close',
+        onPress: props.onClose,
+      }, '닫기'),
+    ),
+  };
+});
 let mockDimensions = { width: 390, height: 844, scale: 3, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
@@ -21,6 +40,18 @@ const ev = (id: string, type: SessionEvent['type'], data: Record<string, unknown
   data,
 });
 
+const attachmentDescriptor = (id: string) => ({
+  attachment_id: id,
+  name: '전체 결과.txt',
+  mime_type: 'text/plain',
+  byte_size: 2048,
+  checksum_sha256: null,
+  width: null,
+  height: null,
+  preview_kind: 'text' as const,
+  preview_mime_type: 'text/plain',
+});
+
 beforeAll(() => {
   jest.spyOn(Appearance, 'getColorScheme').mockReturnValue('light');
 });
@@ -36,6 +67,117 @@ afterEach(async () => {
 });
 
 describe('ToolEvent lazy trace detail', () => {
+  test('입력과 결과의 잘림 메타가 각 원본 첨부를 열고 닫힌다', () => {
+    const screen = render(
+      <ToolEvent
+        sessionId="sess-1"
+        api={null}
+        start={ev('10', 'tool_start', {
+          tool_name: 'Read',
+          tool_input: '입력 앞부분\n[잘림]',
+          truncation: { original_bytes: 2048, attachment: attachmentDescriptor('input-full') },
+        })}
+        result={ev('11', 'tool_result', {
+          result: '결과 앞부분\n[잘림]',
+          truncation: { original_bytes: 4096, attachment: attachmentDescriptor('result-full') },
+        })}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId('tool-event-header-touch'));
+    const body = within(screen.getByTestId('tool-event-body'));
+    expect(body.getByText('입력 앞부분')).toBeTruthy();
+    expect(body.getByText('결과 앞부분')).toBeTruthy();
+    const links = screen.getAllByText('전문 열기');
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link.props.accessibilityRole).toBe('link');
+      expect(StyleSheet.flatten(link.props.style).textDecorationLine).toBe('underline');
+    }
+
+    fireEvent.press(screen.getAllByText('전문 열기')[0]);
+    expect(screen.getByTestId('attachment-preview-modal').props).toMatchObject({
+      item: { key: 'input-full', readContext: { type: 'session', id: 'sess-1' } },
+      items: [{ key: 'input-full' }],
+      initialIndex: 0,
+    });
+    fireEvent.press(screen.getByTestId('attachment-preview-close'));
+    expect(screen.queryByTestId('attachment-preview-modal')).toBeNull();
+    expect(screen.getByTestId('tool-event-body')).toBeTruthy();
+
+    fireEvent.press(screen.getAllByText('전문 열기')[1]);
+    expect(screen.getByTestId('attachment-preview-modal').props.item.key).toBe('result-full');
+  });
+
+  test('보관 실패는 전문 열기 없이 byte 크기와 실패 문구를 보인다', () => {
+    const screen = render(
+      <ToolEvent
+        start={ev('10', 'tool_start', { tool_name: 'Read', tool_input: '입력' })}
+        result={ev('11', 'tool_result', {
+          result: '결과 앞부분\n[잘림]',
+          truncation: { original_bytes: 2048, attachment: null },
+        })}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId('tool-event-header-touch'));
+    expect(screen.getByTestId('tool-event-result-truncation-metadata')).toBeTruthy();
+    expect(screen.getByText('잘림 · 전체 2.0 KB · 전문 보관 실패')).toBeTruthy();
+    expect(screen.queryByText('전문 열기')).toBeNull();
+  });
+
+  test('trace 결과를 우선 렌더해도 결과 이벤트의 잘림 메타와 표시는 유지한다', async () => {
+    const api = {
+      getTimelineTrace: jest.fn(async () => ({
+        type: 'tool_trace' as const,
+        timeline_id: 'tool:toolu_truncated',
+        tool_use_id: 'toolu_truncated',
+        input: 'trace input',
+        result: 'trace 결과 앞부분\n[잘림]',
+        progress: [],
+      })),
+    };
+    const screen = render(
+      <ToolEvent
+        sessionId="sess-1"
+        api={api}
+        start={ev('10', 'tool_start', {
+          tool_name: 'Bash',
+          tool_use_id: 'toolu_truncated',
+          timeline_id: 'tool:toolu_truncated',
+          tool_input: 'event input',
+        })}
+        result={ev('11', 'tool_result', {
+          tool_use_id: 'toolu_truncated',
+          result: 'event result',
+          truncation: { original_bytes: 4096, attachment: attachmentDescriptor('trace-full') },
+        })}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId('tool-event-header-touch'));
+    await waitFor(() => expect(api.getTimelineTrace).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('trace 결과 앞부분')).toBeTruthy();
+    expect(screen.getByTestId('tool-event-result-truncation-metadata')).toBeTruthy();
+    expect(screen.getByText(/잘림 · 전체 4\.0 KB · 전문 열기/)).toBeTruthy();
+  });
+
+  test('truncation이 없는 기존 본문은 잘림 접미사와 메타를 유지한다', () => {
+    const screen = render(
+      <ToolEvent
+        start={ev('10', 'tool_start', { tool_name: 'Read', tool_input: '입력\n[잘림]' })}
+        result={ev('11', 'tool_result', { result: '결과\n[잘림]' })}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId('tool-event-header-touch'));
+    const body = within(screen.getByTestId('tool-event-body'));
+    expect(body.getByText('입력\n[잘림]')).toBeTruthy();
+    expect(body.getByText('결과\n[잘림]')).toBeTruthy();
+    expect(screen.queryByTestId('tool-event-input-truncation-metadata')).toBeNull();
+    expect(screen.queryByTestId('tool-event-result-truncation-metadata')).toBeNull();
+  });
+
   test('구조화 배열 결과는 text 외 annotations와 비text 블록까지 화면에 보존한다', () => {
     const result = [
       { type: 'text', text: '본문', annotations: { source: 'fixture' }, extra: 7 },
