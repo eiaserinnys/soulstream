@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, useWindowDimensions } from 'react-native';
+import { Platform, View, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { CardReport } from '../../api/cardTypes';
 import { buildCustomViewBindings, renderCustomViewHtml } from '../../lib/custom-view-renderer';
@@ -40,13 +40,16 @@ function CardMarkdownReport({ report }: { report: CardReport }) {
   const segments = useMemo(() => segmentCardReportImages(report.body), [report.body]);
   const gallery = segments.flatMap((part) => part.kind === 'image' ? [cardImageSource(part.url, serverUrl, jwt)] : []);
   let imageIndex = 0;
-  // Keep links and image interactions inside the expanded report, outside the timeline fold responder.
-  return <Pressable testID={`card-report-markdown-${report.id}`} accessible={false} focusable={false}
-    onPress={(event) => event.stopPropagation()} style={styles.reportBodyStack}>{segments.map((part, index) => {
+  // RN web의 onPress는 응답자 협상과 별개인 DOM click으로 실행된다.
+  const webClickBoundary = Platform.OS === 'web'
+    ? { onClick: (event: { stopPropagation(): void }) => event.stopPropagation() } : {};
+  // Own body touches, while allowing the scroll view or pager to take over a drag.
+  return <View testID={`card-report-markdown-${report.id}`} style={styles.reportBodyStack} {...webClickBoundary}
+    onStartShouldSetResponder={() => true} onResponderTerminationRequest={() => true}>{segments.map((part, index) => {
     if (part.kind === 'markdown') return part.markdown.trim()
       ? <PlannerMarkdownText key={index} markdown={part.markdown} variant="card" textAlign="left" /> : null;
     const current = imageIndex++;
     return <AttachmentImage key={index} testID={`card-report-image-${report.id}-${current}`}
       source={gallery[current]} sources={gallery} index={current} accessibilityLabel={part.alt || `보고 캡처 ${current + 1}`} />;
-  })}</Pressable>;
+  })}</View>;
 }

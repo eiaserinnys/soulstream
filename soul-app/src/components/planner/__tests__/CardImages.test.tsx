@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { Image } from 'react-native';
+import { Image, Platform } from 'react-native';
 import { CardTimeline } from '../CardTimeline';
 import { CardRequestView } from '../CardRequestView';
 import { CardReportView } from '../CardReportView';
@@ -98,9 +98,7 @@ test('펼친 보고는 글 순서를 유지하고 preview 없이 본문 이미�
   fireEvent.press(screen.getByTestId('card-fold-report-images'));
   expect(screen.queryAllByTestId(/card-report-thumbnail/)).toHaveLength(0);
   expect(screen.getAllByTestId(/card-report-image-images-/)).toHaveLength(3);
-  // Pressable's native View also contains a development-only PressabilityDebugView.
-  // Assert the production content children directly, with the same exact order.
-  const parts = screen.getByTestId('card-report-markdown-images').props.children[0];
+  const parts = screen.getByTestId('card-report-markdown-images').props.children;
   expect(parts.filter(Boolean).map((part: any) => part.props.markdown?.trim() ?? part.props.accessibilityLabel))
     .toEqual(['처음', '첫 사진', '사이', '둘째', '외부', '마지막']);
   fireEvent.press(screen.getByTestId('card-report-image-images-2'));
@@ -195,10 +193,12 @@ test('보고 본문 누름은 바깥 접기로 전파되지 않고 링크를 다
   fireEvent.press(screen.getByTestId('planner-markdown-text-link'));
   await waitFor(() => expect(openAttachment).toHaveBeenCalledTimes(1));
 
-  const stopPropagation = jest.fn();
-  // RN fireEvent climbs to the outer fold if the report has no responder boundary.
-  fireEvent.press(screen.getByTestId('card-report-markdown-images'), { stopPropagation });
-  expect(stopPropagation).toHaveBeenCalledTimes(1);
+  const body = screen.getByTestId('card-report-markdown-images');
+  // The body owns empty-space touches without introducing a pressable control.
+  expect(body.props.onPress).toBeUndefined();
+  expect(body.props.onStartShouldSetResponder()).toBe(true);
+  // A parent scroll/pager can take over a gesture that starts in the body.
+  expect(body.props.onResponderTerminationRequest()).toBe(true);
   expect(screen.getByTestId('card-report-markdown-images')).toBeTruthy();
   fireEvent.press(screen.getByTestId('planner-markdown-text-link'));
   await waitFor(() => expect(openAttachment).toHaveBeenCalledTimes(2));
@@ -217,6 +217,23 @@ test('D13 Markdown 링크 URL 문맥은 현재 보고 카드 문맥보다 우선
   }} />);
   fireEvent.press(screen.getByTestId('planner-markdown-text-link'));
   await waitFor(() => expect(metadataRequest).toHaveBeenCalledWith('url-context-file', { type: 'card', id: 'url-card' }));
+});
+
+test.each(['ios', 'web'] as const)('%s 보고 본문은 웹에서만 DOM click 전파를 막는다', (platform) => {
+  const os = jest.replaceProperty(Platform, 'OS', platform);
+  try {
+    const screen = render(<CardReportView report={{ ...detail.reports[0], body: '본문' }} />);
+    const body = screen.getByTestId('card-report-markdown-images');
+    const stopPropagation = jest.fn();
+    if (platform === 'web') {
+      fireEvent(body, 'click', { stopPropagation });
+      expect(stopPropagation).toHaveBeenCalledTimes(1);
+    } else {
+      expect(body.props.onClick).toBeUndefined();
+    }
+  } finally {
+    os.restore();
+  }
 });
 
 test('D13 문맥 없는 legacy /files 링크는 보고 카드 문맥을 HEAD에 붙인다', async () => {
