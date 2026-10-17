@@ -13,6 +13,7 @@ import type {
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
 } from "../engine/protocol.js";
+import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import { restoreRunnerEngineEventMetadata } from "./engine_event_stream.js";
 import {
   buildRunnerClaudeRuntimeObservationResult,
@@ -47,6 +48,9 @@ import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import type { ReleaseManifestV1 } from "../release/release_manifest.js";
 import { agentRuntimeEnvIdentity } from "../release/release_env.js";
+import { resolveProducedAttachmentExecutionContext } from "../attachments/produced_attachment_context.js";
+import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
+import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -54,6 +58,8 @@ type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_RELEASES_DIR"
   | "SOUL_RUNNER_TERMINAL_RETENTION_MS"
   | "SOUL_RUNNER_LEASE_TIMEOUT_MS"
+  | "INCOMING_FILE_DIR"
+  | "SOULSTREAM_NODE_ID"
   | "CODEX_ADAPTER_MODE"
   | "CODEX_DETACHED_RESULT_RETENTION_MS"
   | "CODEX_APP_SERVER_REQUEST_TIMEOUT_MS"
@@ -71,6 +77,10 @@ export interface RunnerProcessRuntimeFactoryOptions {
   logger: Logger;
   pumpMux: EventOutboxPumpMux;
   sessionStore: IdempotentClaudeSessionStore;
+  producedAttachments?: Pick<
+    ReturnType<typeof createProducedAttachmentRegistration>,
+    "register"
+  >;
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
   antigravityCliPath?: AntigravityCliPathResolution;
@@ -181,6 +191,7 @@ export function createRunnerProcessRuntimeFactory(
       claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
       claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
       runnerLeaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+      incomingFileDir: options.env.INCOMING_FILE_DIR,
       ...runtimeMcpConfig,
       codexHome,
       rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
@@ -268,6 +279,7 @@ function spawnInputFromConfig(
     claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
     claudeRuntimeTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
     runnerLeaseTimeoutMs,
+    ...(config.incomingFileDir ? { incomingFileDir: config.incomingFileDir } : {}),
     ...runtimeMcpConfig,
     codexHome: config.codexHome,
     rolloutRoot: config.rolloutRoot,
@@ -337,6 +349,34 @@ export async function applyRunnerHostCall(
       });
     }
     return result;
+  }
+  if (call.service === "event_archive") {
+    if (call.operation !== "register") {
+      throw new Error(`unsupported event archive host operation: ${call.operation}`);
+    }
+    const localPath = asString(call.args[0], "event archive local path");
+    const name = asString(call.args[1], "event archive name");
+    const mimeType = asString(call.args[2], "event archive MIME type");
+    const execution = resolveProducedAttachmentExecutionContext(
+      task,
+      expectedSessionId,
+      options.env.SOULSTREAM_NODE_ID,
+    );
+    if (!execution) {
+      throw new Error("ATTACHMENT_ACTIVE_EXECUTION_REQUIRED: runner event archive requires an active execution");
+    }
+    const service = options.producedAttachments;
+    if (!service) {
+      throw new Error("ATTACHMENT_REGISTRATION_UNAVAILABLE: produced attachment service is unavailable");
+    }
+    // The runner stops waiting after the same deadline; stop the upload too so
+    // this host request does not hold the connection for the 300s service limit.
+    const result = await service.register(
+      { local_path: localPath, name, mime_type: mimeType },
+      execution,
+      AbortSignal.timeout(EVENT_ARCHIVE_HOST_DEADLINE_MS),
+    );
+    return result.descriptor as AttachmentDescriptor;
   }
   const sessionId = asString(call.args[0], "runner host session id");
   if (sessionId !== expectedSessionId) {

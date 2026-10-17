@@ -75,10 +75,10 @@ describePostgres("session output attachment history references PostgreSQL contra
       output_command_id: "command-other",
     } as SSEEventPayload;
 
-    await outbox.append(buildEventOutboxAppendInput(sessionId, outputEvent));
-    await outbox.append(buildEventOutboxAppendInput(sessionId, retryEvent));
-    await outbox.append(buildEventOutboxAppendInput(sessionId, toolResultEvent));
-    await outbox.append(buildEventOutboxAppendInput(otherSessionId, otherSessionEvent));
+    await outbox.append(buildEventOutboxAppendInput(sessionId, outputEvent).appendInput);
+    await outbox.append(buildEventOutboxAppendInput(sessionId, retryEvent).appendInput);
+    await outbox.append(buildEventOutboxAppendInput(sessionId, toolResultEvent).appendInput);
+    await outbox.append(buildEventOutboxAppendInput(otherSessionId, otherSessionEvent).appendInput);
     const batch = await outbox.readBatch();
     expect(batch).not.toBeNull();
     const committed = await ingress.commitBatch(nodeId, batch!);
@@ -120,7 +120,7 @@ describePostgres("session output attachment history references PostgreSQL contra
     await expect(attachmentReadRepository.getSqlScopeEvidence(
       { type: "session", id: sessionId },
       "asset-tool-result",
-    )).resolves.toMatchObject({ hasStoredRef: false });
+    )).resolves.toMatchObject({ hasStoredRef: true });
   }, 60_000);
 
   async function insertAsset(

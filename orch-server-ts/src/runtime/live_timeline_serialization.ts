@@ -92,6 +92,8 @@ export function buildToolTrace(
   const completedAt =
     resultEvent === undefined ? null : eventTimestamp(resultPayload, resultEvent);
   const isError = resultPayload.is_error === true;
+  const truncation = resultPayload.truncation ?? startPayload.truncation;
+  const attachmentIds = resultPayload.attachment_ids ?? startPayload.attachment_ids;
 
   return {
     type: "tool_trace",
@@ -109,6 +111,8 @@ export function buildToolTrace(
     duration_ms: durationMs(startedAt, completedAt),
     input: startPayload.tool_input ?? startPayload.input,
     result: resultPayload.result ?? resultPayload.content ?? resultPayload.output,
+    ...(truncation === undefined ? {} : { truncation }),
+    ...(attachmentIds === undefined ? {} : { attachment_ids: attachmentIds }),
     progress,
     events,
   };
@@ -205,6 +209,10 @@ function baseToolPayload(
     ...(payload.parent_event_id === undefined
       ? {}
       : { parent_event_id: payload.parent_event_id }),
+    ...(payload.truncation === undefined ? {} : { truncation: payload.truncation }),
+    ...(payload.attachment_ids === undefined
+      ? {}
+      : { attachment_ids: payload.attachment_ids }),
   };
 }
 

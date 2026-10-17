@@ -654,7 +654,7 @@ describe("RunnerProcessDispatcher", () => {
           interventionId: frame.interventionId,
           message: frame.message,
           ...(frame.event
-            ? { event: buildDurableRunnerEvent("session-a", frame.event as never).appendInput }
+            ? { event: (await buildDurableRunnerEvent("session-a", frame.event as never)).appendInput }
             : {}),
           queued: frame.queued,
           queuedAt: "2026-08-17T00:00:01.000Z",

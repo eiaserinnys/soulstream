@@ -222,6 +222,7 @@ const RunnerRequestSchema = z.discriminatedUnion("kind", [
       "claude_runtime",
       "detached_event",
       "snapshot",
+      "event_archive",
     ]),
     operation: z.string().min(1),
     args: z.array(z.json()),

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mapAppServerNotification } from
   "../src/engine/codex_app_server/event_mapper.js";
 import type { SSEEventPayload } from "../src/engine/protocol.js";
+import { EVENT_STRING_MAX_BYTES } from "../src/db/event_payload_truncation.js";
 import {
   EVENT_OUTBOX_COMPACT_BYTES,
   EVENT_OUTBOX_COMPACT_ROWS,
@@ -1731,7 +1732,7 @@ describe("RunnerSqliteEventOutbox", () => {
     recovered.close();
   });
 
-  it("keeps an amplified structured tool result durable and exactly once across reopen and ACK", async () => {
+  it("keeps a truncated amplified tool result durable and exactly once across reopen and ACK", async () => {
     const sourceResult = amplifiedStructuredToolResult();
     const sourceJson = JSON.stringify(sourceResult);
     expect(Buffer.byteLength(sourceJson, "utf8")).toBe(1_200_039);
@@ -1791,14 +1792,18 @@ describe("RunnerSqliteEventOutbox", () => {
       ...completed,
       result: sourceJson,
     } as SSEEventPayload;
-    await expect(outbox.append(
-      buildDurableRunnerEvent("session-a", legacyCompleted).appendInput,
-    )).rejects.toThrow("event payload exceeds 2 MiB ingress single-event contract");
+    const legacyOutbox = await createOutbox();
+    const legacyDurable = await buildDurableRunnerEvent("session-a", legacyCompleted);
+    const legacyRecord = await legacyOutbox.append(legacyDurable.appendInput);
+    expect(Buffer.byteLength(JSON.stringify(legacyRecord.payload), "utf8"))
+      .toBeLessThan(2 * 1024 * 1024);
+    expect(legacyRecord.payload.truncation).toMatchObject({ attachment: null });
+    legacyOutbox.close();
 
     const records = [];
     for (const event of [started, completed, assistant, complete]) {
       records.push(await outbox.append(
-        buildDurableRunnerEvent("session-a", event).appendInput,
+        (await buildDurableRunnerEvent("session-a", event)).appendInput,
       ));
     }
     expect(records.map((record) => record.event_type)).toEqual([
@@ -1807,7 +1812,13 @@ describe("RunnerSqliteEventOutbox", () => {
       "assistant_message",
       "complete",
     ]);
-    expect(records[1]?.payload).toMatchObject({ result: sourceResult });
+    const storedResult = records[1]?.payload.result as {
+      content: Array<{ text: string }>;
+    };
+    expect(Buffer.byteLength(storedResult.content[0]!.text, "utf8"))
+      .toBeLessThanOrEqual(EVENT_STRING_MAX_BYTES);
+    expect(storedResult.content[0]!.text.endsWith("\n[잘림]")).toBe(true);
+    expect(records[1]?.payload.truncation).toMatchObject({ attachment: null });
     outbox.close();
 
     const firstReader = await RunnerSqliteEventOutbox.open(path);
@@ -1817,7 +1828,7 @@ describe("RunnerSqliteEventOutbox", () => {
     const resultBatch = await firstReader.readBatch();
     expect(resultBatch?.events.map((record) => record.event_type)).toEqual(["tool_result"]);
     const resultRecord = resultBatch!.events[0]!;
-    expect(resultRecord.payload).toMatchObject({ result: sourceResult });
+    expect(resultRecord.payload).toEqual(records[1]?.payload);
     firstReader.close();
 
     const replayReader = await RunnerSqliteEventOutbox.open(path);

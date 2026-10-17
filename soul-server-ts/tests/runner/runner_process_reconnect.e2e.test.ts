@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -15,6 +14,10 @@ import {
   classifyRunnerRegistration,
   scanRunnerRegistrations,
 } from "../../src/runner/runner_process_registry.js";
+import {
+  EVENT_STRING_MAX_BYTES,
+  EVENT_TRUNCATION_SUFFIX,
+} from "../../src/db/event_payload_truncation.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import { RunnerProcessSpawner } from "../../src/runner/runner_process_spawn.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
@@ -81,13 +84,20 @@ describe("runner process detach/reconnect E2E", () => {
       "assistant_message",
       "complete",
     ]);
-    const result = frames.find((frame) => frame.payload.type === "tool_result")
-      ?.payload.result;
+    const toolResult = frames.find((frame) => frame.payload.type === "tool_result")
+      ?.payload as { result?: unknown; truncation?: unknown } | undefined;
+    // The 600,000-byte text stays a structured object but is cut to the
+    // durable string limit; its full text belongs to the archive, not the event.
+    const result = toolResult?.result as
+      | { content?: { type?: string; text?: string }[] }
+      | undefined;
     expect(typeof result).toBe("object");
-    const resultJson = JSON.stringify(result);
-    expect(Buffer.byteLength(resultJson, "utf8")).toBe(1_200_039);
-    expect(createHash("sha256").update(resultJson).digest("hex"))
-      .toBe("1eb55038aaf02601e56fc731b3f7c76a116e217be59a62c1e4d52c3362a161ff");
+    const text = result?.content?.[0]?.text ?? "";
+    expect(result?.content?.[0]?.type).toBe("text");
+    expect(text.startsWith(String.raw`\"`)).toBe(true);
+    expect(text.endsWith(EVENT_TRUNCATION_SUFFIX)).toBe(true);
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(EVENT_STRING_MAX_BYTES);
+    expect(toolResult?.truncation).toEqual({ original_bytes: 600_000, attachment: null });
     expect(batches.flatMap((batch) => batch.events.map((event) => event.event_type)))
       .toEqual([
         "session",

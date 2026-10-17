@@ -86,6 +86,7 @@ describe("createRunnerProcessRuntimeFactory", () => {
       codexDetachedResultRetentionMs: 120_000,
       codexAppServerRequestTimeoutMs: 45_000,
       codexAppServerStartupTimeoutMs: 135_000,
+      incomingFileDir: "/incoming",
     }));
   });
 
@@ -247,6 +248,8 @@ function runnerEnv() {
     SOUL_RUNNER_RELEASES_DIR: "/releases",
     SOUL_RUNNER_TERMINAL_RETENTION_MS: 60_000,
     SOUL_RUNNER_LEASE_TIMEOUT_MS: 90_000,
+    INCOMING_FILE_DIR: "/incoming",
+    SOULSTREAM_NODE_ID: "node-test",
     CODEX_ADAPTER_MODE: "sdk" as const,
     CLAUDE_SESSION_RUNTIME_V2_ENABLED: true,
     CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS: 300_000,
@@ -433,6 +436,93 @@ describe("applyRunnerHostCall", () => {
       }),
     );
     expect(publishDetachedClaudeEvent).toHaveBeenCalledWith("session-a", event, "host:5");
+  });
+
+  it("registers archived runner output with the active task execution context", async () => {
+    const descriptor = {
+      attachment_id: "attachment-archive",
+      name: "tool_result-0123456789abcdef.txt",
+      mime_type: "text/plain",
+      byte_size: 4,
+      checksum_sha256: "a".repeat(64),
+      width: null,
+      height: null,
+      preview_kind: "text",
+      preview_mime_type: "text/plain",
+    };
+    const register = vi.fn(async () => ({
+      attachment_id: descriptor.attachment_id,
+      descriptor,
+    }));
+    const task = {
+      agentSessionId: "session-a",
+      resolvedWorkspaceDir: "/workspace/resolved",
+      agentProfileSnapshot: { workspace_dir: "/workspace/profile" },
+      runner: {
+        engine: { workspaceDir: "/workspace/engine" },
+        dispatcher: { activeExecutionCommandId: () => "command-a" },
+      },
+    } as unknown as Task;
+    const options = {
+      env: { SOULSTREAM_NODE_ID: "node-a" },
+      producedAttachments: { register },
+    } as never;
+    const call = {
+      service: "event_archive",
+      operation: "register",
+      args: ["/incoming/session-a/archive.txt", "archive.txt", "text/plain"],
+      correlationId: "host:event-archive",
+    } as never;
+    const snapshots = {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    };
+
+    await expect(applyRunnerHostCall(call, task, snapshots, options)).resolves.toEqual(descriptor);
+    expect(register).toHaveBeenCalledWith(
+      {
+        local_path: "/incoming/session-a/archive.txt",
+        name: "archive.txt",
+        mime_type: "text/plain",
+      },
+      {
+        sessionId: "session-a",
+        nodeId: "node-a",
+        outputCommandId: "command-a",
+        workspaceDir: "/workspace/resolved",
+        profileWorkspaceDir: "/workspace/profile",
+      },
+      expect.any(AbortSignal),
+    );
+
+    const fallbackTask = {
+      ...task,
+      resolvedWorkspaceDir: undefined,
+      runner: {
+        engine: { workspaceDir: "/workspace/engine" },
+        dispatcher: { activeExecutionCommandId: () => "command-fallback" },
+      },
+    } as unknown as Task;
+    await applyRunnerHostCall(call, fallbackTask, snapshots, options);
+    expect(register).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        sessionId: "session-a",
+        nodeId: "node-a",
+        outputCommandId: "command-fallback",
+        workspaceDir: "/workspace/engine",
+      }),
+      expect.any(AbortSignal),
+    );
+
+    const inactiveTask = {
+      ...task,
+      runner: { engine: { workspaceDir: "/workspace/engine" }, dispatcher: { activeExecutionCommandId: () => undefined } },
+    } as unknown as Task;
+    await expect(applyRunnerHostCall(call, inactiveTask, snapshots, options))
+      .rejects.toThrow("ATTACHMENT_ACTIVE_EXECUTION_REQUIRED");
+    expect(register).toHaveBeenCalledTimes(2);
   });
 
   it("restores process-local Claude metadata before an observational host call", async () => {

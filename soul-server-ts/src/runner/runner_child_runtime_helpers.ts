@@ -1,8 +1,11 @@
 import { writeFile } from "node:fs/promises";
 
+import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
+
 import {
   buildEventOutboxAppendInput,
 } from "../db/event_persistence.js";
+import type { EventArchiveContent } from "../db/event_payload_truncation.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 import { engineEventFrame } from "./frame_protocol.js";
@@ -25,20 +28,52 @@ export function runnerToolLeaseTransition(event: SSEEventPayload):
   return { kind: type === "tool_start" ? "start" : "finish", toolUseId };
 }
 
-export function buildDurableRunnerEvent(
+export interface RunnerEventArchiveInput {
+  eventType: string;
+  content: EventArchiveContent;
+}
+
+export type RunnerEventArchive = (
+  input: RunnerEventArchiveInput,
+) => Promise<AttachmentDescriptor | null>;
+
+export async function buildDurableRunnerEvent(
   sessionId: string,
   event: SSEEventPayload,
   effect?: EventOutboxSessionEffect,
   metadata?: unknown,
-): {
-  appendInput: ReturnType<typeof buildEventOutboxAppendInput>;
+  archiveEvent?: RunnerEventArchive,
+): Promise<{
+  appendInput: ReturnType<typeof buildEventOutboxAppendInput>["appendInput"];
   frame: ReturnType<typeof engineEventFrame>;
-} {
-  const appendInput = buildEventOutboxAppendInput(
+}> {
+  const { appendInput, archive } = buildEventOutboxAppendInput(
     sessionId,
     event,
     effect,
   );
+  if (archive && archiveEvent) {
+    let descriptor: AttachmentDescriptor | null = null;
+    try {
+      descriptor = await archiveEvent({
+        eventType: (event as { type: string }).type,
+        content: archive,
+      });
+    } catch {
+      descriptor = null;
+    }
+    const payload = appendInput.payload as Record<string, unknown>;
+    const truncation = payload.truncation;
+    if (typeof truncation === "object" && truncation !== null) {
+      (truncation as Record<string, unknown>).attachment = descriptor;
+      if (descriptor) {
+        const attachmentIds = Array.isArray(payload.attachment_ids)
+          ? payload.attachment_ids as string[]
+          : [];
+        payload.attachment_ids = [...attachmentIds, descriptor.attachment_id];
+      }
+    }
+  }
   return {
     appendInput,
     frame: engineEventFrame(appendInput.payload, metadata),

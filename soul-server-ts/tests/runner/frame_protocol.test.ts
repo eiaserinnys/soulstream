@@ -139,6 +139,18 @@ const frames: RunnerFrame[] = [
   },
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+    channel: "event",
+    kind: "request",
+    correlationId: "event-archive-1",
+    request: {
+      kind: "host_call",
+      service: "event_archive",
+      operation: "register",
+      args: ["/incoming/session/file.txt", "tool_result-a.txt", "text/plain"],
+    },
+  },
+  {
+    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
     channel: "control",
     kind: "command_result",
     commandId: "execute-1",
