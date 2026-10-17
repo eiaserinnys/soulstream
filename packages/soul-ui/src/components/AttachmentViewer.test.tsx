@@ -235,7 +235,8 @@ describe("AttachmentViewer", () => {
     trigger.focus();
     await act(async () => trigger.click());
     const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
-    expect(dialog.contains(document.activeElement)).toBe(true);
+    // Base UI moves initial focus into the dialog asynchronously; wait for it instead of racing it.
+    await vi.waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
     expect(dialog.querySelector('.chat-image-viewer-metadata')?.textContent).toBe("1.0 MB");
     const next = dialog.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!;
     next.focus();
