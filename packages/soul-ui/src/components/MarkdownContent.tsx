@@ -39,6 +39,7 @@ interface MarkdownContentProps {
   codeBlockLayout?: "bounded" | "document";
   chatImages?: {
     role: ChatImageRole;
+    layout?: "inline" | "gallery";
     attachmentPaths?: readonly string[];
     nodeId?: string;
     representedAttachments?: readonly ChatAttachmentItem[];
@@ -397,9 +398,9 @@ export function MarkdownContent({
 
   const remarkPlugins = useMemo(
     () => imageModel
-      ? [remarkGfm, remarkBreaks, createChatMarkdownImageRemarkPlugin(imageModel)]
+      ? [remarkGfm, remarkBreaks, createChatMarkdownImageRemarkPlugin(imageModel, chatImages?.layout !== "inline")]
       : [remarkGfm, remarkBreaks],
-    [imageModel],
+    [imageModel, chatImages?.layout],
   );
   const selectedComponents = useMemo(() => {
     const baseComponents = linkTone === "onUserBubble"

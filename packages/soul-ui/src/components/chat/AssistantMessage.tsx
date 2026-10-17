@@ -78,7 +78,8 @@ export const AssistantMessage = memo(function AssistantMessage({
         ref={bubbleRef}
         {...bubbleProps}
         data-slot="chat-message-bubble"
-        className={cn(bubbleClassName, bubbleProps?.className)}
+        data-chat-attachment-role={!manuscript && attachments ? "assistant" : undefined}
+        className={cn(bubbleClassName, !manuscript && attachments && "chat-attachment-bubble", bubbleProps?.className)}
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         {!manuscript && (header ?? <div className="mb-1 flex items-baseline gap-1.5">
@@ -108,7 +109,7 @@ export const AssistantMessage = memo(function AssistantMessage({
               content={msg.content}
               enableBlockquoteCopy
               chatImages={readContext
-                ? { role: "assistant", representedAttachments, readContext }
+                ? { role: "assistant", layout: manuscript ? "gallery" : "inline", representedAttachments, readContext }
                 : manuscript ? { role: "assistant" } : undefined}
             />
           )}

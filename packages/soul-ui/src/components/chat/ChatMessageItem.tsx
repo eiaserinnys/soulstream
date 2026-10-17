@@ -1,3 +1,4 @@
+import { removeRepresentedAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { memo, useState } from "react";
 import type { ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -58,6 +59,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     enabled: Boolean(sessionId && eventId && hasAttachmentSignal),
   });
   const attachmentItems = filterDisplayedAttachments(msg, attachmentState.items);
+  msg = { ...msg, content: removeRepresentedAttachmentPathNotes(msg.content, attachmentItems) };
+  const attachmentTone = presentation === "default" && msg.role !== "assistant" ? "onUserBubble" as const : undefined;
   const projectedOutputRow = msg.id.startsWith("output-attachments:");
   const [viewer, setViewer] = useState<{ index: number; trigger: HTMLElement } | null>(null);
   const attachmentRole = msg.role === "assistant" ? "assistant" : "user";
@@ -66,18 +69,19 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
     attachmentSlot = <ChatAttachments
       items={attachmentItems}
       role={attachmentRole}
+      tone={attachmentTone}
       onOpen={(index, trigger) => setViewer({ index, trigger })}
     />;
   } else if (attachmentState.loading) {
-    attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-state="loading">
+    attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-tone={attachmentTone} data-chat-attachment-state="loading">
       <div className="chat-image-frame"><span className="chat-image-status" role="status">첨부 불러오는 중…</span></div>
     </div>;
   } else if (attachmentState.error) {
     const retryable = attachmentState.error === "첨부 정보를 불러오지 못했습니다. 다시 시도해 주세요."
       || attachmentState.error === "연결을 확인한 뒤 첨부를 다시 불러와 주세요.";
-    attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-state="error">
+    attachmentSlot = <div className="chat-image-run" data-chat-image-role={attachmentRole} data-chat-attachment-tone={attachmentTone} data-chat-attachment-state="error">
       <div className="chat-image-frame">
-        <span className="chat-image-status" role="status">{attachmentState.error}</span>
+        <span className="chat-image-status" role="status">{retryable ? "첨부 정보를 불러오지 못했습니다." : attachmentState.error}</span>
         {retryable && <Button variant="outline" size="sm" onClick={attachmentState.reload}>다시 시도</Button>}
       </div>
     </div>;

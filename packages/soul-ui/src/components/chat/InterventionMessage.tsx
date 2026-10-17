@@ -1,3 +1,4 @@
+import { cn } from "../../lib/cn";
 import { memo } from "react";
 import type { ReactNode } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
@@ -30,7 +31,7 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
 
   return (
     <div className={manuscript ? MANUSCRIPT_USER_ROW_CLASS_NAME : "flex justify-end gap-2 px-3 py-1.5"} data-chat-manuscript-user-row={manuscript ? "true" : undefined} data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined}>
-      <div className={manuscript ? "w-full min-w-0 max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]"}>
+      <div data-slot={!manuscript && attachments ? "chat-message-bubble" : undefined} data-chat-attachment-role={!manuscript && attachments ? "user" : undefined} className={cn(!manuscript && attachments && "chat-attachment-bubble", manuscript ? "w-full min-w-0 max-w-full text-right text-muted-foreground" : "max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]")}>
         {!manuscript && <div className="mb-1 flex items-baseline justify-end gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {display.displayName}

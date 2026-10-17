@@ -161,6 +161,20 @@ describe("MarkdownContent — remark-breaks plugin", () => {
     expect(html).not.toContain("data-chat-image-run=");
   });
 
+  test("ordinary chat preserves image markup while removing only represented standalone images", () => {
+    const markdown = "![첫 이미지](/one.png)\n\n![둘째 이미지](/two.png)";
+    const options = { chatImages: { role: "user" as const, layout: "inline" as const, readContext: { type: "session" as const, id: "session" } } };
+    expect(renderMarkdownContent(markdown, options)).toBe(renderMarkdownContent(markdown));
+    const item = { key: "same", source: { kind: "asset", attachmentId: "same" }, legacySources: [] } as unknown as import("../lib/chat-attachment-model").ChatAttachmentItem;
+    const html = renderMarkdownContent("![同じ](/api/attachments/same/content)\n\n![外部](https://images.test/same.png)\n\n![旧](/api/attachments/files?nodeId=node&path=%2Fother.png)", {
+      chatImages: { ...options.chatImages, representedAttachments: [item] },
+    });
+    expect(html).not.toContain('/api/attachments/same/content');
+    expect(html).toContain('src="https://images.test/same.png"');
+    expect(html).toContain('context_type=session');
+    expect(html).not.toContain('data-chat-image-run=');
+  });
+
   test("card evidence keeps its existing registered image variant", () => {
     const html = renderToStaticMarkup(createElement(MarkdownImage, {
       src: "/evidence.png",
@@ -181,6 +195,10 @@ describe("MarkdownContent — remark-breaks plugin", () => {
       frameClassName: "chat-image-thumbnail-frame",
     }));
     const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf8");
+
+    expect(css).toContain('[data-chat-attachment-role="user"]');
+    expect(css).toContain('min-width: min(86%, calc(min(var(--chat-attachment-user-max-width)');
+    expect(css).toMatch(/\.chat-image-status\s*\{[^}]*word-break:\s*keep-all/s);
 
     expect(html).toContain('class="chat-image-frame chat-image-thumbnail-frame"');
     expect(css).toMatch(/--chat-attachment-thumbnail-max-size:\s*200px;/);

@@ -1,4 +1,22 @@
+import type { ChatAttachmentItem } from "./chat-attachment-model";
+
 export const ATTACHMENT_PATH_NOTE_PREFIX = "[첨부 파일 로컬 경로: ";
+
+/** Display-only removal; the durable message and similar user prose stay intact. */
+export function removeRepresentedAttachmentPathNotes(text: string, items: readonly ChatAttachmentItem[]): string {
+  const paths = items.flatMap(item => [
+    ...item.legacySources.map(source => source.path),
+    ...(item.source.kind === "legacy" || item.source.kind === "unavailable" && item.source.path
+      ? [item.source.path!] : []),
+  ]);
+  const notes = new Set(collectAttachmentPathNotes(paths));
+  if (notes.size === 0) return text;
+  const lines = text.split(/\r?\n/);
+  const remaining = lines.filter(line => !notes.has(line));
+  if (remaining.length === lines.length) return text;
+  while (remaining.at(-1) === "") remaining.pop();
+  return remaining.join("\n");
+}
 
 export function appendAttachmentPathNotes(text: string, paths?: readonly string[]): string {
   const notes = collectAttachmentPathNotes(paths);

@@ -279,13 +279,13 @@ test("connected attachment failures map correctly, retry, and keep another sessi
   }
 
   const retryRow = sample.locator('[data-tree-node-id="connected-temporary-failure"]');
-  await expect(retryRow.getByRole("status")).toHaveText("첨부 정보를 불러오지 못했습니다. 다시 시도해 주세요.");
+  await expect(retryRow.getByRole("status")).toHaveText("첨부 정보를 불러오지 못했습니다.");
   const initial503Requests = Number(await page.locator("html").getAttribute("data-review-event-503-requests"));
   expect(initial503Requests).toBeGreaterThan(0);
   await retryRow.getByRole("button", { name: "다시 시도", exact: true }).click();
   await expect.poll(() => page.locator("html").getAttribute("data-review-event-503-requests"))
     .toBe(String(initial503Requests + 1));
-  await expect(retryRow.getByRole("status")).toHaveText("첨부 정보를 불러오지 못했습니다. 다시 시도해 주세요.");
+  await expect(retryRow.getByRole("status")).toHaveText("첨부 정보를 불러오지 못했습니다.");
 
   const overlayRow = sample.locator('[data-tree-node-id="connected-overlay-output"]');
   await overlayRow.getByRole("button", { name: "선택 카드 자료.txt", exact: true }).click();

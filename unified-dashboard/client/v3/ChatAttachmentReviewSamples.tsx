@@ -318,6 +318,15 @@ export function ChatAttachmentReviewSamples() {
       eventId: 503,
       attachmentIds: ["review-temporary-failure"],
     },
+    {
+      id: "connected-user-temporary-failure",
+      role: "user",
+      content: "일시 실패 상태입니다.",
+      treeNodeId: "connected-user-temporary-failure",
+      treeNodeType: "user_message",
+      eventId: 503,
+      attachmentIds: ["review-temporary-failure"],
+    },
   ] as ChatMessage[], [connectedUi]);
   const projectedOutputMessages = useMemo(() => projectChatOutputAttachments([
     {
@@ -367,6 +376,14 @@ export function ChatAttachmentReviewSamples() {
     { id: "uploading", file: new File(["업로드"], "화면설계_첨부_버튼과_프리뷰_수정본.pdf", { type: "application/pdf" }), status: "uploading" as const },
     { id: "error", file: new File(["실패"], "번역검토_세부원문_수정요청_목록.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), status: "error" as const },
   ]);
+  const [pastedImage, setPastedImage] = useState<File | null>(null);
+  useLayoutEffect(() => {
+    let active = true;
+    void fetch("/icon-192.png").then(response => response.blob()).then(blob => {
+      if (active) setPastedImage(new File([blob], "clipboard-review.png", { type: "image/png" }));
+    });
+    return () => { active = false; };
+  }, []);
   const pendingItems = useMemo(() => pendingFiles.map(({ id, file }) => localItem(file, "info", `pending:${id}`)), [pendingFiles]);
   const attachmentOnlyFile = useMemo(() => new File(["자료"], "답변에_포함할_추가_자료.pdf", { type: "application/pdf" }), []);
   const attachmentOnlyItems = useMemo(() => [localItem(attachmentOnlyFile, "info", "attachment-only")], [attachmentOnlyFile]);
@@ -417,7 +434,8 @@ export function ChatAttachmentReviewSamples() {
     <FileAttachmentPreview key={file.id} variant="chip" file={file.file} status={file.status}
       onOpen={(next, trigger) => { const itemIndex = pendingItems.findIndex(item => item.source.kind === "local" && item.source.file === next); if (itemIndex >= 0) openAt(pendingItems, itemIndex, trigger); }}
       onRemove={() => setPendingFiles(current => current.filter(item => item.id !== file.id))} />
-  ))}</div>;
+  ))}{pastedImage && <FileAttachmentPreview variant="chip" file={pastedImage} status="done"
+    onOpen={(file, trigger) => openAt([localItem(file, "image")], 0, trigger)} onRemove={() => setPastedImage(null)} />}</div>;
   const attachmentOnlyChip = <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <FileAttachmentPreview variant="chip" file={attachmentOnlyFile} status="done"
       onOpen={(_, trigger) => openAt(attachmentOnlyItems, 0, trigger)} onRemove={() => {}} />

@@ -50,7 +50,7 @@ it("opens a local attachment chip and removes it through separate actions",async
   expect(container.querySelector("[data-chat-attachment-chip]")).not.toBeNull();
   await act(()=>view.click());
   expect(onOpen).toHaveBeenCalledWith(file,view);
-  await act(()=>container.querySelector<HTMLButtonElement>('button[aria-label="Remove file"]')!.click());
+  await act(()=>container.querySelector<HTMLButtonElement>('button[aria-label="첨부 제거"]')!.click());
   expect(onRemove).toHaveBeenCalledOnce();
  }finally{await act(()=>root.unmount());container.remove();}
 });
@@ -72,7 +72,7 @@ it("uses a preview chip for ready uploads and only enables attachment-only send 
   expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
   await act(()=>document.body.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
   chatInputState.removeFile.mockClear();chatInputState.send.mockClear();
-  await act(()=>container.querySelector<HTMLButtonElement>('button[aria-label="Remove file"]')!.click());
+  await act(()=>container.querySelector<HTMLButtonElement>('button[aria-label="첨부 제거"]')!.click());
   expect(chatInputState.removeFile).toHaveBeenCalledWith("file-a");
   expect(chatInputState.send).not.toHaveBeenCalled();
   const sendButton=container.querySelector<HTMLButtonElement>('[data-testid="send-button"]')!;

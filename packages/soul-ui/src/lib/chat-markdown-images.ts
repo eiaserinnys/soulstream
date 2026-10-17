@@ -43,6 +43,7 @@ interface SourcePosition {
 
 interface MarkdownNode {
   type: string;
+  url?: string;
   value?: string;
   children?: MarkdownNode[];
   position?: SourcePosition;
@@ -244,7 +245,7 @@ function candidateParagraph(
  * Runs after the one existing Markdown parse. Only direct root paragraphs whose
  * nonblank source rows match the shared direct-URL matcher become image runs.
  */
-export function createChatMarkdownImageRemarkPlugin(model: ChatMarkdownImageModel) {
+export function createChatMarkdownImageRemarkPlugin(model: ChatMarkdownImageModel, groupImages = true) {
   return () => (tree: MarkdownRoot, file: MarkdownFile) => {
     const source = typeof file.value === "string" ? file.value : "";
     model.gallery = [];
@@ -254,6 +255,16 @@ export function createChatMarkdownImageRemarkPlugin(model: ChatMarkdownImageMode
     const candidates = tree.children
       .map((node, index) => candidateParagraph(node, index, source))
       .filter((candidate): candidate is CandidateParagraph => candidate !== null);
+
+    if (!groupImages) {
+      for (const { node } of candidates) {
+        node.children = node.children?.filter(child => child.type !== "image"
+          || !isRepresentedAttachmentImage(child.url ?? "", model.representedAttachments));
+      }
+      tree.children = tree.children.filter(node => !candidates.some(candidate => candidate.node === node)
+        || node.children?.some(child => child.type === "image"));
+      return;
+    }
 
     const removedNodeIndexes = new Set<number>();
     const visibleCandidates = candidates.flatMap(candidate => {
