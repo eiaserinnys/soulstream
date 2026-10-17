@@ -34,6 +34,7 @@ export function buildThreadStartParams(
       resolvedMcpServers,
       params.agentSessionId,
       internalMcpUrl,
+      params.disallowedTools,
     ),
     serviceName: "soul-server-ts",
     baseInstructions: params.systemPrompt ?? null,
@@ -72,6 +73,7 @@ export function buildThreadResumeParams(
       resolvedMcpServers,
       params.agentSessionId,
       internalMcpUrl,
+      params.disallowedTools,
     ),
     baseInstructions: params.systemPrompt ?? null,
     developerInstructions: null,
@@ -145,6 +147,7 @@ function buildCodexMcpConfig(
   servers: ResolvedMcpServer[] | undefined,
   agentSessionId: string | undefined,
   internalMcpUrl: string | undefined,
+  disallowedTools: string[] | undefined,
 ): JsonObject | null {
   const { supportedServers } = selectCodexMcpServers(servers);
   if (supportedServers === undefined) return null;
@@ -158,6 +161,14 @@ function buildCodexMcpConfig(
     if (mcpServers[name]) {
       throw new Error(`Codex MCP profile contains duplicate server name: ${name}`);
     }
+    const serverToolPrefix = `mcp__${name}__`;
+    const disabledTools = (disallowedTools ?? [])
+      .filter((tool) => tool.startsWith(serverToolPrefix))
+      .map((tool) => tool.slice(serverToolPrefix.length))
+      .filter((tool) => tool.length > 0);
+    const disabledToolsConfig = disabledTools.length > 0
+      ? { disabled_tools: disabledTools }
+      : {};
 
     if (server.type === "stdio") {
       if (!server.command) {
@@ -171,6 +182,7 @@ function buildCodexMcpConfig(
         ...(server.env ? { env: server.env } : {}),
         ...(server.cwd ? { cwd: server.cwd } : {}),
         enabled: true,
+        ...disabledToolsConfig,
       };
       continue;
     }
@@ -196,6 +208,7 @@ function buildCodexMcpConfig(
         : server.url,
       ...(headers ? { http_headers: headers } : {}),
       enabled: true,
+      ...disabledToolsConfig,
     };
   }
   return { mcp_servers: mcpServers };
