@@ -292,6 +292,7 @@ export const dialoguesInventory = [
     name: "채팅 첨부 미리보기",
     component: "AttachmentViewer",
   },
+  { section: "overlays", id: "card-attachments", name: "카드 첨부 미리보기", component: "CardCheckItems / CardTimeline" },
 ] as const;
 export type DialogueId = (typeof dialoguesInventory)[number]["id"];
 export const dialoguesSections = [

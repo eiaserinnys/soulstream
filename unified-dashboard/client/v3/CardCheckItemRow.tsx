@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Checkbox, useInternalLinkClick } from "@seosoyoung/soul-ui";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
+import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
 import { Check, Link, TriangleAlert } from "lucide-react";
+import { cardAttachmentSelectionFromEvidence } from "./card-attachment-selection";
 import "./v3-card-check-items.css";
 
 const displayLabels:Record<CardCheckItem["display"],string>={
@@ -11,7 +13,7 @@ const displayLabels:Record<CardCheckItem["display"],string>={
 
 export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,onToggleExpanded,onTargetItem,onOpenImage,readOnly=false}: {
  item:CardCheckItem;checked:boolean;pending:boolean;expanded:boolean;
- onConfirmChange(confirmed:boolean):void;onToggleExpanded():void;onTargetItem():void;onOpenImage(src:string,alt:string):void;
+ onConfirmChange(confirmed:boolean):void;onToggleExpanded():void;onTargetItem():void;onOpenImage(src:string,alt:string,attachment?:ChatAttachmentItem):void;
  readOnly?:boolean;
 }) {
  const internalLinkClick=useInternalLinkClick();
@@ -61,7 +63,7 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
       const src=evidence.previewUrl??evidence.url;
       if(evidence.availability||!src||failedImages.has(src))return null;
       return <figure key={key} title={evidence.label}>
-       <MarkdownImage variant="card-evidence" src={src} alt={evidence.label} onOpen={onOpenImage} onError={markImageFailed}/>
+       <MarkdownImage variant="card-evidence" src={src} alt={evidence.label} onOpen={(imageSrc,alt)=>onOpenImage(imageSrc,alt,cardAttachmentSelectionFromEvidence(evidence)??undefined)} onError={markImageFailed}/>
       </figure>;
      })}
      {imageFailureCount>0?<span className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>:null}
@@ -70,7 +72,10 @@ export function CardCheckItemRow({item,checked,pending,expanded,onConfirmChange,
     {links.length?<div className="v3-card-check-item-links" data-evidence-type="link">{links.map((evidence,index)=>{
      const key=evidence.attachment_id?`${evidence.attachment_id}:${index}`:`${evidence.url}:${index}`;
      if(evidence.availability)return null;
-     return <a key={key} href={evidence.originalUrl??evidence.url} target="_blank" rel="noreferrer" title={evidence.label} onClick={internalLinkClick}><Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>;
+     const attachment=cardAttachmentSelectionFromEvidence(evidence);
+     return <a key={key} href={evidence.originalUrl??evidence.url} target="_blank" rel="noreferrer" title={evidence.label}
+      onClick={event=>{if(attachment){event.preventDefault();onOpenImage(attachment.previewUrl??attachment.originalUrl??evidence.url,evidence.label,attachment);}else internalLinkClick(event);}}>
+      <Link className="h-3 w-3" aria-hidden="true"/>{evidence.label}</a>;
     })}{linkFailureCount>0?<span className="v3-card-check-item-no-image">파일을 불러오지 못했습니다</span>:null}</div>:null}
     {!readOnly?<div className="v3-card-check-item-foot">
      {metadata}

@@ -53,12 +53,14 @@ export function AttachmentViewer({
   onIndexChange,
   onClose,
   returnFocus,
+  panelContent,
 }: {
   items: ChatAttachmentItem[];
   index: number | null;
   onIndexChange(index: number): void;
   onClose(): void;
   returnFocus?: HTMLElement | null;
+  panelContent?: ReactNode;
 }): ReactNode {
   const item = index === null ? undefined : items[index];
   const localFile = item?.source.kind === "local" ? item.source.file : undefined;
@@ -197,7 +199,7 @@ export function AttachmentViewer({
           scrollable={item.previewKind !== "image"}
           className="chat-image-viewer-panel"
         >
-          {item.availability === "missing" ? (
+          {panelContent ?? (item.availability === "missing" ? (
             <div className="chat-attachment-state chat-image-status" role="status">첨부를 찾을 수 없습니다.</div>
           ) : item.availability === "unavailable" ? (
             <div className="chat-attachment-state chat-image-status" role="status">첨부를 사용할 수 없습니다.</div>
@@ -238,7 +240,7 @@ export function AttachmentViewer({
                 {text.result.truncated && <p className="chat-image-status" role="status">파일이 커서 앞부분만 표시합니다.</p>}
               </>
             )
-          ) : <div className="chat-attachment-state" role="status"><FileTypeIcon label={extension} /></div>}
+          ) : <div className="chat-attachment-state" role="status"><FileTypeIcon label={extension} /></div>)}
         </DialogPanel>
         {(multiItem || canSave || saveMessage) && (
           <DialogFooter className="chat-image-viewer-footer">

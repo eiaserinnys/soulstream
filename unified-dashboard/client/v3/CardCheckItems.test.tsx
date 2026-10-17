@@ -6,6 +6,7 @@ import type { CardCheckItem, CardItemEvidence } from "@seosoyoung/soul-ui/cards/
 import { CardCheckItems } from "./CardCheckItems";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CardImageViewer } from "./CardImageViewer";
+import { cardAttachmentSelectionFromEvidence } from "./card-attachment-selection";
 import { CardNotes } from "./CardNotes";
 import { CardCheckItemRow } from "./CardCheckItemRow";
 import { summarizeCardItems } from "./card-item-summary";
@@ -215,4 +216,85 @@ it("shows preview load errors in the caption and clears them for a new source",a
 it.each(["todo","doing","fix"] as const)("does not render an empty evidence slot between result and footer (%s)",display=>{
  const html=renderToStaticMarkup(<CardCheckItemRow item={item(1,display,{result:"결과",caveat:display==="fix"?"못 본 것":null})} checked={false} pending={false} expanded onConfirmChange={()=>{}} onToggleExpanded={()=>{}} onTargetItem={()=>{}} onOpenImage={()=>{}}/>);
  const node=document.createElement("div");node.innerHTML=html;expect(node.querySelector('[data-evidence-type="image"]')).toBeNull();
+});
+
+it("projects card evidence into the card-scoped chat attachment model",()=>{
+ const preview="/api/attachments/image-1/content?context_type=card&context_id=card-1";
+ const original=`${preview}&download=true`;
+ expect(cardAttachmentSelectionFromEvidence(idEvidence("image",preview,"화면","image-1",preview,original))).toMatchObject({
+  key:"asset:image-1",name:"private-name.png",mimeType:"image/png",byteSize:512,previewKind:"image",availability:"ready",
+  previewUrl:preview,originalUrl:original,source:{kind:"asset",attachmentId:"image-1",context:{type:"card",id:"card-1"}},
+ });
+ expect(cardAttachmentSelectionFromEvidence(idEvidence("image","","없어진 화면","gone",null,"","missing"))).toMatchObject({
+  key:"asset:gone",availability:"missing",previewUrl:null,originalUrl:null,source:{kind:"unavailable",attachmentId:"gone",context:{type:"card",id:"card-1"}},
+ });
+ expect(cardAttachmentSelectionFromEvidence({type:"link",url:"https://example.test/file.txt",label:"외부 파일"})).toBeNull();
+});
+
+it("opens one item's internal evidence in the shared viewer in evidence order",async()=>{
+ const imagePreview="/api/attachments/image-1/content?context_type=card&context_id=card-1";
+ const textPreview="/api/attachments/text-1/content?context_type=card&context_id=card-1";
+ const textEvidence=idEvidence("link",`${textPreview}&download=true`,"두 번째 증거","text-1",textPreview,`${textPreview}&download=true`);
+ textEvidence.descriptor={...textEvidence.descriptor!,name:"notes.txt",mime_type:"text/plain",preview_kind:"text",preview_mime_type:"text/plain"};
+ const evidence=[
+  idEvidence("image",imagePreview,"첫 증거","image-1",imagePreview,`${imagePreview}&download=true`),
+  textEvidence,
+  {type:"link" as const,url:"https://example.test/spec",label:"외부 요구사항"},
+ ];
+ vi.stubGlobal("fetch",vi.fn(async()=>{
+  const previewBytes=new TextEncoder().encode("본문 미리보기");
+  const body=new Uint8Array(512);body.set(previewBytes);body.fill(32,previewBytes.length);
+  return new Response(body,{status:206,headers:{"content-type":"text/plain; charset=utf-8","content-length":"512","content-range":"bytes 0-511/512"}});
+ }));
+ await act(()=>root.render(<CardCheckItems items={[item(14,"reported",{evidence})]} onConfirmChange={vi.fn()} onTargetItem={vi.fn()}/>));
+ const row=container.querySelector<HTMLElement>('[data-item-id="14"]')!;
+ const trigger=row.querySelector<HTMLImageElement>('[data-evidence-type="image"] img')!;
+ trigger.focus();
+ await act(()=>trigger.click());
+ let viewer=document.body.querySelector<HTMLElement>(".chat-image-viewer-popup")!;
+ expect(viewer.querySelector(".chat-image-viewer-title")?.textContent).toBe("private-name.png");
+ expect(viewer.querySelector<HTMLImageElement>("img")?.getAttribute("src")).toBe(imagePreview);
+ expect(viewer.querySelector(".chat-image-viewer-count")?.textContent).toBe("1/2");
+ await act(async()=>{viewer.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ viewer=document.body.querySelector<HTMLElement>(".chat-image-viewer-popup")!;
+ expect(viewer.querySelector(".chat-image-viewer-title")?.textContent).toBe("notes.txt");
+ expect(viewer.querySelector(".chat-image-viewer-count")?.textContent).toBe("2/2");
+ expect(viewer.textContent).toContain("본문 미리보기");
+ expect(row.querySelector<HTMLAnchorElement>('[href="https://example.test/spec"]')?.target).toBe("_blank");
+ await act(()=>document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+ expect(document.activeElement).toBe(trigger);
+});
+
+it("R1 reads text evidence from the real server projection with previewUrl null",async()=>{
+ const url="/api/attachments/text-projection/content?context_type=card&context_id=card-1";
+ const evidence=idEvidence("link",`${url}&download=true`,"텍스트 증거","text-projection",null,`${url}&download=true`);
+ evidence.descriptor={...evidence.descriptor!,name:"실제.txt",mime_type:"text/plain",byte_size:6,preview_kind:"text",preview_mime_type:"text/plain"};
+ const fetchMock=vi.fn(async()=>new Response("server",{status:206,headers:{"content-length":"6","content-range":"bytes 0-5/6"}}));
+ vi.stubGlobal("fetch",fetchMock);
+ expect(cardAttachmentSelectionFromEvidence(evidence)?.previewUrl).toBe(url);
+ await act(()=>root.render(<CardCheckItems items={[item(1,"reported",{evidence:[evidence]})]} onConfirmChange={()=>{}} onTargetItem={()=>{}}/>));
+ await act(async()=>{container.querySelector<HTMLAnchorElement>('[data-evidence-type="link"] a')!.click();await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(document.body.querySelector(".chat-image-viewer-popup pre")?.textContent).toBe("server");
+ expect(fetchMock).toHaveBeenCalledWith(url,expect.objectContaining({credentials:"same-origin"}));
+});
+
+it("R3 navigates mixed evidence in the row's image-then-link display order",async()=>{
+ const evidence=[
+  idEvidence("link","/one","파일 1","file-one",null,"/one"),
+  idEvidence("image","/image-one","이미지 1","image-one","/image-one","/image-one"),
+  idEvidence("link","/two","파일 2","file-two",null,"/two"),
+  idEvidence("image","/image-two","이미지 2","image-two","/image-two","/image-two"),
+ ];
+ evidence.forEach(value=>{value.descriptor={...value.descriptor!,name:value.label};});
+ await act(()=>root.render(<CardCheckItems items={[item(1,"reported",{evidence})]} onConfirmChange={()=>{}} onTargetItem={()=>{}}/>));
+ await act(()=>container.querySelector<HTMLImageElement>('img')!.click());
+ expect(document.body.querySelector(".chat-image-viewer-count")?.textContent).toBe("1/4");
+ await act(()=>document.body.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!.click());
+ expect(document.body.querySelector(".chat-image-viewer-title")?.textContent).toBe("이미지 2");
+ expect(document.body.querySelector(".chat-image-viewer-count")?.textContent).toBe("2/4");
+});
+
+it.each(["missing","unavailable"] as const)("R5 preserves the evidence label without a descriptor (%s)",availability=>{
+ const evidence:CardItemEvidence={type:"link",url:"",label:"지워진 자료.txt",attachment_id:"gone",read_context:{type:"card",id:"card-1"},availability,previewUrl:null,originalUrl:""};
+ expect(cardAttachmentSelectionFromEvidence(evidence)).toMatchObject({name:"지워진 자료.txt",availability,previewUrl:null,originalUrl:null});
 });
