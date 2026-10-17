@@ -42,6 +42,14 @@ type AssetProjectionRow = {
   checksum_sha256: string | null;
   upload_status: string;
 };
+type LegacySourceBody = {
+  rowIndex: number;
+  field: "request" | "body";
+  cardId: string;
+  body: string;
+  sourceIds: ReadonlySet<string>;
+};
+type LegacyAliasProjection = { assetId: unknown; availability: unknown };
 
 export function cardAttachmentUrls(
   cardId: string,
@@ -53,45 +61,6 @@ export function cardAttachmentUrls(
     previewUrl: descriptor.preview_kind === "image" ? content : null,
     originalUrl: content + "&download=true",
   };
-}
-
-export async function projectVerifiedLegacySourceUrls(
-  sql: RepositorySql,
-  input: {
-    body: string;
-    sourceRefs: unknown;
-    cardId: string;
-    format: "markdown" | "html";
-  },
-): Promise<string> {
-  if (input.format === "html") return input.body;
-  const sourceIds = attachmentRefIds(attachmentRefsOf(input.sourceRefs));
-  if (sourceIds.size === 0) return input.body;
-
-  const locations = collectCardLegacyLocations({ body: input.body, format: "markdown" });
-  if (locations.length === 0) return input.body;
-
-  const projectedIds = new Map<string, string>();
-  for (const location of locations) {
-    const rows = await sql<{ asset_id: unknown; availability: unknown }[]>`
-      SELECT asset_id,availability
-      FROM attachment_legacy_aliases
-      WHERE node_id=${location.nodeId} AND normalized_path=${location.path}
-      LIMIT 1
-    `;
-    const row = rows[0];
-    if (row?.availability !== "resolved" || typeof row.asset_id !== "string" || !sourceIds.has(row.asset_id))
-      continue;
-    projectedIds.set(cardLegacyLocationKey(location), row.asset_id);
-  }
-  if (projectedIds.size === 0) return input.body;
-
-  return rewriteMarkdownLegacySourceUrls(input.body, (location) => {
-    const id = projectedIds.get(cardLegacyLocationKey(location));
-    if (id === undefined) return null;
-    return "/api/attachments/" + encodeURIComponent(id) + "/content?context_type=card&context_id=" +
-      encodeURIComponent(input.cardId);
-  });
 }
 
 export async function projectCardAttachmentRows<T extends Record<string, unknown>>(
@@ -148,37 +117,83 @@ export async function projectCardAttachmentRows<T extends Record<string, unknown
     }
   }
 
-  return await Promise.all(rows.map(async (row, index) => {
+  const projectedRows: Array<Record<string, unknown>> = rows.map((row) => ({ ...row }));
+  const legacySources: LegacySourceBody[] = [];
+  rows.forEach((row, index) => {
     const currentCardId = cardIds[index];
-    if (!currentCardId) return { ...row };
-    const projected: Record<string, unknown> = { ...row };
+    if (!currentCardId) return;
+    const projected = projectedRows[index]!;
     const currentRefs = refs[index]!;
     if (Array.isArray(row.items)) {
       projected.items = row.items.map((item) => projectItem(item, currentCardId, currentRefs, assets));
     }
     if (typeof row.request === "string") {
-      projected.request = await projectVerifiedLegacySourceUrls(sql, {
-        body: projectSourceBody(row.request, currentCardId, currentRefs),
-        sourceRefs: row.attachment_refs,
-        cardId: currentCardId,
-        format: "markdown",
+      const body = projectSourceBody(row.request, currentCardId, currentRefs);
+      projected.request = body;
+      if (currentRefs.size > 0) legacySources.push({
+        rowIndex: index, field: "request", cardId: currentCardId, body, sourceIds: currentRefs,
       });
     }
-    if (typeof row.body === "string") {
-      const format = row.format === "html" ? "html" : "markdown";
-      projected.body = await projectVerifiedLegacySourceUrls(sql, {
-        body: format === "html" ? row.body : projectSourceBody(row.body, currentCardId, currentRefs),
-        sourceRefs: row.attachment_refs,
-        cardId: currentCardId,
-        format,
+    if (typeof row.body === "string" && row.format !== "html") {
+      const body = projectSourceBody(row.body, currentCardId, currentRefs);
+      projected.body = body;
+      if (currentRefs.size > 0) legacySources.push({
+        rowIndex: index, field: "body", cardId: currentCardId, body, sourceIds: currentRefs,
       });
     }
-    return projected as T;
-  }));
+  });
+
+  const locations = new Map<string, CardLegacyLocation>();
+  for (const source of legacySources) {
+    for (const location of collectCardLegacyLocations({ body: source.body, format: "markdown" })) {
+      locations.set(cardLegacyLocationKey(location), location);
+    }
+  }
+  const aliases = await readCardLegacyAliases(sql, [...locations.values()]);
+  for (const source of legacySources) {
+    projectedRows[source.rowIndex]![source.field] = rewriteMarkdownLegacySourceUrls(source.body, (location) => {
+      const alias = aliases.get(cardLegacyLocationKey(location));
+      if (alias?.availability !== "resolved" || typeof alias.assetId !== "string"
+        || !source.sourceIds.has(alias.assetId)) return null;
+      return "/api/attachments/" + encodeURIComponent(alias.assetId) + "/content?context_type=card&context_id=" +
+        encodeURIComponent(source.cardId);
+    });
+  }
+  return projectedRows as T[];
 }
 
 function cardLegacyLocationKey(location: CardLegacyLocation): string {
   return `${location.nodeId}\u0000${location.path}`;
+}
+
+async function readCardLegacyAliases(
+  sql: RepositorySql,
+  locations: readonly CardLegacyLocation[],
+): Promise<Map<string, LegacyAliasProjection>> {
+  const aliases = new Map<string, LegacyAliasProjection>();
+  if (locations.length === 0) return aliases;
+  const rows = await sql<{
+    node_id: unknown;
+    normalized_path: unknown;
+    asset_id: unknown;
+    availability: unknown;
+  }[]>`
+    SELECT aliases.node_id, aliases.normalized_path, aliases.asset_id, aliases.availability
+    FROM attachment_legacy_aliases AS aliases
+    JOIN unnest(${locations.map((location) => location.nodeId)}::text[],
+                ${locations.map((location) => location.path)}::text[])
+      AS requested(node_id, normalized_path)
+      ON requested.node_id = aliases.node_id
+     AND requested.normalized_path = aliases.normalized_path
+  `;
+  for (const row of rows) {
+    if (typeof row.node_id !== "string" || typeof row.normalized_path !== "string") continue;
+    aliases.set(cardLegacyLocationKey({ nodeId: row.node_id, path: row.normalized_path }), {
+      assetId: row.asset_id,
+      availability: row.availability,
+    });
+  }
+  return aliases;
 }
 
 function projectItem(

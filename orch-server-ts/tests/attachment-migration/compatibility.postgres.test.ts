@@ -3,7 +3,11 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBoardYjsSqlAdapter } from "../../src/board-yjs/board_yjs_sql.js";
 import { projectCardAttachmentRows } from "../../src/cards/card_attachment_projection.js";
-import { registerAttachmentRoutes, type AttachmentRouteOptions } from "../../src/attachments/attachment_routes.js";
+import {
+  AttachmentTransportConnectionError,
+  registerAttachmentRoutes,
+  type AttachmentRouteOptions,
+} from "../../src/attachments/attachment_routes.js";
 import { createLiveAttachmentReadOptions } from "../../src/runtime/live_attachment_read_provider.js";
 import { createLiveAttachmentReadRepository } from "../../src/runtime/live_attachment_read_repository.js";
 import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
@@ -33,12 +37,10 @@ const cardContentUrl = (cardId: string, assetId: string, download = false) =>
 describePostgres("legacy card attachment compatibility through PostgreSQL and HTTP", () => {
   let h: PagePostgresHarness;
   let app: FastifyInstance | undefined;
-  const getNode = vi.fn(async () => null);
-  const downloadAttachment = vi.fn(async () => ({
-    content_b64: "",
-    filename: "unused.bin",
-    content_type: "application/octet-stream",
-  }));
+  const getNode = vi.fn(async (nodeId: string) => nodeId === "offline-node" ? { id: nodeId, nodeId } : null);
+  const downloadAttachment = vi.fn(async () => {
+    throw new AttachmentTransportConnectionError("connection refused");
+  });
 
   beforeAll(async () => {
     h = await createPagePostgresHarness();
@@ -186,9 +188,12 @@ describePostgres("legacy card attachment compatibility through PostgreSQL and HT
       method: "GET",
       url: filesUrl("offline-node", "/legacy/unresolved.bin"),
     });
-    expect(offline.statusCode).toBe(404);
-    expect(offline.rawPayload.byteLength).toBeGreaterThan(0);
+    expect(offline.statusCode).toBe(503);
+    expect(offline.json()).toMatchObject({ detail: "Node temporarily unavailable: connection refused" });
     expect(getNode).toHaveBeenCalledWith("offline-node");
-    expect(downloadAttachment).not.toHaveBeenCalled();
+    expect(downloadAttachment).toHaveBeenCalledWith(
+      { id: "offline-node", nodeId: "offline-node" },
+      "/legacy/unresolved.bin",
+    );
   });
 });

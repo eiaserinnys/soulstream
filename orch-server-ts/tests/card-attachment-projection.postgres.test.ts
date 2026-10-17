@@ -3,6 +3,9 @@ import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardRepositoryRead } from "../src/cards/control_plane/card_repository_read.js";
 import { CardMcpReadService, type CardMcpGetInput } from "../src/cards/card_mcp_read.js";
+import { collectCardLegacyLocations } from "../src/cards/card_attachment_legacy_refs.js";
+import { projectCardAttachmentRows } from "../src/cards/card_attachment_projection.js";
+import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
 import { serializeCardRow } from "../src/folders/folder_contracts.js";
 import type { CardItem } from "../src/cards/card_item_rules.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
@@ -211,6 +214,14 @@ describe("card attachment evidence projection", () => {
     const sourceBody = [
       `![first](${firstUrl}) [second](${secondUrl} "원본")`,
       `[unreferenced](${unreferencedUrl}) [missing](${missingUrl}) [external](https://example.test/file.png)`,
+      `인라인 코드: \`![inline](${firstUrl})\``,
+      "````markdown",
+      "```",
+      `![four-backtick fence](${firstUrl})`,
+      "````",
+      "~~~markdown",
+      `![tilde fence](${firstUrl})`,
+      "~~~",
       "```",
       `![code](${firstUrl})`,
       "```",
@@ -228,6 +239,14 @@ describe("card attachment evidence projection", () => {
     const expectedBody = [
       `![first](${firstContent}) [second](${firstContent} "원본")`,
       `[unreferenced](${unreferencedUrl}) [missing](${missingUrl}) [external](https://example.test/file.png)`,
+      `인라인 코드: \`![inline](${firstUrl})\``,
+      "````markdown",
+      "```",
+      `![four-backtick fence](${firstUrl})`,
+      "````",
+      "~~~markdown",
+      `![tilde fence](${firstUrl})`,
+      "~~~",
       "```",
       `![code](${firstUrl})`,
       "```",
@@ -239,6 +258,57 @@ describe("card attachment evidence projection", () => {
     expect(detail!.reports.find((row) => row.id === "legacy-projection-html")!.body).toBe(`<img src="${firstUrl}">`);
     expect(detail!.comments[0]!.body).toBe(`![first](${firstContent})`);
     expect((await h.sql`SELECT request FROM cards WHERE id=${cardId}`)[0]!.request).toBe(sourceBody);
+
+    const mcp = await reader.getCard(cardId, { include: ["request"] }, null);
+    expect(mcp.sections.request.text).toBe(expectedBody);
+  });
+
+  it("collects legacy URLs from the same Markdown regions that projection may rewrite", () => {
+    const url = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fcode.png";
+    const body = [
+      `\`![inline](${url})\``,
+      "````markdown",
+      "```",
+      `![four-backtick fence](${url})`,
+      "````",
+      "~~~markdown",
+      `![tilde fence](${url})`,
+      "~~~",
+    ].join("\n");
+    expect(collectCardLegacyLocations({ body, format: "markdown" })).toEqual([]);
+  });
+
+  it("batches alias lookups across the complete card projection input", async () => {
+    const cardId = "batch-card";
+    const assetId = "batch-asset";
+    const legacyUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fshared.png";
+    let aliasQueryCount = 0;
+    const sql = Object.assign(
+      (strings: TemplateStringsArray, ..._values: unknown[]) => {
+        if (strings.join("").includes("FROM attachment_legacy_aliases")) {
+          aliasQueryCount += 1;
+          return Promise.resolve([{
+            node_id: "node-a",
+            normalized_path: "/legacy/shared.png",
+            asset_id: assetId,
+            availability: "resolved",
+          }]);
+        }
+        return Promise.resolve([]);
+      },
+      { json: (value: unknown) => value, array: (values: readonly unknown[]) => values },
+    ) as RepositorySql;
+    const rows = Array.from({ length: 1270 }, (_unused, index) => ({
+      id: `${cardId}-${index}`,
+      request: `![shared](${legacyUrl})`,
+      attachment_refs: [{ attachment_id: assetId }],
+    }));
+
+    const projected = await projectCardAttachmentRows(sql, rows);
+
+    expect(projected).toHaveLength(1270);
+    expect(aliasQueryCount).toBe(1);
+    expect(projected[1269]!.request).toBe(`![shared](${CARD_CONTENT(`${cardId}-1269`, assetId)})`);
   });
 
   it("projects only source-ref URLs before request clipping and fingerprints source refs", async () => {
