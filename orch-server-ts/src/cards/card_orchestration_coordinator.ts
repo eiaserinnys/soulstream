@@ -20,10 +20,11 @@ import {
 import {
   validateDecisionSnapshot,
   selectEligibleCards,
+  classifyExecution,
   decisionInputFingerprint,
 } from "./card_orchestration_selection.js";
+import { clampText } from "./card_orchestration_input.js";
 import { buildCardPrompt } from "./card_prompt.js";
-import { isUsageLimitTermination } from "../session/session_limit_termination.js";
 export interface CoordinatorOptions {
   repository: CardOrchestrationRepository;
   cards: () => Promise<CardControlPlaneService>;
@@ -117,20 +118,38 @@ export class CardOrchestrationCoordinator {
       this.options.dispatch.limited(),
       this.options.dispatch.running(),
     ]);
+    const skippedReasons: string[] = [], resumableLimited: DispatchCard[] = [];
+    for (const card of limited) {
+      const owner = card.assignee_session_id
+        ? await this.options.dispatch.ownerSession(card.assignee_session_id)
+        : null;
+      const execution = classifyExecution(card, owner);
+      if (execution.mode === "skip") skippedReasons.push(execution.reason);
+      else resumableLimited.push(card);
+    }
+    const candidates = [...queue, ...resumableLimited];
+    if (!candidates.length) {
+      await this.options.repository.note(
+        "skipped",
+        skippedReasons.join("; ") || "empty_queue",
+      );
+      return;
+    }
     const targets = new Map<string, CardTarget>();
-    for (const c of [...queue,...limited]) targets.set(c.id,await this.resolve(c));
+    for (const c of candidates) targets.set(c.id,await this.resolve(c));
     // Accepted delivery can wait across ticks/restarts until the owner explicitly starts.
     const pending = new Set((await this.options.repository.pendingWorkers()).map(d=>d.card_id));
     const eligible = selectEligibleCards(
-      [...queue, ...limited].filter(c=>!pending.has(c.id)),
+      candidates.filter(c=>!pending.has(c.id)),
       occupancy,
       capacity,
       (c) => targets.get(c.id)!,
     );
     if (!eligible.length) {
+      const unavailableReasons = [...targets.values()].filter(t=>!t.available).map(t=>t.reason);
       await this.options.repository.note(
         "skipped",
-        queue.length || limited.length ? [...targets.values()].filter(t=>!t.available).map(t=>t.reason).join("; ") || "no_eligible_capacity" : "empty_queue",
+        [...skippedReasons, ...unavailableReasons].filter(Boolean).join("; ") || "no_eligible_capacity",
       );
       return;
     }
@@ -144,20 +163,34 @@ export class CardOrchestrationCoordinator {
       )
         continue;
       const target = await this.resolve(card);
+      const comments = detail.comments.slice(-3).map((comment) => ({
+        body: clampText(String(comment.body), 1000),
+        createdAt: comment.created_at,
+      }));
+      const reports = [...(detail.reports ?? [])].slice(0, 2).reverse().map((report) => ({
+        ...report,
+        title: clampText(String(report.title), 200),
+        body: clampText(String(report.body), 2000),
+      }));
+      const cardSnapshot = {
+        ...detail.card,
+        ...(detail.card.latest_activity?.body
+          ? { latest_activity: { ...detail.card.latest_activity, body: clampText(detail.card.latest_activity.body, 2000) } }
+          : {}),
+      };
       snapshot.push({
         cardId: card.id,
         cardVersion: card.version,
-        card: detail.card,
+        card: cardSnapshot,
         folderName: card.folder_name,
         target,
         answers: detail.questions
           .filter((q) => q.answer !== null)
           .map((q) => ({ text: q.text, answer: q.answer })),
-        comments: detail.comments.map((c) => ({
-          body: c.body,
-          createdAt: c.created_at,
-        })),
-        reports: detail.reports ?? [],
+        comments,
+        omittedComments: detail.comments.length - comments.length,
+        reports,
+        omittedReports: (detail.reports ?? []).length - reports.length,
         rejectionReason: await this.options.dispatch.rejectionReason(card.id),
       });
     }
@@ -171,13 +204,23 @@ export class CardOrchestrationCoordinator {
         title: c.title,
         folderId: c.folder_id,
         status: c.status,
-        request: c.request,
-        brief: c.brief,
+        request: clampText(c.request, 600),
+        brief: clampText(c.brief, 800),
         agentId: c.assignee_agent_id,
         nodeId: c.node_id,
         modelPreset: c.model_preset,
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
+    const runningFingerprint = running
+      .map((c) => ({ id: c.id, status: c.status }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const candidateNodeIds = [...new Set(snapshot.map((candidate) =>
+      (candidate.target as CardTarget).nodeId,
+    ))].sort();
+    const freeSlots = Object.fromEntries(candidateNodeIds.map((nodeId) => [
+      nodeId,
+      Math.max(0, (capacity[nodeId] ?? capacity.default!) - (occupancy[nodeId] ?? 0)),
+    ]));
     const prepared = await this.options.selectOrchestrator(
       settings.policy.candidates,
     );
@@ -192,8 +235,8 @@ export class CardOrchestrationCoordinator {
       policyVersion: settings.version,
       instructionsRevision: prepared.instructionsRevision,
       candidates: snapshot,
-      running: logicalRunning,
-      capacity: { occupancy, limits: capacity },
+      running: runningFingerprint,
+      capacity: freeSlots,
     });
     if (await this.options.repository.isDuplicate(inputHash)) {
       await this.options.repository.note(
@@ -228,10 +271,7 @@ export class CardOrchestrationCoordinator {
       inputHash,
       policyVersion: settings.version,
       snapshot,
-      context: {
-        running: logicalRunning,
-        capacity: { occupancy, limits: capacity },
-      },
+      context: { running: logicalRunning, capacity: freeSlots },
       target: selected.candidate,
       instructionsRevision: selected.instructionsRevision,
     });
@@ -390,8 +430,14 @@ export class CardOrchestrationCoordinator {
         card.status === "blocked" && card.blocked_kind === "limit" && card.assignee_session_id
           ? await this.options.dispatch.ownerSession(card.assignee_session_id)
           : null;
-      const resume = !!ownerSession && isUsageLimitTermination(ownerSession);
-      const sessionId = target.sessionId ?? (resume ? ownerSession!.session_id : randomUUID());
+      const execution = classifyExecution(card, ownerSession);
+      if (execution.mode === "skip") {
+        this.options.warn(`card ${card.id} run skipped: ${execution.reason}`);
+        continue;
+      }
+      const resume = execution.mode === "resume";
+      const executionOwner = execution.mode === "resume" ? execution.owner : ownerSession;
+      const sessionId = target.sessionId ?? (resume ? execution.owner.session_id : randomUUID());
       const input: Record<string, unknown> = {
         sessionId,
         cardId: card.id,
@@ -404,7 +450,7 @@ export class CardOrchestrationCoordinator {
         resume,
         existingSession: !!target.sessionId || resume,
         ...((target.sessionId || resume) ? {deliveryId: `card-admission:${run.id}:${card.id}`} : {}),
-        priorTerminationEventId: ownerSession?.termination_event_id ?? null,
+        priorTerminationEventId: executionOwner?.termination_event_id ?? null,
         prompt: buildCardPrompt({
           cardId: card.id,
           title: card.title,
@@ -437,7 +483,7 @@ export class CardOrchestrationCoordinator {
         workerInput: input,
       };
       try {
-        if (resume)
+        if (execution.mode === "resume")
           await cards.resumeDispatchedCard({
             cardId: card.id,
             expectedVersion: decision.cardVersion,
@@ -445,7 +491,7 @@ export class CardOrchestrationCoordinator {
             nodeId: target.nodeId,
             admission,
           });
-        else if (card.status === "queued")
+        else
           await cards.recordDispatch({
             cardId: card.id,
             expectedVersion: decision.cardVersion,
@@ -453,7 +499,6 @@ export class CardOrchestrationCoordinator {
             nodeId: target.nodeId,
             admission,
           });
-        else continue;
       } catch (e) {
         this.options.warn(`card ${card.id} admission declined: ${String(e)}`);
       }

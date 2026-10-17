@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import {
   validateDecisionSnapshot,
   selectEligibleCards,
+  classifyExecution,
 } from "../src/cards/card_orchestration_selection.js";
+import { clampText } from "../src/cards/card_orchestration_input.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 const snapshot = [
   { cardId: "a", cardVersion: 2 },
@@ -82,6 +84,24 @@ describe("server owns card orchestration admission", () => {
     const cards=[{id:"session",assignee_kind:"session",assignee_agent_id:null,assignee_session_id:"owner"},{id:"missing",assignee_kind:"session",assignee_agent_id:null,assignee_session_id:null}];
     expect(selectEligibleCards(cards as never,{n:1},{default:1},()=>({nodeId:"n",available:true,capacityClaimed:true}))).toEqual([cards[0]]);
     expect(selectEligibleCards(cards as never,{n:1},{default:1},()=>({nodeId:"n",available:true,capacityClaimed:false}))).toEqual([]);
+  });
+  it("classifies execution using the current card and owner termination", () => {
+    const limitOwner = { session_id: "owner", node_id: "n", agent_id: "worker", model_preset: "worker-model", metadata: [], status: "error", termination_reason: "limit_hit", termination_event_id: 12 };
+    expect(classifyExecution({ status: "queued", blocked_kind: null, assignee_session_id: null }, null)).toEqual({ mode: "dispatch" });
+    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: "owner" }, limitOwner)).toEqual({ mode: "resume", owner: limitOwner });
+    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: "owner" }, { ...limitOwner, termination_reason: "error_aborted" })).toEqual({ mode: "skip", reason: "limit_owner_not_resumable" });
+    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: null }, null)).toEqual({ mode: "skip", reason: "limit_owner_missing" });
+    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: "owner" }, null)).toEqual({ mode: "skip", reason: "limit_owner_missing" });
+    expect(classifyExecution({ status: "blocked", blocked_kind: "question", assignee_session_id: "owner" }, limitOwner)).toEqual({ mode: "skip", reason: "card_not_dispatchable" });
+  });
+  it("clamps text by Unicode code point while preserving both ends", () => {
+    expect(clampText("짧은 본문", 20)).toBe("짧은 본문");
+    const long = "앞😀".repeat(40) + "중간 내용".repeat(50) + "끝🌙".repeat(40);
+    const clamped = clampText(long, 48);
+    expect([...clamped].length).toBeLessThanOrEqual(48);
+    expect(clamped).toContain("\n[중간 생략]\n");
+    expect(clamped.startsWith("앞😀앞😀")).toBe(true);
+    expect(clamped.endsWith("끝🌙끝🌙")).toBe(true);
   });
   it("enabled policy never enters legacy FIFO or limit resume", async () => {
     const policy = vi.fn(async () => true),

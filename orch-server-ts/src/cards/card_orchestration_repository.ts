@@ -83,12 +83,11 @@ export class CardOrchestrationRepository {
   async isDuplicate(inputHash: string) {
     const sql = await this.resolveSql();
     return (
-      (
-        await sql<
-          { hash: string | null }[]
-        >`SELECT last_decision_input_hash AS hash FROM card_orchestration_state WHERE id=TRUE`
-      )[0]?.hash === inputHash
-    );
+      await sql`SELECT 1 FROM card_orchestration_runs
+        WHERE input_hash=${inputHash} AND state='completed'
+          AND created_at > NOW() - INTERVAL '10 minutes'
+        LIMIT 1`
+    ).length > 0;
   }
   async claim(input: {
     inputHash: string;
@@ -101,12 +100,11 @@ export class CardOrchestrationRepository {
     const sql = await this.resolveSql();
     return sql.begin(async (tx) => {
       await tx`SELECT id FROM card_orchestration_state WHERE id=TRUE FOR UPDATE`;
-      const duplicate = (
-        await tx<
-          { hash: string | null }[]
-        >`SELECT last_decision_input_hash AS hash FROM card_orchestration_state WHERE id=TRUE`
-      )[0];
-      if (duplicate?.hash === input.inputHash) return null;
+      const duplicate = await tx`SELECT 1 FROM card_orchestration_runs
+        WHERE input_hash=${input.inputHash} AND state='completed'
+          AND created_at > NOW() - INTERVAL '10 minutes'
+        LIMIT 1`;
+      if (duplicate.length) return null;
       const active = (
         await tx<
           (OrchestrationRun & { expired: boolean })[]
@@ -236,7 +234,7 @@ export class CardOrchestrationRepository {
       const changed =
         await tx`UPDATE card_orchestration_runs SET state=${state},reason=${reason},retry_after=NOW()+INTERVAL '5 minutes',updated_at=NOW() WHERE id=${run.id} AND lease_token=${run.lease_token} AND lease_expires_at>NOW() RETURNING id`;
       if (!changed.length) return;
-      await tx`UPDATE card_orchestration_state SET state=${state},reason=${reason},last_decision_input_hash=CASE WHEN ${state}='completed' THEN ${run.input_hash} ELSE last_decision_input_hash END,updated_at=NOW() WHERE id=TRUE`;
+      await tx`UPDATE card_orchestration_state SET state=${state},reason=${reason},updated_at=NOW() WHERE id=TRUE`;
     });
   }
   async reserveFolder(parentId: string | null) {

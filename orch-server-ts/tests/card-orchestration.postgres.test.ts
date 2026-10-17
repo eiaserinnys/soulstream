@@ -295,6 +295,14 @@ describe("durable card orchestration admissions", () => {
     );
     expect(await restarted.claim(input)).toBeNull();
     expect(await restarted.isDuplicate("defer")).toBe(true);
+    const secondInput = { ...input, inputHash: "second-completed-hash" };
+    const second = (await restarted.claim(secondInput))!;
+    await restarted.finish(second, "completed", "all_deferred");
+    expect(await restarted.isDuplicate("defer")).toBe(true);
+    expect(await restarted.isDuplicate("second-completed-hash")).toBe(true);
+    await h.sql`UPDATE card_orchestration_runs SET created_at=NOW()-INTERVAL '11 minutes' WHERE input_hash='defer'`;
+    expect(await restarted.isDuplicate("defer")).toBe(false);
+    expect(await restarted.claim(input)).not.toBeNull();
     const reservations = await Promise.all([
       repo.reserveFolder(null),
       restarted.reserveFolder(null),
