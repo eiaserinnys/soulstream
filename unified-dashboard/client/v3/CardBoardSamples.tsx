@@ -94,7 +94,7 @@ export function CardBoardSamples() {
     comments:Array.from({length:conversation==="short"?1:20},(_,index)=>({id:`detail-comment-${index}`,cardId:selectedCard.id,authorKind:"user" as const,authorId:"sample",sessionId:null,kind:"comment" as const,body:`커멘트 ${index+1}: 탭을 바꾸어도 작성 중 문장과 첨부는 유지됩니다.`,createdAt:reviewCard.createdAt,...(selectedCard.items&&index===0?{itemId:5}:{})})),
     questions:[
       {id:"detail-question",text:"내용을 확인했나요?",options:["확인했습니다"],answer:null,askedAt:reviewCard.createdAt,answeredAt:null},
-      {id:"withdrawn-question",text:"어느 안으로 할까요?",options:["A안","B안"],answer:null,askedAt:reviewCard.createdAt,answeredAt:null,withdrawnAt:reviewCard.updatedAt,withdrawalReason:"커멘트에서 B안으로 정해져 거둡니다"},
+      {id:"withdrawn-question",text:"어느 안으로 할까요?",options:["A안","B안"],answer:null,askedAt:reviewCard.createdAt,answeredAt:null,withdrawnAt:reviewCard.updatedAt,withdrawalReason:"커멘트에서 여러 의견을 비교한 결과 B안으로 정리됐고, 같은 내용을 다시 확인할 필요가 없어 이 질문은 철회합니다."},
     ],
   }:undefined;
   const mobileTabsHost=selectedCard&&mobileMode?document.querySelector('.v3-shell.v3-components-page'):null;

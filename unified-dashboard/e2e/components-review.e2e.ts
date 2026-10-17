@@ -8,6 +8,8 @@ const output = path.resolve("../../../.local/artifacts/20261001-components-full-
 const argonOutput = path.resolve("../../../.local/artifacts/20261015-argon385");
 const withdrawalCaptureRoot = path.resolve("../../../.local/artifacts");
 const withdrawalCaptureStamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+const withdrawalCaptureStage = process.env.CARD_WITHDRAWAL_CAPTURE_STAGE ?? "capture";
+const withdrawalReasonText = "커멘트에서 여러 의견을 비교한 결과 B안으로 정리됐고, 같은 내용을 다시 확인할 필요가 없어 이 질문은 철회합니다.";
 const phase = process.env.COMPONENTS_REVIEW_PHASE;
 if (!phase) throw new Error("COMPONENTS_REVIEW_PHASE is required");
 
@@ -214,20 +216,52 @@ for (const width of [1440, 390]) {
     const timeline = detail.locator(".v3-card-timeline");
     const openQuestion = timeline.locator('[data-card-entry="질문"]').filter({ hasText: "내용을 확인했나요?" });
     const withdrawnQuestion = timeline.locator('[data-card-entry="질문"]').filter({ hasText: "어느 안으로 할까요?" });
+    const withdrawalReason = withdrawnQuestion.locator(".v3-card-question-withdrawal");
+    const commentTarget = timeline.locator(".v3-card-comment-target");
     await expect(openQuestion).toBeVisible();
     await expect(withdrawnQuestion).toBeVisible();
     await expect(openQuestion.locator(".v3-card-answer-options button")).toHaveCount(1);
     await expect(withdrawnQuestion.locator(".v3-card-bubble-kind")).toContainText("철회됨");
-    await expect(withdrawnQuestion.locator(".v3-card-question-withdrawal")).toHaveText("커멘트에서 B안으로 정해져 거둡니다");
+    await expect(withdrawalReason).toHaveText(withdrawalReasonText);
     await expect(withdrawnQuestion.locator(".v3-card-answer-options")).toHaveCount(0);
+    await expect(commentTarget).toHaveCount(1);
     await openQuestion.scrollIntoViewIfNeeded();
     await withdrawnQuestion.scrollIntoViewIfNeeded();
 
+    const questionMetrics = await withdrawnQuestion.evaluate(question => {
+      const reason = question.querySelector<HTMLElement>(".v3-card-question-withdrawal")!;
+      const questionParagraph = Array.from(reason.parentElement!.querySelectorAll<HTMLElement>("p")).find(node => node !== reason)!;
+      const reasonStyle = getComputedStyle(reason);
+      return {
+        fontSize: reasonStyle.fontSize,
+        lineHeight: reasonStyle.lineHeight,
+        questionReasonGap: reason.getBoundingClientRect().top - questionParagraph.getBoundingClientRect().bottom,
+      };
+    });
+    const targetMetrics = await commentTarget.evaluate(target => {
+      const style = getComputedStyle(target);
+      return { fontSize: style.fontSize, lineHeight: style.lineHeight };
+    });
+    console.info("card question withdrawal computed metrics", { width, questionMetrics, targetMetrics });
     mkdirSync(withdrawalCaptureRoot, { recursive: true });
+    writeFileSync(path.join(withdrawalCaptureRoot, `${withdrawalCaptureStamp}-card-question-withdrawal-${withdrawalCaptureStage}-${width}-metrics.json`), JSON.stringify({ width, questionMetrics, targetMetrics }, null, 2));
+
     await page.screenshot({
-      path: path.join(withdrawalCaptureRoot, `${withdrawalCaptureStamp}-card-question-withdrawal-${width}.png`),
+      path: path.join(withdrawalCaptureRoot, `${withdrawalCaptureStamp}-card-question-withdrawal-${withdrawalCaptureStage}-${width}.png`),
       animations: "disabled",
     });
+    if (width === 1440) {
+      await commentTarget.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: path.join(withdrawalCaptureRoot, `${withdrawalCaptureStamp}-card-question-comment-target-${withdrawalCaptureStage}.png`),
+        animations: "disabled",
+      });
+    }
+
+    await expect(withdrawalReason).toHaveCSS("font-size", "12px");
+    await expect(withdrawalReason).toHaveCSS("line-height", "18px");
+    await expect(commentTarget).toHaveCSS("font-size", "12px");
+    await expect(commentTarget).toHaveCSS("line-height", "18px");
   });
 }
 
