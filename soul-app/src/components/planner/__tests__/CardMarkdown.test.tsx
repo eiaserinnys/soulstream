@@ -52,6 +52,23 @@ test('보고 폭 계약은 접기와 펼치기에서 같고 질문과 에이전�
   expect(bubbleStyle()).toEqual(collapsed);
 });
 
+test('철회 질문은 사유를 표시하고 답 선택지를 숨기며 열린 질문 선택지는 유지한다', () => {
+  const card = cardFixture({ id: 'withdrawal-card', request: '지시', assigneeAgentId: 'roselin', createdAt: '2026-10-01T00:00:00Z' });
+  const withdrawalReason = '커멘트에서 B안으로 정해져 거둡니다';
+  const screen = render(<CardTimeline detail={{ card, sessions: [], reports: [], comments: [], questions: [
+    { id: 'withdrawn', cardId: card.id, sessionId: 'roselin-session', text: '어느 안으로 할까요?', options: ['A안', 'B안'], answer: null,
+      askedAt: '2026-10-01T00:01:00Z', withdrawnAt: '2026-10-01T00:02:00Z', withdrawalReason },
+    { id: 'open', cardId: card.id, sessionId: 'roselin-session', text: '아직 답을 보내지 않은 질문입니다.', options: ['확인했습니다'], answer: null,
+      askedAt: '2026-10-01T00:03:00Z' },
+  ] }} onChooseAnswer={() => {}} />);
+
+  expect(screen.getByText('철회됨')).toBeTruthy();
+  expect(screen.getByTestId('card-question-withdrawal-question-withdrawn').props.children).toBe(withdrawalReason);
+  expect(screen.queryByLabelText('A안')).toBeNull();
+  expect(screen.queryByLabelText('B안')).toBeNull();
+  expect(screen.getByLabelText('확인했습니다')).toBeTruthy();
+});
+
 test.each([
   [390, 'light', 17, 22],
   [1024, 'dark', 18, 23],

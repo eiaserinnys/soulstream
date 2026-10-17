@@ -153,6 +153,25 @@ test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 
   expect(screen.getByText('실행 세션')).toBeTruthy();
 });
 
+test('철회 질문을 표시하고 답 선택에서 건너뛴다', async () => {
+  const withdrawn = { id: 'question-withdrawn', cardId: card.id, sessionId: 's1', text: '어느 안으로 할까요?', options: ['A안', 'B안'], answer: null,
+    askedAt: '2026-10-02', withdrawnAt: '2026-10-03', withdrawalReason: '커멘트에서 B안으로 정해져 거둡니다' };
+  const questions = [detail.questions[0], withdrawn];
+  const api = { getCard: jest.fn().mockResolvedValue({ ...detail, questions }), answerCardQuestion: jest.fn().mockResolvedValue({ card, folderId: card.folderId }) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+
+  expect(screen.getByText('철회됨')).toBeTruthy();
+  expect(screen.getByTestId('card-question-withdrawal-question-question-withdrawn').props.children).toBe(withdrawn.withdrawalReason);
+  expect(screen.queryByLabelText('A안')).toBeNull();
+  expect(screen.queryByLabelText('B안')).toBeNull();
+  expect(screen.getByLabelText('파랑')).toBeTruthy();
+
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '선택한 답');
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
+  expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1', '선택한 답', expect.any(String));
+});
+
 test('탭 밖에서 보낸 뒤 안내는 불투명한 알약 표면으로 목록과 구분한다', async () => {
   const source = { ...detail, card: { ...card, status: 'running' as const, blockedKind: null }, questions: [] };
   const saved = { id: 'notice-comment', cardId: card.id, authorKind: 'user' as const,

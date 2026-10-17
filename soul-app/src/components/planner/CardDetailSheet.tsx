@@ -133,7 +133,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const identity = { ...agent, agentPortraitUrl: agent.agentPortraitUrl ?? (agent.agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agent.agentId}/portrait` : null) };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
   const locked = pending || statusAction.pending || comments.pending || composerBusy;
-  const question = [...(detail?.questions ?? [])].reverse().find(item => item.answer === null);
+  const question = [...(detail?.questions ?? [])].reverse().find(item => item.answer === null && !item.withdrawnAt);
   const dockBottom = keyboardOverlap > 0
     ? t.uiSpacing.sm
     : tablet

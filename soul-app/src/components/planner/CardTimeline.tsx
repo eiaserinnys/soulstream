@@ -22,7 +22,7 @@ import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 type Entry = { id: string; kind: string; user: boolean; body: string; at: string; sessionId?: string | null;
-  itemId?: number | null; spoken?: boolean; report?: CardReport; question?: CardQuestion; attachments?: CardAttachment[] };
+  itemId?: number | null; spoken?: boolean; withdrawn?: boolean; report?: CardReport; question?: CardQuestion; attachments?: CardAttachment[] };
 
 type RequestSource = { request: string; createdAt: string; attachments?: CardAttachment[] };
 type Source = RequestSource | CardQuestion | CardReport | CardComment;
@@ -61,7 +61,7 @@ function makeEntry(id: string, type: EntryType, source: Source): Entry {
     }
     case 'question': {
       const question = source as CardQuestion;
-      return { id, kind: '질문', user: false, body: question.text, at: question.askedAt, sessionId: question.sessionId, question };
+      return { id, kind: '질문', user: false, body: question.text, at: question.askedAt, sessionId: question.sessionId, withdrawn: !!question.withdrawnAt, question };
     }
     case 'answer': {
       const question = source as CardQuestion;
@@ -89,7 +89,7 @@ const TimelineMessage = React.memo(function TimelineMessage({ id, type, source, 
   const session: Session = { ...author, agentSessionId: author?.agentSessionId ?? entry.sessionId ?? cardId, displayName: author?.displayName ?? null, status: author?.status ?? 'idle', createdAt: author?.createdAt ?? entry.at, updatedAt: author?.updatedAt ?? entry.at, agentId, agentName: author?.agentName ?? agentId, agentPortraitUrl: author?.agentPortraitUrl ?? (agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agentId}/portrait` : null) };
   const event: SessionEvent = { id: entry.id, type: entry.user ? 'user_message' : 'assistant_message', data: { text: entry.body } };
   const kind = <View style={styles.kindRow}><Text style={[styles.kind, { color: entry.kind === '질문' ? t.colors.warning : entry.user ? t.colors.accent : t.colors.success }]}>{entry.kind}</Text>
-    {entry.spoken ? <Text style={styles.meta}>대화에서</Text> : null}<Text style={styles.meta}>{formatCardTime(entry.at)}</Text></View>;
+    {entry.spoken ? <Text style={styles.meta}>대화에서</Text> : null}{entry.withdrawn ? <Text style={styles.meta}>철회됨</Text> : null}<Text style={styles.meta}>{formatCardTime(entry.at)}</Text></View>;
   const [expanded, setExpanded] = useState(false);
   const fold = !!entry.report || entry.kind === '지시';
   const label = expanded ? '접기' : entry.report ? '자세히' : '더 보기';
@@ -117,11 +117,12 @@ function TimelineBody({ cardId, entry, target, expanded, onChooseAnswer }: { car
   return <AttachmentReadContextProvider context={{ type: 'card', id: cardId }}><View style={styles.bodyStack}>
     {target ? <Text testID={`card-comment-item-target-${entry.id}`} numberOfLines={1} style={styles.commentTarget}>{target}</Text> : null}
     {!fold || (expanded && entry.kind === '지시') ? <CardRequestView request={entry.body} attachments={entry.attachments} /> : !expandedMarkdown ? <Text style={styles.body} numberOfLines={fold && !expanded ? 3 : undefined}>{preview}</Text> : null}
+    {entry.question?.withdrawnAt && entry.question.withdrawalReason ? <Text testID={`card-question-withdrawal-${entry.id}`} style={styles.withdrawalReason}>{entry.question.withdrawalReason}</Text> : null}
     {images.length && !expandedMarkdown ? <View style={styles.thumbnails}>{images.map((source, index) => <AttachmentImage key={source.uri}
       testID={`card-report-thumbnail-${report!.id}-${index}`} onOpen={parseExactAttachmentLink(imageUrls[index], serverUrl) ? restoreFocus => { void openContentLink(imageUrls[index], undefined, restoreFocus); } : undefined} source={source} sources={gallery} index={index} accessibilityLabel={`보고 캡처 ${index + 1}`} />)}</View> : null}
     {fold ? <Text style={styles.meta}>{expanded ? '접기' : report ? '자세히' : '더 보기'}</Text> : null}
     {expanded && report ? <CardReportView report={report} /> : null}
-    {entry.question?.answer === null ? entry.question.options?.map((option) => <CompactTouchTarget key={option}
+    {entry.question?.answer === null && !entry.withdrawn ? entry.question.options?.map((option) => <CompactTouchTarget key={option}
       accessibilityRole="button" accessibilityLabel={option} surfaceStyle={styles.option} onPress={() => onChooseAnswer(option)}><Text style={styles.link}>{option}</Text></CompactTouchTarget>) : null}
   </View></AttachmentReadContextProvider>;
 }
