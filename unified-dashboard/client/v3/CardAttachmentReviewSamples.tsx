@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import type { CardCheckItem, CardDetail, CardItemEvidence } from "@seosoyoung/soul-ui/cards/card-types";
 import { attachmentContentUrl } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import { CardCheckItems } from "./CardCheckItems";
@@ -11,6 +10,7 @@ const cardId = "card-attachment-review";
 const context = { type: "card" as const, id: cardId };
 const prefix = "card-review-";
 const noAction = () => {};
+type AttachmentDescriptor = NonNullable<CardItemEvidence["descriptor"]>;
 type ReviewAsset = { descriptor: AttachmentDescriptor; body: Blob; previewUrl: string; status?: number };
 
 function asset(id: string, name: string, body: Blob, previewKind: AttachmentDescriptor["preview_kind"], previewUrl?: string, status?: number): ReviewAsset {

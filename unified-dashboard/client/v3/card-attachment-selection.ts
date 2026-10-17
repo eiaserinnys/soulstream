@@ -1,6 +1,6 @@
 import type { CardItemEvidence } from "@seosoyoung/soul-ui/cards/card-types";
 import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
-import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
+export type AttachmentReadContext = Extract<ChatAttachmentItem["source"], { kind: "asset" }>["context"];
 
 export function cardAttachmentSelectionFromEvidence(_evidence: CardItemEvidence): ChatAttachmentItem | null {
   const attachmentId = _evidence.attachment_id;

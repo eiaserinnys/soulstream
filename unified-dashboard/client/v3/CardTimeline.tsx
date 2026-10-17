@@ -8,10 +8,9 @@ import { CustomViewIframe } from "@seosoyoung/soul-ui/custom-view/CustomViewRend
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import { attachmentContentUrl, contextualLegacyUrl, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import type { CardDetail, CardItemEvidence, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
-import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments";
 import { cardRequestMarkdown } from "./card-request-markdown";
 import { CardImageViewer } from "./CardImageViewer";
-import { attachmentUrlHasContext, cardAttachmentSelectionFromUrl, cardLegacyAttachmentSelectionFromUrl } from "./card-attachment-selection";
+import { type AttachmentReadContext, attachmentUrlHasContext, cardAttachmentSelectionFromUrl, cardLegacyAttachmentSelectionFromUrl } from "./card-attachment-selection";
 
 type CardAttachmentSelection = { attachmentId: string; context: AttachmentReadContext };
 type CardLegacyAttachmentSelection = { nodeId: string; path: string; context: AttachmentReadContext };

@@ -58,7 +58,7 @@ it("opens card markdown attachments with fetched metadata and keeps external lin
 
 it("uses explicit session context for card body attachments and shows 403 without retry",async()=>{
  const sessionUrl="/api/attachments/session-image/content?context_type=session&context_id=session-1";
- const fetchMock=vi.fn(async()=>new Response(null,{status:403}));
+ const fetchMock=vi.fn(async(_input:RequestInfo|URL)=>new Response(null,{status:403}));
  vi.stubGlobal("fetch",fetchMock);
  const request=`![세션 첨부](${sessionUrl})`;
  await act(()=>root.render(<CardTimeline card={{...card,request}} detail={detail} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
@@ -191,7 +191,7 @@ it("opens contextless legacy Markdown attachments in the current card context wh
  expect(viewer.querySelector(".chat-image-viewer-title")?.textContent).toBe("카드 파일");
  expect(fetchMock).toHaveBeenCalledWith(cardFileUrl,expect.objectContaining({method:"HEAD",credentials:"same-origin"}));
  await act(()=>document.body.querySelector("[role=dialog]")?.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
- await act(async()=>new Promise(resolve=>requestAnimationFrame(resolve)));
+ await act(async()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));
  expect(document.activeElement).toBe(cardLink);
  await act(async()=>{sessionLink.click();await new Promise(resolve=>setTimeout(resolve,0));});
  expect(fetchMock).toHaveBeenCalledWith(explicitLegacy,expect.objectContaining({method:"HEAD",credentials:"same-origin"}));
