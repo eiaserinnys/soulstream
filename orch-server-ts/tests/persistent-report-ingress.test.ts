@@ -14,8 +14,28 @@ describe('report ingress uses existing message and persistence boundaries',()=>{
     const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:accept},SERVICE_CALLER,'sess-contract',{text:'보고: 진행',context_items:context});
     expect(result.status).toBe(200);
     expect(accept).toHaveBeenCalledTimes(1);
-    expect(accept).toHaveBeenCalledWith('sess-contract',context,{source:'browser'});
+    expect(accept).toHaveBeenCalledWith('sess-contract',context,{source:'browser'},SERVICE_CALLER);
     expect(h.sent.at(-1)).toMatchObject({type:'intervene',text:'보고: 진행',extra_context_items:context});
+    await h.app.close();
+  });
+  it('turns a card-question board answer into a pass-through ACK without delivering to the session',async()=>{
+    const h=createActionHarness();
+    const accept=vi.fn(async()=>({handled:true}));
+    const context=[{key:'persistent_report_reply',content:{key:'cq_q-1',option:'진행'}}];
+    const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:accept},SERVICE_CALLER,'sess-contract',{text:'진행',context_items:context});
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({type:'intervene_ack',status:'ok',outcome:'delivered',agentSessionId:'sess-contract',
+      delivered:true,consumeWhen:null,reason:'card_question_answered'});
+    expect(h.sent).toHaveLength(0);
+    await h.app.close();
+  });
+  it('returns the card route failure for a rejected board answer',async()=>{
+    const h=createActionHarness();
+    const accept=vi.fn(async()=>({handled:false,failure:{status:409,body:{detail:{error:{code:'CARD_QUESTION_CLOSED'}}}}}));
+    const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:accept},SERVICE_CALLER,'sess-contract',{text:'진행',context_items:[{key:'persistent_report_reply',content:{key:'cq_q-1',option:'진행'}}]});
+    expect(result.status).toBe(409);
+    expect(result.body).toMatchObject({detail:{error:{code:'CARD_QUESTION_CLOSED'}}});
+    expect(h.sent).toHaveLength(0);
     await h.app.close();
   });
   it('keeps message delivery when the ancillary report update fails',async()=>{

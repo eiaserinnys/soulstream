@@ -12,6 +12,7 @@ export function createCardControlPlaneServiceProvider(options: {
   onMutation?: (change:CardMutationChange)=>void;
   onReportsChanged?: PublishPersistentReports;
   corsAllowedOrigins?: readonly string[];
+  onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>;
 }): () => Promise<CardControlPlaneService> {
   const resolver=new BoardYjsSqlResolver(options.sqlResolver);
   let service: CardControlPlaneService | undefined;
@@ -32,7 +33,7 @@ export function createCardControlPlaneServiceProvider(options: {
       async emitCardUpdated(cardId, folderId) {
         options.broadcaster.append({ type: "card_updated", cardId, folderId });
       },
-    },options.onMutation,options.onReportsChanged,options.warn,options.corsAllowedOrigins);
+    },options.onMutation,options.onReportsChanged,options.warn,options.corsAllowedOrigins,options.onQuestionAsked);
     return service;
   };
 }

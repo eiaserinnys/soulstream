@@ -2,9 +2,11 @@
 
 ## PAS 보고 자동 내림 (#270 R1)
 
-card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 persistent_report_service.ts의 pruneForCard를 기다린다. 대상 PAS를 잠금 없이 찾고 세션마다 별도 트랜잭션에서 세션 행만 잠근 뒤 현재 판과 질문·카드 상태를 다시 확인한다. 질문 정식 답 저장 또는 연결 카드 전부 done/cancelled일 때만 내린다. 보고 쪽은 카드 행을 잠그지 않으며 판 방송은 각 보고 commit 직후 그 트랜잭션의 결과로 낸다. 질문 답변의 기존 메시지 전달은 그대로다.
+card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 persistent_report_service.ts의 pruneForCard를 기다린다. 대상 PAS를 잠금 없이 찾고 세션마다 별도 트랜잭션에서 세션 행만 잠근 뒤 현재 판과 질문·카드 상태를 다시 확인한다. 질문 정식 답 저장·철회 또는 연결 카드 전부 done/cancelled일 때만 내린다. 보고 쪽은 카드 행을 잠그지 않으며 판 방송은 각 보고 commit 직후 그 트랜잭션의 결과로 낸다. 질문 답변의 기존 메시지 전달은 그대로다.
 
 자동 내림이 실패하면 기록만 남기고 commit된 카드 변경 결과는 유지한다. 남은 장은 PAS나 사용자가 「확인했어」로 내릴 때까지 보존한다. 중앙 캐시의 보고 patch는 기존 updatedAtMs를 갱신해 먼저 시작한 DB seed가 최신 판을 덮지 못하게 한다.
+
+카드 질문도 판에 오른다. `card_question_board.ts`의 `placeCardQuestionOnOwnerBoards`가 카드 소유자의 PAS 판에 key `cq_<질문ID>`의 ask 장을 `persistent_report_service.ts`의 `putQuestion`으로 넣는다. 소유자는 `resolveCardOwnerEmail`이 카드를 만든 작업 기록의 사용자, 없으면 세션 소유자 순으로 푼다. 판이 12장으로 차면 장을 만들지 않고 경고만 하며 질문 commit은 그대로 성공한다. 판에서 그 `cq_` 장에 답하면 `acceptReply`가 그 선택지를 카드의 정식 답으로 되돌리지 않고(`card` 결정) 접수 지점이 기존 `answer_card_question` 경로로 저장한다. 판 장과 카드 답은 「답 받음→내림」의 정본이며, 답 commit 뒤 `pruneForCard`가 장을 내린다. 같은 답 재전송은 접수만 확인하고, 다른 답·철회·없는 선택지는 판 전달 없이 카드 route 오류로 끝난다.
 
 `folders.id`가 폴더, 카드, 보드, 세션, worktree의 공통 소속이다. 카드는 섹션 없이 폴더에 직접 속한다. 폴더 상세의 카드 영역은 항상 보이며, 카드가 없을 때는 제목과 추가 동작만 표시한다.
 
@@ -64,7 +66,7 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 | 세션 생성 | `card_dispatch_runtime.ts` → `session/recurring_session_creation.ts` → `SessionCommandRouter.createSession` | 신규 `run_card` 실행은 사전 `requireAvailable` 확인을 거친다. 자동 agent 배정은 사용 불가 대상을 `recordDispatch` 전에 건너뛰므로 카드는 queued로 남고 기존 tick에서 다시 평가한다. 적격 판정 뒤 마지막 `createRecurringSession` 전송 직전에 거부되면 이미 등록한 카드의 기존 생성 실패 처리를 따른다. 명령의 선택 필드 `cardId`는 camelCase고, 첫 프롬프트는 `card_prompt.ts`가 요청·인계 요약·커멘트 ID·반려·실행 중인 다른 카드 세션을 조립한다. 답변 이력은 인계 요약에 포함한다. |
 | 등록 저장 | `control_plane/repositories/session_mutation_repository.ts`의 registerSession/registerSessionWithWorktree | 선택 `cardId`를 기존 등록 트랜잭션에서 `sessions.card_id`에 저장한다. 디스패처에 별도 연결 UPDATE는 없다. wire 정본은 `packages/wire-schema/src/upstream.schema.json`의 CreateSession.cardId다. |
 | 종료·한도 | 커밋된 `node_session_session_updated` → `CardDispatcher.sessionEnded` | 턴 종료만으로 no_report 막힘을 기록하지 않는다. running 담당 세션의 limit_hit 종료만 기존 경로에서 blocked(limit)로 기록한다. review/question/done은 유지한다. 반복 작업 스케줄러의 기존 tick에서 1분마다 한도 카드의 프리셋을 확인한다. |
-| 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options?,idempotencyKey}`, trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
+| 질문·답 | POST `/api/cards/:id/questions` → askQuestion / POST `/api/cards/:id/questions/:qid/answer` | 질문 본문 `{text,options,idempotencyKey}`. `options`는 필수이며 1~3개, 각 12 코드포인트 이하다(`cardQuestionOptionsSchema`, MCP·REST·서비스 공용). trusted service bearer와 agent session header, 성공 201. 답변은 기존 intervene 계약으로 유휴 재개/실행 중 개입. 완료 세션이면 queued로 돌린다. |
 | 확인 요청·사용자 커멘트 | `request_card_review(ask)` / POST `/api/cards/:id/comments`의 `itemId` | 검수 요청은 기존 상태 전환과 함께 상황판을 user 차례로 갱신한다. 확인 항목 대상 커멘트는 항목 확인을 풀고 고칠 점을 추가한다. 사용자 커멘트 전달에는 커멘트 ID, 대상 항목, 직전 성공 전달 이후 확인했던 번호를 넣고 기존 성공 뒤 `delivered_at`을 기록한다. |
 | 반려 | 사람의 review→running, 선택 사유 | 사유는 선택 사항이며, 입력한 경우 기존 세션에 반려 사유 메시지로 전달하고 새 세션의 첫 프롬프트에 포함한다. 완료 세션이면 queued로 둔다. |
 | 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 확인만으로 담당 세션을 깨우지 않으며 다음 사용자 커멘트 전달에 확인 사실을 포함한다. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |

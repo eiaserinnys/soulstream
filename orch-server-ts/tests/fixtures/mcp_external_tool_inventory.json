@@ -124,7 +124,7 @@
     "name": "archive_folder"
   },
   {
-    "description": "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다.",
+    "description": "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -139,10 +139,13 @@
           "type": "string"
         },
         "options": {
+          "description": "사용자가 고를 선택지 1~3개. 각 12자 이하로 짧게 쓰고 설명은 질문 글에 쓴다.",
           "items": {
             "minLength": 1,
             "type": "string"
           },
+          "maxItems": 3,
+          "minItems": 1,
           "type": "array"
         },
         "text": {
@@ -152,7 +155,8 @@
       },
       "required": [
         "card_id",
-        "text"
+        "text",
+        "options"
       ],
       "type": "object"
     },

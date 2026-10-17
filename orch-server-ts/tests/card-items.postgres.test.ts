@@ -179,7 +179,7 @@ describe("card check-item locked mutations", () => {
     expect(current).toMatchObject({ status: "review", now: { text: "로그인 화면에서 확인해 주세요", turn: "user", ask: "로그인 화면에서 확인해 주세요", sessionId: "owner" } });
 
     const question = "가".repeat(61);
-    await cards.askQuestion({ ...assignee, cardId: newCardId, text: question });
+    await cards.askQuestion({ ...assignee, cardId: newCardId, text: question, options: ['진행'] });
     current = (await cards.getCard(newCardId))!.card;
     expect(current).toMatchObject({ status: "blocked", now: { turn: "user", ask: `${"가".repeat(59)}…`, sessionId: "owner" } });
 
@@ -220,7 +220,7 @@ describe("card check-item locked mutations", () => {
     for(let index=0;index<22;index++)
       await cards.addCardNote({...assignee,cardId,text:`내부 노트 ${index+1}`,idempotencyKey:key()});
     await cards.updateCardNow({...assignee,cardId,now:"첫 상황",turn:"agent",idempotencyKey:key()});
-    await cards.askQuestion({...assignee,cardId,text:"사용자 판단 질문",idempotencyKey:key()});
+    await cards.askQuestion({...assignee,cardId,text:"사용자 판단 질문",options:["진행"],idempotencyKey:key()});
     await cards.updateCardNow({...assignee,cardId,now:"다음 상황",turn:"user",ask:"새 화면을 확인해 주세요",idempotencyKey:key()});
     const first=await cards.listCardNotes({...assignee,cardId,limit:20});
     expect(first.notes).toHaveLength(20);

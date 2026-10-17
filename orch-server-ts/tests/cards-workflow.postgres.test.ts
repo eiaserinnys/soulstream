@@ -60,7 +60,7 @@ describe("cards storage, HTTP and planner", () => {
     const id=made.operation.target_id;
     await cards.setCardStatus({ ...human,cardId:id,status:'running',idempotencyKey:key() });
     await cards.askQuestion({ ...agent,cardId:id,text:'결정?',options:['진행','중단'],idempotencyKey:key() });
-    await cards.askQuestion({ ...human,cardId:id,text:'추가 확인?',idempotencyKey:key() });
+    await cards.askQuestion({ ...human,cardId:id,text:'추가 확인?',options:['진행'],idempotencyKey:key() });
     await cards.addReport({ ...agent,cardId:id,title:'작업 보고',format:'markdown',body:'보고',idempotencyKey:key() });
     expect((await cards.getCard(id))!.card.status).toBe('blocked');
     const q=(await cards.getCard(id))!.questions;
@@ -72,11 +72,29 @@ describe("cards storage, HTTP and planner", () => {
     expect((await cards.getCard(id))!.questions[0]).toMatchObject({ answered_by:human.actorUserId,answer:'진행' });
   });
 
+  it("rejects card questions unless options are 1~3 short choices", async () => {
+    const made=await cards.createCard({ ...human,folderId:'cards-a',title:'선택지 계약',request:'',idempotencyKey:key() });
+    const id=made.operation.target_id;
+    await cards.setCardStatus({ ...human,cardId:id,status:'running',idempotencyKey:key() });
+    for (const options of [undefined, [], ['가','나','다','라'], ['가'.repeat(13)], [''], [123]])
+      await expect(cards.askQuestion({ ...agent,cardId:id,text:'계약?',options,idempotencyKey:key() } as never))
+        .rejects.toThrow(/선택지는 1~3개, 각 12자 이하로 줄이고 설명은 질문 글에 쓰세요/);
+    expect((await cards.getCard(id))!.card.status).toBe('running');
+    await cards.askQuestion({ ...agent,cardId:id,text:'한 개',options:['진행'],idempotencyKey:key() });
+    await cards.askQuestion({ ...agent,cardId:id,text:'세 개',options:['가'.repeat(12),'짧음','😀'],idempotencyKey:key() });
+    const rows=await h.sql<{ options: unknown }[]>`SELECT options FROM card_questions WHERE card_id=${id}`;
+    expect(rows).toHaveLength(2);
+    expect(rows.map(r=>r.options)).toContainEqual(['진행']);
+    expect(rows.map(r=>r.options)).toContainEqual(['가'.repeat(12),'짧음','😀']);
+    expect((await cards.getCard(id))!.card.status).toBe('blocked');
+    await h.sql`DELETE FROM cards WHERE id=${id}`;
+  });
+
   it.each(['todo','queued','running','review','done','cancelled'] as const)("allows human %s with an open question and preserves that state after a late answer", async status => {
     const made=await cards.createCard({ ...human,folderId:'cards-a',title:'질문 이후 이동',request:'',idempotencyKey:key() });
     const id=made.operation.target_id;
     await cards.setCardStatus({ ...human,cardId:id,status:'running',idempotencyKey:key() });
-    await cards.askQuestion({ ...agent,cardId:id,text:'결정?',idempotencyKey:key() });
+    await cards.askQuestion({ ...agent,cardId:id,text:'결정?',options:['진행'],idempotencyKey:key() });
     await cards.addReport({ ...agent,cardId:id,title:'보고',format:'markdown',body:'증거',idempotencyKey:key() });
     await cards.setCardStatus({ ...human,cardId:id,status,idempotencyKey:key() });
     const before=(await cards.getCard(id))!;
@@ -107,7 +125,7 @@ describe("cards storage, HTTP and planner", () => {
       blockedKind:'limit',blockedDetail:'이전 한도',idempotencyKey:key() });
     if (from === 'question') {
       await cards.setCardStatus({...human,cardId:id,status:'running',idempotencyKey:key()});
-      await cards.askQuestion({...agent,cardId:id,text:'미답 질문',idempotencyKey:key()});
+      await cards.askQuestion({...agent,cardId:id,text:'미답 질문',options:['진행'],idempotencyKey:key()});
     }
     const expectedStatus=from === 'question' ? 'blocked' : from;
     let before=(await cards.getCard(id))!.card;

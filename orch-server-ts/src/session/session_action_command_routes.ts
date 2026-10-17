@@ -61,7 +61,12 @@ export type SessionActionCommandRouteOptions =
     admitAttachmentInput?: SessionActionAttachmentAdmission;
     reviewAcknowledgeFallback?: SessionReviewAcknowledgeFallback;
     deliveryRepositoryProvider?: () => Promise<Pick<SessionDeliveryRepository, "register">>;
-    acceptPersistentReportReply?: (sessionId: string, context: unknown, callerInfo: JsonObject | undefined) => Promise<void>;
+    /**
+     * 판 답을 처리한 뒤 결과를 알린다. handled면 intervene를 더 진행하지 않고 카드 질문 답 ACK를 돌려주고,
+     * failure면 그 오류를 그대로 응답한다. undefined/void면 지금까지처럼 본문 전달로 이어진다.
+     */
+    acceptPersistentReportReply?: (sessionId: string, context: unknown, callerInfo: JsonObject | undefined, request: FastifyRequest | ServiceCaller) =>
+      Promise<{ handled: boolean; failure?: { status: number; body: unknown } } | undefined>;
   };
 
 export const sessionActionCommandRouteAuthRequirements = {
@@ -204,18 +209,32 @@ export async function executeSessionIntervention(
   if (options.resolveCallerInfo !== undefined) {
     payload.value.caller_info = await options.resolveCallerInfo(caller, payload.value.caller_info, targetSessionId);
   }
+  // 카드 질문 장에 대한 답이면 본문을 담당 세션으로 보내지 않고 카드 답으로 접수한다. 첨부 수락과 durable 등록보다 먼저 끝낸다.
+  if (options.acceptPersistentReportReply !== undefined) {
+    let reply: { handled: boolean; failure?: { status: number; body: unknown } } | undefined;
+    try {
+      reply = await options.acceptPersistentReportReply(targetSessionId, payload.value.extra_context_items, payload.value.caller_info, caller);
+    } catch (error) {
+      if ("log" in caller) caller.log.warn({ err: error }, "Report answer update failed; delivering the user message");
+    }
+    if (reply?.failure) return { status: reply.failure.status, body: reply.failure.body };
+    if (reply?.handled) return cardQuestionAnsweredResponse(targetSessionId);
+  }
   const admitted = await admitAttachmentInput(options, caller, payload.value);
   if ("response" in admitted) return admitted.response;
   const durable = await admitDurableHumanIntervention(options, admitted.payload);
   if (durable.conflict) return { status: 409, body: { error: {
     code: "DELIVERY_IDENTITY_CONFLICT", message: `Delivery identity conflict: ${durable.deliveryId}`, deliveryId: durable.deliveryId,
   } } };
-  try {
-    await options.acceptPersistentReportReply?.(targetSessionId, payload.value.extra_context_items, payload.value.caller_info);
-  } catch (error) {
-    if ("log" in caller) caller.log.warn({ err: error }, "Report answer update failed; delivering the user message");
-  }
   return executeInterveneCommand(options, durable.payload, durable.deliveryId);
+}
+
+/** 카드 질문에 판에서 답한 경우. 담당 세션에는 보내지 않았지만 사용자 답변은 기록되었으니 전달 완료로 알린다. */
+function cardQuestionAnsweredResponse(agentSessionId: string): SessionActionResponse {
+  return { status: 200, body: {
+    type: "intervene_ack", status: "ok", outcome: "delivered", agentSessionId,
+    delivered: true, consumeWhen: null, reason: "card_question_answered",
+  } };
 }
 
 async function admitAttachmentInput(

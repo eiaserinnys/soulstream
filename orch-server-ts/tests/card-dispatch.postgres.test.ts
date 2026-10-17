@@ -219,14 +219,14 @@ describe("card dispatch and session lifecycle", () => {
     it("sends one question alert when a brief update immediately precedes the question", async () => {
         const { id, sessionId } = await start();
         await cards.patchCard({ ...human, cardId: id, brief: '분석 완료', idempotencyKey: key() });
-        await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '방향 확인', idempotencyKey: key() });
+        await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '방향 확인', options: ['진행'], idempotencyKey: key() });
         await dispatcher.drain();
         expect(notify).toHaveBeenCalledTimes(1);
         expect(notify).toHaveBeenCalledWith(expect.objectContaining({ question: '방향 확인' }));
     });
     it("sends the answered question to its session and keeps the card running", async () => {
         const { id, sessionId } = await start();
-        await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '진행?', idempotencyKey: key() });
+        await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '진행?', options: ['진행'], idempotencyKey: key() });
         await dispatcher.drain();
         await terminal(sessionId); // A completed question turn stays blocked until answered.
         await h.sql `UPDATE sessions SET status='idle' WHERE session_id=${sessionId}`;
@@ -257,7 +257,7 @@ describe("card dispatch and session lifecycle", () => {
     });
     it("keeps running after delivering an answer to a finished question session", async () => {
         const { id, sessionId } = await start();
-        await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '방향?', idempotencyKey: key() });
+        await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '방향?', options: ['진행'], idempotencyKey: key() });
         await dispatcher.drain();
         await terminal(sessionId);
         const q = (await cards.getCard(id))!.questions[0]!;
@@ -269,7 +269,7 @@ describe("card dispatch and session lifecycle", () => {
     });
     it("delivers a late answer with attachments to a live session after completion without changing status", async () => {
         const {id,sessionId}=await start();
-        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'뒤늦은 질문',idempotencyKey:key()});
+        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'뒤늦은 질문',options:['진행'],idempotencyKey:key()});
         await dispatcher.drain();
         await cards.setCardStatus({...human,cardId:id,status:'done',idempotencyKey:key()});await dispatcher.drain();
         const attachments=[{nodeId:'eiaserinnys',path:'/incoming/upload/answer.png',name:'답변.png',mimeType:'image/png'}];
@@ -283,7 +283,7 @@ describe("card dispatch and session lifecycle", () => {
     });
     it.each(['review','running'] as const)("delivers a late answer to a finished session and preserves explicitly selected %s", async status => {
         const {id,sessionId}=await start();
-        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'늦은 질문',idempotencyKey:key()});await dispatcher.drain();
+        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'늦은 질문',options:['진행'],idempotencyKey:key()});await dispatcher.drain();
         await terminal(sessionId);
         if(status==='review')await cards.addReport({...human,cardId:id,title:'보고',format:'markdown',body:'결과',idempotencyKey:key()});
         await cards.setCardStatus({...human,cardId:id,status,idempotencyKey:key()});await dispatcher.drain();
@@ -296,7 +296,7 @@ describe("card dispatch and session lifecycle", () => {
     });
     it.each(['completion','version change'])("does not requeue an automatic answer resume superseded by %s during delivery",async change=>{
         const {id,sessionId}=await start();
-        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'재개?',idempotencyKey:key()});await dispatcher.drain();await terminal(sessionId);
+        await cards.askQuestion({actorKind:'agent',actorSessionId:sessionId,cardId:id,text:'재개?',options:['진행'],idempotencyKey:key()});await dispatcher.drain();await terminal(sessionId);
         messages.mockImplementationOnce(async()=>{
             if(change==='completion')await cards.setCardStatus({...human,cardId:id,status:'done',idempotencyKey:key()});
             else await cards.patchCard({...human,cardId:id,brief:'새 요청',idempotencyKey:key()});

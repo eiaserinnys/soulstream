@@ -4,6 +4,10 @@ import { assigneeSchema, callerSessionIdSchema } from "./folder_shared.js";
 
 const id = z.string().min(1);
 const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
+/** 카드 질문의 선택지. 1~3개, 각 비어 있지 않은 문자열(코드포인트 12자 이하). 설명은 질문 글에 쓴다. */
+export const cardQuestionOptionsSchema = z.array(
+  z.string().min(1).refine((value) => [...value].length <= 12, "선택지는 12자 이하"),
+).min(1, "선택지는 1개 이상").max(3, "선택지는 3개 이하");
 const itemId = z.number().int().positive();
 const itemEvidence = z.union([
   z.object({ type:z.enum(["image","link"]),label:z.string(),attachment_id:id }).strict(),
@@ -64,8 +68,8 @@ export const cardTools = {
     description: "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.", inputSchema: { ...scope,ask:z.string().optional() },
   }, audience: "all" },
   ask_card_question: { name: "ask_card_question", config: {
-    description: "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다.",
-    inputSchema: { ...scope, text: id, options: z.array(id).optional() },
+    description: "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다.",
+    inputSchema: { ...scope, text: id, options: cardQuestionOptionsSchema.describe("사용자가 고를 선택지 1~3개. 각 12자 이하로 짧게 쓰고 설명은 질문 글에 쓴다.") },
   }, audience: "all" },
   withdraw_card_question: { name: "withdraw_card_question", config: {
     description: "담당 카드에 내가 남긴 질문이 대화나 커멘트로 결정되어 더 필요 없을 때 철회합니다. reason에 결정 근거를 한 줄(200자까지)로 적습니다. 답이 있거나 이미 철회된 질문은 거부됩니다. 철회한 질문은 답을 기다리는 질문 목록에서 빠집니다.",
