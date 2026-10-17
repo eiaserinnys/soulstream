@@ -38,6 +38,10 @@ export type ClaudeTurnOwner = {
 export type ClaudeInputAdmission = {
   enqueued: boolean;
   state: ClaudeInputState;
+  payloadMismatch?: {
+    existingPayloadHash: string;
+    incomingPayloadHash: string;
+  };
 };
 
 export interface ClaudeRuntimeInput<TMessage> {
@@ -181,14 +185,21 @@ export class ClaudeSessionRuntime<TMessage> {
     this.assertOpen();
     const existing = this.inputs.get(input.uuid);
     if (existing) {
-      if (existing.payloadHash !== input.payloadHash) {
-        throw new Error(`Claude input UUID payload conflict: ${input.uuid}`);
-      }
       if (
         existing.turnOwner.kind !== input.turnOwner.kind
         || existing.turnOwner.id !== input.turnOwner.id
       ) {
         throw new Error(`Claude input UUID owner conflict: ${input.uuid}`);
+      }
+      if (existing.payloadHash !== input.payloadHash) {
+        return {
+          enqueued: false,
+          state: existing.state,
+          payloadMismatch: {
+            existingPayloadHash: existing.payloadHash,
+            incomingPayloadHash: input.payloadHash,
+          },
+        };
       }
       return { enqueued: false, state: existing.state };
     }
@@ -205,14 +216,15 @@ export class ClaudeSessionRuntime<TMessage> {
     return { enqueued: true, state: "queued" };
   }
 
-  enqueueForegroundContinuation(input: ClaudeRuntimeInput<TMessage>): boolean {
+  enqueueForegroundContinuation(input: ClaudeRuntimeInput<TMessage>): ClaudeInputAdmission {
     this.assertOpen();
     if (this.foregroundPhase !== "generating") {
       throw new Error(`Cannot inject Claude input while ${this.foregroundPhase}`);
     }
     const admission = this.enqueueInput(input);
-    if (admission.enqueued) this.requireInput(input.uuid).state = "merged";
-    return admission.enqueued;
+    if (!admission.enqueued) return admission;
+    this.requireInput(input.uuid).state = "merged";
+    return { ...admission, state: "merged" };
   }
 
   hasInput(uuid: string): boolean {

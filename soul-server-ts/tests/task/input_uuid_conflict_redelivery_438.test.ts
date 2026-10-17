@@ -1,5 +1,6 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
 import { ExecutionContextBuilder } from "../../src/context/context_builder.js";
@@ -29,7 +30,18 @@ const logger = pino({ level: "silent" });
 describe("#438 same durable delivery across resume and startup redelivery", () => {
   it("keeps a completed first delivery from turning its session into error_aborted", async () => {
     const sdk = makeHarness();
-    const client = new ClaudeSdkClient({ query: sdk.queryFn }, logger);
+    const sdkInputUuids: string[] = [];
+    const client = new ClaudeSdkClient({
+      query: (params) => sdk.queryFn({
+        ...params,
+        prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+          for await (const message of params.prompt as AsyncIterable<SDKUserMessage>) {
+            sdkInputUuids.push(message.uuid);
+            yield message;
+          }
+        })(),
+      }),
+    }, logger);
     const registry = new ClaudeSessionClientRegistry(
       () => client, { idleTtlMs: 300_000, maxEntries: 4 },
     );
@@ -127,6 +139,7 @@ describe("#438 same durable delivery across resume and startup redelivery", () =
         status: task.status, terminationReason: task.terminationReason,
         error: task.error,
         executeCount: executeInputs.length,
+        sdkInputUuids,
         sameUuid: executeInputs.every(input => input.inputUuid === first.uuid),
         firstHasCallerUpdate: firstPrompt.includes("<caller_info_update>"),
         replayHasCallerUpdate: executeInputs[1]?.prompt.includes("<caller_info_update>"),
@@ -135,11 +148,17 @@ describe("#438 same durable delivery across resume and startup redelivery", () =
         terminalEvents: persistence.enqueueEvent.mock.calls
           .map(([, event]) => event).filter(event => event.type === "session_ended"),
       };
+      const fatalErrorEvents = observed.terminalEvents.filter((event) => {
+        const value = event as unknown as Record<string, unknown>;
+        return value.status === "error" || value.termination_reason === "error_aborted";
+      });
       process.stdout.write(`UUID_CONFLICT_438 ${JSON.stringify(observed)}\n`);
-      // Regression assertion: RED includes the real error terminal event and reason.
+      // Regression assertion follows the actual terminal event and SDK input stream.
       expect(observed, JSON.stringify(observed)).toMatchObject({
         status: "completed", terminationReason: "completed_ok", error: undefined,
+        sdkInputUuids: [first.uuid],
       });
+      expect(fatalErrorEvents, JSON.stringify(observed)).toEqual([]);
     } finally {
       sdk.end();
       await client.close();

@@ -39,6 +39,19 @@ import {
   type PrepareAttachmentInput,
 } from "./prepare_attachment_input.js";
 
+export function buildFollowupInputUuid(interventions: InterventionMessage[]): string | undefined {
+  if (interventions.length === 1) {
+    const deliveryId = interventions[0]?.deliveryId;
+    return deliveryId ? buildDeliveryInputUuid(deliveryId) : undefined;
+  }
+  if (interventions.length > 1) {
+    const deliveryIds = interventions.map((intervention) => intervention.deliveryId);
+    if (deliveryIds.some((deliveryId) => !deliveryId)) return undefined;
+    return buildDeliveryInputUuid(`batch:${deliveryIds.join(",")}`);
+  }
+  return undefined;
+}
+
 export const CLAUDE_ROLLOVER_PROMPT_MAX_CHARS = 80_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS = 60_000;
 export const CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS = 100_000;
@@ -138,9 +151,7 @@ export class TaskTurnInputBuilder {
     const firstIntervention = interventions[0];
     if (!firstIntervention) throw new Error("follow-up turn requires an intervention");
     const currentCallerInfo = interventions.at(-1)?.callerInfo ?? task.callerInfo;
-    const inputUuid = firstIntervention.deliveryId
-      ? buildDeliveryInputUuid(firstIntervention.deliveryId)
-      : undefined;
+    const inputUuid = buildFollowupInputUuid(interventions);
     const includeFullContext = task.needsFullContextReinjection === true;
     const includeClaudeSessionIdUpdate =
       Boolean(task.codexThreadId) &&

@@ -135,6 +135,7 @@ export class ClaudeSdkPersistentSession {
       input,
       active: this.activeForeground,
       runtime: this.runtime,
+      logger: this.logger,
     });
   }
 

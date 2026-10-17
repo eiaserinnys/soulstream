@@ -5,6 +5,7 @@ import {
   type ClaudeInterruptReceipt,
   type ClaudePersistentQuery,
 } from "../../src/engine/claude_session_runtime.js";
+import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 
 function makeSubject(receipt: ClaudeInterruptReceipt = { still_queued: [] }) {
   const query: ClaudePersistentQuery = {
@@ -20,9 +21,10 @@ function runtimeInput(uuid: string, payloadHash: string, message: string) {
 }
 
 describe("ClaudeSessionRuntime", () => {
-  it("admits exact retries by state but rejects payload or owner conflicts", () => {
+  it("admits exact retries by state, reports payload conflicts, and rejects owner conflicts", () => {
     const { runtime } = makeSubject();
     const turnOwner = { kind: "runtime_followup", id: "delivery-1" };
+    const queuePush = vi.spyOn(runtime.inputQueue, "push");
     const input = {
       uuid: "retry-1",
       payloadHash: "canonical-payload",
@@ -38,14 +40,30 @@ describe("ClaudeSessionRuntime", () => {
     runtime.finishForegroundResult();
     expect(runtime.enqueueInput(input)).toEqual({ enqueued: false, state: "settled" });
 
+    expect(runtime.enqueueInput({
+      ...input,
+      payloadHash: "different-payload",
+    })).toEqual({
+      enqueued: false,
+      state: "settled",
+      payloadMismatch: {
+        existingPayloadHash: "canonical-payload",
+        incomingPayloadHash: "different-payload",
+      },
+    });
+    expect(runtime.snapshot().pendingInputs).toContainEqual({
+      uuid: "retry-1",
+      payloadHash: "canonical-payload",
+      turnOwner,
+      state: "settled",
+    });
+    expect(queuePush).toHaveBeenCalledTimes(1);
     expect(() => runtime.enqueueInput({
       ...input,
       payloadHash: "different-payload",
-    })).toThrow(/payload/i);
-    expect(() => runtime.enqueueInput({
-      ...input,
       turnOwner: { kind: "runtime_followup", id: "delivery-2" },
     })).toThrow(/owner/i);
+    expect(queuePush).toHaveBeenCalledTimes(1);
 
     expect(() => runtime.beginForegroundTurn(input.uuid)).toThrow(/settled/i);
     const successor = {
@@ -66,7 +84,7 @@ describe("ClaudeSessionRuntime", () => {
 
     expect(runtime.enqueueForegroundContinuation(
       runtimeInput("machine-report", "hash-2", "report"),
-    )).toBe(true);
+    )).toEqual({ enqueued: true, state: "merged" });
     expect(runtime.snapshot().pendingInputs).toContainEqual({
       uuid: "machine-report",
       payloadHash: "hash-2",
@@ -260,8 +278,9 @@ describe("ClaudeSessionRuntime", () => {
     expect(runtime.snapshot().foregroundPhase).toBe("generating");
   });
 
-  it("rejects a consumed UUID with a conflicting replay payload", async () => {
+  it("keeps a consumed UUID admission when a replay has a conflicting payload", async () => {
     const { runtime, query } = makeSubject();
+    const queuePush = vi.spyOn(runtime.inputQueue, "push");
     runtime.enqueueInput({
       uuid: "runtime-followup-consumed",
       payloadHash: "canonical-before-restart",
@@ -275,19 +294,47 @@ describe("ClaudeSessionRuntime", () => {
     });
     runtime.finishForegroundResult();
 
-    expect(() => runtime.enqueueInput({
+    expect(runtime.enqueueInput({
       uuid: "runtime-followup-consumed",
       payloadHash: "rebuilt-after-restart",
       turnOwner: { kind: "runtime_followup", id: "delivery-consumed" },
       message: "stale replay",
-    })).toThrow(/payload/i);
+    })).toEqual({
+      enqueued: false,
+      state: "settled",
+      payloadMismatch: {
+        existingPayloadHash: "canonical-before-restart",
+        incomingPayloadHash: "rebuilt-after-restart",
+      },
+    });
     expect(runtime.snapshot().pendingInputs).toContainEqual({
       uuid: "runtime-followup-consumed",
       payloadHash: "canonical-before-restart",
       turnOwner: { kind: "runtime_followup", id: "delivery-consumed" },
       state: "settled",
     });
+    expect(queuePush).toHaveBeenCalledTimes(1);
+    await expect(runtime.inputQueue.next()).resolves.toEqual({
+      done: false,
+      value: "consumed follow-up",
+    });
     expect(query.close).not.toHaveBeenCalled();
+  });
+
+  it("admits a batch UUID after the first delivery UUID has settled", () => {
+    const { runtime } = makeSubject();
+    const firstDeliveryUuid = buildDeliveryInputUuid("d1");
+    const batchUuid = buildDeliveryInputUuid("batch:d1,d2");
+
+    runtime.enqueueInput(runtimeInput(firstDeliveryUuid, "first-hash", "first delivery"));
+    runtime.beginForegroundTurn(firstDeliveryUuid);
+    runtime.observeResult({ userMessageUuid: firstDeliveryUuid, interrupted: false });
+    runtime.finishForegroundResult();
+
+    expect(runtime.enqueueInput(runtimeInput(batchUuid, "batch-hash", "second delivery"))).toEqual({
+      enqueued: true,
+      state: "queued",
+    });
   });
 
   it("drain phase input starts the next turn without interrupting the settled turn", () => {

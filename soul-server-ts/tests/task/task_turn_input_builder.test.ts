@@ -11,6 +11,7 @@ import {
   CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
   CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS,
   type TaskInitialMessagePublisherPort,
+  buildFollowupInputUuid,
   TaskTurnInputBuilder,
 } from "../../src/task/task_turn_input_builder.js";
 import { estimateClaudeTextTokens } from "../../src/task/claude_context_recovery.js";
@@ -818,6 +819,36 @@ describe("TaskTurnInputBuilder", () => {
       id: deliveryId,
     });
     expect(replay.turnOrigin).toEqual(first.turnOrigin);
+  });
+
+  it("derives a multi-intervention UUID from every delivery in queue order", () => {
+    const d1 = { text: "first delivery", user: "u", deliveryId: "d1" };
+    const d2 = { text: "second delivery", user: "u", deliveryId: "d2" };
+    const batchUuid = buildDeliveryInputUuid("batch:d1,d2");
+
+    expect(buildFollowupInputUuid([d1])).toBe(buildDeliveryInputUuid("d1"));
+    expect(buildFollowupInputUuid([d1, d2])).toBe(batchUuid);
+    expect(batchUuid).not.toBe(buildDeliveryInputUuid("d1"));
+    expect(buildFollowupInputUuid([d1, d2])).toBe(batchUuid);
+    expect(buildFollowupInputUuid([d2, d1])).not.toBe(batchUuid);
+    expect(buildFollowupInputUuid([d1, { text: "legacy delivery", user: "u" }])).toBeUndefined();
+  });
+
+  it("keeps the second delivery body in the follow-up prompt under the batch UUID", async () => {
+    const task = makeTask();
+    const d1 = { text: "first delivery body", user: "u", deliveryId: "d1" };
+    const d2 = { text: "second delivery body", user: "u", deliveryId: "d2" };
+    const { builder, contextBuilder } = makeSubject();
+
+    const input = await builder.prepareFollowupTurnInput(task, claudeAgent, [d1, d2]);
+
+    expect(input.inputUuid).toBe(buildDeliveryInputUuid("batch:d1,d2"));
+    expect(input.prompt).toContain(d2.text);
+    expect(contextBuilder.buildFollowupContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      expect.objectContaining({ inputId: input.inputUuid }),
+    );
   });
 
   it("rollover replay는 원래 turn origin과 UUID를 그대로 보존한다", async () => {
