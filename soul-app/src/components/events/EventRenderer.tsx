@@ -11,6 +11,7 @@ import type { MessageSelectionModel } from './message-selection-model';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
 import { MessageAttachments } from '../MessageAttachments';
 import { useMessageAttachments } from '../../hooks/useMessageAttachments';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 export type ChatMessageSession = Pick<Session,
   'agentSessionId' | 'nodeId' | 'agentName' | 'agentPortraitUrl' | 'displayName' | 'userName' | 'userPortraitUrl'>;
@@ -29,7 +30,13 @@ interface Props {
   narration?: boolean;
 }
 
-export function EventRenderer({
+export function EventRenderer(props: Props) {
+  return <AttachmentReadContextProvider context={{ type: 'session', id: props.sessionId }}>
+    <EventMessage {...props} />
+  </AttachmentReadContextProvider>;
+}
+
+function EventMessage({
   event,
   sessionId,
   session,
@@ -193,13 +200,14 @@ function OutputAttachmentMessage({ event, sessionId, presentation, session }: {
   presentation: 'default' | 'manuscript';
   session?: ChatMessageSession;
 }) {
-  const { items } = useMessageAttachments({
+  const { items, phase, failure, retry } = useMessageAttachments({
     event,
     readContext: { type: 'session', id: sessionId },
   });
-  return items.length > 0
+  return items.length > 0 || phase === 'loading' || phase === 'failed'
     ? <AssistantMessage event={event} session={session} presentation={presentation} attachmentsOnly>
-        <MessageAttachments items={items} role="assistant" presentation={presentation} />
+        <MessageAttachments items={items} role="assistant" presentation={presentation}
+          loading={phase === 'loading'} failure={failure} onRetry={retry} />
       </AssistantMessage>
     : null;
 }

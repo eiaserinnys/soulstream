@@ -127,7 +127,7 @@ export function ChatRefinedImageGallery({ images, viewerImages = images, startIn
     : precedingContent === 'attachments' ? attachment.gridGap : 0;
   const sources = viewerImages.map((image) => image.source);
   const maxWidth = role === 'user'
-    ? phone ? attachment.phoneUserMaxWidth : attachment.userMaxWidth
+    ? embedded ? attachment.userMaxWidth : phone ? attachment.phoneUserMaxWidth : attachment.userMaxWidth
     : phone ? attachment.phoneAssistantMaxWidth : attachment.assistantMaxWidth;
   const cellStyle = images.length > 1
     ? { flexGrow: 1 as const, flexBasis: 0 as const, flexShrink: 1 as const, minWidth: 0 }
@@ -287,7 +287,9 @@ function ChatRefinedAttachment({ source, sources, index, testID, accessibilityLa
       })}
     >
       {currentInfo.failed ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ ...attachment.metadata, color: attachment.textMuted, textAlign: 'center' }}>
+        <Text lineBreakStrategyIOS="hangul-word" style={{ ...attachment.metadata,
+          ...(Platform.OS === 'web' ? { wordBreak: 'keep-all' as const } : {}),
+          color: attachment.textMuted, textAlign: 'center' }}>
           불러오지 못함
         </Text>
       </View> : currentInfo.aspectRatio === null ? <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>

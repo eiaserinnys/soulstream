@@ -139,7 +139,7 @@ export function AssistantMessage({
       )}
       <View testID={attachmentsOnly ? 'assistant-attachment-content' : 'assistant-message-bubble'} style={presentation === 'manuscript'
         ? styles.manuscriptBubble
-        : attachmentsOnly ? [styles.bubbleLayout, { flexGrow: 1 }]
+        : attachmentsOnly ? [styles.bubbleLayout, { flexGrow: 1, paddingVertical: 0 }]
           : bubbleWidth === 'fill' ? [styles.bubble, { flexGrow: 1 }] : styles.bubble}>
         {/*
           react-native-enriched-markdown — Software Mansion 제작 Fabric 네이티브 마크다운 렌더러.

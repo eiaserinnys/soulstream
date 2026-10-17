@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 import { captureAuthScope } from '../lib/auth-scope';
 import type { AttachmentView } from '../lib/attachment-view';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
@@ -7,12 +7,17 @@ import { AttachmentFileRow } from './AttachmentFileRow';
 import { ChatRefinedImageGallery, type ChatRefinedGalleryItem } from './AttachmentImage';
 import { AttachmentPreviewModal } from './AttachmentPreviewModal';
 import { attachmentImageSource } from '../lib/attachment-image-source';
+import type { MessageAttachmentFailure } from '../hooks/useMessageAttachments';
+import { GlassButton } from './GlassSurface';
 
-export function MessageAttachments({ items, role, presentation = 'default', captionColor }: {
+export function MessageAttachments({ items, role, presentation = 'default', captionColor, loading, failure, onRetry }: {
   items: readonly AttachmentView[];
   role: 'assistant' | 'user';
   presentation?: 'default' | 'manuscript';
   captionColor?: string;
+  loading?: boolean;
+  failure?: MessageAttachmentFailure | null;
+  onRetry?(): void;
 }) {
   const t = useTokens();
   const device = useDeviceType();
@@ -32,7 +37,7 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
     byteSize: item.byteSize ?? undefined,
   }));
   const maxWidth = role === 'user'
-    ? device === 'phone' ? attachment.phoneUserMaxWidth : attachment.userMaxWidth
+    ? attachment.userMaxWidth
     : device === 'phone' ? attachment.phoneAssistantMaxWidth : attachment.assistantMaxWidth;
 
   const open = (index: number, restore: () => void) => {
@@ -44,8 +49,16 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
     restoreFocus.current?.();
   };
 
-  if (items.length === 0) return null;
+  if (items.length === 0 && !loading && !failure) return null;
   return <View testID="message-attachments" style={{ width: '100%', gap: attachment.gridGap }}>
+    {failure || (loading && items.length === 0) ? <View testID="message-attachment-read-status" style={{ gap: attachment.gridGap }}>
+      <Text lineBreakStrategyIOS="hangul-word" style={{ ...attachment.metadata,
+        ...(Platform.OS === 'web' ? { wordBreak: 'keep-all' as const } : {}),
+        color: captionColor ?? t.colors.textPrimary }}>{failure?.message ?? '불러오는 중…'}</Text>
+      {failure?.retryable && onRetry ? <GlassButton size="card" accessibilityLabel="첨부 다시 시도" onPress={onRetry}>
+        <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text>
+      </GlassButton> : null}
+    </View> : null}
     {images.length > 0 ? <ChatRefinedImageGallery
       images={galleryImages}
       role={role}

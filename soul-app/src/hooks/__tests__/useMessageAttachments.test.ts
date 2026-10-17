@@ -43,6 +43,16 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+test.each([[503, true], [403, false], [422, false]] as const)('HTTP %s exposes structured retryability', async (status, retryable) => {
+  jest.spyOn(global, 'fetch').mockResolvedValue(response({}, status));
+  const { result, unmount } = renderHook(() => useMessageAttachments({
+    event: event('41', 'user_message', { attachment_ids: ['asset-1'] }), readContext,
+  }));
+  await waitFor(() => expect(result.current).toMatchObject({ phase: 'failed', failure: { status, retryable } }));
+  expect(result.current.items).toEqual([]);
+  unmount();
+});
+
 test('live와 history projection은 서버 순서와 alias 병합을 그대로 공유한다', async () => {
   const missingLegacy = {
     kind: 'legacy' as const, node_id: 'node-1', path: '/incoming/missing.txt', name: 'missing.txt',
@@ -69,6 +79,17 @@ test('live와 history projection은 서버 순서와 alias 병합을 그대로 �
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(fetch).toHaveBeenNthCalledWith(1,
     'https://chat.test/api/sessions/route%2Fsession/events/41/attachments', expect.objectContaining({ method: 'GET' }));
+  unmount();
+});
+
+test('synthetic complete rows read only the remaining IDs from their shared event projection', async () => {
+  const second = { ...assetProjection, descriptor: { ...assetProjection.descriptor, attachment_id: 'asset-2' } };
+  jest.spyOn(global, 'fetch').mockResolvedValue(response({ event_id: 42, items: [assetProjection, second] }));
+  const { result, unmount } = renderHook(() => useMessageAttachments({
+    event: event('42', 'assistant_message', { attachment_output: true, attachment_ids: ['asset-2'] }), readContext,
+  }));
+  await waitFor(() => expect(result.current.phase).toBe('ready'));
+  expect(result.current.items.map(item => item.key)).toEqual(['asset-2']);
   unmount();
 });
 
@@ -113,11 +134,9 @@ test('retry refetches an event projection after a failed request', async () => {
   }));
 
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-  await waitFor(() => expect(result.current.items).toHaveLength(1));
-  expect(result.current.items[0]).toMatchObject({
-    key: 'asset-1',
-    source: { kind: 'unavailable', availability: 'unavailable' },
-  });
+  await waitFor(() => expect(result.current.phase).toBe('failed'));
+  expect(result.current.items).toEqual([]);
+  expect(result.current.failure).toMatchObject({ status: null, retryable: true });
   await act(async () => { result.current.retry(); });
   await waitFor(() => expect(result.current.items[0]).toMatchObject({
     key: 'asset-1',

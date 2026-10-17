@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, Image, Pressable, StyleSheet } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -128,8 +128,12 @@ export function UserMessage({
 
   const attachments = useMemo(() => extractAttachments(event), [event]);
   const attachmentSignals = useMemo(() => getMessageAttachmentSignals(event), [event]);
-  const { items: projectedAttachments } = useMessageAttachments({ event, readContext });
-  const fallbackPaths = projectedAttachments.length === 0
+  const { items: projectedAttachments, phase, failure, retry } = useMessageAttachments({ event, readContext });
+  const [rowWidth, setRowWidth] = useState(0);
+  const sessionRoles = createSessionVisualRoles(t);
+  const attachmentMinimum = sessionRoles.chat.attachment.userMaxWidth
+    + (presentation === 'default' ? sessionRoles.chat.bubblePaddingHorizontal * 2 : 0);
+  const fallbackPaths = phase === 'idle'
     ? attachments.length > 0 ? attachments : attachmentSignals.paths
     : [];
   const originalText = (event as PendingOptimisticEvent).originalText;
@@ -186,22 +190,49 @@ export function UserMessage({
   const fallbackChar = pickFallbackChar(caller, profile, session?.userName, '나');
 
   return (
-    <View style={presentation === 'manuscript'
+    <View onLayout={attachmentSignals.hasSignal ? ({ nativeEvent: { layout } }) => setRowWidth(layout.width) : undefined}
+      style={presentation === 'manuscript'
       ? styles.manuscriptRow
       : children == null ? styles.row : [styles.row, { marginHorizontal: 0 }]}>
       <View
         testID="user-message-bubble"
         style={[children == null ? bubbleStyle : [bubbleStyle, { backgroundColor: t.colors.accentTint }],
           ...(manuscriptImageItems.length > 0 ? [styles.manuscriptImageBubble] : []),
+          ...(attachmentSignals.hasSignal && rowWidth > 0 ? [{
+            minWidth: Math.min(attachmentMinimum, rowWidth * parseFloat(sessionRoles.chat.bubbleMaxWidth) / 100),
+            maxWidth: sessionRoles.chat.bubbleMaxWidth,
+          }] : []),
           pendingStatus === 'sending' && styles.pendingSendingBubble]}
       >
         {messageKind}
         {children}
-        {projectedAttachments.length > 0 ? (
-          <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
+        {children == null && content ? (
+          selectionModel && onSelectionDone ? (
+            <MessageTextSelectionView
+              model={selectionModel}
+              onDone={onSelectionDone}
+              variant={variant === 'intervention' ? 'intervention' : 'user'}
+              textStyle={textStyle}
+              actionColor={presentation === 'manuscript'
+                ? t.colors.textPrimary
+                : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText}
+            />
+          ) : (
+            <Text
+              testID="user-message-text"
+              selectable={false}
+              style={textStyle}
+            >
+              {content}
+            </Text>
+          )
+        ) : null}
+        {projectedAttachments.length > 0 || (phase && phase !== 'idle') ? (
+          <View testID="user-message-attachments" style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
             ...(presentation === 'manuscript' ? [styles.manuscriptAttachmentList] : [])]}>
             <MessageAttachments items={projectedAttachments} role="user" presentation={presentation}
-              captionColor={presentation === 'default' ? textStyle.color : undefined} />
+              captionColor={presentation === 'default' ? textStyle.color : undefined}
+              loading={phase === 'loading'} failure={failure} onRetry={retry} />
           </View>
         ) : beforeTextEntries.length > 0 && (
           <View style={[styles.attachmentList, content ? styles.attachmentListWithText : null,
@@ -227,27 +258,6 @@ export function UserMessage({
             })}
           </View>
         )}
-        {children == null && content ? (
-          selectionModel && onSelectionDone ? (
-            <MessageTextSelectionView
-              model={selectionModel}
-              onDone={onSelectionDone}
-              variant={variant === 'intervention' ? 'intervention' : 'user'}
-              textStyle={textStyle}
-              actionColor={presentation === 'manuscript'
-                ? t.colors.textPrimary
-                : variant === 'intervention' ? t.colors.interventionText : t.colors.accentText}
-            />
-          ) : (
-            <Text
-              testID="user-message-text"
-              selectable={false}
-              style={textStyle}
-            >
-              {content}
-            </Text>
-          )
-        ) : null}
         {manuscriptImageItems.length > 0 ? <ChatRefinedImageGallery
           role="user"
           images={manuscriptImagesWithMetadata}
@@ -428,9 +438,9 @@ function makeStyles(t: DesignTokens) {
     manuscriptAttachmentList: {
       alignItems: 'flex-end',
     },
-    // 본문 텍스트가 함께 있을 때만 텍스트와 분리하는 하단 여백.
+    // 본문 다음 첨부까지 같은 간격을 유지한다.
     attachmentListWithText: {
-      marginBottom: t.spacing.sm,
+      marginTop: t.spacing.sm,
     },
     avatar: {
       width: AVATAR,

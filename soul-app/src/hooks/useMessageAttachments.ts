@@ -5,7 +5,8 @@ import type {
   SessionEventAttachmentResponse,
   SessionEventAttachmentView,
 } from '../../../packages/wire-schema/src/attachments';
-import { createApiRequestContext } from '../api/clientCore';
+import { ApiHttpError, createApiRequestContext } from '../api/clientCore';
+import { AttachmentReadError } from '../api/attachmentEndpoints';
 import type { SessionEvent } from '../api/types';
 import {
   attachmentContentUrl,
@@ -35,6 +36,14 @@ interface MessageAttachmentSignals {
 interface AttachmentState {
   key: string;
   items: AttachmentView[];
+  phase: 'loading' | 'ready' | 'failed';
+  failure: MessageAttachmentFailure | null;
+}
+
+export interface MessageAttachmentFailure {
+  message: string;
+  status: number | null;
+  retryable: boolean;
 }
 
 type SessionAttachmentReadContext = Extract<AttachmentReadContext, { type: 'session' }>;
@@ -42,10 +51,10 @@ type SessionAttachmentReadContext = Extract<AttachmentReadContext, { type: 'sess
 export function useMessageAttachments({
   event,
   readContext,
-}: UseMessageAttachmentsArgs): { items: AttachmentView[]; retry(): void } {
+}: UseMessageAttachmentsArgs): { items: AttachmentView[]; phase: 'idle' | AttachmentState['phase']; failure: MessageAttachmentFailure | null; retry(): void } {
   const authGeneration = useAuthScopeGeneration();
   const [retryVersion, setRetryVersion] = useState(0);
-  const [state, setState] = useState<AttachmentState>({ key: '', items: [] });
+  const [state, setState] = useState<AttachmentState>({ key: '', items: [], phase: 'loading', failure: null });
   const eventId = String(event.id);
   const signalKey = JSON.stringify(getMessageAttachmentSignals(event));
   const signals = useMemo(() => JSON.parse(signalKey) as MessageAttachmentSignals, [signalKey]);
@@ -56,46 +65,54 @@ export function useMessageAttachments({
     signals.paths,
     readContext,
     authGeneration,
-    retryVersion,
   ]);
+  const numericEventId = Number(eventId);
+  const canReadProjection = signals.hasSignal && readContext?.type === 'session' && Boolean(readContext.id)
+    && Number.isSafeInteger(numericEventId) && numericEventId >= 0;
 
   useEffect(() => {
-    if (!signals.hasSignal || !readContext || readContext.type !== 'session' || !readContext.id) {
-      setState({ key: requestKey, items: [] });
-      return;
-    }
+    if (!canReadProjection || readContext?.type !== 'session') return;
 
     const scope = captureAuthScope();
     if (scope.generation !== authGeneration) return;
     const api = createApiRequestContext(scope.serverUrl, { authScope: scope });
     const controller = new AbortController();
     let active = true;
+    setState(previous => ({ key: requestKey, items: previous.key === requestKey ? previous.items : [], phase: 'loading', failure: null }));
 
     void loadEventAttachments({
       api,
       eventId,
       readContext,
       signals,
+      output: event.data.attachment_output === true,
       signal: controller.signal,
     }).then((items) => {
       if (!active || controller.signal.aborted || !isAuthScopeCurrent(scope)) return;
-      setState({ key: requestKey, items });
-    }).catch(() => {
+      setState({ key: requestKey, items, phase: 'ready', failure: null });
+    }).catch((error: unknown) => {
       if (!active || controller.signal.aborted || !isAuthScopeCurrent(scope)) return;
-      setState({
+      const status = error instanceof ApiHttpError ? error.status : null;
+      const retryable = status !== null ? status >= 500 : error instanceof AttachmentReadError && error.kind === 'retryable';
+      const message = status === 401 ? '로그인이 필요합니다' : status === 403 ? '접근 권한이 없습니다'
+        : status === 404 ? '찾을 수 없음' : '첨부를 불러오지 못했습니다';
+      setState(previous => ({
         key: requestKey,
-        items: signals.ids.map((id) => unavailableAttachment(id, readContext)),
-      });
+        items: previous.key === requestKey ? previous.items : [],
+        phase: 'failed', failure: { message, status, retryable },
+      }));
     });
 
     return () => {
       active = false;
       controller.abort();
     };
-  }, [authGeneration, eventId, requestKey, signals]);
+  }, [authGeneration, canReadProjection, eventId, requestKey, retryVersion, signals, event.data.attachment_output]);
 
   const retry = useCallback(() => setRetryVersion((version) => version + 1), []);
-  return { items: state.key === requestKey ? state.items : [], retry };
+  if (!canReadProjection) return { items: [], phase: 'idle', failure: null, retry };
+  return { items: state.key === requestKey ? state.items : [], phase: state.key === requestKey ? state.phase : 'loading',
+    failure: state.key === requestKey ? state.failure : null, retry };
 }
 
 export function getMessageAttachmentSignals(event: SessionEvent): MessageAttachmentSignals {
@@ -115,32 +132,34 @@ async function loadEventAttachments({
   readContext,
   signals,
   signal,
+  output,
 }: {
   api: ReturnType<typeof createApiRequestContext>;
   eventId: string;
   readContext: SessionAttachmentReadContext;
   signals: MessageAttachmentSignals;
   signal: AbortSignal;
+  output: boolean;
 }): Promise<AttachmentView[]> {
   const numericEventId = Number(eventId);
-  if (!Number.isSafeInteger(numericEventId) || numericEventId < 0) {
-    return signals.ids.map((id) => unavailableAttachment(id, readContext));
-  }
-
+  let response: Response;
   try {
-    const response = await api.authFetch(
+    response = await api.authFetch(
       `${api.base}/api/sessions/${encodeURIComponent(readContext.id)}/events/${numericEventId}/attachments`,
       { method: 'GET', signal },
     );
-    const projection = await api.readJson<SessionEventAttachmentResponse>(response, 'getSessionEventAttachments');
-    if (String(projection.event_id) !== String(numericEventId)) {
-      throw new Error('Event attachment response did not match the requested event');
-    }
-    return await Promise.all(projection.items.map((item) => toAttachmentView(item, api, signal)));
   } catch (error) {
     if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
-    return signals.ids.map((id) => unavailableAttachment(id, readContext));
+    throw new AttachmentReadError('retryable');
   }
+  const projection = await api.readJson<SessionEventAttachmentResponse>(response, 'getSessionEventAttachments');
+  if (String(projection.event_id) !== String(numericEventId)) {
+    throw new Error('Event attachment response did not match the requested event');
+  }
+  const displayed = output ? projection.items.filter(item => item.kind === 'asset'
+    ? signals.ids.includes(item.descriptor.attachment_id) : item.kind === 'unavailable'
+      ? signals.ids.includes(item.attachment_id) : true) : projection.items;
+  return await Promise.all(displayed.map((item) => toAttachmentView(item, api, signal)));
 }
 
 async function toAttachmentView(

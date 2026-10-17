@@ -17,6 +17,23 @@ function outputRows(items: readonly ChatRenderItem[]): EventRenderItem[] {
 }
 
 describe('projectOutputAttachments', () => {
+  it('keeps complete IDs absent from the marker immediately before complete', () => {
+    const events = [event('1', 'user_message'), event('2', 'assistant_message', { content: '답변', output_command_id: 'cmd' }),
+      event('3', 'assistant_message', { attachment_output: true, attachment_ids: ['A'], output_command_id: 'cmd' }),
+      event('4', 'complete', { attachment_ids: ['A', 'B', 'B'], output_command_id: 'cmd' })];
+    const projected = projectOutputAttachments(groupChatEvents(events), events);
+    expect(outputRows(projected).map(row => row.event.data.attachment_ids)).toEqual([['A'], ['B']]);
+    const completeIndex = projected.findIndex(item => item.kind === 'event' && item.event.id === '4' && item.event.type === 'complete');
+    expect(projected[completeIndex - 1]).toBe(outputRows(projected)[1]);
+  });
+
+  it('keeps unstamped complete attachments inside each legacy turn boundary', () => {
+    const events = [event('1', 'user_message'), event('2', 'assistant_message', { content: '답변' }),
+      event('3', 'complete', { attachment_ids: ['A'] }), event('4', 'user_message'),
+      event('5', 'complete', { attachment_ids: ['A'] })];
+    const rows = outputRows(projectOutputAttachments(groupChatEvents(events), events));
+    expect(rows.map(row => [row.event.id, row.event.data.attachment_ids])).toEqual([['3', ['A']], ['5', ['A']]]);
+  });
   it('moves a P6B output marker below its final assistant and deduplicates the complete copy', () => {
     const user = event('10', 'user_message', { content: '질문' });
     const firstAssistant = event('11', 'assistant_message', {
@@ -86,7 +103,7 @@ describe('projectOutputAttachments', () => {
     expect(outputIndex).toBeLessThan(nextUserIndex);
   });
 
-  it('does not infer an attachment target without a matching P6B output identity', () => {
+  it('keeps legacy complete IDs at the turn boundary without inventing registration failures', () => {
     const assistant = event('31', 'assistant_message', { content: '답변' });
     const complete = event('32', 'complete', { attachment_ids: ['unlinked-file'] });
     const registeredAnswer = event('33', 'assistant_message', {
@@ -95,6 +112,8 @@ describe('projectOutputAttachments', () => {
     const registrationFailed = event('34', 'complete', { output_command_id: 'execute:unregistered' });
     const events = [assistant, complete, registeredAnswer, registrationFailed];
 
-    expect(outputRows(projectOutputAttachments(groupChatEvents(events), events))).toHaveLength(0);
+    const rows = outputRows(projectOutputAttachments(groupChatEvents(events), events));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ event: { id: '32', data: { attachment_ids: ['unlinked-file'] } } });
   });
 });
