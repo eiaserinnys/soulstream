@@ -13,7 +13,7 @@ export type PersistentReportReplyDecision =
   | { action: "none" }
   | { action: "card"; cardId: string; questionId: string; option: string }
   | { action: "card-acked"; cardId: string }
-  | { action: "reject"; code: string; status: number; message: string };
+  | { action: "reject"; cardId: string; code: string; status: number; message: string };
 /** 카드 질문을 판에 올릴 때 쓰는 예약 key 접두사. `cq_` + 질문 UUID. */
 export const CARD_QUESTION_KEY_PREFIX = "cq_";
 type ReportRow = Record<string, unknown> & { session_id: string; node_id: string | null; metadata: unknown; session_type: string | null };
@@ -104,14 +104,14 @@ export class PersistentReportService {
   private async cardQuestionDecision(sql: RepositorySql, questionId: string, option: string): Promise<{ errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision }> {
     const question = (await sql<CardQuestionRow[]>`SELECT card_id,options,answer,withdrawn_at FROM card_questions WHERE id=${questionId}`)[0];
     if (!question) return { errors: null, decision: { action: "none" } };
-    if (question.withdrawn_at !== null) return rejectDecision("CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
+    if (question.withdrawn_at !== null) return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     if (question.answer !== null) return question.answer === option
       ? { errors: null, decision: { action: "card-acked", cardId: question.card_id } }
-      : rejectDecision("CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
+      : rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     const options = question.options ?? [];
-    if (options.length > 0 && !options.includes(option)) return rejectDecision("CARD_QUESTION_OPTION_INVALID", 422, "선택지에 없는 답입니다");
+    if (options.length > 0 && !options.includes(option)) return rejectDecision(question.card_id, "CARD_QUESTION_OPTION_INVALID", 422, "선택지에 없는 답입니다");
     const card = (await sql<{ status: string }[]>`SELECT status FROM cards WHERE id=${question.card_id}`)[0];
-    if (!card || card.status === "done" || card.status === "cancelled") return rejectDecision("CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
+    if (!card || card.status === "done" || card.status === "cancelled") return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     return { errors: null, decision: { action: "card", cardId: question.card_id, questionId, option } };
   }
   /** 예약 key(`cq_` + 질문ID)를 다시 받았을 때. 장이 이미 내려가 있어도 질문 상태로 판정한다. */
@@ -176,7 +176,7 @@ export async function writePersistentReportTx(sql: RepositorySql, row: Pick<Repo
   return {agent_session_id:row.session_id,node_id:row.node_id,persistent_report:entries};
 }
 
-function rejectDecision(code: string, status: number, message: string): { errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision } {
-  return { errors: null, decision: { action: "reject", code, status, message } };
+function rejectDecision(cardId: string, code: string, status: number, message: string): { errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision } {
+  return { errors: null, decision: { action: "reject", cardId, code, status, message } };
 }
 

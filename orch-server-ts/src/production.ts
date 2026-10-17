@@ -1159,18 +1159,17 @@ export function buildProductionRouteOptions(
           return { handled: false, failure: { status: 403, body: { detail: { error: {
             code: "CARD_QUESTION_REPLY_FORBIDDEN", message: "카드 질문 답은 로그인한 사용자 요청에서만 접수됩니다",
           } } } } };
-        if (decision.action === "reject")
-          return { handled: false, failure: { status: decision.status, body: { detail: { error: { code: decision.code, message: decision.message } } } } };
         if (!cardServiceProvider)
           return { handled: false, failure: { status: 503, body: { detail: { error: { code: "CARD_SERVICE_UNAVAILABLE" } } } } };
         try {
-          await applyCardQuestionReply(decision, {
+          const failure = await applyCardQuestionReply(decision, {
             sessionId, request,
             requireSessionAccess: input => sessionAccessProvider.requireSessionAccess(input),
             cardOptions: { cardServiceProvider, provider: providers.folderRoutes.provider },
             resolveAccess: () => providers.folderRoutes.accessProvider.resolveAccess(request),
             resolveActor: () => dashboardFolderActor(request, providers.folderRoutes),
           });
+          if (failure) return { handled: false, failure };
         } catch (error) {
           return { handled: false, failure: cardRouteErrorResponse(error) };
         }

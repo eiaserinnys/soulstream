@@ -32,6 +32,14 @@ describe("board answers reach the card only through the same access checks", () 
     })).rejects.toMatchObject({ statusCode: 403 });
     expect(answer).not.toHaveBeenCalled();
   });
+  it("denies a resend with a different answer instead of returning the stored-answer conflict", async () => {
+    const { options } = cardOptions("secret-folder");
+    await expect(applyCardQuestionReply({ action: "reject", cardId: "card-1", code: "CARD_QUESTION_CLOSED", status: 409, message: "이미 닫힌 질문입니다" }, {
+      sessionId: "pas", request, requireSessionAccess: async () => undefined, cardOptions: options,
+      resolveAccess: async () => ({ restricted: true, folders: [] }),
+      resolveActor: async () => ({ actorKind: "user", actorUserId: "other@example.com", actorSessionId: null }),
+    })).rejects.toMatchObject({ statusCode: 403 });
+  });
   it("runs the session check before touching the card", async () => {
     const { options } = cardOptions("report-folder");
     const order: string[] = [];
