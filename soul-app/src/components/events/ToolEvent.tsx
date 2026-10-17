@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { EventTruncation, SessionEvent } from '../../api/types';
 import type { ToolTraceResponse } from '../../api/client';
@@ -109,9 +109,13 @@ export function ToolEvent({ start, result, sessionId, api, presentation = 'defau
           <>
             {' · '}
             <Text
+              {...(Platform.OS === 'web' ? { href: '#' } : {})}
               accessibilityRole="link"
               style={{ textDecorationLine: 'underline' }}
-              onPress={() => openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment)}
+              onPress={event => {
+                if (Platform.OS === 'web') event.preventDefault();
+                openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment);
+              }}
             >
               전문 열기
             </Text>

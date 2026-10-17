@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import type { EventTruncation, SessionEvent } from '../../api/types';
 import { createSessionVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { getChatRowHorizontalInset } from '../chat/ChatBody.styles';
@@ -34,9 +34,13 @@ export function ThinkingEvent({ event, sessionId, presentation = 'default' }: Pr
       {`잘림 · 전체 ${formatAttachmentByteSize(truncation.original_bytes)} · `}
       {truncation.attachment ? (
         <Text
+          {...(Platform.OS === 'web' ? { href: '#' } : {})}
           accessibilityRole="link"
           style={{ textDecorationLine: 'underline' }}
-          onPress={() => openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment)}
+          onPress={event => {
+            if (Platform.OS === 'web') event.preventDefault();
+            openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment);
+          }}
         >
           전문 열기
         </Text>

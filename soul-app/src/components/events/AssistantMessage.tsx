@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import type { SessionEvent, Session } from '../../api/types';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
@@ -190,9 +190,13 @@ export function AssistantMessage({
             {`잘림 · 전체 ${formatAttachmentByteSize(truncation.original_bytes)} · `}
             {truncation.attachment ? (
               <Text
+                {...(Platform.OS === 'web' ? { href: '#' } : {})}
                 accessibilityRole="link"
                 style={{ textDecorationLine: 'underline' }}
-                onPress={() => openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment)}
+                onPress={event => {
+                  if (Platform.OS === 'web') event.preventDefault();
+                  openTruncatedAttachmentPreview(truncation, sessionId!, setPreviewAttachment);
+                }}
               >
                 전문 열기
               </Text>
