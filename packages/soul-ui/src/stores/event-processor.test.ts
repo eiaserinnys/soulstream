@@ -577,6 +577,7 @@ describe("processEventsBatch — app-server final assistant message", () => {
             content: "Hello final",
             tool_use_id: "item-1",
             _final_for_live_stream: true,
+            truncation: { original_bytes: 700_000, attachment: null },
           } as unknown as SoulSSEEvent,
           eventId: 10,
         },
@@ -612,6 +613,7 @@ describe("processEventsBatch — app-server final assistant message", () => {
       content: "Hello final",
       isStreaming: false,
       treeNodeType: "text",
+      truncation: { original_bytes: 700_000, attachment: null },
     });
     expect((result.root?.children ?? [])).toHaveLength(2);
   });
@@ -724,6 +726,8 @@ describe("processEventsBatch — app-server final assistant message", () => {
             content: "Hello final",
             tool_use_id: "item-1",
             _final_for_live_stream: true,
+            truncation: { original_bytes: 900_000, attachment: null },
+            attachment_ids: ["history-final-output"],
           } as unknown as SoulSSEEvent,
           eventId: 10,
         },
@@ -741,6 +745,8 @@ describe("processEventsBatch — app-server final assistant message", () => {
       role: "assistant",
       content: "Hello final",
       treeNodeType: "assistant_message",
+      truncation: { original_bytes: 900_000, attachment: null },
+      attachmentIds: ["history-final-output"],
     });
   });
 

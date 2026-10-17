@@ -60,4 +60,29 @@ describe("applyUpdate structured tool results", () => {
     expect(tool.fullContentEventId).toBe(368);
     expect(fullText).toContain('"annotations"');
   });
+
+  it("keeps tool input and result truncation metadata on their separate sides", () => {
+    const ctx = createProcessingContext();
+    const root = makeNode("root", "session", "");
+    const inputTruncation = { original_bytes: 300_000, attachment: null };
+    const resultTruncation = { original_bytes: 900_000, attachment: null };
+    const tool = makeNode("tool-1", "tool", "", {
+      toolUseId: "tool-r57",
+      inputTruncation,
+    }) as ToolNode;
+    ctx.nodeMap.set("tool-r57", tool);
+
+    applyUpdate({
+      type: "tool_result",
+      timestamp: 2,
+      tool_name: "Read",
+      result: "preview\n[잘림]",
+      truncation: resultTruncation,
+      is_error: false,
+      tool_use_id: "tool-r57",
+    } as unknown as ToolResultEvent, 369, ctx, root);
+
+    expect(tool.inputTruncation).toBe(inputTruncation);
+    expect(tool.resultTruncation).toBe(resultTruncation);
+  });
 });

@@ -90,6 +90,7 @@ function VirtualizedItemImpl({
     return (
       <ToolCallGroup
         messages={item.messages}
+        sessionId={sessionId}
         expanded={toolGroupExpanded}
         onExpandedChange={toolGroupKey && onToolGroupExpandedChange
           ? (expanded) => onToolGroupExpandedChange(toolGroupKey, expanded)
@@ -101,6 +102,7 @@ function VirtualizedItemImpl({
     return (
       <ToolCallGroup
         messages={item.messages}
+        sessionId={sessionId}
         presentation="manuscript"
         expanded={toolGroupExpanded}
         onExpandedChange={toolGroupKey && onToolGroupExpandedChange

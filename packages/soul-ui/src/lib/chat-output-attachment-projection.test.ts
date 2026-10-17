@@ -88,6 +88,23 @@ describe("projectChatOutputAttachments", () => {
     expect(projected[3]).toBe(sourceComplete);
   });
 
+  it("excludes the assistant truncation archive from the turn-end output row", () => {
+    const response = assistant("response-truncated", 10, ["inline-attachment"]);
+    response.truncation = {
+      original_bytes: 1_048_576,
+      attachment: { attachment_id: "response-full-content" },
+    } as ChatMessage["truncation"];
+    const sourceComplete = complete("complete-1", 11, ["response-full-content", "complete-only"]);
+
+    const projected = projectChatOutputAttachments([response, sourceComplete]);
+
+    expect(projected[1]).toMatchObject({
+      id: "output-attachments:11",
+      attachmentIds: ["response-full-content", "complete-only"],
+      attachmentDisplayIds: ["complete-only"],
+    });
+  });
+
   it("resets the seen-ID boundary at each complete and generation start", () => {
     const firstResponse = assistant("response-1", 10, ["same-asset"]);
     const firstComplete = complete("complete-1", 11, ["same-asset"]);

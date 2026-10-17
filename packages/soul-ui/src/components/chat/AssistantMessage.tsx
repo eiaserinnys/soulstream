@@ -6,8 +6,10 @@ import type { AttachmentReadContext } from "@soulstream/wire-schema/attachments"
 import { useChatStore } from "../../stores/chat-store-scope";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
+import { stripEventTruncationSuffix } from "../../lib/event-truncation-display";
 import { useGlassSurface } from "../LiquidGlassProvider";
 import type { LlmContext } from "./hooks";
+import { EventTruncationMetadata } from "./EventTruncationMetadata";
 
 /** text 노드: 일반 텍스트 표시 */
 export const AssistantMessage = memo(function AssistantMessage({
@@ -18,6 +20,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   attachments,
   representedAttachments,
   readContext,
+  sessionId,
   portraitUrl,
   bubbleProps,
   presentation = "default",
@@ -31,6 +34,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   attachments?: ReactNode;
   representedAttachments?: readonly ChatAttachmentItem[];
   readContext?: AttachmentReadContext;
+  sessionId?: string;
   portraitUrl?: string | null;
   bubbleProps?: HTMLAttributes<HTMLDivElement>;
   presentation?: "default" | "manuscript";
@@ -65,6 +69,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   const tokenInfo = msg.usage
     ? `${(msg.usage.input_tokens + msg.usage.output_tokens).toLocaleString()} tokens`
     : null;
+  const displayContent = stripEventTruncationSuffix(msg.content, msg.truncation);
 
   return (
     <div className={manuscript ? "flex" : "flex gap-2 px-3 py-1.5"} data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId} data-chat-presentation={manuscript ? "manuscript" : undefined} data-chat-narration={manuscript && narration ? "true" : undefined}>
@@ -99,14 +104,14 @@ export const AssistantMessage = memo(function AssistantMessage({
         </div>)}
         {msg.isStreaming ? (
           <div data-slot="chat-body" className={cn("text-base text-foreground whitespace-pre-wrap", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "leading-snug break-words")}>
-            {msg.content}
+            {displayContent}
             <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 align-text-bottom animate-caret-blink" aria-hidden="true" />
           </div>
         ) : (
           <div data-slot="chat-body" className={cn("text-base text-foreground", manuscript ? "[line-height:1.6] [word-break:keep-all] [overflow-wrap:anywhere]" : "break-words leading-snug")}>
           {children ?? (
             <MarkdownContent
-              content={msg.content}
+              content={displayContent}
               enableBlockquoteCopy
               chatImages={readContext
                 ? { role: "assistant", layout: manuscript ? "gallery" : "inline", representedAttachments, readContext }
@@ -115,6 +120,11 @@ export const AssistantMessage = memo(function AssistantMessage({
           )}
           </div>
         )}
+        <EventTruncationMetadata
+          truncation={msg.truncation}
+          sessionId={sessionId}
+          eventId={msg.eventId}
+        />
         {attachments}
       </div>
     </div>

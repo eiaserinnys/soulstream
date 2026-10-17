@@ -31,6 +31,7 @@ import type {
   PersistentInstructionRecordedNode,
   PersistentInstructionRecordedData,
   AttachmentEventSignalFields,
+  EventTruncation,
 } from "@shared/types";
 import { mapAttachmentMessageSignals, sameAttachmentMessageSignals } from "./attachment-event-signals";
 import { extractNodeEventId } from "./event-tree-id";
@@ -102,6 +103,9 @@ export interface ChatMessage extends AttachmentEventSignalFields {
   isTruncated?: boolean;
   /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
   fullContentEventId?: number;
+  truncation?: EventTruncation;
+  toolInputTruncation?: EventTruncation;
+  toolResultTruncation?: EventTruncation;
   /** input_request 전용: 질문 목록 */
   questions?: InputRequestQuestion[];
   /** input_request 전용: 요청 ID */
@@ -228,6 +232,9 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.ui === b.ui &&
     a.isTruncated === b.isTruncated &&
     a.fullContentEventId === b.fullContentEventId &&
+    sameEventTruncation(a.truncation, b.truncation) &&
+    sameEventTruncation(a.toolInputTruncation, b.toolInputTruncation) &&
+    sameEventTruncation(a.toolResultTruncation, b.toolResultTruncation) &&
     a.questions === b.questions &&
     a.requestId === b.requestId &&
     a.responded === b.responded &&
@@ -262,6 +269,25 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     )
     && sameAttachmentMessageSignals(a, b)
   );
+}
+
+function sameEventTruncation(
+  a: EventTruncation | undefined,
+  b: EventTruncation | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.original_bytes !== b.original_bytes) return false;
+  if (a.attachment === b.attachment) return true;
+  if (!a.attachment || !b.attachment) return false;
+  return a.attachment.attachment_id === b.attachment.attachment_id
+    && a.attachment.name === b.attachment.name
+    && a.attachment.mime_type === b.attachment.mime_type
+    && a.attachment.byte_size === b.attachment.byte_size
+    && a.attachment.checksum_sha256 === b.attachment.checksum_sha256
+    && a.attachment.width === b.attachment.width
+    && a.attachment.height === b.attachment.height
+    && a.attachment.preview_kind === b.attachment.preview_kind
+    && a.attachment.preview_mime_type === b.attachment.preview_mime_type;
 }
 
 /**
@@ -450,6 +476,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         treeNodeType: n.type,
         isTruncated: n.isTruncated,
         fullContentEventId: n.fullContentEventId,
+        truncation: n.truncation,
       };
     }
 
@@ -464,6 +491,8 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         isStreaming: !n.textCompleted,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        truncation: n.truncation,
+        ...mapAttachmentMessageSignals(n),
       };
     }
 
@@ -489,7 +518,9 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         toolDurationMs: n.durationMs,
         isError: n.isError,
         toolInput: n.toolInput,
+        toolInputTruncation: n.inputTruncation,
         toolResult: n.toolResult,
+        toolResultTruncation: n.resultTruncation,
         toolTraceId: n.toolTraceId,
         treeNodeId: n.id,
         treeNodeType: n.type,
@@ -581,6 +612,7 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         model: n.model,
         provider: n.provider,
         ui: n.ui,
+        truncation: n.truncation,
         ...mapAttachmentMessageSignals(n),
         treeNodeId: n.id,
         treeNodeType: n.type,

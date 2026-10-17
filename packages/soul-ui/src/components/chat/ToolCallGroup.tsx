@@ -6,14 +6,18 @@ import { useLazyLoadContent, useLazyLoadToolTrace } from "./hooks";
 import { ShowFullContentButton } from "./ShowFullContentButton";
 import { ThinkingMessage } from "./ThinkingMessage";
 import { CollapsibleCaptionHeader } from "./CollapsibleCaption";
+import { EventTruncationMetadata } from "./EventTruncationMetadata";
+import { stripEventTruncationSuffix } from "../../lib/event-truncation-display";
 
 /** 그룹 내 개별 tool call 항목 (truncation lazy load 포함) */
 const ToolCallItem = memo(function ToolCallItem({
   msg,
   presentation = "default",
+  sessionId,
 }: {
   msg: ChatMessage;
   presentation?: "default" | "manuscript";
+  sessionId?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const legacyContent = useLazyLoadContent(msg);
@@ -23,6 +27,12 @@ const ToolCallItem = memo(function ToolCallItem({
   const hasTrace = !!msg.toolTraceId;
   const inputContent = traceContent.inputContent;
   const resultContent = hasTrace ? traceContent.resultContent : legacyContent.displayContent;
+  const displayInputContent = inputContent === undefined
+    ? inputContent
+    : stripEventTruncationSuffix(inputContent, msg.toolInputTruncation);
+  const displayResultContent = resultContent === undefined
+    ? resultContent
+    : stripEventTruncationSuffix(resultContent, msg.toolResultTruncation);
   const shortName = (msg.toolName ?? msg.content).replace(/^mcp__.*?__/, "");
   const duration = msg.toolDurationMs
     ? `(${(msg.toolDurationMs / 1000).toFixed(1)}s)`
@@ -36,24 +46,40 @@ const ToolCallItem = memo(function ToolCallItem({
 
   const details = (
     <>
-      {expanded && inputContent && (
-        <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
-          {inputContent}
-        </pre>
-      )}
-      {expanded && resultContent && (
+      {expanded && (inputContent || msg.toolInputTruncation) && (
         <div className="ml-5 mt-0.5">
+          <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
+            {displayInputContent}
+          </pre>
+          {msg.toolInputTruncation && (
+            <EventTruncationMetadata
+              truncation={msg.toolInputTruncation}
+              sessionId={sessionId}
+              eventId={msg.eventId}
+            />
+          )}
+        </div>
+      )}
+      {expanded && (resultContent || msg.toolResultTruncation) && (
+        <div className={cn("ml-5", msg.toolInputTruncation ? "mt-2" : "mt-0.5")}>
           <pre data-slot="chat-tool-body" className={cn(
             "text-xs bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
             msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
           )}>
-            {resultContent}
+            {displayResultContent}
           </pre>
-          {!hasTrace && legacyContent.isTruncated && (
+          {!hasTrace && legacyContent.isTruncated && !msg.toolResultTruncation && (
             <ShowFullContentButton
               loading={legacyContent.loading}
               error={legacyContent.error}
               onClick={legacyContent.loadFullContent}
+            />
+          )}
+          {msg.toolResultTruncation && (
+            <EventTruncationMetadata
+              truncation={msg.toolResultTruncation}
+              sessionId={sessionId}
+              eventId={msg.fullContentEventId ?? msg.eventId}
             />
           )}
         </div>
@@ -127,11 +153,13 @@ const ToolCallItem = memo(function ToolCallItem({
 export const ToolCallGroup = memo(function ToolCallGroup({
   messages,
   presentation = "default",
+  sessionId,
   expanded: controlledExpanded,
   onExpandedChange,
 }: {
   messages: ChatMessage[];
   presentation?: "default" | "manuscript";
+  sessionId?: string;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
@@ -183,8 +211,8 @@ export const ToolCallGroup = memo(function ToolCallGroup({
           {expanded && (
             <div id={activityBodyId} data-slot="manuscript-activity-items" className="ml-5 mt-1 space-y-0.5">
               {messages.map((msg) => msg.role === "tool"
-                ? <ToolCallItem key={msg.id} msg={msg} presentation="manuscript" />
-                : <ThinkingMessage key={msg.id} msg={msg} presentation="manuscript" />)}
+                ? <ToolCallItem key={msg.id} msg={msg} presentation="manuscript" sessionId={sessionId} />
+                : <ThinkingMessage key={msg.id} msg={msg} presentation="manuscript" sessionId={sessionId} />)}
             </div>
           )}
         </div>
@@ -214,7 +242,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
         {expanded && (
           <div data-slot="tool-call-group-items" className="ml-4 mt-1 space-y-0.5">
             {messages.map((msg) => (
-              <ToolCallItem key={msg.id} msg={msg} />
+              <ToolCallItem key={msg.id} msg={msg} sessionId={sessionId} />
             ))}
           </div>
         )}
