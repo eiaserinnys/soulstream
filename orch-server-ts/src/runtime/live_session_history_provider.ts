@@ -1,4 +1,5 @@
 import type {
+  SessionHistoryEventRecord,
   SessionHistoryProvider,
   SessionHistoryRawEvent,
   SessionHistoryReplayRange,
@@ -192,6 +193,19 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
       WHERE session_id = ${sessionId}
     `;
     return numberValue(rows[0]?.last_event_id) ?? 0;
+  }
+
+  async readEvent(
+    sessionId: string,
+    eventId: number,
+  ): Promise<SessionHistoryEventRecord | null> {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<{ readonly id: number; readonly payload: unknown }[]>`
+      SELECT id, payload FROM event_read_one(${sessionId}, ${eventId})
+    `;
+    const row = rows[0];
+    if (row === undefined) return null;
+    return { id: row.id, event: parsePayload(row.payload) };
   }
 
   async *streamEventsRaw(
