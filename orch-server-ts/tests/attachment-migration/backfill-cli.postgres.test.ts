@@ -97,6 +97,32 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     expect(await readMessagePayloads(rows)).toEqual(afterFirstPass);
   });
 
+  it("accepts an approved partial plan and backfills only identities whose own coverage is complete", async () => {
+    // Production plans stay partial while an offline node is unconfirmed (header coverage_complete=false).
+    const rows = [104, 105].map((eventId) => ({
+      session_id: `backfill-cli-partial-${eventId}`, event_id: eventId,
+      payload: { text: `partial-${eventId}`, attachments: ["/legacy/cli-message.png"], attachment_ids: [], attachment_count: 1,
+        timestamp: "2026-10-17T00:00:00.000Z", caller_info: { source: "browser", id: eventId } },
+    }));
+    for (const row of rows) {
+      await harness.sql`INSERT INTO sessions (session_id, node_id, folder_id) VALUES (${row.session_id}, 'node-a', ${folder})`;
+      await harness.sql`
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text)
+        VALUES (${row.session_id}, ${row.event_id}, 'user_message', ${harness.sql.json(row.payload)}::jsonb, ${`search ${row.event_id}`})
+      `;
+    }
+    const covered = messageIdentity(rows[0]!.session_id, rows[0]!.event_id);
+    const uncovered = { ...messageIdentity(rows[1]!.session_id, rows[1]!.event_id), coverage_complete: false };
+    const manifest = await writeManifest([covered, uncovered], false);
+
+    const report = await invokeMessage(manifest, ["--apply", "--approved-manifest-sha256", manifest.sha256]);
+    expect(report[0]).toMatchObject({ apply: true, source_events_updated: 1 });
+    expect(report.some((record) => record.code === "SOURCE_UNVERIFIED" && record.identity_key === "identity-message-105")).toBe(true);
+    const [first, second] = await readMessagePayloads(rows);
+    expect(first).toEqual({ ...rows[0]!.payload, attachment_ids: ["cli-message-asset"], attachment_count: 2 });
+    expect(second).toEqual(rows[1]!.payload);
+  });
+
   it("rolls back a message payload update when a database trigger fails afterward", async () => {
     const sessionId = "backfill-cli-message-rollback";
     const eventId = 103;
@@ -305,10 +331,11 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     expect(savedReport).toEqual({ body, attachment_refs: [] });
   });
 
-  async function writeManifest(identities: Record<string, unknown>[]) {
+  async function writeManifest(identities: Record<string, unknown>[], headerCoverageComplete = true) {
     const file = path.join(tempDir, `manifest-${outputNumber++}.jsonl`);
     const content = [
-      { record_type: "manifest_metadata", schema_version: INVENTORY_SCHEMA_VERSION, dry_run: true, writes_enabled: false, coverage_complete: true },
+      { record_type: "manifest_metadata", schema_version: INVENTORY_SCHEMA_VERSION, dry_run: true, writes_enabled: false,
+        coverage_complete: headerCoverageComplete },
       ...identities,
     ].map((row) => JSON.stringify(row)).join("\n") + "\n";
     await writeFile(file, content, "utf8");

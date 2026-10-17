@@ -379,8 +379,10 @@ export async function readManifest(filePath: string): Promise<ManifestInput> {
     catch { throw new MessageRefBackfillError("INVENTORY_MANIFEST_MISMATCH", `invalid JSONL record ${index + 1}`); }
   }
   const header = rows.shift();
+  // An approved plan may be partial (an offline node stays unconfirmed), so the header only has to be well formed;
+  // each identity's own coverage_complete decides eligibility, as in the copy and publish tools.
   if (!isRecord(header) || header.record_type !== "manifest_metadata" || header.schema_version !== INVENTORY_SCHEMA_VERSION ||
-      header.dry_run !== true || header.writes_enabled !== false || header.coverage_complete !== true) {
+      header.dry_run !== true || header.writes_enabled !== false || typeof header.coverage_complete !== "boolean") {
     throw new MessageRefBackfillError("INVENTORY_MANIFEST_MISMATCH", "manifest header is invalid or incomplete");
   }
   const identities: ManifestIdentity[] = [];
