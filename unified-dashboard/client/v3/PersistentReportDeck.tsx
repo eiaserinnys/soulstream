@@ -142,7 +142,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
                 {entry.card_numbers.map(number => <ReportCardLink key={number} number={number} pending={pendingCardNumbers} lookupCards={lookupCards} />)}
               </div>
               <p className="pas-report-context">{entry.context}</p>
-              {!answered && <p className="pas-report-todo"><ReportAction text={entry.action} /></p>}
+              {!answered && entry.action !== '' && <p className="pas-report-todo"><ReportAction text={entry.action} /></p>}
             </div>
           </div>
           {(entries.length > 1 || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">

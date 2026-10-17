@@ -239,3 +239,10 @@ it('hides the whole deck with opacity until its initial font settles', async () 
   await act(async () => finish());
   expect(deck.style.opacity).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
 });
+
+it('omits the todo line for an unanswered sheet whose action is empty and keeps it when the action is set', async () => {
+  entries = [{ ...one, key: 'no-action', action: '' }]; await render();
+  expect(host.querySelector('.pas-report-content .pas-report-todo')).toBeNull();
+  entries = [one]; await render();
+  expect(host.querySelector('.pas-report-content .pas-report-todo')).not.toBeNull();
+});
