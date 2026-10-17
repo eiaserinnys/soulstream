@@ -59,16 +59,18 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
       </CompactTouchTarget>
     </View>)}
   </View>;
-  const todo = <Text testID="report-todo" numberOfLines={compact ? 2 : undefined} style={styles.todo}>
+  const hasAction = entry.action !== '';
+  const todo = hasAction ? <Text testID="report-todo" numberOfLines={compact ? 2 : undefined} style={styles.todo}>
     {reportActionParts(entry.action).map((part, i) => typeof part === 'string' ? part : <Text key={i} testID="report-link"
       accessibilityRole="link" style={styles.link} onPress={event => { event.stopPropagation(); onLink(part.url); }}>{part.label}</Text>)}
-  </Text>;
+  </Text> : null;
+  const context = <Text testID="report-context" numberOfLines={compact ? 2 : undefined} style={styles.context}>{entry.context}</Text>;
   const frame = <View testID="report-reading"
     onLayout={!bubble ? event => measure('reading', event.nativeEvent.layout.height + t.uiSpacing.md
       + (compact ? t.uiSpacing.lg + (count > 1 ? t.uiSpacing.sm + t.foundation.typography.meta.lineHeight : 0) : 0)) : undefined}
     style={[styles.reading, answer && !bubble && !compact && asked.reading ? { minHeight: Math.max(0, asked.reading - t.uiSpacing.md) } : null]}>
-    {heading}{!compact ? <Text testID="report-context" style={styles.context}>{entry.context}</Text> : null}
-    {answer ? compact ? received : null : todo}
+    {heading}{!compact ? context : null}
+    {answer ? compact ? received : null : hasAction ? todo : compact ? context : null}
   </View>;
   const foot = hasFooter
     ? <View testID="report-footer" style={styles.foot} onLayout={event => measure('foot', event.nativeEvent.layout.height)}>

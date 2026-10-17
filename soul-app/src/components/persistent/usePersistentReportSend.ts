@@ -3,7 +3,7 @@ import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry, Session } from '../../api/types';
 import { pendingReportClosed, pendingReportReply, reportSendContext } from '../../lib/persistent-report';
 import { createOptimisticUserEvent, pickOptimisticVariant, useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
-import { getSendFailureReason } from '../chat/useChatSendFlow';
+import { getSendFailureReason, CARD_QUESTION_ANSWERED_REASON } from '../chat/useChatSendFlow';
 
 export const FAILED_REPORT_SEND_REMAINS = '보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.';
 const edition = (entry: Pick<PersistentReportEntry, 'key' | 'updated_at'>) => JSON.stringify([entry.key, entry.updated_at]);
@@ -68,6 +68,11 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
       if (verdict.delivered === null || verdict.outcome === 'unknown') {
         useChatStore.getState().updatePendingOptimisticStatus(sessionId, message.id, 'failed', '전달을 확인하지 못했습니다');
         return;
+      }
+      // 판의 카드 질문 답은 PAS 채팅 echo가 없으므로 접수 reason으로 같은 요청 ID의 슬롯을 직접 정리한다.
+      // 합성 user 이벤트를 만들지 않는다.
+      if (verdict.reason === CARD_QUESTION_ANSWERED_REASON) {
+        useChatStore.getState().clearPendingOptimistic(sessionId, message.id);
       }
       setState(saved => {
         if (saved.sessionId !== sessionId) return saved;

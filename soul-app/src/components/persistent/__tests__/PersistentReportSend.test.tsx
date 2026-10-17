@@ -210,3 +210,35 @@ test.each(['restore', 'delete'] as const)('an old matching cancel in history can
   expect(h.result.current.report.cancelSent(answered)).toBe(false);
   expect(h.result.current.report.canCancel(answered)).toBe(true);
 });
+
+test('card question answer ACK clears the same pending slot without a chat echo', async () => {
+  const response = deferred<{ delivered: boolean; reason: string }>();
+  const h = setup(jest.fn(() => response.promise));
+  let send!: Promise<void>;
+  act(() => { send = h.result.current.sendOption(entry, '응'); });
+  expect(useChatStore.getState().pendingOptimisticBySession.pas?.id).toBeDefined();
+  await act(async () => { response.resolve({ delivered: true, reason: 'card_question_answered' }); await send; });
+  expect(useChatStore.getState().pendingOptimisticBySession.pas).toBeUndefined();
+  expect(h.result.current.entries[0].state).toBe('answered');
+  expect(h.result.current.busy).toBe(false);
+});
+
+test('conversation retry clears the same report reply slot when the card answer ACK arrives', async () => {
+  const retrySuccess = deferred<{ delivered: boolean; reason: string }>();
+  const intervene = jest.fn().mockRejectedValueOnce(Error('reply failed'))
+    .mockImplementationOnce(() => retrySuccess.promise);
+  const api = { intervene } as unknown as ApiClient;
+  const h = renderHook(({ entries }: { entries: PersistentReportEntry[] }) => ({
+    report: usePersistentReportSend('pas', api, entries, base, 'completed', jest.fn()),
+    conversation: useChatSendFlow({ api, sessionId: 'pas', session: { status: 'completed' },
+      attachments: [], attachmentsReady: true, clearAttachments: jest.fn(), scrollToBottom: jest.fn() }),
+  }), { initialProps: { entries: base } });
+  await act(async () => h.result.current.report.sendOption(entry, '응'));
+  const failed = useChatStore.getState().pendingOptimisticBySession.pas;
+  expect(failed.pendingStatus).toBe('failed');
+  let retry!: Promise<void>;
+  act(() => { retry = h.result.current.conversation.retryPendingOptimistic(failed.id); });
+  expect(useChatStore.getState().pendingOptimisticBySession.pas.pendingStatus).toBe('sending');
+  await act(async () => { retrySuccess.resolve({ delivered: true, reason: 'card_question_answered' }); await retry; });
+  expect(useChatStore.getState().pendingOptimisticBySession.pas).toBeUndefined();
+});
