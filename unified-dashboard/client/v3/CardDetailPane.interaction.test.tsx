@@ -147,7 +147,8 @@ it("shows structured request attachments and opens the existing image viewer",as
  await render();const image=container.querySelector<HTMLImageElement>('img[alt="첨부 이미지.png"]')!;
  expect(image).not.toBeNull();expect(image.src).toContain('nodeId=node');expect(image.src).toContain(encodeURIComponent(attachments[0].path));
  expect(container.querySelector<HTMLAnchorElement>('a[href*="nodeId=other"]')?.textContent).toContain("설명.pdf");
- await act(()=>image.click());expect(document.querySelector('[role="dialog"] img')?.getAttribute('alt')).toBe('첨부 이미지.png');
+ await act(()=>image.click());expect(document.querySelector('[role="dialog"] img')?.getAttribute('alt')).toBe('이미지.png');
+ expect(document.querySelector('.chat-image-viewer-title')?.textContent).toBe('이미지.png');
 });
 
 it("reopens a completed detail through the existing status menu without reports",async()=>{
