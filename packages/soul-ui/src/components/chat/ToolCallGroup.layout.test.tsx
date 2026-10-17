@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { ToolCallGroup } from "./ToolCallGroup";
+import { ShowFullContentButton } from "./ShowFullContentButton";
 
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
@@ -63,6 +64,20 @@ afterEach(() => {
 });
 
 describe("ToolCallGroup compact header", () => {
+  it("separates the legacy full-content error from its retry button", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(ShowFullContentButton, {
+      error: "로드 실패. 다시 시도해주세요.",
+      onClick: vi.fn(),
+    })));
+
+    const error = container.querySelector(".chat-tone-danger-text");
+    expect(error?.textContent).toBe("로드 실패. 다시 시도해주세요.");
+    expect(error?.classList.contains("ml-2")).toBe(true);
+  });
+
   it.each([
     [0, "Tool Calls 0", "실행 중"],
     [1, "Tool Calls 1", "실행 중"],
@@ -237,6 +252,14 @@ describe("ToolCallGroup compact header", () => {
     const spans = [...container.querySelectorAll("span")];
     const inputPrefix = spans.find(span => span.textContent?.startsWith("잘림 · 전체 200.0 KB ·"));
     const resultPrefix = spans.find(span => span.textContent?.startsWith("잘림 · 전체 1.0 MB ·"));
+    const inputGroup = bodies[0].parentElement!;
+    const resultGroup = bodies[1].parentElement!;
+    expect(inputGroup.tagName).toBe("DIV");
+    expect(inputGroup.contains(inputPrefix!)).toBe(true);
+    expect(resultGroup.contains(resultPrefix!)).toBe(true);
+    expect(inputGroup).not.toBe(resultGroup);
+    expect(inputGroup.parentElement).toBe(resultGroup.parentElement);
+    expect(resultGroup.classList.contains("mt-2")).toBe(true);
     const ordered = [bodies[0], inputPrefix, bodies[1], resultPrefix];
     expect(ordered.every(Boolean)).toBe(true);
     for (let index = 0; index < ordered.length - 1; index += 1) {
@@ -294,6 +317,14 @@ describe("ToolCallGroup compact header", () => {
     const toolSpans = [...toolItem.querySelectorAll("span")];
     const inputPrefix = toolSpans.find(span => span.textContent?.startsWith("잘림 · 전체 200.0 KB ·"));
     const resultPrefix = toolSpans.find(span => span.textContent?.startsWith("잘림 · 전체 700.0 KB ·"));
+    const inputGroup = toolBodies[0].parentElement!;
+    const resultGroup = toolBodies[1].parentElement!;
+    expect(inputGroup.tagName).toBe("DIV");
+    expect(inputGroup.contains(inputPrefix!)).toBe(true);
+    expect(resultGroup.contains(resultPrefix!)).toBe(true);
+    expect(inputGroup).not.toBe(resultGroup);
+    expect(inputGroup.parentElement).toBe(resultGroup.parentElement);
+    expect(resultGroup.classList.contains("mt-2")).toBe(true);
     const ordered = [toolBodies[0], inputPrefix, toolBodies[1], resultPrefix];
     expect(ordered.every(Boolean)).toBe(true);
     for (let index = 0; index < ordered.length - 1; index += 1) {

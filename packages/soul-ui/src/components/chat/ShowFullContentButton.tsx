@@ -36,7 +36,7 @@ export const ShowFullContentButton = memo(function ShowFullContentButton({
       ) : label ? (
         <span>{label}</span>
       ) : null}
-      {error && <span className="chat-tone-danger-text">{error}</span>}
+      {error && <span className="ml-2 chat-tone-danger-text">{error}</span>}
     </div>
   );
 });

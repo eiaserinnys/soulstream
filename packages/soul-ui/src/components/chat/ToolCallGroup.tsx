@@ -47,21 +47,21 @@ const ToolCallItem = memo(function ToolCallItem({
   const details = (
     <>
       {expanded && (inputContent || msg.toolInputTruncation) && (
-        <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
-          {displayInputContent}
-        </pre>
-      )}
-      {expanded && msg.toolInputTruncation && (
-        <div className="ml-5">
-          <EventTruncationMetadata
-            truncation={msg.toolInputTruncation}
-            sessionId={sessionId}
-            eventId={msg.eventId}
-          />
+        <div className="ml-5 mt-0.5">
+          <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
+            {displayInputContent}
+          </pre>
+          {msg.toolInputTruncation && (
+            <EventTruncationMetadata
+              truncation={msg.toolInputTruncation}
+              sessionId={sessionId}
+              eventId={msg.eventId}
+            />
+          )}
         </div>
       )}
       {expanded && (resultContent || msg.toolResultTruncation) && (
-        <div className="ml-5 mt-0.5">
+        <div className="ml-5 mt-2">
           <pre data-slot="chat-tool-body" className={cn(
             "text-xs bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
             msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
@@ -75,15 +75,13 @@ const ToolCallItem = memo(function ToolCallItem({
               onClick={legacyContent.loadFullContent}
             />
           )}
-        </div>
-      )}
-      {expanded && msg.toolResultTruncation && (
-        <div className="ml-5">
-          <EventTruncationMetadata
-            truncation={msg.toolResultTruncation}
-            sessionId={sessionId}
-            eventId={msg.fullContentEventId ?? msg.eventId}
-          />
+          {msg.toolResultTruncation && (
+            <EventTruncationMetadata
+              truncation={msg.toolResultTruncation}
+              sessionId={sessionId}
+              eventId={msg.fullContentEventId ?? msg.eventId}
+            />
+          )}
         </div>
       )}
       {expanded && traceContent.progressContent && (
