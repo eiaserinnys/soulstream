@@ -38,14 +38,14 @@ export type MessageBackfillOptions = {
 
 type MessageSql = postgres.Sql;
 type SqlRow = Record<string, unknown>;
-type ManifestIdentity = InventoryPlanIdentity & { references: InventoryPlanReference[] };
+export type ManifestIdentity = InventoryPlanIdentity & { references: InventoryPlanReference[] };
 type MessageReference = InventoryPlanReference & {
   readonly source_kind: "message";
   readonly source_table: "events";
   readonly session_id: string;
   readonly event_id: number;
 };
-type ManifestInput = { readonly manifestSha256: string; readonly identities: ManifestIdentity[] };
+export type ManifestInput = { readonly manifestSha256: string; readonly identities: ManifestIdentity[] };
 type EventCandidate = { readonly session_id: string; readonly event_id: number; readonly references: Array<{
   readonly identity: ManifestIdentity;
   readonly reference: MessageReference;
@@ -344,7 +344,7 @@ async function readEventSnapshots(
   return snapshots;
 }
 
-async function withReadOnlyTransaction<T>(
+export async function withReadOnlyTransaction<T>(
   sql: MessageSql,
   statementTimeoutMs: number,
   callback: (transaction: postgres.TransactionSql) => Promise<T>,
@@ -356,7 +356,7 @@ async function withReadOnlyTransaction<T>(
   }) as T;
 }
 
-async function readManifest(filePath: string): Promise<ManifestInput> {
+export async function readManifest(filePath: string): Promise<ManifestInput> {
   const bytes = await readFile(filePath);
   const manifestSha256 = createHash("sha256").update(bytes).digest("hex");
   const rows: unknown[] = [];
@@ -382,7 +382,7 @@ async function readManifest(filePath: string): Promise<ManifestInput> {
   return { manifestSha256, identities };
 }
 
-function selectIdentities(identities: readonly ManifestIdentity[], options: MessageBackfillOptions): ManifestIdentity[] {
+export function selectIdentities(identities: readonly ManifestIdentity[], options: MessageBackfillOptions): ManifestIdentity[] {
   const selected = identities.filter((identity) => options.only === undefined || identity.identity_key === options.only);
   if (options.only !== undefined && selected.length === 0) throw new MessageRefBackfillError("INVENTORY_MANIFEST_MISMATCH", "--only identity_key was not found");
   return options.limit === undefined ? selected : selected.slice(0, options.limit);
@@ -432,7 +432,7 @@ function sourceRecord(code: string, identity: ManifestIdentity, reference: Messa
     event_id: reference.event_id, pointer: reference.pointer };
 }
 
-async function writeJsonlReport(filePath: string, records: readonly OutputRecord[]): Promise<void> {
+export async function writeJsonlReport(filePath: string, records: readonly OutputRecord[]): Promise<void> {
   await mkdir(path.dirname(path.resolve(filePath)), { recursive: true, mode: 0o700 });
   const content = `${records.map((record) => JSON.stringify(record)).join("\n")}\n`;
   await writeFile(filePath, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
@@ -442,8 +442,8 @@ function isMessageEventType(value: string): boolean {
   return (INVENTORY_EVENT_TYPES as readonly string[]).includes(value);
 }
 function eventKey(sessionId: string, eventId: number): string { return `${sessionId}\u0000${eventId}`; }
-function locationKey(nodeId: string, normalizedPath: string): string { return `${nodeId}\u0000${normalizedPath}`; }
-function uniqueStrings(values: readonly unknown[]): string[] {
+export function locationKey(nodeId: string, normalizedPath: string): string { return `${nodeId}\u0000${normalizedPath}`; }
+export function uniqueStrings(values: readonly unknown[]): string[] {
   const seen = new Set<string>();
   const output: string[] = [];
   for (const value of values) if (typeof value === "string" && value.length > 0 && !seen.has(value)) { seen.add(value); output.push(value); }
@@ -482,7 +482,7 @@ function nonempty(value: string, name: string): string {
   return value;
 }
 function unescapePointer(value: string): string { return value.replace(/~1/g, "/").replace(/~0/g, "~"); }
-function errorCode(error: unknown, fallback: string): string {
+export function errorCode(error: unknown, fallback: string): string {
   return isRecord(error) && typeof error.code === "string" ? error.code : fallback;
 }
 function usageError(detail?: string): TypeError {
