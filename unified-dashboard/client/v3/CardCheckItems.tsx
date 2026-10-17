@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import type { CardCheckItem } from "@seosoyoung/soul-ui/cards/card-types";
+import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 import { CardImageViewer, type CardImageSelection } from "./CardImageViewer";
 import { CardCheckItemRow } from "./CardCheckItemRow";
+import { cardAttachmentSelectionFromEvidence } from "./card-attachment-selection";
 import { summarizeCardItems } from "./card-item-summary";
 import "./v3-card-check-items.css";
 
 export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,onTargetItem,onOpenImage,readOnly=false}: {
  items?:readonly CardCheckItem[]|null;pendingConfirmations?:Readonly<Record<number,boolean>>;
  onConfirmChange(itemId:number,confirmed:boolean):void|Promise<void>;onTargetItem(itemId:number):void;
- onOpenImage?(src:string,alt:string):void;readOnly?:boolean;
+ onOpenImage?(src:string,alt:string,attachment?:ChatAttachmentItem):void;readOnly?:boolean;
 }) {
  const current=items??[];
  const initialized=useRef(current.length>0);
@@ -18,10 +20,12 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
  const [expandedIds,setExpandedIds]=useState<ReadonlySet<number>>(()=>new Set(current.filter(isInitiallyExpanded).map(item=>item.id)));
  const [groupExpanded,setGroupExpanded]=useState(false);
  const [image,setImage]=useState<CardImageSelection|null>(null);
+ const [imageAttachments,setImageAttachments]=useState<readonly ChatAttachmentItem[]>([]);
  const imageTrigger=useRef<HTMLElement|null>(null);
- const openImage=(src:string,alt:string)=>{
+ const openImage=(src:string,alt:string,attachment?:ChatAttachmentItem,attachments:readonly ChatAttachmentItem[]=[] )=>{
   imageTrigger.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
-  setImage({src,alt});
+  setImage({src,alt,...(attachment?{attachment}:{})});
+  setImageAttachments(attachment?attachments:[]);
  };
  const closeImage=()=>{
   setImage(null);
@@ -45,7 +49,12 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
   &&pendingConfirmations[item.id]!==false&&!excludedFromGroup.has(item.id));
  const groupedIds=new Set(grouped.map(item=>item.id));
  const changeExpanded=(id:number)=>setExpandedIds(existing=>{const next=new Set(existing);if(next.has(id))next.delete(id);else next.add(id);return next;});
- const renderItem=(item:CardCheckItem)=><CardCheckItemRow key={item.id} item={item}
+ const renderItem=(item:CardCheckItem)=>{
+  const attachments=item.evidence.flatMap(evidence=>{
+   const attachment=cardAttachmentSelectionFromEvidence(evidence);
+   return attachment?[attachment]:[];
+  });
+  return <CardCheckItemRow key={item.id} item={item}
   checked={pendingConfirmations[item.id]??item.display==="confirmed"} pending={Object.prototype.hasOwnProperty.call(pendingConfirmations,item.id)}
   expanded={readOnly||expandedIds.has(item.id)} readOnly={readOnly} onToggleExpanded={()=>changeExpanded(item.id)}
   onConfirmChange={confirmed=>{const wasExpanded=expandedIds.has(item.id);setExcludedFromGroup(existing=>new Set(existing).add(item.id));setExpandedIds(existing=>{
@@ -53,7 +62,10 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
   });if(!confirmed)onTargetItem(item.id);void Promise.resolve(onConfirmChange(item.id,confirmed)).catch(()=>{
    setExpandedIds(existing=>{const next=new Set(existing);if(wasExpanded)next.add(item.id);else next.delete(item.id);return next;});
   });}}
-  onTargetItem={()=>onTargetItem(item.id)} onOpenImage={(src,alt)=>onOpenImage?onOpenImage(src,alt):openImage(src,alt)}/>;
+  onTargetItem={()=>onTargetItem(item.id)} onOpenImage={(src,alt,attachment)=>onOpenImage
+   ?attachment?onOpenImage(src,alt,attachment):onOpenImage(src,alt)
+   :openImage(src,alt,attachment,attachments)}/>;
+ };
  return <>
   <div className="v3-card-check-items" data-testid="card-check-items" data-active-count={summary.activeCount} data-confirmed-count={summary.confirmedCount}>
    {current.length===0?<p className="v3-detail-empty">확인할 항목이 없습니다.</p>:<>
@@ -67,7 +79,7 @@ export function CardCheckItems({items,pendingConfirmations={},onConfirmChange,on
     </section>:null}
    </>}
   </div>
-  <CardImageViewer image={image} onClose={closeImage}/>
+  <CardImageViewer image={image} attachments={imageAttachments} onClose={closeImage}/>
  </>;
 }
 
