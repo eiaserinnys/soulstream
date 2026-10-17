@@ -47,9 +47,9 @@ export class PersistentReportService {
       if (!card || card.status === "done" || card.status === "cancelled") return null;
       const parsed = parsePersistentReportEntry({
         key: `${CARD_QUESTION_KEY_PREFIX}${questionId}`, kind: "ask",
-        title: [...card.title].slice(0, 24).join(""),
+        title: clip(card.title, 24),
         card_numbers: card.number === null ? [] : [card.number],
-        context: [...question.text].slice(0, 120).join(""),
+        context: clip(question.text, 120),
         action: "", options: question.options ?? [], question_id: questionId,
       });
       if (!parsed.ok) return parsed.errors;
@@ -174,6 +174,12 @@ export class PersistentReportService {
 export async function writePersistentReportTx(sql: RepositorySql, row: Pick<ReportRow,"session_id"|"node_id">, entries: PersistentReportEntry[]): Promise<PersistentReportUpdate> {
   await sql`SELECT session_apply_metadata_entry(${row.session_id},${JSON.stringify({type:PERSISTENT_REPORT_METADATA_TYPE,value:{entries}})},${PERSISTENT_REPORT_METADATA_TYPE},NOW())`;
   return {agent_session_id:row.session_id,node_id:row.node_id,persistent_report:entries};
+}
+
+/** 길이가 바뀌는 글은 말줄임으로 끊는다. 코드포인트로 max를 넘으면 앞 max-1자 + 「…」, 아니면 원문. */
+function clip(text: string, max: number): string {
+  const chars = [...text];
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : text;
 }
 
 function rejectDecision(cardId: string, code: string, status: number, message: string): { errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision } {

@@ -176,6 +176,24 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect(await reports.get('pas')).toHaveLength(12);
     expect((await cards.getCard(cardId))!.questions).toHaveLength(1);
   });
+  it("clips a long card title and question text with an ellipsis and leaves exact lengths untouched", async () => {
+    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    const placed = async (title: string, text: string) => {
+      const cardId=(await cards.createCard({...human,folderId:'report-folder',title,request:''})).operation.target_id;
+      await cards.askQuestion({...human,cardId,text,options:['진행']});
+      const questionId=String((await cards.getCard(cardId))!.questions.at(-1)!.id);
+      await reports.putQuestion('pas',questionId);
+      return (await reports.get('pas')).find(e=>e.key===`cq_${questionId}`)!;
+    };
+    const longTitle='ㄱ'.repeat(30), longText='나'.repeat(130);
+    const clipped=await placed(longTitle,longText);
+    expect(clipped.title).toBe([...longTitle].slice(0,23).join('')+'…');
+    expect(clipped.context).toBe([...longText].slice(0,119).join('')+'…');
+    const exactTitle='다'.repeat(24), exactText='라'.repeat(120);
+    const exact=await placed(exactTitle,exactText);
+    expect(exact.title).toBe(exactTitle);
+    expect(exact.context).toBe(exactText);
+  });
   it("answers a card question from the board, acknowledges a same-option resend and rejects a conflict or invalid option", async () => {
     for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
     const cardId=(await cards.createCard({...human,folderId:'report-folder',title:'판 답',request:''})).operation.target_id;
