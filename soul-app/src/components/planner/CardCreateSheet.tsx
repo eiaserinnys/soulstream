@@ -25,6 +25,7 @@ import { GroupedGlassSheet } from './GroupedGlassSheet';
 import { SessionSelectionRow } from './SessionSelectionRow';
 import { SelectedModelPresetName } from '../sheets/SelectedModelPresetName';
 import { makeStyles } from './SessionSuccessionSheet.styles';
+import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
 export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { api: ApiClient | null; onClose(): void; folderId?: string }) {
   const t = useTokens();
@@ -124,7 +125,9 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
                 style={styles.initialInput} outerScrollRef={scroll} minHeight={t.foundation.minHeight.memo}
                 maxHeight={t.foundation.minHeight.memo * 2} verticalPadding={t.spacing.sm}
                 placeholderTextColor={t.colors.textPlaceholder} editable={!locked && draft.ready} />
-              <CardRequestView request="" attachments={cardFiles(files.attachments.filter((file) => !!file.path))} />
+              <AttachmentReadContextProvider context={{ type: 'owner' }}>
+                <CardRequestView request="" attachments={cardFiles(files.attachments.filter((file) => !!file.path))} />
+              </AttachmentReadContextProvider>
               {files.error && files.attachments.length ? <SheetErrorNotice summary="첨부를 올리지 못했습니다. 제거하거나 다시 선택해 주세요." detail={files.error} /> : null}
               <AttachmentPickerButton uploading={files.uploading} disabled={locked || !selection.effectiveNodeId} onPress={files.pickAttachment} />
               {!selection.effectiveNodeId ? <Text style={styles.meta}>파일을 첨부하려면 실행 노드를 선택해 주세요.</Text> : null}

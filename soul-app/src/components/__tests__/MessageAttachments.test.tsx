@@ -133,7 +133,7 @@ test.each([
   expect(StyleSheet.flatten(screen.getByText('0 B').props.style).color).toBe(tokens.colors.textMuted);
 });
 
-test('mixed attachments share one container gap and one viewer in message order', async () => {
+test('mixed attachments share one container gap and one viewer in displayed image-then-file order', async () => {
   const tokens = renderHook(() => useTokens()).result.current;
   const items = [image('one', 'one.png'), textFile('text', 'notes.txt'), image('two', 'two.png')];
   const screen = render(<MessageAttachments items={items} role="assistant" />);
@@ -141,10 +141,8 @@ test('mixed attachments share one container gap and one viewer in message order'
     createSessionVisualRoles(tokens).chat.attachment.gridGap,
   );
   fireEvent.press(screen.getByLabelText('notes.txt 열기'));
-  await waitFor(() => expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('2 / 3'));
+  await waitFor(() => expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('3 / 3'));
   expect(screen.getByText('빈 파일')).toBeTruthy();
-  fireEvent.press(screen.getByTestId('chat-image-viewer-next'));
-  expect(screen.getByTestId('chat-image-viewer-index').props.children.join('')).toBe('3 / 3');
   const next = screen.getByTestId('chat-image-viewer-next');
   expect(next.props.disabled).not.toBe(true);
   expect(next.props.accessibilityState.disabled).toBe(true);

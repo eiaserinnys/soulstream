@@ -7,7 +7,9 @@ export function restoreAttachmentFocus(target: any): void {
       target?.focus?.({ preventScroll: true });
       return;
     }
-    const handle = findNodeHandle(target);
+    // The opener can unmount before this frame (its list re-rendered); there is nothing left to focus then.
+    let handle: number | null = null;
+    try { handle = target ? findNodeHandle(target) : null; } catch { return; }
     if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
   });
 }

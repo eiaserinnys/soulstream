@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -12,6 +12,7 @@ import type { AttachmentView } from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
+import { AttachmentMetadataPreview } from './AttachmentMetadataPreview';
 import { ImageViewerModal } from './ImageViewerModal';
 import { attachmentImageSource } from '../lib/attachment-image-source';
 
@@ -50,13 +51,16 @@ export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0,
   textContent?: AttachmentTextContent;
 }) {
   const scope = captureAuthScope();
+  const [resolved, setResolved] = useState<Record<string, AttachmentView>>({});
+  const onResolved = useCallback((key: string, view: AttachmentView) => setResolved(previous => ({ ...previous, [key]: view })), []);
+  const views = items.map(entry => resolved[entry.key] ?? entry);
   return <View testID="attachment-preview-modal">
-    <ImageViewerModal variant="chatRefined" items={items} initialIndex={initialIndex} onClose={onClose}
-      sources={items.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
+    <ImageViewerModal variant="chatRefined" items={views} initialIndex={initialIndex} onClose={onClose}
+      sources={views.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
         ? attachmentImageSource({ ...entry, source: entry.source }, scope.serverUrl, scope.jwt) : {})}
-      renderAttachment={(entry) => <AttachmentPreviewContent key={entry.key} item={entry}
+      renderAttachment={(entry) => entry.loadMetadata ? <AttachmentMetadataPreview key={entry.key} item={entry} onResolved={onResolved} /> : <AttachmentPreviewContent key={entry.key} item={entry}
         {...(entry.key === item.key && textContent ? { textContent } : {})} />}
-      onSaveOriginal={async (index, anchor) => { await (onSaveOriginal ?? saveAttachmentOriginalView)(items[index], anchor); }} />
+      onSaveOriginal={async (index, anchor) => { await (onSaveOriginal ?? saveAttachmentOriginalView)(views[index], anchor); }} />
   </View>;
 }
 

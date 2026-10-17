@@ -31,6 +31,7 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
     previewKind: 'image'; source: Extract<AttachmentView['source'], { kind: 'ready' }>;
   } => item.previewKind === 'image' && item.source.kind === 'ready'), [items]);
   const fileRows = useMemo(() => items.filter((item) => item.previewKind !== 'image' || item.source.kind !== 'ready'), [items]);
+  const viewerItems = [...images, ...fileRows];
   const galleryImages: ChatRefinedGalleryItem[] = images.map((item) => ({
     source: attachmentImageSource(item, authScope.serverUrl, authScope.jwt),
     filename: item.name,
@@ -70,7 +71,7 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
       embedded
       captionColor={captionColor}
       contentAlign={contentAlign}
-      onOpenImage={(index, restore) => open(items.indexOf(images[index]), restore)}
+      onOpenImage={(index, restore) => open(index, restore)}
     /> : null}
     {fileRows.length > 0 ? <View testID="message-attachments-file-rows" style={{
       width: '100%',
@@ -83,10 +84,10 @@ export function MessageAttachments({ items, role, presentation = 'default', capt
         item={item}
         presentation={presentation}
         testID={`message-attachment-row-${index}`}
-        onPress={(restore) => open(items.indexOf(item), restore)}
+        onPress={(restore) => open(images.length + index, restore)}
       />)}
     </View> : null}
-    {selectedIndex !== null ? <AttachmentPreviewModal item={items[selectedIndex]} items={items}
+    {selectedIndex !== null ? <AttachmentPreviewModal item={viewerItems[selectedIndex]} items={viewerItems}
       initialIndex={selectedIndex} onClose={close} /> : null}
   </View>;
 }

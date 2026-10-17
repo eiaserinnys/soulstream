@@ -6,6 +6,7 @@ export const MAX_ATTACHMENT_TEXT_BYTES = 1024 * 1024;
 export type AttachmentPreviewKind = 'image' | 'text' | 'info';
 
 export type AttachmentView = {
+  loadMetadata?: () => Promise<AttachmentView>;
   key: string;
   name: string;
   mimeType: string | null;

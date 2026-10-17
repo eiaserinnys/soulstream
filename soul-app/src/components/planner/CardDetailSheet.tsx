@@ -264,7 +264,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
           }}>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {!detail ? <ActivityIndicator color={t.colors.accent} /> : null}
-          {detail && tab === 'items' ? <CardCheckItems key={cardId} items={cardItems}
+          {detail && tab === 'items' ? <CardCheckItems key={cardId} cardId={detail.card.id} items={cardItems}
             pendingConfirmations={itemActions.pendingConfirmations} onConfirm={itemActions.confirm}
             initiallyConfirmedIds={currentVisit?.initiallyConfirmedIds ?? []}
             newlyConfirmedIds={currentVisit?.newlyConfirmedIds ?? []}
