@@ -260,25 +260,45 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     const reportId = "backfill-cli-card-rollback-report";
     const reportUrl = "/api/attachments/files?nodeId=node-a&path=cli-report.png";
     const body = `original report ![attachment](${reportUrl})`;
+    const evidenceUrl = "/api/attachments/files?nodeId=node-a&path=cli-card.png";
+    const items = [{
+      id: 1, title: "Current evidence", state: "done", result: "Keep item result",
+      evidence: [{ type: "image", label: "Current evidence", url: evidenceUrl }],
+      caveat: "Keep item caveat", rev: 1, confirmed: null, fixOpen: 0, reopened: null,
+      from: null, createdAt: "2026-10-17T00:00:00.000Z", reportedAt: null,
+    }];
     await insertCard(cardId, "original card request");
+    await harness.sql`UPDATE cards SET items=${harness.sql.json(items)}::jsonb WHERE id=${cardId}`;
     await harness.sql`INSERT INTO card_reports (id, card_id, title, format, body)
       VALUES (${reportId}, ${cardId}, 'Rollback', 'markdown', ${body})`;
     await harness.sql.unsafe(`
-      CREATE FUNCTION fail_cli_card_backfill() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+      CREATE FUNCTION fail_cli_card_parent_backfill() RETURNS TRIGGER LANGUAGE plpgsql AS $$
       BEGIN
-        IF NEW.id = '${reportId}' THEN RAISE EXCEPTION 'injected card child failure'; END IF;
+        IF NEW.id = '${cardId}' THEN
+          IF EXISTS (
+            SELECT 1 FROM card_reports
+            WHERE id = '${reportId}'
+              AND attachment_refs @> '[{"attachment_id":"cli-report-asset"}]'::jsonb
+          ) THEN
+            RAISE EXCEPTION 'injected card parent failure after report refs update' USING ERRCODE = 'P1234';
+          END IF;
+          RAISE EXCEPTION 'parent update ran before report refs update' USING ERRCODE = 'P1235';
+        END IF;
         RETURN NEW;
       END $$;
-      CREATE TRIGGER fail_cli_card_backfill AFTER UPDATE OF attachment_refs ON card_reports
-        FOR EACH ROW EXECUTE FUNCTION fail_cli_card_backfill();
+      CREATE TRIGGER fail_cli_card_parent_backfill AFTER UPDATE OF attachment_refs ON cards
+        FOR EACH ROW EXECUTE FUNCTION fail_cli_card_parent_backfill();
     `);
-    const manifest = await writeManifest([cardReportIdentity(cardId, reportId, body, reportUrl)]);
+    const manifest = await writeManifest([
+      cardReportIdentity(cardId, reportId, body, reportUrl),
+      cardEvidenceIdentity(cardId, evidenceUrl),
+    ]);
     const report = await invokeCard(manifest, ["--apply", "--approved-manifest-sha256", manifest.sha256]);
-    expect(report.some((record) => record.code === "P0001")).toBe(true);
-    const card = (await harness.sql<{ request: string; attachment_refs: unknown; version: number }[]>`
-      SELECT request, attachment_refs, version FROM cards WHERE id=${cardId}
+    expect(report.some((record) => record.code === "P1234")).toBe(true);
+    const card = (await harness.sql<{ request: string; attachment_refs: unknown; items: unknown; version: number }[]>`
+      SELECT request, attachment_refs, items, version FROM cards WHERE id=${cardId}
     `)[0]!;
-    expect(card).toEqual({ request: "original card request", attachment_refs: [], version: 1 });
+    expect(card).toEqual({ request: "original card request", attachment_refs: [], items, version: 1 });
     const savedReport = (await harness.sql<{ body: string; attachment_refs: unknown }[]>`
       SELECT body, attachment_refs FROM card_reports WHERE id=${reportId}
     `)[0]!;
@@ -325,6 +345,13 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     return identity("identity-card-report-rollback", "cli-report.png", [{
       source_kind: "report", source_table: "card_reports", source_pk: reportId, pointer: "/body", card_id: cardId,
       raw_url: rawUrl, raw_path: "cli-report.png", body_offset: body.indexOf(rawUrl), changed_after_cutoff: false,
+      owner: { status: "unverified", reason: "test fixture", source: "fixture" },
+    }]);
+  }
+  function cardEvidenceIdentity(cardId: string, rawUrl: string) {
+    return identity("identity-card-evidence-rollback", "cli-card.png", [{
+      source_kind: "card_item", source_table: "cards", source_pk: cardId, pointer: "/items/0/evidence/0/url",
+      card_id: cardId, raw_url: rawUrl, raw_path: "cli-card.png", changed_after_cutoff: false,
       owner: { status: "unverified", reason: "test fixture", source: "fixture" },
     }]);
   }
