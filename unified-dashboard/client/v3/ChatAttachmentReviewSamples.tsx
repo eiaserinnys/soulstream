@@ -342,9 +342,11 @@ export function ChatAttachmentReviewSamples() {
       preview_kind: "text" as const,
       preview_mime_type: "text/plain",
     });
-    const singleAttachment = toolAttachment("review-tool-single-full", "단독 도구 전문.txt");
-    const groupAttachment = toolAttachment("review-tool-group-full", "그룹 도구 전문.txt");
+    const singleAttachment = toolAttachment("review-tool-single-full", "도구 결과 전문.txt");
+    const groupInputAttachment = toolAttachment("review-tool-group-input-full", "도구 입력 전문.txt");
+    const groupAttachment = toolAttachment("review-tool-group-full", "도구 결과 전문.txt");
     const assistantAttachment = toolAttachment("review-assistant-truncated", "응답 전문.txt");
+    const thinkingAttachment = toolAttachment("review-thinking-full", "생각 전문.txt");
     return {
       single: {
         id: "truncation-single-tool",
@@ -366,6 +368,8 @@ export function ChatAttachmentReviewSamples() {
           treeNodeId: "truncation-group-tool",
           treeNodeType: "tool",
           toolName: "Read",
+          toolInput: "입력 첫 부분\n[잘림]",
+          toolInputTruncation: { original_bytes: 409_600, attachment: groupInputAttachment },
           toolResult: "첫 부분\n[잘림]",
           toolResultTruncation: { original_bytes: 1_048_586, attachment: groupAttachment },
           eventId: 502,
@@ -402,6 +406,16 @@ export function ChatAttachmentReviewSamples() {
         eventId: 209,
         attachmentIds: ["review-assistant-truncated"],
         truncation: { original_bytes: 1_048_586, attachment: assistantAttachment },
+      } as ChatMessage,
+      thinking: {
+        id: "truncation-thinking",
+        role: "assistant",
+        content: "생각 첫 부분\n[잘림]",
+        thinkingContent: "생각 첫 부분\n[잘림]",
+        treeNodeId: "truncation-thinking",
+        treeNodeType: "thinking",
+        eventId: 505,
+        truncation: { original_bytes: 512_000, attachment: thinkingAttachment },
       } as ChatMessage,
     };
   }, []);
@@ -491,7 +505,7 @@ export function ChatAttachmentReviewSamples() {
           }));
         }
       }
-      const fullContentRequest = url.match(/^\/api\/attachments\/(review-tool-single-full|review-tool-group-full|review-assistant-truncated)\/content(?:\?|$)/);
+      const fullContentRequest = url.match(/^\/api\/attachments\/(review-tool-single-full|review-tool-group-full|review-tool-group-input-full|review-thinking-full|review-assistant-truncated)\/content(?:\?|$)/);
       if (fullContentRequest) {
         const byteSize = 1_048_586;
         if (init?.method === "HEAD") {
@@ -576,7 +590,19 @@ export function ChatAttachmentReviewSamples() {
                 expanded
               />
               <ChatMessageItem msg={truncationSamples.failed} sessionId={connectedReviewSessionId} />
+              <ChatMessageItem msg={truncationSamples.thinking} sessionId={connectedReviewSessionId} />
               <ChatMessageItem msg={truncationSamples.assistant} sessionId={connectedReviewSessionId} />
+              <ChatMessageItem msg={{
+                id: "legacy-thinking-full-content-review",
+                role: "assistant",
+                content: "이전 전문 열기 동작",
+                thinkingContent: "이전 전문 열기 동작",
+                treeNodeId: "legacy-thinking-full-content-review",
+                treeNodeType: "thinking",
+                eventId: 505,
+                fullContentEventId: 505,
+                isTruncated: true,
+              } as ChatMessage} sessionId={connectedReviewSessionId} />
             </div>
           </section>
           <section className="flex flex-col gap-2" aria-label="다른 세션 첨부 문맥">

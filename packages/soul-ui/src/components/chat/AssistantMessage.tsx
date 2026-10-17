@@ -124,7 +124,6 @@ export const AssistantMessage = memo(function AssistantMessage({
           truncation={msg.truncation}
           sessionId={sessionId}
           eventId={msg.eventId}
-          allowOpen={false}
         />
         {attachments}
       </div>

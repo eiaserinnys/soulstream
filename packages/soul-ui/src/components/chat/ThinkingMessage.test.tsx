@@ -61,4 +61,24 @@ describe("ThinkingMessage", () => {
     expect(markup).toContain("잘림 · 전체 1.0 MB ·");
     expect(markup).toContain("전문 열기");
   });
+
+  it("keeps the legacy full-content action in the shared metadata text flow", () => {
+    const legacyTruncation = {
+      ...thinkingMessage,
+      content: "첫 부분",
+      thinkingContent: "첫 부분",
+      isTruncated: true,
+      fullContentEventId: 5,
+    } as ChatMessage;
+    const markup = renderToStaticMarkup(<ThinkingMessage msg={legacyTruncation} />);
+    const row = markup.match(/<div class="([^\"]*mt-1[^\"]*)">([\s\S]*?)<\/div>/);
+    const rowClass = row?.[1];
+    const buttonClass = row?.[0].match(/<button[^>]*class="([^\"]*)"/)?.[1];
+
+    expect(rowClass).toContain("text-xs");
+    expect(rowClass).not.toMatch(/\bflex\b/);
+    expect(rowClass).not.toContain("gap-");
+    expect(buttonClass).not.toContain("text-xs");
+    expect(buttonClass).toContain("inline-flex");
+  });
 });

@@ -64,7 +64,7 @@ describe("AssistantMessage content layout", () => {
     expect(markup).not.toContain("전문 열기");
   });
 
-  it("keeps assistant attachment access in the existing attachment row", () => {
+  it("opens assistant truncation attachments from its metadata row", () => {
     const messageWithAttachment = {
       ...message,
       content: "응답 앞부분",
@@ -87,9 +87,10 @@ describe("AssistantMessage content layout", () => {
     const markup = renderToStaticMarkup(createElement(AssistantMessage, {
       msg: messageWithAttachment,
       presentation: "manuscript",
+      sessionId: "session-one",
     }));
 
     expect(markup).toContain("잘림 · 전체 1.0 MB");
-    expect(markup).not.toContain("전문 열기");
+    expect(markup).toContain("전문 열기");
   });
 });

@@ -16,13 +16,13 @@ export const ShowFullContentButton = memo(function ShowFullContentButton({
   label?: string;
 }) {
   return (
-    <div className="mt-1 flex items-center gap-2">
-      {prefix && <span className="text-xs text-muted-foreground">{prefix}</span>}
+    <div className="mt-1 text-xs text-muted-foreground">
+      {prefix && <span>{prefix}</span>}
       {onClick ? (
         <button
           onClick={onClick}
           disabled={loading}
-          className="text-xs text-accent-blue hover:text-accent-blue/80 flex items-center gap-1 disabled:opacity-50"
+          className="text-accent-blue hover:text-accent-blue/80 inline-flex items-center gap-1 disabled:opacity-50"
         >
           {loading ? (
             <>
@@ -34,9 +34,9 @@ export const ShowFullContentButton = memo(function ShowFullContentButton({
           )}
         </button>
       ) : label ? (
-        <span className="text-xs text-muted-foreground">{label}</span>
+        <span>{label}</span>
       ) : null}
-      {error && <span className="text-xs chat-tone-danger-text">{error}</span>}
+      {error && <span className="chat-tone-danger-text">{error}</span>}
     </div>
   );
 });

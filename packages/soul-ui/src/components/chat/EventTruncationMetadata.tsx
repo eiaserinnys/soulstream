@@ -9,12 +9,10 @@ export function EventTruncationMetadata({
   truncation,
   sessionId,
   eventId,
-  allowOpen = true,
 }: {
   truncation?: EventTruncation;
   sessionId?: string;
   eventId?: number;
-  allowOpen?: boolean;
 }) {
   const [viewer, setViewer] = useState<{ trigger: HTMLElement } | null>(null);
   const attachment = truncation?.attachment;
@@ -34,7 +32,7 @@ export function EventTruncationMetadata({
   if (!truncation) return null;
 
   const size = formatFileSize(truncation.original_bytes);
-  const canOpen = Boolean(allowOpen && attachment && sessionId);
+  const canOpen = Boolean(attachment && sessionId);
   const prefix = canOpen ? `잘림 · 전체 ${size} · ` : undefined;
   const label = attachment === null
     ? `잘림 · 전체 ${size} · 전문 보관 실패`

@@ -72,6 +72,10 @@ describe("ChatMessageItem output attachment rows", () => {
           read_context: { type: "session", id: "output-session" },
         },
       ],
+      604: [
+        asset("assistant-full-content", "응답 전문.txt"),
+        asset("assistant-extra", "별도 결과.zip"),
+      ],
     };
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const rawUrl = input instanceof Request ? input.url : String(input);
@@ -96,6 +100,27 @@ describe("ChatMessageItem output attachment rows", () => {
             <ChatMessageItem msg={outputMessage(601, ["already-shown", "new-output"], ["new-output"])} sessionId="output-session" />
             <ChatMessageItem msg={outputMessage(602, ["only-duplicate"], [])} sessionId="output-session" />
             <ChatMessageItem msg={outputMessage(603, ["only-duplicate"], [])} sessionId="output-session" />
+            <ChatMessageItem msg={{
+              id: "assistant-truncated",
+              role: "assistant",
+              content: "응답 앞부분\n[잘림]",
+              treeNodeId: "assistant-truncated",
+              treeNodeType: "assistant_message",
+              eventId: 604,
+              attachmentIds: ["assistant-full-content", "assistant-extra"],
+              truncation: {
+                original_bytes: 1_048_576,
+                attachment: {
+                  attachment_id: "assistant-full-content",
+                  name: "응답 전문.txt",
+                  mime_type: "text/plain",
+                  byte_size: 1_048_576,
+                  checksum_sha256: null,
+                  width: null,
+                  height: null,
+                },
+              },
+            } as ChatMessage} sessionId="output-session" />
           </>
         </ChatUiControllerProvider>,
       );
@@ -109,7 +134,11 @@ describe("ChatMessageItem output attachment rows", () => {
     const legacyRow = host.querySelector<HTMLElement>('[data-tree-node-id="output-attachments:603"] [data-chat-attachment-rows]');
     expect(legacyRow?.textContent).toContain("legacy.txt");
     expect(legacyRow?.textContent).not.toContain("only-duplicate.zip");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const assistantRow = host.querySelector<HTMLElement>('[data-tree-node-id="assistant-truncated"] [data-chat-attachment-rows]');
+    expect(host.querySelector('[data-tree-node-id="assistant-truncated"]')?.textContent).toContain("전문 열기");
+    expect(assistantRow?.textContent).toContain("별도 결과.zip");
+    expect(assistantRow?.textContent).not.toContain("응답 전문.txt");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/sessions/output-session/events/601/attachments"))).toBe(true);
   });
 });

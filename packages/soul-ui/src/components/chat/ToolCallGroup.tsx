@@ -46,10 +46,19 @@ const ToolCallItem = memo(function ToolCallItem({
 
   const details = (
     <>
-      {expanded && inputContent && (
+      {expanded && (inputContent || msg.toolInputTruncation) && (
         <pre data-slot="chat-tool-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
           {displayInputContent}
         </pre>
+      )}
+      {expanded && msg.toolInputTruncation && (
+        <div className="ml-5">
+          <EventTruncationMetadata
+            truncation={msg.toolInputTruncation}
+            sessionId={sessionId}
+            eventId={msg.eventId}
+          />
+        </div>
       )}
       {expanded && (resultContent || msg.toolResultTruncation) && (
         <div className="ml-5 mt-0.5">
@@ -66,15 +75,6 @@ const ToolCallItem = memo(function ToolCallItem({
               onClick={legacyContent.loadFullContent}
             />
           )}
-        </div>
-      )}
-      {expanded && msg.toolInputTruncation && (
-        <div className="ml-5">
-          <EventTruncationMetadata
-            truncation={msg.toolInputTruncation}
-            sessionId={sessionId}
-            eventId={msg.eventId}
-          />
         </div>
       )}
       {expanded && msg.toolResultTruncation && (

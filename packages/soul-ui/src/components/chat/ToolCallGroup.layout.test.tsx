@@ -197,7 +197,7 @@ describe("ToolCallGroup compact header", () => {
   it("opens a grouped truncated result attachment and returns focus to its link", async () => {
     const attachment = {
       attachment_id: "tool-result-full-content",
-      name: "tool-result.txt",
+      name: "도구 결과 전문.txt",
       mime_type: "application/zip",
       byte_size: 1_048_576,
       checksum_sha256: null,
@@ -206,9 +206,17 @@ describe("ToolCallGroup compact header", () => {
       preview_kind: "info",
       preview_mime_type: null,
     } as const;
+    const inputAttachment = {
+      ...attachment,
+      attachment_id: "tool-input-full-content",
+      name: "도구 입력 전문.txt",
+      byte_size: 204_800,
+    } as const;
     const messages = [
       {
         ...message(0, "done"),
+        toolInput: "입력 미리보기\n[잘림]",
+        toolInputTruncation: { original_bytes: 204_800, attachment: inputAttachment },
         toolResult: "결과 미리보기\n[잘림]",
         toolResultTruncation: { original_bytes: 1_048_576, attachment },
       },
@@ -224,11 +232,19 @@ describe("ToolCallGroup compact header", () => {
     })));
     flushSync(() => container!.querySelector<HTMLButtonElement>("[data-slot='tool-call-item-toggle']")?.click());
 
-    const result = container.querySelector<HTMLElement>("[data-slot='chat-tool-body']");
-    expect(result?.textContent).toBe("결과 미리보기");
-    const link = [...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find(button => button.textContent?.includes("전문 열기"));
-    expect(link?.parentElement?.textContent).toContain("잘림 · 전체 1.0 MB · 전문 열기");
+    const bodies = [...container.querySelectorAll<HTMLElement>("[data-slot='chat-tool-body']")];
+    expect(bodies.map(body => body.textContent)).toEqual(["입력 미리보기", "결과 미리보기"]);
+    const spans = [...container.querySelectorAll("span")];
+    const inputPrefix = spans.find(span => span.textContent?.startsWith("잘림 · 전체 200.0 KB ·"));
+    const resultPrefix = spans.find(span => span.textContent?.startsWith("잘림 · 전체 1.0 MB ·"));
+    const ordered = [bodies[0], inputPrefix, bodies[1], resultPrefix];
+    expect(ordered.every(Boolean)).toBe(true);
+    for (let index = 0; index < ordered.length - 1; index += 1) {
+      expect(ordered[index]!.compareDocumentPosition(ordered[index + 1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(inputPrefix?.parentElement?.textContent).toContain("잘림 · 전체 200.0 KB · 전문 열기");
+    expect(resultPrefix?.parentElement?.textContent).toContain("잘림 · 전체 1.0 MB · 전문 열기");
+    const link = resultPrefix?.parentElement?.querySelector<HTMLButtonElement>("button");
     expect(link).toBeDefined();
     flushSync(() => link!.click());
 
@@ -237,7 +253,7 @@ describe("ToolCallGroup compact header", () => {
       expect(found).not.toBeNull();
       return found!;
     });
-    expect(dialog.textContent).toContain("tool-result.txt");
+    expect(dialog.textContent).toContain("도구 결과 전문.txt");
     expect([...dialog.querySelectorAll("button")].some(button => button.textContent?.includes("원본 저장"))).toBe(true);
     flushSync(() => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     await vi.waitFor(() => expect(document.body.querySelector("[role='dialog']")).toBeNull());
@@ -274,6 +290,15 @@ describe("ToolCallGroup compact header", () => {
 
     const toolBodies = [...container.querySelectorAll<HTMLElement>("[data-slot='chat-tool-body']")];
     expect(toolBodies.map(body => body.textContent)).toEqual(["입력 미리보기", "결과 미리보기"]);
+    const toolItem = container.querySelector<HTMLElement>("[data-slot='manuscript-tool-call-item']")!;
+    const toolSpans = [...toolItem.querySelectorAll("span")];
+    const inputPrefix = toolSpans.find(span => span.textContent?.startsWith("잘림 · 전체 200.0 KB ·"));
+    const resultPrefix = toolSpans.find(span => span.textContent?.startsWith("잘림 · 전체 700.0 KB ·"));
+    const ordered = [toolBodies[0], inputPrefix, toolBodies[1], resultPrefix];
+    expect(ordered.every(Boolean)).toBe(true);
+    for (let index = 0; index < ordered.length - 1; index += 1) {
+      expect(ordered[index]!.compareDocumentPosition(ordered[index + 1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
     expect(container.textContent).toContain("입력 미리보기");
     expect(container.textContent).not.toContain("[잘림]");
     expect(container.textContent).toContain("잘림 · 전체 200.0 KB · 전문 보관 실패");

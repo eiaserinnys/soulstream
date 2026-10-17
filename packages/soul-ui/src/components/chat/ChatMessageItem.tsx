@@ -37,12 +37,17 @@ function shouldAnimateEnter(key: string): boolean {
 }
 
 function filterDisplayedAttachments(msg: ChatMessage, items: ChatAttachmentItem[]): ChatAttachmentItem[] {
-  if (msg.attachmentDisplayIds === undefined) return items;
-  const allowedIds = new Set(msg.attachmentDisplayIds);
+  const truncationAttachmentId = msg.truncation?.attachment?.attachment_id;
+  if (msg.attachmentDisplayIds === undefined && truncationAttachmentId === undefined) return items;
+  const allowedIds = msg.attachmentDisplayIds === undefined ? null : new Set(msg.attachmentDisplayIds);
   return items.filter((item) => {
-    if (item.source.kind === "asset") return allowedIds.has(item.source.attachmentId);
-    if (item.source.kind === "unavailable" && item.source.attachmentId !== undefined) {
-      return allowedIds.has(item.source.attachmentId);
+    const attachmentId = item.source.kind === "asset" || item.source.kind === "unavailable"
+      ? item.source.attachmentId
+      : undefined;
+    if (truncationAttachmentId !== undefined && attachmentId === truncationAttachmentId) return false;
+    if (allowedIds === null) return true;
+    if (attachmentId !== undefined) {
+      return allowedIds.has(attachmentId);
     }
     return true;
   });
