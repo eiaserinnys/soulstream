@@ -104,7 +104,9 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
         return;
       }
       const current = args.getPendingChatSend(sessionId);
-      if (current?.id === pending.id && current.persistentReportOperation) {
+      if (result.reason === "card_question_answered") {
+        if (current?.id === pending.id) args.setPendingChatSend(sessionId, null);
+      } else if (current?.id === pending.id && current.persistentReportOperation) {
         args.setPendingChatSend(sessionId, { ...current, persistentReportOperation: { ...current.persistentReportOperation, acknowledged: true } });
       }
       args.onAfterSend();

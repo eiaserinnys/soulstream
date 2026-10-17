@@ -119,3 +119,19 @@ it('does not start or close over an unrelated retained failure', async () => {
   expect(transport).not.toHaveBeenCalled();
   expect(notify).toHaveBeenCalledWith('보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.');
 });
+
+it('releases the chat slot when the board answer is accepted as a card question answer', async () => {
+  transport.mockResolvedValueOnce({ ok: true, delivered: true, reason: 'card_question_answered', consumeWhen: null });
+  await act(async () => send.reply(entry, '응'));
+  expect(useDashboardStore.getState().pendingChatSends.a).toBeUndefined();
+});
+
+it('keeps a newly reconciled slot when the answered request is no longer the current one', async () => {
+  const replacement = { id: 'newer', status: 'sending' as const, text: '다른 글', messageText: '다른 글', mode: 'intervention' as const, attachments: [], attachmentPaths: [] };
+  transport.mockImplementationOnce(async () => {
+    useDashboardStore.getState().setPendingChatSend('a', replacement);
+    return { ok: true, delivered: true, reason: 'card_question_answered', consumeWhen: null };
+  });
+  await act(async () => send.reply(entry, '응'));
+  expect(useDashboardStore.getState().pendingChatSends.a).toMatchObject({ id: 'newer' });
+});
