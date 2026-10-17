@@ -50,6 +50,10 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 
 노트는 `card_comments`의 `kind='note'` 행이고 이력 별도 테이블은 없다. 일반 `comments` 응답에서 노트를 빼며 REST 상세는 `notes`를, MCP `get_card`는 최근 20건을 제공하고 `list_card_notes`는 최신순 페이지와 `before` cursor를 제공한다. `reports`는 빈 카드에서도 항상 배열이다. 상황판 이력은 `folder_operations`의 `update_card_now` payload에서 최근 20개를 오래된 순으로 읽는다.
 
+## 질문 철회 (123)
+
+`123_card_question_withdrawal.sql`은 `card_questions`에 철회 시각, 담당 세션, 사유를 nullable로 더한다. 현재 담당 세션만 질문을 철회할 수 있고, open question 조회와 supervised checkpoint에서는 빠지며 `questions_history`와 REST 상세에는 철회 정보가 남는다. 철회는 마지막 미답 질문일 때 question-blocked 카드를 running으로 풀고, 철회된 질문을 참조하는 PAS 항목도 카드 commit 뒤 내린다.
+
 ## 카드 실행과 세션 연결
 
 | 경로 | 구현 | 계약 |

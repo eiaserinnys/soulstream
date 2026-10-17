@@ -106,7 +106,8 @@ function cardHarness(
     addCardItem:vi.fn().mockResolvedValue(mutation),reportCardItem:vi.fn().mockResolvedValue(mutation),
     updateCardNow:vi.fn().mockResolvedValue(mutation),addCardNote:vi.fn().mockResolvedValue({id:"note-1",kind:"note"}),
     listCardNotes:vi.fn().mockResolvedValue({notes:[{id:"note-1",kind:"note"}],nextCursor:null}),
-    askQuestion: vi.fn().mockResolvedValue(mutation), moveCard: vi.fn().mockResolvedValue(mutation),
+    askQuestion: vi.fn().mockResolvedValue(mutation), withdrawQuestion: vi.fn().mockResolvedValue(mutation),
+    moveCard: vi.fn().mockResolvedValue(mutation),
   };
   const provider = vi.fn(async () => service);
   const executor = { execute: vi.fn(async () => ({ card: { ...card, status: "running" }, execution: { requestId: "execution-1", sessionId: "spawned-session", state: "pending" } })),
@@ -141,6 +142,8 @@ describe("card MCP execution", () => {
       ["update_card_now",{card_id:"card-1",now:"결과 반영 중",turn:"agent"},"updateCardNow",{now:"결과 반영 중",turn:"agent"}],
       ["add_card_note",{card_id:"card-1",text:"상세 기록"},"addCardNote",{text:"상세 기록"}],
       ["ask_card_question", { card_id: "card-1", text: "질문", options: ["하나", "둘"] }, "askQuestion", { text: "질문", options: ["하나", "둘"] }],
+      ["withdraw_card_question", { card_id: "card-1", question_id: "question-1", reason: "대화에서 결정됨" }, "withdrawQuestion",
+        { questionId: "question-1", reason: "대화에서 결정됨" }],
       ["move_card", { card_id: "card-1", folder_id: "folder-2", after_card_id: "card-2" }, "moveCard",
         { folderId: "folder-2", afterCardId: "card-2", expectedVersion: 3 }],
     ] as const) {

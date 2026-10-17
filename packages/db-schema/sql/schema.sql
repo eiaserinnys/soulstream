@@ -3484,7 +3484,10 @@ CREATE TABLE IF NOT EXISTS card_questions (
     answer TEXT,
     asked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     answered_at TIMESTAMPTZ,
-    answered_by TEXT
+    answered_by TEXT,
+    withdrawn_at TIMESTAMPTZ,
+    withdrawn_by_session_id TEXT,
+    withdrawal_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_card_questions_card ON card_questions(card_id, asked_at);
 CREATE TABLE IF NOT EXISTS card_comments (

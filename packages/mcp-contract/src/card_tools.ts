@@ -67,6 +67,10 @@ export const cardTools = {
     description: "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다.",
     inputSchema: { ...scope, text: id, options: z.array(id).optional() },
   }, audience: "all" },
+  withdraw_card_question: { name: "withdraw_card_question", config: {
+    description: "담당 카드에 내가 남긴 질문이 대화나 커멘트로 결정되어 더 필요 없을 때 철회합니다. reason에 결정 근거를 한 줄(200자까지)로 적습니다. 답이 있거나 이미 철회된 질문은 거부됩니다. 철회한 질문은 답을 기다리는 질문 목록에서 빠집니다.",
+    inputSchema: { ...scope, question_id: id, reason: id },
+  }, audience: "internal" },
   move_card: { name: "move_card", config: {
     description: "카드를 다른 폴더로 옮기고 after_card_id 뒤에 놓는다.",
     inputSchema: { ...scope, folder_id: id, after_card_id: id.nullable().optional() },

@@ -82,6 +82,7 @@ export async function readSupervisedCardContext(
     JOIN cards c ON c.id = q.card_id
     WHERE q.session_id = ${params.sessionId}
       AND q.answer IS NULL
+      AND q.withdrawn_at IS NULL
       AND c.archived = FALSE
     ORDER BY q.asked_at DESC, q.id COLLATE "C" DESC
     LIMIT ${params.questionLimit}

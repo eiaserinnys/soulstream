@@ -18,6 +18,8 @@ function assertPublicTools(definitions: readonly McpToolDefinition[]) {
 test("audience all never exposes delete, configuration or destructive tools", () => assertPublicTools(mcpToolDefinitions));
 test("card assignee handoff is internal-only", () => {
   assert.equal(cardTools.transfer_card_assignee.audience, "internal");
+  assert.equal(cardTools.withdraw_card_question.audience, "internal");
+  assert.equal(mcpToolDefinitions.some((tool) => tool.name === "withdraw_card_question" && tool.audience === "all"), false);
 });
 test("PAS period history is a strict internal read-only tool", () => {
   const definition = sessionTools.list_persistent_session_history;

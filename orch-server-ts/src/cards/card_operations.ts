@@ -24,6 +24,7 @@ export const cardOperationSchemas={
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
   add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.enum(["spoken","reply"]).optional(),itemId:itemId.optional() }),
   ask_card_question:append.extend({ text:id,options:z.array(id).nullable().optional() }),
+  withdraw_card_question:append.extend({ questionId:id,reason:id }),
   answer_card_question:append.extend({ questionId:id,answer:id }),
   set_card_items:append.extend({ items:z.array(z.object({title:id}).strict()) }),
   add_card_item:append.extend({ title:id,fromCommentId:id }),
@@ -57,6 +58,7 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
       case "reorder_card_queue":return service.reorderQueue({ ...common,...cardOperationSchemas.reorder_card_queue.parse(parsed) });
       case "add_card_report":return service.addReport({ ...common,...cardOperationSchemas.add_card_report.parse(parsed) });
       case "ask_card_question":return service.askQuestion({ ...common,...cardOperationSchemas.ask_card_question.parse(parsed) });
+      case "withdraw_card_question":return service.withdrawQuestion({ ...common,...cardOperationSchemas.withdraw_card_question.parse(parsed) });
       case "answer_card_question":return service.answerQuestion({ ...common,...cardOperationSchemas.answer_card_question.parse(parsed) });
       case "set_card_items": {
         const input=cardOperationSchemas.set_card_items.parse(parsed);

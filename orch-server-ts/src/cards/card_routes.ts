@@ -17,6 +17,7 @@ const mutations:readonly ["POST" | "PATCH",string,CardOperation][]=[
   ["POST","/api/cards/:id/comments","add_card_comment"],
   ["POST","/api/cards/:id/items/:itemId/confirm","confirm_card_item"],
   ["POST","/api/cards/:id/questions","ask_card_question"],
+  ["POST","/api/cards/:id/questions/:qid/withdraw","withdraw_card_question"],
   ["POST","/api/cards/:id/questions/:qid/answer","answer_card_question"],
 ];
 export const cardRouteAuthRequirements:Record<string,boolean>=Object.fromEntries([

@@ -8780,5 +8780,38 @@
       "type": "object"
     },
     "name": "upsert_page_markdown"
+  },
+  {
+    "description": "담당 카드에 내가 남긴 질문이 대화나 커멘트로 결정되어 더 필요 없을 때 철회합니다. reason에 결정 근거를 한 줄(200자까지)로 적습니다. 답이 있거나 이미 철회된 질문은 거부됩니다. 철회한 질문은 답을 기다리는 질문 목록에서 빠집니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "question_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "question_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "name": "withdraw_card_question"
   }
 ]
