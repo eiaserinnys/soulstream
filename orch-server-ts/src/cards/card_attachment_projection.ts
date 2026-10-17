@@ -1,5 +1,10 @@
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import { projectAttachmentDescriptor, type AttachmentAssetRow } from "../attachments/attachment_read_service.js";
+import {
+  collectCardLegacyLocations,
+  rewriteMarkdownLegacySourceUrls,
+  type CardLegacyLocation,
+} from "./card_attachment_legacy_refs.js";
 import { attachmentRefIds, attachmentRefsOf, cardAttachmentIdLinks } from "./card_attachment_refs.js";
 import type { RepositorySql } from "./control_plane/card_types.js";
 
@@ -37,6 +42,14 @@ type AssetProjectionRow = {
   checksum_sha256: string | null;
   upload_status: string;
 };
+type LegacySourceBody = {
+  rowIndex: number;
+  field: "request" | "body";
+  cardId: string;
+  body: string;
+  sourceIds: ReadonlySet<string>;
+};
+type LegacyAliasProjection = { assetId: unknown; availability: unknown };
 
 export function cardAttachmentUrls(
   cardId: string,
@@ -104,22 +117,83 @@ export async function projectCardAttachmentRows<T extends Record<string, unknown
     }
   }
 
-  return rows.map((row, index) => {
+  const projectedRows: Array<Record<string, unknown>> = rows.map((row) => ({ ...row }));
+  const legacySources: LegacySourceBody[] = [];
+  rows.forEach((row, index) => {
     const currentCardId = cardIds[index];
-    if (!currentCardId) return { ...row };
-    const projected: Record<string, unknown> = { ...row };
+    if (!currentCardId) return;
+    const projected = projectedRows[index]!;
     const currentRefs = refs[index]!;
     if (Array.isArray(row.items)) {
       projected.items = row.items.map((item) => projectItem(item, currentCardId, currentRefs, assets));
     }
     if (typeof row.request === "string") {
-      projected.request = projectSourceBody(row.request, currentCardId, currentRefs);
+      const body = projectSourceBody(row.request, currentCardId, currentRefs);
+      projected.request = body;
+      if (currentRefs.size > 0) legacySources.push({
+        rowIndex: index, field: "request", cardId: currentCardId, body, sourceIds: currentRefs,
+      });
     }
     if (typeof row.body === "string" && row.format !== "html") {
-      projected.body = projectSourceBody(row.body, currentCardId, currentRefs);
+      const body = projectSourceBody(row.body, currentCardId, currentRefs);
+      projected.body = body;
+      if (currentRefs.size > 0) legacySources.push({
+        rowIndex: index, field: "body", cardId: currentCardId, body, sourceIds: currentRefs,
+      });
     }
-    return projected as T;
   });
+
+  const locations = new Map<string, CardLegacyLocation>();
+  for (const source of legacySources) {
+    for (const location of collectCardLegacyLocations({ body: source.body, format: "markdown" })) {
+      locations.set(cardLegacyLocationKey(location), location);
+    }
+  }
+  const aliases = await readCardLegacyAliases(sql, [...locations.values()]);
+  for (const source of legacySources) {
+    projectedRows[source.rowIndex]![source.field] = rewriteMarkdownLegacySourceUrls(source.body, (location) => {
+      const alias = aliases.get(cardLegacyLocationKey(location));
+      if (alias?.availability !== "resolved" || typeof alias.assetId !== "string"
+        || !source.sourceIds.has(alias.assetId)) return null;
+      return "/api/attachments/" + encodeURIComponent(alias.assetId) + "/content?context_type=card&context_id=" +
+        encodeURIComponent(source.cardId);
+    });
+  }
+  return projectedRows as T[];
+}
+
+function cardLegacyLocationKey(location: CardLegacyLocation): string {
+  return `${location.nodeId}\u0000${location.path}`;
+}
+
+async function readCardLegacyAliases(
+  sql: RepositorySql,
+  locations: readonly CardLegacyLocation[],
+): Promise<Map<string, LegacyAliasProjection>> {
+  const aliases = new Map<string, LegacyAliasProjection>();
+  if (locations.length === 0) return aliases;
+  const rows = await sql<{
+    node_id: unknown;
+    normalized_path: unknown;
+    asset_id: unknown;
+    availability: unknown;
+  }[]>`
+    SELECT aliases.node_id, aliases.normalized_path, aliases.asset_id, aliases.availability
+    FROM attachment_legacy_aliases AS aliases
+    JOIN unnest(${locations.map((location) => location.nodeId)}::text[],
+                ${locations.map((location) => location.path)}::text[])
+      AS requested(node_id, normalized_path)
+      ON requested.node_id = aliases.node_id
+     AND requested.normalized_path = aliases.normalized_path
+  `;
+  for (const row of rows) {
+    if (typeof row.node_id !== "string" || typeof row.normalized_path !== "string") continue;
+    aliases.set(cardLegacyLocationKey({ nodeId: row.node_id, path: row.normalized_path }), {
+      assetId: row.asset_id,
+      availability: row.availability,
+    });
+  }
+  return aliases;
 }
 
 function projectItem(

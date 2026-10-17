@@ -8,6 +8,13 @@ const LEGACY_FILE_PATH = "/api/attachments/files";
 
 export type CardLegacyLocation = { nodeId: string; path: string };
 export type CardLegacyAttachmentRef = AttachmentRef & { legacy_url: string };
+type MarkdownLegacyTarget = {
+  start: number;
+  end: number;
+  location: CardLegacyLocation;
+  wrapped: boolean;
+};
+type TextRange = { start: number; end: number };
 
 export function collectCardLegacyLocations(input: {
   body: string;
@@ -28,11 +35,29 @@ export function collectCardLegacyLocations(input: {
     if (nodeId.length === 0 || path.length === 0) continue;
     add({ nodeId, path: normalizeAttachmentLegacyPath(path) });
   }
-  for (const target of input.format === "html" ? htmlTargets(input.body) : markdownTargets(input.body)) {
-    add(parseLegacyFileUrl(target));
+  if (input.format === "html") {
+    for (const target of htmlTargets(input.body)) add(parseCardLegacyFileUrl(target));
+  } else {
+    for (const target of markdownLegacyTargets(input.body)) add(target.location);
   }
   return order.map((key) => chosen.get(key)!);
 }
+
+export function rewriteMarkdownLegacySourceUrls(
+  body: string,
+  resolve: (location: CardLegacyLocation) => string | null,
+): string {
+  const targets = markdownLegacyTargets(body);
+  let result = body;
+  for (const target of [...targets].reverse()) {
+    const projected = resolve(target.location);
+    if (projected === null) continue;
+    const replacement = target.wrapped ? `<${projected}>` : projected;
+    result = result.slice(0, target.start) + replacement + result.slice(target.end);
+  }
+  return result;
+}
+
 export async function resolveCardLegacySourceRefsTx(
   sql: RepositorySql,
   input: {
@@ -118,13 +143,38 @@ function userLegacyScopeAllowed(scope: unknown, cardId: string): boolean {
   if (scope.type === "card") return typeof scope.id === "string" && scope.id === cardId;
   return false;
 }
-function markdownTargets(body: string): string[] {
-  const text = stripFencedBlocks(body);
-  const targets: string[] = [];
-  for (const match of text.matchAll(/!?\[[^\]\n]*\]\(\s*(<[^<>\n]*>|[^()\s]+)/g)) if (match[1]) targets.push(match[1]);
-  for (const match of text.matchAll(/<([^<>\s]+)>/g)) if (match[1]) targets.push(match[1]);
-  for (const match of text.matchAll(/^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(\S+)/gm)) if (match[1]) targets.push(match[1]);
-  return targets;
+function markdownLegacyTargets(body: string): MarkdownLegacyTarget[] {
+  const codeRanges = markdownCodeRanges(body);
+  const targets: MarkdownLegacyTarget[] = [];
+  const seen = new Set<string>();
+  const add = (start: number, end: number, raw: string): void => {
+    if (codeRanges.some((range) => rangesOverlap(range, { start, end }))) return;
+    const location = parseCardLegacyFileUrl(raw);
+    if (location === null) return;
+    const key = `${start}:${end}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    targets.push({ start, end, location, wrapped: raw.startsWith("<") && raw.endsWith(">") });
+  };
+
+  for (const match of body.matchAll(/(!?\[[^\]\n]*\]\(\s*)(<[^<>\n]*>|[^()\s]+)/g)) {
+    if (match[1] !== undefined && match[2] !== undefined && match.index !== undefined) {
+      const start = match.index + match[1].length;
+      add(start, start + match[2].length, match[2]);
+    }
+  }
+  for (const line of linesWithOffsets(body)) {
+    const match = /^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(\S+)/.exec(line.text);
+    if (match?.[1] !== undefined && match[2] !== undefined) {
+      const start = line.start + match[1].length;
+      add(start, start + match[2].length, match[2]);
+    }
+  }
+  for (const match of body.matchAll(/<([^<>\s]+)>/g)) {
+    if (match[0] !== undefined && match.index !== undefined)
+      add(match.index, match.index + match[0].length, match[0]);
+  }
+  return targets.sort((left, right) => left.start - right.start);
 }
 function htmlTargets(body: string): string[] {
   const targets: string[] = [];
@@ -134,7 +184,7 @@ function htmlTargets(body: string): string[] {
   }
   return targets;
 }
-function parseLegacyFileUrl(raw: string): CardLegacyLocation | null {
+export function parseCardLegacyFileUrl(raw: string): CardLegacyLocation | null {
   let value = raw.trim();
   if (value.startsWith("<") && value.endsWith(">")) value = value.slice(1, -1);
   const hash = value.indexOf("#");
@@ -156,19 +206,88 @@ function legacyRelativeUrl(location: CardLegacyLocation): string {
   params.set("path", location.path);
   return `${LEGACY_FILE_PATH}?${params.toString()}`;
 }
-function stripFencedBlocks(body: string): string {
-  const kept: string[] = [];
-  let fence: string | null = null;
-  for (const line of body.split("\n")) {
-    const marker = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence === null) {
-      if (marker?.[1]) { fence = marker[1][0]!; continue; }
-      kept.push(line);
+function markdownCodeRanges(body: string): TextRange[] {
+  const fenced: TextRange[] = [];
+  let opening: { character: string; length: number; start: number } | null = null;
+  for (const line of linesWithOffsets(body)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line.text);
+    if (opening === null) {
+      if (marker?.[1] !== undefined) {
+        const character = marker[1][0]!;
+        if (character !== "`" || !marker[2]!.includes("`")) {
+          opening = { character, length: marker[1].length, start: line.start };
+        }
+      }
       continue;
     }
-    if (marker?.[1] && marker[1][0] === fence) fence = null;
+
+    const closing = /^ {0,3}(`+|~+)[ \t]*$/.exec(line.text);
+    if (closing?.[1] !== undefined
+      && closing[1][0] === opening.character
+      && closing[1].length >= opening.length) {
+      fenced.push({ start: opening.start, end: line.fullEnd });
+      opening = null;
+    }
   }
-  return kept.join("\n");
+  if (opening !== null) fenced.push({ start: opening.start, end: body.length });
+
+  const inline: TextRange[] = [];
+  let segmentStart = 0;
+  for (const fence of fenced) {
+    inline.push(...inlineCodeRanges(body, segmentStart, fence.start));
+    segmentStart = fence.end;
+  }
+  inline.push(...inlineCodeRanges(body, segmentStart, body.length));
+  return [...fenced, ...inline].sort((left, right) => left.start - right.start);
+}
+
+function inlineCodeRanges(body: string, start: number, end: number): TextRange[] {
+  const runs: Array<TextRange & { length: number }> = [];
+  const segment = body.slice(start, end);
+  for (const match of segment.matchAll(/`+/g)) {
+    if (match.index === undefined || match[0] === undefined) continue;
+    const runStart = start + match.index;
+    if (isEscapedBacktick(body, runStart)) continue;
+    runs.push({ start: runStart, end: runStart + match[0].length, length: match[0].length });
+  }
+
+  const ranges: TextRange[] = [];
+  let index = 0;
+  while (index < runs.length) {
+    let closing = index + 1;
+    while (closing < runs.length && runs[closing]!.length !== runs[index]!.length) closing += 1;
+    if (closing === runs.length) {
+      index += 1;
+      continue;
+    }
+    ranges.push({ start: runs[index]!.start, end: runs[closing]!.end });
+    index = closing + 1;
+  }
+  return ranges;
+}
+
+function linesWithOffsets(body: string): Array<{ text: string; start: number; fullEnd: number }> {
+  const lines: Array<{ text: string; start: number; fullEnd: number }> = [];
+  let start = 0;
+  while (start <= body.length) {
+    const newline = body.indexOf("\n", start);
+    const end = newline === -1 ? body.length : newline;
+    const contentEnd = end > start && body[end - 1] === "\r" ? end - 1 : end;
+    lines.push({ text: body.slice(start, contentEnd), start, fullEnd: newline === -1 ? body.length : newline + 1 });
+    if (newline === -1) break;
+    start = newline + 1;
+  }
+  return lines;
+}
+
+function isEscapedBacktick(body: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && body[cursor] === "\\"; cursor -= 1) backslashes += 1;
+  return backslashes % 2 === 1;
+}
+
+function rangesOverlap(left: TextRange, right: TextRange): boolean {
+  return left.start < right.end && right.start < left.end;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

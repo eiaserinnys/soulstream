@@ -3,6 +3,9 @@ import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardRepositoryRead } from "../src/cards/control_plane/card_repository_read.js";
 import { CardMcpReadService, type CardMcpGetInput } from "../src/cards/card_mcp_read.js";
+import { collectCardLegacyLocations } from "../src/cards/card_attachment_legacy_refs.js";
+import { projectCardAttachmentRows } from "../src/cards/card_attachment_projection.js";
+import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
 import { serializeCardRow } from "../src/folders/folder_contracts.js";
 import type { CardItem } from "../src/cards/card_item_rules.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
@@ -52,6 +55,7 @@ describe("card attachment evidence projection", () => {
     cardUpdates.length = 0;
     await h.sql.unsafe("DELETE FROM folder_operations WHERE folder_id=$1", [FOLDER_ID]);
     await h.sql.unsafe("DELETE FROM cards WHERE folder_id=$1", [FOLDER_ID]);
+    await h.sql.unsafe("DELETE FROM attachment_legacy_aliases");
     await h.sql.unsafe("DELETE FROM file_assets");
     await h.sql.unsafe("UPDATE sessions SET card_id=NULL,status='running' WHERE session_id IN ($1,$2)", [ASSIGNEE, MEMBER]);
     await h.sql.unsafe(
@@ -82,6 +86,16 @@ describe("card attachment evidence projection", () => {
       ${id},${"private/" + id},'attachment','https://r2.example.test','private-attachments','agent_session',${MEMBER},
       ${h.sql.json({ type: "card", id: cardId })}::jsonb,${MEMBER},${id + ".bin"},${options.mime ?? "image/png"},8,${options.status ?? "committed"}
     )`;
+  }
+
+  async function insertLegacyAlias(
+    nodeId: string,
+    path: string,
+    assetId: string | null,
+    availability: "resolved" | "missing",
+  ): Promise<void> {
+    await h.sql`INSERT INTO attachment_legacy_aliases(node_id,normalized_path,asset_id,original_path,availability)
+      VALUES (${nodeId},${path},${assetId},${path},${availability})`;
   }
 
   async function storedItems(cardId: string): Promise<CardItem[]> {
@@ -182,6 +196,119 @@ describe("card attachment evidence projection", () => {
     const cardContent = CARD_CONTENT(cardId, "titled-image");
     expect(detail!.card.request).toBe('![image](' + cardContent + ' "화면") and [file](<' + cardContent + '> \'원본\')');
     expect(detail!.card.request).not.toContain("context_type=owner");
+  });
+
+  it("projects each resolved legacy alias only when its ID is in that source refs", async () => {
+    const cardId = await makeCard();
+    await insertAsset("legacy-shared", cardId);
+    await insertAsset("legacy-unreferenced", cardId);
+    const firstUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Ffirst.png";
+    const secondUrl = "/api/attachments/files?nodeId=node-b&path=%2Flegacy%2Fsecond.png";
+    const unreferencedUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Funreferenced.png";
+    const missingUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fmissing.png";
+    await insertLegacyAlias("node-a", "/legacy/first.png", "legacy-shared", "resolved");
+    await insertLegacyAlias("node-b", "/legacy/second.png", "legacy-shared", "resolved");
+    await insertLegacyAlias("node-a", "/legacy/unreferenced.png", "legacy-unreferenced", "resolved");
+    await insertLegacyAlias("node-a", "/legacy/missing.png", null, "missing");
+
+    const sourceBody = [
+      `![first](${firstUrl}) [second](${secondUrl} "원본")`,
+      `[unreferenced](${unreferencedUrl}) [missing](${missingUrl}) [external](https://example.test/file.png)`,
+      `인라인 코드: \`![inline](${firstUrl})\``,
+      "````markdown",
+      "```",
+      `![four-backtick fence](${firstUrl})`,
+      "````",
+      "~~~markdown",
+      `![tilde fence](${firstUrl})`,
+      "~~~",
+      "```",
+      `![code](${firstUrl})`,
+      "```",
+    ].join("\n");
+    const refs = [{ attachment_id: "legacy-shared", legacy_url: firstUrl }];
+    await h.sql`UPDATE cards SET request=${sourceBody},attachment_refs=${h.sql.json(refs)}::jsonb WHERE id=${cardId}`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,attachment_refs)
+      VALUES ('legacy-projection-report',${cardId},'보고','markdown',${`![second](${secondUrl})`},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,attachment_refs)
+      VALUES ('legacy-projection-html',${cardId},'HTML','html',${`<img src="${firstUrl}">`},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,session_id,attachment_refs)
+      VALUES ('legacy-projection-comment',${cardId},'agent','comment',${`![first](${firstUrl})`},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+
+    const firstContent = CARD_CONTENT(cardId, "legacy-shared");
+    const expectedBody = [
+      `![first](${firstContent}) [second](${firstContent} "원본")`,
+      `[unreferenced](${unreferencedUrl}) [missing](${missingUrl}) [external](https://example.test/file.png)`,
+      `인라인 코드: \`![inline](${firstUrl})\``,
+      "````markdown",
+      "```",
+      `![four-backtick fence](${firstUrl})`,
+      "````",
+      "~~~markdown",
+      `![tilde fence](${firstUrl})`,
+      "~~~",
+      "```",
+      `![code](${firstUrl})`,
+      "```",
+    ].join("\n");
+    const detail = await cards.getCard(cardId);
+    expect(detail!.card.request).toBe(expectedBody);
+    expect(detail!.reports.find((row) => row.id === "legacy-projection-report")!.body)
+      .toBe(`![second](${firstContent})`);
+    expect(detail!.reports.find((row) => row.id === "legacy-projection-html")!.body).toBe(`<img src="${firstUrl}">`);
+    expect(detail!.comments[0]!.body).toBe(`![first](${firstContent})`);
+    expect((await h.sql`SELECT request FROM cards WHERE id=${cardId}`)[0]!.request).toBe(sourceBody);
+
+    const mcp = await reader.getCard(cardId, { include: ["request"] }, null);
+    expect(mcp.sections.request.text).toBe(expectedBody);
+  });
+
+  it("collects legacy URLs from the same Markdown regions that projection may rewrite", () => {
+    const url = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fcode.png";
+    const body = [
+      `\`![inline](${url})\``,
+      "````markdown",
+      "```",
+      `![four-backtick fence](${url})`,
+      "````",
+      "~~~markdown",
+      `![tilde fence](${url})`,
+      "~~~",
+    ].join("\n");
+    expect(collectCardLegacyLocations({ body, format: "markdown" })).toEqual([]);
+  });
+
+  it("batches alias lookups across the complete card projection input", async () => {
+    const cardId = "batch-card";
+    const assetId = "batch-asset";
+    const legacyUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fshared.png";
+    let aliasQueryCount = 0;
+    const sql = Object.assign(
+      (strings: TemplateStringsArray, ..._values: unknown[]) => {
+        if (strings.join("").includes("FROM attachment_legacy_aliases")) {
+          aliasQueryCount += 1;
+          return Promise.resolve([{
+            node_id: "node-a",
+            normalized_path: "/legacy/shared.png",
+            asset_id: assetId,
+            availability: "resolved",
+          }]);
+        }
+        return Promise.resolve([]);
+      },
+      { json: (value: unknown) => value, array: (values: readonly unknown[]) => values },
+    ) as RepositorySql;
+    const rows = Array.from({ length: 1270 }, (_unused, index) => ({
+      id: `${cardId}-${index}`,
+      request: `![shared](${legacyUrl})`,
+      attachment_refs: [{ attachment_id: assetId }],
+    }));
+
+    const projected = await projectCardAttachmentRows(sql, rows);
+
+    expect(projected).toHaveLength(1270);
+    expect(aliasQueryCount).toBe(1);
+    expect(projected[1269]!.request).toBe(`![shared](${CARD_CONTENT(`${cardId}-1269`, assetId)})`);
   });
 
   it("projects only source-ref URLs before request clipping and fingerprints source refs", async () => {
