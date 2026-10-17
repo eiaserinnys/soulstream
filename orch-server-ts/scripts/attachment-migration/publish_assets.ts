@@ -104,13 +104,17 @@ export function validatePublishReceipt(entry: PublishEntry, receipt: PublishRece
     throw publishError("RECEIPT_MISMATCH", "copy receipt asset ID differs from the manifest");
   }
   if (entry.status === "confirmed_missing") {
-    if (receipt.result !== "skipped_unconfirmed" || receipt.storage_key !== "" || receipt.byte_size !== null || receipt.sha256 !== null) {
+    if (receipt.result !== "skipped_unconfirmed" || receipt.storage_key !== "" || receipt.storage_endpoint !== null ||
+        receipt.storage_bucket !== null || receipt.byte_size !== null || receipt.sha256 !== null) {
       throw publishError("RECEIPT_MISMATCH", "confirmed-missing identity has an unexpected copy receipt");
     }
     return { attachmentId, storageKey: null, byteSize: null, checksumSha256: null, missing: true };
   }
   if (receipt.result !== "copied" && receipt.result !== "existing_verified") {
     throw publishError("RECEIPT_MISMATCH", "asset publication requires a verified E-05 receipt");
+  }
+  if (receipt.storage_endpoint !== entry.storage_endpoint || receipt.storage_bucket !== entry.storage_bucket) {
+    throw publishError("RECEIPT_MISMATCH", "copy receipt storage location differs from the current R2 settings");
   }
   if (!receipt.storage_key || !Number.isSafeInteger(receipt.byte_size) || receipt.byte_size! < 0 || !isSha256(receipt.sha256)) {
     throw publishError("RECEIPT_MISMATCH", "copy receipt storage key, size, or checksum is invalid");

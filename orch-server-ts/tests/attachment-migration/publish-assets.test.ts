@@ -41,12 +41,24 @@ describe("attachment migration asset publication", () => {
       .toThrow("RECEIPT_MISMATCH");
   });
 
+  it("rejects a verified receipt from another endpoint or bucket", () => {
+    const identity = planEntry();
+    const receipt = copyReceipt(identity);
+
+    expect(() => validatePublishReceipt(identity, { ...receipt, storage_endpoint: "https://other-r2.example.test" }))
+      .toThrow("RECEIPT_MISMATCH");
+    expect(() => validatePublishReceipt(identity, { ...receipt, storage_bucket: "other-private-attachments" }))
+      .toThrow("RECEIPT_MISMATCH");
+  });
+
   it("allows a confirmed missing receipt to publish only a missing alias", () => {
     const identity = planEntry({ status: "confirmed_missing", size_bytes: undefined, sha256: undefined, proposed_asset_id: undefined });
     const receipt: PublishReceipt = {
       identity_key: identity.identity_key,
       attachment_id: identity.identity_key,
       storage_key: "",
+      storage_endpoint: null,
+      storage_bucket: null,
       byte_size: null,
       sha256: null,
       verified_at: "2026-10-17T00:00:00.000Z",
@@ -119,6 +131,8 @@ function copyReceipt(identity: PublishEntry): PublishReceipt {
     identity_key: identity.identity_key,
     attachment_id: identity.proposed_asset_id ?? identity.identity_key,
     storage_key: `session-attachments/originals/${identity.proposed_asset_id}`,
+    storage_endpoint: identity.storage_endpoint,
+    storage_bucket: identity.storage_bucket,
     byte_size: identity.size_bytes ?? null,
     sha256: identity.sha256 ?? null,
     verified_at: "2026-10-17T00:00:00.000Z",

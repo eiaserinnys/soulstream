@@ -19,17 +19,20 @@ import { R2StorageRequestError, type R2ObjectStorage } from "../../src/runtime/l
 
 const bytes = new TextEncoder().encode("legacy attachment");
 const hash = sha256(bytes);
+const storageLocation = { endpoint: "https://r2.example.test", bucket: "private-attachments" };
 const cliPath = fileURLToPath(new URL("../../scripts/attachment-migration/copy_originals.ts", import.meta.url));
 
 describe("attachment migration original copy", () => {
   it("streams and verifies a source before storing it under the attachment original key", async () => {
     const storage = memoryStorage();
-    const receipt = await copyVerifiedSource(entry(), chunks(bytes), storage);
+    const receipt = await copyVerifiedSource(entry(), chunks(bytes), storageBinding(storage));
 
     expect(receipt).toMatchObject({
       identity_key: "identity-a",
       attachment_id: "legacy-identity-a",
       storage_key: "session-attachments/originals/legacy-identity-a",
+      storage_endpoint: storageLocation.endpoint,
+      storage_bucket: storageLocation.bucket,
       byte_size: bytes.byteLength,
       sha256: hash,
       result: "copied",
@@ -41,7 +44,7 @@ describe("attachment migration original copy", () => {
   it("accepts a zero-byte source and streams large input in chunks", async () => {
     const emptyStorage = memoryStorage();
     const empty = new Uint8Array();
-    await expect(copyVerifiedSource(entry(empty), chunks(empty), emptyStorage)).resolves.toMatchObject({
+    await expect(copyVerifiedSource(entry(empty), chunks(empty), storageBinding(emptyStorage))).resolves.toMatchObject({
       byte_size: 0,
       sha256: sha256(empty),
       result: "copied",
@@ -49,40 +52,50 @@ describe("attachment migration original copy", () => {
 
     const largeStorage = memoryStorage();
     const large = new Uint8Array(2 * 1024 * 1024).fill(7);
-    const receipt = await copyVerifiedSource(entry(large), chunks(large, 32 * 1024), largeStorage);
+    const receipt = await copyVerifiedSource(entry(large), chunks(large, 32 * 1024), storageBinding(largeStorage));
     expect(receipt).toMatchObject({ byte_size: large.byteLength, sha256: sha256(large), result: "copied" });
     expect(largeStorage.putObject).toHaveBeenCalledTimes(1);
   });
 
   it("rechecks the stored object on repeat and does not PUT again", async () => {
     const storage = memoryStorage();
-    const first = await copyVerifiedSource(entry(), chunks(bytes), storage);
-    const second = await copyVerifiedSource(entry(), chunks(bytes), storage);
+    const first = await copyVerifiedSource(entry(), chunks(bytes), storageBinding(storage));
+    const second = await copyVerifiedSource(entry(), chunks(bytes), storageBinding(storage));
 
     expect(first.result).toBe("copied");
     expect(second.result).toBe("existing_verified");
+    expect(second).toMatchObject({ storage_endpoint: storageLocation.endpoint, storage_bucket: storageLocation.bucket });
     expect(storage.putObject).toHaveBeenCalledTimes(1);
   });
 
   it("rejects changed source bytes before any storage write", async () => {
     const storage = memoryStorage();
-    await expect(copyVerifiedSource(entry(), chunks(new TextEncoder().encode("changed")), storage))
+    await expect(copyVerifiedSource(entry(), chunks(new TextEncoder().encode("changed")), storageBinding(storage)))
       .rejects.toMatchObject({ code: "SOURCE_CHANGED" });
     expect(storage.putObject).not.toHaveBeenCalled();
   });
 
-  it("does not bypass the 100 MiB registration limit", async () => {
-    const storage = memoryStorage();
-    const oversized = { ...entry(), size_bytes: 100 * 1024 * 1024 + 1 };
-    await expect(copyVerifiedSource(oversized, chunks(new Uint8Array()), storage)).rejects.toMatchObject({ code: "COPY_SIZE_LIMIT" });
-    expect(storage.putObject).not.toHaveBeenCalled();
+  it("copies and verifies an approved source above 100 MiB using bounded chunks", async () => {
+    const chunk = new Uint8Array(32 * 1024).fill(7);
+    const byteSize = 100 * 1024 * 1024 + 1;
+    const checksumSha256 = sha256Repeated(chunk, byteSize);
+    const storage = streamedPatternStorage(chunk, byteSize);
+    const approvedEntry = { ...entry(), size_bytes: byteSize, sha256: checksumSha256 };
+
+    const receipt = await copyVerifiedSource(approvedEntry, repeatedChunks(chunk, byteSize), storageBinding(storage));
+
+    expect(receipt).toMatchObject({ byte_size: byteSize, sha256: checksumSha256, result: "copied" });
+    expect(storage.putObject).toHaveBeenCalledTimes(1);
+    expect(storage.maxChunkSize()).toBeLessThanOrEqual(64 * 1024);
+    expect(storage.headObject).toHaveBeenCalledTimes(2);
+    expect(storage.openObject).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a conflicting object already stored at the target key", async () => {
     const storage = memoryStorage();
     storage.objects.set("session-attachments/originals/legacy-identity-a", new TextEncoder().encode("other"));
 
-    await expect(copyVerifiedSource(entry(), chunks(bytes), storage)).rejects.toMatchObject({ code: "COPY_HASH_MISMATCH" });
+    await expect(copyVerifiedSource(entry(), chunks(bytes), storageBinding(storage))).rejects.toMatchObject({ code: "COPY_HASH_MISMATCH" });
     expect(storage.putObject).not.toHaveBeenCalled();
   });
 
@@ -93,7 +106,7 @@ describe("attachment migration original copy", () => {
     const storage = memoryStorage();
     storage.putObject.mockRejectedValueOnce(new Error("storage unavailable"));
     try {
-      await expect(copyVerifiedSource(entry(), localFileSource(sourcePath), storage)).rejects.toMatchObject({ code: "COPY_STORAGE_UNAVAILABLE" });
+      await expect(copyVerifiedSource(entry(), localFileSource(sourcePath), storageBinding(storage))).rejects.toMatchObject({ code: "COPY_STORAGE_UNAVAILABLE" });
       expect(await readFile(sourcePath)).toEqual(Buffer.from(bytes));
     } finally {
       await rm(temp, { recursive: true, force: true });
@@ -213,8 +226,68 @@ function memoryStorage() {
   return { ...storage, objects, putObject };
 }
 
+function storageBinding(storage: R2ObjectStorage) {
+  return { storage, ...storageLocation };
+}
+
+function streamedPatternStorage(pattern: Uint8Array, expectedSize: number) {
+  let stored: { storageKey: string; byteSize: number; checksumSha256: string } | undefined;
+  let maxChunk = 0;
+  const putObject = vi.fn(async ({ storageKey, body, byteSize, checksumSha256 }: Parameters<R2ObjectStorage["putObject"]>[0]) => {
+    const hash = createHash("sha256");
+    let actualSize = 0;
+    for await (const value of body as AsyncIterable<Uint8Array>) {
+      maxChunk = Math.max(maxChunk, value.byteLength);
+      actualSize += value.byteLength;
+      hash.update(value);
+    }
+    const actualHash = hash.digest("hex");
+    if (actualSize !== byteSize || actualHash !== checksumSha256) throw new Error("fake storage received unexpected bytes");
+    stored = { storageKey, byteSize: actualSize, checksumSha256: actualHash };
+  });
+  const storage = {
+    putObject,
+    headObject: vi.fn(async ({ storageKey }: { storageKey: string }) => {
+      if (!stored || stored.storageKey !== storageKey) throw new R2StorageRequestError("head object", 404);
+      return { byteSize: stored.byteSize, mimeType: "image/png" };
+    }),
+    openObject: vi.fn(async ({ storageKey }: { storageKey: string }) => {
+      if (!stored || stored.storageKey !== storageKey) return new Response(null, { status: 404 });
+      let remaining = expectedSize;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (remaining === 0) { controller.close(); return; }
+          const next = pattern.subarray(0, Math.min(pattern.byteLength, remaining));
+          remaining -= next.byteLength;
+          controller.enqueue(next);
+        },
+      });
+      return new Response(body, { status: 200, headers: { "content-length": String(expectedSize) } });
+    }),
+  } as unknown as R2ObjectStorage;
+  return { ...storage, putObject, maxChunkSize: () => maxChunk };
+}
+
 async function* chunks(value: Uint8Array, chunkSize = 5): AsyncIterable<Uint8Array> {
   for (let offset = 0; offset < value.byteLength; offset += chunkSize) yield value.slice(offset, offset + chunkSize);
+}
+
+async function* repeatedChunks(pattern: Uint8Array, byteSize: number): AsyncIterable<Uint8Array> {
+  for (let remaining = byteSize; remaining > 0;) {
+    const next = pattern.subarray(0, Math.min(pattern.byteLength, remaining));
+    remaining -= next.byteLength;
+    yield next;
+  }
+}
+
+function sha256Repeated(pattern: Uint8Array, byteSize: number): string {
+  const hash = createHash("sha256");
+  for (let remaining = byteSize; remaining > 0;) {
+    const next = pattern.subarray(0, Math.min(pattern.byteLength, remaining));
+    remaining -= next.byteLength;
+    hash.update(next);
+  }
+  return hash.digest("hex");
 }
 
 async function collect(source: AsyncIterable<Uint8Array>): Promise<Uint8Array> {

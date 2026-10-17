@@ -145,6 +145,8 @@ describe("attachment migration asset publication PostgreSQL contract", () => {
       identity_key: entry.identity_key,
       attachment_id: entry.identity_key,
       storage_key: "",
+      storage_endpoint: null,
+      storage_bucket: null,
       byte_size: null,
       sha256: null,
       verified_at: "2026-10-17T00:00:00.000Z",
@@ -242,6 +244,8 @@ describe("attachment migration asset publication PostgreSQL contract", () => {
       identity_key: entry.identity_key,
       attachment_id: existing.id,
       storage_key: existing.storage_key,
+      storage_endpoint: ENDPOINT,
+      storage_bucket: BUCKET,
       byte_size: existing.byte_size,
       sha256: existing.checksum_sha256,
       verified_at: "2026-10-17T00:00:00.000Z",
@@ -251,6 +255,10 @@ describe("attachment migration asset publication PostgreSQL contract", () => {
     const result = await sql.begin((tx) => publishVerifiedAssetTx(publishSql(tx), entry, receipt));
     expect(result).toEqual({ attachmentId: existing.id, aliasCount: 1 });
     await expect(sql.begin((tx) => publishVerifiedAssetTx(publishSql(tx), entry, { ...receipt, sha256: "b".repeat(64) })))
+      .rejects.toMatchObject({ code: "RECEIPT_MISMATCH" });
+    await expect(sql.begin((tx) => publishVerifiedAssetTx(publishSql(tx), entry, { ...receipt, storage_endpoint: "https://other-r2.example.test" })))
+      .rejects.toMatchObject({ code: "RECEIPT_MISMATCH" });
+    await expect(sql.begin((tx) => publishVerifiedAssetTx(publishSql(tx), entry, { ...receipt, storage_bucket: "other-private-attachments" })))
       .rejects.toMatchObject({ code: "RECEIPT_MISMATCH" });
   });
 });
@@ -289,6 +297,8 @@ function copyReceipt(entry: PublishEntry): PublishReceipt {
     identity_key: entry.identity_key,
     attachment_id: entry.proposed_asset_id ?? entry.identity_key,
     storage_key: `session-attachments/originals/${entry.proposed_asset_id ?? entry.identity_key}`,
+    storage_endpoint: entry.storage_endpoint,
+    storage_bucket: entry.storage_bucket,
     byte_size: entry.size_bytes ?? null,
     sha256: entry.sha256 ?? null,
     verified_at: "2026-10-17T00:00:00.000Z",

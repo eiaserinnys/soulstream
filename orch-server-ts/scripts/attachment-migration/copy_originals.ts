@@ -15,7 +15,6 @@ import {
 } from "../../src/runtime/live_board_asset_storage.js";
 import { type InventoryAssetSnapshot, type InventoryPlanIdentity } from "./inventory_contract.js";
 
-const MAX_COPY_BYTES = 100 * 1024 * 1024;
 const ORIGINALS_STORAGE_PREFIX = "session-attachments/originals";
 const LEGACY_ORCH_URL = "http://127.0.0.1:5200";
 const DRY_RUN_MARKER = "ATTACHMENT_MIGRATION_COPY_DRY_RUN";
@@ -27,16 +26,20 @@ export type CopyReceipt = {
   identity_key: string;
   attachment_id: string;
   storage_key: string;
+  storage_endpoint: string | null;
+  storage_bucket: string | null;
   byte_size: number | null;
   sha256: string | null;
   verified_at: string;
   result: "copied" | "existing_verified" | "skipped_unconfirmed" | `failed(${string})`;
 };
 
-type CopyFailureCode = "SOURCE_CHANGED" | "COPY_HASH_MISMATCH" | "COPY_STORAGE_UNAVAILABLE" | "COPY_SIZE_LIMIT";
+type CopyFailureCode = "SOURCE_CHANGED" | "COPY_HASH_MISMATCH" | "COPY_STORAGE_UNAVAILABLE";
 type CopyFailure = Error & { readonly code: CopyFailureCode };
 type CopyStorage = Pick<R2ObjectStorage, "putObject" | "headObject" | "openObject">;
-type PurposeStorage = { readonly storage: R2ObjectStorage; readonly endpoint: string; readonly bucket: string };
+type StorageLocation = { readonly endpoint: string; readonly bucket: string };
+type CopyStorageBinding = StorageLocation & { readonly storage: CopyStorage };
+type PurposeStorage = StorageLocation & { readonly storage: R2ObjectStorage };
 type Manifest = { readonly manifestHash: string; readonly entries: CopyPlanEntry[]; readonly assets: InventoryAssetSnapshot[] };
 type CopyOptions = {
   readonly manifest: string;
@@ -51,20 +54,20 @@ type CopyOptions = {
 export async function copyVerifiedSource(
   planEntry: CopyPlanEntry,
   source: AsyncIterable<Uint8Array>,
-  storage: CopyStorage,
+  binding: CopyStorageBinding,
 ): Promise<CopyReceipt> {
+  const { storage } = binding;
   const attachmentId = planEntry.proposed_asset_id ?? planEntry.identity_key;
   const storageKey = `${ORIGINALS_STORAGE_PREFIX}/${attachmentId}`;
   if (!Number.isSafeInteger(planEntry.size_bytes) || planEntry.size_bytes! < 0 || !isSha256(planEntry.sha256)) {
     throw copyFailure("SOURCE_CHANGED", "manifest source size or checksum is missing");
   }
-  if (planEntry.size_bytes! > MAX_COPY_BYTES) throw copyFailure("COPY_SIZE_LIMIT", "source exceeds the 100 MiB copy limit");
   const { directory, filePath, byteSize, checksumSha256 } = await spoolAndVerifySource(source, planEntry.size_bytes!, planEntry.sha256!);
   try {
     const existing = await readStoredObject(storage, storageKey, planEntry.size_bytes!);
     if (existing !== undefined) {
       if (existing.checksumSha256 !== planEntry.sha256) throw copyFailure("COPY_HASH_MISMATCH", "stored object differs from the approved source");
-      return receipt(planEntry, attachmentId, storageKey, byteSize, checksumSha256, "existing_verified");
+      return receipt(planEntry, attachmentId, storageKey, byteSize, checksumSha256, "existing_verified", binding);
     }
 
     try {
@@ -81,7 +84,7 @@ export async function copyVerifiedSource(
       if (error instanceof R2ObjectIntegrityError) throw copyFailure("COPY_HASH_MISMATCH", "stored object integrity check failed", error);
       throw copyFailure("COPY_STORAGE_UNAVAILABLE", "could not copy and verify the R2 object", error);
     }
-    return receipt(planEntry, attachmentId, storageKey, byteSize, checksumSha256, "copied");
+    return receipt(planEntry, attachmentId, storageKey, byteSize, checksumSha256, "copied", binding);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -205,7 +208,7 @@ async function copySelectedEntries(entries: readonly CopyPlanEntry[], assets: re
               (asset.storage_bucket && asset.storage_bucket !== binding.bucket)) {
             throw copyFailure("COPY_STORAGE_UNAVAILABLE", "existing asset location does not match configured R2 settings");
           }
-          result = await verifyExistingAsset(entry, asset, binding.storage);
+          result = await verifyExistingAsset(entry, asset, binding);
         }
       } else if (!isCopyCandidate(entry)) {
         result = skippedReceipt(entry);
@@ -213,9 +216,9 @@ async function copySelectedEntries(entries: readonly CopyPlanEntry[], assets: re
         const targetAssetId = entry.proposed_asset_id ?? entry.identity_key;
         const storageKey = `${ORIGINALS_STORAGE_PREFIX}/${targetAssetId}`;
         const previous = receiptMap.get(entry.identity_key);
-        const storage = storageForPurpose("attachment", storages).storage;
+        const binding = storageForPurpose("attachment", storages);
         if (previous && ["copied", "existing_verified"].includes(previous.result)) {
-          result = await verifyPriorReceipt(entry, previous, storage);
+          result = await verifyPriorReceipt(entry, previous, binding);
           if (result.result === "existing_verified") {
             await appendReceipt(receiptPath, result);
             receiptMap.set(entry.identity_key, result);
@@ -226,7 +229,7 @@ async function copySelectedEntries(entries: readonly CopyPlanEntry[], assets: re
         const source = entry.legacy_node_id === localNodeId
           ? localFileSource(entry.physical_path)
           : fetchLegacySource({ baseUrl: LEGACY_ORCH_URL, nodeId: entry.legacy_node_id, path: entry.normalized_path, bearerToken: process.env.AUTH_BEARER_TOKEN ?? "" });
-        result = await copyVerifiedSource(entry, source, storage);
+        result = await copyVerifiedSource(entry, source, binding);
         if (result.storage_key !== storageKey) throw copyFailure("COPY_HASH_MISMATCH", "copy receipt key does not match the approved identity");
       }
     } catch (error) {
@@ -247,28 +250,28 @@ async function copySelectedEntries(entries: readonly CopyPlanEntry[], assets: re
   process.stdout.write(`COPY_VERIFIED copied=${copied} skipped_unconfirmed=${skipped} failed=${failed}\n`);
 }
 
-async function verifyPriorReceipt(entry: CopyPlanEntry, prior: CopyReceipt, storage: CopyStorage): Promise<CopyReceipt> {
+async function verifyPriorReceipt(entry: CopyPlanEntry, prior: CopyReceipt, binding: CopyStorageBinding): Promise<CopyReceipt> {
   const attachmentId = entry.proposed_asset_id ?? entry.identity_key;
   const storageKey = `${ORIGINALS_STORAGE_PREFIX}/${attachmentId}`;
   if (prior.attachment_id !== attachmentId || prior.storage_key !== storageKey || prior.byte_size !== entry.size_bytes || prior.sha256 !== entry.sha256) {
     throw copyFailure("COPY_HASH_MISMATCH", "prior receipt does not match the approved manifest");
   }
-  const existing = await readStoredObject(storage, storageKey, entry.size_bytes ?? 0);
+  const existing = await readStoredObject(binding.storage, storageKey, entry.size_bytes ?? 0);
   if (existing === undefined) return failedReceipt(entry, "SOURCE_CHANGED");
   if (existing.checksumSha256 !== prior.sha256) throw copyFailure("COPY_HASH_MISMATCH", "stored object differs from its prior receipt");
-  return receipt(entry, attachmentId, storageKey, existing.byteSize, existing.checksumSha256, "existing_verified");
+  return receipt(entry, attachmentId, storageKey, existing.byteSize, existing.checksumSha256, "existing_verified", binding);
 }
 
-async function verifyExistingAsset(entry: CopyPlanEntry, asset: InventoryAssetSnapshot, storage: CopyStorage): Promise<CopyReceipt> {
+async function verifyExistingAsset(entry: CopyPlanEntry, asset: InventoryAssetSnapshot, binding: CopyStorageBinding): Promise<CopyReceipt> {
   if (asset.upload_status !== "committed" || !asset.storage_key || typeof asset.byte_size !== "number" || !isSha256(asset.checksum_sha256)) {
     return skippedReceipt(entry);
   }
-  const actual = await readStoredObject(storage, asset.storage_key, asset.byte_size);
+  const actual = await readStoredObject(binding.storage, asset.storage_key, asset.byte_size);
   if (actual === undefined || actual.byteSize !== asset.byte_size || actual.checksumSha256 !== asset.checksum_sha256 ||
       (entry.sha256 !== undefined && entry.sha256 !== actual.checksumSha256)) {
     throw copyFailure("COPY_HASH_MISMATCH", "existing committed asset failed storage verification");
   }
-  return receipt(entry, asset.id, asset.storage_key, actual.byteSize, actual.checksumSha256, "existing_verified");
+  return receipt(entry, asset.id, asset.storage_key, actual.byteSize, actual.checksumSha256, "existing_verified", binding);
 }
 
 function storageForPurpose(purpose: string, storages: Map<string, PurposeStorage>): PurposeStorage {
@@ -350,7 +353,7 @@ async function spoolAndVerifySource(source: AsyncIterable<Uint8Array>, expectedS
     for await (const value of source) {
       const chunk = Buffer.from(value);
       byteSize += chunk.byteLength;
-      if (byteSize > expectedSize || byteSize > MAX_COPY_BYTES) throw copyFailure("SOURCE_CHANGED", "source size changed while reading");
+      if (byteSize > expectedSize) throw copyFailure("SOURCE_CHANGED", "source size changed while reading");
       hash.update(chunk);
       await handle.writeFile(chunk);
     }
@@ -401,19 +404,23 @@ function isCopyCandidate(entry: CopyPlanEntry): boolean {
   return entry.status === "verified_source" || entry.status === "owner_unverified" || entry.status === "unreferenced_preservation_candidate";
 }
 
-function receipt(entry: CopyPlanEntry, attachmentId: string, storageKey: string, byteSize: number, checksumSha256: string, result: CopyReceipt["result"]): CopyReceipt {
+function receipt(entry: CopyPlanEntry, attachmentId: string, storageKey: string, byteSize: number, checksumSha256: string,
+  result: CopyReceipt["result"], binding: StorageLocation): CopyReceipt {
   return { identity_key: entry.identity_key, attachment_id: attachmentId, storage_key: storageKey, byte_size: byteSize,
+    storage_endpoint: binding.endpoint, storage_bucket: binding.bucket,
     sha256: checksumSha256, verified_at: new Date().toISOString(), result };
 }
 
 function skippedReceipt(entry: CopyPlanEntry): CopyReceipt {
   return { identity_key: entry.identity_key, attachment_id: entry.proposed_asset_id ?? entry.existing_alias?.asset_id ?? entry.identity_key,
-    storage_key: "", byte_size: null, sha256: null, verified_at: new Date().toISOString(), result: "skipped_unconfirmed" };
+    storage_key: "", storage_endpoint: null, storage_bucket: null, byte_size: null, sha256: null,
+    verified_at: new Date().toISOString(), result: "skipped_unconfirmed" };
 }
 
 function failedReceipt(entry: CopyPlanEntry, code: CopyFailureCode): CopyReceipt {
   return { identity_key: entry.identity_key, attachment_id: entry.proposed_asset_id ?? entry.existing_alias?.asset_id ?? entry.identity_key,
-    storage_key: "", byte_size: entry.size_bytes ?? null, sha256: entry.sha256 ?? null, verified_at: new Date().toISOString(), result: `failed(${code})` };
+    storage_key: "", storage_endpoint: null, storage_bucket: null, byte_size: entry.size_bytes ?? null,
+    sha256: entry.sha256 ?? null, verified_at: new Date().toISOString(), result: `failed(${code})` };
 }
 
 function copyFailure(code: CopyFailureCode, message: string, cause?: unknown): CopyFailure {
@@ -423,7 +430,7 @@ function copyFailure(code: CopyFailureCode, message: string, cause?: unknown): C
 }
 
 function isCopyFailure(value: unknown): value is CopyFailure {
-  return value instanceof Error && ["SOURCE_CHANGED", "COPY_HASH_MISMATCH", "COPY_STORAGE_UNAVAILABLE", "COPY_SIZE_LIMIT"].includes((value as CopyFailure).code);
+  return value instanceof Error && ["SOURCE_CHANGED", "COPY_HASH_MISMATCH", "COPY_STORAGE_UNAVAILABLE"].includes((value as CopyFailure).code);
 }
 
 function isNodeError(value: unknown): value is NodeJS.ErrnoException { return value instanceof Error && "code" in value; }
