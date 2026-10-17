@@ -52,6 +52,7 @@ describe("card attachment evidence projection", () => {
     cardUpdates.length = 0;
     await h.sql.unsafe("DELETE FROM folder_operations WHERE folder_id=$1", [FOLDER_ID]);
     await h.sql.unsafe("DELETE FROM cards WHERE folder_id=$1", [FOLDER_ID]);
+    await h.sql.unsafe("DELETE FROM attachment_legacy_aliases");
     await h.sql.unsafe("DELETE FROM file_assets");
     await h.sql.unsafe("UPDATE sessions SET card_id=NULL,status='running' WHERE session_id IN ($1,$2)", [ASSIGNEE, MEMBER]);
     await h.sql.unsafe(
@@ -82,6 +83,16 @@ describe("card attachment evidence projection", () => {
       ${id},${"private/" + id},'attachment','https://r2.example.test','private-attachments','agent_session',${MEMBER},
       ${h.sql.json({ type: "card", id: cardId })}::jsonb,${MEMBER},${id + ".bin"},${options.mime ?? "image/png"},8,${options.status ?? "committed"}
     )`;
+  }
+
+  async function insertLegacyAlias(
+    nodeId: string,
+    path: string,
+    assetId: string | null,
+    availability: "resolved" | "missing",
+  ): Promise<void> {
+    await h.sql`INSERT INTO attachment_legacy_aliases(node_id,normalized_path,asset_id,original_path,availability)
+      VALUES (${nodeId},${path},${assetId},${path},${availability})`;
   }
 
   async function storedItems(cardId: string): Promise<CardItem[]> {
@@ -182,6 +193,52 @@ describe("card attachment evidence projection", () => {
     const cardContent = CARD_CONTENT(cardId, "titled-image");
     expect(detail!.card.request).toBe('![image](' + cardContent + ' "화면") and [file](<' + cardContent + '> \'원본\')');
     expect(detail!.card.request).not.toContain("context_type=owner");
+  });
+
+  it("projects each resolved legacy alias only when its ID is in that source refs", async () => {
+    const cardId = await makeCard();
+    await insertAsset("legacy-shared", cardId);
+    await insertAsset("legacy-unreferenced", cardId);
+    const firstUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Ffirst.png";
+    const secondUrl = "/api/attachments/files?nodeId=node-b&path=%2Flegacy%2Fsecond.png";
+    const unreferencedUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Funreferenced.png";
+    const missingUrl = "/api/attachments/files?nodeId=node-a&path=%2Flegacy%2Fmissing.png";
+    await insertLegacyAlias("node-a", "/legacy/first.png", "legacy-shared", "resolved");
+    await insertLegacyAlias("node-b", "/legacy/second.png", "legacy-shared", "resolved");
+    await insertLegacyAlias("node-a", "/legacy/unreferenced.png", "legacy-unreferenced", "resolved");
+    await insertLegacyAlias("node-a", "/legacy/missing.png", null, "missing");
+
+    const sourceBody = [
+      `![first](${firstUrl}) [second](${secondUrl} "원본")`,
+      `[unreferenced](${unreferencedUrl}) [missing](${missingUrl}) [external](https://example.test/file.png)`,
+      "```",
+      `![code](${firstUrl})`,
+      "```",
+    ].join("\n");
+    const refs = [{ attachment_id: "legacy-shared", legacy_url: firstUrl }];
+    await h.sql`UPDATE cards SET request=${sourceBody},attachment_refs=${h.sql.json(refs)}::jsonb WHERE id=${cardId}`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,attachment_refs)
+      VALUES ('legacy-projection-report',${cardId},'보고','markdown',${`![second](${secondUrl})`},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,attachment_refs)
+      VALUES ('legacy-projection-html',${cardId},'HTML','html',${`<img src="${firstUrl}">`},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,session_id,attachment_refs)
+      VALUES ('legacy-projection-comment',${cardId},'agent','comment',${`![first](${firstUrl})`},${ASSIGNEE},${h.sql.json(refs)}::jsonb)`;
+
+    const firstContent = CARD_CONTENT(cardId, "legacy-shared");
+    const expectedBody = [
+      `![first](${firstContent}) [second](${firstContent} "원본")`,
+      `[unreferenced](${unreferencedUrl}) [missing](${missingUrl}) [external](https://example.test/file.png)`,
+      "```",
+      `![code](${firstUrl})`,
+      "```",
+    ].join("\n");
+    const detail = await cards.getCard(cardId);
+    expect(detail!.card.request).toBe(expectedBody);
+    expect(detail!.reports.find((row) => row.id === "legacy-projection-report")!.body)
+      .toBe(`![second](${firstContent})`);
+    expect(detail!.reports.find((row) => row.id === "legacy-projection-html")!.body).toBe(`<img src="${firstUrl}">`);
+    expect(detail!.comments[0]!.body).toBe(`![first](${firstContent})`);
+    expect((await h.sql`SELECT request FROM cards WHERE id=${cardId}`)[0]!.request).toBe(sourceBody);
   });
 
   it("projects only source-ref URLs before request clipping and fingerprints source refs", async () => {

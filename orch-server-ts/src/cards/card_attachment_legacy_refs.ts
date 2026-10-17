@@ -29,10 +29,53 @@ export function collectCardLegacyLocations(input: {
     add({ nodeId, path: normalizeAttachmentLegacyPath(path) });
   }
   for (const target of input.format === "html" ? htmlTargets(input.body) : markdownTargets(input.body)) {
-    add(parseLegacyFileUrl(target));
+    add(parseCardLegacyFileUrl(target));
   }
   return order.map((key) => chosen.get(key)!);
 }
+
+export function rewriteMarkdownLegacySourceUrls(
+  body: string,
+  resolve: (location: CardLegacyLocation) => string | null,
+): string {
+  let fence: string | null = null;
+  return body.split("\n").map((line) => {
+    const marker = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence === null) {
+      if (marker?.[1]) {
+        fence = marker[1][0]!;
+        return line;
+      }
+      return rewriteMarkdownLegacyLine(line, resolve);
+    }
+    if (marker?.[1] && marker[1][0] === fence) fence = null;
+    return line;
+  }).join("\n");
+}
+
+function rewriteMarkdownLegacyLine(
+  line: string,
+  resolve: (location: CardLegacyLocation) => string | null,
+): string {
+  const rewrite = (raw: string): string => {
+    const wrapped = raw.startsWith("<") && raw.endsWith(">");
+    const value = wrapped ? raw.slice(1, -1) : raw;
+    const location = parseCardLegacyFileUrl(value);
+    if (location === null) return raw;
+    const projected = resolve(location);
+    if (projected === null) return raw;
+    return wrapped ? `<${projected}>` : projected;
+  };
+
+  return line
+    .replace(/(!?\[[^\]\n]*\]\(\s*)(<[^<>\n]*>|[^()\s]+)/g,
+      (_whole, prefix: string, destination: string) => prefix + rewrite(destination))
+    .replace(/^([ \t]{0,3}\[[^\]\n]+\]:[ \t]*)(\S+)/,
+      (_whole, prefix: string, destination: string) => prefix + rewrite(destination))
+    .replace(/<([^<>\s]+)>/g,
+      (_whole, destination: string) => `<${rewrite(destination)}>`);
+}
+
 export async function resolveCardLegacySourceRefsTx(
   sql: RepositorySql,
   input: {
@@ -134,7 +177,7 @@ function htmlTargets(body: string): string[] {
   }
   return targets;
 }
-function parseLegacyFileUrl(raw: string): CardLegacyLocation | null {
+export function parseCardLegacyFileUrl(raw: string): CardLegacyLocation | null {
   let value = raw.trim();
   if (value.startsWith("<") && value.endsWith(">")) value = value.slice(1, -1);
   const hash = value.indexOf("#");
