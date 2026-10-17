@@ -42,7 +42,7 @@ export interface CardRow {
   now?: CardNow | null;
 }
 export interface CardReport { id: string; title: string; format: "markdown" | "html"; body: string; createdAt: string; sessionId: string | null }
-export interface CardQuestion { id: string; text: string; options: string[] | null; answer: string | null; askedAt: string; answeredAt: string | null }
+export interface CardQuestion { id: string; text: string; options: string[] | null; answer: string | null; askedAt: string; answeredAt: string | null; withdrawnAt?: string | null; withdrawalReason?: string | null }
 export interface CardLinkedSession { sessionId: string; cardId: string; displayName: string | null; nodeId: string; agentId: string; status: import("../shared/session-types").SessionStatus; createdAt: string; callerSessionId: string | null; updatedAt: string }
 export interface CardComment { id: string; cardId: string; authorKind: "user" | "agent"; authorId: string; sessionId: string | null; kind: "comment" | "spoken" | "note"; itemId?: number | null; body: string; createdAt: string }
 export interface CardDetail { card: CardRow; reports: CardReport[]; questions: CardQuestion[]; sessions: CardLinkedSession[]; comments?: CardComment[]; notes?: CardComment[]; nowHistory?: CardNowHistoryEntry[] }

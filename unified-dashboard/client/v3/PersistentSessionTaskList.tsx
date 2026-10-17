@@ -27,7 +27,7 @@ export function persistentTaskTooltipContent(card: CardRow, titleTruncated: bool
 
 export function latestUnansweredTooltipQuestion(detail: CardDetail | undefined): CardQuestion | null {
   return detail?.questions.reduce<CardQuestion | null>((latest, question) => {
-    if (question.answer !== null) return latest;
+    if (question.answer !== null || question.withdrawnAt) return latest;
     return latest === null || question.askedAt > latest.askedAt ? question : latest;
   }, null) ?? null;
 }

@@ -96,17 +96,18 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  const requestAttachmentReferences=(card.attachments??[]).map((attachment,index)=>occurrenceReference(legacyAttachmentReference(card.id,attachment),`request:${index}`));
  const requestReferences=[...markdownAttachmentReferences(renderedRequestMarkdown,card.id,origin),...requestAttachmentReferences];
  const requestLink=sourceLinkComponent(card.id,origin,requestReferences,openReference,internalLinkClick,true);
- const entries:{id:string;at:string;kind:string;role:"user"|"assistant";spoken?:boolean;collapsible?:boolean;body:ReactNode}[]=[
+ const entries:{id:string;at:string;kind:string;role:"user"|"assistant";spoken?:boolean;withdrawn?:boolean;collapsible?:boolean;body:ReactNode}[]=[
   {id:"request",at:card.createdAt,kind:"지시",role:"user",collapsible:true,body:<RequestPreview markdown={renderedRequestMarkdown} attachments={requestAttachmentReferences} expanded={expanded.has("request")} linkComponent={requestLink} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,requestReferences,trigger)} onOpenAttachment={(reference,trigger)=>void openReference(reference,requestReferences,trigger)}/>},
   ...(detail?.questions??[]).flatMap(q=>{
    const questionMarkdown=contextualizeMarkdownAttachmentUrls(q.text,card.id,origin);
    const questionReferences=markdownAttachmentReferences(questionMarkdown,card.id,origin);
    const questionLink=sourceLinkComponent(card.id,origin,questionReferences,openReference,internalLinkClick);
+   const withdrawn=Boolean(q.withdrawnAt);
    const answerMarkdown=q.answer?contextualizeMarkdownAttachmentUrls(q.answer,card.id,origin):"";
    const answerReferences=markdownAttachmentReferences(answerMarkdown,card.id,origin);
    const answerLink=sourceLinkComponent(card.id,origin,answerReferences,openReference,internalLinkClick,true);
    return [
-    {id:`q-${q.id}`,at:q.askedAt,kind:"질문",role:"assistant" as const,body:<><MarkdownContent content={questionMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,questionReferences,trigger)} sourceLinkComponent={questionLink}/>{!q.answer&&q.options?.length?<div className="v3-card-answer-options">{q.options.map(option=><Button key={option} variant="outline" disabled={pending} onClick={()=>onAnswer(q.id,option)}>{option}</Button>)}</div>:null}</>},
+    {id:`q-${q.id}`,at:q.askedAt,kind:"질문",role:"assistant" as const,withdrawn,body:<><MarkdownContent content={questionMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,questionReferences,trigger)} sourceLinkComponent={questionLink}/>{withdrawn&&q.withdrawalReason?<p className="v3-card-question-withdrawal">{q.withdrawalReason}</p>:null}{!withdrawn&&!q.answer&&q.options?.length?<div className="v3-card-answer-options">{q.options.map(option=><Button key={option} variant="outline" disabled={pending} onClick={()=>onAnswer(q.id,option)}>{option}</Button>)}</div>:null}</>},
     ...(q.answer?[{id:`a-${q.id}`,at:q.answeredAt??q.askedAt,kind:"답",role:"user" as const,body:<MarkdownContent content={answerMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,answerReferences,trigger)} sourceLinkComponent={answerLink}/>}]:[]),
    ];
   }),
@@ -134,7 +135,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  }
  return <><div className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
   const msg:ChatMessage={id:entry.id,treeNodeId:entry.id,treeNodeType:"card",role:entry.role,content:""};
-  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):""}</time></div>;
+  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}{entry.withdrawn?<span>철회됨</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):""}</time></div>;
   const bubbleProps:HTMLAttributes<HTMLDivElement>|undefined=entry.collapsible?{
    role:"button",tabIndex:0,className:"outline-none focus-visible:ring-2 focus-visible:ring-ring","aria-expanded":expanded.has(entry.id),
    onClick:event=>{if(!(event.target as Element).closest("a,button,input,iframe"))toggle(entry.id);},
