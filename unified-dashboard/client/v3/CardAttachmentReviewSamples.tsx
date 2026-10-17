@@ -24,14 +24,14 @@ function asset(id: string, name: string, body: Blob, previewKind: AttachmentDesc
   };
 }
 
-function evidence(value: ReviewAsset, availability?: "missing"): CardItemEvidence {
+function evidence(value: ReviewAsset, availability?: "missing" | "unavailable"): CardItemEvidence {
   const id = value.descriptor.attachment_id;
   const originalUrl = attachmentContentUrl(id, context, true);
   return {
     type: value.descriptor.preview_kind === "image" ? "image" : "link",
-    label: value.descriptor.name, attachment_id: id, descriptor: value.descriptor, read_context: context,
-    url: availability ? "" : value.previewUrl,
-    previewUrl: availability ? null : value.previewUrl,
+    label: value.descriptor.name, attachment_id: id, ...(!availability ? { descriptor: value.descriptor } : {}), read_context: context,
+    url: availability ? "" : value.descriptor.preview_kind === "image" ? value.previewUrl : originalUrl,
+    previewUrl: availability || value.descriptor.preview_kind !== "image" ? null : value.previewUrl,
     originalUrl: availability ? "" : originalUrl,
     ...(availability ? { availability } : {}),
   };
@@ -67,26 +67,29 @@ export function CardAttachmentReviewSamples() {
     const card = {
       ...reviewCard, id: cardId, title: "카드 첨부",
       request: `[요청 파일](/api/attachments/${prefix}text/content)\n\n[기존 파일](/api/attachments/files?nodeId=review-node&path=%2Freview%2Fnotes.txt)`,
+      attachments: [{ nodeId: "review-node", path: "/review/notes.txt", name: "notes.txt", mimeType: "text/plain" }],
     };
     const item: CardCheckItem = {
       ...reviewCardItems[2]!, id: 1, title: "소스 세션 없이 첨부를 읽습니다", result: null,
       evidence: [
-        ...assets.map(value => evidence(value, value.descriptor.attachment_id === `${prefix}missing` ? "missing" : undefined)),
+        // The row groups images first even when the server's evidence input is mixed.
+        ...[assets[2]!, assets[0]!, assets[3]!, assets[1]!, ...assets.slice(4)].map(value => evidence(value, value.descriptor.attachment_id === `${prefix}missing` ? "missing" : undefined)),
         { type: "link", label: "외부 자료", url: "https://example.com/card-attachment-review" },
       ],
     };
     const other: CardCheckItem = { ...item, id: 2, title: "다른 항목", evidence: [evidence(assets[1]!)] };
     const detail: CardDetail = {
-      card, sessions: [], questions: [], notes: [], nowHistory: [],
+      card, sessions: [], questions: [{ id: "attachment-review-question", text: "첨부를 확인했나요?", options: null, answer: `[확인한 파일](/api/attachments/${prefix}text/content)`, askedAt: "2026-10-05T01:10:00Z", answeredAt: "2026-10-05T01:11:00Z" }], notes: [], nowHistory: [],
       reports: [
         { id: "attachment-review-report", title: "첨부 보고", format: "markdown", sessionId: null, createdAt: "2026-10-05T02:00:00Z",
-          body: `[보고 파일](/api/attachments/${prefix}text/content)\n\n[일반 파일](/api/attachments/${prefix}info/content)\n\n[결손 파일](/api/attachments/${prefix}missing/content)\n\n[503 파일](/api/attachments/${prefix}unavailable/content)\n\n[외부 안내](https://example.com/card-attachment-review)` },
+          body: `[보고 파일][report]\n\n[일반 파일](/api/attachments/${prefix}info/content)\n\n[결손 파일](/api/attachments/${prefix}missing/content)\n\n[503 파일](/api/attachments/${prefix}unavailable/content)\n\n[외부 안내](https://example.com/card-attachment-review)\n\n[report]: /api/attachments/${prefix}text/content` },
         { id: "attachment-review-html", title: "HTML 보고", format: "html", sessionId: null, createdAt: "2026-10-05T03:00:00Z", body: "<p>기존 HTML 보고입니다.</p>" },
       ],
       comments: [{ id: "attachment-review-comment", cardId, authorKind: "user", authorId: "review-user", sessionId: null, kind: "comment", createdAt: "2026-10-05T04:00:00Z",
         body: `[세션 첨부](/api/attachments/${prefix}denied/content?context_type=session&context_id=review-session)` }],
     };
-    return { card, detail, items: [item, other] };
+    const unavailable: CardCheckItem = { ...item, id: 3, title: "사용 불가 자료", evidence: [evidence(assets[2]!, "unavailable")] };
+    return { card, detail, items: [item, other, unavailable] };
   }, [assets]);
 
   useEffect(() => {
