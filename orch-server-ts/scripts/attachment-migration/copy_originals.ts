@@ -345,6 +345,7 @@ async function spoolAndVerifySource(source: AsyncIterable<Uint8Array>, expectedS
   const handle = await open(filePath, "wx", 0o600);
   const hash = createHash("sha256");
   let byteSize = 0;
+  let handleClosed = false;
   try {
     for await (const value of source) {
       const chunk = Buffer.from(value);
@@ -358,11 +359,12 @@ async function spoolAndVerifySource(source: AsyncIterable<Uint8Array>, expectedS
     return { directory, filePath, byteSize, checksumSha256 };
   } catch (error) {
     await handle.close();
+    handleClosed = true;
     await rm(directory, { recursive: true, force: true });
     if (isCopyFailure(error)) throw error;
     throw copyFailure("SOURCE_CHANGED", "source stream could not be verified", error);
   } finally {
-    if (!handle.closed) await handle.close();
+    if (!handleClosed) await handle.close();
   }
 }
 

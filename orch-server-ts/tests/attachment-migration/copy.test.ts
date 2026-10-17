@@ -193,8 +193,8 @@ function entry(value = bytes): CopyPlanEntry {
 
 function memoryStorage() {
   const objects = new Map<string, Uint8Array>();
-  const putObject = vi.fn(async ({ storageKey, body }: { storageKey: string; body: AsyncIterable<Uint8Array> }) => {
-    objects.set(storageKey, await collect(body));
+  const putObject = vi.fn(async ({ storageKey, body }: Parameters<R2ObjectStorage["putObject"]>[0]) => {
+    objects.set(storageKey, body instanceof Uint8Array ? body : await collect(body));
   });
   const storage = {
     putObject,
