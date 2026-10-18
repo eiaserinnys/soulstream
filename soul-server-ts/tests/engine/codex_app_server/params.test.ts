@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 
+import type { ResolvedMcpServer } from "../../../src/mcp_config_service.js";
 import {
   buildThreadResumeParams,
   buildThreadStartParams,
   buildTurnStartParams,
 } from "../../../src/engine/codex_app_server/params.js";
+
+const SUPPRESSED_CODEX_APPS = {
+  apps: {
+    "asdk_app_6a74211194808191a5ef4210baa70013": { enabled: false },
+    "asdk_app_6a5b6e5b305481918729569f7881be5d": { enabled: false },
+  },
+};
 
 describe("Codex app-server parameter builders", () => {
   it("builds thread/start params with current wire defaults", () => {
@@ -26,7 +34,7 @@ describe("Codex app-server parameter builders", () => {
       approvalsReviewer: null,
       sandbox: "danger-full-access",
       permissions: null,
-      config: null,
+      config: SUPPRESSED_CODEX_APPS,
       serviceName: "soul-server-ts",
       baseInstructions: "base instructions",
       developerInstructions: null,
@@ -65,7 +73,7 @@ describe("Codex app-server parameter builders", () => {
       approvalsReviewer: null,
       sandbox: "danger-full-access",
       permissions: null,
-      config: null,
+      config: SUPPRESSED_CODEX_APPS,
       baseInstructions: null,
       developerInstructions: null,
       personality: null,
@@ -129,6 +137,7 @@ describe("Codex app-server parameter builders", () => {
           enabled: true,
         },
       },
+      ...SUPPRESSED_CODEX_APPS,
     };
 
     expect(
@@ -286,7 +295,46 @@ describe("Codex app-server parameter builders", () => {
         "/work",
         sseOnlyServers,
       ).config,
-    ).toEqual({ mcp_servers: {} });
+    ).toEqual({ mcp_servers: {}, ...SUPPRESSED_CODEX_APPS });
+  });
+
+  it("applies the duplicate-app suppression for every resolved-server shape on start and resume", () => {
+    const stdioServers: ResolvedMcpServer[] = [
+      { type: "stdio", name: "local", command: "node" },
+    ];
+    const sseServers: ResolvedMcpServer[] = [
+      { type: "sse", name: "outline", url: "http://127.0.0.1:3103/sse" },
+    ];
+    const cases: Array<{
+      servers: ResolvedMcpServer[] | undefined;
+      hasMcpServers: boolean;
+    }> = [
+      { servers: undefined, hasMcpServers: false },
+      { servers: [], hasMcpServers: true },
+      { servers: sseServers, hasMcpServers: true },
+      { servers: stdioServers, hasMcpServers: true },
+    ];
+
+    for (const { servers, hasMcpServers } of cases) {
+      const configs = [
+        buildThreadStartParams({ prompt: "start" }, "/work", servers).config,
+        buildThreadResumeParams(
+          { prompt: "resume", resumeSessionId: "thread-existing" },
+          "/work",
+          servers,
+        ).config,
+      ];
+      for (const config of configs) {
+        expect(config).not.toBeNull();
+        expect(config?.apps).toEqual(SUPPRESSED_CODEX_APPS.apps);
+        expect(Object.keys(config?.apps ?? {})).toHaveLength(2);
+        if (hasMcpServers) {
+          expect(config).toHaveProperty("mcp_servers");
+        } else {
+          expect(config).not.toHaveProperty("mcp_servers");
+        }
+      }
+    }
   });
 
   it("builds turn/start params with input attachments and reasoning effort policy", () => {
