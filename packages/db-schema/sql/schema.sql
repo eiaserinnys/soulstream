@@ -3764,8 +3764,6 @@ CREATE TABLE IF NOT EXISTS block_operations (
     CONSTRAINT block_operations_actor_event_fkey
         FOREIGN KEY (actor_session_id, actor_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL,
-    CONSTRAINT block_operations_agent_actor_check
-        CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL),
     CONSTRAINT block_operations_user_actor_check
         CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL),
     CONSTRAINT block_operations_version_check
@@ -3803,8 +3801,6 @@ ALTER TABLE block_operations ADD CONSTRAINT block_operations_actor_event_fkey
     FOREIGN KEY (actor_session_id, actor_event_id)
     REFERENCES events(session_id, id) ON DELETE SET NULL;
 ALTER TABLE block_operations DROP CONSTRAINT IF EXISTS block_operations_agent_actor_check;
-ALTER TABLE block_operations ADD CONSTRAINT block_operations_agent_actor_check
-    CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL);
 ALTER TABLE block_operations DROP CONSTRAINT IF EXISTS block_operations_user_actor_check;
 ALTER TABLE block_operations ADD CONSTRAINT block_operations_user_actor_check
     CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL);

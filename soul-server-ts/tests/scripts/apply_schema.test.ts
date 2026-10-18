@@ -240,13 +240,15 @@ describe("apply-schema.mjs", () => {
           "blocks_created_event_fkey",
           "blocks_updated_event_fkey",
           "block_operations_actor_event_fkey",
-          "block_operations_agent_actor_check",
           "block_operations_user_actor_check",
           "block_operations_version_check",
           "block_links_target_shape_check",
           "uq_blocks_page_id_id",
           "uq_block_links_source_ordinal",
         ]),
+      );
+      expect(pageModelConstraints.map((row) => row.constraint_name)).not.toContain(
+        "block_operations_agent_actor_check",
       );
 
       const pageModelIndexes = await sql<Array<{ indexname: string }>>`
@@ -298,15 +300,39 @@ describe("apply-schema.mjs", () => {
           'schema:system:1', 1, 2
         )
       `;
-      await expect(sql`
+      await sql`
+        INSERT INTO sessions (session_id, session_type, status)
+        VALUES ('schema-agent-session', 'codex', 'completed')
+      `;
+      await sql`
+        INSERT INTO events (session_id, id, event_type)
+        VALUES ('schema-agent-session', 1, 'assistant_message')
+      `;
+      await sql`
         INSERT INTO block_operations (
-          id, page_id, operation_type, actor_kind, idempotency_key,
+          id, page_id, operation_type, actor_kind, actor_session_id,
+          actor_event_id, idempotency_key,
           expected_version, result_version
         ) VALUES (
-          'operation-agent-missing-session', 'page-schema-1', 'create_block', 'agent',
-          'schema:agent:1', 2, 3
+          'operation-agent-delete-session', 'page-schema-1', 'create_block', 'agent',
+          'schema-agent-session', 1, 'schema:agent:1', 2, 3
         )
-      `).rejects.toMatchObject({ code: "23514" });
+      `;
+      await sql`SELECT session_delete('schema-agent-session')`;
+      const [preservedAgentOperation] = await sql<Array<{
+        actor_kind: string;
+        actor_session_id: string | null;
+        actor_event_id: number | null;
+      }>>`
+        SELECT actor_kind, actor_session_id, actor_event_id
+        FROM block_operations
+        WHERE id = 'operation-agent-delete-session'
+      `;
+      expect(preservedAgentOperation).toMatchObject({
+        actor_kind: "agent",
+        actor_session_id: null,
+      });
+      expect([null, 1]).toContain(preservedAgentOperation?.actor_event_id);
       await expect(sql`
         INSERT INTO block_operations (
           id, page_id, operation_type, actor_kind, idempotency_key,
