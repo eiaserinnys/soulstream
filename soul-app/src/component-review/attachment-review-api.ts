@@ -3,6 +3,19 @@ import { ApiHttpError } from '../api/clientCore';
 import { AttachmentReadError } from '../api/attachmentEndpoints';
 import type { AttachmentDescriptor, AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
 
+/** Public sample only: title, body, a wide table, and long prose, in Korean. */
+const REVIEW_HTML_DOCUMENT = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>공개 검수용 문서</title></head><body>
+<h1>공개 검수용 문서</h1>
+<p>이 문서는 검수 창에서 HTML 첨부가 문서로 표시되는지 확인하기 위한 공개 예시입니다.</p>
+<table>
+<tr><th>항목</th><th>설명</th><th>값</th><th>비고</th><th>확인</th><th>담당</th></tr>
+<tr><td>폭</td><td>가로로 넓은 표가 넘칠 때 가로 스크롤이 되는지</td><td>여섯 열</td><td>좁은 화면</td><td>예</td><td>검수</td></tr>
+<tr><td>본문</td><td>긴 문단이 창 안에서 세로로 스크롤되는지</td><td>여러 줄</td><td>세로</td><td>예</td><td>검수</td></tr>
+</table>
+${Array.from({ length: 40 }, (_, index) => `<p>본문 문단 ${index + 1}: 긴 문서를 세로로 스크롤해 끝까지 읽을 수 있는지 확인합니다.</p>`).join('\n')}
+</body></html>`;
+
 export function buildAttachmentReviewApi(api: Partial<ApiClient>): ApiClient {
   return {
     ...api,
@@ -17,6 +30,7 @@ export function buildAttachmentReviewApi(api: Partial<ApiClient>): ApiClient {
     readAttachmentText: async (attachmentId: string) => {
       const status = attachmentReviewFailureStatus(attachmentId);
       if (status !== null) throw attachmentReadError(status);
+      if (attachmentId === 'review-attachment-html') return { text: REVIEW_HTML_DOCUMENT, truncated: false };
       if (attachmentId === 'review-attachment-long') return { text: Array.from({ length: 300 }, (_, index) => `${index + 1}: 공개 검수용 서버 로그`).join('\n'), truncated: false };
       if (attachmentId === 'review-attachment-empty') return { text: '', truncated: false };
       if (attachmentId === 'review-attachment-markdown') return { text: '# 평문으로 표시되는 Markdown', truncated: false };
@@ -68,6 +82,10 @@ function attachmentReviewDescriptor(attachmentId: string): AttachmentDescriptor 
     'review-attachment-empty': reviewTextDescriptor('빈 파일.txt', 0),
     'review-attachment-long': reviewTextDescriptor('수백 줄 서버 로그와 아주 긴 파일 이름을 가진 공개 검수용 첨부 문서.txt', 12_000),
     'review-attachment-bin': reviewInfoDescriptor('archive.bin', 'application/octet-stream', 4_096),
+    'review-attachment-html': {
+      name: '공개 검수용 문서.html', mime_type: 'text/html', byte_size: 10_401, checksum_sha256: null,
+      width: null, height: null, preview_kind: 'info', preview_mime_type: null,
+    },
     'review-attachment-svg': reviewInfoDescriptor('vector.svg', 'image/svg+xml', 1_536),
     'review-attachment-heic': reviewInfoDescriptor('photo.heic', 'image/heic', 3_072),
   };

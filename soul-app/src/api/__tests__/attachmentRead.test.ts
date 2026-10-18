@@ -104,3 +104,37 @@ test('metadata 404는 attachment missing 상태가 아닌 HTTP 오류로 보존�
   await expect(api.getAttachmentMetadata('asset/1', { type: 'card', id: 'card-1' }))
     .rejects.toMatchObject({ name: 'ApiHttpError', status: 404 });
 });
+
+test('legacy 문서 본문은 원문 files URL로 인증 GET과 바이트 범위를 보낸다', async () => {
+  const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(textResponse('<h1>문서 본문</h1>'));
+  const api = createApiClient(BASE, { authToken: 'test-jwt' });
+  const href = `${BASE}/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fproposal.html&context_type=card&context_id=card-1`;
+
+  await expect(api.readLegacyAttachmentText(href)).resolves.toEqual({ text: '<h1>문서 본문</h1>', truncated: false });
+
+  expect(fetchMock.mock.calls[0][0]).toBe(href);
+  expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get('Range'))
+    .toBe(`bytes=0-${MAX_ATTACHMENT_TEXT_BYTES - 1}`);
+  expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get('Authorization')).toBe('Bearer test-jwt');
+});
+
+test('legacy 본문 읽기는 id URL이나 다른 출처의 링크를 요청하지 않는다', async () => {
+  const fetchMock = jest.spyOn(global, 'fetch');
+  const api = createApiClient(BASE, { authToken: 'test-jwt' });
+
+  await expect(api.readLegacyAttachmentText(`${BASE}/api/attachments/asset-1/content?context_type=card&context_id=card-1`))
+    .rejects.toMatchObject({ name: 'AttachmentReadError', kind: 'preview-failed' });
+  await expect(api.readLegacyAttachmentText('https://outside.test/api/attachments/files?nodeId=n&path=%2Fa.txt'))
+    .rejects.toMatchObject({ name: 'AttachmentReadError', kind: 'preview-failed' });
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('body stream이 없는 RN Response도 text()의 실제 본문을 읽는다', async () => {
+  const headers = new Headers({ 'Content-Type': 'text/html; charset=utf-8' });
+  const withoutBody = { ok: true, status: 200, headers, body: null, text: async () => '<h1>문서 본문</h1>' };
+  jest.spyOn(global, 'fetch').mockResolvedValue(withoutBody as unknown as Response);
+  const api = createApiClient(BASE, { authToken: 'test-jwt' });
+
+  await expect(api.readAttachmentText('asset/1', { type: 'owner' }))
+    .resolves.toEqual({ text: '<h1>문서 본문</h1>', truncated: false });
+});

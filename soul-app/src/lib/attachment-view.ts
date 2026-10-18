@@ -7,6 +7,8 @@ export type AttachmentPreviewKind = 'image' | 'text' | 'info';
 
 export type AttachmentView = {
   loadMetadata?: () => Promise<AttachmentView>;
+  /** Loads a bounded body for views whose content is not fetched by ID (legacy paths). */
+  loadText?: (signal: AbortSignal) => Promise<{ text: string; truncated: boolean }>;
   key: string;
   name: string;
   mimeType: string | null;
@@ -85,4 +87,10 @@ function validByteSize(value: number): number | null {
 /** Preserve the legacy app image extension contract; descriptor previews use preview_kind. */
 export function isLegacyAttachmentImage(path: string): boolean {
   return /\.(?:png|jpe?g|gif|webp|heic|avif)$/i.test(path);
+}
+
+/** HTML attachments open as documents: text/html (parameters stripped) or an html/htm name. */
+export function isHtmlAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'name'>): boolean {
+  const mimeType = view.mimeType?.split(';', 1)[0]?.trim().toLowerCase();
+  return mimeType === 'text/html' || /\.html?$/i.test(view.name);
 }

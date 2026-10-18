@@ -77,6 +77,8 @@ const fileItems: AttachmentView[] = [
   infoFile('review-attachment-heic', 'photo.heic', 'image/heic', 3072),
 ];
 
+const htmlItem = infoFile('review-attachment-html', '공개 검수용 문서.html', 'text/html', 10_401);
+
 const mixedItems = [multipleImages[0], textFile('review-attachment-long', '수백 줄 서버 로그와 아주 긴 파일 이름을 가진 공개 검수용 첨부 문서.txt', 12_000), multipleImages[1], fileItems[7]];
 export const attachmentDialogueItems = mixedItems;
 
@@ -100,6 +102,12 @@ export function ReviewAttachments() {
     </ReviewSection>)}
     <ReviewSection title="파일 행과 프리뷰" testID="review-attachments-files">
       <MessageAttachments items={fileItems} role="assistant" />
+    </ReviewSection>
+    <ReviewSection title="HTML 문서" testID="review-attachments-html">
+      <MessageAttachments items={[htmlItem]} role="assistant" />
+    </ReviewSection>
+    <ReviewSection title="이미지와 HTML 문서 혼합" testID="review-attachments-html-mixed">
+      <MessageAttachments items={[multipleImages[0], htmlItem]} role="assistant" />
     </ReviewSection>
     <ReviewSection title="도구 결과 잘림 · 전문 보관" testID="review-attachments-truncation-attached">
       <ToolEvent start={toolStartTruncated} result={toolResult(truncatedAttachment)} sessionId="review-truncation" api={null} />

@@ -250,3 +250,25 @@ test('원고형 썸네일은 200 정사각 상한을 쓰고 같은 메시지의 
   expect(oneImage.queryByTestId('chat-image-viewer-previous')).toBeNull();
   expect(oneImage.queryByTestId('chat-image-viewer-next')).toBeNull();
 });
+
+test('문서 배치는 미디어 프레임 대신 사용 가능한 세로를 쓰고 높이를 한 번만 기록한다', () => {
+  const screen = render(<ImageViewerModal
+    variant="chatRefined"
+    layout="document"
+    sources={[{ uri: 'https://test/doc.html' }]}
+    items={[{ key: 'doc', name: 'doc.html', source: { kind: 'ready' } }] as any}
+    initialIndex={0}
+    onClose={jest.fn()}
+    filenames={['doc.html']}
+  />);
+
+  const frame = screen.getByTestId('chat-image-viewer-frame');
+  expect(StyleSheet.flatten(frame.props.style).flex).toBe(1);
+  expect(StyleSheet.flatten(frame.props.style).height).toBeUndefined();
+  expect(typeof frame.props.onLayout).toBe('function');
+
+  act(() => {
+    frame.props.onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 320, height: 480 } } });
+  });
+  expect(screen.getByTestId('chat-image-viewer-surface')).toBeTruthy();
+});

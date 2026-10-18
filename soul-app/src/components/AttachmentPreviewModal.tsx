@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -8,13 +8,15 @@ import {
   View,
 } from 'react-native';
 import { createApiClient } from '../api/client';
-import type { AttachmentView } from '../lib/attachment-view';
+import { isHtmlAttachmentView, type AttachmentView } from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
+import { buildCustomViewBindings, renderCustomViewHtml } from '../lib/custom-view-renderer';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
 import { AttachmentMetadataPreview } from './AttachmentMetadataPreview';
 import { ImageViewerModal } from './ImageViewerModal';
 import { attachmentImageSource } from '../lib/attachment-image-source';
+import { WebView } from 'react-native-webview';
 
 export type AttachmentOriginalSaveHandler = (
   view: AttachmentView,
@@ -25,9 +27,12 @@ export type AttachmentTextContent = { text: string; truncated: boolean };
 type PreviewState =
   | { kind: 'loading' }
   | { kind: 'text'; text: string; truncated: boolean }
+  | { kind: 'html'; text: string; truncated: boolean }
   | { kind: 'info' }
   | { kind: 'unavailable'; message: string }
   | { kind: 'failed'; message: string; retryable: boolean };
+
+const CUSTOM_VIEW_BINDINGS = buildCustomViewBindings(null, {});
 
 export async function saveAttachmentOriginalView(
   view: AttachmentView,
@@ -54,8 +59,11 @@ export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0,
   const [resolved, setResolved] = useState<Record<string, AttachmentView>>({});
   const onResolved = useCallback((key: string, view: AttachmentView) => setResolved(previous => ({ ...previous, [key]: view })), []);
   const views = items.map(entry => resolved[entry.key] ?? entry);
+  // A bundle that holds a readable document opens whole in the document layout so
+  // paging never moves the header, close, save, or paging controls.
+  const layout = views.some(isHtmlAttachmentView) ? 'document' : 'media';
   return <View testID="attachment-preview-modal">
-    <ImageViewerModal variant="chatRefined" items={views} initialIndex={initialIndex} onClose={onClose}
+    <ImageViewerModal variant="chatRefined" layout={layout} items={views} initialIndex={initialIndex} onClose={onClose}
       sources={views.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
         ? attachmentImageSource({ ...entry, source: entry.source }, scope.serverUrl, scope.jwt) : {})}
       renderAttachment={(entry) => entry.loadMetadata ? <AttachmentMetadataPreview key={entry.key} item={entry} onResolved={onResolved} /> : <AttachmentPreviewContent key={entry.key} item={entry}
@@ -67,32 +75,43 @@ export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0,
 function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView; textContent?: AttachmentTextContent }) {
   const t = useTokens();
   const attachment = createSessionVisualRoles(t).chat.attachment;
+  const html = isHtmlAttachmentView(item);
   const [state, setState] = useState<PreviewState>(() => initialPreviewState(item));
   const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
     if (textContent) {
-      setState({ kind: 'text', ...textContent });
+      setState(html ? { kind: 'html', ...textContent } : { kind: 'text', ...textContent });
       return;
     }
-    if (item.previewKind !== 'text' || item.source.kind !== 'ready' || item.byteSize === 0) {
+    if ((!html && item.previewKind !== 'text') || item.source.kind !== 'ready' || item.byteSize === 0) {
       setState(initialPreviewState(item));
       return;
     }
     const controller = new AbortController();
     const scope = captureAuthScope();
+    const source = item.source;
     setState({ kind: 'loading' });
-    void createApiClient(scope.serverUrl, { authScope: scope })
-      .readAttachmentText(item.source.attachmentId, item.readContext, controller.signal)
+    const read = item.loadText
+      ? item.loadText(controller.signal)
+      : createApiClient(scope.serverUrl, { authScope: scope })
+        .readAttachmentText(source.attachmentId, item.readContext, controller.signal);
+    void read
       .then(({ text, truncated }) => {
-        if (!controller.signal.aborted) setState({ kind: 'text', text, truncated });
+        if (!controller.signal.aborted) setState(html ? { kind: 'html', text, truncated } : { kind: 'text', text, truncated });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setState(readFailureState(error));
       });
     return () => controller.abort();
-  }, [item, retryKey, textContent]);
+  }, [item, retryKey, textContent, html]);
 
-  return <View style={{ flex: 1, width: '100%', padding: t.spacing.md, alignItems: 'center', justifyContent: 'center' }}>
+  const htmlDocument = useMemo(
+    () => state.kind === 'html' ? renderCustomViewHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
+    [state],
+  );
+  // The document page uses the whole frame; text and states keep the padded, centered box.
+  const fullBleed = state.kind === 'html' && state.text.length > 0;
+  return <View style={{ flex: 1, width: '100%', ...(fullBleed ? null : { padding: t.spacing.md, alignItems: 'center', justifyContent: 'center' }) }}>
     {renderPreviewState(state, t, attachment)}
   </View>;
 
@@ -115,6 +134,14 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
     if (current.text.length === 0) {
       return <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>빈 파일</Text>;
     }
+    if (current.kind === 'html') {
+      return <>
+        <WebView testID="attachment-preview-html" source={{ html: htmlDocument ?? '' }}
+          originWhitelist={['about:blank', 'https://pages.eiaserinnys.me']} javaScriptEnabled allowFileAccess={false}
+          scrollEnabled style={{ flex: 1, width: '100%', backgroundColor: tokens.colors.surfaceCode }} />
+        {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted, padding: tokens.spacing.sm }}>앞부분만 표시</Text> : null}
+      </>;
+    }
     return <ScrollView testID="attachment-preview-text" style={{ flex: 1, width: '100%' }} contentContainerStyle={{ gap: tokens.spacing.sm }}>
       <Text selectable style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>{current.text}</Text>
       {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted }}>앞부분만 표시</Text> : null}
@@ -128,9 +155,12 @@ function initialPreviewState(item: AttachmentView): PreviewState {
       : item.source.availability === 'unavailable' ? '사용할 수 없음' : '첨부 정보를 확인할 수 없음';
     return { kind: 'unavailable', message };
   }
-  return item.previewKind === 'text'
-    ? item.byteSize === 0 ? { kind: 'text', text: '', truncated: false } : { kind: 'loading' }
-    : { kind: 'info' };
+  const html = isHtmlAttachmentView(item);
+  if (html || item.previewKind === 'text') {
+    if (item.byteSize === 0) return html ? { kind: 'html', text: '', truncated: false } : { kind: 'text', text: '', truncated: false };
+    return { kind: 'loading' };
+  }
+  return { kind: 'info' };
 }
 
 function readFailureState(error: unknown): PreviewState {

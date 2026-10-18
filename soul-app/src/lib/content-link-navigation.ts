@@ -22,7 +22,7 @@ import { useUIStore } from '../store/uiStore';
 import type { DeviceType } from '../theme/useDeviceType';
 
 type ContentLinkApi = Pick<ApiClient,
-  'getPlannerFolder' | 'getPage' | 'getAttachmentMetadata'>;
+  'getPlannerFolder' | 'getPage' | 'getAttachmentMetadata' | 'readLegacyAttachmentText'>;
 
 export interface ContentLinkNavigation {
   push?: (name: string, params?: Record<string, unknown>) => void;

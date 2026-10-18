@@ -9,8 +9,13 @@ import { CompactTouchTarget } from '../CompactTouchTarget';
 import { useTokens } from '../../theme';
 import { getChatRowHorizontalInset } from './ChatBody.styles';
 import { createApiRequestContext } from '../../api/clientCore';
+import { createAttachmentEndpoints } from '../../api/attachmentEndpoints';
 import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
-import { MAX_ATTACHMENT_TEXT_BYTES, type AttachmentView } from '../../lib/attachment-view';
+import {
+  MAX_ATTACHMENT_TEXT_BYTES,
+  isHtmlAttachmentView,
+  type AttachmentView,
+} from '../../lib/attachment-view';
 import { captureAuthScope, isAuthScopeCurrent } from '../../lib/auth-scope';
 import { AttachmentPreviewModal, type AttachmentTextContent } from '../AttachmentPreviewModal';
 
@@ -171,6 +176,7 @@ async function readLocalAttachment(
   const mimeType = file.type || localFile.type || attachment.mimeType || null;
   const name = file.name || attachment.name;
   const previewKind = previewKindFor(mimeType, name, true);
+  const isHtml = isHtmlAttachmentView({ mimeType, name });
   const item: AttachmentView = {
     key: `local:${file.uri}`,
     name,
@@ -185,7 +191,7 @@ async function readLocalAttachment(
       originalUrl: file.uri,
     },
   };
-  if (previewKind !== 'text') return { item, localUri: file.uri };
+  if (previewKind !== 'text' && !isHtml) return { item, localUri: file.uri };
   try {
     const textContent = await readLocalText(localFile, byteSize, signal);
     if (!isAuthScopeCurrent(scope)) throw new Error('Attachment preview scope changed');
@@ -236,27 +242,28 @@ async function readOwnedPathAttachment(
 
   const name = filenameFromContentDisposition(response.headers.get('content-disposition')) || attachment.name;
   const mimeType = response.headers.get('content-type')?.split(';', 1)[0].trim() || attachment.mimeType || null;
-  const sizeHeader = response.headers.get('content-length');
-  const size = sizeHeader && /^\d+$/.test(sizeHeader) ? Number(sizeHeader) : null;
   const id = response.headers.get('x-attachment-id');
   const originalUrl = new URL(url.href);
   originalUrl.searchParams.set('download', 'true');
-  return {
-    item: {
-      key: id || `${nodeId}:${attachment.path}`,
-      name,
-      mimeType,
-      byteSize: size !== null && Number.isSafeInteger(size) ? size : null,
-      previewKind: previewKindFor(mimeType, name, Boolean(id)),
-      readContext: OWNER_CONTEXT,
-      source: {
-        kind: 'ready',
-        attachmentId: id || `${nodeId}:${attachment.path}`,
-        previewUrl: url.href,
-        originalUrl: originalUrl.href,
-      },
+  const item: AttachmentView = {
+    key: id || `${nodeId}:${attachment.path}`,
+    name,
+    mimeType,
+    byteSize: null,
+    previewKind: previewKindFor(mimeType, name, Boolean(id)),
+    readContext: OWNER_CONTEXT,
+    source: {
+      kind: 'ready',
+      attachmentId: id || `${nodeId}:${attachment.path}`,
+      previewUrl: url.href,
+      originalUrl: originalUrl.href,
     },
   };
+  if (!id && isHtmlAttachmentView(item)) {
+    const endpoints = createAttachmentEndpoints(api);
+    item.loadText = (textSignal) => endpoints.readLegacyAttachmentText(url.href, textSignal);
+  }
+  return { item };
 }
 
 function unavailablePendingAttachment(attachment: ChatAttachment, nodeId?: string): AttachmentView {

@@ -6,6 +6,7 @@ import { formatCardTime } from '../../lib/card-check-item-summary';
 import { toCardAttachmentView, type AttachmentView } from '../../lib/attachment-view';
 import { attachmentLinkView, scopedAttachmentUrl } from '../../lib/attachment-link-view';
 import { cardImageSource } from '../../lib/card-image-source';
+import { createApiClient } from '../../api/client';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -63,12 +64,16 @@ export function CardCheckItemRow({
   const jwt = useAuthStore((state) => state.jwt);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const [rowWidth, setRowWidth] = useState(0);
+  const api = useMemo(
+    () => (serverUrl ? createApiClient(serverUrl, { authToken: jwt }) : null),
+    [serverUrl, jwt],
+  );
   const images = item.evidence.filter(evidence => evidence.type === 'image');
   const links = item.evidence.filter(evidence => evidence.type === 'link');
   const ordered = [...images, ...links];
   const entries = ordered.map(evidence => {
     if (!('attachment_id' in evidence)) return attachmentLinkView({ href: evidence.url, label: evidence.label },
-      { serverUrl, jwt, api: null, readContext: { type: 'card', id: cardId } });
+      { serverUrl, jwt, api, readContext: { type: 'card', id: cardId } });
     const view = toCardAttachmentView(evidence);
     return evidence.read_context.id === cardId ? view : {
       ...view, readContext: { type: 'card' as const, id: cardId },

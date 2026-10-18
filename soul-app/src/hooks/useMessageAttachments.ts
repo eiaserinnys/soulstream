@@ -6,10 +6,11 @@ import type {
   SessionEventAttachmentView,
 } from '../../../packages/wire-schema/src/attachments';
 import { ApiHttpError, createApiRequestContext } from '../api/clientCore';
-import { AttachmentReadError } from '../api/attachmentEndpoints';
+import { AttachmentReadError, createAttachmentEndpoints } from '../api/attachmentEndpoints';
 import type { EventTruncation, SessionEvent } from '../api/types';
 import {
   attachmentContentUrl,
+  isHtmlAttachmentView,
   isLegacyAttachmentImage,
   type AttachmentView,
 } from '../lib/attachment-view';
@@ -229,15 +230,13 @@ async function readLegacyAttachment(
     }
 
     const mimeType = response.headers.get('content-type')?.split(';', 1)[0].trim() || item.mime_type;
-    const sizeHeader = response.headers.get('content-length');
-    const parsedSize = sizeHeader && /^\d+$/.test(sizeHeader) ? Number(sizeHeader) : item.byte_size;
     const originalUrl = new URL(url.href);
     originalUrl.searchParams.set('download', 'true');
-    return {
+    const view: AttachmentView = {
       key: `${item.node_id}:${item.path}`,
       name,
       mimeType,
-      byteSize: parsedSize !== null && Number.isSafeInteger(parsedSize) ? parsedSize : null,
+      byteSize: null,
       previewKind: isLegacyAttachmentImage(name) ? 'image' : 'info',
       readContext: context,
       source: {
@@ -247,6 +246,11 @@ async function readLegacyAttachment(
         originalUrl: originalUrl.href,
       },
     };
+    if (isHtmlAttachmentView(view)) {
+      const endpoints = createAttachmentEndpoints(api);
+      view.loadText = (textSignal) => endpoints.readLegacyAttachmentText(url.href, textSignal);
+    }
+    return view;
   } catch (error) {
     if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
     return unavailableAttachment(item.path, context, item.name);

@@ -1,6 +1,6 @@
 import type { ApiClient } from '../api/client';
 import type { AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
-import { attachmentContentUrl, isLegacyAttachmentImage, type AttachmentView } from './attachment-view';
+import { attachmentContentUrl, isHtmlAttachmentView, isLegacyAttachmentImage, type AttachmentView } from './attachment-view';
 
 type AttachmentLinkContext = { context: AttachmentReadContext | null; invalid: boolean };
 type ExactAttachmentLink =
@@ -56,12 +56,13 @@ export function resolveAttachmentReadContext(
   return fromUrl.context ?? fromProvider ?? null;
 }
 
-async function readLegacyAttachmentView({ href, nodeId, path, context, jwt }: {
+async function readLegacyAttachmentView({ href, nodeId, path, context, jwt, api }: {
   href: string;
   nodeId: string;
   path: string;
   context: AttachmentReadContext;
   jwt: string | null;
+  api: Pick<ApiClient, 'readLegacyAttachmentText'> | null;
 }): Promise<AttachmentView> {
   const url = new URL(href);
   const response = await fetch(url.href, {
@@ -73,10 +74,10 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt }: {
   const mimeType = response.headers.get('content-type')?.split(';', 1)[0].trim() || null;
   const name = filenameFromContentDisposition(response.headers.get('content-disposition')) || filenameFromPath(path);
   const attachmentId = response.headers.get('x-attachment-id') || `${nodeId}:${path}`;
-  const kind = response.headers.get('x-attachment-id') ? previewKindForLegacy(mimeType, name) : legacyPreviewKind(mimeType, name);
+  const kind = previewKindForLegacy(mimeType, name);
   const originalUrl = new URL(url.href);
   originalUrl.searchParams.set('download', 'true');
-  return {
+  const view: AttachmentView = {
     key: attachmentId,
     name,
     mimeType,
@@ -90,15 +91,16 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt }: {
       originalUrl: originalUrl.href,
     },
   };
-}
-
-function legacyPreviewKind(mimeType: string | null, name: string): AttachmentView['previewKind'] {
-  return isLegacyAttachmentImage(name) ? 'image' : 'info';
+  if (kind === 'text' && api) {
+    view.loadText = (signal) => api.readLegacyAttachmentText(url.href, signal);
+  }
+  return view;
 }
 
 function previewKindForLegacy(mimeType: string | null, name: string): AttachmentView['previewKind'] {
   if (isLegacyAttachmentImage(name)) return 'image';
-  if (mimeType?.startsWith('text/') || /\.(?:txt|md|json)$/i.test(name)) return 'text';
+  if (mimeType?.startsWith('text/') || /\.(?:txt|md|json)$/i.test(name)
+    || isHtmlAttachmentView({ mimeType: null, name })) return 'text';
   return 'info';
 }
 
@@ -128,19 +130,24 @@ export function scopedAttachmentUrl(href: string, serverUrl: string, context?: A
 }
 
 export function attachmentLinkView(link: AttachmentLink, { serverUrl, jwt, api, readContext }: {
-  serverUrl: string; jwt: string | null; api: Pick<ApiClient, 'getAttachmentMetadata'> | null; readContext?: AttachmentReadContext;
+  serverUrl: string; jwt: string | null;
+  api: Pick<ApiClient, 'getAttachmentMetadata' | 'readLegacyAttachmentText'> | null;
+  readContext?: AttachmentReadContext;
 }): AttachmentView | null {
   const parsed = parseExactAttachmentLink(link.href, serverUrl);
   if (!parsed || parsed.kind === 'invalid') return null;
   const context = resolveAttachmentReadContext(parsed.context, readContext);
   if (!context || (parsed.kind === 'id' && !api)) return null;
   const key = parsed.kind === 'id' ? parsed.id : `${parsed.nodeId}:${parsed.path}`;
+  // Hint the document layout before the HEAD resolves: an html/htm legacy path is a document.
+  const legacyHtml = parsed.kind === 'legacy'
+    && isHtmlAttachmentView({ mimeType: null, name: filenameFromPath(parsed.path) });
   return {
     key: `${key}:${context.type}:${'id' in context ? context.id : ''}`, name: link.label || (parsed.kind === 'legacy' ? filenameFromPath(parsed.path) : parsed.id),
-    mimeType: null, byteSize: null, previewKind: 'info', readContext: context,
+    mimeType: legacyHtml ? 'text/html' : null, byteSize: null, previewKind: 'info', readContext: context,
     source: { kind: 'unavailable', availability: 'unresolved' },
     loadMetadata: async () => {
-      if (parsed.kind === 'legacy') return readLegacyAttachmentView({ ...parsed, context, jwt });
+      if (parsed.kind === 'legacy') return readLegacyAttachmentView({ ...parsed, context, jwt, api });
       const { descriptor } = await api!.getAttachmentMetadata(parsed.id, context);
       return {
         key, name: descriptor.name, mimeType: descriptor.mime_type || null,

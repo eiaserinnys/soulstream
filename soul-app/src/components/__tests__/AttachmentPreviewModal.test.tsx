@@ -143,3 +143,44 @@ test('unavailable items retain the original-save layout slot while hiding its ac
   expect(StyleSheet.flatten(slot.props.style).opacity).toBe(0);
   expect(StyleSheet.flatten(slot.props.style).display).not.toBe('none');
 });
+
+test('an HTML attachment marked informational still opens as a rendered document', async () => {
+  mockReadAttachmentText.mockResolvedValue({ text: '<h1>문서 본문</h1>', truncated: false });
+  const screen = render(<AttachmentPreviewModal item={makeView({
+    name: '제안서.html', mimeType: 'text/html', previewKind: 'info', byteSize: 10_401,
+  })} onClose={jest.fn()} />);
+
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-html')).toBeTruthy());
+  expect(mockReadAttachmentText).toHaveBeenCalledWith('attachment-1', { type: 'card', id: 'card-1' }, expect.any(AbortSignal));
+  expect(screen.getByTestId('attachment-preview-html').props.accessibilityLabel).toContain('문서 본문');
+  // The document layout gives the frame the available height instead of a media frame.
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).flex).toBe(1);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeUndefined();
+});
+
+test('an HTML document reads its body through the injected loader instead of the content API', async () => {
+  const loadText = jest.fn().mockResolvedValue({ text: '<p>레거시 문서</p>', truncated: false });
+  const screen = render(<AttachmentPreviewModal item={makeView({
+    name: 'legacy.html', mimeType: 'text/html', previewKind: 'info', byteSize: 2048, loadText,
+  })} onClose={jest.fn()} />);
+
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-html')).toBeTruthy());
+  expect(loadText).toHaveBeenCalledWith(expect.any(AbortSignal));
+  expect(mockReadAttachmentText).not.toHaveBeenCalled();
+});
+
+test('an empty HTML document shows the empty-file state without rendering a web view', async () => {
+  const screen = render(<AttachmentPreviewModal item={makeView({
+    name: 'empty.html', mimeType: 'text/html', previewKind: 'info', byteSize: 0,
+  })} onClose={jest.fn()} />);
+
+  await waitFor(() => expect(screen.getByText('빈 파일')).toBeTruthy());
+  expect(screen.queryByTestId('attachment-preview-html')).toBeNull();
+  expect(mockReadAttachmentText).not.toHaveBeenCalled();
+});
+
+test('a non-HTML attachment keeps the media frame', async () => {
+  const screen = render(<AttachmentPreviewModal item={makeView()} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-text')).toBeTruthy());
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeGreaterThan(0);
+});

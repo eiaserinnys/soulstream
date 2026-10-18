@@ -25,6 +25,11 @@ function createReviewMetroConfig(projectRoot) {
     };
     if (moduleName === '@react-native-async-storage/async-storage') return { type: 'sourceFile', filePath: path.resolve(projectRoot, '../src/component-review/fixture-async-storage.ts') };
     if (moduleName === 'expo-secure-store') return { type: 'sourceFile', filePath: path.resolve(projectRoot, '../src/component-review/fixture-secure-store.ts') };
+    // react-native-webview has no web renderer; the review window shows the same
+    // HTML in a sandboxed iframe. Native keeps the real WKWebView.
+    if (platform === 'web' && moduleName === 'react-native-webview') return {
+      type: 'sourceFile', filePath: path.resolve(projectRoot, '../src/component-review/fixture-webview.web.tsx'),
+    };
     const resolved = resolveChatUiSourceRequest(context,
       moduleName === 'event-target-shim/index' ? 'event-target-shim' : moduleName, platform);
     if (platform === 'web') {
