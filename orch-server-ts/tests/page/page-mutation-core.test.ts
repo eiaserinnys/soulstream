@@ -441,8 +441,21 @@ describe("PageMutationCore", () => {
     const core = createCore();
     expect(() => core.createPage({
       page: { id: "page-1", title: "Page", dailyDate: null, metadata: {} },
-      actor: { actorKind: "agent", actorSessionId: "" },
+      actor: { actorKind: "agent" },
       idempotencyKey: "create_page:missing:actor",
+    })).toThrow(PageMutationValidationError);
+    expect(() => core.createPage({
+      page: { id: "page-1", title: "Page", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "" },
+      idempotencyKey: "create_page:empty:actor",
+    })).toThrow(PageMutationValidationError);
+    const source = createPage(core).document;
+    expect(() => core.mutate(source, {
+      pageId: "page-1",
+      expectedVersion: 1,
+      command: { type: "archive_page" },
+      actor: { actorKind: "agent" },
+      idempotencyKey: "archive_page:missing:actor",
     })).toThrow(PageMutationValidationError);
     expect(() => core.createPage({
       page: { id: "page-1", title: "Page", dailyDate: null, metadata: {} },

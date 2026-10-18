@@ -123,6 +123,59 @@ describe("orch-local Page Yjs host operation routes", () => {
     }
   });
 
+  it("rejects agent create and mutation requests without a session before dispatch", async () => {
+    const service = serviceDouble();
+    const app = Fastify({ logger: false });
+    registerPageYjsHostOperationRoutes(app, {
+      service,
+      authBearerToken: "service-token",
+    });
+    const missingCreateSession = Object.fromEntries(
+      Object.entries(createPagePayload()).filter(([key]) => key !== "actor_session_id"),
+    );
+    const mutationPayload = {
+      page_id: "page-1",
+      expected_version: 1,
+      operations: [{ op: "rename_page", title: "Page" }],
+      actor_kind: "agent",
+      actor_session_id: "agent-session",
+      idempotency_key: "batch_page_operations:agent-session:req-1",
+    };
+    const requests = [
+      { url: "/api/page-yjs/host/create-page", payload: missingCreateSession },
+      {
+        url: "/api/page-yjs/host/create-page",
+        payload: { ...createPagePayload(), actor_session_id: null },
+      },
+      {
+        url: "/api/page-yjs/host/batch-page-operations",
+        payload: Object.fromEntries(
+          Object.entries(mutationPayload).filter(([key]) => key !== "actor_session_id"),
+        ),
+      },
+      {
+        url: "/api/page-yjs/host/batch-page-operations",
+        payload: { ...mutationPayload, actor_session_id: null },
+      },
+    ];
+
+    try {
+      for (const request of requests) {
+        const response = await app.inject({
+          method: "POST",
+          url: request.url,
+          headers: { authorization: "Bearer service-token" },
+          payload: request.payload,
+        });
+        expect(response.statusCode).toBe(422);
+      }
+      expect(service.createPage).not.toHaveBeenCalled();
+      expect(service.mutatePage).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   it("dispatches read operations, strips omitted blocks, and applies backlink defaults", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });

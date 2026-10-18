@@ -354,7 +354,6 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       FOREIGN KEY (actor_session_id, actor_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL,
-      CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL),
       CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
     );
     CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
