@@ -80,7 +80,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
     if (textContent) {
-      setState({ kind: 'text', ...textContent });
+      setState(html ? { kind: 'html', ...textContent } : { kind: 'text', ...textContent });
       return;
     }
     if ((!html && item.previewKind !== 'text') || item.source.kind !== 'ready' || item.byteSize === 0) {

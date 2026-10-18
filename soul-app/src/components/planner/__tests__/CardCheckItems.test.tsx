@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import type { CardCheckItem } from '../../../api/cardTypes';
 import { summarizeCardItems } from '../../../lib/card-check-item-summary';
@@ -220,4 +220,42 @@ test('카드 증거 첨부는 같은 카드의 이미지·파일 순서로 공�
   expect(screen.getAllByText('찾을 수 없음').length).toBeGreaterThan(0);
   fireEvent.press(screen.getByTestId('chat-image-viewer-close'));
   expect(screen.getByTestId('card-check-item-1')).toBeTruthy();
+});
+
+test('URL-only legacy HTML evidence resolves metadata then reads the document body for the preview', async () => {
+  useSettingsStore.setState({ serverUrl: 'https://chat.test' });
+  useAuthStore.setState({ jwt: 'evidence-jwt' });
+  const fetch = jest.spyOn(global, 'fetch').mockImplementation((input, init) => {
+    if ((init as RequestInit | undefined)?.method === 'HEAD') {
+      return Promise.resolve({
+        ok: true, status: 200,
+        headers: { get: (name: string) => {
+          const key = name.toLowerCase();
+          if (key === 'content-type') return 'text/html';
+          if (key === 'content-disposition') return 'inline; filename="report.html"';
+          if (key === 'content-length') return '0';
+          return null;
+        } },
+      } as unknown as Response);
+    }
+    return Promise.resolve({
+      ok: true, status: 200, headers: { get: () => null },
+      text: async () => '<h1>카드 근거 문서</h1>',
+    } as unknown as Response);
+  });
+  const screen = render(<CardCheckItems items={[item(1, 'reported', { evidence: [
+    { type: 'link', label: '근거 문서',
+      url: 'https://chat.test/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Freport.html' },
+  ] })]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}
+    onConfirm={jest.fn()} onSetTarget={jest.fn()} onRecentConfirmation={jest.fn()} paneWidth={428} />);
+
+  await act(async () => { fireEvent.press(screen.getByTestId('card-check-item-1-link')); });
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-html')).toBeTruthy());
+  expect(screen.getByTestId('attachment-preview-html').props.accessibilityLabel).toContain('카드 근거 문서');
+  expect(fetch).toHaveBeenCalledWith(
+    'https://chat.test/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Freport.html',
+    expect.objectContaining({ method: 'HEAD' }));
+  const bodyCall = fetch.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method !== 'HEAD')!;
+  expect(bodyCall[0]).toContain('/api/attachments/files?');
+  expect(new Headers((bodyCall[1] as RequestInit).headers).get('range')).toBe('bytes=0-1048575');
 });

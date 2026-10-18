@@ -195,3 +195,43 @@ test('ID and unresolved legacy projection remain ordered when the legacy node is
   });
   unmount();
 });
+
+test('legacy HTML projection keeps a null size and reads its body from the original files URL', async () => {
+  const legacyHtml = {
+    kind: 'legacy' as const, node_id: 'node-1', path: '/incoming/report.html', name: 'report.html',
+    mime_type: null, byte_size: null, availability: 'ready' as const, read_context: readContext,
+  };
+  const fetch = jest.spyOn(global, 'fetch')
+    .mockResolvedValueOnce(response({ event_id: 61, items: [legacyHtml] }))
+    .mockResolvedValueOnce({
+      ok: true, status: 200,
+      headers: { get: (name: string) => {
+        const key = name.toLowerCase();
+        if (key === 'content-type') return 'text/html';
+        if (key === 'content-disposition') return 'inline; filename="report.html"';
+        return null;
+      } },
+    } as unknown as Response)
+    .mockResolvedValueOnce({
+      ok: true, status: 200,
+      headers: { get: () => null },
+      text: async () => '<h1>레거시 보고서</h1>',
+    } as unknown as Response);
+  const { result, unmount } = renderHook(() => useMessageAttachments({
+    event: event('61', 'user_message', { attachments: ['/incoming/report.html'] }), readContext,
+  }));
+
+  await waitFor(() => expect(result.current.items).toHaveLength(1));
+  const item = result.current.items[0];
+  expect(item).toMatchObject({ name: 'report.html', mimeType: 'text/html', byteSize: null });
+  expect(typeof item.loadText).toBe('function');
+  await expect(item.loadText!(new AbortController().signal))
+    .resolves.toEqual({ text: '<h1>레거시 보고서</h1>', truncated: false });
+  expect(fetch).toHaveBeenNthCalledWith(2,
+    'https://chat.test/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Freport.html&context_type=session&context_id=route%2Fsession',
+    expect.objectContaining({ method: 'HEAD' }));
+  const bodyCall = fetch.mock.calls[2];
+  expect(bodyCall[0]).toContain('/api/attachments/files?');
+  expect(new Headers((bodyCall[1] as RequestInit).headers).get('range')).toBe('bytes=0-1048575');
+  unmount();
+});
