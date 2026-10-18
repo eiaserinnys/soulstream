@@ -143,6 +143,19 @@ function normalizedModel(model: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+const SUPPRESSED_CODEX_APP_IDS = [
+  "asdk_app_6a74211194808191a5ef4210baa70013",
+  "asdk_app_6a5b6e5b305481918729569f7881be5d",
+] as const;
+
+function buildSuppressedCodexApps(): JsonObject {
+  const apps: JsonObject = {};
+  for (const appId of SUPPRESSED_CODEX_APP_IDS) {
+    apps[appId] = { enabled: false };
+  }
+  return apps;
+}
+
 function buildCodexMcpConfig(
   servers: ResolvedMcpServer[] | undefined,
   agentSessionId: string | undefined,
@@ -150,7 +163,8 @@ function buildCodexMcpConfig(
   disallowedTools: string[] | undefined,
 ): JsonObject | null {
   const { supportedServers } = selectCodexMcpServers(servers);
-  if (supportedServers === undefined) return null;
+  const apps = buildSuppressedCodexApps();
+  if (supportedServers === undefined) return { apps };
 
   const mcpServers: JsonObject = {};
   for (const server of supportedServers) {
@@ -211,5 +225,5 @@ function buildCodexMcpConfig(
       ...disabledToolsConfig,
     };
   }
-  return { mcp_servers: mcpServers };
+  return { mcp_servers: mcpServers, apps };
 }
