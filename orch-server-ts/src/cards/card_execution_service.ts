@@ -138,8 +138,16 @@ export class CardExecutionService {
   async observePendingForNode(nodeId:string,warn:(message:string)=>void):Promise<void>{
     let rows:Array<{id:string;card_id:string;actor_user_id:string|null}>;
     try{
-      rows=await this.options.sql<Array<{id:string;card_id:string;actor_user_id:string|null}>>`SELECT id,card_id,actor_user_id
-        FROM card_execution_requests WHERE state='pending' AND target->>'nodeId'=${nodeId} ORDER BY created_at,id`;
+      rows=await this.options.sql<Array<{id:string;card_id:string;actor_user_id:string|null}>>`SELECT r.id,r.card_id,r.actor_user_id
+        FROM card_execution_requests r
+        WHERE r.state='pending' AND (
+          r.target->>'nodeId'=${nodeId}
+          OR (r.mode='observe' AND r.target->>'nodeId' IS NULL AND EXISTS (
+            SELECT 1 FROM card_orchestration_dispatches d
+            WHERE d.card_id=r.card_id AND d.session_id=r.session_id AND d.node_id=${nodeId}
+          ))
+        )
+        ORDER BY r.created_at,r.id`;
     }catch(error){
       warn(`Pending card execution scan failed for node ${nodeId}: ${error instanceof Error?error.message:String(error)}`);
       return;

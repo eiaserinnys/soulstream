@@ -341,6 +341,47 @@ describe("card work runtime and internal MCP integration", () => {
     expect(createCommandCount).toBe(launchesBefore);
   }, 60000);
 
+  it("a node kick confirms a sessionless automatic observe-mode request from its dispatch evidence", async () => {
+    const cards = await runtime.serviceProvider();
+    const execution = await runtime.executionServiceProvider();
+    const card = await cards.createCard({
+      actorKind: "user", actorSessionId: null, actorUserId: "auto-user", folderId: "work",
+      title: "자동 배정", request: "원문", assignee: { kind: "agent", agentId: "agent-a" },
+      nodeId: "node-auto", modelPreset: "model-a", idempotencyKey: "runtime-auto-card",
+    });
+    const cardId = card.operation.target_id;
+    const runId = `run-${cardId}`;
+    const sessionId = `automatic-${cardId}`;
+    const proof = { registrationId: `auto-reg-${cardId}`, executionCommandId: `auto-cmd-${cardId}` };
+    await h.sql`UPDATE cards SET status='queued' WHERE id=${cardId}`;
+    await h.sql`INSERT INTO card_orchestration_runs(id,policy_version,input_hash,snapshot,target,session_id,execution_token,lease_token,lease_expires_at,state)
+      VALUES(${runId},1,'hash','{}','{}',${sessionId},'execution-token','lease-token',NOW()+INTERVAL '1 hour','completed')`;
+    await h.sql`INSERT INTO card_orchestration_dispatches(run_id,card_id,session_id,node_id,input,launch_token,state)
+      VALUES(${runId},${cardId},${sessionId},'node-auto','{}','worker-token','launching')`;
+    const current = (await cards.getCard(cardId))!.card;
+    const started = await execution.execute({
+      actorKind: "user", actorSessionId: null, actorUserId: "auto-user", cardId,
+      expectedVersion: current.version, idempotencyKey: "runtime-auto",
+    });
+    expect(started.execution.state).toBe("pending");
+    const reserved = (await h.sql<Array<{ mode: string; target: Record<string, unknown> }>>`
+      SELECT mode,target FROM card_execution_requests WHERE id=${started.execution.requestId}`)[0]!;
+    expect(reserved.mode).toBe("observe");
+    expect(reserved.target).toEqual({ folderId: "work" });
+
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
+      VALUES(${sessionId},'node-auto','agent-a','running',${cardId},'work','model-a')`;
+    await h.sql`UPDATE card_orchestration_dispatches SET state='running',input=${h.sql.json({ execution: proof })} WHERE session_id=${sessionId}`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id=${sessionId},assignee_agent_id=NULL,status='review' WHERE id=${cardId}`;
+
+    const launchesBefore = createCommandCount;
+    await runtime.kickPendingWorkForNode("node-auto");
+    expect(await h.sql`SELECT state,execution FROM card_execution_requests WHERE id=${started.execution.requestId}`)
+      .toEqual([{ state: "succeeded", execution: proof }]);
+    expect(createCommandCount).toBe(launchesBefore);
+    expect((await cards.getCard(cardId))!.card.status).toBe("review");
+  }, 60000);
+
   async function tick() {
     await new Promise(resolve => setTimeout(resolve, 0));
   }

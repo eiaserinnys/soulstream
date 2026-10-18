@@ -386,7 +386,6 @@ describe("user card execution transport",()=>{
 
     const automatic=await automaticFixture();const observed=await automatic.service.execute(input(automatic.cardId,"scan-observe"));
     expect(observed.execution.state).toBe("pending");
-    await h.sql`UPDATE card_execution_requests SET target=${h.sql.json({folderId:"work",nodeId:"node"})} WHERE id=${observed.execution.requestId}`;
     await automatic.service.observePendingForNode("node",warn);
     expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${observed.execution.requestId}`).toEqual([{state:"pending"}]);
     expect(automatic.launch).not.toHaveBeenCalled();expect(automatic.ensure).not.toHaveBeenCalled();
