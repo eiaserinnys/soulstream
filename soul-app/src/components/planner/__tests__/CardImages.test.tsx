@@ -87,7 +87,7 @@ test('접힌 두 썸네일의 카드 인증 source와 공통 보기 목록을 �
   const thumbnails = screen.getAllByTestId(/card-report-thumbnail/);
   expect(thumbnails).toHaveLength(2);
   expect(thumbnails.map((image) => hasAuth(image.props.source))).toEqual([true, true]);
-  expect(thumbnails[0].props.source.uri).toBe(server + first + '&context_type=card&context_id=card-1');
+  expect(thumbnails[0].props.source.uri).toBe(server + first);
   fireEvent.press(thumbnails[0]);
   const [selected, items, index] = openAttachment.mock.calls[0] as any[];
   expect(index).toBe(0);
@@ -237,7 +237,7 @@ test.each(['ios', 'web'] as const)('%s 보고 본문은 웹에서만 DOM click �
   }
 });
 
-test('D13 문맥 없는 legacy /files 링크는 보고 카드 문맥을 HEAD에 붙인다', async () => {
+test('D13 문맥 없는 legacy /files 링크는 원문 URL 그대로 HEAD한다', async () => {
   const originalFetch = global.fetch;
   const fetchMock = jest.fn().mockResolvedValue({
     ok: true,
@@ -252,7 +252,7 @@ test('D13 문맥 없는 legacy /files 링크는 보고 카드 문맥을 HEAD에 
     }} />);
     fireEvent.press(screen.getByTestId('planner-markdown-text-link'));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      `${server}/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fbody.txt&context_type=card&context_id=report-card`,
+      `${server}/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fbody.txt`,
       expect.objectContaining({ method: 'HEAD' }),
     ));
     expect(openAttachment.mock.calls[0][0]).toEqual(expect.objectContaining({

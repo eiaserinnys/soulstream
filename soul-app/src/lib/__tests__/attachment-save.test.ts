@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Share } from 'react-native';
 import type { AttachmentView } from '../attachment-view';
+import { attachmentLinkView } from '../attachment-link-view';
 import { clearAuthForScope, isAuthScopeCurrent, type AuthScopeSnapshot } from '../auth-scope';
 import { AttachmentSaveError } from '../attachment-save';
 import { saveAttachmentOriginal } from '../attachment-save.native';
@@ -86,6 +87,40 @@ test('0바이트 원본을 그대로 공유하고 OS 시트 취소는 cancelled�
   await expect(saveAttachmentOriginal({ view: emptyView, scope })).resolves.toBe('cancelled');
   expect(Share.share).toHaveBeenCalledTimes(1);
   expect(FileSystem.deleteAsync).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ['image/jpeg', 'thumb.jpg'],
+  ['text/html', 'proposal.html'],
+])('legacy HEAD의 신뢰할 수 없는 크기(%s)는 byteSize=null로 두고 실제 다운로드 크기가 달라도 원본 저장한다', async (mimeType, filename) => {
+  const oldFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+  const fetchMock = jest.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    headers: new Headers({
+      'content-type': mimeType,
+      'content-disposition': `inline; filename="${filename}"`,
+      'content-length': '0',
+    }),
+  } as Response);
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, value: fetchMock });
+  try {
+    const view = attachmentLinkView(
+      { href: `/api/attachments/files?nodeId=node-1&path=%2Fincoming%2F${filename}`, label: filename },
+      { serverUrl: scope.serverUrl, jwt: scope.jwt, api: null, readContext: { type: 'card', id: 'card-1' } },
+    );
+    expect(view).not.toBeNull();
+    const metadata = await view!.loadMetadata!();
+    expect(metadata.byteSize).toBeNull();
+    jest.mocked(FileSystem.getInfoAsync).mockResolvedValue({
+      exists: true, isDirectory: false, uri: `file:///cache/attachment-save/${filename}`, size: 587742, modificationTime: 0,
+    });
+
+    await expect(saveAttachmentOriginal({ view: metadata, scope })).resolves.toBe('shared');
+  } finally {
+    if (oldFetch) Object.defineProperty(globalThis, 'fetch', oldFetch);
+    else Reflect.deleteProperty(globalThis, 'fetch');
+  }
 });
 
 test.each([401, 403, 503])('HTTP %i 다운로드 실패는 OS 공유를 열지 않는다', async (status) => {
