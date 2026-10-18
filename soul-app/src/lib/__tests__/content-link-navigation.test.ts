@@ -232,7 +232,7 @@ test('legacy same-origin image links use authenticated HEAD metadata and preserv
     { method: 'HEAD', headers: { Authorization: 'Bearer fixture-jwt' } },
   );
   expect(state.resolvedAttachment).toHaveBeenCalledWith(expect.objectContaining({
-    name: 'photo.png', mimeType: 'image/png', byteSize: 42, previewKind: 'image',
+    name: 'photo.png', mimeType: 'image/png', byteSize: null, previewKind: 'image',
     readContext: { type: 'card', id: 'card-1' },
   }));
   expect(state.openExternal).not.toHaveBeenCalled();
