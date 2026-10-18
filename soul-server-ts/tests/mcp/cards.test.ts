@@ -35,6 +35,26 @@ describe("card MCP contract", () => {
     expect([...entries.keys()].filter(n => /checklist_(item|section)|list_my_turn_items/.test(n))).toEqual([]);
     expect(entries.has("set_folder_checklist_enabled")).toBe(false);
   });
+  it("documents query limits in field descriptions and enforces the advertised range", () => {
+    const { entries } = harness();
+    const limitCases = [
+      { tool: "list_cards", field: "limit", max: 50, description: "페이지당 카드 수. 정수 1~50, 생략 시 20. 다음 페이지는 cursor로 읽는다." },
+      { tool: "get_card", field: "limit", max: 50, description: "각 목록 페이지의 항목 수. 정수 1~50, 생략 시 20." },
+      { tool: "get_card", field: "text_limit", max: 4000, description: "텍스트 전문 한 페이지의 문자 수. 정수 1~4000, 생략 시 4000. 다음 페이지는 해당 전문의 nextCursor를 cursors에 넣어 읽는다." },
+      { tool: "list_card_notes", field: "limit", max: 100, description: "페이지당 노트 수. 정수 1~100, 생략 시 20. 다음 페이지는 nextCursor를 before로 전달한다." },
+    ];
+    const failures: string[] = [];
+    for (const { tool, field, max, description } of limitCases) {
+      const schema = entries.get(tool)!.config.inputSchema[field];
+      if (schema.description !== description) failures.push(`${tool}.${field} description=${String(schema.description)}`);
+      const probes: Array<[string, number | undefined, boolean]> = [
+        ["omitted", undefined, true], ["min", 1, true], ["max", max, true], ["below", 0, false], ["above", max + 1, false],
+      ];
+      for (const [label, value, expected] of probes)
+        if (schema.safeParse(value).success !== expected) failures.push(`${tool}.${field} ${label}=${String(value)} accepts ${!expected}`);
+    }
+    expect(failures).toEqual([]);
+  });
   it("derives work execution only from runtime and preserves supplied CAS/idempotency", async () => {
     const fetch=vi.fn(async()=>Response.json({ content: [], structuredContent: {card} }));
     vi.stubGlobal("fetch",fetch);

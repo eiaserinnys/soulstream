@@ -1058,11 +1058,13 @@
           "type": "array"
         },
         "limit": {
+          "description": "각 목록 페이지의 항목 수. 정수 1~50, 생략 시 20.",
           "maximum": 50,
           "minimum": 1,
           "type": "integer"
         },
         "text_limit": {
+          "description": "텍스트 전문 한 페이지의 문자 수. 정수 1~4000, 생략 시 4000. 다음 페이지는 해당 전문의 nextCursor를 cursors에 넣어 읽는다.",
           "maximum": 4000,
           "minimum": 1,
           "type": "integer"
@@ -1453,6 +1455,7 @@
           "type": "string"
         },
         "limit": {
+          "description": "페이지당 카드 수. 정수 1~50, 생략 시 20. 다음 페이지는 cursor로 읽는다.",
           "maximum": 50,
           "minimum": 1,
           "type": "integer"
