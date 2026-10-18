@@ -48,7 +48,7 @@ test('a denied path-only durable read never renders an unscoped files image', as
 });
 
 test.each(['/api/attachments/A/content', '/api/attachments/files?nodeId=node&path=%2Fincoming%2Fa.txt'])(
-  'markdown link %s reads through the route session context', async href => {
+  'markdown link %s reads with its original authority context', async href => {
     const fetch = jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
       if (String(input).includes('/files')) return { ok: true, status: 200,
         headers: new Headers({ 'content-type': 'application/octet-stream', 'content-length': '0',
@@ -58,8 +58,14 @@ test.each(['/api/attachments/A/content', '/api/attachments/files?nodeId=node&pat
     const screen = render(<ContentLinkProvider><EventRenderer event={{ id: '2', type: 'assistant_message', data: { content: `[파일](${href})` } }} sessionId="route-session" /></ContentLinkProvider>);
     await act(async () => { fireEvent(screen.getByTestId('body-markdown'), 'linkPress', { url: href }); });
     await waitFor(() => expect(fetch).toHaveBeenCalled());
-    expect(String(fetch.mock.calls[0][0])).toContain('context_type=session');
-    expect(String(fetch.mock.calls[0][0])).toContain('context_id=route-session');
+    const requested = String(fetch.mock.calls[0][0]);
+    if (href.includes('/files')) {
+      expect(requested).not.toContain('context_type');
+      expect(requested).toContain('/api/attachments/files?nodeId=node&path=%2Fincoming%2Fa.txt');
+    } else {
+      expect(requested).toContain('context_type=session');
+      expect(requested).toContain('context_id=route-session');
+    }
     await waitFor(() => expect(screen.getByTestId('attachment-preview-modal')).toBeTruthy());
   },
 );

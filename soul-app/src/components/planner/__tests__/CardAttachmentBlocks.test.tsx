@@ -73,9 +73,11 @@ test('보고 블록의 이미지와 파일 링크, 접힌 썸네일이 같은 �
   await waitFor(() => expect(screen.getByText('빈 파일')).toBeTruthy());
 });
 
-test('요청 legacy 이미지의 읽기 source에는 카드 문맥이 붙고 명시 URL 문맥은 보존된다', () => {
+test('요청 legacy 이미지는 원문 URL을 그대로 쓰고 명시 URL 문맥은 보존한다', () => {
   const screen = render(<AttachmentReadContextProvider context={context}><CardRequestView request={'![사진](/api/attachments/files?nodeId=n&path=%2Fphoto.png)'} /></AttachmentReadContextProvider>);
-  expect(screen.getByTestId('card-request-image-0').props.source.uri).toContain('context_type=card&context_id=card-1');
+  const source = screen.getByTestId('card-request-image-0').props.source.uri;
+  expect(source).toContain('/api/attachments/files?nodeId=n&path=%2Fphoto.png');
+  expect(source).not.toContain('context_type=card');
   screen.rerender(<AttachmentReadContextProvider context={context}><CardRequestView request={'![사진](/api/attachments/files?nodeId=n&path=%2Fphoto.png&context_type=card&context_id=explicit)'} /></AttachmentReadContextProvider>);
   expect(screen.getByTestId('card-request-image-0').props.source.uri).toContain('context_id=explicit');
 });
