@@ -12,7 +12,7 @@ import {
   createCardWorkErrorIngressCommitter,
   createCardWorkErrorSessionEffectApplier,
 } from "../src/production.js";
-import { prepareCardWorkSchema } from "./card-work-postgres-fixture.js";
+import { prepareCardWorkSchema, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 
 const CALLER_ID = "dispatch-runtime-caller";
@@ -315,6 +315,30 @@ describe("card work runtime and internal MCP integration", () => {
     expect(interventionCommandCount).toBe(callsBeforeUnrelated);
     expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error'
       AND payload->>'text' LIKE '%unrelated fatal%'`).toHaveLength(0);
+  }, 60000);
+
+  it("a node kick confirms a person's receipt-backed pending request without relaunching", async () => {
+    const cards = await runtime.serviceProvider();
+    const card = await cards.createCard({
+      actorKind: "user", actorSessionId: null, actorUserId: "scan-user", folderId: "work",
+      title: "사람 실행", request: "원문", assignee: { kind: "agent", agentId: "agent-a" },
+      nodeId: "node-scan", modelPreset: "model-a", idempotencyKey: "runtime-scan-card",
+    });
+    const cardId = card.operation.target_id;
+    const current = (await cards.getCard(cardId))!.card;
+    const execution = await runtime.executionServiceProvider();
+    const proof = { registrationId: `reg-${cardId}`, executionCommandId: `cmd-${cardId}` };
+    const started = await execution.execute({
+      actorKind: "user", actorSessionId: null, actorUserId: "scan-user", cardId,
+      expectedVersion: current.version, idempotencyKey: "runtime-scan",
+    });
+    expect(started.execution.state).toBe("pending");
+    const launchesBefore = createCommandCount;
+    await recordWorkReceipt(h, started.execution.sessionId, "running", proof);
+    await runtime.kickPendingWorkForNode("node-scan");
+    expect(await h.sql`SELECT state,execution FROM card_execution_requests WHERE id=${started.execution.requestId}`)
+      .toEqual([{ state: "succeeded", execution: proof }]);
+    expect(createCommandCount).toBe(launchesBefore);
   }, 60000);
 
   async function tick() {

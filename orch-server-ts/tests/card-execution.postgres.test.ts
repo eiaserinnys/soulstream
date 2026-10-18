@@ -356,6 +356,83 @@ describe("user card execution transport",()=>{
     const next=await f.service.execute({...input(f.cardId,`new-intent-${status}`),expectedVersion:checked.card.version});
     expect(next.card.status).toBe('running');expect(f.ensure).toHaveBeenCalledTimes(1);expect(f.launch).toHaveBeenCalledTimes(1);
   });
+  it("confirms a receipt-backed pending request for its node without relaunching",async()=>{
+    const f=await fixture("pending");const result=await f.service.execute(input(f.cardId,"node-scan"));
+    expect(result.execution.state).toBe("pending");
+    await recordWorkReceipt(h,result.execution.sessionId,"running",f.proof);
+    const warn=vi.fn();
+    await f.service.observePendingForNode("node",warn);
+    expect(await h.sql`SELECT state,execution FROM card_execution_requests WHERE id=${result.execution.requestId}`)
+      .toEqual([{state:"succeeded",execution:f.proof}]);
+    expect(f.launch).toHaveBeenCalledTimes(1);expect(f.ensure).not.toHaveBeenCalled();expect(warn).not.toHaveBeenCalled();
+  });
+  it("confirms from a fresh service object after a restart without a GET",async()=>{
+    const f=await fixture("pending");const result=await f.service.execute(input(f.cardId,"scan-restart"));
+    expect(result.execution.state).toBe("pending");
+    await recordWorkReceipt(h,result.execution.sessionId,"running",f.proof);
+    const restarted=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+      validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),launch:vi.fn(),ensure:vi.fn()});
+    const warn=vi.fn();
+    await restarted.observePendingForNode("node",warn);
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${result.execution.requestId}`).toEqual([{state:"succeeded"}]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+  it("keeps evidence-free and automatic observe-mode requests pending",async()=>{
+    const f=await fixture("pending");const planned=await f.service.execute(input(f.cardId,"scan-no-proof"));
+    const warn=vi.fn();
+    await f.service.observePendingForNode("node",warn);
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${planned.execution.requestId}`).toEqual([{state:"pending"}]);
+    expect(f.launch).toHaveBeenCalledTimes(1);expect(f.ensure).not.toHaveBeenCalled();
+
+    const automatic=await automaticFixture();const observed=await automatic.service.execute(input(automatic.cardId,"scan-observe"));
+    expect(observed.execution.state).toBe("pending");
+    await h.sql`UPDATE card_execution_requests SET target=${h.sql.json({folderId:"work",nodeId:"node"})} WHERE id=${observed.execution.requestId}`;
+    await automatic.service.observePendingForNode("node",warn);
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${observed.execution.requestId}`).toEqual([{state:"pending"}]);
+    expect(automatic.launch).not.toHaveBeenCalled();expect(automatic.ensure).not.toHaveBeenCalled();
+  });
+  it("confirms a pending request without overwriting a later done status",async()=>{
+    const f=await fixture("pending");const first=await f.service.execute(input(f.cardId,"scan-late-done"));
+    await recordWorkReceipt(h,first.execution.sessionId,"running",f.proof);
+    await cards.startCardWork({actorKind:"agent",actorSessionId:first.execution.sessionId,cardId:f.cardId,
+      expectedVersion:(await cards.getCard(f.cardId))!.card.version,idempotencyKey:"scan-accepted",execution:f.proof});
+    await cards.setCardStatus({...actor,cardId:f.cardId,status:"done",expectedVersion:(await cards.getCard(f.cardId))!.card.version,idempotencyKey:"scan-finished"});
+    await f.service.observePendingForNode("node",vi.fn());
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${first.execution.requestId}`).toEqual([{state:"succeeded"}]);
+    expect((await cards.getCard(f.cardId))!.card.status).toBe("done");
+  });
+  it("scans only the requests targeting the given node",async()=>{
+    const f=await fixture("pending");const mine=await f.service.execute(input(f.cardId,"scan-mine"));
+    await recordWorkReceipt(h,mine.execution.sessionId,"running",f.proof);
+    const otherCard=(await cards.createCard({actorKind:"user",actorSessionId:null,folderId:"work",title:"다른 노드",request:"원문",assignee:{kind:"agent",agentId:"profile"},nodeId:"other",modelPreset:"model"})).operation.target_id;
+    const otherService=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+      validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
+      launch:vi.fn(async(value:any)=>{await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${value.sessionId},'other','profile','initializing',${otherCard},'model')`;}),ensure:vi.fn()});
+    const other=await otherService.execute(input(otherCard,"scan-other"));
+    expect(other.execution.state).toBe("pending");
+    await recordWorkReceipt(h,other.execution.sessionId,"running",{registrationId:"reg-other",executionCommandId:"cmd-other"});
+    await f.service.observePendingForNode("node",vi.fn());
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${mine.execution.requestId}`).toEqual([{state:"succeeded"}]);
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${other.execution.requestId}`).toEqual([{state:"pending"}]);
+  });
+  it("warns and continues when one pending request fails observation",async()=>{
+    const f=await fixture("pending");const broken=await f.service.execute(input(f.cardId,"scan-broken"));
+    await h.sql`UPDATE sessions SET status='error' WHERE session_id=${broken.execution.sessionId}`;
+    const okCard=(await cards.createCard({actorKind:"user",actorSessionId:null,folderId:"work",title:"정상 확인",request:"원문",assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
+    const okProof={registrationId:`reg-ok-${okCard}`,executionCommandId:`cmd-ok-${okCard}`};
+    const okService=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+      validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
+      launch:vi.fn(async(value:any)=>{await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${value.sessionId},'node','profile','initializing',${okCard},'model')`;}),ensure:vi.fn()});
+    const ok=await okService.execute(input(okCard,"scan-ok"));
+    expect(ok.execution.state).toBe("pending");
+    await recordWorkReceipt(h,ok.execution.sessionId,"running",okProof);
+    const warn=vi.fn();
+    await okService.observePendingForNode("node",warn);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain(broken.execution.requestId);
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${ok.execution.requestId}`).toEqual([{state:"succeeded"}]);
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${broken.execution.requestId}`).toEqual([{state:"failed"}]);
+  });
   async function automaticFixture(){
     const f=await fixture();
     const runId=`run-${f.cardId}`,sessionId=`automatic-${f.cardId}`;

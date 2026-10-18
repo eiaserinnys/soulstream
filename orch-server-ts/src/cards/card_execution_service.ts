@@ -135,6 +135,23 @@ export class CardExecutionService {
     this.observing.set(key,work);
     try{return await work;}finally{if(this.observing.get(key)===work)this.observing.delete(key);}
   }
+  async observePendingForNode(nodeId:string,warn:(message:string)=>void):Promise<void>{
+    let rows:Array<{id:string;card_id:string;actor_user_id:string|null}>;
+    try{
+      rows=await this.options.sql<Array<{id:string;card_id:string;actor_user_id:string|null}>>`SELECT id,card_id,actor_user_id
+        FROM card_execution_requests WHERE state='pending' AND target->>'nodeId'=${nodeId} ORDER BY created_at,id`;
+    }catch(error){
+      warn(`Pending card execution scan failed for node ${nodeId}: ${error instanceof Error?error.message:String(error)}`);
+      return;
+    }
+    for(const row of rows){
+      try{
+        await this.observe(row.card_id,row.id,{actorKind:"system",actorSessionId:null,actorUserId:row.actor_user_id??null});
+      }catch(error){
+        warn(`Pending card execution observe failed for ${row.id}: ${error instanceof Error?error.message:String(error)}`);
+      }
+    }
+  }
   private async observeOnce(cardId:string,requestId:string,actor:FolderActorParams) {
     let row=(await this.options.sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE id=${requestId} AND card_id=${cardId}`)[0];
     if(!row) throw failure("실행 요청을 찾을 수 없습니다.",404);

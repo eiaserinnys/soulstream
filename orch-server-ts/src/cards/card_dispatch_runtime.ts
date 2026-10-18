@@ -542,6 +542,7 @@ export async function createCardDispatchRuntime(options: {
       warn: options.warn,
     });
   const kickPendingWorkForNode = async (nodeId: string): Promise<void> => {
+    await executionService.observePendingForNode(nodeId, options.warn);
     const service = await workDispatchServiceProvider(async () => {
       throw new Error("Automated work recovery cannot authorize a new dispatch");
     });
