@@ -54,7 +54,7 @@ function makeApi(overrides: Record<string, unknown> = {}) {
       upload_status: 'committed',
     }),
     ...overrides,
-  } as unknown as Pick<ApiClient, 'getCard' | 'getPlannerFolder' | 'getPage' | 'getMarkdownDocument' | 'getAttachmentMetadata'>;
+  } as unknown as Pick<ApiClient, 'getCard' | 'getPlannerFolder' | 'getPage' | 'getMarkdownDocument' | 'getAttachmentMetadata' | 'readLegacyAttachmentText'>;
 }
 
 function deps(href: string, overrides: Record<string, unknown> = {}) {
@@ -445,4 +445,64 @@ test('descriptor HEIC honors the server info preview kind', async () => {
     await view.loadMetadata().then(state.resolvedAttachment, () => {});
   }
   expect(state.resolvedAttachment).toHaveBeenCalledWith(expect.objectContaining({ name: 'IMG_0001.heic', previewKind: 'info' }));
+});
+
+test.each(['proposal.html', 'proposal.htm'])('legacy %s 링크는 HEAD 전에 문서 힌트를 주고 원문 URL로 본문을 읽는다', async (filename) => {
+  const originalFetch = global.fetch;
+  const href = `/api/attachments/files?nodeId=node-1&path=%2Fincoming%2F${filename}&context_type=card&context_id=card-1`;
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers({
+    'content-type': 'text/html; charset=utf-8',
+    'content-disposition': `inline; filename="${filename}"`,
+  }) } as Response);
+  const readLegacyAttachmentText = jest.fn().mockResolvedValue({ text: '<h1>문서 본문</h1>', truncated: false });
+  const state = deps(href, { api: makeApi({ readLegacyAttachmentText }) });
+  try {
+    await openContentLinkNavigation(state.input);
+    const [pending] = state.openAttachment.mock.calls.at(-1)!;
+    // The document hint exists before the HEAD resolves so the preview opens wide.
+    expect(pending.mimeType).toBe('text/html');
+    expect(pending.previewKind).toBe('info');
+
+    const resolved = await pending.loadMetadata();
+    expect(resolved).toMatchObject({ name: filename, mimeType: 'text/html', previewKind: 'text' });
+    const signal = new AbortController().signal;
+    await expect(resolved.loadText(signal)).resolves.toEqual({ text: '<h1>문서 본문</h1>', truncated: false });
+    expect(readLegacyAttachmentText).toHaveBeenCalledWith(`https://soulstream.test${href}`, signal);
+    expect(state.api.getAttachmentMetadata).not.toHaveBeenCalled();
+  } finally { global.fetch = originalFetch; }
+});
+
+test('legacy 평문 링크에는 문서 힌트를 붙이지 않는다', async () => {
+  const originalFetch = global.fetch;
+  const href = '/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fnotes.txt&context_type=card&context_id=card-1';
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers({
+    'content-type': 'text/plain', 'content-disposition': 'inline; filename="notes.txt"',
+  }) } as Response);
+  const state = deps(href);
+  try {
+    await openContentLinkNavigation(state.input);
+    const [pending] = state.openAttachment.mock.calls.at(-1)!;
+    expect(pending.mimeType).toBeNull();
+    const resolved = await pending.loadMetadata();
+    expect(resolved.previewKind).toBe('text');
+  } finally { global.fetch = originalFetch; }
+});
+
+test('legacy 문서는 content-type이 octet-stream이어도 이름으로 문서를 판별해 loadText를 붙인다', async () => {
+  const originalFetch = global.fetch;
+  const href = '/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Freports%2Fq3.html&context_type=card&context_id=card-1';
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers({
+    'content-type': 'application/octet-stream',
+  }) } as Response);
+  const readLegacyAttachmentText = jest.fn().mockResolvedValue({ text: '<p>분기 보고서</p>', truncated: true });
+  const state = deps(href, { api: makeApi({ readLegacyAttachmentText }) });
+  try {
+    await openContentLinkNavigation(state.input);
+    const [pending] = state.openAttachment.mock.calls.at(-1)!;
+    expect(pending.mimeType).toBe('text/html');
+
+    const resolved = await pending.loadMetadata();
+    expect(resolved).toMatchObject({ name: 'q3.html', previewKind: 'text' });
+    await expect(resolved.loadText(new AbortController().signal)).resolves.toEqual({ text: '<p>분기 보고서</p>', truncated: true });
+  } finally { global.fetch = originalFetch; }
 });

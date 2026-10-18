@@ -20,6 +20,8 @@ export type ImageViewerModalProps = {
   initialIndex: number;
   onClose(): void;
   variant?: 'default' | 'chatRefined';
+  /** chatRefined only. 'document' gives readable documents the available height. */
+  layout?: 'media' | 'document';
   filenames?: readonly string[];
   alts?: readonly string[];
   metadataLabels?: readonly string[];

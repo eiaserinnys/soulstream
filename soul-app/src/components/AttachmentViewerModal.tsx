@@ -44,6 +44,7 @@ function ChatRefinedImageViewerContent({
   onSaveOriginal,
   byteSizes,
   renderAttachment,
+  layout = 'media',
 }: ImageViewerModalProps) {
   const t = useTokens();
   const device = useDeviceType();
@@ -51,6 +52,15 @@ function ChatRefinedImageViewerContent({
   const insets = useSafeAreaInsets();
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const [currentIndex, setCurrentIndex] = useState(clampIndex(initialIndex, sources.length));
+  const documentLayout = layout === 'document';
+  // Document pages fill the available height. On tablets the page is never
+  // wider than a landscape A-series sheet (height x sqrt 2); phones keep the
+  // inherited side insets.
+  const [documentFrameHeight, setDocumentFrameHeight] = useState(0);
+  const documentWidth = documentLayout && device !== 'phone' && documentFrameHeight > 0
+    ? Math.min(window.width - insets.left - insets.right - t.spacing.md * 2,
+      Math.round(documentFrameHeight * Math.SQRT2) + t.spacing.md * 2)
+    : null;
   const filename = filenames?.[currentIndex] ?? items?.[currentIndex]?.name ?? '';
   const size = formatAttachmentByteSize(items?.[currentIndex]?.byteSize ?? byteSizes?.[currentIndex] ?? null);
 
@@ -62,11 +72,11 @@ function ChatRefinedImageViewerContent({
       padding: t.spacing.md,
     }}>
       <GlassSurface role="modal" testID="chat-image-viewer-surface" style={{
-        width: '100%',
-        maxHeight: '90%',
+        width: documentWidth ?? '100%',
+        ...(documentLayout ? { flex: 1 } : { maxHeight: '90%' }),
         overflow: 'hidden',
       }}>
-        <View style={{ padding: t.spacing.md, gap: t.spacing.md }}>
+        <View style={{ padding: t.spacing.md, gap: t.spacing.md, ...(documentLayout ? { flex: 1 } : null) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.md }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               {filename ? <Text numberOfLines={1} ellipsizeMode="tail" style={{
@@ -80,8 +90,10 @@ function ChatRefinedImageViewerContent({
               <Ionicons name="close" size={t.foundation.iconFrame.compact} color={t.colors.textMuted} />
             </GlassButton>
           </View>
-          <View testID="chat-image-viewer-frame" style={{
-            height: (window.height - insets.top - insets.bottom) * (device === 'phone' ? 0.46 : 0.58),
+          <View testID="chat-image-viewer-frame" onLayout={documentLayout
+            ? ({ nativeEvent: { layout: frame } }) => setDocumentFrameHeight(previous => previous === frame.height ? previous : frame.height)
+            : undefined} style={{
+            ...(documentLayout ? { flex: 1 } : { height: (window.height - insets.top - insets.bottom) * (device === 'phone' ? 0.46 : 0.58) }),
             minHeight: t.foundation.minHeight.secondary,
             alignItems: 'center',
             justifyContent: 'center',

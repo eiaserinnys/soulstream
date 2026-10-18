@@ -1,5 +1,5 @@
 import type { CardAttachmentAssetEvidence } from '../../api/cardTypes';
-import { attachmentContentUrl, toCardAttachmentView } from '../attachment-view';
+import { attachmentContentUrl, isHtmlAttachmentView, toCardAttachmentView } from '../attachment-view';
 
 const descriptor = {
   attachment_id: 'asset/1',
@@ -71,4 +71,14 @@ test('인증 context와 download만 URL에 포함하고 인증값은 넣지 않�
     .toBe('/api/attachments/asset%2F1/content?context_type=card&context_id=card%2F1&download=true');
   expect(attachmentContentUrl('asset/1', { type: 'owner' }))
     .toBe('/api/attachments/asset%2F1/content');
+});
+
+test('HTML 문서는 MIME과 확장자 양쪽으로 판별한다', () => {
+  expect(isHtmlAttachmentView({ mimeType: 'text/html', name: '문서' })).toBe(true);
+  expect(isHtmlAttachmentView({ mimeType: 'text/html; charset=utf-8', name: '문서' })).toBe(true);
+  expect(isHtmlAttachmentView({ mimeType: null, name: '보고서.HTML' })).toBe(true);
+  expect(isHtmlAttachmentView({ mimeType: 'application/octet-stream', name: '메모.htm' })).toBe(true);
+  expect(isHtmlAttachmentView({ mimeType: 'text/plain', name: '메모.txt' })).toBe(false);
+  expect(isHtmlAttachmentView({ mimeType: 'application/octet-stream', name: '자료.bin' })).toBe(false);
+  expect(isHtmlAttachmentView({ mimeType: null, name: 'html' })).toBe(false);
 });

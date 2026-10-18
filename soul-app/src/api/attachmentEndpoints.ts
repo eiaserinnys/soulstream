@@ -4,6 +4,7 @@ import { appendNativeUploadFile, type NativeUploadFile } from './nativeUpload';
 import { NATIVE_MULTIPART_THRESHOLD_BYTES, uploadNativeMultipart } from './nativeMultipartUpload';
 import type { AttachmentDescriptor, AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
 import { attachmentContentUrl, MAX_ATTACHMENT_TEXT_BYTES } from '../lib/attachment-view';
+import { parseExactAttachmentLink } from '../lib/attachment-link-view';
 
 export interface AttachmentMetadataResponse {
   descriptor: AttachmentDescriptor;
@@ -25,6 +26,33 @@ export function createAttachmentEndpoints({
   authFetch,
   readJson,
 }: ApiRequestContext) {
+  const readBoundedAttachmentText = async (
+    url: string,
+    signal?: AbortSignal,
+  ): Promise<{ text: string; truncated: boolean }> => {
+    let response: Response;
+    try {
+      response = await authFetch(url, {
+        headers: { Range: `bytes=0-${MAX_ATTACHMENT_TEXT_BYTES - 1}` },
+        ...(signal === undefined ? {} : { signal }),
+      });
+    } catch (error) {
+      if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+      throw new AttachmentReadError('retryable');
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw attachmentReadError(response.status);
+    }
+    try {
+      return await readBoundedText(response, MAX_ATTACHMENT_TEXT_BYTES);
+    } catch (error) {
+      if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+      if (error instanceof AttachmentReadError) throw error;
+      throw new AttachmentReadError('preview-failed');
+    }
+  };
+
   return {
     getAttachmentMetadata: async (
       id: string,
@@ -36,33 +64,21 @@ export function createAttachmentEndpoints({
       const response = await authFetch(url, signal === undefined ? {} : { signal });
       return readJson<AttachmentMetadataResponse>(response, 'getAttachmentMetadata');
     },
-    readAttachmentText: async (
+    readAttachmentText: (
       id: string,
       context: AttachmentReadContext,
       signal?: AbortSignal,
+    ): Promise<{ text: string; truncated: boolean }> =>
+      readBoundedAttachmentText(`${base}${attachmentContentUrl(id, context)}`, signal),
+    // Legacy files are not addressable by ID; read the original /api/attachments/files URL instead.
+    readLegacyAttachmentText: async (
+      href: string,
+      signal?: AbortSignal,
     ): Promise<{ text: string; truncated: boolean }> => {
-      const url = `${base}${attachmentContentUrl(id, context)}`;
-      let response: Response;
-      try {
-        response = await authFetch(url, {
-          headers: { Range: `bytes=0-${MAX_ATTACHMENT_TEXT_BYTES - 1}` },
-          ...(signal === undefined ? {} : { signal }),
-        });
-      } catch (error) {
-        if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
-        throw new AttachmentReadError('retryable');
-      }
-      if (!response.ok) {
-        await response.body?.cancel().catch(() => undefined);
-        throw attachmentReadError(response.status);
-      }
-      try {
-        return await readBoundedText(response, MAX_ATTACHMENT_TEXT_BYTES);
-      } catch (error) {
-        if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
-        if (error instanceof AttachmentReadError) throw error;
+      if (parseExactAttachmentLink(href, base)?.kind !== 'legacy') {
         throw new AttachmentReadError('preview-failed');
       }
+      return readBoundedAttachmentText(new URL(href, base).href, signal);
     },
     // 첨부 파일 업로드 (multipart). multipart Content-Type은 boundary 때문에 fetch가 자동 부착한다.
     uploadAttachment: async (
@@ -131,7 +147,9 @@ async function readBoundedText(response: Response, maximumBytes: number): Promis
     if (contentLength !== null && contentLength > maximumBytes) {
       throw new AttachmentReadError('preview-failed', response.status);
     }
-    const text = body ? await response.text() : '';
+    // RN's whatwg-fetch Response exposes no body stream, but text() still returns
+    // the real payload; an empty GET yields ''. Always read the text.
+    const text = await response.text();
     const bytes = new TextEncoder().encode(text);
     const truncated = bytes.byteLength > maximumBytes || rangeExceedsLimit(response, maximumBytes);
     const limited = bytes.subarray(0, maximumBytes);

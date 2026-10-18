@@ -72,3 +72,14 @@ test('component review registers truncated tool success, storage failure, and as
   expect(thinkingManuscriptFailed.getByText(/전문 보관 실패/)).toBeTruthy();
   expect(thinkingManuscriptFailed.queryByText('전문 열기')).toBeNull();
 });
+
+test('component review registers the HTML document sample alone and mixed with an image', () => {
+  const screen = render(<ReviewAttachments />);
+
+  const html = within(screen.getByTestId('review-attachments-html'));
+  expect(html.getByText('공개 검수용 문서.html')).toBeTruthy();
+
+  const mixed = within(screen.getByTestId('review-attachments-html-mixed'));
+  expect(mixed.getByText('공개 검수용 문서.html')).toBeTruthy();
+  expect(mixed.getByLabelText('표본 첫 이미지.png 크게 보기')).toBeTruthy();
+});
