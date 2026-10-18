@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import "../v3/v3-visual-tokens.css";
-import { WifiOff, LoaderCircle, RefreshCw } from "lucide-react";
+import { Wifi, WifiOff, LoaderCircle, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogPopup,
@@ -13,11 +13,11 @@ import {
 import type { ConnectionSnapshot } from "./connection-monitor";
 
 const disconnected = [
-  "소울스트림 오케스트레이터와의 연결이 끊겼습니다",
+  "소울스트림 오케스트레이터와의\n연결이 끊겼습니다.",
   "일시적인 연결 이상이거나 업데이트가 진행 중일 수 있습니다.",
   "자동으로 다시 연결하고 있습니다",
-  "이 화면을 그대로 두세요. 연결이 돌아오면 자동으로 이어집니다.",
-  "연결 대기 중에는 작성 중인 내용을 전송하지 않습니다.",
+  "연결이 돌아오면 자동으로 이어집니다.",
+  "",
 ];
 function copy({ phase, fresh }: ConnectionSnapshot) {
   if (phase === "planned")
@@ -31,10 +31,10 @@ function copy({ phase, fresh }: ConnectionSnapshot) {
   if (phase === "recovering")
     return [
       "소울스트림 연결이 복구되었습니다",
-      "최신 내용을 불러오고 있습니다. 곧 이전 화면으로 돌아갑니다.",
+      "최신 내용을 불러오고 있습니다.",
       "화면을 복구하고 있습니다",
-      "다시 연결된 내용이 화면에 반영되면 이 안내가 닫힙니다.",
-      "현재 화면을 유지한 채 최신 내용을 반영합니다.",
+      "",
+      "",
     ];
   if (phase === "new-version")
     return [
@@ -115,15 +115,36 @@ export function ConnectionDialog({
         initialFocus={title}
       >
         <DialogHeader>
-          <div className="dialog-confirm-icon">
-            {snapshot.phase === "planned" ||
+          <div
+            className="dialog-confirm-icon"
+            style={
+              snapshot.phase === "recovering"
+                ? {
+                    color: "var(--success)",
+                    background:
+                      "color-mix(in srgb, var(--success) 9%, transparent)",
+                  }
+                : undefined
+            }
+          >
+            {snapshot.phase === "recovering" ? (
+              <Wifi className="size-5" aria-hidden="true" />
+            ) : snapshot.phase === "planned" ||
             snapshot.phase === "new-version" ? (
               <RefreshCw className="size-5" aria-hidden="true" />
             ) : (
               <WifiOff className="size-5" aria-hidden="true" />
             )}
           </div>
-          <DialogTitle ref={title} tabIndex={-1} className="outline-none">
+          <DialogTitle
+            ref={title}
+            tabIndex={-1}
+            className={
+              snapshot.phase === "disconnected" || snapshot.phase === "checking"
+                ? "outline-none whitespace-pre-line break-keep [overflow-wrap:anywhere]"
+                : "outline-none"
+            }
+          >
             {text[0]}
           </DialogTitle>
           <DialogDescription>{text[1]}</DialogDescription>
@@ -142,12 +163,14 @@ export function ConnectionDialog({
               />
               {text[2]}
             </strong>
-            <span>{text[3]}</span>
+            {text[3] ? <span>{text[3]}</span> : null}
           </div>
         </DialogPanel>
-        <DialogFooter variant="bare">
-          <p className="text-sm text-muted-foreground">{text[4]}</p>
-        </DialogFooter>
+        {text[4] ? (
+          <DialogFooter variant="bare">
+            <p className="text-sm text-muted-foreground">{text[4]}</p>
+          </DialogFooter>
+        ) : null}
       </DialogPopup>
     </Dialog>
   );

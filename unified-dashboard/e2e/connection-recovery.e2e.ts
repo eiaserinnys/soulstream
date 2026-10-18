@@ -168,7 +168,7 @@ for (const width of [1440, 390])
       .toBe(1);
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("heading")).toHaveText(
-      "소울스트림 오케스트레이터와의 연결이 끊겼습니다",
+      "소울스트림 오케스트레이터와의 연결이 끊겼습니다.",
     );
     const heading = dialog.getByRole("heading");
     await expect(heading).toBeFocused();
@@ -238,6 +238,12 @@ test("fresh nginx fallback keeps document URI and leaves APIs failing", async ({
   );
   await expect(page.getByRole("dialog")).toContainText(
     "연결이 돌아오면 자동으로 화면을 엽니다.",
+  );
+  await expect(page.getByRole("dialog").locator(".dialog-confirm-summary > span")).toHaveText(
+    "이 화면을 그대로 두세요. 연결이 돌아오면 자동으로 화면을 엽니다.",
+  );
+  await expect(page.getByRole("dialog").locator('[data-slot="dialog-footer"] p')).toHaveText(
+    "화면이 열릴 때까지 잠시 기다려 주세요.",
   );
   expect(page.url()).toContain("/v3?connection=fresh");
   fixture.setOffline(false);

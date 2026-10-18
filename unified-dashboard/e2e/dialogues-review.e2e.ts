@@ -42,6 +42,142 @@ async function shell(page: Page) {
     return {x:r.x,width:r.width,documentWidth:document.documentElement.scrollWidth,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth};
   });
 }
+const connectionCopyOutput = path.resolve("../../../.local/artifacts/20261019-connection-dialog-178");
+for (const width of [1440,390]) test(`connection copy and recovery appearance ${width}`,async({page})=>{
+  mkdirSync(connectionCopyOutput,{recursive:true});
+  const state=await prepare(page,width);
+  await page.goto("/dialogues?sample=connection-disconnected");
+  await expect(page.getByTestId("dialogue-sample")).toBeVisible();
+  await settledPopup(page);
+  await page.screenshot({path:path.join(connectionCopyOutput,`green-disconnected-${width}.png`),animations:"disabled"});
+  const disconnected=page.getByRole("dialog");
+  const disconnectedMetrics=await disconnected.evaluate(element=>{
+    const popup=element;
+    const title=element.querySelector('[data-slot="dialog-title"]')!;
+    const summary=element.querySelector(".dialog-confirm-summary")!;
+    const panel=element.querySelector('[data-slot="dialog-panel"]')!;
+    const popupRect=popup.getBoundingClientRect();
+    return {
+      innerText:title.innerText,
+      documentWidth:document.documentElement.scrollWidth,
+      popup:{x:popupRect.x,right:popupRect.right},
+      title:{clientWidth:title.clientWidth,scrollWidth:title.scrollWidth},
+      summary:{clientWidth:summary.clientWidth,scrollWidth:summary.scrollWidth},
+      panel:{paddingBottom:getComputedStyle(panel).paddingBottom,paddingLeft:getComputedStyle(panel).paddingLeft},
+    };
+  });
+  const deletedDisconnectedText=await disconnected.innerText();
+
+  await page.goto("/dialogues?sample=connection-recovering");
+  await expect(page.getByTestId("dialogue-sample")).toBeVisible();
+  await settledPopup(page);
+  await page.screenshot({path:path.join(connectionCopyOutput,`green-recovering-${width}.png`),animations:"disabled"});
+  const recovering=page.getByRole("dialog");
+  const recoveringMetrics=await recovering.evaluate(element=>{
+    const popup=element;
+    const title=element.querySelector('[data-slot="dialog-title"]')!;
+    const summary=element.querySelector(".dialog-confirm-summary")!;
+    const panel=element.querySelector('[data-slot="dialog-panel"]')!;
+    const popupRect=popup.getBoundingClientRect();
+    const icon=element.querySelector(".dialog-confirm-icon")!;
+    const probe=document.createElement("div");
+    probe.style.color="var(--success)";
+    probe.style.backgroundColor="color-mix(in srgb, var(--success) 9%, transparent)";
+    document.body.append(probe);
+    const expectedColor=getComputedStyle(probe).color;
+    const expectedBackground=getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    const iconStyle=getComputedStyle(icon);
+    return {
+      documentWidth:document.documentElement.scrollWidth,
+      popup:{x:popupRect.x,right:popupRect.right},
+      title:{clientWidth:title.clientWidth,scrollWidth:title.scrollWidth},
+      summary:{clientWidth:summary.clientWidth,scrollWidth:summary.scrollWidth},
+      panel:{paddingBottom:getComputedStyle(panel).paddingBottom,paddingLeft:getComputedStyle(panel).paddingLeft},
+      icon:{color:iconStyle.color,backgroundColor:iconStyle.backgroundColor},
+      expectedIcon:{color:expectedColor,backgroundColor:expectedBackground},
+    };
+  });
+
+  await page.goto("/dialogues?sample=connection-disconnected");
+  await settledPopup(page);
+  const disconnectedAgain=page.getByRole("dialog");
+  const disconnectedHeading=disconnectedAgain.getByRole("heading",{
+    name:"소울스트림 오케스트레이터와의 연결이 끊겼습니다.",
+    exact:true,
+  });
+  await expect(disconnectedHeading).toBeVisible();
+  expect(await disconnectedHeading.evaluate(element=>(element as HTMLElement).innerText)).toBe(
+    "소울스트림 오케스트레이터와의\n연결이 끊겼습니다.",
+  );
+  const phraseLineCounts=await disconnectedHeading.evaluate(element=>{
+    const node=element.firstChild as Text;
+    const text=element.textContent??"";
+    const firstPhraseLength="소울스트림 오케스트레이터와의".length;
+    const secondPhraseStart=text.indexOf("연결이");
+    return [[0,firstPhraseLength],[secondPhraseStart,text.length]].map(([start,end])=>{
+      const range=document.createRange();
+      range.setStart(node,start);
+      range.setEnd(node,end);
+      return range.getClientRects().length;
+    });
+  });
+  expect(phraseLineCounts).toEqual([1,1]);
+  expect(disconnectedMetrics.innerText).toBe("소울스트림 오케스트레이터와의\n연결이 끊겼습니다.");
+  expect(disconnectedMetrics.documentWidth).toBe(width);
+  expect(disconnectedMetrics.popup.x).toBeGreaterThanOrEqual(0);
+  expect(disconnectedMetrics.popup.right).toBeLessThanOrEqual(width);
+  expect(disconnectedMetrics.title.scrollWidth).toBeLessThanOrEqual(disconnectedMetrics.title.clientWidth);
+  expect(disconnectedMetrics.summary.scrollWidth).toBeLessThanOrEqual(disconnectedMetrics.summary.clientWidth);
+  expect(disconnectedMetrics.panel.paddingBottom).toBe(disconnectedMetrics.panel.paddingLeft);
+  await expect(disconnectedAgain.getByText("일시적인 연결 이상이거나 업데이트가 진행 중일 수 있습니다.",{exact:true})).toBeVisible();
+  await expect(disconnectedAgain.getByRole("status")).toContainText("자동으로 다시 연결하고 있습니다");
+  await expect(disconnectedAgain.locator(".dialog-confirm-summary > span")).toHaveText("연결이 돌아오면 자동으로 이어집니다.");
+  await expect(disconnectedAgain.locator('[data-slot="dialog-footer"]')).toHaveCount(0);
+  expect(deletedDisconnectedText).not.toContain("연결 대기 중에는 작성 중인 내용을 전송하지 않습니다.");
+  expect(deletedDisconnectedText).not.toContain("이 화면을 그대로 두세요.");
+
+  await page.goto("/dialogues?sample=connection-recovering");
+  await settledPopup(page);
+  const recoveringAgain=page.getByRole("dialog");
+  await expect(recoveringAgain.getByRole("heading",{name:"소울스트림 연결이 복구되었습니다",exact:true})).toBeVisible();
+  await expect(recoveringAgain.getByText("최신 내용을 불러오고 있습니다.",{exact:true})).toBeVisible();
+  await expect(recoveringAgain.getByRole("status")).toContainText("화면을 복구하고 있습니다");
+  await expect(recoveringAgain.locator(".dialog-confirm-summary > span")).toHaveCount(0);
+  await expect(recoveringAgain.locator('[data-slot="dialog-footer"]')).toHaveCount(0);
+  await expect(recoveringAgain.locator(".dialog-confirm-icon svg")).toHaveClass(/(?:^|\s)lucide-wifi(?:\s|$)/);
+  await expect(recoveringAgain.locator(".dialog-confirm-icon svg")).toHaveAttribute("aria-hidden","true");
+  expect(recoveringMetrics.documentWidth).toBe(width);
+  expect(recoveringMetrics.popup.x).toBeGreaterThanOrEqual(0);
+  expect(recoveringMetrics.popup.right).toBeLessThanOrEqual(width);
+  expect(recoveringMetrics.title.scrollWidth).toBeLessThanOrEqual(recoveringMetrics.title.clientWidth);
+  expect(recoveringMetrics.summary.scrollWidth).toBeLessThanOrEqual(recoveringMetrics.summary.clientWidth);
+  expect(recoveringMetrics.panel.paddingBottom).toBe(recoveringMetrics.panel.paddingLeft);
+  expect(recoveringMetrics.icon).toEqual(recoveringMetrics.expectedIcon);
+  const recoveringText=await recoveringAgain.innerText();
+  expect(recoveringText).not.toContain("곧 이전 화면으로 돌아갑니다.");
+  expect(recoveringText).not.toContain("다시 연결된 내용이 화면에 반영되면 이 안내가 닫힙니다.");
+  expect(recoveringText).not.toContain("현재 화면을 유지한 채 최신 내용을 반영합니다.");
+
+  if(width===390) {
+    await page.goto("/dialogues?sample=connection-checking");
+    await settledPopup(page);
+    const checking=page.getByRole("dialog");
+    const checkingHeading=checking.getByRole("heading",{
+      name:"소울스트림 오케스트레이터와의 연결이 끊겼습니다.",
+      exact:true,
+    });
+    await expect(checkingHeading).toBeVisible();
+    expect(await checkingHeading.evaluate(element=>(element as HTMLElement).innerText)).toBe(
+      "소울스트림 오케스트레이터와의\n연결이 끊겼습니다.",
+    );
+    await expect(checking.getByRole("status")).toContainText("연결 상태를 확인하고 있습니다");
+    await expect(checking.locator(".dialog-confirm-summary > span")).toHaveText("연결이 돌아오면 자동으로 이어집니다.");
+    await expect(checking.locator('[data-slot="dialog-footer"]')).toHaveCount(0);
+  }
+  expect(state.errors).toEqual([]);
+  expect(state.writes).toEqual([]);
+});
 for (const width of [1440,390]) test(`simultaneous real windows and horizontal rail ${width}`, async ({page}) => {
   const state=await prepare(page,width);
   await page.goto("/dialogues/");
