@@ -71,8 +71,6 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt }: {
   if (!response.ok) throw { status: response.status };
 
   const mimeType = response.headers.get('content-type')?.split(';', 1)[0].trim() || null;
-  const byteSizeHeader = response.headers.get('content-length');
-  const parsedSize = byteSizeHeader && /^\d+$/.test(byteSizeHeader) ? Number(byteSizeHeader) : null;
   const name = filenameFromContentDisposition(response.headers.get('content-disposition')) || filenameFromPath(path);
   const attachmentId = response.headers.get('x-attachment-id') || `${nodeId}:${path}`;
   const kind = response.headers.get('x-attachment-id') ? previewKindForLegacy(mimeType, name) : legacyPreviewKind(mimeType, name);
@@ -82,7 +80,7 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt }: {
     key: attachmentId,
     name,
     mimeType,
-    byteSize: parsedSize !== null && Number.isSafeInteger(parsedSize) ? parsedSize : null,
+    byteSize: null,
     previewKind: kind,
     readContext: context,
     source: {
