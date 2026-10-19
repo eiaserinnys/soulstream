@@ -12,9 +12,7 @@ import { AgentBackendSchema } from "../../agent_registry.js";
 import { estimateInputTokens } from "@soulstream/model-catalog/input-token-estimate";
 import { CALLER_INFO_SOURCES } from "@soulstream/wire-schema";
 import {
-  ATOM_CONTEXT_HEADER,
   fetchAtomMarkdownResult,
-  formatAtomContext,
   formatAtomMarkdown,
   type AtomContextSpec,
   type AtomFetchConfig,
@@ -25,6 +23,7 @@ import {
   renderExplicitAtomSource,
   type ContextRenderMode,
 } from "./render_modes.js";
+import { assembleContextSectionsWithMaterial } from "../input_material_parts.js";
 
 type ContextCompilerLogger = Pick<Logger, "warn">;
 
@@ -108,6 +107,7 @@ export interface ContextCompilationResult {
   sections: CompiledContextSection[];
   assembled: string | null;
   manifest: ContextManifest;
+  materialParts?: import("@soulstream/wire-schema").InputMaterialPartV1[];
 }
 
 export function createContextSource(
@@ -286,30 +286,6 @@ function annotateContextSections(
   return [...sections];
 }
 
-function assembleContextSections(sections: readonly CompiledContextSection[]): string | null {
-  const renderedSections = sections.filter(({ status }) => status !== "filtered");
-  if (renderedSections.length === 0) return null;
-  if (renderedSections.length === 1) {
-    const markdown = renderedSections[0]?.markdown;
-    return markdown === null || markdown === undefined
-      ? null
-      : formatAtomContext(markdown);
-  }
-
-  const assembled = renderedSections.flatMap(({ source, markdown }) => {
-    if (!markdown) return [];
-    if (isContextRenderMode(source.mode)) return [formatAtomMarkdown(markdown)];
-    return [[
-      `## atom node: ${source.nodeId}`,
-      `depth=${source.depth}, titles_only=${source.titlesOnly}`,
-      "",
-      formatAtomMarkdown(markdown),
-    ].join("\n")];
-  });
-  if (assembled.length === 0) return null;
-  return `${ATOM_CONTEXT_HEADER}\n${assembled.join("\n\n")}`;
-}
-
 function desiredSpec(source: ContextSource | ContextManifestSource): Record<string, unknown> {
   if ("nodeId" in source) {
     return {
@@ -479,11 +455,13 @@ export async function compileContextSources(
       : renderedBySource.get(source)!
   ));
   const annotated = annotateContextSections(observed);
-  const assembled = assembleContextSections(annotated);
+  const assembly = assembleContextSectionsWithMaterial(annotated);
+  const assembled = assembly.text || null;
   return {
     sections: annotated,
     assembled,
     manifest: buildContextManifest(annotated, assembled),
+    materialParts: [...assembly.parts],
   };
 }
 

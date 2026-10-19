@@ -75,6 +75,16 @@ describe("context compiler golden parity", () => {
       const compiled = await compileContexts(config, [golden.spec], silentLogger);
 
       expect(compiled.assembled).toBe(legacy);
+      expect(compiled.materialParts?.reduce(
+        (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+        0,
+      )).toBe(compiled.assembled?.length);
+      expect(compiled.materialParts).toContainEqual(expect.objectContaining({
+        category: "soulstream_injection",
+        source_key: `source/atom/${golden.spec.nodeId}/0`,
+        approximate_tokens: compiled.manifest.sources[0]?.token_estimate,
+        estimate_source: "manifest",
+      }));
       expect(compiled.sections).toHaveLength(1);
       expect(compiled.sections[0]?.source).toMatchObject({
         id: golden.spec.nodeId,
@@ -116,6 +126,14 @@ describe("context compiler golden parity", () => {
     const compiled = await compileContexts(config, specs, silentLogger);
 
     expect(compiled.assembled).toBe(legacy);
+    expect(compiled.materialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(compiled.assembled?.length);
+    expect(compiled.materialParts).toContainEqual(expect.objectContaining({
+      source_key: "source/atom/node-ok/1",
+      category: "soulstream_injection",
+    }));
     expect(compiled.sections).toHaveLength(2);
     expect(compiled.sections[0]?.markdown).toBeNull();
     expect(compiled.sections[1]?.markdown).toBe("# surviving source");
