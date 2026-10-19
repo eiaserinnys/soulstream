@@ -11,6 +11,8 @@ export type CanonicalSessionStatisticsRow = {
   row_kind: "usage" | "input_material" | "tool_call" | "boundary";
   session_id: string;
   selection_event_id: number;
+  input_id: string | null;
+  missing_identity: string | null;
   accounting_key: string | null;
   owner_event_id: number | null;
   candidate_event_id: number | null;
@@ -84,20 +86,30 @@ export async function createCanonicalSessionStatisticsFacts(
       ${usageCtes},
       ${materialCtes}
     SELECT * FROM (
-      SELECT row_kind, session_id, selection_event_id, accounting_key,
+      SELECT row_kind, session_id, selection_event_id, input_id, missing_identity, accounting_key,
         owner_event_id, candidate_event_id, candidate_type, representation,
         state, selection_quality, owner_recorded_at, fact
       FROM usage_rows
       UNION ALL
-      SELECT row_kind, session_id, selection_event_id, accounting_key,
+      SELECT row_kind, session_id, selection_event_id, input_id, missing_identity, accounting_key,
         owner_event_id, candidate_event_id, candidate_type, representation,
         state, selection_quality, owner_recorded_at, fact
       FROM material_rows
       UNION ALL
-      SELECT row_kind, session_id, selection_event_id, accounting_key,
+      SELECT row_kind, session_id, selection_event_id, input_id, missing_identity, accounting_key,
         owner_event_id, candidate_event_id, candidate_type, representation,
         state, selection_quality, owner_recorded_at, fact
       FROM supporting_fact_rows
+      UNION ALL
+      SELECT row_kind, session_id, selection_event_id, input_id, missing_identity, accounting_key,
+        owner_event_id, candidate_event_id, candidate_type, representation,
+        state, selection_quality, owner_recorded_at, fact
+      FROM input_coverage_rows
+      UNION ALL
+      SELECT row_kind, session_id, selection_event_id, input_id, missing_identity, accounting_key,
+        owner_event_id, candidate_event_id, candidate_type, representation,
+        state, selection_quality, owner_recorded_at, fact
+      FROM unmatched_incomplete_owner_rows
     ) AS canonical_rows
     ORDER BY session_id, row_kind, accounting_key NULLS FIRST,
       coalesce(candidate_event_id, owner_event_id, 0),

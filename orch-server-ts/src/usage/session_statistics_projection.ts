@@ -94,3 +94,85 @@ export async function insertSessionStatisticsFacts(
     ON CONFLICT (session_id, event_id, part_key) DO NOTHING
   `;
 }
+
+export async function assertSessionStatisticsFactsMatchSourceEvents(
+  sql: EventIngressQuerySql,
+  sourceEvents: readonly { session_id: string; event_id: number | string }[],
+  expectedFacts: readonly FactDraft[],
+): Promise<void> {
+  if (sourceEvents.length === 0) return;
+  const sourceKeys = sourceEvents.map((event) => ({
+    session_id: event.session_id,
+    event_id: String(event.event_id),
+  }));
+  const expectedRows = expectedFacts.map((fact) => ({
+    ...fact,
+    event_id: String(fact.event_id),
+  }));
+  const [counts] = await sql<readonly { missing_count: number; unexpected_count: number }[]>`
+    WITH source_keys AS (
+      SELECT session_id, event_id
+      FROM jsonb_to_recordset(${sql.json(sourceKeys)}::jsonb) AS source(session_id TEXT, event_id BIGINT)
+    ),
+    expected_facts AS (
+      SELECT to_jsonb(fact) AS row_data
+      FROM jsonb_to_recordset(${sql.json(expectedRows)}::jsonb) AS fact(
+        session_id TEXT,
+        event_id BIGINT,
+        part_key TEXT,
+        fact_kind TEXT,
+        recorded_at TIMESTAMPTZ,
+        source_event_type TEXT,
+        normalization_version INTEGER,
+        accounting_key TEXT,
+        input_id TEXT,
+        candidate_type TEXT,
+        provider TEXT,
+        backend TEXT,
+        model TEXT,
+        usage_snapshot JSONB,
+        quality JSONB,
+        representation TEXT,
+        input_total BIGINT,
+        output_total BIGINT,
+        total_tokens BIGINT,
+        cache_read BIGINT,
+        cache_write BIGINT,
+        reasoning_output BIGINT,
+        known_cost_usd NUMERIC,
+        priced_tokens BIGINT,
+        unpriced_tokens BIGINT,
+        pricing_complete BOOLEAN,
+        pricing_version TEXT,
+        raw_numeric JSONB,
+        category TEXT,
+        source_key TEXT,
+        estimate_source TEXT,
+        raw_chars_utf16 BIGINT,
+        approximate_tokens BIGINT,
+        boundary_type TEXT
+      )
+    ),
+    actual_facts AS (
+      SELECT to_jsonb(fact) AS row_data
+      FROM session_statistics_facts AS fact
+      JOIN source_keys USING (session_id, event_id)
+    ),
+    missing_facts AS (
+      SELECT row_data FROM expected_facts
+      EXCEPT ALL
+      SELECT row_data FROM actual_facts
+    ),
+    unexpected_facts AS (
+      SELECT row_data FROM actual_facts
+      EXCEPT ALL
+      SELECT row_data FROM expected_facts
+    )
+    SELECT
+      (SELECT count(*)::int FROM missing_facts) AS missing_count,
+      (SELECT count(*)::int FROM unexpected_facts) AS unexpected_count
+  `;
+  if ((counts?.missing_count ?? 0) !== 0 || (counts?.unexpected_count ?? 0) !== 0) {
+    throw new Error("session statistics projection facts do not match normalized source events");
+  }
+}

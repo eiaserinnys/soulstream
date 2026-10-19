@@ -269,6 +269,11 @@ describePostgres("session statistics facts projection", () => {
     const allFacts = [...expectedBackfillFacts, ...normalizeSessionStatisticsEvent(lateLiveEvent).facts,
       ...normalizeSessionStatisticsEvent(malformed).facts, ...fixtureFacts];
     expect(describeSqlUsage(canonicalRows)).toEqual(describePureUsage(allFacts));
+    expect(canonicalRows.some((row) => row.row_kind === "usage"
+      && row.accounting_key === "missing-complete-wins"
+      && row.state === "missing"
+      && row.missing_identity === "command:missing-complete-wins"
+      && row.fact === null)).toBe(true);
     expect(describeSqlMaterial(canonicalRows)).toEqual(describePureMaterial(allFacts));
 
     const rangeRows = await createCanonicalSessionStatisticsFacts(
@@ -286,6 +291,185 @@ describePostgres("session statistics facts projection", () => {
     expect(String(rangeRows.find((row) => row.row_kind === "usage")?.owner_event_id)).toBe("2000002");
     expect(Date.parse(String(rangeRows.find((row) => row.row_kind === "usage")?.owner_recorded_at)))
       .toBeGreaterThanOrEqual(Date.parse("2026-10-20T00:00:00.000Z"));
+  }, 60_000);
+
+  it("returns pending and missing coverage for input boundaries without usage candidates", async () => {
+    const events: SessionStatisticsEventInput[] = [
+      {
+        sessionId: "statistics-projection-closed-empty-input",
+        eventId: 3_000_001,
+        eventType: "user_message",
+        createdAt: "2026-10-19T00:00:00.000Z",
+        payload: { type: "user_message", input_id: "empty-input", text: "no usage" },
+      },
+      {
+        sessionId: "statistics-projection-closed-empty-input",
+        eventId: 3_000_002,
+        eventType: "session_ended",
+        createdAt: "2026-10-19T00:00:01.000Z",
+        payload: { type: "session_ended" },
+      },
+      {
+        sessionId: "statistics-projection-open-empty-input",
+        eventId: 3_000_003,
+        eventType: "user_message",
+        createdAt: "2026-10-19T00:00:02.000Z",
+        payload: { type: "user_message", input_id: "open-input", text: "still running" },
+      },
+      {
+        sessionId: "statistics-projection-incomplete-owner",
+        eventId: 3_000_004,
+        eventType: "user_message",
+        createdAt: "2026-10-19T00:00:03.000Z",
+        payload: { type: "user_message", input_id: "incomplete-input", text: "known input" },
+      },
+      {
+        sessionId: "statistics-projection-incomplete-owner",
+        eventId: 3_000_005,
+        eventType: "complete",
+        createdAt: "2026-10-19T00:00:04.000Z",
+        payload: { type: "complete", input_id: "incomplete-input", output_command_id: "incomplete-command" },
+      },
+    ];
+    await seedSourceEvents(sql, events);
+    await insertSessionStatisticsFacts(
+      sql as unknown as EventIngressQuerySql,
+      events.flatMap((event) => normalizeSessionStatisticsEvent(event).facts),
+    );
+
+    const rows = await createCanonicalSessionStatisticsFacts(
+      sql as unknown as EventIngressQuerySql,
+      events.map((event) => event.sessionId),
+    );
+    const coverage = rows.filter((row) => row.row_kind === "usage" && row.fact === null);
+    expect(coverage.map((row) => ({
+      session_id: row.session_id,
+      candidate_event_id: String(row.candidate_event_id),
+      state: row.state,
+    })).sort((left, right) => left.session_id.localeCompare(right.session_id))).toEqual([
+      {
+        session_id: "statistics-projection-closed-empty-input",
+        candidate_event_id: "3000001",
+        state: "missing",
+      },
+      {
+        session_id: "statistics-projection-incomplete-owner",
+        candidate_event_id: "3000004",
+        state: "missing",
+      },
+      {
+        session_id: "statistics-projection-open-empty-input",
+        candidate_event_id: "3000003",
+        state: "pending",
+      },
+    ]);
+  }, 60_000);
+
+  it("preserves command subtotals and one missing identity for mixed same-input owners", async () => {
+    const sessionId = "statistics-projection-mixed-input";
+    const inputId = "mixed-input";
+    const boundary: SessionStatisticsEventInput = {
+      sessionId, eventId: 3_050_001, eventType: "user_message",
+      createdAt: "2026-10-19T00:00:00.000Z",
+      payload: { type: "user_message", input_id: inputId, text: "multiple commands" },
+    };
+    const known: SessionStatisticsEventInput = {
+      sessionId, eventId: 3_050_002, eventType: "complete",
+      createdAt: "2026-10-19T00:00:01.000Z",
+      payload: {
+        type: "complete", input_id: inputId, output_command_id: "known-a",
+        usage_snapshot: usageSnapshot(), usage: { input_tokens: 12, output_tokens: 3 },
+      },
+    };
+    const incomplete: SessionStatisticsEventInput = {
+      sessionId, eventId: 3_050_003, eventType: "complete",
+      createdAt: "2026-10-19T00:00:02.000Z",
+      payload: { type: "complete", input_id: inputId, output_command_id: "missing-b" },
+    };
+    const append = async (events: readonly SessionStatisticsEventInput[]) => {
+      await seedSourceEvents(sql, events);
+      await insertSessionStatisticsFacts(
+        sql as unknown as EventIngressQuerySql,
+        events.flatMap((event) => normalizeSessionStatisticsEvent(event).facts),
+      );
+      return await createCanonicalSessionStatisticsFacts(sql as unknown as EventIngressQuerySql, [sessionId]);
+    };
+    const subtotal = (rows: Awaited<ReturnType<typeof append>>) => rows
+      .filter((row) => row.row_kind === "usage" && row.state === "owned")
+      .reduce((sum, row) => sum + (row.fact?.total_tokens ?? 0), 0);
+    const missing = (rows: Awaited<ReturnType<typeof append>>) => rows
+      .filter((row) => row.row_kind === "usage" && row.state === "missing");
+
+    // A pending sibling preserves known A without claiming missing usage.
+    const pendingRows = await append([boundary, known, {
+      ...incomplete, eventType: "result",
+      payload: { type: "result", success: true, input_id: inputId, output_command_id: "missing-b" },
+    }]);
+    expect(subtotal(pendingRows)).toBe(15);
+    expect(missing(pendingRows)).toHaveLength(0);
+    expect(pendingRows.some((row) => row.row_kind === "usage" && row.state === "pending")).toBe(true);
+
+    // Exactly two commands: known A and incomplete B (result + complete).
+    const twoCommandRows = await append([{ ...incomplete, eventId: 3_050_004 }]);
+    expect(subtotal(twoCommandRows)).toBe(15);
+    expect(missing(twoCommandRows)).toHaveLength(1);
+    expect(missing(twoCommandRows)[0]).toMatchObject({ input_id: inputId, missing_identity: `input:${inputId}`, fact: null });
+
+    // Two known commands remain additive; multiple incomplete commands share one input identity.
+    const mixedRows = await append([
+      { ...incomplete, eventId: 3_050_005, payload: { ...incomplete.payload as object, output_command_id: "missing-c" } },
+      { ...known, eventId: 3_050_006, payload: { ...known.payload as object, output_command_id: "known-d", usage: { input_tokens: 7, output_tokens: 2 } } },
+    ]);
+    expect(subtotal(mixedRows)).toBe(24);
+    expect(mixedRows.filter((row) => row.row_kind === "usage" && row.state === "owned" && row.fact !== null && row.fact.total_tokens !== null)
+      .map((row) => row.accounting_key).sort()).toEqual(["known-a", "known-d"]);
+    expect(missing(mixedRows)).toHaveLength(1);
+    expect(missing(mixedRows)[0]?.missing_identity).toBe(`input:${inputId}`);
+  }, 60_000);
+
+  it("keeps backfill out of ready when persisted source facts differ from normalization", async () => {
+    const event: SessionStatisticsEventInput = {
+      sessionId: "zzzz-statistics-projection-reconciliation",
+      eventId: 3_100_001,
+      eventType: "user_message",
+      createdAt: "2026-10-19T00:00:00.000Z",
+      payload: { type: "user_message", input_id: "reconcile-input", text: "source text" },
+    };
+    await seedSourceEvents(sql, [event]);
+    const expectedFacts = normalizeSessionStatisticsEvent(event).facts;
+    await insertSessionStatisticsFacts(
+      sql as unknown as EventIngressQuerySql,
+      expectedFacts.map((fact) => fact.fact_kind === "input_material"
+        ? { ...fact, approximate_tokens: 777 }
+        : fact),
+    );
+    await sql`
+      UPDATE system_settings
+      SET value = ${sql.json({
+        state: "backfilling",
+        normalization_version: 1,
+        covered_since: event.createdAt,
+        backfill_cutoff_event_id: Number(event.eventId),
+        last_session_id: event.sessionId,
+        last_event_id: Number(event.eventId) - 1,
+      })},
+          version = version + 1
+      WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}
+    `;
+
+    await expect(backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { batchSize: 1 }))
+      .rejects.toThrow("session statistics projection facts do not match normalized source events");
+    const [checkpoint] = await sql<readonly { value: Record<string, unknown> }[]>`
+      SELECT value FROM system_settings
+      WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}
+    `;
+    expect(checkpoint?.value).toMatchObject({
+      state: "backfilling",
+      covered_since: event.createdAt,
+      backfill_cutoff_event_id: Number(event.eventId),
+      last_session_id: event.sessionId,
+      last_event_id: Number(event.eventId) - 1,
+    });
   }, 60_000);
 });
 
@@ -375,7 +559,8 @@ function describePureUsage(facts: readonly FactDraft[]) {
 
 function describeSqlUsage(rows: Awaited<ReturnType<typeof createCanonicalSessionStatisticsFacts>>) {
   const groups = new Map<string, typeof rows[number][]>();
-  for (const row of rows.filter((item) => item.row_kind === "usage")) {
+  for (const row of rows.filter((item) => item.row_kind === "usage"
+    && !(item.fact === null && item.candidate_type === null && item.missing_identity !== null))) {
     const key = `${row.session_id}\u0000${row.selection_event_id}`;
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }

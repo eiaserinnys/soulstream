@@ -138,6 +138,7 @@ export function createSessionStatisticsUsageCtes(
       SELECT
         success.session_id,
         success.accounting_key,
+        success.input_id,
         NULL::bigint AS owner_event_id,
         success.event_id AS candidate_event_id,
         success.candidate_type,
@@ -190,6 +191,7 @@ export function createSessionStatisticsUsageCtes(
       SELECT
         event.session_id,
         event.accounting_key,
+        event.input_id,
         NULL::bigint AS owner_event_id,
         event.event_id AS candidate_event_id,
         event.candidate_type,
@@ -209,6 +211,7 @@ export function createSessionStatisticsUsageCtes(
       SELECT
         owner.session_id,
         owner.accounting_key,
+        owner.input_id,
         owner.event_id AS owner_event_id,
         owner.event_id AS candidate_event_id,
         owner.candidate_type,
@@ -231,6 +234,7 @@ export function createSessionStatisticsUsageCtes(
       SELECT
         event.session_id,
         event.accounting_key,
+        event.input_id,
         event.event_id AS owner_event_id,
         event.event_id AS candidate_event_id,
         event.candidate_type,
@@ -286,6 +290,7 @@ export function createSessionStatisticsUsageCtes(
       SELECT
         event.session_id,
         NULL::text AS accounting_key,
+        event.input_id,
         NULL::bigint AS owner_event_id,
         event.event_id AS candidate_event_id,
         event.candidate_type,
@@ -331,6 +336,7 @@ export function createSessionStatisticsUsageCtes(
       SELECT
         interval.session_id,
         NULL::text AS accounting_key,
+        failure.input_id,
         CASE WHEN interval.failure_count = 1 AND NOT interval.has_other_owner
           THEN interval.failed_event_id ELSE NULL END::bigint AS owner_event_id,
         CASE WHEN interval.failure_count = 1 AND NOT interval.has_other_owner
@@ -374,14 +380,46 @@ export function createSessionStatisticsUsageCtes(
     labeled_usage_selections AS (
       SELECT
         selection.*,
-        coalesce(owner_event_id, candidate_event_id, interval_start_event_id, 0)::bigint AS selection_event_id
+        coalesce(owner_event_id, candidate_event_id, interval_start_event_id, 0)::bigint AS selection_event_id,
+        input_boundary.event_id AS input_boundary_event_id,
+        CASE WHEN selection.state IN (
+          'missing', 'pending', 'ambiguous_legacy', 'unresolved_legacy', 'identity_conflict'
+        ) THEN coalesce(
+          CASE WHEN selection.input_id IS NOT NULL THEN 'input:' || selection.input_id END,
+          CASE WHEN input_boundary.event_id IS NOT NULL THEN 'user_event:' || input_boundary.event_id::text END,
+          CASE WHEN selection.accounting_key IS NOT NULL THEN 'command:' || selection.accounting_key END,
+          CASE WHEN selection.candidate_event_id IS NOT NULL THEN 'event:' || selection.candidate_event_id::text END
+        ) END AS missing_identity
       FROM usage_selections AS selection
+      LEFT JOIN LATERAL (
+        SELECT boundary.event_id
+        FROM scoped_facts AS boundary
+        WHERE boundary.session_id = selection.session_id
+          AND boundary.fact_kind = 'boundary'
+          AND boundary.boundary_type = 'input'
+          AND (
+            (selection.input_id IS NOT NULL AND boundary.input_id = selection.input_id)
+            OR (boundary.event_id <= coalesce(
+              selection.owner_event_id, selection.candidate_event_id,
+              selection.interval_start_event_id, 0
+            ))
+          )
+        ORDER BY
+          CASE WHEN selection.input_id IS NOT NULL AND boundary.input_id = selection.input_id THEN 0 ELSE 1 END,
+          CASE WHEN selection.input_id IS NOT NULL AND boundary.input_id = selection.input_id
+            THEN boundary.event_id END ASC,
+          CASE WHEN selection.input_id IS NULL OR boundary.input_id IS DISTINCT FROM selection.input_id
+            THEN boundary.event_id END DESC
+        LIMIT 1
+      ) AS input_boundary ON true
     ),
     usage_rows AS (
       SELECT
         'usage'::text AS row_kind,
         selection.session_id,
         selection.selection_event_id,
+        selection.input_id,
+        selection.missing_identity,
         selection.accounting_key,
         selection.owner_event_id,
         selection.candidate_event_id,

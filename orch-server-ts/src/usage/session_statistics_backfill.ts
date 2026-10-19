@@ -2,7 +2,10 @@ import {
   normalizeSessionStatisticsEvent,
   type FactDraft,
 } from "./session_statistics_normalizer.js";
-import { insertSessionStatisticsFacts } from "./session_statistics_projection.js";
+import {
+  assertSessionStatisticsFactsMatchSourceEvents,
+  insertSessionStatisticsFacts,
+} from "./session_statistics_projection.js";
 import type { EventIngressSql, EventIngressQuerySql } from "../node/event_ingress_repository.js";
 
 export const SESSION_STATISTICS_PROJECTION_SETTING_KEY = "session_statistics_projection_v1";
@@ -95,6 +98,11 @@ async function backfillBatch(
     facts.push(...normalized.facts);
   }
   await insertSessionStatisticsFacts(sql, facts);
+  await assertSessionStatisticsFactsMatchSourceEvents(
+    sql,
+    eventRows.map((row) => ({ session_id: row.session_id, event_id: row.id })),
+    facts,
+  );
 
   const lastEvent = eventRows.at(-1);
   const nextState: SessionStatisticsProjectionState = {
