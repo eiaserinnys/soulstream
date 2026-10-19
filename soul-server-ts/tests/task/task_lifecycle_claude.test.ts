@@ -335,7 +335,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       queued: true,
       queuePosition: 1,
       consumeWhen: "next_turn",
-      reason: "not_supported",
+      reason: "no_active_turn",
     });
     expect(task.interventionQueue.map((item) => item.text)).toEqual([
       "second at 80ms",
@@ -437,10 +437,9 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       queued: true,
       queuePosition: 1,
       consumeWhen: "next_turn",
-      reason: "not_supported",
+      reason: "no_active_turn",
     });
-    // This fixture intentionally exercises the legacy non-persistent client,
-    // so it must finish its current query before the preserved input can run.
+    // Legacy non-persistent clients cannot inject at tool boundaries; this queues as no_active_turn.
     interrupted.resolve();
     await task.executionPromise;
 

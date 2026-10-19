@@ -475,7 +475,7 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0]).toMatchObject({ deliveryId });
     expect(timedOut.dispatcher.invoke).toHaveBeenCalledWith(
-      "intervene",
+      "injectAtToolBoundary",
       [expect.objectContaining({
         prompt: "deliver exactly once",
         inputUuid: stableInputUuid,
