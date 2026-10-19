@@ -11,6 +11,7 @@ import { OwnedAgentsSettingsSection } from '../components/settings/OwnedAgentsSe
 import { SessionReviewPolicySettingsSection } from '../components/settings/SessionReviewPolicySettingsSection';
 import { RecurringJobsSettingsSection } from '../components/settings/RecurringJobsSettingsSection';
 import { PersistentSessionsSettingsSection } from '../components/settings/PersistentSessionsSettingsSection';
+import { UsageStatsSettingsSection } from '../components/settings/usage-stats/UsageStatsSettingsSection';
 import type { SettingsCategory } from '../components/settings/settingsCategories';
 import { useDashboardAdminStatus } from '../components/settings/useDashboardAdminStatus';
 import { resolveBackgroundImageSource } from '../lib/wallpaper-source';
@@ -303,6 +304,11 @@ export function SettingsContent({
               error={backendError}
               onRetry={() => setBackendReload(value => value + 1)}
             />
+            </ScrollView>
+          ) : null}
+          {renderCategory('usage-stats') ? (
+            <ScrollView {...pageProps('usage-stats')}>
+              <UsageStatsSettingsSection flattened={flattened} />
             </ScrollView>
           ) : null}
           {renderCategory('recurring-jobs') ? (

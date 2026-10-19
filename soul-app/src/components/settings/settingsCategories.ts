@@ -6,6 +6,7 @@ export type SettingsCategory =
   | 'owned-agents'
   | 'connection'
   | 'backends'
+  | 'usage-stats'
   | 'recurring-jobs'
   | 'persistent'
   | 'review-policy'
@@ -24,6 +25,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
   { id: 'owned-agents', label: '내 에이전트', group: '개인 환경', description: '이름과 연결 키 관리', icon: 'people-outline' },
   { id: 'connection', label: '서버 연결', group: '작업과 실행', description: '서버 주소와 연결 확인', icon: 'server-outline' },
   { id: 'backends', label: 'AI 연결과 사용량', group: '작업과 실행', description: 'AI 백엔드와 인증 상태', icon: 'terminal-outline' },
+  { id: 'usage-stats', label: '세션 통계', group: '작업과 실행', description: '기간별 토큰과 정가', icon: 'stats-chart-outline' },
   { id: 'recurring-jobs', label: '반복 작업', group: '작업과 실행', description: '일정과 다음 실행', icon: 'repeat-outline' },
   { id: 'persistent', label: '영구 에이전트 세션', group: '작업과 실행', description: 'Persistent Agent Session', icon: 'infinite-outline' },
   { id: 'review-policy', label: '요청 검수', group: '관리와 문제 해결', description: '새 세션 실행 후 결과 검수', icon: 'checkmark-done-outline' },
