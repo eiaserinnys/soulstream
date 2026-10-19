@@ -199,7 +199,61 @@ describe("persistent Claude session: injected input the CLI runs as a following 
     await client.close();
   });
 
-  it("T4 ends the foreground cleanly when a human interrupts the following turn", async () => {
+  it("T5 keeps a second injection in the same foreground after the following turn has started", async () => {
+    const { harness, client } = newClient();
+    const foreground = startForeground(client, "U1");
+    await harness.nextInput();
+    harness.push(sdkCommandLifecycle("U1", "queued"));
+    harness.push(sdkCommandLifecycle("U1", "started"));
+    inject(client, "INJ1");
+    await harness.nextInput();
+
+    harness.push(sdkCommandLifecycle("INJ1", "queued"));
+    harness.push(sdkResult("sdk-session", "U1", "first turn done"));
+    harness.push(sdkCommandLifecycle("U1", "completed"));
+    harness.push(sdkCommandLifecycle("INJ1", "started"));
+    harness.push(sdkInit("sdk-session"));
+    harness.push(sdkAssistantText("a-follow1", "following turn text for INJ1"));
+    await vi.waitFor(() => expect(foreground.events).toContainEqual(
+      expect.objectContaining({ type: "text", text: "following turn text for INJ1" }),
+    ));
+    expect(completes(foreground.events)).toEqual([]);
+
+    inject(client, "INJ2");
+    await harness.nextInput();
+    harness.push(sdkCommandLifecycle("INJ2", "queued"));
+    harness.push(sdkResult("sdk-session", "INJ1", "first following turn done"));
+    harness.push(sdkCommandLifecycle("INJ1", "completed"));
+    harness.push(sdkCommandLifecycle("INJ2", "started"));
+    harness.push(sdkInit("sdk-session"));
+    harness.push(sdkAssistantText("a-follow2", "following turn text for INJ2"));
+    await vi.waitFor(() => expect(foreground.events).toContainEqual(
+      expect.objectContaining({ type: "text", text: "following turn text for INJ2" }),
+    ));
+    expect(completes(foreground.events)).toEqual([]);
+
+    harness.push(sdkResult("sdk-session", "INJ2", "second following turn done"));
+    harness.push(sdkCommandLifecycle("INJ2", "completed"));
+    await foreground.done;
+
+    expect(foreground.events).toContainEqual(
+      expect.objectContaining({ type: "text", text: "following turn text for INJ1" }),
+    );
+    expect(foreground.events).toContainEqual(
+      expect.objectContaining({ type: "text", text: "following turn text for INJ2" }),
+    );
+    expect(completes(foreground.events)).toEqual([
+      expect.objectContaining({ type: "complete", result: "second following turn done" }),
+    ]);
+    expect(detachedTexts(harness.detached)).toEqual([]);
+    expect(harness.interrupt).not.toHaveBeenCalled();
+
+    await expectNextForegroundRuns(harness, client, "F2");
+    expect(harness.close).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  it("T4 ends the foreground cleanly after an explicit intervention interrupt during the following turn", async () => {
     const { harness, client } = newClient();
     const foreground = startForeground(client, "U1");
     await harness.nextInput();

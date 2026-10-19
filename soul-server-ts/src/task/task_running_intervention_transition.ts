@@ -18,14 +18,6 @@ import { createInterventionAttachmentSource } from "./generation_turn_input.js";
 import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
 
-const HUMAN_CALLER_SOURCES = new Set(["slack", "browser", "soul-app"]);
-
-/** Missing source keeps the legacy human path; every explicit non-human source is push-only. */
-export function isHumanAuthored(message: Pick<InterventionMessage, "callerInfo">): boolean {
-  const source = message.callerInfo?.source;
-  return source === undefined || source === null || HUMAN_CALLER_SOURCES.has(source);
-}
-
 export type RunningInterventionResult =
   | { delivered: true }
   | {
@@ -242,7 +234,7 @@ export class RunningInterventionTransition {
       turnOrigin: interventionTurnOrigin(message, inputUuid),
     };
     try {
-      if (isHumanAuthored(message) || engine.backendId !== "claude") {
+      if (engine.backendId !== "claude") {
         return await engine.intervene(input);
       }
       const injection = engine as typeof engine & Partial<SupportsToolBoundaryInjection>;
