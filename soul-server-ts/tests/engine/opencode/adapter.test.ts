@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { EngineExecuteParams, SSEEventPayload } from "../../../src/engine/protocol.js";
 import { OpenCodeEngineAdapter } from "../../../src/engine/opencode/adapter.js";
 
 function fixture(extraEvents: unknown[] = []) {
@@ -80,8 +81,8 @@ const input = {
   systemPrompt: "adapter instructions",
 };
 
-async function collect(engine: OpenCodeEngineAdapter, params = input) {
-  const events = [];
+async function collect(engine: OpenCodeEngineAdapter, params: EngineExecuteParams = input) {
+  const events: SSEEventPayload[] = [];
   for await (const event of engine.execute(params)) events.push(event);
   return events;
 }
@@ -111,6 +112,101 @@ describe("OpenCodeEngineAdapter", () => {
         args: ["--print-logs", "--log-level", "ERROR", "run", "--pure", "--format", "json", "--model", "opencode/deepseek-v4.1-flash-free"],
       });
       expect(complete).toMatchObject({ type: "complete", turn_cost_usd: 0.25 });
+    } finally {
+      await engine.close();
+      rmSync(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("starts a fresh usage accumulator for each execution", async () => {
+    const paths = fixture([{
+      type: "step_finish",
+      sessionID: "ses_adapter_usage",
+      part: {
+        id: "prt_adapter_usage",
+        messageID: "msg_adapter_usage",
+        type: "step-finish",
+        reason: "stop",
+        cost: 0,
+        tokens: { total: 15, input: 10, output: 2, reasoning: 3, cache: { read: 0, write: 0 } },
+      },
+    }]);
+    const engine = new OpenCodeEngineAdapter({ ...paths, agentId: "test-agent", processEnv: {} }, pino({ level: "silent" }));
+    try {
+      const first = await collect(engine);
+      const second = await collect(engine);
+      const firstComplete = first.find((event) => event.type === "complete");
+      const secondComplete = second.find((event) => event.type === "complete");
+      expect(firstComplete).toMatchObject({ raw_usage: { input: 10, total: 15 } });
+      expect(secondComplete).toMatchObject({ raw_usage: { input: 10, total: 15 } });
+    } finally {
+      await engine.close();
+      rmSync(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes bound B2 usage context to an interrupt observation", async () => {
+    const paths = rateLimitFixture({ mode: "interrupt-after-step" });
+    const engine = new OpenCodeEngineAdapter({ ...paths, agentId: "test-agent", processEnv: {} }, pino({ level: "silent" }));
+    const usageSnapshot = {
+      schema_version: 1,
+      backend: "opencode",
+      provider: "deepseek",
+      preset_id: "opencode-deepseek-v4.1-flash-free",
+      requested_model: "opencode/deepseek-v4.1-flash-free",
+      provider_attribution: "configured_alias",
+    } as const;
+    const params: EngineExecuteParams = {
+      ...input,
+      usage_snapshot: usageSnapshot,
+      execution_input: {
+        schema_version: 1,
+        command_id: "bound-command",
+        input_id: "logical-input",
+        scope: "newly_observed_material",
+        stage: "prepared",
+        resumed: false,
+        replayed: false,
+        scope_match: "unverified",
+        non_comparable_reasons: ["hidden_system_or_schema"],
+        estimate_method: "utf16_chars_div4_ceil_v1",
+        parts: [],
+      },
+    };
+    const events: SSEEventPayload[] = [];
+    let interrupted = false;
+    try {
+      for await (const event of engine.execute(params)) {
+        events.push(event);
+        if (!interrupted && event.type === "assistant_message") {
+          interrupted = await engine.interrupt();
+        }
+      }
+
+      expect(interrupted).toBe(true);
+      expect(readFileSync(paths.signalPath, "utf8")).toBe("SIGINT");
+      expect(events.filter((event) => event.type === "usage_observation")).toMatchObject([
+        {
+          type: "usage_observation",
+          schema_version: 1,
+          output_command_id: "bound-command",
+          input_id: "logical-input",
+          usage_snapshot: usageSnapshot,
+          model: null,
+          accounting_key: "bound-command",
+          outcome: "interrupted",
+          source: "opencode_step_finish",
+          usage: {
+            input_tokens: 10,
+            cached_input_tokens: 0,
+            cache_write_input_tokens: null,
+            output_tokens: 5,
+            reasoning_output_tokens: 3,
+          },
+          raw_usage: { input: 10, output: 2, reasoning: 3, cache_read: 0, cache_write: 0, total: 15 },
+        },
+      ]);
+      expect(events.some((event) => event.type === "complete" || event.type === "error")).toBe(false);
     } finally {
       await engine.close();
       rmSync(paths.root, { recursive: true, force: true });
