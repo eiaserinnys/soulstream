@@ -43,9 +43,10 @@ export const USAGE_STATS_LABELS = {
   output: "출력", reasoning: "그중 추론",
 };
 
-export function formatUsageStatsApproximateTokens(value: number | null, observed = false): string {
+export function formatUsageStatsApproximateTokens(value: number | null, observed = false, partial = false): string {
   if (value === null) return observed ? "관측 안 됨" : "미기록";
-  return `${observed ? "추정 " : ""}약 ${value.toLocaleString("ko-KR")} 토큰`;
+  if (partial && value === 0) return "미기록";
+  return `${observed ? "추정 " : ""}약 ${value.toLocaleString("ko-KR")}${partial ? "+" : ""} 토큰`;
 }
 
 export function formatUsageStatsValue(
@@ -72,29 +73,99 @@ export function usageStatsModelColorIndex(model: string | null | undefined, rost
 export function usageStatsMonthAnchor(bucket: string, asOf: string): string {
   const parsed = parseDate(bucket);
   const monthEnd = formatDate(Date.UTC(parsed.year, parsed.month, 0));
-  const cutoff = parseDate(asOf.slice(0, 10));
-  const lastAvailable = formatDate(Date.UTC(cutoff.year, cutoff.month - 1, cutoff.day - 1));
-  return monthEnd < lastAvailable ? monthEnd : lastAvailable;
+  const today = usageStatsKstDate(asOf);
+  return monthEnd < today ? monthEnd : today;
 }
 
+// Fixture/legacy pure helper only. Production must consume the server's range instead of rebuilding it here.
 export function usageStatsRange(period: "week" | "month" | "all", anchor: string, asOf: string, coveredSince: string) {
-  const parsed = parseDate(anchor);
+  const today = usageStatsKstDate(asOf);
+  const todayEnd = addDays(today, 1);
   let since = coveredSince;
-  let until = asOf.slice(0, 10);
+  let until = todayEnd;
   let bucket: "day" | "month" = "month";
-  if (period === "week") {
-    const weekday = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay();
-    since = formatDate(Date.UTC(parsed.year, parsed.month - 1, parsed.day - ((weekday + 6) % 7)));
-    const start = parseDate(since);
-    until = formatDate(Date.UTC(start.year, start.month - 1, start.day + 7));
-    bucket = "day";
-  } else if (period === "month") {
-    since = formatDate(Date.UTC(parsed.year, parsed.month - 1, 1));
-    until = formatDate(Date.UTC(parsed.year, parsed.month, 1));
+  if (period !== "all") {
+    const calendar = usageStatsCalendarRange(period, anchor);
+    since = calendar.since;
+    until = calendar.until;
     bucket = "day";
   }
-  const effective = until < asOf.slice(0, 10) ? until : asOf.slice(0, 10);
+  const effective = until < todayEnd ? until : todayEnd;
   return { period, since, until, effective_until: effective < since ? since : effective, timezone: "Asia/Seoul" as const, bucket };
+}
+
+export function usageStatsKstDate(instant: string | number): string {
+  const date = typeof instant === "number" ? new Date(instant) : new Date(instant);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  let year = "";
+  let month = "";
+  let day = "";
+  for (const part of parts) {
+    if (part.type === "year") year = part.value;
+    else if (part.type === "month") month = part.value;
+    else if (part.type === "day") day = part.value;
+  }
+  return `${year}-${month}-${day}`;
+}
+
+export function usageStatsCalendarRange(period: "week" | "month", anchor: string): {
+  since: string;
+  until: string;
+  bucket: "day";
+} {
+  const parsed = parseDate(anchor);
+  if (period === "week") {
+    const weekday = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay();
+    const since = formatDate(Date.UTC(parsed.year, parsed.month - 1, parsed.day - ((weekday + 6) % 7)));
+    const start = parseDate(since);
+    return { since, until: formatDate(Date.UTC(start.year, start.month - 1, start.day + 7)), bucket: "day" };
+  }
+  return {
+    since: formatDate(Date.UTC(parsed.year, parsed.month - 1, 1)),
+    until: formatDate(Date.UTC(parsed.year, parsed.month, 1)),
+    bucket: "day",
+  };
+}
+
+export function usageStatsBucketStarts(range: {
+  since: string;
+  until: string;
+  effective_until: string;
+  bucket: "day" | "month";
+}): string[] {
+  const buckets: string[] = [];
+  if (range.bucket === "day") {
+    let cursor = range.since;
+    while (cursor < range.until) {
+      buckets.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+    return buckets;
+  }
+  const start = parseDate(range.since);
+  let year = start.year;
+  let month = start.month;
+  let cursor = formatDate(Date.UTC(year, month - 1, 1));
+  while (cursor < range.effective_until) {
+    buckets.push(cursor);
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+    cursor = formatDate(Date.UTC(year, month - 1, 1));
+  }
+  return buckets;
+}
+
+function addDays(date: string, amount: number): string {
+  const parsed = parseDate(date);
+  return formatDate(Date.UTC(parsed.year, parsed.month - 1, parsed.day + amount));
 }
 
 export function isUsageStatsTokenPartial(coverage: {
@@ -176,6 +247,7 @@ export function formatUsageStatsProviderLabel(provider: string): string {
   if (provider === "antigravity") return "Antigravity";
   if (provider === "deepseek") return "DeepSeek";
   if (provider === "kimi") return "Kimi";
+  if (provider === "unknown") return "공급자 미확인";
   return provider;
 }
 
@@ -196,6 +268,11 @@ export function formatUsageStatsInputCategoryLabel(category: string): string {
   if (category === "soulstream_injection") return "소울스트림 주입";
   if (category === "user_prompt") return "사용자 프롬프트";
   if (category === "tool_result") return "툴 결과";
+  if (category === "history_replay") return "이전 대화 재전달";
+  if (category === "tool_definition") return "툴 정의";
+  if (category === "framing") return "구분자·형식";
+  if (category === "combined_visible") return "합쳐진 입력 자료";
+  if (category === "unknown") return "분류 미확인";
   if (category === "harness_internal") return "하네스 내부 입력";
   return category;
 }
