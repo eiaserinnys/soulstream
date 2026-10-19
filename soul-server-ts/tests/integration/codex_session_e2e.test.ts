@@ -298,6 +298,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     expect(durableTypes).toEqual([
       "metadata",
       "user_message",
+      "input_material_manifest",
       "session",
       "assistant_message",
       "complete",
@@ -318,6 +319,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
       (input as Record<string, unknown>).session_effect)).toEqual([
       expect.objectContaining({ kind: "execution_registration" }),
       expect.objectContaining({ kind: "last_message" }),
+      null,
       { kind: "set_backend_session_id", backend_session_id: "thr-codex-1" },
       expect.objectContaining({ kind: "last_message" }),
       null,
@@ -331,7 +333,7 @@ describe("Phase B-3 E2E: create_session → engine drain → ingress effects", (
     // task 상태
     expect(task!.status).toBe("completed");
     expect(task!.codexThreadId).toBe("thr-codex-1");
-    expect(task!.lastEventId).toBe(6);
+    expect(task!.lastEventId).toBe(7);
     expect(task!.lastAssistantText).toBe("Hello world");
   });
 

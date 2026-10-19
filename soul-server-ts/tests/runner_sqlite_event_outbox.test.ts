@@ -53,6 +53,86 @@ afterEach(async () => {
 });
 
 describe("RunnerSqliteEventOutbox", () => {
+  it("durably appends both numeric usage events with their original JSON payloads", async () => {
+    const outbox = await createOutbox();
+    const usageSnapshot = {
+      schema_version: 1,
+      backend: "opencode",
+      provider: "deepseek",
+      preset_id: "opencode-deepseek-v4.1-flash-free",
+      requested_model: "opencode/deepseek-v4.1-flash-free",
+      provider_attribution: "configured_alias",
+    };
+    const events = [
+      {
+        type: "input_material_manifest",
+        schema_version: 1,
+        timestamp: 1,
+        output_command_id: "command-1",
+        input_id: "input-1",
+        usage_snapshot: usageSnapshot,
+        execution_input: {
+          schema_version: 1,
+          command_id: "command-1",
+          input_id: "input-1",
+          scope: "newly_observed_material",
+          stage: "prepared",
+          resumed: false,
+          replayed: false,
+          scope_match: "unverified",
+          non_comparable_reasons: ["hidden_system_or_schema", "missing_source_token_breakdown"],
+          estimate_method: "utf16_chars_div4_ceil_v1",
+          parts: [],
+        },
+      },
+      {
+        type: "usage_observation",
+        schema_version: 1,
+        timestamp: 2,
+        output_command_id: "command-1",
+        input_id: "input-1",
+        usage_snapshot: usageSnapshot,
+        model: "opencode/deepseek-v4.1-flash-free",
+        usage_scope: "command_delta",
+        accounting_key: "command-1",
+        outcome: "interrupted",
+        source: "opencode_step_finish",
+        usage: {
+          input_tokens: 9,
+          cached_input_tokens: 3,
+          cache_write_input_tokens: null,
+          output_tokens: 4,
+          reasoning_output_tokens: 1,
+        },
+        raw_usage: {
+          input: 8,
+          output: 3,
+          reasoning: 1,
+          cache_read: 3,
+          cache_write: null,
+          total: null,
+        },
+      },
+    ] as SSEEventPayload[];
+
+    try {
+      const records = [];
+      for (const event of events) {
+        const durable = await buildDurableRunnerEvent("session-a", event);
+        records.push(await outbox.appendEngineFrame(durable.appendInput, durable.frame));
+      }
+
+      expect(records.map((record) => record.event_type)).toEqual([
+        "input_material_manifest",
+        "usage_observation",
+      ]);
+      expect(records.map((record) => record.payload)).toEqual(events);
+      expect(records.every((record) => record.ipc_frame_seq > 0)).toBe(true);
+    } finally {
+      outbox.close();
+    }
+  });
+
   it("attaches a v10 sidecar identity and stays fail-closed after migration without it", async () => {
     const path = await temporaryDatabasePath();
     const original = await RunnerSqliteEventOutbox.create(path);

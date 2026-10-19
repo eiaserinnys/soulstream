@@ -1358,6 +1358,9 @@ export class TaskExecutor {
           runner,
           input: {
             prompt: turnInput.prompt,
+            ...(turnInput.inputMaterialParts !== undefined
+              ? { inputMaterialParts: turnInput.inputMaterialParts }
+              : {}),
             ...(turnInput.inputUuid !== undefined
               ? { inputUuid: turnInput.inputUuid }
               : {}),
