@@ -211,6 +211,20 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["GET"],
+    path: "/api/session-statistics",
+    name: "get_session_statistics",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/session-statistics/days/{date}",
+    name: "get_session_statistics_day",
+    authRequired: true,
+    family: "control_plane",
+  },
+  {
+    methods: ["GET"],
     path: "/api/pages/search",
     name: "search_pages",
     authRequired: true,
@@ -493,7 +507,9 @@ function isControlPlanePath(path: string): boolean {
     path === "/api/nodes" ||
     path === "/api/nodes/stream" ||
     path === "/api/sessions/stream" ||
-    path === "/api/execute"
+    path === "/api/execute" ||
+    path === "/api/session-statistics" ||
+    path === "/api/session-statistics/days/{date}"
   ) {
     return true;
   }

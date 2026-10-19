@@ -237,6 +237,7 @@ function createAllOptInRouteApp() {
     userBackgroundRoutes: inert,
     userPreferencesRoutes: inert,
     usageSummaryRoutes: inert,
+    sessionStatisticsRoutes: inert,
     uiEventRoutes: inert,
   } as unknown as CreateAppOptions);
 }

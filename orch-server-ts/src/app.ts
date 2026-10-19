@@ -188,6 +188,10 @@ import {
   type UsageSummaryRouteOptions,
 } from "./usage/usage_summary_routes.js";
 import {
+  registerSessionStatisticsRoutes,
+  type SessionStatisticsRouteOptions,
+} from "./usage/session_statistics_routes.js";
+import {
   registerUiEventRoutes,
   type UiEventRouteOptions,
 } from "./ui-events/ui_event_routes.js";
@@ -251,6 +255,7 @@ export type CreateAppOptions = {
   persistenceHostRoutes?: PersistenceHostRouteOptions;
   persistentContextRoutes?: PersistentContextHostRouteOptions;
   usageSummaryRoutes?: UsageSummaryRouteOptions;
+  sessionStatisticsRoutes?: SessionStatisticsRouteOptions;
   uiEventRoutes?: UiEventRouteOptions;
 };
 
@@ -464,6 +469,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.usageSummaryRoutes !== undefined) {
     registerUsageSummaryRoutes(app, options.usageSummaryRoutes);
+  }
+  if (options.sessionStatisticsRoutes !== undefined) {
+    registerSessionStatisticsRoutes(app, options.sessionStatisticsRoutes);
   }
   if (options.uiEventRoutes !== undefined) {
     registerUiEventRoutes(app, options.uiEventRoutes);
