@@ -5,6 +5,7 @@ import type { CallerInfo, Task } from "../task/task_models.js";
 import { effectiveTaskBackend } from "../task/task_model_preset.js";
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 
 import {
   atomContextSpecKey,
@@ -18,7 +19,13 @@ import {
   type ContextFilterParameters,
 } from "./compiler/index.js";
 import type { PreparedContext } from "./context_builder.js";
-import { formatContextItems, type ContextItem } from "./prompt_assembler.js";
+import { formatContextItemsWithMaterial, type ContextItem } from "./prompt_assembler.js";
+import {
+  createInputMaterialPart,
+  inputMaterialPartsMatchText,
+  joinInputMaterialSegments,
+  type InputMaterialTextSegment,
+} from "./input_material_parts.js";
 import type { PrimarySessionFolderContext } from "./session_folder_context.js";
 import { resolvePrimarySessionFolderContext } from "./session_folder_context.js";
 
@@ -41,12 +48,40 @@ export interface ProfileRuntimeSettings {
 }
 
 export function composeFirstTurnPrompt(ctx: PreparedContext): string {
-  const parts: string[] = [];
-  if (ctx.effectiveSystemPrompt) parts.push(ctx.effectiveSystemPrompt);
-  const contextBlock = formatContextItems(ctx.combinedContextItems);
-  if (contextBlock) parts.push(contextBlock);
-  parts.push(ctx.assembledPrompt);
-  return parts.join("\n\n");
+  return composeFirstTurnPromptWithMaterial(ctx).prompt;
+}
+
+export function composeFirstTurnPromptWithMaterial(
+  ctx: PreparedContext,
+  assembledPromptParts?: readonly InputMaterialPartV1[],
+): { prompt: string; parts: InputMaterialPartV1[] } {
+  const segments: InputMaterialTextSegment[] = [];
+  if (ctx.effectiveSystemPrompt) {
+    const systemParts = ctx.inputMaterialBreakdown?.systemParts;
+    segments.push({
+      text: ctx.effectiveSystemPrompt,
+      parts: inputMaterialPartsMatchText(systemParts, ctx.effectiveSystemPrompt)
+        ? systemParts
+        : [createInputMaterialPart(
+            "system_prompt",
+            "fallback:system_source_breakdown",
+            ctx.effectiveSystemPrompt,
+          )],
+    });
+  }
+  const context = formatContextItemsWithMaterial(
+    ctx.combinedContextItems,
+    ctx.inputMaterialBreakdown?.contextParts,
+  );
+  if (context.text) segments.push({ text: context.text, parts: context.parts });
+  segments.push({
+    text: ctx.assembledPrompt,
+    parts: inputMaterialPartsMatchText(assembledPromptParts, ctx.assembledPrompt)
+      ? assembledPromptParts
+      : [createInputMaterialPart("user_prompt", "initial/user", ctx.assembledPrompt)],
+  });
+  const assembled = joinInputMaterialSegments(segments, "\n\n", "first_turn_prompt");
+  return { prompt: assembled.text, parts: [...assembled.parts] };
 }
 
 /** 프로필 `context_scope`가 "minimal"인지. 최소 주입 판정은 이 함수 한 곳에서만 한다. */

@@ -1,7 +1,12 @@
 import type { AgentProfile } from "../agent_registry.js";
 import type { BackendRolloverContext, GenerationPreparedContext } from "../context/context_builder.js";
-import { composeFirstTurnPrompt } from "../context/context_builder.js";
+import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
+import { composeFirstTurnPromptWithMaterial } from "../context/context_builder.js";
 import { formatContextItems } from "../context/prompt_assembler.js";
+import {
+  createInputMaterialPart,
+  inputMaterialPartsMatchText,
+} from "../context/input_material_parts.js";
 
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
 import { truncateClaudeTextToEstimatedTokens } from "./claude_context_recovery.js";
@@ -200,11 +205,15 @@ export function prepareGenerationTurnInput(
     context: message.context?.filter((item) => item.key !== "assigned_cards"),
   })));
   const isClaude = effectiveTaskBackend(task, agent) === "claude";
-  const prompt = composeFirstTurnPrompt({
+  const composedPrompt = composeFirstTurnPromptWithMaterial({
     ...context,
     effectiveSystemPrompt: isClaude ? undefined : context.effectiveSystemPrompt,
     assembledPrompt: composed.prompt,
-  });
+  }, composed.inputMaterialParts);
+  const systemPrompt = isClaude ? context.effectiveSystemPrompt : undefined;
+  const systemParts = systemPrompt
+    ? resolveSystemInputMaterialParts(context.inputMaterialBreakdown?.systemParts, systemPrompt)
+    : [];
 
   task.needsFullContextReinjection = false;
   if (task.codexThreadId) task.lastInjectedClaudeSessionId = task.codexThreadId;
@@ -214,10 +223,11 @@ export function prepareGenerationTurnInput(
     .map((message) => message.runnerInterventionId)
     .filter((id): id is string => id !== undefined);
   return {
-    prompt,
+    prompt: composedPrompt.prompt,
+    inputMaterialParts: [...systemParts, ...composedPrompt.parts],
     imageAttachmentPaths: composed.imageAttachmentPaths,
-    ...(isClaude && context.effectiveSystemPrompt !== undefined
-      ? { systemPrompt: context.effectiveSystemPrompt }
+    ...(systemPrompt !== undefined
+      ? { systemPrompt }
       : {}),
     ...(inputUuid ? { inputUuid } : {}),
     ...(firstIntervention.runnerInterventionId
@@ -230,4 +240,17 @@ export function prepareGenerationTurnInput(
     generationRollover: true,
     generationCheckpointStats: context.checkpointStats,
   };
+}
+
+function resolveSystemInputMaterialParts(
+  parts: readonly InputMaterialPartV1[] | undefined,
+  text: string,
+): readonly InputMaterialPartV1[] {
+  return inputMaterialPartsMatchText(parts, text)
+    ? parts
+    : [createInputMaterialPart(
+        "system_prompt",
+        "fallback:system_source_breakdown",
+        text,
+      )];
 }

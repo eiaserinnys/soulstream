@@ -40,6 +40,7 @@ import {
   TaskTurnInputBuilder,
   type TaskTurnInput,
 } from "../../src/task/task_turn_input_builder.js";
+import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
 import {
   createExecutionActivation,
   type InterventionMessage,
@@ -6330,6 +6331,7 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
   it.each([
     ["unclassified", null],
     ["observed empty", []],
+    ["observed nonempty", [createInputMaterialPart("user_prompt", "initial/user", "prepared prompt")]],
   ] as const)("passes %s input material parts into the actual executeTurn call", async (_label, parts) => {
     const prepareSpy = vi.spyOn(TaskTurnInputBuilder.prototype, "prepareInitialTurnInput")
       .mockResolvedValue({
