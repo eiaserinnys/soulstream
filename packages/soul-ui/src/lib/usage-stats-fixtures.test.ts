@@ -144,6 +144,38 @@ describe("usage statistics public fixture", () => {
     expect(modelSeries.series.find(point => point.model)?.label).toBe("Claude (claude-opus-5.5)");
   });
 
+  it("uses one period project roster across month series and selected-day details", () => {
+    const overview = buildUsageStatsOverview({ period: "all", anchor: USAGE_STATS_FIXTURE_ANCHOR });
+    const roster = overview.by_project
+      .map(row => row.project_id)
+      .filter((projectId): projectId is string => projectId !== null && projectId !== "__other__");
+    const projectKeys = new Set(
+      overview.by_project.map(row => row.project_id ?? "__unclassified__"),
+    );
+    const projectPoints = overview.series.filter(point => point.project_id !== undefined);
+    const modelPoints = overview.series.filter(point => point.provider !== undefined);
+
+    expect(projectPoints.every(point => projectKeys.has(point.project_id ?? "__unclassified__"))).toBe(true);
+    expect(projectPoints.find(point => point.bucket_start === "2026-10-01" && point.project_id === "__other__")?.metrics.total_tokens)
+      .toBe(300_000);
+
+    const octoberProjects = projectPoints.filter(point => point.bucket_start === "2026-10-01");
+    const octoberModels = modelPoints.filter(point => point.bucket_start === "2026-10-01");
+    expect(sumKnownTokens(octoberProjects)).toBe(sumKnownTokens(octoberModels));
+    expect(sumKnownTokens(projectPoints)).toBe(overview.totals.metrics.total_tokens);
+
+    const day = buildUsageStatsDayDetail("2026-10-17", {}, roster);
+    expect(day.by_project.map(row => row.project_id)).toEqual(["__other__"]);
+    expect(day.by_project[0].metrics.total_tokens).toBe(300_000);
+  });
+
+  it("keeps an observed zero-token event as zero", () => {
+    const day = buildUsageStatsDayDetail("2026-10-15", { provider: "codex" });
+
+    expect(day.totals.metrics.total_tokens).toBe(0);
+    expect(day.totals.metrics.reference_cost_usd).toBe(0);
+  });
+
   it("represents a measured empty range with zero instead of missing values", () => {
     const empty = buildEmptyUsageStatsOverview({ period: "week", anchor: "2026-10-18" });
 

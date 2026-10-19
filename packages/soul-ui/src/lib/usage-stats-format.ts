@@ -34,6 +34,14 @@ export function formatUsageStatsCoverage(
   return `기록 토큰 ${percent}% 환산`;
 }
 
+export function isUsageStatsTokenPartial(coverage: {
+  usage_partial_events: number;
+  missing_usage_turns: number;
+  unknown_total_token_events: number;
+}): boolean {
+  return coverage.usage_partial_events > 0 || coverage.missing_usage_turns > 0 || coverage.unknown_total_token_events > 0;
+}
+
 export function formatUsageStatsPeriodLabel(
   period: "week" | "month" | "all",
   since: string,

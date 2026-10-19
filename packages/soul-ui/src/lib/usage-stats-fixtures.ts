@@ -43,9 +43,10 @@ export function buildUsageStatsOverview(query: UsageStatsQuery): UsageStatsOverv
   const missing = filterMissingTurns(query, range.since, range.effective_until);
   const pending = filterPendingTurns(query, range.since, range.effective_until);
   const totals = aggregate(records, missing, pending, true);
+  const projectRoster = buildProjectRoster(records, query);
   const byModel = buildProviderRows(records, missing, pending, query);
-  const byProject = buildProjectRows(records, missing, pending, query);
-  const series = buildSeries(query, range, records, missing, pending);
+  const byProject = buildProjectRows(records, missing, pending, query, projectRoster);
+  const series = buildSeries(query, range, records, missing, pending, projectRoster);
 
   return {
     schema_version: 1,
@@ -81,6 +82,7 @@ export function buildEmptyUsageStatsOverview(query: UsageStatsQuery): UsageStats
 export function buildUsageStatsDayDetail(
   date: string,
   filter: { provider?: UsageStatsProvider | null; model?: string | null; project_ids?: readonly string[] },
+  projectRoster?: readonly string[],
 ): UsageStatsDayDetail {
   const records: RawUsageRecord[] = [];
   for (const record of RAW_USAGE_RECORDS) {
@@ -92,7 +94,7 @@ export function buildUsageStatsDayDetail(
   const pending = filterPendingTurns(filter, date, addDays(date, 1));
   const totals = aggregate(records, missing, pending, !filter.provider && !filter.model);
   const byModel = buildProviderRows(records, [], [], filter);
-  const byProject = buildProjectRows(records, missing, pending, filter);
+  const byProject = buildProjectRows(records, missing, pending, filter, projectRoster);
   const inputMaterial = buildInputMaterial(date, filter);
   let toolCalls = 0;
   for (const call of RAW_TOOL_CALLS) {
@@ -260,32 +262,17 @@ function buildProjectRows(
   missing: MissingTurnRecord[],
   pending: PendingTurnRecord[],
   query: { project_ids?: readonly string[] },
+  projectRoster?: readonly string[],
 ): UsageStatsProjectRow[] {
-  const groups: ProjectGroup[] = [];
-  for (const record of records) {
-    let group: ProjectGroup | undefined;
-    for (const candidate of groups) if (candidate.project_id === record.project_id) group = candidate;
-    if (!group) {
-      group = { project_id: record.project_id, label: projectLabel(record.project_id), records: [] };
-      groups.push(group);
-    }
-    group.records.push(record);
-  }
-  groups.sort((left, right) => valueForSort(right.records) - valueForSort(left.records));
-
-  const named: ProjectGroup[] = [];
-  let unclassified: ProjectGroup | undefined;
-  for (const group of groups) {
-    if (group.project_id === null) unclassified = group;
-    else named.push(group);
-  }
-
+  const groups = groupProjectRecords(records);
+  const roster = projectRoster ?? buildProjectRoster(records, query);
   const rows: UsageStatsProjectRow[] = [];
   const otherRecords: RawUsageRecord[] = [];
-  const maximumNamed = query.project_ids && query.project_ids.length > 0 ? named.length : 5;
-  for (let index = 0; index < named.length; index += 1) {
-    const group = named[index];
-    if (index < maximumNamed) {
+  let unclassified: ProjectGroup | undefined;
+  for (const group of groups) {
+    if (group.project_id === null) {
+      unclassified = group;
+    } else if (roster.indexOf(group.project_id) >= 0) {
       rows.push(projectRow(group, missing, pending));
     } else {
       for (const record of group.records) otherRecords.push(record);
@@ -297,6 +284,32 @@ function buildProjectRows(
     rows.push(projectRow(other, missing, pending));
   }
   return rows;
+}
+
+function buildProjectRoster(records: RawUsageRecord[], query: { project_ids?: readonly string[] }): string[] {
+  const groups = groupProjectRecords(records);
+  const roster: string[] = [];
+  const maximumNamed = query.project_ids && query.project_ids.length > 0 ? groups.length : 5;
+  for (const group of groups) {
+    if (group.project_id !== null) roster.push(group.project_id);
+  }
+  if (roster.length > maximumNamed) roster.length = maximumNamed;
+  return roster;
+}
+
+function groupProjectRecords(records: RawUsageRecord[]): ProjectGroup[] {
+  const groups: ProjectGroup[] = [];
+  for (const record of records) {
+    let group: ProjectGroup | undefined;
+    for (const candidate of groups) if (candidate.project_id === record.project_id) group = candidate;
+    if (!group) {
+      group = { project_id: record.project_id, label: projectLabel(record.project_id), records: [] };
+      groups.push(group);
+    }
+    group.records.push(record);
+  }
+  groups.sort((left, right) => valueForSort(right.records) - valueForSort(left.records));
+  return groups;
 }
 
 function projectRow(group: ProjectGroup, missing: MissingTurnRecord[], pending: PendingTurnRecord[]): UsageStatsProjectRow {
@@ -320,6 +333,7 @@ function buildSeries(
   records: RawUsageRecord[],
   missing: MissingTurnRecord[],
   pending: PendingTurnRecord[],
+  projectRoster: readonly string[],
 ): UsageStatsSeriesPoint[] {
   const series: UsageStatsSeriesPoint[] = [];
   const buckets = bucketStarts(range);
@@ -342,7 +356,7 @@ function buildSeries(
       series.push(point);
     }
 
-    const projectRows = buildProjectRows(bucketRecords, missing, pending, query);
+    const projectRows = buildProjectRows(bucketRecords, missing, pending, query, projectRoster);
     for (const row of projectRows) {
       if (row.metrics.total_tokens === null) continue;
       const point: UsageStatsSeriesPoint = {

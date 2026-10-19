@@ -6,6 +6,7 @@ import {
   formatUsageStatsPeriodLabel,
   formatUsageStatsTokenCount,
   formatUsageStatsUsd,
+  isUsageStatsTokenPartial,
   shiftUsageStatsAnchor,
 } from "./usage-stats-format";
 
@@ -20,6 +21,29 @@ describe("usage statistics formatting", () => {
   it("names the observed-token denominator in coverage", () => {
     expect(formatUsageStatsCoverage(8_200, 10_000)).toBe("기록 토큰 82% 환산");
     expect(formatUsageStatsCoverage(1, null)).toBe("일부만 환산");
+  });
+
+  it("marks token totals partial only for missing or unknown usage", () => {
+    expect(isUsageStatsTokenPartial({
+      usage_partial_events: 0,
+      missing_usage_turns: 0,
+      unknown_total_token_events: 0,
+    })).toBe(false);
+    expect(isUsageStatsTokenPartial({
+      usage_partial_events: 1,
+      missing_usage_turns: 0,
+      unknown_total_token_events: 0,
+    })).toBe(true);
+    expect(isUsageStatsTokenPartial({
+      usage_partial_events: 0,
+      missing_usage_turns: 1,
+      unknown_total_token_events: 0,
+    })).toBe(true);
+    expect(isUsageStatsTokenPartial({
+      usage_partial_events: 0,
+      missing_usage_turns: 0,
+      unknown_total_token_events: 1,
+    })).toBe(true);
   });
 
   it("formats the corrected KST week, month, and full-period ranges", () => {
