@@ -17,7 +17,9 @@ export function aggregateFixtureUsage(
   const value = aggregate(records, missing, pending, countMissing);
   const collection = USAGE_STATS_COLLECTION;
   const covered = since >= collection.since && until <= collection.until && since < until;
-  const providerCovered = query.provider ? collection.providers[query.provider] === "complete" : !query.model;
+  const providerCovered = query.provider
+    ? (query.provider === "unknown" ? collection.providers.unknown : collection.providers[query.provider]) === "complete"
+    : !query.model;
   const inScope = (turn: { date: string; project_id: string | null }) => turn.date >= since && turn.date < until &&
     (!query.project_ids?.length || query.project_ids.some(id => id === turn.project_id || (id === "__unclassified__" && turn.project_id === null)));
   const unidentified = [MISSING_TURNS, PENDING_TURNS].some(turns => turns.some(inScope));

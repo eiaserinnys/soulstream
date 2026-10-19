@@ -26,10 +26,26 @@ describe("usage statistics public fixture", () => {
     expect(kimi.observed_approximate_tokens).toBe(65000);
     expect(buildUsageStatsDayDetail("2026-10-16", { project_ids: ["project-web-dashboard"] }).input_material.observed_approximate_tokens).toBe(218000);
     expect(claude.parts.map(part => part.approximate_tokens)).toEqual([62500, 45000, 32500, 78000, null]);
+    expect(claude.parts.slice(0, -1).every(part => part.measurement === "estimate")).toBe(true);
+    expect(claude.parts[claude.parts.length - 1]).toMatchObject({ measurement: "unobserved", approximate_tokens: null, share: null });
+    expect(claude.calibration).toEqual({ status: "not_comparable", sample_count: 0, factor: null, reasons: ["missing_source_token_breakdown"] });
     expect(all.parts.reduce((sum, part) => sum + (part.approximate_tokens ?? 0), 0)).toBe(283000);
     expect(all.parts.reduce((sum, part) => sum + (part.share ?? 0), 0)).toBeCloseTo(1);
     expect(all.parts.find(part => part.category === "harness_internal")).toMatchObject({ approximate_tokens: null, share: null });
     expect(RAW_INPUT_MATERIAL.every(part => part.estimate_source === "derived_chars" && part.approximate_tokens === Math.ceil(part.chars / 4))).toBe(true);
+  });
+
+  it("matches the canonical provider options and unknown collection fixture", () => {
+    const overview = buildUsageStatsOverview({ period: "all", anchor: USAGE_STATS_FIXTURE_ANCHOR });
+    expect(overview.options.providers.map(option => option.provider)).toEqual(USAGE_STATS_PROVIDERS);
+    expect(overview.options.providers[USAGE_STATS_PROVIDERS.length - 1]).toEqual({ provider: "unknown", label: "공급자 미확인" });
+    expect(buildUsageStatsOverview({ period: "all", anchor: USAGE_STATS_FIXTURE_ANCHOR, provider: "codex" }).options)
+      .toEqual(overview.options);
+    expect(overview.by_model.find(row => row.provider === "unknown")).toMatchObject({
+      backend: "unknown", model: null, metrics: { total_tokens: null },
+    });
+    expect(overview.options.models.every(option => typeof option.backend === "string")).toBe(true);
+    expect(overview.options.model_rosters.map(roster => roster.provider)).toEqual(USAGE_STATS_PROVIDERS);
   });
 
   it("prefers stored source estimates, rounds sources before summing and counts duplicates once", () => {
@@ -39,7 +55,8 @@ describe("usage statistics public fixture", () => {
     try {
       const material = buildUsageStatsDayDetail("2026-10-06", { provider: "claude" }).input_material;
       expect(material.observed_approximate_tokens).toBe(9);
-      expect(material.parts[0]).toMatchObject({ approximate_tokens: 9, share: 1 });
+      expect(material.parts.map(part => part.approximate_tokens)).toEqual([7, 1, 1, null]);
+      expect(material.parts[0]).toMatchObject({ source_key: "manifest", approximate_tokens: 7, share: 7 / 9 });
       RAW_INPUT_MATERIAL.splice(count);
       RAW_INPUT_MATERIAL.push({ ...source, chars: 0, approximate_tokens: 0 });
       expect(buildUsageStatsDayDetail("2026-10-06", {}).input_material.observed_approximate_tokens).toBe(0);
