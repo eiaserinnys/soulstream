@@ -83,7 +83,15 @@ export class OpenCodeEngineAdapter implements EnginePort {
     if (this.executing) throw new Error("OpenCode engine already has an active turn");
     this.executing = true;
     const model = params.model || "";
-    const mapper = new OpenCodeEventMapper(model);
+    const usageContext = params.execution_input?.command_id
+      && params.usage_snapshot !== undefined
+      ? {
+        commandId: params.execution_input.command_id,
+        inputId: params.execution_input.input_id,
+        usageSnapshot: params.usage_snapshot,
+      }
+      : undefined;
+    const mapper = new OpenCodeEventMapper(model, usageContext);
     const warnedCallIds = new Set<string>();
     let backendSessionId: string | undefined;
     let sessionEventPublished = false;

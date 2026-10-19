@@ -18,6 +18,7 @@ import { estimateClaudeTextTokens } from "../../src/task/claude_context_recovery
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskInitialMessagePublisher } from "../../src/task/task_initial_message_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
+import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
 
 const claudeAgent: AgentProfile = {
   id: "claude-default",
@@ -51,6 +52,20 @@ function makeContext(overrides: Partial<PreparedContext> = {}): PreparedContext 
     effectiveSystemPrompt: "system instructions",
     combinedContextItems: [{ key: "session_context", label: "Session", content: "session facts" }],
     assembledPrompt: "사용자 요청",
+    inputMaterialBreakdown: {
+      systemParts: [createInputMaterialPart(
+        "system_prompt",
+        "system/task_system_prompt",
+        "system instructions",
+        0,
+      )],
+      contextParts: [[createInputMaterialPart(
+        "soulstream_injection",
+        "source/atom/node-1/0",
+        "session facts",
+        3,
+      )]],
+    },
     ...overrides,
   };
 }
@@ -183,6 +198,18 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).not.toContain("/legacy/report.pdf");
     expect(input.interventions).toBe(interventions);
     expect(interventions[0]?.attachmentPaths).toEqual(["/legacy/report.pdf"]);
+    expect(input.inputMaterialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(input.prompt.length);
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "intervention/0/user",
+      category: "user_prompt",
+    }));
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "followup/context/0",
+      category: "soulstream_injection",
+    }));
   });
 
   it("re-materializes the initial source on backend rollover", async () => {
@@ -254,6 +281,20 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).not.toContain("system instructions");
     expect(input.prompt.endsWith("사용자 요청")).toBe(true);
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/screen.png"]);
+    expect(input.inputMaterialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(input.prompt.length + input.systemPrompt!.length);
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "system/task_system_prompt",
+      approximate_tokens: 0,
+      estimate_source: "manifest",
+    }));
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "context/0/atom/source/atom/node-1/0",
+      approximate_tokens: 3,
+      estimate_source: "manifest",
+    }));
   });
 
   it.each(["antigravity", "claude", "opencode"] as const)("preserves the approved empty-instruction first turn for %s", async backend => {
@@ -286,6 +327,14 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).toContain("system instructions");
     expect(input.prompt).toContain("<session_context>");
     expect(input.prompt.endsWith("사용자 요청")).toBe(true);
+    expect(input.inputMaterialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(input.prompt.length);
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "initial/user",
+      category: "user_prompt",
+    }));
   });
 
   it("starts an applying generation from checkpoint context plus the queued input", async () => {
@@ -374,6 +423,16 @@ describe("TaskTurnInputBuilder", () => {
     expect(waitForAttachmentRefs).toHaveBeenCalledWith(task.agentSessionId);
     expect(prepareAttachmentInput).toHaveBeenCalledTimes(1);
     expect(input.imageAttachmentPaths).toEqual(["/cache/generation.png"]);
+    expect(input.inputMaterialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(input.prompt.length + input.systemPrompt!.length);
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      category: "system_prompt",
+      source_key: "system/task_system_prompt",
+      approximate_tokens: 0,
+      estimate_source: "manifest",
+    }));
     expect(input.interventions?.[0]).toMatchObject({
       attachmentIds: ["generation-id"], attachmentPaths: ["/legacy/generation.png"],
     });
@@ -522,6 +581,7 @@ describe("TaskTurnInputBuilder", () => {
 
     expect(input).toEqual({
       prompt: "사용자 요청",
+      inputMaterialParts: [createInputMaterialPart("user_prompt", "initial/user", "사용자 요청")],
       originalPrompt: "사용자 요청",
       imageAttachmentPaths: ["/tmp/incoming/sess/a.jpg"],
       turnOrigin: { kind: "initial_prompt" },
@@ -593,6 +653,26 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).toContain("later");
     expect(input.prompt).toContain("<running_sessions>");
     expect(input.prompt.endsWith("</context>")).toBe(true);
+    expect(input.inputMaterialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(input.prompt.length);
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "intervention/0/context/0",
+      category: "soulstream_injection",
+    }));
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "intervention/0/user",
+      category: "user_prompt",
+    }));
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "intervention/1/user",
+      category: "user_prompt",
+    }));
+    expect(input.inputMaterialParts).toContainEqual(expect.objectContaining({
+      source_key: "followup/context/0",
+      category: "soulstream_injection",
+    }));
     expect(task.interventionQueue).toEqual([]);
   });
 
@@ -787,6 +867,10 @@ describe("TaskTurnInputBuilder", () => {
 
     expect(input.prompt).toContain("other context");
     expect(input.prompt.includes("assigned card reminder")).toBe(shouldIncludeAssignedCards);
+    expect(input.inputMaterialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(input.prompt.length);
   });
 
   it("binds a durable delivery to one stable engine input UUID", async () => {
@@ -955,6 +1039,19 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).toContain("최근 유효 응답");
     expect(input.prompt).toContain("older or omitted");
     expect(input.backendSessionRolloverFrom).toBe("claude-exhausted");
+    expect(input.inputMaterialParts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: "combined_visible",
+        source_key: "fallback:bounded_replay:prompt",
+        raw_chars_utf16: input.prompt.length,
+      }),
+      expect.objectContaining({
+        category: "system_prompt",
+        source_key: "fallback:system_source_breakdown",
+        raw_chars_utf16: input.systemPrompt?.length,
+      }),
+    ]));
+    expect(input.inputMaterialParts?.some((part) => part.category === "history_replay")).toBe(false);
   });
 
   it("rollover context 조회 실패는 replay 생존을 막지 않고 metadata-only notice로 강등한다", async () => {
@@ -1004,6 +1101,10 @@ describe("TaskTurnInputBuilder", () => {
     );
     expect(first.systemPrompt).toBe("full system");
     expect(first.prompt).toContain("<soulstream_session>");
+    expect(first.inputMaterialParts?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    )).toBe(first.prompt.length + first.systemPrompt!.length);
     expect(task.needsFullContextReinjection).toBe(false);
 
     task.interventionQueue.push({ text: "regular", user: "u" });

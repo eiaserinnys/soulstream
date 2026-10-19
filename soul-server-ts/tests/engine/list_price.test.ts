@@ -6,14 +6,22 @@ import {
   LIST_PRICES,
   normalizePricedModelId,
 } from "../../src/engine/list_price.js";
+import {
+  PRICE_SNAPSHOT_METADATA,
+  priceInferenceUsage,
+} from "@soulstream/model-catalog/inference-pricing";
 
 describe("list price turn cost", () => {
+  it("exposes the fixed pricing snapshot through the package export", () => {
+    expect(PRICE_SNAPSHOT_METADATA.price_version).toBe("api-list-usd-2026-10-19-v1");
+  });
+
   it("keeps the approved model price rows", () => {
     expect(LIST_PRICES).toEqual({
       "claude-opus-5-5": { input: 4, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8, output: 20 },
       "claude-fable-5-1": { input: 10, cacheRead: 0.25, cacheWrite5m: 12.5, cacheWrite1h: 20, output: 50 },
       "claude-opus-5": { input: 5, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10, output: 25 },
-      "claude-sonnet-5-5": { input: 2, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4, output: 10 },
+      "claude-sonnet-5-5": { input: 2, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4, output: 10 },
       "claude-sonnet-5": { input: 2, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4, output: 10 },
       "claude-opus-4-8": { input: 5, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10, output: 25 },
       "claude-haiku-4-5": { input: 1, cacheRead: 0.1, cacheWrite5m: 1.25, cacheWrite1h: 2, output: 5 },
@@ -24,7 +32,7 @@ describe("list price turn cost", () => {
     });
   });
 
-  it("calculates the supplied Claude vectors and rounds to six decimal places", () => {
+  it("prices only explicitly timed Claude cache writes through the legacy wrapper", () => {
     const v1 = {
       input_tokens: 4,
       cache_read_input_tokens: 245_563,
@@ -45,10 +53,10 @@ describe("list price turn cost", () => {
       output_tokens: 6_139,
     };
 
-    expect(claudeTurnCostUsd(v1, "claude-opus-5-5")).toBe(0.063697);
-    expect(claudeTurnCostUsd(v1, "claude-sonnet-5")).toBe(0.056405);
+    expect(claudeTurnCostUsd(v1, "claude-opus-5-5")).toBeUndefined();
+    expect(claudeTurnCostUsd(v1, "claude-sonnet-5")).toBeUndefined();
     expect(claudeTurnCostUsd(v4, "claude-opus-5-5")).toBe(1.548342);
-    expect(claudeTurnCostUsd(v5, "claude-fable-5-1")).toBe(0.621749);
+    expect(claudeTurnCostUsd(v5, "claude-fable-5-1")).toBeUndefined();
   });
 
   it("calculates the supplied Codex vectors without adding reasoning tokens", () => {
@@ -94,5 +102,143 @@ describe("list price turn cost", () => {
     expect(codexTurnCostUsd({ input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 }, "gpt-5.6-sol"))
       .toBeUndefined();
     expect(claudeTurnCostUsd(null, "claude-opus-5-5")).toBeUndefined();
+  });
+});
+
+describe("fixed inference price reference", () => {
+  const completeInput = {
+    input_total: 1_000,
+    cache_read: 100,
+    cache_write_5m: 0,
+    cache_write_1h: 0,
+    cache_write_unknown: 0,
+    output_total: 1_000,
+  };
+
+  it.each([
+    ["claude", "claude-fable-5-1", 0.059025],
+    ["codex", "gpt-6-astra", 0.0591],
+    ["antigravity", "gemini-4-argon", 0.01181],
+    ["deepseek", "deepseek-flash", 0.0014706],
+  ])("prices the fixed %s reference row", (provider, model, expectedCost) => {
+    const result = priceInferenceUsage({ provider, model, ...completeInput });
+
+    expect(result.known_cost_usd).toBe(expectedCost);
+    expect(result.price_version).toBe("api-list-usd-2026-10-19-v1");
+    expect(result.as_of).toBe("2026-10-19");
+    expect(result.priced_tokens).toBe(2_000);
+    expect(result.unpriced_tokens).toBe(0);
+    expect(result.pricing_complete).toBe(true);
+  });
+
+  it("uses exact aliases and leaves Kimi and fuzzy names unknown", () => {
+    const alias = priceInferenceUsage({
+      provider: "deepseek",
+      model: "opencode/deepseek-v4.1-flash-free",
+      ...completeInput,
+    });
+    const kimi = priceInferenceUsage({
+      provider: "kimi",
+      model: "kimi-for-coding",
+      ...completeInput,
+    });
+    const fuzzy = priceInferenceUsage({
+      provider: "deepseek",
+      model: "vendor/deepseek-flash",
+      ...completeInput,
+    });
+
+    expect(alias.known_cost_usd).toBe(0.0014706);
+    expect(alias.pricing_complete).toBe(true);
+    expect(kimi.known_cost_usd).toBeNull();
+    expect(kimi.priced_tokens).toBe(0);
+    expect(kimi.unpriced_tokens).toBe(2_000);
+    expect(kimi.pricing_complete).toBe(false);
+    expect(fuzzy.known_cost_usd).toBeNull();
+  });
+
+  it("prices cache hits once as an input subset", () => {
+    const result = priceInferenceUsage({
+      provider: "codex",
+      model: "gpt-6-sol",
+      input_total: 10_000,
+      cache_read: 10_000,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 0,
+    });
+
+    expect(result.known_cost_usd).toBe(0.002);
+    expect(result.priced_tokens).toBe(10_000);
+    expect(result.unpriced_tokens).toBe(0);
+    expect(result.pricing_complete).toBe(true);
+  });
+
+  it("returns a known subtotal and counts unknown cache TTL tokens once", () => {
+    const result = priceInferenceUsage({
+      provider: "claude",
+      model: "claude-opus-5-5",
+      input_total: 1_000,
+      cache_read: 100,
+      cache_write_5m: 100,
+      cache_write_1h: 0,
+      cache_write_unknown: 800,
+      output_total: 100,
+    });
+
+    expect(result.known_cost_usd).toBe(0.00252);
+    expect(result.priced_tokens).toBe(300);
+    expect(result.unpriced_tokens).toBe(800);
+    expect(result.pricing_complete).toBe(false);
+    expect(result.unpriced_reasons).toContain("cache_write_ttl_unknown");
+  });
+
+  it("does not infer base input when cache volume is unknown", () => {
+    const result = priceInferenceUsage({
+      provider: "claude",
+      model: "claude-opus-5-5",
+      input_total: 1_000,
+      cache_read: null,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 100,
+    });
+
+    expect(result.known_cost_usd).toBe(0.002);
+    expect(result.priced_tokens).toBe(100);
+    expect(result.unpriced_tokens).toBe(1_000);
+    expect(result.pricing_complete).toBe(false);
+    expect(result.unpriced_reasons).toContain("input_components_unknown");
+  });
+
+  it("distinguishes known zero cost from unknown pricing and usage", () => {
+    const zero = priceInferenceUsage({
+      provider: "claude",
+      model: "claude-opus-5-5",
+      input_total: 0,
+      cache_read: 0,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 0,
+    });
+    const unknown = priceInferenceUsage({
+      provider: "claude",
+      model: "kimi-for-coding",
+      input_total: null,
+      cache_read: null,
+      cache_write_5m: null,
+      cache_write_1h: null,
+      cache_write_unknown: null,
+      output_total: null,
+    });
+
+    expect(zero.known_cost_usd).toBe(0);
+    expect(zero.pricing_complete).toBe(true);
+    expect(unknown.known_cost_usd).toBeNull();
+    expect(unknown.unpriced_tokens).toBeNull();
+    expect(unknown.pricing_complete).toBe(false);
   });
 });

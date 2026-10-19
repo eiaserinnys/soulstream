@@ -64,7 +64,7 @@ export class InMemoryEventIngressSqlProvider implements EventIngressSqlProvider 
   }
 
   private queryFor(state: StoreState): EventIngressQuerySql {
-    return (async (
+    return Object.assign(async (
       strings: TemplateStringsArray,
       ...values: unknown[]
     ): Promise<readonly Record<string, unknown>[]> => {
@@ -106,8 +106,11 @@ export class InMemoryEventIngressSqlProvider implements EventIngressSqlProvider 
         state.receipts.push({ nodeId, streamId, sourceSeq, sessionId, payloadHash, eventId });
         return [];
       }
+      if (statement.includes("INSERT INTO session_statistics_facts")) {
+        return [];
+      }
       throw new Error(`unexpected event ingress SQL: ${statement}`);
-    }) as EventIngressQuerySql;
+    }, { json: (value: unknown) => value }) as EventIngressQuerySql;
   }
 }
 

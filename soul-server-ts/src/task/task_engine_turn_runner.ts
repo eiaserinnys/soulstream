@@ -1,4 +1,6 @@
 import type { AgentProfile } from "../agent_registry.js";
+import type { ExecutionInputV1, UsageSnapshotV1 } from "@soulstream/wire-schema";
+import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 import type {
   EngineExecuteParams,
   EnginePort,
@@ -32,6 +34,7 @@ import { resolveTurnReasoningEffort } from "./session_effort_storage.js";
 
 export interface TaskEngineTurnInput {
   prompt: string;
+  inputMaterialParts?: ExecutionInputV1["parts"];
   inputUuid?: string;
   runnerInterventionId?: string;
   runnerInterventionIds?: string[];
@@ -57,6 +60,22 @@ export interface TaskEngineTurnRunnerParams {
   agent: AgentProfile;
   runner: TaskRunnerRuntime;
   input: TaskEngineTurnInput;
+}
+
+function usageProviderForExecution(
+  backend: AgentProfile["backend"],
+  model: string | null,
+): UsageStatsProvider {
+  if (backend === "codex") return "codex";
+  if (backend === "antigravity") return "antigravity";
+  if (backend === "claude") {
+    if (model === "kimi-for-coding" || model === "k3") return "kimi";
+    if (model?.startsWith("claude-")) return "claude";
+  }
+  if (backend === "opencode" && model === "opencode/deepseek-v4.1-flash-free") {
+    return "deepseek";
+  }
+  return "unknown";
 }
 
 function buildClaudeExtraEnv(params: {
@@ -183,7 +202,50 @@ export class TaskEngineTurnRunner {
         ? { scheduleToolUseEnabled: true }
         : {}),
     };
-    const frames = dispatcher.executeFrames(executeParams);
+    const backend = effectiveTaskBackend(task, agent);
+    const provider = usageProviderForExecution(backend, effectiveModel ?? null);
+    const usageSnapshot: UsageSnapshotV1 = {
+      schema_version: 1,
+      backend,
+      provider,
+      preset_id: task.modelPreset ?? null,
+      requested_model: effectiveModel ?? null,
+      provider_attribution: provider === "unknown" ? "unknown" : "configured_alias",
+    };
+    const inputMaterialParts = input.inputMaterialParts ?? null;
+    const resumed = executeParams.resumeSessionId !== undefined
+      || executeParams.resumeRunState !== undefined
+      || executeParams.previousResponseId !== undefined
+      || executeParams.conversationId !== undefined
+      || executeParams.sessionItems !== undefined;
+    const replayed = Boolean(input.backendSessionRolloverFrom)
+      || inputMaterialParts?.some((part) => part.category === "history_replay") === true;
+    const nonComparableReasons: ExecutionInputV1["non_comparable_reasons"] = [
+      "hidden_system_or_schema",
+      "missing_source_token_breakdown",
+    ];
+    if (inputMaterialParts === null) {
+      nonComparableReasons.push("material_breakdown_unavailable");
+    }
+    if (resumed || replayed) nonComparableReasons.push("replayed_history");
+    const executionInput: ExecutionInputV1 = {
+      schema_version: 1,
+      command_id: null,
+      input_id: input.inputUuid ?? null,
+      scope: "newly_observed_material",
+      stage: "prepared",
+      resumed,
+      replayed,
+      scope_match: "unverified",
+      non_comparable_reasons: nonComparableReasons,
+      estimate_method: "utf16_chars_div4_ceil_v1",
+      parts: inputMaterialParts,
+    };
+    const frames = dispatcher.executeFrames({
+      ...executeParams,
+      usage_snapshot: usageSnapshot,
+      execution_input: executionInput,
+    });
 
     return consumeRunnerFrames(frames, {
       task,

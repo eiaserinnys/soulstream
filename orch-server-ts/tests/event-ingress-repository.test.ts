@@ -111,6 +111,122 @@ describe("EventIngressRepository", () => {
     sessionEffectApplication: { applied: true, canonicalSession: null } }]);
   });
 
+  it("projects a newly appended usage event before its ingress receipt", async () => {
+    const order: string[] = [];
+    const sql = fakeSql(async (text, values) => {
+      if (text.includes("FROM event_ingress_receipts")) return [];
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_registration_id: null }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) return [];
+      if (text.includes("SELECT event_append")) {
+        order.push("event-append");
+        return [{ event_id: 41 }];
+      }
+      if (text.includes("INSERT INTO session_statistics_facts")) {
+        order.push("statistics-facts");
+        expect(values).toMatchObject([{
+          __jsonParameter: [expect.objectContaining({ session_id: "session-a", event_id: "41" })],
+        }]);
+        return [];
+      }
+      if (text.includes("INSERT INTO event_ingress_receipts")) {
+        order.push("receipt-insert");
+        return [];
+      }
+      throw new Error(`unexpected SQL: ${text}`);
+    });
+    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+
+    await repository.commitBatch("node-a", batch({
+      event_type: "complete",
+      payload: {
+        type: "complete",
+        output_command_id: "command-statistics",
+        usage_snapshot: {
+          schema_version: 1,
+          backend: "codex",
+          provider: "codex",
+          preset_id: null,
+          requested_model: "gpt-6-luna",
+          provider_attribution: "configured_alias",
+        },
+        usage: {
+          input_tokens: 10,
+          cached_input_tokens: 0,
+          cache_write_input_tokens: 0,
+          output_tokens: 2,
+          reasoning_output_tokens: 0,
+        },
+      },
+      semantic_dedupe_key: null,
+    }));
+
+    expect(order).toEqual(["event-append", "statistics-facts", "receipt-insert"]);
+  });
+
+  it("does not project facts for a semantic duplicate or a receipt replay", async () => {
+    const receipts = new Set<number>();
+    let semanticEventId: number | undefined;
+    let factInsertCount = 0;
+    const sql = fakeSql(async (text, values) => {
+      if (text.includes("FROM event_ingress_receipts")) {
+        const sourceSeq = Number(values[2]);
+        return receipts.has(sourceSeq)
+          ? [{ session_id: "session-a", payload_hash: "a".repeat(64), event_id: 41 }]
+          : [];
+      }
+      if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
+        return [{ execution_registration_id: null }];
+      }
+      if (text.includes("pg_advisory_xact_lock")) return [];
+      if (text.includes("FROM events") && text.includes("dedupe_key")) {
+        return semanticEventId === undefined ? [] : [{ event_id: semanticEventId }];
+      }
+      if (text.includes("SELECT event_append")) {
+        semanticEventId = 41;
+        return [{ event_id: semanticEventId }];
+      }
+      if (text.includes("INSERT INTO session_statistics_facts")) {
+        factInsertCount += 1;
+        return [];
+      }
+      if (text.includes("INSERT INTO event_ingress_receipts")) {
+        receipts.add(Number(values[2]));
+        return [];
+      }
+      throw new Error("unexpected SQL in statistics duplicate test");
+    });
+    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const input = {
+      event_type: "complete",
+      semantic_dedupe_key: "same-statistics-command",
+      payload: {
+        type: "complete",
+        output_command_id: "same-statistics-command",
+        usage_snapshot: {
+          schema_version: 1,
+          backend: "codex",
+          provider: "codex",
+          preset_id: null,
+          requested_model: "gpt-6-luna",
+          provider_attribution: "configured_alias",
+        },
+        usage: { input_tokens: 10, output_tokens: 2 },
+      },
+    };
+
+    const first = await repository.commitBatch("node-a", batch(input, 1));
+    const semanticDuplicate = await repository.commitBatch("node-a", batch(input, 2));
+    const receiptReplay = await repository.commitBatch("node-a", batch(input, 1));
+
+    expect(first).toMatchObject([{ eventId: 41, duplicateReceipt: false }]);
+    expect(semanticDuplicate).toMatchObject([{ eventId: 41, duplicateReceipt: true }]);
+    expect(receiptReplay).toMatchObject([{ eventId: 41, duplicateReceipt: true }]);
+    expect(factInsertCount).toBe(1);
+  });
+
   it("returns a raw-coordinate watermark only after an actual feed semantic projection", async () => {
     const order: string[] = [];
     const sql = fakeSql(async (text) => {
@@ -174,6 +290,7 @@ describe("EventIngressRepository", () => {
         return [{ execution_registration_id: null, execution_command_id: null }];
       }
       if (text.includes("SELECT event_append")) return [{ event_id: 42 }];
+      if (text.includes("INSERT INTO session_statistics_facts")) return [];
       if (text.includes("INSERT INTO event_ingress_receipts")) return [];
       throw new Error(`unexpected SQL: ${text}`);
     });

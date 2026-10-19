@@ -3,13 +3,20 @@ import type { Logger } from "pino";
 import type { AgentProfile } from "../agent_registry.js";
 import {
   type BackendRolloverContext,
-  composeFirstTurnPrompt,
+  composeFirstTurnPromptWithMaterial,
   type ExecutionContextBuilder,
   type FollowupContext,
   type PreparedContext,
 } from "../context/context_builder.js";
 import type { PersistentCheckpointStats } from "../context/persistent_checkpoint.js";
-import { formatContextItems } from "../context/prompt_assembler.js";
+import { formatContextItemsWithMaterial } from "../context/prompt_assembler.js";
+import {
+  appendInputMaterialTextSegment,
+  backendRolloverInputMaterialParts,
+  createInputMaterialPart,
+  selectAlignedInputMaterialItems,
+  systemPromptMaterialParts,
+} from "../context/input_material_parts.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
@@ -33,6 +40,7 @@ import {
   type BackendRolloverReplayBase,
 } from "./generation_turn_input.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
+import type { ExecutionInputV1 } from "@soulstream/wire-schema";
 import {
   type AttachmentTurnSource,
   type PreparedAttachmentInput,
@@ -58,6 +66,7 @@ export const CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS = 100_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS = 50_000;
 export interface TaskTurnInput {
   prompt: string;
+  inputMaterialParts?: ExecutionInputV1["parts"];
   /** Original initial user text, before dynamic context assembly; only for rollover replay. */
   originalPrompt?: string;
   imageAttachmentPaths: string[];
@@ -163,30 +172,41 @@ export class TaskTurnInputBuilder {
       currentCallerInfo,
       inputId: inputUuid ?? null,
     });
-    if (includeFullContext) {
-      task.needsFullContextReinjection = false;
-    }
-
-    if (ctx) {
-      this.recordFollowupContextInjection(task, currentCallerInfo);
-    }
-
+    if (includeFullContext) task.needsFullContextReinjection = false;
+    if (ctx) this.recordFollowupContextInjection(task, currentCallerInfo);
     const preparedInterventions = await this.prepareInterventionCopies(task, interventions);
-    const composed = composeInterventionTurnPrompt(preparedInterventions.map(message=>({...message,context:message.context?.filter(item=>item.key !== "assigned_cards")})));
+    const composed = composeInterventionTurnPrompt(preparedInterventions.map((message) => ({
+      ...message,
+      context: message.context?.filter((item) => item.key !== "assigned_cards"),
+    })));
     const contextItems = ctx?.contextItems ?? [];
-    const followupContextItems = isCacheKeepaliveInput(firstIntervention)
-      ? contextItems.filter((item) => item.key !== "assigned_cards")
-      : contextItems;
-    const prompt = appendContextBlock(composed.prompt, followupContextItems);
+    const selectedContext = selectAlignedInputMaterialItems(
+      contextItems,
+      ctx?.inputMaterialBreakdown?.contextParts,
+      (item) => !isCacheKeepaliveInput(firstIntervention) || item.key !== "assigned_cards",
+    );
+    const formattedContext = formatContextItemsWithMaterial(
+      selectedContext.items,
+      selectedContext.parts,
+    );
+    const promptAssembly = appendInputMaterialTextSegment(
+      { text: composed.prompt, parts: composed.inputMaterialParts },
+      { text: formattedContext.text, parts: formattedContext.parts },
+      "followup",
+    );
     const systemPrompt =
       ["claude", "antigravity", "opencode"].includes(effectiveTaskBackend(task, agent)) && includeFullContext
         ? ctx?.effectiveSystemPrompt
         : undefined;
+    const systemParts = systemPrompt
+      ? systemPromptMaterialParts(ctx?.inputMaterialBreakdown?.systemParts, systemPrompt)
+      : [];
     const runnerInterventionIds = interventions
       .map((message) => message.runnerInterventionId)
       .filter((id): id is string => id !== undefined);
     return {
-      prompt,
+      prompt: promptAssembly.text,
+      inputMaterialParts: [...systemParts, ...promptAssembly.parts],
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(inputUuid ? { inputUuid } : {}),
@@ -233,26 +253,28 @@ export class TaskTurnInputBuilder {
         imageAttachmentPaths: failedInput.imageAttachmentPaths,
       };
     }
+    const prompt = buildBoundedBackendRolloverPrompt(replayBase.prompt, ctx, {
+      maxChars: CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
+      maxEstimatedTokens: CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
+    }, replayBase.attachmentNotePaths);
+    const systemPrompt = ctx.effectiveSystemPrompt !== undefined
+      ? truncateClaudeTextToEstimatedTokens(
+          truncateWithNotice(
+            ctx.effectiveSystemPrompt,
+            CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
+            "system prompt",
+          ),
+          CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS,
+          "system prompt",
+        )
+      : undefined;
+    const inputMaterialParts = backendRolloverInputMaterialParts(prompt, systemPrompt);
     return {
-      prompt: buildBoundedBackendRolloverPrompt(replayBase.prompt, ctx, {
-        maxChars: CLAUDE_ROLLOVER_PROMPT_MAX_CHARS,
-        maxEstimatedTokens: CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS,
-      }, replayBase.attachmentNotePaths),
+      prompt,
+      inputMaterialParts,
       originalPrompt: replayBase.prompt,
       imageAttachmentPaths: replayBase.imageAttachmentPaths,
-      ...(ctx.effectiveSystemPrompt !== undefined
-        ? {
-            systemPrompt: truncateClaudeTextToEstimatedTokens(
-              truncateWithNotice(
-                ctx.effectiveSystemPrompt,
-                CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS,
-                "system prompt",
-              ),
-              CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS,
-              "system prompt",
-            ),
-          }
-        : {}),
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(failedInput.inputUuid !== undefined ? { inputUuid: failedInput.inputUuid } : {}),
       ...(failedInput.runnerInterventionId !== undefined
         ? { runnerInterventionId: failedInput.runnerInterventionId }
@@ -380,6 +402,7 @@ export class TaskTurnInputBuilder {
     if (!ctx) {
       return {
         prompt: promptText,
+        inputMaterialParts: [createInputMaterialPart("user_prompt", "initial/user", promptText)],
         ...replayFields,
         imageAttachmentPaths,
         ...(backend === "antigravity" || backend === "opencode" ? { systemPrompt: "" } : {}),
@@ -389,30 +412,38 @@ export class TaskTurnInputBuilder {
     }
 
     if (["claude", "antigravity", "opencode"].includes(backend)) {
+      const promptAssembly = composeFirstTurnPromptWithMaterial({
+        ...ctx,
+        effectiveSystemPrompt: undefined,
+        assembledPrompt: promptText,
+      }, [createInputMaterialPart("user_prompt", "initial/user", promptText)]);
+      const systemPrompt = backend === "antigravity" || backend === "opencode"
+        ? ctx.effectiveSystemPrompt ?? ""
+        : ctx.effectiveSystemPrompt;
+      const systemParts = systemPrompt ? systemPromptMaterialParts(ctx.inputMaterialBreakdown?.systemParts, systemPrompt) : [];
       return {
         ...replayFields,
-        prompt: composeFirstTurnPrompt({
-          effectiveSystemPrompt: undefined,
-          combinedContextItems: ctx.combinedContextItems,
-          assembledPrompt: promptText,
-        }),
+        prompt: promptAssembly.prompt,
+        inputMaterialParts: [...systemParts, ...promptAssembly.parts],
         imageAttachmentPaths,
         ...(inputUuid ? { inputUuid } : {}),
         ...(backend === "antigravity" || backend === "opencode"
-          ? { systemPrompt: ctx.effectiveSystemPrompt ?? "" }
-          : ctx.effectiveSystemPrompt !== undefined
-          ? { systemPrompt: ctx.effectiveSystemPrompt }
+          ? { systemPrompt }
+          : systemPrompt !== undefined
+          ? { systemPrompt }
           : {}),
         turnOrigin: { kind: "initial_prompt" },
       };
     }
 
+    const promptAssembly = composeFirstTurnPromptWithMaterial({
+      ...ctx,
+      assembledPrompt: promptText,
+    }, [createInputMaterialPart("user_prompt", "initial/user", promptText)]);
     return {
       ...replayFields,
-      prompt: composeFirstTurnPrompt({
-        ...ctx,
-      assembledPrompt: promptText,
-      }),
+      prompt: promptAssembly.prompt,
+      inputMaterialParts: promptAssembly.parts,
       imageAttachmentPaths,
       ...(inputUuid ? { inputUuid } : {}),
       turnOrigin: { kind: "initial_prompt" },
@@ -464,10 +495,4 @@ export class TaskTurnInputBuilder {
       task.lastInjectedCallerInfo = currentCallerInfo;
     }
   }
-}
-
-function appendContextBlock(prompt: string, contextItems: FollowupContext["contextItems"]): string {
-  const contextBlock = formatContextItems(contextItems);
-  if (!contextBlock) return prompt;
-  return `${prompt}\n\n${contextBlock}`;
 }
