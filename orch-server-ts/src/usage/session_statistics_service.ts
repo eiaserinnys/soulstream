@@ -278,7 +278,7 @@ function series(
 
 export function buildOverview(read: SessionStatisticsReadResult): UsageStatsOverview {
   const index = createSessionStatisticsCoverageIndex(read);
-  const options = buildSessionStatisticsOptions(read);
+  const options = buildSessionStatisticsOptions(read, index);
   const models = modelTargets(read, options);
   const projects = projectTargets(read, options);
   return {
@@ -302,7 +302,7 @@ export function buildOverview(read: SessionStatisticsReadResult): UsageStatsOver
 
 export function buildDay(read: SessionStatisticsReadResult, date: string): UsageStatsDayDetail {
   const index = createSessionStatisticsCoverageIndex(read);
-  const options = buildSessionStatisticsOptions(read);
+  const options = buildSessionStatisticsOptions(read, index);
   return {
     schema_version: 1,
     date,

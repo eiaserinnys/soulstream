@@ -3,6 +3,7 @@ import type {
   UsageStatsProvider,
 } from "@soulstream/wire-schema/session-statistics";
 import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
+import { sessionStatisticsInPeriod } from "./session_statistics_scope.js";
 import {
   sessionStatisticsDateMatches,
   sessionStatisticsEventOrder,
@@ -19,6 +20,7 @@ type Attribution = { provider: UsageStatsProvider; model: string | null };
 type EvidenceKind = "terminal" | "ended" | "pending";
 
 type Evidence = {
+  row: Row;
   identityKey: string;
   sessionId: string;
   projectId: string | null;
@@ -162,6 +164,7 @@ function addEvidence(
   attribution: Attribution | null,
 ): void {
   target.push({
+    row,
     identityKey: identityKey(row.session_id, identity),
     sessionId: row.session_id,
     projectId: projectForSession(read, row.session_id),
@@ -292,6 +295,7 @@ export function createSessionStatisticsCoverageIndex(
     if (row.state === "pending") {
       const identity = identityForRow(row, inputStarts);
       pendingRecords.push({
+        row,
         identityKey: identityKey(row.session_id, identity),
         sessionId: row.session_id,
         projectId: projectForSession(read, row.session_id),
@@ -323,6 +327,7 @@ export function createSessionStatisticsCoverageIndex(
     const ownerEvidence = terminalRecords.filter((record) => record.identityKey === key);
     const attribution = mergeAttributions(ownerEvidence);
     endedRecords.push({
+      row: start,
       identityKey: key,
       sessionId: start.session_id,
       projectId: projectForSession(read, start.session_id),
@@ -343,9 +348,9 @@ export function createSessionStatisticsCoverageIndex(
   }
   const missing = [...terminal, ...ended];
   return {
-    owners: [...ownersByKey.values()],
-    missing,
-    pending,
+    owners: [...ownersByKey.values()].filter((owner) => sessionStatisticsInPeriod(read, owner.timestamp)),
+    missing: missing.filter((record) => sessionStatisticsInPeriod(read, record.timestamp)),
+    pending: pending.filter((record) => sessionStatisticsInPeriod(read, record.timestamp)),
     allMissingIdentityKeys: new Set(missing.map((record) => record.identityKey)),
   };
 }
@@ -362,13 +367,6 @@ function scopeAttributionMatches(
     && attribution?.model !== read.query.model) return false;
   if (scope.model !== undefined && attribution?.model !== scope.model.value) return false;
   return true;
-}
-
-function hasProviderModelFilter(
-  read: SessionStatisticsReadResult,
-  scope: SessionStatisticsScope,
-): boolean {
-  return !scopeAttributionMatches(read, null, scope);
 }
 
 export function sessionStatisticsRowsForQuery(read: SessionStatisticsReadResult): Row[] {
@@ -468,13 +466,13 @@ export function sessionStatisticsCoverage(
   }
 
   const relatedMissing = index.missing.filter((record) => evidenceMatchesScope(read, record, scope));
-  const missing = relatedMissing.filter((record) => !hasProviderModelFilter(read, scope)
+  const missing = relatedMissing.filter((record) => scopeAttributionMatches(read, null, scope)
     || (record.attribution !== null && scopeAttributionMatches(read, record.attribution, scope)));
   const pending = index.pending.filter((record) => evidenceMatchesScope(read, record, scope)
     && scopeAttributionMatches(read, record.attribution, scope)
     && !index.allMissingIdentityKeys.has(record.identityKey));
   const unattributedMissingUsage = relatedMissing.some((record) => record.attribution === null);
-  const countableMissing = hasProviderModelFilter(read, scope)
+  const countableMissing = !scopeAttributionMatches(read, null, scope)
     ? missing.filter((record) => record.attribution !== null)
     : missing;
   const countableTerminalKeys = new Set(countableMissing.filter((record) => record.kind === "terminal").map((record) => record.identityKey));

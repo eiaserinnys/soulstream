@@ -3,6 +3,8 @@ import type {
   UsageStatsProvider,
 } from "@soulstream/wire-schema/session-statistics";
 import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
+import { sessionStatisticsDate, sessionStatisticsInPeriod } from "./session_statistics_scope.js";
+export { sessionStatisticsDate, sessionStatisticsDateMatches } from "./session_statistics_scope.js";
 
 type Row = SessionStatisticsReadResult["rows"][number];
 
@@ -30,27 +32,6 @@ export function sessionStatisticsEventOrder(row: Row): number {
   if (row.state === "ambiguous_legacy" && row.owner_recorded_at === null
     && row.fact?.fact_kind === "usage") return Number(row.fact.event_id);
   return row.owner_event_id ?? row.candidate_event_id ?? row.selection_event_id;
-}
-
-export function sessionStatisticsDate(value: string | null): string | null {
-  if (value === null) return null;
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return null;
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(timestamp);
-  const fields = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${fields.year}-${fields.month}-${fields.day}`;
-}
-
-export function sessionStatisticsDateMatches(value: string | null, filter?: string): boolean {
-  const date = sessionStatisticsDate(value);
-  return filter === undefined || (filter.length === 7
-    ? date?.startsWith(filter) === true
-    : date === filter);
 }
 
 export function sessionStatisticsProjectMatches(projectId: string | null, ids: readonly string[]): boolean {
@@ -85,6 +66,7 @@ export function selectOwnedSessionStatisticsRows(
   for (const row of read.rows) {
     if (row.row_kind !== "usage" || row.state !== "owned" || row.fact?.fact_kind !== "usage") continue;
     const fact = row.fact;
+    if (!sessionStatisticsInPeriod(read, rowTimestamp(row))) continue;
     if (scope.respectQueryFilters !== false && read.query.provider != null
       && fact.provider !== read.query.provider) continue;
     if (scope.provider !== undefined && fact.provider !== scope.provider) continue;

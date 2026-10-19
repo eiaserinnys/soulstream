@@ -3,6 +3,7 @@ import type {
   UsageStatsInputPart,
 } from "@soulstream/wire-schema/session-statistics";
 import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
+import { sessionStatisticsInPeriod } from "./session_statistics_scope.js";
 import {
   sessionStatisticsCompareText,
   sessionStatisticsDate,
@@ -105,7 +106,7 @@ export function buildSessionStatisticsMaterial(
     if ((row.row_kind !== "input_material" && row.row_kind !== "tool_call") || row.accounting_key === null) return row;
     const ownerDate = ownerDates.get(JSON.stringify([row.session_id, row.accounting_key]));
     return ownerDate === undefined ? row : { ...row, owner_recorded_at: ownerDate };
-  });
+  }).filter((row) => sessionStatisticsInPeriod(read, row.owner_recorded_at ?? row.fact?.recorded_at ?? null));
   const materialRows: Row[] = [];
   const tools = new Set<string>();
   const sourceKeys = new Set<string>();

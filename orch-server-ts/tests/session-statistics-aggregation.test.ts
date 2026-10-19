@@ -21,6 +21,7 @@ import {
   fact,
   materialRow,
   missingRow,
+  periodBoundaryRead,
   read,
   timestamp,
   toolCallRow,
@@ -28,6 +29,44 @@ import {
 } from "./fixtures/session_statistics_aggregation.fixtures.js";
 
 describe("session statistics coverage aggregation", () => {
+  it("applies the final period after canonical owner and coverage date selection", () => {
+    const source = periodBoundaryRead();
+    const result = buildOverview(source);
+    const day = buildDay(source, "2026-10-26");
+    expect(result.totals.metrics.total_tokens).toBe(120);
+    expect(result.totals.coverage).toMatchObject({
+      usage_complete_events: 1, missing_usage_turns: 0, terminal_missing_usage: 0,
+      ended_input_without_usage: 0, pending_inputs: 0, unattributed_missing_usage: false,
+    });
+    expect(result.by_model.map((row) => row.provider)).toEqual(["claude"]);
+    expect(result.by_project.map((row) => row.project_id)).toEqual(["inside"]);
+    expect(result.by_model.reduce((sum, row) => sum + (row.metrics.total_tokens ?? 0), 0)).toBe(120);
+    expect(result.by_project.reduce((sum, row) => sum + (row.metrics.total_tokens ?? 0), 0)).toBe(120);
+    expect(result.options.models).toEqual([
+      { provider: "claude", model: "sonnet", backend: "claude", label: "sonnet" },
+    ]);
+    expect(result.options.projects.map((project) => project.project_id)).toEqual(["inside"]);
+    expect(result.options.project_roster).toEqual(["inside"]);
+    expect(result.options.model_rosters.find((roster) => roster.provider === "codex")?.models).toEqual([]);
+    for (const axis of [result.series.filter((point) => point.provider !== undefined),
+      result.series.filter((point) => point.project_id !== undefined)]) {
+      expect(axis.reduce((sum, point) => sum + (point.metrics.total_tokens ?? 0), 0)).toBe(120);
+    }
+    expect(day.totals.metrics.total_tokens).toBe(null);
+    expect(day.totals.coverage.missing_usage_turns).toBe(0);
+    expect(day.by_model).toEqual([]);
+    expect(day.by_project).toEqual([]);
+    const filtered = buildOverview({ ...source, query: { ...source.query, provider: "codex" } });
+    expect(filtered.options).toEqual(result.options);
+    expect(filtered.totals.metrics.total_tokens).toBe(null);
+    const outsideOnly = buildOverview({ ...source, rows: source.rows.filter((row) => row.session_id !== "inside") });
+    expect(outsideOnly.totals.metrics.total_tokens).toBe(null);
+    expect(outsideOnly.series).toEqual([]);
+    expect(outsideOnly.options.models).toEqual([]);
+    expect(outsideOnly.options.projects).toEqual([]);
+    expect(source.rows[1]?.owner_recorded_at).toBe("2026-10-25T18:00:00.000Z");
+  });
+
   it("counts model parts as one complete and priced owner event", () => {
     const first = usageRow();
     const second = usageRow({

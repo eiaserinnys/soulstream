@@ -8,6 +8,8 @@ import type {
 } from "@soulstream/wire-schema/session-statistics";
 import type { FactDraft } from "./session_statistics_fact_types.js";
 import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
+import { createSessionStatisticsCoverageIndex } from "./session_statistics_coverage.js";
+import type { SessionStatisticsCoverageIndex } from "./session_statistics_coverage.js";
 import {
   selectOwnedSessionStatisticsRows,
   sessionStatisticsCompareText,
@@ -93,31 +95,19 @@ function compareProvider(left: UsageStatsProvider, right: UsageStatsProvider): n
   return USAGE_STATS_PROVIDERS.indexOf(left) - USAGE_STATS_PROVIDERS.indexOf(right);
 }
 
-export function buildSessionStatisticsOptions(read: SessionStatisticsReadResult): UsageStatsOptions {
+export function buildSessionStatisticsOptions(
+  read: SessionStatisticsReadResult,
+  index: SessionStatisticsCoverageIndex = createSessionStatisticsCoverageIndex(read),
+): UsageStatsOptions {
   const starts = commandStartAttributions(read.rows);
   const models = new Map<string, ModelOption>();
   const projectSessions = new Set<string>();
-  for (const row of read.rows) {
-    if (row.row_kind !== "usage") continue;
-    if (row.state === "owned" && row.fact?.fact_kind === "usage") {
-      const attribution = rowAttribution(row, starts);
-      const key = JSON.stringify([attribution.provider, attribution.model, attribution.backend]);
-      models.set(key, {
-        ...attribution,
-        label: attribution.model ?? "모델 미확인",
-      });
-      projectSessions.add(row.session_id);
-      continue;
-    }
-    if (row.state === "owned" && row.fact === null) {
-      const attribution = rowAttribution(row, starts);
-      const key = JSON.stringify([attribution.provider, attribution.model, attribution.backend]);
-      models.set(key, { ...attribution, label: attribution.model ?? "모델 미확인" });
-      projectSessions.add(row.session_id);
-      continue;
-    }
-    if (row.state !== "pending" && row.state !== "missing" && row.state !== "ambiguous_legacy"
-      && row.state !== "unresolved_legacy" && row.state !== "identity_conflict") continue;
+  const periodRows = [
+    ...index.owners.flatMap((owner) => [...owner.parts.map((part) => part.row), ...owner.factlessRows]),
+    ...index.missing.map((record) => record.row),
+    ...index.pending.filter((record) => !index.allMissingIdentityKeys.has(record.identityKey)).map((record) => record.row),
+  ];
+  for (const row of periodRows) {
     const attribution = rowAttribution(row, starts);
     const key = JSON.stringify([attribution.provider, attribution.model, attribution.backend]);
     models.set(key, {
