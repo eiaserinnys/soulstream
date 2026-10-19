@@ -11,7 +11,7 @@ import {
   formatUsageStatsTokenCount,
   formatUsageStatsUsd,
   formatUsageStatsValue,
-  formatUsageStatsChars,
+  formatUsageStatsApproximateTokens,
   USAGE_STATS_LABELS,
   usageStatsMonthAnchor,
   usageStatsModelColorIndex,
@@ -146,6 +146,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [metric, setMetric] = useState<Metric>("tokens");
+  const [view, setView] = useState<"model" | "project">("model");
   const [overview, setOverview] = useState<UsageStatsOverview | null>(null);
   const [periodModelRoster, setPeriodModelRoster] = useState<(string | null)[]>([]);
   const [detail, setDetail] = useState<UsageStatsDayDetail | null>(null);
@@ -365,34 +366,43 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
                 <p>단가 출처: <a href="https://developers.openai.com/api/docs/pricing?tab=suite" target="_blank" rel="noreferrer">OpenAI</a>, <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noreferrer">Claude</a>, <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Gemini</a>, <a href="https://api-docs.deepseek.com/quick_start/pricing/" target="_blank" rel="noreferrer">DeepSeek</a>, <a href="https://platform.kimi.ai/docs/pricing/chat" target="_blank" rel="noreferrer">Kimi</a></p>
                 <p>날짜는 턴이 끝난 시각, Asia/Seoul, 주는 월요일 시작</p>
                 <p>프로젝트는 지금 보이는 최상위 폴더 기준</p>
+                <p>{USAGE_STATS_LABELS.inputEstimateBasis}</p>
+                <p>{USAGE_STATS_LABELS.inputEstimateCaveat}</p>
               </div>
             </details>
           </div>
 
           <div className="usage-stats-chart-heading">
-            <h3>모델별</h3>
+            <CatalogSelectionField
+              label="보기"
+              ariaLabel="그래프 보기"
+              value={view}
+              options={[{ value: "model", label: "모델별" }, { value: "project", label: "프로젝트별" }]}
+              selectedLabel={view === "model" ? "모델별" : "프로젝트별"}
+              onValueChange={value => setView(value as "model" | "project")}
+            />
             <div className="v3-completed-periods" role="group" aria-label="표시 값">
               <Button size="sm" variant="ghost" aria-pressed={metric === "tokens"} onClick={() => setMetric("tokens")}>토큰</Button>
               <Button size="sm" variant="ghost" aria-pressed={metric === "cost"} onClick={() => setMetric("cost")}>정가</Button>
             </div>
           </div>
           <UsageStackedBars
-            label="모델별 사용량"
-            kind="provider"
+            label={view === "model" ? "모델별 사용량" : "프로젝트별 사용량"}
+            kind={view === "model" ? "provider" : "project"}
             period={period}
             range={range}
             coveredSince={coveredSince}
-            points={overviewLoading ? [] : providerPoints}
-            series={providerChartSeries}
+            points={overviewLoading ? [] : view === "model" ? providerPoints : projectPoints}
+            series={view === "model" ? providerChartSeries : projectChartSeries}
             metric={metric}
             selectedBucket={selectedDate}
             loading={overviewLoading}
             emptyMessage={beforeCoverage ? "이 기간은 기록 전입니다" : noRecords ? "이 기간에 기록이 없습니다" : null}
-            providerSelected={provider !== null}
+            providerSelected={view === "model" && provider !== null}
             onSelect={chooseBucket}
           />
           {(noRecords || beforeCoverage) && !overviewLoading ? null : <div className="usage-stats-share-list">
-            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedModels.map(row => {
+            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : view === "model" ? displayedModels.map(row => {
               const value = metricValue(row.metrics, metric);
               const name = row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider);
               const isProviderRow = row.attribution === "provider";
@@ -404,27 +414,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
                 color={providerChartSeries.find(item => item.key === (provider ? `${row.provider}:${row.model ?? "__unknown__"}` : row.provider))?.color}
                 onClick={isProviderRow ? () => changeProvider(row.provider) : undefined}
               />;
-            })}
-          </div>}
-        </SettingsGroupBox>
-
-        {!noRecords && !beforeCoverage ? <SettingsGroupBox title="프로젝트별">
-          <UsageStackedBars
-            label="프로젝트별 사용량"
-            kind="project"
-            period={period}
-            range={range}
-            coveredSince={coveredSince}
-            points={overviewLoading ? [] : projectPoints}
-            series={projectChartSeries}
-            metric={metric}
-            selectedBucket={selectedDate}
-            loading={overviewLoading}
-            emptyMessage={beforeCoverage ? "이 기간은 기록 전입니다" : noRecords ? "이 기간에 기록이 없습니다" : null}
-            onSelect={chooseBucket}
-          />
-          <div className="usage-stats-share-list">
-            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedProjects.map(row => {
+            }) : displayedProjects.map(row => {
               const value = metricValue(row.metrics, metric);
               const selectable = row.project_id !== "__other__";
               return <UsageShareRow
@@ -438,8 +428,8 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
                 onClick={selectable ? () => changeProject(row.project_id ?? "__unclassified__") : undefined}
               />;
             })}
-          </div>
-        </SettingsGroupBox> : null}
+          </div>}
+        </SettingsGroupBox>
 
         {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords ? <SettingsGroupBox title="입력 자료 구성">
           {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <p className="usage-stats-muted" role="status">불러오는 중…</p> : detail ? <InputMaterial detail={detail} /> : null}
@@ -452,14 +442,14 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
 function InputMaterial({ detail }: { detail: UsageStatsDayDetail }) {
   const material = detail.input_material;
   const parts = material.parts.filter(part => part.category !== "harness_internal");
-  const denominator = material.observed_chars;
+  const denominator = material.observed_approximate_tokens;
   return <div className="usage-stats-input-material">
-    <p className="usage-stats-input-total">{formatUsageStatsChars(denominator, true)}</p>
+    <p className="usage-stats-input-total">{formatUsageStatsApproximateTokens(denominator, true)}</p>
     <div className="usage-stats-share-list">
       {parts.map((part, index) => <UsageShareRow
         key={`${part.category}:${part.source_key ?? index}`}
         name={formatUsageStatsInputCategoryLabel(part.category)}
-        value={formatUsageStatsChars(part.chars)}
+        value={formatUsageStatsApproximateTokens(part.approximate_tokens)}
         share={part.share}
         color="var(--v3-accent)"
       />)}

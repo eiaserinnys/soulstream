@@ -389,12 +389,17 @@ function buildInputMaterial(
   const totals: Record<string, number> = {};
   const sourceKeys: Record<string, string | null> = {};
   const samples = new Set<string>();
+  const sources = new Set<string>();
   let observed = 0;
   for (const record of records) {
+    const source = `${record.sample_id}:${record.category}:${record.source_key ?? ""}`;
+    if (sources.has(source)) continue;
+    sources.add(source);
     samples.add(record.sample_id);
-    totals[record.category] = (totals[record.category] ?? 0) + record.chars;
+    const approximateTokens = record.approximate_tokens ?? Math.ceil(record.chars / 4);
+    totals[record.category] = (totals[record.category] ?? 0) + approximateTokens;
     sourceKeys[record.category] = record.source_key;
-    observed += record.chars;
+    observed += approximateTokens;
   }
 
   const parts: UsageStatsInputPart[] = [];
@@ -403,17 +408,18 @@ function buildInputMaterial(
     parts.push({
       category,
       source_key: sourceKeys[category] ?? null,
-      chars: totals[category],
+      approximate_tokens: totals[category],
       share: observed > 0 ? totals[category] / observed : null,
     });
   }
-  parts.push({ category: "harness_internal", source_key: null, chars: null, share: null });
+  parts.push({ category: "harness_internal", source_key: null, approximate_tokens: null, share: null });
 
   return {
     basis: "observed_input_material",
-    unit: "chars_utf16",
+    unit: "approximate_tokens",
+    estimate_method: "utf16_chars_div4_ceil_v1",
     method: "combined_visible",
-    observed_chars: records.length > 0 ? observed : null,
+    observed_approximate_tokens: records.length > 0 ? observed : null,
     parts,
     coverage: {
       complete_samples: samples.size,

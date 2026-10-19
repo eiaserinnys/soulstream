@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RAW_USAGE_RECORDS } from "./usage-stats-fixture-data";
+import { RAW_USAGE_RECORDS, RAW_INPUT_MATERIAL, type RawInputMaterialRecord } from "./usage-stats-fixture-data";
 import { formatUsageStatsValue, isUsageStatsTokenPartial, isUsageStatsCostPartial } from "./usage-stats-format";
 
 import {
@@ -17,6 +17,36 @@ function sumKnownTokens(rows: Array<{ metrics: { total_tokens: number | null } }
 }
 
 describe("usage statistics public fixture", () => {
+  it("uses the same source estimates for the input total, shares and provider/project filters", () => {
+    const all = buildUsageStatsDayDetail("2026-10-16", {}).input_material;
+    const claude = buildUsageStatsDayDetail("2026-10-16", { provider: "claude" }).input_material;
+    const kimi = buildUsageStatsDayDetail("2026-10-16", { provider: "kimi" }).input_material;
+    expect(all).toMatchObject({ unit: "approximate_tokens", estimate_method: "utf16_chars_div4_ceil_v1", observed_approximate_tokens: 283000 });
+    expect(claude.observed_approximate_tokens).toBe(218000);
+    expect(kimi.observed_approximate_tokens).toBe(65000);
+    expect(buildUsageStatsDayDetail("2026-10-16", { project_ids: ["project-web-dashboard"] }).input_material.observed_approximate_tokens).toBe(218000);
+    expect(claude.parts.map(part => part.approximate_tokens)).toEqual([62500, 45000, 32500, 78000, null]);
+    expect(all.parts.reduce((sum, part) => sum + (part.approximate_tokens ?? 0), 0)).toBe(283000);
+    expect(all.parts.reduce((sum, part) => sum + (part.share ?? 0), 0)).toBeCloseTo(1);
+    expect(all.parts.find(part => part.category === "harness_internal")).toMatchObject({ approximate_tokens: null, share: null });
+    expect(RAW_INPUT_MATERIAL.every(part => part.estimate_source === "derived_chars" && part.approximate_tokens === Math.ceil(part.chars / 4))).toBe(true);
+  });
+
+  it("prefers stored source estimates, rounds sources before summing and counts duplicates once", () => {
+    const count = RAW_INPUT_MATERIAL.length;
+    const source: RawInputMaterialRecord = { date: "2026-10-06", sample_id: "manifest", provider: "claude", model: "claude-opus-5.5", project_id: "project-docs", category: "user_prompt", source_key: "manifest", chars: 100, approximate_tokens: 7, estimate_source: "manifest" };
+    RAW_INPUT_MATERIAL.push(source, source, { ...source, sample_id: "derived-one", source_key: "one", chars: 1, approximate_tokens: null, estimate_source: "derived_chars" }, { ...source, sample_id: "derived-two", source_key: "two", chars: 1, approximate_tokens: null, estimate_source: "derived_chars" });
+    try {
+      const material = buildUsageStatsDayDetail("2026-10-06", { provider: "claude" }).input_material;
+      expect(material.observed_approximate_tokens).toBe(9);
+      expect(material.parts[0]).toMatchObject({ approximate_tokens: 9, share: 1 });
+      RAW_INPUT_MATERIAL.splice(count);
+      RAW_INPUT_MATERIAL.push({ ...source, chars: 0, approximate_tokens: 0 });
+      expect(buildUsageStatsDayDetail("2026-10-06", {}).input_material.observed_approximate_tokens).toBe(0);
+      RAW_INPUT_MATERIAL.splice(count);
+      expect(buildUsageStatsDayDetail("2026-10-06", {}).input_material.observed_approximate_tokens).toBeNull();
+    } finally { RAW_INPUT_MATERIAL.splice(count); }
+  });
   it("marks filtered positive subtotals uncertain without assigning missing counts to providers or models", () => {
     const query = { period: "week" as const, anchor: USAGE_STATS_FIXTURE_ANCHOR, provider: "claude" as const };
     const week = buildUsageStatsOverview(query);
@@ -193,14 +223,14 @@ describe("usage statistics public fixture", () => {
     expect(unmatched.by_model).toHaveLength(1);
     expect(unmatched.by_model[0].metrics.total_tokens).toBeNull();
     expect(claude.tool_calls).toBe(312);
-    expect(claude.input_material.observed_chars).toBe(872_000);
+    expect(claude.input_material.observed_approximate_tokens).toBe(218_000);
     expect(claude.input_material.coverage.complete_samples).toBe(1);
-    expect(missingModel.input_material.observed_chars).toBeNull();
+    expect(missingModel.input_material.observed_approximate_tokens).toBeNull();
     expect(missingModel.input_material.coverage.complete_samples).toBe(0);
     expect(missingModel.tool_calls).toBe(0);
     expect(missingModel.input_material.parts.map(row => row.category)).toContain("harness_internal");
     expect(mobileProject.tool_calls).toBe(0);
-    expect(noInputRecord.input_material.observed_chars).toBeNull();
+    expect(noInputRecord.input_material.observed_approximate_tokens).toBeNull();
     expect(noInputRecord.input_material.coverage.missing_samples).toBe(1);
     expect(noInputRecord.input_material.parts.map(row => row.category)).toContain("harness_internal");
 

@@ -182,7 +182,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
           </DialogDescription>
         </DialogHeader>
 
-        <DialogPanel className="config-dialog-panel">
+        <DialogPanel className="config-dialog-panel" scrollable={false} scrollFade={false}>
           {loading && (
             <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
               설정을 불러오는 중...

@@ -4,6 +4,34 @@ import { resolve } from "node:path";
 
 const captureDir = resolve(process.env.USAGE_STATS_CAPTURE_DIR ?? "../.local/artifacts/usage-stats-485");
 
+test("comparison view preserves date, cost and input without another statistics request", async ({ page }) => {
+  await page.addInitScript(() => {
+    const state = window as Window & { __statisticsRequests?: number };
+    state.__statisticsRequests = 0;
+    const wrap = (fetcher: typeof fetch): typeof fetch => (...args) => {
+      if (String(args[0]).includes('/api/session-statistics')) state.__statisticsRequests! += 1;
+      return fetcher(...args);
+    };
+    let current = wrap(window.fetch.bind(window));
+    Object.defineProperty(window, 'fetch', { configurable: true, get: () => current, set: value => { current = wrap(value); } });
+  });
+  await page.goto('/frame.html?state=normal&theme=light&glass=css');
+  await page.locator('.usage-stats-chart-column[aria-label*="10월 16일"]').first().click();
+  await expect(page.locator('.usage-stats-input-material')).toBeVisible();
+  await page.getByRole('group', { name: '표시 값' }).getByRole('button', { name: '정가', exact: true }).click();
+  const summary = await page.locator('.usage-stats-summary').innerText();
+  const input = await page.locator('.usage-stats-input-material').innerText();
+  const requests = await page.evaluate(() => (window as Window & { __statisticsRequests: number }).__statisticsRequests);
+  await page.getByRole('combobox', { name: '그래프 보기' }).click();
+  await page.getByRole('option', { name: '프로젝트별', exact: true }).click();
+  await expect(page.locator('.usage-stats-chart')).toHaveCount(1);
+  await expect(page.locator('.usage-stats-chart-column[aria-pressed="true"]')).toHaveCount(1);
+  await expect(page.locator('.usage-stats-summary')).toHaveText(summary);
+  await expect(page.locator('.usage-stats-input-material')).toHaveText(input);
+  await expect(page.getByRole('group', { name: '표시 값' }).getByRole('button', { name: '정가', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => (window as Window & { __statisticsRequests: number }).__statisticsRequests)).toBe(requests);
+});
+
 test("settings statistics support date, filters, detail, keyboard, and narrow layout", async ({ page }) => {
   mkdirSync(captureDir, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 1200 });
@@ -28,7 +56,7 @@ test("settings statistics support date, filters, detail, keyboard, and narrow la
   await expect(page.locator(".usage-stats-date-chip")).toHaveText("10월 16일 (금)");
   await expect(page.getByText("툴 호출 312회")).toBeVisible();
   await expect(page.getByText("하네스 내부 입력")).toBeVisible();
-  await expect(page.getByText("1,132,000자")).toBeVisible();
+  await expect(page.getByText("추정 약 283,000 토큰")).toBeVisible();
   await expect(page.getByText("관측 안 됨").first()).toBeVisible();
   const visibleSegment = page.locator(".usage-stats-stack-segment").first();
   await expect(visibleSegment).toBeVisible();
@@ -84,7 +112,7 @@ test("settings statistics support date, filters, detail, keyboard, and narrow la
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator(".usage-stats-chart-plot").first().scrollIntoViewIfNeeded();
-  const scrollSurface = page.locator('[data-slot="dialog-panel-scroll"]');
+  const scrollSurface = page.locator('.config-detail');
   const previousScroll = await scrollSurface.evaluate(element => element.scrollTop);
   const plotBounds = await page.locator(".usage-stats-chart-plot").first().boundingBox();
   if (!plotBounds) throw new Error("통계 그래프가 화면에 없습니다.");
@@ -197,6 +225,8 @@ test("monthly columns keep visible bars at a 390px viewport", async ({ page }) =
 test("project row colors stay attached to the project across date detail", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/frame.html?state=normal&theme=light&glass=css");
+  await page.getByRole("combobox", { name: "그래프 보기" }).click();
+  await page.getByRole("option", { name: "프로젝트별", exact: true }).click();
   const overviewRow = page.getByRole("button", { name: /^웹 대시보드/ });
   const overviewColor = await overviewRow.locator(".usage-stats-share-fill").evaluate(element => getComputedStyle(element).backgroundColor);
   const friday = page.locator(".usage-stats-chart-plot").first().locator(".usage-stats-chart-column[aria-label*='10월 16일']");

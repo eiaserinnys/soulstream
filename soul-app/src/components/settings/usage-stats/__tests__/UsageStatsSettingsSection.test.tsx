@@ -45,6 +45,32 @@ async function ready(screen: ReturnType<typeof render>) {
   await waitFor(() => expect(screen.getByTestId('usage-stats-total-tokens')).toBeTruthy());
 }
 
+async function chooseView(screen: ReturnType<typeof render>, name: '모델별' | '프로젝트별') {
+  fireEvent.press(screen.getByLabelText(/^보기:/));
+  fireEvent.press(screen.getByLabelText(name));
+}
+
+test('비교 보기 전환은 금요일·정가·요약·입력을 유지하고 추가 조회 없이 그래프와 행만 바꾼다', async () => {
+  const screen = render(<UsageStatsPreviewProvider><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  await ready(screen);
+  fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
+  await ready(screen);
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-cost'));
+  const values = [screen.getByTestId('usage-stats-total-tokens').props.children, screen.getByTestId('usage-stats-reference-cost').props.children, screen.getByTestId('usage-stats-observed-tokens').props.children];
+  const requests = (global.fetch as jest.Mock).mock.calls.length;
+  await chooseView(screen, '프로젝트별');
+  expect(screen.queryByTestId('usage-stats-model-chart-chart')).toBeNull();
+  expect(screen.getByTestId('usage-stats-project-chart-day-2026-10-16').props.accessibilityState).toMatchObject({ selected: true });
+  expect(screen.getByTestId('settings-segment-usage-stats-measure-cost').props.accessibilityState).toMatchObject({ selected: true });
+  expect(screen.getByLabelText('10월 16일 (금) 선택 해제')).toBeTruthy();
+  expect([screen.getByTestId('usage-stats-total-tokens').props.children, screen.getByTestId('usage-stats-reference-cost').props.children, screen.getByTestId('usage-stats-observed-tokens').props.children]).toEqual(values);
+  expect(screen.getByTestId('usage-stats-project-row-project-web-dashboard')).toBeTruthy();
+  await chooseView(screen, '모델별');
+  expect(screen.getByTestId('usage-stats-model-chart-day-2026-10-16').props.accessibilityState).toMatchObject({ selected: true });
+  expect(screen.queryByTestId('usage-stats-project-chart-chart')).toBeNull();
+  expect((global.fetch as jest.Mock).mock.calls.length).toBe(requests);
+});
+
 
 const emptyFilter = { provider: null, model: null, project_ids: [] as string[] };
 const weekQuery = {
@@ -70,12 +96,13 @@ test('선택한 금요일의 요약과 입력 구성은 같은 날짜 상세로 
   await ready(screen);
   expect(screen.getByTestId('usage-stats-total-tokens').props.children)
     .toBe(tokenDisplay(detail.totals.metrics.total_tokens, detail.totals.coverage));
+  await chooseView(screen, '프로젝트별');
   expect(screen.getByTestId('usage-stats-project-chart-day-2026-10-16').props.accessibilityState)
     .toMatchObject({ selected: true });
-  expect(screen.getByTestId('usage-stats-observed-chars').props.children)
-    .toBe(detail.input_material.observed_chars === null
+  expect(screen.getByTestId('usage-stats-observed-tokens').props.children)
+    .toBe(detail.input_material.observed_approximate_tokens === null
       ? '미기록'
-      : `관측 ${detail.input_material.observed_chars.toLocaleString('ko-KR')}자`);
+      : `추정 약 ${detail.input_material.observed_approximate_tokens.toLocaleString('ko-KR')} 토큰`);
   if (detail.totals.coverage.missing_usage_turns > 0) {
     expect(screen.getByText(
       `미기록 턴 ${detail.totals.coverage.missing_usage_turns}`,
@@ -167,6 +194,7 @@ test('프로젝트 행은 단일 프로젝트 필터를 적용하고 날짜 선�
 
   fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
   await ready(screen);
+  await chooseView(screen, '프로젝트별');
   fireEvent.press(screen.getByTestId(`usage-stats-project-row-${project.project_id}`));
   await ready(screen);
 
@@ -179,6 +207,7 @@ test('프로젝트 행은 단일 프로젝트 필터를 적용하고 날짜 선�
 test('웹 대시보드 프로젝트의 미기록 턴은 요약과 행의 정가 부분합에 반영한다', async () => {
   const screen = render(<UsageStatsPreviewProvider><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
   await ready(screen);
+  await chooseView(screen, '프로젝트별');
   fireEvent.press(screen.getByTestId('usage-stats-project-row-project-web-dashboard'));
   await ready(screen);
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('$13.00+');

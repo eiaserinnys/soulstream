@@ -111,6 +111,14 @@ describe("ConfigModal layout", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
 
+  it("keeps the outer panel from scrolling the settings columns together", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+    const outer = document.querySelector<HTMLElement>('[data-slot="dialog-panel-scroll"]');
+    expect(outer?.classList.contains("overflow-hidden")).toBe(true);
+    expect(outer?.classList.contains("overflow-y-auto")).toBe(false);
+  });
+
   beforeEach(() => {
     dirtyState.value = false;
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });

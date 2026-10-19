@@ -52,11 +52,13 @@
   gap: var(--v3-space-3);
 }
 
-.config-dialog .usage-stats-filters > div {
+.config-dialog .usage-stats-filters > div,
+.config-dialog .usage-stats-chart-heading > div {
   min-width: 0;
 }
 
-.config-dialog .usage-stats-filters > div > label {
+.config-dialog .usage-stats-filters > div > label,
+.config-dialog .usage-stats-chart-heading > div > label {
   display: block;
   margin-bottom: var(--v3-space-2);
   color: var(--v3-text-secondary);
@@ -156,22 +158,16 @@
 }
 
 .config-dialog .usage-stats-chart-heading {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: center;
-  justify-content: space-between;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
   gap: var(--v3-space-3);
   margin-top: var(--v3-space-4);
 }
 
-.config-dialog .usage-stats-chart-heading h3 {
-  margin: 0;
-  font: var(--v3-type-body) var(--v3-font-family);
-  font-weight: 700;
-}
-
-.config-dialog .usage-stats-chart-heading-spacer {
-  flex: 1;
+.config-dialog .usage-stats-chart-heading > .v3-completed-periods {
+  justify-self: end;
 }
 
 .config-dialog .usage-stats-chart {
@@ -400,11 +396,4 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .config-dialog .usage-stats-chart-heading {
-    flex-wrap: wrap;
-  }
-
-  .config-dialog .usage-stats-project-heading {
-    justify-content: flex-end;
-  }
 }

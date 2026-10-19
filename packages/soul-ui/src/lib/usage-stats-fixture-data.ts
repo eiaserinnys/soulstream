@@ -105,15 +105,16 @@ export interface UsageStatsOverview {
 export interface UsageStatsInputPart {
   category: string;
   source_key: string | null;
-  chars: number | null;
+  approximate_tokens: number | null;
   share: number | null;
 }
 
 export interface UsageStatsInputMaterial {
   basis: "observed_input_material";
-  unit: "chars_utf16";
+  unit: "approximate_tokens";
+  estimate_method: "utf16_chars_div4_ceil_v1";
   method: "combined_visible";
-  observed_chars: number | null;
+  observed_approximate_tokens: number | null;
   parts: UsageStatsInputPart[];
   coverage: {
     complete_samples: number;
@@ -171,6 +172,8 @@ export interface RawInputMaterialRecord {
   category: string;
   source_key: string | null;
   chars: number;
+  approximate_tokens: number | null;
+  estimate_source: "manifest" | "derived_chars";
 }
 
 export interface RawToolCallRecord {
@@ -235,12 +238,12 @@ export const PENDING_TURNS: PendingTurnRecord[] = [
 ];
 
 export const RAW_INPUT_MATERIAL: RawInputMaterialRecord[] = [
-  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "system_prompt", source_key: "system-prompt", chars: 250_000 },
-  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "soulstream_injection", source_key: "soulstream-injection", chars: 180_000 },
-  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "user_prompt", source_key: "user-prompt", chars: 130_000 },
-  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "tool_result", source_key: "tool-result", chars: 312_000 },
-  { date: "2026-10-16", sample_id: "kimi-mobile-1016", provider: "kimi", model: "kimi-for-coding/k3", project_id: "project-mobile-app", category: "system_prompt", source_key: "system-prompt", chars: 70_000 },
-  { date: "2026-10-16", sample_id: "kimi-mobile-1016", provider: "kimi", model: "kimi-for-coding/k3", project_id: "project-mobile-app", category: "user_prompt", source_key: "user-prompt", chars: 190_000 },
+  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "system_prompt", source_key: "system-prompt", chars: 250_000, approximate_tokens: 62_500, estimate_source: "derived_chars" },
+  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "soulstream_injection", source_key: "soulstream-injection", chars: 180_000, approximate_tokens: 45_000, estimate_source: "derived_chars" },
+  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "user_prompt", source_key: "user-prompt", chars: 130_000, approximate_tokens: 32_500, estimate_source: "derived_chars" },
+  { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "tool_result", source_key: "tool-result", chars: 312_000, approximate_tokens: 78_000, estimate_source: "derived_chars" },
+  { date: "2026-10-16", sample_id: "kimi-mobile-1016", provider: "kimi", model: "kimi-for-coding/k3", project_id: "project-mobile-app", category: "system_prompt", source_key: "system-prompt", chars: 70_000, approximate_tokens: 17_500, estimate_source: "derived_chars" },
+  { date: "2026-10-16", sample_id: "kimi-mobile-1016", provider: "kimi", model: "kimi-for-coding/k3", project_id: "project-mobile-app", category: "user_prompt", source_key: "user-prompt", chars: 190_000, approximate_tokens: 47_500, estimate_source: "derived_chars" },
 ];
 
 export const RAW_TOOL_CALLS: RawToolCallRecord[] = [

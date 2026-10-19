@@ -37,13 +37,15 @@ export const USAGE_STATS_LABELS = {
   missingUsage: "미기록", unknownPrice: "정가 미확인", unknownCost: "미확인",
   beforeCoverage: "이 기간은 기록 전입니다", emptyRange: "이 기간에 기록이 없습니다",
   missingInput: "일부 세션 미기록",
+  inputEstimateBasis: "저장된 manifest 추정값을 우선하며, 없으면 기록된 자료의 글자 수를 4로 나눈 올림값을 사용합니다.",
+  inputEstimateCaveat: "언어와 모델에 따라 실제 토큰과 차이가 있습니다. 입력 구성은 관측 자료 기준이며 실측 과금 토큰과 분모가 다릅니다.",
   input: "입력 (캐시 포함)", cacheRead: "그중 캐시 읽기", cacheWrite: "그중 캐시 쓰기",
   output: "출력", reasoning: "그중 추론",
 };
 
-export function formatUsageStatsChars(value: number | null, observed = false): string {
+export function formatUsageStatsApproximateTokens(value: number | null, observed = false): string {
   if (value === null) return observed ? "관측 안 됨" : "미기록";
-  return `${observed ? "관측 " : ""}${value.toLocaleString("ko-KR")}자`;
+  return `${observed ? "추정 " : ""}약 ${value.toLocaleString("ko-KR")} 토큰`;
 }
 
 export function formatUsageStatsValue(

@@ -62,9 +62,10 @@ mockApi({
           detail.by_project = [];
           detail.input_material = {
             basis: "observed_input_material",
-            unit: "chars_utf16",
+            unit: "approximate_tokens",
+            estimate_method: "utf16_chars_div4_ceil_v1",
             method: "combined_visible",
-            observed_chars: null,
+            observed_approximate_tokens: null,
             parts: [],
             coverage: { complete_samples: 0, partial_samples: 0, manifest_only_samples: 0, missing_samples: 1 },
           };

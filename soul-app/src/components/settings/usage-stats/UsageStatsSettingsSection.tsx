@@ -22,7 +22,7 @@ import {
   usageStatsModelColorIndex,
   USAGE_STATS_LABELS,
   formatUsageStatsValue,
-  formatUsageStatsChars,
+  formatUsageStatsApproximateTokens,
 } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
 import type {
   UsageStatsAggregate,
@@ -101,6 +101,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const [modelFilterId, setModelFilterId] = useState('all');
   const [projectIds, setProjectIds] = useState<string[]>([]);
   const [measure, setMeasure] = useState<Measure>(preview?.initialMeasure ?? 'tokens');
+  const [view, setView] = useState<'model' | 'project'>('model');
   const [metricsExpanded, setMetricsExpanded] = useState(false);
   const [basisExpanded, setBasisExpanded] = useState(false);
 
@@ -259,20 +260,23 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
             {basisExpanded ? <AggregationBasis /> : null}
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
-                <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>모델별</Text>
-                <View style={{ flex: 1 }} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <SettingsOptionRow label="보기" pickerMode="picker" selected={view}
+                    options={[{ id: 'model', label: '모델별' }, { id: 'project', label: '프로젝트별' }]}
+                    onSelect={value => setView(value as 'model' | 'project')} emptyLabel="보기 없음" />
+                </View>
                 <SettingsSegmentedControl<Measure> id="usage-stats-measure" value={measure} options={MEASURE_OPTIONS} onChange={setMeasure} wrap />
               </View>
               <UsageStackedBars
-                testID="usage-stats-model-chart"
-                buckets={modelBuckets}
+                testID={view === 'model' ? 'usage-stats-model-chart' : 'usage-stats-project-chart'}
+                buckets={view === 'model' ? modelBuckets : projectBuckets}
                 selectedBucket={activeDate ? `day-${activeDate}` : null}
                 onSelectBucket={bucketId => changeBucket(bucketId, false)}
                 onDragBucket={period === 'all' ? undefined : bucketId => changeBucket(bucketId, true)}
                 measure={measure}
               />
               <View style={{ gap: t.spacing.md }}>
-                {!emptyData && !beforeCoverage ? modelRows.map(row => {
+                {!emptyData && !beforeCoverage ? view === 'model' ? modelRows.map(row => {
                   const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
                   const share = typeof value === 'number' && denominator > 0 ? value / denominator : value === 0 ? 0 : null;
                   const label = row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider);
@@ -289,59 +293,42 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                       setSelectedDate(null);
                     } : undefined}
                   />;
+                }) : projectRows.map(row => {
+                  const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
+                  const share = typeof value === 'number' && projectDenominator > 0 ? value / projectDenominator : value === 0 ? 0 : null;
+                  const id = row.project_id === null ? '__unclassified__' : row.project_id;
+                  return <UsageShareRow
+                    key={id}
+                    testID={`usage-stats-project-row-${id}`}
+                    label={row.label}
+                    value={formatUsageStatsValue(row.metrics, row.coverage, measure, true)}
+                    share={share}
+                    color={projectColorById[id] ?? t.colors.textTertiary}
+                    onPress={row.project_id === '__other__' ? undefined : () => {
+                      setProjectIds([id]);
+                      setSelectedDate(null);
+                    }}
+                  />;
                 }) : null}
               </View>
             </View>
           </View>
         </SettingsSection>
 
-        {!emptyData && !beforeCoverage ? <SettingsSection id="usage-stats-projects" title="프로젝트별" flattened={flattened}>
-          <View style={{ gap: t.spacing.md, padding: t.cardLayout.padding }}>
-            {workspace ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>프로젝트별</Text> : null}
-            <UsageStackedBars
-              testID="usage-stats-project-chart"
-              buckets={projectBuckets}
-              selectedBucket={activeDate ? `day-${activeDate}` : null}
-              onSelectBucket={bucketId => changeBucket(bucketId, false)}
-              onDragBucket={period === 'all' ? undefined : bucketId => changeBucket(bucketId, true)}
-              measure={measure}
-            />
-            <View style={{ gap: t.spacing.md }}>
-              {projectRows.map(row => {
-                const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
-                const share = typeof value === 'number' && projectDenominator > 0 ? value / projectDenominator : value === 0 ? 0 : null;
-                const id = row.project_id === null ? '__unclassified__' : row.project_id;
-                return <UsageShareRow
-                  key={id}
-                  testID={`usage-stats-project-row-${id}`}
-                  label={row.label}
-                  value={formatUsageStatsValue(row.metrics, row.coverage, measure, true)}
-                  share={share}
-                  color={projectColorById[id] ?? t.colors.textTertiary}
-                  onPress={row.project_id === '__other__' ? undefined : () => {
-                    setProjectIds([id]);
-                    setSelectedDate(null);
-                  }}
-                />;
-              })}
-            </View>
-          </View>
-        </SettingsSection> : null}
-
         {!emptyData && !beforeCoverage && period !== 'all' ? <SettingsSection id="usage-stats-input" title="입력 자료 구성" flattened={flattened}>
           <View style={{ gap: t.spacing.md, padding: t.cardLayout.padding }}>
             {workspace ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>입력 자료 구성</Text> : null}
             {inputMaterial ? <>
-              <Text testID="usage-stats-observed-chars" style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{formatUsageStatsChars(inputMaterial.observed_chars, true)}</Text>
+              <Text testID="usage-stats-observed-tokens" style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{formatUsageStatsApproximateTokens(inputMaterial.observed_approximate_tokens, true)}</Text>
               {inputMaterial.parts.map((part, index) => {
                 const isHarness = part.category === 'harness_internal';
                 const label = formatUsageStatsInputCategoryLabel(part.category);
-                const value = isHarness ? '관측 안 됨' : formatUsageStatsChars(part.chars);
+                const value = isHarness ? '관측 안 됨' : formatUsageStatsApproximateTokens(part.approximate_tokens);
                 return <UsageShareRow key={`${part.category}:${part.source_key ?? index}`} testID={isHarness ? 'usage-stats-input-harness-row' : undefined} valueTestID={isHarness ? 'usage-stats-input-harness' : undefined} label={label} value={value} share={isHarness ? null : part.share} color={t.colors.accent} />;
               })}
               <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>툴 호출 {selectedDetail?.tool_calls ?? 0}회</Text>
               {inputMaterial.coverage.missing_samples > 0 || inputMaterial.coverage.partial_samples > 0 ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{USAGE_STATS_LABELS.missingInput}</Text> : null}
-            </> : <Text testID="usage-stats-observed-chars" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>막대에서 날짜를 고르세요</Text>}
+            </> : <Text testID="usage-stats-observed-tokens" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>막대에서 날짜를 고르세요</Text>}
           </View>
         </SettingsSection> : null}
       </> : null}
@@ -395,5 +382,7 @@ function AggregationBasis() {
     ].map(([label, url], index) => <Text key={label} accessibilityRole="link" onPress={() => { void Linking.openURL(url); }} style={{ color: t.colors.accent }}>{index ? ', ' : ''}{label}</Text>)}</Text>
     <Text style={style}>날짜는 턴이 끝난 시각, Asia/Seoul, 주는 월요일 시작</Text>
     <Text style={style}>프로젝트는 지금 보이는 최상위 폴더 기준</Text>
+    <Text style={style}>{USAGE_STATS_LABELS.inputEstimateBasis}</Text>
+    <Text style={style}>{USAGE_STATS_LABELS.inputEstimateCaveat}</Text>
   </View>;
 }

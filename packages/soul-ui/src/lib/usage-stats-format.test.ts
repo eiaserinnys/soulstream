@@ -10,20 +10,22 @@ import {
   shiftUsageStatsAnchor,
   usageStatsMonthAnchor,
   usageStatsModelColorIndex,
-  formatUsageStatsChars,
+  formatUsageStatsApproximateTokens,
   formatUsageStatsValue,
   usageStatsRange,
 } from "./usage-stats-format";
 
 describe("usage statistics formatting", () => {
-  it("shares month drilldown anchors, stable model ranks, and observed character units", () => {
+  it("shares month drilldown anchors, stable model ranks, and estimated input token units", () => {
     expect(usageStatsMonthAnchor("2026-10-01", "2026-10-19T00:00:00+09:00")).toBe("2026-10-18");
     expect(usageStatsMonthAnchor("2026-09-01", "2026-10-19T00:00:00+09:00")).toBe("2026-09-30");
     expect(usageStatsRange("week", usageStatsMonthAnchor("2026-09-01", "2026-10-19"), "2026-10-19", "2026-09-01")).toMatchObject({ since: "2026-09-28", until: "2026-10-05" });
     expect(usageStatsModelColorIndex("sonnet", ["opus", "sonnet"])).toBe(1);
     expect(usageStatsModelColorIndex(null, ["opus", "sonnet"])).toBe(-1);
-    expect(formatUsageStatsChars(1132000, true)).toBe("관측 1,132,000자");
-    expect(formatUsageStatsChars(1132000)).toBe("1,132,000자");
+    expect(formatUsageStatsApproximateTokens(283000, true)).toBe("추정 약 283,000 토큰");
+    expect(formatUsageStatsApproximateTokens(283000)).toBe("약 283,000 토큰");
+    expect(formatUsageStatsApproximateTokens(0, true)).toBe("추정 약 0 토큰");
+    expect(formatUsageStatsApproximateTokens(null, true)).toBe("관측 안 됨");
     expect(formatUsageStatsCoverage(0, 0)).toBe("");
     expect(formatUsageStatsCoverage(null, null)).toBe("");
   });
