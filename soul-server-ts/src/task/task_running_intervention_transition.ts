@@ -229,7 +229,8 @@ export class RunningInterventionTransition {
       if (current) composed.prompt += `\n\n${formatContextItems([current])}`;
     }
     const input = {
-      ...composed,
+      prompt: composed.prompt,
+      imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(inputUuid ? { inputUuid } : {}),
       turnOrigin: interventionTurnOrigin(message, inputUuid),
     };

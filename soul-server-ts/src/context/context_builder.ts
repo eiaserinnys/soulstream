@@ -1,6 +1,7 @@
 /** Builds input context; agent and folder instructions form the system prompt. */
 import { readPersistentInstructions } from "@soulstream/wire-schema/persistent-session-instructions";
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
+import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import { buildPersistentReportContext } from "./persistent_report_context.js";
 import { fetchAssignedCardContextItem, type AssignedCardContextCapture } from "./assigned_card_context.js";
 import type { Logger } from "pino";
@@ -25,6 +26,7 @@ import {
   compileAtomContext,
   composeEffectiveSystemPrompt,
   composeFirstTurnPrompt as composeFirstTurnPromptImpl,
+  composeFirstTurnPromptWithMaterial as composeFirstTurnPromptWithMaterialImpl,
   composeFolderPromptChain,
   extractAgentAtomContextSpecs,
   extractFolderAtomContextSpecs,
@@ -81,6 +83,7 @@ export interface FollowupContextOptions {
 export interface FollowupContext {
   effectiveSystemPrompt?: string;
   contextItems: ContextItem[];
+  inputMaterialBreakdown?: PreparedContext["inputMaterialBreakdown"];
 }
 
 /** atom 호출 설정 (config.ts env에서 주입). */
@@ -120,6 +123,7 @@ export class ExecutionContextBuilder {
       return {
         effectiveSystemPrompt: ctx.effectiveSystemPrompt,
         contextItems: ctx.combinedContextItems,
+        inputMaterialBreakdown: ctx.inputMaterialBreakdown,
       };
     }
 
@@ -318,8 +322,11 @@ export class ExecutionContextBuilder {
       folderName: folder.folderName,
       folderPrompt: folder.folderPrompt,
       agentAtomMarkdown: agentAtomCompilation.assembled,
+      agentAtomMaterialParts: agentAtomCompilation.materialParts,
       atomMarkdown: atomCompilation.assembled,
+      atomMaterialParts: atomCompilation.materialParts,
       taskAtomMarkdown: taskAtomCompilation.assembled,
+      taskAtomMaterialParts: taskAtomCompilation.materialParts,
       contextManifest,
       primaryFolder,
       pageContextItem,
@@ -478,4 +485,11 @@ export class ExecutionContextBuilder {
 /** Keeps the public and cogito-reflected context composition entrypoint stable. */
 export function composeFirstTurnPrompt(ctx: PreparedContext): string {
   return composeFirstTurnPromptImpl(ctx);
+}
+
+export function composeFirstTurnPromptWithMaterial(
+  ctx: PreparedContext,
+  assembledPromptParts?: readonly InputMaterialPartV1[],
+): { prompt: string; parts: InputMaterialPartV1[] } {
+  return composeFirstTurnPromptWithMaterialImpl(ctx, assembledPromptParts);
 }
