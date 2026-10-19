@@ -419,6 +419,7 @@ export function createCardColorReviewClient(mode: CardColorReviewMode = 'success
 }
 export function createApiClient(baseUrl = ''): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
+  const usageEndpoints = createUsageEndpoints(createApiRequestContext(baseUrl));
   if (section === 'attachments' || section === 'cardImages') return createAttachmentReviewApi();
   if (section === 'chatUiRenderer') return createChatUiFlowReviewApi(window.location.search);
   if (section === 'contentLinks' || section === 'contentLinkDocument') {
@@ -433,7 +434,7 @@ export function createApiClient(baseUrl = ''): ApiClient {
       getStarredFolders: async () => ({ items: empty ? [] : starredFolders, nextCursor: null }) } as unknown as ApiClient;
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
-  if (section === 'nativeSettings') return nativeSettingsApi;
+  if (section === 'nativeSettings') return { ...nativeSettingsApi, ...usageEndpoints } as unknown as ApiClient;
   if (section === 'persistent') {
     const api = createPersistentFullscreenReviewApi(window.location.search);
     return new URLSearchParams(window.location.search).get('sample') === 'report'
@@ -442,7 +443,7 @@ export function createApiClient(baseUrl = ''): ApiClient {
   if (section === 'dialogues' && new URLSearchParams(window.location.search).get('sample') === 'persistent-select') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;
-  return { ...api, ...createUsageEndpoints(createApiRequestContext(baseUrl)) } as unknown as ApiClient;
+  return { ...api, ...usageEndpoints } as unknown as ApiClient;
 }
 
 export function createAttachmentReviewApi(): ApiClient {

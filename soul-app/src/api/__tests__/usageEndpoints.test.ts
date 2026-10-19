@@ -54,3 +54,13 @@ test('statistics overview and day use the same authenticated query boundary', as
     expect((init.headers as Headers).get('Authorization')).toBe('Bearer usage-jwt');
   }
 });
+
+test('model values containing separators and the literal null remain query values', async () => {
+  const api = createApiClient('https://usage.example');
+  for (const model of ['vendor:family/model', 'null']) {
+    await api.getSessionStatistics({ period: 'week', anchor: '2026-10-17', provider: 'unknown', model });
+  }
+  const calls = (global.fetch as jest.Mock).mock.calls as [string, RequestInit][];
+  expect(calls.map(([url]) => new URL(url).searchParams.get('model'))).toEqual(['vendor:family/model', 'null']);
+  expect(calls.map(([url]) => new URL(url).searchParams.get('provider'))).toEqual(['unknown', 'unknown']);
+});

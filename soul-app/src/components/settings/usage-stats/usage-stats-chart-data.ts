@@ -1,10 +1,11 @@
-import { formatUsageStatsDateWithWeekday } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
+import { formatUsageStatsDateWithWeekday, usageStatsBucketStarts } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
+import { usageStatsSeriesKey } from '../../../../../packages/soul-ui/src/lib/usage-stats-presentation';
 import type {
   UsageStatsPeriod,
   UsageStatsProvider,
   UsageStatsRange,
   UsageStatsSeriesPoint,
-} from '../../../../../packages/soul-ui/src/lib/usage-stats-fixture-data';
+} from '../../../../../packages/wire-schema/src/session_statistics';
 import type { UsageStackBucket } from './UsageStackedBars';
 
 type Measure = 'tokens' | 'cost';
@@ -19,11 +20,11 @@ export function makeUsageStatsBuckets(
   projectColorById: Record<string, string>,
   fallbackColor: string,
   coveredSince: string,
-  emptyData: boolean,
   modelColorById?: Record<string, string>,
 ): UsageStackBucket[] {
   const grouped: Record<string, UsageStackBucket> = {};
-  for (const bucketStart of bucketStarts(period, range)) {
+  const bucketsWithUnknown = new Set<string>();
+  for (const bucketStart of usageStatsBucketStarts(range)) {
     const id = `${period === 'all' ? 'month' : 'day'}-${bucketStart}`;
     const availability = bucketAvailability(bucketStart, period, range, coveredSince);
     grouped[bucketStart] = {
@@ -31,7 +32,7 @@ export function makeUsageStatsBuckets(
       label: bucketLabel(bucketStart, period),
       description: bucketDescription(bucketStart, period),
       segments: [],
-      selectable: !emptyData && availability === 'available',
+      selectable: availability === 'available',
       availability,
     };
   }
@@ -40,20 +41,32 @@ export function makeUsageStatsBuckets(
     const bucket = grouped[point.bucket_start];
     if (!bucket) continue;
     const identity = kind === 'model'
-      ? `${point.provider ?? '__unknown__'}:${point.model ?? ''}`
+      ? usageStatsSeriesKey(point.provider ?? 'unknown', point.model ?? null, true)
       : `project:${point.project_id ?? '__unclassified__'}`;
     const value = point.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
     const color = kind === 'model'
-      ? modelColorById ? (point.model ? modelColorById[point.model] : undefined) ?? fallbackColor : point.provider ? seriesColors[point.provider] : fallbackColor
+      ? modelColorById ? (point.model !== null && point.model !== undefined ? modelColorById[point.model] : undefined) ?? fallbackColor : point.provider ? seriesColors[point.provider] : fallbackColor
       : point.project_id && point.project_id !== '__other__' ? projectColorById[point.project_id] ?? fallbackColor : fallbackColor;
+    if (value === null) bucketsWithUnknown.add(point.bucket_start);
     const existing = bucket.segments.find(segment => segment.id === identity);
     if (existing) {
       const prior = existing.value;
-      existing.partial = existing.partial || prior === null || value === null;
       const known = [prior, value].flatMap(item => typeof item === 'number' ? [item] : []);
       existing.value = known.length === 0 ? null : known.reduce((sum, item) => sum + item, 0);
     } else {
-      bucket.segments.push({ id: identity, label: point.label, value, color, partial: false });
+      bucket.segments.push({ id: identity, label: point.label, value, color });
+    }
+  }
+  for (const [bucketStart, bucket] of Object.entries(grouped)) {
+    const known = bucket.segments.flatMap(segment => typeof segment.value === 'number' ? [segment.value] : []);
+    if (known.some(value => value > 0)) {
+      bucket.segments = bucket.segments.filter(segment => segment.value !== null);
+      if (bucket.availability === 'before-coverage') {
+        bucket.availability = 'available';
+        bucket.selectable = true;
+      }
+    } else if (bucketsWithUnknown.has(bucketStart)) {
+      for (const segment of bucket.segments) segment.value = null;
     }
   }
   return Object.values(grouped);
@@ -61,30 +74,6 @@ export function makeUsageStatsBuckets(
 
 export function sumKnown(values: (number | null)[]): number {
   return values.reduce<number>((sum, value) => sum + (typeof value === 'number' ? value : 0), 0);
-}
-
-function bucketStarts(period: UsageStatsPeriod, range: UsageStatsRange): string[] {
-  const buckets: string[] = [];
-  if (period === 'all') {
-    const start = new Date(`${range.since}T00:00:00Z`);
-    const end = new Date(`${range.effective_until}T00:00:00Z`);
-    let year = start.getUTCFullYear();
-    let month = start.getUTCMonth();
-    while (year < end.getUTCFullYear() || (year === end.getUTCFullYear() && month <= end.getUTCMonth())) {
-      buckets.push(`${year}-${String(month + 1).padStart(2, '0')}-01`);
-      month += 1;
-      if (month > 11) { month = 0; year += 1; }
-    }
-    return buckets;
-  }
-
-  const cursor = new Date(`${range.since}T00:00:00Z`);
-  const until = new Date(`${range.until}T00:00:00Z`);
-  while (cursor < until) {
-    buckets.push(cursor.toISOString().slice(0, 10));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return buckets;
 }
 
 function bucketLabel(bucket: string, period: UsageStatsPeriod): string {

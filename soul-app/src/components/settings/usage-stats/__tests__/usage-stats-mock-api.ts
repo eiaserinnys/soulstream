@@ -1,10 +1,10 @@
-import { buildEmptyUsageStatsOverview, buildUsageStatsDayDetail, buildUsageStatsOverview } from '../../../../packages/soul-ui/src/lib/usage-stats-fixtures';
-import type { UsageStatsProvider, UsageStatsQuery } from '../../../../packages/soul-ui/src/lib/usage-stats-fixture-data';
+import { buildEmptyUsageStatsOverview, buildUsageStatsDayDetail, buildUsageStatsOverview } from '../../../../../../packages/soul-ui/src/lib/usage-stats-fixtures';
+import type { UsageStatsProvider, UsageStatsQuery } from '../../../../../../packages/wire-schema/src/session_statistics';
 
-export type PreviewState = 'ready' | 'loading' | 'empty' | 'error' | 'forbidden' | 'backfilling';
+export type UsageStatsMockState = 'ready' | 'loading' | 'empty' | 'error' | 'forbidden' | 'backfilling';
 
-// Only the standalone mockup installs this transport. The screen uses authFetch.
-export function createUsageStatsMockFetch(state: PreviewState, fallback: typeof fetch): typeof fetch {
+// Tests exercise the real client and endpoint methods through this fetch transport.
+export function createUsageStatsMockFetch(state: UsageStatsMockState, fallback: typeof fetch): typeof fetch {
   let failureInjected = false;
   return async (input, init) => {
     const url = new URL(String(input), 'https://usage-stats.mock');

@@ -30,6 +30,7 @@ export function UsageStackedBars({
   onDragBucket,
   measure,
   testID,
+  emptyMessage = USAGE_STATS_LABELS.emptyRange,
 }: {
   buckets: UsageStackBucket[];
   selectedBucket?: string | null;
@@ -37,6 +38,7 @@ export function UsageStackedBars({
   onDragBucket?: (bucketId: string) => void;
   measure: Measure;
   testID: string;
+  emptyMessage?: string;
 }) {
   const t = useTokens();
   const chartRef = useRef<View>(null);
@@ -53,7 +55,7 @@ export function UsageStackedBars({
   const chartStatus = buckets.length > 0 && buckets.every(bucket => bucket.availability === 'before-coverage')
     ? USAGE_STATS_LABELS.beforeCoverage
     : buckets.length > 0 && buckets.every(bucket => bucket.segments.length === 0)
-      ? USAGE_STATS_LABELS.emptyRange
+      ? emptyMessage
     : buckets.some(bucket => bucket.segments.length > 0) && totals.every(total => total === null)
       ? missingLabel
       : null;

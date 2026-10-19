@@ -1,66 +1,116 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createApiClient } from '../../../api/client';
 import { ApiHttpError } from '../../../api/clientCore';
 import { useSettingsStore } from '../../../store/settingsStore';
-import type { UsageStatsDayDetail, UsageStatsOverview, UsageStatsQuery } from '../../../../../packages/soul-ui/src/lib/usage-stats-fixture-data';
+import type {
+  UsageStatsDayDetail,
+  UsageStatsOverview,
+  UsageStatsQuery,
+} from '../../../../../packages/wire-schema/src/session_statistics';
 
 export type UsageStatsLoadState = 'loading' | 'ready' | 'error' | 'forbidden';
 
-// Match the app's request lifecycle: an obsolete effect cannot publish its result.
 export function useUsageStats(query: UsageStatsQuery, date: string | null) {
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => createApiClient(serverUrl), [serverUrl]);
   const [reload, setReload] = useState(0);
-  const [state, setState] = useState<UsageStatsLoadState>('loading');
-  const [overview, setOverview] = useState<UsageStatsOverview | null>(null);
-  const [detail, setDetail] = useState<UsageStatsDayDetail | null>(null);
-  const [baseOverview, setBaseOverview] = useState<UsageStatsOverview | null>(null);
-  const [allOverview, setAllOverview] = useState<UsageStatsOverview | null>(null);
-  const [modelOverviews, setModelOverviews] = useState<UsageStatsOverview[]>([]);
-  const [optionsState, setOptionsState] = useState<UsageStatsLoadState>('loading');
+  const projectIds = query.project_ids ?? [];
+  const projectIdsKey = JSON.stringify(projectIds);
+  const requestQuery = useMemo<UsageStatsQuery>(() => ({
+    period: query.period,
+    anchor: query.anchor,
+    provider: query.provider,
+    model: query.model,
+    project_ids: projectIds,
+  }), [query.period, query.anchor, query.provider, query.model, projectIdsKey]);
+  const queryKey = JSON.stringify([
+    serverUrl,
+    query.period,
+    query.anchor,
+    query.provider ?? null,
+    query.model ?? null,
+    projectIds,
+  ]);
+  const overviewKey = JSON.stringify([queryKey, reload]);
+  const dateKey = date === null ? null : JSON.stringify([queryKey, date, reload]);
+  const currentOverviewKey = useRef(overviewKey);
+  currentOverviewKey.current = overviewKey;
+  const currentDateKey = useRef(dateKey);
+  currentDateKey.current = dateKey;
+  const [overviewResult, setOverviewResult] = useState<{
+    key: string;
+    state: UsageStatsLoadState;
+    value?: UsageStatsOverview;
+  } | null>(null);
+  const [detailResult, setDetailResult] = useState<{
+    key: string;
+    state: UsageStatsLoadState;
+    value?: UsageStatsDayDetail;
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
-    setOptionsState('loading');
-    const base = { period: query.period, anchor: query.anchor };
-    void Promise.all([
-      api.getSessionStatistics(base),
-      api.getSessionStatistics({ period: 'all', anchor: query.anchor }),
-      ...(['claude', 'codex', 'antigravity', 'deepseek', 'kimi'] as const)
-        .map(provider => api.getSessionStatistics({ ...base, provider })),
-    ]).then(([unfiltered, all, ...models]) => {
-      if (!active) return;
-      setBaseOverview(unfiltered);
-      setAllOverview(all);
-      setModelOverviews(models);
-      setOptionsState('ready');
+    setOverviewResult({ key: overviewKey, state: 'loading' });
+    void api.getSessionStatistics(requestQuery).then(value => {
+      if (!active || currentOverviewKey.current !== overviewKey) return;
+      setOverviewResult({ key: overviewKey, state: 'ready', value });
     }).catch(error => {
-      if (active) setOptionsState(error instanceof ApiHttpError && error.status === 403 ? 'forbidden' : 'error');
+      if (!active || currentOverviewKey.current !== overviewKey) return;
+      setOverviewResult({
+        key: overviewKey,
+        state: error instanceof ApiHttpError && error.status === 403 ? 'forbidden' : 'error',
+      });
     });
     return () => { active = false; };
-  }, [api, query.period, query.anchor, reload]);
+  }, [api, requestQuery, overviewKey]);
+
+  const currentOverview = overviewResult?.key === overviewKey && overviewResult.state === 'ready'
+    ? overviewResult.value ?? null
+    : null;
+  const overviewReady = currentOverview !== null;
+  const rangeSince = currentOverview?.range.since ?? null;
+  const rangeEffectiveUntil = currentOverview?.range.effective_until ?? null;
+  const overviewState = overviewResult?.key === overviewKey ? overviewResult.state : 'loading';
+  const dateInRange = Boolean(
+    date !== null
+    && query.period !== 'all'
+    && rangeSince !== null
+    && rangeEffectiveUntil !== null
+    && rangeSince <= date
+    && date < rangeEffectiveUntil,
+  );
 
   useEffect(() => {
     let active = true;
-    setState('loading');
-    setDetail(null);
-    void Promise.all([
-      api.getSessionStatistics(query),
-      date ? api.getSessionStatisticsDay(date, query) : Promise.resolve(null),
-    ]).then(([nextOverview, nextDetail]) => {
-      if (!active) return;
-      setOverview(nextOverview);
-      setDetail(nextDetail);
-      setState('ready');
+    if (!date || !dateKey || !overviewReady || !dateInRange) return () => { active = false; };
+    setDetailResult({ key: dateKey, state: 'loading' });
+    void api.getSessionStatisticsDay(date, requestQuery).then(value => {
+      if (!active || currentDateKey.current !== dateKey) return;
+      setDetailResult({ key: dateKey, state: 'ready', value });
     }).catch(error => {
-      if (active) setState(error instanceof ApiHttpError && error.status === 403 ? 'forbidden' : 'error');
+      if (!active || currentDateKey.current !== dateKey) return;
+      const forbidden = error instanceof ApiHttpError && error.status === 403;
+      if (forbidden) setOverviewResult({ key: overviewKey, state: 'forbidden' });
+      setDetailResult({
+        key: dateKey,
+        state: forbidden ? 'forbidden' : 'error',
+      });
     });
     return () => { active = false; };
-  }, [api, query, date, reload]);
+  }, [api, requestQuery, overviewKey, queryKey, date, dateKey, dateInRange, overviewReady, rangeSince, rangeEffectiveUntil, reload]);
+
+  const detail = dateKey !== null && detailResult?.key === dateKey && detailResult.state === 'ready'
+    ? detailResult.value ?? null
+    : null;
+  const detailState = date === null ? 'ready' : detailResult?.key === dateKey
+    ? detailResult.state
+    : 'loading';
+  const state = overviewState === 'ready' ? detailState : overviewState;
 
   return {
-    overview, detail, baseOverview, allOverview, modelOverviews,
-    state: optionsState === 'ready' ? state : optionsState,
+    overview: currentOverview,
+    detail,
+    state,
     retry: () => setReload(value => value + 1),
   };
 }

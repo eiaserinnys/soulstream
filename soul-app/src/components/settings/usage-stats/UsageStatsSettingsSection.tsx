@@ -1,24 +1,29 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Text, View } from 'react-native';
 import { BackendNodeCardHeader } from '../BackendNodeCard';
 import { useSettingsWorkspace } from '../SettingsWorkspaceContext';
-import { USAGE_STATS_FIXTURE_ANCHOR, USAGE_STATS_FIXTURE_AS_OF } from '../../../../../packages/soul-ui/src/lib/usage-stats-fixture-data';
 import { GlassButton } from '../../GlassSurface';
 import { SettingsOptionRow } from '../SettingsOptionRow';
 import { SettingsSection } from '../SettingsSection';
 import { SettingsSegmentedControl } from '../SettingsSegmentedControl';
 import { useTokens } from '../../../theme';
 import {
+  buildUsageStatsModelOptions,
+  groupUsageStatsInputMaterial,
+  usageStatsFilterKey,
+  type UsageStatsModelOption,
+} from '../../../../../packages/soul-ui/src/lib/usage-stats-presentation';
+import {
   formatUsageStatsCoverage,
   formatUsageStatsDateWithWeekday,
-  formatUsageStatsInputCategoryLabel,
   formatUsageStatsModelLabel,
   formatUsageStatsPeriodLabel,
   formatUsageStatsProviderLabel,
   formatUsageStatsTokenCount,
   shiftUsageStatsAnchor,
+  usageStatsCalendarRange,
+  usageStatsKstDate,
   usageStatsMonthAnchor,
-  usageStatsRange,
   usageStatsModelColorIndex,
   USAGE_STATS_LABELS,
   formatUsageStatsValue,
@@ -29,22 +34,22 @@ import type {
   UsageStatsPeriod,
   UsageStatsProvider,
   UsageStatsQuery,
-} from '../../../../../packages/soul-ui/src/lib/usage-stats-fixture-data';
+} from '../../../../../packages/wire-schema/src/session_statistics';
 import { UsageShareRow } from './UsageShareRow';
 import { makeUsageStatsBuckets, sumKnown } from './usage-stats-chart-data';
 import { UsageStackedBars } from './UsageStackedBars';
 import { useUsageStats, type UsageStatsLoadState } from './useUsageStats';
 
 type Measure = 'tokens' | 'cost';
-type ModelFilter = { id: string; provider: UsageStatsProvider | null; model: string | null; label: string };
-type PreviewContextValue = {
-  initialPeriod: UsageStatsPeriod;
-  initialAnchor: string;
-  initialDate: string | null;
-  initialMeasure: Measure;
+type ProjectFilter = { id: string; label: string };
+const ALL_MODEL_FILTER: UsageStatsModelOption = {
+  id: usageStatsFilterKey('all', null, null),
+  provider: null,
+  model: null,
+  label: '모든 모델',
 };
-
-const PreviewContext = createContext<PreviewContextValue | null>(null);
+const ALL_PROJECT_FILTER: ProjectFilter = { id: 'all', label: '모든 프로젝트' };
+const UNCLASSIFIED_PROJECT_FILTER: ProjectFilter = { id: '__unclassified__', label: '미분류' };
 
 const NODE_COLORS = {
   light: {
@@ -75,69 +80,70 @@ const MEASURE_OPTIONS: { value: Measure; label: string }[] = [
   { value: 'cost', label: '정가' },
 ];
 
-export function UsageStatsPreviewProvider({
-  children,
-  initialPeriod = 'week',
-  initialAnchor = USAGE_STATS_FIXTURE_ANCHOR,
-  initialDate = null,
-  initialMeasure = 'tokens',
-}: {
-  children: React.ReactNode;
-  initialPeriod?: UsageStatsPeriod;
-  initialAnchor?: string;
-  initialDate?: string | null;
-  initialMeasure?: Measure;
-}) {
-  return <PreviewContext.Provider value={{ initialPeriod, initialAnchor, initialDate, initialMeasure }}>{children}</PreviewContext.Provider>;
-}
-
 export function UsageStatsSettingsSection({ flattened = false }: { flattened?: boolean }) {
   const t = useTokens();
-  const preview = useContext(PreviewContext);
   const workspace = useSettingsWorkspace();
-  const [period, setPeriod] = useState<UsageStatsPeriod>(preview?.initialPeriod ?? 'week');
-  const [anchor, setAnchor] = useState(() => preview?.initialAnchor ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }));
-  const [selectedDate, setSelectedDate] = useState<string | null>(preview?.initialDate ?? null);
-  const [modelFilterId, setModelFilterId] = useState('all');
-  const [projectIds, setProjectIds] = useState<string[]>([]);
-  const [measure, setMeasure] = useState<Measure>(preview?.initialMeasure ?? 'tokens');
+  const [period, setPeriod] = useState<UsageStatsPeriod>('week');
+  const [anchor, setAnchor] = useState(() => usageStatsKstDate(Date.now()));
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [modelFilter, setModelFilter] = useState<UsageStatsModelOption>(ALL_MODEL_FILTER);
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>(ALL_PROJECT_FILTER);
+  const [measure, setMeasure] = useState<Measure>('tokens');
   const [view, setView] = useState<'model' | 'project'>('model');
   const [metricsExpanded, setMetricsExpanded] = useState(false);
   const [basisExpanded, setBasisExpanded] = useState(false);
 
-  const [, provider = null, model = null] = modelFilterId.split(':') as [string, UsageStatsProvider?, string?];
   const query = useMemo<UsageStatsQuery>(() => ({
-    period, anchor, provider, model, project_ids: projectIds,
-  }), [period, anchor, provider, model, projectIds]);
-  const { overview, detail: selectedDetail, baseOverview, allOverview, modelOverviews, state, retry } = useUsageStats(query, selectedDate);
-  const modelOptions: ModelFilter[] = (() => {
-    const options: ModelFilter[] = [{ id: 'all', provider: null, model: null, label: '모든 모델' }];
-    for (const [index, provider] of (['claude', 'codex', 'antigravity', 'deepseek', 'kimi'] as const).entries()) {
-      options.push({ id: `provider:${provider}`, provider, model: null, label: formatUsageStatsProviderLabel(provider) });
-      for (const row of modelOverviews[index]?.by_model ?? []) {
-        if (!row.model) continue;
-        options.push({
-          id: `model:${provider}:${row.model}`,
-          provider,
-          model: row.model,
-          label: formatUsageStatsModelLabel(row.model),
-        });
-      }
-    }
-    return options;
-  })();
-  const range = state === 'ready' && overview ? overview.range : usageStatsRange(period, anchor, USAGE_STATS_FIXTURE_AS_OF, '2026-09-01');
-  const coveredSince = allOverview?.projection_status.covered_since ?? '2026-09-01';
-  const beforeCoverage = range.effective_until <= coveredSince;
-  const selectedModel = { provider, model };
-  const emptyData = overview?.series.length === 0 && overview.totals.metrics.total_tokens === 0;
-  const activeDate = emptyData ? null : selectedDate;
-  const activeAggregate = selectedDetail?.totals ?? overview?.totals ?? null;
+    period,
+    anchor,
+    provider: modelFilter.provider,
+    model: modelFilter.model,
+    project_ids: projectFilter.id === 'all' ? [] : [projectFilter.id],
+  }), [period, anchor, modelFilter.provider, modelFilter.model, projectFilter.id]);
+  const { overview, detail: selectedDetail, state, retry } = useUsageStats(query, selectedDate);
+  const provider = modelFilter.provider;
+  const modelOptions = overview
+    ? buildUsageStatsModelOptions(overview.options).map(option => option.provider === null && option.model === null
+      ? { ...option, label: ALL_MODEL_FILTER.label }
+      : option)
+    : [ALL_MODEL_FILTER];
+  if (!modelOptions.some(option => option.id === modelFilter.id)) modelOptions.push(modelFilter);
+  const projectOptions = [
+    ALL_PROJECT_FILTER,
+    ...(overview?.options.projects ?? []).map(project => ({ id: project.project_id, label: project.label })),
+    UNCLASSIFIED_PROJECT_FILTER,
+  ];
+  if (projectFilter.id !== 'all' && !projectOptions.some(option => option.id === projectFilter.id)) {
+    projectOptions.push(projectFilter);
+  }
+  const range = overview?.range ?? null;
+  const coveredSince = overview?.projection_status.covered_since ?? '';
+  const hasPositiveKnown = Boolean(overview && (
+    (typeof overview.totals.metrics.total_tokens === 'number' && overview.totals.metrics.total_tokens > 0)
+      || (typeof overview.totals.metrics.reference_cost_usd === 'number' && overview.totals.metrics.reference_cost_usd > 0)
+      || overview.series.some(point =>
+    (typeof point.metrics.total_tokens === 'number' && point.metrics.total_tokens > 0)
+      || (typeof point.metrics.reference_cost_usd === 'number' && point.metrics.reference_cost_usd > 0),
+      )
+  ));
+  const beforeCoverage = Boolean(range && range.effective_until <= coveredSince && !hasPositiveKnown);
+  const emptyData = Boolean(overview && overview.series.length === 0 && overview.totals.metrics.total_tokens === 0);
+  const activeDate = selectedDate;
+  const activeAggregate = selectedDate
+    ? selectedDetail?.totals ?? null
+    : overview?.totals ?? null;
   const tokenValue = activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'tokens') : '미기록';
   const costValue = activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'cost') : '미확인';
   const coverageLabel = activeAggregate ? formatUsageStatsCoverage(activeAggregate.coverage.priced_total_tokens, activeAggregate.metrics.total_tokens) : '';
   const modelPoints = overview?.series.filter(point => point.provider !== undefined && point.project_id === undefined) ?? [];
   const projectPoints = overview?.series.filter(point => point.project_id !== undefined) ?? [];
+  const completeEmptyRange = Boolean(overview
+    && overview.totals.metrics.total_tokens === 0
+    && overview.totals.metrics.reference_cost_usd === 0
+    && !overview.totals.is_partial);
+  const chartEmptyMessage = completeEmptyRange
+    ? USAGE_STATS_LABELS.emptyRange
+    : measure === 'tokens' ? USAGE_STATS_LABELS.missingUsage : USAGE_STATS_LABELS.unknownPrice;
   const nodeColors = t.mode === 'dark' ? NODE_COLORS.dark : NODE_COLORS.light;
   const seriesColors: Record<UsageStatsProvider, string> = {
     claude: nodeColors.intervention,
@@ -145,42 +151,43 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
     antigravity: nodeColors.user,
     deepseek: nodeColors.thinking,
     kimi: nodeColors.plan,
+    unknown: t.colors.textTertiary,
   };
   const projectPalette = [nodeColors.user, nodeColors.response, nodeColors.tool, nodeColors.thinking, nodeColors.plan];
   const projectColorById = (() => {
     const result: Record<string, string> = {};
-    let rank = 0;
-    for (const row of baseOverview?.by_project ?? []) {
-      if (!row.project_id || row.project_id === '__other__') continue;
-      if (rank < projectPalette.length) result[row.project_id] = projectPalette[rank];
-      rank += 1;
+    const roster = overview?.options.project_roster ?? [];
+    for (const project of overview?.options.projects ?? []) {
+      const index = roster.indexOf(project.project_id);
+      result[project.project_id] = index >= 0 ? projectPalette[index] ?? t.colors.textTertiary : t.colors.textTertiary;
     }
     return result;
   })();
-  const modelRoster = modelOverviews.find(data => data.by_model[0]?.provider === provider)?.by_model.map(row => row.model) ?? [];
+  const modelRoster = overview?.options.model_rosters.find(roster => roster.provider === provider)?.models ?? [];
   const modelColorById: Record<string, string> = {};
   for (const model of modelRoster) {
-    if (model) modelColorById[model] = projectPalette[usageStatsModelColorIndex(model, modelRoster)] ?? t.colors.textTertiary;
+    if (model === null || provider === 'unknown') continue;
+    const colorIndex = usageStatsModelColorIndex(model, modelRoster);
+    if (colorIndex >= 0) modelColorById[model] = projectPalette[colorIndex] ?? t.colors.textTertiary;
   }
-  const modelBuckets = makeUsageStatsBuckets(modelPoints, period, range, measure, 'model', seriesColors, projectColorById, t.colors.textTertiary, coveredSince, emptyData, provider ? modelColorById : undefined);
-  const projectBuckets = makeUsageStatsBuckets(projectPoints, period, range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, coveredSince, emptyData);
-  const projectOptions = [
-    { id: 'all', label: '모든 프로젝트' },
-    ...(baseOverview?.by_project ?? [])
-      .filter(row => row.project_id !== '__other__')
-      .map(row => ({ id: row.project_id ?? '__unclassified__', label: row.label })),
-  ];
-  const selectedProject = projectIds[0] ?? 'all';
+  const modelBuckets = overview && range
+    ? makeUsageStatsBuckets(modelPoints, period, range, measure, 'model', seriesColors, projectColorById, t.colors.textTertiary, coveredSince, provider ? modelColorById : undefined)
+    : [];
+  const projectBuckets = overview && range
+    ? makeUsageStatsBuckets(projectPoints, period, range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, coveredSince)
+    : [];
   const modelRows = selectedDetail?.by_model ?? overview?.by_model ?? [];
   const projectRows = selectedDetail?.by_project ?? overview?.by_project ?? [];
   const inputMaterial = selectedDetail?.input_material ?? null;
+  const inputRows = inputMaterial ? groupUsageStatsInputMaterial(inputMaterial) : [];
   const denominator = sumKnown(modelRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
   const projectDenominator = sumKnown(projectRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
   const loading = state === 'loading';
-  const unavailable = state !== 'ready' || !overview || !baseOverview || !allOverview;
-  const previousDisabled = period === 'all' || !allOverview || range.since <= coveredSince;
-  const nextDisabled = period === 'all' || !allOverview || range.until >= allOverview.as_of.slice(0, 10);
-  const periodLabel = formatUsageStatsPeriodLabel(period, range.since, range.until);
+  const unavailable = state !== 'ready' || !overview || (selectedDate !== null && !selectedDetail);
+  const previousDisabled = period === 'all' || !range || range.since <= coveredSince;
+  const nextDisabled = period === 'all' || !range || range.until > (overview ? usageStatsKstDate(overview.as_of) : '');
+  const labelRange = range ?? (period === 'all' ? null : usageStatsCalendarRange(period, anchor));
+  const periodLabel = period === 'all' ? '전체' : formatUsageStatsPeriodLabel(period, labelRange!.since, labelRange!.until);
 
   function changePeriod(nextPeriod: UsageStatsPeriod) {
     setPeriod(nextPeriod);
@@ -205,6 +212,20 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
     setSelectedDate(null);
   }
 
+  function selectModelFilter(id: string) {
+    const selected = modelOptions.find(option => option.id === id);
+    if (!selected) return;
+    setModelFilter(selected);
+    setSelectedDate(null);
+  }
+
+  function selectProjectFilter(id: string) {
+    const selected = projectOptions.find(option => option.id === id);
+    if (!selected) return;
+    setProjectFilter(selected);
+    setSelectedDate(null);
+  }
+
   return (
     <View testID="usage-stats-screen" style={{ gap: t.spacing.lg }}>
       <View testID="usage-stats-controls" style={{ gap: t.spacing.md }}>
@@ -217,17 +238,17 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
         <SettingsOptionRow
           pickerMode="picker"
           label="모델"
-          selected={modelFilterId}
+          selected={modelFilter.id}
           options={modelOptions.map(option => ({ id: option.id, label: option.label }))}
-          onSelect={id => { setModelFilterId(id); setSelectedDate(null); }}
+          onSelect={selectModelFilter}
           emptyLabel="모델 없음"
         />
         <SettingsOptionRow
           pickerMode="picker"
           label="프로젝트"
-          selected={selectedProject}
+          selected={projectFilter.id}
           options={projectOptions}
-          onSelect={id => { setProjectIds(id === 'all' ? [] : [id]); setSelectedDate(null); }}
+          onSelect={selectProjectFilter}
           emptyLabel="프로젝트 없음"
         />
       </View>
@@ -274,22 +295,31 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                 onSelectBucket={bucketId => changeBucket(bucketId, false)}
                 onDragBucket={period === 'all' ? undefined : bucketId => changeBucket(bucketId, true)}
                 measure={measure}
+                emptyMessage={chartEmptyMessage}
               />
               <View style={{ gap: t.spacing.md }}>
                 {!emptyData && !beforeCoverage ? view === 'model' ? modelRows.map(row => {
                   const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
                   const share = typeof value === 'number' && denominator > 0 ? value / denominator : value === 0 ? 0 : null;
-                  const label = row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider);
-                  const id = row.model ? `usage-stats-model-row-${row.provider}-${row.model}` : `usage-stats-model-row-${row.provider}-provider`;
+                  const label = row.attribution === 'provider'
+                    ? formatUsageStatsProviderLabel(row.provider)
+                    : formatUsageStatsModelLabel(row.model);
+                  const id = row.model !== null ? `usage-stats-model-row-${row.provider}-${row.model}` : `usage-stats-model-row-${row.provider}-provider`;
                   return <UsageShareRow
-                    key={`${row.provider}:${row.model ?? 'provider'}`}
+                    key={JSON.stringify([row.provider, row.model])}
                     testID={id}
                     label={label}
                     value={formatUsageStatsValue(row.metrics, row.coverage, measure, true)}
                     share={share}
-                    color={provider ? (row.model ? modelColorById[row.model] : undefined) ?? t.colors.textTertiary : seriesColors[row.provider]}
-                    onPress={!selectedModel.provider && !row.model ? () => {
-                      setModelFilterId(`provider:${row.provider}`);
+                    color={provider !== null ? (provider !== 'unknown' && row.model !== null ? modelColorById[row.model] : undefined) ?? t.colors.textTertiary : seriesColors[row.provider]}
+                    onPress={modelFilter.provider === null && row.model === null ? () => {
+                      const selected = modelOptions.find(option => option.provider === row.provider && option.model === null);
+                      setModelFilter(selected ?? {
+                        id: usageStatsFilterKey('provider', row.provider, null),
+                        provider: row.provider,
+                        model: null,
+                        label: formatUsageStatsProviderLabel(row.provider),
+                      });
                       setSelectedDate(null);
                     } : undefined}
                   />;
@@ -305,7 +335,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                     share={share}
                     color={projectColorById[id] ?? t.colors.textTertiary}
                     onPress={row.project_id === '__other__' ? undefined : () => {
-                      setProjectIds([id]);
+                      setProjectFilter(projectOptions.find(option => option.id === id) ?? { id, label: row.label });
                       setSelectedDate(null);
                     }}
                   />;
@@ -320,11 +350,10 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
             {workspace ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>입력 자료 구성</Text> : null}
             {inputMaterial ? <>
               <Text testID="usage-stats-observed-tokens" style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{formatUsageStatsApproximateTokens(inputMaterial.observed_approximate_tokens, true)}</Text>
-              {inputMaterial.parts.map((part, index) => {
-                const isHarness = part.category === 'harness_internal';
-                const label = formatUsageStatsInputCategoryLabel(part.category);
-                const value = isHarness ? '관측 안 됨' : formatUsageStatsApproximateTokens(part.approximate_tokens);
-                return <UsageShareRow key={`${part.category}:${part.source_key ?? index}`} testID={isHarness ? 'usage-stats-input-harness-row' : undefined} valueTestID={isHarness ? 'usage-stats-input-harness' : undefined} label={label} value={value} share={isHarness ? null : part.share} color={t.colors.accent} />;
+              {inputRows.map(row => {
+                const isHarness = row.category === 'harness_internal';
+                const value = isHarness ? '관측 안 됨' : formatUsageStatsApproximateTokens(row.approximate_tokens, false, row.partial);
+                return <UsageShareRow key={row.category} testID={isHarness ? 'usage-stats-input-harness-row' : undefined} valueTestID={isHarness ? 'usage-stats-input-harness' : undefined} label={row.label} value={value} share={isHarness ? null : row.share} color={t.colors.accent} />;
               })}
               <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>툴 호출 {selectedDetail?.tool_calls ?? 0}회</Text>
               {inputMaterial.coverage.missing_samples > 0 || inputMaterial.coverage.partial_samples > 0 ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{USAGE_STATS_LABELS.missingInput}</Text> : null}

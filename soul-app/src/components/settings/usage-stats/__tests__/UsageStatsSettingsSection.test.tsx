@@ -1,5 +1,5 @@
 import React from 'react';
-import { createUsageStatsMockFetch, type PreviewState } from '../../../../mockups/usage-stats-485/mock-api';
+import { createUsageStatsMockFetch, type UsageStatsMockState } from './usage-stats-mock-api';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import {
   buildUsageStatsDayDetail,
@@ -11,19 +11,20 @@ import {
   formatUsageStatsUsd,
   isUsageStatsTokenPartial,
 } from '../../../../../../packages/soul-ui/src/lib/usage-stats-format';
-import {
-  UsageStatsPreviewProvider as InitialOptionsProvider,
-  UsageStatsSettingsSection,
-} from '../UsageStatsSettingsSection';
+import { UsageStatsSettingsSection } from '../UsageStatsSettingsSection';
 import { UsageShareRow } from '../UsageShareRow';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 const originalFetch = global.fetch;
-beforeEach(() => { global.fetch = jest.fn(createUsageStatsMockFetch('ready', originalFetch)); });
+beforeEach(() => {
+  jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T03:00:00.000Z'));
+  jest.spyOn(Date.prototype, 'toLocaleDateString').mockReturnValue(USAGE_STATS_FIXTURE_ANCHOR);
+  global.fetch = jest.fn(createUsageStatsMockFetch('ready', originalFetch));
+});
 afterEach(() => { jest.restoreAllMocks(); global.fetch = originalFetch; });
 
 test.each(['loading', 'error', 'forbidden'] as const)('%s 응답 상태에서도 기간과 두 필터를 유지한다', async state => {
-  const screen = render(<UsageStatsPreviewProvider initialState={state}><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  const screen = render(<UsageStatsTestHarness initialState={state}><UsageStatsSettingsSection /></UsageStatsTestHarness>);
   if (state === 'error') await waitFor(() => expect(screen.getByText('다시 불러오기')).toBeTruthy());
   if (state === 'forbidden') await waitFor(() => expect(screen.getByText('이 통계를 볼 권한이 없습니다.')).toBeTruthy());
   expect(screen.getByTestId('usage-stats-controls')).toBeTruthy();
@@ -37,12 +38,16 @@ test('unknown share는 track을 숨기고 실측0 share는 track을 유지한다
   screen.rerender(<UsageShareRow testID="share" label="Codex" value="0" color="blue" share={0} />);
   expect(screen.getByTestId('share-track', { includeHiddenElements: true })).toBeTruthy();
 });
-function UsageStatsPreviewProvider({ initialState, children }: { initialState?: PreviewState; children: React.ReactNode }) {
-  if (initialState) global.fetch = jest.fn(createUsageStatsMockFetch(initialState, originalFetch));
-  return <InitialOptionsProvider>{children}</InitialOptionsProvider>;
+function UsageStatsTestHarness({ initialState = 'ready', children }: { initialState?: UsageStatsMockState; children: React.ReactNode }) {
+  global.fetch = jest.fn(createUsageStatsMockFetch(initialState, originalFetch));
+  return <>{children}</>;
 }
 async function ready(screen: ReturnType<typeof render>) {
   await waitFor(() => expect(screen.getByTestId('usage-stats-total-tokens')).toBeTruthy());
+}
+
+function requestUrl(input: unknown): URL {
+  return new URL(String(input), 'https://usage-stats.mock');
 }
 
 async function chooseView(screen: ReturnType<typeof render>, name: '모델별' | '프로젝트별') {
@@ -50,8 +55,42 @@ async function chooseView(screen: ReturnType<typeof render>, name: '모델별' |
   fireEvent.press(screen.getByLabelText(name));
 }
 
+test('첫 진입은 overview 하나를 받고 날짜 선택만 day 요청을 추가한다', async () => {
+  (Date.prototype.toLocaleDateString as jest.Mock).mockReturnValue('2026-10-20');
+  const request = jest.spyOn(global, 'fetch');
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+  expect(request).toHaveBeenCalledTimes(1);
+  const initialUrl = requestUrl(request.mock.calls[0][0]);
+  expect(initialUrl.pathname).toBe('/api/session-statistics');
+  expect(initialUrl.searchParams.get('anchor')).toBe('2026-10-18');
+
+  fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+  expect(requestUrl(request.mock.calls[1][0]).pathname).toBe('/api/session-statistics/days/2026-10-16');
+  await ready(screen);
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-cost'));
+  await chooseView(screen, '프로젝트별');
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+test('KST 오늘에 시작하는 다음 주는 이전 주에서 이동할 수 있다', async () => {
+  (Date.now as jest.Mock).mockReturnValue(Date.parse('2026-10-19T00:00:00.000Z'));
+  (Date.prototype.toLocaleDateString as jest.Mock).mockReturnValue('2026-10-19');
+  const request = jest.spyOn(global, 'fetch');
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  fireEvent.press(screen.getByLabelText('이전 기간'));
+  await ready(screen);
+  expect(screen.getByLabelText('다음 기간').props.accessibilityState?.disabled).toBe(false);
+  fireEvent.press(screen.getByLabelText('다음 기간'));
+  await ready(screen);
+  expect(requestUrl(request.mock.calls.at(-1)?.[0]).searchParams.get('anchor')).toBe('2026-10-19');
+});
+
 test('비교 보기 전환은 금요일·정가·요약·입력을 유지하고 추가 조회 없이 그래프와 행만 바꾼다', async () => {
-  const screen = render(<UsageStatsPreviewProvider><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
   await ready(screen);
   fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
   await ready(screen);
@@ -84,9 +123,9 @@ test('선택한 금요일의 요약과 입력 구성은 같은 날짜 상세로 
   const projectRoster = overview.by_project.flatMap(row => row.project_id && row.project_id !== '__other__' ? [row.project_id] : []);
   const detail = buildUsageStatsDayDetail('2026-10-16', emptyFilter, projectRoster);
   const screen = render(
-    <UsageStatsPreviewProvider>
+    <UsageStatsTestHarness>
       <UsageStatsSettingsSection />
-    </UsageStatsPreviewProvider>,
+    </UsageStatsTestHarness>,
   );
   await ready(screen);
 
@@ -115,9 +154,9 @@ test('선택한 금요일의 요약과 입력 구성은 같은 날짜 상세로 
 
 test('월 정가 모드는 미확인 Kimi 가격을 표시하고 전체 월 막대는 월간 보기로 연다', async () => {
   const screen = render(
-    <UsageStatsPreviewProvider>
+    <UsageStatsTestHarness>
       <UsageStatsSettingsSection />
-    </UsageStatsPreviewProvider>,
+    </UsageStatsTestHarness>,
   );
   await ready(screen);
 
@@ -143,9 +182,9 @@ test('월 정가 모드는 미확인 Kimi 가격을 표시하고 전체 월 막�
 
 test('기록 없음은 0 요약과 빈 차트를 보이고 프로젝트와 입력 상자는 숨긴다', async () => {
   const screen = render(
-    <UsageStatsPreviewProvider initialState="empty">
+    <UsageStatsTestHarness initialState="empty">
       <UsageStatsSettingsSection />
-    </UsageStatsPreviewProvider>,
+    </UsageStatsTestHarness>,
   );
   await ready(screen);
 
@@ -158,9 +197,9 @@ test('기록 없음은 0 요약과 빈 차트를 보이고 프로젝트와 입�
 
 test('모델 필터는 해제할 수 있고 실패 상태의 재시도는 데이터를 다시 표시한다', async () => {
   const screen = render(
-    <UsageStatsPreviewProvider initialState="error">
+    <UsageStatsTestHarness initialState="error">
       <UsageStatsSettingsSection />
-    </UsageStatsPreviewProvider>,
+    </UsageStatsTestHarness>,
   );
   await waitFor(() => expect(screen.getByText('다시 불러오기')).toBeTruthy());
 
@@ -186,9 +225,9 @@ test('프로젝트 행은 단일 프로젝트 필터를 적용하고 날짜 선�
   const project = overview.by_project.find(row => row.project_id !== null && row.project_id !== '__other__');
   if (!project?.project_id) throw new Error('fixture에 이름 있는 프로젝트가 없습니다.');
   const screen = render(
-    <UsageStatsPreviewProvider>
+    <UsageStatsTestHarness>
       <UsageStatsSettingsSection />
-    </UsageStatsPreviewProvider>,
+    </UsageStatsTestHarness>,
   );
   await ready(screen);
 
@@ -204,8 +243,38 @@ test('프로젝트 행은 단일 프로젝트 필터를 적용하고 날짜 선�
   expect(screen.queryByTestId('usage-stats-project-row-__other__')).toBeNull();
 });
 
+test('프로젝트 선택 목록에 미분류가 있고 선택하면 날짜를 풀고 sentinel query를 보낸다', async () => {
+  const request = jest.spyOn(global, 'fetch');
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+  fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
+  await ready(screen);
+
+  fireEvent.press(screen.getByLabelText('프로젝트: 모든 프로젝트'));
+  fireEvent.press(screen.getByLabelText('미분류'));
+  await ready(screen);
+
+  expect(screen.queryByLabelText('10월 16일 (금) 선택 해제')).toBeNull();
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(requestUrl(request.mock.calls[2][0]).searchParams.get('project_ids')).toBe('__unclassified__');
+});
+
+test('모델 attribution의 null 행은 모델 미상으로 표시한다', async () => {
+  const overview = buildUsageStatsOverview(weekQuery);
+  const first = overview.by_model[0];
+  overview.by_model = [{ ...first, model: null, attribution: 'model' }];
+  global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  expect(screen.getByText('모델 미상')).toBeTruthy();
+});
+
 test('웹 대시보드 프로젝트의 미기록 턴은 요약과 행의 정가 부분합에 반영한다', async () => {
-  const screen = render(<UsageStatsPreviewProvider><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
   await ready(screen);
   await chooseView(screen, '프로젝트별');
   fireEvent.press(screen.getByTestId('usage-stats-project-row-project-web-dashboard'));
@@ -217,7 +286,7 @@ test('웹 대시보드 프로젝트의 미기록 턴은 요약과 행의 정가 
 
 test('화면 진입은 실제 API 요청을 보낸다', async () => {
   const request = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('offline'));
-  const screen = render(<UsageStatsPreviewProvider><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  const screen = render(<UsageStatsSettingsSection />);
   await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining('/api/session-statistics?'), expect.anything()));
   await waitFor(() => expect(screen.getByText('다시 불러오기')).toBeTruthy());
   request.mockRestore();
@@ -226,7 +295,7 @@ test('화면 진입은 실제 API 요청을 보낸다', async () => {
 test('재시도도 실패 응답이면 오류를 유지하고 403은 권한 상태로 표시한다', async () => {
   const request = jest.fn(async () => new Response('{}', { status: 503, headers: { 'Content-Type': 'application/json' } }));
   global.fetch = request;
-  const screen = render(<UsageStatsPreviewProvider><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  const screen = render(<UsageStatsSettingsSection />);
   await waitFor(() => expect(screen.getByText('다시 불러오기')).toBeTruthy());
   const before = request.mock.calls.length;
   fireEvent.press(screen.getByText('다시 불러오기'));
@@ -238,13 +307,50 @@ test('재시도도 실패 응답이면 오류를 유지하고 403은 권한 상�
   await waitFor(() => expect(screen.getByText('이 통계를 볼 권한이 없습니다.')).toBeTruthy());
 });
 
+test('날짜 조회 실패는 같은 query와 날짜를 재시도하고 두 요청만 다시 보낸다', async () => {
+  const mockFetch = createUsageStatsMockFetch('ready', originalFetch);
+  let dayCalls = 0;
+  const request = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/days/')) {
+      dayCalls += 1;
+      if (dayCalls === 1) return Promise.resolve(new Response('{}', { status: 503 }));
+    }
+    return mockFetch(input, init);
+  });
+  global.fetch = request;
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+  fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
+  await waitFor(() => expect(screen.getByText('다시 불러오기')).toBeTruthy());
+  expect(request).toHaveBeenCalledTimes(2);
+
+  fireEvent.press(screen.getByText('다시 불러오기'));
+  await ready(screen);
+  expect(request).toHaveBeenCalledTimes(4);
+  expect(requestUrl(request.mock.calls[2][0]).pathname).toBe('/api/session-statistics');
+  expect(requestUrl(request.mock.calls[3][0]).pathname).toBe('/api/session-statistics/days/2026-10-16');
+});
+
+test('날짜 조회 403은 현재 query 데이터도 지우고 권한 상태를 보인다', async () => {
+  const mockFetch = createUsageStatsMockFetch('ready', originalFetch);
+  global.fetch = jest.fn((input, init) => String(input).includes('/days/')
+    ? Promise.resolve(new Response('{}', { status: 403 }))
+    : mockFetch(input, init));
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+  fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
+  await waitFor(() => expect(screen.getByText('이 통계를 볼 권한이 없습니다.')).toBeTruthy());
+  expect(screen.queryByTestId('usage-stats-total-tokens')).toBeNull();
+  expect(screen.queryByLabelText('10월 16일 (금) 선택 해제')).toBeNull();
+});
+
 test('늦은 이전 날짜 응답은 현재 기간을 덮지 않는다', async () => {
   const mockFetch = createUsageStatsMockFetch('ready', originalFetch);
   let finishFriday!: (value: Response) => void;
   global.fetch = jest.fn((input, init) => String(input).includes('/days/2026-10-16')
     ? new Promise<Response>(resolve => { finishFriday = resolve; })
     : mockFetch(input, init));
-  const screen = render(<UsageStatsPreviewProvider><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  const screen = render(<UsageStatsSettingsSection />);
   await ready(screen);
   fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
   await waitFor(() => expect(finishFriday).toBeDefined());

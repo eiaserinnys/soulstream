@@ -1,5 +1,5 @@
 import type { UsageSummarySnapshot } from '../../../packages/soul-ui/src/lib/usage-summary';
-import type { UsageStatsQuery, UsageStatsOverview, UsageStatsDayDetail } from '../../../packages/soul-ui/src/lib/usage-stats-fixture-data';
+import type { UsageStatsQuery, UsageStatsOverview, UsageStatsDayDetail } from '../../../packages/wire-schema/src/session_statistics';
 
 import type { ApiRequestContext } from './clientCore';
 
@@ -9,7 +9,7 @@ export function createUsageEndpoints({ base, authFetch, readJson }: ApiRequestCo
     anchor: query.anchor,
     timezone: 'Asia/Seoul',
     ...(query.provider ? { provider: query.provider } : {}),
-    ...(query.model ? { model: query.model } : {}),
+    ...(query.model !== undefined && query.model !== null ? { model: query.model } : {}),
     ...(query.project_ids?.length ? { project_ids: query.project_ids.join(',') } : {}),
   }).toString();
   return {
