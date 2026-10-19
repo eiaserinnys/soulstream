@@ -296,13 +296,13 @@
   min-width: 0;
   gap: var(--v3-space-2);
   padding: var(--v3-space-2);
+  margin-inline: calc(-1 * var(--v3-space-2));
   color: inherit;
   font: inherit;
   text-align: left;
 }
 
 .config-dialog .usage-stats-share-row-clickable {
-  width: 100%;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
