@@ -37,8 +37,35 @@ describe("production orchestrator entrypoint", () => {
       checksum: "test-schema-checksum",
       ordinal: 88,
     };
+    const unexpectedSqlStatements: string[] = [];
     const schemaQuery = vi.fn(async (strings: TemplateStringsArray) => {
-      expect(strings.join(" ")).toContain("FROM schema_migrations");
+      const statement = strings.join(" ");
+      if (statement.includes("FROM schema_migrations")) return [databaseSchema];
+      if (statement.includes("FROM users")) {
+        return [{
+          email: "dashboard@example.com",
+          is_admin: true,
+          allowed_folder_ids: [],
+          created_at: new Date("2026-07-10T00:00:00.000Z"),
+        }];
+      }
+      if (statement.includes("FROM system_settings")) {
+        return [{
+          value: {
+            state: "ready",
+            normalization_version: 1,
+            covered_since: "2026-10-01T00:00:00.000+09:00",
+          },
+          version: 1,
+        }];
+      }
+      if (
+        statement.includes("folder_get_all()") ||
+        statement.includes("FROM sessions") ||
+        statement.includes("SET TRANSACTION")
+      ) return [];
+      unexpectedSqlStatements.push(statement);
+      expect(statement).toContain("FROM schema_migrations");
       return [databaseSchema];
     });
     const sql = Object.assign(schemaQuery, {
@@ -74,6 +101,37 @@ describe("production orchestrator entrypoint", () => {
     // attachment registration adapters share this resolver.
     expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(5);
     expect(schemaQuery).toHaveBeenCalledOnce();
+    expect(application.app.hasRoute({
+      method: "GET",
+      url: "/api/session-statistics",
+    })).toBe(true);
+    expect(application.app.hasRoute({
+      method: "GET",
+      url: "/api/session-statistics/days/:date",
+    })).toBe(true);
+    const databaseCallsBeforeStatisticsAuth = vi.mocked(sqlResolver.resolveSql).mock.calls.length;
+    for (const url of [
+      "/api/session-statistics",
+      "/api/session-statistics/days/2026-10-19",
+    ]) {
+      const unauthenticated = await application.app.inject({ method: "GET", url });
+      expect(unauthenticated.statusCode, url).toBe(401);
+    }
+    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(databaseCallsBeforeStatisticsAuth);
+
+    const statisticsOverview = await application.app.inject({
+      method: "GET",
+      url: "/api/session-statistics?period=week&anchor=2000-01-01",
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${jwtToken}` },
+    });
+    expect(unexpectedSqlStatements).toEqual([]);
+    expect(statisticsOverview.statusCode).toBe(200);
+    const statisticsDay = await application.app.inject({
+      method: "GET",
+      url: "/api/session-statistics/days/2000-01-01?period=week&anchor=2000-01-01",
+      headers: { authorization: "Bearer production-service-token" },
+    });
+    expect(statisticsDay.statusCode).toBe(200);
 
     const systemPortrait = await application.app.inject({
       method: "GET",

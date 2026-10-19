@@ -89,6 +89,9 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "system.config", path: "systemConfigRoutes.provider" },
   { owner: "ui.events", path: "uiEventRoutes.repository" },
   { owner: "ui.events", path: "uiEventRoutes.resolveIdentity" },
+  { owner: "usage.statistics", path: "sessionStatisticsRoutes.accessProvider" },
+  { owner: "usage.statistics", path: "sessionStatisticsRoutes.folderProvider" },
+  { owner: "usage.statistics", path: "sessionStatisticsRoutes.service" },
   { owner: "usage.summary", path: "usageSummaryRoutes.service" },
   { owner: "user.background", path: "userBackgroundRoutes.repository" },
   {
