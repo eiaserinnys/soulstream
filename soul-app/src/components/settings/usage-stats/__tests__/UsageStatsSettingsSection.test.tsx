@@ -41,10 +41,13 @@ test('선택한 금요일의 요약과 입력 구성은 같은 날짜 상세로 
     .toBe(detail.input_material.observed_chars === null
       ? '미기록'
       : `${detail.input_material.observed_chars.toLocaleString('ko-KR')}자`);
-  expect(screen.getByTestId('usage-stats-missing-turns').props.children)
-    .toBe(detail.totals.coverage.missing_usage_turns
-      ? `미기록 턴 ${detail.totals.coverage.missing_usage_turns}`
-      : null);
+  if (detail.totals.coverage.missing_usage_turns > 0) {
+    expect(screen.getByText(
+      `미기록 턴 ${detail.totals.coverage.missing_usage_turns}`,
+    )).toBeTruthy();
+  } else {
+    expect(screen.queryByTestId('usage-stats-missing-turns')).toBeNull();
+  }
   expect(screen.getByTestId('usage-stats-input-harness').props.children).toBe('관측 안 됨');
 });
 
