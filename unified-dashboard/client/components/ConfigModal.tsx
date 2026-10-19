@@ -48,6 +48,7 @@ import { SessionReviewPolicyTab } from "./SessionReviewPolicyTab";
 import { UsageLogTab } from "./UsageLogTab";
 import { RecurringJobsTab } from "./RecurringJobsTab";
 import { PersistentSessionsTab } from "./PersistentSessionsTab";
+import { UsageStatsTab } from "./usage-stats/UsageStatsTab";
 
 const LIQUID_GLASS_TAB_NAME = "liquid_glass";
 const CHAT_TAB_NAME = "chat";
@@ -57,6 +58,7 @@ const AGENTS_TAB_NAME = "agents";
 const OWNED_AGENTS_TAB_NAME = "owned_agents";
 const SESSION_REVIEW_TAB_NAME = "session_review";
 const USAGE_LOG_TAB_NAME = "usage_log";
+const USAGE_STATS_TAB_NAME = "usage_stats";
 const RECURRING_JOBS_TAB_NAME = "recurring_jobs";
 const PERSISTENT_TAB_NAME = "persistent";
 
@@ -115,6 +117,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
       { name: RECURRING_JOBS_TAB_NAME, label: "반복 작업" },
       { name: PERSISTENT_TAB_NAME, label: "영구 에이전트 세션" },
       { name: USAGE_LOG_TAB_NAME, label: "사용 로그" },
+      { name: USAGE_STATS_TAB_NAME, label: "세션 통계" },
       ...((api || user?.isAdmin) ? [
         { name: SESSION_REVIEW_TAB_NAME, label: "요청 검수" },
         { name: "file_storage", label: "파일 저장소" },
@@ -153,6 +156,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     selectedTab === AGENTS_TAB_NAME ||
     selectedTab === OWNED_AGENTS_TAB_NAME ||
     selectedTab === USERS_TAB_NAME;
+  const isUsageStatsTab = selectedTab === USAGE_STATS_TAB_NAME;
+  const isNonConfigTabWithUsageStats = isNonConfigTab || isUsageStatsTab;
   const hasTabs = categories.length > 0 || extraTabs.length > 0;
 
   const activeLabel = selectedTab === "appearance" ? "화면과 읽기" : [...categories, ...extraTabs].find(tab => tab.name === selectedTab)?.label ?? "설정";
@@ -163,6 +168,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
     recurring_jobs: "반복할 작업과 다음 실행 시점을 관리합니다.", persistent: "Persistent Agent Session의 이름과 기본 모델을 관리합니다.", card_dispatch: "카드의 실행 방식과 동시 실행 수를 조정합니다.",
     users: "서버를 사용할 사람과 접근 범위를 관리합니다.", session_review: "실행 전 검수가 필요한 요청을 정합니다.",
     file_storage: "첨부 파일을 보관할 저장소를 연결합니다.", usage_log: "사용 기록을 확인하고 필요한 범위로 좁힙니다.",
+    usage_stats: "기간별 토큰과 정가 환산을 봅니다.",
   };
   const close = () => { if (saving || saveInFlight.current) return; if (hasChanges) setDiscardPrompt(true); else onOpenChange(false); };
   return (
@@ -224,6 +230,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
                 <PersistentSessionsTab request={api?.request} assignment={api?.assignment} />
               ) : selectedTab === USAGE_LOG_TAB_NAME ? (
                 <UsageLogTab request={api?.request} />
+              ) : selectedTab === USAGE_STATS_TAB_NAME ? (
+                <UsageStatsTab request={api?.request} />
               ) : selectedTab === SESSION_REVIEW_TAB_NAME ? (
                 <SessionReviewPolicyTab request={api?.request} />
               ) : selectedTab === "file_storage" && (api || user?.isAdmin) ? (
@@ -260,9 +268,9 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
             <Button variant="outline" onClick={() => setDiscardPrompt(false)}>계속 편집</Button>
             <Button variant="destructive" onClick={() => onOpenChange(false)}>변경 버리기</Button>
           </div> : <div className="config-footer-row">
-            <p className="config-save-state">{hasChanges ? `${changedKeys.length}개 변경, 아직 저장되지 않음` : selectedTab === "appearance" ? <><Check className="size-4" aria-hidden="true"/> 변경 즉시 적용</> : isNonConfigTab ? "각 항목의 버튼으로 변경을 적용합니다" : "재시작이 필요한 항목은 별도로 표시됩니다"}</p>
-            <Button variant="outline" disabled={saving} onClick={close}>{hasChanges ? "취소" : "완료"}</Button>
-            {hasChanges || !isNonConfigTab ? <Button data-testid="config-save-button" disabled={!hasChanges || saving} onClick={() => void saveChanges()}>
+            <p className="config-save-state">{isUsageStatsTab ? null : hasChanges ? `${changedKeys.length}개 변경, 아직 저장되지 않음` : selectedTab === "appearance" ? <><Check className="size-4" aria-hidden="true"/> 변경 즉시 적용</> : isNonConfigTab ? "각 항목의 버튼으로 변경을 적용합니다" : "재시작이 필요한 항목은 별도로 표시됩니다"}</p>
+            <Button variant="outline" disabled={saving} onClick={close}>{!isUsageStatsTab && hasChanges ? "취소" : "완료"}</Button>
+            {!isUsageStatsTab && (hasChanges || !isNonConfigTabWithUsageStats) ? <Button data-testid="config-save-button" disabled={!hasChanges || saving} onClick={() => void saveChanges()}>
               {saving ? "저장 중…" : "변경 저장"}
             </Button> : null}
           </div>}

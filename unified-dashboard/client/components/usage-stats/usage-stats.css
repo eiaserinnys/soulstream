@@ -1,0 +1,416 @@
+.config-dialog {
+  --usage-stats-provider-claude: var(--node-intervention);
+  --usage-stats-provider-codex: var(--node-response);
+  --usage-stats-provider-antigravity: var(--node-user);
+  --usage-stats-provider-deepseek: var(--node-thinking);
+  --usage-stats-provider-kimi: var(--node-plan);
+  --usage-stats-project-1: var(--node-user);
+  --usage-stats-project-2: var(--node-response);
+  --usage-stats-project-3: var(--node-tool);
+  --usage-stats-project-4: var(--node-thinking);
+  --usage-stats-project-5: var(--node-plan);
+}
+
+.config-dialog .usage-stats-tab {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-4);
+  color: var(--v3-text-primary);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+
+.usage-stats-mockup-label {
+  position: fixed;
+  z-index: 40;
+  top: var(--v3-space-3);
+  right: var(--v3-space-3);
+  border: thin solid var(--v3-stroke-default);
+  border-radius: var(--radius-md);
+  padding: var(--v3-space-2);
+  background: var(--background);
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.config-dialog .usage-stats-controls {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-range-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-2);
+}
+
+.config-dialog .usage-stats-period-label {
+  min-width: 0;
+  flex: 1;
+  font: var(--v3-type-section) var(--v3-font-family);
+  text-align: center;
+}
+
+.config-dialog .usage-stats-range-controls [data-slot="dashboard-icon-cap"]:disabled {
+  opacity: 0.45;
+}
+
+.config-dialog .usage-stats-filters {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-filters > div {
+  min-width: 0;
+}
+
+.config-dialog .usage-stats-filters > div > label {
+  display: block;
+  margin-bottom: var(--v3-space-2);
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.config-dialog .usage-stats-summary {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-summary-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-summary-metric {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-2);
+}
+
+.config-dialog .usage-stats-summary-metric > span,
+.config-dialog .usage-stats-summary-meta,
+.config-dialog .usage-stats-muted,
+.config-dialog .usage-stats-share-percent,
+.config-dialog .usage-stats-share-secondary,
+.config-dialog .usage-stats-axis-label,
+.config-dialog .usage-stats-axis-zero,
+.config-dialog .usage-stats-bucket-label,
+.config-dialog .usage-stats-input-meta {
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.config-dialog .usage-stats-summary-metric > strong {
+  overflow-wrap: anywhere;
+  font: var(--v3-type-section) var(--v3-font-family);
+  font-variant-numeric: tabular-nums;
+}
+
+.config-dialog .usage-stats-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-date-chip {
+  width: fit-content;
+  gap: var(--v3-space-2);
+}
+
+.config-dialog .usage-stats-disclosure {
+  min-width: 0;
+}
+
+.config-dialog .usage-stats-token-details {
+  display: grid;
+  gap: var(--v3-space-2);
+  margin: 0;
+}
+
+.config-dialog .usage-stats-token-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-token-details dt,
+.config-dialog .usage-stats-basis,
+.config-dialog .usage-stats-basis a {
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.config-dialog .usage-stats-token-details dd {
+  margin: 0;
+  color: var(--v3-text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.config-dialog .usage-stats-basis {
+  display: grid;
+  gap: var(--v3-space-2);
+}
+
+.config-dialog .usage-stats-basis p {
+  margin: 0;
+}
+
+.config-dialog .usage-stats-basis a {
+  text-decoration: underline;
+  text-underline-offset: var(--v3-space-2);
+}
+
+.config-dialog .usage-stats-chart-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-3);
+  margin-top: var(--v3-space-4);
+}
+
+.config-dialog .usage-stats-chart-heading h3 {
+  margin: 0;
+  font: var(--v3-type-body) var(--v3-font-family);
+  font-weight: 700;
+}
+
+.config-dialog .usage-stats-chart-heading-spacer {
+  flex: 1;
+}
+
+.config-dialog .usage-stats-chart {
+  position: relative;
+  min-width: 0;
+  margin-top: var(--v3-space-3);
+  touch-action: pan-y;
+}
+
+.config-dialog .usage-stats-axis-label {
+  min-height: var(--v3-space-4);
+  text-align: right;
+}
+
+.config-dialog .usage-stats-chart-plot {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(var(--usage-stats-column-count), minmax(0, 1fr));
+  min-height: calc(var(--v3-action-size) * 4);
+  border-top: thin solid var(--v3-stroke-default);
+  border-bottom: thin solid var(--v3-stroke-default);
+}
+
+.config-dialog .usage-stats-chart-column {
+  position: relative;
+  display: block;
+  min-width: 0;
+  height: calc(var(--v3-action-size) * 4);
+  min-height: calc(var(--v3-action-size) * 4);
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.config-dialog .usage-stats-chart-column.is-selected {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.config-dialog .usage-stats-chart-column.is-unavailable {
+  color: var(--v3-text-tertiary);
+  opacity: 0.48;
+  cursor: default;
+}
+
+.config-dialog .usage-stats-chart-column:focus-visible {
+  z-index: 1;
+  outline: none;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 calc(var(--spacing) / 2) var(--ring);
+}
+
+.config-dialog .usage-stats-column-band {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.config-dialog .usage-stats-stack {
+  position: absolute;
+  right: var(--v3-space-2);
+  bottom: var(--v3-space-4);
+  left: var(--v3-space-2);
+  display: flex;
+  flex-direction: column-reverse;
+  overflow: hidden;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  pointer-events: none;
+}
+
+.config-dialog .usage-stats-stack-segment {
+  display: block;
+  min-height: 0;
+  flex: none;
+}
+
+.config-dialog .usage-stats-bucket-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  text-align: center;
+  pointer-events: none;
+}
+
+.config-dialog .usage-stats-axis-zero {
+  display: block;
+  text-align: right;
+}
+
+.config-dialog .usage-stats-chart-message {
+  position: absolute;
+  z-index: 2;
+  inset: 50% var(--v3-space-3) auto;
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-body) var(--v3-font-family);
+  text-align: center;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.config-dialog .usage-stats-share-list {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-2);
+  margin-top: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-share-row {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.config-dialog .usage-stats-share-row-clickable {
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: var(--v3-space-2) 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.config-dialog .usage-stats-share-row-clickable:hover {
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.config-dialog .usage-stats-share-row-clickable:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 calc(var(--spacing) / 2) var(--ring);
+}
+
+.config-dialog .usage-stats-share-head {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto minmax(2em, auto);
+  align-items: baseline;
+  gap: var(--v3-space-2);
+}
+
+.config-dialog .usage-stats-share-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v3-text-primary);
+  font: var(--v3-type-body) var(--v3-font-family);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-dialog .usage-stats-share-value {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--v3-text-primary);
+  font: var(--v3-type-body) var(--v3-font-family);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-dialog .usage-stats-share-percent {
+  min-width: 2em;
+  text-align: right;
+}
+
+.config-dialog .usage-stats-share-track {
+  display: block;
+  height: var(--v3-space-2);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--v3-stroke-subtle);
+}
+
+.config-dialog .usage-stats-share-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--usage-stats-row-color, var(--v3-accent));
+}
+
+.config-dialog .usage-stats-share-secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.config-dialog .usage-stats-input-material {
+  display: grid;
+  min-width: 0;
+  gap: var(--v3-space-3);
+}
+
+.config-dialog .usage-stats-input-total {
+  margin: 0;
+  color: var(--v3-text-primary);
+  font: var(--v3-type-body) var(--v3-font-family);
+  font-variant-numeric: tabular-nums;
+}
+
+.config-dialog .usage-stats-input-meta {
+  margin: 0;
+}
+
+.config-dialog .usage-stats-error-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-2);
+}
+
+@media (max-width: 40rem) {
+  .config-dialog .usage-stats-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .config-dialog .usage-stats-chart-heading {
+    flex-wrap: wrap;
+  }
+
+  .config-dialog .usage-stats-project-heading {
+    justify-content: flex-end;
+  }
+}
