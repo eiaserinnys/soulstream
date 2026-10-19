@@ -87,6 +87,27 @@ async function observeTaskOutput(
 }
 
 describe("runtime_followup consumption proof", () => {
+  it.each(["input_material_manifest", "usage_observation"] as const)(
+    "%s numeric metadata does not prove that a queued input was consumed",
+    async (type) => {
+      const intervention: InterventionMessage = {
+        text: "queued human input",
+        user: "agent",
+        deliveryIntent: "human_live_steer",
+        deliveryId: `delivery-${type}`,
+      };
+      const { recorder, receipt } = makeHarness([intervention]);
+      const task = makeTask();
+
+      await receipt.observe(task, { type } as unknown as SSEEventPayload);
+      await receipt.consume(task);
+
+      expect(recorder.recordTurnStarted).not.toHaveBeenCalled();
+      expect(recorder.recordConsumed).not.toHaveBeenCalled();
+      expect(receipt.hasConsumptionReceipt(intervention)).toBe(false);
+    },
+  );
+
   it("generic SSE와 settle consume로 runtime_followup을 소비하지 않는다", async () => {
     const intervention = runtimeFollowup();
     const { recorder, receipt } = makeHarness([intervention]);

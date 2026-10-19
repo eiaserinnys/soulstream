@@ -320,7 +320,8 @@ describe("TaskEngineTurnRunner", () => {
       input: { prompt: "turn prompt" },
     }));
 
-    expect(events.map((event) => event.type)).toEqual(["session", "complete"]);
+    expect(events.filter((event) => event.type !== "input_material_manifest")
+      .map((event) => event.type)).toEqual(["session", "complete"]);
     expect(snapshotPersistence.persistRunStateSnapshot).toHaveBeenCalledWith(
       task,
       { backendId: "openai-agents", serialized: "state-1" },
@@ -348,13 +349,14 @@ describe("TaskEngineTurnRunner", () => {
     };
     const { runner } = makeSubject();
 
-    const [event] = await drain(runner.executeTurn({
+    const events = await drain(runner.executeTurn({
       task,
       agent,
       runner: createInProcessTaskRunnerRuntime(engine),
       input: { prompt: "turn prompt" },
     }));
 
+    const event = events.find((candidate) => candidate.type === "task_notification");
     expect(event).toBeDefined();
     expect(readClaudeBackgroundProvenance(event!)).toBe("sdk_membership");
   });
@@ -409,11 +411,20 @@ describe("TaskEngineTurnRunner", () => {
       runner.executeTurn({ task, agent, runner: createInProcessTaskRunnerRuntime(engine), input: { prompt: "turn" } }),
     );
 
-    expect(events).toEqual([{
+    expect(events.filter((event) => event.type !== "input_material_manifest")).toEqual([{
       type: "complete",
       result: "done",
       timestamp: 1,
       output_command_id: expect.stringMatching(/^execute:[0-9a-f-]{36}$/),
+      input_id: null,
+      usage_snapshot: {
+        schema_version: 1,
+        backend: "claude",
+        preset_id: null,
+        provider: "unknown",
+        provider_attribution: "unknown",
+        requested_model: null,
+      },
     }]);
     expect(sendControlFrame).not.toHaveBeenCalled();
   });
@@ -542,7 +553,9 @@ describe("TaskEngineTurnRunner", () => {
     expect(hostSignal).toBe(channel.requestContext("schedule-interrupt")?.signal);
     await engine.interrupt();
 
-    await expect(execution).resolves.toEqual([]);
+    await expect(execution).resolves.toEqual([
+      expect.objectContaining({ type: "input_material_manifest" }),
+    ]);
     expect(hostSignal?.aborted).toBe(true);
     expect(channel.pendingControlCount).toBe(0);
   });

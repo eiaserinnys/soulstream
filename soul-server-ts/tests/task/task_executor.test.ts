@@ -1077,10 +1077,10 @@ describe("TaskExecutor.startNewExecution", () => {
     executor.startNewExecution(task, agent);
     await task.executionPromise;
 
-    // user_message + session + assistant_message + session_ended만 durable 저장.
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
+    // user_message + input manifest + session + assistant_message + session_ended are durable.
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(5);
     expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(2);
-    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(5);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(6);
 
     // 첫 persistEvent는 user_message 영속화
     expect(mocks.persistEvent.mock.calls[0][1]).toMatchObject({
@@ -1089,7 +1089,7 @@ describe("TaskExecutor.startNewExecution", () => {
     });
 
     expect(task.status).toBe("completed");
-    expect(task.lastEventId).toBe(5);
+    expect(task.lastEventId).toBe(6);
     expect(task.codexThreadId).toBe("thr-1");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.runner).toBeUndefined();
@@ -1165,11 +1165,12 @@ describe("TaskExecutor.startNewExecution", () => {
     );
     expect(persistedTypes).toEqual([
       "user_message",
+      "input_material_manifest",
       "assistant_message",
       "session_ended",
     ]);
     expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(4);
-    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(6);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(7);
     const broadcastEventIds = mocks.emitEventEnvelope.mock.calls.map(
       (c) => (c[1] as Record<string, unknown>)._event_id,
     );
@@ -1179,7 +1180,7 @@ describe("TaskExecutor.startNewExecution", () => {
       undefined,
       undefined,
     ]);
-    expect(task.lastEventId).toBe(4);
+    expect(task.lastEventId).toBe(5);
     expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session_ended" }),
@@ -1546,7 +1547,10 @@ describe("TaskExecutor.startNewExecution", () => {
 
     expect(task.status).toBe("error");
     expect(task.error).toContain("claude boom");
-    expect(mocks.persistEvent.mock.calls[1][1]).toMatchObject({
+    const persistedError = mocks.persistEvent.mock.calls.find((call) =>
+      (call[1] as { type: string }).type === "error"
+    )?.[1];
+    expect(persistedError).toMatchObject({
       type: "error",
       message: "claude boom",
       fatal: true,
@@ -2061,9 +2065,9 @@ describe("TaskExecutor.startNewExecution", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
-    // user_message(1) + assistant_message + complete = 3건 (첫 handleSideEffects throw에도 다음 이벤트 진행)
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
-    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(3);
+    // user_message + input manifest + assistant_message + complete + session_ended = 5 durable events.
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(5);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(4);
   });
 
   it("F-3B T7: backend-session effect는 worker DB를 호출하지 않고 task를 완료", async () => {
@@ -2087,8 +2091,8 @@ describe("TaskExecutor.startNewExecution", () => {
 
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("thr-codex-1");
-    // user_message(1) + session(2) + assistant_message(3) = 3건 durable 저장
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
+    // user_message + input manifest + session + assistant_message + session_ended = 5 durable events.
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(5);
     expect(mocks.persistEvent).toHaveBeenCalledWith(
       "sess-1",
       expect.objectContaining({ type: "session", session_id: "thr-codex-1" }),
@@ -5203,6 +5207,7 @@ describe("TaskExecutor engine event publishing — durable ingress / transient w
     );
     expect(persistedTypes).toEqual([
       "user_message",
+      "input_material_manifest",
       "session",
       "prompt_suggestion",
       "credential_alert",
@@ -5219,7 +5224,7 @@ describe("TaskExecutor engine event publishing — durable ingress / transient w
 
   it("persistent ingress 실패는 해당 turn을 중단하고 terminal event로 닫는다", async () => {
     const mocks = makeMocks();
-    // user_message persist는 성공, 첫 turn event persist는 실패하도록 시뮬레이션
+    // user_message persist는 성공하고 첫 turn event인 manifest persist에서 실패시킨다.
     let callCount = 0;
     mocks.persistEvent.mockImplementation(async () => {
       callCount++;
@@ -5238,7 +5243,11 @@ describe("TaskExecutor engine event publishing — durable ingress / transient w
     expect(task.status).toBe("error");
     expect(mocks.persistEvent.mock.calls.map(
       (call) => (call[1] as { type: string }).type,
-    )).toEqual(["user_message", "assistant_message", "session_ended"]);
+    )).toEqual([
+      "user_message",
+      "input_material_manifest",
+      "session_ended",
+    ]);
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
   });
 });
@@ -5895,7 +5904,10 @@ describe("TaskExecutor persistent generation rollover", () => {
       "session",
       "metadata:persistent_generation",
     ]);
-    expect(mocks.persistEvent.mock.calls[2]?.[2]).toEqual({
+    const persistedSessionCall = mocks.persistEvent.mock.calls.find((call) =>
+      (call[1] as { type: string }).type === "session"
+    );
+    expect(persistedSessionCall?.[2]).toEqual({
       kind: "rotate_backend_session_id",
       expected_backend_session_id: "native-old",
       backend_session_id: "native-new",
@@ -5967,7 +5979,16 @@ describe("TaskExecutor persistent generation rollover", () => {
     const ordinary = await run(false);
     const pending = await run(true);
 
-    expect(pending.capturedParams).toEqual(ordinary.capturedParams);
+    const withoutCommandBinding = (params: EngineExecuteParams | undefined) => params && ({
+      ...params,
+      execution_input: params.execution_input
+        ? { ...params.execution_input, command_id: null }
+        : undefined,
+    });
+    expect(withoutCommandBinding(pending.capturedParams))
+      .toEqual(withoutCommandBinding(ordinary.capturedParams));
+    expect(pending.capturedParams?.execution_input?.command_id)
+      .not.toBe(ordinary.capturedParams?.execution_input?.command_id);
     expect(pending.modelCatalog.resolve).not.toHaveBeenCalled();
   });
 
