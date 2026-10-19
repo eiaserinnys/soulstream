@@ -48,7 +48,7 @@ export function formatUsageStatsChars(value: number | null, observed = false): s
 
 export function formatUsageStatsValue(
   metrics: { total_tokens: number | null; reference_cost_usd: number | null },
-  coverage: { usage_partial_events: number; missing_usage_turns: number; unknown_total_token_events: number; unpriced_events: number },
+  coverage: { usage_partial_events: number; missing_usage_turns: number; unknown_total_token_events: number; unpriced_events: number; unattributed_missing_usage: boolean },
   metric: "tokens" | "cost", row = false,
 ): string {
   const partial = metric === "tokens" ? isUsageStatsTokenPartial(coverage) : isUsageStatsCostPartial(coverage);
@@ -99,14 +99,16 @@ export function isUsageStatsTokenPartial(coverage: {
   usage_partial_events: number;
   missing_usage_turns: number;
   unknown_total_token_events: number;
+  unattributed_missing_usage: boolean;
 }): boolean {
-  return coverage.usage_partial_events > 0 || coverage.missing_usage_turns > 0 || coverage.unknown_total_token_events > 0;
+  return coverage.unattributed_missing_usage || coverage.usage_partial_events > 0 || coverage.missing_usage_turns > 0 || coverage.unknown_total_token_events > 0;
 }
 
 export function isUsageStatsCostPartial(coverage: {
   usage_partial_events: number;
   missing_usage_turns: number;
   unknown_total_token_events: number;
+  unattributed_missing_usage: boolean;
   unpriced_events: number;
 }): boolean {
   return coverage.unpriced_events > 0 || isUsageStatsTokenPartial(coverage);

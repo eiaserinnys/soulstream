@@ -28,7 +28,7 @@ describe("usage statistics formatting", () => {
     expect(formatUsageStatsCoverage(null, null)).toBe("");
   });
   it("shares unknown price wording and never invents a zero partial total", () => {
-    const coverage = { usage_partial_events: 0, missing_usage_turns: 1, unknown_total_token_events: 0, unpriced_events: 0 };
+    const coverage = { usage_partial_events: 0, missing_usage_turns: 1, unknown_total_token_events: 0, unpriced_events: 0, unattributed_missing_usage: false };
     expect(formatUsageStatsValue({ total_tokens: null, reference_cost_usd: null }, coverage, "cost")).toBe("미확인");
     expect(formatUsageStatsValue({ total_tokens: null, reference_cost_usd: null }, coverage, "cost", true)).toBe("미기록");
     expect(formatUsageStatsValue({ total_tokens: 5, reference_cost_usd: null }, coverage, "cost", true)).toBe("정가 미확인");
@@ -51,21 +51,25 @@ describe("usage statistics formatting", () => {
       usage_partial_events: 0,
       missing_usage_turns: 0,
       unknown_total_token_events: 0,
+      unattributed_missing_usage: false,
     })).toBe(false);
     expect(isUsageStatsTokenPartial({
       usage_partial_events: 1,
       missing_usage_turns: 0,
       unknown_total_token_events: 0,
+      unattributed_missing_usage: false,
     })).toBe(true);
     expect(isUsageStatsTokenPartial({
       usage_partial_events: 0,
       missing_usage_turns: 1,
       unknown_total_token_events: 0,
+      unattributed_missing_usage: false,
     })).toBe(true);
     expect(isUsageStatsTokenPartial({
       usage_partial_events: 0,
       missing_usage_turns: 0,
       unknown_total_token_events: 1,
+      unattributed_missing_usage: false,
     })).toBe(true);
   });
 

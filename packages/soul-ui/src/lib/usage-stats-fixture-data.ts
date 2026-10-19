@@ -43,6 +43,7 @@ export interface UsageStatsCoverage {
   priced_total_tokens: number | null;
   unpriced_total_tokens: number | null;
   unknown_total_token_events: number;
+  unattributed_missing_usage: boolean;
 }
 
 export interface UsageStatsAggregate {

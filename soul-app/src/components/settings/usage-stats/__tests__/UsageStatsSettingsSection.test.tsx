@@ -230,7 +230,7 @@ test('늦은 이전 날짜 응답은 현재 기간을 덮지 않는다', async (
 
 function tokenDisplay(
   value: number | null,
-  coverage: { usage_partial_events: number; missing_usage_turns: number; unknown_total_token_events: number },
+  coverage: { usage_partial_events: number; missing_usage_turns: number; unknown_total_token_events: number; unattributed_missing_usage: boolean },
 ): string {
   if (value === null) return '미기록';
   return `${formatUsageStatsTokenCount(value)}${isUsageStatsTokenPartial(coverage) ? '+' : ''}`;

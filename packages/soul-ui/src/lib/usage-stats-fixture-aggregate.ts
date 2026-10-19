@@ -18,8 +18,13 @@ export function aggregateFixtureUsage(
   const collection = USAGE_STATS_COLLECTION;
   const covered = since >= collection.since && until <= collection.until && since < until;
   const providerCovered = query.provider ? collection.providers[query.provider] === "complete" : !query.model;
-  const unidentified = [MISSING_TURNS, PENDING_TURNS].some(turns => turns.some(turn => turn.date >= since && turn.date < until &&
-    (!query.project_ids?.length || query.project_ids.some(id => id === turn.project_id || (id === "__unclassified__" && turn.project_id === null)))));
+  const inScope = (turn: { date: string; project_id: string | null }) => turn.date >= since && turn.date < until &&
+    (!query.project_ids?.length || query.project_ids.some(id => id === turn.project_id || (id === "__unclassified__" && turn.project_id === null)));
+  const unidentified = [MISSING_TURNS, PENDING_TURNS].some(turns => turns.some(inScope));
+  // Missing turns have no provider/model attribution; preserve that uncertainty
+  // without assigning their numeric counts to any filtered provider or model.
+  value.coverage.unattributed_missing_usage = Boolean(query.provider || query.model) && MISSING_TURNS.some(inScope);
+  if (value.coverage.unattributed_missing_usage) value.is_partial = true;
   if (!records.length && covered && providerCovered && !unidentified) {
     return { metrics: zeroMetrics(), coverage: zeroCoverage(), is_partial: false };
   }
@@ -97,6 +102,7 @@ export function aggregate(
     priced_total_tokens: hasPricedTokens ? pricedTokens : null,
     unpriced_total_tokens: hasUnpricedTokens ? unpricedTokens : null,
     unknown_total_token_events: unknown,
+    unattributed_missing_usage: false,
   };
   return {
     metrics,
@@ -175,5 +181,6 @@ export function zeroCoverage(): UsageStatsCoverage {
     priced_total_tokens: 0,
     unpriced_total_tokens: 0,
     unknown_total_token_events: 0,
+    unattributed_missing_usage: false,
   };
 }
