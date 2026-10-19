@@ -1,4 +1,5 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import {
@@ -43,6 +44,9 @@ function childEnvironment(
   configPath: string,
   sessionDirectory: string,
 ): NodeJS.ProcessEnv {
+  const ghConfigDir = source.GH_CONFIG_DIR || (source.XDG_CONFIG_HOME
+    ? join(source.XDG_CONFIG_HOME, "gh")
+    : join(source.HOME || homedir(), ".config", "gh"));
   const env: NodeJS.ProcessEnv = {
     PWD: workspaceDir,
     OPENCODE_CONFIG: configPath,
@@ -50,6 +54,7 @@ function childEnvironment(
     XDG_DATA_HOME: join(sessionDirectory, "xdg", "data"),
     XDG_CACHE_HOME: join(sessionDirectory, "xdg", "cache"),
     XDG_STATE_HOME: join(sessionDirectory, "xdg", "state"),
+    GH_CONFIG_DIR: ghConfigDir,
   };
   for (const name of CHILD_ENVIRONMENT_KEYS) {
     const value = source[name];
