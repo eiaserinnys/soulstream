@@ -7,7 +7,8 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./input-token-estimate": "./src/input_token_estimate.ts"
+    "./input-token-estimate": "./src/input_token_estimate.ts",
+    "./inference-pricing": "./src/inference_pricing.ts"
   },
   "dependencies": {
     "yaml": "^2.9.0",
