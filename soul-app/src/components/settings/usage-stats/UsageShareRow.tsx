@@ -31,7 +31,7 @@ export function UsageShareRow({
       onPress={onPress}
       accessible={Boolean(onPress)}
       frameStyle={{ width: '100%' }}
-      surfaceStyle={{ width: '100%', gap: t.spacing.xxs }}
+      surfaceStyle={{ width: '100%', alignItems: 'stretch', gap: t.spacing.xxs }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
         <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textPrimary }}>{label}</Text>
