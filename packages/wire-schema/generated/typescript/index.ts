@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 171개 $defs (top-level wire 83 + supporting/SSE 88). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 176개 $defs (top-level wire 83 + supporting/SSE 93). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -447,6 +447,8 @@ export interface SessionEventEnvelope {
     | SSEEventContextUsage
     | SSEEventContextManifest
     | SSEEventGenerationStarted
+    | SSEEventInputMaterialManifest
+    | SSEEventUsageObservation
     | SSEEventCompact
     | SSEEventReconnect
     | SSEEventHistorySync
@@ -740,13 +742,26 @@ export interface PersistentJevTopRawScores {
 export interface SSEEventComplete {
   type: "complete";
   output_command_id?: string;
+  input_id?: string | null;
+  usage_snapshot?: UsageSnapshotV1;
   [k: string]: unknown;
+}
+export interface UsageSnapshotV1 {
+  schema_version: 1;
+  backend: "claude" | "codex" | "openai-agents" | "antigravity" | "opencode";
+  provider: "claude" | "codex" | "antigravity" | "deepseek" | "kimi" | "unknown";
+  preset_id: string | null;
+  requested_model: string | null;
+  provider_attribution: "configured_alias" | "unknown";
 }
 /**
  * SSE: 에러.
  */
 export interface SSEEventError {
   type: "error";
+  output_command_id?: string;
+  input_id?: string | null;
+  usage_snapshot?: UsageSnapshotV1;
   message?: string;
   error_code?: string;
   fatal?: boolean;
@@ -934,6 +949,9 @@ export interface SSEEventRealtimeTranscript {
  */
 export interface SSEEventResult {
   type: "result";
+  output_command_id?: string;
+  input_id?: string | null;
+  usage_snapshot?: UsageSnapshotV1;
   [k: string]: unknown;
 }
 /**
@@ -1319,6 +1337,84 @@ export interface SSEEventGenerationStarted {
     recent_to_event_id: number | null;
   };
   timestamp: number;
+  [k: string]: unknown;
+}
+/**
+ * Durable numeric manifest for the prepared material of one runner command.
+ */
+export interface SSEEventInputMaterialManifest {
+  type: "input_material_manifest";
+  schema_version: 1;
+  timestamp: number;
+  output_command_id: string;
+  input_id: string | null;
+  usage_snapshot: UsageSnapshotV1;
+  execution_input: ExecutionInputV1;
+  [k: string]: unknown;
+}
+export interface ExecutionInputV1 {
+  schema_version: 1;
+  command_id: string | null;
+  input_id: string | null;
+  scope: "newly_observed_material";
+  stage: "prepared";
+  resumed: boolean;
+  replayed: boolean;
+  scope_match: "unverified";
+  non_comparable_reasons: (
+    | "hidden_system_or_schema"
+    | "replayed_history"
+    | "multiple_calls_or_carry"
+    | "missing_source_token_breakdown"
+    | "material_breakdown_unavailable"
+  )[];
+  estimate_method: "utf16_chars_div4_ceil_v1";
+  parts: null | InputMaterialPartV1[];
+}
+export interface InputMaterialPartV1 {
+  category:
+    | "system_prompt"
+    | "soulstream_injection"
+    | "user_prompt"
+    | "history_replay"
+    | "tool_definition"
+    | "framing"
+    | "combined_visible";
+  source_key: string | null;
+  raw_chars_utf16: number | null;
+  approximate_tokens: number | null;
+  estimate_source: "manifest" | "derived_chars" | null;
+}
+/**
+ * Durable numeric usage observation for one interrupted runner command.
+ */
+export interface SSEEventUsageObservation {
+  type: "usage_observation";
+  schema_version: 1;
+  timestamp: number;
+  output_command_id: string;
+  input_id: string | null;
+  usage_snapshot: UsageSnapshotV1;
+  model: string | null;
+  usage_scope: "command_delta";
+  accounting_key: string;
+  outcome: "interrupted";
+  source: "opencode_step_finish";
+  usage: {
+    input_tokens: number | null;
+    cached_input_tokens: number | null;
+    cache_write_input_tokens: number | null;
+    output_tokens: number | null;
+    reasoning_output_tokens: number | null;
+  };
+  raw_usage: {
+    input: number | null;
+    output: number | null;
+    reasoning: number | null;
+    cache_read: number | null;
+    cache_write: number | null;
+    total: number | null;
+  };
   [k: string]: unknown;
 }
 /**
@@ -2963,6 +3059,8 @@ export const EVENT_DURABILITY = {
   "context_usage": "durable",
   "context_manifest": "durable",
   "generation_started": "durable",
+  "input_material_manifest": "durable",
+  "usage_observation": "durable",
   "compact": "durable",
   "reconnect": "durable",
   "history_sync": "durable",
@@ -2995,6 +3093,8 @@ export const SSE_EVENT_TYPES = [
   "input_request_expired",
   "input_request_responded",
   "debug",
+  "input_material_manifest",
+  "usage_observation",
   "complete",
   "error",
   "credential_alert",

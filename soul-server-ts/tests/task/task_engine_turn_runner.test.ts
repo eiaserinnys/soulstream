@@ -1044,4 +1044,83 @@ describe("TaskEngineTurnRunner", () => {
       expect.objectContaining({ items: [{ role: "user", content: "hi" }] }),
     );
   });
+
+  it.each([
+    ["not yet classified", null, ["material_breakdown_unavailable"]],
+    ["observed empty material", [], []],
+  ] as const)("builds execution context for %s parts", async (_label, parts, extraReasons) => {
+    const task = makeTask({
+      modelPreset: "kimi-coding",
+      modelPresetBackend: "claude",
+      model: "kimi-for-coding",
+    });
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => { captured = params; });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: { ...agent, backend: "claude" },
+      runner: createInProcessTaskRunnerRuntime(engine),
+      input: { prompt: "turn", inputUuid: "input-1", inputMaterialParts: parts } as never,
+    }));
+
+    const params = captured as unknown as {
+      usage_snapshot: Record<string, unknown>;
+      execution_input: Record<string, unknown>;
+    };
+    expect(params.usage_snapshot).toEqual({
+      schema_version: 1,
+      backend: "claude",
+      provider: "kimi",
+      preset_id: "kimi-coding",
+      requested_model: "kimi-for-coding",
+      provider_attribution: "configured_alias",
+    });
+    expect(params.execution_input).toMatchObject({
+      schema_version: 1,
+      command_id: expect.stringMatching(/^execute:/),
+      input_id: "input-1",
+      scope: "newly_observed_material",
+      stage: "prepared",
+      resumed: false,
+      replayed: false,
+      scope_match: "unverified",
+      estimate_method: "utf16_chars_div4_ceil_v1",
+      parts,
+    });
+    expect(params.execution_input.non_comparable_reasons).toEqual([
+      "hidden_system_or_schema",
+      "missing_source_token_breakdown",
+      ...extraReasons,
+    ]);
+  });
+
+  it.each([
+    ["Codex", "codex", "gpt-6.1-sol", "codex"],
+    ["Antigravity", "antigravity", "gemini-3", "antigravity"],
+    ["Kimi K3", "claude", "k3", "kimi"],
+    ["Claude", "claude", "claude-sonnet-4-5", "claude"],
+    ["DeepSeek OpenCode", "opencode", "opencode/deepseek-v4.1-flash-free", "deepseek"],
+    ["unmapped model", "claude", "custom-model", "unknown"],
+  ] as const)("maps %s to its configured usage provider", async (_label, backend, model, provider) => {
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => { captured = params; });
+    const task = makeTask({
+      modelPreset: backend === "opencode" ? null : "selected-preset",
+      modelPresetBackend: backend,
+      model,
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: { ...agent, backend },
+      runner: createInProcessTaskRunnerRuntime(engine),
+      input: { prompt: "turn" },
+    }));
+
+    expect((captured as unknown as { usage_snapshot: { provider: string } }).usage_snapshot.provider)
+      .toBe(provider);
+  });
 });

@@ -17,6 +17,7 @@ import {
 } from "../../src/runner/frame_protocol.js";
 import { InProcessRunnerCommandDispatcher } from
   "../../src/runner/runner_command_dispatcher.js";
+import { isLogicalTurnCompleteFrame } from "../../src/runner/engine_event_stream.js";
 
 function makeEngine(overrides: Partial<EnginePort> = {}): EnginePort {
   return {
@@ -48,12 +49,17 @@ describe("RunnerCommandDispatcher", () => {
       prompt: "hello",
     }));
 
-    expect(frames).toEqual([
-      engineEventFrame(
-        { type: "result", success: true, output: "done" },
-        { claudeResultReceipt: { inputUuid: "input-1" } },
-      ),
-    ]);
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toMatchObject({
+      kind: "engine_event",
+      metadata: { claudeResultReceipt: { inputUuid: "input-1" } },
+      payload: {
+        type: "result",
+        success: true,
+        output: "done",
+        output_command_id: expect.stringMatching(/^execute:/),
+      },
+    });
   });
 
   it("ACKs execute by commandId and runs the JSON-round-tripped DTO", async () => {
@@ -202,6 +208,125 @@ describe("RunnerCommandDispatcher", () => {
       payload: { session_cost_usd: 10.5 },
     });
     expect(dispatcher.activeExecutionCommandId()).toBeUndefined();
+  });
+
+  it("binds one manifest and stamps execution context on result, error, observation, and complete", async () => {
+    const usageSnapshot = {
+      schema_version: 1,
+      backend: "codex",
+      provider: "codex",
+      preset_id: "codex-sol",
+      requested_model: "requested-model",
+      provider_attribution: "configured_alias",
+    };
+    const executionInput = {
+      schema_version: 1,
+      command_id: null,
+      input_id: "input-1",
+      scope: "newly_observed_material",
+      stage: "prepared",
+      resumed: false,
+      replayed: false,
+      scope_match: "unverified",
+      non_comparable_reasons: ["hidden_system_or_schema", "missing_source_token_breakdown"],
+      estimate_method: "utf16_chars_div4_ceil_v1",
+      parts: [],
+    };
+    const sourceParams = {
+      agentSessionId: "session-1",
+      prompt: "hello",
+      usage_snapshot: usageSnapshot,
+      execution_input: executionInput,
+    };
+    const sourceEvents = [
+      { type: "result", model: "reported-model", timestamp: 1 },
+      { type: "error", model: "reported-model", timestamp: 2 },
+      {
+        type: "usage_observation",
+        schema_version: 1,
+        timestamp: 3,
+        output_command_id: "spoofed-command",
+        input_id: "spoofed-input",
+        usage_snapshot: { ...usageSnapshot, requested_model: "spoofed-model" },
+        model: "reported-model",
+        usage_scope: "command_delta",
+        accounting_key: "spoofed-command",
+        outcome: "interrupted",
+        source: "opencode_step_finish",
+        usage: {
+          input_tokens: 4,
+          cached_input_tokens: 2,
+          cache_write_input_tokens: null,
+          output_tokens: 5,
+          reasoning_output_tokens: 1,
+        },
+        raw_usage: {
+          input: 4,
+          output: 4,
+          reasoning: 1,
+          cache_read: 2,
+          cache_write: null,
+          total: null,
+        },
+      },
+      { type: "complete", model: "reported-model", timestamp: 4 },
+    ] as SSEEventPayload[];
+    let adapterParams: EngineExecuteParams | undefined;
+    const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine({
+      async executeToFrameChannel(params, channel) {
+        adapterParams = params;
+        for (const event of sourceEvents) await channel.emit(engineEventFrame(event));
+      },
+    }));
+
+    const commandId = "execute:usage-context";
+    await expect(dispatcher.dispatch(executeCommandFrame(
+      commandId,
+      sourceParams as EngineExecuteParams,
+    ))).resolves.toMatchObject({
+      commandId,
+      result: { status: "ok" },
+    });
+    const frames = await drain(dispatcher.events(commandId));
+    const engineEvents = frames.filter((frame) => frame.kind === "engine_event");
+    const manifest = engineEvents[0];
+    if (!manifest || manifest.kind !== "engine_event") throw new Error("manifest frame missing");
+
+    expect(engineEvents.map((frame) => frame.kind === "engine_event" ? frame.payload.type : null))
+      .toEqual([
+        "input_material_manifest",
+        "result",
+        "error",
+        "usage_observation",
+        "complete",
+      ]);
+    expect(engineEvents.filter((frame) => frame.kind === "engine_event"
+      && frame.payload.type === "input_material_manifest")).toHaveLength(1);
+    expect(manifest).toMatchObject({
+      payload: {
+        type: "input_material_manifest",
+        output_command_id: commandId,
+        input_id: "input-1",
+        usage_snapshot: usageSnapshot,
+        execution_input: { command_id: commandId, input_id: "input-1", parts: [] },
+      },
+    });
+    for (const frame of engineEvents.slice(1)) {
+      expect(frame).toMatchObject({
+        payload: {
+          output_command_id: commandId,
+          input_id: "input-1",
+          usage_snapshot: usageSnapshot,
+        },
+      });
+    }
+    expect(engineEvents[1]).toMatchObject({ payload: { model: "reported-model" } });
+    expect(engineEvents[3]).toMatchObject({ payload: { accounting_key: commandId } });
+    expect(isLogicalTurnCompleteFrame(engineEvents[3]!)).toBe(false);
+    expect(adapterParams).not.toBe(sourceParams);
+    expect(adapterParams?.execution_input).not.toBe(sourceParams.execution_input);
+    expect(adapterParams?.execution_input).toMatchObject({ command_id: commandId });
+    expect(sourceParams.execution_input.command_id).toBeNull();
   });
 
   it("keeps consecutive execute output command ids separate", async () => {

@@ -31,6 +31,7 @@ import {
   isTerminalStatus,
   type RunnerProcessRuntimeFactory,
 } from "../../src/task/task_executor.js";
+import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import { TaskDeliveryTurnReceipt } from
   "../../src/task/task_delivery_turn_receipt.js";
 import { TaskDeliveryLedgerGate } from
@@ -6303,5 +6304,42 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     expect(capturedParams.allowedTools).toEqual(["Bash"]);
     expect(capturedParams.disallowedTools).toEqual(["Edit"]);
     expect(capturedParams.useMcp).toBe(false);
+  });
+
+  it.each([
+    ["unclassified", null],
+    ["observed empty", []],
+  ] as const)("passes %s input material parts into the actual executeTurn call", async (_label, parts) => {
+    const prepareSpy = vi.spyOn(TaskTurnInputBuilder.prototype, "prepareInitialTurnInput")
+      .mockResolvedValue({
+        prompt: "prepared prompt",
+        imageAttachmentPaths: [],
+        inputMaterialParts: parts,
+      } as TaskTurnInput);
+    const executeTurnSpy = vi.spyOn(TaskEngineTurnRunner.prototype, "executeTurn");
+    try {
+      const mocks = makeMocks();
+      const executor = new TaskExecutor(
+        () => makeFakeEngine([{ type: "complete", timestamp: 1 } as SSEEventPayload]),
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+      );
+      const task = makeTask();
+      task.profileId = agent.id;
+
+      executor.startNewExecution(task, agent);
+      await task.executionPromise;
+
+      expect(prepareSpy).toHaveBeenCalledOnce();
+      expect(executeTurnSpy).toHaveBeenCalledOnce();
+      expect((executeTurnSpy.mock.calls[0]?.[0].input as unknown as {
+        inputMaterialParts?: unknown;
+      }).inputMaterialParts).toEqual(parts);
+    } finally {
+      prepareSpy.mockRestore();
+      executeTurnSpy.mockRestore();
+    }
   });
 });
