@@ -1,5 +1,12 @@
 import type { AgentProfile } from "../agent_registry.js";
-import { formatContextItems } from "../context/prompt_assembler.js";
+import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
+import { formatContextItemsWithMaterial } from "../context/prompt_assembler.js";
+import {
+  createInputMaterialPart,
+  joinInputMaterialSegments,
+  scopeFormattedContextParts,
+  type InputMaterialTextSegment,
+} from "../context/input_material_parts.js";
 import type { SupportsDetachedClaudeRuntime } from "../engine/protocol.js";
 
 import { appendAttachmentPathNotes } from "./attachment_path_note.js";
@@ -70,18 +77,37 @@ export function isOpenAiAgentsApprovalPending(task: Task): boolean {
 export function composeInterventionTurnPrompt(messages: readonly InterventionMessage[]): {
   prompt: string;
   imageAttachmentPaths: string[];
+  inputMaterialParts: InputMaterialPartV1[];
 } {
-  const prompts: string[] = [];
+  const prompts: InputMaterialTextSegment[] = [];
   const imageAttachmentPaths: string[] = [];
-  for (const message of messages) {
+  for (const [messageIndex, message] of messages.entries()) {
     const { imagePaths } = splitAttachmentPaths(message.attachmentPaths);
     imageAttachmentPaths.push(...imagePaths);
-    const contextBlock = formatContextItems(message.context ?? []);
+    const context = formatContextItemsWithMaterial(message.context ?? []);
     const text = appendAttachmentPathNotes(message.text, message.attachmentPaths);
-    prompts.push(contextBlock ? `${contextBlock}\n\n${text}` : text);
+    const user = {
+      text,
+      parts: [createInputMaterialPart(
+        "user_prompt",
+        `intervention/${messageIndex}/user`,
+        text,
+      )],
+    };
+    prompts.push(context.text
+      ? joinInputMaterialSegments([
+          {
+            text: context.text,
+            parts: scopeFormattedContextParts(context.parts, `intervention/${messageIndex}`),
+          },
+          user,
+        ], "\n\n", `intervention/${messageIndex}`)
+      : user);
   }
+  const assembled = joinInputMaterialSegments(prompts, "\n\n", "intervention_batch");
   return {
-    prompt: prompts.join("\n\n"),
+    prompt: assembled.text,
     imageAttachmentPaths,
+    inputMaterialParts: [...assembled.parts],
   };
 }

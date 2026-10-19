@@ -16,6 +16,8 @@ const REPLAY_SAFE_EVENT_TYPES = new Set([
   "debug",
   "rate_limit",
   "prompt_suggestion",
+  "input_material_manifest",
+  "usage_observation",
 ]);
 
 export interface ClaudeContextRecoveryObservation {

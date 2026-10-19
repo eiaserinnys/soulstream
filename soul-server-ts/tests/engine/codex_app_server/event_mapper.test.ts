@@ -253,6 +253,55 @@ describe("Codex app-server notification mapper", () => {
     expect(out[1]).not.toHaveProperty("turn_cost_usd");
   });
 
+  it("preserves the per-turn cache write input delta", () => {
+    const out = mapAppServerNotification(
+      {
+        method: "turn/completed",
+        params: { threadId: "thread-1", turn: turn("turn-1", "completed") },
+      },
+      undefined,
+      {
+        model: "gpt-6.1-sol",
+        tokenUsage: {
+          first: null,
+          baseline: {
+            totalTokens: 0,
+            inputTokens: 0,
+            cachedInputTokens: 0,
+            cacheWriteInputTokens: 7,
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+          },
+          latest: {
+            total: {
+              totalTokens: 15,
+              inputTokens: 10,
+              cachedInputTokens: 3,
+              cacheWriteInputTokens: 12,
+              outputTokens: 5,
+              reasoningOutputTokens: 1,
+            },
+            last: {
+              totalTokens: 15,
+              inputTokens: 10,
+              cachedInputTokens: 3,
+              cacheWriteInputTokens: 12,
+              outputTokens: 5,
+              reasoningOutputTokens: 1,
+            },
+            modelContextWindow: null,
+          },
+        },
+      },
+    );
+
+    expect(out.find((event) => event.type === "complete")).toMatchObject({
+      usage: {
+        cache_write_input_tokens: 5,
+      },
+    });
+  });
+
   it("keeps usage when the context window is null", () => {
     const out = mapAppServerNotification(
       {

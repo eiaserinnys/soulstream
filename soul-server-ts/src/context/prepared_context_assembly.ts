@@ -1,6 +1,13 @@
 import type { AgentProfile } from "../agent_registry.js";
+import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import type { Task } from "../task/task_models.js";
 import { assemblePrompt, type ContextItem } from "./prompt_assembler.js";
+import {
+  createInputMaterialPart,
+  joinInputMaterialSegments,
+  scopeInputMaterialParts,
+  type InputMaterialTextSegment,
+} from "./input_material_parts.js";
 import type { ContextManifest } from "./compiler/index.js";
 import { composeEffectiveSystemPrompt } from "./context_builder_helpers.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
@@ -21,6 +28,10 @@ export interface PreparedContext {
   assembledPrompt: string;
   /** Phase A compiler observation. Initial-message publisher records this once per new session. */
   contextManifest?: ContextManifest;
+  inputMaterialBreakdown?: {
+    systemParts: InputMaterialPartV1[];
+    contextParts: Array<InputMaterialPartV1[] | null>;
+  };
 }
 
 export interface PreparedContextAssemblyInput {
@@ -30,8 +41,11 @@ export interface PreparedContextAssemblyInput {
   folderName?: string;
   folderPrompt?: string;
   agentAtomMarkdown: string | null;
+  agentAtomMaterialParts?: InputMaterialPartV1[];
   atomMarkdown: string | null;
+  atomMaterialParts?: InputMaterialPartV1[];
   taskAtomMarkdown: string | null;
+  taskAtomMaterialParts?: InputMaterialPartV1[];
   contextManifest: ContextManifest;
   primaryFolder: PrimarySessionFolderContext | null;
   pageContextItem: ContextItem | null;
@@ -53,6 +67,30 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
     folderPrompt: args.folderPrompt,
     taskSystemPrompt: args.task.systemPrompt,
   });
+  const systemSegments: InputMaterialTextSegment[] = [];
+  if (args.agentAtomMarkdown) {
+    systemSegments.push({
+      text: args.agentAtomMarkdown,
+      parts: scopeInputMaterialParts(args.agentAtomMaterialParts ?? [], "system/agent-atom"),
+    });
+  }
+  if (args.folderPrompt) {
+    systemSegments.push({
+      text: args.folderPrompt,
+      parts: [createInputMaterialPart("system_prompt", "system/folder_prompt", args.folderPrompt)],
+    });
+  }
+  if (args.task.systemPrompt) {
+    systemSegments.push({
+      text: args.task.systemPrompt,
+      parts: [createInputMaterialPart(
+        "system_prompt",
+        "system/task_system_prompt",
+        args.task.systemPrompt,
+      )],
+    });
+  }
+  const systemMaterial = joinInputMaterialSegments(systemSegments, "\n\n", "system_prompt");
 
   const effectiveWorkspaceDir = args.workingDir ?? args.agent.workspace_dir;
   const soulstreamItem = buildSoulstreamContextItem({
@@ -68,19 +106,39 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
   });
 
   const combinedContextItems: ContextItem[] = [soulstreamItem];
-  if (args.persistentReportItem) combinedContextItems.push(args.persistentReportItem);
-  if (args.pageContextItem) combinedContextItems.push(args.pageContextItem);
-  if (args.boardWorkspaceItem) combinedContextItems.push(args.boardWorkspaceItem);
+  const contextParts: Array<InputMaterialPartV1[] | null> = [null];
+  if (args.persistentReportItem) {
+    combinedContextItems.push(args.persistentReportItem);
+    contextParts.push(null);
+  }
+  if (args.pageContextItem) {
+    combinedContextItems.push(args.pageContextItem);
+    contextParts.push(null);
+  }
+  if (args.boardWorkspaceItem) {
+    combinedContextItems.push(args.boardWorkspaceItem);
+    contextParts.push(null);
+  }
   const checkpointContextItem = args.generationCheckpointItem ?? args.predecessorSummaryItem;
-  if (checkpointContextItem) combinedContextItems.push(checkpointContextItem);
-  if (args.runningSessionsItem) combinedContextItems.push(args.runningSessionsItem);
-  if (args.cogitoContextItem) combinedContextItems.push(args.cogitoContextItem);
+  if (checkpointContextItem) {
+    combinedContextItems.push(checkpointContextItem);
+    contextParts.push(null);
+  }
+  if (args.runningSessionsItem) {
+    combinedContextItems.push(args.runningSessionsItem);
+    contextParts.push(null);
+  }
+  if (args.cogitoContextItem) {
+    combinedContextItems.push(args.cogitoContextItem);
+    contextParts.push(null);
+  }
   if (args.atomMarkdown) {
     combinedContextItems.push({
       key: "atom_context",
       label: "atom 트리",
       content: args.atomMarkdown,
     });
+    contextParts.push(args.atomMaterialParts ?? null);
   }
   if (args.taskAtomMarkdown) {
     combinedContextItems.push({
@@ -88,11 +146,17 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
       label: "선택한 atom 노드",
       content: args.taskAtomMarkdown,
     });
+    contextParts.push(args.taskAtomMaterialParts ?? null);
   }
-  combinedContextItems.push(
-    ...withoutSessionContextSourceMarkers(args.task.contextItems).filter((item) => item.key !== "assigned_cards"),
-  );
-  if (args.assignedCardItem) combinedContextItems.push(args.assignedCardItem);
+  for (const item of withoutSessionContextSourceMarkers(args.task.contextItems)
+    .filter((entry) => entry.key !== "assigned_cards")) {
+    combinedContextItems.push(item);
+    contextParts.push(null);
+  }
+  if (args.assignedCardItem) {
+    combinedContextItems.push(args.assignedCardItem);
+    contextParts.push(null);
+  }
 
   return {
     effectiveSystemPrompt,
@@ -102,5 +166,9 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
     maxTurns: args.maxTurns,
     assembledPrompt: assemblePrompt(args.task.prompt, undefined),
     contextManifest: args.contextManifest,
+    inputMaterialBreakdown: {
+      systemParts: [...systemMaterial.parts],
+      contextParts,
+    },
   };
 }

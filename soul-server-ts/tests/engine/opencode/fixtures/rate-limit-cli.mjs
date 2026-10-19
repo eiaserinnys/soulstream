@@ -21,6 +21,34 @@ if (options.mode === "cancel-before-stdout") {
     })}\n`);
   }, 100);
   setInterval(() => {}, 1000);
+} else if (options.mode === "interrupt-after-step") {
+  process.on("SIGINT", () => {
+    writeFileSync(options.signalPath, "SIGINT");
+    process.exit(130);
+  });
+  process.stdout.write(`${JSON.stringify({
+    type: "step_finish",
+    sessionID,
+    part: {
+      id: "prt_interrupt_fixture",
+      messageID: "msg_interrupt_fixture",
+      type: "step-finish",
+      reason: "tool-calls",
+      cost: 0,
+      tokens: { total: 15, input: 10, output: 2, reasoning: 3, cache: { read: 0, write: 0 } },
+    },
+  })}\n`);
+  process.stdout.write(`${JSON.stringify({
+    type: "text",
+    sessionID,
+    part: { type: "text", text: "before interrupt" },
+  })}\n`);
+  process.stdout.write(`${JSON.stringify({
+    type: "text",
+    sessionID,
+    part: { type: "text", text: "pending interrupt response" },
+  })}\n`);
+  setInterval(() => {}, 1000);
 } else {
   const errorText = `${options.errorType ?? "AI_RetryError"}: Rate limit exceeded; key=FAKE_STDERR_SECRET`;
   const sessionField = options.logSessionId ? ` session.id=${options.logSessionId}` : "";

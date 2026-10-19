@@ -17,7 +17,7 @@ export async function prepareCardWorkSchema(h:PagePostgresHarness) {
   await h.sql`ALTER TABLE sessions ADD COLUMN execution_registration_id TEXT, ADD COLUMN execution_command_id TEXT,
     ADD COLUMN metadata JSONB, ADD COLUMN model_preset TEXT, ADD COLUMN termination_reason TEXT, ADD COLUMN termination_event_id INTEGER`;
   const schema=await readFile(new URL("../../packages/db-schema/sql/schema.sql",import.meta.url),"utf8");
-  for (const table of ["session_deliveries","event_ingress_receipts"]) {
+  for (const table of ["session_deliveries","event_ingress_receipts","session_statistics_facts"]) {
     const ddl=schema.match(new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?\\n\\);`))?.[0];
     if (!ddl) throw new Error(`Actual schema is missing ${table}`);
     await h.sql.unsafe(ddl);
