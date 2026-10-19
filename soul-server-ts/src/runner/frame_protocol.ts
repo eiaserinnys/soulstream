@@ -28,6 +28,51 @@ const protocolVersion = z.literal(RUNNER_FRAME_PROTOCOL_VERSION);
 const correlationId = z.string().min(1);
 const jsonRecord = z.record(z.string(), z.json());
 
+const UsageSnapshotV1Schema = z.object({
+  schema_version: z.literal(1),
+  backend: AgentBackendSchema,
+  provider: z.enum(["claude", "codex", "antigravity", "deepseek", "kimi", "unknown"]),
+  preset_id: z.string().nullable(),
+  requested_model: z.string().nullable(),
+  provider_attribution: z.enum(["configured_alias", "unknown"]),
+});
+
+const InputMaterialPartV1Schema = z.object({
+  category: z.enum([
+    "system_prompt",
+    "soulstream_injection",
+    "user_prompt",
+    "history_replay",
+    "tool_definition",
+    "framing",
+    "combined_visible",
+  ]),
+  source_key: z.string().nullable(),
+  raw_chars_utf16: z.number().int().nonnegative().nullable(),
+  approximate_tokens: z.number().int().nonnegative().nullable(),
+  estimate_source: z.enum(["manifest", "derived_chars"]).nullable(),
+});
+
+const ExecutionInputV1Schema = z.object({
+  schema_version: z.literal(1),
+  command_id: z.string().nullable(),
+  input_id: z.string().nullable(),
+  scope: z.literal("newly_observed_material"),
+  stage: z.literal("prepared"),
+  resumed: z.boolean(),
+  replayed: z.boolean(),
+  scope_match: z.literal("unverified"),
+  non_comparable_reasons: z.array(z.enum([
+    "hidden_system_or_schema",
+    "replayed_history",
+    "multiple_calls_or_carry",
+    "missing_source_token_breakdown",
+    "material_breakdown_unavailable",
+  ])),
+  estimate_method: z.literal("utf16_chars_div4_ceil_v1"),
+  parts: z.union([z.array(InputMaterialPartV1Schema), z.null()]),
+});
+
 export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   agentSessionId: z.string().min(1),
   prompt: z.string(),
@@ -76,6 +121,8 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   previousResponseId: z.string().nullable().optional(),
   conversationId: z.string().nullable().optional(),
   sessionItems: z.array(z.json()).optional(),
+  usage_snapshot: UsageSnapshotV1Schema.optional(),
+  execution_input: ExecutionInputV1Schema.optional(),
   queuedToolApproval: z.object({
     approvalId: z.string().min(1),
     decision: z.enum(["approved", "rejected"]),

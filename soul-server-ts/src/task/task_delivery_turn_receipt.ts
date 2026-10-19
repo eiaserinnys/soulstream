@@ -86,7 +86,12 @@ export class TaskDeliveryTurnReceipt {
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
     await this.observeExplicitBackgroundResult(task, event);
-    if (event.type === "session" || event.type === "error") return;
+    if (
+      event.type === "session"
+      || event.type === "error"
+      || event.type === "input_material_manifest"
+      || event.type === "usage_observation"
+    ) return;
     const consumedTurnId = turnReceiptId(task);
     this.observedTask = task;
     this.observedTurnId = consumedTurnId;

@@ -9,8 +9,10 @@ import type { SessionStatus } from "./session-types";
 import type {
   CallerInfoSource,
   SSEEventGenerationStarted,
+  SSEEventInputMaterialManifest,
   SSEEventTextSnapshot,
   SSEEventType as GeneratedSSEEventType,
+  SSEEventUsageObservation,
 } from "@soulstream/wire-schema";
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
 import type {
@@ -868,6 +870,8 @@ export type SoulSSEEvent =
   | SystemMessageEvent
   | DebugEvent
   | GenerationStartedEvent
+  | SSEEventInputMaterialManifest
+  | SSEEventUsageObservation
   | CompleteEvent
   | ErrorEvent
   | ContextUsageEvent
