@@ -549,6 +549,8 @@ export async function createLiveProductionApplication(
       runtimeServices,
       uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
+      sessionStatisticsRepositoryProvider: async () =>
+        (await persistenceRepositoryProvider()).sessionStatistics,
       findSessionNode: dbCatalogRepository.findSessionOwnerNodeId,
       dbSqlResolver: sqlResolver,
       agentAttachmentRegistration: {
@@ -1211,6 +1213,7 @@ export function buildProductionRouteOptions(
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
     usageSummaryRoutes: providers.usageSummaryRoutes,
+    sessionStatisticsRoutes: providers.sessionStatisticsRoutes,
     uiEventRoutes: providers.uiEventRoutes,
   };
 }
