@@ -20,6 +20,11 @@ describe("live provider factory inventory", () => {
       liveFactoryImplementedProviderPaths,
     );
     expect(result.unresolvedProviderPaths).toEqual([]);
+    expect(liveFactoryImplementedProviderPaths).toEqual(expect.arrayContaining([
+      { owner: "usage.statistics", path: "sessionStatisticsRoutes.service" },
+      { owner: "usage.statistics", path: "sessionStatisticsRoutes.accessProvider" },
+      { owner: "usage.statistics", path: "sessionStatisticsRoutes.folderProvider" },
+    ]));
   });
 
   it("fails when inventory marks a path implemented but the factory omits it", () => {

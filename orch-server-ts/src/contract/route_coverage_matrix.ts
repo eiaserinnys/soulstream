@@ -39,6 +39,7 @@ import { systemConfigRouteAuthRequirements } from "../system/system_config_route
 import { userBackgroundRouteAuthRequirements } from "../user/user_background_routes.js";
 import { userPreferencesRouteAuthRequirements } from "../user/user_preferences_routes.js";
 import { usageSummaryRouteAuthRequirements } from "../usage/usage_summary_routes.js";
+import { sessionStatisticsRouteAuthRequirements } from "../usage/session_statistics_routes.js";
 import { uiEventRouteAuthRequirements } from "../ui-events/ui_event_routes.js";
 import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
 import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
@@ -103,6 +104,7 @@ export const routeCoverageOwners = [
   { owner: "user.background", authRequirements: userBackgroundRouteAuthRequirements },
   { owner: "user.preferences", authRequirements: userPreferencesRouteAuthRequirements },
   { owner: "usage.summary", authRequirements: usageSummaryRouteAuthRequirements },
+  { owner: "usage.statistics", authRequirements: sessionStatisticsRouteAuthRequirements },
   { owner: "ui.events", authRequirements: uiEventRouteAuthRequirements },
   { owner: "recurring.jobs", authRequirements: recurringJobRouteAuthRequirements },
   { owner: "persistent.context", authRequirements: persistentContextRouteAuthRequirements },
@@ -157,6 +159,8 @@ export const tsOnlyRouteKeys = [
   "GET /api/ui-events",
   "GET /api/ui-events/config",
   "GET /api/ui-events/installs",
+  "GET /api/session-statistics",
+  "GET /api/session-statistics/days/{date}",
   "GET /api/context-bundles",
   "DELETE /api/context-bundles/{bundle_id}",
   "GET /api/context-bundles/{bundle_id}",

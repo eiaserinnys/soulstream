@@ -182,6 +182,23 @@ describe("route registry", () => {
     expect(validateStaticBeforeDynamicPriority(runtimeRegistry).valid).toBe(true);
   });
 
+  it("registers both session statistics endpoints as authenticated control-plane routes", () => {
+    const runtimeRegistry = buildRuntimeRouteRegistry(fixtures.routeInventory);
+
+    expect(getRouteByKey(runtimeRegistry, "GET", "/api/session-statistics"))
+      .toMatchObject({
+        name: "get_session_statistics",
+        authRequired: true,
+        family: "control_plane",
+      });
+    expect(getRouteByKey(runtimeRegistry, "GET", "/api/session-statistics/days/{date}"))
+      .toMatchObject({
+        name: "get_session_statistics_day",
+        authRequired: true,
+        family: "control_plane",
+      });
+  });
+
   it("builds a planning-only owner manifest from the Python fixture without TS production owners", () => {
     const manifest = buildPlanningRouteOwnerManifest(registry);
 
