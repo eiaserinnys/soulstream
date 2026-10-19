@@ -182,6 +182,11 @@ describe("live attachment input admission wiring", () => {
         getSummary: () => ({ generatedAt: "2026-07-20T10:00:00.000Z", collectedAt: null, nodes: [] }),
         getLimitRejection: () => null,
       } },
+      sessionStatisticsRepositoryProvider: async () => ({
+        read: async () => {
+          throw new Error("session statistics fixture must not read");
+        },
+      }),
       uiEventRepository: {
         readConfig: async () => UI_EVENT_COLLECTION_DISABLED,
         insertBatch: async () => [], query: async () => [], listInstalls: async () => [], pruneExpired: async () => 0,

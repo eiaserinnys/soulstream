@@ -35,6 +35,14 @@ const config = parseOrchServerConfig({
   authBearerToken: "test-token",
 });
 
+function createSessionStatisticsRepositoryProvider() {
+  return async () => ({
+    read: async () => {
+      throw new Error("session statistics fixture must not read");
+    },
+  });
+}
+
 const liveProviderConfig: Record<string, unknown> = {
   node_name: "orch-live",
   google_client_id: "google-client",
@@ -93,11 +101,15 @@ describe("live provider factory boundary", () => {
   it("returns the default bundle after the inventory reaches fully implemented", () => {
     const dependencies = createLiveDependencies();
     const runtimeServices = createRuntimeServices(dependencies);
+    const sessionStatisticsRepositoryProvider = vi.fn(
+      createSessionStatisticsRepositoryProvider(),
+    );
 
     const bundle = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
+      sessionStatisticsRepositoryProvider,
       uiEventRepository: createInertUiEventRepository(),
     });
 
@@ -110,6 +122,11 @@ describe("live provider factory boundary", () => {
       deleteSessionAttachments: expect.any(Function),
       downloadAttachment: expect.any(Function),
     });
+    expect(bundle.sessionStatisticsRoutes.accessProvider)
+      .toBe(bundle.folderRoutes.accessProvider);
+    expect(bundle.sessionStatisticsRoutes.folderProvider)
+      .toBe(dependencies.dbCatalogRepository.folderRouteProvider);
+    expect(sessionStatisticsRepositoryProvider).not.toHaveBeenCalled();
   });
 
   it("wires the authenticated attachment reader only when read dependencies are supplied", async () => {
@@ -124,6 +141,7 @@ describe("live provider factory boundary", () => {
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
+      sessionStatisticsRepositoryProvider: createSessionStatisticsRepositoryProvider(),
       uiEventRepository: createInertUiEventRepository(),
       resolveReadStorage,
       readPageAttachmentEvidence: vi.fn(async () => null),
@@ -155,6 +173,7 @@ describe("live provider factory boundary", () => {
         dependencies,
         runtimeServices,
         usageSummaryRoutes: createUsageSummaryRoutes(),
+        sessionStatisticsRepositoryProvider: createSessionStatisticsRepositoryProvider(),
         uiEventRepository: createInertUiEventRepository(),
         resolveAttachmentStorage,
         resolveReadStorage: async () => null,
@@ -185,6 +204,7 @@ describe("live provider factory boundary", () => {
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
+      sessionStatisticsRepositoryProvider: createSessionStatisticsRepositoryProvider(),
       uiEventRepository: createInertUiEventRepository(),
       resolveAttachmentStorage: async () => null,
     })).toThrow(/attachment.*read|read.*attachment/i);
@@ -334,6 +354,7 @@ describe("live provider factory boundary", () => {
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
+      sessionStatisticsRepositoryProvider: createSessionStatisticsRepositoryProvider(),
       uiEventRepository: createInertUiEventRepository(),
       inventory: implementedOnly,
     });
@@ -629,6 +650,7 @@ describe("live provider factory boundary", () => {
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
+      sessionStatisticsRepositoryProvider: createSessionStatisticsRepositoryProvider(),
       uiEventRepository: createInertUiEventRepository(),
     });
     runtimeServices.registry.registerNode({
@@ -849,6 +871,7 @@ function createOwnedUploadHarness(options: {
     dependencies,
     runtimeServices,
     usageSummaryRoutes: createUsageSummaryRoutes(),
+    sessionStatisticsRepositoryProvider: createSessionStatisticsRepositoryProvider(),
     uiEventRepository: createInertUiEventRepository(),
     resolveAttachmentStorage,
     resolveReadStorage,

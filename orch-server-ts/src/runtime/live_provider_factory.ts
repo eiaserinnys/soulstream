@@ -46,6 +46,9 @@ import type { PushRouteOptions } from "../push/push_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
+import { SessionStatisticsService } from "../usage/session_statistics_service.js";
+import type { SessionStatisticsRepositoryPort } from "../usage/session_statistics_types.js";
+import type { SessionStatisticsRouteOptions } from "../usage/session_statistics_routes.js";
 import type { UiEventRepository, UiEventRouteOptions }
   from "../ui-events/ui_event_routes.js";
 import { createLiveUiEventIdentityResolver } from "./live_ui_event_identity.js";
@@ -180,6 +183,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly usageSummaryRoutes: LiveUsageSummaryRouteOptions;
+  readonly sessionStatisticsRoutes: SessionStatisticsRouteOptions;
   readonly uiEventRoutes: UiEventRouteOptions;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
@@ -188,6 +192,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly dependencies: LiveProviderDependencies;
   readonly runtimeServices: OrchestratorRuntimeServices;
   readonly usageSummaryRoutes: LiveUsageSummaryRouteOptions;
+  readonly sessionStatisticsRepositoryProvider: () => Promise<SessionStatisticsRepositoryPort>;
   readonly uiEventRepository: UiEventRepository;
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
@@ -561,6 +566,12 @@ export function createLiveOrchestratorProviderBundle(
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     usageSummaryRoutes: options.usageSummaryRoutes,
+    sessionStatisticsRoutes: {
+      service: new SessionStatisticsService(options.sessionStatisticsRepositoryProvider),
+      accessProvider: dashboardAccessProvider,
+      folderProvider: options.dependencies.dbCatalogRepository.folderRouteProvider,
+      now: () => new Date(),
+    },
     uiEventRoutes: {
       repository: options.uiEventRepository,
       resolveIdentity: createLiveUiEventIdentityResolver({

@@ -95,6 +95,12 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("system.config:systemConfigRoutes.httpClient")).toBe(
       "implemented",
     );
+    expect(liveProviderWiringInventory.filter((entry) => entry.owner === "usage.statistics"))
+      .toMatchObject([
+        { path: "sessionStatisticsRoutes.service", status: "implemented", dependencies: ["db"] },
+        { path: "sessionStatisticsRoutes.accessProvider", status: "implemented", dependencies: ["auth", "jwt", "db"] },
+        { path: "sessionStatisticsRoutes.folderProvider", status: "implemented", dependencies: ["db"] },
+      ]);
     expect(statusByPath.get("cogito:cogitoRoutes.provider")).toBe("implemented");
     expect(statusByPath.get("cogito:cogitoRoutes.searchProvider")).toBe("implemented");
     expect(statusByPath.get("cogito:cogitoRoutes.briefCollector")).toBe(
