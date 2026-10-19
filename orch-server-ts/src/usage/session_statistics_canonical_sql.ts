@@ -6,6 +6,10 @@ import type {
 import { createSessionStatisticsScopeCtes } from "./session_statistics_canonical_scope_sql.js";
 import { createSessionStatisticsUsageCtes } from "./session_statistics_canonical_usage_sql.js";
 import { createSessionStatisticsMaterialCtes } from "./session_statistics_canonical_material_sql.js";
+import { parseOffsetTimestamp } from "./session_statistics_period.js";
+import type { SessionStatisticsCanonicalReadOptions } from "./session_statistics_period_seed_sql.js";
+
+export type { SessionStatisticsCanonicalReadOptions } from "./session_statistics_period_seed_sql.js";
 
 export type CanonicalSessionStatisticsRow = {
   row_kind: "usage" | "input_material" | "tool_call" | "boundary";
@@ -63,6 +67,7 @@ export async function createCanonicalSessionStatisticsFacts(
   sql: EventIngressQuerySql,
   authorizedSessionIds: readonly string[],
   range?: { recordedAtFrom: string; recordedAtBefore: string },
+  options?: SessionStatisticsCanonicalReadOptions,
 ): Promise<readonly CanonicalSessionStatisticsRow[]> {
   if (authorizedSessionIds.length === 0) return [];
   if (range !== undefined) {
@@ -72,15 +77,25 @@ export async function createCanonicalSessionStatisticsFacts(
       throw new Error("session statistics seed range must be a valid increasing timestamp interval");
     }
   }
+  if (options !== undefined) {
+    parseOffsetTimestamp(options.asOf, "asOf");
+    if (options.readPurpose.kind === "day") {
+      const from = Date.parse(options.readPurpose.recordedAtFrom);
+      const before = Date.parse(options.readPurpose.recordedAtBefore);
+      if (!Number.isFinite(from) || !Number.isFinite(before) || from >= before) {
+        throw new Error("session statistics day seed range must be a valid increasing timestamp interval");
+      }
+    }
+  }
   const recordedAtFrom = range?.recordedAtFrom ?? null;
   const recordedAtBefore = range?.recordedAtBefore ?? null;
   // The adapter exposes the underlying tag; raw postgres.js tags work directly too.
   const fragment = sql.fragment ?? sql as unknown as EventIngressSqlFragment;
   const scopeCtes = createSessionStatisticsScopeCtes(
-    sql, fragment, authorizedSessionIds, recordedAtFrom, recordedAtBefore,
+    sql, fragment, authorizedSessionIds, recordedAtFrom, recordedAtBefore, options,
   );
   const usageCtes = createSessionStatisticsUsageCtes(fragment);
-  const materialCtes = createSessionStatisticsMaterialCtes(fragment);
+  const materialCtes = createSessionStatisticsMaterialCtes(fragment, options);
   const rows = await sql<readonly CanonicalSqlRow[]>`
     WITH ${scopeCtes},
       ${usageCtes},

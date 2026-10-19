@@ -1,4 +1,8 @@
 import type { EventIngressQuerySql, EventIngressSqlFragment } from "../node/event_ingress_repository.js";
+import {
+  createSessionStatisticsPeriodSeedCtes,
+  type SessionStatisticsCanonicalReadOptions,
+} from "./session_statistics_period_seed_sql.js";
 
 export function createSessionStatisticsScopeCtes(
   sql: EventIngressQuerySql,
@@ -6,7 +10,18 @@ export function createSessionStatisticsScopeCtes(
   authorizedSessionIds: readonly string[],
   recordedAtFrom: string | null,
   recordedAtBefore: string | null,
+  options?: SessionStatisticsCanonicalReadOptions,
 ): unknown {
+  if (options !== undefined) {
+    return createSessionStatisticsPeriodSeedCtes(
+      sql,
+      fragment,
+      authorizedSessionIds,
+      recordedAtFrom,
+      recordedAtBefore,
+      options,
+    );
+  }
   return fragment`
 authorized_sessions AS (
       SELECT value AS session_id
