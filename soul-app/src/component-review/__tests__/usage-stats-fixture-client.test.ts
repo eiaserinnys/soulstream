@@ -20,7 +20,7 @@ test('Metro alias 대상 client도 인증 요청을 보내고 실패·재시도�
     by_model: [expect.objectContaining({ provider: 'codex', model: 'gpt-6-luna' })],
   });
   await expect(client.getSessionStatisticsDay('2026-10-15', query)).resolves.toMatchObject({
-    date: '2026-10-15', totals: { metrics: { total_tokens: 0, reference_cost_usd: 0 } },
+    date: '2026-10-15', totals: { metrics: { total_tokens: null, reference_cost_usd: null } },
   });
   const calls = (global.fetch as jest.Mock).mock.calls as [string, RequestInit][];
   expect(calls).toHaveLength(3);

@@ -20,6 +20,7 @@ export function makeUsageStatsBuckets(
   fallbackColor: string,
   coveredSince: string,
   emptyData: boolean,
+  modelColorById?: Record<string, string>,
 ): UsageStackBucket[] {
   const grouped: Record<string, UsageStackBucket> = {};
   for (const bucketStart of bucketStarts(period, range)) {
@@ -43,7 +44,7 @@ export function makeUsageStatsBuckets(
       : `project:${point.project_id ?? '__unclassified__'}`;
     const value = point.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
     const color = kind === 'model'
-      ? point.provider ? seriesColors[point.provider] : fallbackColor
+      ? modelColorById ? (point.model ? modelColorById[point.model] : undefined) ?? fallbackColor : point.provider ? seriesColors[point.provider] : fallbackColor
       : point.project_id && point.project_id !== '__other__' ? projectColorById[point.project_id] ?? fallbackColor : fallbackColor;
     const existing = bucket.segments.find(segment => segment.id === identity);
     if (existing) {

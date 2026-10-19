@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RAW_USAGE_RECORDS } from "./usage-stats-fixture-data";
 
 import {
   buildEmptyUsageStatsOverview,
@@ -15,6 +16,25 @@ function sumKnownTokens(rows: Array<{ metrics: { total_tokens: number | null } }
 }
 
 describe("usage statistics public fixture", () => {
+  it("never turns a null usage record into a collected zero", () => {
+    RAW_USAGE_RECORDS.push({ date: "2026-10-06", provider: "codex", backend: "codex", model: "gpt-6-luna", project_id: "project-docs", input_total: null, cache_read: null, cache_write: null, output_total: null, reasoning_output: null, reference_cost_usd: null });
+    try {
+      expect(buildUsageStatsDayDetail("2026-10-06", { provider: "codex" }).totals.metrics.total_tokens).toBeNull();
+    } finally { RAW_USAGE_RECORDS.pop(); }
+  });
+  it("confirms zero only inside collection coverage with no scoped usage or unidentified turns", () => {
+    const empty = buildUsageStatsOverview({ period: "week", anchor: "2026-10-10" });
+    expect(empty.totals.metrics.total_tokens).toBe(0);
+    expect(empty.totals.metrics.reference_cost_usd).toBe(0);
+    expect(empty.totals.is_partial).toBe(false);
+    expect(empty.series).toEqual([]);
+    expect(empty.by_model.find(row => row.provider === "claude")?.metrics.total_tokens).toBe(0);
+    expect(empty.by_model.find(row => row.provider === "deepseek")?.metrics.total_tokens).toBeNull();
+    expect(buildUsageStatsOverview({ period: "week", anchor: "2026-10-10", provider: "deepseek" }).totals.metrics.total_tokens).toBeNull();
+    expect(buildUsageStatsOverview({ period: "week", anchor: "2026-08-16" }).totals.metrics.total_tokens).toBeNull();
+    expect(buildUsageStatsDayDetail("2026-10-06", { provider: "codex" }).totals.metrics.total_tokens).toBe(0);
+    expect(buildUsageStatsDayDetail("2026-10-16", { provider: "codex" }).totals.metrics.total_tokens).toBeNull();
+  });
   it("uses the corrected half-open KST week and never adds cache or reasoning twice", () => {
     const overview = buildUsageStatsOverview({ period: "week", anchor: USAGE_STATS_FIXTURE_ANCHOR });
 
@@ -169,11 +189,12 @@ describe("usage statistics public fixture", () => {
     expect(day.by_project[0].metrics.total_tokens).toBe(300_000);
   });
 
-  it("keeps an observed zero-token event as zero", () => {
+  it("keeps an observed zero event separate from unidentified missing turns", () => {
     const day = buildUsageStatsDayDetail("2026-10-15", { provider: "codex" });
 
-    expect(day.totals.metrics.total_tokens).toBe(0);
-    expect(day.totals.metrics.reference_cost_usd).toBe(0);
+    expect(day.totals.metrics.total_tokens).toBeNull();
+    expect(day.totals.metrics.reference_cost_usd).toBeNull();
+    expect(day.by_project[0].metrics.total_tokens).toBeNull();
   });
 
   it("represents a measured empty range with zero instead of missing values", () => {

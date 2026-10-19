@@ -10,7 +10,11 @@ import {
   formatUsageStatsProviderLabel,
   formatUsageStatsTokenCount,
   formatUsageStatsUsd,
-  isUsageStatsTokenPartial,
+  formatUsageStatsValue,
+  formatUsageStatsChars,
+  USAGE_STATS_LABELS,
+  usageStatsMonthAnchor,
+  usageStatsModelColorIndex,
   shiftUsageStatsAnchor,
   USAGE_STATS_FIXTURE_ANCHOR,
   type UsageStatsAggregate,
@@ -84,17 +88,11 @@ function valueForMetric(
   coverage: UsageStatsAggregate["coverage"],
   row = false,
 ): string {
-  if (metric === "tokens") {
-    const value = metrics.total_tokens;
-    return value === null ? "미기록" : `${formatUsageStatsTokenCount(value)}${isUsageStatsTokenPartial(coverage) ? "+" : ""}`;
-  }
-  const value = metrics.reference_cost_usd;
-  if (value === null) return row && (metrics.total_tokens ?? 0) > 0 ? "정가 미확인" : row ? "미기록" : "미확인";
-  return `${formatUsageStatsUsd(value)}${partial ? "+" : ""}`;
+  return formatUsageStatsValue(metrics, coverage, metric, row);
 }
 
 function shareFor(value: number | null, total: number): number | null {
-  return value === null || total <= 0 ? null : value / total;
+  return value === null ? null : total > 0 ? value / total : value === 0 ? 0 : null;
 }
 
 function providerColor(provider: string): string {
@@ -102,14 +100,14 @@ function providerColor(provider: string): string {
 }
 
 function projectColor(index: number): string {
-  return index < 5 ? `var(--usage-stats-project-${index + 1})` : "var(--v3-text-tertiary)";
+  return index >= 0 && index < 5 ? `var(--usage-stats-project-${index + 1})` : "var(--v3-text-tertiary)";
 }
 
-function providerSeries(rows: readonly UsageStatsProviderRow[], provider: UsageStatsProvider | null): UsageChartSeries[] {
+function providerSeries(rows: readonly UsageStatsProviderRow[], provider: UsageStatsProvider | null, roster: readonly (string | null)[]): UsageChartSeries[] {
   return rows.map(row => ({
     key: provider ? `${row.provider}:${row.model ?? "__unknown__"}` : row.provider,
-    label: provider ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider),
-    color: providerColor(row.provider),
+    label: row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider),
+    color: provider ? projectColor(usageStatsModelColorIndex(row.model, roster)) : providerColor(row.provider),
   }));
 }
 
@@ -149,6 +147,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [metric, setMetric] = useState<Metric>("tokens");
   const [overview, setOverview] = useState<UsageStatsOverview | null>(null);
+  const [periodModelRoster, setPeriodModelRoster] = useState<(string | null)[]>([]);
   const [detail, setDetail] = useState<UsageStatsDayDetail | null>(null);
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [state, setState] = useState<LoadState>("loading");
@@ -182,15 +181,18 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     setDetail(null);
     setDetailDate(null);
     const params = makeQuery(period, anchor, provider, projectId);
-    void requester(`${API_URL}?${params.toString()}`, { credentials: "same-origin" })
-      .then(async response => {
-        if (response.status === 403) throw Object.assign(new Error("forbidden"), { status: 403 });
-        if (!response.ok) throw new Error(`조회 실패: ${response.status}`);
-        return response.json() as Promise<UsageStatsOverview>;
-      })
-      .then(data => {
+    const readOverview = async (query: URLSearchParams) => {
+      const response = await requester(`${API_URL}?${query.toString()}`, { credentials: "same-origin" });
+      if (response.status === 403) throw Object.assign(new Error("forbidden"), { status: 403 });
+      if (!response.ok) throw new Error(`조회 실패: ${response.status}`);
+      return response.json() as Promise<UsageStatsOverview>;
+    };
+    const current = readOverview(params);
+    void Promise.all([current, provider && projectId ? readOverview(makeQuery(period, anchor, provider, null)) : current])
+      .then(([data, unfiltered]) => {
         if (!active) return;
         setOverview(data);
+        setPeriodModelRoster(unfiltered.by_model.map(row => row.model));
         setState("ready");
       })
       .catch((error: unknown) => {
@@ -236,13 +238,12 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const displayedAggregate = selectedDate ? detailDate === selectedDate ? detail?.totals ?? null : null : overview?.totals ?? null;
   const displayedModels = selectedDate ? detailDate === selectedDate ? detail?.by_model ?? [] : [] : overview?.by_model ?? [];
   const displayedProjects = selectedDate ? detailDate === selectedDate ? detail?.by_project ?? [] : [] : overview?.by_project ?? [];
-  const noRecords = state === "ready" && !isAggregateActive(overview?.totals ?? null) &&
-    !overview?.series.length && range.since >= coveredSince;
+  const noRecords = state === "ready" && overview?.totals.metrics.total_tokens === 0 && !overview.totals.is_partial && !isAggregateActive(overview.totals);
   const beforeCoverage = state === "ready" && range.effective_until <= coveredSince;
   const selectedNoRecords = Boolean(selectedDate && detailDate === selectedDate && detail && !isAggregateActive(detail.totals));
   const providerRowsForSeries = overview?.by_model ?? [];
   const projectRowsForSeries = overview?.by_project ?? [];
-  const providerChartSeries = providerSeries(providerRowsForSeries, provider);
+  const providerChartSeries = providerSeries(providerRowsForSeries, provider, periodModelRoster);
   const projectChartSeries = projectSeries(projectRowsForSeries);
   const projectColors = new Map(projectChartSeries.map(item => [item.key, item.color] as const));
   const providerPoints = (overview?.series ?? []).filter(point => point.provider !== undefined && providerPointKey(point, provider) !== "__unknown__");
@@ -261,7 +262,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     if (period === "all") {
       setSelectedDate(null);
       setPeriod("month");
-      setAnchor(`${bucket.slice(0, 7)}-18`);
+      setAnchor(usageStatsMonthAnchor(bucket, overview!.as_of));
       return;
     }
     if (intent === "set") {
@@ -344,21 +345,21 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             </div>
             <div className="usage-stats-summary-meta" aria-live="polite">
               {overviewLoading || detailLoading ? null : displayedAggregate?.coverage.missing_usage_turns ? <span>미기록 턴 {displayedAggregate.coverage.missing_usage_turns}</span> : null}
-              {overviewLoading || detailLoading ? null : metric === "cost" && coverageLabel ? <span>{coverageLabel}</span> : null}
+              {overviewLoading || detailLoading ? null : coverageLabel ? <span>{coverageLabel}</span> : null}
               {overview?.projection_status.state === "backfilling" ? <span>이전 기록 정리 중</span> : null}
             </div>
             <details className="config-advanced usage-stats-disclosure">
-              <summary>토큰 상세<span>상세</span></summary>
+              <summary>{USAGE_STATS_LABELS.tokenDetails}</summary>
             {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedAggregate ? <dl className="usage-stats-token-details">
-                <div><dt>입력</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.input_total, false)}</dd></div>
-                <div><dt>캐시 읽기</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.cache_read, false)}</dd></div>
-                <div><dt>캐시 쓰기</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.cache_write, false)}</dd></div>
-                <div><dt>출력</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.output_total, false)}</dd></div>
-                <div><dt>추론</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.reasoning_output, false)}</dd></div>
+                <div><dt>{USAGE_STATS_LABELS.input}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.input_total, false)}</dd></div>
+                <div><dt>{USAGE_STATS_LABELS.cacheRead}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.cache_read, false)}</dd></div>
+                <div><dt>{USAGE_STATS_LABELS.cacheWrite}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.cache_write, false)}</dd></div>
+                <div><dt>{USAGE_STATS_LABELS.output}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.output_total, false)}</dd></div>
+                <div><dt>{USAGE_STATS_LABELS.reasoning}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.reasoning_output, false)}</dd></div>
               </dl> : <p className="usage-stats-muted">{overviewLoading || detailLoading ? "불러오는 중…" : "미기록"}</p>}
             </details>
             <details className="config-advanced usage-stats-disclosure">
-              <summary>집계 기준<span>기준</span></summary>
+              <summary>집계 기준</summary>
               <div className="usage-stats-basis">
                 <p>2026-10-19 공개 API 정가 USD 환산(standard, 기본 컨텍스트). 구독 실지출 아님</p>
                 <p>단가 출처: <a href="https://developers.openai.com/api/docs/pricing?tab=suite" target="_blank" rel="noreferrer">OpenAI</a>, <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noreferrer">Claude</a>, <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Gemini</a>, <a href="https://api-docs.deepseek.com/quick_start/pricing/" target="_blank" rel="noreferrer">DeepSeek</a>, <a href="https://platform.kimi.ai/docs/pricing/chat" target="_blank" rel="noreferrer">Kimi</a></p>
@@ -386,11 +387,11 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             metric={metric}
             selectedBucket={selectedDate}
             loading={overviewLoading}
-            emptyMessage={shownError ? null : beforeCoverage ? "이 기간은 기록 전입니다" : null}
+            emptyMessage={beforeCoverage ? "이 기간은 기록 전입니다" : noRecords ? "이 기간에 기록이 없습니다" : null}
             providerSelected={provider !== null}
             onSelect={chooseBucket}
           />
-          {noRecords && !overviewLoading ? null : <div className="usage-stats-share-list">
+          {(noRecords || beforeCoverage) && !overviewLoading ? null : <div className="usage-stats-share-list">
             {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedModels.map(row => {
               const value = metricValue(row.metrics, metric);
               const name = row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider);
@@ -400,14 +401,14 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
                 name={name}
                 value={valueForMetric(row.metrics, metric, row.is_partial, row.coverage, true)}
                 share={shareFor(value, providerKnownTotal)}
-                color={providerColor(row.provider)}
+                color={providerChartSeries.find(item => item.key === (provider ? `${row.provider}:${row.model ?? "__unknown__"}` : row.provider))?.color}
                 onClick={isProviderRow ? () => changeProvider(row.provider) : undefined}
               />;
             })}
           </div>}
         </SettingsGroupBox>
 
-        {!noRecords ? <SettingsGroupBox title="프로젝트별">
+        {!noRecords && !beforeCoverage ? <SettingsGroupBox title="프로젝트별">
           <UsageStackedBars
             label="프로젝트별 사용량"
             kind="project"
@@ -419,7 +420,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             metric={metric}
             selectedBucket={selectedDate}
             loading={overviewLoading}
-            emptyMessage={shownError ? null : beforeCoverage ? "이 기간은 기록 전입니다" : null}
+            emptyMessage={beforeCoverage ? "이 기간은 기록 전입니다" : noRecords ? "이 기간에 기록이 없습니다" : null}
             onSelect={chooseBucket}
           />
           <div className="usage-stats-share-list">
@@ -440,7 +441,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
           </div>
         </SettingsGroupBox> : null}
 
-        {period !== "all" && !noRecords && !selectedNoRecords ? <SettingsGroupBox title="입력 자료 구성">
+        {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords ? <SettingsGroupBox title="입력 자료 구성">
           {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <p className="usage-stats-muted" role="status">불러오는 중…</p> : detail ? <InputMaterial detail={detail} /> : null}
         </SettingsGroupBox> : null}
       </>
@@ -453,18 +454,18 @@ function InputMaterial({ detail }: { detail: UsageStatsDayDetail }) {
   const parts = material.parts.filter(part => part.category !== "harness_internal");
   const denominator = material.observed_chars;
   return <div className="usage-stats-input-material">
-    <p className="usage-stats-input-total">{denominator === null ? "관측 안 됨" : `${formatUsageStatsTokenCount(denominator, false)}자`}</p>
+    <p className="usage-stats-input-total">{formatUsageStatsChars(denominator, true)}</p>
     <div className="usage-stats-share-list">
       {parts.map((part, index) => <UsageShareRow
         key={`${part.category}:${part.source_key ?? index}`}
         name={formatUsageStatsInputCategoryLabel(part.category)}
-        value={part.chars === null ? "미기록" : formatUsageStatsTokenCount(part.chars, false)}
+        value={formatUsageStatsChars(part.chars)}
         share={part.share}
         color="var(--v3-accent)"
       />)}
       <UsageShareRow name="하네스 내부 입력" value="관측 안 됨" share={null} />
     </div>
     <p className="usage-stats-input-meta">툴 호출 {detail.tool_calls.toLocaleString("ko-KR")}회</p>
-    {material.coverage.partial_samples > 0 || material.coverage.missing_samples > 0 ? <p className="usage-stats-input-meta">일부 세션 미기록</p> : null}
+    {material.coverage.partial_samples > 0 || material.coverage.missing_samples > 0 ? <p className="usage-stats-input-meta">{USAGE_STATS_LABELS.missingInput}</p> : null}
   </div>;
 }

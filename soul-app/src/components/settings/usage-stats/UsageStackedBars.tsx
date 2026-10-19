@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
 import { CompactTouchTarget } from '../../CompactTouchTarget';
 import { useTokens } from '../../../theme';
-import { formatUsageStatsTokenCount, formatUsageStatsUsd } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
+import { formatUsageStatsTokenCount, formatUsageStatsUsd, USAGE_STATS_LABELS } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
 
 export interface UsageStackSegment {
   id: string;
@@ -49,17 +49,16 @@ export function UsageStackedBars({
     return known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0);
   }), [buckets]);
   const maximum = Math.max(0, ...totals.flatMap(total => total === null ? [] : [total]));
-  const missingLabel = measure === 'tokens' ? '미기록' : '정가 미확인';
+  const missingLabel = measure === 'tokens' ? USAGE_STATS_LABELS.missingUsage : USAGE_STATS_LABELS.unknownPrice;
   const chartStatus = buckets.length > 0 && buckets.every(bucket => bucket.availability === 'before-coverage')
-    ? '이 기간은 기록 전입니다'
+    ? USAGE_STATS_LABELS.beforeCoverage
     : buckets.length > 0 && buckets.every(bucket => bucket.segments.length === 0)
-      ? '이 기간에 기록이 없습니다'
+      ? USAGE_STATS_LABELS.emptyRange
     : buckets.some(bucket => bucket.segments.length > 0) && totals.every(total => total === null)
       ? missingLabel
       : null;
   const hasKnownValue = totals.some(total => total !== null);
-  const hasDataPoint = buckets.some(bucket => bucket.segments.length > 0);
-  const axisLabel = maximum > 0 ? formatValue(maximum, measure) : hasKnownValue || !hasDataPoint ? '0' : missingLabel;
+  const axisLabel = hasKnownValue ? formatValue(maximum, measure) : null;
   const chartHeight = t.hitTarget.min * 4;
 
   const selectDragPosition = useCallback((pageX: number) => {
@@ -107,7 +106,7 @@ export function UsageStackedBars({
       }}
       style={{ minWidth: 0 }}
     >
-      <Text accessibilityElementsHidden importantForAccessibility="no" style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, textAlign: 'right' }}>{axisLabel}</Text>
+      {axisLabel ? <Text accessibilityElementsHidden importantForAccessibility="no" style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, textAlign: 'right' }}>{axisLabel}</Text> : null}
       {chartStatus ? <Text accessibilityRole="text" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{chartStatus}</Text> : null}
       <CompactTouchTarget
         testID={`${testID}-interaction`}
@@ -128,7 +127,7 @@ export function UsageStackedBars({
           const availabilityLabel = bucket.availability === 'before-coverage'
             ? '기록 전'
             : bucket.availability === 'future' ? '아직 기록되지 않음' : null;
-          const valueLabel = availabilityLabel ?? (total === null
+          const valueLabel = availabilityLabel ?? (total === null || (total === 0 && hasUnknown)
             ? missingLabel
             : `${formatValue(total, measure)}${hasUnknown ? '+' : ''}`);
           const hasBar = total !== null && total > 0 && maximum > 0;
@@ -139,9 +138,7 @@ export function UsageStackedBars({
                 {hasBar ? bucket.segments.map(segment => typeof segment.value === 'number' && segment.value > 0
                   ? <View key={segment.id} accessibilityElementsHidden importantForAccessibility="no" style={{ height: `${(segment.value / maximum) * 100}%`, backgroundColor: segment.color }} />
                   : null) : null}
-                {!chartStatus && !hasBar && total === null ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, textAlign: 'center' }}>?</Text> : null}
               </View>
-              <Text numberOfLines={1} style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, width: '100%', textAlign: 'center' }}>{bucket.label}</Text>
             </>
           );
 
@@ -172,7 +169,12 @@ export function UsageStackedBars({
           );
         })}
       </CompactTouchTarget>
-      <Text accessibilityElementsHidden importantForAccessibility="no" style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>{hasKnownValue || !hasDataPoint ? '0' : ''}</Text>
+      <View accessibilityElementsHidden importantForAccessibility="no" style={{ flexDirection: 'row', overflow: 'hidden', paddingTop: t.spacing.xxs }}>
+        {buckets.map(bucket => <View key={bucket.id} style={{ flex: 1, minWidth: 0, alignItems: 'center', opacity: bucket.selectable ? 1 : 0.48 }}>
+          <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, flexShrink: 0 }}>{bucket.label}</Text>
+        </View>)}
+      </View>
+      {hasKnownValue ? <Text accessibilityElementsHidden importantForAccessibility="no" style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>0</Text> : null}
     </View>
   );
 }

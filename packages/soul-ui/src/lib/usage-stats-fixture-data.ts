@@ -6,6 +6,13 @@ export const USAGE_STATS_FIXTURE_ANCHOR = "2026-10-18";
 export const USAGE_STATS_FIXTURE_AS_OF = "2026-10-19T00:00:00+09:00";
 export const USAGE_STATS_PROVIDERS: UsageStatsProvider[] = ["claude", "codex", "antigravity", "deepseek", "kimi"];
 
+// Collection evidence is separate from the presence of usage rows.
+export const USAGE_STATS_COLLECTION = {
+  since: "2026-09-01",
+  until: "2026-10-19",
+  providers: { claude: "complete", codex: "complete", antigravity: "complete", deepseek: "unknown", kimi: "complete" },
+} as const;
+
 export interface UsageStatsQuery {
   period: UsageStatsPeriod;
   anchor: string;

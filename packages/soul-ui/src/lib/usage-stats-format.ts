@@ -26,12 +26,73 @@ export function formatUsageStatsCoverage(
   pricedTokens: number | null | undefined,
   observedTokens: number | null | undefined,
 ): string {
+  if (typeof observedTokens !== "number" || !Number.isFinite(observedTokens) || observedTokens <= 0) return "";
   if (typeof pricedTokens !== "number" || !Number.isFinite(pricedTokens)) return "일부만 환산";
-  if (typeof observedTokens !== "number" || !Number.isFinite(observedTokens) || observedTokens <= 0) {
-    return "일부만 환산";
-  }
   const percent = Math.round((pricedTokens / observedTokens) * 100);
   return `기록 토큰 ${percent}% 환산`;
+}
+
+export const USAGE_STATS_LABELS = {
+  tokenDetails: "토큰 상세",
+  missingUsage: "미기록", unknownPrice: "정가 미확인", unknownCost: "미확인",
+  beforeCoverage: "이 기간은 기록 전입니다", emptyRange: "이 기간에 기록이 없습니다",
+  missingInput: "일부 세션 미기록",
+  input: "입력 (캐시 포함)", cacheRead: "그중 캐시 읽기", cacheWrite: "그중 캐시 쓰기",
+  output: "출력", reasoning: "그중 추론",
+};
+
+export function formatUsageStatsChars(value: number | null, observed = false): string {
+  if (value === null) return observed ? "관측 안 됨" : "미기록";
+  return `${observed ? "관측 " : ""}${value.toLocaleString("ko-KR")}자`;
+}
+
+export function formatUsageStatsValue(
+  metrics: { total_tokens: number | null; reference_cost_usd: number | null },
+  coverage: { usage_partial_events: number; missing_usage_turns: number; unknown_total_token_events: number; unpriced_events: number },
+  metric: "tokens" | "cost", row = false,
+): string {
+  const partial = metric === "tokens" ? isUsageStatsTokenPartial(coverage) : isUsageStatsCostPartial(coverage);
+  if (metric === "tokens") {
+    if (metrics.total_tokens === null || (metrics.total_tokens === 0 && partial)) return USAGE_STATS_LABELS.missingUsage;
+    return `${formatUsageStatsTokenCount(metrics.total_tokens)}${partial ? "+" : ""}`;
+  }
+  if (row && metrics.total_tokens === null) return USAGE_STATS_LABELS.missingUsage;
+  if (metrics.reference_cost_usd === null || (metrics.reference_cost_usd === 0 && partial)) return row ? USAGE_STATS_LABELS.unknownPrice : USAGE_STATS_LABELS.unknownCost;
+  return `${formatUsageStatsUsd(metrics.reference_cost_usd)}${partial ? "+" : ""}`;
+}
+
+export function usageStatsModelColorIndex(model: string | null | undefined, roster: readonly (string | null)[]): number {
+  if (!model) return -1;
+  const index = roster.indexOf(model);
+  return index < 5 ? index : -1;
+}
+
+export function usageStatsMonthAnchor(bucket: string, asOf: string): string {
+  const parsed = parseDate(bucket);
+  const monthEnd = formatDate(Date.UTC(parsed.year, parsed.month, 0));
+  const cutoff = parseDate(asOf.slice(0, 10));
+  const lastAvailable = formatDate(Date.UTC(cutoff.year, cutoff.month - 1, cutoff.day - 1));
+  return monthEnd < lastAvailable ? monthEnd : lastAvailable;
+}
+
+export function usageStatsRange(period: "week" | "month" | "all", anchor: string, asOf: string, coveredSince: string) {
+  const parsed = parseDate(anchor);
+  let since = coveredSince;
+  let until = asOf.slice(0, 10);
+  let bucket: "day" | "month" = "month";
+  if (period === "week") {
+    const weekday = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay();
+    since = formatDate(Date.UTC(parsed.year, parsed.month - 1, parsed.day - ((weekday + 6) % 7)));
+    const start = parseDate(since);
+    until = formatDate(Date.UTC(start.year, start.month - 1, start.day + 7));
+    bucket = "day";
+  } else if (period === "month") {
+    since = formatDate(Date.UTC(parsed.year, parsed.month - 1, 1));
+    until = formatDate(Date.UTC(parsed.year, parsed.month, 1));
+    bucket = "day";
+  }
+  const effective = until < asOf.slice(0, 10) ? until : asOf.slice(0, 10);
+  return { period, since, until, effective_until: effective < since ? since : effective, timezone: "Asia/Seoul" as const, bucket };
 }
 
 export function isUsageStatsTokenPartial(coverage: {

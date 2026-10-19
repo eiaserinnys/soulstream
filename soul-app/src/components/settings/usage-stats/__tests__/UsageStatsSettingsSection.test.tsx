@@ -15,11 +15,28 @@ import {
   UsageStatsPreviewProvider as InitialOptionsProvider,
   UsageStatsSettingsSection,
 } from '../UsageStatsSettingsSection';
+import { UsageShareRow } from '../UsageShareRow';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 const originalFetch = global.fetch;
 beforeEach(() => { global.fetch = jest.fn(createUsageStatsMockFetch('ready', originalFetch)); });
 afterEach(() => { jest.restoreAllMocks(); global.fetch = originalFetch; });
+
+test.each(['loading', 'error', 'forbidden'] as const)('%s 응답 상태에서도 기간과 두 필터를 유지한다', async state => {
+  const screen = render(<UsageStatsPreviewProvider initialState={state}><UsageStatsSettingsSection /></UsageStatsPreviewProvider>);
+  if (state === 'error') await waitFor(() => expect(screen.getByText('다시 불러오기')).toBeTruthy());
+  if (state === 'forbidden') await waitFor(() => expect(screen.getByText('이 통계를 볼 권한이 없습니다.')).toBeTruthy());
+  expect(screen.getByTestId('usage-stats-controls')).toBeTruthy();
+  expect(screen.getByLabelText('모델: 모든 모델')).toBeTruthy();
+  expect(screen.getByLabelText('프로젝트: 모든 프로젝트')).toBeTruthy();
+});
+
+test('unknown share는 track을 숨기고 실측0 share는 track을 유지한다', () => {
+  const screen = render(<UsageShareRow testID="share" label="DeepSeek" value="미기록" color="blue" share={null} />);
+  expect(screen.queryByTestId('share-track', { includeHiddenElements: true })).toBeNull();
+  screen.rerender(<UsageShareRow testID="share" label="Codex" value="0" color="blue" share={0} />);
+  expect(screen.getByTestId('share-track', { includeHiddenElements: true })).toBeTruthy();
+});
 function UsageStatsPreviewProvider({ initialState, children }: { initialState?: PreviewState; children: React.ReactNode }) {
   if (initialState) global.fetch = jest.fn(createUsageStatsMockFetch(initialState, originalFetch));
   return <InitialOptionsProvider>{children}</InitialOptionsProvider>;
@@ -84,7 +101,7 @@ test('월 정가 모드는 미확인 Kimi 가격을 표시하고 전체 월 막�
   const cost = month.totals.metrics.reference_cost_usd;
   expect(screen.getByTestId('usage-stats-reference-cost').props.children)
     .toBe(cost === null
-      ? '정가 미확인'
+      ? '미확인'
       : `${formatUsageStatsUsd(cost)}${month.totals.is_partial ? '+' : ''}`);
   expect(screen.getByTestId('usage-stats-model-row-kimi-provider-value').props.children)
     .toBe('정가 미확인');

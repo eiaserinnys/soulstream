@@ -8,9 +8,32 @@ import {
   formatUsageStatsUsd,
   isUsageStatsTokenPartial,
   shiftUsageStatsAnchor,
+  usageStatsMonthAnchor,
+  usageStatsModelColorIndex,
+  formatUsageStatsChars,
+  formatUsageStatsValue,
+  usageStatsRange,
 } from "./usage-stats-format";
 
 describe("usage statistics formatting", () => {
+  it("shares month drilldown anchors, stable model ranks, and observed character units", () => {
+    expect(usageStatsMonthAnchor("2026-10-01", "2026-10-19T00:00:00+09:00")).toBe("2026-10-18");
+    expect(usageStatsMonthAnchor("2026-09-01", "2026-10-19T00:00:00+09:00")).toBe("2026-09-30");
+    expect(usageStatsRange("week", usageStatsMonthAnchor("2026-09-01", "2026-10-19"), "2026-10-19", "2026-09-01")).toMatchObject({ since: "2026-09-28", until: "2026-10-05" });
+    expect(usageStatsModelColorIndex("sonnet", ["opus", "sonnet"])).toBe(1);
+    expect(usageStatsModelColorIndex(null, ["opus", "sonnet"])).toBe(-1);
+    expect(formatUsageStatsChars(1132000, true)).toBe("관측 1,132,000자");
+    expect(formatUsageStatsChars(1132000)).toBe("1,132,000자");
+    expect(formatUsageStatsCoverage(0, 0)).toBe("");
+    expect(formatUsageStatsCoverage(null, null)).toBe("");
+  });
+  it("shares unknown price wording and never invents a zero partial total", () => {
+    const coverage = { usage_partial_events: 0, missing_usage_turns: 1, unknown_total_token_events: 0, unpriced_events: 0 };
+    expect(formatUsageStatsValue({ total_tokens: null, reference_cost_usd: null }, coverage, "cost")).toBe("미확인");
+    expect(formatUsageStatsValue({ total_tokens: null, reference_cost_usd: null }, coverage, "cost", true)).toBe("미기록");
+    expect(formatUsageStatsValue({ total_tokens: 5, reference_cost_usd: null }, coverage, "cost", true)).toBe("정가 미확인");
+    expect(formatUsageStatsValue({ total_tokens: 0, reference_cost_usd: 0 }, coverage, "tokens")).toBe("미기록");
+  });
   it("keeps measured zero distinct from missing data", () => {
     expect(formatUsageStatsTokenCount(0)).toBe("0");
     expect(formatUsageStatsTokenCount(null)).toBe("미기록");
@@ -20,7 +43,7 @@ describe("usage statistics formatting", () => {
 
   it("names the observed-token denominator in coverage", () => {
     expect(formatUsageStatsCoverage(8_200, 10_000)).toBe("기록 토큰 82% 환산");
-    expect(formatUsageStatsCoverage(1, null)).toBe("일부만 환산");
+    expect(formatUsageStatsCoverage(1, null)).toBe("");
   });
 
   it("marks token totals partial only for missing or unknown usage", () => {

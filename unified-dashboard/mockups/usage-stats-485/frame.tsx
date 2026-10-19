@@ -5,6 +5,7 @@ import {
   buildEmptyUsageStatsOverview,
   buildUsageStatsDayDetail,
   buildUsageStatsOverview,
+  Button,
   type UsageStatsPeriod,
   type UsageStatsProvider,
 } from "@seosoyoung/soul-ui";
@@ -78,11 +79,15 @@ mockApi({
   })(),
 });
 
+let failureInjected = false;
 const mockRequest: typeof fetch = async (input, init) => {
   const requestUrl = new URL(input instanceof Request ? input.url : String(input), window.location.href);
   if (requestUrl.pathname.startsWith("/api/session-statistics")) {
     if (state === "forbidden") return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
-    if (state === "error") return new Response(JSON.stringify({ error: "unavailable" }), { status: 503 });
+    if (state === "error" && !failureInjected) {
+      failureInjected = true;
+      return new Response(JSON.stringify({ error: "unavailable" }), { status: 503 });
+    }
     if (state === "loading") await new Promise(resolve => window.setTimeout(resolve, 2400));
   }
   return window.fetch(input, init);
@@ -93,8 +98,8 @@ const mockConfigApi = { request: mockRequest } as ConfigModalApi;
 function UsageStatsMockup() {
   const [open, setOpen] = useState(true);
   return <>
-    <span className="usage-stats-mockup-label">예시 숫자</span>
-    <ConfigModal initialTab="usage_stats" open={open} onOpenChange={setOpen} api={mockConfigApi} />
+    {open ? <ConfigModal initialTab="usage_stats" open onOpenChange={setOpen} api={mockConfigApi} />
+      : <Button onClick={() => setOpen(true)}>다시 열기</Button>}
   </>;
 }
 

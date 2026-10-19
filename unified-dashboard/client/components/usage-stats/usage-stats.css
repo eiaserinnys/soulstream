@@ -19,18 +19,6 @@
   font: var(--v3-type-body) var(--v3-font-family);
 }
 
-.usage-stats-mockup-label {
-  position: fixed;
-  z-index: 40;
-  top: var(--v3-space-3);
-  right: var(--v3-space-3);
-  border: thin solid var(--v3-stroke-default);
-  border-radius: var(--radius-md);
-  padding: var(--v3-space-2);
-  background: var(--background);
-  color: var(--v3-text-secondary);
-  font: var(--v3-type-meta) var(--v3-font-family);
-}
 
 .config-dialog .usage-stats-controls {
   display: grid;
@@ -247,7 +235,7 @@
 .config-dialog .usage-stats-stack {
   position: absolute;
   right: 10%;
-  bottom: var(--v3-space-4);
+  bottom: 0;
   left: 10%;
   display: flex;
   flex-direction: column-reverse;
@@ -262,21 +250,23 @@
   flex: none;
 }
 
-.config-dialog .usage-stats-bucket-label {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
+.config-dialog .usage-stats-chart-labels {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--usage-stats-column-count), minmax(0, 1fr));
+  padding-top: var(--v3-space-2);
   overflow: hidden;
-  text-overflow: clip;
-  white-space: nowrap;
+}
+
+.config-dialog .usage-stats-bucket-label {
   text-align: center;
-  pointer-events: none;
+  white-space: nowrap;
 }
 
 .config-dialog .usage-stats-axis-zero {
-  display: block;
-  text-align: right;
+  position: absolute;
+  right: 0;
+  top: 0;
 }
 
 .config-dialog .usage-stats-chart-message {
@@ -301,6 +291,7 @@
   display: grid;
   min-width: 0;
   gap: var(--v3-space-2);
+  padding: var(--v3-space-2);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -310,7 +301,6 @@
   width: 100%;
   border: 0;
   border-radius: var(--radius-md);
-  padding: var(--v3-space-2) 0;
   background: transparent;
   cursor: pointer;
 }

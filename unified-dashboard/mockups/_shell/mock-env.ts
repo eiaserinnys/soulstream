@@ -34,7 +34,8 @@ if (params.get("glass") === "css") {
 }
 
 // 운영 서버로 가는 호출은 밖으로 내보내지 않는다. 등록한 응답만 돌려준다.
-const isApi = (url: URL) => url.origin === window.location.origin && /^\/(api|cogito)\//.test(url.pathname);
+const isApi = (url: URL) => url.origin === window.location.origin &&
+  !url.pathname.startsWith("/api/annotations/") && /^\/(api|cogito)\//.test(url.pathname);
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const request = input instanceof Request ? input : null;

@@ -1,4 +1,5 @@
 // Pure, deterministic public fixture builders for the usage statistics mockup.
+import { usageStatsRange } from "./usage-stats-format";
 import {
   MISSING_TURNS,
   PENDING_TURNS,
@@ -28,9 +29,8 @@ import type {
   UsageStatsSeriesPoint,
 } from "./usage-stats-fixture-data";
 import {
-  aggregate,
+  aggregateFixtureUsage,
   aggregateMetrics,
-  hasUnknownPrice,
   zeroCoverage,
   zeroMetrics,
 } from "./usage-stats-fixture-aggregate";
@@ -42,10 +42,10 @@ export function buildUsageStatsOverview(query: UsageStatsQuery): UsageStatsOverv
   const records = filterUsageRecords(query, range.since, range.effective_until);
   const missing = filterMissingTurns(query, range.since, range.effective_until);
   const pending = filterPendingTurns(query, range.since, range.effective_until);
-  const totals = aggregate(records, missing, pending, true);
+  const totals = aggregateFixtureUsage(records, missing, pending, true, query, range.since, range.effective_until);
   const projectRoster = buildProjectRoster(records, query);
-  const byModel = buildProviderRows(records, missing, pending, query);
-  const byProject = buildProjectRows(records, missing, pending, query, projectRoster);
+  const byModel = buildProviderRows(records, missing, pending, query, range.since, range.effective_until);
+  const byProject = buildProjectRows(records, missing, pending, query, projectRoster, range.since, range.effective_until);
   const series = buildSeries(query, range, records, missing, pending, projectRoster);
 
   return {
@@ -62,7 +62,7 @@ export function buildUsageStatsOverview(query: UsageStatsQuery): UsageStatsOverv
     totals,
     by_model: byModel,
     by_project: byProject,
-    series,
+    series: totals.metrics.total_tokens === 0 && !totals.is_partial && !records.length ? [] : series,
   };
 }
 
@@ -92,9 +92,9 @@ export function buildUsageStatsDayDetail(
   }
   const missing = filterMissingTurns(filter, date, addDays(date, 1));
   const pending = filterPendingTurns(filter, date, addDays(date, 1));
-  const totals = aggregate(records, missing, pending, !filter.provider && !filter.model);
-  const byModel = buildProviderRows(records, [], [], filter);
-  const byProject = buildProjectRows(records, missing, pending, filter, projectRoster);
+  const totals = aggregateFixtureUsage(records, missing, pending, !filter.provider && !filter.model, filter, date, addDays(date, 1));
+  const byModel = buildProviderRows(records, [], [], filter, date, addDays(date, 1));
+  const byProject = buildProjectRows(records, missing, pending, filter, projectRoster, date, addDays(date, 1));
   const inputMaterial = buildInputMaterial(date, filter);
   let toolCalls = 0;
   for (const call of RAW_TOOL_CALLS) {
@@ -119,31 +119,7 @@ export function buildUsageStatsDayDetail(
 }
 
 function buildRange(period: UsageStatsPeriod, anchor: string): UsageStatsRange {
-  const asOf = USAGE_STATS_FIXTURE_AS_OF.slice(0, 10);
-  let since = "2026-09-01";
-  let until = asOf;
-  let bucket: "day" | "month" = "month";
-
-  if (period === "week") {
-    since = mondayOf(anchor);
-    until = addDays(since, 7);
-    bucket = "day";
-  } else if (period === "month") {
-    const parsed = parseDate(anchor);
-    since = formatDate(Date.UTC(parsed.year, parsed.month - 1, 1));
-    until = formatDate(Date.UTC(parsed.year, parsed.month, 1));
-    bucket = "day";
-  }
-
-  const effectiveUntil = minDate(until, asOf);
-  return {
-    period,
-    since,
-    until,
-    effective_until: effectiveUntil < since ? since : effectiveUntil,
-    timezone: "Asia/Seoul",
-    bucket,
-  };
+  return usageStatsRange(period, anchor, USAGE_STATS_FIXTURE_AS_OF, "2026-09-01");
 }
 
 function filterUsageRecords(query: UsageStatsQuery, since: string, until: string): RawUsageRecord[] {
@@ -198,21 +174,20 @@ function buildProviderRows(
   records: RawUsageRecord[],
   missing: MissingTurnRecord[],
   pending: PendingTurnRecord[],
-  query: { provider?: UsageStatsProvider | null; model?: string | null },
+  query: Partial<UsageStatsQuery>, since: string, until: string,
 ): UsageStatsProviderRow[] {
   const rows: UsageStatsProviderRow[] = [];
   if (!query.provider && !query.model) {
     for (const provider of USAGE_STATS_PROVIDERS) {
       const matching: RawUsageRecord[] = [];
       for (const record of records) if (record.provider === provider) matching.push(record);
+      const value = aggregateFixtureUsage(matching, [], [], false, { provider, project_ids: query.project_ids }, since, until);
       rows.push({
         provider,
         backend: backendFor(provider),
         model: null,
         attribution: "provider",
-        metrics: aggregateMetrics(matching),
-        coverage: aggregate(matching, [], [], false).coverage,
-        is_partial: matching.length === 0 || hasUnknownPrice(matching),
+        metrics: value.metrics, coverage: value.coverage, is_partial: value.is_partial,
       });
     }
     return rows;
@@ -244,14 +219,13 @@ function buildProviderRows(
     for (const record of records) {
       if (record.provider === provider && record.model === model) matching.push(record);
     }
+    const value = aggregateFixtureUsage(matching, [], [], false, { provider, model, project_ids: query.project_ids }, since, until);
     rows.push({
       provider,
       backend: backendFor(provider),
       model,
       attribution: "model",
-      metrics: aggregateMetrics(matching),
-      coverage: aggregate(matching, [], [], false).coverage,
-      is_partial: matching.length === 0 || hasUnknownPrice(matching),
+      metrics: value.metrics, coverage: value.coverage, is_partial: value.is_partial,
     });
   }
   return rows;
@@ -261,8 +235,8 @@ function buildProjectRows(
   records: RawUsageRecord[],
   missing: MissingTurnRecord[],
   pending: PendingTurnRecord[],
-  query: { project_ids?: readonly string[] },
-  projectRoster?: readonly string[],
+  query: Partial<UsageStatsQuery>,
+  projectRoster: readonly string[] | undefined, since: string, until: string,
 ): UsageStatsProjectRow[] {
   const groups = groupProjectRecords(records);
   const roster = projectRoster ?? buildProjectRoster(records, query);
@@ -273,15 +247,15 @@ function buildProjectRows(
     if (group.project_id === null) {
       unclassified = group;
     } else if (roster.indexOf(group.project_id) >= 0) {
-      rows.push(projectRow(group, missing, pending));
+      rows.push(projectRow(group, missing, pending, query, since, until));
     } else {
       for (const record of group.records) otherRecords.push(record);
     }
   }
-  if (unclassified) rows.push(projectRow(unclassified, missing, pending));
+  if (unclassified) rows.push(projectRow(unclassified, missing, pending, query, since, until));
   if (otherRecords.length > 0) {
     const other: ProjectGroup = { project_id: "__other__", label: "기타", records: otherRecords };
-    rows.push(projectRow(other, missing, pending));
+    rows.push(projectRow(other, missing, pending, query, since, until));
   }
   return rows;
 }
@@ -312,12 +286,12 @@ function groupProjectRecords(records: RawUsageRecord[]): ProjectGroup[] {
   return groups;
 }
 
-function projectRow(group: ProjectGroup, missing: MissingTurnRecord[], pending: PendingTurnRecord[]): UsageStatsProjectRow {
+function projectRow(group: ProjectGroup, missing: MissingTurnRecord[], pending: PendingTurnRecord[], query: Partial<UsageStatsQuery>, since: string, until: string): UsageStatsProjectRow {
   const matchingMissing: MissingTurnRecord[] = [];
   const matchingPending: PendingTurnRecord[] = [];
   for (const turn of missing) if (turn.project_id === group.project_id) matchingMissing.push(turn);
   for (const turn of pending) if (turn.project_id === group.project_id) matchingPending.push(turn);
-  const value = aggregate(group.records, matchingMissing, matchingPending, true);
+  const value = aggregateFixtureUsage(group.records, matchingMissing, matchingPending, true, { provider: query.provider, model: query.model, project_ids: group.records.map(record => record.project_id ?? "__unclassified__") }, since, until);
   return {
     project_id: group.project_id,
     label: group.label,
@@ -343,7 +317,8 @@ function buildSeries(
       const key = range.bucket === "month" ? record.date.slice(0, 7) + "-01" : record.date;
       if (key === bucket) bucketRecords.push(record);
     }
-    const modelRows = buildProviderRows(bucketRecords, [], [], query);
+    const until = range.bucket === "month" ? minDate(formatDate(Date.UTC(parseDate(bucket).year, parseDate(bucket).month, 1)), range.effective_until) : minDate(addDays(bucket, 1), range.effective_until);
+    const modelRows = buildProviderRows(bucketRecords, [], [], query, bucket, until);
     for (const row of modelRows) {
       const point: UsageStatsSeriesPoint = {
         bucket_start: bucket,
@@ -355,7 +330,7 @@ function buildSeries(
       series.push(point);
     }
 
-    const projectRows = buildProjectRows(bucketRecords, missing, pending, query, projectRoster);
+    const projectRows = buildProjectRows(bucketRecords, missing.filter(turn => turn.date >= bucket && turn.date < until), pending.filter(turn => turn.date >= bucket && turn.date < until), query, projectRoster, bucket, until);
     for (const row of projectRows) {
       const point: UsageStatsSeriesPoint = {
         bucket_start: bucket,
@@ -473,13 +448,6 @@ function projectLabel(projectId: string | null): string {
 function valueForSort(records: RawUsageRecord[]): number {
   const value = aggregateMetrics(records).total_tokens;
   return value ?? 0;
-}
-
-function mondayOf(date: string): string {
-  const parsed = parseDate(date);
-  const weekday = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay();
-  const daysFromMonday = (weekday + 6) % 7;
-  return addDays(date, -daysFromMonday);
 }
 
 function minDate(left: string, right: string): string {

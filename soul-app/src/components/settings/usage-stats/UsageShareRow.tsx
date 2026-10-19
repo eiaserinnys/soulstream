@@ -38,9 +38,9 @@ export function UsageShareRow({
         <Text testID={valueTestID ?? (testID ? `${testID}-value` : undefined)} style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, fontVariant: ['tabular-nums'] }}>{value}</Text>
         {shareLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary, fontVariant: ['tabular-nums'] }}>{shareLabel}</Text> : null}
       </View>
-      <View accessibilityElementsHidden importantForAccessibility="no" style={{ height: t.spacing.xs, borderRadius: t.radius.sm, backgroundColor: t.persistentSession.line, overflow: 'hidden' }}>
+      {boundedShare !== null ? <View testID={testID ? `${testID}-track` : undefined} accessibilityElementsHidden importantForAccessibility="no" style={{ height: t.spacing.xs, borderRadius: t.radius.sm, backgroundColor: t.persistentSession.line, overflow: 'hidden' }}>
         {boundedShare !== null ? <View style={{ height: '100%', width: `${boundedShare * 100}%`, backgroundColor: color }} /> : null}
-      </View>
+      </View> : null}
     </CompactTouchTarget>
   );
 }

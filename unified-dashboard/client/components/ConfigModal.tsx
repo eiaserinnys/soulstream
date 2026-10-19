@@ -1,4 +1,5 @@
 import "./config/config-layout.css";
+import "../v3/v3-card-board.css";
 import { fileToWallpaperDataUrl } from "@seosoyoung/soul-ui/lib/wallpaper-settings";
 import { ArrowLeft, Check } from "lucide-react";
 import { FileStorageTab } from "./FileStorageTab";

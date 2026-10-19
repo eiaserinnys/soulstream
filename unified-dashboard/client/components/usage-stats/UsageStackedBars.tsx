@@ -1,6 +1,6 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { UsageStatsMetrics, UsageStatsPeriod, UsageStatsRange, UsageStatsSeriesPoint } from "@seosoyoung/soul-ui";
-import { formatUsageStatsDateWithWeekday, formatUsageStatsTokenCount, formatUsageStatsUsd } from "@seosoyoung/soul-ui";
+import { formatUsageStatsDateWithWeekday, formatUsageStatsTokenCount, formatUsageStatsUsd, USAGE_STATS_LABELS } from "@seosoyoung/soul-ui";
 
 export interface UsageChartSeries {
   key: string;
@@ -19,7 +19,7 @@ function valueLabel(value: number, metric: Metric): string {
 }
 
 function unknownLabel(metric: Metric): string {
-  return metric === "tokens" ? "미기록" : "정가 미확인";
+  return metric === "tokens" ? USAGE_STATS_LABELS.missingUsage : USAGE_STATS_LABELS.unknownPrice;
 }
 
 function bucketDates(range: UsageStatsRange, period: UsageStatsPeriod): string[] {
@@ -152,13 +152,11 @@ export function UsageStackedBars({
   };
 
   return <div className="usage-stats-chart" aria-label={label}>
-    <div className="usage-stats-axis-label" aria-hidden="true">
-      {maximum > 0 ? valueLabel(maximum, metric) : hasKnownValue ? valueLabel(0, metric) : hasDataPoint ? unknownLabel(metric) : "0"}
-    </div>
+    {hasKnownValue && !emptyMessage && !loading ? <div className="usage-stats-axis-label" aria-hidden="true">{valueLabel(maximum, metric)}</div> : null}
     {loading ? <div className="usage-stats-chart-message" role="status">불러오는 중…</div> : emptyMessage ? (
       <div className="usage-stats-chart-message">{emptyMessage}</div>
     ) : !hasKnownValue ? (
-      <div className="usage-stats-chart-message">{hasDataPoint ? unknownLabel(metric) : "이 기간에 기록이 없습니다"}</div>
+      <div className="usage-stats-chart-message">{hasDataPoint ? unknownLabel(metric) : USAGE_STATS_LABELS.emptyRange}</div>
     ) : null}
     <div className="usage-stats-chart-plot" role="group" aria-label={label} style={{ "--usage-stats-column-count": values.length } as CSSProperties} onKeyDownCapture={(event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "Escape" || !selectedBucket) return;
@@ -177,7 +175,9 @@ export function UsageStackedBars({
         const total = item.total;
         const height = maximum > 0 && total !== null ? (total / maximum) * 100 : 0;
         const dateLabel = bucketDescription(item.bucket, period);
-        const accessibleValue = total === null ? (item.hasPoint ? unknownLabel(metric) : "기록 없음") : valueLabel(total, metric);
+        const partial = item.segments.some(segment => segment.value === null);
+        const accessibleValue = item.bucket < coveredSince ? "기록 전" : item.bucket >= range.effective_until ? "아직 기록되지 않음"
+          : total === null || (total === 0 && partial) ? (item.hasPoint ? unknownLabel(metric) : "기록 없음") : `${valueLabel(total, metric)}${partial ? "+" : ""}`;
         const selected = selectedBucket === item.bucket;
         const disabled = unavailable || Boolean(emptyMessage);
         const description = period === "all" ? dateLabel : formatUsageStatsDateWithWeekday(item.bucket);
@@ -217,10 +217,12 @@ export function UsageStackedBars({
               style={{ height: `${(segment.value / total) * 100}%`, backgroundColor: segment.color }}
             />)}
           </span> : null}
-          <span className="usage-stats-bucket-label" aria-hidden="true">{bucketLabel(item.bucket, period)}</span>
         </button>;
       })}
     </div>
-    <span className="usage-stats-axis-zero" aria-hidden="true">{hasKnownValue || !hasDataPoint ? "0" : ""}</span>
+    <div className="usage-stats-chart-labels" aria-hidden="true" style={{ "--usage-stats-column-count": values.length } as CSSProperties}>
+      {hasKnownValue && !emptyMessage && !loading ? <span className="usage-stats-axis-zero">0</span> : null}
+      {values.map(item => <span key={item.bucket} className="usage-stats-bucket-label" style={{ opacity: isUnavailable(item.bucket, period, range, coveredSince) ? 0.48 : 1 }}>{bucketLabel(item.bucket, period)}</span>)}
+    </div>
   </div>;
 }

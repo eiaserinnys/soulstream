@@ -6,7 +6,31 @@ import type {
   UsageStatsAggregate,
   UsageStatsCoverage,
   UsageStatsMetrics,
+  UsageStatsQuery,
 } from "./usage-stats-fixture-data";
+import { MISSING_TURNS, PENDING_TURNS, USAGE_STATS_COLLECTION } from "./usage-stats-fixture-data";
+
+export function aggregateFixtureUsage(
+  records: RawUsageRecord[], missing: MissingTurnRecord[], pending: PendingTurnRecord[],
+  countMissing: boolean, query: Partial<UsageStatsQuery>, since: string, until: string,
+): UsageStatsAggregate {
+  const value = aggregate(records, missing, pending, countMissing);
+  const collection = USAGE_STATS_COLLECTION;
+  const covered = since >= collection.since && until <= collection.until && since < until;
+  const providerCovered = query.provider ? collection.providers[query.provider] === "complete" : !query.model;
+  const unidentified = [MISSING_TURNS, PENDING_TURNS].some(turns => turns.some(turn => turn.date >= since && turn.date < until &&
+    (!query.project_ids?.length || query.project_ids.some(id => id === turn.project_id || (id === "__unclassified__" && turn.project_id === null)))));
+  if (!records.length && covered && providerCovered && !unidentified) {
+    return { metrics: zeroMetrics(), coverage: zeroCoverage(), is_partial: false };
+  }
+  // A known zero event is not evidence that unidentified turns also used zero.
+  if (value.metrics.total_tokens === 0 && unidentified) {
+    value.metrics.total_tokens = null;
+    value.metrics.reference_cost_usd = null;
+    value.is_partial = true;
+  }
+  return value;
+}
 
 export function aggregate(
   records: RawUsageRecord[],
@@ -55,6 +79,10 @@ export function aggregate(
     if (turn.terminal) terminal += 1;
     if (turn.ended) ended += 1;
     if (countMissing && countedIds.indexOf(turn.id) < 0) countedIds.push(turn.id);
+  }
+  if (metrics.total_tokens === 0 && (missing.length > 0 || pending.length > 0)) {
+    metrics.total_tokens = null;
+    metrics.reference_cost_usd = null;
   }
 
   const coverage: UsageStatsCoverage = {
