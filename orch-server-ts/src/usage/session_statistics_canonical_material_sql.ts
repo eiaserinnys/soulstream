@@ -1,13 +1,16 @@
 import type { EventIngressSqlFragment } from "../node/event_ingress_repository.js";
+import type { SessionStatisticsCanonicalReadOptions } from "./session_statistics_period_seed_sql.js";
 
 export function createSessionStatisticsMaterialCtes(
   fragment: EventIngressSqlFragment,
+  options?: SessionStatisticsCanonicalReadOptions,
 ): unknown {
-  return fragment`
+  const materialScope = createMaterialScopeCte(fragment, options);
+  return fragment`${materialScope},
     latest_new_manifests AS (
       SELECT DISTINCT ON (session_id, accounting_key)
         session_id, accounting_key, event_id, input_id
-      FROM scoped_facts
+      FROM material_scope_facts
       WHERE fact_kind = 'boundary'
         AND source_event_type = 'input_material_manifest'
         AND accounting_key IS NOT NULL
@@ -21,7 +24,7 @@ export function createSessionStatisticsMaterialCtes(
     ),
     body_input_ids AS (
       SELECT DISTINCT session_id, input_id
-      FROM scoped_facts
+      FROM material_scope_facts
       WHERE fact_kind = 'input_material'
         AND source_event_type IN ('user_message', 'system_message')
         AND input_id IS NOT NULL
@@ -29,7 +32,7 @@ export function createSessionStatisticsMaterialCtes(
     latest_legacy_manifests AS (
       SELECT DISTINCT ON (material.session_id, material.input_id)
         material.session_id, material.input_id, material.event_id
-      FROM scoped_facts AS material
+      FROM material_scope_facts AS material
       JOIN body_input_ids AS body USING (session_id, input_id)
       WHERE material.fact_kind = 'input_material'
         AND material.source_event_type = 'context_manifest'
@@ -45,7 +48,7 @@ export function createSessionStatisticsMaterialCtes(
     ),
     selected_material AS (
       SELECT material.*
-      FROM scoped_facts AS material
+      FROM material_scope_facts AS material
       WHERE material.fact_kind = 'input_material'
         AND NOT (material.quality @> '["identity_conflict"]'::jsonb)
         AND NOT (material.quality @> '["unmatched_legacy_material"]'::jsonb)
@@ -242,9 +245,92 @@ export function createSessionStatisticsMaterialCtes(
         '[]'::jsonb AS selection_quality,
         fact.recorded_at AS owner_recorded_at,
         to_jsonb(fact) AS fact
-      FROM scoped_facts AS fact
+      FROM material_scope_facts AS fact
       WHERE fact.fact_kind IN ('boundary', 'tool_call')
     )
 
+  `;
+}
+
+function createMaterialScopeCte(
+  fragment: EventIngressSqlFragment,
+  options?: SessionStatisticsCanonicalReadOptions,
+): unknown {
+  if (options === undefined) {
+    return fragment`material_scope_facts AS (SELECT * FROM scoped_facts)`;
+  }
+  if (options.readPurpose.kind === "overview") {
+    return fragment`material_scope_facts AS (
+      SELECT * FROM scoped_facts
+      WHERE fact_kind = 'boundary'
+        AND source_event_type <> 'input_material_manifest'
+    )`;
+  }
+
+  const { asOf, readPurpose } = options;
+  // Input IDs recover commandless legacy facts; keyed material follows exact command keys.
+  return fragment`
+    day_owner_command_keys AS (
+      SELECT DISTINCT session_id, accounting_key
+      FROM labeled_usage_selections
+      WHERE state = 'owned'
+        AND accounting_key IS NOT NULL
+        AND owner_recorded_at >= ${readPurpose.recordedAtFrom}::timestamptz
+        AND owner_recorded_at < LEAST(
+          ${readPurpose.recordedAtBefore}::timestamptz,
+          ${asOf}::timestamptz
+        )
+    ),
+    day_owner_input_ids AS (
+      SELECT DISTINCT session_id, input_id
+      FROM labeled_usage_selections
+      WHERE state = 'owned'
+        AND accounting_key IS NULL
+        AND input_id IS NOT NULL
+        AND owner_recorded_at >= ${readPurpose.recordedAtFrom}::timestamptz
+        AND owner_recorded_at < LEAST(
+          ${readPurpose.recordedAtBefore}::timestamptz,
+          ${asOf}::timestamptz
+        )
+    ),
+    day_material_command_keys AS (
+      SELECT session_id, accounting_key FROM day_owner_command_keys
+      UNION
+      SELECT DISTINCT session_id, accounting_key
+      FROM day_material_seed_facts
+      WHERE accounting_key IS NOT NULL
+    ),
+    day_material_input_ids AS (
+      SELECT session_id, input_id FROM day_owner_input_ids
+      UNION
+      SELECT DISTINCT session_id, input_id
+      FROM day_material_seed_facts
+      WHERE input_id IS NOT NULL
+    ),
+    day_material_related_facts AS (
+      SELECT fact.*
+      FROM session_statistics_facts AS fact
+      JOIN authorized_sessions AS allowed USING (session_id)
+      JOIN day_material_command_keys AS command
+        ON command.session_id = fact.session_id
+       AND command.accounting_key = fact.accounting_key
+      WHERE fact.fact_kind IN ('boundary', 'input_material', 'tool_call')
+        AND fact.recorded_at < ${asOf}::timestamptz
+      UNION
+      SELECT fact.*
+      FROM session_statistics_facts AS fact
+      JOIN authorized_sessions AS allowed USING (session_id)
+      JOIN day_material_input_ids AS input
+        ON input.session_id = fact.session_id
+       AND input.input_id = fact.input_id
+      WHERE fact.fact_kind IN ('boundary', 'input_material', 'tool_call')
+        AND fact.accounting_key IS NULL
+        AND fact.recorded_at < ${asOf}::timestamptz
+    ),
+    material_scope_facts AS (
+      SELECT * FROM scoped_facts
+      UNION
+      SELECT * FROM day_material_related_facts
+    )
   `;
 }
