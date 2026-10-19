@@ -345,7 +345,6 @@ function buildSeries(
     }
     const modelRows = buildProviderRows(bucketRecords, [], [], query);
     for (const row of modelRows) {
-      if (row.metrics.total_tokens === null) continue;
       const point: UsageStatsSeriesPoint = {
         bucket_start: bucket,
         provider: row.provider,
@@ -358,7 +357,6 @@ function buildSeries(
 
     const projectRows = buildProjectRows(bucketRecords, missing, pending, query, projectRoster);
     for (const row of projectRows) {
-      if (row.metrics.total_tokens === null) continue;
       const point: UsageStatsSeriesPoint = {
         bucket_start: bucket,
         project_id: row.project_id,

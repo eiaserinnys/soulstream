@@ -42,6 +42,15 @@ export function isUsageStatsTokenPartial(coverage: {
   return coverage.usage_partial_events > 0 || coverage.missing_usage_turns > 0 || coverage.unknown_total_token_events > 0;
 }
 
+export function isUsageStatsCostPartial(coverage: {
+  usage_partial_events: number;
+  missing_usage_turns: number;
+  unknown_total_token_events: number;
+  unpriced_events: number;
+}): boolean {
+  return coverage.unpriced_events > 0 || isUsageStatsTokenPartial(coverage);
+}
+
 export function formatUsageStatsPeriodLabel(
   period: "week" | "month" | "all",
   since: string,

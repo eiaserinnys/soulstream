@@ -11,8 +11,8 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { TABLET_BREAKPOINT, useTokens } from '../../theme';
 import {
   UsageStatsPreviewProvider,
-  type PreviewState,
 } from '../../components/settings/usage-stats/UsageStatsSettingsSection';
+import { createUsageStatsMockFetch, type PreviewState } from './mock-api';
 import { MockupShell } from '../MockupShell';
 
 function queryOptions(): { state: PreviewState; period: 'week' | 'month' | 'all'; date: string | null; measure: 'tokens' | 'cost' } {
@@ -33,6 +33,7 @@ function SettingsPreview() {
   const [closed, setClosed] = useState(false);
   const [initialized] = useState(() => {
     useSettingsStore.setState({ serverUrl: '' });
+    globalThis.fetch = createUsageStatsMockFetch(queryOptions().state, globalThis.fetch);
     return true;
   });
   const options = queryOptions();
@@ -48,7 +49,7 @@ function SettingsPreview() {
         {closed ? <View testID="usage-stats-mockup-closed" style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: t.spacing.md }}>
           <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>설정 화면이 닫혔습니다.</Text>
           <GlassButton onPress={() => setClosed(false)}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 열기</Text></GlassButton>
-        </View> : <UsageStatsPreviewProvider initialState={options.state} initialPeriod={options.period} initialDate={options.date} initialMeasure={options.measure}>
+        </View> : <UsageStatsPreviewProvider initialPeriod={options.period} initialDate={options.date} initialMeasure={options.measure}>
           <SettingsScreen category="usage-stats" showAdmin={false} onClose={() => setClosed(true)} />
         </UsageStatsPreviewProvider>}
       </View>

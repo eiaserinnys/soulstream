@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PanResponder, Platform, StyleSheet, Text, View } from 'react-native';
+import { CompactTouchTarget } from '../../CompactTouchTarget';
 import { useTokens } from '../../../theme';
 import { formatUsageStatsTokenCount, formatUsageStatsUsd } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
 
@@ -56,7 +57,9 @@ export function UsageStackedBars({
     : buckets.some(bucket => bucket.segments.length > 0) && totals.every(total => total === null)
       ? missingLabel
       : null;
-  const axisLabel = maximum > 0 ? formatValue(maximum, measure) : '0';
+  const hasKnownValue = totals.some(total => total !== null);
+  const hasDataPoint = buckets.some(bucket => bucket.segments.length > 0);
+  const axisLabel = maximum > 0 ? formatValue(maximum, measure) : hasKnownValue || !hasDataPoint ? '0' : missingLabel;
   const chartHeight = t.hitTarget.min * 4;
 
   const selectDragPosition = useCallback((pageX: number) => {
@@ -106,7 +109,19 @@ export function UsageStackedBars({
     >
       <Text accessibilityElementsHidden importantForAccessibility="no" style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary, textAlign: 'right' }}>{axisLabel}</Text>
       {chartStatus ? <Text accessibilityRole="text" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{chartStatus}</Text> : null}
-      <View style={{ flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }}>
+      <CompactTouchTarget
+        testID={`${testID}-interaction`}
+        accessible={false}
+        frameStyle={{ width: '100%' }}
+        surfaceStyle={{ width: '100%', flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }}
+        onPress={event => {
+          if (didDrag.current) { didDrag.current = false; return; }
+          if (chartWidth <= 0) return;
+          const index = Math.floor(((event.nativeEvent.pageX - chartLeft.current) / chartWidth) * buckets.length);
+          const bucket = buckets[Math.max(0, Math.min(buckets.length - 1, index))];
+          if (bucket?.selectable) onSelectBucket?.(bucket.id);
+        }}
+      >
         {buckets.map((bucket, index) => {
           const total = totals[index] ?? null;
           const hasUnknown = bucket.segments.length === 0 || bucket.segments.some(segment => segment.value === null || segment.partial);
@@ -131,28 +146,33 @@ export function UsageStackedBars({
           );
 
           return (
-            <Pressable
+            <View
               key={bucket.id}
               testID={`${testID}-${bucket.id}`}
               accessibilityRole="button"
               accessibilityLabel={`${bucket.description}, ${valueLabel}`}
               accessibilityState={{ selected, disabled: !bucket.selectable }}
-              disabled={!bucket.selectable || !onSelectBucket}
-              onPress={() => {
-                if (didDrag.current) {
-                  didDrag.current = false;
-                  return;
-                }
-                onSelectBucket?.(bucket.id);
-              }}
+              accessible
+              tabIndex={bucket.selectable ? 0 : -1}
+              {...(Platform.OS === 'web' ? {
+                onKeyDown: (event: { key: string; preventDefault(): void; stopPropagation(): void }) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (bucket.selectable) onSelectBucket?.(bucket.id);
+                },
+              } : {})}
+              onAccessibilityTap={() => { if (bucket.selectable) onSelectBucket?.(bucket.id); }}
+              accessibilityActions={[{ name: 'activate' }]}
+              onAccessibilityAction={event => { if (event.nativeEvent.actionName === 'activate' && bucket.selectable) onSelectBucket?.(bucket.id); }}
               style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'space-between', gap: t.spacing.xxs, backgroundColor: selected ? t.colors.accentTint : 'transparent', opacity: bucket.selectable ? 1 : 0.48 }}
             >
               {label}
-            </Pressable>
+            </View>
           );
         })}
-      </View>
-      <Text accessibilityElementsHidden importantForAccessibility="no" style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>0</Text>
+      </CompactTouchTarget>
+      <Text accessibilityElementsHidden importantForAccessibility="no" style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>{hasKnownValue || !hasDataPoint ? '0' : ''}</Text>
     </View>
   );
 }

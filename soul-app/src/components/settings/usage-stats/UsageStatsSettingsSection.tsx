@@ -1,19 +1,12 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
-import { isUsageStatsTokenPartial } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
+import { ActivityIndicator, Linking, Text, View } from 'react-native';
+import { isUsageStatsTokenPartial, isUsageStatsCostPartial } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
 import { DisclosureIcon } from '../../DisclosureIcon';
 import { GlassButton } from '../../GlassSurface';
 import { SettingsOptionRow } from '../SettingsOptionRow';
 import { SettingsSection } from '../SettingsSection';
 import { SettingsSegmentedControl } from '../SettingsSegmentedControl';
 import { useTokens } from '../../../theme';
-import {
-  buildEmptyUsageStatsOverview,
-  buildUsageStatsDayDetail,
-  buildUsageStatsOverview,
-  USAGE_STATS_FIXTURE_ANCHOR,
-  USAGE_STATS_PROVIDERS,
-} from '../../../../../packages/soul-ui/src/lib/usage-stats-fixtures';
 import {
   formatUsageStatsCoverage,
   formatUsageStatsDateWithWeekday,
@@ -34,14 +27,13 @@ import type {
 import { UsageShareRow } from './UsageShareRow';
 import { makeUsageStatsBuckets, sumKnown } from './usage-stats-chart-data';
 import { UsageStackedBars } from './UsageStackedBars';
+import { useUsageStats, type UsageStatsLoadState } from './useUsageStats';
 
-export type PreviewState = 'ready' | 'loading' | 'empty' | 'error' | 'forbidden' | 'backfilling';
 type Measure = 'tokens' | 'cost';
 type ModelFilter = { id: string; provider: UsageStatsProvider | null; model: string | null; label: string };
 type PreviewContextValue = {
-  state: PreviewState;
-  setState(state: PreviewState): void;
   initialPeriod: UsageStatsPeriod;
+  initialAnchor: string;
   initialDate: string | null;
   initialMeasure: Measure;
 };
@@ -79,28 +71,25 @@ const MEASURE_OPTIONS: { value: Measure; label: string }[] = [
 
 export function UsageStatsPreviewProvider({
   children,
-  initialState = 'ready',
   initialPeriod = 'week',
+  initialAnchor = '2026-10-17',
   initialDate = null,
   initialMeasure = 'tokens',
 }: {
   children: React.ReactNode;
-  initialState?: PreviewState;
   initialPeriod?: UsageStatsPeriod;
+  initialAnchor?: string;
   initialDate?: string | null;
   initialMeasure?: Measure;
 }) {
-  const [state, setState] = useState(initialState);
-  return <PreviewContext.Provider value={{ state, setState, initialPeriod, initialDate, initialMeasure }}>{children}</PreviewContext.Provider>;
+  return <PreviewContext.Provider value={{ initialPeriod, initialAnchor, initialDate, initialMeasure }}>{children}</PreviewContext.Provider>;
 }
 
 export function UsageStatsSettingsSection({ flattened = false }: { flattened?: boolean }) {
   const t = useTokens();
   const preview = useContext(PreviewContext);
-  const state = preview?.state ?? 'ready';
-  const setPreviewState = preview?.setState ?? (() => undefined);
   const [period, setPeriod] = useState<UsageStatsPeriod>(preview?.initialPeriod ?? 'week');
-  const [anchor, setAnchor] = useState(USAGE_STATS_FIXTURE_ANCHOR);
+  const [anchor, setAnchor] = useState(() => preview?.initialAnchor ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }));
   const [selectedDate, setSelectedDate] = useState<string | null>(preview?.initialDate ?? null);
   const [modelFilterId, setModelFilterId] = useState('all');
   const [projectIds, setProjectIds] = useState<string[]>([]);
@@ -108,12 +97,16 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const [metricsExpanded, setMetricsExpanded] = useState(false);
   const [basisExpanded, setBasisExpanded] = useState(false);
 
-  const modelOptions = useMemo<ModelFilter[]>(() => {
+  const [, provider = null, model = null] = modelFilterId.split(':') as [string, UsageStatsProvider?, string?];
+  const query = useMemo<UsageStatsQuery>(() => ({
+    period, anchor, provider, model, project_ids: projectIds,
+  }), [period, anchor, provider, model, projectIds]);
+  const { overview, detail: selectedDetail, baseOverview, allOverview, modelOverviews, state, retry } = useUsageStats(query, selectedDate);
+  const modelOptions: ModelFilter[] = (() => {
     const options: ModelFilter[] = [{ id: 'all', provider: null, model: null, label: '모든 모델' }];
-    for (const provider of USAGE_STATS_PROVIDERS) {
+    for (const [index, provider] of (['claude', 'codex', 'antigravity', 'deepseek', 'kimi'] as const).entries()) {
       options.push({ id: `provider:${provider}`, provider, model: null, label: formatUsageStatsProviderLabel(provider) });
-      const providerOverview = buildUsageStatsOverview({ period, anchor, provider, model: null, project_ids: [] });
-      for (const row of providerOverview.by_model) {
+      for (const row of modelOverviews[index]?.by_model ?? []) {
         if (!row.model) continue;
         options.push({
           id: `model:${provider}:${row.model}`,
@@ -124,33 +117,15 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
       }
     }
     return options;
-  }, [period, anchor]);
-  const selectedModel = modelOptions.find(option => option.id === modelFilterId) ?? modelOptions[0];
-  const query = useMemo<UsageStatsQuery>(() => ({
-    period,
-    anchor,
-    provider: selectedModel.provider,
-    model: selectedModel.model,
-    project_ids: projectIds,
-  }), [period, anchor, selectedModel, projectIds]);
-  const overview = state === 'empty'
-    ? buildEmptyUsageStatsOverview(query)
-    : buildUsageStatsOverview(query);
-  if (state === 'backfilling') overview.projection_status.state = 'backfilling';
-  const emptyData = state === 'empty';
+  })();
+  if (!overview || !baseOverview || !allOverview) return <StatusSection flattened={flattened} state={state} loading={state === 'loading'} onRetry={retry} />;
+  const selectedModel = { provider, model };
+  const emptyData = overview.series.length === 0 && overview.totals.metrics.total_tokens === 0;
   const activeDate = emptyData ? null : selectedDate;
-
-  const baseOverview = useMemo(() => buildUsageStatsOverview({ period, anchor }), [period, anchor]);
-  const allOverview = useMemo(() => buildUsageStatsOverview({ period: 'all', anchor: USAGE_STATS_FIXTURE_ANCHOR }), []);
-  const projectRoster = useMemo(
-    () => baseOverview.by_project.flatMap(row => row.project_id && row.project_id !== '__other__' ? [row.project_id] : []),
-    [baseOverview],
-  );
-  const selectedDetail = activeDate ? buildUsageStatsDayDetail(activeDate, query, projectRoster) : null;
   const activeAggregate: UsageStatsAggregate = selectedDetail?.totals ?? overview.totals;
   const activeMetrics = activeAggregate.metrics;
   const tokenValue = formatTokenValue(activeMetrics.total_tokens, activeAggregate.coverage);
-  const costValue = formatCostValue(activeMetrics.reference_cost_usd, activeAggregate.coverage.unpriced_events > 0 || activeAggregate.coverage.unknown_total_token_events > 0);
+  const costValue = formatCostValue(activeMetrics.reference_cost_usd, isUsageStatsCostPartial(activeAggregate.coverage));
   const coverageLabel = emptyData ? null : formatUsageStatsCoverage(activeAggregate.coverage.priced_total_tokens, activeMetrics.total_tokens);
   const modelPoints = overview.series.filter(point => point.provider !== undefined && point.project_id === undefined);
   const projectPoints = overview.series.filter(point => point.project_id !== undefined);
@@ -163,7 +138,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
     kimi: nodeColors.plan,
   };
   const projectPalette = [nodeColors.user, nodeColors.response, nodeColors.tool, nodeColors.thinking, nodeColors.plan];
-  const projectColorById = useMemo(() => {
+  const projectColorById = (() => {
     const result: Record<string, string> = {};
     let rank = 0;
     for (const row of baseOverview.by_project) {
@@ -172,15 +147,9 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
       rank += 1;
     }
     return result;
-  }, [baseOverview, t.mode]);
-  const modelBuckets = useMemo(
-    () => makeUsageStatsBuckets(modelPoints, period, overview.range, measure, 'model', seriesColors, projectColorById, t.colors.textTertiary, overview.projection_status.covered_since, emptyData),
-    [modelPoints, period, overview.range, measure, t.mode, projectColorById, overview.projection_status.covered_since, emptyData],
-  );
-  const projectBuckets = useMemo(
-    () => makeUsageStatsBuckets(projectPoints, period, overview.range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, overview.projection_status.covered_since, emptyData),
-    [projectPoints, period, overview.range, measure, t.mode, projectColorById, overview.projection_status.covered_since, emptyData],
-  );
+  })();
+  const modelBuckets = makeUsageStatsBuckets(modelPoints, period, overview.range, measure, 'model', seriesColors, projectColorById, t.colors.textTertiary, overview.projection_status.covered_since, emptyData);
+  const projectBuckets = makeUsageStatsBuckets(projectPoints, period, overview.range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, overview.projection_status.covered_since, emptyData);
   const projectOptions = [
     { id: 'all', label: '모든 프로젝트' },
     ...baseOverview.by_project
@@ -195,12 +164,8 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const projectDenominator = sumKnown(projectRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
   const loading = state === 'loading';
   const unavailable = state === 'loading' || state === 'error' || state === 'forbidden';
-  const previousAnchor = shiftUsageStatsAnchor(period, anchor, -1);
-  const nextAnchor = shiftUsageStatsAnchor(period, anchor, 1);
-  const previousRange = buildUsageStatsOverview({ period, anchor: previousAnchor }).range;
-  const nextRange = buildUsageStatsOverview({ period, anchor: nextAnchor }).range;
-  const previousDisabled = period === 'all' || previousRange.until <= allOverview.projection_status.covered_since;
-  const nextDisabled = period === 'all' || nextRange.since >= allOverview.as_of.slice(0, 10);
+  const previousDisabled = period === 'all' || overview.range.since <= allOverview.projection_status.covered_since;
+  const nextDisabled = period === 'all' || overview.range.until >= allOverview.as_of.slice(0, 10);
   const periodLabel = formatUsageStatsPeriodLabel(period, overview.range.since, overview.range.until);
 
   function changePeriod(nextPeriod: UsageStatsPeriod) {
@@ -251,7 +216,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
         />
       </View>
 
-      {unavailable ? <StatusSection flattened={flattened} state={state} loading={loading} onRetry={() => setPreviewState('ready')} /> : null}
+      {unavailable ? <StatusSection flattened={flattened} state={state} loading={loading} onRetry={retry} /> : null}
       {!unavailable ? <>
         {overview.projection_status.state === 'backfilling' ? <Text testID="usage-stats-backfilling" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>이전 기록 정리 중</Text> : null}
         <SettingsSection id="usage-stats-summary" title="요약" flattened={flattened}>
@@ -276,7 +241,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
             <DisclosureButton label="토큰 구성" expanded={metricsExpanded} onPress={() => setMetricsExpanded(value => !value)} />
             {metricsExpanded ? <MetricBreakdown aggregate={activeAggregate} /> : null}
             <DisclosureButton label="집계 기준" expanded={basisExpanded} onPress={() => setBasisExpanded(value => !value)} />
-            {basisExpanded ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>KST 완료 기록 · 2026-10-19 API 기본 정가</Text> : null}
+            {basisExpanded ? <AggregationBasis /> : null}
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
                 <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>모델별</Text>
@@ -369,13 +334,11 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   );
 }
 
-function StatusSection({ flattened, state, loading, onRetry }: { flattened: boolean; state: PreviewState; loading: boolean; onRetry(): void }) {
+function StatusSection({ flattened, state, loading, onRetry }: { flattened: boolean; state: UsageStatsLoadState; loading: boolean; onRetry(): void }) {
   const t = useTokens();
   const content = state === 'loading'
     ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><ActivityIndicator size="small" color={t.colors.accent} /><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>불러오는 중…</Text></View>
-    : state === 'empty'
-      ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>기록이 없습니다.</Text>
-      : state === 'forbidden'
+    : state === 'forbidden'
         ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>이 통계를 볼 권한이 없습니다.</Text>
         : <View style={{ gap: t.spacing.sm }}><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>통계를 불러오지 못했습니다.</Text><GlassButton disabled={loading} onPress={onRetry}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 불러오기</Text></GlassButton></View>;
   return <SettingsSection id="usage-stats-status" title="사용량" flattened={flattened}><View style={{ padding: t.cardLayout.padding }}>{content}</View></SettingsSection>;
@@ -420,5 +383,22 @@ function formatAggregateValue(
 ): string {
   return measure === 'tokens'
     ? formatTokenValue(metrics.total_tokens, coverage)
-    : formatCostValue(metrics.reference_cost_usd, coverage.unpriced_events > 0 || coverage.unknown_total_token_events > 0);
+    : formatCostValue(metrics.reference_cost_usd, isUsageStatsCostPartial(coverage));
+}
+
+function AggregationBasis() {
+  const t = useTokens();
+  const style = { ...t.foundation.typography.meta, color: t.colors.textSecondary };
+  return <View style={{ gap: t.spacing.xs }}>
+    <Text style={style}>2026-10-19 공개 API 정가 USD 환산(standard, 기본 컨텍스트). 구독 실지출 아님</Text>
+    <Text style={style}>단가 출처: {[
+      ['OpenAI', 'https://developers.openai.com/api/docs/pricing?tab=suite'],
+      ['Claude', 'https://platform.claude.com/docs/en/about-claude/pricing'],
+      ['Gemini', 'https://ai.google.dev/gemini-api/docs/pricing'],
+      ['DeepSeek', 'https://api-docs.deepseek.com/quick_start/pricing/'],
+      ['Kimi', 'https://platform.kimi.ai/docs/pricing/chat'],
+    ].map(([label, url], index) => <Text key={label} accessibilityRole="link" onPress={() => { void Linking.openURL(url); }} style={{ color: t.colors.accent }}>{index ? ', ' : ''}{label}</Text>)}</Text>
+    <Text style={style}>날짜는 턴이 끝난 시각, Asia/Seoul, 주는 월요일 시작</Text>
+    <Text style={style}>프로젝트는 지금 보이는 최상위 폴더 기준</Text>
+  </View>;
 }

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { CompactTouchTarget } from '../../CompactTouchTarget';
 import { useTokens } from '../../../theme';
 
 export function UsageShareRow({
@@ -23,13 +24,14 @@ export function UsageShareRow({
   const boundedShare = share === null ? null : Math.min(1, Math.max(0, share));
   const shareLabel = boundedShare === null ? null : `${Math.round(boundedShare * 100)}%`;
   return (
-    <Pressable
+    <CompactTouchTarget
       testID={testID}
       accessibilityRole={onPress ? 'button' : undefined}
       accessibilityLabel={onPress ? [label, value, shareLabel].filter(Boolean).join(', ') : undefined}
-      disabled={!onPress}
       onPress={onPress}
-      style={{ gap: t.spacing.xxs }}
+      accessible={Boolean(onPress)}
+      frameStyle={{ width: '100%' }}
+      surfaceStyle={{ width: '100%', gap: t.spacing.xxs }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
         <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textPrimary }}>{label}</Text>
@@ -39,6 +41,6 @@ export function UsageShareRow({
       <View accessibilityElementsHidden importantForAccessibility="no" style={{ height: t.spacing.xs, borderRadius: t.radius.sm, backgroundColor: t.persistentSession.line, overflow: 'hidden' }}>
         {boundedShare !== null ? <View style={{ height: '100%', width: `${boundedShare * 100}%`, backgroundColor: color }} /> : null}
       </View>
-    </Pressable>
+    </CompactTouchTarget>
   );
 }

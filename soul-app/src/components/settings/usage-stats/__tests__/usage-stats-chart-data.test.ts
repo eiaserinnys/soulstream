@@ -51,3 +51,9 @@ test('전체 보기는 월별 칸을 만들고 기록 전 주간은 모두 비�
   expect(all.map(bucket => bucket.id)).toEqual(['month-2026-09-01', 'month-2026-10-01']);
   expect(beforeCoverage.every(bucket => bucket.availability === 'before-coverage' && !bucket.selectable)).toBe(true);
 });
+test('실제 DeepSeek 필터 응답은 금요일의 미기록 포인트를 보존한다', () => {
+  const overview = buildUsageStatsOverview({ period: 'week', anchor: '2026-10-17', provider: 'deepseek' });
+  const friday = overview.series.filter(point => point.provider === 'deepseek' && point.bucket_start === '2026-10-16');
+  expect(friday.length).toBeGreaterThan(0);
+  expect(friday.every(point => point.metrics.total_tokens === null)).toBe(true);
+});
