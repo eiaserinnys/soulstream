@@ -106,6 +106,7 @@ function MockupHost() {
     <div className="v3-shell mockup-host text-foreground">
       <header className="v3-detail-section-head mockup-host-header">
         <h3 className="mockup-host-title">{document.title}</h3>
+        {document.getElementById("root")?.dataset.exampleLabel ? <span className="text-muted-foreground">{document.getElementById("root")!.dataset.exampleLabel}</span> : null}
         <ToggleGroup
           label="테마"
           items={[{ id: "light", label: "밝게" }, { id: "dark", label: "어둡게" }]}

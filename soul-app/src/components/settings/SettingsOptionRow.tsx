@@ -8,9 +8,10 @@ import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet
 import { cardStyles } from '../planner/Card.styles';
 
 export interface SettingsOption { id: string; label: string; available?: boolean; reason?: string | null }
-export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, label = '항목 선택', variant, presentation = 'default' }: {
+export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, label = '항목 선택', variant, presentation = 'default', pickerMode = 'auto' }: {
   selected: string; options: SettingsOption[]; onSelect(value: string): void; emptyLabel: string; label?: string;
   variant?: 'chat'; presentation?: 'default' | 'manuscript';
+  pickerMode?: 'auto' | 'picker';
 }) {
   const t = useTokens();
   const baseStyles = useMemo(() => cardStyles(t), [t]);
@@ -23,7 +24,7 @@ export function SettingsOptionRow({ selected, options, onSelect, emptyLabel, lab
   const selectedOption = items.find(option => option.id === selected);
   const description = (option: SettingsOption) => option.reason ?? (option.available === false ? '현재 사용 불가' : null);
   const choose = (id: string) => { onSelect(id); setOpen(false); setQuery(''); };
-  const large = items.length > 5 || items.some(option => option.label.length > 24);
+  const large = pickerMode === 'picker' || items.length > 5 || items.some(option => option.label.length > 24);
   if (!items.length) return <Text style={styles.body}>{emptyLabel}</Text>;
   const rows = items.filter(option => `${option.label} ${option.id}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <View>

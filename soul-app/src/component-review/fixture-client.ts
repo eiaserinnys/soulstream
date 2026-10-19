@@ -1,4 +1,6 @@
 import type { ApiClient } from '../api/client';
+import { createApiRequestContext } from '../api/clientCore';
+import { createUsageEndpoints } from '../api/usageEndpoints';
 import type { FeedPage } from '../api/feedPage';
 import { Alert, Platform, type AlertButton } from 'react-native';
 import type { CardCheckItem, CardComment, CardDetail, CardDto, CardMutationResult, CardPatch, CardStatus } from '../api/cardTypes';
@@ -415,8 +417,9 @@ export function createCardColorReviewClient(mode: CardColorReviewMode = 'success
     get readCount() { return reads; },
   };
 }
-export function createApiClient(): ApiClient {
+export function createApiClient(baseUrl = ''): ApiClient {
   const section = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('section') : null;
+  const usageEndpoints = createUsageEndpoints(createApiRequestContext(baseUrl));
   if (section === 'attachments' || section === 'cardImages') return createAttachmentReviewApi();
   if (section === 'chatUiRenderer') return createChatUiFlowReviewApi(window.location.search);
   if (section === 'contentLinks' || section === 'contentLinkDocument') {
@@ -431,7 +434,7 @@ export function createApiClient(): ApiClient {
       getStarredFolders: async () => ({ items: empty ? [] : starredFolders, nextCursor: null }) } as unknown as ApiClient;
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
-  if (section === 'nativeSettings') return nativeSettingsApi;
+  if (section === 'nativeSettings') return { ...nativeSettingsApi, ...usageEndpoints } as unknown as ApiClient;
   if (section === 'persistent') {
     const api = createPersistentFullscreenReviewApi(window.location.search);
     return new URLSearchParams(window.location.search).get('sample') === 'report'
@@ -440,7 +443,7 @@ export function createApiClient(): ApiClient {
   if (section === 'dialogues' && new URLSearchParams(window.location.search).get('sample') === 'persistent-select') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;
-  return api as unknown as ApiClient;
+  return { ...api, ...usageEndpoints } as unknown as ApiClient;
 }
 
 export function createAttachmentReviewApi(): ApiClient {

@@ -4,6 +4,11 @@
 .config-dialog .config-dialog-panel { padding:0; }
 .config-dialog [data-slot="dialog-panel-scroll"] { border-radius:0; }
 .config-dialog .config-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,3fr); min-height:0; }
+.config-dialog:not(.persistent-session-settings-popup) > [data-slot="dialog-panel-scroll"] { display:flex; }
+.config-dialog:not(.persistent-session-settings-popup) [data-slot="dialog-panel"] { display:flex; flex:1 1 auto; flex-direction:column; min-width:0; min-height:0; }
+.config-dialog .config-layout:not([data-layout="pas"]) { flex:1 1 auto; grid-template-rows:minmax(0,1fr); overflow:hidden; }
+.config-dialog .config-layout:not([data-layout="pas"]) > .config-category-nav,
+.config-dialog .config-layout:not([data-layout="pas"]) > .config-detail { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 .config-dialog.persistent-session-settings-popup > [data-slot="dialog-panel-scroll"] { display:flex; }
 .config-dialog.persistent-session-settings-popup [data-slot="dialog-panel"] { display:flex; flex:1 0 100%; flex-direction:column; min-width:0; min-height:100%; }
 .config-dialog.persistent-session-settings-popup .config-layout { flex:1 0 auto; }
@@ -78,7 +83,7 @@
 .config-dialog .session-story-settings-error > p { margin:0; color:var(--muted-foreground); font:var(--v3-type-body) var(--v3-font-family); }
 @media (max-width:40rem) {
  .config-dialog { height:calc(100dvh - var(--v3-space-8)); }
- .config-dialog .config-layout { display:block; }
+ .config-dialog .config-layout:not([data-layout="pas"]) { grid-template-columns:minmax(0,1fr); }
  .config-dialog .config-category-nav { border-right:0; background:transparent; padding:var(--v3-space-6); }
  .config-dialog .config-category-item { min-height:var(--v3-control-height); }
  .config-dialog .config-category-chevron { opacity:.65; }

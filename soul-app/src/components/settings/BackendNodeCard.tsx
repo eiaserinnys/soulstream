@@ -18,28 +18,23 @@ export function BackendNodeCard({
 
   return (
     <View testID={`settings-backend-node-${nodeId}`} style={styles.container}>
-      <TouchableOpacity
-        testID={`settings-backend-node-${nodeId}-header`}
-        accessibilityRole="button"
-        accessibilityLabel={`노드 ${nodeId}`}
-        accessibilityState={{ expanded }}
-        style={styles.header}
-        onPress={() => setExpanded((value) => !value)}
-      >
-        <View style={styles.headerCopy}>
-          <Text style={styles.nodeId} numberOfLines={1}>
-            노드: {nodeId}
-          </Text>
-        </View>
-        <DisclosureIcon
-          expanded={expanded}
-          color={t.colors.textTertiary}
-          size={t.iconSize.standard}
-        />
-      </TouchableOpacity>
+      <BackendNodeCardHeader testID={`settings-backend-node-${nodeId}-header`} accessibilityLabel={`노드 ${nodeId}`} expanded={expanded} onPress={() => setExpanded(value => !value)}>
+        <Text style={styles.nodeId} numberOfLines={1}>노드: {nodeId}</Text>
+      </BackendNodeCardHeader>
       {expanded ? <View style={styles.providers}>{children}</View> : null}
     </View>
   );
+}
+
+export function BackendNodeCardHeader({ children, expanded, onPress, accessibilityLabel, testID }: {
+  children: React.ReactNode; expanded: boolean; onPress(): void; accessibilityLabel: string; testID?: string;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  return <TouchableOpacity testID={testID} accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ expanded }} style={styles.header} onPress={onPress}>
+    <View style={styles.headerCopy}>{children}</View>
+    <DisclosureIcon expanded={expanded} color={t.colors.textTertiary} size={t.iconSize.standard} />
+  </TouchableOpacity>;
 }
 
 function makeStyles(t: DesignTokens) {

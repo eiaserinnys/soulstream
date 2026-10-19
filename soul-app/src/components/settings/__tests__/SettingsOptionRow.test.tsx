@@ -6,6 +6,18 @@ import { PHONE_CHAT_TYPOGRAPHY, PHONE_FOUNDATION, TABLET_CHAT_TYPOGRAPHY } from 
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
+test('짧은 목록은 기본 칩을 유지하고 pickerMode 지정 때만 기존 picker를 쓴다', () => {
+  const options = [{ id: 'all', label: '전체' }, { id: 'one', label: '하나' }];
+  const onSelect = jest.fn();
+  const screen = render(<SettingsOptionRow label="범위" selected="all" options={options} emptyLabel="없음" onSelect={onSelect}/>);
+  expect(screen.getByText('하나')).toBeTruthy();
+  screen.rerender(<SettingsOptionRow label="범위" selected="all" options={options} emptyLabel="없음" onSelect={onSelect} pickerMode="picker"/>);
+  expect(screen.queryByText('하나')).toBeNull();
+  fireEvent.press(screen.getByLabelText('범위: 전체'));
+  fireEvent.press(screen.getByLabelText('하나'));
+  expect(onSelect).toHaveBeenCalledWith('one');
+});
+
 test('긴 목록 검색은 저장된 누락 값과 가용성 사유를 보존하며 선택을 임의 차단하지 않는다', () => {
   const onSelect = jest.fn();
   const screen = render(<SettingsOptionRow label="모델" selected="saved-model" options={Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, label: `모델 ${i}`, available: false, reason: '한도 소진' }))} emptyLabel="없음" onSelect={onSelect}/>);

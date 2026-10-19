@@ -30,6 +30,11 @@
 !/packages/soul-ui/src/lib/safe-error-detail.ts
 !/packages/soul-ui/src/lib/turn-usage-format.ts
 !/packages/soul-ui/src/lib/usage-summary.ts
+!/packages/soul-ui/src/lib/usage-stats-format.ts
+!/packages/soul-ui/src/lib/usage-stats-presentation.ts
+!/packages/soul-ui/src/lib/usage-stats-fixtures.ts
+!/packages/soul-ui/src/lib/usage-stats-fixture-data.ts
+!/packages/soul-ui/src/lib/usage-stats-fixture-aggregate.ts
 !/packages/soul-ui/src/lib/persistent-turn-usage.ts
 !/packages/soul-ui/src/lib/persistent-session-layout.ts
 !/packages/soul-ui/src/lib/standalone-image-line.ts
@@ -42,6 +47,7 @@
 !/packages/wire-schema/src/card_colors.ts
 !/packages/wire-schema/src/persistent_jev_candidates.ts
 !/packages/wire-schema/src/persistent_report.ts
+!/packages/wire-schema/src/session_statistics.ts
 
 # .easignore replaces all .gitignore files, including soul-app/.gitignore.
 node_modules/
