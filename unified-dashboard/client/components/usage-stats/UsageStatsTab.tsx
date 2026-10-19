@@ -184,6 +184,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     (overview.totals.metrics.total_tokens ?? 0) > 0 || (overview.totals.metrics.reference_cost_usd ?? 0) > 0
   ));
   const noRecords = Boolean(overviewReady && overview?.totals.metrics.total_tokens === 0 && !overview.totals.is_partial && !isAggregateActive(overview.totals));
+  const unknownEmptyRange = Boolean(overview && overview.series.length === 0 && overview.totals.metrics.total_tokens === null);
   const beforeCoverage = Boolean(overviewReady && range && coveredSince && range.effective_until <= coveredSince && !hasKnownPositive);
   const selectedNoRecords = Boolean(selectedDate && detail && !isAggregateActive(detail.totals));
   const providerRowsForSeries = overviewReady ? overview?.by_model ?? [] : [];
@@ -396,7 +397,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
           </div>}
         </SettingsGroupBox>
 
-        {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords ? <SettingsGroupBox title="입력 자료 구성">
+        {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords && !unknownEmptyRange ? <SettingsGroupBox title="입력 자료 구성">
           {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <p className="usage-stats-muted" role="status">불러오는 중…</p> : detail ? <InputMaterial detail={detail} /> : null}
         </SettingsGroupBox> : null}
       </>

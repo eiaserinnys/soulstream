@@ -111,7 +111,6 @@ export function UsageStackedBars({
   });
   const maximum = Math.max(0, ...values.map(item => item.total ?? 0));
   const hasKnownValue = values.some(item => item.total !== null);
-  const hasDataPoint = values.some(item => item.hasPoint);
   const activeIndex = Math.max(0, buckets.findIndex(bucket => bucket === selectedBucket));
 
   const bucketAtX = (clientX: number, rect: DOMRect): number => {
@@ -135,7 +134,7 @@ export function UsageStackedBars({
     {loading ? <div className="usage-stats-chart-message" role="status">불러오는 중…</div> : emptyMessage ? (
       <div className="usage-stats-chart-message">{emptyMessage}</div>
     ) : !hasKnownValue ? (
-      <div className="usage-stats-chart-message">{hasDataPoint ? unknownLabel(metric) : USAGE_STATS_LABELS.emptyRange}</div>
+      <div className="usage-stats-chart-message">{unknownLabel(metric)}</div>
     ) : null}
     <div className="usage-stats-chart-plot" role="group" aria-label={label} style={{ "--usage-stats-column-count": values.length } as CSSProperties} onKeyDownCapture={(event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "Escape" || !selectedBucket) return;

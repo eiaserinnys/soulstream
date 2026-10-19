@@ -38,7 +38,7 @@ it("starts with the current Korea calendar date and makes one overview request",
   expect(document.querySelectorAll("[data-bucket-index]")).toHaveLength(0);
 });
 
-function aggregate(totalTokens: number): UsageStatsAggregate {
+function aggregate(totalTokens: number | null): UsageStatsAggregate {
   const metrics: UsageStatsMetrics = {
     input_total: null,
     cache_read: null,
@@ -51,7 +51,7 @@ function aggregate(totalTokens: number): UsageStatsAggregate {
   return {
     metrics,
     coverage: {
-      usage_complete_events: 1,
+      usage_complete_events: totalTokens === null || totalTokens === 0 ? 0 : 1,
       usage_partial_events: 0,
       terminal_missing_usage: 0,
       ended_input_without_usage: 0,
@@ -68,7 +68,7 @@ function aggregate(totalTokens: number): UsageStatsAggregate {
   };
 }
 
-function overview(totalTokens: number, options: Partial<UsageStatsOverview["options"]> = {}): UsageStatsOverview {
+function overview(totalTokens: number | null, options: Partial<UsageStatsOverview["options"]> = {}): UsageStatsOverview {
   return {
     schema_version: 1,
     generated_at: "2026-10-20T03:00:00.000Z",
@@ -416,4 +416,39 @@ it("removes successful day details and selection labels after a later day 403", 
   await act(async () => selectTrigger("모델").click());
   await act(async () => selectTrigger("프로젝트").click());
   expect(request).toHaveBeenCalledTimes(5);
+});
+
+it("distinguishes an unknown empty range from explicit zero without input guidance", async () => {
+  request.mockImplementation(input => {
+    const url = new URL(String(input), "https://soulstream.test");
+    return Promise.resolve(jsonResponse(url.searchParams.get("period") === "week" ? overview(null) : overview(0)));
+  });
+
+  await act(async () => root.render(<UsageStatsTab request={request} />));
+
+  const summary = document.querySelector(".usage-stats-summary-values")?.textContent ?? "";
+  expect(summary).toContain("미기록");
+  expect(summary).toContain("미확인");
+  expect(document.querySelector(".usage-stats-chart-message")?.textContent).toBe("미기록");
+  expect(document.querySelector(".usage-stats-input-material")).toBeNull();
+  expect(document.body.textContent).not.toContain("입력 자료 구성");
+  expect(document.body.textContent).not.toContain("막대에서 날짜를 고르세요");
+
+  const costButton = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="표시 값"] button')]
+    .find(button => button.textContent?.trim() === "정가");
+  if (!costButton) throw new Error("Could not find the cost metric control.");
+  await act(async () => costButton.click());
+  expect(document.querySelector(".usage-stats-chart-message")?.textContent).toBe("정가 미확인");
+  expect(request).toHaveBeenCalledTimes(1);
+
+  const monthButton = [...document.querySelectorAll<HTMLButtonElement>("button")]
+    .find(button => button.textContent?.trim() === "월간");
+  if (!monthButton) throw new Error("Could not find the month period control.");
+  await act(async () => monthButton.click());
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(responseQuery(1).get("period")).toBe("month");
+  expect(document.querySelector(".usage-stats-chart-message")?.textContent).toBe("이 기간에 기록이 없습니다");
+  expect(document.querySelector(".usage-stats-input-material")).toBeNull();
+  expect(document.body.textContent).not.toContain("입력 자료 구성");
+  expect(document.body.textContent).not.toContain("막대에서 날짜를 고르세요");
 });
