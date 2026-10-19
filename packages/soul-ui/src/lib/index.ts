@@ -14,6 +14,30 @@ export { retainEqualSet, retainEqualValue } from "./structural-sharing";
 export { appendAttachmentPathNotes } from "./attachment-path-notes";
 export { formatAssignedCardContextSnapshot } from "./assigned-card-context-content";
 export * from "./usage-summary";
+export * from "./usage-stats-format";
+export {
+  buildEmptyUsageStatsOverview,
+  buildUsageStatsDayDetail,
+  buildUsageStatsOverview,
+  USAGE_STATS_FIXTURE_ANCHOR,
+  USAGE_STATS_PROVIDERS,
+} from "./usage-stats-fixtures";
+export type {
+  UsageStatsAggregate,
+  UsageStatsCoverage,
+  UsageStatsDayDetail,
+  UsageStatsInputMaterial,
+  UsageStatsInputPart,
+  UsageStatsMetrics,
+  UsageStatsOverview,
+  UsageStatsPeriod,
+  UsageStatsProjectRow,
+  UsageStatsProvider,
+  UsageStatsProviderRow,
+  UsageStatsQuery,
+  UsageStatsRange,
+  UsageStatsSeriesPoint,
+} from "./usage-stats-fixture-data";
 export { classifyInternalLink, internalLinkPath } from "./internal-link";
 export type { InternalLinkTarget } from "./internal-link";
 
