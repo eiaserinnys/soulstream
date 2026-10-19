@@ -97,8 +97,13 @@ describe("runner lifecycle observations", () => {
       join(scenario.controlDirectory, "lifecycle-observation-interrupt-count"),
     )).toBe(false);
     expect(isPidAlive(scenario.spawned.pid)).toBe(true);
-    await waitFor(async () => (await readFile(scenario.spawned.paths.logPath, "utf8"))
-      .includes("Stale runner lifecycle observation ignored"));
+    await waitFor(async () => {
+      const runnerLog = await readFile(scenario.spawned.paths.logPath, "utf8");
+      return runnerLog.includes("Stale runner lifecycle observation ignored")
+        && runnerLog.includes('"observation":"progress"')
+        && runnerLog.includes('"observation":"tool_started"')
+        && runnerLog.includes('"observation":"engine_progress"');
+    });
     const runnerLog = await readFile(scenario.spawned.paths.logPath, "utf8");
     expect(runnerLog).toContain(`runner lifecycle command mismatch: ${activeCommandId}`);
     expect(runnerLog).toContain('"observation":"progress"');
