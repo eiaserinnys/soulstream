@@ -20,6 +20,7 @@ import {
   advanceSessionFeedLastEventId,
   hasFeedSemanticIngressChange,
 } from "./event_feed_semantic_watermark.js";
+import { applySessionStatisticsProjection } from "../usage/session_statistics_projection.js";
 
 type QueryRows = readonly Record<string, unknown>[];
 
@@ -28,11 +29,17 @@ export type EventIngressQuerySql = {
     strings: TemplateStringsArray,
     ...values: unknown[]
   ): Promise<T>;
+  readonly fragment?: EventIngressSqlFragment;
   // postgres.js serialises a plain JS string bound to a JSONB parameter as a
   // JSON *string*, so JSON.stringify() before the bind double-encodes the value.
   // Callers writing JSONB must route the object through json().
   readonly json: (value: unknown) => unknown;
 };
+
+export type EventIngressSqlFragment = (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => unknown;
 
 export type EventIngressSql = EventIngressQuerySql & {
   begin<T>(callback: (sql: EventIngressQuerySql) => Promise<T>): Promise<T>;
@@ -194,6 +201,9 @@ export class EventIngressRepository {
     const eventId = semanticReceipt?.event_id ?? await appendEvent(transaction, envelope);
     if (!Number.isSafeInteger(eventId) || eventId <= 0) {
       throw new Error("event_append did not return a positive event id");
+    }
+    if (!semanticReceipt) {
+      await applySessionStatisticsProjection(transaction, { eventId, envelope });
     }
 
     let sessionEffectApplication: EventSessionEffectApplication | undefined;
@@ -644,5 +654,7 @@ function createQueryAdapter(sql: LivePostgresSql): EventIngressQuerySql {
   ): Promise<T> => await sql(strings, ...values) as T);
   return Object.assign(query, {
     json: (value: unknown) => sql.json(value),
+    // Preserve the raw postgres.js tag so callers can compose parameterized fragments.
+    fragment: (strings: TemplateStringsArray, ...values: unknown[]) => sql(strings, ...values),
   }) as EventIngressQuerySql;
 }
