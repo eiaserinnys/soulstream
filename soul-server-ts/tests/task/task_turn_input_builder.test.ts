@@ -70,6 +70,38 @@ function makeContext(overrides: Partial<PreparedContext> = {}): PreparedContext 
   };
 }
 
+type ContextManifestSourceStatus =
+  NonNullable<PreparedContext["contextManifest"]>["sources"][number]["status"];
+
+function makeContextManifest(
+  sources: Array<{ nodeId: string; status: ContextManifestSourceStatus }>,
+): NonNullable<PreparedContext["contextManifest"]> {
+  return {
+    compiler_version: "phase-a.v1",
+    spec_hash: "turn-input-test",
+    source_count: sources.length,
+    total_chars: sources.filter((source) => source.status === "ok").length,
+    total_token_estimate: 0,
+    sources: sources.map((source, index) => ({
+      id: `source-${index}`,
+      label: `Source ${index}`,
+      instance: "atom",
+      node_id: source.nodeId,
+      mode: "full",
+      depth: 5,
+      titles_only: false,
+      include_ids: true,
+      priority: index,
+      never_truncate: false,
+      chars: source.status === "ok" ? 1 : 0,
+      token_estimate: 0,
+      status: source.status,
+      truncated: false,
+      anchor_count: 0,
+    })),
+  };
+}
+
 function makeSubject(options: {
   contextBuilder?: Partial<{
     build: ReturnType<typeof vi.fn>;
@@ -440,6 +472,60 @@ describe("TaskTurnInputBuilder", () => {
     expect(task.needsFullContextReinjection).toBe(false);
   });
 
+  it("rejects an applying generation when its context manifest has an error source", async () => {
+    const task = makeTask({
+      codexThreadId: "native-old",
+      modelPresetBackend: "claude",
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        fromBackendSessionId: "native-old",
+        previousBackend: "claude",
+        previousModelPreset: "claude-default",
+      },
+      interventionQueue: [{
+        text: "다음 요청",
+        deliveryId: "delivery-generation-error",
+        attachmentIds: ["generation-asset"],
+        attachmentPaths: ["/tmp/incoming/generation.png"],
+        attachmentBindings: [{
+          attachment_id: "generation-asset",
+          path: "/tmp/incoming/generation.png",
+        }],
+      }],
+    });
+    const manifest = makeContextManifest([
+      { nodeId: "generation-node-ok", status: "ok" },
+      { nodeId: "generation-node-error", status: "error" },
+    ]);
+    const prepareAttachmentInput = vi.fn().mockResolvedValue({
+      text: "다음 요청",
+      attachmentPaths: ["/tmp/cache/generation.png"],
+      imageAttachmentPaths: ["/tmp/cache/generation.png"],
+    });
+    const waitForAttachmentRefs = vi.fn().mockResolvedValue(undefined);
+    const { builder, contextBuilder, initialMessagePublisher } = makeSubject({
+      prepareAttachmentInput,
+      waitForAttachmentRefs,
+    });
+    const generatedContext = await contextBuilder.buildGenerationContext();
+    contextBuilder.buildGenerationContext.mockClear();
+    contextBuilder.buildGenerationContext.mockResolvedValue({
+      ...generatedContext,
+      contextManifest: manifest,
+    });
+
+    await expect(builder.prepareInitialTurnInput(task, claudeAgent))
+      .rejects.toThrow("Atom context compilation failed: generation-node-error");
+
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledTimes(1);
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledWith(task, manifest);
+    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
+    expect(prepareAttachmentInput).not.toHaveBeenCalled();
+    expect(waitForAttachmentRefs).not.toHaveBeenCalled();
+  });
+
   it.each([claudeAgent, codexAgent])("carries the built checkpoint instructions into the prepared %s generation input", async (agent) => {
     const scopedAgent = { ...agent, context_scope: "minimal" } as AgentProfile;
     const standingInstructions = Array.from({ length: 36 }, (_, index) => ({
@@ -571,26 +657,61 @@ describe("TaskTurnInputBuilder", () => {
     expect(task.activeGenerationRollover?.fromBackendSessionId).toBe("native-old");
   });
 
-  it("falls back to task.prompt when contextBuilder fails and still publishes initial user message", async () => {
+  it("rejects a first turn when any context source errors, even if another source is ok", async () => {
     const task = makeTask({ attachmentPaths: ["/tmp/incoming/sess/a.jpg"] });
-    const { builder, initialMessagePublisher, logger } = makeSubject({
-      contextBuilder: { build: vi.fn().mockRejectedValue(new Error("context down")) },
+    const manifest = makeContextManifest([
+      { nodeId: "node-error", status: "error" },
+      { nodeId: "node-ok", status: "ok" },
+    ]);
+    const context = makeContext({ contextManifest: manifest });
+    const prepareAttachmentInput = vi.fn().mockResolvedValue({
+      text: "사용자 요청",
+      attachmentPaths: ["/tmp/cache/a.jpg"],
+      imageAttachmentPaths: ["/tmp/cache/a.jpg"],
+    });
+    const { builder, initialMessagePublisher } = makeSubject({
+      contextBuilder: { build: vi.fn().mockResolvedValue(context) },
+      prepareAttachmentInput,
     });
 
-    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+    await expect(builder.prepareInitialTurnInput(task, claudeAgent))
+      .rejects.toThrow("Atom context compilation failed: node-error");
 
-    expect(input).toEqual({
-      prompt: "사용자 요청",
-      inputMaterialParts: [createInputMaterialPart("user_prompt", "initial/user", "사용자 요청")],
-      originalPrompt: "사용자 요청",
-      imageAttachmentPaths: ["/tmp/incoming/sess/a.jpg"],
-      turnOrigin: { kind: "initial_prompt" },
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledTimes(1);
+    expect(initialMessagePublisher.publishContextManifestBestEffort).toHaveBeenCalledWith(task, manifest);
+    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
+    expect(prepareAttachmentInput).not.toHaveBeenCalled();
+  });
+
+  it("keeps ok, filtered, and empty context sources eligible for a first turn", async () => {
+    const task = makeTask();
+    const context = makeContext({
+      contextManifest: makeContextManifest([
+        { nodeId: "node-ok", status: "ok" },
+        { nodeId: "node-filtered", status: "filtered" },
+        { nodeId: "node-empty", status: "empty" },
+      ]),
     });
-    expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(task, undefined);
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "sess-turn-input" }),
-      "context_builder failed — falling back to task.prompt without context",
-    );
+    const { builder, initialMessagePublisher } = makeSubject({
+      contextBuilder: { build: vi.fn().mockResolvedValue(context) },
+    });
+
+    await builder.prepareInitialTurnInput(task, claudeAgent);
+
+    expect(initialMessagePublisher.publishContextManifestBestEffort).not.toHaveBeenCalled();
+    expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(task, context);
+  });
+
+  it("propagates the original context builder failure and does not publish initial messages", async () => {
+    const failure = new Error("context down");
+    const { builder, initialMessagePublisher } = makeSubject({
+      contextBuilder: { build: vi.fn().mockRejectedValue(failure) },
+    });
+
+    await expect(builder.prepareInitialTurnInput(makeTask(), claudeAgent))
+      .rejects.toBe(failure);
+    expect(initialMessagePublisher.publishContextManifestBestEffort).not.toHaveBeenCalled();
+    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
   });
 
   it("refuses to start a turn when the session-data host read fails", async () => {

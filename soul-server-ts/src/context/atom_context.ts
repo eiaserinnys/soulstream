@@ -1,8 +1,9 @@
 /**
- * atom 컨텍스트 취득 — Python `service/atom_context.py` 정본 그대로 이식.
+ * atom 컨텍스트 취득 — Python `service/atom_context.py`에서 이식한 TypeScript 구현.
  *
  * atom API에서 subtree를 compile하여 codex 세션에 주입할 컨텍스트 마크다운을 생성하는
- * 독립 함수들. 호출 실패 시 null 반환 (graceful) — turn 시작 차단하지 않는다.
+ * 독립 함수들. fetch 실패는 error/null로 반환하고, 새 세션 첫 turn은 error manifest를
+ * 남긴 뒤 엔진 실행 전에 거절한다.
  */
 
 import type { Logger } from "pino";
@@ -99,8 +100,8 @@ export interface AtomFetchResult {
 /**
  * atom API에서 subtree를 compile하여 마크다운을 반환 (Python `fetch_atom_context` 정본).
  *
- * 실패 시 null 반환 — turn 진행 차단하지 않는다. 5초 timeout (Python httpx.AsyncClient
- * timeout 5.0 정합).
+ * 실패 시 기존 null 반환 계약을 유지한다. 단일 요청 deadline은 30초이며,
+ * 첫 turn 입력 guard가 compiler manifest의 error 상태를 종료로 처리한다.
  */
 export async function fetchAtomContext(
   config: AtomFetchConfig,
@@ -173,7 +174,7 @@ export async function fetchAtomMarkdownResult(
   if (spec.limit !== undefined) url.searchParams.set("limit", String(spec.limit));
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), 30_000);
   try {
     const resp = await fetch(url.toString(), {
       headers: { "x-api-key": config.apiKey },
