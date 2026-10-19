@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchAtomContext,
   fetchAtomContexts,
+  fetchAtomMarkdownResult,
   formatAtomContext,
 } from "../../src/context/atom_context.js";
 
@@ -161,7 +162,7 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
     expect(out).toBeNull();
   });
 
-  it("network throw → null (graceful, turn 진행 차단 안 함)", async () => {
+  it("network throw → null result", async () => {
     vi.mocked(globalThis.fetch).mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const out = await fetchAtomContext(
       { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
@@ -171,6 +172,87 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
       silentLogger,
     );
     expect(out).toBeNull();
+  });
+
+  it("lets a single request return a normal 6-second response before its deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.mocked(globalThis.fetch).mockImplementationOnce(
+        (_input, init) => new Promise<Response>((resolve, reject) => {
+          const responseTimer = setTimeout(() => {
+            resolve(new Response(JSON.stringify({ markdown: "late but valid" }), { status: 200 }));
+          }, 6_000);
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(responseTimer);
+            reject(init.signal?.reason);
+          }, { once: true });
+        }),
+      );
+      const result = fetchAtomMarkdownResult(
+        { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
+        { nodeId: "node-1", depth: 3, titlesOnly: false },
+        silentLogger,
+      );
+
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await expect(result).resolves.toEqual({ status: "ok", markdown: "late but valid" });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts one pending request at 30 seconds and returns an error result", async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      const fetchMock = vi.mocked(globalThis.fetch).mockImplementationOnce(
+        (_input, init) => new Promise<Response>((_resolve, reject) => {
+          signal = init?.signal ?? undefined;
+          signal?.addEventListener("abort", () => reject(signal?.reason), { once: true });
+        }),
+      );
+      let settled = false;
+      const result = fetchAtomMarkdownResult(
+        { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
+        { nodeId: "node-1", depth: 3, titlesOnly: false },
+        silentLogger,
+      ).then((value) => {
+        settled = true;
+        return value;
+      });
+
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(signal?.aborted).toBe(false);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(result).resolves.toEqual({ status: "error", markdown: null });
+      expect(signal?.aborted).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the deadline timer when a request fails before the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(globalThis.fetch).mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(fetchAtomMarkdownResult(
+        { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
+        { nodeId: "node-1", depth: 3, titlesOnly: false },
+        silentLogger,
+      )).resolves.toEqual({ status: "error", markdown: null });
+
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("응답에 markdown 키 없으면 null", async () => {

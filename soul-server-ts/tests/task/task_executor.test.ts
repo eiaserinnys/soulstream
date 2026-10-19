@@ -5692,7 +5692,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     expect(userIdx).toBeGreaterThan(sysIdx);
   });
 
-  it("contextBuilder.build throw → ctx 격리 후 task.prompt 그대로 첫 turn 실행", async () => {
+  it("contextBuilder.build throw → outer error finalizer runs before executeTurn", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
@@ -5711,19 +5711,33 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
       fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
     );
     const task = makeTask();
-    executor.startNewExecution(task, agent);
-    await task.executionPromise;
+    const executeTurnSpy = vi.spyOn(TaskEngineTurnRunner.prototype, "executeTurn");
+    try {
+      executor.startNewExecution(task, agent);
+      await task.executionPromise;
 
-    // ctx 격리 → system_message 영속화 0회, user_message.context 키 미박힘 (legacy 동작)
-    const sysCalls = mocks.persistEvent.mock.calls.filter(
-      (c) => (c[1] as { type: string }).type === "system_message",
-    );
-    expect(sysCalls.length).toBe(0);
-    const userCall = mocks.persistEvent.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "user_message",
-    );
-    expect((userCall![1] as Record<string, unknown>).context).toBeUndefined();
-    expect(task.status).toBe("completed");  // 본 task 진행에 영향 0
+      const initialMessageTypes = mocks.persistEvent.mock.calls
+        .map((call) => (call[1] as { type: string }).type)
+        .filter((type) => type === "system_message" || type === "user_message");
+      expect(initialMessageTypes).toEqual([]);
+      expect(executeTurnSpy).not.toHaveBeenCalled();
+      expect(task.status).toBe("error");
+      expect(task.error).toBe("atom HTTP timeout");
+      expect(task.completedAt).toBeInstanceOf(Date);
+      expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledWith(
+        "sess-1",
+        expect.objectContaining({ type: "session_ended", status: "error" }),
+        expect.objectContaining({
+          kind: "terminal_transition",
+          status: "error",
+          termination_reason: "error_aborted",
+          termination_detail: "atom HTTP timeout",
+        }),
+        expect.stringMatching(/^in-process:/),
+      );
+    } finally {
+      executeTurnSpy.mockRestore();
+    }
   });
 
   it("auto-resume (queue 비어있지 않음) → contextBuilder.build 없이 follow-up context만 붙인다", async () => {

@@ -111,6 +111,7 @@ export class TaskTurnInputBuilder {
       const context = inputUuid
         ? await contextBuilder.buildGenerationContext(task, agent, inputUuid)
         : await contextBuilder.buildGenerationContext(task, agent);
+      await this.requireInitialContextSources(task, context);
       if (context.contextManifest) {
         await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, context.contextManifest);
       }
@@ -131,6 +132,7 @@ export class TaskTurnInputBuilder {
       ? buildDeliveryInputUuid(task.executionRegistration.executionCommandId)
       : undefined;
     const ctx = await this.buildContext(task, agent, inputUuid);
+    await this.requireInitialContextSources(task, ctx);
     if (inputUuid) {
       await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx, inputUuid);
     } else {
@@ -359,6 +361,22 @@ export class TaskTurnInputBuilder {
     }
   }
 
+  private async requireInitialContextSources(
+    task: Task,
+    context: PreparedContext | undefined,
+  ): Promise<void> {
+    const manifest = context?.contextManifest;
+    if (!manifest) return;
+
+    const failedSources = manifest.sources.filter((source) => source.status === "error");
+    if (failedSources.length === 0) return;
+
+    await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, manifest);
+    throw new Error(
+      `Atom context compilation failed: ${failedSources.map((source) => source.node_id).join(", ")}`,
+    );
+  }
+
   private async buildContext(
     task: Task,
     agent: AgentProfile,
@@ -368,18 +386,9 @@ export class TaskTurnInputBuilder {
       return undefined;
     }
 
-    try {
-      return inputId
-        ? await this.deps.contextBuilder.build(task, agent, inputId)
-        : await this.deps.contextBuilder.build(task, agent);
-    } catch (err) {
-      if (isSessionDataHostError(err)) throw err;
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "context_builder failed — falling back to task.prompt without context",
-      );
-      return undefined;
-    }
+    return inputId
+      ? this.deps.contextBuilder.build(task, agent, inputId)
+      : this.deps.contextBuilder.build(task, agent);
   }
 
   private prepareNewTaskTurnInput(
