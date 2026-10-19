@@ -8,8 +8,10 @@ import { describe, expect, it } from "vitest";
 import {
   assemblePrompt,
   formatContextItems,
+  formatContextItemsWithMaterial,
   type ContextItem,
 } from "../../src/context/prompt_assembler.js";
+import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
 
 describe("formatContextItems (Python `format_context_items` 정본 L72-85)", () => {
   it("string content는 그대로 — 이스케이프 *없음* (Python L83 정합)", () => {
@@ -66,6 +68,75 @@ describe("formatContextItems (Python `format_context_items` 정본 L72-85)", () 
   it("모든 item 빈 content → 빈 문자열 (호출자가 prepend skip)", () => {
     expect(formatContextItems([{ key: "a", content: "" }])).toBe("");
     expect(formatContextItems([])).toBe("");
+  });
+});
+
+describe("formatContextItemsWithMaterial", () => {
+  it("keeps legacy serialization and partitions each visible character into framing or content", () => {
+    const items: ContextItem[] = [
+      { key: "with-dash", content: "hello 😀" },
+      { key: "object", content: { value: 1 } },
+      { key: "null", content: null },
+      { key: "empty", content: "" },
+    ];
+
+    const result = formatContextItemsWithMaterial(items);
+
+    expect(result.text).toBe(formatContextItems(items));
+    expect(result.text).toContain("<with_dash>\nhello 😀\n</with_dash>");
+    expect(result.parts.reduce((sum, part) => sum + (part.raw_chars_utf16 ?? 0), 0))
+      .toBe(result.text.length);
+    expect(result.parts).toContainEqual(expect.objectContaining({
+      category: "soulstream_injection",
+      source_key: "context/0/content",
+      raw_chars_utf16: "hello 😀".length,
+      approximate_tokens: 2,
+      estimate_source: "derived_chars",
+    }));
+  });
+
+  it("preserves repeated source occurrences and a stored zero estimate", () => {
+    const source = createInputMaterialPart(
+      "soulstream_injection",
+      "source/atom/node-1/0",
+      "same body",
+      0,
+    );
+    const result = formatContextItemsWithMaterial(
+      [
+        { key: "first", content: "same body" },
+        { key: "second", content: "same body" },
+      ],
+      [[source], [source]],
+    );
+    const contentParts = result.parts.filter((part) => part.category === "soulstream_injection");
+
+    expect(contentParts.map((part) => part.source_key)).toEqual([
+      "context/0/atom/source/atom/node-1/0",
+      "context/1/atom/source/atom/node-1/0",
+    ]);
+    expect(contentParts.map((part) => part.approximate_tokens)).toEqual([0, 0]);
+    expect(contentParts.map((part) => part.estimate_source)).toEqual(["manifest", "manifest"]);
+    expect(result.parts.reduce((sum, part) => sum + (part.raw_chars_utf16 ?? 0), 0))
+      .toBe(result.text.length);
+  });
+
+  it("prefers stored token estimates, including nonzero values, and derives only when absent", () => {
+    expect(createInputMaterialPart("user_prompt", "stored-zero", "12345", 0)).toMatchObject({
+      raw_chars_utf16: 5,
+      approximate_tokens: 0,
+      estimate_source: "manifest",
+    });
+    expect(createInputMaterialPart("user_prompt", "stored", "12345", 17)).toMatchObject({
+      raw_chars_utf16: 5,
+      approximate_tokens: 17,
+      estimate_source: "manifest",
+    });
+    expect(createInputMaterialPart("user_prompt", "derived", "12345")).toMatchObject({
+      raw_chars_utf16: 5,
+      approximate_tokens: 2,
+      estimate_source: "derived_chars",
+    });
   });
 });
 

@@ -21,6 +21,13 @@
  * 합쳐 단일 prompt 문자열로 만든다.
  */
 
+import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
+import {
+  createInputMaterialFramingPart,
+  createInputMaterialPart,
+  scopeInputMaterialParts,
+} from "./input_material_parts.js";
+
 const TAG_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_\-]*$/;
 const FORMAT_KEY_INVALID_CHARS = /[^a-zA-Z0-9_]/g;
 
@@ -48,8 +55,15 @@ function escapeClosingTag(text: string): string {
  *   - 빈 list 또는 *모든 item이 빈 content* → 빈 문자열 반환 (호출자가 prepend skip).
  */
 export function formatContextItems(items: ContextItem[]): string {
-  const parts: string[] = [];
-  for (const item of items) {
+  return formatContextItemsWithMaterial(items).text;
+}
+
+export function formatContextItemsWithMaterial(
+  items: ContextItem[],
+  contentPartsByIndex?: readonly (readonly InputMaterialPartV1[] | null | undefined)[],
+): { text: string; parts: InputMaterialPartV1[] } {
+  const blocks: Array<{ key: string; content: string; index: number }> = [];
+  for (const [index, item] of items.entries()) {
     const rawKey = item.key || "item";
     const key = rawKey.replace(FORMAT_KEY_INVALID_CHARS, "_") || "item";
     const content = item.content;
@@ -62,10 +76,44 @@ export function formatContextItems(items: ContextItem[]): string {
     } else {
       serialized = String(content);
     }
-    parts.push(`<${key}>\n${serialized}\n</${key}>`);
+    blocks.push({ key, content: serialized, index });
   }
-  if (parts.length === 0) return "";
-  return `<context>\n${parts.join("\n")}\n</context>`;
+  if (blocks.length === 0) return { text: "", parts: [] };
+
+  const location = "context_items";
+  let text = "<context>\n";
+  const parts: InputMaterialPartV1[] = [
+    createInputMaterialFramingPart(location, 0, "<context>\n"),
+  ];
+  let framingIndex = 1;
+  blocks.forEach((block, index) => {
+    if (index > 0) {
+      text += "\n";
+      parts.push(createInputMaterialFramingPart(location, framingIndex++, "\n"));
+    }
+    const open = `<${block.key}>\n`;
+    const close = `\n</${block.key}>`;
+    text += open + block.content + close;
+    parts.push(createInputMaterialFramingPart(location, framingIndex++, open));
+    const supplied = contentPartsByIndex?.[block.index];
+    const suppliedChars = supplied?.reduce(
+      (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
+      0,
+    );
+    parts.push(...(
+      supplied && suppliedChars === block.content.length
+        ? scopeInputMaterialParts(supplied, `context/${block.index}/atom`)
+        : [createInputMaterialPart(
+            "soulstream_injection",
+            `context/${block.index}/content`,
+            block.content,
+          )]
+    ));
+    parts.push(createInputMaterialFramingPart(location, framingIndex++, close));
+  });
+  text += "\n</context>";
+  parts.push(createInputMaterialFramingPart(location, framingIndex, "\n</context>"));
+  return { text, parts };
 }
 
 /**
