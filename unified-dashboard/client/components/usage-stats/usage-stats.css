@@ -181,6 +181,10 @@
   touch-action: pan-y;
 }
 
+.config-dialog .usage-stats-disclosure > summary {
+  justify-content: flex-start;
+}
+
 .config-dialog .usage-stats-axis-label {
   min-height: var(--v3-space-4);
   text-align: right;
