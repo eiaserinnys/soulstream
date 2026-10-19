@@ -1,5 +1,5 @@
-import { buildEmptyUsageStatsOverview, buildUsageStatsDayDetail, buildUsageStatsOverview } from '../../../../../../packages/soul-ui/src/lib/usage-stats-fixtures';
-import type { UsageStatsProvider, UsageStatsQuery } from '../../../../../../packages/wire-schema/src/session_statistics';
+import { buildEmptyUsageStatsOverview, buildUsageStatsDayDetail, buildUsageStatsOverview } from '../../../packages/soul-ui/src/lib/usage-stats-fixtures';
+import type { UsageStatsProvider, UsageStatsQuery } from '../../../packages/wire-schema/src/session_statistics';
 
 export type UsageStatsMockState = 'ready' | 'loading' | 'empty' | 'error' | 'forbidden' | 'backfilling';
 

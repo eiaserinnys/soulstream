@@ -1,6 +1,6 @@
 import { createApiClient } from '../fixture-client';
 import { useAuthStore } from '../../store/authStore';
-import { createUsageStatsMockFetch } from '../../components/settings/usage-stats/__tests__/usage-stats-mock-api';
+import { createUsageStatsMockFetch } from '../../test-support/usage-stats-mock-api';
 
 const originalFetch = global.fetch;
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { createUsageStatsMockFetch, type UsageStatsMockState } from './usage-stats-mock-api';
+import { createUsageStatsMockFetch, type UsageStatsMockState } from '../../../../test-support/usage-stats-mock-api';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import {
   buildUsageStatsDayDetail,
