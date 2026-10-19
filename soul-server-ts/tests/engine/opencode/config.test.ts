@@ -31,6 +31,9 @@ describe("OpenCode session configuration", () => {
         LANG: "C.UTF-8",
         OPENCODE_API_KEY: "must-not-pass",
         ANTHROPIC_API_KEY: "must-not-pass",
+        GH_TOKEN: "must-not-pass",
+        GITHUB_TOKEN: "must-not-pass",
+        GITHUB_PAT: "must-not-pass",
       },
     });
 
@@ -76,9 +79,55 @@ describe("OpenCode session configuration", () => {
       XDG_DATA_HOME: join(sessionDirectory, "xdg", "data"),
       XDG_CACHE_HOME: join(sessionDirectory, "xdg", "cache"),
       XDG_STATE_HOME: join(sessionDirectory, "xdg", "state"),
+      GH_CONFIG_DIR: "/home/test/.config/gh",
     });
     expect(prepared.processEnv.OPENCODE_API_KEY).toBeUndefined();
     expect(prepared.processEnv.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(prepared.processEnv.GH_TOKEN).toBeUndefined();
+    expect(prepared.processEnv.GITHUB_TOKEN).toBeUndefined();
+    expect(prepared.processEnv.GITHUB_PAT).toBeUndefined();
+  });
+
+  it("preserves the parent GitHub config path and derives it from parent XDG settings", async () => {
+    const root = makeTempDirSync("opencode-gh-config-");
+    const common = {
+      workspaceDir: join(root, "workspace"),
+      model: "opencode/deepseek-v4.1-flash-free",
+      agentSessionId: "session-gh-config-479",
+    };
+    const explicit = await prepareOpenCodeSession({
+      ...common,
+      sessionDirectory: join(root, "explicit"),
+      processEnv: {
+        HOME: "/parent/home",
+        XDG_CONFIG_HOME: "/parent/config",
+        GH_CONFIG_DIR: "/custom/gh-config",
+      },
+    });
+    const fromXdg = await prepareOpenCodeSession({
+      ...common,
+      sessionDirectory: join(root, "xdg"),
+      processEnv: {
+        HOME: "/parent/home",
+        XDG_CONFIG_HOME: "/parent/config",
+      },
+    });
+    const fromHomeWhenEmpty = await prepareOpenCodeSession({
+      ...common,
+      sessionDirectory: join(root, "empty"),
+      processEnv: {
+        HOME: "/parent/home",
+        XDG_CONFIG_HOME: "",
+        GH_CONFIG_DIR: "",
+      },
+    });
+
+    expect(explicit.processEnv.GH_CONFIG_DIR).toBe("/custom/gh-config");
+    expect(explicit.processEnv.XDG_CONFIG_HOME).toBe(join(root, "explicit", "xdg", "config"));
+    expect(fromXdg.processEnv.GH_CONFIG_DIR).toBe("/parent/config/gh");
+    expect(fromXdg.processEnv.XDG_CONFIG_HOME).toBe(join(root, "xdg", "xdg", "config"));
+    expect(fromHomeWhenEmpty.processEnv.GH_CONFIG_DIR).toBe("/parent/home/.config/gh");
+    expect(fromHomeWhenEmpty.processEnv.XDG_CONFIG_HOME).toBe(join(root, "empty", "xdg", "config"));
   });
 
   it("reuses the existing instructions file on a resume without a full prompt reinjection", async () => {
