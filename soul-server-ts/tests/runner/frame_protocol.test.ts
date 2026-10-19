@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
+  RunnerExecuteParamsSchema,
   RunnerFrameSchema,
   applyInterventionCommandFrame,
   discardInterventionCommandFrame,
   engineEventFrame,
+  parseRunnerCommandJsonRoundTrip,
   type RunnerFrame,
 } from "../../src/runner/frame_protocol.js";
 
@@ -368,5 +370,67 @@ describe("runner frame protocol", () => {
       ...frames[0],
       protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION + 1,
     }).success).toBe(false);
+  });
+
+  it("round-trips typed usage context while accepting legacy execute params without it", () => {
+    const usageSnapshot = {
+      schema_version: 1,
+      backend: "codex",
+      provider: "codex",
+      preset_id: "codex-sol",
+      requested_model: "gpt-6.1-sol",
+      provider_attribution: "configured_alias",
+    };
+    const executionInput = {
+      schema_version: 1,
+      command_id: "command-1",
+      input_id: "input-1",
+      scope: "newly_observed_material",
+      stage: "prepared",
+      resumed: true,
+      replayed: false,
+      scope_match: "unverified",
+      non_comparable_reasons: ["hidden_system_or_schema", "missing_source_token_breakdown"],
+      estimate_method: "utf16_chars_div4_ceil_v1",
+      parts: [{
+        category: "user_prompt",
+        source_key: "user",
+        raw_chars_utf16: 12,
+        approximate_tokens: 3,
+        estimate_source: "derived_chars",
+      }],
+    };
+    const params = {
+      agentSessionId: "session-1",
+      prompt: "hello",
+      usage_snapshot: usageSnapshot,
+      execution_input: executionInput,
+    };
+    const roundTripped = parseRunnerCommandJsonRoundTrip({
+      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+      channel: "command",
+      kind: "execute",
+      commandId: "command-1",
+      params,
+    });
+
+    expect(roundTripped.kind).toBe("execute");
+    if (roundTripped.kind === "execute") expect(roundTripped.params).toMatchObject(params);
+    expect(RunnerExecuteParamsSchema.safeParse(params).success).toBe(true);
+    expect(RunnerExecuteParamsSchema.safeParse({
+      ...params,
+      execution_input: { ...executionInput, parts: [{ category: "unclassified" }] },
+    }).success).toBe(false);
+
+    const legacy = parseRunnerCommandJsonRoundTrip({
+      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
+      channel: "command",
+      kind: "execute",
+      commandId: "legacy-command",
+      params: { agentSessionId: "session-1", prompt: "legacy" },
+    });
+    if (legacy.kind !== "execute") throw new Error("expected execute command");
+    expect(legacy.params).not.toHaveProperty("usage_snapshot");
+    expect(legacy.params).not.toHaveProperty("execution_input");
   });
 });

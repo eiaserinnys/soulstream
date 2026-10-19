@@ -33,6 +33,7 @@ import {
   type BackendRolloverReplayBase,
 } from "./generation_turn_input.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
+import type { ExecutionInputV1 } from "@soulstream/wire-schema";
 import {
   type AttachmentTurnSource,
   type PreparedAttachmentInput,
@@ -58,6 +59,7 @@ export const CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS = 100_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_ESTIMATED_TOKENS = 50_000;
 export interface TaskTurnInput {
   prompt: string;
+  inputMaterialParts?: ExecutionInputV1["parts"];
   /** Original initial user text, before dynamic context assembly; only for rollover replay. */
   originalPrompt?: string;
   imageAttachmentPaths: string[];
