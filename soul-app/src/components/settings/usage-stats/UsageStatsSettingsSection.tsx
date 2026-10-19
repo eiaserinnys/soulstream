@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
+import { isUsageStatsTokenPartial } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
 import { DisclosureIcon } from '../../DisclosureIcon';
 import { GlassButton } from '../../GlassSurface';
 import { SettingsOptionRow } from '../SettingsOptionRow';
@@ -29,10 +30,10 @@ import type {
   UsageStatsPeriod,
   UsageStatsProvider,
   UsageStatsQuery,
-  UsageStatsSeriesPoint,
 } from '../../../../../packages/soul-ui/src/lib/usage-stats-fixture-data';
 import { UsageShareRow } from './UsageShareRow';
-import { UsageStackBucket, UsageStackSegment, UsageStackedBars } from './UsageStackedBars';
+import { makeUsageStatsBuckets, sumKnown } from './usage-stats-chart-data';
+import { UsageStackedBars } from './UsageStackedBars';
 
 export type PreviewState = 'ready' | 'loading' | 'empty' | 'error' | 'forbidden' | 'backfilling';
 type Measure = 'tokens' | 'cost';
@@ -46,6 +47,35 @@ type PreviewContextValue = {
 };
 
 const PreviewContext = createContext<PreviewContextValue | null>(null);
+
+const NODE_COLORS = {
+  light: {
+    user: '#3b82f6',
+    response: '#10b981',
+    thinking: '#8b5cf6',
+    plan: '#06b6d4',
+    tool: '#f59e0b',
+    intervention: '#f97316',
+  },
+  dark: {
+    user: 'hsl(217, 70%, 68%)',
+    response: 'hsl(160, 60%, 52%)',
+    thinking: 'hsl(258, 65%, 72%)',
+    plan: 'hsl(189, 65%, 52%)',
+    tool: 'hsl(38, 75%, 58%)',
+    intervention: 'hsl(25, 70%, 60%)',
+  },
+} as const;
+
+const PERIOD_OPTIONS: { value: UsageStatsPeriod; label: string }[] = [
+  { value: 'week', label: '주간' },
+  { value: 'month', label: '월간' },
+  { value: 'all', label: '전체' },
+];
+const MEASURE_OPTIONS: { value: Measure; label: string }[] = [
+  { value: 'tokens', label: '토큰' },
+  { value: 'cost', label: '정가' },
+];
 
 export function UsageStatsPreviewProvider({
   children,
@@ -63,26 +93,6 @@ export function UsageStatsPreviewProvider({
   const [state, setState] = useState(initialState);
   return <PreviewContext.Provider value={{ state, setState, initialPeriod, initialDate, initialMeasure }}>{children}</PreviewContext.Provider>;
 }
-
-const SERIES_COLORS: Record<UsageStatsProvider, string> = {
-  claude: '#cf7252',
-  codex: '#5b8f78',
-  antigravity: '#7f78c6',
-  deepseek: '#4885bd',
-  kimi: '#ba8b39',
-};
-const PROJECT_COLORS = ['#4987b5', '#5b9679', '#bd8055', '#8278b8', '#a36b89', '#88914b'];
-const INPUT_COLORS = ['#5489bf', '#9674b5', '#55a08b', '#c2894e', '#8b8e94'];
-
-const PERIOD_OPTIONS: { value: UsageStatsPeriod; label: string }[] = [
-  { value: 'week', label: '주간' },
-  { value: 'month', label: '월간' },
-  { value: 'all', label: '전체' },
-];
-const MEASURE_OPTIONS: { value: Measure; label: string }[] = [
-  { value: 'tokens', label: '토큰' },
-  { value: 'cost', label: '정가' },
-];
 
 export function UsageStatsSettingsSection({ flattened = false }: { flattened?: boolean }) {
   const t = useTokens();
@@ -127,42 +137,78 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
     ? buildEmptyUsageStatsOverview(query)
     : buildUsageStatsOverview(query);
   if (state === 'backfilling') overview.projection_status.state = 'backfilling';
-  const selectedDetail = selectedDate ? buildUsageStatsDayDetail(selectedDate, query) : null;
+  const emptyData = state === 'empty';
+  const activeDate = emptyData ? null : selectedDate;
+
+  const baseOverview = useMemo(() => buildUsageStatsOverview({ period, anchor }), [period, anchor]);
+  const allOverview = useMemo(() => buildUsageStatsOverview({ period: 'all', anchor: USAGE_STATS_FIXTURE_ANCHOR }), []);
+  const projectRoster = useMemo(
+    () => baseOverview.by_project.flatMap(row => row.project_id && row.project_id !== '__other__' ? [row.project_id] : []),
+    [baseOverview],
+  );
+  const selectedDetail = activeDate ? buildUsageStatsDayDetail(activeDate, query, projectRoster) : null;
   const activeAggregate: UsageStatsAggregate = selectedDetail?.totals ?? overview.totals;
   const activeMetrics = activeAggregate.metrics;
-  const tokenValue = formatUsageStatsTokenCount(activeMetrics.total_tokens);
-  const costValue = formatUsageStatsUsd(activeMetrics.reference_cost_usd);
-  const mainValue = measure === 'tokens' ? tokenValue : costValue;
-  const secondaryValue = measure === 'tokens' ? costValue : tokenValue;
-  const coverageLabel = formatUsageStatsCoverage(activeAggregate.coverage.priced_total_tokens, activeMetrics.total_tokens);
-  const baseOverview = useMemo(() => buildUsageStatsOverview({ period, anchor }), [period, anchor]);
+  const tokenValue = formatTokenValue(activeMetrics.total_tokens, activeAggregate.coverage);
+  const costValue = formatCostValue(activeMetrics.reference_cost_usd, activeAggregate.coverage.unpriced_events > 0 || activeAggregate.coverage.unknown_total_token_events > 0);
+  const coverageLabel = emptyData ? null : formatUsageStatsCoverage(activeAggregate.coverage.priced_total_tokens, activeMetrics.total_tokens);
   const modelPoints = overview.series.filter(point => point.provider !== undefined && point.project_id === undefined);
   const projectPoints = overview.series.filter(point => point.project_id !== undefined);
-  const modelBuckets = useMemo(() => makeBuckets(modelPoints, period, measure, 'model'), [modelPoints, period, measure]);
-  const projectBuckets = useMemo(() => makeBuckets(projectPoints, period, measure, 'project'), [projectPoints, period, measure]);
-  const projectOptions = baseOverview.by_project
-    .filter(row => row.project_id !== '__other__')
-    .map(row => ({ id: row.project_id ?? '__unclassified__', label: row.label }));
-  const denominator = sumKnown((selectedDetail?.by_model ?? overview.by_model).map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
-  const projectDenominator = sumKnown((selectedDetail?.by_project ?? overview.by_project).map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
+  const nodeColors = t.mode === 'dark' ? NODE_COLORS.dark : NODE_COLORS.light;
+  const seriesColors: Record<UsageStatsProvider, string> = {
+    claude: nodeColors.intervention,
+    codex: nodeColors.response,
+    antigravity: nodeColors.user,
+    deepseek: nodeColors.thinking,
+    kimi: nodeColors.plan,
+  };
+  const projectPalette = [nodeColors.user, nodeColors.response, nodeColors.tool, nodeColors.thinking, nodeColors.plan];
+  const projectColorById = useMemo(() => {
+    const result: Record<string, string> = {};
+    let rank = 0;
+    for (const row of baseOverview.by_project) {
+      if (!row.project_id || row.project_id === '__other__') continue;
+      if (rank < projectPalette.length) result[row.project_id] = projectPalette[rank];
+      rank += 1;
+    }
+    return result;
+  }, [baseOverview, t.mode]);
+  const modelBuckets = useMemo(
+    () => makeUsageStatsBuckets(modelPoints, period, overview.range, measure, 'model', seriesColors, projectColorById, t.colors.textTertiary, overview.projection_status.covered_since, emptyData),
+    [modelPoints, period, overview.range, measure, t.mode, projectColorById, overview.projection_status.covered_since, emptyData],
+  );
+  const projectBuckets = useMemo(
+    () => makeUsageStatsBuckets(projectPoints, period, overview.range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, overview.projection_status.covered_since, emptyData),
+    [projectPoints, period, overview.range, measure, t.mode, projectColorById, overview.projection_status.covered_since, emptyData],
+  );
+  const projectOptions = [
+    { id: 'all', label: '모든 프로젝트' },
+    ...baseOverview.by_project
+      .filter(row => row.project_id !== '__other__')
+      .map(row => ({ id: row.project_id ?? '__unclassified__', label: row.label })),
+  ];
+  const selectedProject = projectIds[0] ?? 'all';
+  const modelRows = selectedDetail?.by_model ?? overview.by_model;
+  const projectRows = selectedDetail?.by_project ?? overview.by_project;
+  const inputMaterial = selectedDetail?.input_material ?? null;
+  const denominator = sumKnown(modelRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
+  const projectDenominator = sumKnown(projectRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
   const loading = state === 'loading';
-  const unavailable = state === 'loading' || state === 'empty' || state === 'error' || state === 'forbidden';
+  const unavailable = state === 'loading' || state === 'error' || state === 'forbidden';
+  const previousAnchor = shiftUsageStatsAnchor(period, anchor, -1);
+  const nextAnchor = shiftUsageStatsAnchor(period, anchor, 1);
+  const previousRange = buildUsageStatsOverview({ period, anchor: previousAnchor }).range;
+  const nextRange = buildUsageStatsOverview({ period, anchor: nextAnchor }).range;
+  const previousDisabled = period === 'all' || previousRange.until <= allOverview.projection_status.covered_since;
+  const nextDisabled = period === 'all' || nextRange.since >= allOverview.as_of.slice(0, 10);
+  const periodLabel = formatUsageStatsPeriodLabel(period, overview.range.since, overview.range.until);
 
   function changePeriod(nextPeriod: UsageStatsPeriod) {
     setPeriod(nextPeriod);
-    setAnchor(USAGE_STATS_FIXTURE_ANCHOR);
     setSelectedDate(null);
   }
 
-  function changeProject(id: string) {
-    if (id === '__all__') {
-      setProjectIds([]);
-      return;
-    }
-    setProjectIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
-  }
-
-  function changeBucket(bucketId: string) {
+  function changeBucket(bucketId: string, fromDrag: boolean) {
     const bucketStart = bucketId.slice(bucketId.indexOf('-') + 1);
     if (period === 'all') {
       setPeriod('month');
@@ -170,142 +216,169 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
       setSelectedDate(null);
       return;
     }
-    setSelectedDate(current => current === bucketStart ? null : bucketStart);
+    if (fromDrag) setSelectedDate(bucketStart);
+    else setSelectedDate(current => current === bucketStart ? null : bucketStart);
   }
 
   function movePeriod(direction: number) {
     if (period === 'all') return;
-    setAnchor(shiftUsageStatsAnchor(period, anchor, direction));
+    setAnchor(current => shiftUsageStatsAnchor(period, current, direction));
     setSelectedDate(null);
   }
 
-  const periodLabel = formatUsageStatsPeriodLabel(period, overview.range.since, overview.range.until);
-  const modelRows = selectedDetail?.by_model ?? overview.by_model;
-  const projectRows = selectedDetail?.by_project ?? overview.by_project;
-  const inputMaterial = selectedDetail?.input_material ?? null;
-
   return (
     <View testID="usage-stats-screen" style={{ gap: t.spacing.lg }}>
-      <SettingsSection id="usage-stats-controls" title="기간과 필터" flattened={flattened}>
-        <View style={{ gap: t.spacing.md }}>
-          <SettingsSegmentedControl id="usage-stats-period" value={period} options={PERIOD_OPTIONS} onChange={changePeriod} />
-          <View testID="usage-stats-date-row" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
-            <GlassButton iconOnly accessibilityLabel="이전 기간" disabled={period === 'all'} onPress={() => movePeriod(-1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>‹</Text></GlassButton>
-            <Text testID="usage-stats-period-label" numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textPrimary, textAlign: 'center' }}>{selectedDate ? formatUsageStatsDateWithWeekday(selectedDate) : periodLabel}</Text>
-            <GlassButton iconOnly accessibilityLabel="다음 기간" disabled={period === 'all'} onPress={() => movePeriod(1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>›</Text></GlassButton>
-            {selectedDate ? <GlassButton accessibilityLabel="기간 요약으로 돌아가기" onPress={() => setSelectedDate(null)}><Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary }}>전체</Text></GlassButton> : null}
-          </View>
-          <SettingsOptionRow
-            label="모델"
-            selected={modelFilterId}
-            options={modelOptions.map(option => ({ id: option.id, label: option.label }))}
-            onSelect={setModelFilterId}
-            emptyLabel="모델 없음"
-          />
-          <View style={{ gap: t.spacing.xs }}>
-            <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>프로젝트</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.xs }}>
-              <ProjectFilterChip label="전체" selected={projectIds.length === 0} onPress={() => changeProject('__all__')} />
-              {projectOptions.map(option => <ProjectFilterChip key={option.id} label={option.label} selected={projectIds.includes(option.id)} onPress={() => changeProject(option.id)} />)}
-            </View>
-          </View>
-          <SettingsSegmentedControl<Measure> id="usage-stats-measure" value={measure} options={MEASURE_OPTIONS} onChange={setMeasure} />
+      <View testID="usage-stats-controls" style={{ gap: t.spacing.md }}>
+        <SettingsSegmentedControl id="usage-stats-period" value={period} options={PERIOD_OPTIONS} onChange={changePeriod} />
+        <View testID="usage-stats-date-row" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
+          {period !== 'all' ? <GlassButton iconOnly accessibilityLabel="이전 기간" disabled={previousDisabled} onPress={() => movePeriod(-1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>‹</Text></GlassButton> : null}
+          <Text testID="usage-stats-period-label" numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textPrimary, textAlign: 'center' }}>{periodLabel}</Text>
+          {period !== 'all' ? <GlassButton iconOnly accessibilityLabel="다음 기간" disabled={nextDisabled} onPress={() => movePeriod(1)}><Text style={{ ...t.foundation.typography.section, color: t.colors.accent }}>›</Text></GlassButton> : null}
         </View>
-      </SettingsSection>
+        <SettingsOptionRow
+          label="모델"
+          selected={modelFilterId}
+          options={modelOptions.map(option => ({ id: option.id, label: option.label }))}
+          onSelect={id => { setModelFilterId(id); setSelectedDate(null); }}
+          emptyLabel="모델 없음"
+        />
+        <SettingsOptionRow
+          label="프로젝트"
+          selected={selectedProject}
+          options={projectOptions}
+          onSelect={id => { setProjectIds(id === 'all' ? [] : [id]); setSelectedDate(null); }}
+          emptyLabel="프로젝트 없음"
+        />
+      </View>
 
       {unavailable ? <StatusSection flattened={flattened} state={state} loading={loading} onRetry={() => setPreviewState('ready')} /> : null}
       {!unavailable ? <>
-        {overview.projection_status.state === 'backfilling' ? <Text testID="usage-stats-backfilling" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>일부 기간을 수집 중</Text> : null}
+        {overview.projection_status.state === 'backfilling' ? <Text testID="usage-stats-backfilling" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>이전 기록 정리 중</Text> : null}
         <SettingsSection id="usage-stats-summary" title="요약" flattened={flattened}>
-          <View style={{ gap: t.spacing.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: t.spacing.sm }}>
-              <Text testID={measure === 'cost' ? 'usage-stats-reference-cost' : 'usage-stats-total-tokens'} style={{ flex: 1, ...t.foundation.typography.display, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{mainValue}</Text>
-              <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{measure === 'tokens' ? '토큰' : '정가'}</Text>
+          <View style={{ gap: t.spacing.lg, padding: t.cardLayout.padding }}>
+            {activeDate ? <GlassButton size="compact" accessibilityLabel={`${formatUsageStatsDateWithWeekday(activeDate)} 선택 해제`} onPress={() => setSelectedDate(null)}>
+              <Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary }}>{formatUsageStatsDateWithWeekday(activeDate)} ×</Text>
+            </GlassButton> : null}
+            <View style={{ flexDirection: 'row', gap: t.spacing.md }}>
+              <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
+                <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>토큰</Text>
+                <Text testID="usage-stats-total-tokens" numberOfLines={1} style={{ ...t.foundation.typography.section, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{tokenValue}</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
+                <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>정가</Text>
+                <Text testID="usage-stats-reference-cost" numberOfLines={1} style={{ ...t.foundation.typography.section, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{costValue}</Text>
+              </View>
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }}>
-              <Text testID={measure === 'tokens' ? 'usage-stats-reference-cost' : 'usage-stats-total-tokens'} style={{ ...t.foundation.typography.body, color: t.colors.textSecondary, fontVariant: ['tabular-nums'] }}>{measure === 'tokens' ? costValue : tokenValue}</Text>
-              <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text>
-              {activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : <Text testID="usage-stats-missing-turns">{null}</Text>}
+              {coverageLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text> : null}
+              {activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : null}
             </View>
             <DisclosureButton label="토큰 구성" expanded={metricsExpanded} onPress={() => setMetricsExpanded(value => !value)} />
             {metricsExpanded ? <MetricBreakdown aggregate={activeAggregate} /> : null}
             <DisclosureButton label="집계 기준" expanded={basisExpanded} onPress={() => setBasisExpanded(value => !value)} />
             {basisExpanded ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>KST 완료 기록 · 2026-10-19 API 기본 정가</Text> : null}
-          </View>
-        </SettingsSection>
-
-        <SettingsSection id="usage-stats-models" title="모델" flattened={flattened}>
-          <View style={{ gap: t.spacing.md }}>
-            <UsageStackedBars testID="usage-stats-model-chart" buckets={modelBuckets} selectedBucket={selectedDate ? `day-${selectedDate}` : null} onSelectBucket={changeBucket} />
-            <View style={{ gap: t.spacing.md }}>
-              {modelRows.map(row => {
-                const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
-                const share = typeof value === 'number' && denominator > 0 ? value / denominator : null;
-                const label = row.model
-                  ? `${formatUsageStatsProviderLabel(row.provider)} (${formatUsageStatsModelLabel(row.model)})`
-                  : formatUsageStatsProviderLabel(row.provider);
-                const id = row.model ? `usage-stats-model-row-${row.provider}-${row.model}` : `usage-stats-model-row-${row.provider}-provider`;
-                const valueLabel = measure === 'tokens' ? formatUsageStatsTokenCount(value) : formatUsageStatsUsd(value);
-                return <UsageShareRow key={`${row.provider}:${row.model ?? 'provider'}`} testID={id} label={label} value={valueLabel} share={share} color={SERIES_COLORS[row.provider]} />;
-              })}
+            <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
+                <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>모델별</Text>
+                <View style={{ flex: 1 }} />
+                <SettingsSegmentedControl<Measure> id="usage-stats-measure" value={measure} options={MEASURE_OPTIONS} onChange={setMeasure} wrap />
+              </View>
+              <UsageStackedBars
+                testID="usage-stats-model-chart"
+                buckets={modelBuckets}
+                selectedBucket={activeDate ? `day-${activeDate}` : null}
+                onSelectBucket={bucketId => changeBucket(bucketId, false)}
+                onDragBucket={period === 'all' ? undefined : bucketId => changeBucket(bucketId, true)}
+                measure={measure}
+              />
+              <View style={{ gap: t.spacing.md }}>
+                {modelRows.map(row => {
+                  const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
+                  const share = typeof value === 'number' && denominator > 0 ? value / denominator : null;
+                  const label = row.model
+                    ? `${formatUsageStatsProviderLabel(row.provider)} (${formatUsageStatsModelLabel(row.model)})`
+                    : formatUsageStatsProviderLabel(row.provider);
+                  const id = row.model ? `usage-stats-model-row-${row.provider}-${row.model}` : `usage-stats-model-row-${row.provider}-provider`;
+                  return <UsageShareRow
+                    key={`${row.provider}:${row.model ?? 'provider'}`}
+                    testID={id}
+                    label={label}
+                    value={formatAggregateValue(row.metrics, row.coverage, measure)}
+                    share={share}
+                    color={seriesColors[row.provider]}
+                    onPress={!selectedModel.provider && !row.model ? () => {
+                      setModelFilterId(`provider:${row.provider}`);
+                      setSelectedDate(null);
+                    } : undefined}
+                  />;
+                })}
+              </View>
             </View>
           </View>
         </SettingsSection>
 
-        <SettingsSection id="usage-stats-projects" title="프로젝트" flattened={flattened}>
-          <View style={{ gap: t.spacing.md }}>
-            <UsageStackedBars testID="usage-stats-project-chart" buckets={projectBuckets} />
+        {!emptyData ? <SettingsSection id="usage-stats-projects" title="프로젝트별" flattened={flattened}>
+          <View style={{ gap: t.spacing.md, padding: t.cardLayout.padding }}>
+            <UsageStackedBars
+              testID="usage-stats-project-chart"
+              buckets={projectBuckets}
+              selectedBucket={activeDate ? `day-${activeDate}` : null}
+              onSelectBucket={bucketId => changeBucket(bucketId, false)}
+              onDragBucket={period === 'all' ? undefined : bucketId => changeBucket(bucketId, true)}
+              measure={measure}
+            />
             <View style={{ gap: t.spacing.md }}>
               {projectRows.map(row => {
                 const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
                 const share = typeof value === 'number' && projectDenominator > 0 ? value / projectDenominator : null;
-                const id = row.project_id === null ? 'unclassified' : row.project_id;
-                return <UsageShareRow key={id} label={row.label} value={measure === 'tokens' ? formatUsageStatsTokenCount(value) : formatUsageStatsUsd(value)} share={share} color={projectColor(row.project_id)} />;
+                const id = row.project_id === null ? '__unclassified__' : row.project_id;
+                return <UsageShareRow
+                  key={id}
+                  testID={`usage-stats-project-row-${id}`}
+                  label={row.label}
+                  value={formatAggregateValue(row.metrics, row.coverage, measure)}
+                  share={share}
+                  color={projectColorById[id] ?? t.colors.textTertiary}
+                  onPress={row.project_id === '__other__' ? undefined : () => {
+                    setProjectIds([id]);
+                    setSelectedDate(null);
+                  }}
+                />;
               })}
             </View>
           </View>
-        </SettingsSection>
+        </SettingsSection> : null}
 
-        <SettingsSection id="usage-stats-input" title="입력 자료" flattened={flattened}>
-          <View style={{ gap: t.spacing.md }}>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: t.spacing.sm }}>
-              <Text style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textSecondary }}>관측 글자</Text>
-              <Text testID="usage-stats-observed-chars" style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{inputMaterial?.observed_chars === null || inputMaterial === null ? (inputMaterial ? '미기록' : '날짜 선택') : `${inputMaterial.observed_chars.toLocaleString('ko-KR')}자`}</Text>
-            </View>
+        {!emptyData && period !== 'all' ? <SettingsSection id="usage-stats-input" title="입력 자료 구성" flattened={flattened}>
+          <View style={{ gap: t.spacing.md, padding: t.cardLayout.padding }}>
             {inputMaterial ? <>
-              <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>문자 수 기준 · 과금 토큰과 별도</Text>
+              <Text testID="usage-stats-observed-chars" style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{inputMaterial.observed_chars === null ? '미기록' : `관측 ${inputMaterial.observed_chars.toLocaleString('ko-KR')}자`}</Text>
               {inputMaterial.parts.map((part, index) => {
                 const isHarness = part.category === 'harness_internal';
                 const label = formatUsageStatsInputCategoryLabel(part.category);
                 const value = isHarness ? '관측 안 됨' : part.chars === null ? '미기록' : `${part.chars.toLocaleString('ko-KR')}자`;
-                return <UsageShareRow key={part.category} testID={isHarness ? 'usage-stats-input-harness-row' : undefined} valueTestID={isHarness ? 'usage-stats-input-harness' : undefined} label={label} value={value} share={isHarness ? null : part.share} color={INPUT_COLORS[index % INPUT_COLORS.length]} />;
+                return <UsageShareRow key={`${part.category}:${part.source_key ?? index}`} testID={isHarness ? 'usage-stats-input-harness-row' : undefined} valueTestID={isHarness ? 'usage-stats-input-harness' : undefined} label={label} value={value} share={isHarness ? null : part.share} color={t.colors.accent} />;
               })}
-              <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>도구 호출 {selectedDetail?.tool_calls ?? 0}회 · 미기록 입력 {inputMaterial.coverage.missing_samples}건</Text>
-            </> : <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>날짜를 선택하면 그날의 입력 구성을 봅니다.</Text>}
+              <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>툴 호출 {selectedDetail?.tool_calls ?? 0}회</Text>
+              {inputMaterial.coverage.missing_samples > 0 ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 입력 {inputMaterial.coverage.missing_samples}건</Text> : null}
+            </> : <Text testID="usage-stats-observed-chars" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>막대에서 날짜를 고르세요</Text>}
           </View>
-        </SettingsSection>
+        </SettingsSection> : null}
       </> : null}
     </View>
   );
 }
 
-function ProjectFilterChip({ label, selected, onPress }: { label: string; selected: boolean; onPress(): void }) {
-  const t = useTokens();
-  return <GlassButton accessibilityLabel={label} accessibilityState={{ selected }} onPress={onPress} contentStyle={selected ? { backgroundColor: t.colors.accentTint } : undefined}>
-    <Text style={{ ...t.foundation.typography.meta, color: selected ? t.colors.textPrimary : t.colors.textSecondary }}>{label}</Text>
-  </GlassButton>;
-}
-
 function StatusSection({ flattened, state, loading, onRetry }: { flattened: boolean; state: PreviewState; loading: boolean; onRetry(): void }) {
   const t = useTokens();
   const content = state === 'loading'
-    ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><ActivityIndicator /><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>불러오는 중</Text></View>
+    ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><ActivityIndicator size="small" color={t.colors.accent} /><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>불러오는 중…</Text></View>
     : state === 'empty'
       ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>기록이 없습니다.</Text>
       : state === 'forbidden'
-        ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>통계를 볼 권한이 없습니다.</Text>
+        ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>이 통계를 볼 권한이 없습니다.</Text>
         : <View style={{ gap: t.spacing.sm }}><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>통계를 불러오지 못했습니다.</Text><GlassButton disabled={loading} onPress={onRetry}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 불러오기</Text></GlassButton></View>;
-  return <SettingsSection id="usage-stats-status" title="사용량" flattened={flattened}>{content}</SettingsSection>;
+  return <SettingsSection id="usage-stats-status" title="사용량" flattened={flattened}><View style={{ padding: t.cardLayout.padding }}>{content}</View></SettingsSection>;
 }
 
 function DisclosureButton({ label, expanded, onPress }: { label: string; expanded: boolean; onPress(): void }) {
@@ -319,43 +392,33 @@ function MetricBreakdown({ aggregate }: { aggregate: UsageStatsAggregate }) {
   const t = useTokens();
   const metrics = aggregate.metrics;
   const rows = [
-    ['입력 토큰', metrics.input_total],
-    ['캐시 읽기', metrics.cache_read],
-    ['캐시 쓰기', metrics.cache_write],
-    ['출력 토큰', metrics.output_total],
-    ['추론 출력 포함', metrics.reasoning_output],
+    ['입력 (캐시 포함)', metrics.input_total],
+    ['그중 캐시 읽기', metrics.cache_read],
+    ['그중 캐시 쓰기', metrics.cache_write],
+    ['출력', metrics.output_total],
+    ['그중 추론', metrics.reasoning_output],
   ] as const;
   return <View style={{ gap: t.spacing.xs }}>
     {rows.map(([label, value]) => <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><Text style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{label}</Text><Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{formatUsageStatsTokenCount(value, false)}</Text></View>)}
-    <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>캐시와 추론은 합계에 이미 포함</Text>
   </View>;
 }
 
-function makeBuckets(points: UsageStatsSeriesPoint[], period: UsageStatsPeriod, measure: Measure, kind: 'model' | 'project'): UsageStackBucket[] {
-  const grouped: Record<string, UsageStackBucket> = {};
-  for (const point of points) {
-    const bucket = point.bucket_start;
-    const identity = kind === 'model' ? `${point.provider}:${point.model ?? ''}` : `project:${point.project_id ?? '__unclassified__'}`;
-    const label = period === 'all' ? point.bucket_start.slice(0, 7) : point.bucket_start.slice(5);
-    if (!grouped[bucket]) grouped[bucket] = { id: `${period === 'all' ? 'month' : 'day'}-${bucket}`, label, segments: [] };
-    const existing = grouped[bucket].segments.find(segment => segment.id === identity);
-    const value = point.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
-    const color = kind === 'model'
-      ? point.provider ? SERIES_COLORS[point.provider] : '#888888'
-      : projectColor(point.project_id);
-    if (existing) existing.value = (existing.value ?? 0) + (value ?? 0);
-    else grouped[bucket].segments.push({ id: identity, label: point.label, value, color });
-  }
-  return Object.values(grouped);
+function formatTokenValue(value: number | null, coverage: UsageStatsAggregate['coverage']): string {
+  if (value === null) return '미기록';
+  return `${formatUsageStatsTokenCount(value)}${isUsageStatsTokenPartial(coverage) ? '+' : ''}`;
 }
 
-function sumKnown(values: (number | null)[]): number {
-  return values.reduce<number>((sum, value) => sum + (typeof value === 'number' ? value : 0), 0);
+function formatCostValue(value: number | null, partial: boolean): string {
+  if (value === null) return '정가 미확인';
+  return `${formatUsageStatsUsd(value)}${partial ? '+' : ''}`;
 }
 
-function projectColor(projectId: string | null | undefined): string {
-  const key = projectId ?? '__unclassified__';
-  let hash = 0;
-  for (let index = 0; index < key.length; index += 1) hash = (hash * 31 + key.charCodeAt(index)) | 0;
-  return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length];
+function formatAggregateValue(
+  metrics: UsageStatsAggregate['metrics'],
+  coverage: UsageStatsAggregate['coverage'],
+  measure: Measure,
+): string {
+  return measure === 'tokens'
+    ? formatTokenValue(metrics.total_tokens, coverage)
+    : formatCostValue(metrics.reference_cost_usd, coverage.unpriced_events > 0 || coverage.unknown_total_token_events > 0);
 }
