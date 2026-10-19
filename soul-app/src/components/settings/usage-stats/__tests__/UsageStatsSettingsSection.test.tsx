@@ -1,6 +1,6 @@
 import React from 'react';
 import { createUsageStatsMockFetch, type UsageStatsMockState } from '../../../../test-support/usage-stats-mock-api';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import {
   buildUsageStatsDayDetail,
   buildUsageStatsOverview,
@@ -74,6 +74,70 @@ test('첫 진입은 overview 하나를 받고 날짜 선택만 day 요청을 추
   expect(request).toHaveBeenCalledTimes(2);
 });
 
+test('날짜 상세 로딩 중에는 기존 요약과 그래프를 유지하고 선택 날짜 자료만 기다린다', async () => {
+  const query = { period: 'week' as const, anchor: '2026-10-18', ...emptyFilter };
+  const overview = buildUsageStatsOverview(query);
+  const projectRoster = overview.by_project.flatMap(row => row.project_id && row.project_id !== '__other__' ? [row.project_id] : []);
+  const detail = buildUsageStatsDayDetail('2026-10-16', emptyFilter, projectRoster);
+  const mockFetch = createUsageStatsMockFetch('ready', originalFetch);
+  let finishDay!: (value: Response) => void;
+  const request = jest.fn((input: RequestInfo | URL, init?: RequestInit) => requestUrl(input).pathname.includes('/days/')
+    ? new Promise<Response>(resolve => { finishDay = resolve; })
+    : mockFetch(input, init));
+  global.fetch = request;
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  expect(request).toHaveBeenCalledTimes(1);
+  fireEvent(screen.getByTestId('usage-stats-model-chart-day-2026-10-16'), 'accessibilityTap');
+  await waitFor(() => expect(finishDay).toBeDefined());
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(requestUrl(request.mock.calls[0][0]).pathname).toBe('/api/session-statistics');
+  expect(requestUrl(request.mock.calls[1][0]).pathname).toBe('/api/session-statistics/days/2026-10-16');
+
+  expect(screen.getByTestId('usage-stats-model-chart-chart')).toBeTruthy();
+  expect(screen.getByTestId('usage-stats-model-chart-day-2026-10-16').props.accessibilityState)
+    .toMatchObject({ selected: true });
+  expect(screen.getByLabelText('10월 16일 (금) 선택 해제')).toBeTruthy();
+  expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('불러오는 중…');
+  expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('불러오는 중…');
+  expect(screen.getByTestId('usage-stats-observed-tokens').props.children).toBe('불러오는 중…');
+  expect(within(screen.getByTestId('usage-stats-models')).getByText('불러오는 중…')).toBeTruthy();
+  for (const row of overview.by_model) {
+    const rowId = row.model !== null
+      ? `usage-stats-model-row-${row.provider}-${row.model}`
+      : `usage-stats-model-row-${row.provider}-provider`;
+    expect(screen.queryByTestId(`${rowId}-value`)).toBeNull();
+  }
+
+  await chooseView(screen, '프로젝트별');
+  expect(screen.getByTestId('usage-stats-project-chart-day-2026-10-16').props.accessibilityState)
+    .toMatchObject({ selected: true });
+  expect(within(screen.getByTestId('usage-stats-models')).getByText('불러오는 중…')).toBeTruthy();
+  for (const row of overview.by_project) {
+    const rowId = `usage-stats-project-row-${row.project_id === null ? '__unclassified__' : row.project_id}`;
+    expect(screen.queryByTestId(`${rowId}-value`)).toBeNull();
+  }
+  expect(request).toHaveBeenCalledTimes(2);
+
+  await chooseView(screen, '모델별');
+  await act(async () => {
+    finishDay(new Response(JSON.stringify(detail), { headers: { 'Content-Type': 'application/json' } }));
+  });
+  await waitFor(() => expect(screen.getByTestId('usage-stats-total-tokens').props.children)
+    .toBe(tokenDisplay(detail.totals.metrics.total_tokens, detail.totals.coverage)));
+  expect(screen.getByTestId('usage-stats-reference-cost').props.children)
+    .toBe(detail.totals.metrics.reference_cost_usd === null
+      ? '미확인'
+      : `${formatUsageStatsUsd(detail.totals.metrics.reference_cost_usd)}${detail.totals.is_partial ? '+' : ''}`);
+  expect(screen.getByTestId('usage-stats-observed-tokens').props.children)
+    .toBe(detail.input_material.observed_approximate_tokens === null
+      ? '미기록'
+      : `추정 약 ${detail.input_material.observed_approximate_tokens.toLocaleString('ko-KR')} 토큰`);
+  expect(screen.getByTestId('usage-stats-input-harness').props.children).toBe('관측 안 됨');
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
 test('KST 오늘에 시작하는 다음 주는 이전 주에서 이동할 수 있다', async () => {
   (Date.now as jest.Mock).mockReturnValue(Date.parse('2026-10-19T00:00:00.000Z'));
   (Date.prototype.toLocaleDateString as jest.Mock).mockReturnValue('2026-10-19');
@@ -117,6 +181,32 @@ const weekQuery = {
   anchor: USAGE_STATS_FIXTURE_ANCHOR,
   ...emptyFilter,
 };
+
+test('미확인 빈 기간에는 입력 자료 안내를 숨기고 그래프는 미기록으로 둔다', async () => {
+  const overview = buildUsageStatsOverview({
+    period: 'week',
+    anchor: '2026-10-18',
+    provider: 'deepseek',
+    project_ids: ['folder-infra'],
+  });
+  overview.series = [];
+  overview.totals.metrics.total_tokens = null;
+  overview.totals.metrics.reference_cost_usd = null;
+  overview.by_model = [];
+  overview.by_project = [];
+  global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('미기록');
+  expect(within(screen.getByTestId('usage-stats-model-chart-chart')).getByText('미기록')).toBeTruthy();
+  expect(screen.queryByTestId('settings-section-usage-stats-input')).toBeNull();
+  expect(screen.queryByText('막대에서 날짜를 고르세요')).toBeNull();
+  expect(screen.queryByTestId('usage-stats-observed-tokens')).toBeNull();
+});
 
 test('선택한 금요일의 요약과 입력 구성은 같은 날짜 상세로 바뀐다', async () => {
   const overview = buildUsageStatsOverview(weekQuery);

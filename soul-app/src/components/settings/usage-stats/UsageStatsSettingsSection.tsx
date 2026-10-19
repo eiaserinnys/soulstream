@@ -128,12 +128,18 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   ));
   const beforeCoverage = Boolean(range && range.effective_until <= coveredSince && !hasPositiveKnown);
   const emptyData = Boolean(overview && overview.series.length === 0 && overview.totals.metrics.total_tokens === 0);
+  const unknownEmptyRange = Boolean(overview && overview.series.length === 0 && overview.totals.metrics.total_tokens === null);
   const activeDate = selectedDate;
   const activeAggregate = selectedDate
     ? selectedDetail?.totals ?? null
     : overview?.totals ?? null;
-  const tokenValue = activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'tokens') : '미기록';
-  const costValue = activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'cost') : '미확인';
+  const detailLoading = selectedDate !== null && !selectedDetail && state === 'loading';
+  const tokenValue = detailLoading
+    ? '불러오는 중…'
+    : activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'tokens') : '미기록';
+  const costValue = detailLoading
+    ? '불러오는 중…'
+    : activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'cost') : '미확인';
   const coverageLabel = activeAggregate ? formatUsageStatsCoverage(activeAggregate.coverage.priced_total_tokens, activeAggregate.metrics.total_tokens) : '';
   const modelPoints = overview?.series.filter(point => point.provider !== undefined && point.project_id === undefined) ?? [];
   const projectPoints = overview?.series.filter(point => point.project_id !== undefined) ?? [];
@@ -176,14 +182,14 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const projectBuckets = overview && range
     ? makeUsageStatsBuckets(projectPoints, period, range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, coveredSince)
     : [];
-  const modelRows = selectedDetail?.by_model ?? overview?.by_model ?? [];
-  const projectRows = selectedDetail?.by_project ?? overview?.by_project ?? [];
+  const modelRows = selectedDate ? selectedDetail?.by_model ?? [] : overview?.by_model ?? [];
+  const projectRows = selectedDate ? selectedDetail?.by_project ?? [] : overview?.by_project ?? [];
   const inputMaterial = selectedDetail?.input_material ?? null;
   const inputRows = inputMaterial ? groupUsageStatsInputMaterial(inputMaterial) : [];
   const denominator = sumKnown(modelRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
   const projectDenominator = sumKnown(projectRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
   const loading = state === 'loading';
-  const unavailable = state !== 'ready' || !overview || (selectedDate !== null && !selectedDetail);
+  const unavailable = !overview || state === 'error' || state === 'forbidden';
   const previousDisabled = period === 'all' || !range || range.since <= coveredSince;
   const nextDisabled = period === 'all' || !range || range.until > (overview ? usageStatsKstDate(overview.as_of) : '');
   const labelRange = range ?? (period === 'all' ? null : usageStatsCalendarRange(period, anchor));
@@ -254,7 +260,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
       </View>
 
       {unavailable ? <StatusSection flattened={flattened} state={state} loading={loading} onRetry={retry} /> : null}
-      {!unavailable && overview && activeAggregate ? <>
+      {!unavailable && overview ? <>
         {overview.projection_status.state === 'backfilling' ? <Text testID="usage-stats-backfilling" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>이전 기록 정리 중</Text> : null}
         <SettingsSection id="usage-stats-summary" title="요약" flattened={flattened}>
           <View style={{ gap: t.spacing.lg, padding: t.cardLayout.padding }}>
@@ -273,10 +279,13 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }}>
               {coverageLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text> : null}
-              {activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : null}
+              {activeAggregate && activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : null}
             </View>
             <DisclosureButton label={USAGE_STATS_LABELS.tokenDetails} expanded={metricsExpanded} onPress={() => setMetricsExpanded(value => !value)} />
-            {metricsExpanded ? <MetricBreakdown aggregate={activeAggregate} /> : null}
+            {metricsExpanded ? detailLoading
+              ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>불러오는 중…</Text>
+              : activeAggregate ? <MetricBreakdown aggregate={activeAggregate} /> : null
+              : null}
             <DisclosureButton label="집계 기준" expanded={basisExpanded} onPress={() => setBasisExpanded(value => !value)} />
             {basisExpanded ? <AggregationBasis /> : null}
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
@@ -298,7 +307,9 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                 emptyMessage={chartEmptyMessage}
               />
               <View style={{ gap: t.spacing.md }}>
-                {!emptyData && !beforeCoverage ? view === 'model' ? modelRows.map(row => {
+                {!emptyData && !beforeCoverage ? detailLoading
+                  ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>불러오는 중…</Text>
+                  : view === 'model' ? modelRows.map(row => {
                   const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
                   const share = typeof value === 'number' && denominator > 0 ? value / denominator : value === 0 ? 0 : null;
                   const label = row.attribution === 'provider'
@@ -345,10 +356,12 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
           </View>
         </SettingsSection>
 
-        {!emptyData && !beforeCoverage && period !== 'all' ? <SettingsSection id="usage-stats-input" title="입력 자료 구성" flattened={flattened}>
+        {!emptyData && !beforeCoverage && !unknownEmptyRange && period !== 'all' ? <SettingsSection id="usage-stats-input" title="입력 자료 구성" flattened={flattened}>
           <View style={{ gap: t.spacing.md, padding: t.cardLayout.padding }}>
             {workspace ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>입력 자료 구성</Text> : null}
-            {inputMaterial ? <>
+            {detailLoading
+              ? <Text testID="usage-stats-observed-tokens" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>불러오는 중…</Text>
+              : inputMaterial ? <>
               <Text testID="usage-stats-observed-tokens" style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{formatUsageStatsApproximateTokens(inputMaterial.observed_approximate_tokens, true)}</Text>
               {inputRows.map(row => {
                 const isHarness = row.category === 'harness_internal';
