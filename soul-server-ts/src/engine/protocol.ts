@@ -12,7 +12,11 @@
  * - 분석 캐시 `20260517-1700-phase-b2-engine-port-codex.md` §2
  */
 
-import type { SessionEventEnvelope } from "@soulstream/wire-schema";
+import type {
+  ExecutionInputV1,
+  SessionEventEnvelope,
+  UsageSnapshotV1,
+} from "@soulstream/wire-schema";
 import {
   MODEL_REASONING_EFFORTS,
   type AgentBackend,
@@ -181,6 +185,8 @@ export interface EngineExecuteParams {
   conversationId?: string | null;
   /** OpenAI Agents SDK Session item history restored from Soulstream metadata. */
   sessionItems?: unknown[];
+  usage_snapshot?: UsageSnapshotV1;
+  execution_input?: ExecutionInputV1;
   /** Approval decision queued before the resumed SDK engine is back in memory. */
   queuedToolApproval?: QueuedToolApprovalDecision;
   /** Host has a consumer for correlated schedule request frames. */

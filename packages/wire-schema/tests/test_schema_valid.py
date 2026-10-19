@@ -444,6 +444,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventContextUsage",
         "SSEEventContextManifest",
         "SSEEventGenerationStarted",
+        "SSEEventInputMaterialManifest",
+        "SSEEventUsageObservation",
         "SSEEventCompact",
         "SSEEventReconnect",
         "SSEEventHistorySync",
@@ -452,8 +454,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTurnSummary",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 62, (
-        "SSE event $defs 62종."
+    assert len(sse_types) == 64, (
+        "SSE event $defs 64종."
     )
 
     expected = wire_types | sse_types
@@ -481,7 +483,7 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         if name.startswith("SSEEvent")
     }
 
-    assert len(sse_event_types) == 65
+    assert len(sse_event_types) == 67
     assert persistence_only_event_types == {"metadata"}
     assert persistence_only_event_types.isdisjoint(sse_event_types)
     assert set(durability) == sse_event_types | persistence_only_event_types
@@ -491,6 +493,106 @@ def test_every_persisted_event_has_an_explicit_durability_class() -> None:
         for event_type, classification in durability.items()
         if classification == "transient"
     } == {"text_start", "text_delta", "text_end", "text_snapshot"}
+
+
+def test_usage_execution_context_events_are_durable_and_not_timeline_events() -> None:
+    schema = _load_schema()
+    definitions = schema["$defs"]
+    event_union = definitions["SessionEventEnvelope"]["properties"]["event"]["oneOf"]
+    event_refs = {item["$ref"] for item in event_union}
+    timeline = set(schema["x-soulstream-session-timeline-event-types"])
+    persistence_only = set(schema["x-soulstream-persistence-only-event-types"])
+
+    for definition_name, event_type in (
+        ("SSEEventInputMaterialManifest", "input_material_manifest"),
+        ("SSEEventUsageObservation", "usage_observation"),
+    ):
+        definition = definitions[definition_name]
+        assert f"#/$defs/{definition_name}" in event_refs
+        assert definition["properties"]["type"]["const"] == event_type
+        assert schema["x-soulstream-event-durability"][event_type] == "durable"
+        assert event_type not in timeline
+        assert event_type not in persistence_only
+
+    required_event_fields = {"type", "schema_version", "timestamp", "output_command_id", "input_id", "usage_snapshot"}
+    for definition_name in ("SSEEventInputMaterialManifest", "SSEEventUsageObservation"):
+        assert required_event_fields <= set(definitions[definition_name]["required"])
+
+    for definition_name in ("SSEEventComplete", "SSEEventResult", "SSEEventError"):
+        properties = definitions[definition_name]["properties"]
+        assert properties["output_command_id"]["type"] == "string"
+        assert properties["input_id"]["type"] == ["string", "null"]
+        assert "output_command_id" not in definitions[definition_name]["required"]
+        assert properties["usage_snapshot"]["$ref"] == "#/$defs/UsageSnapshotV1"
+        assert "input_id" not in definitions[definition_name]["required"]
+        assert "usage_snapshot" not in definitions[definition_name]["required"]
+
+    event_type_schema = definitions["EventAppendBatch"]["properties"]["events"]["items"]["properties"]["event_type"]
+    assert event_type_schema["type"] == "string"
+    assert event_type_schema["minLength"] == 1
+    assert "enum" not in event_type_schema
+
+    snapshot = {
+        "schema_version": 1,
+        "backend": "opencode",
+        "provider": "deepseek",
+        "preset_id": "opencode-deepseek-v4.1-flash-free",
+        "requested_model": "opencode/deepseek-v4.1-flash-free",
+        "provider_attribution": "configured_alias",
+    }
+    execution_input = {
+        "schema_version": 1,
+        "command_id": "command-1",
+        "input_id": None,
+        "scope": "newly_observed_material",
+        "stage": "prepared",
+        "resumed": False,
+        "replayed": False,
+        "scope_match": "unverified",
+        "non_comparable_reasons": ["material_breakdown_unavailable"],
+        "estimate_method": "utf16_chars_div4_ceil_v1",
+        "parts": None,
+    }
+    manifest_event = {
+        "type": "input_material_manifest",
+        "schema_version": 1,
+        "timestamp": 1,
+        "output_command_id": "command-1",
+        "input_id": None,
+        "usage_snapshot": snapshot,
+        "execution_input": execution_input,
+    }
+    observation_event = {
+        "type": "usage_observation",
+        "schema_version": 1,
+        "timestamp": 1,
+        "output_command_id": "command-1",
+        "input_id": None,
+        "usage_snapshot": snapshot,
+        "model": None,
+        "usage_scope": "command_delta",
+        "accounting_key": "command-1",
+        "outcome": "interrupted",
+        "source": "opencode_step_finish",
+        "usage": {
+            "input_tokens": None,
+            "cached_input_tokens": None,
+            "cache_write_input_tokens": None,
+            "output_tokens": None,
+            "reasoning_output_tokens": None,
+        },
+        "raw_usage": {
+            "input": None,
+            "output": None,
+            "reasoning": None,
+            "cache_read": None,
+            "cache_write": None,
+            "total": None,
+        },
+    }
+    validator = jsonschema.Draft202012Validator(schema)
+    for event in (manifest_event, observation_event):
+        validator.validate({"type": "event", "agentSessionId": "session-1", "event": event})
 
 
 def test_context_manifest_event_contract() -> None:
@@ -792,6 +894,8 @@ def test_known_sse_event_types_completeness() -> None:
         "context_usage",
         "context_manifest",
         "generation_started",
+        "input_material_manifest",
+        "usage_observation",
         "compact",
         "reconnect",
         "history_sync",

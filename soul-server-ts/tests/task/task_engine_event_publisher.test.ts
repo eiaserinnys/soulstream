@@ -345,6 +345,87 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.sessionCost).toEqual({ usd: 3.2, partial: true });
   });
 
+  it("persists in-process numeric usage events without runner reappend", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+    const usageSnapshot = {
+      schema_version: 1,
+      backend: "opencode",
+      provider: "deepseek",
+      preset_id: "opencode-deepseek-v4.1-flash-free",
+      requested_model: "opencode/deepseek-v4.1-flash-free",
+      provider_attribution: "configured_alias",
+    };
+    const events = [
+      {
+        type: "input_material_manifest",
+        schema_version: 1,
+        timestamp: 1,
+        output_command_id: "command-1",
+        input_id: "input-1",
+        usage_snapshot: usageSnapshot,
+        execution_input: {
+          schema_version: 1,
+          command_id: "command-1",
+          input_id: "input-1",
+          scope: "newly_observed_material",
+          stage: "prepared",
+          resumed: false,
+          replayed: false,
+          scope_match: "unverified",
+          non_comparable_reasons: ["hidden_system_or_schema", "missing_source_token_breakdown"],
+          estimate_method: "utf16_chars_div4_ceil_v1",
+          parts: null,
+        },
+      },
+      {
+        type: "usage_observation",
+        schema_version: 1,
+        timestamp: 2,
+        output_command_id: "command-1",
+        input_id: "input-1",
+        usage_snapshot: usageSnapshot,
+        model: "opencode/deepseek-v4.1-flash-free",
+        usage_scope: "command_delta",
+        accounting_key: "command-1",
+        outcome: "interrupted",
+        source: "opencode_step_finish",
+        usage: {
+          input_tokens: null,
+          cached_input_tokens: null,
+          cache_write_input_tokens: null,
+          output_tokens: null,
+          reasoning_output_tokens: null,
+        },
+        raw_usage: {
+          input: null,
+          output: null,
+          reasoning: null,
+          cache_read: null,
+          cache_write: null,
+          total: null,
+        },
+      },
+    ] as SSEEventPayload[];
+
+    for (const event of events) {
+      await publisher.publishEngineEvent(task, event);
+    }
+    expect(deps.enqueueEvent).toHaveBeenCalledTimes(2);
+    expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
+
+    for (const event of events) {
+      await publisher.publishEngineEvent(task, event, { alreadyPersisted: true });
+    }
+
+    expect(deps.enqueueEvent).toHaveBeenCalledTimes(2);
+    expect(deps.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(deps.enqueueMetadataEffect).not.toHaveBeenCalled();
+    expect(task.status).toBe("running");
+    expect(task.sessionCost).toBeUndefined();
+  });
+
   it("includes a cache keepalive complete in the session cost total", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

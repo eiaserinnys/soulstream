@@ -6,6 +6,7 @@ import type {
   EnginePort,
   EngineUserInput,
 } from "../engine/protocol.js";
+import type { SSEEventInputMaterialManifest } from "@soulstream/wire-schema";
 import { stampSessionCost, type SessionCostBase } from "../engine/session_cost.js";
 import { engineEventMetadata } from "../engine/engine_event_metadata.js";
 import {
@@ -111,7 +112,10 @@ export interface RunnerPendingIntervention {
 }
 
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
-  private readonly eventStreams = new Map<string, InProcessRunnerFrameChannel>();
+  private readonly eventStreams = new Map<string, {
+    channel: InProcessRunnerFrameChannel;
+    params: EngineExecuteParams;
+  }>();
   private activeExecuteCommandId: string | undefined;
   private sessionCost: SessionCostBase | undefined;
   private readonly attachedRegistrationId = `in-process:${randomUUID()}`;
@@ -246,11 +250,11 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   }
 
   events(commandId: string): AsyncIterable<RunnerEventFrame> {
-    const channel = this.eventStreams.get(commandId);
-    if (!channel) {
+    const execution = this.eventStreams.get(commandId);
+    if (!execution) {
       throw new Error(`Runner execute command has no event stream: ${commandId}`);
     }
-    return this.consumeEventStream(commandId, channel);
+    return this.consumeEventStream(commandId, execution.channel, execution.params);
   }
 
   requestContext(correlationId: string): {
@@ -258,7 +262,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     timeoutMs: number;
   } | undefined {
     if (!this.activeExecuteCommandId) return undefined;
-    return this.eventStreams.get(this.activeExecuteCommandId)?.requestContext(correlationId);
+    return this.eventStreams.get(this.activeExecuteCommandId)?.channel.requestContext(correlationId);
   }
 
   async waitForSessionAck(): Promise<number | null> {
@@ -271,13 +275,14 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
         `Runner execute command already active: ${this.activeExecuteCommandId}`,
       );
     }
-    this.sessionCost = command.params.sessionCost;
+    const params = bindExecutionCommand(command.commandId, command.params);
+    this.sessionCost = params.sessionCost;
     let channel: InProcessRunnerFrameChannel;
     if (this.target.executeToFrameChannel) {
       channel = new InProcessRunnerFrameChannel(this.channelOptions);
-      channel.start(() => this.target.executeToFrameChannel!(command.params, channel));
+      channel.start(() => this.target.executeToFrameChannel!(params, channel));
     } else if (this.target.executeFrames) {
-      const frames = this.target.executeFrames(command.params);
+      const frames = this.target.executeFrames(params);
       if (frames instanceof InProcessRunnerFrameChannel) {
         channel = frames;
       } else {
@@ -285,11 +290,11 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       }
     } else {
       channel = pipeFrames(
-        legacyEngineEventFrames(this.target.execute(command.params)),
+        legacyEngineEventFrames(this.target.execute(params)),
         this.channelOptions,
       );
     }
-    this.eventStreams.set(command.commandId, channel);
+    this.eventStreams.set(command.commandId, { channel, params });
     this.activeExecuteCommandId = command.commandId;
   }
 
@@ -305,8 +310,21 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   private async *consumeEventStream(
     commandId: string,
     channel: InProcessRunnerFrameChannel,
+    params?: EngineExecuteParams,
   ): AsyncIterable<RunnerEventFrame> {
     try {
+      if (params?.usage_snapshot !== undefined && params.execution_input !== undefined) {
+        const manifest: SSEEventInputMaterialManifest = {
+          type: "input_material_manifest",
+          schema_version: 1,
+          timestamp: Date.now() / 1000,
+          output_command_id: commandId,
+          input_id: params.execution_input.input_id,
+          usage_snapshot: params.usage_snapshot,
+          execution_input: params.execution_input,
+        };
+        yield engineEventFrame(manifest);
+      }
       for await (const frame of channel) {
         let eventFrame = frame;
         if (frame.kind === "engine_event") {
@@ -314,14 +332,24 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
           if (this.sessionCost) {
             this.sessionCost = stampSessionCost(payload, this.sessionCost);
           }
-          if (
-            typeof payload.type === "string"
-            && OUTPUT_COMMAND_EVENT_TYPES.has(payload.type)
-          ) {
-            eventFrame = {
-              ...frame,
-              payload: { ...payload, output_command_id: commandId },
-            };
+          if (typeof payload.type === "string" && (
+            OUTPUT_COMMAND_EVENT_TYPES.has(payload.type)
+            || payload.type === "result"
+            || payload.type === "error"
+            || payload.type === "usage_observation"
+          )) {
+            const inputId = params?.execution_input?.input_id;
+            const usageSnapshot = params?.usage_snapshot;
+            const hasUsageContext = params?.execution_input !== undefined
+              && usageSnapshot !== undefined;
+            eventFrame = engineEventFrame({
+              ...payload,
+              output_command_id: commandId,
+              ...(payload.type === "usage_observation" ? { accounting_key: commandId } : {}),
+              ...(hasUsageContext
+                ? { input_id: inputId ?? null, usage_snapshot: usageSnapshot }
+                : {}),
+            }, frame.metadata);
           }
         }
         if (
@@ -340,6 +368,20 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       this.sessionCost = undefined;
     }
   }
+}
+
+function bindExecutionCommand(
+  commandId: string,
+  params: EngineExecuteParams,
+): EngineExecuteParams {
+  if (params.execution_input === undefined) return params;
+  return {
+    ...params,
+    execution_input: {
+      ...params.execution_input,
+      command_id: commandId,
+    },
+  };
 }
 
 export async function invokeEngineCapability(

@@ -15,7 +15,9 @@ import {
   CLAUDE_ROLLOVER_HISTORY_MAX_CHARS,
   ExecutionContextBuilder,
   composeFirstTurnPrompt,
+  composeFirstTurnPromptWithMaterial,
 } from "../../src/context/context_builder.js";
+import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
 import type { CogitoContextConfig } from "../../src/context/cogito_context.js";
 import { ATOM_CONTEXT_HEADER } from "../../src/context/atom_context.js";
 import { CONTEXT_COMPILER_VERSION } from "../../src/context/compiler/index.js";
@@ -1665,6 +1667,41 @@ describe("composeFirstTurnPrompt — 합성 알고리즘", () => {
       assembledPrompt: "U",
     });
     expect(out).toBe("U");
+  });
+
+  it("keeps the legacy prompt while carrying compiler parts through context framing", () => {
+    const context = {
+      effectiveSystemPrompt: "SP",
+      combinedContextItems: [
+        { key: "atom_context", content: "atom body" },
+        { key: "page_context", content: { summary: "visible page" } },
+      ],
+      assembledPrompt: "USER",
+      inputMaterialBreakdown: {
+        systemParts: [createInputMaterialPart("system_prompt", "system/task_system_prompt", "SP")],
+        contextParts: [[createInputMaterialPart(
+          "soulstream_injection",
+          "source/atom/node-1/0",
+          "atom body",
+          0,
+        )], null],
+      },
+    };
+
+    const result = composeFirstTurnPromptWithMaterial(context);
+
+    expect(result.prompt).toBe(composeFirstTurnPrompt(context));
+    expect(result.parts.reduce((sum, part) => sum + (part.raw_chars_utf16 ?? 0), 0))
+      .toBe(result.prompt.length);
+    expect(result.parts).toContainEqual(expect.objectContaining({
+      source_key: "context/0/atom/source/atom/node-1/0",
+      approximate_tokens: 0,
+      estimate_source: "manifest",
+    }));
+    expect(result.parts).toContainEqual(expect.objectContaining({
+      source_key: "context/1/content",
+      category: "soulstream_injection",
+    }));
   });
 });
 

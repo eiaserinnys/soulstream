@@ -14,6 +14,7 @@ export interface CodexTurnTokenUsage {
 export function codexTurnUsage(tokenUsage: CodexTurnTokenUsage): {
   input_tokens: number;
   cached_input_tokens: number;
+  cache_write_input_tokens: number;
   output_tokens: number;
   reasoning_output_tokens: number;
 } {
@@ -21,6 +22,8 @@ export function codexTurnUsage(tokenUsage: CodexTurnTokenUsage): {
     input_tokens: tokenUsage.latest.total.inputTokens - tokenUsage.baseline.inputTokens,
     cached_input_tokens:
       tokenUsage.latest.total.cachedInputTokens - tokenUsage.baseline.cachedInputTokens,
+    cache_write_input_tokens:
+      tokenUsage.latest.total.cacheWriteInputTokens - tokenUsage.baseline.cacheWriteInputTokens,
     output_tokens: tokenUsage.latest.total.outputTokens - tokenUsage.baseline.outputTokens,
     reasoning_output_tokens:
       tokenUsage.latest.total.reasoningOutputTokens - tokenUsage.baseline.reasoningOutputTokens,

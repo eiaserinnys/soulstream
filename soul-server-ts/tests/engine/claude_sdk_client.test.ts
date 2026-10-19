@@ -1014,11 +1014,12 @@ describe("ClaudeSdkClient", () => {
       maxTokens: 1_000_000,
       percent: 24.7,
     });
-    expect(events.find((event) => event.type === "complete")).toMatchObject({
+    const completeEvent = events.find((event) => event.type === "complete");
+    expect(completeEvent).toMatchObject({
       type: "complete",
       model: "claude-opus-5-5",
-      turnCostUsd: 0.063697,
     });
+    expect(completeEvent?.turnCostUsd).toBeUndefined();
   });
 
   it("uses the main SDK model and V4 result usage for the completed turn price", async () => {

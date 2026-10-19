@@ -504,6 +504,10 @@
     {
       "id": "124_block_operations_actor_session_nullable.sql",
       "sha256": "2ad5065c27f4bfd009ad410280d17c1c3f59182d464621e120407b68c451a071"
+    },
+    {
+      "id": "125_session_statistics_facts.sql",
+      "sha256": "768261c7813b396e2e7434af7ddb779637b6adf66e92a0c54bfc463f33abfdab"
     }
   ]
 }
