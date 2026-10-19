@@ -10,6 +10,7 @@ import {
   formatUsageStatsProviderLabel,
   formatUsageStatsTokenCount,
   formatUsageStatsUsd,
+  isUsageStatsTokenPartial,
   shiftUsageStatsAnchor,
   USAGE_STATS_FIXTURE_ANCHOR,
   type UsageStatsAggregate,
@@ -76,10 +77,16 @@ function isAggregateActive(aggregate: UsageStatsAggregate | null): boolean {
     coverage.missing_usage_turns > 0 || coverage.pending_inputs > 0 || coverage.unpriced_events > 0 || coverage.unknown_total_token_events > 0;
 }
 
-function valueForMetric(metrics: UsageStatsMetrics, metric: Metric, partial: boolean, row = false): string {
+function valueForMetric(
+  metrics: UsageStatsMetrics,
+  metric: Metric,
+  partial: boolean,
+  coverage: UsageStatsAggregate["coverage"],
+  row = false,
+): string {
   if (metric === "tokens") {
     const value = metrics.total_tokens;
-    return value === null ? "미기록" : `${formatUsageStatsTokenCount(value)}${partial ? "+" : ""}`;
+    return value === null ? "미기록" : `${formatUsageStatsTokenCount(value)}${isUsageStatsTokenPartial(coverage) ? "+" : ""}`;
   }
   const value = metrics.reference_cost_usd;
   if (value === null) return row && (metrics.total_tokens ?? 0) > 0 ? "정가 미확인" : row ? "미기록" : "미확인";
@@ -165,6 +172,9 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
       .map(row => ({ value: row.project_id ?? "__unclassified__", label: row.label })),
   ], [overview?.by_project]);
   const selectedProjectLabel = projectOptions.find(option => option.value === (projectId ?? "all"))?.label ?? "모든 프로젝트";
+  const projectRoster = useMemo(() => (overview?.by_project ?? [])
+    .flatMap(row => row.project_id && row.project_id !== "__other__" ? [row.project_id] : []), [overview?.by_project]);
+  const projectRosterKey = projectRoster.join(",");
 
   useEffect(() => {
     let active = true;
@@ -201,6 +211,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     setDetail(null);
     setDetailDate(null);
     const params = makeQuery(period, anchor, provider, projectId);
+    if (projectRosterKey) params.set("project_roster", projectRosterKey);
     void requester(`${API_URL}/days/${selectedDate}?${params.toString()}`, { credentials: "same-origin" })
       .then(async response => {
         if (response.status === 403) throw Object.assign(new Error("forbidden"), { status: 403 });
@@ -218,7 +229,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
         setState(typeof error === "object" && error !== null && "status" in error && error.status === 403 ? "forbidden" : "error");
       });
     return () => { active = false; };
-  }, [requester, selectedDate, period, anchor, provider, projectId, state]);
+  }, [requester, selectedDate, period, anchor, provider, projectId, projectRosterKey, state]);
 
   const overviewLoading = state === "loading";
   const detailLoading = Boolean(selectedDate) && detailDate !== selectedDate && state === "ready";
@@ -233,6 +244,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const projectRowsForSeries = overview?.by_project ?? [];
   const providerChartSeries = providerSeries(providerRowsForSeries, provider);
   const projectChartSeries = projectSeries(projectRowsForSeries);
+  const projectColors = new Map(projectChartSeries.map(item => [item.key, item.color] as const));
   const providerPoints = (overview?.series ?? []).filter(point => point.provider !== undefined && providerPointKey(point, provider) !== "__unknown__");
   const projectPoints = (overview?.series ?? []).filter(point => point.project_id !== undefined);
   const providerKnownTotal = metricTotal(displayedModels, metric);
@@ -244,12 +256,16 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   ) : "";
   const periodLabel = formatUsageStatsPeriodLabel(period, range.since, range.until);
 
-  const chooseBucket = (bucket: string) => {
+  const chooseBucket = (bucket: string, intent: "toggle" | "set") => {
     if (!bucket) { setSelectedDate(null); return; }
     if (period === "all") {
       setSelectedDate(null);
       setPeriod("month");
       setAnchor(`${bucket.slice(0, 7)}-18`);
+      return;
+    }
+    if (intent === "set") {
+      setSelectedDate(bucket);
       return;
     }
     setSelectedDate(current => current === bucket ? null : bucket);
@@ -278,7 +294,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const summaryValue = (metricName: Metric) => {
     if (overviewLoading || detailLoading) return "불러오는 중…";
     if (beforeCoverage) return metricName === "tokens" ? "미기록" : "미확인";
-    return displayedAggregate ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.is_partial) : "미기록";
+    return displayedAggregate ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.is_partial, displayedAggregate.coverage) : "미기록";
   };
   const shownError = state === "forbidden" || state === "error";
 
@@ -375,14 +391,14 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             onSelect={chooseBucket}
           />
           {noRecords && !overviewLoading ? null : <div className="usage-stats-share-list">
-            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedModels.map((row, index) => {
+            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedModels.map(row => {
               const value = metricValue(row.metrics, metric);
               const name = row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider);
               const isProviderRow = row.attribution === "provider";
               return <UsageShareRow
                 key={`${row.provider}:${row.model ?? "provider"}`}
                 name={name}
-                value={valueForMetric(row.metrics, metric, row.is_partial, true)}
+                value={valueForMetric(row.metrics, metric, row.is_partial, row.coverage, true)}
                 share={shareFor(value, providerKnownTotal)}
                 color={providerColor(row.provider)}
                 onClick={isProviderRow ? () => changeProvider(row.provider) : undefined}
@@ -407,15 +423,17 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             onSelect={chooseBucket}
           />
           <div className="usage-stats-share-list">
-            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedProjects.map((row, index) => {
+            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedProjects.map(row => {
               const value = metricValue(row.metrics, metric);
               const selectable = row.project_id !== "__other__";
               return <UsageShareRow
                 key={row.project_id ?? "unclassified"}
                 name={row.label}
-                value={valueForMetric(row.metrics, metric, row.is_partial, true)}
+                value={valueForMetric(row.metrics, metric, row.is_partial, row.coverage, true)}
                 share={shareFor(value, projectKnownTotal)}
-                color={projectColor(index)}
+                color={row.project_id === null || row.project_id === "__other__"
+                  ? "var(--v3-text-tertiary)"
+                  : projectColors.get(row.project_id) ?? "var(--v3-text-tertiary)"}
                 onClick={selectable ? () => changeProject(row.project_id ?? "__unclassified__") : undefined}
               />;
             })}

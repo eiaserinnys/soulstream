@@ -246,9 +246,9 @@
 
 .config-dialog .usage-stats-stack {
   position: absolute;
-  right: var(--v3-space-2);
+  right: 10%;
   bottom: var(--v3-space-4);
-  left: var(--v3-space-2);
+  left: 10%;
   display: flex;
   flex-direction: column-reverse;
   overflow: hidden;

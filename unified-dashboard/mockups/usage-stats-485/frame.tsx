@@ -25,12 +25,23 @@ function queryFor(url: URL) {
   };
 }
 
+function projectRosterFor(url: URL): string[] | undefined {
+  const roster = url.searchParams.get("project_roster");
+  return roster ? roster.split(",").filter(Boolean) : undefined;
+}
+
 mockApi({
   "GET /api/config/settings": { categories: [] },
   "GET /api/session-statistics": ({ url }: { url: URL; method: string; body: unknown }) => {
     const query = queryFor(url);
     if (state === "empty") return buildEmptyUsageStatsOverview(query);
     const overview = buildUsageStatsOverview(query);
+    if (state === "unknown_tokens") {
+      overview.series = overview.series.map(point => ({
+        ...point,
+        metrics: { ...point.metrics, total_tokens: null },
+      }));
+    }
     if (state === "backfilling") overview.projection_status = { state: "backfilling", covered_since: "2026-09-10" };
     return overview;
   },
@@ -43,7 +54,7 @@ mockApi({
       routes[`GET /api/session-statistics/days/${date}`] = ({ url }) => {
         const query = queryFor(url);
         if (state === "empty") {
-          const detail = buildUsageStatsDayDetail(date, query);
+          const detail = buildUsageStatsDayDetail(date, query, projectRosterFor(url));
           const empty = buildEmptyUsageStatsOverview({ period: "week", anchor: date, provider: query.provider, project_ids: query.project_ids });
           detail.totals = empty.totals;
           detail.by_model = [];
@@ -59,7 +70,7 @@ mockApi({
           detail.tool_calls = 0;
           return detail;
         }
-        return buildUsageStatsDayDetail(date, query);
+        return buildUsageStatsDayDetail(date, query, projectRosterFor(url));
       };
       start.setUTCDate(start.getUTCDate() + 1);
     }

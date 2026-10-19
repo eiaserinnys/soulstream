@@ -18,6 +18,10 @@ function valueLabel(value: number, metric: Metric): string {
   return metric === "tokens" ? formatUsageStatsTokenCount(value) : formatUsageStatsUsd(value);
 }
 
+function unknownLabel(metric: Metric): string {
+  return metric === "tokens" ? "미기록" : "정가 미확인";
+}
+
 function bucketDates(range: UsageStatsRange, period: UsageStatsPeriod): string[] {
   const result: string[] = [];
   if (period === "all") {
@@ -101,7 +105,7 @@ export function UsageStackedBars({
   loading: boolean;
   emptyMessage: string | null;
   providerSelected?: boolean;
-  onSelect(bucket: string): void;
+  onSelect(bucket: string, intent: "toggle" | "set"): void;
 }) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const drag = useRef<{ x: number; y: number; horizontal: boolean } | null>(null);
@@ -109,20 +113,26 @@ export function UsageStackedBars({
   const buckets = bucketDates(range, period);
   const visiblePoints = points.filter(point => kind === "provider" ? point.provider !== undefined : point.project_id !== undefined);
   const values = buckets.map(bucket => {
+    const bucketPoints = visiblePoints.filter(point => point.bucket_start === bucket);
     const segments = series.map(item => {
       let value: number | null = null;
-      for (const point of visiblePoints) {
-        if (point.bucket_start !== bucket || pointKey(point, kind, providerSelected) !== item.key) continue;
+      for (const point of bucketPoints) {
+        if (pointKey(point, kind, providerSelected) !== item.key) continue;
         const nextValue = metricValue(point.metrics, metric);
         if (nextValue === null) continue;
         value = (value ?? 0) + nextValue;
       }
       return { ...item, value };
     });
-    return { bucket, segments, total: segments.reduce((sum, segment) => sum + (segment.value ?? 0), 0) };
+    let total: number | null = null;
+    for (const segment of segments) {
+      if (segment.value !== null) total = (total ?? 0) + segment.value;
+    }
+    return { bucket, segments, total, hasPoint: bucketPoints.length > 0 };
   });
-  const maximum = Math.max(0, ...values.map(item => item.total));
-  const hasValue = values.some(item => item.segments.some(segment => segment.value !== null));
+  const maximum = Math.max(0, ...values.map(item => item.total ?? 0));
+  const hasKnownValue = values.some(item => item.total !== null);
+  const hasDataPoint = values.some(item => item.hasPoint);
   const activeIndex = Math.max(0, buckets.findIndex(bucket => bucket === selectedBucket));
 
   const bucketAtX = (clientX: number, rect: DOMRect): number => {
@@ -138,21 +148,23 @@ export function UsageStackedBars({
     if (Math.abs(deltaY) >= Math.abs(deltaX)) return;
     drag.current.horizontal = true;
     const index = bucketAtX(event.clientX, event.currentTarget.getBoundingClientRect());
-    if (index >= 0 && !isUnavailable(buckets[index]!, period, range, coveredSince)) onSelect(buckets[index]!);
+    if (index >= 0 && !isUnavailable(buckets[index]!, period, range, coveredSince)) onSelect(buckets[index]!, "set");
   };
 
   return <div className="usage-stats-chart" aria-label={label}>
-    <div className="usage-stats-axis-label" aria-hidden="true">{maximum > 0 ? valueLabel(maximum, metric) : "0"}</div>
+    <div className="usage-stats-axis-label" aria-hidden="true">
+      {maximum > 0 ? valueLabel(maximum, metric) : hasKnownValue ? valueLabel(0, metric) : hasDataPoint ? unknownLabel(metric) : "0"}
+    </div>
     {loading ? <div className="usage-stats-chart-message" role="status">불러오는 중…</div> : emptyMessage ? (
       <div className="usage-stats-chart-message">{emptyMessage}</div>
-    ) : !hasValue ? (
-      <div className="usage-stats-chart-message">이 기간에 기록이 없습니다</div>
+    ) : !hasKnownValue ? (
+      <div className="usage-stats-chart-message">{hasDataPoint ? unknownLabel(metric) : "이 기간에 기록이 없습니다"}</div>
     ) : null}
     <div className="usage-stats-chart-plot" role="group" aria-label={label} style={{ "--usage-stats-column-count": values.length } as CSSProperties} onKeyDownCapture={(event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "Escape" || !selectedBucket) return;
       event.preventDefault();
       event.stopPropagation();
-      onSelect("");
+      onSelect("", "set");
     }} onPointerMove={onPointerMove} onPointerUp={() => {
       if (drag.current?.horizontal) {
         ignoreClick.current = true;
@@ -162,9 +174,10 @@ export function UsageStackedBars({
     }} onPointerCancel={() => { drag.current = null; }}>
       {values.map((item, index) => {
         const unavailable = isUnavailable(item.bucket, period, range, coveredSince);
-        const height = maximum > 0 ? (item.total / maximum) * 100 : 0;
+        const total = item.total;
+        const height = maximum > 0 && total !== null ? (total / maximum) * 100 : 0;
         const dateLabel = bucketDescription(item.bucket, period);
-        const accessibleValue = item.segments.reduce((sum, segment) => sum + (segment.value ?? 0), 0);
+        const accessibleValue = total === null ? (item.hasPoint ? unknownLabel(metric) : "기록 없음") : valueLabel(total, metric);
         const selected = selectedBucket === item.bucket;
         const disabled = unavailable || Boolean(emptyMessage);
         const description = period === "all" ? dateLabel : formatUsageStatsDateWithWeekday(item.bucket);
@@ -174,7 +187,7 @@ export function UsageStackedBars({
           type="button"
           className={`usage-stats-chart-column${selected ? " is-selected" : ""}${unavailable ? " is-unavailable" : ""}`}
           data-bucket-index={index}
-          aria-label={`${description}, ${valueLabel(accessibleValue, metric)}`}
+          aria-label={`${description}, ${accessibleValue}`}
           aria-pressed={selected}
           tabIndex={index === activeIndex && !disabled ? 0 : -1}
           disabled={disabled}
@@ -182,7 +195,7 @@ export function UsageStackedBars({
           onClick={() => {
             if (ignoreClick.current) { ignoreClick.current = false; return; }
             if (disabled) return;
-            onSelect(item.bucket);
+            onSelect(item.bucket, "toggle");
           }}
           onKeyDown={event => {
             if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -193,21 +206,21 @@ export function UsageStackedBars({
             }
             if (next < 0 || next >= values.length) return;
             buttons.current[next]?.focus();
-            onSelect(values[next]!.bucket);
+            onSelect(values[next]!.bucket, "set");
           }}
         >
           <span className="usage-stats-column-band" aria-hidden="true" />
-          {item.total > 0 ? <span className="usage-stats-stack" style={{ height: `${height}%` }} aria-hidden="true">
+          {total !== null && total > 0 ? <span className="usage-stats-stack" style={{ height: `${height}%` }} aria-hidden="true">
             {item.segments.map(segment => segment.value === null || segment.value === 0 ? null : <span
               key={segment.key}
               className="usage-stats-stack-segment"
-              style={{ height: `${(segment.value / item.total) * 100}%`, backgroundColor: segment.color }}
+              style={{ height: `${(segment.value / total) * 100}%`, backgroundColor: segment.color }}
             />)}
           </span> : null}
           <span className="usage-stats-bucket-label" aria-hidden="true">{bucketLabel(item.bucket, period)}</span>
         </button>;
       })}
     </div>
-    <span className="usage-stats-axis-zero" aria-hidden="true">0</span>
+    <span className="usage-stats-axis-zero" aria-hidden="true">{hasKnownValue || !hasDataPoint ? "0" : ""}</span>
   </div>;
 }
