@@ -113,13 +113,35 @@ describe("usage statistics public fixture", () => {
       provider: "kimi",
       model: "claude-sonnet-5.5",
     });
+    const mobileProject = buildUsageStatsDayDetail("2026-10-16", {
+      project_ids: ["project-mobile-app"],
+    });
+    const noInputRecord = buildUsageStatsDayDetail("2026-10-15", {
+      provider: null,
+      model: null,
+      project_ids: [],
+    });
 
     expect(unmatched.by_model).toHaveLength(1);
     expect(unmatched.by_model[0].metrics.total_tokens).toBeNull();
+    expect(claude.tool_calls).toBe(312);
     expect(claude.input_material.observed_chars).toBe(872_000);
     expect(claude.input_material.coverage.complete_samples).toBe(1);
-    expect(missingModel.input_material.observed_chars).toBe(0);
+    expect(missingModel.input_material.observed_chars).toBeNull();
     expect(missingModel.input_material.coverage.complete_samples).toBe(0);
+    expect(missingModel.tool_calls).toBe(0);
+    expect(missingModel.input_material.parts.map(row => row.category)).toContain("harness_internal");
+    expect(mobileProject.tool_calls).toBe(0);
+    expect(noInputRecord.input_material.observed_chars).toBeNull();
+    expect(noInputRecord.input_material.coverage.missing_samples).toBe(1);
+    expect(noInputRecord.input_material.parts.map(row => row.category)).toContain("harness_internal");
+
+    const modelSeries = buildUsageStatsOverview({
+      period: "week",
+      anchor: USAGE_STATS_FIXTURE_ANCHOR,
+      provider: "claude",
+    });
+    expect(modelSeries.series.find(point => point.model)?.label).toBe("Claude (claude-opus-5.5)");
   });
 
   it("represents a measured empty range with zero instead of missing values", () => {

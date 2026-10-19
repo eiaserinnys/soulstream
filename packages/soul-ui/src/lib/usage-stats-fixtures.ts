@@ -4,6 +4,7 @@ import {
   PENDING_TURNS,
   PROJECT_LABELS,
   RAW_INPUT_MATERIAL,
+  RAW_TOOL_CALLS,
   RAW_USAGE_RECORDS,
   USAGE_STATS_FIXTURE_AS_OF,
   USAGE_STATS_PROVIDERS,
@@ -93,6 +94,14 @@ export function buildUsageStatsDayDetail(
   const byModel = buildProviderRows(records, [], [], filter);
   const byProject = buildProjectRows(records, missing, pending, filter);
   const inputMaterial = buildInputMaterial(date, filter);
+  let toolCalls = 0;
+  for (const call of RAW_TOOL_CALLS) {
+    if (call.date !== date) continue;
+    if (filter.provider && call.provider !== filter.provider) continue;
+    if (filter.model && call.model !== filter.model) continue;
+    if (!matchesProject(call.project_id, filter.project_ids)) continue;
+    toolCalls += call.calls;
+  }
 
   return {
     schema_version: 1,
@@ -103,7 +112,7 @@ export function buildUsageStatsDayDetail(
     by_model: byModel,
     by_project: byProject,
     input_material: inputMaterial,
-    tool_calls: date === "2026-10-16" ? 312 : 0,
+    tool_calls: toolCalls,
   };
 }
 
@@ -326,7 +335,7 @@ function buildSeries(
       const point: UsageStatsSeriesPoint = {
         bucket_start: bucket,
         provider: row.provider,
-        label: row.model ? `${row.provider} · ${row.model}` : providerLabel(row.provider),
+        label: row.model ? `${providerLabel(row.provider)} (${row.model})` : providerLabel(row.provider),
         metrics: row.metrics,
       };
       if (row.model) point.model = row.model;
@@ -411,15 +420,13 @@ function buildInputMaterial(
       share: observed > 0 ? totals[category] / observed : null,
     });
   }
-  if (date === "2026-10-16" && (!filter.provider || filter.provider === "claude") && (!filter.model || filter.model === "claude-sonnet-5.5") && (!filter.project_ids || filter.project_ids.length === 0 || filter.project_ids.indexOf("project-web-dashboard") >= 0)) {
-    parts.push({ category: "harness_internal", source_key: null, chars: null, share: null });
-  }
+  parts.push({ category: "harness_internal", source_key: null, chars: null, share: null });
 
   return {
     basis: "observed_input_material",
     unit: "chars_utf16",
     method: "combined_visible",
-    observed_chars: observed,
+    observed_chars: records.length > 0 ? observed : null,
     parts,
     coverage: {
       complete_samples: samples.size,

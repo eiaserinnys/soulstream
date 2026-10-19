@@ -165,6 +165,14 @@ export interface RawInputMaterialRecord {
   chars: number;
 }
 
+export interface RawToolCallRecord {
+  date: string;
+  provider: UsageStatsProvider;
+  model: string;
+  project_id: string | null;
+  calls: number;
+}
+
 export interface ProjectGroup {
   project_id: string | null;
   label: string;
@@ -225,4 +233,8 @@ export const RAW_INPUT_MATERIAL: RawInputMaterialRecord[] = [
   { date: "2026-10-16", sample_id: "claude-web-1016", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", category: "tool_result", source_key: "tool-result", chars: 312_000 },
   { date: "2026-10-16", sample_id: "kimi-mobile-1016", provider: "kimi", model: "kimi-for-coding/k3", project_id: "project-mobile-app", category: "system_prompt", source_key: "system-prompt", chars: 70_000 },
   { date: "2026-10-16", sample_id: "kimi-mobile-1016", provider: "kimi", model: "kimi-for-coding/k3", project_id: "project-mobile-app", category: "user_prompt", source_key: "user-prompt", chars: 190_000 },
+];
+
+export const RAW_TOOL_CALLS: RawToolCallRecord[] = [
+  { date: "2026-10-16", provider: "claude", model: "claude-sonnet-5.5", project_id: "project-web-dashboard", calls: 312 },
 ];
