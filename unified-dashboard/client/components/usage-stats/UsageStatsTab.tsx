@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Button,
   DashboardIconCap,
+  buildUsageStatsModelOptions,
   formatUsageStatsCoverage,
   formatUsageStatsDateWithWeekday,
-  formatUsageStatsInputCategoryLabel,
   formatUsageStatsModelLabel,
   formatUsageStatsPeriodLabel,
   formatUsageStatsProviderLabel,
@@ -12,63 +12,37 @@ import {
   formatUsageStatsUsd,
   formatUsageStatsValue,
   formatUsageStatsApproximateTokens,
+  groupUsageStatsInputMaterial,
   USAGE_STATS_LABELS,
+  usageStatsCalendarRange,
+  usageStatsFilterKey,
+  usageStatsKstDate,
   usageStatsMonthAnchor,
   usageStatsModelColorIndex,
+  usageStatsSeriesKey,
   shiftUsageStatsAnchor,
-  USAGE_STATS_FIXTURE_ANCHOR,
-  type UsageStatsAggregate,
-  type UsageStatsDayDetail,
-  type UsageStatsMetrics,
-  type UsageStatsOverview,
-  type UsageStatsProjectRow,
-  type UsageStatsProvider,
-  type UsageStatsProviderRow,
-  type UsageStatsRange,
-  type UsageStatsSeriesPoint,
-  type UsageStatsPeriod,
+} from "@seosoyoung/soul-ui";
+import type {
+  UsageStatsAggregate,
+  UsageStatsDayDetail,
+  UsageStatsMetrics,
+  UsageStatsOptions,
+  UsageStatsOverview,
+  UsageStatsPeriod,
+  UsageStatsProjectRow,
+  UsageStatsProvider,
+  UsageStatsProviderRow,
 } from "@seosoyoung/soul-ui";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { CatalogSelectionField } from "../CatalogSelectionField";
 import { SettingsAlert, SettingsGroupBox } from "../config/SettingsListDetail";
 import { UsageShareRow } from "./UsageShareRow";
 import { UsageStackedBars, type UsageChartSeries } from "./UsageStackedBars";
+import { ALL_USAGE_STATS_FILTER, useUsageStats, type UsageStatsFilter } from "./useUsageStats";
 import "./usage-stats.css";
 
-type LoadState = "loading" | "ready" | "error" | "forbidden";
 type Metric = "tokens" | "cost";
-const API_URL = "/api/session-statistics";
-
-function makeQuery(period: UsageStatsPeriod, anchor: string, provider: UsageStatsProvider | null, projectId: string | null): URLSearchParams {
-  const params = new URLSearchParams({ period, anchor, timezone: "Asia/Seoul" });
-  if (provider) params.set("provider", provider);
-  if (projectId) params.set("project_ids", projectId);
-  return params;
-}
-
-function fallbackRange(period: UsageStatsPeriod, anchor: string): UsageStatsRange {
-  const parsed = new Date(`${anchor}T00:00:00Z`);
-  let since = "2026-09-01";
-  let until = "2026-10-19";
-  let bucket: UsageStatsRange["bucket"] = "month";
-  if (period === "week") {
-    const monday = new Date(parsed);
-    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-    since = monday.toISOString().slice(0, 10);
-    const next = new Date(monday);
-    next.setUTCDate(next.getUTCDate() + 7);
-    until = next.toISOString().slice(0, 10);
-    bucket = "day";
-  } else if (period === "month") {
-    since = `${anchor.slice(0, 7)}-01`;
-    const first = new Date(`${since}T00:00:00Z`);
-    first.setUTCMonth(first.getUTCMonth() + 1);
-    until = first.toISOString().slice(0, 10);
-    bucket = "day";
-  }
-  const effectiveUntil = period === "all" ? until : (until < "2026-10-19" ? until : "2026-10-19");
-  return { period, since, until, effective_until: effectiveUntil, timezone: "Asia/Seoul", bucket };
-}
+type SelectedProject = { value: string; label: string };
 
 function metricValue(metrics: UsageStatsMetrics, metric: Metric): number | null {
   return metric === "tokens" ? metrics.total_tokens : metrics.reference_cost_usd;
@@ -84,7 +58,6 @@ function isAggregateActive(aggregate: UsageStatsAggregate | null): boolean {
 function valueForMetric(
   metrics: UsageStatsMetrics,
   metric: Metric,
-  partial: boolean,
   coverage: UsageStatsAggregate["coverage"],
   row = false,
 ): string {
@@ -95,7 +68,8 @@ function shareFor(value: number | null, total: number): number | null {
   return value === null ? null : total > 0 ? value / total : value === 0 ? 0 : null;
 }
 
-function providerColor(provider: string): string {
+function providerColor(provider: UsageStatsProvider): string {
+  if (provider === "unknown") return "var(--v3-text-tertiary)";
   return `var(--usage-stats-provider-${provider})`;
 }
 
@@ -103,24 +77,30 @@ function projectColor(index: number): string {
   return index >= 0 && index < 5 ? `var(--usage-stats-project-${index + 1})` : "var(--v3-text-tertiary)";
 }
 
-function providerSeries(rows: readonly UsageStatsProviderRow[], provider: UsageStatsProvider | null, roster: readonly (string | null)[]): UsageChartSeries[] {
+function providerSeries(rows: readonly UsageStatsProviderRow[], modelMode: boolean, options: UsageStatsOptions | undefined): UsageChartSeries[] {
   return rows.map(row => ({
-    key: provider ? `${row.provider}:${row.model ?? "__unknown__"}` : row.provider,
-    label: row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider),
-    color: provider ? projectColor(usageStatsModelColorIndex(row.model, roster)) : providerColor(row.provider),
+    key: usageStatsSeriesKey(row.provider, row.model, modelMode),
+    label: row.attribution === "provider"
+      ? formatUsageStatsProviderLabel(row.provider)
+      : row.model === null ? "모델 미상" : formatUsageStatsModelLabel(row.model),
+    color: row.provider === "unknown" || (modelMode && row.model === null)
+      ? "var(--v3-text-tertiary)"
+      : modelMode ? projectColor(usageStatsModelColorIndex(
+        row.model,
+        options?.model_rosters.find(roster => roster.provider === row.provider)?.models ?? [],
+      ))
+      : providerColor(row.provider),
   }));
 }
 
-function projectSeries(rows: readonly UsageStatsProjectRow[]): UsageChartSeries[] {
+function projectSeries(rows: readonly UsageStatsProjectRow[], options: UsageStatsOptions | undefined): UsageChartSeries[] {
   return rows.map((row, index) => ({
     key: row.project_id ?? "__unclassified__",
     label: row.label,
-    color: row.project_id === null || row.project_id === "__other__" ? "var(--v3-text-tertiary)" : projectColor(index),
+    color: row.project_id === null || row.project_id === "__other__"
+      ? "var(--v3-text-tertiary)"
+      : projectColor(options?.projects.findIndex(project => project.project_id === row.project_id) ?? index),
   }));
-}
-
-function providerPointKey(point: UsageStatsSeriesPoint, provider: UsageStatsProvider | null): string {
-  return provider ? `${point.provider ?? "__unknown__"}:${point.model ?? "__unknown__"}` : point.provider ?? "__unknown__";
 }
 
 function metricTotal(rows: readonly { metrics: UsageStatsMetrics }[], metric: Metric): number {
@@ -140,115 +120,81 @@ function PeriodButtons({ value, onChange, label }: { value: string; onChange(val
 }
 
 export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = {}) {
+  const [today] = useState(() => usageStatsKstDate(Date.now()));
   const [period, setPeriod] = useState<UsageStatsPeriod>("week");
-  const [anchor, setAnchor] = useState(USAGE_STATS_FIXTURE_ANCHOR);
-  const [provider, setProvider] = useState<UsageStatsProvider | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState(today);
+  const [filter, setFilter] = useState<UsageStatsFilter>(ALL_USAGE_STATS_FILTER);
+  const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [metric, setMetric] = useState<Metric>("tokens");
   const [view, setView] = useState<"model" | "project">("model");
-  const [overview, setOverview] = useState<UsageStatsOverview | null>(null);
-  const [periodModelRoster, setPeriodModelRoster] = useState<(string | null)[]>([]);
-  const [detail, setDetail] = useState<UsageStatsDayDetail | null>(null);
-  const [detailDate, setDetailDate] = useState<string | null>(null);
-  const [state, setState] = useState<LoadState>("loading");
-  const [retry, setRetry] = useState(0);
-
+  const projectId = selectedProject?.value ?? null;
   const requester = request ?? fetch;
-  const range = state === "ready" && overview ? overview.range : fallbackRange(period, anchor);
-  const coveredSince = overview?.projection_status.covered_since ?? range.since;
-  const providerOptions = useMemo(() => [
-    { value: "all", label: "모든 모델" },
-    { value: "claude", label: "Claude" },
-    { value: "codex", label: "Codex" },
-    { value: "antigravity", label: "Antigravity" },
-    { value: "deepseek", label: "DeepSeek" },
-    { value: "kimi", label: "Kimi" },
-  ], []);
-  const projectOptions = useMemo(() => [
-    { value: "all", label: "모든 프로젝트" },
-    ...(overview?.by_project ?? [])
-      .filter(row => row.project_id !== "__other__")
-      .map(row => ({ value: row.project_id ?? "__unclassified__", label: row.label })),
-  ], [overview?.by_project]);
-  const selectedProjectLabel = projectOptions.find(option => option.value === (projectId ?? "all"))?.label ?? "모든 프로젝트";
-  const projectRoster = useMemo(() => (overview?.by_project ?? [])
-    .flatMap(row => row.project_id && row.project_id !== "__other__" ? [row.project_id] : []), [overview?.by_project]);
-  const projectRosterKey = projectRoster.join(",");
-
-  useEffect(() => {
-    let active = true;
-    setState("loading");
-    setDetail(null);
-    setDetailDate(null);
-    const params = makeQuery(period, anchor, provider, projectId);
-    const readOverview = async (query: URLSearchParams) => {
-      const response = await requester(`${API_URL}?${query.toString()}`, { credentials: "same-origin" });
-      if (response.status === 403) throw Object.assign(new Error("forbidden"), { status: 403 });
-      if (!response.ok) throw new Error(`조회 실패: ${response.status}`);
-      return response.json() as Promise<UsageStatsOverview>;
-    };
-    const current = readOverview(params);
-    void Promise.all([current, provider && projectId ? readOverview(makeQuery(period, anchor, provider, null)) : current])
-      .then(([data, unfiltered]) => {
-        if (!active) return;
-        setOverview(data);
-        setPeriodModelRoster(unfiltered.by_model.map(row => row.model));
-        setState("ready");
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setOverview(null);
-        setState(typeof error === "object" && error !== null && "status" in error && error.status === 403 ? "forbidden" : "error");
-      });
-    return () => { active = false; };
-  }, [requester, period, anchor, provider, projectId, retry]);
-
-  useEffect(() => {
-    if (!selectedDate || period === "all" || state !== "ready") {
-      setDetail(null);
-      setDetailDate(null);
-      return;
+  const { overview, detail, state, overviewLoading, detailLoading, retry } = useUsageStats({
+    request: requester,
+    period,
+    anchor,
+    filter,
+    projectId,
+    selectedDate,
+  });
+  const range = overview?.range ?? null;
+  const coveredSince = overview?.projection_status.covered_since ?? null;
+  const overviewReady = state === "ready" && overview !== null;
+  const forbidden = state === "forbidden";
+  const modelOptions = useMemo(() => {
+    const allKey = usageStatsFilterKey("all", null, null);
+    if (forbidden) return [ALL_USAGE_STATS_FILTER];
+    const built: UsageStatsFilter[] = [ALL_USAGE_STATS_FILTER];
+    if (overview) {
+      for (const option of buildUsageStatsModelOptions(overview.options)) {
+        if (option.id === allKey) continue;
+        if (option.provider !== null && option.model === null) {
+          built.push({ ...option, kind: "provider", provider: option.provider, model: null });
+        } else if (option.provider !== null && option.model !== null) {
+          built.push({ ...option, kind: "model", provider: option.provider, model: option.model });
+        }
+      }
     }
-    let active = true;
-    setDetail(null);
-    setDetailDate(null);
-    const params = makeQuery(period, anchor, provider, projectId);
-    if (projectRosterKey) params.set("project_roster", projectRosterKey);
-    void requester(`${API_URL}/days/${selectedDate}?${params.toString()}`, { credentials: "same-origin" })
-      .then(async response => {
-        if (response.status === 403) throw Object.assign(new Error("forbidden"), { status: 403 });
-        if (!response.ok) throw new Error(`조회 실패: ${response.status}`);
-        return response.json() as Promise<UsageStatsDayDetail>;
-      })
-      .then(data => {
-        if (!active) return;
-        setDetail(data);
-        setDetailDate(selectedDate);
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setOverview(null);
-        setState(typeof error === "object" && error !== null && "status" in error && error.status === 403 ? "forbidden" : "error");
-      });
-    return () => { active = false; };
-  }, [requester, selectedDate, period, anchor, provider, projectId, projectRosterKey, state]);
-
-  const overviewLoading = state === "loading";
-  const detailLoading = Boolean(selectedDate) && detailDate !== selectedDate && state === "ready";
-  const displayedAggregate = selectedDate ? detailDate === selectedDate ? detail?.totals ?? null : null : overview?.totals ?? null;
-  const displayedModels = selectedDate ? detailDate === selectedDate ? detail?.by_model ?? [] : [] : overview?.by_model ?? [];
-  const displayedProjects = selectedDate ? detailDate === selectedDate ? detail?.by_project ?? [] : [] : overview?.by_project ?? [];
-  const noRecords = state === "ready" && overview?.totals.metrics.total_tokens === 0 && !overview.totals.is_partial && !isAggregateActive(overview.totals);
-  const beforeCoverage = state === "ready" && range.effective_until <= coveredSince;
-  const selectedNoRecords = Boolean(selectedDate && detailDate === selectedDate && detail && !isAggregateActive(detail.totals));
-  const providerRowsForSeries = overview?.by_model ?? [];
-  const projectRowsForSeries = overview?.by_project ?? [];
-  const providerChartSeries = providerSeries(providerRowsForSeries, provider, periodModelRoster);
-  const projectChartSeries = projectSeries(projectRowsForSeries);
+    if (!built.some(option => option.id === filter.id)) built.push(filter);
+    return built;
+  }, [overview, filter, forbidden]);
+  const projectOptions = useMemo(() => {
+    const allProjects = { value: "all", label: "모든 프로젝트" };
+    if (forbidden) return [allProjects];
+    const built = [
+      allProjects,
+      ...(overview?.options.projects ?? []).map(project => ({ value: project.project_id, label: project.label })),
+      { value: "__unclassified__", label: "미분류" },
+    ];
+    if (selectedProject && selectedProject.value !== "__unclassified__" &&
+      !built.some(option => option.value === selectedProject.value)) built.push(selectedProject);
+    return built;
+  }, [overview?.options.projects, selectedProject, forbidden]);
+  const selectedFilterLabel = forbidden
+    ? ALL_USAGE_STATS_FILTER.label
+    : modelOptions.find(option => option.id === filter.id)?.label ?? filter.label;
+  const selectedProjectLabel = forbidden
+    ? "모든 프로젝트"
+    : projectOptions.find(option => option.value === (projectId ?? "all"))?.label ?? selectedProject?.label ?? "모든 프로젝트";
+  const displayedAggregate = selectedDate ? detail?.totals ?? null : overviewReady ? overview?.totals ?? null : null;
+  const displayedModels = selectedDate ? detail?.by_model ?? [] : overviewReady ? overview?.by_model ?? [] : [];
+  const displayedProjects = selectedDate ? detail?.by_project ?? [] : overviewReady ? overview?.by_project ?? [] : [];
+  const hasKnownPositive = Boolean(overview && (
+    (overview.totals.metrics.total_tokens ?? 0) > 0 || (overview.totals.metrics.reference_cost_usd ?? 0) > 0
+  ));
+  const noRecords = Boolean(overviewReady && overview?.totals.metrics.total_tokens === 0 && !overview.totals.is_partial && !isAggregateActive(overview.totals));
+  const unknownEmptyRange = Boolean(overview && overview.series.length === 0 && overview.totals.metrics.total_tokens === null);
+  const beforeCoverage = Boolean(overviewReady && range && coveredSince && range.effective_until <= coveredSince && !hasKnownPositive);
+  const selectedNoRecords = Boolean(selectedDate && detail && !isAggregateActive(detail.totals));
+  const providerRowsForSeries = overviewReady ? overview?.by_model ?? [] : [];
+  const projectRowsForSeries = overviewReady ? overview?.by_project ?? [] : [];
+  const modelMode = filter.kind !== "all";
+  const providerChartSeries = providerSeries(providerRowsForSeries, modelMode, overview?.options);
+  const projectChartSeries = projectSeries(projectRowsForSeries, overview?.options);
   const projectColors = new Map(projectChartSeries.map(item => [item.key, item.color] as const));
-  const providerPoints = (overview?.series ?? []).filter(point => point.provider !== undefined && providerPointKey(point, provider) !== "__unknown__");
-  const projectPoints = (overview?.series ?? []).filter(point => point.project_id !== undefined);
+  const providerPoints = overviewReady ? (overview?.series ?? []).filter(point => point.provider !== undefined) : [];
+  const projectPoints = overviewReady ? (overview?.series ?? []).filter(point => point.project_id !== undefined) : [];
   const providerKnownTotal = metricTotal(displayedModels, metric);
   const projectKnownTotal = metricTotal(displayedProjects, metric);
   const dateLabel = selectedDate ? formatUsageStatsDateWithWeekday(selectedDate) : null;
@@ -256,14 +202,18 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     displayedAggregate.coverage.priced_total_tokens,
     displayedAggregate.metrics.total_tokens,
   ) : "";
-  const periodLabel = formatUsageStatsPeriodLabel(period, range.since, range.until);
+  const calendarRange = period === "all" ? null : usageStatsCalendarRange(period, anchor);
+  const periodLabel = range
+    ? formatUsageStatsPeriodLabel(period, range.since, range.until)
+    : period === "all" ? "전체" : formatUsageStatsPeriodLabel(period, calendarRange!.since, calendarRange!.until);
 
   const chooseBucket = (bucket: string, intent: "toggle" | "set") => {
     if (!bucket) { setSelectedDate(null); return; }
     if (period === "all") {
+      if (!overview) return;
       setSelectedDate(null);
       setPeriod("month");
-      setAnchor(usageStatsMonthAnchor(bucket, overview!.as_of));
+      setAnchor(usageStatsMonthAnchor(bucket, overview.as_of));
       return;
     }
     if (intent === "set") {
@@ -280,23 +230,32 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     setSelectedDate(null);
     setAnchor(current => shiftUsageStatsAnchor(period, current, direction));
   };
-  const changeProvider = (value: string) => {
+  const changeFilter = (value: string) => {
+    if (forbidden) return;
+    const next = modelOptions.find(option => option.id === value);
+    if (!next) return;
     setSelectedDate(null);
-    setProvider(value === "all" ? null : value as UsageStatsProvider);
+    setFilter(next);
   };
   const changeProject = (value: string) => {
+    if (forbidden) return;
+    const next = projectOptions.find(option => option.value === value);
+    if (!next) return;
     setSelectedDate(null);
-    setProjectId(value === "all" ? null : value);
+    setSelectedProject(value === "all" ? null : next);
   };
   const previousAnchor = shiftUsageStatsAnchor(period, anchor, -1);
   const nextAnchor = shiftUsageStatsAnchor(period, anchor, 1);
-  const previousDisabled = period === "all" || fallbackRange(period, previousAnchor).until <= coveredSince;
-  const nextDisabled = period === "all" || fallbackRange(period, nextAnchor).since >= (overview?.as_of.slice(0, 10) ?? "2026-10-19");
+  const previousRange = period === "all" ? null : usageStatsCalendarRange(period, previousAnchor);
+  const nextRange = period === "all" ? null : usageStatsCalendarRange(period, nextAnchor);
+  const asOfDate = overview ? usageStatsKstDate(overview.as_of) : today;
+  const previousDisabled = period === "all" || Boolean(previousRange && coveredSince && previousRange.until <= coveredSince);
+  const nextDisabled = period === "all" || Boolean(nextRange && nextRange.since > asOfDate);
 
   const summaryValue = (metricName: Metric) => {
     if (overviewLoading || detailLoading) return "불러오는 중…";
     if (beforeCoverage) return metricName === "tokens" ? "미기록" : "미확인";
-    return displayedAggregate ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.is_partial, displayedAggregate.coverage) : "미기록";
+    return displayedAggregate ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.coverage) : "미기록";
   };
   const shownError = state === "forbidden" || state === "error";
 
@@ -310,19 +269,23 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
       </div>
       <div className="usage-stats-filters">
         <CatalogSelectionField
+          key={forbidden ? "model:forbidden" : "model:active"}
           label="모델"
           ariaLabel="모델"
-          value={provider ?? "all"}
-          selectedLabel={providerOptions.find(option => option.value === (provider ?? "all"))?.label ?? "모든 모델"}
-          options={providerOptions}
-          onValueChange={changeProvider}
+          value={forbidden ? ALL_USAGE_STATS_FILTER.id : filter.id}
+          selectedLabel={selectedFilterLabel}
+          options={modelOptions.map(option => ({ value: option.id, label: option.label }))}
+          disabled={forbidden}
+          onValueChange={changeFilter}
         />
         <CatalogSelectionField
+          key={forbidden ? "project:forbidden" : "project:active"}
           label="프로젝트"
           ariaLabel="프로젝트"
-          value={projectId ?? "all"}
+          value={forbidden ? "all" : projectId ?? "all"}
           selectedLabel={selectedProjectLabel}
           options={projectOptions}
+          disabled={forbidden}
           onValueChange={changeProject}
         />
       </div>
@@ -331,7 +294,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     {shownError ? <SettingsAlert>
       <div className="usage-stats-error-content">
         <span>{state === "forbidden" ? "이 통계를 볼 권한이 없습니다." : "통계를 불러오지 못했습니다."}</span>
-        {state === "error" ? <Button size="sm" variant="ghost" onClick={() => setRetry(current => current + 1)}>다시 불러오기</Button> : null}
+        {state === "error" ? <Button size="sm" variant="ghost" onClick={retry}>다시 불러오기</Button> : null}
       </div>
     </SettingsAlert> : (
       <>
@@ -398,21 +361,24 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             selectedBucket={selectedDate}
             loading={overviewLoading}
             emptyMessage={beforeCoverage ? "이 기간은 기록 전입니다" : noRecords ? "이 기간에 기록이 없습니다" : null}
-            providerSelected={view === "model" && provider !== null}
+            modelMode={view === "model" && modelMode}
             onSelect={chooseBucket}
           />
           {(noRecords || beforeCoverage) && !overviewLoading ? null : <div className="usage-stats-share-list">
             {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : view === "model" ? displayedModels.map(row => {
               const value = metricValue(row.metrics, metric);
-              const name = row.model ? formatUsageStatsModelLabel(row.model) : formatUsageStatsProviderLabel(row.provider);
+              const name = row.attribution === "provider"
+                ? formatUsageStatsProviderLabel(row.provider)
+                : row.model === null ? "모델 미상" : formatUsageStatsModelLabel(row.model);
               const isProviderRow = row.attribution === "provider";
+              const seriesKey = usageStatsSeriesKey(row.provider, row.model, modelMode);
               return <UsageShareRow
-                key={`${row.provider}:${row.model ?? "provider"}`}
+                key={seriesKey}
                 name={name}
-                value={valueForMetric(row.metrics, metric, row.is_partial, row.coverage, true)}
+                value={valueForMetric(row.metrics, metric, row.coverage, true)}
                 share={shareFor(value, providerKnownTotal)}
-                color={providerChartSeries.find(item => item.key === (provider ? `${row.provider}:${row.model ?? "__unknown__"}` : row.provider))?.color}
-                onClick={isProviderRow ? () => changeProvider(row.provider) : undefined}
+                color={providerChartSeries.find(item => item.key === seriesKey)?.color}
+                onClick={isProviderRow ? () => changeFilter(usageStatsFilterKey("provider", row.provider, null)) : undefined}
               />;
             }) : displayedProjects.map(row => {
               const value = metricValue(row.metrics, metric);
@@ -420,7 +386,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               return <UsageShareRow
                 key={row.project_id ?? "unclassified"}
                 name={row.label}
-                value={valueForMetric(row.metrics, metric, row.is_partial, row.coverage, true)}
+                value={valueForMetric(row.metrics, metric, row.coverage, true)}
                 share={shareFor(value, projectKnownTotal)}
                 color={row.project_id === null || row.project_id === "__other__"
                   ? "var(--v3-text-tertiary)"
@@ -431,7 +397,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
           </div>}
         </SettingsGroupBox>
 
-        {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords ? <SettingsGroupBox title="입력 자료 구성">
+        {period !== "all" && !noRecords && !beforeCoverage && !selectedNoRecords && !unknownEmptyRange ? <SettingsGroupBox title="입력 자료 구성">
           {!selectedDate ? <p className="usage-stats-muted">막대에서 날짜를 고르세요</p> : detailLoading ? <p className="usage-stats-muted" role="status">불러오는 중…</p> : detail ? <InputMaterial detail={detail} /> : null}
         </SettingsGroupBox> : null}
       </>
@@ -441,19 +407,17 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
 
 function InputMaterial({ detail }: { detail: UsageStatsDayDetail }) {
   const material = detail.input_material;
-  const parts = material.parts.filter(part => part.category !== "harness_internal");
-  const denominator = material.observed_approximate_tokens;
+  const rows = groupUsageStatsInputMaterial(material);
   return <div className="usage-stats-input-material">
-    <p className="usage-stats-input-total">{formatUsageStatsApproximateTokens(denominator, true)}</p>
+    <p className="usage-stats-input-total">{formatUsageStatsApproximateTokens(material.observed_approximate_tokens, true)}</p>
     <div className="usage-stats-share-list">
-      {parts.map((part, index) => <UsageShareRow
-        key={`${part.category}:${part.source_key ?? index}`}
-        name={formatUsageStatsInputCategoryLabel(part.category)}
-        value={formatUsageStatsApproximateTokens(part.approximate_tokens)}
-        share={part.share}
-        color="var(--v3-accent)"
+      {rows.map(row => <UsageShareRow
+        key={row.category}
+        name={row.label}
+        value={formatUsageStatsApproximateTokens(row.approximate_tokens, row.category === "harness_internal", row.partial)}
+        share={row.share}
+        color={row.category === "harness_internal" ? undefined : "var(--v3-accent)"}
       />)}
-      <UsageShareRow name="하네스 내부 입력" value="관측 안 됨" share={null} />
     </div>
     <p className="usage-stats-input-meta">툴 호출 {detail.tool_calls.toLocaleString("ko-KR")}회</p>
     {material.coverage.partial_samples > 0 || material.coverage.missing_samples > 0 ? <p className="usage-stats-input-meta">{USAGE_STATS_LABELS.missingInput}</p> : null}

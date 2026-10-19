@@ -1,4 +1,5 @@
 import { useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { usageStatsBucketStarts, usageStatsCalendarRange, usageStatsSeriesKey } from "@seosoyoung/soul-ui";
 import type { UsageStatsMetrics, UsageStatsPeriod, UsageStatsRange, UsageStatsSeriesPoint } from "@seosoyoung/soul-ui";
 import { formatUsageStatsDateWithWeekday, formatUsageStatsTokenCount, formatUsageStatsUsd, USAGE_STATS_LABELS } from "@seosoyoung/soul-ui";
 
@@ -22,34 +23,9 @@ function unknownLabel(metric: Metric): string {
   return metric === "tokens" ? USAGE_STATS_LABELS.missingUsage : USAGE_STATS_LABELS.unknownPrice;
 }
 
-function bucketDates(range: UsageStatsRange, period: UsageStatsPeriod): string[] {
-  const result: string[] = [];
-  if (period === "all") {
-    const start = new Date(`${range.since}T00:00:00Z`);
-    const end = new Date(`${range.effective_until}T00:00:00Z`);
-    let year = start.getUTCFullYear();
-    let month = start.getUTCMonth();
-    while (year < end.getUTCFullYear() || (year === end.getUTCFullYear() && month <= end.getUTCMonth())) {
-      result.push(`${year}-${String(month + 1).padStart(2, "0")}-01`);
-      month += 1;
-      if (month > 11) { month = 0; year += 1; }
-    }
-    return result;
-  }
-
-  const cursor = new Date(`${range.since}T00:00:00Z`);
-  const until = new Date(`${range.until}T00:00:00Z`);
-  while (cursor < until) {
-    result.push(cursor.toISOString().slice(0, 10));
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return result;
-}
-
-function pointKey(point: UsageStatsSeriesPoint, kind: "provider" | "project", providerSelected: boolean): string {
+function pointKey(point: UsageStatsSeriesPoint, kind: "provider" | "project", modelMode: boolean): string {
   if (kind === "project") return point.project_id ?? "__unclassified__";
-  if (!providerSelected) return point.provider ?? "__unknown__";
-  return `${point.provider ?? "__unknown__"}:${point.model ?? "__unknown__"}`;
+  return usageStatsSeriesKey(point.provider ?? "unknown", point.model ?? null, modelMode);
 }
 
 function bucketLabel(bucket: string, period: UsageStatsPeriod): string {
@@ -68,14 +44,17 @@ function bucketDescription(bucket: string, period: UsageStatsPeriod): string {
   return formatUsageStatsDateWithWeekday(bucket);
 }
 
-function isUnavailable(bucket: string, period: UsageStatsPeriod, range: UsageStatsRange, coveredSince: string): boolean {
+function isBeforeCoverage(bucket: string, period: UsageStatsPeriod, coveredSince: string): boolean {
   if (period === "all") {
-    const endOfMonth = new Date(`${bucket}T00:00:00Z`);
-    endOfMonth.setUTCMonth(endOfMonth.getUTCMonth() + 1);
-    const monthEnd = endOfMonth.toISOString().slice(0, 10);
-    return monthEnd <= coveredSince || bucket >= range.effective_until;
+    const monthEnd = usageStatsCalendarRange("month", bucket).until;
+    return monthEnd <= coveredSince;
   }
-  return bucket < coveredSince || bucket >= range.effective_until;
+  return bucket < coveredSince;
+}
+
+function isUnavailable(bucket: string, period: UsageStatsPeriod, range: UsageStatsRange | null, coveredSince: string | null): boolean {
+  if (!range || !coveredSince) return true;
+  return isBeforeCoverage(bucket, period, coveredSince) || bucket >= range.effective_until;
 }
 
 export function UsageStackedBars({
@@ -90,34 +69,34 @@ export function UsageStackedBars({
   selectedBucket,
   loading,
   emptyMessage,
-  providerSelected = false,
+  modelMode = false,
   onSelect,
 }: {
   label: string;
   kind: "provider" | "project";
   period: UsageStatsPeriod;
-  range: UsageStatsRange;
-  coveredSince: string;
+  range: UsageStatsRange | null;
+  coveredSince: string | null;
   points: readonly UsageStatsSeriesPoint[];
   series: readonly UsageChartSeries[];
   metric: Metric;
   selectedBucket: string | null;
   loading: boolean;
   emptyMessage: string | null;
-  providerSelected?: boolean;
+  modelMode?: boolean;
   onSelect(bucket: string, intent: "toggle" | "set"): void;
 }) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   const drag = useRef<{ x: number; y: number; horizontal: boolean } | null>(null);
   const ignoreClick = useRef(false);
-  const buckets = bucketDates(range, period);
+  const buckets = range ? usageStatsBucketStarts(range) : [];
   const visiblePoints = points.filter(point => kind === "provider" ? point.provider !== undefined : point.project_id !== undefined);
   const values = buckets.map(bucket => {
     const bucketPoints = visiblePoints.filter(point => point.bucket_start === bucket);
     const segments = series.map(item => {
       let value: number | null = null;
       for (const point of bucketPoints) {
-        if (pointKey(point, kind, providerSelected) !== item.key) continue;
+        if (pointKey(point, kind, modelMode) !== item.key) continue;
         const nextValue = metricValue(point.metrics, metric);
         if (nextValue === null) continue;
         value = (value ?? 0) + nextValue;
@@ -132,7 +111,6 @@ export function UsageStackedBars({
   });
   const maximum = Math.max(0, ...values.map(item => item.total ?? 0));
   const hasKnownValue = values.some(item => item.total !== null);
-  const hasDataPoint = values.some(item => item.hasPoint);
   const activeIndex = Math.max(0, buckets.findIndex(bucket => bucket === selectedBucket));
 
   const bucketAtX = (clientX: number, rect: DOMRect): number => {
@@ -156,7 +134,7 @@ export function UsageStackedBars({
     {loading ? <div className="usage-stats-chart-message" role="status">불러오는 중…</div> : emptyMessage ? (
       <div className="usage-stats-chart-message">{emptyMessage}</div>
     ) : !hasKnownValue ? (
-      <div className="usage-stats-chart-message">{hasDataPoint ? unknownLabel(metric) : USAGE_STATS_LABELS.emptyRange}</div>
+      <div className="usage-stats-chart-message">{unknownLabel(metric)}</div>
     ) : null}
     <div className="usage-stats-chart-plot" role="group" aria-label={label} style={{ "--usage-stats-column-count": values.length } as CSSProperties} onKeyDownCapture={(event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "Escape" || !selectedBucket) return;
@@ -176,7 +154,9 @@ export function UsageStackedBars({
         const height = maximum > 0 && total !== null ? (total / maximum) * 100 : 0;
         const dateLabel = bucketDescription(item.bucket, period);
         const partial = item.segments.some(segment => segment.value === null);
-        const accessibleValue = item.bucket < coveredSince ? "기록 전" : item.bucket >= range.effective_until ? "아직 기록되지 않음"
+        const beforeCoverage = coveredSince !== null && isBeforeCoverage(item.bucket, period, coveredSince);
+        const afterRange = range !== null && item.bucket >= range.effective_until;
+        const accessibleValue = beforeCoverage ? "기록 전" : afterRange ? "아직 기록되지 않음"
           : total === null || (total === 0 && partial) ? (item.hasPoint ? unknownLabel(metric) : "기록 없음") : `${valueLabel(total, metric)}${partial ? "+" : ""}`;
         const selected = selectedBucket === item.bucket;
         const disabled = unavailable || Boolean(emptyMessage);
