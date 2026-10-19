@@ -1,144 +1,37 @@
-// Public API types and deterministic synthetic source records for usage statistics.
-export type UsageStatsPeriod = "week" | "month" | "all";
-export type UsageStatsProvider = "claude" | "codex" | "antigravity" | "deepseek" | "kimi";
+// Deterministic synthetic source records for usage statistics.
+import type { UsageStatsProvider as FixtureUsageStatsProvider } from "../../../wire-schema/src/session_statistics";
+
+export { USAGE_STATS_PROVIDERS } from "../../../wire-schema/src/session_statistics";
+export type {
+  UsageStatsAggregate,
+  UsageStatsCoverage,
+  UsageStatsDayDetail,
+  UsageStatsInputMaterial,
+  UsageStatsInputPart,
+  UsageStatsMetrics,
+  UsageStatsOptions,
+  UsageStatsOverview,
+  UsageStatsPeriod,
+  UsageStatsProjectRow,
+  UsageStatsProvider,
+  UsageStatsProviderRow,
+  UsageStatsQuery,
+  UsageStatsRange,
+  UsageStatsSeriesPoint,
+} from "../../../wire-schema/src/session_statistics";
 
 export const USAGE_STATS_FIXTURE_ANCHOR = "2026-10-18";
 export const USAGE_STATS_FIXTURE_AS_OF = "2026-10-19T00:00:00+09:00";
-export const USAGE_STATS_PROVIDERS: UsageStatsProvider[] = ["claude", "codex", "antigravity", "deepseek", "kimi"];
-
 // Collection evidence is separate from the presence of usage rows.
 export const USAGE_STATS_COLLECTION = {
   since: "2026-09-01",
   until: "2026-10-19",
-  providers: { claude: "complete", codex: "complete", antigravity: "complete", deepseek: "unknown", kimi: "complete" },
+  providers: { claude: "complete", codex: "complete", antigravity: "complete", deepseek: "unknown", kimi: "complete", unknown: "unknown" },
 } as const;
-
-export interface UsageStatsQuery {
-  period: UsageStatsPeriod;
-  anchor: string;
-  provider?: UsageStatsProvider | null;
-  model?: string | null;
-  project_ids?: readonly string[];
-}
-
-export interface UsageStatsMetrics {
-  input_total: number | null;
-  cache_read: number | null;
-  cache_write: number | null;
-  output_total: number | null;
-  reasoning_output: number | null;
-  total_tokens: number | null;
-  reference_cost_usd: number | null;
-}
-
-export interface UsageStatsCoverage {
-  usage_complete_events: number;
-  usage_partial_events: number;
-  terminal_missing_usage: number;
-  ended_input_without_usage: number;
-  missing_usage_turns: number;
-  pending_inputs: number;
-  priced_events: number;
-  unpriced_events: number;
-  priced_total_tokens: number | null;
-  unpriced_total_tokens: number | null;
-  unknown_total_token_events: number;
-  unattributed_missing_usage: boolean;
-}
-
-export interface UsageStatsAggregate {
-  metrics: UsageStatsMetrics;
-  coverage: UsageStatsCoverage;
-  is_partial: boolean;
-}
-
-export interface UsageStatsProviderRow extends UsageStatsAggregate {
-  provider: UsageStatsProvider;
-  backend: string;
-  model: string | null;
-  attribution: "provider" | "model";
-}
-
-export interface UsageStatsProjectRow extends UsageStatsAggregate {
-  project_id: string | null;
-  label: string;
-}
-
-export interface UsageStatsSeriesPoint {
-  bucket_start: string;
-  provider?: UsageStatsProvider;
-  model?: string | null;
-  project_id?: string | null;
-  label: string;
-  metrics: UsageStatsMetrics;
-}
-
-export interface UsageStatsRange {
-  period: UsageStatsPeriod;
-  since: string;
-  until: string;
-  effective_until: string;
-  timezone: "Asia/Seoul";
-  bucket: "day" | "month";
-}
-
-export interface UsageStatsOverview {
-  schema_version: 1;
-  generated_at: string;
-  as_of: string;
-  range: UsageStatsRange;
-  policies: {
-    date_attribution: "recorded_terminal";
-    project_attribution: "current_folder";
-    price_version: "api-list-usd-2026-10-19-v1";
-  };
-  projection_status: {
-    state: "ready" | "backfilling";
-    covered_since: string;
-  };
-  totals: UsageStatsAggregate;
-  by_model: UsageStatsProviderRow[];
-  by_project: UsageStatsProjectRow[];
-  series: UsageStatsSeriesPoint[];
-}
-
-export interface UsageStatsInputPart {
-  category: string;
-  source_key: string | null;
-  approximate_tokens: number | null;
-  share: number | null;
-}
-
-export interface UsageStatsInputMaterial {
-  basis: "observed_input_material";
-  unit: "approximate_tokens";
-  estimate_method: "utf16_chars_div4_ceil_v1";
-  method: "combined_visible";
-  observed_approximate_tokens: number | null;
-  parts: UsageStatsInputPart[];
-  coverage: {
-    complete_samples: number;
-    partial_samples: number;
-    manifest_only_samples: number;
-    missing_samples: number;
-  };
-}
-
-export interface UsageStatsDayDetail {
-  schema_version: 1;
-  date: string;
-  generated_at: string;
-  as_of: string;
-  totals: UsageStatsAggregate;
-  by_model: UsageStatsProviderRow[];
-  by_project: UsageStatsProjectRow[];
-  input_material: UsageStatsInputMaterial;
-  tool_calls: number;
-}
 
 export interface RawUsageRecord {
   date: string;
-  provider: UsageStatsProvider;
+  provider: FixtureUsageStatsProvider;
   backend: string;
   model: string;
   project_id: string | null;
@@ -166,7 +59,7 @@ export interface PendingTurnRecord {
 export interface RawInputMaterialRecord {
   date: string;
   sample_id: string;
-  provider: UsageStatsProvider | null;
+  provider: FixtureUsageStatsProvider | null;
   model: string | null;
   project_id: string | null;
   category: string;
@@ -178,7 +71,7 @@ export interface RawInputMaterialRecord {
 
 export interface RawToolCallRecord {
   date: string;
-  provider: UsageStatsProvider;
+  provider: FixtureUsageStatsProvider;
   model: string;
   project_id: string | null;
   calls: number;

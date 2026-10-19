@@ -1,5 +1,5 @@
 // Pure, deterministic public fixture builders for the usage statistics mockup.
-import { usageStatsRange } from "./usage-stats-format";
+import { formatUsageStatsModelLabel, formatUsageStatsProviderLabel, usageStatsBucketStarts, usageStatsRange } from "./usage-stats-format";
 import {
   MISSING_TURNS,
   PENDING_TURNS,
@@ -20,6 +20,7 @@ import type {
   UsageStatsInputMaterial,
   UsageStatsInputPart,
   UsageStatsOverview,
+  UsageStatsOptions,
   UsageStatsPeriod,
   UsageStatsProvider,
   UsageStatsProviderRow,
@@ -63,6 +64,7 @@ export function buildUsageStatsOverview(query: UsageStatsQuery): UsageStatsOverv
     by_model: byModel,
     by_project: byProject,
     series: totals.metrics.total_tokens === 0 && !totals.is_partial && !records.length ? [] : series,
+    options: buildOptions(range),
   };
 }
 
@@ -120,6 +122,40 @@ export function buildUsageStatsDayDetail(
 
 function buildRange(period: UsageStatsPeriod, anchor: string): UsageStatsRange {
   return usageStatsRange(period, anchor, USAGE_STATS_FIXTURE_AS_OF, "2026-09-01");
+}
+
+function buildOptions(range: UsageStatsRange): UsageStatsOptions {
+  const records: RawUsageRecord[] = [];
+  for (const record of RAW_USAGE_RECORDS) if (record.date >= range.since && record.date < range.effective_until) records.push(record);
+  const providers: UsageStatsOptions["providers"] = [];
+  const models: UsageStatsOptions["models"] = [];
+  const modelRosters: UsageStatsOptions["model_rosters"] = [];
+  for (const provider of USAGE_STATS_PROVIDERS) {
+    providers.push({ provider, label: formatUsageStatsProviderLabel(provider) });
+    const providerModels: UsageStatsOptions["models"] = [];
+    for (const record of records) {
+      if (record.provider !== provider) continue;
+      let exists = false;
+      for (const model of providerModels) if (model.model === record.model && model.backend === record.backend) exists = true;
+      if (!exists) providerModels.push({ provider, model: record.model, backend: record.backend, label: formatUsageStatsModelLabel(record.model) });
+    }
+    providerModels.sort((left, right) => left.model === right.model
+      ? (left.backend < right.backend ? -1 : left.backend > right.backend ? 1 : 0)
+      : (left.model ?? "") < (right.model ?? "") ? -1 : 1);
+    const roster: Array<string | null> = [];
+    for (const model of providerModels) {
+      models.push(model);
+      if (roster.indexOf(model.model) < 0) roster.push(model.model);
+    }
+    roster.sort((left, right) => left === right ? 0 : left === null ? 1 : right === null ? -1 : left < right ? -1 : 1);
+    modelRosters.push({ provider, models: roster });
+  }
+  const projectRows = groupProjectRecords(records);
+  const projects: UsageStatsOptions["projects"] = [];
+  for (const row of projectRows) if (row.project_id !== null) projects.push({ project_id: row.project_id, label: row.label });
+  const projectRoster: string[] = [];
+  for (const project of projects) if (projectRoster.length < 5) projectRoster.push(project.project_id);
+  return { providers, models, projects, project_roster: projectRoster, model_rosters: modelRosters };
 }
 
 function filterUsageRecords(query: UsageStatsQuery, since: string, until: string): RawUsageRecord[] {
@@ -310,7 +346,7 @@ function buildSeries(
   projectRoster: readonly string[],
 ): UsageStatsSeriesPoint[] {
   const series: UsageStatsSeriesPoint[] = [];
-  const buckets = bucketStarts(range);
+  const buckets = usageStatsBucketStarts(range);
   for (const bucket of buckets) {
     const bucketRecords: RawUsageRecord[] = [];
     for (const record of records) {
@@ -323,7 +359,7 @@ function buildSeries(
       const point: UsageStatsSeriesPoint = {
         bucket_start: bucket,
         provider: row.provider,
-        label: row.model ? `${providerLabel(row.provider)} (${row.model})` : providerLabel(row.provider),
+        label: row.model ? `${formatUsageStatsProviderLabel(row.provider)} (${row.model})` : formatUsageStatsProviderLabel(row.provider),
         metrics: row.metrics,
       };
       if (row.model) point.model = row.model;
@@ -342,28 +378,6 @@ function buildSeries(
     }
   }
   return series;
-}
-
-function bucketStarts(range: UsageStatsRange): string[] {
-  const buckets: string[] = [];
-  if (range.bucket === "day") {
-    let cursor = range.since;
-    while (cursor < range.until) {
-      buckets.push(cursor);
-      cursor = addDays(cursor, 1);
-    }
-    return buckets;
-  }
-  const start = parseDate(range.since);
-  const end = parseDate(range.effective_until);
-  let year = start.year;
-  let month = start.month;
-  while (year < end.year || (year === end.year && month <= end.month)) {
-    buckets.push(formatDate(Date.UTC(year, month - 1, 1)));
-    month += 1;
-    if (month > 12) { month = 1; year += 1; }
-  }
-  return buckets;
 }
 
 function filterInputRecords(
@@ -386,33 +400,29 @@ function buildInputMaterial(
   filter: { provider?: UsageStatsProvider | null; model?: string | null; project_ids?: readonly string[] },
 ): UsageStatsInputMaterial {
   const records = filterInputRecords(date, filter);
-  const totals: Record<string, number> = {};
-  const sourceKeys: Record<string, string | null> = {};
   const samples = new Set<string>();
   const sources = new Set<string>();
   let observed = 0;
+  const parts: UsageStatsInputPart[] = [];
   for (const record of records) {
     const source = `${record.sample_id}:${record.category}:${record.source_key ?? ""}`;
     if (sources.has(source)) continue;
     sources.add(source);
     samples.add(record.sample_id);
     const approximateTokens = record.approximate_tokens ?? Math.ceil(record.chars / 4);
-    totals[record.category] = (totals[record.category] ?? 0) + approximateTokens;
-    sourceKeys[record.category] = record.source_key;
+    let part: UsageStatsInputPart | undefined;
+    for (const candidate of parts) {
+      if (candidate.category === record.category && candidate.source_key === record.source_key && candidate.measurement === "estimate") part = candidate;
+    }
+    if (!part) {
+      part = { category: record.category, source_key: record.source_key, approximate_tokens: 0, share: null, measurement: "estimate" };
+      parts.push(part);
+    }
+    part.approximate_tokens = (part.approximate_tokens ?? 0) + approximateTokens;
     observed += approximateTokens;
   }
-
-  const parts: UsageStatsInputPart[] = [];
-  for (const category of ["system_prompt", "soulstream_injection", "user_prompt", "tool_result"]) {
-    if (totals[category] === undefined) continue;
-    parts.push({
-      category,
-      source_key: sourceKeys[category] ?? null,
-      approximate_tokens: totals[category],
-      share: observed > 0 ? totals[category] / observed : null,
-    });
-  }
-  parts.push({ category: "harness_internal", source_key: null, approximate_tokens: null, share: null });
+  for (const part of parts) part.share = observed > 0 ? (part.approximate_tokens ?? 0) / observed : null;
+  parts.push({ category: "harness_internal", source_key: null, approximate_tokens: null, share: null, measurement: "unobserved" });
 
   return {
     basis: "observed_input_material",
@@ -421,6 +431,7 @@ function buildInputMaterial(
     method: "combined_visible",
     observed_approximate_tokens: records.length > 0 ? observed : null,
     parts,
+    calibration: { status: "not_comparable", sample_count: 0, factor: null, reasons: ["missing_source_token_breakdown"] },
     coverage: {
       complete_samples: samples.size,
       partial_samples: 0,
@@ -435,15 +446,8 @@ function backendFor(provider: UsageStatsProvider): string {
   if (provider === "codex") return "codex";
   if (provider === "antigravity") return "antigravity";
   if (provider === "deepseek") return "opencode";
+  if (provider === "unknown") return "unknown";
   return "kimi-for-coding";
-}
-
-function providerLabel(provider: UsageStatsProvider): string {
-  if (provider === "claude") return "Claude";
-  if (provider === "codex") return "Codex";
-  if (provider === "antigravity") return "Antigravity";
-  if (provider === "deepseek") return "DeepSeek";
-  return "Kimi";
 }
 
 function projectLabel(projectId: string | null): string {

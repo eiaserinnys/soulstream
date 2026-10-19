@@ -15,13 +15,8 @@ export { appendAttachmentPathNotes } from "./attachment-path-notes";
 export { formatAssignedCardContextSnapshot } from "./assigned-card-context-content";
 export * from "./usage-summary";
 export * from "./usage-stats-format";
-export {
-  buildEmptyUsageStatsOverview,
-  buildUsageStatsDayDetail,
-  buildUsageStatsOverview,
-  USAGE_STATS_FIXTURE_ANCHOR,
-  USAGE_STATS_PROVIDERS,
-} from "./usage-stats-fixtures";
+export * from "./usage-stats-presentation";
+export { USAGE_STATS_PROVIDERS, USAGE_STATS_UNKNOWN_PROVIDER_LABEL } from "../../../wire-schema/src/session_statistics";
 export type {
   UsageStatsAggregate,
   UsageStatsCoverage,
@@ -29,6 +24,7 @@ export type {
   UsageStatsInputMaterial,
   UsageStatsInputPart,
   UsageStatsMetrics,
+  UsageStatsOptions,
   UsageStatsOverview,
   UsageStatsPeriod,
   UsageStatsProjectRow,
@@ -37,7 +33,7 @@ export type {
   UsageStatsQuery,
   UsageStatsRange,
   UsageStatsSeriesPoint,
-} from "./usage-stats-fixture-data";
+} from "../../../wire-schema/src/session_statistics";
 export { classifyInternalLink, internalLinkPath } from "./internal-link";
 export type { InternalLinkTarget } from "./internal-link";
 
