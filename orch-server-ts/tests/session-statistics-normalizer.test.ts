@@ -24,6 +24,249 @@ function usageFact(event: Parameters<typeof normalizeSessionStatisticsEvent>[0])
   return normalize(event).facts.find((fact) => fact.fact_kind === "usage" && fact.representation !== "diagnostic");
 }
 
+function unknownClaudeEvent(
+  eventId: number,
+  usage: Record<string, unknown>,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    sessionId: "native-format",
+    eventId,
+    eventType: "complete",
+    createdAt: "2026-10-20T00:10:00Z",
+    payload: {
+      type: "complete",
+      model: "claude-opus-5-5",
+      output_command_id: `native-format-${eventId}`,
+      usage_snapshot: {
+        schema_version: 1,
+        backend: "claude",
+        provider: "unknown",
+        preset_id: null,
+        requested_model: "claude-opus-5-5",
+        provider_attribution: "unknown",
+      },
+      usage,
+      ...extra,
+    },
+  };
+}
+
+describe("session statistics native usage number format", () => {
+  it("repairs native base/read/write input when snapshot provider is unknown", () => {
+    const fact = usageFact(unknownClaudeEvent(200, {
+      input_tokens: 12,
+      cache_read_input_tokens: 469_276,
+      cache_creation_input_tokens: 41_375,
+      output_tokens: 1_746,
+    }));
+    expect(fact).toMatchObject({
+      provider: "unknown",
+      input_total: 510_663,
+      output_total: 1_746,
+      total_tokens: 512_409,
+      cache_read: 469_276,
+      cache_write: 41_375,
+      known_cost_usd: null,
+    });
+    expect((fact?.total_tokens ?? 0) - (fact?.cache_read ?? 0)).toBe(43_133);
+    expect((fact?.input_total ?? 0) - (fact?.cache_read ?? 0) - (fact?.cache_write ?? 0)).toBe(12);
+  });
+
+  it("normalizes the other observed native vectors", () => {
+    const second = usageFact(unknownClaudeEvent(201, {
+      input_tokens: 4,
+      cache_read_input_tokens: 60_970,
+      cache_creation_input_tokens: 61_117,
+      output_tokens: 753,
+    }));
+    expect(second).toMatchObject({
+      input_total: 122_091,
+      total_tokens: 122_844,
+      cache_read: 60_970,
+      cache_write: 61_117,
+    });
+    expect((second?.total_tokens ?? 0) - (second?.cache_read ?? 0)).toBe(61_874);
+    expect((second?.input_total ?? 0) - (second?.cache_read ?? 0) - (second?.cache_write ?? 0)).toBe(4);
+
+    const third = usageFact(unknownClaudeEvent(202, {
+      input_tokens: 12,
+      cache_read_input_tokens: 4_881_539,
+      cache_creation_input_tokens: 21_506,
+      output_tokens: 12_001,
+    }));
+    expect(third).toMatchObject({
+      input_total: 4_903_057,
+      total_tokens: 4_915_058,
+      cache_read: 4_881_539,
+      cache_write: 21_506,
+    });
+    expect((third?.total_tokens ?? 0) - (third?.cache_read ?? 0)).toBe(33_519);
+    expect((third?.input_total ?? 0) - (third?.cache_read ?? 0) - (third?.cache_write ?? 0)).toBe(12);
+  });
+
+  it("accepts camelCase native aliases", () => {
+    const fact = usageFact(unknownClaudeEvent(203, {
+      inputTokens: 4,
+      cacheReadInputTokens: 60_970,
+      cacheCreationInputTokens: 61_117,
+      outputTokens: 753,
+    }));
+    expect(fact).toMatchObject({
+      input_total: 122_091,
+      total_tokens: 122_844,
+      cache_read: 60_970,
+      cache_write: 61_117,
+      quality: expect.not.arrayContaining(["normalization_error"]),
+    });
+  });
+
+  it("keeps a parent input total when only parent cache aliases are present", () => {
+    const fact = usageFact(unknownClaudeEvent(204, {
+      input_tokens: 6,
+      cached_input_tokens: 3,
+      output_tokens: 2,
+    }));
+    expect(fact).toMatchObject({
+      input_total: 6,
+      total_tokens: 8,
+      cache_read: 3,
+      cache_write: null,
+    });
+    expect((fact?.total_tokens ?? 0) - (fact?.cache_read ?? 0)).toBe(5);
+  });
+
+  it("keeps an explicit parent input total ahead of native fields", () => {
+    const fact = usageFact(unknownClaudeEvent(205, {
+      input_total: 100,
+      input_tokens: 2,
+      cache_read_input_tokens: 60,
+      cache_creation_input_tokens: 10,
+      output_tokens: 20,
+    }));
+    expect(fact).toMatchObject({
+      input_total: 100,
+      total_tokens: 120,
+      cache_read: 60,
+      cache_write: 10,
+    });
+    expect((fact?.total_tokens ?? 0) - (fact?.cache_read ?? 0)).toBe(60);
+    expect((fact?.input_total ?? 0) - (fact?.cache_read ?? 0) - (fact?.cache_write ?? 0)).toBe(30);
+  });
+
+  it("does not fall back to native fields when input_total is explicitly null", () => {
+    const fact = usageFact(unknownClaudeEvent(206, {
+      input_total: null,
+      input_tokens: 2,
+      cache_read_input_tokens: 60,
+      cache_creation_input_tokens: 10,
+      output_tokens: 20,
+    }));
+    expect(fact).toMatchObject({
+      input_total: null,
+      total_tokens: null,
+      cache_read: 60,
+      cache_write: 10,
+      output_total: 20,
+    });
+    expect(fact?.quality).toContain("normalization_error");
+  });
+
+  it("treats measured zeros as known native values", () => {
+    const fact = usageFact(unknownClaudeEvent(207, {
+      input_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      output_tokens: 0,
+    }));
+    expect(fact).toMatchObject({
+      input_total: 0,
+      total_tokens: 0,
+      cache_read: 0,
+      cache_write: 0,
+      quality: expect.not.arrayContaining(["normalization_error"]),
+    });
+  });
+
+  it("rejects conflicting cache read aliases without dropping the parent", () => {
+    const fact = usageFact(unknownClaudeEvent(208, {
+      input_tokens: 20,
+      cached_input_tokens: 10,
+      cache_read_input_tokens: 11,
+      output_tokens: 5,
+    }));
+    expect(fact).toMatchObject({
+      input_total: 20,
+      total_tokens: 25,
+      cache_read: null,
+    });
+    expect(fact?.quality).toContain("normalization_error");
+  });
+
+  it("does not compose a native input when only the legacy read alias is recorded", () => {
+    const fact = usageFact(unknownClaudeEvent(209, {
+      input_tokens: 50,
+      cache_read_input_tokens: 10,
+      output_tokens: 5,
+    }));
+    expect(fact).toMatchObject({
+      input_total: null,
+      total_tokens: null,
+      cache_read: 10,
+      cache_write: null,
+      output_total: 5,
+    });
+  });
+
+  it("nulls an impossible parent input while preserving cache components", () => {
+    const fact = usageFact(unknownClaudeEvent(210, {
+      input_tokens: 10,
+      cached_input_tokens: 11,
+      output_tokens: 2,
+    }));
+    expect(fact).toMatchObject({
+      input_total: null,
+      total_tokens: null,
+      cache_read: 11,
+      output_total: 2,
+    });
+    expect(fact?.quality).toContain("normalization_error");
+  });
+
+  it("applies the same native numbers to aggregate and model usage parts", () => {
+    const facts = normalize(unknownClaudeEvent(211, {
+      input_tokens: 12,
+      cache_read_input_tokens: 469_276,
+      cache_creation_input_tokens: 41_375,
+      output_tokens: 1_746,
+    }, {
+      model_usage: {
+        "claude-opus-5-5": {
+          inputTokens: 4,
+          cacheReadInputTokens: 60_970,
+          cacheCreationInputTokens: 61_117,
+          outputTokens: 753,
+        },
+      },
+    })).facts.filter((fact) => fact.fact_kind === "usage");
+    const aggregate = facts.find((fact) => fact.representation === "aggregate");
+    const model = facts.find((fact) => fact.representation === "model_breakdown");
+    expect(aggregate).toMatchObject({
+      input_total: 510_663,
+      total_tokens: 512_409,
+      cache_read: 469_276,
+      cache_write: 41_375,
+    });
+    expect(model).toMatchObject({
+      model: "claude-opus-5-5",
+      input_total: 122_091,
+      total_tokens: 122_844,
+      cache_read: 60_970,
+      cache_write: 61_117,
+    });
+  });
+});
+
 describe("session statistics normalizer", () => {
   it("keeps the provider-specific token subsets and representative OpenCode totals", () => {
     const claude = usageFact(representativeProviderEvents.claude);
