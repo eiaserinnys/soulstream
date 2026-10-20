@@ -7,11 +7,15 @@ import { sessionStatisticsInPeriod } from "./session_statistics_scope.js";
 import {
   sessionStatisticsDateMatches,
   sessionStatisticsEventOrder,
+  sessionStatisticsProjectIdForSession,
   sessionStatisticsProjectMatches,
   sessionStatisticsRowProjectMatches,
   sessionStatisticsSourceKey,
 } from "./session_statistics_aggregate.js";
 import type { SessionStatisticsScope } from "./session_statistics_aggregate.js";
+
+// 500줄 상한을 넘는다: 경계·커버리지 색인 로직은 이 파일의 응집 단위이며,
+// 집계 TS 선형화 범위 밖으로 분리하지 않는다.
 
 type Row = SessionStatisticsReadResult["rows"][number];
 type Fact = NonNullable<Row["fact"]>;
@@ -64,14 +68,44 @@ function inputIdentity(inputId: string | null, eventId: number | string): string
   return inputId === null ? `user_event:${String(eventId)}` : `input:${inputId}`;
 }
 
-function projectForSession(read: SessionStatisticsReadResult, sessionId: string): string | null {
-  return read.sessions.find((session) => session.sessionId === sessionId)?.projectId ?? null;
-}
-
 function boundaryRows(read: SessionStatisticsReadResult): Row[] {
   return read.rows.filter((row) => row.row_kind === "boundary"
     && row.state === "owned"
     && row.fact?.fact_kind === "boundary");
+}
+
+function groupBySessionOrdered(rows: readonly Row[]): ReadonlyMap<string, readonly Row[]> {
+  const bySession = new Map<string, Row[]>();
+  for (const row of rows) {
+    const list = bySession.get(row.session_id);
+    if (list !== undefined) list.push(row);
+    else bySession.set(row.session_id, [row]);
+  }
+  for (const list of bySession.values()) {
+    list.sort((left, right) => sessionStatisticsEventOrder(left) - sessionStatisticsEventOrder(right));
+  }
+  return bySession;
+}
+
+function firstOrderAbove(rows: readonly Row[], order: number): number {
+  let low = 0;
+  let high = rows.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (sessionStatisticsEventOrder(rows[middle]!) <= order) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function firstBoundaryAfter(rows: readonly Row[] | undefined, startOrder: number): Row | undefined {
+  if (rows === undefined) return undefined;
+  for (let index = firstOrderAbove(rows, startOrder); index < rows.length; index += 1) {
+    const fact = rows[index]!.fact;
+    if (fact?.fact_kind === "boundary"
+      && (fact.boundary_type === "input" || fact.boundary_type === "session_ended")) return rows[index];
+  }
+  return undefined;
 }
 
 function getInputStarts(rows: readonly Row[]): Map<string, Row> {
@@ -92,31 +126,34 @@ function getInputStarts(rows: readonly Row[]): Map<string, Row> {
 function nearestInputIdentity(
   row: Row,
   inputStarts: ReadonlyMap<string, Row>,
+  sessionStarts: readonly Row[] | undefined,
 ): string | null {
   const inputId = row.input_id ?? row.fact?.input_id ?? null;
   if (inputId !== null) {
     const key = identityKey(row.session_id, `input:${inputId}`);
     if (inputStarts.has(key)) return `input:${inputId}`;
   }
+  if (sessionStarts === undefined || sessionStarts.length === 0) return null;
 
-  const eventOrder = sessionStatisticsEventOrder(row);
-  let nearest: Row | null = null;
-  for (const start of inputStarts.values()) {
-    if (start.session_id !== row.session_id) continue;
-    if (sessionStatisticsEventOrder(start) > eventOrder) continue;
-    if (!nearest || sessionStatisticsEventOrder(start) > sessionStatisticsEventOrder(nearest)) {
-      nearest = start;
-    }
-  }
-  if (!nearest?.fact || nearest.fact.fact_kind !== "boundary") return null;
+  let nearestIndex = firstOrderAbove(sessionStarts, sessionStatisticsEventOrder(row)) - 1;
+  if (nearestIndex < 0) return null;
+  const nearestOrder = sessionStatisticsEventOrder(sessionStarts[nearestIndex]!);
+  while (nearestIndex > 0
+    && sessionStatisticsEventOrder(sessionStarts[nearestIndex - 1]!) === nearestOrder) nearestIndex -= 1;
+  const nearest = sessionStarts[nearestIndex]!;
+  if (!nearest.fact || nearest.fact.fact_kind !== "boundary") return null;
   return inputIdentity(nearest.fact.input_id, nearest.fact.event_id);
 }
 
-function identityForRow(row: Row, inputStarts: ReadonlyMap<string, Row>): string {
+function identityForRow(
+  row: Row,
+  inputStarts: ReadonlyMap<string, Row>,
+  startsBySession: ReadonlyMap<string, readonly Row[]>,
+): string {
   if (row.missing_identity !== null) return row.missing_identity;
   const inputId = row.input_id ?? row.fact?.input_id ?? null;
   if (inputId !== null) return `input:${inputId}`;
-  const nearest = nearestInputIdentity(row, inputStarts);
+  const nearest = nearestInputIdentity(row, inputStarts, startsBySession.get(row.session_id));
   if (nearest !== null) return nearest;
   if (row.accounting_key !== null) return `command:${row.accounting_key}`;
   const eventId = row.owner_event_id ?? row.candidate_event_id ?? row.selection_event_id;
@@ -167,7 +204,7 @@ function addEvidence(
     row,
     identityKey: identityKey(row.session_id, identity),
     sessionId: row.session_id,
-    projectId: projectForSession(read, row.session_id),
+    projectId: sessionStatisticsProjectIdForSession(read, row.session_id),
     kind,
     timestamp: rowTimestamp(row),
     eventOrder: sessionStatisticsEventOrder(row),
@@ -220,16 +257,13 @@ export function createSessionStatisticsCoverageIndex(
 ): SessionStatisticsCoverageIndex {
   const boundaries = boundaryRows(read);
   const inputStarts = getInputStarts(boundaries);
+  const startsBySession = groupBySessionOrdered([...inputStarts.values()]);
+  const sessionBoundaries = groupBySessionOrdered(boundaries);
   const commandStarts = commandStartAttributions(boundaries);
   const closures = new Map<string, Row>();
   for (const start of inputStarts.values()) {
     const startOrder = sessionStatisticsEventOrder(start);
-    const closure = boundaries
-      .filter((row) => row.session_id === start.session_id
-        && sessionStatisticsEventOrder(row) > startOrder
-        && row.fact?.fact_kind === "boundary"
-        && (row.fact.boundary_type === "input" || row.fact.boundary_type === "session_ended"))
-      .sort((left, right) => sessionStatisticsEventOrder(left) - sessionStatisticsEventOrder(right))[0];
+    const closure = firstBoundaryAfter(sessionBoundaries.get(start.session_id), startOrder);
     if (!closure) continue;
     const fact = start.fact!;
     closures.set(identityKey(start.session_id, inputIdentity(fact.input_id, fact.event_id)), closure);
@@ -241,14 +275,14 @@ export function createSessionStatisticsCoverageIndex(
   for (const row of read.rows) {
     if (row.row_kind !== "usage" || row.state !== "owned") continue;
     if (row.fact !== null && row.fact.fact_kind !== "usage") continue;
-    const identity = identityForRow(row, inputStarts);
+    const identity = identityForRow(row, inputStarts, startsBySession);
     const key = ownerKey(row);
     let owner = ownersByKey.get(key);
     if (!owner) {
       owner = {
         ownerKey: key,
         sessionId: row.session_id,
-        projectId: projectForSession(read, row.session_id),
+        projectId: sessionStatisticsProjectIdForSession(read, row.session_id),
         identityKey: identityKey(row.session_id, identity),
         timestamp: rowTimestamp(row),
         eventOrder: sessionStatisticsEventOrder(row),
@@ -283,7 +317,7 @@ export function createSessionStatisticsCoverageIndex(
     if (!complete) {
       const row = owner.factlessRows[0] ?? owner.parts[0]?.row;
       if (row) {
-        const identity = identityForRow(row, inputStarts);
+        const identity = identityForRow(row, inputStarts, startsBySession);
         missingCandidateKeys.add(identityKey(row.session_id, identity));
         addEvidence(terminalRecords, read, row, "terminal", identity, rowAttribution(row, commandStarts));
       }
@@ -293,12 +327,12 @@ export function createSessionStatisticsCoverageIndex(
   for (const row of read.rows) {
     if (row.row_kind !== "usage") continue;
     if (row.state === "pending") {
-      const identity = identityForRow(row, inputStarts);
+      const identity = identityForRow(row, inputStarts, startsBySession);
       pendingRecords.push({
         row,
         identityKey: identityKey(row.session_id, identity),
         sessionId: row.session_id,
-        projectId: projectForSession(read, row.session_id),
+        projectId: sessionStatisticsProjectIdForSession(read, row.session_id),
         kind: "pending",
         timestamp: inputStarts.get(identityKey(row.session_id, identity))?.fact?.recorded_at
           ?? rowTimestamp(row),
@@ -310,11 +344,18 @@ export function createSessionStatisticsCoverageIndex(
     if (row.state !== "missing" && row.state !== "ambiguous_legacy"
       && row.state !== "unresolved_legacy" && row.state !== "identity_conflict") continue;
 
-    const identity = identityForRow(row, inputStarts);
+    const identity = identityForRow(row, inputStarts, startsBySession);
     const key = identityKey(row.session_id, identity);
     missingCandidateKeys.add(key);
     if (isInputCoverageRow(row)) continue;
     addEvidence(terminalRecords, read, row, "terminal", identity, rowAttribution(row, commandStarts));
+  }
+
+  const terminalByIdentityKey = new Map<string, Evidence[]>();
+  for (const record of terminalRecords) {
+    const list = terminalByIdentityKey.get(record.identityKey);
+    if (list !== undefined) list.push(record);
+    else terminalByIdentityKey.set(record.identityKey, [record]);
   }
 
   const endedRecords: Evidence[] = [];
@@ -324,13 +365,13 @@ export function createSessionStatisticsCoverageIndex(
     const start = inputStarts.get(key);
     if (!start?.fact || start.fact.fact_kind !== "boundary") continue;
     const identity = inputIdentity(start.fact.input_id, start.fact.event_id);
-    const ownerEvidence = terminalRecords.filter((record) => record.identityKey === key);
+    const ownerEvidence = terminalByIdentityKey.get(key) ?? [];
     const attribution = mergeAttributions(ownerEvidence);
     endedRecords.push({
       row: start,
       identityKey: key,
       sessionId: start.session_id,
-      projectId: projectForSession(read, start.session_id),
+      projectId: sessionStatisticsProjectIdForSession(read, start.session_id),
       kind: "ended",
       timestamp: closure.fact.recorded_at,
       eventOrder: Number(closure.fact.event_id),
