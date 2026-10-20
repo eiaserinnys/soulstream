@@ -33,6 +33,31 @@ describePostgres("session statistics repository", () => {
     sql = harness.sql;
   }, 60_000);
 
+  it("reads the earliest authorized session creation without requiring an event", async () => {
+    await sql`INSERT INTO folders (id, name) VALUES ('earliest-visible', 'Visible'), ('earliest-hidden', 'Hidden')`;
+    await sql`
+      INSERT INTO sessions (session_id, folder_id, status, session_type, created_at) VALUES
+        ('earliest-visible-session', 'earliest-visible', 'idle', 'claude', '2026-09-15T00:00:00Z'),
+        ('earliest-hidden-session', 'earliest-hidden', 'idle', 'claude', '2026-09-05T00:00:00Z'),
+        ('earliest-at-cutoff', 'earliest-visible', 'idle', 'claude', '2026-10-20T00:00:00Z')
+    `;
+    await sql`
+      UPDATE system_settings SET value = ${sql.json({
+        state: "ready", normalization_version: 1, covered_since: "2026-09-01T00:00:00Z",
+      })}, version = version + 1
+      WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}
+    `;
+    const repository = new SessionStatisticsRepository(sql as unknown as BoardYjsSql);
+    const request: SessionStatisticsReadRequest = {
+      query: { period: "all", anchor: "2026-10-20" }, timezone: "Asia/Seoul", asOf: "2026-10-20T00:00:00Z",
+      access: { restricted: true, allowedFolderIds: ["earliest-visible"] },
+      visibleFolders: [{ id: "earliest-visible", name: "Visible", parentFolderId: null }], day: null,
+    };
+    const result = await repository.read(request);
+    expect(result.range.since).toBe("2026-09-15");
+    expect(result.projectionStatus.covered_since).toBe("2026-09-15");
+  });
+
   afterAll(async () => {
     await harness?.cleanup();
   });
@@ -50,10 +75,10 @@ describePostgres("session statistics repository", () => {
       VALUES ('allowed-card', 'allowed-root', 'a', 'Card in allowed project')
     `;
     await sql`
-      INSERT INTO sessions (session_id, folder_id, card_id, status, session_type) VALUES
-        ('statistics-authorized', 'allowed-child', NULL, 'idle', 'claude'),
-        ('statistics-hidden-card', 'hidden-child', 'allowed-card', 'idle', 'claude'),
-        ('statistics-restricted-card-fallback', NULL, 'allowed-card', 'idle', 'claude')
+      INSERT INTO sessions (session_id, folder_id, card_id, status, session_type, created_at) VALUES
+        ('statistics-authorized', 'allowed-child', NULL, 'idle', 'claude', '2026-10-01T00:00:00Z'),
+        ('statistics-hidden-card', 'hidden-child', 'allowed-card', 'idle', 'claude', '2019-01-01T00:00:00Z'),
+        ('statistics-restricted-card-fallback', NULL, 'allowed-card', 'idle', 'claude', '2020-01-01T00:00:00Z')
     `;
 
     const events = createEvents();

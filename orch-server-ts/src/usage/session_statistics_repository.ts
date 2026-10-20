@@ -58,15 +58,15 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
   async read(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult> {
     parseOffsetTimestamp(input.asOf, "asOf");
     return await this.sql.begin(async (transaction) => {
-      await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+      await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
       await transaction`SET LOCAL jit = off`;
+      await transaction`SET LOCAL client_min_messages = warning`;
       const sessions = await readAuthorizedSessions(transaction, input);
       const projectionState = await readProjectionState(transaction);
       const sessionIds = sessions.map((session) => session.sessionId);
       const authorizedEarliest = await readAuthorizedEarliest(
         transaction,
-        sessionIds,
-        input.asOf,
+        input,
       );
       const period = resolveSessionStatisticsPeriod(
         input.query,
@@ -228,29 +228,15 @@ function parseJson(value: string): unknown {
 
 async function readAuthorizedEarliest(
   sql: BoardYjsQuerySql,
-  authorizedSessionIds: readonly string[],
-  asOf: string,
+  input: SessionStatisticsReadRequest,
 ): Promise<string | null> {
-  if (authorizedSessionIds.length === 0) return null;
+  const visibleFolderIds = [...new Set(input.visibleFolders.map((folder) => folder.id))];
   const rows = await sql<readonly EarliestSqlRow[]>`
-    WITH authorized_sessions AS (
-      SELECT value AS session_id
-      FROM jsonb_array_elements_text(${sql.json([...new Set(authorizedSessionIds)])}::jsonb)
-    ),
-    first_event_per_session AS (
-      SELECT first_event.created_at
-      FROM authorized_sessions AS allowed
-      JOIN LATERAL (
-        SELECT event.created_at
-        FROM events AS event
-        WHERE event.session_id = allowed.session_id
-          AND event.created_at < ${asOf}::timestamptz
-        ORDER BY event.created_at ASC, event.id ASC
-        LIMIT 1
-      ) AS first_event ON true
-    )
     SELECT min(created_at) AS earliest_created_at
-    FROM first_event_per_session
+    FROM sessions
+    WHERE (NOT ${input.access.restricted}
+      OR folder_id = ANY(${sql.array(visibleFolderIds)}::text[]))
+      AND created_at < ${input.asOf}::timestamptz
   `;
   const value = rows[0]?.earliest_created_at ?? null;
   if (value === null) return null;

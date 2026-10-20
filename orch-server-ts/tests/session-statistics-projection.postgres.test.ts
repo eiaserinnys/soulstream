@@ -101,10 +101,10 @@ describePostgres("session statistics facts projection", () => {
         envelope: asEnvelope(eventTwo),
       });
     });
-    const pendingBeforeBoundary = await createCanonicalSessionStatisticsFacts(
-      sql as unknown as EventIngressQuerySql,
+    const pendingBeforeBoundary = await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
+      transaction as unknown as EventIngressQuerySql,
       [backfillSession],
-    );
+    ));
     expect(pendingBeforeBoundary.some((row) => row.row_kind === "usage"
       && String(row.candidate_event_id) === "1000002"
       && row.state === "pending"
@@ -131,10 +131,10 @@ describePostgres("session statistics facts projection", () => {
       covered_since: "2026-10-19T00:00:00.000Z",
     });
 
-    const finalRows = await createCanonicalSessionStatisticsFacts(
-      sql as unknown as EventIngressQuerySql,
+    const finalRows = await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
+      transaction as unknown as EventIngressQuerySql,
       [backfillSession],
-    );
+    ));
     expect(finalRows.some((row) => row.row_kind === "usage"
       && String(row.candidate_event_id) === "1000002"
       && row.state === "missing"
@@ -262,10 +262,10 @@ describePostgres("session statistics facts projection", () => {
       backfillSession,
       ...fixtureEvents.map((event) => event.sessionId),
     ])];
-    const canonicalRows = await createCanonicalSessionStatisticsFacts(
-      sql as unknown as EventIngressQuerySql,
+    const canonicalRows = await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
+      transaction as unknown as EventIngressQuerySql,
       authorizedSessions,
-    );
+    ));
     const allFacts = [...expectedBackfillFacts, ...normalizeSessionStatisticsEvent(lateLiveEvent).facts,
       ...normalizeSessionStatisticsEvent(malformed).facts, ...fixtureFacts];
     expect(describeSqlUsage(canonicalRows)).toEqual(describePureUsage(allFacts));
@@ -276,14 +276,14 @@ describePostgres("session statistics facts projection", () => {
       && row.fact === null)).toBe(true);
     expect(describeSqlMaterial(canonicalRows)).toEqual(describePureMaterial(allFacts));
 
-    const rangeRows = await createCanonicalSessionStatisticsFacts(
-      sql as unknown as EventIngressQuerySql,
+    const rangeRows = await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
+      transaction as unknown as EventIngressQuerySql,
       ["statistics-projection-range"],
       {
         recordedAtFrom: "2026-10-19T00:00:00.000Z",
         recordedAtBefore: "2026-10-20T00:00:00.000Z",
       },
-    );
+    ));
     expect(describeSqlUsage(rangeRows)).toEqual(describePureUsage(
       fixtureFacts.filter((fact) => fact.session_id === "statistics-projection-range"),
     ));
@@ -337,10 +337,10 @@ describePostgres("session statistics facts projection", () => {
       events.flatMap((event) => normalizeSessionStatisticsEvent(event).facts),
     );
 
-    const rows = await createCanonicalSessionStatisticsFacts(
-      sql as unknown as EventIngressQuerySql,
+    const rows = await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
+      transaction as unknown as EventIngressQuerySql,
       events.map((event) => event.sessionId),
-    );
+    ));
     const coverage = rows.filter((row) => row.row_kind === "usage" && row.fact === null);
     expect(coverage.map((row) => ({
       session_id: row.session_id,
@@ -392,7 +392,9 @@ describePostgres("session statistics facts projection", () => {
         sql as unknown as EventIngressQuerySql,
         events.flatMap((event) => normalizeSessionStatisticsEvent(event).facts),
       );
-      return await createCanonicalSessionStatisticsFacts(sql as unknown as EventIngressQuerySql, [sessionId]);
+      return await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
+        transaction as unknown as EventIngressQuerySql, [sessionId],
+      ));
     };
     const subtotal = (rows: Awaited<ReturnType<typeof append>>) => rows
       .filter((row) => row.row_kind === "usage" && row.state === "owned")

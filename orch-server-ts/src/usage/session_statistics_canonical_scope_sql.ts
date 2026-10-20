@@ -1,32 +1,24 @@
-import type { EventIngressQuerySql, EventIngressSqlFragment } from "../node/event_ingress_repository.js";
+import type { EventIngressSqlFragment } from "../node/event_ingress_repository.js";
 import {
   createSessionStatisticsPeriodSeedCtes,
   type SessionStatisticsCanonicalReadOptions,
 } from "./session_statistics_period_seed_sql.js";
 
 export function createSessionStatisticsScopeCtes(
-  sql: EventIngressQuerySql,
   fragment: EventIngressSqlFragment,
-  authorizedSessionIds: readonly string[],
   recordedAtFrom: string | null,
   recordedAtBefore: string | null,
   options?: SessionStatisticsCanonicalReadOptions,
-): unknown {
+): { seedCtes: unknown; scopedFacts: unknown } {
   if (options !== undefined) {
     return createSessionStatisticsPeriodSeedCtes(
-      sql,
       fragment,
-      authorizedSessionIds,
       recordedAtFrom,
       recordedAtBefore,
       options,
     );
   }
-  return fragment`
-authorized_sessions AS (
-      SELECT value AS session_id
-      FROM jsonb_array_elements_text(${sql.json([...new Set(authorizedSessionIds)])}::jsonb)
-    ),
+  return { seedCtes: fragment`
     full_facts AS (
       SELECT fact.*
       FROM session_statistics_facts AS fact
@@ -108,8 +100,8 @@ authorized_sessions AS (
       FROM session_statistics_facts AS fact
       JOIN authorized_sessions AS allowed USING (session_id)
       WHERE fact.fact_kind = 'input_material'
-    ),
-    scoped_facts AS (
+    )
+  `, scopedFacts: fragment`
       SELECT * FROM full_facts
       UNION
       SELECT * FROM range_seed_facts
@@ -121,6 +113,5 @@ authorized_sessions AS (
       SELECT * FROM legacy_interval_facts
       UNION
       SELECT * FROM material_facts
-    )
-  `;
+  ` };
 }
