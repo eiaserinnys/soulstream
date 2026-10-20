@@ -43,6 +43,8 @@ it("starts with the current Korea calendar date and makes one overview request",
   const costRows = summary?.querySelectorAll(".usage-stats-share-list > .usage-stats-share-row");
   expect(costRows).toHaveLength(2);
   expect([...(costRows ?? [])].map(row => row.querySelector(".usage-stats-share-value")?.textContent)).toEqual(["", ""]);
+  expect(summary?.querySelector(".usage-stats-share-list")?.classList.contains("usage-stats-share-list-no-share")).toBe(true);
+  expect(summary?.querySelectorAll(".usage-stats-share-percent")).toHaveLength(0);
 });
 
 function aggregate(totalTokens: number | null): UsageStatsAggregate {
@@ -327,8 +329,11 @@ function dayDetail(totalTokens: number): UsageStatsDayDetail {
       unit: "approximate_tokens",
       estimate_method: "utf16_chars_div4_ceil_v1",
       method: "combined_visible",
-      observed_approximate_tokens: null,
-      parts: [],
+      observed_approximate_tokens: 20,
+      parts: [
+        { category: "system_prompt", source_key: "system", approximate_tokens: 12, share: 0.6, measurement: "reported" },
+        { category: "harness_internal", source_key: null, approximate_tokens: null, share: null, measurement: "unobserved" },
+      ],
       calibration: { status: "not_comparable", sample_count: 0, factor: null, reasons: [] },
       coverage: { complete_samples: 0, partial_samples: 0, manifest_only_samples: 0, missing_samples: 0 },
     },
@@ -635,6 +640,11 @@ it("removes successful day details and selection labels after a later day 403", 
   await chooseTabOption("프로젝트", "현재 프로젝트");
   await act(async () => document.querySelector<HTMLButtonElement>('[data-bucket-index="1"]')!.click());
   expect(document.querySelector(".usage-stats-input-material")?.textContent).toContain("툴 호출");
+  const inputRows = [...document.querySelectorAll(".usage-stats-input-material .usage-stats-share-row")];
+  expect(inputRows).toHaveLength(2);
+  expect(inputRows.every(row => row.querySelector(".usage-stats-share-percent") !== null)).toBe(true);
+  expect(inputRows[0]?.querySelector(".usage-stats-share-percent")?.textContent).toBe("60%");
+  expect(inputRows[1]?.querySelector(".usage-stats-share-percent")?.textContent).toBe("");
   await act(async () => document.querySelector<HTMLButtonElement>('[data-bucket-index="0"]')!.click());
 
   expect(request).toHaveBeenCalledTimes(5);

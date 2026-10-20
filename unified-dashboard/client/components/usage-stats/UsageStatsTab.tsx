@@ -57,11 +57,9 @@ function valueForMetric(
   metric: Metric,
   coverage: UsageStatsAggregate["coverage"],
   row = false,
-  includeCacheRead?: boolean,
+  includeCacheRead = false,
 ): string {
-  return includeCacheRead === undefined
-    ? formatUsageStatsValue(metrics, coverage, metric, row)
-    : formatUsageStatsValue(metrics, coverage, metric, row, includeCacheRead);
+  return formatUsageStatsValue(metrics, coverage, metric, row, includeCacheRead);
 }
 
 function shareFor(value: number | null, total: number): number | null {
@@ -215,6 +213,11 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     overviewLoading || detailLoading ? null : displayedAggregate?.metrics,
     overviewLoading || detailLoading ? null : displayedAggregate?.coverage,
   );
+  const summaryCostRows = [
+    { key: "non-cache", name: USAGE_STATS_LABELS.nonCacheCost, value: cacheSplit.nonCacheCost, share: null },
+    { key: "cache-read", name: USAGE_STATS_LABELS.cacheReadCost, value: cacheSplit.cacheReadCost, share: null },
+  ] as const;
+  const summaryCostHasShare = summaryCostRows.some(row => row.share !== null);
   const coverageLabel = displayedAggregate ? formatUsageStatsCoverage(
     displayedAggregate.coverage.priced_total_tokens,
     displayedAggregate.metrics.provider_total_tokens,
@@ -273,7 +276,9 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
   const summaryValue = (metricName: Metric) => {
     if (overviewLoading || detailLoading) return "불러오는 중…";
     if (beforeCoverage) return metricName === "tokens" ? "미기록" : "미확인";
-    return displayedAggregate ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.coverage) : "미기록";
+    return displayedAggregate
+      ? valueForMetric(displayedAggregate.metrics, metricName, displayedAggregate.coverage, false, metricName === "cost")
+      : "미기록";
   };
   const shownError = state === "forbidden" || state === "error";
 
@@ -325,9 +330,14 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               <div className="usage-stats-summary-metric"><span>토큰</span><strong>{summaryValue("tokens")}</strong><span>{cacheSplit.cacheReadLine}</span></div>
               <div className="usage-stats-summary-metric"><span>정가</span><strong>{summaryValue("cost")}</strong></div>
             </div>
-            <div className="usage-stats-share-list">
-              <UsageShareRow name={USAGE_STATS_LABELS.nonCacheCost} value={cacheSplit.nonCacheCost} share={null} />
-              <UsageShareRow name={USAGE_STATS_LABELS.cacheReadCost} value={cacheSplit.cacheReadCost} share={null} />
+            <div className={`usage-stats-share-list${summaryCostHasShare ? "" : " usage-stats-share-list-no-share"}`}>
+              {summaryCostRows.map(row => <UsageShareRow
+                key={row.key}
+                name={row.name}
+                value={row.value}
+                share={row.share}
+                showShareColumn={summaryCostHasShare}
+              />)}
             </div>
             <div className="usage-stats-summary-meta" aria-live="polite">
               {overviewLoading || detailLoading ? null : displayedAggregate?.coverage.missing_usage_turns ? <span>미기록 턴 {displayedAggregate.coverage.missing_usage_turns}</span> : null}
@@ -367,7 +377,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               selectedLabel={view === "model" ? "모델별" : "프로젝트별"}
               onValueChange={value => setView(value as "model" | "project")}
             />
-            <div className="v3-completed-periods">
+            <div className="usage-stats-chart-heading-controls">
               <div className="v3-completed-periods" role="group" aria-label="표시 값">
                 <Button size="sm" variant="ghost" aria-pressed={metric === "tokens"} onClick={() => setMetric("tokens")}>토큰</Button>
                 <Button size="sm" variant="ghost" aria-pressed={metric === "cost"} onClick={() => setMetric("cost")}>정가</Button>
