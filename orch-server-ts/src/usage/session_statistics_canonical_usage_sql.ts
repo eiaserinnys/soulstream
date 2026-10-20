@@ -1,8 +1,10 @@
 import type { EventIngressSqlFragment } from "../node/event_ingress_repository.js";
+import { createSessionStatisticsInputLookupCtes } from "./session_statistics_canonical_input_sql.js";
 
 export function createSessionStatisticsUsageCtes(
   fragment: EventIngressSqlFragment,
 ): unknown {
+  const inputLookupCtes = createSessionStatisticsInputLookupCtes(fragment);
   return fragment`
     usage_events AS (
       SELECT
@@ -13,6 +15,20 @@ export function createSessionStatisticsUsageCtes(
         min(candidate_type) AS candidate_type,
         min(recorded_at) AS recorded_at,
         bool_or(quality @> '["identity_conflict"]'::jsonb) AS identity_conflict
+      FROM scoped_facts
+      WHERE fact_kind = 'usage'
+      GROUP BY session_id, event_id
+    ),
+    usage_event_representation_flags AS (
+      SELECT
+        session_id,
+        event_id,
+        bool_or(representation = 'aggregate') AS has_aggregate,
+        bool_or(representation = 'model_breakdown') AS has_model_breakdown,
+        bool_or(representation = 'aggregate' AND (
+          quality @> '["model_breakdown_unverified"]'::jsonb
+          OR jsonb_typeof(raw_numeric -> 'model_usage') = 'object'
+        )) AS aggregate_breakdown_unverified
       FROM scoped_facts
       WHERE fact_kind = 'usage'
       GROUP BY session_id, event_id
@@ -71,30 +87,17 @@ export function createSessionStatisticsUsageCtes(
     usage_profiles AS (
       SELECT
         event.*,
-        EXISTS (
-          SELECT 1 FROM scoped_facts AS fact
-          WHERE fact.session_id = event.session_id AND fact.event_id = event.event_id
-            AND fact.fact_kind = 'usage' AND fact.representation = 'aggregate'
-        ) AS has_aggregate,
-        EXISTS (
-          SELECT 1 FROM scoped_facts AS fact
-          WHERE fact.session_id = event.session_id AND fact.event_id = event.event_id
-            AND fact.fact_kind = 'usage' AND fact.representation = 'model_breakdown'
-        ) AS has_model_breakdown,
-        coalesce((
-          SELECT validity.is_valid
-          FROM model_breakdown_validity AS validity
-          WHERE validity.session_id = event.session_id AND validity.event_id = event.event_id
-        ), false) AS model_breakdown_valid,
-        coalesce((
-          SELECT fact.quality @> '["model_breakdown_unverified"]'::jsonb
-            OR jsonb_typeof(fact.raw_numeric -> 'model_usage') = 'object'
-          FROM scoped_facts AS fact
-          WHERE fact.session_id = event.session_id AND fact.event_id = event.event_id
-            AND fact.fact_kind = 'usage' AND fact.representation = 'aggregate'
-          LIMIT 1
-        ), false) AS aggregate_breakdown_unverified
+        coalesce(flags.has_aggregate, false) AS has_aggregate,
+        coalesce(flags.has_model_breakdown, false) AS has_model_breakdown,
+        coalesce(validity.is_valid, false) AS model_breakdown_valid,
+        coalesce(flags.aggregate_breakdown_unverified, false) AS aggregate_breakdown_unverified
       FROM usage_events AS event
+      LEFT JOIN usage_event_representation_flags AS flags
+        ON flags.session_id = event.session_id
+       AND flags.event_id = event.event_id
+      LEFT JOIN model_breakdown_validity AS validity
+        ON validity.session_id = event.session_id
+       AND validity.event_id = event.event_id
     ),
     terminal_candidates AS (
       SELECT profile.*,
@@ -377,41 +380,38 @@ export function createSessionStatisticsUsageCtes(
       UNION ALL SELECT * FROM unresolved_legacy_selections
       UNION ALL SELECT * FROM legacy_failure_selections
     ),
+    ${inputLookupCtes},
     labeled_usage_selections AS (
       SELECT
-        selection.*,
-        coalesce(owner_event_id, candidate_event_id, interval_start_event_id, 0)::bigint AS selection_event_id,
-        input_boundary.event_id AS input_boundary_event_id,
-        CASE WHEN selection.state IN (
+        labeled.*,
+        CASE WHEN labeled.state IN (
           'missing', 'pending', 'ambiguous_legacy', 'unresolved_legacy', 'identity_conflict'
         ) THEN coalesce(
-          CASE WHEN selection.input_id IS NOT NULL THEN 'input:' || selection.input_id END,
-          CASE WHEN input_boundary.event_id IS NOT NULL THEN 'user_event:' || input_boundary.event_id::text END,
-          CASE WHEN selection.accounting_key IS NOT NULL THEN 'command:' || selection.accounting_key END,
-          CASE WHEN selection.candidate_event_id IS NOT NULL THEN 'event:' || selection.candidate_event_id::text END
+          CASE WHEN labeled.input_id IS NOT NULL THEN 'input:' || labeled.input_id END,
+          CASE WHEN labeled.input_boundary_event_id IS NOT NULL
+            THEN 'user_event:' || labeled.input_boundary_event_id::text END,
+          CASE WHEN labeled.accounting_key IS NOT NULL THEN 'command:' || labeled.accounting_key END,
+          CASE WHEN labeled.candidate_event_id IS NOT NULL
+            THEN 'event:' || labeled.candidate_event_id::text END
         ) END AS missing_identity
-      FROM usage_selections AS selection
-      LEFT JOIN LATERAL (
-        SELECT boundary.event_id
-        FROM scoped_facts AS boundary
-        WHERE boundary.session_id = selection.session_id
-          AND boundary.fact_kind = 'boundary'
-          AND boundary.boundary_type = 'input'
-          AND (
-            (selection.input_id IS NOT NULL AND boundary.input_id = selection.input_id)
-            OR (boundary.event_id <= coalesce(
-              selection.owner_event_id, selection.candidate_event_id,
-              selection.interval_start_event_id, 0
-            ))
-          )
-        ORDER BY
-          CASE WHEN selection.input_id IS NOT NULL AND boundary.input_id = selection.input_id THEN 0 ELSE 1 END,
-          CASE WHEN selection.input_id IS NOT NULL AND boundary.input_id = selection.input_id
-            THEN boundary.event_id END ASC,
-          CASE WHEN selection.input_id IS NULL OR boundary.input_id IS DISTINCT FROM selection.input_id
-            THEN boundary.event_id END DESC
-        LIMIT 1
-      ) AS input_boundary ON true
+      FROM (
+        SELECT
+          selection.*,
+          coalesce(exact_boundary.event_id, previous_boundary.input_boundary_event_id) AS input_boundary_event_id
+        FROM (
+          SELECT
+            usage_selection.*,
+            coalesce(owner_event_id, candidate_event_id, interval_start_event_id, 0)::bigint AS selection_event_id
+          FROM usage_selections AS usage_selection
+        ) AS selection
+        LEFT JOIN exact_input_boundaries AS exact_boundary
+          ON selection.input_id IS NOT NULL
+         AND exact_boundary.session_id = selection.session_id
+         AND exact_boundary.input_id = selection.input_id
+        LEFT JOIN previous_input_boundaries AS previous_boundary
+          ON previous_boundary.session_id = selection.session_id
+         AND previous_boundary.position_event_id = selection.selection_event_id
+      ) AS labeled
     ),
     usage_rows AS (
       SELECT
