@@ -18,6 +18,7 @@ import {
   usageStatsModelColorIndex,
   formatUsageStatsValue,
   USAGE_STATS_LABELS,
+  usageStatsMetricValue,
   usageStatsRange,
 } from "./usage-stats-format";
 
@@ -139,6 +140,9 @@ describe("usage statistics formatting", () => {
       cacheReadCost: "캐시 읽기",
       cacheReadExcludedRule: "캐시 읽기 제외",
       uncachedInput: "그중 일반 입력",
+      cacheReadToggleGroup: "캐시 읽기",
+      cacheReadExclude: "캐시 제외",
+      cacheReadInclude: "캐시 포함",
     });
     expect(formatUsageStatsCacheSplit(null, null)).toEqual({
       cacheReadLine: "캐시 읽기 제외",
@@ -248,6 +252,71 @@ describe("usage statistics formatting", () => {
       "cost",
       true,
     )).toBe("미기록");
+  });
+
+  it("selects cache-inclusive and cache-excluded metrics with independent partial states", () => {
+    const metrics = { ...splitMetrics(), reference_cost_usd: 123.45 };
+    const complete = coverageWith();
+
+    expect(usageStatsMetricValue(metrics, "tokens", false)).toBe(60);
+    expect(usageStatsMetricValue(metrics, "tokens", true)).toBe(120);
+    expect(usageStatsMetricValue(metrics, "cost", false)).toBe(78.45);
+    expect(usageStatsMetricValue(metrics, "cost", true)).toBe(123.45);
+    expect(formatUsageStatsValue(metrics, complete, "tokens", false, false)).toBe("60");
+    expect(formatUsageStatsValue(metrics, complete, "tokens", false, true)).toBe("120");
+    expect(formatUsageStatsValue(metrics, complete, "cost", false, false)).toBe("$78.45");
+    expect(formatUsageStatsValue(metrics, complete, "cost", false, true)).toBe("$123.45");
+    expect(formatUsageStatsValue(metrics, complete, "cost")).toBe("$123.45");
+
+    const partialCoverage = coverageWith({ total_tokens: true, provider_total_tokens: true });
+    partialCoverage.unpriced_events = 1;
+    const partialMetrics = { ...metrics };
+    partialMetrics.reference_cost_breakdown = {
+      ...metrics.reference_cost_breakdown,
+      non_cache: { known_cost_usd: 78.45, is_partial: true },
+    };
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "tokens", false, false)).toBe("60+");
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "tokens", false, true)).toBe("120+");
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "cost", false, false)).toBe("$78.45+");
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "cost", false, true)).toBe("$123.45+");
+
+    const unknown = {
+      ...metrics,
+      total_tokens: null,
+      provider_total_tokens: null,
+      reference_cost_usd: null,
+      reference_cost_breakdown: {
+        cache_read: { known_cost_usd: null, is_partial: true },
+        non_cache: { known_cost_usd: null, is_partial: true },
+      },
+    };
+    expect(usageStatsMetricValue(unknown, "tokens", false)).toBeNull();
+    expect(usageStatsMetricValue(unknown, "tokens", true)).toBeNull();
+    expect(usageStatsMetricValue(unknown, "cost", false)).toBeNull();
+    expect(usageStatsMetricValue(unknown, "cost", true)).toBeNull();
+    expect(formatUsageStatsValue(unknown, complete, "tokens", false, false)).toBe("미기록");
+    expect(formatUsageStatsValue(unknown, complete, "tokens", false, true)).toBe("미기록");
+    expect(formatUsageStatsValue(unknown, complete, "cost", false, false)).toBe("미확인");
+    expect(formatUsageStatsValue(unknown, complete, "cost", false, true)).toBe("미확인");
+
+    const confirmedZero = {
+      ...unknown,
+      total_tokens: 0,
+      provider_total_tokens: 0,
+      reference_cost_usd: 0,
+      reference_cost_breakdown: {
+        cache_read: { known_cost_usd: 0, is_partial: false },
+        non_cache: { known_cost_usd: 0, is_partial: false },
+      },
+    };
+    expect(usageStatsMetricValue(confirmedZero, "tokens", false)).toBe(0);
+    expect(usageStatsMetricValue(confirmedZero, "tokens", true)).toBe(0);
+    expect(usageStatsMetricValue(confirmedZero, "cost", false)).toBe(0);
+    expect(usageStatsMetricValue(confirmedZero, "cost", true)).toBe(0);
+    expect(formatUsageStatsValue(confirmedZero, complete, "tokens", false, false)).toBe("0");
+    expect(formatUsageStatsValue(confirmedZero, complete, "tokens", false, true)).toBe("0");
+    expect(formatUsageStatsValue(confirmedZero, complete, "cost", false, false)).toBe("$0.00");
+    expect(formatUsageStatsValue(confirmedZero, complete, "cost", false, true)).toBe("$0.00");
   });
 
   it("formats the corrected KST week, month, and full-period ranges", () => {
