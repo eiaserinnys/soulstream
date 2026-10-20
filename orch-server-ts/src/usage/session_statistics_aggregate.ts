@@ -123,7 +123,7 @@ function sumKnown(rows: readonly Row[], select: (row: Row) => number | null): nu
 }
 
 export function createSessionStatisticsMetricState(
-  read: SessionStatisticsReadResult,
+  read: Pick<SessionStatisticsReadResult, "costDecimals">,
   sourceRows: readonly Row[],
 ): SessionStatisticsMetricState {
   const seen = new Set<string>();

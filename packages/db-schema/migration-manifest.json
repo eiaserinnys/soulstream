@@ -520,6 +520,10 @@
     {
       "id": "128_session_statistics_input_boundary_event_index.sql",
       "sha256": "8367de20cd4beab8ed4dcff60daeff4bdb20a76d2c568c953d13d6c2d4779609"
+    },
+    {
+      "id": "129_session_statistics_daily_groups.sql",
+      "sha256": "b08398cdb3ad2a8ecd73c8a5e96fcbd5f8cd6e0faedd81ce782d16a0d29c84af"
     }
   ]
 }

@@ -20,6 +20,8 @@ export type DailyAggregateState = {
 };
 export type DailySessionState = {
   sessionId: string;
+  folderId?: string | null;
+  cardFolderId?: string | null;
   selectors: Record<string, DailyAggregateState>;
   options: UsageStatsOptions["models"];
   hasUsage: boolean;
@@ -30,6 +32,16 @@ export type SessionStatisticsDailyState = {
   version: number;
   asOf: string;
   sessions: DailySessionState[];
+  groups?: DailyGroupState[];
+};
+export type DailyOverviewAggregateState = Omit<DailyAggregateState, "material">;
+export type DailyGroupState = {
+  folderId: string | null;
+  cardFolderId: string | null;
+  selectors: Record<string, DailyOverviewAggregateState>;
+  options: DailySessionState["options"];
+  hasUsage: boolean;
+  unattributedAllFields: boolean;
 };
 
 export function dailySelectorKey(selector: DailySelector): string {
@@ -77,7 +89,8 @@ export function createSessionStatisticsDailyState(read: SessionStatisticsReadRes
         material: buildSessionStatisticsMaterial(slice, day, scope),
       };
     }
-    sessions.push({ sessionId: session.sessionId, selectors: prepared, options,
+    sessions.push({ sessionId: session.sessionId, folderId: session.folderId,
+      cardFolderId: session.cardFolderId, selectors: prepared, options,
       hasUsage: rows.some(row => row.row_kind === "usage"),
       unattributedAllFields,
     });
