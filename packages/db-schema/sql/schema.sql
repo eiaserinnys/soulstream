@@ -792,6 +792,9 @@ CREATE INDEX IF NOT EXISTS idx_session_statistics_facts_usage_key
 CREATE INDEX IF NOT EXISTS idx_session_statistics_facts_boundary
     ON session_statistics_facts (session_id, event_id)
     WHERE fact_kind = 'boundary';
+CREATE INDEX IF NOT EXISTS idx_session_statistics_facts_input_boundary_event
+    ON session_statistics_facts (session_id, event_id)
+    WHERE fact_kind = 'boundary' AND boundary_type = 'input';
 CREATE INDEX IF NOT EXISTS idx_session_statistics_facts_kind_recorded
     ON session_statistics_facts (recorded_at, session_id);
 
