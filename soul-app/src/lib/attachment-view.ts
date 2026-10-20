@@ -94,3 +94,9 @@ export function isHtmlAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'na
   const mimeType = view.mimeType?.split(';', 1)[0]?.trim().toLowerCase();
   return mimeType === 'text/html' || /\.html?$/i.test(view.name);
 }
+
+/** Markdown attachments use the planner's readable document preview. */
+export function isMarkdownAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'name'>): boolean {
+  const mimeType = view.mimeType?.split(';', 1)[0]?.trim().toLowerCase();
+  return mimeType === 'text/markdown' || /\.(?:md|markdown)$/i.test(view.name);
+}

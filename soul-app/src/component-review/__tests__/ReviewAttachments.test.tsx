@@ -30,7 +30,7 @@ test('component review registers the production image and file attachment states
 
   const files = within(screen.getByTestId('review-attachments-files'));
   for (const name of [
-    '메모.txt', 'README.md', '설정.json', '빈 파일.txt', '첨부 없음.txt',
+    '메모.txt', '톤 제안 원문.md', '설정.json', '빈 파일.txt', '첨부 없음.txt',
     '권한 없음.txt', '일시 오류.txt', 'archive.bin', 'vector.svg', 'photo.heic',
   ]) expect(files.getByText(name)).toBeTruthy();
   expect(files.getByText('찾을 수 없음')).toBeTruthy();

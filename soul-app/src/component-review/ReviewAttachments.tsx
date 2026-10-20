@@ -66,7 +66,7 @@ const thinkingEvent = (id: string, attachment: typeof truncatedAttachment | null
 
 const fileItems: AttachmentView[] = [
   textFile('review-attachment-text', '메모.txt', 348),
-  textFile('review-attachment-markdown', 'README.md', 2048),
+  textFile('review-attachment-markdown', '톤 제안 원문.md', 2048, 'text/markdown'),
   textFile('review-attachment-json', '설정.json', 1200),
   textFile('review-attachment-empty', '빈 파일.txt', 0),
   unavailableFile('review-attachment-missing', '첨부 없음.txt'),
@@ -153,11 +153,11 @@ function image(key: string, name: string, previewUrl: string): AttachmentView {
   };
 }
 
-function textFile(key: string, name: string, byteSize: number): AttachmentView {
+function textFile(key: string, name: string, byteSize: number, mimeType = 'text/plain'): AttachmentView {
   return {
     key,
     name,
-    mimeType: 'text/plain',
+    mimeType,
     byteSize,
     previewKind: 'text',
     readContext,

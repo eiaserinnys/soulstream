@@ -8,13 +8,14 @@ import {
   View,
 } from 'react-native';
 import { createApiClient } from '../api/client';
-import { isHtmlAttachmentView, type AttachmentView } from '../lib/attachment-view';
+import { isHtmlAttachmentView, isMarkdownAttachmentView, type AttachmentView } from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
 import { buildCustomViewBindings, renderCustomViewHtml } from '../lib/custom-view-renderer';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
 import { AttachmentMetadataPreview } from './AttachmentMetadataPreview';
 import { ImageViewerModal } from './ImageViewerModal';
+import { PlannerMarkdownText } from './planner/PlannerMarkdownText';
 import { attachmentImageSource } from '../lib/attachment-image-source';
 import { WebView } from 'react-native-webview';
 
@@ -27,6 +28,7 @@ export type AttachmentTextContent = { text: string; truncated: boolean };
 type PreviewState =
   | { kind: 'loading' }
   | { kind: 'text'; text: string; truncated: boolean }
+  | { kind: 'markdown'; text: string; truncated: boolean }
   | { kind: 'html'; text: string; truncated: boolean }
   | { kind: 'info' }
   | { kind: 'unavailable'; message: string }
@@ -61,7 +63,8 @@ export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0,
   const views = items.map(entry => resolved[entry.key] ?? entry);
   // A bundle that holds a readable document opens whole in the document layout so
   // paging never moves the header, close, save, or paging controls.
-  const layout = views.some(isHtmlAttachmentView) ? 'document' : 'media';
+  const layout = views.some(view => isHtmlAttachmentView(view)
+    || (view.previewKind === 'text' && isMarkdownAttachmentView(view))) ? 'document' : 'media';
   return <View testID="attachment-preview-modal">
     <ImageViewerModal variant="chatRefined" layout={layout} items={views} initialIndex={initialIndex} onClose={onClose}
       sources={views.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
@@ -76,11 +79,13 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   const t = useTokens();
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const html = isHtmlAttachmentView(item);
+  const markdown = !html && item.previewKind === 'text' && isMarkdownAttachmentView(item);
   const [state, setState] = useState<PreviewState>(() => initialPreviewState(item));
   const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
     if (textContent) {
-      setState(html ? { kind: 'html', ...textContent } : { kind: 'text', ...textContent });
+      setState(html ? { kind: 'html', ...textContent }
+        : markdown ? { kind: 'markdown', ...textContent } : { kind: 'text', ...textContent });
       return;
     }
     if ((!html && item.previewKind !== 'text') || item.source.kind !== 'ready' || item.byteSize === 0) {
@@ -97,7 +102,8 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         .readAttachmentText(source.attachmentId, item.readContext, controller.signal);
     void read
       .then(({ text, truncated }) => {
-        if (!controller.signal.aborted) setState(html ? { kind: 'html', text, truncated } : { kind: 'text', text, truncated });
+        if (!controller.signal.aborted) setState(html ? { kind: 'html', text, truncated }
+          : markdown ? { kind: 'markdown', text, truncated } : { kind: 'text', text, truncated });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setState(readFailureState(error));
@@ -111,7 +117,11 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   );
   // The document page uses the whole frame; text and states keep the padded, centered box.
   const fullBleed = state.kind === 'html' && state.text.length > 0;
-  return <View style={{ flex: 1, width: '100%', ...(fullBleed ? null : { padding: t.spacing.md, alignItems: 'center', justifyContent: 'center' }) }}>
+  const markdownDocument = state.kind === 'markdown';
+  return <View style={{ flex: 1, width: '100%', ...(fullBleed ? null : {
+    padding: t.spacing.md,
+    ...(!markdownDocument ? { alignItems: 'center', justifyContent: 'center' } : null),
+  }) }}>
     {renderPreviewState(state, t, attachment)}
   </View>;
 
@@ -142,6 +152,13 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted, padding: tokens.spacing.sm }}>앞부분만 표시</Text> : null}
       </>;
     }
+    if (current.kind === 'markdown') {
+      return <ScrollView testID="attachment-preview-markdown" style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ gap: tokens.spacing.sm }}>
+        <PlannerMarkdownText markdown={current.text} readContext={item.readContext} />
+        {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted }}>앞부분만 표시</Text> : null}
+      </ScrollView>;
+    }
     return <ScrollView testID="attachment-preview-text" style={{ flex: 1, width: '100%' }} contentContainerStyle={{ gap: tokens.spacing.sm }}>
       <Text selectable style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>{current.text}</Text>
       {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted }}>앞부분만 표시</Text> : null}
@@ -156,8 +173,10 @@ function initialPreviewState(item: AttachmentView): PreviewState {
     return { kind: 'unavailable', message };
   }
   const html = isHtmlAttachmentView(item);
+  const markdown = !html && item.previewKind === 'text' && isMarkdownAttachmentView(item);
   if (html || item.previewKind === 'text') {
-    if (item.byteSize === 0) return html ? { kind: 'html', text: '', truncated: false } : { kind: 'text', text: '', truncated: false };
+    if (item.byteSize === 0) return html ? { kind: 'html', text: '', truncated: false }
+      : markdown ? { kind: 'markdown', text: '', truncated: false } : { kind: 'text', text: '', truncated: false };
     return { kind: 'loading' };
   }
   return { kind: 'info' };

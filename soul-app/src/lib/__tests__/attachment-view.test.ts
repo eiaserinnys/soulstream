@@ -1,5 +1,5 @@
 import type { CardAttachmentAssetEvidence } from '../../api/cardTypes';
-import { attachmentContentUrl, isHtmlAttachmentView, toCardAttachmentView } from '../attachment-view';
+import { attachmentContentUrl, isHtmlAttachmentView, isMarkdownAttachmentView, toCardAttachmentView } from '../attachment-view';
 
 const descriptor = {
   attachment_id: 'asset/1',
@@ -81,4 +81,13 @@ test('HTML 문서는 MIME과 확장자 양쪽으로 판별한다', () => {
   expect(isHtmlAttachmentView({ mimeType: 'text/plain', name: '메모.txt' })).toBe(false);
   expect(isHtmlAttachmentView({ mimeType: 'application/octet-stream', name: '자료.bin' })).toBe(false);
   expect(isHtmlAttachmentView({ mimeType: null, name: 'html' })).toBe(false);
+});
+
+test('Markdown 문서는 정규화한 MIME이나 md·markdown 확장자로 판별한다', () => {
+  expect(isMarkdownAttachmentView({ mimeType: 'text/markdown', name: 'memo.txt' })).toBe(true);
+  expect(isMarkdownAttachmentView({ mimeType: ' TEXT/MARKDOWN ; charset=utf-8 ', name: 'memo.txt' })).toBe(true);
+  expect(isMarkdownAttachmentView({ mimeType: 'application/octet-stream', name: 'proposal.MD' })).toBe(true);
+  expect(isMarkdownAttachmentView({ mimeType: null, name: 'proposal.markdown' })).toBe(true);
+  expect(isMarkdownAttachmentView({ mimeType: 'text/plain', name: 'memo.txt' })).toBe(false);
+  expect(isMarkdownAttachmentView({ mimeType: 'text/plain', name: 'markdown' })).toBe(false);
 });
