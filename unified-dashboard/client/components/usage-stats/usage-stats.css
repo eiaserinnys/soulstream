@@ -101,6 +101,10 @@
   font: var(--v3-type-meta) var(--v3-font-family);
 }
 
+.config-dialog .usage-stats-summary-metric > span {
+  word-break: keep-all;
+}
+
 .config-dialog .usage-stats-summary-metric > strong {
   overflow-wrap: anywhere;
   font: var(--v3-type-section) var(--v3-font-family);
@@ -413,6 +417,15 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+}
+
+/* The dialog keeps a menu column, so the chart heading follows the tab's own width. */
+.config-dialog .usage-stats-tab {
+  container-name: usage-stats;
+  container-type: inline-size;
+}
+
+@container usage-stats (max-width: 36rem) {
   .config-dialog .usage-stats-chart-heading {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -420,5 +433,4 @@
   .config-dialog .usage-stats-chart-heading-controls {
     justify-self: start;
   }
-
 }
