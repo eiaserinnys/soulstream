@@ -71,7 +71,17 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   await expect(dialog.getByRole("heading", { name: "세션 통계" })).toBeVisible();
   const stats = dialog.locator(".usage-stats-tab");
   await expect(stats.locator("[data-bucket-index]")).toHaveCount(7);
-  await expect(stats.locator(".usage-stats-share-list")).toContainText("모델 미상");
+  await expect(stats.locator(".usage-stats-share-list").filter({ hasText: "모델 미상" })).toContainText("모델 미상");
+  await expectCacheReadToggle(stats, "캐시 제외");
+  await expectCacheSplitSummary(stats);
+  await expect(stats.locator(".usage-stats-axis-label")).toHaveText("100");
+  const initialModelRow = stats.locator(".usage-stats-share-list").filter({ hasText: "모델 미상" }).locator(".usage-stats-share-row");
+  await expect(initialModelRow.locator(".usage-stats-share-value")).toHaveText("100");
+  await stats.getByRole("group", { name: "캐시 읽기" }).getByRole("button", { name: "캐시 포함" }).click();
+  await expectCacheReadToggle(stats, "캐시 포함");
+  await expect(stats.locator(".usage-stats-axis-label")).toHaveText("140");
+  await expect(initialModelRow.locator(".usage-stats-share-value")).toHaveText("140");
+  await expectCacheSplitSummary(stats);
   expect(requests).toHaveLength(1);
   expect(requests[0]?.path).toBe("/api/session-statistics");
   expect(requests[0]?.query).toContainEqual(["anchor", "2026-10-20"]);
@@ -85,6 +95,10 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
     await filteredOverviewHeld;
     expect(requests).toHaveLength(2);
     await expect(stats.getByRole("combobox", { name: "모델" })).toContainText("원문 모델");
+    const loadingCostRows = stats.locator(".usage-stats-summary > .usage-stats-share-list > .usage-stats-share-row");
+    await expect(loadingCostRows).toHaveCount(2);
+    await expect(loadingCostRows.locator(".usage-stats-share-value")).toHaveText(["", ""]);
+    await expect(stats.locator(".usage-stats-summary-metric").first()).toContainText("캐시 읽기 제외");
     await stats.getByRole("combobox", { name: "모델" }).click();
     await expect(page.getByRole("option", { name: "공급자 미확인 · 원문 모델", exact: true })).toBeVisible();
     expect(requests).toHaveLength(2);
@@ -92,18 +106,23 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   } finally {
     releaseFilteredOverview?.();
   }
-  await expect(stats.locator(".usage-stats-share-list")).toContainText("vendor/team:model:v2");
+  await expect(stats.locator(".usage-stats-share-list").filter({ hasText: "vendor/team:model:v2" })).toContainText("vendor/team:model:v2");
+  await expectCacheReadToggle(stats, "캐시 포함");
+  await expectCacheSplitSummary(stats);
   expect(requests).toHaveLength(2);
   expect(requests[1]?.query).toContainEqual(["provider", "unknown"]);
   expect(requests[1]?.query).toContainEqual(["model", "vendor/team:model:v2"]);
 
   await chooseStatsOption(dialog, page, "프로젝트", "소울스트림");
-  await expect(stats.locator(".usage-stats-share-list")).toContainText("vendor/team:model:v2");
+  await expect(stats.locator(".usage-stats-share-list").filter({ hasText: "vendor/team:model:v2" })).toContainText("vendor/team:model:v2");
+  await expectCacheReadToggle(stats, "캐시 포함");
+  await expectCacheSplitSummary(stats);
   expect(requests).toHaveLength(3);
   expect(requests[2]?.query).toContainEqual(["project_ids", "folder-amber"]);
 
   const filterRequestCount = requests.length;
   await chooseStatsOption(dialog, page, "그래프 보기", "프로젝트별");
+  await expectCacheReadToggle(stats, "캐시 포함");
   const projectChart = stats.locator('.usage-stats-chart[aria-label="프로젝트별 사용량"]');
   await expect(projectChart).toHaveCount(1);
   const projectSegment = projectChart.locator(".usage-stats-stack-segment").first();
@@ -115,6 +134,8 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   expect(await namedProjectRow.evaluate(element => (element as HTMLElement).style.getPropertyValue("--usage-stats-row-color")))
     .toBe("var(--usage-stats-project-1)");
   await dialog.getByRole("group", { name: "표시 값" }).getByRole("button", { name: "정가" }).click();
+  await expectCacheReadToggle(stats, "캐시 포함");
+  await expect(stats.locator(".usage-stats-axis-label")).toHaveText("$4.80");
   expect(requests).toHaveLength(filterRequestCount);
   await expect(stats.getByRole("combobox", { name: "모델" })).toContainText("원문 모델");
   await expect(stats.getByRole("combobox", { name: "프로젝트" })).toContainText("소울스트림");
@@ -122,6 +143,7 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   await expect(dayButton).toBeEnabled();
   await dayButton.click();
   await expect(stats.locator(".usage-stats-input-material")).toContainText("툴 호출 4회");
+  await expectCacheReadToggle(stats, "캐시 포함");
   expect(requests).toHaveLength(filterRequestCount + 1);
   expect(requests.at(-1)?.path).toBe("/api/session-statistics/days/2026-10-20");
   expect(requests.at(-1)?.query).toContainEqual(["provider", "unknown"]);
@@ -144,16 +166,19 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   await dialog.getByRole("group", { name: "통계 기간" }).getByRole("button", { name: "월간" }).click();
   await expect(stats.getByText("통계를 불러오지 못했습니다.")).toBeVisible();
   await expect(stats.getByText(rawErrorMarker)).toHaveCount(0);
+  await expect(stats.locator(".usage-stats-summary")).toHaveCount(0);
   await captureStats("1440-error");
   responseMode = "ok";
   await stats.getByRole("button", { name: "다시 불러오기" }).click();
   await expect(stats.locator("[data-bucket-index]")).toHaveCount(31);
+  await expectCacheReadToggle(stats, "캐시 포함");
 
   responseMode = "forbidden";
   await dialog.getByRole("combobox", { name: "모델" }).click();
   await page.getByRole("option", { name: "공급자 미확인", exact: true }).click();
   await expect(stats.getByText("이 통계를 볼 권한이 없습니다.")).toBeVisible();
   await expect(stats.getByText(rawErrorMarker)).toHaveCount(0);
+  await expect(stats.locator(".usage-stats-summary")).toHaveCount(0);
   await expect(stats.locator(".usage-stats-share-list")).toHaveCount(0);
   await captureStats("1440-forbidden");
 
@@ -167,7 +192,8 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   await narrowDialog.getByTestId("config-category-nav").getByRole("button", { name: "세션 통계" }).click();
   const narrowStats = narrowDialog.locator(".usage-stats-tab");
   await expect(narrowStats.locator("[data-bucket-index]")).toHaveCount(7);
-  await expect(narrowStats.locator(".usage-stats-share-list")).toContainText("모델 미상");
+  await expect(narrowStats.locator(".usage-stats-share-list").filter({ hasText: "모델 미상" })).toContainText("모델 미상");
+  await expectCacheSplitSummary(narrowStats);
   await expectNoStatsHorizontalOverflow(narrowDialog, narrowStats);
   await captureStats("390-overview");
   await narrowStats.locator('[data-bucket-index="1"]').click();
@@ -208,10 +234,15 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
   }
 });
 
-function statsMetrics(totalTokens: number, cost = 0.012) {
+function statsMetrics(totalTokens: number, cost = totalTokens / 25) {
   return {
-    input_total: null, cache_read: null, cache_write: null, output_total: null,
-    reasoning_output: null, total_tokens: totalTokens, reference_cost_usd: cost,
+    input_total: totalTokens + 40, cache_read: 40, cache_write: 0, output_total: 0,
+    reasoning_output: null, total_tokens: totalTokens, provider_total_tokens: totalTokens + 40, ordinary_input: totalTokens,
+    reference_cost_usd: cost,
+    reference_cost_breakdown: {
+      cache_read: { known_cost_usd: cost / 2, is_partial: false },
+      non_cache: { known_cost_usd: cost / 2, is_partial: false },
+    },
   };
 }
 
@@ -222,11 +253,44 @@ function statsCoverage() {
     priced_events: 1, unpriced_events: 0, priced_total_tokens: 100,
     unpriced_total_tokens: null, unknown_total_token_events: 0,
     unattributed_missing_usage: false,
+    token_partials: {
+      total_tokens: false, provider_total_tokens: false, ordinary_input: false, cache_read: false,
+    },
   };
 }
 
 function statsAggregate(totalTokens: number) {
   return { metrics: statsMetrics(totalTokens), coverage: statsCoverage(), is_partial: false };
+}
+
+function summaryAggregate() {
+  return {
+    metrics: {
+      input_total: 1_263_000_000,
+      cache_read: 1_230_000_000,
+      cache_write: 2_000_000,
+      output_total: 9_000_000,
+      reasoning_output: null,
+      total_tokens: 42_000_000,
+      provider_total_tokens: 1_272_000_000,
+      ordinary_input: 31_000_000,
+      reference_cost_usd: 1_234.56,
+      reference_cost_breakdown: {
+        cache_read: { known_cost_usd: 1_234.56, is_partial: true },
+        non_cache: { known_cost_usd: 0, is_partial: false },
+      },
+    },
+    coverage: {
+      ...statsCoverage(),
+      usage_partial_events: 1,
+      unpriced_events: 1,
+      priced_total_tokens: 636_000_000,
+      token_partials: {
+        total_tokens: true, provider_total_tokens: false, ordinary_input: true, cache_read: true,
+      },
+    },
+    is_partial: true,
+  };
 }
 
 function overviewFixture(query: URLSearchParams) {
@@ -246,7 +310,7 @@ function overviewFixture(query: URLSearchParams) {
     range: { period, since, until, effective_until: "2026-10-21", timezone: "Asia/Seoul", bucket: "day" },
     policies: { date_attribution: "recorded_terminal", project_attribution: "current_folder", price_version: "api-list-usd-2026-10-19-v1" },
     projection_status: { state: "ready", covered_since: "2026-10-01" },
-    totals: statsAggregate(120),
+    totals: summaryAggregate(),
     by_model: [modelRow],
     by_project: [
       { project_id: "folder-amber", label: "소울스트림", ...statsAggregate(100) },
@@ -298,6 +362,28 @@ function dayFixture() {
 async function chooseStatsOption(dialog: Locator, page: Page, field: string, option: string) {
   await dialog.getByRole("combobox", { name: field }).click();
   await page.locator('[data-slot="select-positioner"]:not([hidden]) [data-slot="select-item"]').filter({ hasText: option }).last().click();
+}
+
+async function expectCacheSplitSummary(stats: Locator) {
+  const summary = stats.locator(".usage-stats-summary");
+  await expect(summary.locator(".usage-stats-summary-metric").first()).toContainText("4,200만+");
+  await expect(summary.locator(".usage-stats-summary-metric").first()).toContainText("캐시 읽기 12.3억+ 제외");
+  await expect(summary.locator(".usage-stats-summary-metric").nth(1)).toContainText("$1,234.56+");
+  const costRows = summary.locator(".usage-stats-share-list > .usage-stats-share-row");
+  await expect(costRows).toHaveCount(2);
+  await expect(costRows.nth(0).locator(".usage-stats-share-name")).toHaveText("비캐시");
+  await expect(costRows.nth(0).locator(".usage-stats-share-value")).toHaveText("$0.00");
+  await expect(costRows.nth(1).locator(".usage-stats-share-name")).toHaveText("캐시 읽기");
+  await expect(costRows.nth(1).locator(".usage-stats-share-value")).toHaveText("$1,234.56+");
+  await expect(costRows.locator(".usage-stats-share-track")).toHaveCount(0);
+  await expect(summary.locator(".usage-stats-summary-meta")).toContainText("기록 토큰 50% 환산");
+}
+
+async function expectCacheReadToggle(stats: Locator, selected: "캐시 제외" | "캐시 포함") {
+  const group = stats.getByRole("group", { name: "캐시 읽기" });
+  await expect(group.getByRole("button", { name: selected })).toHaveAttribute("aria-pressed", "true");
+  const other = selected === "캐시 제외" ? "캐시 포함" : "캐시 제외";
+  await expect(group.getByRole("button", { name: other })).toHaveAttribute("aria-pressed", "false");
 }
 
 async function expectNoStatsHorizontalOverflow(dialog: Locator, stats: Locator) {
