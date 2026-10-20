@@ -780,6 +780,12 @@ CREATE TABLE IF NOT EXISTS session_statistics_facts (
         REFERENCES events(session_id, id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS idx_session_statistics_facts_usage_input
+    ON session_statistics_facts (session_id, input_id)
+    WHERE fact_kind = 'usage' AND input_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_session_statistics_facts_boundary_input
+    ON session_statistics_facts (session_id, input_id)
+    WHERE fact_kind = 'boundary' AND input_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_session_statistics_facts_usage_key
     ON session_statistics_facts (session_id, accounting_key, event_id)
     WHERE fact_kind = 'usage';

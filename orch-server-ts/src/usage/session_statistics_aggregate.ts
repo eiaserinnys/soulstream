@@ -2,7 +2,10 @@ import type {
   UsageStatsMetrics,
   UsageStatsProvider,
 } from "@soulstream/wire-schema/session-statistics";
-import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
+import type {
+  SessionStatisticsReadResult,
+  SessionStatisticsScopeSession,
+} from "./session_statistics_types.js";
 import { sessionStatisticsDate, sessionStatisticsInPeriod } from "./session_statistics_scope.js";
 import {
   addDecimal,
@@ -46,8 +49,24 @@ export function sessionStatisticsProjectMatches(projectId: string | null, ids: r
   return ids.some((id) => id === "__unclassified__" ? projectId === null : id === projectId);
 }
 
-function sessionProjectId(read: SessionStatisticsReadResult, sessionId: string): string | null {
-  return read.sessions.find((session) => session.sessionId === sessionId)?.projectId ?? null;
+const SESSION_STATISTICS_PROJECT_INDEX = new WeakMap<
+  readonly SessionStatisticsScopeSession[],
+  Map<string, string | null>
+>();
+
+export function sessionStatisticsProjectIdForSession(
+  read: SessionStatisticsReadResult,
+  sessionId: string,
+): string | null {
+  let index = SESSION_STATISTICS_PROJECT_INDEX.get(read.sessions);
+  if (index === undefined) {
+    index = new Map();
+    for (const session of read.sessions) {
+      if (!index.has(session.sessionId)) index.set(session.sessionId, session.projectId);
+    }
+    SESSION_STATISTICS_PROJECT_INDEX.set(read.sessions, index);
+  }
+  return index.get(sessionId) ?? null;
 }
 
 export function sessionStatisticsRowProjectMatches(
@@ -55,7 +74,7 @@ export function sessionStatisticsRowProjectMatches(
   row: Row,
   scope: SessionStatisticsScope,
 ): boolean {
-  const projectId = sessionProjectId(read, row.session_id);
+  const projectId = sessionStatisticsProjectIdForSession(read, row.session_id);
   return (scope.respectQueryFilters === false || read.query.project_ids === undefined
     || sessionStatisticsProjectMatches(projectId, read.query.project_ids))
     && (scope.projectIds === undefined || scope.projectIds.includes(projectId));

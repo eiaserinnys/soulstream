@@ -658,6 +658,42 @@ describe("session statistics coverage aggregation", () => {
     expect(projectSeries[1]?.metrics.total_tokens).toBe(null);
   });
 
+  it("builds an overview for thirty thousand sessions within two seconds", () => {
+    const rowCount = 5_000;
+    const sessionCount = 30_000;
+    const rows = Array.from({ length: rowCount }, (_, index) => usageRow({
+      session_id: `bulk-${index}`,
+      selection_event_id: 100 + index,
+      input_id: `bulk-input-${index}`,
+      accounting_key: `bulk-command-${index}`,
+      owner_event_id: 100 + index,
+      fact: fact({
+        session_id: `bulk-${index}`,
+        event_id: 100 + index,
+        input_id: `bulk-input-${index}`,
+        accounting_key: `bulk-command-${index}`,
+        known_cost_usd: null,
+        priced_tokens: 0,
+        unpriced_tokens: 120,
+        pricing_complete: false,
+      }),
+    }));
+    const sessions = Array.from({ length: sessionCount }, (_, index) => ({
+      sessionId: `bulk-${index}`,
+      folderId: null,
+      cardFolderId: null,
+      projectId: "bulk-project",
+      projectLabel: "Bulk",
+    }));
+    const expected = buildOverview(read(rows, {}, new Map(), sessions.slice(0, rowCount)));
+    const started = Date.now();
+    const result = buildOverview(read(rows, {}, new Map(), sessions));
+    const elapsedMs = Date.now() - started;
+
+    expect(result).toEqual(expected);
+    expect(elapsedMs).toBeLessThan(2000);
+  });
+
   it("calls repository provider and read exactly once per service method", async () => {
     const empty = read([], {}, new Map(), []);
     const repository = { read: vi.fn(async () => empty) };

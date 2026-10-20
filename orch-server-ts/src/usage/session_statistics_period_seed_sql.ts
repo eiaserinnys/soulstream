@@ -1,5 +1,4 @@
 import type {
-  EventIngressQuerySql,
   EventIngressSqlFragment,
 } from "../node/event_ingress_repository.js";
 
@@ -10,26 +9,33 @@ export type SessionStatisticsCanonicalReadOptions = {
     | { kind: "day"; recordedAtFrom: string; recordedAtBefore: string };
 };
 
-export function createSessionStatisticsPeriodSeedCtes(
-  sql: EventIngressQuerySql,
+export function createSessionStatisticsDayMaterialSeed(
   fragment: EventIngressSqlFragment,
-  authorizedSessionIds: readonly string[],
+  options?: SessionStatisticsCanonicalReadOptions,
+): unknown {
+  const dayPurpose = options?.readPurpose.kind === "day" ? options.readPurpose : null;
+  return fragment`
+    SELECT fact.*
+    FROM session_statistics_facts AS fact
+    JOIN authorized_sessions AS allowed USING (session_id)
+    WHERE ${dayPurpose !== null}
+      AND fact.fact_kind IN ('input_material', 'tool_call')
+      AND fact.recorded_at >= ${dayPurpose?.recordedAtFrom ?? null}::timestamptz
+      AND fact.recorded_at < LEAST(${dayPurpose?.recordedAtBefore ?? null}::timestamptz, ${options?.asOf ?? null}::timestamptz)
+  `;
+}
+
+export function createSessionStatisticsPeriodSeedCtes(
+  fragment: EventIngressSqlFragment,
   recordedAtFrom: string | null,
   recordedAtBefore: string | null,
   options: SessionStatisticsCanonicalReadOptions,
-): unknown {
+): { seedCtes: unknown; scopedFacts: unknown } {
   const asOf = options.asOf;
   const dayPurpose = options.readPurpose.kind === "day" ? options.readPurpose : null;
-  const includesDayMaterials = dayPurpose !== null;
-  const dayFrom = dayPurpose?.recordedAtFrom ?? null;
-  const dayBefore = dayPurpose?.recordedAtBefore ?? null;
   const includesMaterialBoundaries = dayPurpose !== null;
 
-  return fragment`
-    authorized_sessions AS (
-      SELECT value AS session_id
-      FROM jsonb_array_elements_text(${sql.json([...new Set(authorizedSessionIds)])}::jsonb)
-    ),
+  return { seedCtes: fragment`
     period_seed_facts AS (
       SELECT fact.*
       FROM session_statistics_facts AS fact
@@ -41,15 +47,6 @@ export function createSessionStatisticsPeriodSeedCtes(
         AND (${recordedAtBefore}::timestamptz IS NULL
           OR fact.recorded_at < ${recordedAtBefore}::timestamptz)
         AND (${includesMaterialBoundaries} OR fact.source_event_type <> 'input_material_manifest')
-    ),
-    day_material_seed_facts AS (
-      SELECT fact.*
-      FROM session_statistics_facts AS fact
-      JOIN authorized_sessions AS allowed USING (session_id)
-      WHERE ${includesDayMaterials}
-        AND fact.fact_kind IN ('input_material', 'tool_call')
-        AND fact.recorded_at >= ${dayFrom}::timestamptz
-        AND fact.recorded_at < LEAST(${dayBefore}::timestamptz, ${asOf}::timestamptz)
     ),
     seed_command_keys AS (
       SELECT DISTINCT session_id, accounting_key
@@ -259,12 +256,15 @@ export function createSessionStatisticsPeriodSeedCtes(
         ORDER BY later_input.event_id ASC
         LIMIT 1
       ) AS next_input ON true
-      JOIN session_statistics_facts AS boundary
-        ON boundary.session_id = input_start.session_id
-       AND boundary.fact_kind = 'boundary'
-       AND boundary.event_id >= input_start.event_id
-       AND (next_input.event_id IS NULL OR boundary.event_id < next_input.event_id)
-       AND boundary.recorded_at < ${asOf}::timestamptz
+      JOIN LATERAL (
+        SELECT interval_boundary.*
+        FROM session_statistics_facts AS interval_boundary
+        WHERE interval_boundary.session_id = input_start.session_id
+          AND interval_boundary.fact_kind = 'boundary'
+          AND interval_boundary.event_id >= input_start.event_id
+          AND (next_input.event_id IS NULL OR interval_boundary.event_id < next_input.event_id)
+          AND interval_boundary.recorded_at < ${asOf}::timestamptz
+      ) AS boundary ON true
     ),
     boundary_facts AS (
       SELECT * FROM period_seed_facts WHERE fact_kind = 'boundary'
@@ -276,8 +276,8 @@ export function createSessionStatisticsPeriodSeedCtes(
       SELECT * FROM exact_input_boundary_facts
       UNION
       SELECT * FROM interval_boundary_facts
-    ),
-    scoped_facts AS (
+    )
+  `, scopedFacts: fragment`
       SELECT * FROM period_seed_facts
       UNION
       SELECT * FROM day_material_seed_facts
@@ -289,6 +289,5 @@ export function createSessionStatisticsPeriodSeedCtes(
       SELECT * FROM legacy_interval_facts
       UNION
       SELECT * FROM explicit_input_usage_facts
-    )
-  `;
+  ` };
 }
