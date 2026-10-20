@@ -136,6 +136,7 @@ describe("AttachmentViewer", () => {
 
     const dialog = document.body.querySelector("[role=dialog]");
     expect(dialog?.querySelector("h1")?.textContent).toBe("톤 제안");
+    expect(dialog?.querySelector(".chat-attachment-markdown h1")?.textContent).toBe("톤 제안");
     expect(dialog?.querySelector(".chat-image-viewer-panel h2")?.textContent).toBe("요약");
     expect(dialog?.querySelector("ul li")?.textContent).toBe("첫 번째");
     expect(dialog?.querySelector("table td")?.textContent).toBe("상태");

@@ -134,6 +134,11 @@ export function ChatAttachmentReviewSamples() {
   const items = useMemo(() => {
     const emptyText = new File([], "empty.txt", { type: "text/plain" });
     const largeText = new File([new Uint8Array(1_048_586).fill(65)], "large.txt", { type: "text/plain" });
+    const longMarkdownSections = Array.from({ length: 14 }, (_, index) => [
+      `## 절 ${index + 1}`,
+      "",
+      `이 절의 본문은 긴 문서에서 표와 코드 블록의 높이가 유지되는지 확인합니다. ${"긴 설명이 패널 아래까지 이어집니다. ".repeat(12)}`,
+    ].join("\n"));
     const markdown = new File([[
       "# 톤 제안 원문",
       "",
@@ -142,11 +147,27 @@ export function ChatAttachmentReviewSamples() {
       "- 명확한 제목",
       "- 짧은 설명",
       "",
-      "| 항목 | 상태 |",
-      "| --- | --- |",
-      "| 미리보기 | 준비 |",
+      "| 항목 | 상태 | 비고 |",
+      "| --- | --- | --- |",
+      "| 미리보기 | 준비 | 긴 문서 표본 |",
+      "| Markdown | 문서 레이아웃 | 코드 블록 포함 |",
+      "| 좁은 화면 | 확인 대상 | 줄바꿈 포함 |",
       "",
-      "    const tone = 'Argon';",
+      "## 세부 점검",
+      "",
+      "| 화면 | 폭 | 확인 내용 |",
+      "| --- | --- | --- |",
+      "| 넓은 화면 | 1440 | 표와 코드 블록 높이 |",
+      "| 좁은 화면 | 390 | 내용과 스크롤 |",
+      "| 다크 테마 | 390 | 본문 대비 |",
+      "",
+      "```ts",
+      "const tone = 'Argon';",
+      "export function pick(level: number) { return level > 2 ? 'bold' : 'calm'; }",
+      "```",
+      "",
+      ...longMarkdownSections,
+      "",
       "",
       "[참고 링크](https://example.com)",
     ].join("\n")], "톤 제안 원문.md", { type: "text/markdown" });

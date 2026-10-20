@@ -1507,6 +1507,12 @@ pre[data-markdown-code-layout="document"] {
   min-height: 0;
   border: 0;
   border-radius: var(--chat-attachment-radius);
+  color-scheme: light;
+  background-color: Canvas;
+}
+.chat-attachment-markdown {
+  flex: 0 0 auto;
+  min-width: 0;
 }
 .chat-image-viewer-popup > [data-slot="dialog-panel-scroll"] {
   display: flex;

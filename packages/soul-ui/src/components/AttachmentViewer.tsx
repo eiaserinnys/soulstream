@@ -240,7 +240,9 @@ export function AttachmentViewer({
             ) : (
               <>
                 {textFormat === "markdown" ? (
-                  <MarkdownContent content={text.result.text} codeBlockLayout="document" />
+                  <div className="chat-attachment-markdown">
+                    <MarkdownContent content={text.result.text} codeBlockLayout="document" />
+                  </div>
                 ) : textFormat === "html" ? (
                   <CustomViewIframe
                     html={text.result.text}
