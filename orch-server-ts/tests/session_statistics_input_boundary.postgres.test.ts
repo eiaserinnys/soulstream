@@ -59,9 +59,38 @@ describePostgres("session statistics input boundary mapping", () => {
         { relname: "scoped_facts", rows: 2, indexes: 3 },
       ]);
       expect(await read()).toEqual(first);
+      const readDay = () => createCanonicalSessionStatisticsFacts(
+        transaction as unknown as EventIngressQuerySql,
+        [sessionId],
+        undefined,
+        { asOf: AS_OF, readPurpose: {
+          kind: "day", recordedAtFrom: RECORDED_AT, recordedAtBefore: AS_OF,
+        } },
+      );
+      const day = await readDay();
+      expect(day).toEqual(first);
+      const dayRelations = await transaction`
+        SELECT relname, reltuples::int AS rows,
+          (SELECT count(*)::int FROM pg_index WHERE indrelid = relation.oid) AS indexes
+        FROM pg_class AS relation
+        WHERE relnamespace = pg_my_temp_schema()
+          AND relname IN ('labeled_usage_selections', 'material_scope_facts')
+        ORDER BY relname
+      `;
+      expect(dayRelations).toEqual([
+        { relname: "labeled_usage_selections", rows: 1, indexes: 0 },
+        { relname: "material_scope_facts", rows: 2, indexes: 3 },
+      ]);
+      expect(await readDay()).toEqual(day);
     });
-    const [temporary] = await sql`SELECT to_regclass('pg_temp.scoped_facts') AS relation`;
+    const [temporary] = await sql`
+      SELECT to_regclass('pg_temp.scoped_facts') AS relation,
+        to_regclass('pg_temp.labeled_usage_selections') AS selections,
+        to_regclass('pg_temp.material_scope_facts') AS material
+    `;
     expect(temporary?.relation).toBeNull();
+    expect(temporary?.selections).toBeNull();
+    expect(temporary?.material).toBeNull();
   });
 
   it("keeps exact input boundaries ahead of their position", async () => {
