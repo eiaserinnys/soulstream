@@ -239,27 +239,33 @@ function series(
   if (!read.rows.some((row) => row.row_kind === "usage")) return [];
   const buckets = bucketStarts(read);
   const result: UsageStatsSeriesPoint[] = [];
-  const axes: Array<{ scope: SessionStatisticsScope; point: Omit<UsageStatsSeriesPoint, "bucket_start" | "metrics"> }> = [];
+  const axes: Array<{
+    scope: SessionStatisticsScope;
+    point: Omit<UsageStatsSeriesPoint, "bucket_start" | "metrics">;
+    rows: Read["rows"];
+  }> = [];
   for (const target of models) {
     const scope = target.scope;
-    if (!hasContent(aggregate(read, index, scope), selectOwnedSessionStatisticsRows(read, scope).length)) continue;
+    const rows = selectOwnedSessionStatisticsRows(read, scope);
+    if (!hasContent(aggregate(read, index, scope), rows.length)) continue;
     axes.push({
       scope,
       point: target.attribution === "provider"
         ? { provider: target.provider, label: target.label }
         : { provider: target.provider, model: target.model, label: target.label },
+      rows,
     });
   }
   for (const target of projects) {
     const scope = { projectIds: target.projectIds };
-    if (!hasContent(aggregate(read, index, scope), selectOwnedSessionStatisticsRows(read, scope).length)) continue;
-    axes.push({ scope, point: { project_id: target.projectId, label: target.label } });
+    const rows = selectOwnedSessionStatisticsRows(read, scope);
+    if (!hasContent(aggregate(read, index, scope), rows.length)) continue;
+    axes.push({ scope, point: { project_id: target.projectId, label: target.label }, rows });
   }
   for (const bucket of buckets) {
     const date = read.range.bucket === "month" ? bucket.slice(0, 7) : bucket;
     for (const axis of axes) {
-      const bucketScope = { ...axis.scope, date: read.range.bucket === "month" ? undefined : date };
-      const selected = selectOwnedSessionStatisticsRows(read, bucketScope).filter((row) => {
+      const selected = axis.rows.filter((row) => {
         const factDate = sessionStatisticsDate(row.owner_recorded_at ?? row.fact?.recorded_at ?? null);
         return factDate !== null && (read.range.bucket === "month" ? factDate.startsWith(date) : factDate === date);
       });
