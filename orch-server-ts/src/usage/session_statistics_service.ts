@@ -50,13 +50,30 @@ function preserveKnownSubtotals(
     || coverage.missing_usage_turns > 0
     || coverage.pending_inputs > 0
     || coverage.unattributed_missing_usage;
+  const zeroToken = (value: number | null): number | null =>
+    value === 0 && unresolvedTokens ? null : value;
+  const costMissing = unresolvedTokens || coverage.unpriced_events > 0;
+  const costZeroProtected = metrics.reference_cost_usd === 0 && costMissing;
+  const component = (
+    value: { known_cost_usd: number | null; is_partial: boolean },
+    tokenPartial: boolean,
+  ): { known_cost_usd: number | null; is_partial: boolean } => ({
+    known_cost_usd: costZeroProtected ? null : value.known_cost_usd,
+    is_partial: value.is_partial || tokenPartial || costZeroProtected,
+  });
   return {
     ...metrics,
-    total_tokens: metrics.total_tokens === 0 && unresolvedTokens ? null : metrics.total_tokens,
-    reference_cost_usd: metrics.reference_cost_usd === 0
-      && (unresolvedTokens || coverage.unpriced_events > 0)
-      ? null
-      : metrics.reference_cost_usd,
+    total_tokens: zeroToken(metrics.total_tokens),
+    provider_total_tokens: zeroToken(metrics.provider_total_tokens),
+    ordinary_input: zeroToken(metrics.ordinary_input),
+    reference_cost_usd: costZeroProtected ? null : metrics.reference_cost_usd,
+    reference_cost_breakdown: {
+      cache_read: component(metrics.reference_cost_breakdown.cache_read, coverage.token_partials.cache_read),
+      non_cache: component(
+        metrics.reference_cost_breakdown.non_cache,
+        coverage.token_partials.ordinary_input || coverage.token_partials.total_tokens,
+      ),
+    },
   };
 }
 

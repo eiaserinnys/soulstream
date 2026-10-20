@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { PRICE_SNAPSHOT_METADATA } from "@soulstream/model-catalog/inference-pricing";
 import {
   aggregateSessionStatisticsMetrics,
   selectOwnedSessionStatisticsRows,
@@ -91,6 +92,42 @@ describe("session statistics coverage aggregation", () => {
     expect(coverageResult.terminal_missing_usage).toBe(1);
     expect(coverageResult.ended_input_without_usage).toBe(1);
     expect(coverageResult.missing_usage_turns).toBe(1);
+    expect(coverageResult.token_partials).toEqual({
+      total_tokens: true,
+      provider_total_tokens: true,
+      ordinary_input: true,
+      cache_read: true,
+    });
+  });
+
+  it("preserves all-field missing evidence when a later partial owner shares its input", () => {
+    const known = usageRow();
+    const partialOwner = usageRow({
+      selection_event_id: 30,
+      owner_event_id: 30,
+      fact: fact({
+        event_id: 30,
+        output_total: null,
+        total_tokens: null,
+        cache_read: 40,
+      }),
+    });
+    const result = read([known, missingRow(), partialOwner]);
+    const index = createSessionStatisticsCoverageIndex(result);
+    const coverageResult = sessionStatisticsCoverage(
+      result,
+      index,
+      {},
+      selectOwnedSessionStatisticsRows(result),
+    );
+
+    expect(coverageResult.missing_usage_turns).toBe(1);
+    expect(coverageResult.token_partials).toEqual({
+      total_tokens: true,
+      provider_total_tokens: true,
+      ordinary_input: true,
+      cache_read: true,
+    });
   });
 
   it("assigns a terminal and its closure to one representative day", () => {
@@ -171,7 +208,7 @@ describe("session statistics coverage aggregation", () => {
     expect(selected).toHaveLength(1);
   });
 
-  it("sums known component fields without rebuilding total tokens and preserves decimal cost", () => {
+  it("sums known component fields with a cache-excluded total and preserves decimal cost", () => {
     const complete = usageRow({
       fact: fact({
         cache_read: 8,
@@ -212,14 +249,135 @@ describe("session statistics coverage aggregation", () => {
     expect(metrics.output_total).toBe(20);
     expect(metrics.cache_read).toBe(8);
     expect(metrics.reasoning_output).toBe(5);
-    expect(metrics.total_tokens).toBe(120);
+    expect(metrics.total_tokens).toBe(112);
+    expect(metrics.provider_total_tokens).toBe(120);
+    expect(metrics.ordinary_input).toBe(122);
     expect(metrics.reference_cost_usd).toBe(0.3);
+    expect(metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: null, is_partial: true },
+      non_cache: { known_cost_usd: null, is_partial: true },
+    });
     const index = createSessionStatisticsCoverageIndex(result);
     const coverageResult = sessionStatisticsCoverage(result, index, {}, [complete, partial] as never);
     expect(coverageResult.priced_events).toBe(2);
     expect(coverageResult.unpriced_events).toBe(2);
     expect(coverageResult.priced_total_tokens).toBe(90);
     expect(coverageResult.unpriced_total_tokens).toBe(70);
+    expect(coverageResult.token_partials).toEqual({
+      total_tokens: true,
+      provider_total_tokens: true,
+      ordinary_input: false,
+      cache_read: false,
+    });
+  });
+
+  it("splits a stored canonical cost into exact cache-read and non-cache components", () => {
+    const row = usageRow({
+      fact: fact({
+        provider: "claude",
+        model: "claude-sonnet-5",
+        input_total: 100,
+        cache_read: 40,
+        cache_write: 0,
+        output_total: 20,
+        known_cost_usd: 0.000328,
+        pricing_version: PRICE_SNAPSHOT_METADATA.price_version,
+      }),
+    });
+    const decimals = new Map([
+      [sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0.000328"],
+    ]);
+    const result = read([row], {}, decimals);
+    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
+
+    expect(metrics.total_tokens).toBe(80);
+    expect(metrics.provider_total_tokens).toBe(120);
+    expect(metrics.ordinary_input).toBe(60);
+    expect(metrics.reference_cost_usd).toBe(0.000328);
+    expect(metrics.reference_cost_breakdown.cache_read).toEqual({
+      known_cost_usd: 0.000008,
+      is_partial: false,
+    });
+    expect(metrics.reference_cost_breakdown.non_cache).toEqual({
+      known_cost_usd: 0.00032,
+      is_partial: false,
+    });
+    const index = createSessionStatisticsCoverageIndex(result);
+    const coverageResult = sessionStatisticsCoverage(result, index, {}, [row] as never);
+    expect(coverageResult.token_partials).toEqual({
+      total_tokens: false,
+      provider_total_tokens: false,
+      ordinary_input: false,
+      cache_read: false,
+    });
+  });
+
+  it("marks known cost components partial when another selected source is unpriced", () => {
+    const priced = usageRow({
+      fact: fact({
+        provider: "claude",
+        model: "claude-sonnet-5",
+        input_total: 100,
+        cache_read: 40,
+        cache_write: 0,
+        output_total: 20,
+        known_cost_usd: 0.000328,
+        pricing_version: PRICE_SNAPSHOT_METADATA.price_version,
+      }),
+    });
+    const unpriced = usageRow({
+      selection_event_id: 21,
+      input_id: "input-2",
+      accounting_key: "command-2",
+      owner_event_id: 21,
+      fact: fact({
+        event_id: 21,
+        input_id: "input-2",
+        accounting_key: "command-2",
+        known_cost_usd: null,
+        pricing_version: null,
+        priced_tokens: 0,
+        unpriced_tokens: 120,
+        pricing_complete: false,
+      }),
+    });
+    const decimals = new Map([
+      [sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0.000328"],
+    ]);
+    const result = read([priced, unpriced], {}, decimals);
+    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
+
+    expect(metrics.reference_cost_usd).toBe(0.000328);
+    expect(metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: 0.000008, is_partial: true },
+      non_cache: { known_cost_usd: 0.00032, is_partial: true },
+    });
+  });
+
+  it("leaves cache-excluded totals null when cache reads exceed the inclusive input", () => {
+    const row = usageRow({
+      fact: fact({
+        input_total: 100,
+        cache_read: 150,
+        cache_write: 0,
+        output_total: 20,
+        known_cost_usd: null,
+      }),
+    });
+    const result = read([row], {}, new Map());
+    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
+
+    expect(metrics.total_tokens).toBe(null);
+    expect(metrics.provider_total_tokens).toBe(120);
+    expect(metrics.ordinary_input).toBe(null);
+    const index = createSessionStatisticsCoverageIndex(result);
+    const coverageResult = sessionStatisticsCoverage(result, index, {}, [row] as never);
+    expect(coverageResult.token_partials).toEqual({
+      total_tokens: true,
+      provider_total_tokens: false,
+      ordinary_input: true,
+      cache_read: false,
+    });
   });
 
   it("keeps options based on the unfiltered period and sorts tied project totals by id", () => {
@@ -588,7 +746,13 @@ describe("session statistics coverage aggregation", () => {
       output_total: null,
       reasoning_output: null,
       total_tokens: null,
+      provider_total_tokens: null,
+      ordinary_input: null,
       reference_cost_usd: null,
+      reference_cost_breakdown: {
+        cache_read: { known_cost_usd: null, is_partial: true },
+        non_cache: { known_cost_usd: null, is_partial: true },
+      },
     });
     expect(overview.totals.is_partial).toBe(true);
     expect(overview.series).toEqual([]);
@@ -642,7 +806,19 @@ describe("session statistics coverage aggregation", () => {
     expect(observedZero.totals.metrics.total_tokens).toBe(0);
     expect(observedZero.totals.metrics.reference_cost_usd).toBe(0);
     expect(missing.totals.metrics.total_tokens).toBe(null);
+    expect(missing.totals.metrics.provider_total_tokens).toBe(null);
+    expect(missing.totals.metrics.ordinary_input).toBe(null);
     expect(missing.totals.metrics.reference_cost_usd).toBe(null);
+    expect(missing.totals.metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: null, is_partial: true },
+      non_cache: { known_cost_usd: null, is_partial: true },
+    });
+    expect(missing.totals.coverage.token_partials).toEqual({
+      total_tokens: true,
+      provider_total_tokens: true,
+      ordinary_input: true,
+      cache_read: true,
+    });
     expect(missing.series.find((point) => point.project_id === "project-1" && point.bucket_start === "2026-10-19")?.metrics)
       .toMatchObject({ total_tokens: null, reference_cost_usd: null });
     expect(pending.totals.metrics.total_tokens).toBe(null);
