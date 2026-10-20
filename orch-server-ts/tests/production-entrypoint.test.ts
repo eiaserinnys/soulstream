@@ -62,7 +62,8 @@ describe("production orchestrator entrypoint", () => {
       if (
         statement.includes("folder_get_all()") ||
         statement.includes("FROM sessions") ||
-        statement.includes("SET TRANSACTION")
+        statement.includes("SET TRANSACTION") ||
+        statement.trim() === "SET LOCAL jit = off"
       ) return [];
       unexpectedSqlStatements.push(statement);
       expect(statement).toContain("FROM schema_migrations");

@@ -59,6 +59,7 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
     parseOffsetTimestamp(input.asOf, "asOf");
     return await this.sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
+      await transaction`SET LOCAL jit = off`;
       const sessions = await readAuthorizedSessions(transaction, input);
       const projectionState = await readProjectionState(transaction);
       const sessionIds = sessions.map((session) => session.sessionId);
