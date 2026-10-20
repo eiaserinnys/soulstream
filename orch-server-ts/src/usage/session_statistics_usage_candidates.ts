@@ -12,10 +12,10 @@ import {
   hasOwn,
   isRecord,
   numericFields,
-  readNumeric,
   blankFact,
 } from "./session_statistics_normalization_helpers.js";
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
+import { normalizeUsageNumbers } from "./session_statistics_usage_numbers.js";
 
 const AGGREGATE_USAGE_KEYS = [
   "input_tokens", "inputTokens", "input_total", "output_tokens", "outputTokens", "output_total",
@@ -30,42 +30,6 @@ const MODEL_USAGE_KEYS = [
 ];
 const FIRST_CALL_KEYS = ["input_tokens", "cached_input_tokens", "inputTokens", "cachedInputTokens"];
 const RAW_OPENCODE_KEYS = ["input", "output", "reasoning", "cache_read", "cache_write", "total"];
-
-function normalizeUsageNumbers(
-  usage: Record<string, unknown>,
-  provider: UsageStatsProvider,
-  issues: Set<string>,
-): NormalizedUsage {
-  const explicitInput = readNumeric(usage, ["input_total"], issues);
-  const claudeLike = provider === "claude" || provider === "kimi";
-  let inputTotal = explicitInput;
-  let cacheRead: number | null;
-  let cacheWrite: number | null;
-  if (claudeLike) {
-    const input = readNumeric(usage, ["input_tokens", "inputTokens"], issues);
-    cacheRead = readNumeric(usage, ["cache_read_input_tokens", "cacheReadInputTokens"], issues);
-    cacheWrite = readNumeric(usage, ["cache_creation_input_tokens", "cacheCreationInputTokens"], issues);
-    if (inputTotal === null && input !== null && cacheRead !== null && cacheWrite !== null) {
-      inputTotal = input + cacheRead + cacheWrite;
-    }
-  } else {
-    cacheRead = readNumeric(usage, ["cached_input_tokens", "cache_read_input_tokens", "cache_read"], issues);
-    cacheWrite = readNumeric(usage, ["cache_write_input_tokens", "cache_write"], issues);
-    if (inputTotal === null) {
-      inputTotal = readNumeric(usage, ["input_tokens", "inputTokens"], issues);
-    }
-  }
-  const outputTotal = readNumeric(usage, ["output_total", "output_tokens", "outputTokens"], issues);
-  const reasoningOutput = readNumeric(usage, ["reasoning_output_tokens", "reasoningOutputTokens"], issues);
-  return {
-    input_total: inputTotal,
-    output_total: outputTotal,
-    total_tokens: inputTotal !== null && outputTotal !== null ? inputTotal + outputTotal : null,
-    cache_read: cacheRead,
-    cache_write: cacheWrite,
-    reasoning_output: reasoningOutput,
-  };
-}
 
 function safeRawNumeric(
   payload: Record<string, unknown> | null,
