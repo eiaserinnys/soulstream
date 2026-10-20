@@ -9,6 +9,7 @@ import {
 import {
   PRICE_SNAPSHOT_METADATA,
   priceInferenceUsage,
+  priceInferenceUsageComponents,
 } from "@soulstream/model-catalog/inference-pricing";
 
 describe("list price turn cost", () => {
@@ -240,5 +241,140 @@ describe("fixed inference price reference", () => {
     expect(unknown.known_cost_usd).toBeNull();
     expect(unknown.unpriced_tokens).toBeNull();
     expect(unknown.pricing_complete).toBe(false);
+  });
+});
+
+describe("precise inference price components", () => {
+  it("splits a complete gpt-6.1-sol vector into exact read and non-cache decimals", () => {
+    const input = {
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      input_total: 100,
+      cache_read: 60,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 20,
+    };
+    const components = priceInferenceUsageComponents(input);
+
+    expect(components.price_version).toBe("api-list-usd-2026-10-19-v1");
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0.000006", is_partial: false });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.00028", is_partial: false });
+    expect(priceInferenceUsage(input).known_cost_usd).toBe(0.000286);
+  });
+
+  it("keeps the non-cache side partial for unknown-TTL cache writes without touching read", () => {
+    const input = {
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      input_total: 100,
+      cache_read: 60,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 10,
+      output_total: 20,
+    };
+    const components = priceInferenceUsageComponents(input);
+
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0.000006", is_partial: false });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.00026", is_partial: true });
+    expect(priceInferenceUsage(input).known_cost_usd).toBe(0.000266);
+  });
+
+  it("leaves read unknown while pricing the known output remainder", () => {
+    const components = priceInferenceUsageComponents({
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      input_total: 100,
+      cache_read: null,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 20,
+    });
+
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: null, is_partial: true });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.0002", is_partial: true });
+  });
+
+  it("keeps read complete when the input total is unknown", () => {
+    const components = priceInferenceUsageComponents({
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      input_total: null,
+      cache_read: 60,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 20,
+    });
+
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0.000006", is_partial: false });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.0002", is_partial: true });
+  });
+
+  it("returns both sides unknown for an unpriced model", () => {
+    const components = priceInferenceUsageComponents({
+      provider: "codex",
+      model: "gpt-5.6-sol",
+      input_total: 100,
+      cache_read: 60,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 20,
+    });
+
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: null, is_partial: true });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: null, is_partial: true });
+  });
+
+  it("distinguishes a confirmed zero component from a missing one", () => {
+    const components = priceInferenceUsageComponents({
+      provider: "claude",
+      model: "claude-opus-5-5",
+      input_total: 0,
+      cache_read: 0,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 0,
+    });
+
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0", is_partial: false });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0", is_partial: false });
+  });
+
+  it("prices 5-minute and 1-hour cache writes into the non-cache side", () => {
+    const components = priceInferenceUsageComponents({
+      provider: "claude",
+      model: "claude-opus-5-5",
+      input_total: 2_000,
+      cache_read: 0,
+      cache_write_5m: 1_000,
+      cache_write_1h: 1_000,
+      cache_write_unknown: 0,
+      output_total: 0,
+    });
+
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0", is_partial: false });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.013", is_partial: false });
+  });
+
+  it("marks a known write amount with an unknown rate as an unpriced non-cache part", () => {
+    const components = priceInferenceUsageComponents({
+      provider: "deepseek",
+      model: "opencode/deepseek-v4.1-flash-free",
+      input_total: 1_000,
+      cache_read: 100,
+      cache_write_5m: 50,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: 100,
+    });
+
+    expect(components.cache_read).toEqual({ known_cost_usd_decimal: "0.0000006", is_partial: false });
+    expect(components.non_cache).toEqual({ known_cost_usd_decimal: "0.000375", is_partial: true });
   });
 });
