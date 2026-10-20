@@ -26,6 +26,18 @@ export interface UsageStatsQuery {
   project_ids?: readonly string[];
 }
 
+export interface UsageStatsCostComponent {
+  known_cost_usd: number | null;
+  is_partial: boolean;
+}
+
+export interface UsageStatsTokenPartials {
+  total_tokens: boolean;
+  provider_total_tokens: boolean;
+  ordinary_input: boolean;
+  cache_read: boolean;
+}
+
 export interface UsageStatsMetrics {
   input_total: number | null;
   cache_read: number | null;
@@ -33,7 +45,13 @@ export interface UsageStatsMetrics {
   output_total: number | null;
   reasoning_output: number | null;
   total_tokens: number | null;
+  provider_total_tokens: number | null;
+  ordinary_input: number | null;
   reference_cost_usd: number | null;
+  reference_cost_breakdown: {
+    cache_read: UsageStatsCostComponent;
+    non_cache: UsageStatsCostComponent;
+  };
 }
 
 export interface UsageStatsCoverage {
@@ -49,6 +67,7 @@ export interface UsageStatsCoverage {
   unpriced_total_tokens: number | null;
   unknown_total_token_events: number;
   unattributed_missing_usage: boolean;
+  token_partials: UsageStatsTokenPartials;
 }
 
 export interface UsageStatsAggregate {
