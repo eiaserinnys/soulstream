@@ -3,17 +3,33 @@ import { ApiHttpError } from '../api/clientCore';
 import { AttachmentReadError } from '../api/attachmentEndpoints';
 import type { AttachmentDescriptor, AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
 
-/** Public sample only: title, body, a wide table, and long prose, in Korean. */
+/** Public sample only: a document, modal interaction, wide table, and long prose. */
 const REVIEW_HTML_DOCUMENT = `<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><title>공개 검수용 문서</title></head><body>
+<html lang="ko"><head><meta charset="utf-8"><title>공개 검수용 문서</title>
+<style>
+.review-modal { display: none; position: fixed; inset: 0; z-index: 10; align-items: center; justify-content: center; padding: 24px; background: rgba(10, 12, 18, .72); }
+.review-modal[aria-hidden="false"] { display: flex; }
+.review-modal__panel { max-width: 28rem; padding: 24px; border-radius: 12px; background: white; color: #18191c; }
+</style></head><body>
 <h1>공개 검수용 문서</h1>
 <p>이 문서는 검수 창에서 HTML 첨부가 문서로 표시되는지 확인하기 위한 공개 예시입니다.</p>
+<button id="open-review-modal" type="button">모달 열기</button>
+<div id="review-modal" class="review-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="review-modal-title">
+<div class="review-modal__panel"><button id="close-review-modal" type="button">닫기</button><h2 id="review-modal-title">HTML 모달</h2><p>HTML 안의 스크립트가 이 창을 열고 닫습니다.</p></div>
+</div>
 <table>
 <tr><th>항목</th><th>설명</th><th>값</th><th>비고</th><th>확인</th><th>담당</th></tr>
 <tr><td>폭</td><td>가로로 넓은 표가 넘칠 때 가로 스크롤이 되는지</td><td>여섯 열</td><td>좁은 화면</td><td>예</td><td>검수</td></tr>
 <tr><td>본문</td><td>긴 문단이 창 안에서 세로로 스크롤되는지</td><td>여러 줄</td><td>세로</td><td>예</td><td>검수</td></tr>
 </table>
 ${Array.from({ length: 40 }, (_, index) => `<p>본문 문단 ${index + 1}: 긴 문서를 세로로 스크롤해 끝까지 읽을 수 있는지 확인합니다.</p>`).join('\n')}
+<script>
+(() => {
+  const modal = document.getElementById('review-modal');
+  document.getElementById('open-review-modal').addEventListener('click', () => modal.setAttribute('aria-hidden', 'false'));
+  document.getElementById('close-review-modal').addEventListener('click', () => modal.setAttribute('aria-hidden', 'true'));
+})();
+</script>
 </body></html>`;
 
 export function buildAttachmentReviewApi(api: Partial<ApiClient>): ApiClient {
@@ -33,7 +49,31 @@ export function buildAttachmentReviewApi(api: Partial<ApiClient>): ApiClient {
       if (attachmentId === 'review-attachment-html') return { text: REVIEW_HTML_DOCUMENT, truncated: false };
       if (attachmentId === 'review-attachment-long') return { text: Array.from({ length: 300 }, (_, index) => `${index + 1}: 공개 검수용 서버 로그`).join('\n'), truncated: false };
       if (attachmentId === 'review-attachment-empty') return { text: '', truncated: false };
-      if (attachmentId === 'review-attachment-markdown') return { text: '# 평문으로 표시되는 Markdown', truncated: false };
+      if (attachmentId === 'review-attachment-markdown') return { text: [
+        '# Argon 톤 제안',
+        '',
+        '## 방향',
+        '',
+        '차분하게 정리하고 필요한 부분은 선명하게 드러냅니다.',
+        '',
+        '- 차분한 바탕',
+        '- 따뜻한 강조',
+        '',
+        '## 토큰',
+        '',
+        '| 역할 | 값 |',
+        '| --- | --- |',
+        '| 배경 | 차분함 |',
+        '| 강조 | 따뜻함 |',
+        '',
+        '## 예시',
+        '',
+        '```ts',
+        'const tone = "warm";',
+        '```',
+        '',
+        '[톤 제안 원문](https://example.com/argon-tone)',
+      ].join('\n'), truncated: false };
       if (attachmentId === 'review-attachment-json') return { text: '{\n  "ready": true\n}', truncated: false };
       if (!attachmentReviewDescriptor(attachmentId)) throw attachmentReadError(404);
       return { text: '공개 검수용 TXT 내용입니다.', truncated: false };
@@ -77,7 +117,7 @@ function attachmentReviewDescriptor(attachmentId: string): AttachmentDescriptor 
     'review-image-two': reviewImageDescriptor('표본 둘째 이미지.png'),
     'review-image-single': reviewImageDescriptor('표본 한 장 이미지.png'),
     'review-attachment-text': reviewTextDescriptor('메모.txt', 348),
-    'review-attachment-markdown': reviewTextDescriptor('README.md', 2_048),
+    'review-attachment-markdown': reviewTextDescriptor('톤 제안 원문.md', 2_048, 'text/markdown'),
     'review-attachment-json': reviewTextDescriptor('설정.json', 1_200),
     'review-attachment-empty': reviewTextDescriptor('빈 파일.txt', 0),
     'review-attachment-long': reviewTextDescriptor('수백 줄 서버 로그와 아주 긴 파일 이름을 가진 공개 검수용 첨부 문서.txt', 12_000),
@@ -100,10 +140,10 @@ function reviewImageDescriptor(name: string): Omit<AttachmentDescriptor, 'attach
   };
 }
 
-function reviewTextDescriptor(name: string, byteSize: number): Omit<AttachmentDescriptor, 'attachment_id'> {
+function reviewTextDescriptor(name: string, byteSize: number, mimeType = 'text/plain'): Omit<AttachmentDescriptor, 'attachment_id'> {
   return {
-    name, mime_type: 'text/plain', byte_size: byteSize, checksum_sha256: null,
-    width: null, height: null, preview_kind: 'text', preview_mime_type: 'text/plain',
+    name, mime_type: mimeType, byte_size: byteSize, checksum_sha256: null,
+    width: null, height: null, preview_kind: 'text', preview_mime_type: mimeType,
   };
 }
 

@@ -1,8 +1,9 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { StyleSheet, TouchableOpacity } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AttachmentReadError } from '../../api/attachmentEndpoints';
 import type { AttachmentView } from '../../lib/attachment-view';
+import { PlannerMarkdownText } from '../planner/PlannerMarkdownText';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 
 const mockReadAttachmentText = jest.fn();
@@ -10,6 +11,14 @@ jest.mock('../../api/client', () => ({
   createApiClient: () => ({ readAttachmentText: (...args: unknown[]) => mockReadAttachmentText(...args) }),
 }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('react-native-enriched-markdown', () => ({
+  EnrichedMarkdownText: (props: any) => require('react').createElement(
+    require('react-native').Text,
+    { ...props, testID: 'planner-markdown-rendered' },
+    props.markdown,
+  ),
+}));
+jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 
 const makeView = (overrides: Partial<AttachmentView> = {}): AttachmentView => ({
   key: 'attachment-1',
@@ -56,11 +65,61 @@ test('zero-byte text never requests content', () => {
   expect(mockReadAttachmentText).not.toHaveBeenCalled();
 });
 
+test('empty Markdown shows its empty-file state centered in the frame', () => {
+  const screen = render(<AttachmentPreviewModal item={makeView({
+    name: 'empty.md', mimeType: 'text/markdown', byteSize: 0,
+  })} onClose={jest.fn()} />);
+
+  const message = screen.getByText('빈 파일');
+  let content = message.parent;
+  while (content && content.type !== View) content = content.parent;
+  expect(content).toBeTruthy();
+  expect(StyleSheet.flatten(content!.props.style)).toMatchObject({
+    alignItems: 'center',
+    justifyContent: 'center',
+  });
+  expect(screen.queryByTestId('attachment-preview-markdown')).toBeNull();
+  expect(mockReadAttachmentText).not.toHaveBeenCalled();
+});
+
 test('caller-provided local text is shown without a server read', async () => {
   const screen = render(<AttachmentPreviewModal item={makeView()} onClose={() => {}}
     textContent={{ text: 'local preview', truncated: true }} />);
 
   await waitFor(() => expect(screen.getByText('local preview')).toBeTruthy());
+  expect(screen.getByText('앞부분만 표시')).toBeTruthy();
+  expect(mockReadAttachmentText).not.toHaveBeenCalled();
+});
+
+test('Markdown preview renders through PlannerMarkdownText in the document frame', async () => {
+  const markdown = '# Argon 톤 제안\n\n## 방향\n\n- 차분하게\n- 선명하게\n\n| 토큰 | 값 |\n| --- | --- |\n| 강조 | 따뜻함 |\n\n```ts\nconst tone = "warm";\n```\n\n[원문](https://example.com/argon-tone)';
+  mockReadAttachmentText.mockResolvedValue({ text: markdown, truncated: false });
+  const screen = render(<AttachmentPreviewModal item={makeView({ name: '톤 제안 원문.md', mimeType: 'text/markdown' })}
+    onClose={jest.fn()} />);
+
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy());
+  expect(screen.UNSAFE_getByType(PlannerMarkdownText).props).toMatchObject({
+    markdown,
+    readContext: { type: 'card', id: 'card-1' },
+  });
+  expect(screen.getByTestId('planner-markdown-rendered').props.markdown).toBe(markdown);
+  expect(screen.queryByTestId('attachment-preview-text')).toBeNull();
+  const preview = screen.getByTestId('attachment-preview-markdown');
+  expect(StyleSheet.flatten(preview.props.style).flex).toBe(1);
+  const frame = screen.getByTestId('chat-image-viewer-frame');
+  expect(StyleSheet.flatten(frame.props.style).flex).toBe(1);
+  expect(StyleSheet.flatten(frame.props.style).height).toBeUndefined();
+  expect(StyleSheet.flatten(preview.parent!.props.style)).not.toHaveProperty('justifyContent');
+  expect(mockReadAttachmentText).toHaveBeenCalledWith('attachment-1', { type: 'card', id: 'card-1' }, expect.any(AbortSignal));
+});
+
+test('caller-provided Markdown uses the renderer and keeps the truncation label', async () => {
+  const markdown = '## local preview';
+  const screen = render(<AttachmentPreviewModal item={makeView({ name: 'local.md', mimeType: 'text/markdown' })} onClose={jest.fn()}
+    textContent={{ text: markdown, truncated: true }} />);
+
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy());
+  expect(screen.UNSAFE_getByType(PlannerMarkdownText).props.markdown).toBe(markdown);
   expect(screen.getByText('앞부분만 표시')).toBeTruthy();
   expect(mockReadAttachmentText).not.toHaveBeenCalled();
 });
@@ -156,6 +215,23 @@ test('an HTML attachment marked informational still opens as a rendered document
   // The document layout gives the frame the available height instead of a media frame.
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).flex).toBe(1);
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeUndefined();
+});
+
+test('a metadata-pending Markdown name opens a single-item bundle in the document frame', () => {
+  const item = makeView({
+    key: 'report-md',
+    name: '보고 설명.md',
+    mimeType: null,
+    byteSize: null,
+    previewKind: 'info',
+    loadMetadata: jest.fn(() => new Promise<AttachmentView>(() => {})),
+  });
+  const screen = render(<AttachmentPreviewModal item={item} items={[item]} onClose={jest.fn()} />);
+
+  expect(screen.getByTestId('attachment-metadata-loading')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).flex).toBe(1);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeUndefined();
+  expect(screen.queryByTestId('attachment-preview-markdown')).toBeNull();
 });
 
 test('an HTML document reads its body through the injected loader instead of the content API', async () => {
