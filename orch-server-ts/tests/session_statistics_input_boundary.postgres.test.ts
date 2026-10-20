@@ -29,6 +29,41 @@ describePostgres("session statistics input boundary mapping", () => {
     await harness?.cleanup();
   });
 
+  it("analyzes indexed temporary facts and recreates them within the same transaction", async () => {
+    const sessionId = "input-boundary-temporary-facts";
+    await seedSession(sessionId);
+    await seedBoundary(sessionId, 1, "temporary-input");
+    await seedUsage(sessionId, 2, {
+      candidateType: "complete", accountingKey: "temporary-command", inputId: "temporary-input",
+    });
+    await sql.begin(async (transaction) => {
+      const read = () => createCanonicalSessionStatisticsFacts(
+        transaction as unknown as EventIngressQuerySql,
+        [sessionId, sessionId],
+        undefined,
+        { asOf: AS_OF, readPurpose: { kind: "overview" } },
+      );
+      const first = await read();
+      expect(first.some((row) => row.state === "owned" && row.fact?.total_tokens === 15)).toBe(true);
+      const relations = await transaction`
+        SELECT relname, reltuples::int AS rows,
+          (SELECT count(*)::int FROM pg_index WHERE indrelid = relation.oid) AS indexes
+        FROM pg_class AS relation
+        WHERE relnamespace = pg_my_temp_schema()
+          AND relname IN ('authorized_sessions', 'day_material_seed_facts', 'scoped_facts')
+        ORDER BY relname
+      `;
+      expect(relations).toEqual([
+        { relname: "authorized_sessions", rows: 1, indexes: 1 },
+        { relname: "day_material_seed_facts", rows: 0, indexes: 0 },
+        { relname: "scoped_facts", rows: 2, indexes: 3 },
+      ]);
+      expect(await read()).toEqual(first);
+    });
+    const [temporary] = await sql`SELECT to_regclass('pg_temp.scoped_facts') AS relation`;
+    expect(temporary?.relation).toBeNull();
+  });
+
   it("keeps exact input boundaries ahead of their position", async () => {
     const sessionId = "input-boundary-exact-future";
     await seedSession(sessionId);
@@ -98,12 +133,12 @@ describePostgres("session statistics input boundary mapping", () => {
   });
 
   async function readRows(sessionId: string) {
-    return await createCanonicalSessionStatisticsFacts(
-      sql as unknown as EventIngressQuerySql,
+    return await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
+      transaction as unknown as EventIngressQuerySql,
       [sessionId],
       undefined,
       { asOf: AS_OF, readPurpose: { kind: "overview" } },
-    );
+    ));
   }
 
   async function seedSession(sessionId: string): Promise<void> {

@@ -7,7 +7,10 @@ import { createSessionStatisticsScopeCtes } from "./session_statistics_canonical
 import { createSessionStatisticsUsageCtes } from "./session_statistics_canonical_usage_sql.js";
 import { createSessionStatisticsMaterialCtes } from "./session_statistics_canonical_material_sql.js";
 import { parseOffsetTimestamp } from "./session_statistics_period.js";
-import type { SessionStatisticsCanonicalReadOptions } from "./session_statistics_period_seed_sql.js";
+import {
+  createSessionStatisticsDayMaterialSeed,
+  type SessionStatisticsCanonicalReadOptions,
+} from "./session_statistics_period_seed_sql.js";
 
 export type { SessionStatisticsCanonicalReadOptions } from "./session_statistics_period_seed_sql.js";
 
@@ -62,7 +65,11 @@ function toCanonicalRow(row: CanonicalSqlRow): CanonicalSessionStatisticsRow {
   };
 }
 
-/** Select canonical owners before callers apply provider/model/project filters. */
+/**
+ * Select canonical owners before callers apply provider/model/project filters.
+ * sql must be transaction-bound: temporary relations share its connection and
+ * are dropped on commit. Each call recreates them for repeated reads in one transaction.
+ */
 export async function createCanonicalSessionStatisticsFacts(
   sql: EventIngressQuerySql,
   authorizedSessionIds: readonly string[],
@@ -91,14 +98,38 @@ export async function createCanonicalSessionStatisticsFacts(
   const recordedAtBefore = range?.recordedAtBefore ?? null;
   // The adapter exposes the underlying tag; raw postgres.js tags work directly too.
   const fragment = sql.fragment ?? sql as unknown as EventIngressSqlFragment;
-  const scopeCtes = createSessionStatisticsScopeCtes(
-    sql, fragment, authorizedSessionIds, recordedAtFrom, recordedAtBefore, options,
+  await sql`DROP TABLE IF EXISTS pg_temp.authorized_sessions`;
+  await sql`
+    CREATE TEMP TABLE authorized_sessions ON COMMIT DROP AS
+    SELECT DISTINCT value AS session_id
+    FROM jsonb_array_elements_text(${sql.json([...new Set(authorizedSessionIds)])}::jsonb)
+  `;
+  await sql`ALTER TABLE pg_temp.authorized_sessions ADD PRIMARY KEY (session_id)`;
+  await sql`ANALYZE pg_temp.authorized_sessions`;
+
+  const dayMaterialSeed = createSessionStatisticsDayMaterialSeed(fragment, options);
+  await sql`DROP TABLE IF EXISTS pg_temp.day_material_seed_facts`;
+  await sql`CREATE TEMP TABLE day_material_seed_facts ON COMMIT DROP AS ${dayMaterialSeed}`;
+  await sql`ANALYZE pg_temp.day_material_seed_facts`;
+
+  const scope = createSessionStatisticsScopeCtes(
+    fragment, recordedAtFrom, recordedAtBefore, options,
   );
+  await sql`DROP TABLE IF EXISTS pg_temp.scoped_facts`;
+  await sql`
+    CREATE TEMP TABLE scoped_facts ON COMMIT DROP AS
+    WITH ${scope.seedCtes}
+    ${scope.scopedFacts}
+  `;
+  await sql`CREATE INDEX ON pg_temp.scoped_facts (session_id, event_id)`;
+  await sql`CREATE INDEX ON pg_temp.scoped_facts (session_id, accounting_key)`;
+  await sql`CREATE INDEX ON pg_temp.scoped_facts (session_id, input_id)`;
+  await sql`ANALYZE pg_temp.scoped_facts`;
+
   const usageCtes = createSessionStatisticsUsageCtes(fragment);
   const materialCtes = createSessionStatisticsMaterialCtes(fragment, options);
   const rows = await sql<readonly CanonicalSqlRow[]>`
-    WITH ${scopeCtes},
-      ${usageCtes},
+    WITH ${usageCtes},
       ${materialCtes}
     SELECT * FROM (
       SELECT row_kind, session_id, selection_event_id, input_id, missing_identity, accounting_key,
