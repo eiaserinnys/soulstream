@@ -5,7 +5,10 @@ import type {
 } from "../node/event_ingress_repository.js";
 import { createSessionStatisticsScopeCtes } from "./session_statistics_canonical_scope_sql.js";
 import { createSessionStatisticsUsageCtes } from "./session_statistics_canonical_usage_sql.js";
-import { createSessionStatisticsMaterialCtes } from "./session_statistics_canonical_material_sql.js";
+import {
+  createSessionStatisticsDayMaterialScopeCtes,
+  createSessionStatisticsMaterialCtes,
+} from "./session_statistics_canonical_material_sql.js";
 import { parseOffsetTimestamp } from "./session_statistics_period.js";
 import {
   createSessionStatisticsDayMaterialSeed,
@@ -127,6 +130,31 @@ export async function createCanonicalSessionStatisticsFacts(
   await sql`ANALYZE pg_temp.scoped_facts`;
 
   const usageCtes = createSessionStatisticsUsageCtes(fragment);
+  if (options?.readPurpose.kind === "day") {
+    await sql`DROP TABLE IF EXISTS pg_temp.labeled_usage_selections`;
+    await sql`
+      CREATE TEMP TABLE labeled_usage_selections ON COMMIT DROP AS
+      WITH ${usageCtes}
+      SELECT * FROM labeled_usage_selections
+    `;
+    await sql`ANALYZE pg_temp.labeled_usage_selections`;
+
+    const dayMaterialScopeCtes = createSessionStatisticsDayMaterialScopeCtes(
+      fragment, options.asOf, options.readPurpose,
+    );
+    await sql`DROP TABLE IF EXISTS pg_temp.material_scope_facts`;
+    await sql`
+      CREATE TEMP TABLE material_scope_facts ON COMMIT DROP AS
+      WITH ${dayMaterialScopeCtes}
+      SELECT * FROM scoped_facts
+      UNION
+      SELECT * FROM day_material_related_facts
+    `;
+    await sql`CREATE INDEX ON pg_temp.material_scope_facts (session_id, event_id)`;
+    await sql`CREATE INDEX ON pg_temp.material_scope_facts (session_id, accounting_key)`;
+    await sql`CREATE INDEX ON pg_temp.material_scope_facts (session_id, input_id)`;
+    await sql`ANALYZE pg_temp.material_scope_facts`;
+  }
   const materialCtes = createSessionStatisticsMaterialCtes(fragment, options);
   const rows = await sql<readonly CanonicalSqlRow[]>`
     WITH ${usageCtes},

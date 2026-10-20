@@ -5,8 +5,10 @@ export function createSessionStatisticsMaterialCtes(
   fragment: EventIngressSqlFragment,
   options?: SessionStatisticsCanonicalReadOptions,
 ): unknown {
-  const materialScope = createMaterialScopeCte(fragment, options);
-  return fragment`${materialScope},
+  const materialScope = options?.readPurpose.kind === "day"
+    ? fragment``
+    : fragment`${createMaterialScopeCte(fragment, options)},`;
+  return fragment`${materialScope}
     latest_new_manifests AS (
       SELECT DISTINCT ON (session_id, accounting_key)
         session_id, accounting_key, event_id, input_id
@@ -259,15 +261,18 @@ function createMaterialScopeCte(
   if (options === undefined) {
     return fragment`material_scope_facts AS (SELECT * FROM scoped_facts)`;
   }
-  if (options.readPurpose.kind === "overview") {
-    return fragment`material_scope_facts AS (
-      SELECT * FROM scoped_facts
-      WHERE fact_kind = 'boundary'
-        AND source_event_type <> 'input_material_manifest'
-    )`;
-  }
+  return fragment`material_scope_facts AS (
+    SELECT * FROM scoped_facts
+    WHERE fact_kind = 'boundary'
+      AND source_event_type <> 'input_material_manifest'
+  )`;
+}
 
-  const { asOf, readPurpose } = options;
+export function createSessionStatisticsDayMaterialScopeCtes(
+  fragment: EventIngressSqlFragment,
+  asOf: string,
+  readPurpose: Extract<SessionStatisticsCanonicalReadOptions["readPurpose"], { kind: "day" }>,
+): unknown {
   // Input IDs recover commandless legacy facts; keyed material follows exact command keys.
   return fragment`
     day_owner_command_keys AS (
@@ -326,11 +331,6 @@ function createMaterialScopeCte(
       WHERE fact.fact_kind IN ('boundary', 'input_material', 'tool_call')
         AND fact.accounting_key IS NULL
         AND fact.recorded_at < ${asOf}::timestamptz
-    ),
-    material_scope_facts AS (
-      SELECT * FROM scoped_facts
-      UNION
-      SELECT * FROM day_material_related_facts
     )
   `;
 }
