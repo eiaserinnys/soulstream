@@ -45,8 +45,10 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
     this.startCalculator(input);
     const liveDays = statisticsLiveDays(input.asOf);
     const storedBefore = liveDays[0]! < read.range.effective_until ? liveDays[0]! : read.range.effective_until;
-    const stored = read.range.since < storedBefore ? await repository.daily.load(read.range.since, storedBefore,
-      SESSION_STATISTICS_DAILY_AGGREGATION_VERSION, read.sessions.map(session => session.sessionId)) : [];
+    const sessionIds = read.sessions.map(session => session.sessionId);
+    const stored = read.range.since >= storedBefore ? [] : input.day === null && repository.daily.loadOverview
+      ? await repository.daily.loadOverview(read.range.since, storedBefore, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION, input, sessionIds)
+      : await repository.daily.load(read.range.since, storedBefore, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION, sessionIds);
     const available = new Set(stored.map(day => day.day));
     for (let date = read.range.since; date < storedBefore; date = statisticsShiftDay(date, 1)) {
       if (!available.has(date)) return null;

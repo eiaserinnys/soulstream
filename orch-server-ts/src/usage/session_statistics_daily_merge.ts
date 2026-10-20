@@ -7,7 +7,7 @@ import { addDecimal, decimalString, parseDecimal } from "./session_statistics_de
 import { buildSessionStatisticsMaterial } from "./session_statistics_material.js";
 import { finalizeSessionStatisticsOptions } from "./session_statistics_options.js";
 import { buildDay, buildOverview, finalizeSessionStatisticsAggregate, type SessionStatisticsView } from "./session_statistics_service.js";
-import { dailySelectorKey, type DailyAggregateState, type DailyMaterial, type DailySessionState,
+import { dailySelectorKey, type DailyAggregateState, type DailyMaterial, type DailySessionState, type DailyGroupState, type DailyOverviewAggregateState,
   type SessionStatisticsDailyState } from "./session_statistics_daily_state.js";
 import type { SessionStatisticsReadResult } from "./session_statistics_types.js";
 
@@ -22,7 +22,7 @@ function knownSum(left: number | null, right: number | null): number | null {
   return left + right;
 }
 
-export function mergeSessionStatisticsMetricStates(read: SessionStatisticsReadResult,
+export function mergeSessionStatisticsMetricStates(read: Pick<SessionStatisticsReadResult, "costDecimals">,
   states: readonly SessionStatisticsMetricState[]): SessionStatisticsMetricState {
   const result = createSessionStatisticsMetricState(read, []);
   for (const state of states) {
@@ -42,7 +42,7 @@ export function mergeSessionStatisticsMetricStates(read: SessionStatisticsReadRe
   return result;
 }
 
-function emptyCoverage(): UsageStatsCoverage {
+export function emptyDailyCoverage(): UsageStatsCoverage {
   return { usage_complete_events: 0, usage_partial_events: 0, terminal_missing_usage: 0,
     ended_input_without_usage: 0, missing_usage_turns: 0, pending_inputs: 0, priced_events: 0,
     unpriced_events: 0, priced_total_tokens: null, unpriced_total_tokens: null,
@@ -51,8 +51,8 @@ function emptyCoverage(): UsageStatsCoverage {
 }
 
 /** Counts intentionally add across dates; cross-midnight identity dedup is a documented difference. */
-function mergeCoverage(states: readonly DailyAggregateState[]): UsageStatsCoverage {
-  const coverage = emptyCoverage();
+export function mergeDailyCoverage(states: readonly DailyOverviewAggregateState[]): UsageStatsCoverage {
+  const coverage = emptyDailyCoverage();
   let evidence = false;
   for (const state of states) {
     for (const key of COUNT_KEYS) coverage[key] += state.coverage[key];
@@ -101,24 +101,33 @@ function mergeMaterial(read: SessionStatisticsReadResult, date: string, values: 
 
 function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStatisticsDailyState[]): SessionStatisticsView {
   const authorized = new Map(read.sessions.map(session => [session.sessionId, session]));
+  const pairs = new Map(read.sessions.map(session => [JSON.stringify([session.folderId, session.cardFolderId]), session]));
+  type Cell = { day: string; cell: DailySessionState | DailyGroupState; projectId: string | null; projectLabel: string };
   const cells = days.filter(day => read.range.since <= day.day && day.day < read.range.effective_until)
-    .flatMap(day => day.sessions.filter(cell => authorized.has(cell.sessionId)).map(cell => ({ day: day.day, cell })));
+    .flatMap(day => {
+      const result: Cell[] = [];
+      for (const cell of day.groups ?? day.sessions) {
+        const session = "sessionId" in cell ? authorized.get(cell.sessionId)
+          : pairs.get(JSON.stringify([cell.folderId, cell.cardFolderId]));
+        if (session) result.push({ day: day.day, cell, projectId: session.projectId, projectLabel: session.projectLabel });
+      }
+      return result;
+    });
   const models: UsageStatsOptions["models"] = [];
   const projects: UsageStatsOptions["projects"] = [];
   const weights = new Map<string, number>();
-  for (const { cell } of cells) {
+  for (const { cell, projectId, projectLabel } of cells) {
     models.push(...cell.options);
-    const session = authorized.get(cell.sessionId)!;
-    if (session.projectId !== null) {
-      if (cell.options.length > 0) projects.push({ project_id: session.projectId, label: session.projectLabel });
-      weights.set(session.projectId, (weights.get(session.projectId) ?? 0)
+    if (projectId !== null) {
+      if (cell.options.length > 0) projects.push({ project_id: projectId, label: projectLabel });
+      weights.set(projectId, (weights.get(projectId) ?? 0)
         + (cell.selectors[dailySelectorKey({})]!.metrics.tokens.total_tokens ?? 0));
     }
   }
   const emptyMetric = createSessionStatisticsMetricState(read, []);
   const emptyMaterial = buildSessionStatisticsMaterial({ ...read, rows: [] }, read.range.since);
-  const fallback = (cell: DailySessionState): DailyAggregateState => {
-    const coverage = emptyCoverage();
+  const fallback = (cell: DailySessionState | DailyGroupState): DailyAggregateState => {
+    const coverage = emptyDailyCoverage();
     coverage.unattributed_missing_usage = cell.selectors[dailySelectorKey({})]!.coverage.unattributed_missing_usage;
     if (cell.unattributedAllFields) for (const key of TOKEN_FLAGS) coverage.token_partials[key] = true;
     return { metrics: emptyMetric, coverage, sourceCount: 0, tokenEvidence: cell.unattributedAllFields, material: emptyMaterial };
@@ -130,8 +139,7 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
       || (scope.model !== undefined && query.model != null && scope.model.value !== query.model);
     const key = dailySelectorKey({ provider: scope.provider ?? query.provider ?? undefined,
       model: scope.model ?? (query.model == null ? undefined : { value: query.model }) });
-    return cells.filter(({ day, cell }) => {
-      const project = authorized.get(cell.sessionId)!.projectId;
+    return cells.filter(({ day, projectId: project }) => {
       return (scope.date === undefined || (scope.date.length === 7 ? day.startsWith(scope.date) : day === scope.date))
         && (query.project_ids === undefined || sessionStatisticsProjectMatches(project, query.project_ids))
         && (scope.projectIds === undefined || scope.projectIds.includes(project));
@@ -141,20 +149,21 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
   return {
     options: finalizeSessionStatisticsOptions(models, projects, weights),
     hasUsage: cells.some(({ cell }) => cell.hasUsage),
-    hasUnclassifiedUsage: cells.some(({ cell }) => cell.hasUsage && authorized.get(cell.sessionId)!.projectId === null),
+    hasUnclassifiedUsage: cells.some(({ cell, projectId }) => cell.hasUsage && projectId === null),
     aggregate(scope) {
       const key = JSON.stringify(scope);
       let result = aggregateCache.get(key);
       if (result === undefined) {
         const selected = select(scope);
         const metrics: UsageStatsMetrics = finalizeSessionStatisticsMetrics(mergeSessionStatisticsMetricStates(read, selected.map(state => state.metrics)));
-        result = finalizeSessionStatisticsAggregate(read, metrics, mergeCoverage(selected));
+        result = finalizeSessionStatisticsAggregate(read, metrics, mergeDailyCoverage(selected));
         aggregateCache.set(key, result);
       }
       return result;
     },
     rowCount: scope => select(scope).reduce((total, state) => total + state.sourceCount, 0),
-    material: date => mergeMaterial(read, date, select({ date }).map(state => state.material)),
+    material: date => mergeMaterial(read, date, select({ date }).map(state =>
+      "material" in state ? (state as DailyAggregateState).material : emptyMaterial)),
   };
 }
 

@@ -1,5 +1,7 @@
 import type { BoardYjsSql } from "../board-yjs/board_yjs_sql.js";
 import type { SessionStatisticsDailyState } from "./session_statistics_daily_state.js";
+import { SessionStatisticsDailyGroupRepository, saveDailyGroups } from "./session_statistics_daily_group_repository.js";
+import type { SessionStatisticsReadRequest } from "./session_statistics_types.js";
 
 export type DailyBatch = SessionStatisticsDailyState & { sourceMaxEventId: string };
 export interface SessionStatisticsDailyRepositoryPort {
@@ -7,10 +9,20 @@ export interface SessionStatisticsDailyRepositoryPort {
   sourceMax(since: string, before: string): Promise<ReadonlyMap<string, string>>;
   save(state: SessionStatisticsDailyState, sourceMaxEventId: string): Promise<void>;
   withLock(work: () => Promise<void>): Promise<boolean>;
+  loadOverview?(since: string, before: string, version: number, input: SessionStatisticsReadRequest, sessionIds: readonly string[]): Promise<DailyBatch[]>;
+  regroupNext?(since: string, before: string, version: number): Promise<boolean>;
 }
 
 export class SessionStatisticsDailyRepository implements SessionStatisticsDailyRepositoryPort {
   constructor(private readonly sql: BoardYjsSql) {}
+
+  loadOverview(since: string, before: string, version: number, input: SessionStatisticsReadRequest, sessionIds: readonly string[]) {
+    return new SessionStatisticsDailyGroupRepository(this.sql).loadOverview(since, before, version, input, sessionIds);
+  }
+
+  regroupNext(since: string, before: string, version: number) {
+    return new SessionStatisticsDailyGroupRepository(this.sql).regroupNext(since, before, version);
+  }
 
   async load(since: string, before: string, version: number, sessionIds?: readonly string[]): Promise<DailyBatch[]> {
     const rows = await this.sql<readonly {
@@ -55,11 +67,13 @@ export class SessionStatisticsDailyRepository implements SessionStatisticsDailyR
       await sql`DELETE FROM session_statistics_daily_sessions
         WHERE day = ${state.day}::date AND aggregation_version = ${state.version}`;
       if (state.sessions.length > 0) {
-        await sql`INSERT INTO session_statistics_daily_sessions (day, aggregation_version, session_id, payload)
-          SELECT ${state.day}::date, ${state.version}, cell.session_id, cell.payload
-          FROM jsonb_to_recordset(${sql.json(state.sessions.map(cell => ({ session_id: cell.sessionId, payload: cell })))}::jsonb)
-            AS cell(session_id text, payload jsonb)`;
+        await sql`INSERT INTO session_statistics_daily_sessions (day, aggregation_version, session_id, payload, folder_id, card_folder_id)
+          SELECT ${state.day}::date, ${state.version}, cell.session_id, cell.payload, cell.folder_id, cell.card_folder_id
+          FROM jsonb_to_recordset(${sql.json(state.sessions.map(cell => ({ session_id: cell.sessionId, payload: cell,
+            folder_id: cell.folderId ?? null, card_folder_id: cell.cardFolderId ?? null })))}::jsonb)
+            AS cell(session_id text, payload jsonb, folder_id text, card_folder_id text)`;
       }
+      await saveDailyGroups(sql, state.day, state.version, state.sessions);
       await sql`UPDATE session_statistics_daily_batches SET computed_at = ${state.asOf}::timestamptz,
         source_max_event_id = ${sourceMaxEventId}::bigint, ready = true
         WHERE day = ${state.day}::date AND aggregation_version = ${state.version}`;

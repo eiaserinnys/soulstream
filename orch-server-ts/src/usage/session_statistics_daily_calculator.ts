@@ -41,7 +41,10 @@ export async function calculateSessionStatisticsDay(repository: SessionStatistic
         break;
       }
     }
-    if (selected === undefined) return;
+    if (selected === undefined) {
+      computed = await daily.regroupNext?.(metadata.range.since, before, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION) ?? false;
+      return;
+    }
     const maximum = selected >= recentSince ? maxima.get(selected) ?? "0"
       : (await daily.sourceMax(selected, statisticsShiftDay(selected, 1))).get(selected) ?? "0";
     const read = await readSlice(globalInput, selected);
