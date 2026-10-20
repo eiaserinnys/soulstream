@@ -36,3 +36,11 @@ export function compareDecimal(left: Decimal, right: Decimal): number {
 export function decimalNumber(value: Decimal | null): number | null {
   return value === null ? null : Number(value.coefficient) / 10 ** value.scale;
 }
+
+export function decimalString(value: Decimal | null): string | null {
+  if (value === null) return null;
+  const negative = value.coefficient < 0n;
+  const digits = (negative ? -value.coefficient : value.coefficient).toString().padStart(value.scale + 1, "0");
+  const split = digits.length - value.scale;
+  return `${negative ? "-" : ""}${digits.slice(0, split)}${value.scale ? `.${digits.slice(split)}` : ""}`;
+}

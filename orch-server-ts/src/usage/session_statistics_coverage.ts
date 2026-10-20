@@ -425,7 +425,7 @@ function scopeAttributionMatches(
   return true;
 }
 
-export function sessionStatisticsRowsForQuery(read: SessionStatisticsReadResult): Row[] {
+export function sessionStatisticsRowsForQuery(read: SessionStatisticsReadResult, scope: SessionStatisticsScope = {}): Row[] {
   const commandStarts = commandStartAttributions(boundaryRows(read));
   const ownerMatches = new Map<string, boolean>();
   for (const row of read.rows) {
@@ -433,12 +433,12 @@ export function sessionStatisticsRowsForQuery(read: SessionStatisticsReadResult)
       || row.accounting_key === null) continue;
     const key = identityKey(row.session_id, row.accounting_key);
     ownerMatches.set(key, ownerMatches.get(key) === true
-      || scopeAttributionMatches(read, rowAttribution(row, commandStarts), {}));
+      || scopeAttributionMatches(read, rowAttribution(row, commandStarts), scope));
   }
-  return read.rows.filter((row) => sessionStatisticsRowProjectMatches(read, row, {})
+  return read.rows.filter((row) => sessionStatisticsRowProjectMatches(read, row, scope)
     && (((row.row_kind === "input_material" || row.row_kind === "tool_call") && row.accounting_key !== null
       ? ownerMatches.get(identityKey(row.session_id, row.accounting_key)) : undefined)
-      ?? scopeAttributionMatches(read, rowAttribution(row, commandStarts), {})));
+      ?? scopeAttributionMatches(read, rowAttribution(row, commandStarts), scope)));
 }
 
 function evidenceMatchesScope(

@@ -46,7 +46,7 @@ import type { PushRouteOptions } from "../push/push_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
-import { SessionStatisticsService } from "../usage/session_statistics_service.js";
+import { SessionStatisticsDailyService } from "../usage/session_statistics_daily_service.js";
 import type { SessionStatisticsRepositoryPort } from "../usage/session_statistics_types.js";
 import type { SessionStatisticsRouteOptions } from "../usage/session_statistics_routes.js";
 import type { UiEventRepository, UiEventRouteOptions }
@@ -567,7 +567,7 @@ export function createLiveOrchestratorProviderBundle(
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     usageSummaryRoutes: options.usageSummaryRoutes,
     sessionStatisticsRoutes: {
-      service: new SessionStatisticsService(options.sessionStatisticsRepositoryProvider),
+      service: new SessionStatisticsDailyService(options.sessionStatisticsRepositoryProvider),
       accessProvider: dashboardAccessProvider,
       folderProvider: options.dependencies.dbCatalogRepository.folderRouteProvider,
       now: () => new Date(),

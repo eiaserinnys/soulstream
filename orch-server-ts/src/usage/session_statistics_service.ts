@@ -42,7 +42,7 @@ type ProjectTarget = {
   projectIds: readonly (string | null)[];
 };
 
-function preserveKnownSubtotals(
+export function preserveKnownSubtotals(
   metrics: UsageStatsMetrics,
   coverage: UsageStatsAggregate["coverage"],
 ): UsageStatsMetrics {
@@ -77,16 +77,11 @@ function preserveKnownSubtotals(
   };
 }
 
-function aggregate(
-  read: Read,
-  index: ReturnType<typeof createSessionStatisticsCoverageIndex>,
-  scope: SessionStatisticsScope,
+export function finalizeSessionStatisticsAggregate(
+  read: Read, metrics: UsageStatsMetrics, coverage: UsageStatsAggregate["coverage"],
 ): UsageStatsAggregate {
-  const rows = selectOwnedSessionStatisticsRows(read, scope);
-  const coverage = sessionStatisticsCoverage(read, index, scope, rows);
-  const metrics = preserveKnownSubtotals(aggregateSessionStatisticsMetrics(read, rows), coverage);
   return {
-    metrics,
+    metrics: preserveKnownSubtotals(metrics, coverage),
     coverage,
     is_partial: coverage.usage_partial_events > 0
       || coverage.missing_usage_turns > 0
@@ -140,7 +135,7 @@ function modelTargets(read: Read, options: UsageStatsOverview["options"]): Model
       other.provider === target.provider && other.model === target.model) === index);
 }
 
-function projectTargets(read: Read, options: UsageStatsOverview["options"]): ProjectTarget[] {
+function projectTargets(read: Read, options: UsageStatsOverview["options"], view: SessionStatisticsView): ProjectTarget[] {
   const roster = options.project_roster;
   const selectedOutside = [...new Set((read.query.project_ids ?? [])
     .filter((id) => id !== "__unclassified__" && !roster.includes(id)
@@ -162,9 +157,7 @@ function projectTargets(read: Read, options: UsageStatsOverview["options"]): Pro
     .filter((projectId) => !roster.includes(projectId) && !outside.has(projectId));
   if (otherIds.length > 0) targets.push({ projectId: "__other__", label: "기타", projectIds: otherIds });
 
-  const projectBySession = new Map(read.sessions.map((session) => [session.sessionId, session.projectId]));
-  const hasUnclassified = read.rows.some((row) => row.row_kind === "usage"
-    && projectBySession.get(row.session_id) === null);
+  const hasUnclassified = view.hasUnclassifiedUsage;
   if (hasUnclassified || read.query.project_ids?.includes("__unclassified__")) {
     targets.push({ projectId: null, label: "미분류", projectIds: [null] });
   }
@@ -180,15 +173,15 @@ function hasContent(aggregateResult: UsageStatsAggregate, rowCount: number): boo
 
 function projectRows(
   read: Read,
-  index: ReturnType<typeof createSessionStatisticsCoverageIndex>,
+  view: SessionStatisticsView,
   targets: readonly ProjectTarget[],
   date?: string,
 ): UsageStatsProjectRow[] {
   const rows: UsageStatsProjectRow[] = [];
   for (const target of targets) {
     const scope: SessionStatisticsScope = { projectIds: target.projectIds, date };
-    const result = aggregate(read, index, scope);
-    const rowCount = selectOwnedSessionStatisticsRows(read, scope).length;
+    const result = view.aggregate(scope);
+    const rowCount = view.rowCount(scope);
     if (!hasContent(result, rowCount)) continue;
     rows.push({ project_id: target.projectId, label: target.label, ...result });
   }
@@ -197,15 +190,15 @@ function projectRows(
 
 function providerRows(
   read: Read,
-  index: ReturnType<typeof createSessionStatisticsCoverageIndex>,
+  view: SessionStatisticsView,
   targets: readonly ModelTarget[],
   date?: string,
 ): UsageStatsProviderRow[] {
   const rows: UsageStatsProviderRow[] = [];
   for (const target of targets) {
     const scope = { ...target.scope, date };
-    const result = aggregate(read, index, scope);
-    const rowCount = selectOwnedSessionStatisticsRows(read, scope).length;
+    const result = view.aggregate(scope);
+    const rowCount = view.rowCount(scope);
     if (!hasContent(result, rowCount)) continue;
     rows.push({
       provider: target.provider,
@@ -249,61 +242,49 @@ function bucketStarts(read: Read): string[] {
 
 function series(
   read: Read,
-  index: ReturnType<typeof createSessionStatisticsCoverageIndex>,
+  view: SessionStatisticsView,
   models: readonly ModelTarget[],
   projects: readonly ProjectTarget[],
 ): UsageStatsSeriesPoint[] {
-  if (!read.rows.some((row) => row.row_kind === "usage")) return [];
+  if (!view.hasUsage) return [];
   const buckets = bucketStarts(read);
   const result: UsageStatsSeriesPoint[] = [];
   const axes: Array<{
     scope: SessionStatisticsScope;
     point: Omit<UsageStatsSeriesPoint, "bucket_start" | "metrics">;
-    rows: Read["rows"];
   }> = [];
   for (const target of models) {
     const scope = target.scope;
-    const rows = selectOwnedSessionStatisticsRows(read, scope);
-    if (!hasContent(aggregate(read, index, scope), rows.length)) continue;
+    if (!hasContent(view.aggregate(scope), view.rowCount(scope))) continue;
     axes.push({
       scope,
       point: target.attribution === "provider"
         ? { provider: target.provider, label: target.label }
         : { provider: target.provider, model: target.model, label: target.label },
-      rows,
     });
   }
   for (const target of projects) {
     const scope = { projectIds: target.projectIds };
-    const rows = selectOwnedSessionStatisticsRows(read, scope);
-    if (!hasContent(aggregate(read, index, scope), rows.length)) continue;
-    axes.push({ scope, point: { project_id: target.projectId, label: target.label }, rows });
+    if (!hasContent(view.aggregate(scope), view.rowCount(scope))) continue;
+    axes.push({ scope, point: { project_id: target.projectId, label: target.label } });
   }
   for (const bucket of buckets) {
     const date = read.range.bucket === "month" ? bucket.slice(0, 7) : bucket;
     for (const axis of axes) {
-      const selected = axis.rows.filter((row) => {
-        const factDate = sessionStatisticsDate(row.owner_recorded_at ?? row.fact?.recorded_at ?? null);
-        return factDate !== null && (read.range.bucket === "month" ? factDate.startsWith(date) : factDate === date);
-      });
       result.push({
         bucket_start: bucket,
         ...axis.point,
-        metrics: preserveKnownSubtotals(
-          aggregateSessionStatisticsMetrics(read, selected),
-          sessionStatisticsCoverage(read, index, { ...axis.scope, date }, selected),
-        ),
+        metrics: view.aggregate({ ...axis.scope, date }).metrics,
       });
     }
   }
   return result;
 }
 
-export function buildOverview(read: SessionStatisticsReadResult): UsageStatsOverview {
-  const index = createSessionStatisticsCoverageIndex(read);
-  const options = buildSessionStatisticsOptions(read, index);
+export function buildOverview(read: SessionStatisticsReadResult, view = directView(read)): UsageStatsOverview {
+  const options = view.options;
   const models = modelTargets(read, options);
-  const projects = projectTargets(read, options);
+  const projects = projectTargets(read, options, view);
   return {
     schema_version: 1,
     generated_at: read.asOf,
@@ -315,26 +296,56 @@ export function buildOverview(read: SessionStatisticsReadResult): UsageStatsOver
       price_version: "api-list-usd-2026-10-19-v1",
     },
     projection_status: read.projectionStatus,
-    totals: aggregate(read, index, {}),
-    by_model: providerRows(read, index, models),
-    by_project: projectRows(read, index, projects),
-    series: series(read, index, models, projects),
+    totals: view.aggregate({}),
+    by_model: providerRows(read, view, models),
+    by_project: projectRows(read, view, projects),
+    series: series(read, view, models, projects),
     options,
   };
 }
 
-export function buildDay(read: SessionStatisticsReadResult, date: string): UsageStatsDayDetail {
-  const index = createSessionStatisticsCoverageIndex(read);
-  const options = buildSessionStatisticsOptions(read, index);
+export function buildDay(read: SessionStatisticsReadResult, date: string, view = directView(read)): UsageStatsDayDetail {
+  const options = view.options;
   return {
     schema_version: 1,
     date,
     generated_at: read.asOf,
     as_of: read.asOf,
-    totals: aggregate(read, index, { date }),
-    by_model: providerRows(read, index, modelTargets(read, options), date),
-    by_project: projectRows(read, index, projectTargets(read, options), date),
-    ...buildSessionStatisticsMaterial(read, date),
+    totals: view.aggregate({ date }),
+    by_model: providerRows(read, view, modelTargets(read, options), date),
+    by_project: projectRows(read, view, projectTargets(read, options, view), date),
+    ...view.material(date),
+  };
+}
+
+export type SessionStatisticsView = {
+  options: UsageStatsOverview["options"];
+  hasUsage: boolean;
+  hasUnclassifiedUsage: boolean;
+  aggregate(scope: SessionStatisticsScope): UsageStatsAggregate;
+  rowCount(scope: SessionStatisticsScope): number;
+  material(date: string): Pick<UsageStatsDayDetail, "input_material" | "tool_calls">;
+};
+
+function directView(read: Read): SessionStatisticsView {
+  const index = createSessionStatisticsCoverageIndex(read);
+  const rowsFor = (scope: SessionStatisticsScope) => {
+    if (scope.date?.length !== 7) return selectOwnedSessionStatisticsRows(read, scope);
+    return selectOwnedSessionStatisticsRows(read, { ...scope, date: undefined }).filter(row =>
+      sessionStatisticsDate(row.owner_recorded_at ?? row.fact?.recorded_at ?? null)?.startsWith(scope.date!) === true);
+  };
+  const projects = new Map(read.sessions.map(session => [session.sessionId, session.projectId]));
+  return {
+    options: buildSessionStatisticsOptions(read, index),
+    hasUsage: read.rows.some(row => row.row_kind === "usage"),
+    hasUnclassifiedUsage: read.rows.some(row => row.row_kind === "usage" && projects.get(row.session_id) === null),
+    aggregate(scope) {
+      const selected = rowsFor(scope);
+      return finalizeSessionStatisticsAggregate(read, aggregateSessionStatisticsMetrics(read, selected),
+        sessionStatisticsCoverage(read, index, scope, selected));
+    },
+    rowCount: scope => rowsFor(scope).length,
+    material: date => buildSessionStatisticsMaterial(read, date),
   };
 }
 

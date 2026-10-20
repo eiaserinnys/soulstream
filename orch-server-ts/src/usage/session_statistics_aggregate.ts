@@ -10,6 +10,7 @@ import { sessionStatisticsDate, sessionStatisticsInPeriod } from "./session_stat
 import {
   addDecimal,
   decimalNumber,
+  decimalString,
   parseDecimal,
   type Decimal,
 } from "./session_statistics_decimal.js";
@@ -121,10 +122,10 @@ function sumKnown(rows: readonly Row[], select: (row: Row) => number | null): nu
   return found && Number.isSafeInteger(total) ? total : null;
 }
 
-export function aggregateSessionStatisticsMetrics(
+export function createSessionStatisticsMetricState(
   read: SessionStatisticsReadResult,
   sourceRows: readonly Row[],
-): UsageStatsMetrics {
+): SessionStatisticsMetricState {
   const seen = new Set<string>();
   const rows: Row[] = [];
   let knownCost: Decimal | null = null;
@@ -167,6 +168,7 @@ export function aggregateSessionStatisticsMetrics(
   }
 
   return {
+    tokens: {
     input_total: sumKnown(rows, (row) => row.fact!.input_total),
     cache_read: sumKnown(rows, (row) => row.fact!.cache_read),
     cache_write: sumKnown(rows, (row) => row.fact!.cache_write),
@@ -175,16 +177,35 @@ export function aggregateSessionStatisticsMetrics(
     total_tokens: sumKnownTokenMetrics(rows.map((row) => sourceTokenMetrics(row.fact!).total_tokens)),
     provider_total_tokens: sumKnownTokenMetrics(rows.map((row) => sourceTokenMetrics(row.fact!).provider_total_tokens)),
     ordinary_input: sumKnownTokenMetrics(rows.map((row) => sourceTokenMetrics(row.fact!).ordinary_input)),
-    reference_cost_usd: decimalNumber(knownCost),
+    },
+    costs: { total: decimalString(knownCost), cache_read: decimalString(cacheReadCost), non_cache: decimalString(nonCacheCost) },
+    costPartials: { cache_read: cacheReadPartial, non_cache: nonCachePartial },
+  };
+}
+
+export type SessionStatisticsMetricState = {
+  tokens: Omit<UsageStatsMetrics, "reference_cost_usd" | "reference_cost_breakdown">;
+  costs: { total: string | null; cache_read: string | null; non_cache: string | null };
+  costPartials: { cache_read: boolean; non_cache: boolean };
+};
+
+export function finalizeSessionStatisticsMetrics(state: SessionStatisticsMetricState): UsageStatsMetrics {
+  const value = (text: string | null) => text === null ? null : decimalNumber(parseDecimal(text));
+  return {
+    ...state.tokens,
+    reference_cost_usd: value(state.costs.total),
     reference_cost_breakdown: {
-      cache_read: {
-        known_cost_usd: hasCacheRead ? decimalNumber(cacheReadCost) : null,
-        is_partial: cacheReadPartial || !hasCacheRead,
-      },
-      non_cache: {
-        known_cost_usd: hasNonCache ? decimalNumber(nonCacheCost) : null,
-        is_partial: nonCachePartial || !hasNonCache,
-      },
+      cache_read: { known_cost_usd: value(state.costs.cache_read),
+        is_partial: state.costPartials.cache_read || state.costs.cache_read === null },
+      non_cache: { known_cost_usd: value(state.costs.non_cache),
+        is_partial: state.costPartials.non_cache || state.costs.non_cache === null },
     },
   };
+}
+
+export function aggregateSessionStatisticsMetrics(
+  read: SessionStatisticsReadResult,
+  sourceRows: readonly Row[],
+): UsageStatsMetrics {
+  return finalizeSessionStatisticsMetrics(createSessionStatisticsMetricState(read, sourceRows));
 }

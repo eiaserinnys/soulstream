@@ -130,12 +130,23 @@ export function buildSessionStatisticsOptions(
     .filter((project, index, all) => all.findIndex((other) => other.project_id === project.project_id) === index)
     .sort((left, right) => (totals.get(right.project_id) ?? 0) - (totals.get(left.project_id) ?? 0)
       || sessionStatisticsCompareText(left.project_id, right.project_id));
-  const sortedModels = [...models.values()].sort((left, right) => compareProvider(left.provider, right.provider)
-    || modelSort(left.model, right.model)
-    || sessionStatisticsCompareText(left.backend, right.backend));
-  const modelRosters = USAGE_STATS_PROVIDERS.map((provider) => ({
-    provider,
-    models: [...new Set(sortedModels.filter((model) => model.provider === provider).map((model) => model.model))]
+  return finalizeSessionStatisticsOptions([...models.values()], projects, totals);
+}
+
+export function finalizeSessionStatisticsOptions(
+  modelOptions: readonly ModelOption[],
+  projectOptions: UsageStatsOptions["projects"],
+  totals: ReadonlyMap<string, number>,
+): UsageStatsOptions {
+  const projects = [...new Map(projectOptions.map(project => [project.project_id, project])).values()]
+    .sort((left, right) => (totals.get(right.project_id) ?? 0) - (totals.get(left.project_id) ?? 0)
+      || sessionStatisticsCompareText(left.project_id, right.project_id));
+  const sortedModels = [...new Map(modelOptions.map(model => [
+    JSON.stringify([model.provider, model.model, model.backend]), model,
+  ])).values()].sort((left, right) => compareProvider(left.provider, right.provider)
+    || modelSort(left.model, right.model) || sessionStatisticsCompareText(left.backend, right.backend));
+  const modelRosters = USAGE_STATS_PROVIDERS.map(provider => ({
+    provider, models: [...new Set(sortedModels.filter(model => model.provider === provider).map(model => model.model))]
       .sort(modelSort),
   }));
 
