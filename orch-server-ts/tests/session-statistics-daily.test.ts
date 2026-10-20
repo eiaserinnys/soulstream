@@ -50,8 +50,9 @@ describe("session statistics daily rollups", () => {
     // the previous day's usage. The extra ended count and field partial flags
     // are the accepted cross-midnight differences; supporting identity is not stored.
     const dayStates = [
-      createSessionStatisticsDailyState({ ...source, rows: [start, partial, end, diagnostic] }, firstDate.slice(0, 10)),
-      createSessionStatisticsDailyState({ ...source, rows: [start, end, diagnostic, complete] }, secondDate.slice(0, 10)),
+      createSessionStatisticsDailyState({ ...source, rows: source.rows.filter(row => row.session_id === "session-1") }, firstDate.slice(0, 10)),
+      createSessionStatisticsDailyState({ ...source, rows: source.rows.filter(row =>
+        row.session_id !== "session-1" || row.owner_event_id !== 20) }, secondDate.slice(0, 10)),
     ];
     const point = (result: ReturnType<typeof buildOverview>) => result.series.find(item =>
       item.project_id === "p" && item.bucket_start === "2026-10-20")!;
