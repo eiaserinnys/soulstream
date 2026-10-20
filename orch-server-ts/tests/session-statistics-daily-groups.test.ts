@@ -32,4 +32,12 @@ describe("daily folder groups", () => {
     expect(buildDailyOverview(metadata, [{ ...state, sessions: [], groups }]))
       .toEqual(buildDailyOverview(metadata, [state]));
   });
+
+  it("preserves the existing provider/model/backend option identity", () => {
+    const first = state.sessions[0]!;
+    const option = first.options[0]!;
+    const other = { ...first, sessionId: "backend-variant", options: [{ ...option, backend: "opencode" }] };
+    const groups = createSessionStatisticsDailyGroups([first, other]);
+    expect(groups[0]!.options).toEqual([option, { ...option, backend: "opencode" }]);
+  });
 });

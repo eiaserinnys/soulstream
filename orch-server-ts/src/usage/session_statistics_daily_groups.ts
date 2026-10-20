@@ -35,7 +35,7 @@ export function createSessionStatisticsDailyGroups(sessions: readonly DailySessi
         tokenEvidence: selected.some(state => state.tokenEvidence),
       };
     }
-    const options = new Map(cells.flatMap(cell => cell.options).map(option => [JSON.stringify([option.provider, option.model]), option]));
+    const options = new Map(cells.flatMap(cell => cell.options).map(option => [JSON.stringify([option.provider, option.model, option.backend]), option]));
     return { folderId: cells[0]!.folderId ?? null, cardFolderId: cells[0]!.cardFolderId ?? null,
       selectors, options: [...options.values()], hasUsage: cells.some(cell => cell.hasUsage),
       unattributedAllFields: cells.some(cell => cell.unattributedAllFields) };
