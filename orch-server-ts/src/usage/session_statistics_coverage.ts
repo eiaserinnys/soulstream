@@ -537,7 +537,8 @@ export function sessionStatisticsCoverage(
   const countableEndedKeys = new Set(countableMissing.filter((record) => record.kind === "ended").map((record) => record.identityKey));
   const countableMissingTurnKeys = new Set(countableMissing.map((record) => record.identityKey));
   const pendingKeys = new Set(pending.map((record) => record.identityKey));
-  const missingAllFields = countableMissing.some((record) => record.unknownAllUsageFields);
+  const missingAllFields = relatedMissing.some((record) => record.unknownAllUsageFields
+    && (record.attribution === null || scopeAttributionMatches(read, record.attribution, scope)));
 
   return {
     usage_complete_events: usageCompleteEvents,

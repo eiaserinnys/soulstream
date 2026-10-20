@@ -201,6 +201,16 @@ describe("session statistics coverage aggregation", () => {
     expect(result.unattributed_missing_usage).toBe(true);
   });
 
+  it("marks token fields partial for unattributed all-field missing under provider filtering", () => {
+    const scoped = read([usageRow(), missingRow({ input_id: null })], { provider: "claude" });
+    const index = createSessionStatisticsCoverageIndex(scoped);
+    const result = sessionStatisticsCoverage(scoped, index, {}, selectOwnedSessionStatisticsRows(scoped));
+
+    expect(result.unattributed_missing_usage).toBe(true);
+    expect(result.missing_usage_turns).toBe(0);
+    expect(result.token_partials.total_tokens).toBe(true);
+  });
+
   it("removes duplicate canonical source rows before selecting owned facts", () => {
     const duplicate = usageRow();
     const selected = selectOwnedSessionStatisticsRows(read([duplicate, duplicate]));
@@ -271,7 +281,7 @@ describe("session statistics coverage aggregation", () => {
     });
   });
 
-  it("splits a stored canonical cost into exact cache-read and non-cache components", () => {
+  it("uses stored canonical cost as the source when helper component totals differ", () => {
     const row = usageRow({
       fact: fact({
         provider: "claude",
@@ -285,7 +295,7 @@ describe("session statistics coverage aggregation", () => {
       }),
     });
     const decimals = new Map([
-      [sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0.000328"],
+      [sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0.000329"],
     ]);
     const result = read([row], {}, decimals);
     const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
@@ -293,13 +303,13 @@ describe("session statistics coverage aggregation", () => {
     expect(metrics.total_tokens).toBe(80);
     expect(metrics.provider_total_tokens).toBe(120);
     expect(metrics.ordinary_input).toBe(60);
-    expect(metrics.reference_cost_usd).toBe(0.000328);
+    expect(metrics.reference_cost_usd).toBe(0.000329);
     expect(metrics.reference_cost_breakdown.cache_read).toEqual({
       known_cost_usd: 0.000008,
       is_partial: false,
     });
     expect(metrics.reference_cost_breakdown.non_cache).toEqual({
-      known_cost_usd: 0.00032,
+      known_cost_usd: 0.000321,
       is_partial: false,
     });
     const index = createSessionStatisticsCoverageIndex(result);
