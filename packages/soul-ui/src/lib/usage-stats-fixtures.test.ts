@@ -84,9 +84,9 @@ describe("usage statistics public fixture", () => {
       expect(isUsageStatsCostPartial(aggregate.coverage)).toBe(true);
     }
     expect(formatUsageStatsValue(week.totals.metrics, week.totals.coverage, "tokens")).toBe("160만+");
-    expect(formatUsageStatsValue(week.totals.metrics, week.totals.coverage, "cost")).toBe("$13.00+");
+    expect(formatUsageStatsValue(week.totals.metrics, week.totals.coverage, "cost", false, true)).toBe("$13.00+");
     expect(formatUsageStatsValue(friday.totals.metrics, friday.totals.coverage, "tokens")).toBe("60만+");
-    expect(formatUsageStatsValue(friday.totals.metrics, friday.totals.coverage, "cost")).toBe("$3.00+");
+    expect(formatUsageStatsValue(friday.totals.metrics, friday.totals.coverage, "cost", false, true)).toBe("$3.00+");
     expect(all.totals.coverage).toMatchObject({ missing_usage_turns: 14, unattributed_missing_usage: false });
     const unfilteredProject = buildUsageStatsOverview({ period: "week", anchor: USAGE_STATS_FIXTURE_ANCHOR, project_ids: ["project-web-dashboard"] });
     expect(unfilteredProject.totals.coverage).toMatchObject({ missing_usage_turns: 4, unattributed_missing_usage: false });
@@ -96,12 +96,12 @@ describe("usage statistics public fixture", () => {
     const empty = buildUsageStatsOverview({ period: "week", anchor: "2026-10-10", provider: "claude" });
     expect(empty.totals.coverage.unattributed_missing_usage).toBe(false);
     expect(formatUsageStatsValue(empty.totals.metrics, empty.totals.coverage, "tokens")).toBe("0");
-    expect(formatUsageStatsValue(empty.totals.metrics, empty.totals.coverage, "cost")).toBe("$0.00");
+    expect(formatUsageStatsValue(empty.totals.metrics, empty.totals.coverage, "cost", false, true)).toBe("$0.00");
     const pendingOnly = buildUsageStatsDayDetail("2026-10-18", { provider: "antigravity", project_ids: ["project-experiments"] });
     expect(pendingOnly.totals.coverage.unattributed_missing_usage).toBe(false);
     expect(pendingOnly.totals.is_partial).toBe(false);
     expect(formatUsageStatsValue(pendingOnly.totals.metrics, pendingOnly.totals.coverage, "tokens")).toBe("45만");
-    expect(formatUsageStatsValue(pendingOnly.totals.metrics, pendingOnly.totals.coverage, "cost")).toBe("$2.00");
+    expect(formatUsageStatsValue(pendingOnly.totals.metrics, pendingOnly.totals.coverage, "cost", false, true)).toBe("$2.00");
     const blockedZero = buildUsageStatsDayDetail("2026-10-18", { provider: "claude", project_ids: ["project-experiments"] });
     expect(blockedZero.totals.coverage.unattributed_missing_usage).toBe(false);
     expect(blockedZero.totals.metrics.total_tokens).toBeNull();
@@ -243,6 +243,20 @@ describe("usage statistics public fixture", () => {
     expect(kimi?.metrics.reference_cost_usd).toBeNull();
     expect(deepseek?.metrics.total_tokens).toBeNull();
     expect(deepseek?.metrics.reference_cost_usd).toBeNull();
+  });
+
+  it("keeps row wording stable when cache-read costs are included or excluded", () => {
+    const overview = buildUsageStatsOverview({ period: "week", anchor: USAGE_STATS_FIXTURE_ANCHOR });
+    const kimi = overview.by_model.find(row => row.provider === "kimi")!;
+    const deepseek = overview.by_model.find(row => row.provider === "deepseek")!;
+    const unknownProvider = overview.by_model.find(row => row.provider === "unknown")!;
+
+    expect(formatUsageStatsValue(deepseek.metrics, deepseek.coverage, "cost", true, false)).toBe("미기록");
+    expect(formatUsageStatsValue(deepseek.metrics, deepseek.coverage, "cost", true, true)).toBe("미기록");
+    expect(formatUsageStatsValue(kimi.metrics, kimi.coverage, "cost", true, false)).toBe("정가 미확인");
+    expect(formatUsageStatsValue(kimi.metrics, kimi.coverage, "cost", true, true)).toBe("정가 미확인");
+    expect(formatUsageStatsValue(unknownProvider.metrics, unknownProvider.coverage, "cost", true, false)).toBe("미기록");
+    expect(formatUsageStatsValue(unknownProvider.metrics, unknownProvider.coverage, "cost", true, true)).toBe("미기록");
   });
 
   it("deduplicates missing usage turns and excludes pending inputs", () => {

@@ -59,7 +59,7 @@ export function formatUsageStatsValue(
     total_tokens: number | null;
     provider_total_tokens: number | null;
     reference_cost_usd: number | null;
-    reference_cost_breakdown?: {
+    reference_cost_breakdown: {
       non_cache: { known_cost_usd: number | null; is_partial: boolean };
     };
   },
@@ -86,13 +86,9 @@ export function formatUsageStatsValue(
     if (value === null || (value === 0 && partial)) return USAGE_STATS_LABELS.missingUsage;
     return `${formatUsageStatsTokenCount(value)}${partial ? "+" : ""}`;
   }
-  // Calls predating the option retain their total-cost output; explicit false selects the non-cache component.
-  if (!includeCacheRead && arguments.length >= 5) {
-    if (!metrics.reference_cost_breakdown) return USAGE_STATS_LABELS.unknownCost;
-    return formatUsageStatsSplitCost(metrics.reference_cost_breakdown.non_cache);
-  }
-  const partial = isUsageStatsCostPartial(coverage);
   if (row && metrics.provider_total_tokens === null) return USAGE_STATS_LABELS.missingUsage;
+  if (!includeCacheRead) return formatUsageStatsSplitCost(metrics.reference_cost_breakdown.non_cache, row);
+  const partial = isUsageStatsCostPartial(coverage);
   if (metrics.reference_cost_usd === null || (metrics.reference_cost_usd === 0 && partial)) return row ? USAGE_STATS_LABELS.unknownPrice : USAGE_STATS_LABELS.unknownCost;
   return `${formatUsageStatsUsd(metrics.reference_cost_usd)}${partial ? "+" : ""}`;
 }
@@ -159,9 +155,9 @@ export function formatUsageStatsCacheSplit(
   };
 }
 
-function formatUsageStatsSplitCost(component: { known_cost_usd: number | null; is_partial: boolean }): string {
+function formatUsageStatsSplitCost(component: { known_cost_usd: number | null; is_partial: boolean }, row = false): string {
   if (component.known_cost_usd === null || (component.known_cost_usd === 0 && component.is_partial)) {
-    return USAGE_STATS_LABELS.unknownCost;
+    return row ? USAGE_STATS_LABELS.unknownPrice : USAGE_STATS_LABELS.unknownCost;
   }
   return `${formatUsageStatsUsd(component.known_cost_usd)}${component.is_partial ? "+" : ""}`;
 }
