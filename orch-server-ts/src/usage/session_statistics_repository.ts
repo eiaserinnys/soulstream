@@ -108,7 +108,6 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
         );
         costDecimals = await readSelectedCostDecimals(
           transaction,
-          sessionIds,
           input.asOf,
           rows,
         );
@@ -264,7 +263,6 @@ function buildProjectionStatus(
 
 async function readSelectedCostDecimals(
   sql: BoardYjsQuerySql,
-  authorizedSessionIds: readonly string[],
   asOf: string,
   rows: readonly CanonicalSessionStatisticsRow[],
 ): Promise<ReadonlyMap<string, string>> {
@@ -281,12 +279,9 @@ async function readSelectedCostDecimals(
   }
   const sources = [...selected.values()];
   if (sources.length === 0) return new Map();
+  // The canonical read creates authorized_sessions on this same transaction before this call.
   const decimalRows = await sql<readonly CostSqlRow[]>`
-    WITH authorized_sessions AS (
-      SELECT value AS session_id
-      FROM jsonb_array_elements_text(${sql.json([...new Set(authorizedSessionIds)])}::jsonb)
-    ),
-    selected_sources AS (
+    WITH selected_sources AS (
       SELECT source.session_id, source.event_id, source.part_key
       FROM jsonb_to_recordset(${sql.json(sources)}::jsonb)
         AS source(session_id TEXT, event_id BIGINT, part_key TEXT)
