@@ -1,3 +1,4 @@
+import { SessionStatisticsDailyRepository } from "./session_statistics_daily_repository.js";
 import type { UsageStatsOverview } from "@soulstream/wire-schema/session-statistics";
 import type { BoardYjsQuerySql, BoardYjsSql } from "../board-yjs/board_yjs_sql.js";
 import { SESSION_STATISTICS_PROJECTION_SETTING_KEY } from "./session_statistics_backfill.js";
@@ -6,6 +7,7 @@ import {
   type CanonicalSessionStatisticsRow,
 } from "./session_statistics_canonical_sql.js";
 import {
+  resolveSessionStatisticsDateSlice,
   resolveSessionStatisticsDay,
   resolveSessionStatisticsPeriod,
   parseOffsetTimestamp,
@@ -53,9 +55,24 @@ type CostSource = {
 };
 
 export class SessionStatisticsRepository implements SessionStatisticsRepositoryPort {
-  constructor(private readonly sql: BoardYjsSql) {}
+  readonly daily: SessionStatisticsDailyRepository;
+  constructor(private readonly sql: BoardYjsSql) {
+    this.daily = new SessionStatisticsDailyRepository(sql);
+  }
+
+  readMetadata(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult> {
+    return this.readInternal(input, "metadata");
+  }
+
+  readSlice(input: SessionStatisticsReadRequest, day: string): Promise<SessionStatisticsReadResult> {
+    return this.readInternal(input, "slice", day);
+  }
 
   async read(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult> {
+    return this.readInternal(input, "direct");
+  }
+
+  private async readInternal(input: SessionStatisticsReadRequest, mode: "direct" | "metadata" | "slice", sliceDay?: string): Promise<SessionStatisticsReadResult> {
     parseOffsetTimestamp(input.asOf, "asOf");
     return await this.sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
@@ -68,11 +85,21 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
         transaction,
         input,
       );
-      const period = resolveSessionStatisticsPeriod(
+      let period = resolveSessionStatisticsPeriod(
         input.query,
         input.asOf,
         authorizedEarliest,
       );
+      if (mode === "slice") {
+        const bounds = resolveSessionStatisticsDateSlice(sliceDay!, input.asOf);
+        const next = new Date(`${sliceDay}T00:00:00Z`);
+        next.setUTCDate(next.getUTCDate() + 1);
+        period = { ...period, ...bounds,
+          range: { ...period.range, since: sliceDay!, until: next.toISOString().slice(0, 10),
+            effective_until: next.toISOString().slice(0, 10), bucket: "day" },
+          empty: Date.parse(bounds.recordedAtFrom) >= Date.parse(bounds.recordedAtBefore),
+        };
+      }
       const projectionStatus = buildProjectionStatus(
         projectionState,
         authorizedEarliest,
@@ -87,7 +114,9 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
         recordedAtFrom: string;
         recordedAtBefore: string;
       };
-      if (input.day === null) {
+      if (mode === "slice") {
+        readPurpose = { kind: "day", recordedAtFrom: period.recordedAtFrom, recordedAtBefore: period.recordedAtBefore };
+      } else if (input.day === null || mode === "metadata") {
         readPurpose = { kind: "overview" };
       } else {
         const day = resolveSessionStatisticsDay(input.day, period.range, input.asOf);
@@ -96,7 +125,7 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
 
       const isEmptyDay = readPurpose.kind === "day"
         && Date.parse(readPurpose.recordedAtFrom) >= Date.parse(readPurpose.recordedAtBefore);
-      if (sessionIds.length > 0 && !period.empty && !isEmptyDay) {
+      if (mode !== "metadata" && sessionIds.length > 0 && !period.empty && !isEmptyDay) {
         rows = await createCanonicalSessionStatisticsFacts(
           transaction,
           sessionIds,

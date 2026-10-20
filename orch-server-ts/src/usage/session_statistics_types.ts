@@ -35,5 +35,8 @@ export type SessionStatisticsReadResult = {
 };
 
 export type SessionStatisticsRepositoryPort = {
+  daily?: import("./session_statistics_daily_repository.js").SessionStatisticsDailyRepositoryPort;
+  readMetadata?(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult>;
+  readSlice?(input: SessionStatisticsReadRequest, day: string): Promise<SessionStatisticsReadResult>;
   read(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult>;
 };

@@ -155,3 +155,13 @@ function minDate(left: string, right: string): string {
 function minTimestamp(left: Date, right: Date): Date {
   return left.getTime() <= right.getTime() ? left : right;
 }
+
+/** Internal day seed; the public period union remains unchanged. */
+export function resolveSessionStatisticsDateSlice(date: string, asOf: string): SessionStatisticsDayRange {
+  const selected = parseCalendarDate(date, "day");
+  const end = kstMidnight(addDays(selected, 1));
+  return {
+    recordedAtFrom: kstMidnight(selected).toISOString(),
+    recordedAtBefore: minTimestamp(end, parseOffsetTimestamp(asOf, "asOf")).toISOString(),
+  };
+}

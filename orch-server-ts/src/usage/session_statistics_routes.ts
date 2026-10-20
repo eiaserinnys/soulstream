@@ -36,7 +36,7 @@ const ACCESS_DENIED = { detail: "Session statistics access denied" } as const;
 const UNAVAILABLE = { detail: "Session statistics unavailable" } as const;
 
 export type SessionStatisticsRouteOptions = {
-  service: Pick<SessionStatisticsService, "getOverview" | "getDay">;
+  service: Pick<SessionStatisticsService, "getOverview" | "getDay"> & { close?: () => void };
   accessProvider: Pick<LiveDashboardAccessProvider, "resolveAccess">;
   folderProvider: Pick<FolderRouteProvider, "listFolders">;
   now: () => Date;
@@ -55,6 +55,7 @@ export function registerSessionStatisticsRoutes(
   app: FastifyInstance,
   options: SessionStatisticsRouteOptions,
 ): void {
+  app.addHook("onClose", async () => { options.service.close?.(); });
   app.get("/api/session-statistics", async (request, reply) => {
     const scope = await resolveScope(request, reply, options);
     if (scope === null) return;

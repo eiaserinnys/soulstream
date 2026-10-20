@@ -9,6 +9,7 @@ import {
   sessionStatisticsDate,
   sessionStatisticsSourceKey,
 } from "./session_statistics_aggregate.js";
+import type { SessionStatisticsScope } from "./session_statistics_aggregate.js";
 import { sessionStatisticsRowsForQuery } from "./session_statistics_coverage.js";
 
 type Row = SessionStatisticsReadResult["rows"][number];
@@ -94,8 +95,9 @@ function materialSampleCoverage(materialRows: readonly Row[], readRows: readonly
 export function buildSessionStatisticsMaterial(
   read: SessionStatisticsReadResult,
   date: string,
+  scope: SessionStatisticsScope = {},
 ): MaterialResult {
-  const filteredRows = sessionStatisticsRowsForQuery(read);
+  const filteredRows = sessionStatisticsRowsForQuery(read, scope);
   const ownerDates = new Map<string, string>();
   for (const row of filteredRows) {
     if (row.row_kind !== "usage" || row.state !== "owned" || row.fact?.fact_kind !== "usage"
