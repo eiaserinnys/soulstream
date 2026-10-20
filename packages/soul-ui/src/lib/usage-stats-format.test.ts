@@ -81,10 +81,11 @@ describe("usage statistics formatting", () => {
   });
   it("shares unknown price wording and never invents a zero partial total", () => {
     const coverage = coverageWith({ total_tokens: true });
-    expect(formatUsageStatsValue({ total_tokens: null, provider_total_tokens: null, reference_cost_usd: null }, coverage, "cost")).toBe("미확인");
-    expect(formatUsageStatsValue({ total_tokens: null, provider_total_tokens: null, reference_cost_usd: null }, coverage, "cost", true)).toBe("미기록");
-    expect(formatUsageStatsValue({ total_tokens: 5, provider_total_tokens: 5, reference_cost_usd: null }, coverage, "cost", true)).toBe("정가 미확인");
-    expect(formatUsageStatsValue({ total_tokens: 0, provider_total_tokens: 0, reference_cost_usd: 0 }, coverage, "tokens")).toBe("미기록");
+    const unknownCost = { non_cache: { known_cost_usd: null, is_partial: true } };
+    expect(formatUsageStatsValue({ total_tokens: null, provider_total_tokens: null, reference_cost_usd: null, reference_cost_breakdown: unknownCost }, coverage, "cost")).toBe("미확인");
+    expect(formatUsageStatsValue({ total_tokens: null, provider_total_tokens: null, reference_cost_usd: null, reference_cost_breakdown: unknownCost }, coverage, "cost", true)).toBe("미기록");
+    expect(formatUsageStatsValue({ total_tokens: 5, provider_total_tokens: 5, reference_cost_usd: null, reference_cost_breakdown: unknownCost }, coverage, "cost", true)).toBe("정가 미확인");
+    expect(formatUsageStatsValue({ total_tokens: 0, provider_total_tokens: 0, reference_cost_usd: 0, reference_cost_breakdown: { non_cache: { known_cost_usd: 0, is_partial: false } } }, coverage, "tokens")).toBe("미기록");
   });
   it("does not mark positive totals partial for pending-only or unknown collection evidence", () => {
     const pendingOnly = {
@@ -92,7 +93,7 @@ describe("usage statistics formatting", () => {
       pending_inputs: 1,
       collection_state: "unknown",
     };
-    expect(formatUsageStatsValue({ total_tokens: 8, provider_total_tokens: 8, reference_cost_usd: null }, pendingOnly, "tokens")).toBe("8");
+    expect(formatUsageStatsValue({ total_tokens: 8, provider_total_tokens: 8, reference_cost_usd: null, reference_cost_breakdown: { non_cache: { known_cost_usd: null, is_partial: true } } }, pendingOnly, "tokens")).toBe("8");
   });
   it("keeps measured zero distinct from missing data", () => {
     expect(formatUsageStatsTokenCount(0)).toBe("0");
@@ -241,13 +242,23 @@ describe("usage statistics formatting", () => {
 
   it("guards the cost row with provider_total_tokens instead of total_tokens", () => {
     expect(formatUsageStatsValue(
-      { total_tokens: null, provider_total_tokens: 120, reference_cost_usd: 3 },
+      {
+        total_tokens: null,
+        provider_total_tokens: 120,
+        reference_cost_usd: 3,
+        reference_cost_breakdown: { non_cache: { known_cost_usd: 3, is_partial: false } },
+      },
       coverageWith(),
       "cost",
       true,
     )).toBe("$3.00");
     expect(formatUsageStatsValue(
-      { total_tokens: 120, provider_total_tokens: null, reference_cost_usd: null },
+      {
+        total_tokens: 120,
+        provider_total_tokens: null,
+        reference_cost_usd: null,
+        reference_cost_breakdown: { non_cache: { known_cost_usd: null, is_partial: true } },
+      },
       coverageWith(),
       "cost",
       true,
@@ -266,7 +277,7 @@ describe("usage statistics formatting", () => {
     expect(formatUsageStatsValue(metrics, complete, "tokens", false, true)).toBe("120");
     expect(formatUsageStatsValue(metrics, complete, "cost", false, false)).toBe("$78.45");
     expect(formatUsageStatsValue(metrics, complete, "cost", false, true)).toBe("$123.45");
-    expect(formatUsageStatsValue(metrics, complete, "cost")).toBe("$123.45");
+    expect(formatUsageStatsValue(metrics, complete, "cost")).toBe("$78.45");
 
     const partialCoverage = coverageWith({ total_tokens: true, provider_total_tokens: true });
     partialCoverage.unpriced_events = 1;
