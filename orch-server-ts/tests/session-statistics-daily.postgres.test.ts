@@ -14,8 +14,8 @@ describe("daily statistics PostgreSQL storage", () => {
 
   it("roundtrips session states, preserves an empty marker, filters authorization, and cascades explicit deletion", async () => {
     const sql = harness.sql;
-    const [{ count }] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM sessions`;
-    expect(count).toBe(0);
+    const counts = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM sessions`;
+    expect(counts[0]?.count).toBe(0);
     const repository = new SessionStatisticsDailyRepository(sql as unknown as BoardYjsSql);
     const state = createSessionStatisticsDailyState(read([usageRow()]), "2026-10-19");
     await repository.save(state, "20");
