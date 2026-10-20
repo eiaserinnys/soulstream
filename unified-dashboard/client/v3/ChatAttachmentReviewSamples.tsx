@@ -134,7 +134,40 @@ export function ChatAttachmentReviewSamples() {
   const items = useMemo(() => {
     const emptyText = new File([], "empty.txt", { type: "text/plain" });
     const largeText = new File([new Uint8Array(1_048_586).fill(65)], "large.txt", { type: "text/plain" });
-    const markdown = new File(["# 제목\n\n**강조** · `코드` · <script>문자 그대로</script>"], "readme.md", { type: "text/markdown" });
+    const markdown = new File([[
+      "# 톤 제안 원문",
+      "",
+      "## 선택 방향",
+      "",
+      "- 명확한 제목",
+      "- 짧은 설명",
+      "",
+      "| 항목 | 상태 |",
+      "| --- | --- |",
+      "| 미리보기 | 준비 |",
+      "",
+      "    const tone = 'Argon';",
+      "",
+      "[참고 링크](https://example.com)",
+    ].join("\n")], "톤 제안 원문.md", { type: "text/markdown" });
+    const html = new File([[
+      "<!doctype html>",
+      "<html><head><meta charset='utf-8'><style>",
+      "body { font-family: sans-serif; }",
+      ".modal { display: none; position: fixed; inset: 0; place-items: center; background: rgba(0, 0, 0, .7); }",
+      ".modal[aria-hidden='false'] { display: grid; }",
+      ".modal-card { padding: 1.5em; background: white; color: #111; }",
+      "</style></head><body>",
+      "<h1>보고서 시안</h1>",
+      "<p>샌드박스 안에서 모달 조작을 확인합니다.</p>",
+      "<button id='open-modal' type='button'>모달 열기</button>",
+      "<div class='modal' id='modal' role='dialog' aria-modal='true' aria-hidden='true'><div class='modal-card'><p>보고서 모달</p><button id='close-modal' type='button'>닫기</button></div></div>",
+      "<script>",
+      "const modal = document.getElementById('modal');",
+      "document.getElementById('open-modal').addEventListener('click', () => modal.setAttribute('aria-hidden', 'false'));",
+      "document.getElementById('close-modal').addEventListener('click', () => modal.setAttribute('aria-hidden', 'true'));",
+      "</script></body></html>",
+    ].join("\n")], "보고서 시안.html", { type: "text/html" });
     const json = new File(['{"attachment":"sample","ready":true}'], "manifest.json", { type: "application/json" });
     const binary = new File([new Uint8Array([0, 1, 2])], "archive.bin", { type: "application/octet-stream" });
     const svg = new File(["<svg></svg>"], "vector.svg", { type: "image/svg+xml" });
@@ -168,6 +201,7 @@ export function ChatAttachmentReviewSamples() {
       localItem(emptyText, "text"),
       localItem(largeText, "text"),
       localItem(markdown, "text"),
+      localItem(html, "text"),
       localItem(json, "text"),
       localItem(binary, "info"),
       localItem(svg, "info"),
