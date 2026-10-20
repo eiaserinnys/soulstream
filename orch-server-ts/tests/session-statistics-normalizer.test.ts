@@ -12,6 +12,7 @@ import {
   expectedCanonicalInputMaterialFacts,
   expectedCanonicalOwners,
   keylessSystemMaterialEvents,
+  noWriteCacheCases,
   representativeProviderEvents,
   unverifiedClaudeModelBreakdownEvent,
 } from "./fixtures/session_statistics_normalizer.fixtures.js";
@@ -53,6 +54,10 @@ function unknownClaudeEvent(
 }
 
 describe("session statistics native usage number format", () => {
+  it.each(noWriteCacheCases)("preserves cache write semantics: $name", ({ event, expected }) => {
+    expect(usageFact(event)).toMatchObject(expected);
+  });
+
   it("repairs native base/read/write input when snapshot provider is unknown", () => {
     const fact = usageFact(unknownClaudeEvent(200, {
       input_tokens: 12,
@@ -131,7 +136,7 @@ describe("session statistics native usage number format", () => {
       input_total: 6,
       total_tokens: 8,
       cache_read: 3,
-      cache_write: null,
+      cache_write: 0,
     });
     expect((fact?.total_tokens ?? 0) - (fact?.cache_read ?? 0)).toBe(5);
   });
