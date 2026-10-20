@@ -4,7 +4,7 @@ import { createSessionStatisticsDailyState } from "../src/usage/session_statisti
 import { buildDailyDay, buildDailyOverview } from "../src/usage/session_statistics_daily_merge.js";
 import { resolveSessionStatisticsDateSlice } from "../src/usage/session_statistics_period.js";
 import type { SessionStatisticsReadResult } from "../src/usage/session_statistics_types.js";
-import { fact, materialRow, missingRow, read, usageRow } from "./fixtures/session_statistics_aggregation.fixtures.js";
+import { boundaryRow, fact, materialRow, missingRow, read, usageRow } from "./fixtures/session_statistics_aggregation.fixtures.js";
 import { sessionStatisticsSourceKey } from "../src/usage/session_statistics_aggregate.js";
 
 function fixture(): SessionStatisticsReadResult {
@@ -25,6 +25,48 @@ function states(source: SessionStatisticsReadResult) {
 }
 
 describe("session statistics daily rollups", () => {
+  it("records the known cross-midnight difference in missing counts and series field partials", () => {
+    const firstDate = "2026-10-19T12:00:00Z";
+    const secondDate = "2026-10-20T01:00:00Z";
+    const partial = usageRow({ fact: fact({ provider: "codex", backend: "codex", model: "gpt-6.1-sol",
+      output_total: null, cache_read: 60, known_cost_usd: 0.000086,
+      pricing_version: "api-list-usd-2026-10-19-v1", pricing_complete: false }) });
+    const start = boundaryRow(10, "input");
+    const end = { ...boundaryRow(30, "session_ended", { recorded_at: secondDate }), owner_recorded_at: secondDate };
+    const diagnostic = missingRow({ selection_event_id: 10, candidate_event_id: 10, candidate_type: null });
+    const complete = usageRow({ session_id: "s2", owner_event_id: 40, selection_event_id: 40,
+      owner_recorded_at: secondDate,
+      fact: fact({ session_id: "s2", event_id: 40, recorded_at: secondDate,
+        provider: "codex", backend: "codex", model: "gpt-6.1-sol", cache_read: 60,
+        known_cost_usd: 0.000286, pricing_version: "api-list-usd-2026-10-19-v1" }) });
+    const source: SessionStatisticsReadResult = read([start, partial, end, diagnostic, complete], {}, new Map([
+      [sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0.000086"],
+      [sessionStatisticsSourceKey("s2", 40, "usage:aggregate"), "0.000286"],
+    ]), [
+      { sessionId: "session-1", folderId: "f", cardFolderId: null, projectId: "p", projectLabel: "P" },
+      { sessionId: "s2", folderId: "f", cardFolderId: null, projectId: "p", projectLabel: "P" },
+    ]);
+    // A day seed at the closing boundary can retain input/closure support without
+    // the previous day's usage. The extra ended count and field partial flags
+    // are the accepted cross-midnight differences; supporting identity is not stored.
+    const dayStates = [
+      createSessionStatisticsDailyState({ ...source, rows: [start, partial, end, diagnostic] }, firstDate.slice(0, 10)),
+      createSessionStatisticsDailyState({ ...source, rows: [start, end, diagnostic, complete] }, secondDate.slice(0, 10)),
+    ];
+    const point = (result: ReturnType<typeof buildOverview>) => result.series.find(item =>
+      item.project_id === "p" && item.bucket_start === "2026-10-20")!;
+    const directOverview = buildOverview(source);
+    const mergedOverview = buildDailyOverview(source, dayStates);
+    const direct = point(directOverview);
+    const merged = point(mergedOverview);
+    expect(mergedOverview.totals.coverage.ended_input_without_usage)
+      .toBe(directOverview.totals.coverage.ended_input_without_usage + 1);
+    expect(direct.metrics.reference_cost_breakdown.cache_read.is_partial).toBe(false);
+    expect(merged.metrics.reference_cost_breakdown.cache_read.is_partial).toBe(true);
+    expect(merged.metrics.reference_cost_breakdown.cache_read.known_cost_usd)
+      .toBe(direct.metrics.reference_cost_breakdown.cache_read.known_cost_usd);
+  });
+
   it.each([{}, { provider: "claude", model: "sonnet" }, { model: "sol" },
     { project_ids: ["p1"] }, { project_ids: ["p1", "p2"] }])("matches the direct period with filter %j", query => {
     const source = fixture();

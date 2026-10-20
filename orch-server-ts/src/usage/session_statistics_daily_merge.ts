@@ -1,3 +1,5 @@
+// Known difference: missing-input counts can add across dates for the same cross-midnight input.
+// Known difference: the resulting ended-only evidence can also mark field partials true.
 import type { UsageStatsCoverage, UsageStatsMetrics, UsageStatsOptions } from "@soulstream/wire-schema/session-statistics";
 import { createSessionStatisticsMetricState, finalizeSessionStatisticsMetrics, sessionStatisticsProjectMatches,
   type SessionStatisticsMetricState, type SessionStatisticsScope } from "./session_statistics_aggregate.js";
