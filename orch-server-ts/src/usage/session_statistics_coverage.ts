@@ -12,6 +12,8 @@ import {
   sessionStatisticsSourceKey,
 } from "./session_statistics_aggregate.js";
 import type { SessionStatisticsScope } from "./session_statistics_aggregate.js";
+import { foldTokenPartials } from "./session_statistics_field_coverage.js";
+import { sourceTokenMetrics, type SourceTokenInput } from "./session_statistics_token_metrics.js";
 
 type Row = SessionStatisticsReadResult["rows"][number];
 type Fact = NonNullable<Row["fact"]>;
@@ -28,6 +30,7 @@ type Evidence = {
   timestamp: string | null;
   eventOrder: number;
   attribution: Attribution | null;
+  unknownAllUsageFields: boolean;
 };
 
 type Owner = {
@@ -162,6 +165,7 @@ function addEvidence(
   kind: EvidenceKind,
   identity: string,
   attribution: Attribution | null,
+  unknownAllUsageFields: boolean,
 ): void {
   target.push({
     row,
@@ -172,6 +176,7 @@ function addEvidence(
     timestamp: rowTimestamp(row),
     eventOrder: sessionStatisticsEventOrder(row),
     attribution,
+    unknownAllUsageFields,
   });
 }
 
@@ -285,7 +290,10 @@ export function createSessionStatisticsCoverageIndex(
       if (row) {
         const identity = identityForRow(row, inputStarts);
         missingCandidateKeys.add(identityKey(row.session_id, identity));
-        addEvidence(terminalRecords, read, row, "terminal", identity, rowAttribution(row, commandStarts));
+        addEvidence(
+          terminalRecords, read, row, "terminal", identity,
+          rowAttribution(row, commandStarts), owner.factlessRows.length > 0,
+        );
       }
     }
   }
@@ -314,7 +322,7 @@ export function createSessionStatisticsCoverageIndex(
     const key = identityKey(row.session_id, identity);
     missingCandidateKeys.add(key);
     if (isInputCoverageRow(row)) continue;
-    addEvidence(terminalRecords, read, row, "terminal", identity, rowAttribution(row, commandStarts));
+    addEvidence(terminalRecords, read, row, "terminal", identity, rowAttribution(row, commandStarts), true);
   }
 
   const endedRecords: Evidence[] = [];
@@ -335,6 +343,8 @@ export function createSessionStatisticsCoverageIndex(
       timestamp: closure.fact.recorded_at,
       eventOrder: Number(closure.fact.event_id),
       attribution,
+      unknownAllUsageFields: ownerEvidence.length === 0
+        || ownerEvidence.some((record) => record.unknownAllUsageFields),
     });
   }
 
@@ -433,6 +443,7 @@ export function sessionStatisticsCoverage(
   let hasPricedTokens = false;
   let hasUnpricedTokens = false;
   const commandStarts = commandStartAttributions(boundaryRows(read));
+  const selectedSources: SourceTokenInput[] = [];
 
   for (const owner of index.owners) {
     if (!sessionStatisticsRowProjectMatches(read, owner.parts[0]?.row ?? owner.factlessRows[0]!, scope)) continue;
@@ -444,16 +455,17 @@ export function sessionStatisticsCoverage(
       && parts.length > 0
       && parts.every(({ fact }) => fact.input_total !== null && fact.output_total !== null);
     if (complete) usageCompleteEvents += 1;
-    else {
-      usagePartialEvents += 1;
-      unknownTotalTokenEvents += 1;
-    }
+    else usagePartialEvents += 1;
+    const totalUnknown = factless.length > 0 || parts.length === 0
+      || parts.some(({ fact }) => sourceTokenMetrics(fact).total_tokens === null);
+    if (totalUnknown) unknownTotalTokenEvents += 1;
 
     const ownerPriced = parts.some(({ fact }) => fact.known_cost_usd !== null);
     const ownerUnpriced = parts.some(({ fact }) => fact.pricing_complete !== true);
     if (ownerPriced) pricedEvents += 1;
     if (ownerUnpriced) unpricedEvents += 1;
     for (const { fact } of parts) {
+      selectedSources.push(fact);
       if (fact.priced_tokens !== null) {
         hasPricedTokens = true;
         pricedTokenTotal += fact.priced_tokens;
@@ -479,6 +491,7 @@ export function sessionStatisticsCoverage(
   const countableEndedKeys = new Set(countableMissing.filter((record) => record.kind === "ended").map((record) => record.identityKey));
   const countableMissingTurnKeys = new Set(countableMissing.map((record) => record.identityKey));
   const pendingKeys = new Set(pending.map((record) => record.identityKey));
+  const missingAllFields = countableMissing.some((record) => record.unknownAllUsageFields);
 
   return {
     usage_complete_events: usageCompleteEvents,
@@ -493,5 +506,6 @@ export function sessionStatisticsCoverage(
     unpriced_total_tokens: hasUnpricedTokens ? unpricedTokenTotal : null,
     unknown_total_token_events: unknownTotalTokenEvents,
     unattributed_missing_usage: unattributedMissingUsage,
+    token_partials: foldTokenPartials(selectedSources, missingAllFields),
   };
 }
