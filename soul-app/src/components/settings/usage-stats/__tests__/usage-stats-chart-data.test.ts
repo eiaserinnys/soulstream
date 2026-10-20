@@ -78,7 +78,13 @@ test('기록 전 bucket의 양수 known 합은 before-coverage로 가려지지 �
       output_total: 10,
       reasoning_output: 0,
       total_tokens: 50,
+      provider_total_tokens: 50,
+      ordinary_input: 40,
       reference_cost_usd: null,
+      reference_cost_breakdown: {
+        cache_read: { known_cost_usd: null, is_partial: false },
+        non_cache: { known_cost_usd: null, is_partial: false },
+      },
     },
   };
   const buckets = makeUsageStatsBuckets(

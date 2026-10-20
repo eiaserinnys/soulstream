@@ -20,6 +20,7 @@ import {
   formatUsageStatsPeriodLabel,
   formatUsageStatsProviderLabel,
   formatUsageStatsTokenCount,
+  formatUsageStatsCacheSplit,
   shiftUsageStatsAnchor,
   usageStatsCalendarRange,
   usageStatsKstDate,
@@ -28,6 +29,7 @@ import {
   USAGE_STATS_LABELS,
   formatUsageStatsValue,
   formatUsageStatsApproximateTokens,
+  usageStatsMetricValue,
 } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
 import type {
   UsageStatsAggregate,
@@ -41,6 +43,7 @@ import { UsageStackedBars } from './UsageStackedBars';
 import { useUsageStats, type UsageStatsLoadState } from './useUsageStats';
 
 type Measure = 'tokens' | 'cost';
+type CacheReadSetting = 'exclude' | 'include';
 type ProjectFilter = { id: string; label: string };
 const ALL_MODEL_FILTER: UsageStatsModelOption = {
   id: usageStatsFilterKey('all', null, null),
@@ -79,6 +82,10 @@ const MEASURE_OPTIONS: { value: Measure; label: string }[] = [
   { value: 'tokens', label: '토큰' },
   { value: 'cost', label: '정가' },
 ];
+const CACHE_READ_OPTIONS: { value: CacheReadSetting; label: string }[] = [
+  { value: 'exclude', label: USAGE_STATS_LABELS.cacheReadExclude },
+  { value: 'include', label: USAGE_STATS_LABELS.cacheReadInclude },
+];
 
 export function UsageStatsSettingsSection({ flattened = false }: { flattened?: boolean }) {
   const t = useTokens();
@@ -89,6 +96,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const [modelFilter, setModelFilter] = useState<UsageStatsModelOption>(ALL_MODEL_FILTER);
   const [projectFilter, setProjectFilter] = useState<ProjectFilter>(ALL_PROJECT_FILTER);
   const [measure, setMeasure] = useState<Measure>('tokens');
+  const [includeCacheRead, setIncludeCacheRead] = useState(false);
   const [view, setView] = useState<'model' | 'project'>('model');
   const [metricsExpanded, setMetricsExpanded] = useState(false);
   const [basisExpanded, setBasisExpanded] = useState(false);
@@ -133,6 +141,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const activeAggregate = selectedDate
     ? selectedDetail?.totals ?? null
     : overview?.totals ?? null;
+  const cacheSplit = formatUsageStatsCacheSplit(activeAggregate?.metrics, activeAggregate?.coverage);
   const detailLoading = selectedDate !== null && !selectedDetail && state === 'loading';
   const tokenValue = detailLoading
     ? '불러오는 중…'
@@ -140,9 +149,27 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const costValue = detailLoading
     ? '불러오는 중…'
     : activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'cost') : '미확인';
-  const coverageLabel = activeAggregate ? formatUsageStatsCoverage(activeAggregate.coverage.priced_total_tokens, activeAggregate.metrics.total_tokens) : '';
+  const coverageLabel = activeAggregate
+    ? formatUsageStatsCoverage(
+      activeAggregate.coverage.priced_total_tokens,
+      activeAggregate.metrics.provider_total_tokens,
+      activeAggregate.coverage.token_partials.provider_total_tokens,
+    )
+    : '';
   const modelPoints = overview?.series.filter(point => point.provider !== undefined && point.project_id === undefined) ?? [];
   const projectPoints = overview?.series.filter(point => point.project_id !== undefined) ?? [];
+  const modelChartPoints = modelPoints.map(point => {
+    const value = usageStatsMetricValue(point.metrics, measure, includeCacheRead);
+    return measure === 'tokens'
+      ? { ...point, metrics: { ...point.metrics, total_tokens: value } }
+      : { ...point, metrics: { ...point.metrics, reference_cost_usd: value } };
+  });
+  const projectChartPoints = projectPoints.map(point => {
+    const value = usageStatsMetricValue(point.metrics, measure, includeCacheRead);
+    return measure === 'tokens'
+      ? { ...point, metrics: { ...point.metrics, total_tokens: value } }
+      : { ...point, metrics: { ...point.metrics, reference_cost_usd: value } };
+  });
   const completeEmptyRange = Boolean(overview
     && overview.totals.metrics.total_tokens === 0
     && overview.totals.metrics.reference_cost_usd === 0
@@ -177,17 +204,17 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
     if (colorIndex >= 0) modelColorById[model] = projectPalette[colorIndex] ?? t.colors.textTertiary;
   }
   const modelBuckets = overview && range
-    ? makeUsageStatsBuckets(modelPoints, period, range, measure, 'model', seriesColors, projectColorById, t.colors.textTertiary, coveredSince, provider ? modelColorById : undefined)
+    ? makeUsageStatsBuckets(modelChartPoints, period, range, measure, 'model', seriesColors, projectColorById, t.colors.textTertiary, coveredSince, provider ? modelColorById : undefined)
     : [];
   const projectBuckets = overview && range
-    ? makeUsageStatsBuckets(projectPoints, period, range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, coveredSince)
+    ? makeUsageStatsBuckets(projectChartPoints, period, range, measure, 'project', seriesColors, projectColorById, t.colors.textTertiary, coveredSince)
     : [];
   const modelRows = selectedDate ? selectedDetail?.by_model ?? [] : overview?.by_model ?? [];
   const projectRows = selectedDate ? selectedDetail?.by_project ?? [] : overview?.by_project ?? [];
   const inputMaterial = selectedDetail?.input_material ?? null;
   const inputRows = inputMaterial ? groupUsageStatsInputMaterial(inputMaterial) : [];
-  const denominator = sumKnown(modelRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
-  const projectDenominator = sumKnown(projectRows.map(row => row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd']));
+  const denominator = sumKnown(modelRows.map(row => usageStatsMetricValue(row.metrics, measure, includeCacheRead)));
+  const projectDenominator = sumKnown(projectRows.map(row => usageStatsMetricValue(row.metrics, measure, includeCacheRead)));
   const loading = state === 'loading';
   const unavailable = !overview || state === 'error' || state === 'forbidden';
   const previousDisabled = period === 'all' || !range || range.since <= coveredSince;
@@ -271,11 +298,28 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
               <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
                 <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>토큰</Text>
                 <Text testID="usage-stats-total-tokens" numberOfLines={1} style={{ ...t.foundation.typography.section, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{tokenValue}</Text>
+                <Text testID="usage-stats-cache-read-excluded" numberOfLines={1} style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>{cacheSplit.cacheReadLine}</Text>
               </View>
               <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
                 <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>정가</Text>
                 <Text testID="usage-stats-reference-cost" numberOfLines={1} style={{ ...t.foundation.typography.section, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{costValue}</Text>
               </View>
+            </View>
+            <View testID="usage-stats-cost-split" style={{ gap: t.spacing.md }}>
+              <UsageShareRow
+                testID="usage-stats-cost-split-non-cache"
+                label={USAGE_STATS_LABELS.nonCacheCost}
+                value={cacheSplit.nonCacheCost}
+                share={null}
+                color={t.colors.accent}
+              />
+              <UsageShareRow
+                testID="usage-stats-cost-split-cache-read"
+                label={USAGE_STATS_LABELS.cacheReadCost}
+                value={cacheSplit.cacheReadCost}
+                share={null}
+                color={t.colors.accent}
+              />
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }}>
               {coverageLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text> : null}
@@ -296,6 +340,13 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                     onSelect={value => setView(value as 'model' | 'project')} emptyLabel="보기 없음" />
                 </View>
                 <SettingsSegmentedControl<Measure> id="usage-stats-measure" value={measure} options={MEASURE_OPTIONS} onChange={setMeasure} wrap />
+                <SettingsSegmentedControl<CacheReadSetting>
+                  id="usage-stats-cache-read"
+                  value={includeCacheRead ? 'include' : 'exclude'}
+                  options={CACHE_READ_OPTIONS}
+                  onChange={value => setIncludeCacheRead(value === 'include')}
+                  wrap
+                />
               </View>
               <UsageStackedBars
                 testID={view === 'model' ? 'usage-stats-model-chart' : 'usage-stats-project-chart'}
@@ -310,7 +361,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                 {!emptyData && !beforeCoverage ? detailLoading
                   ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>불러오는 중…</Text>
                   : view === 'model' ? modelRows.map(row => {
-                  const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
+                  const value = usageStatsMetricValue(row.metrics, measure, includeCacheRead);
                   const share = typeof value === 'number' && denominator > 0 ? value / denominator : value === 0 ? 0 : null;
                   const label = row.attribution === 'provider'
                     ? formatUsageStatsProviderLabel(row.provider)
@@ -320,7 +371,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                     key={JSON.stringify([row.provider, row.model])}
                     testID={id}
                     label={label}
-                    value={formatUsageStatsValue(row.metrics, row.coverage, measure, true)}
+                    value={formatUsageStatsValue(row.metrics, row.coverage, measure, true, includeCacheRead)}
                     share={share}
                     color={provider !== null ? (provider !== 'unknown' && row.model !== null ? modelColorById[row.model] : undefined) ?? t.colors.textTertiary : seriesColors[row.provider]}
                     onPress={modelFilter.provider === null && row.model === null ? () => {
@@ -335,14 +386,14 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                     } : undefined}
                   />;
                 }) : projectRows.map(row => {
-                  const value = row.metrics[measure === 'tokens' ? 'total_tokens' : 'reference_cost_usd'];
+                  const value = usageStatsMetricValue(row.metrics, measure, includeCacheRead);
                   const share = typeof value === 'number' && projectDenominator > 0 ? value / projectDenominator : value === 0 ? 0 : null;
                   const id = row.project_id === null ? '__unclassified__' : row.project_id;
                   return <UsageShareRow
                     key={id}
                     testID={`usage-stats-project-row-${id}`}
                     label={row.label}
-                    value={formatUsageStatsValue(row.metrics, row.coverage, measure, true)}
+                    value={formatUsageStatsValue(row.metrics, row.coverage, measure, true, includeCacheRead)}
                     share={share}
                     color={projectColorById[id] ?? t.colors.textTertiary}
                     onPress={row.project_id === '__other__' ? undefined : () => {
@@ -400,6 +451,7 @@ function MetricBreakdown({ aggregate }: { aggregate: UsageStatsAggregate }) {
   const metrics = aggregate.metrics;
   const rows = [
     [USAGE_STATS_LABELS.input, metrics.input_total],
+    [USAGE_STATS_LABELS.uncachedInput, metrics.ordinary_input],
     [USAGE_STATS_LABELS.cacheRead, metrics.cache_read],
     [USAGE_STATS_LABELS.cacheWrite, metrics.cache_write],
     [USAGE_STATS_LABELS.output, metrics.output_total],

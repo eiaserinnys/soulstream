@@ -28,6 +28,7 @@ test.each(['loading', 'error', 'forbidden'] as const)('%s 응답 상태에서도
   if (state === 'error') await waitFor(() => expect(screen.getByText('다시 불러오기')).toBeTruthy());
   if (state === 'forbidden') await waitFor(() => expect(screen.getByText('이 통계를 볼 권한이 없습니다.')).toBeTruthy());
   expect(screen.getByTestId('usage-stats-controls')).toBeTruthy();
+  expect(screen.queryByTestId('settings-section-usage-stats-summary')).toBeNull();
   expect(screen.getByLabelText('모델: 모든 모델')).toBeTruthy();
   expect(screen.getByLabelText('프로젝트: 모든 프로젝트')).toBeTruthy();
 });
@@ -44,6 +45,11 @@ function UsageStatsTestHarness({ initialState = 'ready', children }: { initialSt
 }
 async function ready(screen: ReturnType<typeof render>) {
   await waitFor(() => expect(screen.getByTestId('usage-stats-total-tokens')).toBeTruthy());
+}
+
+function expectCacheReadIncluded(screen: ReturnType<typeof render>) {
+  expect(screen.getByTestId('settings-segment-usage-stats-cache-read-include').props.accessibilityState)
+    .toMatchObject({ selected: true });
 }
 
 function requestUrl(input: unknown): URL {
@@ -101,6 +107,11 @@ test('날짜 상세 로딩 중에는 기존 요약과 그래프를 유지하고 
   expect(screen.getByLabelText('10월 16일 (금) 선택 해제')).toBeTruthy();
   expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('불러오는 중…');
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('불러오는 중…');
+  expect(screen.getByTestId('usage-stats-cache-read-excluded').props.children).toBe('캐시 읽기 제외');
+  expect(screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children).toBe('');
+  expect(screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children).toBe('');
+  expect(screen.queryByTestId('usage-stats-cost-split-non-cache-track')).toBeNull();
+  expect(screen.queryByTestId('usage-stats-cost-split-cache-read-track')).toBeNull();
   expect(screen.getByTestId('usage-stats-observed-tokens').props.children).toBe('불러오는 중…');
   expect(within(screen.getByTestId('usage-stats-models')).getByText('불러오는 중…')).toBeTruthy();
   for (const row of overview.by_model) {
@@ -174,6 +185,160 @@ test('비교 보기 전환은 금요일·정가·요약·입력을 유지하고 
   expect((global.fetch as jest.Mock).mock.calls.length).toBe(requests);
 });
 
+test('캐시 포함 선택은 요약을 유지하고 그래프와 모델·프로젝트 행의 토큰과 비중을 바꾼다', async () => {
+  const overview = buildUsageStatsOverview(weekQuery);
+  overview.series.forEach(point => {
+    point.metrics.total_tokens = 10;
+    point.metrics.provider_total_tokens = 40;
+    point.metrics.reference_cost_usd = 2;
+    point.metrics.reference_cost_breakdown.non_cache.known_cost_usd = 1;
+    point.metrics.reference_cost_breakdown.non_cache.is_partial = false;
+    point.metrics.reference_cost_breakdown.cache_read.known_cost_usd = 1;
+    point.metrics.reference_cost_breakdown.cache_read.is_partial = false;
+  });
+  overview.by_model.forEach((row, index) => {
+    row.metrics.total_tokens = 100;
+    row.metrics.provider_total_tokens = index === 0 ? 300 : 100;
+    row.metrics.reference_cost_usd = 50;
+    row.metrics.reference_cost_breakdown.non_cache.known_cost_usd = index === 0 ? 25 : 50;
+    row.metrics.reference_cost_breakdown.non_cache.is_partial = false;
+    row.metrics.reference_cost_breakdown.cache_read.known_cost_usd = index === 0 ? 25 : 50;
+    row.metrics.reference_cost_breakdown.cache_read.is_partial = false;
+    row.coverage.token_partials.total_tokens = false;
+    row.coverage.token_partials.provider_total_tokens = false;
+    row.coverage.unpriced_events = 0;
+  });
+  overview.by_project.forEach((row, index) => {
+    row.metrics.total_tokens = 100;
+    row.metrics.provider_total_tokens = index === 0 ? 300 : 100;
+    row.metrics.reference_cost_usd = 50;
+    row.metrics.reference_cost_breakdown.non_cache.known_cost_usd = index === 0 ? 25 : 50;
+    row.metrics.reference_cost_breakdown.non_cache.is_partial = false;
+    row.metrics.reference_cost_breakdown.cache_read.known_cost_usd = index === 0 ? 25 : 50;
+    row.metrics.reference_cost_breakdown.cache_read.is_partial = false;
+    row.coverage.token_partials.total_tokens = false;
+    row.coverage.token_partials.provider_total_tokens = false;
+    row.coverage.unpriced_events = 0;
+  });
+  const request = jest.fn(async () => new Response(JSON.stringify(overview), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  global.fetch = request;
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  const summary = [
+    screen.getByTestId('usage-stats-total-tokens').props.children,
+    screen.getByTestId('usage-stats-reference-cost').props.children,
+    screen.getByTestId('usage-stats-cache-read-excluded').props.children,
+    screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children,
+    screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children,
+  ];
+  const model = overview.by_model[0];
+  const modelId = model.model !== null
+    ? `usage-stats-model-row-${model.provider}-${model.model}`
+    : `usage-stats-model-row-${model.provider}-provider`;
+  const excludedShare = Math.round(100 / overview.by_model.length);
+  const includedShare = Math.round(300 / (300 + 100 * (overview.by_model.length - 1)) * 100);
+  const excludedCostShare = Math.round(25 / (25 + 50 * (overview.by_model.length - 1)) * 100);
+  const includedCostShare = Math.round(50 / (50 * overview.by_model.length) * 100);
+  const bucketSeries = overview.series.filter(point => point.bucket_start === '2026-10-16'
+    && point.provider !== undefined && point.project_id === undefined);
+  const cacheExcludedGraphValue = bucketSeries.length * 10;
+  const cacheIncludedGraphValue = bucketSeries.length * 40;
+  const projectBucketSeries = overview.series.filter(point => point.bucket_start === '2026-10-16'
+    && point.project_id !== undefined);
+
+  expect(screen.getByTestId('settings-segment-usage-stats-cache-read-exclude').props.accessibilityState)
+    .toMatchObject({ selected: true });
+  expect(screen.getByTestId(`${modelId}-value`).props.children).toBe(formatUsageStatsTokenCount(100));
+  expect(within(screen.getByTestId(modelId)).getByText(`${excludedShare}%`)).toBeTruthy();
+  expect(screen.getByTestId('usage-stats-model-chart-day-2026-10-16').props.accessibilityLabel)
+    .toContain(formatUsageStatsTokenCount(cacheExcludedGraphValue));
+  expect(request).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-cache-read-include'));
+
+  expect(screen.getByTestId('settings-segment-usage-stats-cache-read-include').props.accessibilityState)
+    .toMatchObject({ selected: true });
+  expect(screen.getByTestId(`${modelId}-value`).props.children).toBe(formatUsageStatsTokenCount(300));
+  expect(within(screen.getByTestId(modelId)).getByText(`${includedShare}%`)).toBeTruthy();
+  expect(screen.getByTestId('usage-stats-model-chart-day-2026-10-16').props.accessibilityLabel)
+    .toContain(formatUsageStatsTokenCount(cacheIncludedGraphValue));
+  expect([
+    screen.getByTestId('usage-stats-total-tokens').props.children,
+    screen.getByTestId('usage-stats-reference-cost').props.children,
+    screen.getByTestId('usage-stats-cache-read-excluded').props.children,
+    screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children,
+    screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children,
+  ]).toEqual(summary);
+  expect(request).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-cost'));
+  expect(screen.getByTestId(`${modelId}-value`).props.children).toBe('$50.00');
+  expect(within(screen.getByTestId(modelId)).getByText(`${includedCostShare}%`)).toBeTruthy();
+  expect(screen.getByTestId('usage-stats-model-chart-day-2026-10-16').props.accessibilityLabel)
+    .toContain(formatUsageStatsUsd(bucketSeries.length * 2));
+
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-cache-read-exclude'));
+  expect(screen.getByTestId(`${modelId}-value`).props.children).toBe('$25.00');
+  expect(within(screen.getByTestId(modelId)).getByText(`${excludedCostShare}%`)).toBeTruthy();
+  expect(screen.getByTestId('usage-stats-model-chart-day-2026-10-16').props.accessibilityLabel)
+    .toContain(formatUsageStatsUsd(bucketSeries.length));
+  expect([
+    screen.getByTestId('usage-stats-total-tokens').props.children,
+    screen.getByTestId('usage-stats-reference-cost').props.children,
+    screen.getByTestId('usage-stats-cache-read-excluded').props.children,
+    screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children,
+    screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children,
+  ]).toEqual(summary);
+
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-cache-read-include'));
+  await chooseView(screen, '프로젝트별');
+  expect(screen.getByTestId('settings-segment-usage-stats-measure-cost').props.accessibilityState)
+    .toMatchObject({ selected: true });
+  const project = overview.by_project[0];
+  const projectId = `usage-stats-project-row-${project.project_id === null ? '__unclassified__' : project.project_id}`;
+  expect(screen.getByTestId(`${projectId}-value`).props.children).toBe('$50.00');
+  expect(screen.getByTestId('usage-stats-project-chart-day-2026-10-16').props.accessibilityLabel)
+    .toContain(formatUsageStatsUsd(projectBucketSeries.length * 2));
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-tokens'));
+  expect(screen.getByTestId(`${projectId}-value`).props.children).toBe(formatUsageStatsTokenCount(300));
+  expect(screen.getByTestId('usage-stats-project-chart-day-2026-10-16').props.accessibilityLabel)
+    .toContain(formatUsageStatsTokenCount(projectBucketSeries.length * 40));
+  expect(request).toHaveBeenCalledTimes(1);
+});
+
+test('캐시 읽기 선택은 기간·필터·날짜·보기·측정값을 바꿔도 유지된다', async () => {
+  const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
+  await ready(screen);
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-cache-read-include'));
+
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-cost'));
+  expectCacheReadIncluded(screen);
+  await chooseView(screen, '프로젝트별');
+  expectCacheReadIncluded(screen);
+  fireEvent.press(screen.getByTestId('settings-segment-usage-stats-period-month'));
+  await ready(screen);
+  expectCacheReadIncluded(screen);
+
+  fireEvent.press(screen.getByLabelText('모델: 모든 모델'));
+  fireEvent.press(screen.getByLabelText('Claude'));
+  await ready(screen);
+  expectCacheReadIncluded(screen);
+  fireEvent.press(screen.getByLabelText('프로젝트: 모든 프로젝트'));
+  fireEvent.press(screen.getByLabelText('미분류'));
+  await ready(screen);
+  expectCacheReadIncluded(screen);
+
+  fireEvent(screen.getByTestId('usage-stats-project-chart-day-2026-10-16'), 'accessibilityTap');
+  await ready(screen);
+  expectCacheReadIncluded(screen);
+  await chooseView(screen, '모델별');
+  expectCacheReadIncluded(screen);
+});
+
 
 const emptyFilter = { provider: null, model: null, project_ids: [] as string[] };
 const weekQuery = {
@@ -242,7 +407,7 @@ test('선택한 금요일의 요약과 입력 구성은 같은 날짜 상세로 
   expect(screen.getByTestId('usage-stats-input-harness').props.children).toBe('관측 안 됨');
 });
 
-test('월 정가 모드는 미확인 Kimi 가격을 표시하고 전체 월 막대는 월간 보기로 연다', async () => {
+test('월 정가 모드는 미확인 Kimi 비캐시 비용을 표시하고 전체 월 막대는 월간 보기로 연다', async () => {
   const screen = render(
     <UsageStatsTestHarness>
       <UsageStatsSettingsSection />
@@ -260,7 +425,7 @@ test('월 정가 모드는 미확인 Kimi 가격을 표시하고 전체 월 막�
       ? '미확인'
       : `${formatUsageStatsUsd(cost)}${month.totals.is_partial ? '+' : ''}`);
   expect(screen.getByTestId('usage-stats-model-row-kimi-provider-value').props.children)
-    .toBe('정가 미확인');
+    .toBe('미확인');
 
   fireEvent.press(screen.getByTestId('settings-segment-usage-stats-period-all'));
   await ready(screen);
@@ -280,9 +445,125 @@ test('기록 없음은 0 요약과 빈 차트를 보이고 프로젝트와 입�
 
   expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('0');
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('$0.00');
+  expect(screen.getByTestId('usage-stats-cache-read-excluded').props.children).toBe('캐시 읽기 0 제외');
+  expect(screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children).toBe('$0.00');
+  expect(screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children).toBe('$0.00');
   expect(screen.getByText('이 기간에 기록이 없습니다')).toBeTruthy();
   expect(screen.queryByText('프로젝트별')).toBeNull();
   expect(screen.queryByText('입력 자료 구성')).toBeNull();
+});
+
+const cacheSplitScenarios = [
+  {
+    name: '확정 수',
+    totalTokens: 140_000_000,
+    providerTotalTokens: 450_000_000,
+    cacheRead: 310_000_000,
+    ordinaryInput: 50_000_000,
+    totalCost: 123.45,
+    nonCacheCost: 45,
+    nonCacheCostPartial: false,
+    cacheReadCost: 78.45,
+    cacheReadCostPartial: false,
+    cacheReadPartial: false,
+    providerTotalPartial: false,
+    pricedTokens: 225_000_000,
+    expected: {
+      cacheReadLine: '캐시 읽기 3.1억 제외',
+      nonCacheCost: '$45.00',
+      cacheReadCost: '$78.45',
+      coverageLabel: '기록 토큰 50% 환산',
+    },
+  },
+  {
+    name: '부분+',
+    totalTokens: 140_000_000,
+    providerTotalTokens: 450_000_000,
+    cacheRead: 310_000_000,
+    ordinaryInput: 50_000_000,
+    totalCost: 123.45,
+    nonCacheCost: 45,
+    nonCacheCostPartial: true,
+    cacheReadCost: 78.45,
+    cacheReadCostPartial: true,
+    cacheReadPartial: true,
+    providerTotalPartial: true,
+    pricedTokens: 225_000_000,
+    expected: {
+      cacheReadLine: '캐시 읽기 3.1억+ 제외',
+      nonCacheCost: '$45.00+',
+      cacheReadCost: '$78.45+',
+      coverageLabel: '일부만 환산',
+    },
+  },
+  {
+    name: '미확인',
+    totalTokens: null,
+    providerTotalTokens: 450_000_000,
+    cacheRead: null,
+    ordinaryInput: null,
+    totalCost: null,
+    nonCacheCost: null,
+    nonCacheCostPartial: true,
+    cacheReadCost: null,
+    cacheReadCostPartial: true,
+    cacheReadPartial: true,
+    providerTotalPartial: false,
+    pricedTokens: null,
+    expected: {
+      cacheReadLine: '캐시 읽기 미기록',
+      nonCacheCost: '미확인',
+      cacheReadCost: '미확인',
+      coverageLabel: '일부만 환산',
+    },
+  },
+] as const;
+
+test.each(cacheSplitScenarios)('$name 캐시 분할 값과 캐시 포함 환산 분모를 표시한다', async scenario => {
+  const overview = buildUsageStatsOverview(weekQuery);
+  Object.assign(overview.totals.metrics, {
+    total_tokens: scenario.totalTokens,
+    provider_total_tokens: scenario.providerTotalTokens,
+    cache_read: scenario.cacheRead,
+    ordinary_input: scenario.ordinaryInput,
+    reference_cost_usd: scenario.totalCost,
+    reference_cost_breakdown: {
+      non_cache: { known_cost_usd: scenario.nonCacheCost, is_partial: scenario.nonCacheCostPartial },
+      cache_read: { known_cost_usd: scenario.cacheReadCost, is_partial: scenario.cacheReadCostPartial },
+    },
+  });
+  overview.totals.coverage.priced_total_tokens = scenario.pricedTokens;
+  overview.totals.coverage.token_partials.cache_read = scenario.cacheReadPartial;
+  overview.totals.coverage.token_partials.provider_total_tokens = scenario.providerTotalPartial;
+  global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  expect(screen.getByTestId('usage-stats-cache-read-excluded').props.children).toBe(scenario.expected.cacheReadLine);
+  expect(screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children).toBe(scenario.expected.nonCacheCost);
+  expect(screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children).toBe(scenario.expected.cacheReadCost);
+  expect(screen.getByText(scenario.expected.coverageLabel)).toBeTruthy();
+});
+
+test('토큰 상세에서 그중 일반 입력을 입력 다음에 보여준다', async () => {
+  const overview = buildUsageStatsOverview(weekQuery);
+  overview.totals.metrics.ordinary_input = 50_000_000;
+  global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  fireEvent.press(screen.getByText('토큰 상세'));
+  const labels = ['입력 (캐시 포함)', '그중 일반 입력', '그중 캐시 읽기', '그중 캐시 쓰기', '출력', '그중 추론'];
+  const labelPositions = labels.map(label => screen.getByText(label));
+  expect(screen.getByText('50,000,000')).toBeTruthy();
+  expect(labelPositions).toHaveLength(6);
 });
 
 test('모델 필터는 해제할 수 있고 실패 상태의 재시도는 데이터를 다시 표시한다', async () => {
@@ -363,7 +644,7 @@ test('모델 attribution의 null 행은 모델 미상으로 표시한다', async
   expect(screen.getByText('모델 미상')).toBeTruthy();
 });
 
-test('웹 대시보드 프로젝트의 미기록 턴은 요약과 행의 정가 부분합에 반영한다', async () => {
+test('웹 대시보드 프로젝트의 미기록 턴은 요약 전체 정가와 행 비캐시 비용의 부분합에 반영한다', async () => {
   const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
   await ready(screen);
   await chooseView(screen, '프로젝트별');
@@ -371,7 +652,7 @@ test('웹 대시보드 프로젝트의 미기록 턴은 요약과 행의 정가 
   await ready(screen);
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('$13.00+');
   fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-cost'));
-  expect(screen.getByTestId('usage-stats-project-row-project-web-dashboard-value').props.children).toBe('$13.00+');
+  expect(screen.getByTestId('usage-stats-project-row-project-web-dashboard-value').props.children).toBe('$12.86+');
 });
 
 test('화면 진입은 실제 API 요청을 보낸다', async () => {
@@ -455,7 +736,7 @@ test('늦은 이전 날짜 응답은 현재 기간을 덮지 않는다', async (
 
 function tokenDisplay(
   value: number | null,
-  coverage: { usage_partial_events: number; missing_usage_turns: number; unknown_total_token_events: number; unattributed_missing_usage: boolean },
+  coverage: { token_partials: { total_tokens: boolean; provider_total_tokens: boolean; ordinary_input: boolean; cache_read: boolean } },
 ): string {
   if (value === null) return '미기록';
   return `${formatUsageStatsTokenCount(value)}${isUsageStatsTokenPartial(coverage) ? '+' : ''}`;
