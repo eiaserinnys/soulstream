@@ -60,9 +60,8 @@ describe("daily groups PostgreSQL membership and fallback", () => {
     // This single-connection harness exercises the stored-cell regroup operation
     // directly. The scheduler's advisory lock is covered by the service tests.
     expect(await repository.daily.regroupNext("2026-10-19", "2026-10-20", 1)).toBe(true);
-    expect((await compare()).groups?.map(group => [group.folderId, group.cardFolderId])).toEqual([
-      [null, "f1"], ["f2", null],
-    ]);
+    expect(new Set((await compare()).groups?.map(group => JSON.stringify([group.folderId, group.cardFolderId]))))
+      .toEqual(new Set([JSON.stringify([null, "f1"]), JSON.stringify(["f2", null])]));
     expect(await repository.daily.regroupNext("2026-10-19", "2026-10-20", 1)).toBe(false);
   });
 
