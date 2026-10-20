@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Text, View, type TextStyle } from 'react-native';
 import { BackendNodeCardHeader } from '../BackendNodeCard';
 import { useSettingsWorkspace } from '../SettingsWorkspaceContext';
 import { GlassButton } from '../../GlassSurface';
@@ -148,7 +148,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
     : activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'tokens') : '미기록';
   const costValue = detailLoading
     ? '불러오는 중…'
-    : activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'cost') : '미확인';
+    : activeAggregate ? formatUsageStatsValue(activeAggregate.metrics, activeAggregate.coverage, 'cost', false, true) : '미확인';
   const coverageLabel = activeAggregate
     ? formatUsageStatsCoverage(
       activeAggregate.coverage.priced_total_tokens,
@@ -298,7 +298,17 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
               <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
                 <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>토큰</Text>
                 <Text testID="usage-stats-total-tokens" numberOfLines={1} style={{ ...t.foundation.typography.section, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{tokenValue}</Text>
-                <Text testID="usage-stats-cache-read-excluded" numberOfLines={1} style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>{cacheSplit.cacheReadLine}</Text>
+                <Text
+                  testID="usage-stats-cache-read-excluded"
+                  numberOfLines={2}
+                  lineBreakStrategyIOS="hangul-word"
+                  style={[
+                    { ...t.foundation.typography.meta, color: t.colors.textTertiary },
+                    Platform.OS === 'web' ? ({ wordBreak: 'keep-all' } as TextStyle) : undefined,
+                  ]}
+                >
+                  {cacheSplit.cacheReadLine}
+                </Text>
               </View>
               <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
                 <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>정가</Text>
@@ -333,13 +343,15 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
             <DisclosureButton label="집계 기준" expanded={basisExpanded} onPress={() => setBasisExpanded(value => !value)} />
             {basisExpanded ? <AggregationBasis /> : null}
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
+              <View testID="usage-stats-view-measure-row" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <SettingsOptionRow label="보기" pickerMode="picker" selected={view}
                     options={[{ id: 'model', label: '모델별' }, { id: 'project', label: '프로젝트별' }]}
                     onSelect={value => setView(value as 'model' | 'project')} emptyLabel="보기 없음" />
                 </View>
                 <SettingsSegmentedControl<Measure> id="usage-stats-measure" value={measure} options={MEASURE_OPTIONS} onChange={setMeasure} wrap />
+              </View>
+              <View testID="usage-stats-cache-read-row" style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
                 <SettingsSegmentedControl<CacheReadSetting>
                   id="usage-stats-cache-read"
                   value={includeCacheRead ? 'include' : 'exclude'}

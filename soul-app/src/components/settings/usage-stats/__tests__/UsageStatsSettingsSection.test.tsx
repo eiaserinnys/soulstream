@@ -1,4 +1,5 @@
 import React from 'react';
+import { TouchableOpacity } from 'react-native';
 import { createUsageStatsMockFetch, type UsageStatsMockState } from '../../../../test-support/usage-stats-mock-api';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import {
@@ -38,6 +39,18 @@ test('unknown share는 track을 숨기고 실측0 share는 track을 유지한다
   expect(screen.queryByTestId('share-track', { includeHiddenElements: true })).toBeNull();
   screen.rerender(<UsageShareRow testID="share" label="Codex" value="0" color="blue" share={0} />);
   expect(screen.getByTestId('share-track', { includeHiddenElements: true })).toBeTruthy();
+});
+
+test('비대화형 share 행은 눌림 표면을 만들지 않고 대화형 행은 기존 동작을 유지한다', () => {
+  const staticRow = render(<UsageShareRow testID="static-share" label="캐시 읽기" value="$1.00" color="blue" share={null} />);
+  expect(staticRow.UNSAFE_root.findAllByType(TouchableOpacity)).toHaveLength(0);
+  expect(staticRow.getByTestId('static-share').props.accessibilityRole).toBeUndefined();
+
+  const onPress = jest.fn();
+  const interactiveRow = render(<UsageShareRow testID="interactive-share" label="Codex" value="$1.00" color="blue" share={0.5} onPress={onPress} />);
+  expect(interactiveRow.UNSAFE_root.findAllByType(TouchableOpacity)).toHaveLength(1);
+  fireEvent.press(interactiveRow.getByTestId('interactive-share'));
+  expect(onPress).toHaveBeenCalledTimes(1);
 });
 function UsageStatsTestHarness({ initialState = 'ready', children }: { initialState?: UsageStatsMockState; children: React.ReactNode }) {
   global.fetch = jest.fn(createUsageStatsMockFetch(initialState, originalFetch));
@@ -339,6 +352,24 @@ test('캐시 읽기 선택은 기간·필터·날짜·보기·측정값을 바�
   expectCacheReadIncluded(screen);
 });
 
+test('캐시 읽기 선택은 측정 선택 아래의 같은 오른쪽 선에 둔다', async () => {
+  const screen = render(<UsageStatsTestHarness><UsageStatsSettingsSection /></UsageStatsTestHarness>);
+  await ready(screen);
+
+  const viewMeasureRow = screen.getByTestId('usage-stats-view-measure-row');
+  expect(within(viewMeasureRow).getByTestId('settings-segment-usage-stats-measure-tokens')).toBeTruthy();
+  expect(within(viewMeasureRow).getByLabelText(/^보기:/)).toBeTruthy();
+  expect(within(viewMeasureRow).queryByTestId('settings-segment-usage-stats-cache-read-exclude')).toBeNull();
+
+  const cacheReadRow = screen.getByTestId('usage-stats-cache-read-row');
+  expect(within(cacheReadRow).getByTestId('settings-segment-usage-stats-cache-read-exclude')).toBeTruthy();
+  expect(cacheReadRow.props.style).toMatchObject({ flexDirection: 'row', justifyContent: 'flex-end' });
+
+  const cacheReadLine = screen.getByTestId('usage-stats-cache-read-excluded');
+  expect(cacheReadLine.props.numberOfLines).toBe(2);
+  expect(cacheReadLine.props.lineBreakStrategyIOS).toBe('hangul-word');
+});
+
 
 const emptyFilter = { provider: null, model: null, project_ids: [] as string[] };
 const weekQuery = {
@@ -425,7 +456,7 @@ test('월 정가 모드는 미확인 Kimi 비캐시 비용을 표시하고 전�
       ? '미확인'
       : `${formatUsageStatsUsd(cost)}${month.totals.is_partial ? '+' : ''}`);
   expect(screen.getByTestId('usage-stats-model-row-kimi-provider-value').props.children)
-    .toBe('미확인');
+    .toBe('정가 미확인');
 
   fireEvent.press(screen.getByTestId('settings-segment-usage-stats-period-all'));
   await ready(screen);
