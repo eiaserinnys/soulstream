@@ -55,7 +55,7 @@ export function registerSessionStatisticsRoutes(
   app: FastifyInstance,
   options: SessionStatisticsRouteOptions,
 ): void {
-  app.addHook("onClose", async () => { options.service.close?.(); });
+  app.addHook("onClose", async () => { options.service?.close?.(); });
   app.get("/api/session-statistics", async (request, reply) => {
     const scope = await resolveScope(request, reply, options);
     if (scope === null) return;

@@ -38,6 +38,7 @@ describe("production orchestrator entrypoint", () => {
       ordinal: 88,
     };
     const unexpectedSqlStatements: string[] = [];
+    const sqlTransactions: Promise<unknown>[] = [];
     const schemaQuery = vi.fn(async (strings: TemplateStringsArray) => {
       const statement = strings.join(" ");
       if (statement.includes("FROM schema_migrations")) return [databaseSchema];
@@ -62,6 +63,9 @@ describe("production orchestrator entrypoint", () => {
       if (
         statement.includes("folder_get_all()") ||
         statement.includes("FROM sessions") ||
+        statement.includes("FROM session_statistics_daily_batches") ||
+        statement.includes("FROM session_statistics_facts") ||
+        statement.includes("pg_try_advisory_xact_lock(485, 1)") ||
         statement.includes("SET TRANSACTION") ||
         statement.trim() === "SET LOCAL jit = off" ||
         statement.trim() === "SET LOCAL client_min_messages = warning"
@@ -73,7 +77,11 @@ describe("production orchestrator entrypoint", () => {
     const sql = Object.assign(schemaQuery, {
       json: (value: unknown) => value,
       array: (values: readonly unknown[]) => values,
-      begin: async <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => callback(sql),
+      begin: <T>(callback: (transaction: LivePostgresSql) => Promise<T>) => {
+        const transaction = callback(sql);
+        sqlTransactions.push(transaction);
+        return transaction;
+      },
     }) as unknown as LivePostgresSql;
     const sqlResolver: LiveDbSqlResolver = {
       resolveSql: vi.fn(async () => sql),
@@ -191,6 +199,16 @@ describe("production orchestrator entrypoint", () => {
       method: "GET",
       url: "/api/admin/runtime-memory",
     })).toMatchObject({ statusCode: 401 });
+
+    // The refresh timer must finish its transaction through the SQL double too.
+    // An empty advisory-lock result skips calculation without external services.
+    await vi.waitFor(() => {
+      expect(schemaQuery.mock.calls.some(([strings]) =>
+        strings.join(" ").includes("pg_try_advisory_xact_lock(485, 1)")
+      )).toBe(true);
+    });
+    await Promise.all(sqlTransactions);
+    expect(unexpectedSqlStatements).toEqual([]);
 
     await application.app.close();
     await application.closeResources();
