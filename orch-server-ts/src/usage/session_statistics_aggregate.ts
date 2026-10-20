@@ -7,6 +7,14 @@ import type {
   SessionStatisticsScopeSession,
 } from "./session_statistics_types.js";
 import { sessionStatisticsDate, sessionStatisticsInPeriod } from "./session_statistics_scope.js";
+import {
+  addDecimal,
+  decimalNumber,
+  parseDecimal,
+  type Decimal,
+} from "./session_statistics_decimal.js";
+import { sourceTokenMetrics, sumKnownTokenMetrics } from "./session_statistics_token_metrics.js";
+import { splitSourceCost } from "./session_statistics_costs.js";
 export { sessionStatisticsDate, sessionStatisticsDateMatches } from "./session_statistics_scope.js";
 
 type Row = SessionStatisticsReadResult["rows"][number];
@@ -101,28 +109,6 @@ export function selectOwnedSessionStatisticsRows(
   return rows;
 }
 
-type Decimal = { coefficient: bigint; scale: number };
-
-function parseDecimal(value: string): Decimal {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
-  if (!match) throw new Error("session statistics cost decimal is invalid");
-  const fraction = match[3] ?? "";
-  const sign = match[1] === "-" ? "-" : "";
-  return { coefficient: BigInt(`${sign}${match[2]}${fraction}`), scale: fraction.length };
-}
-
-function addDecimal(total: Decimal | null, next: Decimal): Decimal {
-  if (total === null) return next;
-  const scale = Math.max(total.scale, next.scale);
-  const left = total.coefficient * 10n ** BigInt(scale - total.scale);
-  const right = next.coefficient * 10n ** BigInt(scale - next.scale);
-  return { coefficient: left + right, scale };
-}
-
-function decimalNumber(value: Decimal | null): number | null {
-  return value === null ? null : Number(value.coefficient) / 10 ** value.scale;
-}
-
 function sumKnown(rows: readonly Row[], select: (row: Row) => number | null): number | null {
   let total = 0;
   let found = false;
@@ -132,7 +118,7 @@ function sumKnown(rows: readonly Row[], select: (row: Row) => number | null): nu
     total += value;
     found = true;
   }
-  return found ? total : null;
+  return found && Number.isSafeInteger(total) ? total : null;
 }
 
 export function aggregateSessionStatisticsMetrics(
@@ -142,6 +128,12 @@ export function aggregateSessionStatisticsMetrics(
   const seen = new Set<string>();
   const rows: Row[] = [];
   let knownCost: Decimal | null = null;
+  let cacheReadCost: Decimal | null = null;
+  let nonCacheCost: Decimal | null = null;
+  let hasCacheRead = false;
+  let hasNonCache = false;
+  let cacheReadPartial = false;
+  let nonCachePartial = false;
   for (const row of sourceRows) {
     if (row.row_kind !== "usage" || row.state !== "owned" || row.fact?.fact_kind !== "usage") continue;
     const fact = row.fact;
@@ -149,10 +141,29 @@ export function aggregateSessionStatisticsMetrics(
     if (seen.has(key)) continue;
     seen.add(key);
     rows.push(row);
-    if (fact.known_cost_usd === null) continue;
+    if (fact.known_cost_usd === null) {
+      cacheReadPartial = true;
+      nonCachePartial = true;
+      continue;
+    }
     const cost = read.costDecimals.get(key);
     if (cost === undefined) throw new Error("session statistics known cost is missing its decimal source");
     knownCost = addDecimal(knownCost, parseDecimal(cost));
+    if (fact.cache_read === null) cacheReadPartial = true;
+    const tokens = sourceTokenMetrics(fact);
+    if (tokens.ordinary_input === null || tokens.total_tokens === null) nonCachePartial = true;
+    const split = splitSourceCost(fact, cost);
+    if (split === null) continue;
+    if (split.cacheRead !== null) {
+      cacheReadCost = hasCacheRead ? addDecimal(cacheReadCost, split.cacheRead) : split.cacheRead;
+      hasCacheRead = true;
+    } else cacheReadPartial = true;
+    if (split.nonCache !== null) {
+      nonCacheCost = hasNonCache ? addDecimal(nonCacheCost, split.nonCache) : split.nonCache;
+      hasNonCache = true;
+    } else nonCachePartial = true;
+    cacheReadPartial = cacheReadPartial || split.cacheReadPartial;
+    nonCachePartial = nonCachePartial || split.nonCachePartial;
   }
 
   return {
@@ -161,9 +172,19 @@ export function aggregateSessionStatisticsMetrics(
     cache_write: sumKnown(rows, (row) => row.fact!.cache_write),
     output_total: sumKnown(rows, (row) => row.fact!.output_total),
     reasoning_output: sumKnown(rows, (row) => row.fact!.reasoning_output),
-    total_tokens: sumKnown(rows, (row) => row.fact!.input_total !== null && row.fact!.output_total !== null
-      ? row.fact!.total_tokens
-      : null),
+    total_tokens: sumKnownTokenMetrics(rows.map((row) => sourceTokenMetrics(row.fact!).total_tokens)),
+    provider_total_tokens: sumKnownTokenMetrics(rows.map((row) => sourceTokenMetrics(row.fact!).provider_total_tokens)),
+    ordinary_input: sumKnownTokenMetrics(rows.map((row) => sourceTokenMetrics(row.fact!).ordinary_input)),
     reference_cost_usd: decimalNumber(knownCost),
+    reference_cost_breakdown: {
+      cache_read: {
+        known_cost_usd: hasCacheRead ? decimalNumber(cacheReadCost) : null,
+        is_partial: cacheReadPartial || !hasCacheRead,
+      },
+      non_cache: {
+        known_cost_usd: hasNonCache ? decimalNumber(nonCacheCost) : null,
+        is_partial: nonCachePartial || !hasNonCache,
+      },
+    },
   };
 }

@@ -15,6 +15,7 @@ import {
   sessionStatisticsCompareText,
   sessionStatisticsSourceKey,
 } from "./session_statistics_aggregate.js";
+import { sourceTokenMetrics } from "./session_statistics_token_metrics.js";
 
 type Row = SessionStatisticsReadResult["rows"][number];
 type ModelOption = UsageStatsOptions["models"][number];
@@ -81,12 +82,12 @@ function projectTotalTokens(read: SessionStatisticsReadResult): Map<string, numb
   for (const row of selectOwnedSessionStatisticsRows(read, { respectQueryFilters: false })) {
     const fact = row.fact!;
     const projectId = sessions.get(row.session_id);
-    if (projectId === undefined || projectId === null || fact.input_total === null || fact.output_total === null
-      || fact.total_tokens === null) continue;
+    const total = sourceTokenMetrics(fact).total_tokens;
+    if (projectId === undefined || projectId === null || total === null) continue;
     const sourceKey = sessionStatisticsSourceKey(row.session_id, fact.event_id, fact.part_key);
     if (seen.has(sourceKey)) continue;
     seen.add(sourceKey);
-    totals.set(projectId, (totals.get(projectId) ?? 0) + fact.total_tokens);
+    totals.set(projectId, (totals.get(projectId) ?? 0) + total);
   }
   return totals;
 }

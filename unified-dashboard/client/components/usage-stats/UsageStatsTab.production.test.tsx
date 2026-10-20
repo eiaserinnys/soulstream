@@ -36,6 +36,13 @@ it("starts with the current Korea calendar date and makes one overview request",
   expect(query.get("anchor")).toBe("2026-10-20");
   expect(query.get("timezone")).toBe("Asia/Seoul");
   expect(document.querySelectorAll("[data-bucket-index]")).toHaveLength(0);
+  const summary = document.querySelector(".usage-stats-summary");
+  expect(summary).not.toBeNull();
+  const tokenMetric = summary?.querySelector(".usage-stats-summary-metric");
+  expect(tokenMetric?.lastElementChild?.textContent).toBe("캐시 읽기 제외");
+  const costRows = summary?.querySelectorAll(".usage-stats-share-list > .usage-stats-share-row");
+  expect(costRows).toHaveLength(2);
+  expect([...(costRows ?? [])].map(row => row.querySelector(".usage-stats-share-value")?.textContent)).toEqual(["", ""]);
 });
 
 function aggregate(totalTokens: number | null): UsageStatsAggregate {
@@ -46,7 +53,13 @@ function aggregate(totalTokens: number | null): UsageStatsAggregate {
     output_total: null,
     reasoning_output: null,
     total_tokens: totalTokens,
+    provider_total_tokens: totalTokens,
+    ordinary_input: null,
     reference_cost_usd: null,
+    reference_cost_breakdown: {
+      cache_read: { known_cost_usd: null, is_partial: false },
+      non_cache: { known_cost_usd: null, is_partial: false },
+    },
   };
   return {
     metrics,
@@ -63,12 +76,75 @@ function aggregate(totalTokens: number | null): UsageStatsAggregate {
       unpriced_total_tokens: null,
       unknown_total_token_events: 0,
       unattributed_missing_usage: false,
+      token_partials: {
+        total_tokens: false,
+        provider_total_tokens: false,
+        ordinary_input: false,
+        cache_read: false,
+      },
     },
     is_partial: false,
   };
 }
 
-function overview(totalTokens: number | null, options: Partial<UsageStatsOverview["options"]> = {}): UsageStatsOverview {
+function cacheSplitAggregate(
+  metricOverrides: Partial<UsageStatsMetrics> = {},
+  coverageOverrides: Partial<UsageStatsAggregate["coverage"]> = {},
+): UsageStatsAggregate {
+  const totalTokens = metricOverrides.total_tokens === undefined ? 100 : metricOverrides.total_tokens;
+  const zero = totalTokens === 0;
+  const base = aggregate(totalTokens);
+  return {
+    ...base,
+    metrics: {
+      ...base.metrics,
+      input_total: zero ? 0 : 110,
+      cache_read: zero ? 0 : 60,
+      cache_write: zero ? 0 : 10,
+      output_total: zero ? 0 : 50,
+      provider_total_tokens: zero ? 0 : 160,
+      ordinary_input: zero ? 0 : 40,
+      reference_cost_usd: zero ? 0 : 123.45,
+      reference_cost_breakdown: zero ? {
+        cache_read: { known_cost_usd: 0, is_partial: false },
+        non_cache: { known_cost_usd: 0, is_partial: false },
+      } : {
+        cache_read: { known_cost_usd: 45, is_partial: false },
+        non_cache: { known_cost_usd: 78.45, is_partial: false },
+      },
+      ...metricOverrides,
+    },
+    coverage: {
+      ...base.coverage,
+      priced_total_tokens: zero ? 0 : 80,
+      ...coverageOverrides,
+    },
+  };
+}
+
+function chartAggregate(
+  totalTokens: number,
+  providerTokens: number,
+  totalCost: number,
+  nonCacheCost: number,
+  cacheReadCost: number,
+): UsageStatsAggregate {
+  return cacheSplitAggregate({
+    total_tokens: totalTokens,
+    provider_total_tokens: providerTokens,
+    reference_cost_usd: totalCost,
+    reference_cost_breakdown: {
+      non_cache: { known_cost_usd: nonCacheCost, is_partial: false },
+      cache_read: { known_cost_usd: cacheReadCost, is_partial: false },
+    },
+  });
+}
+
+function overview(
+  totalTokens: number | null,
+  options: Partial<UsageStatsOverview["options"]> = {},
+  totals: UsageStatsAggregate = aggregate(totalTokens),
+): UsageStatsOverview {
   return {
     schema_version: 1,
     generated_at: "2026-10-20T03:00:00.000Z",
@@ -87,7 +163,7 @@ function overview(totalTokens: number | null, options: Partial<UsageStatsOvervie
       price_version: "api-list-usd-2026-10-19-v1",
     },
     projection_status: { state: "ready", covered_since: "2026-10-01" },
-    totals: aggregate(totalTokens),
+    totals,
     by_model: [],
     by_project: [],
     series: [],
@@ -101,6 +177,141 @@ function overview(totalTokens: number | null, options: Partial<UsageStatsOvervie
     },
   };
 }
+
+it("shows the cache split and uses provider tokens for the coverage denominator", async () => {
+  request.mockResolvedValue(jsonResponse(overview(100, {}, cacheSplitAggregate())));
+
+  await act(async () => root.render(<UsageStatsTab request={request} />));
+
+  const summary = document.querySelector(".usage-stats-summary")!;
+  const tokenMetric = summary.querySelector(".usage-stats-summary-metric")!;
+  expect(tokenMetric.lastElementChild?.textContent).toBe("캐시 읽기 60 제외");
+  const rows = [...summary.querySelectorAll<HTMLElement>(".usage-stats-share-list > .usage-stats-share-row")];
+  expect(rows.map(row => row.querySelector(".usage-stats-share-name")?.textContent)).toEqual(["비캐시", "캐시 읽기"]);
+  expect(rows.map(row => row.querySelector(".usage-stats-share-value")?.textContent)).toEqual(["$78.45", "$45.00"]);
+  expect(rows.every(row => row.tagName === "DIV" && row.querySelector(".usage-stats-share-track") === null)).toBe(true);
+  expect(summary.textContent).toContain("기록 토큰 50% 환산");
+
+  const tokenDetails = summary.querySelector("details")!;
+  await act(async () => (tokenDetails.querySelector("summary") as HTMLElement).click());
+  const detailRows = [...tokenDetails.querySelectorAll("dl > div")];
+  expect(detailRows[0]?.querySelector("dt")?.textContent).toBe("입력 (캐시 포함)");
+  expect(detailRows[1]?.querySelector("dt")?.textContent).toBe("그중 일반 입력");
+  expect(detailRows[1]?.querySelector("dd")?.textContent).toBe("40");
+});
+
+it("switches only graph and comparison values between cache-excluded and included metrics", async () => {
+  const first = chartAggregate(100, 160, 4, 2, 2);
+  const second = chartAggregate(100, 240, 8, 3, 5);
+  const totals = chartAggregate(200, 400, 12, 5, 7);
+  const data = overview(200, {
+    providers: [
+      { provider: "claude", label: "Claude" },
+      { provider: "codex", label: "Codex" },
+    ],
+    projects: [
+      { project_id: "project-one", label: "Project One" },
+      { project_id: "project-two", label: "Project Two" },
+    ],
+    project_roster: ["project-one", "project-two"],
+  }, totals);
+  data.by_model = [
+    { provider: "claude", backend: "claude", model: null, attribution: "provider", ...first },
+    { provider: "codex", backend: "codex", model: null, attribution: "provider", ...second },
+  ];
+  data.by_project = [
+    { project_id: "project-one", label: "Project One", ...first },
+    { project_id: "project-two", label: "Project Two", ...second },
+  ];
+  data.series = [
+    { bucket_start: "2026-10-19", provider: "claude", model: null, label: "Claude", metrics: first.metrics },
+    { bucket_start: "2026-10-19", provider: "codex", model: null, label: "Codex", metrics: second.metrics },
+    { bucket_start: "2026-10-19", project_id: "project-one", label: "Project One", metrics: first.metrics },
+    { bucket_start: "2026-10-19", project_id: "project-two", label: "Project Two", metrics: second.metrics },
+  ];
+  request.mockResolvedValue(jsonResponse(data));
+
+  await act(async () => root.render(<UsageStatsTab request={request} />));
+
+  const summary = document.querySelector(".usage-stats-summary")!;
+  const summaryBefore = summary.textContent;
+  expect(summary.querySelectorAll(".usage-stats-summary-metric")[1]?.textContent).toContain("$12.00");
+  const comparisonList = () => [...document.querySelectorAll(".usage-stats-share-list")]
+    .find(list => list.textContent?.includes("Claude"))!;
+  const comparisonValues = () => [...comparisonList().querySelectorAll(".usage-stats-share-row")]
+    .map(row => row.querySelector(".usage-stats-share-value")?.textContent);
+  const comparisonShares = () => [...comparisonList().querySelectorAll(".usage-stats-share-row")]
+    .map(row => row.querySelector(".usage-stats-share-percent")?.textContent);
+  const chartAxis = () => document.querySelector(".usage-stats-axis-label")?.textContent;
+
+  expect(cacheToggle("캐시 제외").getAttribute("aria-pressed")).toBe("true");
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("false");
+  expect(chartAxis()).toBe("200");
+  expect(comparisonValues()).toEqual(["100", "100"]);
+  expect(comparisonShares()).toEqual(["50%", "50%"]);
+
+  await act(async () => cacheToggle("캐시 포함").click());
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
+  expect(chartAxis()).toBe("400");
+  expect(comparisonValues()).toEqual(["160", "240"]);
+  expect(comparisonShares()).toEqual(["40%", "60%"]);
+  expect(summary.textContent).toBe(summaryBefore);
+
+  const costButton = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="표시 값"] button')]
+    .find(button => button.textContent?.trim() === "정가")!;
+  await act(async () => costButton.click());
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
+  expect(chartAxis()).toBe("$12.00");
+  expect(comparisonValues()).toEqual(["$4.00", "$8.00"]);
+  expect(comparisonShares()).toEqual(["33%", "67%"]);
+  expect(summary.textContent).toBe(summaryBefore);
+
+  await act(async () => cacheToggle("캐시 제외").click());
+  expect(chartAxis()).toBe("$5.00");
+  expect(comparisonValues()).toEqual(["$2.00", "$3.00"]);
+  expect(comparisonShares()).toEqual(["40%", "60%"]);
+  await act(async () => cacheToggle("캐시 포함").click());
+  await chooseTabOption("그래프 보기", "프로젝트별");
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
+  expect(chartAxis()).toBe("$12.00");
+  const projectList = [...document.querySelectorAll(".usage-stats-share-list")]
+    .find(list => list.textContent?.includes("Project One"))!;
+  expect([...projectList.querySelectorAll(".usage-stats-share-value")].map(value => value.textContent))
+    .toEqual(["$4.00", "$8.00"]);
+  expect([...projectList.querySelectorAll(".usage-stats-share-percent")].map(value => value.textContent))
+    .toEqual(["33%", "67%"]);
+  expect(summary.textContent).toBe(summaryBefore);
+});
+
+it("marks partial cache split values and coverage", async () => {
+  const totals = cacheSplitAggregate({
+    reference_cost_breakdown: {
+      cache_read: { known_cost_usd: 45, is_partial: true },
+      non_cache: { known_cost_usd: 78.45, is_partial: true },
+    },
+  }, {
+    usage_partial_events: 1,
+    unpriced_events: 1,
+    priced_total_tokens: 50,
+    token_partials: {
+      total_tokens: true,
+      provider_total_tokens: true,
+      ordinary_input: true,
+      cache_read: true,
+    },
+  });
+  request.mockResolvedValue(jsonResponse(overview(100, {}, totals)));
+
+  await act(async () => root.render(<UsageStatsTab request={request} />));
+
+  const summary = document.querySelector(".usage-stats-summary")!;
+  expect(summary.querySelector(".usage-stats-summary-metric")?.lastElementChild?.textContent).toBe("캐시 읽기 60+ 제외");
+  expect([...summary.querySelectorAll(".usage-stats-share-value")].map(value => value.textContent)).toEqual(["$78.45+", "$45.00+"]);
+  expect(summary.textContent).toContain("일부만 환산");
+});
 
 function dayDetail(totalTokens: number): UsageStatsDayDetail {
   return {
@@ -138,6 +349,14 @@ function selectTrigger(label: string): HTMLButtonElement {
     .find(candidate => candidate.getAttribute("aria-label") === label);
   if (!trigger) throw new Error(`Could not find the ${label} selection field.`);
   return trigger;
+}
+
+function cacheToggle(label: "캐시 제외" | "캐시 포함"): HTMLButtonElement {
+  const group = document.querySelector<HTMLElement>('[role="group"][aria-label="캐시 읽기"]');
+  const button = [...(group?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+    .find(candidate => candidate.textContent?.trim() === label);
+  if (!button) throw new Error(`Could not find the ${label} graph setting.`);
+  return button;
 }
 
 function activeSelectItems(field: string): HTMLElement[] {
@@ -300,6 +519,7 @@ it("keeps real model and project selections through pending requests and replace
   serverMonth.range = { ...serverMonth.range, period: "month", since: "2026-10-01", until: "2026-11-01", bucket: "day" };
   request.mockImplementation((input) => {
     const url = new URL(String(input), "https://soulstream.test");
+    if (url.pathname.endsWith("/days/2026-10-20")) return Promise.resolve(jsonResponse(dayDetail(20)));
     const count = request.mock.calls.length;
     if (count === 1) return Promise.resolve(jsonResponse(optionsOverview(10)));
     if (count === 2) return new Promise<Response>(resolve => { resolveFilteredOverview = resolve; });
@@ -309,8 +529,11 @@ it("keeps real model and project selections through pending requests and replace
   });
 
   await act(async () => root.render(<UsageStatsTab request={request} />));
+  await act(async () => cacheToggle("캐시 포함").click());
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
   await chooseTabOption("모델", "공급자 미확인 · 원문 모델");
   expect(request).toHaveBeenCalledTimes(2);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
   expect(responseQuery(1).get("provider")).toBe("unknown");
   expect(responseQuery(1).get("model")).toBe("vendor/team:model:v2");
   expect(selectTrigger("모델").textContent).toContain("원문 모델");
@@ -325,6 +548,7 @@ it("keeps real model and project selections through pending requests and replace
   await act(async () => { resolveFilteredOverview!(jsonResponse(optionsOverview(20))); await Promise.resolve(); });
   await chooseTabOption("프로젝트", "현재 프로젝트");
   expect(request).toHaveBeenCalledTimes(3);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
   expect(responseQuery(2).get("provider")).toBe("unknown");
   expect(responseQuery(2).get("model")).toBe("vendor/team:model:v2");
   expect(responseQuery(2).get("project_ids")).toBe("folder-current");
@@ -335,6 +559,7 @@ it("keeps real model and project selections through pending requests and replace
   await act(async () => [...document.querySelectorAll<HTMLButtonElement>("button")]
     .find(button => button.textContent?.trim() === "월간")!.click());
   expect(request).toHaveBeenCalledTimes(4);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
   expect(responseQuery(3).get("period")).toBe("month");
   expect(responseQuery(3).get("provider")).toBe("unknown");
   expect(responseQuery(3).get("model")).toBe("vendor/team:model:v2");
@@ -354,13 +579,21 @@ it("keeps real model and project selections through pending requests and replace
   expect(projectOptions).toEqual(["모든 프로젝트", "새 기간 프로젝트", "미분류", "현재 프로젝트"]);
   expect(projectOptions).not.toContain("이전 프로젝트");
   expect(modelOptions).not.toContain("이전 모델");
-  expect(document.querySelectorAll(".usage-stats-share-row")).toHaveLength(1);
+  expect([...document.querySelectorAll<HTMLElement>(".usage-stats-share-row")]
+    .filter(row => row.querySelector(".usage-stats-share-name")?.textContent === "server-month-model")).toHaveLength(1);
   const modelChart = document.querySelector<HTMLElement>(".usage-stats-chart");
   expect(modelChart?.getAttribute("aria-label")).toBe("모델별 사용량");
-  expect(document.querySelector(".usage-stats-share-list")?.textContent).toContain("server-month-model");
+  const modelShareList = [...document.querySelectorAll(".usage-stats-share-list")]
+    .find(list => list.textContent?.includes("server-month-model"));
+  expect(modelShareList?.textContent).toContain("server-month-model");
   const modelSegment = modelChart?.querySelector<HTMLElement>(".usage-stats-stack-segment");
   expect(modelSegment?.style.backgroundColor).toBe("var(--v3-text-tertiary)");
-  expect(request).toHaveBeenCalledTimes(4);
+  await act(async () => document.querySelector<HTMLButtonElement>('[data-bucket-index="19"]')!.click());
+  expect(request).toHaveBeenCalledTimes(5);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
+  await chooseTabOption("그래프 보기", "프로젝트별");
+  expect(request).toHaveBeenCalledTimes(5);
+  expect(cacheToggle("캐시 포함").getAttribute("aria-pressed")).toBe("true");
 });
 
 it("clears displayed selections and data and disables both filters after an overview 403", async () => {
@@ -419,9 +652,12 @@ it("removes successful day details and selection labels after a later day 403", 
 });
 
 it("distinguishes an unknown empty range from explicit zero without input guidance", async () => {
+  const explicitZero = cacheSplitAggregate({ total_tokens: 0 });
   request.mockImplementation(input => {
     const url = new URL(String(input), "https://soulstream.test");
-    return Promise.resolve(jsonResponse(url.searchParams.get("period") === "week" ? overview(null) : overview(0)));
+    return Promise.resolve(jsonResponse(url.searchParams.get("period") === "week"
+      ? overview(null)
+      : overview(0, {}, explicitZero)));
   });
 
   await act(async () => root.render(<UsageStatsTab request={request} />));
@@ -429,6 +665,9 @@ it("distinguishes an unknown empty range from explicit zero without input guidan
   const summary = document.querySelector(".usage-stats-summary-values")?.textContent ?? "";
   expect(summary).toContain("미기록");
   expect(summary).toContain("미확인");
+  const unknownSummary = document.querySelector(".usage-stats-summary")!;
+  expect(unknownSummary.querySelector(".usage-stats-summary-metric")?.lastElementChild?.textContent).toBe("캐시 읽기 미기록");
+  expect([...unknownSummary.querySelectorAll(".usage-stats-share-value")].map(value => value.textContent)).toEqual(["미확인", "미확인"]);
   expect(document.querySelector(".usage-stats-chart-message")?.textContent).toBe("미기록");
   expect(document.querySelector(".usage-stats-input-material")).toBeNull();
   expect(document.body.textContent).not.toContain("입력 자료 구성");
@@ -448,6 +687,9 @@ it("distinguishes an unknown empty range from explicit zero without input guidan
   expect(request).toHaveBeenCalledTimes(2);
   expect(responseQuery(1).get("period")).toBe("month");
   expect(document.querySelector(".usage-stats-chart-message")?.textContent).toBe("이 기간에 기록이 없습니다");
+  const zeroSummary = document.querySelector(".usage-stats-summary")!;
+  expect(zeroSummary.querySelector(".usage-stats-summary-metric")?.lastElementChild?.textContent).toBe("캐시 읽기 0 제외");
+  expect([...zeroSummary.querySelectorAll(".usage-stats-share-value")].map(value => value.textContent)).toEqual(["$0.00", "$0.00"]);
   expect(document.querySelector(".usage-stats-input-material")).toBeNull();
   expect(document.body.textContent).not.toContain("입력 자료 구성");
   expect(document.body.textContent).not.toContain("막대에서 날짜를 고르세요");

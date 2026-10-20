@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { UsageStatsMetrics } from "../../../wire-schema/src/session_statistics";
 
 import {
+  formatUsageStatsCacheSplit,
   formatUsageStatsCoverage,
   formatUsageStatsDateWithWeekday,
   formatUsageStatsPeriodLabel,
@@ -15,8 +17,51 @@ import {
   usageStatsMonthAnchor,
   usageStatsModelColorIndex,
   formatUsageStatsValue,
+  USAGE_STATS_LABELS,
+  usageStatsMetricValue,
   usageStatsRange,
 } from "./usage-stats-format";
+
+const EMPTY_TOKEN_PARTIALS = {
+  total_tokens: false,
+  provider_total_tokens: false,
+  ordinary_input: false,
+  cache_read: false,
+};
+
+const EMPTY_COVERAGE = {
+  usage_partial_events: 0,
+  missing_usage_turns: 0,
+  unknown_total_token_events: 0,
+  unpriced_events: 0,
+  unattributed_missing_usage: false,
+  token_partials: EMPTY_TOKEN_PARTIALS,
+};
+
+function coverageWith(tokenPartials: Partial<typeof EMPTY_TOKEN_PARTIALS> = {}) {
+  return {
+    ...EMPTY_COVERAGE,
+    token_partials: { ...EMPTY_TOKEN_PARTIALS, ...tokenPartials },
+  };
+}
+
+function splitMetrics(): UsageStatsMetrics {
+  return {
+    input_total: 100,
+    cache_read: 60,
+    cache_write: 0,
+    output_total: 20,
+    reasoning_output: 0,
+    total_tokens: 60,
+    provider_total_tokens: 120,
+    ordinary_input: 40,
+    reference_cost_usd: 3,
+    reference_cost_breakdown: {
+      cache_read: { known_cost_usd: 45, is_partial: false },
+      non_cache: { known_cost_usd: 78.45, is_partial: false },
+    },
+  };
+}
 
 describe("usage statistics formatting", () => {
   it("shares month drilldown anchors, stable model ranks, and estimated input token units", () => {
@@ -35,23 +80,19 @@ describe("usage statistics formatting", () => {
     expect(formatUsageStatsCoverage(null, null)).toBe("");
   });
   it("shares unknown price wording and never invents a zero partial total", () => {
-    const coverage = { usage_partial_events: 0, missing_usage_turns: 1, unknown_total_token_events: 0, unpriced_events: 0, unattributed_missing_usage: false };
-    expect(formatUsageStatsValue({ total_tokens: null, reference_cost_usd: null }, coverage, "cost")).toBe("미확인");
-    expect(formatUsageStatsValue({ total_tokens: null, reference_cost_usd: null }, coverage, "cost", true)).toBe("미기록");
-    expect(formatUsageStatsValue({ total_tokens: 5, reference_cost_usd: null }, coverage, "cost", true)).toBe("정가 미확인");
-    expect(formatUsageStatsValue({ total_tokens: 0, reference_cost_usd: 0 }, coverage, "tokens")).toBe("미기록");
+    const coverage = coverageWith({ total_tokens: true });
+    expect(formatUsageStatsValue({ total_tokens: null, provider_total_tokens: null, reference_cost_usd: null }, coverage, "cost")).toBe("미확인");
+    expect(formatUsageStatsValue({ total_tokens: null, provider_total_tokens: null, reference_cost_usd: null }, coverage, "cost", true)).toBe("미기록");
+    expect(formatUsageStatsValue({ total_tokens: 5, provider_total_tokens: 5, reference_cost_usd: null }, coverage, "cost", true)).toBe("정가 미확인");
+    expect(formatUsageStatsValue({ total_tokens: 0, provider_total_tokens: 0, reference_cost_usd: 0 }, coverage, "tokens")).toBe("미기록");
   });
   it("does not mark positive totals partial for pending-only or unknown collection evidence", () => {
     const pendingOnly = {
-      usage_partial_events: 0,
-      missing_usage_turns: 0,
-      unknown_total_token_events: 0,
-      unpriced_events: 0,
-      unattributed_missing_usage: false,
+      ...coverageWith(),
       pending_inputs: 1,
       collection_state: "unknown",
     };
-    expect(formatUsageStatsValue({ total_tokens: 8, reference_cost_usd: null }, pendingOnly, "tokens")).toBe("8");
+    expect(formatUsageStatsValue({ total_tokens: 8, provider_total_tokens: 8, reference_cost_usd: null }, pendingOnly, "tokens")).toBe("8");
   });
   it("keeps measured zero distinct from missing data", () => {
     expect(formatUsageStatsTokenCount(0)).toBe("0");
@@ -63,33 +104,219 @@ describe("usage statistics formatting", () => {
   it("names the observed-token denominator in coverage", () => {
     expect(formatUsageStatsCoverage(8_200, 10_000)).toBe("기록 토큰 82% 환산");
     expect(formatUsageStatsCoverage(1, null)).toBe("");
+    expect(formatUsageStatsCoverage(120, 120)).toBe("기록 토큰 100% 환산");
+    expect(formatUsageStatsCoverage(60, 120)).toBe("기록 토큰 50% 환산");
+    expect(formatUsageStatsCoverage(0, 120)).toBe("기록 토큰 0% 환산");
   });
 
-  it("marks token totals partial only for missing or unknown usage", () => {
-    expect(isUsageStatsTokenPartial({
-      usage_partial_events: 0,
-      missing_usage_turns: 0,
-      unknown_total_token_events: 0,
-      unattributed_missing_usage: false,
-    })).toBe(false);
-    expect(isUsageStatsTokenPartial({
+  it("reports a partial denominator when pricing or the token breakdown is incomplete", () => {
+    expect(formatUsageStatsCoverage(120, 120, true)).toBe("일부만 환산");
+    expect(formatUsageStatsCoverage(121, 120)).toBe("일부만 환산");
+    expect(formatUsageStatsCoverage(-1, 120)).toBe("일부만 환산");
+    expect(formatUsageStatsCoverage(null, 120)).toBe("일부만 환산");
+    expect(formatUsageStatsCoverage(1, 0)).toBe("");
+    expect(formatUsageStatsCoverage(1, -1)).toBe("");
+  });
+
+  it("marks token totals partial from the token_partials canon, not raw evidence counts", () => {
+    expect(isUsageStatsTokenPartial(coverageWith())).toBe(false);
+    expect(isUsageStatsTokenPartial(coverageWith({ total_tokens: true }))).toBe(true);
+    expect(isUsageStatsTokenPartial(coverageWith({ provider_total_tokens: true }))).toBe(false);
+    expect(isUsageStatsTokenPartial(coverageWith({ ordinary_input: true }))).toBe(false);
+    expect(isUsageStatsTokenPartial(coverageWith({ cache_read: true }))).toBe(false);
+    const rawEvidence = {
+      ...coverageWith(),
       usage_partial_events: 1,
-      missing_usage_turns: 0,
-      unknown_total_token_events: 0,
-      unattributed_missing_usage: false,
-    })).toBe(true);
-    expect(isUsageStatsTokenPartial({
-      usage_partial_events: 0,
       missing_usage_turns: 1,
-      unknown_total_token_events: 0,
-      unattributed_missing_usage: false,
-    })).toBe(true);
-    expect(isUsageStatsTokenPartial({
-      usage_partial_events: 0,
-      missing_usage_turns: 0,
       unknown_total_token_events: 1,
-      unattributed_missing_usage: false,
-    })).toBe(true);
+      unattributed_missing_usage: true,
+    };
+    expect(isUsageStatsTokenPartial(rawEvidence)).toBe(false);
+  });
+
+  it("formats the cache split with per-component and per-line partial marks", () => {
+    expect(USAGE_STATS_LABELS).toMatchObject({
+      nonCacheCost: "비캐시",
+      cacheReadCost: "캐시 읽기",
+      cacheReadExcludedRule: "캐시 읽기 제외",
+      uncachedInput: "그중 일반 입력",
+      cacheReadToggleGroup: "캐시 읽기",
+      cacheReadExclude: "캐시 제외",
+      cacheReadInclude: "캐시 포함",
+    });
+    expect(formatUsageStatsCacheSplit(null, null)).toEqual({
+      cacheReadLine: "캐시 읽기 제외",
+      nonCacheCost: "",
+      cacheReadCost: "",
+      ordinaryInput: "",
+    });
+    expect(formatUsageStatsCacheSplit(splitMetrics(), coverageWith())).toEqual({
+      cacheReadLine: "캐시 읽기 60 제외",
+      nonCacheCost: "$78.45",
+      cacheReadCost: "$45.00",
+      ordinaryInput: "40",
+    });
+    expect(formatUsageStatsCacheSplit(
+      { ...splitMetrics(), ordinary_input: 1_000_000 },
+      coverageWith(),
+    ).ordinaryInput).toBe("1,000,000");
+    const partialCosts = splitMetrics();
+    partialCosts.reference_cost_breakdown = {
+      cache_read: { known_cost_usd: 45, is_partial: true },
+      non_cache: { known_cost_usd: 78.45, is_partial: true },
+    };
+    expect(formatUsageStatsCacheSplit(
+      partialCosts,
+      coverageWith({ cache_read: true, ordinary_input: true, provider_total_tokens: true }),
+    )).toEqual({
+      cacheReadLine: "캐시 읽기 60+ 제외",
+      nonCacheCost: "$78.45+",
+      cacheReadCost: "$45.00+",
+      ordinaryInput: "40+",
+    });
+  });
+
+  it("keeps missing, partial zero, and measured zero distinct in the cache split", () => {
+    const missing = splitMetrics();
+    missing.cache_read = null;
+    missing.ordinary_input = null;
+    missing.reference_cost_breakdown = {
+      cache_read: { known_cost_usd: null, is_partial: true },
+      non_cache: { known_cost_usd: null, is_partial: true },
+    };
+    expect(formatUsageStatsCacheSplit(missing, coverageWith({ cache_read: true, ordinary_input: true }))).toEqual({
+      cacheReadLine: "캐시 읽기 미기록",
+      nonCacheCost: "미확인",
+      cacheReadCost: "미확인",
+      ordinaryInput: "미기록",
+    });
+
+    const partialZero = splitMetrics();
+    partialZero.cache_read = 0;
+    partialZero.ordinary_input = 0;
+    partialZero.reference_cost_breakdown = {
+      cache_read: { known_cost_usd: 0, is_partial: true },
+      non_cache: { known_cost_usd: 0, is_partial: true },
+    };
+    expect(formatUsageStatsCacheSplit(partialZero, coverageWith({ cache_read: true, ordinary_input: true }))).toEqual({
+      cacheReadLine: "캐시 읽기 미기록",
+      nonCacheCost: "미확인",
+      cacheReadCost: "미확인",
+      ordinaryInput: "미기록",
+    });
+
+    const measuredZero = splitMetrics();
+    measuredZero.cache_read = 0;
+    measuredZero.ordinary_input = 0;
+    measuredZero.reference_cost_breakdown = {
+      cache_read: { known_cost_usd: 0, is_partial: false },
+      non_cache: { known_cost_usd: 0, is_partial: false },
+    };
+    expect(formatUsageStatsCacheSplit(measuredZero, coverageWith())).toEqual({
+      cacheReadLine: "캐시 읽기 0 제외",
+      nonCacheCost: "$0.00",
+      cacheReadCost: "$0.00",
+      ordinaryInput: "0",
+    });
+  });
+
+  it("does not spread partial marks across independent cache lines", () => {
+    const result = formatUsageStatsCacheSplit(
+      splitMetrics(),
+      coverageWith({ ordinary_input: true }),
+    );
+    expect(result.cacheReadLine).toBe("캐시 읽기 60 제외");
+    expect(result.cacheReadCost).toBe("$45.00");
+    expect(result.nonCacheCost).toBe("$78.45");
+    expect(result.ordinaryInput).toBe("40+");
+
+    const components = splitMetrics();
+    components.reference_cost_breakdown = {
+      cache_read: { known_cost_usd: 45, is_partial: true },
+      non_cache: { known_cost_usd: 78.45, is_partial: false },
+    };
+    expect(formatUsageStatsCacheSplit(components, coverageWith()).cacheReadCost).toBe("$45.00+");
+    expect(formatUsageStatsCacheSplit(components, coverageWith()).nonCacheCost).toBe("$78.45");
+  });
+
+  it("guards the cost row with provider_total_tokens instead of total_tokens", () => {
+    expect(formatUsageStatsValue(
+      { total_tokens: null, provider_total_tokens: 120, reference_cost_usd: 3 },
+      coverageWith(),
+      "cost",
+      true,
+    )).toBe("$3.00");
+    expect(formatUsageStatsValue(
+      { total_tokens: 120, provider_total_tokens: null, reference_cost_usd: null },
+      coverageWith(),
+      "cost",
+      true,
+    )).toBe("미기록");
+  });
+
+  it("selects cache-inclusive and cache-excluded metrics with independent partial states", () => {
+    const metrics = { ...splitMetrics(), reference_cost_usd: 123.45 };
+    const complete = coverageWith();
+
+    expect(usageStatsMetricValue(metrics, "tokens", false)).toBe(60);
+    expect(usageStatsMetricValue(metrics, "tokens", true)).toBe(120);
+    expect(usageStatsMetricValue(metrics, "cost", false)).toBe(78.45);
+    expect(usageStatsMetricValue(metrics, "cost", true)).toBe(123.45);
+    expect(formatUsageStatsValue(metrics, complete, "tokens", false, false)).toBe("60");
+    expect(formatUsageStatsValue(metrics, complete, "tokens", false, true)).toBe("120");
+    expect(formatUsageStatsValue(metrics, complete, "cost", false, false)).toBe("$78.45");
+    expect(formatUsageStatsValue(metrics, complete, "cost", false, true)).toBe("$123.45");
+    expect(formatUsageStatsValue(metrics, complete, "cost")).toBe("$123.45");
+
+    const partialCoverage = coverageWith({ total_tokens: true, provider_total_tokens: true });
+    partialCoverage.unpriced_events = 1;
+    const partialMetrics = { ...metrics };
+    partialMetrics.reference_cost_breakdown = {
+      ...metrics.reference_cost_breakdown,
+      non_cache: { known_cost_usd: 78.45, is_partial: true },
+    };
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "tokens", false, false)).toBe("60+");
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "tokens", false, true)).toBe("120+");
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "cost", false, false)).toBe("$78.45+");
+    expect(formatUsageStatsValue(partialMetrics, partialCoverage, "cost", false, true)).toBe("$123.45+");
+
+    const unknown = {
+      ...metrics,
+      total_tokens: null,
+      provider_total_tokens: null,
+      reference_cost_usd: null,
+      reference_cost_breakdown: {
+        cache_read: { known_cost_usd: null, is_partial: true },
+        non_cache: { known_cost_usd: null, is_partial: true },
+      },
+    };
+    expect(usageStatsMetricValue(unknown, "tokens", false)).toBeNull();
+    expect(usageStatsMetricValue(unknown, "tokens", true)).toBeNull();
+    expect(usageStatsMetricValue(unknown, "cost", false)).toBeNull();
+    expect(usageStatsMetricValue(unknown, "cost", true)).toBeNull();
+    expect(formatUsageStatsValue(unknown, complete, "tokens", false, false)).toBe("미기록");
+    expect(formatUsageStatsValue(unknown, complete, "tokens", false, true)).toBe("미기록");
+    expect(formatUsageStatsValue(unknown, complete, "cost", false, false)).toBe("미확인");
+    expect(formatUsageStatsValue(unknown, complete, "cost", false, true)).toBe("미확인");
+
+    const confirmedZero = {
+      ...unknown,
+      total_tokens: 0,
+      provider_total_tokens: 0,
+      reference_cost_usd: 0,
+      reference_cost_breakdown: {
+        cache_read: { known_cost_usd: 0, is_partial: false },
+        non_cache: { known_cost_usd: 0, is_partial: false },
+      },
+    };
+    expect(usageStatsMetricValue(confirmedZero, "tokens", false)).toBe(0);
+    expect(usageStatsMetricValue(confirmedZero, "tokens", true)).toBe(0);
+    expect(usageStatsMetricValue(confirmedZero, "cost", false)).toBe(0);
+    expect(usageStatsMetricValue(confirmedZero, "cost", true)).toBe(0);
+    expect(formatUsageStatsValue(confirmedZero, complete, "tokens", false, false)).toBe("0");
+    expect(formatUsageStatsValue(confirmedZero, complete, "tokens", false, true)).toBe("0");
+    expect(formatUsageStatsValue(confirmedZero, complete, "cost", false, false)).toBe("$0.00");
+    expect(formatUsageStatsValue(confirmedZero, complete, "cost", false, true)).toBe("$0.00");
   });
 
   it("formats the corrected KST week, month, and full-period ranges", () => {
