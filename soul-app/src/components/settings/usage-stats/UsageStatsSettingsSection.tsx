@@ -328,7 +328,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
             <DisclosureButton label={USAGE_STATS_LABELS.tokenDetails} expanded={metricsExpanded} onPress={() => setMetricsExpanded(value => !value)} />
             {metricsExpanded ? detailLoading
               ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>불러오는 중…</Text>
-              : activeAggregate ? <MetricBreakdown aggregate={activeAggregate} /> : null
+              : activeAggregate ? <MetricBreakdown aggregate={activeAggregate} ordinaryInput={cacheSplit.ordinaryInput} /> : null
               : null}
             <DisclosureButton label="집계 기준" expanded={basisExpanded} onPress={() => setBasisExpanded(value => !value)} />
             {basisExpanded ? <AggregationBasis /> : null}
@@ -446,19 +446,19 @@ function DisclosureButton({ label, expanded, onPress }: { label: string; expande
   </BackendNodeCardHeader>;
 }
 
-function MetricBreakdown({ aggregate }: { aggregate: UsageStatsAggregate }) {
+function MetricBreakdown({ aggregate, ordinaryInput }: { aggregate: UsageStatsAggregate; ordinaryInput: string }) {
   const t = useTokens();
   const metrics = aggregate.metrics;
   const rows = [
-    [USAGE_STATS_LABELS.input, metrics.input_total],
-    [USAGE_STATS_LABELS.uncachedInput, metrics.ordinary_input],
-    [USAGE_STATS_LABELS.cacheRead, metrics.cache_read],
-    [USAGE_STATS_LABELS.cacheWrite, metrics.cache_write],
-    [USAGE_STATS_LABELS.output, metrics.output_total],
-    [USAGE_STATS_LABELS.reasoning, metrics.reasoning_output],
+    { label: USAGE_STATS_LABELS.input, value: formatUsageStatsTokenCount(metrics.input_total, false) },
+    { label: USAGE_STATS_LABELS.uncachedInput, value: ordinaryInput, testID: 'usage-stats-ordinary-input-value' },
+    { label: USAGE_STATS_LABELS.cacheRead, value: formatUsageStatsTokenCount(metrics.cache_read, false) },
+    { label: USAGE_STATS_LABELS.cacheWrite, value: formatUsageStatsTokenCount(metrics.cache_write, false) },
+    { label: USAGE_STATS_LABELS.output, value: formatUsageStatsTokenCount(metrics.output_total, false) },
+    { label: USAGE_STATS_LABELS.reasoning, value: formatUsageStatsTokenCount(metrics.reasoning_output, false) },
   ] as const;
   return <View style={{ gap: t.spacing.xs }}>
-    {rows.map(([label, value]) => <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><Text style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{label}</Text><Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{formatUsageStatsTokenCount(value, false)}</Text></View>)}
+    {rows.map(row => <View key={row.label} style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><Text style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{row.label}</Text><Text testID={'testID' in row ? row.testID : undefined} style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{row.value}</Text></View>)}
   </View>;
 }
 

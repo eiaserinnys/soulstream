@@ -552,6 +552,7 @@ test.each(cacheSplitScenarios)('$name 캐시 분할 값과 캐시 포함 환산 
 test('토큰 상세에서 그중 일반 입력을 입력 다음에 보여준다', async () => {
   const overview = buildUsageStatsOverview(weekQuery);
   overview.totals.metrics.ordinary_input = 50_000_000;
+  overview.totals.coverage.token_partials.ordinary_input = false;
   global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -564,6 +565,25 @@ test('토큰 상세에서 그중 일반 입력을 입력 다음에 보여준다'
   const labelPositions = labels.map(label => screen.getByText(label));
   expect(screen.getByText('50,000,000')).toBeTruthy();
   expect(labelPositions).toHaveLength(6);
+});
+
+test.each([
+  { name: '양수', value: 40_000_000, expected: '40,000,000+' },
+  { name: '0', value: 0, expected: '미기록' },
+])('부분 기록된 일반 입력 $name 값은 공통 포맷을 사용한다', async scenario => {
+  const overview = buildUsageStatsOverview(weekQuery);
+  overview.totals.metrics.ordinary_input = scenario.value;
+  overview.totals.coverage.token_partials.ordinary_input = true;
+  global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  const screen = render(<UsageStatsSettingsSection />);
+  await ready(screen);
+
+  fireEvent.press(screen.getByText('토큰 상세'));
+  expect(screen.getByText('그중 일반 입력')).toBeTruthy();
+  expect(screen.getByTestId('usage-stats-ordinary-input-value').props.children).toBe(scenario.expected);
 });
 
 test('모델 필터는 해제할 수 있고 실패 상태의 재시도는 데이터를 다시 표시한다', async () => {
