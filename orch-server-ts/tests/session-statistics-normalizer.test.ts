@@ -9,6 +9,7 @@ import {
 import {
   canonicalOwnershipEvents,
   claudeModelBreakdownEvents,
+  claudeCacheTtlCases,
   expectedCanonicalInputMaterialFacts,
   expectedCanonicalOwners,
   keylessSystemMaterialEvents,
@@ -54,6 +55,10 @@ function unknownClaudeEvent(
 }
 
 describe("session statistics native usage number format", () => {
+  it.each(claudeCacheTtlCases)("prices Claude cache TTL: $name", ({ event, expected }) => {
+    expect(normalize(event).facts).toEqual(expected.map((fact) => expect.objectContaining(fact)));
+  });
+
   it.each(noWriteCacheCases)("preserves cache write semantics: $name", ({ event, expected }) => {
     expect(usageFact(event)).toMatchObject(expected);
   });

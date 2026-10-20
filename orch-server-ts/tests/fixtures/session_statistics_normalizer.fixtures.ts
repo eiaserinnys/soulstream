@@ -246,6 +246,45 @@ export const noWriteCacheCases = noWriteCacheVectors.map(({ name, provider, mode
   },
 }));
 
+const claudeCacheTtlVectors = [
+  { name: "one hour", creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 100 }, cost: 0.000944, unpriced: 0 },
+  { name: "five minutes", creation: { ephemeral_5m_input_tokens: 100, ephemeral_1h_input_tokens: 0 }, cost: 0.000644, unpriced: 0 },
+  { name: "both TTLs", creation: { ephemeral_5m_input_tokens: 40, ephemeral_1h_input_tokens: 60 }, cost: 0.000824, unpriced: 0 },
+  { name: "unmatched remainder", creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 30 }, cost: 0.000484, unpriced: 50 },
+  { name: "no object", creation: undefined, cost: 0.000144, unpriced: 100 },
+];
+
+const claudeTtlBaseUsage = {
+  input_tokens: 10, cache_read_input_tokens: 20, cache_creation_input_tokens: 100, output_tokens: 5,
+};
+
+export const claudeCacheTtlCases = claudeCacheTtlVectors.map(({ name, creation, cost, unpriced }) => ({
+  name,
+  event: {
+    ...representativeProviderEvents.claude,
+    payload: {
+      type: "complete",
+      model: "claude-opus-5-5",
+      output_command_id: "claude-ttl-command",
+      usage_snapshot: representativeProviderEvents.claude.payload.usage_snapshot,
+      usage: { ...claudeTtlBaseUsage, ...(creation === undefined ? {} : { cache_creation: creation }) },
+      model_usage: { "claude-opus-5-5": claudeTtlBaseUsage },
+    },
+  },
+  expected: [
+    {
+      representation: "aggregate", cache_write: 100, known_cost_usd: cost,
+      pricing_complete: unpriced === 0, priced_tokens: 135 - unpriced, unpriced_tokens: unpriced,
+      raw_numeric: { usage: claudeTtlBaseUsage, model_usage: { "claude-opus-5-5": claudeTtlBaseUsage } },
+    },
+    {
+      representation: "model_breakdown", cache_write: 100, known_cost_usd: 0.000144,
+      pricing_complete: false, priced_tokens: 35, unpriced_tokens: 100,
+      raw_numeric: { usage: claudeTtlBaseUsage, model_usage: { "claude-opus-5-5": claudeTtlBaseUsage } },
+    },
+  ],
+}));
+
 const modelBreakdown = {
   "claude-opus-5-5": {
     inputTokens: 4,
