@@ -25,9 +25,11 @@ export function formatUsageStatsUsd(value: number | null | undefined): string {
 export function formatUsageStatsCoverage(
   pricedTokens: number | null | undefined,
   observedTokens: number | null | undefined,
+  denominatorPartial = false,
 ): string {
   if (typeof observedTokens !== "number" || !Number.isFinite(observedTokens) || observedTokens <= 0) return "";
-  if (typeof pricedTokens !== "number" || !Number.isFinite(pricedTokens)) return "일부만 환산";
+  if (denominatorPartial) return "일부만 환산";
+  if (typeof pricedTokens !== "number" || !Number.isFinite(pricedTokens) || pricedTokens < 0 || pricedTokens > observedTokens) return "일부만 환산";
   const percent = Math.round((pricedTokens / observedTokens) * 100);
   return `기록 토큰 ${percent}% 환산`;
 }
@@ -35,6 +37,9 @@ export function formatUsageStatsCoverage(
 export const USAGE_STATS_LABELS = {
   tokenDetails: "토큰 상세",
   missingUsage: "미기록", unknownPrice: "정가 미확인", unknownCost: "미확인",
+  nonCacheCost: "비캐시", cacheReadCost: "캐시 읽기",
+  cacheReadExcludedRule: "캐시 읽기 제외", uncachedInput: "그중 일반 입력",
+  cacheReadToggleGroup: "캐시 읽기", cacheReadExclude: "캐시 제외", cacheReadInclude: "캐시 포함",
   beforeCoverage: "이 기간은 기록 전입니다", emptyRange: "이 기간에 기록이 없습니다",
   missingInput: "일부 세션 미기록",
   inputEstimateBasis: "저장된 manifest 추정값을 우선하며, 없으면 기록된 자료의 글자 수를 4로 나눈 올림값을 사용합니다.",
@@ -50,18 +55,111 @@ export function formatUsageStatsApproximateTokens(value: number | null, observed
 }
 
 export function formatUsageStatsValue(
-  metrics: { total_tokens: number | null; reference_cost_usd: number | null },
-  coverage: { usage_partial_events: number; missing_usage_turns: number; unknown_total_token_events: number; unpriced_events: number; unattributed_missing_usage: boolean },
-  metric: "tokens" | "cost", row = false,
+  metrics: {
+    total_tokens: number | null;
+    provider_total_tokens: number | null;
+    reference_cost_usd: number | null;
+    reference_cost_breakdown: {
+      non_cache: { known_cost_usd: number | null; is_partial: boolean };
+    };
+  },
+  coverage: {
+    usage_partial_events: number;
+    missing_usage_turns: number;
+    unknown_total_token_events: number;
+    unpriced_events: number;
+    unattributed_missing_usage: boolean;
+    token_partials: {
+      total_tokens: boolean;
+      provider_total_tokens: boolean;
+      ordinary_input: boolean;
+      cache_read: boolean;
+    };
+  },
+  metric: "tokens" | "cost", row = false, includeCacheRead = false,
 ): string {
-  const partial = metric === "tokens" ? isUsageStatsTokenPartial(coverage) : isUsageStatsCostPartial(coverage);
   if (metric === "tokens") {
-    if (metrics.total_tokens === null || (metrics.total_tokens === 0 && partial)) return USAGE_STATS_LABELS.missingUsage;
-    return `${formatUsageStatsTokenCount(metrics.total_tokens)}${partial ? "+" : ""}`;
+    const value = includeCacheRead ? metrics.provider_total_tokens : metrics.total_tokens;
+    const partial = includeCacheRead
+      ? coverage.token_partials.provider_total_tokens
+      : coverage.token_partials.total_tokens;
+    if (value === null || (value === 0 && partial)) return USAGE_STATS_LABELS.missingUsage;
+    return `${formatUsageStatsTokenCount(value)}${partial ? "+" : ""}`;
   }
-  if (row && metrics.total_tokens === null) return USAGE_STATS_LABELS.missingUsage;
+  if (row && metrics.provider_total_tokens === null) return USAGE_STATS_LABELS.missingUsage;
+  if (!includeCacheRead) return formatUsageStatsSplitCost(metrics.reference_cost_breakdown.non_cache, row);
+  const partial = isUsageStatsCostPartial(coverage);
   if (metrics.reference_cost_usd === null || (metrics.reference_cost_usd === 0 && partial)) return row ? USAGE_STATS_LABELS.unknownPrice : USAGE_STATS_LABELS.unknownCost;
   return `${formatUsageStatsUsd(metrics.reference_cost_usd)}${partial ? "+" : ""}`;
+}
+
+export function usageStatsMetricValue(
+  metrics: {
+    total_tokens: number | null;
+    provider_total_tokens: number | null;
+    reference_cost_usd: number | null;
+    reference_cost_breakdown: {
+      non_cache: { known_cost_usd: number | null; is_partial: boolean };
+    };
+  },
+  metric: "tokens" | "cost",
+  includeCacheRead: boolean,
+): number | null {
+  if (metric === "tokens") return includeCacheRead ? metrics.provider_total_tokens : metrics.total_tokens;
+  return includeCacheRead
+    ? metrics.reference_cost_usd
+    : metrics.reference_cost_breakdown.non_cache.known_cost_usd;
+}
+
+export function formatUsageStatsCacheSplit(
+  metrics: {
+    cache_read: number | null;
+    ordinary_input: number | null;
+    reference_cost_breakdown: {
+      cache_read: { known_cost_usd: number | null; is_partial: boolean };
+      non_cache: { known_cost_usd: number | null; is_partial: boolean };
+    };
+  } | null | undefined,
+  coverage: {
+    token_partials: {
+      total_tokens: boolean;
+      provider_total_tokens: boolean;
+      ordinary_input: boolean;
+      cache_read: boolean;
+    };
+  } | null | undefined,
+): { cacheReadLine: string; nonCacheCost: string; cacheReadCost: string; ordinaryInput: string } {
+  if (!metrics || !coverage) {
+    return {
+      cacheReadLine: USAGE_STATS_LABELS.cacheReadExcludedRule,
+      nonCacheCost: "",
+      cacheReadCost: "",
+      ordinaryInput: "",
+    };
+  }
+  const tokenPartials = coverage.token_partials;
+  const cacheReadPartial = tokenPartials.cache_read;
+  let cacheReadLine = `${USAGE_STATS_LABELS.cacheReadCost} ${USAGE_STATS_LABELS.missingUsage}`;
+  if (metrics.cache_read !== null && !(metrics.cache_read === 0 && cacheReadPartial)) {
+    cacheReadLine = `${USAGE_STATS_LABELS.cacheReadCost} ${formatUsageStatsTokenCount(metrics.cache_read)}${cacheReadPartial ? "+" : ""} 제외`;
+  }
+  let ordinaryInput = USAGE_STATS_LABELS.missingUsage;
+  if (metrics.ordinary_input !== null && !(metrics.ordinary_input === 0 && tokenPartials.ordinary_input)) {
+    ordinaryInput = `${formatUsageStatsTokenCount(metrics.ordinary_input, false)}${tokenPartials.ordinary_input ? "+" : ""}`;
+  }
+  return {
+    cacheReadLine,
+    nonCacheCost: formatUsageStatsSplitCost(metrics.reference_cost_breakdown.non_cache),
+    cacheReadCost: formatUsageStatsSplitCost(metrics.reference_cost_breakdown.cache_read),
+    ordinaryInput,
+  };
+}
+
+function formatUsageStatsSplitCost(component: { known_cost_usd: number | null; is_partial: boolean }, row = false): string {
+  if (component.known_cost_usd === null || (component.known_cost_usd === 0 && component.is_partial)) {
+    return row ? USAGE_STATS_LABELS.unknownPrice : USAGE_STATS_LABELS.unknownCost;
+  }
+  return `${formatUsageStatsUsd(component.known_cost_usd)}${component.is_partial ? "+" : ""}`;
 }
 
 export function usageStatsModelColorIndex(model: string | null | undefined, roster: readonly (string | null)[]): number {
@@ -169,22 +267,26 @@ function addDays(date: string, amount: number): string {
 }
 
 export function isUsageStatsTokenPartial(coverage: {
-  usage_partial_events: number;
-  missing_usage_turns: number;
-  unknown_total_token_events: number;
-  unattributed_missing_usage: boolean;
+  token_partials: {
+    total_tokens: boolean;
+    provider_total_tokens: boolean;
+    ordinary_input: boolean;
+    cache_read: boolean;
+  };
 }): boolean {
-  return coverage.unattributed_missing_usage || coverage.usage_partial_events > 0 || coverage.missing_usage_turns > 0 || coverage.unknown_total_token_events > 0;
+  return coverage.token_partials.total_tokens;
 }
 
 export function isUsageStatsCostPartial(coverage: {
-  usage_partial_events: number;
-  missing_usage_turns: number;
-  unknown_total_token_events: number;
-  unattributed_missing_usage: boolean;
   unpriced_events: number;
+  token_partials: {
+    total_tokens: boolean;
+    provider_total_tokens: boolean;
+    ordinary_input: boolean;
+    cache_read: boolean;
+  };
 }): boolean {
-  return coverage.unpriced_events > 0 || isUsageStatsTokenPartial(coverage);
+  return coverage.unpriced_events > 0 || coverage.token_partials.provider_total_tokens;
 }
 
 export function formatUsageStatsPeriodLabel(

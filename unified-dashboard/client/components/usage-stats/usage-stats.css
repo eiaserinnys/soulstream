@@ -71,6 +71,10 @@
   gap: var(--v3-space-3);
 }
 
+.config-dialog.usage-stats-review-sample {
+  height: auto;
+}
+
 .config-dialog .usage-stats-summary-values {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -81,6 +85,7 @@
   display: grid;
   min-width: 0;
   gap: var(--v3-space-2);
+  align-content: start;
 }
 
 .config-dialog .usage-stats-summary-metric > span,
@@ -94,6 +99,10 @@
 .config-dialog .usage-stats-input-meta {
   color: var(--v3-text-tertiary);
   font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.config-dialog .usage-stats-summary-metric > span {
+  word-break: keep-all;
 }
 
 .config-dialog .usage-stats-summary-metric > strong {
@@ -166,8 +175,16 @@
   margin-top: var(--v3-space-4);
 }
 
-.config-dialog .usage-stats-chart-heading > .v3-completed-periods {
+.config-dialog .usage-stats-chart-heading-controls {
+  display: flex;
+  min-width: 0;
+  flex-wrap: nowrap;
   justify-self: end;
+  gap: var(--v3-space-4);
+}
+
+.config-dialog .usage-stats-chart-heading-controls > .v3-completed-periods {
+  flex-wrap: nowrap;
 }
 
 .config-dialog .usage-stats-chart {
@@ -322,6 +339,10 @@
   gap: var(--v3-space-2);
 }
 
+.config-dialog .usage-stats-share-list-no-share .usage-stats-share-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .config-dialog .usage-stats-share-name {
   min-width: 0;
   overflow: hidden;
@@ -396,4 +417,20 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+}
+
+/* The dialog keeps a menu column, so the chart heading follows the tab's own width. */
+.config-dialog .usage-stats-tab {
+  container-name: usage-stats;
+  container-type: inline-size;
+}
+
+@container usage-stats (max-width: 36rem) {
+  .config-dialog .usage-stats-chart-heading {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .config-dialog .usage-stats-chart-heading-controls {
+    justify-self: start;
+  }
 }

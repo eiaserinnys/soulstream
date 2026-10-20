@@ -512,6 +512,10 @@
     {
       "id": "126_session_statistics_input_indexes.sql",
       "sha256": "d88bd6ce0d3c025b0dc5d921dee7ea8c5f1ec627b0d1dbf23128e3efa3fd31cc"
+    },
+    {
+      "id": "127_session_statistics_daily_rollups.sql",
+      "sha256": "3a563922fa1b8ae0d4d0fb4c9951a8d2aa68d1bef1d80e089d55106717d6e0ee"
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RAW_USAGE_RECORDS, RAW_INPUT_MATERIAL, type RawInputMaterialRecord } from "./usage-stats-fixture-data";
+import { aggregate, zeroCoverage, zeroMetrics } from "./usage-stats-fixture-aggregate";
 import { formatUsageStatsValue, isUsageStatsTokenPartial, isUsageStatsCostPartial } from "./usage-stats-format";
 
 import {
@@ -82,10 +83,10 @@ describe("usage statistics public fixture", () => {
       expect(isUsageStatsTokenPartial(aggregate.coverage)).toBe(true);
       expect(isUsageStatsCostPartial(aggregate.coverage)).toBe(true);
     }
-    expect(formatUsageStatsValue(week.totals.metrics, week.totals.coverage, "tokens")).toBe("245만+");
-    expect(formatUsageStatsValue(week.totals.metrics, week.totals.coverage, "cost")).toBe("$13.00+");
-    expect(formatUsageStatsValue(friday.totals.metrics, friday.totals.coverage, "tokens")).toBe("85만+");
-    expect(formatUsageStatsValue(friday.totals.metrics, friday.totals.coverage, "cost")).toBe("$3.00+");
+    expect(formatUsageStatsValue(week.totals.metrics, week.totals.coverage, "tokens")).toBe("160만+");
+    expect(formatUsageStatsValue(week.totals.metrics, week.totals.coverage, "cost", false, true)).toBe("$13.00+");
+    expect(formatUsageStatsValue(friday.totals.metrics, friday.totals.coverage, "tokens")).toBe("60만+");
+    expect(formatUsageStatsValue(friday.totals.metrics, friday.totals.coverage, "cost", false, true)).toBe("$3.00+");
     expect(all.totals.coverage).toMatchObject({ missing_usage_turns: 14, unattributed_missing_usage: false });
     const unfilteredProject = buildUsageStatsOverview({ period: "week", anchor: USAGE_STATS_FIXTURE_ANCHOR, project_ids: ["project-web-dashboard"] });
     expect(unfilteredProject.totals.coverage).toMatchObject({ missing_usage_turns: 4, unattributed_missing_usage: false });
@@ -95,12 +96,12 @@ describe("usage statistics public fixture", () => {
     const empty = buildUsageStatsOverview({ period: "week", anchor: "2026-10-10", provider: "claude" });
     expect(empty.totals.coverage.unattributed_missing_usage).toBe(false);
     expect(formatUsageStatsValue(empty.totals.metrics, empty.totals.coverage, "tokens")).toBe("0");
-    expect(formatUsageStatsValue(empty.totals.metrics, empty.totals.coverage, "cost")).toBe("$0.00");
+    expect(formatUsageStatsValue(empty.totals.metrics, empty.totals.coverage, "cost", false, true)).toBe("$0.00");
     const pendingOnly = buildUsageStatsDayDetail("2026-10-18", { provider: "antigravity", project_ids: ["project-experiments"] });
     expect(pendingOnly.totals.coverage.unattributed_missing_usage).toBe(false);
     expect(pendingOnly.totals.is_partial).toBe(false);
-    expect(formatUsageStatsValue(pendingOnly.totals.metrics, pendingOnly.totals.coverage, "tokens")).toBe("60만");
-    expect(formatUsageStatsValue(pendingOnly.totals.metrics, pendingOnly.totals.coverage, "cost")).toBe("$2.00");
+    expect(formatUsageStatsValue(pendingOnly.totals.metrics, pendingOnly.totals.coverage, "tokens")).toBe("45만");
+    expect(formatUsageStatsValue(pendingOnly.totals.metrics, pendingOnly.totals.coverage, "cost", false, true)).toBe("$2.00");
     const blockedZero = buildUsageStatsDayDetail("2026-10-18", { provider: "claude", project_ids: ["project-experiments"] });
     expect(blockedZero.totals.coverage.unattributed_missing_usage).toBe(false);
     expect(blockedZero.totals.metrics.total_tokens).toBeNull();
@@ -112,11 +113,96 @@ describe("usage statistics public fixture", () => {
   });
 
   it("never turns a null usage record into a collected zero", () => {
-    RAW_USAGE_RECORDS.push({ date: "2026-10-06", provider: "codex", backend: "codex", model: "gpt-6-luna", project_id: "project-docs", input_total: null, cache_read: null, cache_write: null, output_total: null, reasoning_output: null, reference_cost_usd: null });
+    RAW_USAGE_RECORDS.push({ date: "2026-10-06", provider: "codex", backend: "codex", model: "gpt-6-luna", project_id: "project-docs", input_total: null, cache_read: null, cache_write: null, output_total: null, reasoning_output: null, reference_cost_usd: null, cache_read_cost_usd: null, non_cache_cost_usd: null });
     try {
       expect(buildUsageStatsDayDetail("2026-10-06", { provider: "codex" }).totals.metrics.total_tokens).toBeNull();
     } finally { RAW_USAGE_RECORDS.pop(); }
   });
+  it("derives cache-adjusted totals, provider totals, ordinary input, and component costs", () => {
+    const all = aggregate(RAW_USAGE_RECORDS, [], [], false);
+    expect(all.metrics.input_total).toBe(6_350_000);
+    expect(all.metrics.cache_read).toBe(2_650_000);
+    expect(all.metrics.total_tokens).toBe(6_070_000);
+    expect(all.metrics.provider_total_tokens).toBe(8_720_000);
+    expect(all.metrics.ordinary_input).toBe(3_700_000);
+    expect(all.metrics.reference_cost_breakdown.cache_read.is_partial).toBe(true);
+    expect(all.metrics.reference_cost_breakdown.non_cache.is_partial).toBe(true);
+    expect(all.metrics.reference_cost_breakdown.cache_read.known_cost_usd).toBeCloseTo(0.2955, 6);
+    expect(all.metrics.reference_cost_breakdown.non_cache.known_cost_usd).toBeCloseTo(35.4045, 6);
+    expect(all.coverage.token_partials).toEqual({
+      total_tokens: false, provider_total_tokens: false, ordinary_input: false, cache_read: false,
+    });
+
+    const day = buildUsageStatsDayDetail("2026-10-18", { provider: "antigravity", project_ids: ["project-experiments"] });
+    expect(day.totals.metrics).toMatchObject({
+      total_tokens: 450_000, provider_total_tokens: 600_000, ordinary_input: 250_000,
+    });
+    expect(day.totals.metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: 0.015, is_partial: false },
+      non_cache: { known_cost_usd: 1.985, is_partial: false },
+    });
+
+    expect(zeroMetrics().reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: 0, is_partial: false },
+      non_cache: { known_cost_usd: 0, is_partial: false },
+    });
+    expect(zeroCoverage().token_partials).toEqual({
+      total_tokens: false, provider_total_tokens: false, ordinary_input: false, cache_read: false,
+    });
+  });
+
+  it("keeps cache, non-cache, and ordinary partials independent", () => {
+    const record = {
+      ...RAW_USAGE_RECORDS[0],
+      input_total: 100, cache_read: 60, cache_write: 0, output_total: 20, reasoning_output: 0,
+      reference_cost_usd: 3, cache_read_cost_usd: 1, non_cache_cost_usd: 2,
+    };
+    const known = aggregate([record], [], [], false);
+    expect(known.metrics).toMatchObject({
+      total_tokens: 60, provider_total_tokens: 120, ordinary_input: 40,
+    });
+    expect(known.coverage.token_partials).toEqual({
+      total_tokens: false, provider_total_tokens: false, ordinary_input: false, cache_read: false,
+    });
+    expect(known.metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: 1, is_partial: false },
+      non_cache: { known_cost_usd: 2, is_partial: false },
+    });
+
+    const ttlUnknown = aggregate([{ ...record, cache_write: null }], [], [], false);
+    expect(ttlUnknown.metrics.ordinary_input).toBeNull();
+    expect(ttlUnknown.coverage.token_partials).toEqual({
+      total_tokens: false, provider_total_tokens: false, ordinary_input: true, cache_read: false,
+    });
+    expect(ttlUnknown.metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: 1, is_partial: false },
+      non_cache: { known_cost_usd: 2, is_partial: true },
+    });
+  });
+
+  it("marks missing usage as partial while pending-only input stays unpartial", () => {
+    const missing = aggregate([], [{
+      id: "missing-1", date: "2026-10-06", project_id: "project-docs", terminal: true, ended: true,
+    }], [], true);
+    expect(missing.coverage.token_partials).toEqual({
+      total_tokens: true, provider_total_tokens: true, ordinary_input: true, cache_read: true,
+    });
+    expect(missing.metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: null, is_partial: true },
+      non_cache: { known_cost_usd: null, is_partial: true },
+    });
+
+    const pending = aggregate([], [], [{ date: "2026-10-06", project_id: "project-docs" }], false);
+    expect(pending.coverage.token_partials).toEqual({
+      total_tokens: false, provider_total_tokens: false, ordinary_input: false, cache_read: false,
+    });
+    expect(pending.metrics.reference_cost_breakdown).toEqual({
+      cache_read: { known_cost_usd: null, is_partial: false },
+      non_cache: { known_cost_usd: null, is_partial: false },
+    });
+    expect(pending.is_partial).toBe(false);
+  });
+
   it("confirms zero only inside collection coverage with no scoped usage or unidentified turns", () => {
     const empty = buildUsageStatsOverview({ period: "week", anchor: "2026-10-10" });
     expect(empty.totals.metrics.total_tokens).toBe(0);
@@ -142,7 +228,7 @@ describe("usage statistics public fixture", () => {
     });
     expect(overview.totals.metrics.input_total).toBe(4_550_000);
     expect(overview.totals.metrics.output_total).toBe(1_800_000);
-    expect(overview.totals.metrics.total_tokens).toBe(6_350_000);
+    expect(overview.totals.metrics.total_tokens).toBe(4_250_000);
     expect(overview.totals.metrics.total_tokens).not.toBe(9_050_000);
   });
 
@@ -157,6 +243,20 @@ describe("usage statistics public fixture", () => {
     expect(kimi?.metrics.reference_cost_usd).toBeNull();
     expect(deepseek?.metrics.total_tokens).toBeNull();
     expect(deepseek?.metrics.reference_cost_usd).toBeNull();
+  });
+
+  it("keeps row wording stable when cache-read costs are included or excluded", () => {
+    const overview = buildUsageStatsOverview({ period: "week", anchor: USAGE_STATS_FIXTURE_ANCHOR });
+    const kimi = overview.by_model.find(row => row.provider === "kimi")!;
+    const deepseek = overview.by_model.find(row => row.provider === "deepseek")!;
+    const unknownProvider = overview.by_model.find(row => row.provider === "unknown")!;
+
+    expect(formatUsageStatsValue(deepseek.metrics, deepseek.coverage, "cost", true, false)).toBe("미기록");
+    expect(formatUsageStatsValue(deepseek.metrics, deepseek.coverage, "cost", true, true)).toBe("미기록");
+    expect(formatUsageStatsValue(kimi.metrics, kimi.coverage, "cost", true, false)).toBe("정가 미확인");
+    expect(formatUsageStatsValue(kimi.metrics, kimi.coverage, "cost", true, true)).toBe("정가 미확인");
+    expect(formatUsageStatsValue(unknownProvider.metrics, unknownProvider.coverage, "cost", true, false)).toBe("미기록");
+    expect(formatUsageStatsValue(unknownProvider.metrics, unknownProvider.coverage, "cost", true, true)).toBe("미기록");
   });
 
   it("deduplicates missing usage turns and excludes pending inputs", () => {
@@ -186,7 +286,7 @@ describe("usage statistics public fixture", () => {
     expect(sumKnownTokens(codex.by_model)).toBe(codex.totals.metrics.total_tokens);
     expect(sumKnownTokens(project.by_project)).toBe(project.totals.metrics.total_tokens);
     expect(project.by_project.map(row => row.project_id)).toEqual(["project-web-dashboard"]);
-    expect(codex.totals.metrics.total_tokens).toBe(1_500_000);
+    expect(codex.totals.metrics.total_tokens).toBe(1_150_000);
   });
 
   it("uses two calendar month buckets for all time and gives day detail the same metric shape", () => {
@@ -208,7 +308,7 @@ describe("usage statistics public fixture", () => {
     expect(day.totals.metrics).toHaveProperty("output_total");
     expect(day.totals.metrics).toHaveProperty("reasoning_output");
     expect(day.totals.coverage.priced_total_tokens).toBeGreaterThan(0);
-    expect(day.totals.metrics.total_tokens).toBe(1_850_000);
+    expect(day.totals.metrics.total_tokens).toBe(1_000_000);
     expect(day.input_material.parts.map(row => row.category)).toContain("harness_internal");
     expect(day.input_material.parts.find(row => row.category === "harness_internal")?.share).toBeNull();
     expect(day.tool_calls).toBe(312);
@@ -272,7 +372,7 @@ describe("usage statistics public fixture", () => {
 
     expect(projectPoints.every(point => projectKeys.has(point.project_id ?? "__unclassified__"))).toBe(true);
     expect(projectPoints.find(point => point.bucket_start === "2026-10-01" && point.project_id === "__other__")?.metrics.total_tokens)
-      .toBe(300_000);
+      .toBe(250_000);
 
     const octoberProjects = projectPoints.filter(point => point.bucket_start === "2026-10-01");
     const octoberModels = modelPoints.filter(point => point.bucket_start === "2026-10-01");
@@ -281,7 +381,7 @@ describe("usage statistics public fixture", () => {
 
     const day = buildUsageStatsDayDetail("2026-10-17", {}, roster);
     expect(day.by_project.map(row => row.project_id)).toEqual(["__other__"]);
-    expect(day.by_project[0].metrics.total_tokens).toBe(300_000);
+    expect(day.by_project[0].metrics.total_tokens).toBe(250_000);
   });
 
   it("keeps an observed zero event separate from unidentified missing turns", () => {

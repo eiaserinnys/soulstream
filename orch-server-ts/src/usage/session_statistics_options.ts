@@ -15,6 +15,7 @@ import {
   sessionStatisticsCompareText,
   sessionStatisticsSourceKey,
 } from "./session_statistics_aggregate.js";
+import { sourceTokenMetrics } from "./session_statistics_token_metrics.js";
 
 type Row = SessionStatisticsReadResult["rows"][number];
 type ModelOption = UsageStatsOptions["models"][number];
@@ -81,12 +82,12 @@ function projectTotalTokens(read: SessionStatisticsReadResult): Map<string, numb
   for (const row of selectOwnedSessionStatisticsRows(read, { respectQueryFilters: false })) {
     const fact = row.fact!;
     const projectId = sessions.get(row.session_id);
-    if (projectId === undefined || projectId === null || fact.input_total === null || fact.output_total === null
-      || fact.total_tokens === null) continue;
+    const total = sourceTokenMetrics(fact).total_tokens;
+    if (projectId === undefined || projectId === null || total === null) continue;
     const sourceKey = sessionStatisticsSourceKey(row.session_id, fact.event_id, fact.part_key);
     if (seen.has(sourceKey)) continue;
     seen.add(sourceKey);
-    totals.set(projectId, (totals.get(projectId) ?? 0) + fact.total_tokens);
+    totals.set(projectId, (totals.get(projectId) ?? 0) + total);
   }
   return totals;
 }
@@ -129,12 +130,23 @@ export function buildSessionStatisticsOptions(
     .filter((project, index, all) => all.findIndex((other) => other.project_id === project.project_id) === index)
     .sort((left, right) => (totals.get(right.project_id) ?? 0) - (totals.get(left.project_id) ?? 0)
       || sessionStatisticsCompareText(left.project_id, right.project_id));
-  const sortedModels = [...models.values()].sort((left, right) => compareProvider(left.provider, right.provider)
-    || modelSort(left.model, right.model)
-    || sessionStatisticsCompareText(left.backend, right.backend));
-  const modelRosters = USAGE_STATS_PROVIDERS.map((provider) => ({
-    provider,
-    models: [...new Set(sortedModels.filter((model) => model.provider === provider).map((model) => model.model))]
+  return finalizeSessionStatisticsOptions([...models.values()], projects, totals);
+}
+
+export function finalizeSessionStatisticsOptions(
+  modelOptions: readonly ModelOption[],
+  projectOptions: UsageStatsOptions["projects"],
+  totals: ReadonlyMap<string, number>,
+): UsageStatsOptions {
+  const projects = [...new Map(projectOptions.map(project => [project.project_id, project])).values()]
+    .sort((left, right) => (totals.get(right.project_id) ?? 0) - (totals.get(left.project_id) ?? 0)
+      || sessionStatisticsCompareText(left.project_id, right.project_id));
+  const sortedModels = [...new Map(modelOptions.map(model => [
+    JSON.stringify([model.provider, model.model, model.backend]), model,
+  ])).values()].sort((left, right) => compareProvider(left.provider, right.provider)
+    || modelSort(left.model, right.model) || sessionStatisticsCompareText(left.backend, right.backend));
+  const modelRosters = USAGE_STATS_PROVIDERS.map(provider => ({
+    provider, models: [...new Set(sortedModels.filter(model => model.provider === provider).map(model => model.model))]
       .sort(modelSort),
   }));
 

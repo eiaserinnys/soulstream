@@ -26,7 +26,15 @@ export function aggregateFixtureUsage(
   // Missing turns have no provider/model attribution; preserve that uncertainty
   // without assigning their numeric counts to any filtered provider or model.
   value.coverage.unattributed_missing_usage = Boolean(query.provider || query.model) && MISSING_TURNS.some(inScope);
-  if (value.coverage.unattributed_missing_usage) value.is_partial = true;
+  if (value.coverage.unattributed_missing_usage) {
+    value.is_partial = true;
+    value.coverage.token_partials.total_tokens = true;
+    value.coverage.token_partials.provider_total_tokens = true;
+    value.coverage.token_partials.ordinary_input = true;
+    value.coverage.token_partials.cache_read = true;
+    value.metrics.reference_cost_breakdown.cache_read.is_partial = true;
+    value.metrics.reference_cost_breakdown.non_cache.is_partial = true;
+  }
   if (!records.length && covered && providerCovered && !unidentified) {
     return { metrics: zeroMetrics(), coverage: zeroCoverage(), is_partial: false };
   }
@@ -55,6 +63,10 @@ export function aggregate(
   let unknown = 0;
   let pricedTokens = 0;
   let unpricedTokens = 0;
+  let totalPartial = false;
+  let providerPartial = false;
+  let ordinaryPartial = false;
+  let cacheReadPartial = false;
   let hasPricedTokens = false;
   let hasUnpricedTokens = false;
   const countedIds: string[] = [];
@@ -65,6 +77,10 @@ export function aggregate(
     if (hasInput && hasOutput) complete += 1;
     else partial += 1;
     if (!hasInput || !hasOutput) unknown += 1;
+    if (!hasInput || !hasOutput || typeof record.cache_read !== "number") totalPartial = true;
+    if (!hasInput || !hasOutput) providerPartial = true;
+    if (!hasInput || typeof record.cache_read !== "number" || typeof record.cache_write !== "number") ordinaryPartial = true;
+    if (typeof record.cache_read !== "number") cacheReadPartial = true;
 
     const eventTokens = hasInput && hasOutput ? record.input_total! + record.output_total! : null;
     if (record.reference_cost_usd === null) {
@@ -89,7 +105,18 @@ export function aggregate(
   }
   if (metrics.total_tokens === 0 && (missing.length > 0 || pending.length > 0)) {
     metrics.total_tokens = null;
+    metrics.provider_total_tokens = null;
+    metrics.ordinary_input = null;
     metrics.reference_cost_usd = null;
+    if (missing.length > 0) {
+      metrics.reference_cost_breakdown.cache_read.is_partial = true;
+      metrics.reference_cost_breakdown.non_cache.is_partial = true;
+    }
+  }
+  const missingEvidence = countedIds.length > 0;
+  if (missingEvidence) {
+    metrics.reference_cost_breakdown.cache_read.is_partial = true;
+    metrics.reference_cost_breakdown.non_cache.is_partial = true;
   }
 
   const coverage: UsageStatsCoverage = {
@@ -105,11 +132,17 @@ export function aggregate(
     unpriced_total_tokens: hasUnpricedTokens ? unpricedTokens : null,
     unknown_total_token_events: unknown,
     unattributed_missing_usage: false,
+    token_partials: {
+      total_tokens: missingEvidence || totalPartial,
+      provider_total_tokens: missingEvidence || providerPartial,
+      ordinary_input: missingEvidence || ordinaryPartial,
+      cache_read: missingEvidence || cacheReadPartial,
+    },
   };
   return {
     metrics,
     coverage,
-    is_partial: partial > 0 || unknown > 0 || countedIds.length > 0 || unpriced > 0 || records.length === 0,
+    is_partial: partial > 0 || unknown > 0 || countedIds.length > 0 || unpriced > 0 || (records.length === 0 && pending.length === 0),
   };
 }
 
@@ -128,6 +161,16 @@ export function aggregateMetrics(records: RawUsageRecord[]): UsageStatsMetrics {
   let knownCost = false;
   let totalTokens = 0;
   let knownTokens = false;
+  let providerTotalTokens = 0;
+  let knownProviderTokens = false;
+  let ordinaryInput = 0;
+  let knownOrdinaryInput = false;
+  let cacheReadCost = 0;
+  let nonCacheCost = 0;
+  let knownCacheReadCost = false;
+  let knownNonCacheCost = false;
+  let cacheReadCostPartial = false;
+  let nonCacheCostPartial = false;
 
   for (const record of records) {
     if (record.input_total !== null) { input += record.input_total; knownInput = true; }
@@ -136,9 +179,22 @@ export function aggregateMetrics(records: RawUsageRecord[]): UsageStatsMetrics {
     if (record.output_total !== null) { output += record.output_total; knownOutput = true; }
     if (record.reasoning_output !== null) { reasoning += record.reasoning_output; knownReasoning = true; }
     if (record.reference_cost_usd !== null) { cost += record.reference_cost_usd; knownCost = true; }
-    if (record.input_total !== null && record.output_total !== null) {
-      totalTokens += record.input_total + record.output_total;
+    if (record.cache_read_cost_usd !== null) { cacheReadCost += record.cache_read_cost_usd; knownCacheReadCost = true; }
+    else cacheReadCostPartial = true;
+    if (record.non_cache_cost_usd !== null) { nonCacheCost += record.non_cache_cost_usd; knownNonCacheCost = true; }
+    else nonCacheCostPartial = true;
+    if (record.cache_write === null) nonCacheCostPartial = true;
+    if (record.input_total !== null && record.cache_read !== null && record.output_total !== null) {
+      totalTokens += record.input_total - record.cache_read + record.output_total;
       knownTokens = true;
+    }
+    if (record.input_total !== null && record.output_total !== null) {
+      providerTotalTokens += record.input_total + record.output_total;
+      knownProviderTokens = true;
+    }
+    if (record.input_total !== null && record.cache_read !== null && record.cache_write !== null) {
+      ordinaryInput += record.input_total - record.cache_read - record.cache_write;
+      knownOrdinaryInput = true;
     }
   }
 
@@ -149,7 +205,19 @@ export function aggregateMetrics(records: RawUsageRecord[]): UsageStatsMetrics {
     output_total: knownOutput ? output : null,
     reasoning_output: knownReasoning ? reasoning : null,
     total_tokens: knownTokens ? totalTokens : null,
+    provider_total_tokens: knownProviderTokens ? providerTotalTokens : null,
+    ordinary_input: knownOrdinaryInput ? ordinaryInput : null,
     reference_cost_usd: knownCost ? cost : null,
+    reference_cost_breakdown: {
+      cache_read: {
+        known_cost_usd: knownCacheReadCost ? cacheReadCost : null,
+        is_partial: cacheReadCostPartial,
+      },
+      non_cache: {
+        known_cost_usd: knownNonCacheCost ? nonCacheCost : null,
+        is_partial: nonCacheCostPartial,
+      },
+    },
   };
 }
 
@@ -166,7 +234,13 @@ export function zeroMetrics(): UsageStatsMetrics {
     output_total: 0,
     reasoning_output: 0,
     total_tokens: 0,
+    provider_total_tokens: 0,
+    ordinary_input: 0,
     reference_cost_usd: 0,
+    reference_cost_breakdown: {
+      cache_read: { known_cost_usd: 0, is_partial: false },
+      non_cache: { known_cost_usd: 0, is_partial: false },
+    },
   };
 }
 
@@ -184,5 +258,11 @@ export function zeroCoverage(): UsageStatsCoverage {
     unpriced_total_tokens: 0,
     unknown_total_token_events: 0,
     unattributed_missing_usage: false,
+    token_partials: {
+      total_tokens: false,
+      provider_total_tokens: false,
+      ordinary_input: false,
+      cache_read: false,
+    },
   };
 }
