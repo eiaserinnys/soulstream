@@ -65,7 +65,6 @@ export function splitSourceCost(fact: FactDraft, storedCostDecimal: string | nul
     if (compareDecimal(cacheRead, ZERO) < 0 || compareDecimal(cacheRead, stored) > 0) return unsplit();
     if (nonCacheValue !== null) {
       const nonCache = subtractDecimal(stored, cacheRead);
-      if (compareDecimal(nonCache, parseDecimal(nonCacheValue)) !== 0) return unsplit();
       return { cacheRead, nonCache, cacheReadPartial: readFlag, nonCachePartial: writeFlag };
     }
     if (compareDecimal(stored, cacheRead) !== 0) return unsplit();
