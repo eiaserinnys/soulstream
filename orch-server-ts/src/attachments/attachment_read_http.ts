@@ -66,6 +66,9 @@ export function previewInfo(
   mimeType: string,
 ): { kind: AttachmentDescriptor["preview_kind"]; mimeType: string | null } {
   if (SAFE_INLINE_RASTER_MIME_TYPES.has(mimeType)) return { kind: "image", mimeType };
+  if (mimeType === "text/markdown" || mimeType === "text/html") {
+    return { kind: "text", mimeType };
+  }
   if (SAFE_TEXT_PREVIEW_MIME_TYPES.has(mimeType)) {
     return { kind: "text", mimeType: "text/plain" };
   }

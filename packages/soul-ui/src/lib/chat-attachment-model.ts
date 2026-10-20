@@ -25,6 +25,19 @@ export interface ChatAttachmentItem {
   source: ChatAttachmentSource;
 }
 
+export function attachmentTextFormat(
+  item: Pick<ChatAttachmentItem, "mimeType" | "name">,
+): "markdown" | "html" | "plain" {
+  const mimeType = item.mimeType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (mimeType === "text/markdown" || /\.(md|markdown)$/i.test(item.name ?? "")) {
+    return "markdown";
+  }
+  if (mimeType === "text/html" || /\.html?$/i.test(item.name ?? "")) {
+    return "html";
+  }
+  return "plain";
+}
+
 const SAFE_RASTER_PREVIEW_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -210,7 +223,10 @@ function safePreviewKind(
   mimeType: string | null,
 ): ChatAttachmentItem["previewKind"] {
   if (advertisedKind === "image" && isSafeRasterPreviewMimeType(mimeType)) return "image";
-  if (advertisedKind === "text" && SAFE_TEXT_PREVIEW_MIME_TYPES.has(normalizeMimeType(mimeType))) return "text";
+  const normalized = normalizeMimeType(mimeType);
+  if (advertisedKind === "text" && (
+    normalized === "text/html" || SAFE_TEXT_PREVIEW_MIME_TYPES.has(normalized)
+  )) return "text";
   return "info";
 }
 

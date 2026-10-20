@@ -6,6 +6,7 @@ import type {
   SessionEventAttachmentView,
 } from "@soulstream/wire-schema/attachments";
 import {
+  attachmentTextFormat,
   attachmentContentUrl,
   contextualLegacyUrl,
   loadChatAttachments,
@@ -191,5 +192,37 @@ describe("chat attachment model", () => {
     });
 
     expect(svg).toMatchObject({ previewKind: "info", previewUrl: null });
+  });
+
+  it("keeps HTML text previews behind the server descriptor and classifies text formats", () => {
+    const [htmlAsset, htmlLegacy] = projectChatAttachmentItems({
+      event_id: 45,
+      items: [
+        assetView("asset-html", sessionContext, {
+          name: "report.html",
+          mime_type: "text/html",
+          preview_kind: "text",
+          preview_mime_type: "text/html",
+        }),
+        {
+          kind: "legacy",
+          node_id: "node-a",
+          path: "/incoming/report.html",
+          name: "report.html",
+          mime_type: "text/html",
+          byte_size: 12,
+          availability: "unresolved",
+          read_context: sessionContext as Extract<AttachmentReadContext, { type: "session" }>,
+        },
+      ],
+    });
+
+    expect(htmlAsset).toMatchObject({ previewKind: "text", previewUrl: expect.any(String) });
+    expect(htmlLegacy).toMatchObject({ previewKind: "info", previewUrl: null });
+    expect(attachmentTextFormat({ mimeType: " TEXT/MARKDOWN ; charset=utf-8 ", name: "report.html" })).toBe("markdown");
+    expect(attachmentTextFormat({ mimeType: null, name: "report.MARKDOWN" })).toBe("markdown");
+    expect(attachmentTextFormat({ mimeType: "text/html; charset=utf-8", name: "report.txt" })).toBe("html");
+    expect(attachmentTextFormat({ mimeType: null, name: "report.htm" })).toBe("html");
+    expect(attachmentTextFormat({ mimeType: "application/json", name: "manifest.json" })).toBe("plain");
   });
 });

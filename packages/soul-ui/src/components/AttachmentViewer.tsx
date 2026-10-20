@@ -18,7 +18,9 @@ import { downloadAttachmentOriginal, downloadLocalAttachmentOriginal } from "../
 import { readAttachmentText, readLocalAttachmentText, type AttachmentTextPreview } from "../lib/attachment-text-preview";
 import { AttachmentDownloadError } from "../lib/attachment-download";
 import { AttachmentTextPreviewError } from "../lib/attachment-text-preview";
-import type { ChatAttachmentItem } from "../lib/chat-attachment-model";
+import { attachmentTextFormat, type ChatAttachmentItem } from "../lib/chat-attachment-model";
+import { MarkdownContent } from "./MarkdownContent";
+import { CustomViewIframe } from "../custom-view/CustomViewRenderer";
 
 type TextState =
   | { key: string; state: "loading" }
@@ -151,6 +153,7 @@ export function AttachmentViewer({
   const imageGallery = items.every(attachment => attachment.source.kind === "markdown-image");
   const saveMessage = saveFailure?.key === previewKey ? saveFailure.message : null;
   const text = textState?.key === previewKey ? textState : null;
+  const textFormat = item.previewKind === "text" ? attachmentTextFormat(item) : null;
   const extension = item.name?.includes(".") ? item.name.split(".").pop()!.toUpperCase() : "FILE";
 
   const changeIndex = (next: number) => {
@@ -196,7 +199,7 @@ export function AttachmentViewer({
         </DialogHeader>
         <DialogPanel
           scrollFade={false}
-          scrollable={item.previewKind !== "image"}
+          scrollable={item.previewKind !== "image" && textFormat !== "html"}
           className="chat-image-viewer-panel"
         >
           {panelContent ?? (item.availability === "missing" ? (
@@ -236,7 +239,19 @@ export function AttachmentViewer({
               <div className="chat-attachment-state chat-image-status" role="status">빈 파일</div>
             ) : (
               <>
-                <pre className="whitespace-pre-wrap break-words">{text.result.text}</pre>
+                {textFormat === "markdown" ? (
+                  <div className="chat-attachment-markdown">
+                    <MarkdownContent content={text.result.text} codeBlockLayout="document" />
+                  </div>
+                ) : textFormat === "html" ? (
+                  <CustomViewIframe
+                    html={text.result.text}
+                    title={item.name ?? "HTML 첨부"}
+                    className="chat-attachment-html-frame"
+                  />
+                ) : (
+                  <pre className="whitespace-pre-wrap break-words">{text.result.text}</pre>
+                )}
                 {text.result.truncated && <p className="chat-image-status" role="status">파일이 커서 앞부분만 표시합니다.</p>}
               </>
             )

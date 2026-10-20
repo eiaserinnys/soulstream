@@ -87,7 +87,7 @@ describe("AttachmentViewer", () => {
     expect(popup?.textContent).toContain("one.png");
   });
 
-  it("shows fetched text as a React text child and keeps original save available", async () => {
+  it("keeps plain text as a React text child and keeps original save available", async () => {
     const unsafeText = "<script>window.pwned = true</script>\n**literal markdown**";
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
       init?.method === "HEAD" ? new Response(null, { status: 200 }) : rangeResponse(unsafeText),
@@ -108,6 +108,57 @@ describe("AttachmentViewer", () => {
       expect.objectContaining({ method: "HEAD" }),
     );
     expect(anchorClick).toHaveBeenCalledOnce();
+  });
+
+  it("renders markdown through the shared document renderer", async () => {
+    const markdown = [
+      "# 톤 제안",
+      "",
+      "## 요약",
+      "",
+      "- 첫 번째",
+      "- 두 번째",
+      "",
+      "| 항목 | 값 |",
+      "| --- | --- |",
+      "| 상태 | 준비 |",
+      "",
+      "    const value = 1;",
+      "",
+      "[참고 링크](https://example.com)",
+    ].join("\n");
+    vi.stubGlobal("fetch", vi.fn(async () => rangeResponse(markdown)));
+    await act(async () => root.render(<ViewerHarness items={[attachment({
+      name: "톤 제안 원문.md",
+      mimeType: "text/markdown",
+      byteSize: new TextEncoder().encode(markdown).byteLength,
+    })]} />));
+
+    const dialog = document.body.querySelector("[role=dialog]");
+    expect(dialog?.querySelector("h1")?.textContent).toBe("톤 제안");
+    expect(dialog?.querySelector(".chat-attachment-markdown h1")?.textContent).toBe("톤 제안");
+    expect(dialog?.querySelector(".chat-image-viewer-panel h2")?.textContent).toBe("요약");
+    expect(dialog?.querySelector("ul li")?.textContent).toBe("첫 번째");
+    expect(dialog?.querySelector("table td")?.textContent).toBe("상태");
+    expect(dialog?.querySelector("pre code")?.textContent).toContain("const value = 1;");
+    expect(dialog?.querySelector('a[href="https://example.com"]')?.textContent).toBe("참고 링크");
+  });
+
+  it("renders HTML in a script-only sandboxed iframe", async () => {
+    const html = "<!doctype html><html><body><button>열기</button></body></html>";
+    vi.stubGlobal("fetch", vi.fn(async () => rangeResponse(html)));
+    await act(async () => root.render(<ViewerHarness items={[attachment({
+      name: "보고서 시안.html",
+      mimeType: "text/html",
+      byteSize: new TextEncoder().encode(html).byteLength,
+    })]} />));
+
+    const dialog = document.body.querySelector("[role=dialog]");
+    const frame = dialog?.querySelector<HTMLIFrameElement>("iframe");
+    expect(frame).not.toBeNull();
+    expect(frame?.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame?.title).toBe("보고서 시안.html");
+    expect(dialog?.querySelector("pre")).toBeNull();
   });
 
   it("keeps missing info separate from previews and hides unavailable original save", async () => {

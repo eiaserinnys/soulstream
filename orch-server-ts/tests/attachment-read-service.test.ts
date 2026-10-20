@@ -6,7 +6,7 @@ import {
   type AttachmentAssetRow,
   type AttachmentReadRepository,
 } from "../src/attachments/attachment_read_service.js";
-import { responseHeaders } from "../src/attachments/attachment_read_http.js";
+import { previewInfo, responseHeaders } from "../src/attachments/attachment_read_http.js";
 
 const committedAsset: AttachmentAssetRow = {
   id: "attachment-a",
@@ -69,6 +69,12 @@ function makeService(input: {
 }
 
 describe("attachment read service", () => {
+  it("preserves markdown and HTML preview MIME types while keeping plain text unchanged", () => {
+    expect(previewInfo("text/markdown")).toEqual({ kind: "text", mimeType: "text/markdown" });
+    expect(previewInfo("text/html")).toEqual({ kind: "text", mimeType: "text/html" });
+    expect(previewInfo("text/plain")).toEqual({ kind: "text", mimeType: "text/plain" });
+  });
+
   it("preserves safe MIME parameters for inline and download responses", () => {
     const asset = {
       originalName: "notes.txt",
@@ -87,7 +93,6 @@ describe("attachment read service", () => {
   it("classifies only explicit plain text and code MIME types as text previews", async () => {
     const textMimeTypes = [
       "text/plain",
-      "text/markdown",
       "application/json",
       "text/javascript",
       "application/javascript",
@@ -104,7 +109,6 @@ describe("attachment read service", () => {
     ];
     const infoMimeTypes = [
       "text/x-unknown",
-      "text/html",
       "application/xhtml+xml",
       "image/svg+xml",
       "image/heic",
@@ -122,9 +126,22 @@ describe("attachment read service", () => {
         asset.id,
         { type: "owner" },
       )).resolves.toMatchObject({
-        descriptor: { preview_kind: "text", preview_mime_type: "text/plain" },
+        descriptor: {
+          preview_kind: "text",
+          preview_mime_type: mimeType === "text/markdown" ? "text/markdown" : "text/plain",
+        },
       });
     }
+
+    const htmlAsset = { ...committedAsset, originalName: "report.html", mimeType: "text/html" };
+    const { service: htmlService } = makeService({ asset: htmlAsset });
+    await expect(htmlService.metadata(
+      { kind: "user", email: "owner@example.com" },
+      htmlAsset.id,
+      { type: "owner" },
+    )).resolves.toMatchObject({
+      descriptor: { preview_kind: "text", preview_mime_type: "text/html" },
+    });
 
     for (const mimeType of infoMimeTypes) {
       const asset = { ...committedAsset, originalName: "script.py", mimeType };
