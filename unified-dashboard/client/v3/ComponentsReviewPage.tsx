@@ -45,6 +45,8 @@ import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./C
 import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
+import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
+import "../components/usage-stats/usage-stats.css";
 
 const sections = [
   { id: "board", title: "카드 보드", icon: LayoutDashboard },
@@ -70,6 +72,15 @@ const assignedCardPreview = formatAssignedCardContextSnapshot({
 function Sample({ name, state, children }: { name: string; state: string; children: ReactNode }) {
   return <div className="v3-components-sample" data-component={name}>
     <p className="v3-components-label">{name} · {state}</p>{children}
+  </div>;
+}
+
+type UsageShareRowSampleItem = { name: string; value: string; share: number | null };
+
+function UsageShareRowsSample({ rows }: { rows: readonly UsageShareRowSampleItem[] }) {
+  const showShareColumn = rows.some(row => row.share !== null);
+  return <div className={`usage-stats-share-list${showShareColumn ? "" : " usage-stats-share-list-no-share"}`}>
+    {rows.map(row => <UsageShareRow key={row.name} {...row} showShareColumn={showShareColumn} />)}
   </div>;
 }
 
@@ -134,6 +145,18 @@ export function ComponentsReviewPage() {
           <section id="components-rows" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>목록 행</h3></div>
             <div className="v3-components-samples">
+              <Sample name="UsageShareRow" state="전 행 비중 없음 · 혼합 목록 비중 칸 유지">
+                <div className="config-dialog usage-stats-review-sample" data-testid="usage-share-row-review-samples">
+                  <UsageShareRowsSample rows={[
+                    { name: "비캐시", value: "$47.00", share: null },
+                    { name: "캐시 읽기", value: "$78.45", share: null },
+                  ]} />
+                  <UsageShareRowsSample rows={[
+                    { name: "시스템 프롬프트", value: "12", share: 0.6 },
+                    { name: "하네스 내부 입력", value: "미기록", share: null },
+                  ]} />
+                </div>
+              </Sample>
               <Sample name="RichSessionRow / RunRowFrame" state="기본 · 행 클릭 · 포커스">
                 <div className="v3-run-list"><RichSessionRow session={reviewSession} onOpen={() => open("세션")}/></div>
               </Sample>

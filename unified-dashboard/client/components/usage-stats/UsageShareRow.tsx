@@ -6,6 +6,7 @@ export function UsageShareRow({
   share,
   color,
   secondary,
+  showShareColumn = true,
   onClick,
 }: {
   name: string;
@@ -13,6 +14,7 @@ export function UsageShareRow({
   share: number | null;
   color?: string;
   secondary?: string;
+  showShareColumn?: boolean;
   onClick?: () => void;
 }) {
   const style = color ? { "--usage-stats-row-color": color } as CSSProperties : undefined;
@@ -20,7 +22,7 @@ export function UsageShareRow({
     <span className="usage-stats-share-head">
       <span className="usage-stats-share-name" title={name}>{name}</span>
       <span className="usage-stats-share-value">{value}</span>
-      <span className="usage-stats-share-percent">{share === null ? "" : `${Math.round(share * 100)}%`}</span>
+      {showShareColumn ? <span className="usage-stats-share-percent">{share === null ? "" : `${Math.round(share * 100)}%`}</span> : null}
     </span>
     {share !== null ? <span className="usage-stats-share-track" aria-hidden="true">
       <span className="usage-stats-share-fill" style={{ width: `${Math.max(0, Math.min(100, share * 100))}%` }} />

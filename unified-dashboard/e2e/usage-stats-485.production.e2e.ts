@@ -366,7 +366,7 @@ async function chooseStatsOption(dialog: Locator, page: Page, field: string, opt
 
 async function expectCacheSplitSummary(stats: Locator) {
   const summary = stats.locator(".usage-stats-summary");
-  await expect(summary.locator(".usage-stats-summary-metric").first()).toContainText("4,200만+");
+  await expect(summary.locator(".usage-stats-summary-metric").first()).toContainText("4200만");
   await expect(summary.locator(".usage-stats-summary-metric").first()).toContainText("캐시 읽기 12.3억+ 제외");
   await expect(summary.locator(".usage-stats-summary-metric").nth(1)).toContainText("$1,234.56+");
   const costRows = summary.locator(".usage-stats-share-list > .usage-stats-share-row");
