@@ -3,7 +3,6 @@ import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from 
 import { SessionStatisticsRepository } from "../src/usage/session_statistics_repository.js";
 import { buildDailyOverview } from "../src/usage/session_statistics_daily_merge.js";
 import { createSessionStatisticsDailyState } from "../src/usage/session_statistics_daily_state.js";
-import { calculateSessionStatisticsDay } from "../src/usage/session_statistics_daily_calculator.js";
 import type { BoardYjsSql } from "../src/board-yjs/board_yjs_sql.js";
 import type { SessionStatisticsReadRequest, SessionStatisticsReadResult } from "../src/usage/session_statistics_types.js";
 import { read, usageRow, fact } from "./fixtures/session_statistics_aggregation.fixtures.js";
@@ -58,14 +57,9 @@ describe("daily groups PostgreSQL membership and fallback", () => {
     await harness.sql`UPDATE sessions SET folder_id = 'f2' WHERE session_id = 'session-1'`;
     await harness.sql`UPDATE cards SET folder_id = 'f1' WHERE id = 'c'`;
     expect((await compare()).groups).toBeUndefined();
-    // No facts exist; all days are already saved. This tick must use stored cells.
-    const calls: string[] = [];
-    expect(await calculateSessionStatisticsDay({ ...repository,
-      daily: repository.daily, readMetadata: repository.readMetadata.bind(repository),
-      read: async () => { calls.push("read"); throw new Error("must not read facts"); },
-      readSlice: async () => { calls.push("slice"); throw new Error("must not read facts"); },
-    }, input)).toBe(true);
-    expect(calls).toEqual([]);
+    // This single-connection harness exercises the stored-cell regroup operation
+    // directly. The scheduler's advisory lock is covered by the service tests.
+    expect(await repository.daily.regroupNext("2026-10-19", "2026-10-20", 1)).toBe(true);
     expect((await compare()).groups?.map(group => [group.folderId, group.cardFolderId])).toEqual([
       [null, "f1"], ["f2", null],
     ]);
