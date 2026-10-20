@@ -168,6 +168,84 @@ export const representativeProviderEvents = {
   },
 } as const;
 
+const noWriteCacheVectors: Array<{
+  name: string;
+  provider: string;
+  model: string;
+  usage: Record<string, unknown>;
+  expected: Record<string, unknown>;
+}> = [
+  {
+    name: "codex parent cache without write", provider: "codex", model: "gpt-6-luna",
+    usage: { input_tokens: 100, cached_input_tokens: 25, output_tokens: 30 },
+    expected: { cache_write: 0, input_total: 100, cache_read: 25, pricing_complete: true, priced_tokens: 130, unpriced_tokens: 0, known_cost_usd: 0.00002275 },
+  },
+  {
+    name: "codex provider without cache fields", provider: "codex", model: "gpt-6-luna",
+    usage: { input_tokens: 100, output_tokens: 30 },
+    expected: { cache_write: 0, cache_read: null, pricing_complete: false },
+  },
+  {
+    name: "antigravity provider without parent cache marker", provider: "antigravity", model: "gemini-4-argon",
+    usage: { input_total: 100, cache_read_input_tokens: 25, output_tokens: 30 },
+    expected: { cache_write: 0, input_total: 100, pricing_complete: true, priced_tokens: 130, unpriced_tokens: 0 },
+  },
+  {
+    name: "deepseek provider without parent cache marker", provider: "deepseek", model: "deepseek-flash",
+    usage: { input_total: 100, cache_read_input_tokens: 25, output_tokens: 30 },
+    expected: { cache_write: 0, input_total: 100, pricing_complete: true, priced_tokens: 130, unpriced_tokens: 0 },
+  },
+  {
+    name: "claude missing native write", provider: "claude", model: "claude-opus-5-5",
+    usage: { input_tokens: 100, cache_read_input_tokens: 25, output_tokens: 30 },
+    expected: { cache_write: null, pricing_complete: false },
+  },
+  {
+    name: "kimi missing native write", provider: "kimi", model: "kimi-for-coding",
+    usage: { input_tokens: 100, cache_read_input_tokens: 25, output_tokens: 30 },
+    expected: { cache_write: null, pricing_complete: false },
+  },
+  {
+    name: "unknown without a format marker", provider: "unknown", model: "unlisted-model",
+    usage: { input_tokens: 100, output_tokens: 30 },
+    expected: { cache_write: null, pricing_complete: false },
+  },
+  {
+    name: "unknown with parent cache marker", provider: "unknown", model: "unlisted-model",
+    usage: { input_tokens: 100, cached_input_tokens: 25, output_tokens: 30 },
+    expected: { cache_write: 0, input_total: 100, cache_read: 25, pricing_complete: false },
+  },
+  {
+    name: "explicit write amount", provider: "codex", model: "gpt-6-luna",
+    usage: { input_tokens: 100, cached_input_tokens: 25, cache_write_input_tokens: 5, output_tokens: 30 },
+    expected: { cache_write: 5, pricing_complete: false },
+  },
+  {
+    name: "explicit unknown native creation", provider: "codex", model: "gpt-6-luna",
+    usage: { input_tokens: 100, cached_input_tokens: 25, cacheCreationInputTokens: null, output_tokens: 30 },
+    expected: { cache_write: null, pricing_complete: false, quality: ["normalization_error"] },
+  },
+];
+
+export const noWriteCacheCases = noWriteCacheVectors.map(({ name, provider, model, usage, expected }) => ({
+  name,
+  expected,
+  event: {
+    ...representativeProviderEvents.codex,
+    payload: {
+      ...representativeProviderEvents.codex.payload,
+      model,
+      usage_snapshot: {
+        ...representativeProviderEvents.codex.payload.usage_snapshot,
+        backend: provider === "deepseek" ? "opencode" : provider === "kimi" ? "claude" : provider,
+        provider,
+        requested_model: model,
+      },
+      usage,
+    },
+  },
+}));
+
 const modelBreakdown = {
   "claude-opus-5-5": {
     inputTokens: 4,

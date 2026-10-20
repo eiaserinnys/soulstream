@@ -53,7 +53,11 @@ export function normalizeUsageNumbers(
   const outputTotal = readNumeric(usage, ["output_total", "output_tokens", "outputTokens"], issues);
   const reasoningOutput = readNumeric(usage, ["reasoning_output_tokens", "reasoningOutputTokens"], issues);
   const cacheRead = readNumeric(usage, CACHE_READ_KEYS, issues);
-  const cacheWrite = readNumeric(usage, CACHE_WRITE_KEYS, issues);
+  // Parent-cache formats and these providers have no separate cache-write charge.
+  const hasNoWriteCache = !CACHE_WRITE_KEYS.some((key) => hasOwn(usage, key))
+    && (hasOwn(usage, "cached_input_tokens")
+      || provider === "codex" || provider === "antigravity" || provider === "deepseek");
+  const cacheWrite = hasNoWriteCache ? 0 : readNumeric(usage, CACHE_WRITE_KEYS, issues);
 
   const hasExplicitInput = hasOwn(usage, "input_total");
   const hasNativeWrite = NATIVE_WRITE_KEYS.some((key) => hasOwn(usage, key));
