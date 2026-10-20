@@ -82,6 +82,18 @@ export type PriceInferenceUsageResult = {
   unpriced_reasons: string[];
 };
 
+export type PriceInferenceUsageComponentsResult = {
+  price_version: typeof PRICE_SNAPSHOT_METADATA.price_version;
+  cache_read: {
+    known_cost_usd_decimal: string | null;
+    is_partial: boolean;
+  };
+  non_cache: {
+    known_cost_usd_decimal: string | null;
+    is_partial: boolean;
+  };
+};
+
 type ModelPrice = {
   rates: ModelRates;
   source: string;
@@ -141,6 +153,18 @@ function usdPerMillionToScaledRate(rate: number): bigint {
   return BigInt(Math.round(rate * Number(RATE_SCALE)));
 }
 
+function numeratorToDecimalString(numerator: bigint): string {
+  const negative = numerator < 0n;
+  const absolute = negative ? -numerator : numerator;
+  const whole = absolute / USD_DENOMINATOR;
+  const fraction = (absolute % USD_DENOMINATOR)
+    .toString()
+    .padStart(12, "0")
+    .replace(/0+$/, "");
+  const sign = negative ? "-" : "";
+  return fraction.length === 0 ? `${sign}${whole}` : `${sign}${whole}.${fraction}`;
+}
+
 export function normalizePricedModelId(model: string): string {
   return model.replace(/\[[^\]]*\]$/, "").replace(/-\d{8}$/, "");
 }
@@ -173,30 +197,62 @@ function unpricedResult(
  * priceInferenceUsage(input: PriceInferenceUsageInput): PriceInferenceUsageResult
  * Amounts are normalized, input_total includes its cache subsets, and rates use the fixed USD/1M snapshot.
  */
-export function priceInferenceUsage(
-  input: PriceInferenceUsageInput,
-): PriceInferenceUsageResult {
-  if (input.model === null) return unpricedResult(input, "model_price_unknown");
-
+function resolveModelPrice(input: PriceInferenceUsageInput): ModelPrice | undefined {
+  if (input.model === null) return undefined;
   const modelKey = `${input.provider}:${normalizePricedModelId(input.model)}`;
   const canonicalKey = EXACT_MODEL_ALIASES[modelKey];
-  const modelPrice = canonicalKey === undefined ? undefined : MODEL_PRICES[canonicalKey];
-  if (modelPrice === undefined) return unpricedResult(input, "model_price_unknown");
+  return canonicalKey === undefined ? undefined : MODEL_PRICES[canonicalKey];
+}
 
-  let costNumerator = 0n;
+type PriceBucket = "read" | "non_cache";
+
+type PricedComponentParts = {
+  readNumerator: bigint;
+  nonCacheNumerator: bigint;
+  readPriced: boolean;
+  nonCachePriced: boolean;
+  readPartial: boolean;
+  nonCachePartial: boolean;
+  pricedTokens: number;
+  pricedComponents: number;
+  reasons: Set<string>;
+};
+
+function computePricedComponentParts(
+  input: PriceInferenceUsageInput,
+  modelPrice: ModelPrice,
+): PricedComponentParts {
+  let readNumerator = 0n;
+  let nonCacheNumerator = 0n;
   let pricedTokens = 0;
   let pricedComponents = 0;
+  let readPriced = false;
+  let nonCachePriced = false;
+  let readPartial = false;
+  let nonCachePartial = false;
   const reasons = new Set<string>();
   const priceComponent = (
+    bucket: PriceBucket,
     amount: number,
     rate: number | null,
     missingPriceReason: string,
   ) => {
     if (rate === null) {
-      if (amount > 0) reasons.add(missingPriceReason);
+      if (amount > 0) {
+        reasons.add(missingPriceReason);
+        if (bucket === "read") readPartial = true;
+        else nonCachePartial = true;
+      }
       return;
     }
-    costNumerator += BigInt(amount) * usdPerMillionToScaledRate(rate);
+    const numerator = BigInt(amount) * usdPerMillionToScaledRate(rate);
+    if (bucket === "read") {
+      readNumerator += numerator;
+      readPriced = true;
+    } else {
+      nonCacheNumerator += numerator;
+      nonCachePriced = true;
+    }
     pricedTokens += amount;
     pricedComponents += 1;
   };
@@ -210,39 +266,120 @@ export function priceInferenceUsage(
 
   if (input.input_total === null) {
     reasons.add("input_total_unknown");
+    nonCachePartial = true;
   } else if (!inputComponentsKnown) {
     reasons.add("input_components_unknown");
+    nonCachePartial = true;
   } else {
     const cacheTokens = cacheAmounts.reduce((sum, amount) => sum + (amount ?? 0), 0);
     const inputBase = input.input_total - cacheTokens;
-    priceComponent(inputBase, modelPrice.rates.input, "input_price_unknown");
+    priceComponent("non_cache", inputBase, modelPrice.rates.input, "input_price_unknown");
   }
 
-  if (cacheRead === null) reasons.add("cache_read_unknown");
-  else priceComponent(cacheRead, modelPrice.rates.cacheRead, "cache_read_price_unknown");
+  if (cacheRead === null) {
+    reasons.add("cache_read_unknown");
+    readPartial = true;
+  } else {
+    priceComponent("read", cacheRead, modelPrice.rates.cacheRead, "cache_read_price_unknown");
+  }
 
-  if (cacheWrite5m === null) reasons.add("cache_write_5m_unknown");
-  else priceComponent(cacheWrite5m, modelPrice.rates.cacheWrite5m, "cache_write_price_unknown");
+  if (cacheWrite5m === null) {
+    reasons.add("cache_write_5m_unknown");
+    nonCachePartial = true;
+  } else {
+    priceComponent("non_cache", cacheWrite5m, modelPrice.rates.cacheWrite5m, "cache_write_price_unknown");
+  }
 
-  if (cacheWrite1h === null) reasons.add("cache_write_1h_unknown");
-  else priceComponent(cacheWrite1h, modelPrice.rates.cacheWrite1h, "cache_write_price_unknown");
+  if (cacheWrite1h === null) {
+    reasons.add("cache_write_1h_unknown");
+    nonCachePartial = true;
+  } else {
+    priceComponent("non_cache", cacheWrite1h, modelPrice.rates.cacheWrite1h, "cache_write_price_unknown");
+  }
 
-  if (cacheWriteUnknown === null) reasons.add("cache_write_amount_unknown");
-  else if (cacheWriteUnknown > 0) reasons.add("cache_write_ttl_unknown");
+  if (cacheWriteUnknown === null) {
+    reasons.add("cache_write_amount_unknown");
+    nonCachePartial = true;
+  } else if (cacheWriteUnknown > 0) {
+    reasons.add("cache_write_ttl_unknown");
+    nonCachePartial = true;
+  }
 
-  if (input.output_total === null) reasons.add("output_total_unknown");
-  else priceComponent(input.output_total, modelPrice.rates.output, "output_price_unknown");
+  if (input.output_total === null) {
+    reasons.add("output_total_unknown");
+    nonCachePartial = true;
+  } else {
+    priceComponent("non_cache", input.output_total, modelPrice.rates.output, "output_price_unknown");
+  }
+
+  return {
+    readNumerator,
+    nonCacheNumerator,
+    readPriced,
+    nonCachePriced,
+    readPartial,
+    nonCachePartial,
+    pricedTokens,
+    pricedComponents,
+    reasons,
+  };
+}
+
+export function priceInferenceUsage(
+  input: PriceInferenceUsageInput,
+): PriceInferenceUsageResult {
+  const modelPrice = resolveModelPrice(input);
+  if (modelPrice === undefined) return unpricedResult(input, "model_price_unknown");
+
+  const parts = computePricedComponentParts(input, modelPrice);
+  const costNumerator = parts.readNumerator + parts.nonCacheNumerator;
 
   return {
     price_version: PRICE_SNAPSHOT_METADATA.price_version,
     source: modelPrice.source,
     as_of: PRICE_SNAPSHOT_METADATA.as_of,
-    known_cost_usd: pricedComponents === 0
+    known_cost_usd: parts.pricedComponents === 0
       ? null
       : Number(costNumerator) / Number(USD_DENOMINATOR),
-    priced_tokens: pricedTokens,
-    unpriced_tokens: unpricedTokenCount(input, pricedTokens),
-    pricing_complete: reasons.size === 0,
-    unpriced_reasons: [...reasons],
+    priced_tokens: parts.pricedTokens,
+    unpriced_tokens: unpricedTokenCount(input, parts.pricedTokens),
+    pricing_complete: parts.reasons.size === 0,
+    unpriced_reasons: [...parts.reasons],
+  };
+}
+
+/**
+ * Published signature:
+ * priceInferenceUsageComponents(input: PriceInferenceUsageInput): PriceInferenceUsageComponentsResult
+ * Splits the fixed-snapshot cost into cache-read and non-cache parts as exact decimal USD strings.
+ * Cache-read covers cache_read; non-cache covers ordinary input, timed cache writes, and output.
+ */
+export function priceInferenceUsageComponents(
+  input: PriceInferenceUsageInput,
+): PriceInferenceUsageComponentsResult {
+  const modelPrice = resolveModelPrice(input);
+  if (modelPrice === undefined) {
+    return {
+      price_version: PRICE_SNAPSHOT_METADATA.price_version,
+      cache_read: { known_cost_usd_decimal: null, is_partial: true },
+      non_cache: { known_cost_usd_decimal: null, is_partial: true },
+    };
+  }
+
+  const parts = computePricedComponentParts(input, modelPrice);
+  return {
+    price_version: PRICE_SNAPSHOT_METADATA.price_version,
+    cache_read: {
+      known_cost_usd_decimal: parts.readPriced
+        ? numeratorToDecimalString(parts.readNumerator)
+        : null,
+      is_partial: parts.readPartial,
+    },
+    non_cache: {
+      known_cost_usd_decimal: parts.nonCachePriced
+        ? numeratorToDecimalString(parts.nonCacheNumerator)
+        : null,
+      is_partial: parts.nonCachePartial,
+    },
   };
 }
