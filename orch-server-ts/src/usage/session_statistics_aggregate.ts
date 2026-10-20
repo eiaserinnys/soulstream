@@ -141,7 +141,11 @@ export function aggregateSessionStatisticsMetrics(
     if (seen.has(key)) continue;
     seen.add(key);
     rows.push(row);
-    if (fact.known_cost_usd === null) continue;
+    if (fact.known_cost_usd === null) {
+      cacheReadPartial = true;
+      nonCachePartial = true;
+      continue;
+    }
     const cost = read.costDecimals.get(key);
     if (cost === undefined) throw new Error("session statistics known cost is missing its decimal source");
     knownCost = addDecimal(knownCost, parseDecimal(cost));

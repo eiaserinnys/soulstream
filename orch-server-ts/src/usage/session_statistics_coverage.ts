@@ -237,7 +237,11 @@ function collapseEvidence(records: readonly Evidence[]): Evidence[] {
   const collapsed: Evidence[] = [];
   for (const group of byIdentity.values()) {
     const latest = [...group].sort((left, right) => right.eventOrder - left.eventOrder)[0]!;
-    collapsed.push({ ...latest, attribution: mergeAttributions(group) });
+    collapsed.push({
+      ...latest,
+      attribution: mergeAttributions(group),
+      unknownAllUsageFields: group.some((record) => record.unknownAllUsageFields),
+    });
   }
   return collapsed;
 }
@@ -346,6 +350,7 @@ export function createSessionStatisticsCoverageIndex(
           ?? rowTimestamp(row),
         eventOrder: sessionStatisticsEventOrder(row),
         attribution: rowAttribution(row, commandStarts),
+        unknownAllUsageFields: false,
       });
       continue;
     }
