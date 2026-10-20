@@ -63,8 +63,7 @@ export function AttachmentPreviewModal({ item, items = [item], initialIndex = 0,
   const views = items.map(entry => resolved[entry.key] ?? entry);
   // A bundle that holds a readable document opens whole in the document layout so
   // paging never moves the header, close, save, or paging controls.
-  const layout = views.some(view => isHtmlAttachmentView(view)
-    || (view.previewKind === 'text' && isMarkdownAttachmentView(view))) ? 'document' : 'media';
+  const layout = views.some(view => isHtmlAttachmentView(view) || isMarkdownAttachmentView(view)) ? 'document' : 'media';
   return <View testID="attachment-preview-modal">
     <ImageViewerModal variant="chatRefined" layout={layout} items={views} initialIndex={initialIndex} onClose={onClose}
       sources={views.map(entry => entry.previewKind === 'image' && entry.source.kind === 'ready'
@@ -117,7 +116,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   );
   // The document page uses the whole frame; text and states keep the padded, centered box.
   const fullBleed = state.kind === 'html' && state.text.length > 0;
-  const markdownDocument = state.kind === 'markdown';
+  const markdownDocument = state.kind === 'markdown' && state.text.length > 0;
   return <View style={{ flex: 1, width: '100%', ...(fullBleed ? null : {
     padding: t.spacing.md,
     ...(!markdownDocument ? { alignItems: 'center', justifyContent: 'center' } : null),
