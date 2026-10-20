@@ -11,6 +11,7 @@ import {
   compareText,
   hasOwn,
   isRecord,
+  knownInteger,
   numericFields,
   blankFact,
 } from "./session_statistics_normalization_helpers.js";
@@ -59,16 +60,24 @@ export function priceNormalizedUsage(
   usage: NormalizedUsage,
   provider: UsageStatsProvider,
   model: string | null,
+  rawUsage?: Record<string, unknown> | null,
 ) {
   const writeKnown = usage.cache_write !== null;
+  const cacheCreation = provider === "claude" && isRecord(rawUsage?.cache_creation)
+    ? rawUsage.cache_creation
+    : null;
+  const cacheWrite5m = knownInteger(cacheCreation?.ephemeral_5m_input_tokens) ?? 0;
+  const cacheWrite1h = knownInteger(cacheCreation?.ephemeral_1h_input_tokens) ?? 0;
   const priced = priceInferenceUsage({
     provider,
     model,
     input_total: usage.input_total,
     cache_read: usage.cache_read,
-    cache_write_5m: writeKnown ? 0 : null,
-    cache_write_1h: writeKnown ? 0 : null,
-    cache_write_unknown: usage.cache_write,
+    cache_write_5m: writeKnown ? cacheWrite5m : null,
+    cache_write_1h: writeKnown ? cacheWrite1h : null,
+    cache_write_unknown: usage.cache_write === null
+      ? null
+      : usage.cache_write - cacheWrite5m - cacheWrite1h,
     output_total: usage.output_total,
   });
   return {
@@ -140,7 +149,7 @@ function usageRow(
     unpriced_tokens: null,
     pricing_complete: null,
     pricing_version: null,
-  } : priceNormalizedUsage(normalized, identity.provider, model);
+  } : priceNormalizedUsage(normalized, identity.provider, model, rawUsage);
   return {
     ...base,
     model,
