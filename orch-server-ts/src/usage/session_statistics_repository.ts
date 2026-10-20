@@ -60,6 +60,7 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
     return await this.sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
       await transaction`SET LOCAL jit = off`;
+      await transaction`SET LOCAL client_min_messages = warning`;
       const sessions = await readAuthorizedSessions(transaction, input);
       const projectionState = await readProjectionState(transaction);
       const sessionIds = sessions.map((session) => session.sessionId);
