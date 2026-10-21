@@ -47,11 +47,12 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
         const undo = sheet.querySelector<HTMLElement>('.pas-report-undo');
         const style = getComputedStyle(sheet), key = sheet.dataset.publication!;
         keys.add(key);
-        const intrinsic = content.getBoundingClientRect().height + (footer?.getBoundingClientRect().height ?? 0)
-          + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (footer ? parseFloat(style.rowGap) || 0 : 0)
-          + (undo ? undo.getBoundingClientRect().height + (parseFloat(style.rowGap) || 0) : 0);
-        if (sheet.dataset.answered !== 'true') beforeAnswer.current.set(key, intrinsic);
-        return sheet.dataset.answered === 'true' ? beforeAnswer.current.get(key) ?? intrinsic : intrinsic;
+        const rowGap = parseFloat(style.rowGap) || 0;
+        const base = content.getBoundingClientRect().height + (footer?.getBoundingClientRect().height ?? 0)
+          + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (footer ? rowGap : 0);
+        const undoExtra = undo ? undo.getBoundingClientRect().height + rowGap : 0;
+        if (sheet.dataset.answered !== 'true') beforeAnswer.current.set(key, base);
+        return (sheet.dataset.answered === 'true' ? beforeAnswer.current.get(key) ?? base : base) + undoExtra;
       });
       for (const key of beforeAnswer.current.keys()) if (!keys.has(key)) beforeAnswer.current.delete(key);
       node.style.height = oldHeight; node.style.maxHeight = oldMaximum;
