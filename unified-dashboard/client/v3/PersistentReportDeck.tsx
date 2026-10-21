@@ -7,7 +7,7 @@ import type { PersistentSessionReportBubbleLayout, PersistentSessionRect } from 
 import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
 import { usePersistentReportSend } from './usePersistentReportSend';
 import { useReportDeckHeight } from './useReportDeckHeight';
-import { ChevronLeft, ChevronRight, Link } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Link, Maximize2, Minimize2 } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { cardRequest } from '@seosoyoung/soul-ui/cards/card-api';
 import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
@@ -151,10 +151,15 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
             node.dataset.more = String(node.scrollHeight - node.scrollTop - node.clientHeight > 1);
           }} ref={node => { if (node) node.dataset.more = String(node.scrollHeight - node.scrollTop - node.clientHeight > 1); }}>
             <div className="pas-report-content">
-              <div className="pas-report-heading">
-                <h2 className="pas-report-title">{expandable ? <button type="button" className="pas-report-expand" aria-expanded={expanded} onClick={toggle}>{entry.title}</button> : entry.title}</h2>
-                {entry.card_numbers.map(number => <ReportCardLink key={number} number={number} pending={pendingCardNumbers} lookupCards={lookupCards} />)}
-                {renderCardStatus?.(entry)}
+              <div className="pas-report-heading" data-window={expandable || undefined}>
+                <div className="pas-report-heading-main">
+                  <h2 className="pas-report-title">{expandable ? <button type="button" className="pas-report-expand" aria-expanded={expanded} onClick={toggle}>{entry.title}</button> : entry.title}</h2>
+                  {entry.card_numbers.map(number => <ReportCardLink key={number} number={number} pending={pendingCardNumbers} lookupCards={lookupCards} />)}
+                  {renderCardStatus?.(entry)}
+                </div>
+                {expandable && <DashboardIconCap size="small" className="pas-report-window" label={expanded ? '축소' : '확대'} aria-expanded={expanded} onClick={toggle}>
+                  {expanded ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
+                </DashboardIconCap>}
               </div>
               {(!expanded || entry.kind === 'ask') && <p className="pas-report-context" onClick={expandable ? toggle : undefined}>{entry.context}</p>}
               {!answered && entry.action !== '' && <p className="pas-report-todo"><ReportAction text={entry.action} /></p>}
