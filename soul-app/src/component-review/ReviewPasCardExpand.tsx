@@ -137,7 +137,7 @@ export function ReviewPasCardExpand() {
         <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="닫기" onPress={() => setSheet(null)}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} /></GlassButton>
       <Text style={styles.heading} numberOfLines={2}>{persistentReportStatusCard(sheet) ? <><CardStatusChip card={persistentReportStatusCard(sheet)!} detail />{' '}</> : null}{sheet.title}</Text>
       </View></View>
-      <ScrollView ref={sheetScroll.scroll} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false}
+      <ScrollView style={{ flex: 1, minHeight: 0 }} ref={sheetScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false}
         onLayout={sheetScroll.keepComposerVisible} onContentSizeChange={sheetScroll.keepComposerVisible}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>

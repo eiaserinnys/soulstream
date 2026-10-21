@@ -331,7 +331,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           {reportCardSheetEntry.title}
         </Text>
       </View></View>
-      <ScrollView ref={reportCardScroll.scroll} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }}
+      <ScrollView style={{ flex: 1, minHeight: 0 }} ref={reportCardScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }}
         onLayout={reportCardScroll.keepComposerVisible} onContentSizeChange={reportCardScroll.keepComposerVisible}
         showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
