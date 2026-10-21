@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry, Session } from '../../api/types';
+import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX } from '../../../../packages/wire-schema/src/persistent_report';
 import { pendingReportClosed, pendingReportReply, reportSendContext } from '../../lib/persistent-report';
 import { createOptimisticUserEvent, pickOptimisticVariant, useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
 import { getSendFailureReason, CARD_QUESTION_ANSWERED_REASON } from '../chat/useChatSendFlow';
@@ -95,6 +96,7 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
     sendOption: (entry: PersistentReportEntry, option: string) => send(entry, 'reply', option),
     cancel: (entry: PersistentReportEntry) => send(entry, 'cancel'),
     close: (entry: PersistentReportEntry) => {
+      if (entry.key.startsWith(CARD_ENTRY_KEY_PREFIX) || entry.key.startsWith(CARD_QUESTION_KEY_PREFIX)) return true;
       const message = start(entry, 'close');
       if (!message) return false;
       void deliver(entry, message, 'close', `${entry.title}: 확인했어`);

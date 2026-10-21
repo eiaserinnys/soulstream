@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
+import { isPersistentReportCardExpandable, isServerCardAcknowledgement } from '../../lib/persistent-report-card';
 import { useDeviceType, useTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import { useChatUiActions } from '../chat-ui/ChatUiControllerProvider';
@@ -22,7 +23,8 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails }: {
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange }: {
+  expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
   onOpenCardDetails?(entry: PersistentReportEntry): void;
@@ -32,7 +34,9 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
 }) {
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [localExpandedKey, setLocalExpandedKey] = useState<string | null>(null);
+  const expandedKey = controlledExpandedKey === undefined ? localExpandedKey : controlledExpandedKey;
+  const setExpandedKey = onExpandedKeyChange ?? setLocalExpandedKey;
   const t = useTokens();
   const { setNotice } = useChatUiActions();
   const phone = useDeviceType() === 'phone';
@@ -50,11 +54,12 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const measuredHeights = useRef(new Map<string, number>());
   const readyHeights = useRef(new Set<string>());
   const openHeights = useRef(new Map<string, number>());
-  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, expandedKey === entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers]);
+  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, expandedKey === entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, entry.card_id, entry.card_status]);
   const pressing = useRef(false);
   const [height, setHeight] = useState(0);
   const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
   const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
+  const presentedSession = useRef(sessionId);
   const commitHeight = () => {
     const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
     if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
@@ -62,15 +67,17 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
       entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
     setHeight(saved => saved === next ? saved : next);
-    if (allMeasured && next > 0) setPresentedLayout(layoutKey);
+    if (allMeasured && next > 0) { presentedSession.current = sessionId; setPresentedLayout(layoutKey); }
   };
   const latestMeasurement = useRef({ entries, commitHeight, measureKey });
   latestMeasurement.current = { entries, commitHeight, measureKey };
   useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
-  // Publication edits wait for height without hiding an already visible deck.
-  // A new session/layout still measures before its first presentation.
-  const ready = presentedLayout === layoutKey;
+  const inlineExpanded = !bubble && expandedKey !== null && renderCardDetails !== undefined;
+  const inlineHeight = inlineExpanded ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
+  // Keep a presented session interactive while its placement/width remeasures:
+  // hiding the surface here also hides its focused native TextInput.
+  const ready = presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId);
   useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
   const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
   const latestInteraction = useRef(interaction);
@@ -131,14 +138,16 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   if (!count) return null;
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
     pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
-    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
+    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight },
+      inlineExpanded && { height: inlineHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
     onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={bubble ? { height: bubbleHeight, flexShrink: 0,
+      keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.track, inlineExpanded && { height: inlineHeight }]} style={bubble ? { height: bubbleHeight, flexShrink: 0,
         // The surface's existing horizontal borders belong to its height;
         // let the viewport span them without adding two more pixels.
-        marginVertical: -StyleSheet.hairlineWidth } : height ? { height } : undefined}
+        marginVertical: -StyleSheet.hairlineWidth } : inlineExpanded ? { height: inlineHeight, flexShrink: 0 }
+          : height ? { height } : undefined}
       onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
       onLayout={event => setWidth(event.nativeEvent.layout.width)} onContentSizeChange={align}
       onScroll={event => {
@@ -152,15 +161,18 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         const next = Math.max(0, Math.min(count - 1, Math.round(x / width)));
         if (next !== index) { if (focusInside()) moveFocus.current = true; onSelect(next); }
       }} scrollEventThrottle={16}>
-      {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={measureKey(entry)} entry={entry}
-        expandedContent={expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
-        cardStatus={renderCardStatus?.(entry)}
-        onToggleCard={renderCardDetails || onOpenCardDetails ? () => {
+      {width > 0 ? entries.map((entry, i) => {
+        const expandable = isPersistentReportCardExpandable(entry);
+        return <PersistentReportSheet key={JSON.stringify([sessionId, entry.key])} entry={entry}
+        expandedContent={expandable && expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
+        cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
+        onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {
           if (onOpenCardDetails) onOpenCardDetails(entry);
-          else setExpandedKey(saved => saved === entry.key ? null : entry.key);
+          else setExpandedKey(expandedKey === entry.key ? null : entry.key);
         } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
-        bubble={bubble} bubbleHeight={bubbleHeight} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
+        bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineExpanded ? inlineHeight : undefined}
+        busy={isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
         onReady={() => {
           const id = measureKey(entry), latest = latestMeasurement.current;
@@ -183,7 +195,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         }}
         onOption={option => {
           void send?.sendOption(entry, option);
-        }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />) : null}
+        }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />
+      }) : null}
     </ScrollView>
     {count > 1 && !compact && !phone ? <View testID="report-nav" style={styles.nav}>
       <ReportNavButton interaction={navInteraction} testID="report-prev-touch" iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>

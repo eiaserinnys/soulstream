@@ -65,6 +65,16 @@ test('close acknowledgement uses the pending slot with only closed context and r
   expect(started).toBe(true);
   expect(intervene).toHaveBeenCalledTimes(2);
 });
+test.each(['card_531', 'cq_question-1'])('%s acknowledgement only dismisses the server card entry', async key => {
+  const cardEntry = { ...entry, key, kind: 'see' as const, options: [], card_id: 'card-531', card_status: 'review' };
+  const h = setup(jest.fn().mockResolvedValue({ delivered: true }));
+  h.rerender({ entries: [cardEntry], server: [cardEntry] });
+  let started = false;
+  await act(async () => { started = h.result.current.close(cardEntry); await Promise.resolve(); });
+  expect(started).toBe(true);
+  expect(h.intervene).not.toHaveBeenCalled();
+  expect(useChatStore.getState().pendingOptimisticBySession.pas).toBeUndefined();
+});
 test('close acknowledgement is rejected when another message is sending or an unrelated failure remains', async () => {
   const h = setup();
   const other = { ...createOptimisticUserEvent('다른 글', 'user_message'), pendingStatus: 'sending' as const };
@@ -184,6 +194,28 @@ test('actual report controls hide cancellation until server answer, disable duri
   act(() => useChatStore.getState().updatePendingOptimisticStatus('pas', other.id, 'failed', 'failure'));
   fireEvent.press(screen.getByLabelText('응'));
   expect(notice).toHaveBeenCalledWith(FAILED_REPORT_SEND_REMAINS);
+});
+
+test('server card acknowledgement dismisses while an unrelated PAS message is sending', () => {
+  const cardEntry = { ...entry, key: 'card_531', kind: 'see' as const, options: [], card_id: 'card-531', card_status: 'review', card_numbers: [531] };
+  const api = { intervene: jest.fn() } as unknown as ApiClient;
+  const onDismiss = jest.fn().mockResolvedValue(true);
+  const notice = jest.fn();
+  const other = { ...createOptimisticUserEvent('다른 글', 'user_message'), pendingStatus: 'sending' as const };
+  act(() => useChatStore.getState().setPendingOptimistic('pas', other));
+  function Harness() {
+    const send = usePersistentReportSend('pas', api, [cardEntry], [cardEntry], 'completed', notice);
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+      <PersistentReportPager entries={send.entries} index={0} api={api} send={send}
+        onSelect={jest.fn()} onDismiss={onDismiss} onFocusComposer={jest.fn()} />
+    </ChatUiControllerProvider>;
+  }
+  const screen = render(<Harness />);
+  measurePersistentReports(screen);
+  expect(screen.getByLabelText('확인했어').props.accessibilityState?.disabled).not.toBe(true);
+  fireEvent.press(screen.getByLabelText('확인했어'));
+  expect(onDismiss).toHaveBeenCalledWith('card_531');
+  expect(api.intervene).not.toHaveBeenCalled();
 });
 
 

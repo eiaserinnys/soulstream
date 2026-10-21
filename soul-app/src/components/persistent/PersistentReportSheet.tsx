@@ -14,14 +14,14 @@ export function reportTag(entry: PersistentReportEntry) {
   return entry.kind === 'see' ? '보실 것' : entry.state === 'answered' ? '답 받음' : '답하실 것';
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
-  titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, bubbleHeight, busy = false,
+  titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false,
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard }: {
   expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
   onCard(number: number): void; onLink(url: string): void;
-  bubble?: boolean; bubbleHeight?: number; busy?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
+  bubble?: boolean; surfaceHeight?: number; busy?: boolean; canCancel?: boolean; cancelSent?: boolean; onCancel?(): void;
   onHeight?(height: number): void; onInteraction?(pressed: boolean): void;
   onReady?(): void;
 }) {
@@ -48,8 +48,9 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const heading = <View testID="report-head" style={styles.heading}>
     <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header" style={styles.title}
       {...reportWebProps({ tabIndex: -1 })}
-      {...(onToggleCard ? { onPress: onToggleCard, accessibilityRole: 'button' as const, accessibilityState: { expanded: Boolean(expandedContent) } } : {})}
-      {...(compact ? { onPress: (event: { stopPropagation(): void }) => { event.stopPropagation(); onExpand(); }, accessibilityHint: '누르면 펼칩니다',
+      {...(onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onToggleCard(); }, accessibilityRole: 'button' as const,
+        accessibilityState: { expanded: Boolean(expandedContent) } } : {})}
+      {...(compact && !onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onExpand(); }, accessibilityHint: '누르면 펼칩니다',
         accessibilityActions: [{ name: 'expand', label: '펼치기' }], onAccessibilityAction: onExpand } : {})}>{entry.title}</Text>
     {entry.card_numbers.map(number => <View key={number} style={styles.chipSlot}>
       <CompactTouchTarget testID="report-card-link" surfaceTestID="report-card-pill" accessibilityRole="link"
@@ -104,8 +105,8 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     accessibilityLabel={`${count > 1 ? `${page}, ` : ''}${reportTag(entry)}, ${entry.title}`}
     onPress={compact ? onExpand : undefined} onTouchStart={() => onInteraction?.(true)} onTouchEnd={() => onInteraction?.(false)}
     onTouchCancel={() => onInteraction?.(false)} {...reportWebProps({ inert: !current, tabIndex: -1, role: 'group' })}
-    style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }, bubble && { height: bubbleHeight }, !compact && styles.resting]}>
-    {bubble ? <PersistentReportReading current={current} styles={styles} onHeight={height => measure('reading', height)}>{frame}</PersistentReportReading>
+    style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }, surfaceHeight !== undefined ? { height: surfaceHeight } : null, !compact && styles.resting]}>
+    {surfaceHeight !== undefined || bubble || expandedContent ? <PersistentReportReading current={current} styles={styles} onHeight={height => measure('reading', height)}>{frame}</PersistentReportReading>
       : <View style={[styles.body, compact ? styles.compact : null, { flexGrow: 1 }]}>{frame}
         {compact && count > 1 ? <Text testID="report-page" style={styles.page} accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
           accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}

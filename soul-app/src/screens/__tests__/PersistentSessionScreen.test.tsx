@@ -1,11 +1,33 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
+const mockOpenContentLink = jest.fn();
+const mockApi = {
+  listCards: jest.fn().mockResolvedValue({ cards: [] }),
+  getCard: jest.fn(),
+  dismissPersistentReport: jest.fn(),
+  confirmCardItem: jest.fn(),
+  addCardComment: jest.fn(),
+  answerCardQuestion: jest.fn(),
+};
+jest.mock('../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpenContentLink }));
+jest.mock('../../api/client', () => ({ createApiClient: () => mockApi }));
 let mockDevice = 'phone';
+let mockKeyboardLayout = false;
 jest.mock('../../theme/useDeviceType', () => ({ useDeviceType: () => mockDevice, deviceTypeToBaseKey: (device: string) => device === 'phone' ? 'phone' : 'tablet' }));
 jest.mock('../../components/chat/ChatBody', () => {
   const React = require('react'); const { View, TextInput } = require('react-native');
+  const { AppKeyboardAvoidingView } = require('../../components/AppKeyboardAvoidingView');
   return { ChatBody: (props: any) => {
     const [draft, setDraft] = React.useState('');
+    const latest = React.useRef(props);
+    latest.current = props;
+    const onOverlapChange = React.useCallback((overlap: number) => {
+      // Yoga's padding response at the ChatBody boundary; the inset itself is
+      // calculated by the production avoider from the native keyboard event.
+      if (mockKeyboardLayout) latest.current.onComposerLayout(
+        { x: 0, y: 644 - overlap, width: 480, height: 76 },
+        { x: 0, y: 20, width: 480, height: 56 });
+    }, []);
     React.useEffect(() => {
       if (!props.active || !props.sessionId) return undefined;
       const probe = (globalThis as any).__persistentChatConnectionProbe;
@@ -13,7 +35,11 @@ jest.mock('../../components/chat/ChatBody', () => {
       probe.connected = true;
       return () => { probe.closes += 1; probe.connected = false; };
     }, [props.active, props.sessionId]);
-    return <View testID="persistent-body-probe" {...props}><TextInput testID="persistent-draft" value={draft} onChangeText={setDraft} /></View>;
+    return <View testID="persistent-body-probe" {...props}>
+      <AppKeyboardAvoidingView testID="persistent-keyboard-probe" behavior="padding" onOverlapChange={onOverlapChange}>
+        {props.reportView}<TextInput key={props.sessionId} testID="persistent-draft" value={draft} onChangeText={setDraft} />
+      </AppKeyboardAvoidingView>
+    </View>;
   } };
 });
 jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
@@ -28,17 +54,23 @@ jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
     <Pressable testID="close-card-overlay" onPress={onClose} />
   </View> : null };
 });
+jest.mock('../../components/AppModalSurface', () => {
+  const { View } = require('react-native');
+  return { AppModalSurface: ({ visible, modalId, onRequestClose, onDismiss, children, surfaceTestID }: any) =>
+    <View testID={surfaceTestID} visible={visible} modalId={modalId} onRequestClose={onRequestClose} onDismiss={onDismiss}>{children}</View> };
+});
 jest.mock('../../components/settings/PersistentSessionPasSettingsModal', () => ({ PersistentSessionPasSettingsModal: () => null }));
 jest.mock('../SettingsScreen', () => ({ SettingsScreen: () => null }));
 jest.mock('../../hooks/useUsageSummary', () => ({ useUsageSummary: jest.fn() }));
 
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../../navigation/PersistentSessionContext';
 import { PersistentSessionScreen } from '../PersistentSessionScreen';
+import { ChatUiControllerProvider } from '../../components/chat-ui/ChatUiControllerProvider';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import type { StoreApi } from 'zustand';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { renderHook } from '@testing-library/react-native';
 import { useChatStore } from '../../store/chatStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -47,6 +79,11 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useUsageSummary } from '../../hooks/useUsageSummary';
 import { useTokens } from '../../theme';
+import { AppModalSurface } from '../../components/AppModalSurface';
+import { GlassButton } from '../../components/GlassSurface';
+import { measurePersistentReports } from '../../test-utils/persistent-report-layout';
+import type { CardDetail } from '../../api/cardTypes';
+import { cardFixture } from '../../test-support/cards';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -54,6 +91,12 @@ function ScreenHarness({ active = true, show = true }: { active?: boolean; show?
   return <PersistentSessionProvider><Capture />{show ? <PersistentSessionScreen active={active} onHome={jest.fn()} /> : null}</PersistentSessionProvider>;
 }
 beforeEach(() => {
+  mockKeyboardLayout = false;
+  mockOpenContentLink.mockReset();
+  useSettingsStore.setState({ serverUrl: '' });
+  const card = cardFixture({ id: 'card-531', number: 531, status: 'review', assigneeSessionId: 'pas-card-phone',
+    now: { text: '검수 결과를 확인해 주세요.', turn: 'user', ask: '확인 항목도 살펴봐 주세요.', updatedAt: '2026-10-21T00:00:00Z', sessionId: 'pas-card-phone' } });
+  mockApi.getCard.mockReset().mockResolvedValue({ card: { ...card, items: [] }, reports: [], questions: [], sessions: [], nowHistory: [], comments: [] } as CardDetail);
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
   jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
 });
@@ -158,6 +201,144 @@ test('phone report deck touch leaves page swipes to the deck and conversation sw
 
   view.unmount();
   measure.mockRestore();
+});
+
+test('card report opens an iPhone page sheet and expands inline on iPad', async () => {
+  const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const cardReport = { key: 'card_531', kind: 'see' as const, title: '검수 결과', card_numbers: [531], card_id: 'card-531',
+    card_status: 'review', context: '결과를 확인해 주세요.', action: '', options: [], state: 'open' as const, answer: '', updated_at: '2026-10-21T00:00:00Z' };
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
+  });
+  mockDevice = 'phone';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const phone = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-card-phone', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-card-phone', [cardReport]);
+  });
+  act(() => phone.getByTestId('persistent-session-screen').props.onLayout());
+  const phoneBody = phone.getByTestId('persistent-body-probe');
+  act(() => phoneBody.props.onComposerLayout({ x: 0, y: 560, width: 350, height: 76 }, { x: 0, y: 20, width: 350, height: 56 }));
+  const phonePager = phone;
+  measurePersistentReports(phonePager);
+  await waitFor(() => expect(phonePager.getByTestId('report-title')).toBeTruthy());
+  fireEvent.press(phonePager.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  const modal = phone.UNSAFE_getByType(AppModalSurface);
+  expect(errors.mock.calls.filter(args => String(args[0]).includes('same key'))).toEqual([]);
+  errors.mockRestore();
+  expect(modal.props.variant).toBe('expanded');
+  expect(modal.props.presentationStyle).toBe('pageSheet');
+  expect(phone.getByTestId('persistent-session-report-card-sheet')).toBeTruthy();
+  expect(phone.getAllByText('검수 대기')).toHaveLength(2);
+  await waitFor(() => expect(phone.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
+  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
+  fireEvent(phone.getByPlaceholderText('커멘트'), 'focus');
+  const sheetScroll = phone.UNSAFE_getAllByType(ScrollView).find(scroll => scroll.props.automaticallyAdjustKeyboardInsets);
+  expect(sheetScroll).toBeDefined();
+  fireEvent.changeText(phone.getByPlaceholderText('커멘트'), '아이폰에서도\n입력이\n여러 줄로\n늘어납니다.');
+  fireEvent(sheetScroll!, 'contentSizeChange', 390, 1184);
+  await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
+  fireEvent(phone.getByPlaceholderText('커멘트'), 'blur');
+  scrollToEnd.mockClear();
+  fireEvent(sheetScroll!, 'layout', { nativeEvent: { layout: { height: 400 } } });
+  expect(scrollToEnd).not.toHaveBeenCalled();
+  scrollToEnd.mockRestore();
+  expect(mockOpenContentLink).not.toHaveBeenCalled();
+  const closeAfterOpen = phone.UNSAFE_getByType(AppModalSurface).props.onDismiss;
+  const openCard = phone.UNSAFE_getAllByType(GlassButton).find(button => button.props.accessibilityLabel === '카드 열기');
+  expect(openCard).toBeDefined();
+  act(() => openCard!.props.onPress());
+  await waitFor(() => expect(phone.UNSAFE_getByType(AppModalSurface).props.visible).toBe(false));
+  const closingSheet = phone.UNSAFE_getByType(AppModalSurface);
+  expect(mockOpenContentLink).not.toHaveBeenCalled();
+  act(() => closingSheet.props.onDismiss());
+  expect(mockOpenContentLink).toHaveBeenCalledTimes(1);
+  expect(mockOpenContentLink).toHaveBeenCalledWith('/?card=card-531');
+  act(() => closeAfterOpen());
+  expect(mockOpenContentLink).toHaveBeenCalledTimes(1);
+  phone.unmount();
+
+  mockDevice = 'tabletLandscape';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
+  const tabletMeasure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
+    else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 720);
+  });
+  const tablet = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-card-tablet', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-card-tablet', [cardReport]);
+  });
+  act(() => tablet.getByTestId('persistent-session-screen').props.onLayout());
+  const tabletBody = tablet.getByTestId('persistent-body-probe');
+  act(() => tabletBody.props.onComposerLayout({ x: 0, y: 560, width: 480, height: 76 }, { x: 0, y: 20, width: 480, height: 56 }));
+  const tabletPager = tablet;
+  measurePersistentReports(tabletPager);
+  await waitFor(() => expect(tabletPager.getByTestId('report-title')).toBeTruthy());
+  fireEvent.press(tabletPager.getByTestId('report-title'));
+  await waitFor(() => expect(tabletPager.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
+  expect(tablet.queryByTestId('persistent-session-report-card-sheet')).toBeNull();
+  tablet.unmount();
+  tabletMeasure.mockRestore(); dimensions.mockRestore(); measure.mockRestore();
+});
+
+test('iOS keyboard padding moves the expanded bubble inline without replacing its focused TextInput', async () => {
+  mockDevice = 'tabletLandscape';
+  mockKeyboardLayout = true;
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
+  const listeners = new Map<string, Set<(event: any) => void>>();
+  const keyboard = jest.spyOn(Keyboard, 'addListener').mockImplementation((name, callback) => {
+    const callbacks = listeners.get(name) ?? new Set(); callbacks.add(callback); listeners.set(name, callbacks);
+    return { remove: () => { callbacks.delete(callback); } } as ReturnType<typeof Keyboard.addListener>;
+  });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
+    else if (['persistent-session-conversation', 'persistent-keyboard-probe'].includes(this.props.testID)) callback(350, 100, 480, 720);
+  });
+  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const view = render(<ScreenHarness />);
+  const sessionId = 'pas-keyboard-card';
+  act(() => {
+    store.getState().open({ session_id: sessionId, persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport(sessionId, [{ key: 'card_keyboard', kind: 'see', title: '검수 결과',
+      card_id: 'card-531', card_status: 'review', card_numbers: [531], context: '확인해 주세요.', action: '', options: [], state: 'open', answer: '', updated_at: 'now' }]);
+    const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
+    useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, { show_character: true, animate_character: false,
+      show_generation_separator: true, show_jev_candidates: true, turn_usage_mode: 'collapsed' });
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  fireEvent(view.getByTestId('persistent-keyboard-probe'), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 480, height: 720 } } });
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
+    { x: 0, y: 644, width: 480, height: 76 }, { x: 0, y: 20, width: 480, height: 56 }));
+  expect(view.getByTestId('persistent-session-report-bubble-seat', { includeHiddenElements: true })).toBeTruthy();
+  measurePersistentReports(view, { width: 318 });
+  fireEvent.press(view.getByTestId('report-title'));
+  await waitFor(() => expect(view.getByPlaceholderText('커멘트')).toBeTruthy());
+  const input = view.getByPlaceholderText('커멘트');
+  fireEvent(input, 'focus');
+  fireEvent.changeText(input, '키보드가 떠도 유지되는 커멘트');
+  act(() => {
+    for (const callback of listeners.get(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow') ?? []) callback({
+      duration: 250, easing: 'keyboard', isEventFromThisApp: true,
+      endCoordinates: { screenX: 0, screenY: 422, width: 1180, height: 398 },
+    });
+  });
+  expect(StyleSheet.flatten(view.getByTestId('persistent-keyboard-probe').props.style).paddingBottom).toBe(398);
+  expect(view.getByTestId('persistent-body-probe').props.reportView).toBeTruthy();
+  // A width change also goes through the real pager measurement path.
+  measurePersistentReports(view, { width: 480, readingHeight: 1000 });
+  const after = view.getByPlaceholderText('커멘트');
+  expect(after === input).toBe(true);
+  expect(after.props.value).toBe('키보드가 떠도 유지되는 커멘트');
+  expect(view.getByTestId('report-title').props.accessibilityState.expanded).toBe(true);
+  const deck = StyleSheet.flatten(view.getByTestId('report-deck').props.style);
+  expect(deck.maxHeight).toBeLessThan(422 - 100);
+  expect(within(view.getByTestId('report-scroll')).getByTestId('card-comment-composer')).toBeTruthy();
+  await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
+  view.unmount(); scrollToEnd.mockRestore(); measure.mockRestore(); keyboard.mockRestore(); dimensions.mockRestore();
 });
 
 test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점을 유지한다', () => {

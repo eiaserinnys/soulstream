@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
+import { Alert, BackHandler, PanResponder, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -15,14 +15,21 @@ import { PersistentReportPager } from '../components/persistent/PersistentReport
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
+import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
+import { ReportComposerFocusContext, useReportComposerScroll } from '../components/persistent/useReportComposerScroll';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
 import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/persistentSessionFrame';
 import { PersistentSessionPasSettingsModal } from '../components/settings/PersistentSessionPasSettingsModal';
 import { persistentChatDisplaySettings, savePersistentSessionSettings } from '../components/settings/persistentSessionSettingsActions';
 import { useDisplayPreferenceActions } from '../components/settings/useDisplayPreferenceActions';
+import { AppModalSurface } from '../components/AppModalSurface';
+import { GlassButton } from '../components/GlassSurface';
+import { CardStatusChip } from '../components/planner/CardRow';
+import { cardDetailStyles } from '../components/planner/CardDetail.styles';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
 import { useUsageSummary } from '../hooks/useUsageSummary';
+import { useOpenContentLink } from '../hooks/useOpenContentLink';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { useAuthStore } from '../store/authStore';
@@ -30,6 +37,8 @@ import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
+import type { PersistentReportEntry } from '../api/types';
+import { isPersistentReportCardExpandable, persistentReportStatusCard } from '../lib/persistent-report-card';
 
 export interface PersistentSessionScreenProps {
   active?: boolean;
@@ -49,6 +58,7 @@ export function PersistentSessionScreen(props: PersistentSessionScreenProps) {
 }
 function PersistentSessionContents({ active = true, chatActive = active, onOpenPhoneCard, onHome, inputComposerRef }: PersistentSessionScreenProps & { inputComposerRef: React.RefObject<ChatInputComposerHandle | null> }) {
   const t = useTokens();
+  const cardStyles = useMemo(() => cardDetailStyles(t), [t]);
   const device = useDeviceType();
   const phone = device === 'phone';
   const { fontScale } = useWindowDimensions();
@@ -81,6 +91,32 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     : null);
   const { handleAppearanceChange } = useDisplayPreferenceActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reportCard, setReportCard] = useState<PersistentReportEntry | null>(null);
+  const [reportCardSheetEntry, setReportCardSheetEntry] = useState<PersistentReportEntry | null>(null);
+  const reportCardScroll = useReportComposerScroll();
+  const [reportExpansion, setReportExpansion] = useState<{ sessionId?: string; key: string | null }>({ key: null });
+  const expandedReportKey = reportExpansion.sessionId === session?.session_id ? reportExpansion.key : null;
+  const [reportSeatHeight, setReportSeatHeight] = useState(0);
+  const pendingReportCardLink = React.useRef<string | null>(null);
+  const openContentLink = useOpenContentLink();
+  const showReportCard = React.useCallback((entry: PersistentReportEntry) => {
+    pendingReportCardLink.current = null;
+    setReportCard(entry);
+    setReportCardSheetEntry(entry);
+  }, []);
+  const closeReportCard = React.useCallback(() => {
+    setReportCard(null);
+  }, []);
+  const openReportCardFromSheet = React.useCallback((cardId: string) => {
+    pendingReportCardLink.current = cardId;
+    closeReportCard();
+  }, [closeReportCard]);
+  const onReportCardSheetDismiss = React.useCallback(() => {
+    const cardId = pendingReportCardLink.current;
+    pendingReportCardLink.current = null;
+    setReportCardSheetEntry(null);
+    if (cardId) void openContentLink(`/?card=${encodeURIComponent(cardId)}`);
+  }, [openContentLink]);
   const [savingCharacter, setSavingCharacter] = useState(false);
   const appRef = React.useRef<View>(null);
   const mainRef = React.useRef<View>(null);
@@ -130,9 +166,18 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   previousSize.current = [app?.width, app?.height];
   const geometry = heldGeometry.current;
   const pager = geometry ? <PersistentReportPager entries={reportSend.entries} index={report.index} api={api}
+    key={`report-${session?.session_id}`} expandedKey={expandedReportKey}
+    onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
     sessionId={session?.session_id} onReady={setReportReady}
-    send={reportSend} bubble={!!geometry?.reportBubble} maxHeight={geometry?.reportBubble?.maxHeight}
+    send={reportSend} bubble={!!geometry.reportBubble}
+    maxHeight={geometry.reportBubble?.maxHeight ?? geometry.reportViewMaxHeight}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
+    renderCardStatus={entry => {
+      const card = persistentReportStatusCard(entry);
+      return card ? <CardStatusChip card={card} detail /> : null;
+    }}
+    renderCardDetails={!phone ? entry => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} /> : undefined}
+    onOpenCardDetails={phone ? showReportCard : undefined}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
@@ -209,7 +254,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           opacity: hidePhoneConversation ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript" showSessionAuxiliary={false}
           inputComposerRef={inputComposerRef} getReportSendContext={report.getSendContext}
-          reportView={geometry?.reportBubble ? null : pager}
+          reportView={geometry?.reportBubble ? null : phone ? pager : geometry && report.entries.length > 0
+            ? <View testID="persistent-session-report-inline-space" style={{ height: reportSeatHeight }} /> : null}
           active={chatActive} minimumBottomPadding={phone ? 0 : insets.bottom}
           onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
@@ -223,16 +269,20 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         <SwayCharacter width={geometry.body.width} height={geometry.body.height} shown motionEnabled={display?.animate_character === true}
           active={active && !settingsOpen} />
       </View> : null}
-      {!phone && geometry?.reportBubble && report.entries.length > 0 ? <View testID="persistent-session-report-bubble-seat"
+      {!phone && geometry && report.entries.length > 0 ? <View
+        testID={geometry.reportBubble ? 'persistent-session-report-bubble-seat' : 'persistent-session-report-inline-seat'}
         pointerEvents={reportReady ? 'auto' : 'none'} accessibilityElementsHidden={!reportReady}
-        style={{ position: 'absolute', left: geometry.reportBubble.left, bottom: (app?.height ?? 0) - geometry.reportBubble.bottom,
-          width: geometry.reportBubble.width, maxHeight: geometry.reportBubble.maxHeight, opacity: reportReady ? 1 : 0 }}>
+        onLayout={event => setReportSeatHeight(event.nativeEvent.layout.height)}
+        style={{ position: 'absolute', ...(geometry.reportBubble
+          ? { left: geometry.reportBubble.left, bottom: (app?.height ?? 0) - geometry.reportBubble.bottom,
+            width: geometry.reportBubble.width, maxHeight: geometry.reportBubble.maxHeight }
+          : { left: columnLeft, top: headerHeight, width: columnWidth }), opacity: reportReady ? 1 : 0 }}>
         {pager}
-        <View testID="report-tail" pointerEvents="none" style={{ position: 'absolute',
+        {geometry.reportBubble ? <View testID="report-tail" pointerEvents="none" style={{ position: 'absolute',
           left: geometry.reportBubble.tailLeft - t.uiSpacing.lg / 2, bottom: -t.uiSpacing.lg / 2,
           width: t.uiSpacing.lg, height: t.uiSpacing.lg, backgroundColor: t.persistentSession.panel,
           borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: t.persistentSession.line,
-          transform: [{ skewX: geometry.reportBubble.tailDirection === 'left' ? '-45deg' : '45deg' }, { rotate: '45deg' }] }} />
+          transform: [{ skewX: geometry.reportBubble.tailDirection === 'left' ? '-45deg' : '45deg' }, { rotate: '45deg' }] }} /> : null}
       </View> : null}
       {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
         left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,
@@ -270,5 +320,25 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
+    {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"
+      variant="expanded" presentationStyle="pageSheet" onRequestClose={closeReportCard} onDismiss={onReportCardSheetDismiss} surfaceTestID="persistent-session-report-card-sheet">
+      <View style={cardStyles.header}><View style={cardStyles.headerRow}>
+        <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="닫기" onPress={closeReportCard}>
+          <Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} />
+        </GlassButton>
+        <Text style={cardStyles.heading} numberOfLines={2}>
+          {persistentReportStatusCard(reportCardSheetEntry) ? <><CardStatusChip card={persistentReportStatusCard(reportCardSheetEntry)!} detail />{' '}</> : null}
+          {reportCardSheetEntry.title}
+        </Text>
+      </View></View>
+      <ScrollView style={{ flex: 1, minHeight: 0 }} ref={reportCardScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }}
+        onLayout={reportCardScroll.keepComposerVisible} onContentSizeChange={reportCardScroll.keepComposerVisible}
+        showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
+        <ReportComposerFocusContext.Provider value={reportCardScroll.onFocusChange}>
+          <PersistentReportCardExpansion key={reportCardSheetEntry.key} api={api} entry={reportCardSheetEntry} onOpenCard={openReportCardFromSheet} />
+        </ReportComposerFocusContext.Provider>
+      </ScrollView>
+    </AppModalSurface> : null}
   </SafeAreaView>;
 }

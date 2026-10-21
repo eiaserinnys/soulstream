@@ -159,13 +159,15 @@ describe('persistent report bubble geometry', () => {
     expect(reportLayout(1440, 900, 0.8, available + 1).reportBubble).toBeNull();
   });
 
-  it('adds no seat to legacy calls, hidden portraits, or constrained phone layouts', () => {
+  it('leaves existing geometry unchanged when report-view geometry is enabled', () => {
     expect(layout().reportBubble).toBeNull();
     expect(reportLayout(1440, 900, 0.8, 221, { showCharacter: false }).reportBubble).toBeNull();
     expect(reportLayout(1440, 900, 0.8, 221, { phoneConfigured: true }).reportBubble).toBeNull();
-    const { reportBubble, ...existing } = reportLayout(1440, 900, 0.8, 221);
-    const { reportBubble: disabled, ...withoutBubble } = reportLayout(1440, 900, 0.8, 221, { reportBubble: undefined });
+    const { reportBubble, reportViewMaxHeight, ...existing } = reportLayout(1440, 900, 0.8, 221);
+    const { reportBubble: disabled, reportViewMaxHeight: disabledViewHeight, ...withoutBubble } = reportLayout(1440, 900, 0.8, 221, { reportBubble: undefined });
     expect(existing).toEqual(withoutBubble);
+    expect(reportViewMaxHeight).toBeGreaterThan(0);
+    expect(disabledViewHeight).toBe(0);
   });
 
   it('centers or clamps inside the gutter and seats its tail toward the portrait center', () => {

@@ -1,7 +1,7 @@
 import React from 'react';
-import { AccessibilityInfo, Keyboard, Platform, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Keyboard, Platform, StyleSheet, Text } from 'react-native';
 import * as ReactNative from 'react-native';
-import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { PersistentReportSheet } from '../PersistentReportSheet';
 import { reportStyles } from '../persistentReportStyles';
@@ -14,6 +14,7 @@ import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDi
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 import type { PersistentReportEntry } from '../../../api/types';
 import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
+import { calculatePersistentSessionLayout } from '../../../../../packages/soul-ui/src/lib/persistent-session-layout';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 // Forward View refs to the host so createNodeMock supplies the actual native
@@ -118,6 +119,85 @@ test('phone keyboard collapses context/buttons, keeps two-line action, and resto
   expect(dismiss).toHaveBeenCalledTimes(1);
   measurePersistentReports(screen);
   expect(screen.getByTestId('report-context')).toBeTruthy();
+});
+
+test('eligible card titles open the card sheet even while the phone report is compact', () => {
+  const listeners: Record<string, () => void> = {};
+  jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
+    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+  });
+  const dismissKeyboard = jest.spyOn(Keyboard, 'dismiss');
+  const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review', card_numbers: [531] };
+  const onOpen = jest.fn();
+  const api = { listCards: jest.fn().mockResolvedValue({ cards: [] }) } as any;
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[cardEntry]} index={0} api={api} onSelect={jest.fn()} onDismiss={jest.fn()}
+      onFocusComposer={jest.fn()} renderCardDetails={() => null} renderCardStatus={() => null} onOpenCardDetails={onOpen}
+      send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen);
+  act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
+  measurePersistentReports(screen);
+  fireEvent.press(screen.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  expect(onOpen).toHaveBeenCalledWith(cardEntry);
+  expect(dismissKeyboard).not.toHaveBeenCalled();
+});
+
+test('card expansion is limited to a bound ID or one card number', () => {
+  const unbound = { ...reportReviewEntries[2], card_numbers: [531, 532] };
+  const onOpen = jest.fn();
+  const api = { listCards: jest.fn().mockResolvedValue({ cards: [] }) } as any;
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[unbound]} index={0} api={api} onSelect={jest.fn()} onDismiss={jest.fn()}
+      onFocusComposer={jest.fn()} renderCardDetails={() => null} renderCardStatus={() => <Text testID="report-status">상태</Text>} onOpenCardDetails={onOpen}
+      send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen);
+  expect(screen.getByTestId('report-title').props.onPress).toBeUndefined();
+  expect(screen.queryByTestId('report-status')).toBeNull();
+  fireEvent.press(screen.getByTestId('report-title'));
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test('expanded inline report uses the layout height cap and scrolls its reading block', () => {
+  mockDevice = 'tablet';
+  const geometry = calculatePersistentSessionLayout({
+    app: { left: 0, top: 0, width: 834, height: 1194 },
+    header: { left: 0, top: 0, width: 834, height: 76 },
+    main: { left: 217, top: 76, width: 400, height: 1074 },
+    baselineBottom: 1149, inputRowHeight: 44, rowBottomGap: 4,
+    pointerFine: false, showCharacter: false, phoneConfigured: false,
+    reportBubble: { widthScale: 1, minimumHeight: 0 },
+  });
+  expect(geometry.reportBubble).toBeNull();
+  expect(geometry.reportViewMaxHeight).toBe(geometry.lineY - (76 + 16) - 44 - 4);
+  const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531] };
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+      <PersistentReportPager entries={[cardEntry, { ...reportReviewEntries[2], key: 'long-pas', context: '긴 PAS 본문'.repeat(100) }]} index={0} api={null} bubble={false} maxHeight={geometry.reportViewMaxHeight}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
+      renderCardDetails={() => <Text testID="inline-card-expansion">긴 카드 세부</Text>}
+      send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen);
+
+  fireEvent.press(screen.getByTestId('report-context'));
+  const deck = () => StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
+  const track = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style);
+  const sheet = () => StyleSheet.flatten(screen.getByTestId('report-sheet-card_531').props.style);
+  expect(screen.getByTestId('inline-card-expansion')).toBeTruthy();
+  expect(screen.getByTestId('report-scroll')).toBeTruthy();
+  expect(deck().maxHeight).toBe(geometry.reportViewMaxHeight);
+
+  const reading = screen.getByTestId('report-scroll');
+  expect(StyleSheet.flatten(reading.props.style)).toMatchObject({ flexShrink: 1, minHeight: 0 });
+  fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 160 } } });
+  fireEvent(reading, 'contentSizeChange', 390, 1200);
+  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  expect(track().height).toBe(geometry.reportViewMaxHeight);
+  expect(sheet().height).toBe(geometry.reportViewMaxHeight);
+  const pasSheet = screen.getByTestId('report-sheet-long-pas', { includeHiddenElements: true });
+  const pasReading = within(pasSheet).getByTestId('report-scroll', { includeHiddenElements: true });
+  expect(within(pasReading).queryByTestId('report-footer', { includeHiddenElements: true })).toBeNull();
 });
 
 test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 그린다', () => {
@@ -433,7 +513,7 @@ test('bubble reports intrinsic height only after both reading and footer are mea
   function Harness() {
     const t = useTokens();
     return <PersistentReportSheet entry={reportReviewEntries[1]} index={0} count={1} current compact={false}
-      showNav={false} width={318} styles={reportStyles(t, 0, false)} bubble bubbleHeight={440}
+      showNav={false} width={318} styles={reportStyles(t, 0, false)} bubble surfaceHeight={440}
       titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()} onDismiss={jest.fn()}
       onCard={jest.fn()} onLink={jest.fn()} onHeight={onHeight} />;
   }

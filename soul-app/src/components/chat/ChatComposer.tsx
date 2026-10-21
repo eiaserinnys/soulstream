@@ -41,6 +41,7 @@ interface Props {
   minimumBottomPadding?: number;
   embedded?: boolean;
   onInputRef?: (input: TextInput | null) => void;
+  onInputFocusChange?(focused: boolean): void;
   focusAccent?: boolean;
   selection?: TextInputProps['selection'];
   onSelectionChange?: TextInputProps['onSelectionChange'];
@@ -68,6 +69,7 @@ export function ChatComposer({
   sendDisabled = false,
   hasAttachments = false,
   onInputRef,
+  onInputFocusChange,
   selection,
   onSelectionChange,
   onComposerBoxLayout,
@@ -186,8 +188,8 @@ export function ChatComposer({
                 measurement.ref.current = input;
                 onInputRef?.(input);
               }}
-              onFocus={focusAccent ? () => setFocusAccentActive(true) : undefined}
-              onBlur={focusAccent ? () => setFocusAccentActive(false) : undefined}
+              onFocus={focusAccent || onInputFocusChange ? () => { if (focusAccent) setFocusAccentActive(true); onInputFocusChange?.(true); } : undefined}
+              onBlur={focusAccent || onInputFocusChange ? () => { if (focusAccent) setFocusAccentActive(false); onInputFocusChange?.(false); } : undefined}
               selection={selection}
               onSelectionChange={onSelectionChange}
               onContentSizeChange={measurement.onContentSizeChange}

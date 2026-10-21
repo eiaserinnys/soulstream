@@ -58,6 +58,8 @@ export interface PersistentSessionReportBubbleLayout {
 export interface PersistentSessionLayout {
   /** Baseline row's Y coordinate in app-local coordinates. */
   lineY: number;
+  /** Available inline report height above the composer's input row. */
+  reportViewMaxHeight: number;
   /** Body and toggle rectangles are app-local; null means not rendered. */
   body: PersistentSessionRect | null;
   toggle: PersistentSessionRect | null;
@@ -103,7 +105,8 @@ export function calculatePersistentSessionLayout(
   const reportInlineMaxHeight = Math.max(0, main.height - (inlineComposerReserve ?? 0));
 
   if (isConstrained) {
-    return { lineY, body: null, toggle: null, lineLeftReach: 0, reportInlineMaxHeight, reportBubble: null };
+    return { lineY, reportViewMaxHeight: input.reportBubble ? Math.max(0, lineY - safeTop - inputRowHeight - rowBottomGap) : 0,
+      body: null, toggle: null, lineLeftReach: 0, reportInlineMaxHeight, reportBubble: null };
   }
 
   const body = showCharacter
@@ -126,6 +129,7 @@ export function calculatePersistentSessionLayout(
 
   return {
     lineY,
+    reportViewMaxHeight: input.reportBubble ? Math.max(0, lineY - safeTop - inputRowHeight - rowBottomGap) : 0,
     body,
     toggle,
     lineLeftReach: showCharacter ? Math.max(0, leftWidth - bodyLeft) : 0,

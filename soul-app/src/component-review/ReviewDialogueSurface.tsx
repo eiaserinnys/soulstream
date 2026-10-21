@@ -24,6 +24,7 @@ import { dialogueApi as api, dialogueFolder, dialogueFolders } from './dialogue-
 import { type DialogueSample } from './dialogue-inventory';
 import { ReviewDialogueOwners } from './ReviewDialogueOwners';
 import { ReviewPersistentEntry } from './ReviewPersistentEntry';
+import { ReviewPasCardExpand } from './ReviewPasCardExpand';
 
 const assignment = { folderId: 'public-project', nodeId: 'public-node', agentId: 'public-agent', modelPreset: 'public-model' };
 
@@ -56,6 +57,7 @@ export function ReviewDialogueSurface({ opened, onClose, onResult, preview = fal
       {opened === 'card-status' ? <CardStatusMenu api={api} card={makeCard('todo')} onClose={close} /> : null}
       {opened === 'attachment-preview' ? <AttachmentPreviewModal item={attachmentDialogueItems[0]} items={attachmentDialogueItems} onClose={close} /> : null}
       {opened === 'image-viewer' ? <ImageViewerModal sources={[require('../../assets/icon.png')]} initialIndex={0} onClose={close} /> : null}
+      {opened === 'pas-card-detail' ? <ReviewPasCardExpand /> : null}
       <ReviewDialogueOwners opened={opened} preview={preview} onClose={close} />
   </>;
 }
