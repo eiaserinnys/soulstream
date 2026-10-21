@@ -392,6 +392,7 @@ test('미확인 빈 기간에는 입력 자료 안내를 숨기고 그래프는 
   const screen = render(<UsageStatsSettingsSection />);
   await ready(screen);
 
+  expect(screen.queryByTestId('usage-stats-summary-meta')).toBeNull();
   expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('미기록');
   expect(within(screen.getByTestId('usage-stats-model-chart-chart')).getByText('미기록')).toBeTruthy();
   expect(screen.queryByTestId('settings-section-usage-stats-input')).toBeNull();
@@ -659,6 +660,13 @@ test('웹 대시보드 프로젝트의 미기록 턴은 요약 전체 정가와 
   await chooseView(screen, '프로젝트별');
   fireEvent.press(screen.getByTestId('usage-stats-project-row-project-web-dashboard'));
   await ready(screen);
+  const metaChildren = React.Children.toArray(
+    screen.getByTestId('usage-stats-summary-meta').props.children,
+  ) as React.ReactElement<{ testID?: string; children?: React.ReactNode }>[];
+  expect(metaChildren.map(child => child.props.testID ?? child.props.children)).toEqual([
+    'usage-stats-missing-turns',
+    expect.stringMatching(/환산$/),
+  ]);
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('$13.00+');
   fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-cost'));
   expect(screen.getByTestId('usage-stats-project-row-project-web-dashboard-value').props.children).toBe('$12.86+');

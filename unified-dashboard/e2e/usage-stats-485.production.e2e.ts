@@ -95,10 +95,9 @@ test("485 E1 production ConfigModal flow with controlled statistics transport", 
     await filteredOverviewHeld;
     expect(requests).toHaveLength(2);
     await expect(stats.getByRole("combobox", { name: "모델" })).toContainText("원문 모델");
-    const loadingCostRows = stats.locator(".usage-stats-summary > .usage-stats-share-list > .usage-stats-share-row");
-    await expect(loadingCostRows).toHaveCount(2);
-    await expect(loadingCostRows.locator(".usage-stats-share-value")).toHaveText(["", ""]);
+    await expect(stats.locator(".usage-stats-summary > .usage-stats-share-list")).toHaveCount(0);
     await expect(stats.locator(".usage-stats-summary-metric").first()).toContainText("캐시 읽기 제외");
+    await expect(stats.locator(".usage-stats-summary-metric").nth(1)).toContainText("캐시 읽기 포함");
     await stats.getByRole("combobox", { name: "모델" }).click();
     await expect(page.getByRole("option", { name: "공급자 미확인 · 원문 모델", exact: true })).toBeVisible();
     expect(requests).toHaveLength(2);
@@ -368,14 +367,8 @@ async function expectCacheSplitSummary(stats: Locator) {
   const summary = stats.locator(".usage-stats-summary");
   await expect(summary.locator(".usage-stats-summary-metric").first()).toContainText("4200만");
   await expect(summary.locator(".usage-stats-summary-metric").first()).toContainText("캐시 읽기 12.3억+ 제외");
-  await expect(summary.locator(".usage-stats-summary-metric").nth(1)).toContainText("$1,234.56+");
-  const costRows = summary.locator(".usage-stats-share-list > .usage-stats-share-row");
-  await expect(costRows).toHaveCount(2);
-  await expect(costRows.nth(0).locator(".usage-stats-share-name")).toHaveText("비캐시");
-  await expect(costRows.nth(0).locator(".usage-stats-share-value")).toHaveText("$0.00");
-  await expect(costRows.nth(1).locator(".usage-stats-share-name")).toHaveText("캐시 읽기");
-  await expect(costRows.nth(1).locator(".usage-stats-share-value")).toHaveText("$1,234.56+");
-  await expect(costRows.locator(".usage-stats-share-track")).toHaveCount(0);
+  await expect(summary.locator(".usage-stats-summary-metric").nth(1)).toContainText("캐시 읽기 $1,234.56+ 포함");
+  await expect(summary.locator(".usage-stats-share-list")).toHaveCount(0);
   await expect(summary.locator(".usage-stats-summary-meta")).toContainText("기록 토큰 50% 환산");
 }
 

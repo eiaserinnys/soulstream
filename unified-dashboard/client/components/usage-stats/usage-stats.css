@@ -117,6 +117,10 @@
   gap: var(--v3-space-3);
 }
 
+.config-dialog .usage-stats-summary-meta:empty {
+  display: none;
+}
+
 .config-dialog .usage-stats-date-chip {
   width: fit-content;
   gap: var(--v3-space-2);

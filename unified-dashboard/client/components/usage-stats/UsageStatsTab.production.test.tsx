@@ -182,7 +182,7 @@ function overview(
 }
 
 it("shows the cache split and uses provider tokens for the coverage denominator", async () => {
-  request.mockResolvedValue(jsonResponse(overview(100, {}, cacheSplitAggregate())));
+  request.mockResolvedValue(jsonResponse(overview(100, {}, cacheSplitAggregate({}, { missing_usage_turns: 2 }))));
 
   await act(async () => root.render(<UsageStatsTab request={request} />));
 
@@ -196,6 +196,8 @@ it("shows the cache split and uses provider tokens for the coverage denominator"
   expect(summary.textContent).not.toContain("토큰 상세");
   expect(summary.textContent).not.toContain("집계 기준");
   expect(summary.textContent).toContain("기록 토큰 50% 환산");
+  const meta = summary.querySelector(".usage-stats-summary-meta");
+  expect(Array.from(meta?.children ?? [], child => child.textContent)).toEqual(["미기록 턴 2", "기록 토큰 50% 환산"]);
 });
 
 it("switches only graph and comparison values between cache-excluded and included metrics", async () => {
@@ -673,6 +675,8 @@ it("distinguishes an unknown empty range from explicit zero without input guidan
   expect(summary).toContain("미기록");
   expect(summary).toContain("미확인");
   const unknownSummary = document.querySelector(".usage-stats-summary")!;
+  const unknownMeta = unknownSummary.querySelector(".usage-stats-summary-meta");
+  expect(unknownMeta?.matches(":empty")).toBe(true);
   expect(unknownSummary.querySelector(".usage-stats-summary-metric")?.lastElementChild?.textContent).toBe("캐시 읽기 미기록");
   expect(unknownSummary.querySelectorAll(".usage-stats-summary-metric")[1]?.lastElementChild?.textContent).toBe("캐시 읽기 미확인");
   expect(unknownSummary.querySelector(".usage-stats-share-list")).toBeNull();

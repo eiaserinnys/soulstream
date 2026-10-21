@@ -321,10 +321,12 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                 </Text>
               </View>
             </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }}>
-              {coverageLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text> : null}
-              {activeAggregate && activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : null}
-            </View>
+            {coverageLabel || (activeAggregate?.coverage.missing_usage_turns ?? 0) > 0 ? (
+              <View testID="usage-stats-summary-meta" style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }}>
+                {activeAggregate && activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : null}
+                {coverageLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text> : null}
+              </View>
+            ) : null}
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
               <View testID="usage-stats-view-measure-row" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
