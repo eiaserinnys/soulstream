@@ -5,7 +5,7 @@ import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 export const chatUiSession = "run-alpha-2";
 export type ChatUiExample = "normal" | "pas" | "gallery";
-const settings = { default_model: { model_preset: null, reasoning_effort: null }, fallback_model: null,
+const settings = { default_model: { model_preset: null, reasoning_effort: null }, fallback_models: [],
   show_generation_separator: true, show_character: false, show_jev_candidates: true, animate_character: false, show_turn_usage: true };
 function gate() {
   let release!: () => void;

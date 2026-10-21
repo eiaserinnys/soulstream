@@ -16,7 +16,7 @@ describe("persistent sessions review fixture", () => {
     expect(Object.keys(json.sessions[0].settings).sort()).toEqual([
       "animate_character",
       "default_model",
-      "fallback_model",
+      "fallback_models",
       "show_character",
       "show_generation_separator",
       "show_jev_candidates",

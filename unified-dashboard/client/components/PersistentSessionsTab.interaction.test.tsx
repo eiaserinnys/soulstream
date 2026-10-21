@@ -437,7 +437,7 @@ function session({ session_id, display_name, defaultModel = "preset-a", currentM
 }) {
   return {
     session_id, display_name, node_id, folder_id: "folder-a", agent_id, agent_name, persistent: true,
-    settings: { default_model: { model_preset: defaultModel, reasoning_effort: defaultEffort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, turn_usage_mode: "collapsed", show_turn_usage: true },
+    settings: { default_model: { model_preset: defaultModel, reasoning_effort: defaultEffort }, fallback_models: [], show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, turn_usage_mode: "collapsed", show_turn_usage: true },
     runtime: { current_model: { model_preset: currentModel, reasoning_effort: currentEffort, model: `${currentModel}-model` }, pending },
   };
 }
@@ -466,7 +466,7 @@ function server(options: ServerOptions = {}) {
           preferred_agent_id: options.defaults?.preferred_agent_id ?? null,
           settings: {
             default_model: { model_preset: options.defaults && "model_preset" in options.defaults ? options.defaults.model_preset : "preset-a", reasoning_effort: null },
-            fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, turn_usage_mode: "collapsed", show_turn_usage: true,
+            fallback_models: [], show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: true, turn_usage_mode: "collapsed", show_turn_usage: true,
           },
           initial_instruction: BLANK_MESSAGE,
           unavailable_reason: null,

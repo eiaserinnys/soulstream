@@ -11,13 +11,13 @@ import { useChatStore } from '../../../store/chatStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { AppKeyboardAvoidingView } from '../../AppKeyboardAvoidingView';
 import { PersistentSessionPasSettingsModal } from '../PersistentSessionPasSettingsModal';
-import { normalizePersistentHistory, persistentHistoryForTurnPairing } from '../PersistentSessionMonitoring';
+import { normalizePersistentHistory, persistentHistoryForTurnPairing, persistentSessionQuotaRows } from '../PersistentSessionMonitoring';
 
 const session = (overrides: Record<string, unknown> = {}) => ({
   session_id: 'pas-1', display_name: '관제 세션', node_id: 'node-a', folder_id: 'folder-a', agent_id: 'agent-a', agent_name: '에이전트 A', persistent: true,
   settings: {
     default_model: { model_preset: 'model-a', reasoning_effort: null },
-    fallback_model: null,
+    fallback_models: [],
     show_character: true,
     animate_character: false,
     show_generation_separator: true,
@@ -71,6 +71,17 @@ beforeEach(() => {
 });
 
 const renderModal = () => render(<PersistentSessionPasSettingsModal sessionId="pas-1" nodeId="node-a" onClose={jest.fn()} />);
+const quotaPresets: Parameters<typeof persistentSessionQuotaRows>[1] = [
+  { id: 'model-a', label: 'Model A', backend: 'claude', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+    weekly_headroom: { status: 'ok', headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: '2026-10-06T14:00:00Z', observed_at: '2026-10-06T01:00:00Z', quota_label: '7일' } },
+  { id: 'gemini-4-argon', label: 'Argon', backend: 'antigravity', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+    weekly_headroom: { status: 'ok', headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: null, observed_at: null, quota_label: '7일' } },
+  { id: 'codex-6.1-sol', label: 'Sol 6.1', backend: 'codex', available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+    weekly_headroom: { status: 'ok', headroom: 18.7, remaining_percent: 81.3, window_remaining_percent: 81.3, resets_at: null, observed_at: null, quota_label: '7일' } },
+];
+const quotaRowsFor = (fallbackModels: { model_preset: string; reasoning_effort: string | null }[]) =>
+  persistentSessionQuotaRows(session({ settings: { ...session().settings, fallback_models: fallbackModels } }) as never, quotaPresets);
+
 const open = (section = 'account-model') => {
   const screen = renderModal();
   if (section !== 'instructions') fireEvent.press(screen.getByTestId(`settings-segment-pas-settings-${section}`));
@@ -565,8 +576,12 @@ test('normalizes overlapping timeline pages by unique id and descending timestam
 
 test('shows actual quota snapshots for current/default and fallback model providers', async () => {
   api.getPersistentSession.mockResolvedValueOnce({ session: session({
-    settings: { ...session().settings, fallback_model: { model_preset: 'model-b', reasoning_effort: 'high' } },
+    settings: { ...session().settings, fallback_models: [
+      { model_preset: 'gemini-4-argon', reasoning_effort: 'high' },
+      { model_preset: 'codex-6.1-sol', reasoning_effort: 'high' },
+    ] },
   }) });
+  api.listModelPresets.mockResolvedValueOnce({ model_presets: quotaPresets });
   const screen = open();
   await screen.findByTestId('persistent-session-pas-editor');
 
@@ -574,9 +589,36 @@ test('shows actual quota snapshots for current/default and fallback model provid
   expect(screen.getByText('7일 여유 12.5%')).toBeTruthy();
   expect(screen.queryByText(/72\.5%/)).toBeNull();
   expect(screen.getByText(/초기화 .* · 관측/)).toBeTruthy();
-  expect(screen.getByText('Codex · 대체')).toBeTruthy();
-  expect(screen.getByText('기록 없음')).toBeTruthy();
+  expect(screen.getByText('Antigravity · 대체 1')).toBeTruthy();
+  expect(screen.getByText('Codex · 대체 2')).toBeTruthy();
   expect(screen.queryByText(/0%/)).toBeNull();
+});
+
+test('shows ordered fallback ranks and keeps current/default grouped', () => {
+  const rows = quotaRowsFor([
+    { model_preset: 'gemini-4-argon', reasoning_effort: 'high' },
+    { model_preset: 'codex-6.1-sol', reasoning_effort: 'high' },
+  ]);
+
+  expect(rows.map((row) => row.label)).toEqual([
+    'Claude · 현재·기본',
+    'Antigravity · 대체 1',
+    'Codex · 대체 2',
+  ]);
+});
+
+test('labels a single fallback without a rank number', () => {
+  const rows = quotaRowsFor([{ model_preset: 'codex-6.1-sol', reasoning_effort: 'high' }]);
+
+  expect(rows.map((row) => row.label)).toEqual(['Claude · 현재·기본', 'Codex · 대체']);
+});
+
+test('ignores the legacy fallback projection when the fallback list is absent', () => {
+  const legacySession = session({ settings: { ...session().settings, fallback_model: { model_preset: 'codex-6.1-sol', reasoning_effort: 'high' } } });
+  delete (legacySession.settings as Record<string, unknown>).fallback_models;
+  const rows = persistentSessionQuotaRows(legacySession as never, quotaPresets);
+
+  expect(rows.some((row) => row.label.includes('대체'))).toBe(false);
 });
 
 test('shows negative weekly headroom exactly as received', async () => {

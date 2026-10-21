@@ -19,7 +19,7 @@ const sameModel = (a: ModelSelection, b: ModelSelection) =>
 export function createPersistentSessionsFixture({ scenario = "normal", nodeId, folderId }: { scenario?: string; nodeId: string; folderId: string }) {
   const settings = (preset: string) => ({
     default_model: { model_preset: preset, reasoning_effort: defaultEffort[preset] ?? null },
-    fallback_model: null,
+    fallback_models: [],
     show_generation_separator: true,
     show_character: true,
     show_jev_candidates: true,

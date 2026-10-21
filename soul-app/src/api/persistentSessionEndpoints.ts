@@ -12,6 +12,7 @@ export interface PersistentSessionModel {
 
 export interface PersistentSessionSettings {
   default_model: PersistentSessionModel;
+  fallback_models?: PersistentSessionModel[];
   /** Stored by the server and not shown or edited by this app. */
   fallback_model?: PersistentSessionModel | null;
   show_generation_separator?: boolean;
@@ -53,7 +54,6 @@ export interface PersistentSessionCreateDefaults {
 /** Partial settings the server accepts on PUT; omitted keys keep their stored values. */
 export interface PersistentSessionSettingsPatch {
   default_model?: PersistentSessionModelWrite;
-  fallback_model?: PersistentSessionModelWrite | null;
   show_generation_separator?: boolean;
   show_character?: boolean;
   show_jev_candidates?: boolean;

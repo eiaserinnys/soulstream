@@ -11,7 +11,7 @@ const output = "/home/eias/workspace/.local/artifacts/20261014-366-tooltip-impl"
 const taskIds = ["pas-question-delayed", "pas-question-retry", "pas-question-no-now", "pas-question-multi", "pas-question-long"] as const;
 const LONG_QUESTION = "구현 검수에서 발견한 질문입니다. 지금 보고 있는 툴팁은 카드의 열린 질문과 선택지를 함께 보여 줍니다. 선택지는 여러 개이고 질문 문장이 길어서 다섯 줄보다 더 많은 공간이 필요합니다. 이 문장은 모두 읽을 수 있어야 하며 버튼은 질문 바로 아래에 이어져야 합니다. 마지막 문장까지 잘리지 않고 답변을 고를 수 있을까요?";
 const settings = {
-  default_model: { model_preset: null, reasoning_effort: null }, fallback_model: null,
+  default_model: { model_preset: null, reasoning_effort: null }, fallback_models: [],
   show_generation_separator: true, show_character: false, animate_character: false,
   show_jev_candidates: true, show_turn_usage: true,
 };

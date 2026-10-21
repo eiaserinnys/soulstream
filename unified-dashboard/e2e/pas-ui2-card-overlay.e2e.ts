@@ -26,7 +26,7 @@ async function capturePhoneHeader(chat: Locator, name: string) {
 }
 const settings = {
   default_model: { model_preset: null, reasoning_effort: null },
-  fallback_model: null,
+  fallback_models: [],
   show_generation_separator: true,
   show_character: false,
   animate_character: false,

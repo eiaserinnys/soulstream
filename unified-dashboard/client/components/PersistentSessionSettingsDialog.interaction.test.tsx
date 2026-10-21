@@ -195,6 +195,76 @@ it("omits weekly headroom when the server has no usable value", () => {
   expect(rows).toEqual([]);
 });
 
+it("shows ordered fallback ranks and keeps current/default grouped", () => {
+  const resource = makeSession();
+  const rankedResource = {
+    ...resource,
+    settings: {
+      ...resource.settings,
+      default_model: { model_preset: "sample-opus", reasoning_effort: null },
+      fallback_models: [
+        { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+        { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+      ],
+    },
+    runtime: { ...resource.runtime, current_model: { ...resource.runtime.current_model, model_preset: "sample-opus" } },
+  } as unknown as PersistentSession;
+  const rows = persistentSessionQuotaRows(rankedResource, [
+    { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "ok" as const, headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: null, observed_at: null, quota_label: "7일" } },
+    { id: "gemini-4-argon", label: "Argon", backend: "antigravity", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "ok" as const, headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: null, observed_at: null, quota_label: "7일" } },
+    { id: "codex-6.1-sol", label: "Sol 6.1", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "ok" as const, headroom: 20, remaining_percent: 80, window_remaining_percent: 80, resets_at: null, observed_at: null, quota_label: "7일" } },
+  ]);
+
+  expect(rows.map((row) => row.label)).toEqual([
+    "Claude · 현재·기본",
+    "Antigravity · 대체 1",
+    "Codex · 대체 2",
+  ]);
+});
+
+it("labels a single fallback without a rank number", () => {
+  const resource = makeSession();
+  const singleFallbackResource = {
+    ...resource,
+    settings: {
+      ...resource.settings,
+      default_model: { model_preset: "sample-opus", reasoning_effort: null },
+      fallback_models: [{ model_preset: "sample-sol", reasoning_effort: "high" }],
+    },
+    runtime: { ...resource.runtime, current_model: { ...resource.runtime.current_model, model_preset: "sample-opus" } },
+  } as unknown as PersistentSession;
+  const rows = persistentSessionQuotaRows(singleFallbackResource, [
+    { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "ok" as const, headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: null, observed_at: null, quota_label: "7일" } },
+    { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "ok" as const, headroom: 20, remaining_percent: 80, window_remaining_percent: 80, resets_at: null, observed_at: null, quota_label: "7일" } },
+  ]);
+
+  expect(rows.map((row) => row.label)).toEqual(["Claude · 현재·기본", "Codex · 대체"]);
+});
+
+it("ignores the legacy fallback projection when the fallback list is absent", () => {
+  const resource = makeSession();
+  const legacyResource = {
+    ...resource,
+    settings: {
+      ...resource.settings,
+      fallback_model: { model_preset: "sample-sol", reasoning_effort: "high" },
+    },
+  } as unknown as PersistentSession;
+  const rows = persistentSessionQuotaRows(legacyResource, [
+    { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "ok" as const, headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: null, observed_at: null, quota_label: "7일" } },
+    { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+      weekly_headroom: { status: "ok" as const, headroom: 20, remaining_percent: 80, window_remaining_percent: 80, resets_at: null, observed_at: null, quota_label: "7일" } },
+  ]);
+
+  expect(rows.some((row) => row.label.includes("대체"))).toBe(false);
+});
+
 it("uses the shared account detail draft and save action", async () => {
   const resource = makeSession();
   const calls: Array<{ method: string; body: unknown }> = [];
@@ -568,7 +638,7 @@ function makeSession(): PersistentSession {
   persistent: true,
   settings: {
     default_model: { model_preset: "sample-opus", reasoning_effort: null },
-    fallback_model: null,
+    fallback_models: [],
     show_generation_separator: true,
     show_character: true,
     animate_character: true,
