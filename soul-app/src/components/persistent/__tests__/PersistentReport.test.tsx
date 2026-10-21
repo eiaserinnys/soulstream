@@ -1,7 +1,7 @@
 import React from 'react';
 import { AccessibilityInfo, Keyboard, Platform, StyleSheet, Text } from 'react-native';
 import * as ReactNative from 'react-native';
-import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
 import { PersistentReportSheet } from '../PersistentReportSheet';
 import { reportStyles } from '../persistentReportStyles';
@@ -173,7 +173,7 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   expect(geometry.reportViewMaxHeight).toBe(geometry.lineY - (76 + 16) - 44 - 4);
   const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531] };
   const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
-    <PersistentReportPager entries={[cardEntry]} index={0} api={null} bubble={false} maxHeight={geometry.reportViewMaxHeight}
+      <PersistentReportPager entries={[cardEntry, { ...reportReviewEntries[2], key: 'long-pas', context: '긴 PAS 본문'.repeat(100) }]} index={0} api={null} bubble={false} maxHeight={geometry.reportViewMaxHeight}
       onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
       renderCardDetails={() => <Text testID="inline-card-expansion">긴 카드 세부</Text>}
       send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
@@ -195,6 +195,9 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
   expect(track().height).toBe(geometry.reportViewMaxHeight);
   expect(sheet().height).toBe(geometry.reportViewMaxHeight);
+  const pasSheet = screen.getByTestId('report-sheet-long-pas', { includeHiddenElements: true });
+  const pasReading = within(pasSheet).getByTestId('report-scroll', { includeHiddenElements: true });
+  expect(within(pasReading).queryByTestId('report-footer', { includeHiddenElements: true })).toBeNull();
 });
 
 test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 그린다', () => {

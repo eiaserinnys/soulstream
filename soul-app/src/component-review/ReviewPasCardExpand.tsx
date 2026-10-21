@@ -12,6 +12,7 @@ import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { ChatUiControllerProvider } from '../components/chat-ui/ChatUiControllerProvider';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
+import { ReportComposerFocusContext, useReportComposerScroll } from '../components/persistent/useReportComposerScroll';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
 import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/persistentSessionFrame';
@@ -93,6 +94,7 @@ export function ReviewPasCardExpand() {
   const [entries, setEntries] = useState<PersistentReportEntry[]>(initialEntries);
   const [index, setIndex] = useState(0);
   const [sheet, setSheet] = useState<PersistentReportEntry | null>(null);
+  const sheetScroll = useReportComposerScroll();
   const [text, setText] = useState('');
   const api = useMemo(createReviewCardApi, []);
   const styles = useMemo(() => cardDetailStyles(t), [t]);
@@ -135,9 +137,12 @@ export function ReviewPasCardExpand() {
         <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="닫기" onPress={() => setSheet(null)}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} /></GlassButton>
       <Text style={styles.heading} numberOfLines={2}>{persistentReportStatusCard(sheet) ? <><CardStatusChip card={persistentReportStatusCard(sheet)!} detail />{' '}</> : null}{sheet.title}</Text>
       </View></View>
-      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false}
+      <ScrollView ref={sheetScroll.scroll} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false}
+        onLayout={sheetScroll.keepComposerVisible} onContentSizeChange={sheetScroll.keepComposerVisible}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>{details(sheet)}</ScrollView>
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
+        <ReportComposerFocusContext.Provider value={sheetScroll.onFocusChange}>{details(sheet)}</ReportComposerFocusContext.Provider>
+      </ScrollView>
     </AppModalSurface> : null}
   </ChatUiControllerProvider></ContentLinkProvider>;
 }

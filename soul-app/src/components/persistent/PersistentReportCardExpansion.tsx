@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardCheckItem } from '../../api/cardTypes';
@@ -16,6 +16,7 @@ import { cardDetailStyles } from '../planner/CardDetail.styles';
 import { CardTimeline } from '../planner/CardTimeline';
 import { SheetErrorNotice, sheetErrorDetail } from '../planner/SheetErrorNotice';
 import { GlassButton } from '../GlassSurface';
+import { ReportComposerFocusContext } from './useReportComposerScroll';
 
 type Lookup = { key: string; number: number; cardId: string | null; loading: boolean; error?: string };
 
@@ -25,6 +26,7 @@ export function PersistentReportCardExpansion({ api, entry, onOpenCard }: {
   onOpenCard?(cardId: string): void;
 }) {
   const t = useTokens();
+  const onInputFocusChange = useContext(ReportComposerFocusContext);
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const { width } = useWindowDimensions();
   const number = entry.card_numbers.length === 1 ? entry.card_numbers[0] : null;
@@ -108,6 +110,7 @@ export function PersistentReportCardExpansion({ api, entry, onOpenCard }: {
     <CardCommentComposer ref={composer} api={api} cardId={cardId} sessionId={detail.card.assigneeSessionId} nodeId={detail.card.nodeId}
       question={question} cardLoaded locked={actions.pending || comments.pending || composerBusy} sending={actions.pending || comments.pending}
       onBusyChange={onBusyChange} sendComment={comments.send} runMutation={actions.run} embedded
+      onInputFocusChange={onInputFocusChange}
       placeholder={question ? '질문에 답하기' : '커멘트'} targetItem={targetItem}
       onReleaseTarget={() => setTargetItem(null)} onTargetSent={() => setTargetItem(null)} />
   </View>;

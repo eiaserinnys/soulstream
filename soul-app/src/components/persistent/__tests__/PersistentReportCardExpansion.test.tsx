@@ -4,6 +4,7 @@ const mockOpenCardLink = jest.fn();
 jest.mock('../../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpenCardLink }));
 
 import React from 'react';
+import { ScrollView } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import type { CardCheckItem, CardComment, CardDetail } from '../../../api/cardTypes';
@@ -14,6 +15,11 @@ import { useDraftStore } from '../../../store/draftStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { cardFixture } from '../../../test-support/cards';
 import { PersistentReportCardExpansion } from '../PersistentReportCardExpansion';
+import { PersistentReportPager } from '../PersistentReportPager';
+import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
+import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
+
+jest.mock('../../../theme/useDeviceType', () => ({ useDeviceType: () => 'tabletLandscape', deviceTypeToBaseKey: () => 'tablet' }));
 
 const at = '2026-10-05T08:00:00Z';
 const card = cardFixture({ id: 'card-531', number: 531, status: 'review', nodeId: null,
@@ -117,4 +123,35 @@ test('shows a folded card read error and retries in place', async () => {
   await waitFor(() => expect(screen.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
   expect(api.getCard).toHaveBeenCalledTimes(2);
   expect(screen.queryByText('카드를 불러오지 못했습니다.')).toBeNull();
+});
+
+test.each([false, true])('focused card composer follows reading growth and viewport changes (bubble=%s)', async bubble => {
+  const api = { getCard: jest.fn().mockResolvedValue(makeDetail()) } as unknown as ApiClient;
+  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[{ ...entry, card_id: card.id }]} index={0} api={api} bubble={bubble} maxHeight={440}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
+      renderCardDetails={item => <PersistentReportCardExpansion api={api} entry={item} />} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen);
+  fireEvent.press(screen.getByTestId('report-title'));
+  await waitFor(() => expect(screen.getByPlaceholderText('질문에 답하기')).toBeTruthy());
+  const reading = screen.getByTestId('report-scroll');
+  fireEvent(reading, 'contentSizeChange', 318, 1000);
+  expect(scrollToEnd).not.toHaveBeenCalled();
+  fireEvent(screen.getByPlaceholderText('질문에 답하기'), 'focus');
+  await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
+  scrollToEnd.mockClear();
+  fireEvent.changeText(screen.getByPlaceholderText('질문에 답하기'), '여러 줄\n커멘트를\n길게\n입력합니다.');
+  fireEvent(reading, 'contentSizeChange', 318, 1184);
+  await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
+  scrollToEnd.mockClear();
+  fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 240 } } });
+  await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
+  fireEvent(screen.getByPlaceholderText('질문에 답하기'), 'blur');
+  scrollToEnd.mockClear();
+  fireEvent(reading, 'contentSizeChange', 318, 1200);
+  expect(scrollToEnd).not.toHaveBeenCalled();
+  screen.unmount();
+  scrollToEnd.mockRestore();
 });

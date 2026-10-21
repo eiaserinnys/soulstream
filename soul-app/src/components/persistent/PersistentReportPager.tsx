@@ -23,7 +23,8 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails }: {
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange }: {
+  expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
   onOpenCardDetails?(entry: PersistentReportEntry): void;
@@ -33,7 +34,9 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
 }) {
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [localExpandedKey, setLocalExpandedKey] = useState<string | null>(null);
+  const expandedKey = controlledExpandedKey === undefined ? localExpandedKey : controlledExpandedKey;
+  const setExpandedKey = onExpandedKeyChange ?? setLocalExpandedKey;
   const t = useTokens();
   const { setNotice } = useChatUiActions();
   const phone = useDeviceType() === 'phone';
@@ -56,6 +59,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const [height, setHeight] = useState(0);
   const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
   const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
+  const presentedSession = useRef(sessionId);
   const commitHeight = () => {
     const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
     if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
@@ -63,7 +67,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
       entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
     setHeight(saved => saved === next ? saved : next);
-    if (allMeasured && next > 0) setPresentedLayout(layoutKey);
+    if (allMeasured && next > 0) { presentedSession.current = sessionId; setPresentedLayout(layoutKey); }
   };
   const latestMeasurement = useRef({ entries, commitHeight, measureKey });
   latestMeasurement.current = { entries, commitHeight, measureKey };
@@ -71,9 +75,9 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   const inlineExpanded = !bubble && expandedKey !== null && renderCardDetails !== undefined;
   const inlineHeight = inlineExpanded ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
-  // Publication edits wait for height without hiding an already visible deck.
-  // A new session/layout still measures before its first presentation.
-  const ready = presentedLayout === layoutKey;
+  // Keep a presented session interactive while its placement/width remeasures:
+  // hiding the surface here also hides its focused native TextInput.
+  const ready = presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId);
   useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
   const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
   const latestInteraction = useRef(interaction);
@@ -159,12 +163,12 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
       }} scrollEventThrottle={16}>
       {width > 0 ? entries.map((entry, i) => {
         const expandable = isPersistentReportCardExpandable(entry);
-        return <PersistentReportSheet key={measureKey(entry)} entry={entry}
+        return <PersistentReportSheet key={JSON.stringify([sessionId, entry.key])} entry={entry}
         expandedContent={expandable && expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
         cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
         onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {
           if (onOpenCardDetails) onOpenCardDetails(entry);
-          else setExpandedKey(saved => saved === entry.key ? null : entry.key);
+          else setExpandedKey(expandedKey === entry.key ? null : entry.key);
         } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineExpanded ? inlineHeight : undefined}
