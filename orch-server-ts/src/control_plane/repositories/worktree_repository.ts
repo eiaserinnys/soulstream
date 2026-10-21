@@ -35,6 +35,9 @@ export type WorktreeBinding = {
   setupStatus: string;
 };
 
+type RemovalActor = { actorSessionId: string; sweeperNodeId?: never }
+  | { sweeperNodeId: string; actorSessionId?: never };
+
 export class WorktreeRepository {
   constructor(private readonly sql: SqlClient) {}
 
@@ -57,6 +60,31 @@ export class WorktreeRepository {
       mutableByCaller: await actorOwns(this.sql, row, input.actorSessionId),
       activeSessionId: await activeSessionId(this.sql, row.id),
     })));
+  }
+
+  async sweepCandidates(input: { nodeId: string }): Promise<Array<Record<string, unknown>>> {
+    const rows = await this.sql<Array<WorktreeRow & {
+      last_session_activity_at: Date; linked_cards_closed: boolean;
+    }>>`
+      SELECT w.*, activity.last_session_activity_at, activity.linked_cards_closed
+      FROM worktrees w
+      CROSS JOIN LATERAL (
+        SELECT GREATEST(w.created_at, MAX(s.updated_at)) AS last_session_activity_at,
+          COUNT(c.id) > 0 AND BOOL_AND(c.status IN ('done', 'cancelled')) AS linked_cards_closed
+        FROM sessions s LEFT JOIN cards c ON c.id = s.card_id
+        WHERE s.worktree_id = w.id OR s.session_id = w.created_by_session_id
+      ) activity
+      WHERE w.node_id = ${input.nodeId} AND w.state = 'ready'
+        AND NOT EXISTS (
+          SELECT 1 FROM sessions active
+          WHERE active.worktree_id = w.id AND active.status IN ('initializing', 'running')
+        )
+      ORDER BY w.created_at, w.id
+    `;
+    return rows.map(row => ({ ...project(row),
+      lastSessionActivityAt: row.last_session_activity_at.toISOString(),
+      linkedCardsClosed: row.linked_cards_closed,
+    }));
   }
 
   async register(input: {
@@ -113,11 +141,11 @@ export class WorktreeRepository {
     });
   }
 
-  async beginRemove(input: {
-    actorSessionId: string;
+  async beginRemove(input: RemovalActor & {
     worktreeId: string;
-    expectedSha: string;
+    expectedSha: string | null;
   }) {
+    if (!input.expectedSha && !("sweeperNodeId" in input)) throw hostError(422, "expectedSha is required");
     return await this.mutateLocked(input, async (tx, row) => {
       if (row.state === "removed") return row;
       if (
@@ -135,11 +163,10 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    });
+    }, true);
   }
 
-  async restoreReady(input: {
-    actorSessionId: string;
+  async restoreReady(input: RemovalActor & {
     worktreeId: string;
     errorCode: string;
     errorMessage: string;
@@ -152,10 +179,10 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    });
+    }, true);
   }
 
-  async finishRemove(input: { actorSessionId: string; worktreeId: string }) {
+  async finishRemove(input: RemovalActor & { worktreeId: string }) {
     return await this.mutateLocked(input, async (tx, row) => {
       if (row.state === "removed") return row;
       if (row.state !== "removing") throw hostError(409, "WORKTREE_NOT_REMOVING");
@@ -165,7 +192,7 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    });
+    }, true);
   }
 
   async beginBranchDelete(input: {
@@ -215,10 +242,14 @@ export class WorktreeRepository {
   }
 
   private async mutateLocked(
-    input: { actorSessionId: string; worktreeId: string },
+    input: RemovalActor & { worktreeId: string },
     mutate: (tx: SqlClient, row: WorktreeRow) => Promise<WorktreeRow>,
+    allowSweeper = false,
   ) {
-    if (!input.actorSessionId) throw hostError(422, "actorSessionId is required");
+    const sweeper = "sweeperNodeId" in input;
+    if (sweeper ? !allowSweeper || !input.sweeperNodeId || Boolean(input.actorSessionId) : !input.actorSessionId) {
+      throw hostError(422, "Exactly one permitted worktree actor is required");
+    }
     return await this.sql.begin(async (transaction) => {
       const tx = transaction as unknown as SqlClient;
       const rows = await tx<WorktreeRow[]>`
@@ -226,7 +257,9 @@ export class WorktreeRepository {
       `;
       const row = rows[0];
       if (!row) throw hostError(404, "WORKTREE_NOT_FOUND");
-      if (!await actorOwns(tx, row, input.actorSessionId)) {
+      if (sweeper) {
+        if (row.node_id !== input.sweeperNodeId) throw hostError(403, "WORKTREE_NODE_MISMATCH");
+      } else if (!await actorOwns(tx, row, input.actorSessionId!)) {
         throw hostError(403, "WORKTREE_NOT_OWNED");
       }
       return project(await mutate(tx, row));

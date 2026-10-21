@@ -20,6 +20,20 @@ afterEach(async () => {
 });
 
 describe("control-plane host routes", () => {
+  it("authenticates sweep candidates and carries the node sweeper actor on removal operations", async () => {
+    const methods = { sweepCandidates: vi.fn(async () => []), beginRemove: vi.fn(async () => ({})), restoreReady: vi.fn(async () => ({})), finishRemove: vi.fn(async () => ({})) };
+    const app = Fastify(); apps.push(app);
+    registerPersistenceHostRoutes(app, { authBearerToken: token, environment: "production", repositoryProvider: async () => ({ worktrees: methods }) as unknown as PersistenceHostRepositories });
+    for (const [operation, method] of [["sweep_candidates", "sweepCandidates"], ["begin_remove", "beginRemove"], ["restore_ready", "restoreReady"], ["finish_remove", "finishRemove"]] as const) {
+      const payload = { args: [operation === "sweep_candidates" ? { node_id: "node-a" } : { sweeper_node_id: "node-a", worktree_id: "wt" }] };
+      const url = `/api/worktrees/host/${operation}`;
+      expect((await app.inject({ method: "POST", url, payload })).statusCode).toBe(401);
+      expect(methods[method]).not.toHaveBeenCalled();
+      expect((await app.inject({ method: "POST", url, payload, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200);
+      expect(methods[method]).toHaveBeenCalledWith(operation === "sweep_candidates" ? { nodeId: "node-a" } : { sweeperNodeId: "node-a", worktreeId: "wt" });
+    }
+  });
+
   it("limits assigned-card reads to the service bearer and passes only the execution session scope", async()=>{
     const snapshot={capturedAt:"2026-10-02T00:00:00Z",total:0,omitted:0,cards:[]};
     const getAssignedCardContext=vi.fn(async()=>snapshot),app=Fastify();apps.push(app);

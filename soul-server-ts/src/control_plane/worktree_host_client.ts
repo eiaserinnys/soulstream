@@ -1,5 +1,5 @@
 import { PersistenceHostTransport, type HostClientConfig } from "./persistence_host_transport.js";
-import type { WorktreeHost, WorktreeRecord } from "../worktree/worktree_types.js";
+import type { WorktreeHost, WorktreeRecord, WorktreeSweepCandidate } from "../worktree/worktree_types.js";
 
 export class WorktreeHostClient implements WorktreeHost {
   private readonly transport: PersistenceHostTransport;
@@ -10,6 +10,10 @@ export class WorktreeHostClient implements WorktreeHost {
 
   list(input: Parameters<WorktreeHost["list"]>[0]): Promise<WorktreeRecord[]> {
     return this.request("list", input);
+  }
+
+  sweepCandidates(input: Parameters<WorktreeHost["sweepCandidates"]>[0]): Promise<WorktreeSweepCandidate[]> {
+    return this.request("sweep_candidates", input);
   }
 
   register(input: Parameters<WorktreeHost["register"]>[0]): Promise<WorktreeRecord> {

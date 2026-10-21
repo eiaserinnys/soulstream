@@ -121,6 +121,7 @@ const sessionDataOperations = {
 } as const satisfies Record<string, OperationTarget>;
 
 const worktreeOperations = {
+  sweep_candidates: ["worktrees", null, "sweepCandidates"],
   list: ["worktrees", null, "list"],
   register: ["worktrees", null, "register"],
   update_setup: ["worktrees", null, "updateSetup"],

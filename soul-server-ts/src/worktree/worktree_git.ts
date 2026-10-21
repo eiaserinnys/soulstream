@@ -265,7 +265,7 @@ export class WorktreeGit {
     }
     for (const link of links) rmSync(link.path, { force: true });
     try {
-      await this.git(repo, ["worktree", "remove", path]);
+      await this.git(repo, ["worktree", "remove", path], this.options.createTimeoutMs ?? this.options.timeoutMs);
       await this.git(repo, ["worktree", "prune"]);
     } catch (error) {
       try {
@@ -291,6 +291,7 @@ export class WorktreeGit {
     worktreeId: string;
     branch: string;
     expectedSha: string | null;
+    allowMissingBranch?: boolean;
   }): Promise<WorktreeRemovalWorkspaceState> {
     const repo = this.resolveRepository(input.repoId);
     const path = resolve(input.path);
@@ -306,13 +307,15 @@ export class WorktreeGit {
         );
       }
       if (!pathStat) {
-        this.assertRecordedRemovalHead(input.expectedSha);
         if (registration.branch !== input.branch) {
           throw new WorktreeGitError(
             "WORKTREE_BRANCH_MISMATCH",
             `${registration.branch ?? "detached"} != ${input.branch}`,
           );
         }
+        if (input.allowMissingBranch && input.expectedSha === null
+          && await this.branchHead(input.repoId, input.branch) === null) return "registered_missing";
+        this.assertRecordedRemovalHead(input.expectedSha);
         if (registration.head !== input.expectedSha) {
           throw new WorktreeGitError(
             "WORKTREE_HEAD_CHANGED",
@@ -337,6 +340,8 @@ export class WorktreeGit {
       }
       return "registered";
     }
+    if (!pathStat && input.allowMissingBranch && input.expectedSha === null
+      && await this.branchHead(input.repoId, input.branch) === null) return "unregistered_missing";
     this.assertRecordedRemovalHead(input.expectedSha);
     await this.assertBranchHead(input.repoId, input.branch, input.expectedSha);
     if (!pathStat) return "unregistered_missing";
@@ -433,6 +438,39 @@ export class WorktreeGit {
     await this.git(repo, ["worktree", "prune", "--expire", "now"]);
     if ((await this.list(input.repoId)).some((entry) => samePath(entry.path, path))) {
       throw new WorktreeGitError("WORKTREE_PRUNE_FAILED", path);
+    }
+  }
+
+  async lastWorktreeActivityMs(repoId: string, path: string): Promise<number> {
+    const admin = await this.registrationAdmin(repoId, path);
+    if (!admin) return 0;
+    return Math.max(0, ...["HEAD", "index", "logs/HEAD"].map(file =>
+      lstatIfPresent(join(admin.path, file))?.mtimeMs ?? 0));
+  }
+
+  async fetchOrigin(repoId: string): Promise<void> {
+    await this.git(this.resolveRepository(repoId), ["fetch", "--prune", "origin"]);
+  }
+
+  async sweepCommitState(repoId: string, head: string): Promise<{ pushed: boolean; merged: boolean }> {
+    const repo = this.resolveRepository(repoId);
+    const refs = (await this.git(repo, ["for-each-ref", `--contains=${head}`, "--format=%(refname)", "refs/remotes/origin/"])).stdout.trim();
+    const pushed = refs.length > 0;
+    let defaultRef: string | null;
+    try {
+      defaultRef = (await this.git(repo, ["symbolic-ref", "refs/remotes/origin/HEAD"])).stdout.trim();
+    } catch (error) {
+      rethrowProcessTimeout(error);
+      defaultRef = await this.refSha(repo, "refs/remotes/origin/main") ? "refs/remotes/origin/main"
+        : await this.refSha(repo, "refs/remotes/origin/master") ? "refs/remotes/origin/master" : null;
+    }
+    if (!defaultRef) return { pushed, merged: false };
+    try {
+      await this.git(repo, ["merge-base", "--is-ancestor", head, defaultRef]);
+      return { pushed, merged: true };
+    } catch (error) {
+      rethrowProcessTimeout(error);
+      return { pushed, merged: false };
     }
   }
 

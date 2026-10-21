@@ -38,7 +38,15 @@ export interface WorktreeMutationActor {
   actorSessionId: string;
 }
 
+export type WorktreeRemovalActor = WorktreeMutationActor | { sweeperNodeId: string };
+
+export interface WorktreeSweepCandidate extends WorktreeRecord {
+  lastSessionActivityAt: string | Date;
+  linkedCardsClosed: boolean;
+}
+
 export interface WorktreeHost {
+  sweepCandidates(input: { nodeId: string }): Promise<WorktreeSweepCandidate[]>;
   list(input: {
     actorSessionId: string;
     nodeId: string;
@@ -64,16 +72,16 @@ export interface WorktreeHost {
     setupStatus: WorktreeSetupStatus;
     managedPaths: ManagedWorktreePath[];
   }): Promise<WorktreeRecord>;
-  beginRemove(input: WorktreeMutationActor & {
+  beginRemove(input: WorktreeRemovalActor & {
     worktreeId: string;
-    expectedSha: string;
+    expectedSha: string | null;
   }): Promise<WorktreeRecord>;
-  restoreReady(input: WorktreeMutationActor & {
+  restoreReady(input: WorktreeRemovalActor & {
     worktreeId: string;
     errorCode: string;
     errorMessage: string;
   }): Promise<WorktreeRecord>;
-  finishRemove(input: WorktreeMutationActor & { worktreeId: string }): Promise<WorktreeRecord>;
+  finishRemove(input: WorktreeRemovalActor & { worktreeId: string }): Promise<WorktreeRecord>;
   beginBranchDelete(input: WorktreeMutationActor & {
     worktreeId: string;
     expectedSha: string;

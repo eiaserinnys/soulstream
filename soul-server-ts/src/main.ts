@@ -275,6 +275,7 @@ async function main(): Promise<void> {
         "Completion delivery recovery shutdown drain finished",
       );
     }
+    runtime.worktreeSweeper?.stop();
     runtime.sessionPageBindingService.stop();
     await runtime.runnerRecoveryCoordinator?.stop();
     try {
