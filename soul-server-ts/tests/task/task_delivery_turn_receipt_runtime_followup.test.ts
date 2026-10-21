@@ -87,6 +87,66 @@ async function observeTaskOutput(
 }
 
 describe("runtime_followup consumption proof", () => {
+  it.each([
+    "opencode_rate_limit_exceeded",
+    "claude_rate_limit_stop_failure",
+  ])("usage-limit fatal error %s consumes an ordinary delivery", async (errorCode) => {
+    const intervention: InterventionMessage = {
+      text: "ordinary delivery",
+      user: "agent",
+      deliveryIntent: "human_live_steer",
+      deliveryId: `delivery-${errorCode}`,
+    };
+    const { recorder, receipt } = makeHarness([intervention]);
+
+    await receipt.observe(makeTask(), {
+      type: "error",
+      fatal: true,
+      error_code: errorCode,
+      message: "usage limit reached",
+    } as SSEEventPayload);
+
+    expect(recorder.recordTurnStarted).toHaveBeenCalledOnce();
+    expect(recorder.recordConsumed).toHaveBeenCalledOnce();
+    expect(receipt.hasConsumptionReceipt(intervention)).toBe(true);
+  });
+
+  it("fatal errors without a usage-limit code do not consume an ordinary delivery", async () => {
+    const intervention: InterventionMessage = {
+      text: "ordinary delivery",
+      user: "agent",
+      deliveryIntent: "human_live_steer",
+      deliveryId: "delivery-unclassified-fatal",
+    };
+    const { recorder, receipt } = makeHarness([intervention]);
+
+    await receipt.observe(makeTask(), {
+      type: "error",
+      fatal: true,
+      message: "engine failed before dispatch",
+    } as SSEEventPayload);
+
+    expect(recorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(recorder.recordConsumed).not.toHaveBeenCalled();
+    expect(receipt.hasConsumptionReceipt(intervention)).toBe(false);
+  });
+
+  it("usage-limit fatal error does not consume an unregistered runtime_followup", async () => {
+    const intervention = runtimeFollowup();
+    const { recorder, receipt } = makeHarness([intervention]);
+
+    await receipt.observe(makeTask(), {
+      type: "error",
+      fatal: true,
+      error_code: "opencode_rate_limit_exceeded",
+      message: "usage limit reached",
+    } as SSEEventPayload);
+
+    expect(recorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(recorder.recordConsumed).not.toHaveBeenCalled();
+    expect(receipt.hasConsumptionReceipt(intervention)).toBe(false);
+  });
+
   it.each(["input_material_manifest", "usage_observation"] as const)(
     "%s numeric metadata does not prove that a queued input was consumed",
     async (type) => {
