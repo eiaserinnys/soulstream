@@ -12,6 +12,7 @@ import type {
   SSEEventPayload,
 } from "../protocol.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
+import { OPENCODE_RATE_LIMIT_ERROR_CODE } from "../usage_limit_stop.js";
 import { openCodeMcpToolName, prepareOpenCodeSession } from "./config.js";
 import { OpenCodeEventMapper, parseOpenCodeEvent } from "./events.js";
 import { launchOpenCodeProcess } from "./process.js";
@@ -173,7 +174,11 @@ export class OpenCodeEngineAdapter implements EnginePort {
             yield engineEventFrame(event);
           }
         }
-        for (const event of mapper.fail(exit.error)) yield engineEventFrame(event);
+        for (const event of mapper.fail(exit.error)) {
+          yield engineEventFrame(exit.rateLimitDetected && event.type === "error"
+            ? { ...event, error_code: OPENCODE_RATE_LIMIT_ERROR_CODE }
+            : event);
+        }
       } else {
         for (const event of mapper.finish(exit.code, exit.signal, process.interrupted)) {
           yield engineEventFrame(event);

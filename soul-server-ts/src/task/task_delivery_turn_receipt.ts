@@ -1,6 +1,7 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 import { readClaudeResultReceiptMetadata } from
   "../engine/claude_result_receipt_metadata.js";
+import { isUsageLimitStopErrorCode } from "../engine/usage_limit_stop.js";
 
 import {
   classifyClaudeBackgroundConsumptionProof,
@@ -86,9 +87,13 @@ export class TaskDeliveryTurnReceipt {
 
   async observe(task: Task, event: SSEEventPayload): Promise<void> {
     await this.observeExplicitBackgroundResult(task, event);
+    const payload = event as Record<string, unknown>;
+    const isUsageLimitFatalError = event.type === "error" &&
+      payload.fatal === true &&
+      isUsageLimitStopErrorCode(payload.error_code);
     if (
       event.type === "session"
-      || event.type === "error"
+      || (event.type === "error" && !isUsageLimitFatalError)
       || event.type === "input_material_manifest"
       || event.type === "usage_observation"
     ) return;
