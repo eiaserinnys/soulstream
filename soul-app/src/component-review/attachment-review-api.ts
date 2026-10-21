@@ -66,6 +66,13 @@ export function buildAttachmentReviewApi(api: Partial<ApiClient>): ApiClient {
         '| 배경 | 차분함 |',
         '| 강조 | 따뜻함 |',
         '',
+        '**굵게**와 *기울임*, ~~취소선~~, `인라인 코드`.',
+        '',
+        '> 인용 문장입니다.',
+        '',
+        '- [ ] 확인할 항목',
+        '- [x] 확인한 항목',
+        '',
         '## 예시',
         '',
         '```ts',
@@ -73,6 +80,8 @@ export function buildAttachmentReviewApi(api: Partial<ApiClient>): ApiClient {
         '```',
         '',
         '[톤 제안 원문](https://example.com/argon-tone)',
+        '',
+        '---',
       ].join('\n'), truncated: false };
       if (attachmentId === 'review-attachment-json') return { text: '{\n  "ready": true\n}', truncated: false };
       if (!attachmentReviewDescriptor(attachmentId)) throw attachmentReadError(404);
