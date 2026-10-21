@@ -7,6 +7,7 @@ import type { PersistentSessionReportBubbleLayout, PersistentSessionRect } from 
 import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
 import { usePersistentReportSend } from './usePersistentReportSend';
 import { useReportDeckHeight } from './useReportDeckHeight';
+import { usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';
 import { ChevronLeft, ChevronRight, Link, Maximize2, Minimize2 } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { cardRequest } from '@seosoyoung/soul-ui/cards/card-api';
@@ -15,15 +16,16 @@ import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
 export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number; inlineMaxHeight?: number };
-type Props = { renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention };
+type Props = { renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
-export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderCardDetails, renderCardStatus }: Props) {
+export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderCardDetails, renderCardStatus, cardTransition }: Props) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const report = usePersistentReport()!;
   const { entries, visibleKey } = report;
   const sending = usePersistentReportSend(sessionId, notify, transport);
+  const completion = usePersistentCardCompletion(notify, cardTransition);
   const pendingCardNumbers = useRef(new Set<number>()).current;
   const byId = useCardStore(state => state.byId);
   const numbers = [...new Set(entries.flatMap(entry => entry.card_numbers))].sort((a, b) => a - b);
@@ -57,13 +59,13 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const bubble = seat?.target && seat.body ? seat.layout : null;
   const inBubble = Boolean(bubble);
   const ready = seat?.ready !== false;
-  const measurementRevision = JSON.stringify([activeExpandedKey, entries.map(entry => {
+  const measurementRevision = JSON.stringify([activeExpandedKey, completion.recent, entries.map(entry => {
     const cardEntry = entry as ReportCardEntry;
     return [entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, cardEntry.card_id, cardEntry.card_status];
   })]);
   const inlineMaxHeight = bubble ? undefined : seat?.inlineMaxHeight;
   const maximumHeight = bubble?.maxHeight ?? inlineMaxHeight;
-  const layoutKey = JSON.stringify([sessionId, inBubble, bubble?.width ?? seat?.inlineWidth, maximumHeight, ready, activeExpandedKey, entries.length > 0]);
+  const layoutKey = JSON.stringify([sessionId, inBubble, bubble?.width ?? seat?.inlineWidth, maximumHeight, ready, activeExpandedKey, entries.length > 0 || Boolean(completion.recent)]);
   const sizing = useReportDeckHeight(root, measurementRevision, sessionId, layoutKey, maximumHeight);
   const focusWithin = useRef(false);
   const flying = useRef<number | null>(null);
@@ -110,10 +112,10 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     if (sheet) sheet.focus({ preventScroll: true });
   }, [visibleKey, entries.length, focusInput]);
 
-  if (!entries.length || !ready) return null;
+  if (!ready || (!entries.length && !completion.recent)) return null;
   // The global reduced-motion duration must not interpolate the initial font
   // gate's opacity or measured height for a frame.
-  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-inline-max-height={inlineMaxHeight !== undefined || undefined} data-overflow={sizing.overflowing} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(inlineMaxHeight !== undefined ? { '--pas-report-inline-max-height': `${inlineMaxHeight}px` } : {}), ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
+  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-inline-max-height={inlineMaxHeight !== undefined || undefined} data-overflow={sizing.overflowing} data-undo={Boolean(completion.recent) || undefined} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(inlineMaxHeight !== undefined ? { '--pas-report-inline-max-height': `${inlineMaxHeight}px` } : {}), ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
     inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} aria-label="지금의 보고" aria-roledescription="carousel"
     onPointerDownCapture={sizing.hold}
     onFocusCapture={() => { focusWithin.current = true; }}
@@ -134,13 +136,18 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         if (entries[at]) report.view(entries[at].key);
         sizing.endScroll();
       }}>
-      {entries.map((entry, position) => {
+      {!entries.length && completion.recent ? <article className="pas-report-sheet" data-current="true" data-undo-only data-publication={JSON.stringify([sessionId, 'undo', completion.recent.cardId])}>
+        <div className="pas-report-reading"><div className="pas-report-content" /></div>
+        <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}>되돌리기</Button></div>
+      </article> : entries.map((entry, position) => {
         const cardEntry = entry as ReportCardEntry;
+        const completionEligible = entry.key.startsWith('card_') && cardEntry.card_status === 'review' && Boolean(cardEntry.card_id);
         const expandable = Boolean(renderCardDetails && (cardEntry.card_id || entry.card_numbers.length === 1));
         const expanded = expandable && activeExpandedKey === entry.key;
         const toggle = () => setExpandedKey(expanded ? null : entry.key);
         const answer = report.answer(entry);
         const answered = answer !== undefined;
+        const suppressActions = answered && !completionEligible;
         const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && !answered);
         const tag = entry.kind === 'see' ? '보실 것' : answered ? '답 받음' : '답하실 것';
         return <article key={entry.key} className="pas-report-sheet" data-testid={`report-sheet-${entry.key}`} data-current={position === index}
@@ -166,10 +173,11 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
               {expanded && renderCardDetails?.(entry, lookupCards)}
             </div>
           </div>
-          {(entries.length > 1 || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">
-            {(acknowledgeable || entry.options.length > 0) && !(answered && sizing.overflowing) && <div className="chat-ui-actions pas-report-actions" aria-hidden={answered || undefined} inert={answered || undefined} style={answered ? { visibility: 'hidden' } : undefined}>
-              {(acknowledgeable ? ['확인했어'] : entry.options).map(option => <Button key={option} variant="outline" disabled={disabled || sending.sending} onClick={() => {
-                if (acknowledgeable) {
+          {(entries.length > 1 || completionEligible || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">
+            {(completionEligible || acknowledgeable || entry.options.length > 0) && !(answered && sizing.overflowing && !completionEligible) && <div className="chat-ui-actions pas-report-actions" aria-hidden={suppressActions || undefined} inert={suppressActions || undefined} style={suppressActions ? { visibility: 'hidden' } : undefined}>
+              {(completionEligible ? ['완료'] : acknowledgeable ? ['확인했어'] : entry.options).map(option => <Button key={option} variant="outline" disabled={disabled || sending.sending || (completionEligible && completion.busy)} onClick={() => {
+                if (completionEligible) void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] });
+                else if (acknowledgeable) {
                   if (entry.key.startsWith('card_') || entry.key.startsWith('cq_')) void dismissReport(entry.key);
                   else if (sending.close(entry)) void dismissReport(entry.key);
                 } else void sending.reply(entry, option);
@@ -180,6 +188,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
               {sending.canCancel(entry) && (sending.cancelRequested(entry) ? <span className="pas-report-cancel-sent">취소 요청 보냄</span> : <Button variant="ghost" size="xs" disabled={disabled || sending.sending} onClick={() => void sending.cancel(entry)}>취소 요청</Button>)}
             </div>}
           </div>}
+          {position === index && completion.recent && <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}>되돌리기</Button></div>}
         </article>;
       })}
     </div>

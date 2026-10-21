@@ -27,11 +27,13 @@ const serverQuestionEntry: PersistentReportEntry & { card_id: string; card_statu
 let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
+let cardTransition: ((cardId: string, status: 'done' | 'review') => Promise<void>) | undefined;
 let portalTarget: HTMLDivElement | null = null;
 let inlineMaxHeight: number | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
 const render = () => act(async () => root.render(<InternalLinkProvider internalOrigins={['https://example.test']} openTarget={openTarget}><PersistentReportProvider sessionId="a" entries={entries}>
   <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss}
+    cardTransition={cardTransition}
     renderCardDetails={entry => <div data-testid={`card-details-${entry.key}`}>운영 카드 칸</div>}
     renderCardStatus={entry => <span data-testid={`card-status-${entry.key}`}>{entry.key.startsWith('cq_') ? '질문' : '카드 상태'}</span>}
     seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : inlineMaxHeight === null ? undefined : { target: null, body: null, layout: null, inlineMaxHeight }} />
@@ -39,7 +41,7 @@ const render = () => act(async () => root.render(<InternalLinkProvider internalO
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 let contentHeight = 0;
 beforeEach(async () => {
-  vi.clearAllMocks(); contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  vi.clearAllMocks(); cardTransition = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
     const expanded = this.classList.contains('pas-report-content') && Boolean(this.querySelector('.pas-report-expand[aria-expanded="true"]'));
@@ -105,6 +107,41 @@ it('does not show a window control for a report without expandable card details'
   expect(host.querySelector('.pas-report-title button')).toBeNull();
   expect(host.querySelector('.pas-report-heading[data-window]')).toBeNull();
   expect(host.querySelector('.pas-report-window')).toBeNull();
+});
+
+it('completes a review card without dismissing it directly and exposes the undo transition', async () => {
+  const review = { ...serverCardEntry, card_status: 'review', card_numbers: [270] };
+  entries = [review]; cardTransition = vi.fn(async () => {}); await render();
+  expect(button('완료')).toBeTruthy();
+  button('완료').focus();
+  await act(async () => button('완료').click());
+  expect(cardTransition).toHaveBeenCalledTimes(1); expect(cardTransition).toHaveBeenCalledWith(cardRow.id, 'done');
+  expect(dismiss).not.toHaveBeenCalled();
+  expect(host.textContent).toContain('#270 완료됨');
+
+  entries = []; await render();
+  expect(host.querySelector('.pas-report-sheet[data-undo-only]')).not.toBeNull();
+  expect(host.querySelector('.pas-report-undo')?.textContent).toContain('되돌리기');
+  expect(focusInput).toHaveBeenCalled();
+  await act(async () => button('되돌리기').click());
+  expect(cardTransition).toHaveBeenLastCalledWith(cardRow.id, 'review');
+  expect(host.querySelector('.pas-report-undo')).toBeNull();
+});
+
+it('keeps completion available for a review card even with an existing answer', async () => {
+  entries = [{ ...serverCardEntry, kind: 'ask', card_status: 'review', state: 'answered', answer: '확인 완료', options: [] }];
+  contentHeight = 500; inlineMaxHeight = 250; await render();
+  expect(host.querySelector('[data-testid="report-deck"]')?.getAttribute('data-overflow')).toBe('true');
+  expect(button('완료')).toBeTruthy();
+});
+
+it('keeps the existing acknowledgement on a blocked card', async () => {
+  const blocked = { ...serverCardEntry, card_status: 'blocked' };
+  entries = [blocked]; await render();
+  expect(button('완료')).toBeUndefined();
+  await act(async () => button('확인했어').click());
+  expect(dismiss).toHaveBeenCalledWith(blocked.key);
+  expect(cardTransition).toBeUndefined();
 });
 
 it('keeps inline report height within its measured chat column and scrolls the reading area', async () => {

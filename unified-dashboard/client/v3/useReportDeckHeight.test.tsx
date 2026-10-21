@@ -5,9 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useReportDeckHeight } from './useReportDeckHeight';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement; let root: ReturnType<typeof createRoot>; let sizing: ReturnType<typeof useReportDeckHeight>;
-function Harness({ contentHeight, layoutKey = 'a', composer = false }: { contentHeight: number; layoutKey?: string; composer?: boolean }) {
-  const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, contentHeight, 'a', layoutKey);
-  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}>{[contentHeight, Math.max(0, contentHeight - 50)].map((height, index) => <article key={index} className="pas-report-sheet" data-publication={`${contentHeight}-${index}`} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-reading"><div className="pas-report-content" data-height={height}>{composer&&index===0?<div className="pas-report-card-preview"><div className="v3-card-comment-dock"><textarea aria-label="커멘트"/></div></div>:null}</div></div><div className="pas-report-footer" data-height="32"/></article>)}</section>;
+function Harness({ contentHeight, layoutKey = 'a', composer = false, undo = false }: { contentHeight: number; layoutKey?: string; composer?: boolean; undo?: boolean }) {
+  const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, contentHeight, 'a', JSON.stringify([layoutKey, undo]));
+  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}>{[contentHeight, Math.max(0, contentHeight - 50)].map((height, index) => <article key={index} className="pas-report-sheet" data-publication={`${contentHeight}-${index}`} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-reading"><div className="pas-report-content" data-height={height}>{composer&&index===0?<div className="pas-report-card-preview"><div className="v3-card-comment-dock"><textarea aria-label="커멘트"/></div></div>:null}</div></div><div className="pas-report-footer" data-height="32"/>{undo&&index===0?<div className="pas-report-undo" data-height="24"/>:null}</article>)}</section>;
 }
 const render = (height: number) => act(async () => root.render(<Harness contentHeight={height}/>));
 beforeEach(() => {
@@ -16,6 +16,11 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); Reflect.deleteProperty(document,'fonts'); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('adds the undo row and its sheet gap to intrinsic height', async () => {
+  await render(100); expect(sizing.height).toBe(174);
+  await act(async () => root.render(<Harness contentHeight={100} undo/>));
+  expect(sizing.height).toBe(210);
+});
 it('holds updated heights from pointer down through horizontal settling, including release outside the deck', async () => {
   await render(100); expect(host.firstElementChild?.getAttribute('style')).toContain('174px');
   sizing.hold(); sizing.startScroll(); await render(200);

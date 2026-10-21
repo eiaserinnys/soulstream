@@ -115,7 +115,13 @@ export function ComponentsReviewPage() {
     onToggleToday: async () => setInToday(value => !value), onMoveToParent: () => open("상위 폴더 이동"),
   };
 
-  if (new URLSearchParams(window.location.search).get('sample') === 'pas-card') return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">PAS 카드 펼친 장</p><PersistentReportReviewSample cardPreview bubble before={new URLSearchParams(window.location.search).get('before') === '1'} /></div>;
+  const sampleParams = new URLSearchParams(window.location.search);
+  if (sampleParams.get('sample') === 'pas-card') return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">PAS 카드 펼친 장</p><PersistentReportReviewSample cardPreview bubble before={sampleParams.get('before') === '1'} /></div>;
+  const completionState = sampleParams.get('state');
+  if (sampleParams.get('sample') === 'pas-completion' && ['review', 'blocked', 'undo', 'undo-only'].includes(completionState ?? '')) {
+    return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">PAS 완료·되돌리기 · {completionState}</p>
+      <PersistentReportReviewSample completionScenario={completionState as 'review' | 'blocked' | 'undo' | 'undo-only'} bubble={sampleParams.get('bubble') === '1'} /></div>;
+  }
   return <SessionMenuProvider sessions={[reviewSession]}
     onRename={async()=>open("세션 이름 변경")} onDelete={async()=>open("세션 삭제")}
     onMove={async(_id,target)=>open(`폴더 이동 · ${target.page.title}`)} onCreated={()=>open("세션 승계")}>
@@ -255,6 +261,10 @@ export function ComponentsReviewPage() {
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
             <Sample name="PAS 카드 펼친 장" state="카드와 질문"><PersistentReportReviewSample cardPreview bubble /></Sample>
+            <Sample name="PAS 카드 완료" state="검수 대기 · 완료 버튼"><PersistentReportReviewSample completionScenario="review" bubble /></Sample>
+            <Sample name="PAS 막힘 카드" state="확인했어 유지"><PersistentReportReviewSample completionScenario="blocked" bubble /></Sample>
+            <Sample name="PAS 완료 되돌리기" state="완료 후 되돌리기 줄"><PersistentReportReviewSample completionScenario="undo" bubble /></Sample>
+            <Sample name="PAS 완료 되돌리기" state="마지막 장 완료 · 되돌리기 줄만"><PersistentReportReviewSample completionScenario="undo-only" bubble /></Sample>
             <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 확인했어"><PersistentReportReviewSample /></Sample>
             <Sample name="PersistentReportDeck" state="PAS 말풍선 · 1440"><PersistentReportReviewSample bubble /></Sample>
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">

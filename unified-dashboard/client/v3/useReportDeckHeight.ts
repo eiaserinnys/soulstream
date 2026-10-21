@@ -44,10 +44,12 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
       const sizes = [...node.querySelectorAll<HTMLElement>('.pas-report-sheet')].map(sheet => {
         const content = sheet.querySelector<HTMLElement>('.pas-report-content')!;
         const footer = sheet.querySelector<HTMLElement>('.pas-report-footer');
+        const undo = sheet.querySelector<HTMLElement>('.pas-report-undo');
         const style = getComputedStyle(sheet), key = sheet.dataset.publication!;
         keys.add(key);
         const intrinsic = content.getBoundingClientRect().height + (footer?.getBoundingClientRect().height ?? 0)
-          + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (footer ? parseFloat(style.rowGap) || 0 : 0);
+          + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (footer ? parseFloat(style.rowGap) || 0 : 0)
+          + (undo ? undo.getBoundingClientRect().height + (parseFloat(style.rowGap) || 0) : 0);
         if (sheet.dataset.answered !== 'true') beforeAnswer.current.set(key, intrinsic);
         return sheet.dataset.answered === 'true' ? beforeAnswer.current.get(key) ?? intrinsic : intrinsic;
       });
