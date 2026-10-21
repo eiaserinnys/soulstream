@@ -55,6 +55,11 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
       node.style.height = oldHeight; node.style.maxHeight = oldMaximum;
       readings.forEach((reading, index) => {
         reading.scrollTop = positions[index].atBottom ? reading.scrollHeight : positions[index].top;
+        const composer = reading.querySelector<HTMLElement>('.pas-report-card-preview .v3-card-comment-dock');
+        if (composer?.contains(document.activeElement)) {
+          // Caret scrolling may have moved the viewport before this resize.
+          reading.scrollTop += Math.max(0, composer.getBoundingClientRect().bottom - reading.getBoundingClientRect().bottom);
+        }
         readingPositions.current.set(reading, position(reading));
       });
       pending.current = { revision, layoutKey, height: Math.ceil(Math.max(0, ...sizes)) + 2 };

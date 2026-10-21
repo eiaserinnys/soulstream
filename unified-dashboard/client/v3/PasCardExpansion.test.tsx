@@ -166,3 +166,19 @@ it.each(['comment', 'answer', 'item'])('keeps %s send errors local, above the in
  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
  expect(host.querySelector('[role="alert"].v3-card-error')).toBeNull();
 });
+
+it('shows an item confirmation failure with the same message after a successful send retry',async()=>{
+ detail={...detail,questions:[]};
+ await act(async()=>useCardStore.setState({details:{[card.id]:detail}}));
+ request.mockRejectedValueOnce(new Error('요청 실패'));
+ await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
+ await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
+ expect(host.querySelector('[role="alert"]')).toBeNull();
+ request.mockRejectedValueOnce(new Error('요청 실패'));
+ await act(async()=>{
+  await useCardStore.getState().confirmItem(card.id,4,true).catch(()=>undefined);
+ });
+ const alert=host.querySelector('[role="alert"].v3-card-error');
+ expect(alert?.textContent).toBe('요청 실패');
+ expect(alert?.previousElementSibling).toBe(host.querySelector('[data-testid="now"]'));
+});

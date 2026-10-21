@@ -5,9 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useReportDeckHeight } from './useReportDeckHeight';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement; let root: ReturnType<typeof createRoot>; let sizing: ReturnType<typeof useReportDeckHeight>;
-function Harness({ contentHeight, layoutKey = 'a' }: { contentHeight: number; layoutKey?: string }) {
+function Harness({ contentHeight, layoutKey = 'a', composer = false }: { contentHeight: number; layoutKey?: string; composer?: boolean }) {
   const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, contentHeight, 'a', layoutKey);
-  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}>{[contentHeight, Math.max(0, contentHeight - 50)].map((height, index) => <article key={index} className="pas-report-sheet" data-publication={`${contentHeight}-${index}`} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-reading"><div className="pas-report-content" data-height={height}/></div><div className="pas-report-footer" data-height="32"/></article>)}</section>;
+  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}>{[contentHeight, Math.max(0, contentHeight - 50)].map((height, index) => <article key={index} className="pas-report-sheet" data-publication={`${contentHeight}-${index}`} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-reading"><div className="pas-report-content" data-height={height}>{composer&&index===0?<div className="pas-report-card-preview"><div className="v3-card-comment-dock"><textarea aria-label="커멘트"/></div></div>:null}</div></div><div className="pas-report-footer" data-height="32"/></article>)}</section>;
 }
 const render = (height: number) => act(async () => root.render(<Harness contentHeight={height}/>));
 beforeEach(() => {
@@ -120,4 +120,26 @@ it('drops remembered bottom state when opening a different deck layout',async()=
  content=388;
  await act(async()=>root.render(<Harness contentHeight={200} layoutKey="expanded"/>));
  expect(top).toBe(200);
+});
+
+it.each([false,true])('keeps a growing focused PAS composer inside the reading viewport (focused=%s)',async focused=>{
+ await act(async()=>root.render(<Harness contentHeight={100} composer/>));
+ const reading=host.querySelector<HTMLElement>('.pas-report-reading')!;
+ const composer=reading.querySelector<HTMLElement>('.v3-card-comment-dock')!;
+ const input=composer.querySelector('textarea')!;
+ let top=190,composerBottom=315;
+ Object.defineProperty(reading,'clientHeight',{configurable:true,get:()=>200});
+ Object.defineProperty(reading,'scrollHeight',{configurable:true,get:()=>500});
+ Object.defineProperty(reading,'scrollTop',{configurable:true,get:()=>top,set:value=>{top=value;}});
+ vi.spyOn(reading,'getBoundingClientRect').mockImplementation(()=>({bottom:300} as DOMRect));
+ vi.spyOn(composer,'getBoundingClientRect').mockImplementation(()=>({bottom:composerBottom-(top-190)} as DOMRect));
+ if(focused)input.focus();
+ // The browser moved to the caret before the height observer ran.
+ reading.dispatchEvent(new Event('scroll'));
+ await act(async()=>root.render(<Harness contentHeight={120} composer/>));
+ expect(top).toBe(focused?205:190);
+ // A send error adds space above the same input group.
+ composerBottom+=32;
+ await act(async()=>root.render(<Harness contentHeight={150} composer/>));
+ expect(top).toBe(focused?237:190);
 });

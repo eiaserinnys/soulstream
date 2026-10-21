@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cardRequest, confirmCardItem, createCardInput, groupCards, queueAfterId } from "@seosoyoung/soul-ui/cards/card-api";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
+import { useCardStore as worktreeCardStore } from "../../../packages/soul-ui/src/cards/card-store";
 
 const card = <T extends Record<string, unknown> = Record<string, never>,>(id: string, status: string, extra: T = {} as T) => ({ id, folderId: "folder", title: id, status, version: 2, archived: false, ...extra });
 afterEach(() => { vi.unstubAllGlobals(); useCardStore.getState().reset(); });
@@ -169,4 +170,24 @@ describe("card comments",()=>{
   await expect(useCardStore.getState().addComment("c","지시","key")).rejects.toThrow("저장 실패");
   expect(useCardStore.getState().details.c.comments).toEqual([]);expect(useCardStore.getState().errors.c).toBe("저장 실패");
  });
+});
+
+it("resolves the card store alias to the same worktree source as a direct relative import",()=>{
+ expect(useCardStore).toBe(worktreeCardStore);
+});
+
+it.each([undefined,4])("clears a failed comment error after a successful retry (itemId=%s)",async itemId=>{
+ const current=card("c","running");
+ const detail={card:current,reports:[],questions:[],sessions:[],comments:[]};
+ const saved={id:"saved-retry",cardId:"c",authorKind:"user",authorId:"director",sessionId:null,kind:"comment",body:"재시도",createdAt:"2026-10-05T01:00:00Z",...(itemId===undefined?{}:{itemId})};
+ useCardStore.setState({byId:{c:current as never},details:{c:detail as never}});
+ vi.stubGlobal("fetch",vi.fn()
+  .mockResolvedValueOnce(new Response(JSON.stringify({message:"저장 실패"}),{status:500}))
+  .mockResolvedValueOnce(new Response(JSON.stringify(saved)))
+  .mockResolvedValueOnce(new Response(JSON.stringify({...detail,comments:[saved]}))));
+ await expect(useCardStore.getState().addComment("c","재시도","failed-key",itemId)).rejects.toThrow("저장 실패");
+ expect(useCardStore.getState().errors.c).toBe("저장 실패");
+ await useCardStore.getState().addComment("c","재시도","retry-key",itemId);
+ expect(useCardStore.getState().errors.c).toBe("");
+ expect(useCardStore.getState().details.c.comments?.[0].id).toBe("saved-retry");
 });

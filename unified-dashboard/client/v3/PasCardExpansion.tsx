@@ -115,6 +115,7 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
       }
       setTargetItemId(null);
       setSendError(null);
+      lastSendError.current = null;
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
