@@ -13,6 +13,13 @@ describe("persistent report shared contract", () => {
     expect(parsePersistentReportEntry({ ...entry, title: "😀".repeat(24) })).toMatchObject({ ok: true, value: { state: "open", answer: "" } });
     expect(parsePersistentReportEntry({ ...entry, state: "answered", answer: "진행" })).toMatchObject({ ok: true, value: { state: "answered", answer: "진행" } });
   });
+  it.each([["card_id", "4ba81937-7f22-4ab5-945a-29d2d7e94626"], ["card_status", "review"]])(
+    "keeps the server-only %s field out of PAS input",
+    (field, value) => {
+      expect(parsePersistentReportEntry({ ...entry, [field]: value }))
+        .toMatchObject({ ok: false, errors: [{ path: field, reason: "지원하지 않는 칸입니다" }] });
+    },
+  );
   it.each([
     ["key", "Upper"], ["key", "a".repeat(49)], ["title", "가".repeat(25)],
     ["context", "가".repeat(121)], ["action", "가".repeat(101)], ["answer", "가".repeat(41)],
