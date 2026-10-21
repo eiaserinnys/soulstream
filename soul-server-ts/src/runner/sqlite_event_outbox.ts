@@ -1122,9 +1122,7 @@ export class RunnerSqliteEventOutbox {
 
   private attachRegistrationIdentity(record: EventOutboxRecord): EventOutboxRecord {
     if (typeof record.registration_id === "string") {
-      if (this.registrationId && record.registration_id !== this.registrationId) {
-        throw new Error("runner event registration differs from registration sidecar");
-      }
+      // Keep the writer identity; orch handles duplicate receipts and stale-registration ACKs.
       return record;
     }
     if (!this.registrationId && record.registration_id === null) return record;
