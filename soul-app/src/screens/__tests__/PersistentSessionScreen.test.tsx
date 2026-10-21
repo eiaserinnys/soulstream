@@ -4,6 +4,7 @@ const mockOpenContentLink = jest.fn();
 const mockApi = {
   listCards: jest.fn().mockResolvedValue({ cards: [] }),
   getCard: jest.fn(),
+  setCardStatus: jest.fn(),
   dismissPersistentReport: jest.fn(),
   confirmCardItem: jest.fn(),
   addCardComment: jest.fn(),
@@ -97,6 +98,9 @@ beforeEach(() => {
   const card = cardFixture({ id: 'card-531', number: 531, status: 'review', assigneeSessionId: 'pas-card-phone',
     now: { text: '검수 결과를 확인해 주세요.', turn: 'user', ask: '확인 항목도 살펴봐 주세요.', updatedAt: '2026-10-21T00:00:00Z', sessionId: 'pas-card-phone' } });
   mockApi.getCard.mockReset().mockResolvedValue({ card: { ...card, items: [] }, reports: [], questions: [], sessions: [], nowHistory: [], comments: [] } as CardDetail);
+  mockApi.setCardStatus.mockReset().mockImplementation(async (_id: string, status: string, version: number) => ({
+    folderId: card.folderId, card: { ...card, status, version: version + 1 },
+  }));
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
   jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
 });
@@ -265,6 +269,15 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
   expect(phone.queryByLabelText('닫기')).toBeNull();
   fireEvent.press(phone.getByLabelText('축소'));
   await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(false));
+
+  fireEvent.press(phone.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(true));
+  expect(phone.getByTestId('persistent-report-card-sheet-complete')).toBeTruthy();
+  mockApi.setCardStatus.mockClear();
+  await act(async () => { fireEvent.press(phone.getByTestId('persistent-report-card-sheet-complete')); });
+  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(false));
+  expect(mockApi.setCardStatus).toHaveBeenCalledTimes(1);
+  expect(mockApi.setCardStatus.mock.calls[0][1]).toBe('done');
   phone.unmount();
 
   mockDevice = 'tabletLandscape';
@@ -289,6 +302,32 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
   expect(tablet.queryByTestId('persistent-session-report-card-sheet')).toBeNull();
   tablet.unmount();
   tabletMeasure.mockRestore(); dimensions.mockRestore(); measure.mockRestore();
+});
+
+test('blocked card sheet does not show the completion action', async () => {
+  mockDevice = 'phone';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
+  });
+  const blockedReport = { key: 'card_blocked', kind: 'see' as const, title: '막힌 카드', card_numbers: [531], card_id: 'card-531',
+    card_status: 'blocked', context: '진행할 수 없습니다.', action: '', options: [], state: 'open' as const, answer: '', updated_at: 'now' };
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-blocked-phone', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-blocked-phone', [blockedReport]);
+  });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
+    { x: 0, y: 560, width: 350, height: 76 }, { x: 0, y: 20, width: 350, height: 56 }));
+  measurePersistentReports(view);
+  await waitFor(() => expect(view.getByTestId('report-title')).toBeTruthy());
+  fireEvent.press(view.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  await waitFor(() => expect(view.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(true));
+  expect(view.queryByTestId('persistent-report-card-sheet-complete')).toBeNull();
+  view.unmount();
+  measure.mockRestore();
 });
 
 test('iOS keyboard padding moves the expanded bubble inline without replacing its focused TextInput', async () => {

@@ -13,6 +13,8 @@ import { usePersistentReport } from '../components/persistent/usePersistentRepor
 import { usePersistentReportSend } from '../components/persistent/usePersistentReportSend';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
 import { PersistentReportCardSheetHeader } from '../components/persistent/PersistentReportCardSheetHeader';
+import { PersistentReportCardSheetComplete } from '../components/persistent/PersistentReportCardSheetComplete';
+import { usePersistentCardCompletion } from '../components/persistent/usePersistentCardCompletion';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
@@ -81,6 +83,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const report = usePersistentReport(session?.session_id, true, api, session?.persistent_report, pending);
   const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
   const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
+  const completion = usePersistentCardCompletion(api);
   const [reportPressed, setReportPressed] = useState(false);
   const [reportReady, setReportReady] = useState(false);
   const reportTouch = React.useRef(false);
@@ -168,7 +171,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     key={`report-${session?.session_id}`} expandedKey={expandedReportKey}
     onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
     sessionId={session?.session_id} onReady={setReportReady}
-    send={reportSend} bubble={!!geometry.reportBubble}
+    send={reportSend} completion={completion} bubble={!!geometry.reportBubble}
     maxHeight={geometry.reportBubble?.maxHeight ?? geometry.reportViewMaxHeight}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
     renderCardStatus={entry => {
@@ -253,7 +256,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           opacity: hidePhoneConversation ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript" showSessionAuxiliary={false}
           inputComposerRef={inputComposerRef} getReportSendContext={report.getSendContext}
-          reportView={geometry?.reportBubble ? null : phone ? pager : geometry && report.entries.length > 0
+          reportView={geometry?.reportBubble ? null : phone ? pager : geometry && (report.entries.length > 0 || completion.recent)
             ? <View testID="persistent-session-report-inline-space" style={{ height: reportSeatHeight }} /> : null}
           active={chatActive} minimumBottomPadding={phone ? 0 : insets.bottom}
           onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
@@ -268,7 +271,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         <SwayCharacter width={geometry.body.width} height={geometry.body.height} shown motionEnabled={display?.animate_character === true}
           active={active && !settingsOpen} />
       </View> : null}
-      {!phone && geometry && report.entries.length > 0 ? <View
+      {!phone && geometry && (report.entries.length > 0 || completion.recent) ? <View
         testID={geometry.reportBubble ? 'persistent-session-report-bubble-seat' : 'persistent-session-report-inline-seat'}
         pointerEvents={reportReady ? 'auto' : 'none'} accessibilityElementsHidden={!reportReady}
         onLayout={event => setReportSeatHeight(event.nativeEvent.layout.height)}
@@ -328,6 +331,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
         <ReportComposerFocusContext.Provider value={reportCardScroll.onFocusChange}>
           <PersistentReportCardExpansion key={reportCardSheetEntry.key} api={api} entry={reportCardSheetEntry} onOpenCard={openReportCardFromSheet} />
+          <PersistentReportCardSheetComplete key={'complete-' + reportCardSheetEntry.key} entry={reportCardSheetEntry}
+            completion={completion} onCompleted={closeReportCard} />
         </ReportComposerFocusContext.Provider>
       </ScrollView>
     </AppModalSurface> : null}

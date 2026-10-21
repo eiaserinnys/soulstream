@@ -3,7 +3,7 @@ import { Platform, ScrollView, Text, View, useWindowDimensions } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import type { ApiClient } from '../api/client';
-import type { CardAttachmentAssetEvidence, CardCheckItem, CardComment, CardDetail } from '../api/cardTypes';
+import type { CardAttachmentAssetEvidence, CardCheckItem, CardComment, CardDetail, CardStatus } from '../api/cardTypes';
 import type { PersistentReportEntry } from '../api/types';
 import { cardFixture } from '../test-support/cards';
 import { useDeviceType, useTokens } from '../theme';
@@ -12,6 +12,8 @@ import { ChatUiControllerProvider } from '../components/chat-ui/ChatUiController
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
 import { PersistentReportCardSheetHeader } from '../components/persistent/PersistentReportCardSheetHeader';
+import { PersistentReportCardSheetComplete } from '../components/persistent/PersistentReportCardSheetComplete';
+import { usePersistentCardCompletion } from '../components/persistent/usePersistentCardCompletion';
 import { ReportComposerFocusContext, useReportComposerScroll } from '../components/persistent/useReportComposerScroll';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
@@ -48,20 +50,31 @@ const items: CardCheckItem[] = [
 const initialEntries: (PersistentReportEntry & { card_id: string; card_status: string })[] = [
   { key: 'card_preview', kind: 'see', title: card.title.slice(0, 24) + '…', context: card.now!.ask!, action: '', options: [], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'review', updated_at: at },
   { key: 'cq_preview', question_id: 'preview-question', kind: 'ask', title: '입력 위치 확인', context: '추가 커멘트를 장 안에서 바로 쓸까요?', action: '', options: ['장 안에서', '카드에서'], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'blocked', updated_at: at },
+  { key: 'card_blocked_preview', kind: 'see', title: '외부 권한 확인', context: '외부 권한 확인이 필요해 작업이 멈췄습니다.', action: '', options: [], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'blocked', updated_at: at },
 ];
 const noop = () => {};
+function reviewEntries() {
+  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('singleCard') === '1'
+    ? [initialEntries[0]] : initialEntries;
+}
 const question = { id: 'preview-question', cardId: card.id, sessionId: 'preview-agent', text: '추가 커멘트를 장 안에서 바로 쓸까요?',
   options: ['장 안에서', '카드에서'], answer: null, askedAt: at };
-function createReviewCardApi(): ApiClient {
+function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void): ApiClient {
   let detail: CardDetail = { card: { ...card, items }, reports: [], questions: [question], sessions: [], nowHistory: [], comments: [
     { id: 'preview-user', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.', createdAt: at },
     { id: 'preview-agent', cardId: card.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '결과와 증거를 장 안에 모았습니다.', createdAt: '2026-10-05T08:01:00Z' },
   ] };
   const snapshot = (): CardDetail => ({ ...detail, card: { ...detail.card, items: [...(detail.card.items ?? [])] },
     questions: [...detail.questions], comments: [...(detail.comments ?? [])] });
-  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'confirmCardItem' | 'addCardComment' | 'answerCardQuestion'> = {
+  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'setCardStatus' | 'confirmCardItem' | 'addCardComment' | 'answerCardQuestion'> = {
     listCards: async () => ({ cards: [{ ...detail.card, number: 531 }] }),
     getCard: async () => snapshot(),
+    setCardStatus: async (id, status, expectedVersion) => {
+      if (id !== detail.card.id || expectedVersion !== detail.card.version) throw new Error('공개 예시: 카드가 바뀌었습니다.');
+      detail = { ...detail, card: { ...detail.card, status, version: detail.card.version + 1 } };
+      onStatusChange(id, status);
+      return { folderId: detail.card.folderId, card: detail.card };
+    },
     confirmCardItem: async (_cardId, itemId, confirmed) => {
       const nextItems = (detail.card.items ?? []).map(item => item.id !== itemId ? item : { ...item,
         confirmed: confirmed ? { at, rev: item.rev } : null,
@@ -90,12 +103,20 @@ export function ReviewPasCardExpand() {
   const phone = useDeviceType() === 'phone';
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [entries, setEntries] = useState<PersistentReportEntry[]>(initialEntries);
+  const [entries, setEntries] = useState<PersistentReportEntry[]>(reviewEntries);
   const [index, setIndex] = useState(0);
   const [sheet, setSheet] = useState<PersistentReportEntry | null>(null);
   const sheetScroll = useReportComposerScroll();
   const [text, setText] = useState('');
-  const api = useMemo(createReviewCardApi, []);
+  const api = useMemo(() => createReviewCardApi((id, status) => {
+    if (id !== card.id) return;
+    setEntries(saved => {
+      const reviewEntry = initialEntries.find(entry => entry.key === 'card_preview')!;
+      if (status === 'done') return saved.filter(entry => entry.key !== reviewEntry.key);
+      return saved.some(entry => entry.key === reviewEntry.key) ? saved : [reviewEntry, ...saved];
+    });
+  }), []);
+  const completion = usePersistentCardCompletion(api);
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const column = phone ? width - t.foundation.pageInset * 2 : FRAME.landscape.conversation;
   const left = (width - column) / 2;
@@ -110,7 +131,7 @@ export function ReviewPasCardExpand() {
     setSheet(null);
   };
   const details = (entry: PersistentReportEntry) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} />;
-  const pager = <PersistentReportPager entries={entries} index={Math.min(index, entries.length - 1)} api={api} sessionId="preview-pas"
+  const pager = <PersistentReportPager entries={entries} index={Math.min(index, Math.max(0, entries.length - 1))} api={api} sessionId="preview-pas" completion={completion}
     onSelect={setIndex} onDismiss={async key => { setEntries(saved => saved.filter(item => item.key !== key)); }} onFocusComposer={noop}
     bubble={Boolean(layout.reportBubble)} maxHeight={layout.reportBubble?.maxHeight ?? layout.reportViewMaxHeight}
     renderCardStatus={entry => { const statusCard = persistentReportStatusCard(entry); return statusCard ? <CardStatusChip card={statusCard} detail /> : null; }}
@@ -137,7 +158,10 @@ export function ReviewPasCardExpand() {
         onLayout={sheetScroll.keepComposerVisible} onContentSizeChange={sheetScroll.keepComposerVisible}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
-        <ReportComposerFocusContext.Provider value={sheetScroll.onFocusChange}>{details(sheet)}</ReportComposerFocusContext.Provider>
+        <ReportComposerFocusContext.Provider value={sheetScroll.onFocusChange}>
+          {details(sheet)}
+          <PersistentReportCardSheetComplete entry={sheet} completion={completion} onCompleted={() => setSheet(null)} />
+        </ReportComposerFocusContext.Provider>
       </ScrollView>
     </AppModalSurface> : null}
   </ChatUiControllerProvider></ContentLinkProvider>;

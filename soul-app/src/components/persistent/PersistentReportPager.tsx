@@ -4,13 +4,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
-import { isPersistentReportCardExpandable, isServerCardAcknowledgement } from '../../lib/persistent-report-card';
+import { isPersistentReportCardExpandable, isReviewCardEntry, isServerCardAcknowledgement } from '../../lib/persistent-report-card';
 import { useDeviceType, useTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import { useChatUiActions } from '../chat-ui/ChatUiControllerProvider';
-import { PersistentReportSheet, reportTag, reportWebProps } from './PersistentReportSheet';
+import { PersistentReportSheet, PersistentReportUndoRow, reportTag, reportWebProps } from './PersistentReportSheet';
 import { reportStyles } from './persistentReportStyles';
 import type { usePersistentReportSend } from './usePersistentReportSend';
+import type { CardCompletion } from './usePersistentCardCompletion';
 
 function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps<typeof LiquidGlassButton> & { interaction(pressed: boolean): void }) {
   const held = useRef(false);
@@ -23,7 +24,7 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange }: {
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
@@ -33,6 +34,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   onFocusComposer(): void;
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
+  completion?: CardCompletion;
 }) {
   const [localExpandedKey, setLocalExpandedKey] = useState<string | null>(null);
   const expandedKey = controlledExpandedKey === undefined ? localExpandedKey : controlledExpandedKey;
@@ -77,7 +79,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const inlineHeight = inlineExpanded ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   // Keep a presented session interactive while its placement/width remeasures:
   // hiding the surface here also hides its focused native TextInput.
-  const ready = presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId);
+  const ready = presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId)
+    || (entries.length === 0 && Boolean(completion?.recent));
   useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
   const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
   const latestInteraction = useRef(interaction);
@@ -135,7 +138,18 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
     event.preventDefault?.(); step(key === 'ArrowRight' ? 1 : -1);
   };
-  if (!count) return null;
+  if (!count) {
+    if (!completion?.recent || compact) return null;
+    const undo = { label: completion.recent.label, busy: completion.busy, onUndo: () => {
+      void completion.undo().then(ok => { if (!ok) setNotice('되돌리지 못했어.'); });
+    } };
+    return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
+      pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
+      style={[styles.deck, !bubble && styles.band, !ready && { opacity: 0 }]}
+      {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}>
+      <View testID="report-footer" style={[styles.foot, { marginTop: 'auto' }]}><PersistentReportUndoRow undo={undo} styles={styles} /></View>
+    </View>;
+  }
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
     pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
     style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight },
@@ -163,6 +177,10 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
       }} scrollEventThrottle={16}>
       {width > 0 ? entries.map((entry, i) => {
         const expandable = isPersistentReportCardExpandable(entry);
+        const reviewCard = isReviewCardEntry(entry);
+        const undo = i === index && completion?.recent ? { label: completion.recent.label, busy: completion.busy, onUndo: () => {
+          void completion.undo().then(ok => { if (!ok) setNotice('되돌리지 못했어.'); });
+        } } : undefined;
         return <PersistentReportSheet key={JSON.stringify([sessionId, entry.key])} entry={entry}
         expandedContent={expandable && expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
         cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
@@ -172,7 +190,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineExpanded ? inlineHeight : undefined}
-        busy={isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
+        busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
+        acknowledgeLabel={reviewCard ? '완료' : undefined} undo={undo}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
         onReady={() => {
           const id = measureKey(entry), latest = latestMeasurement.current;
@@ -189,6 +208,12 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         }}
         titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
         onDismiss={() => {
+          if (reviewCard) {
+            if (!completion) return;
+            moveFocus.current = Platform.OS !== 'web' || focusInside();
+            void completion.complete(entry).then(ok => { if (!ok) setNotice('카드를 완료하지 못했어.'); });
+            return;
+          }
           if (!send?.close(entry)) return;
           moveFocus.current = Platform.OS !== 'web' || focusInside();
           void onDismiss(entry.key).then(ok => { if (ok === false) setNotice('보고를 내리지 못했어.'); });
@@ -198,7 +223,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />
       }) : null}
     </ScrollView>
-    {count > 1 && !compact && !phone ? <View testID="report-nav" style={styles.nav}>
+    {count > 1 && !compact && !phone ? <View testID="report-nav" style={[styles.nav, completion?.recent
+      ? { bottom: t.uiSpacing.lg + t.hitTarget.min + t.uiSpacing.sm } : null]}>
       <ReportNavButton interaction={navInteraction} testID="report-prev-touch" iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
         <Ionicons name="chevron-back" size={t.iconSize.navigation} color={index === 0 ? t.colors.textPlaceholder : t.colors.textPrimary} />
       </ReportNavButton>

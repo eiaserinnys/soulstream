@@ -13,10 +13,21 @@ export const reportWebProps = (props: Record<string, unknown>) => Platform.OS ==
 export function reportTag(entry: PersistentReportEntry) {
   return entry.kind === 'see' ? '보실 것' : entry.state === 'answered' ? '답 받음' : '답하실 것';
 }
+export function PersistentReportUndoRow({ undo, styles }: {
+  undo: { label: string; busy: boolean; onUndo(): void }; styles: ReturnType<typeof reportStyles>;
+}) {
+  return <View style={styles.undoRow}>
+    <Text testID="report-undo-label" style={styles.receivedLabel}>{undo.label}</Text>
+    <View style={styles.cancelEdge}><GlassButton testID="report-undo" variant="plain" size="compact" disabled={undo.busy}
+      accessibilityLabel="되돌리기" onPress={undo.onUndo}><Text style={styles.cancelLabel}>되돌리기</Text></GlassButton></View>
+  </View>;
+}
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false,
-  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard }: {
+  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard,
+  acknowledgeLabel = '확인했어', undo }: {
   expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
+  acknowledgeLabel?: string; undo?: { label: string; busy: boolean; onUndo(): void };
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
@@ -30,7 +41,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const [asked, setAsked] = useState({ signature, reading: 0, foot: 0 });
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
   const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && entry.state === 'open');
-  const hasFooter = !compact && (count > 1 || entry.state === 'answered' || acknowledgeable || entry.options.length > 0);
+  const hasFooter = !compact && (count > 1 || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(undo));
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
   const measure = (part: 'reading' | 'foot', height: number) => {
     measured.current[part] = height;
@@ -50,7 +61,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const heading = <View style={onToggleCard ? styles.headingRow : undefined}>
     <View testID="report-head" style={[styles.heading, onToggleCard ? styles.headingContent : undefined]}>
     <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header"
-      style={[styles.title, onToggleCard ? { paddingVertical: Math.max(0,
+      style={[styles.title, Platform.OS === 'web' ? { outlineStyle: 'solid', outlineWidth: 0 } : undefined, onToggleCard ? { paddingVertical: Math.max(0,
         (t.foundation.iconFrame.compact - t.foundation.typography.cardTitle.lineHeight) / 2) } : undefined]}
       {...reportWebProps({ tabIndex: -1 })}
       {...(onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onToggleCard(); }, accessibilityRole: 'button' as const,
@@ -93,6 +104,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   </View>;
   const foot = hasFooter
     ? <View testID="report-footer" style={styles.foot} onLayout={event => measure('foot', event.nativeEvent.layout.height)}>
+      {undo ? <PersistentReportUndoRow undo={undo} styles={styles} /> : null}
       {count > 1 ? <View testID="report-nav-slot" style={[styles.navSlot, !showNav && { width: 'auto', minWidth: t.uiSpacing.xxl,
         height: t.hitTarget.min, justifyContent: 'center' }]}
 >
@@ -107,7 +119,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
           : canCancel ? <View style={styles.cancelEdge}><GlassButton testID="report-cancel" variant="plain" size="compact"
             disabled={busy} accessibilityLabel="취소 요청" onPress={() => onCancel?.()}><Text style={styles.cancelLabel}>취소 요청</Text></GlassButton></View> : null}
       </View> : acknowledgeable || entry.options.length ? <View testID="report-actions" style={styles.actions}>
-        {(acknowledgeable ? ['확인했어'] : entry.options).map(option => <GlassButton key={option} variant="paper" size="compact"
+        {(acknowledgeable ? [acknowledgeLabel] : entry.options).map(option => <GlassButton key={option} variant="paper" size="compact"
           disabled={busy} accessibilityLabel={option}
           onPress={() => acknowledgeable ? onDismiss() : onOption(option)} style={styles.button}>
           <Text style={styles.buttonLabel}>{option}</Text>
