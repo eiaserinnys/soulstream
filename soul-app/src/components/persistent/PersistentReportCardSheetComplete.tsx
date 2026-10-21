@@ -5,6 +5,7 @@ import { useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
 import { cardDetailStyles } from '../planner/CardDetail.styles';
 import { isReviewCardEntry } from '../../lib/persistent-report-card';
+import { reportStyles } from './persistentReportStyles';
 import type { CardCompletion } from './usePersistentCardCompletion';
 
 export function PersistentReportCardSheetComplete({ entry, completion, onCompleted }: {
@@ -12,6 +13,7 @@ export function PersistentReportCardSheetComplete({ entry, completion, onComplet
 }) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
+  const reportText = useMemo(() => reportStyles(t, t.foundation.pageInset, false), [t]);
   const [failedEntryKey, setFailedEntryKey] = useState<string | null>(null);
   if (!isReviewCardEntry(entry)) return null;
 
@@ -25,7 +27,7 @@ export function PersistentReportCardSheetComplete({ entry, completion, onComplet
           else setFailedEntryKey(entry.key);
         });
       }}>
-      <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>완료</Text>
+      <Text style={reportText.buttonLabel}>완료</Text>
     </GlassButton>
   </View>;
 }
