@@ -6,9 +6,10 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
-import { WorktreeGit, WorktreeGitError } from "./worktree_git.js";
+import { WorktreeGit } from "./worktree_git.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
-import { baseDependencyLinksIntoWorktree } from "./worktree_dependency_links.js";
+import { removeWorktreeLocked } from "./worktree_removal.js";
+import { sweepWorktrees } from "./worktree_sweep.js";
 import { defaultWorktreeSetupMode, setupSharedDependencies } from "./worktree_setup.js";
 import type {
   WorktreeHost,
@@ -305,9 +306,16 @@ export class WorktreeService implements WorktreeExecutionResolver {
     return createResult(updated, true, false, setup.warnings);
   }
 
+  async sweep(input: { now?: number; onFetchError?: (repoId: string, error: unknown) => void } = {}) {
+    return await sweepWorktrees({ ...this.options,
+      assertWorkspaceUnused: (path) => this.assertWorkspaceUnused(path),
+    }, input);
+  }
+
   async remove(input: { actorSessionId: string; worktreeId: string }): Promise<Record<string, unknown>> {
     return await this.options.git.withOperationDeadline(
       async () => await this.removeWithinDeadline(input),
+      this.options.createTimeoutMs,
     );
   }
 
@@ -326,99 +334,10 @@ export class WorktreeService implements WorktreeExecutionResolver {
       return { worktreeId: initialRecord.id, removed: true, reused: true };
     }
     const commonDirectory = await this.options.git.commonDirectory(initialRecord.repoId);
-    let record = initialRecord;
-    try {
-      await this.options.lock.withLock(commonDirectory, async () => {
-        this.assertWorkspaceUnused(record.canonicalPath);
-        const links = await baseDependencyLinksIntoWorktree(
-          join(this.options.projectsRoot, record.repoId), record.canonicalPath,
-        );
-        if (links.length > 0) {
-          throw new WorktreeServiceError(
-            "WORKTREE_BASE_DEPENDENCY_IN_USE",
-            "Base dependency links point into this worktree; repair the listed links before retrying removal",
-            { links },
-          );
-        }
-        const workspaceState = await this.options.git.removalWorkspaceState({
-          repoId: record.repoId,
-          path: record.canonicalPath,
-          worktreeId: record.worktreeIdentity,
-          branch: record.branch,
-          expectedSha: record.branchDeleteExpectedSha,
-        });
-        if (workspaceState !== "registered") {
-          const expectedSha = record.branchDeleteExpectedSha;
-          if (!expectedSha) {
-            throw new WorktreeServiceError(
-              "WORKTREE_REMOVAL_HEAD_UNRECORDED",
-              "The worktree registration disappeared before its branch HEAD was durably recorded",
-            );
-          }
-          record = await this.options.host.beginRemove({
-            ...input,
-            expectedSha,
-          });
-          if (workspaceState === "registered_missing") {
-            await this.options.git.pruneMissingWorktree({
-              repoId: record.repoId,
-              path: record.canonicalPath,
-              worktreeId: record.worktreeIdentity,
-            });
-          } else {
-            await this.options.git.finishPartialRemoval({
-              repoId: record.repoId,
-              path: record.canonicalPath,
-              branch: record.branch,
-              expectedSha,
-            });
-          }
-          return;
-        }
-        const dirty = await this.options.git.inspectDirty(
-          record.canonicalPath,
-          record.managedPaths.map((managed) => managed.path),
-        );
-        if (!dirty.clean) {
-          throw new WorktreeServiceError(
-            "WORKTREE_DIRTY",
-            "Worktree contains tracked, untracked, or ignored files; clean the listed paths and retry",
-            {
-              ...dirty,
-              cleanup: "Commit, stash, or manually remove only the listed paths, then retry. Real node_modules directories are never removed automatically.",
-            },
-          );
-        }
-        const expectedSha = await this.options.git.removalHead({
-          repoId: record.repoId,
-          path: record.canonicalPath,
-          worktreeId: record.worktreeIdentity,
-          branch: record.branch,
-        });
-        record = await this.options.host.beginRemove({ ...input, expectedSha });
-        await this.options.git.remove({
-          repoId: record.repoId,
-          path: record.canonicalPath,
-          worktreeId: record.worktreeIdentity,
-          managedPaths: record.managedPaths,
-        });
-      });
-    } catch (error) {
-      await this.options.host.restoreReady({
-        ...input,
-        errorCode: errorCode(error),
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
-      if (error instanceof WorktreeGitError && error.code === "MANAGED_LINK_RESTORE_FAILED") {
-        await this.options.host.updateSetup({
-          ...input,
-          setupStatus: "failed",
-          managedPaths: record.managedPaths,
-        });
-      }
-      throw error;
-    }
-    const removed = await this.options.host.finishRemove(input);
+    const removed = await this.options.lock.withLock(commonDirectory, async () =>
+      await removeWorktreeLocked({ ...this.options,
+        assertWorkspaceUnused: (path) => this.assertWorkspaceUnused(path),
+      }, initialRecord, { actorSessionId: input.actorSessionId }));
     return { worktreeId: removed.id, removed: true, branch: removed.branch };
   }
 
@@ -616,9 +535,4 @@ function createResult(
     setupStatus: record.setupStatus,
     warnings,
   };
-}
-
-function errorCode(error: unknown): string {
-  if (error instanceof WorktreeServiceError || error instanceof WorktreeGitError) return error.code;
-  return "WORKTREE_REMOVE_FAILED";
 }

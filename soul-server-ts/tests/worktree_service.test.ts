@@ -9,6 +9,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  utimesSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -90,6 +91,102 @@ async function captureWorktreeError(operation: Promise<unknown>): Promise<Worktr
 }
 
 describe("WorktreeService", () => {
+  it.each(["tracked", "untracked"])("preserves %s changes even alongside ignored dependencies", async (kind) => {
+    const { service } = fixture();
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: `dirty/${kind}`, mode: "new" });
+    const path = String(created.path);
+    mkdirSync(join(path, "node_modules"));
+    writeFileSync(join(path, "node_modules", "generated"), "ignored");
+    writeFileSync(join(path, kind === "tracked" ? "README.md" : "work.txt"), "preserve");
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .rejects.toMatchObject({ code: "WORKTREE_DIRTY", details: { ignored: ["node_modules/"] } });
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("gives Git removal the configured creation deadline", async () => {
+    const { projectsRoot, repo, service, host } = fixture();
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: "remove-timeout", mode: "new" });
+    const { runBoundedProcess } = await import("../src/worktree/worktree_process.js");
+    let removalTimeout: number | undefined;
+    const boundedGit = new WorktreeGit({ projectsRoot, timeoutMs: 5_000, createTimeoutMs: 45_000,
+      processRunner: async (input) => {
+        if (input.args[0] === "worktree" && input.args[1] === "remove") removalTimeout = input.timeoutMs;
+        return await runBoundedProcess(input);
+      },
+    });
+    const deadline = vi.spyOn(boundedGit, "withOperationDeadline");
+    const remover = new WorktreeService({ nodeId: "node-a", projectsRoot, git: boundedGit, createTimeoutMs: 45_000,
+      host, lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 }), listActiveWorkspaceDirs: () => [] });
+    await remover.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) });
+    expect(removalTimeout).toBe(45_000);
+    expect(deadline).toHaveBeenCalledWith(expect.any(Function), 45_000);
+    expect(git(repo, "rev-parse", "refs/heads/remove-timeout")).toBe(created.head);
+  });
+
+  it("sweeps only finished clean pushed worktrees, once per repo, preserving branches", async () => {
+    const active: string[] = [];
+    const { projectsRoot, repo, service, host } = fixture(active);
+    const origin = join(projectsRoot, "remote.git");
+    git(projectsRoot, "init", "--bare", origin);
+    git(repo, "remote", "add", "origin", origin);
+    git(repo, "push", "origin", "main");
+    git(repo, "remote", "set-head", "origin", "main");
+    const now = Date.now() + 10 * 24 * 60 * 60_000;
+    const old = new Date(now - 4 * 60 * 60_000).toISOString();
+    const paths = new Map<string, string>();
+    const ids = new Map<string, string>();
+    for (const kind of ["merged", "closed", "idle", "recent", "git_recent", "active", "links", "tracked", "untracked", "unpushed", "unfinished", "raced", "failed", "missing", "prunable", "no_branch"]) {
+      const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: `sweep/${kind}`, mode: "new" });
+      const path = String(created.path), id = String(created.worktreeId);
+      paths.set(kind, path); ids.set(kind, id);
+      if (!["merged", "missing", "prunable", "no_branch"].includes(kind)) {
+        writeFileSync(join(path, "feature.txt"), kind);
+        git(path, "add", "."); git(path, "commit", "-m", kind);
+        if (kind !== "unpushed") git(path, "push", "origin", `sweep/${kind}`);
+      }
+      const record = host.records.get(id)!;
+      host.records.set(id, { ...record, lastSessionActivityAt: kind === "recent" ? new Date(now).toISOString() : kind === "idle" ? new Date(now - 8 * 24 * 60 * 60_000).toISOString() : old,
+        linkedCardsClosed: ["closed", "active", "links", "tracked", "untracked", "unpushed", "raced", "failed", "git_recent"].includes(kind) });
+      if (kind === "git_recent") {
+        const dir = git(path, "rev-parse", "--absolute-git-dir");
+        for (const file of ["HEAD", "index", "logs/HEAD"]) utimesSync(join(dir, file), now / 1000, now / 1000);
+      }
+      if (kind === "active") active.push(path);
+      if (kind === "links") { mkdirSync(join(repo, "node_modules")); symlinkSync(join(path, "packages", "ui"), join(repo, "node_modules", "ui"), "dir"); }
+      if (kind === "tracked") writeFileSync(join(path, "README.md"), "user edit");
+      if (kind === "untracked") writeFileSync(join(path, "user.txt"), "user data");
+      if (kind === "missing" || kind === "no_branch") git(repo, "worktree", "remove", path);
+      if (kind === "no_branch") git(repo, "branch", "-d", `sweep/${kind}`);
+      if (kind === "prunable") rmSync(path, { recursive: true });
+      if (kind === "merged") { mkdirSync(join(path, "node_modules")); writeFileSync(join(path, "node_modules", "generated"), "ignored"); }
+    }
+    const originalBegin = host.beginRemove.bind(host);
+    const begin = vi.spyOn(host, "beginRemove").mockImplementation(async (input) => {
+      if (input.worktreeId === ids.get("raced")) throw Object.assign(new Error("WORKTREE_IN_USE: late-session"), { code: "WORKTREE_IN_USE" });
+      if (input.worktreeId === ids.get("failed")) throw new Error("simulated failure");
+      return originalBegin(input);
+    });
+    const { runBoundedProcess } = await import("../src/worktree/worktree_process.js");
+    let fetches = 0;
+    const sweepGit = new WorktreeGit({ projectsRoot, timeoutMs: 5_000, createTimeoutMs: 5_000,
+      processRunner: async (input) => { if (input.args[0] === "fetch") fetches++; return runBoundedProcess(input); } });
+    const sweeper = new WorktreeService({ nodeId: "node-a", projectsRoot, git: sweepGit, createTimeoutMs: 5_000, host,
+      lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 }), listActiveWorkspaceDirs: () => active });
+    const result = await sweeper.sweep({ now });
+    expect(result).toMatchObject({ candidates: 16, removed: 6, recent: 2, in_use: 2, base_links: 1, changes: 2, unpushed: 1, not_finished: 1, failed: 1 });
+    expect(fetches).toBe(1);
+    for (const kind of ["merged", "closed", "idle", "missing", "prunable", "no_branch"]) {
+      expect(existsSync(paths.get(kind)!)).toBe(false);
+      expect(host.records.get(ids.get(kind)!)?.state).toBe("removed");
+      if (kind !== "no_branch") expect(git(repo, "rev-parse", `refs/heads/sweep/${kind}`)).toBeTruthy();
+    }
+    for (const kind of ["recent", "git_recent", "active", "links", "tracked", "untracked", "unpushed", "unfinished", "raced", "failed"]) {
+      expect(existsSync(paths.get(kind)!)).toBe(true);
+      expect(host.records.get(ids.get(kind)!)?.state).toBe("ready");
+    }
+    expect(begin.mock.calls.every(([input]) => input.sweeperNodeId === "node-a" && !input.actorSessionId)).toBe(true);
+  });
+
   it("preserves a shared worktree when base dependency links point back into it", async () => {
     const { repo, service, host } = fixture();
     mkdirSync(join(repo, "node_modules"));
@@ -203,20 +300,12 @@ describe("WorktreeService", () => {
     const path = String(created.path);
     mkdirSync(join(path, "dist"));
     writeFileSync(join(path, "dist", "bundle.js"), "generated");
+    mkdirSync(join(path, "node_modules"));
+    writeFileSync(join(path, "node_modules", "generated.js"), "dependency");
     await expect(service.remove({
-      actorSessionId: "owner",
-      worktreeId: String(created.worktreeId),
-    })).rejects.toMatchObject({
-      code: "WORKTREE_DIRTY",
-      details: { ignored: ["dist/"] },
-    });
-    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
-
-    rmSync(join(path, "dist"), { recursive: true });
-    await expect(service.remove({
-      actorSessionId: "owner",
-      worktreeId: String(created.worktreeId),
+      actorSessionId: "owner", worktreeId: String(created.worktreeId),
     })).resolves.toMatchObject({ removed: true });
+    expect(existsSync(path)).toBe(false);
     expect(host.records.get(String(created.worktreeId))?.state).toBe("removed");
     await expect(service.list({ actorSessionId: "owner", repoId: "demo" }))
       .resolves.toEqual(expect.arrayContaining([
@@ -807,7 +896,7 @@ describe("WorktreeService", () => {
       ]));
   });
 
-  it("finishes a removing record on retry when Git removal succeeded before DB transition failed", async () => {
+  it("restores ready and finishes on retry when Git removal succeeded before DB transition failed", async () => {
     const { service, host } = fixture();
     const created = await service.create({
       actorSessionId: "owner",
@@ -823,7 +912,7 @@ describe("WorktreeService", () => {
       actorSessionId: "owner",
       worktreeId: String(created.worktreeId),
     })).rejects.toThrow("simulated finish failure");
-    expect(host.records.get(String(created.worktreeId))?.state).toBe("removing");
+    expect(host.records.get(String(created.worktreeId))?.state).toBe("ready");
     await expect(service.remove({
       actorSessionId: "owner",
       worktreeId: String(created.worktreeId),
@@ -997,9 +1086,14 @@ describe("WorktreeService", () => {
 });
 
 class MemoryWorktreeHost implements WorktreeHost {
-  readonly records = new Map<string, WorktreeRecord>();
+  readonly records = new Map<string, WorktreeRecord & { lastSessionActivityAt?: string; linkedCardsClosed?: boolean }>();
   registerFailuresRemaining = 0;
   finishRemoveFailuresRemaining = 0;
+
+  async sweepCandidates(input: { nodeId: string }) {
+    return [...this.records.values()].filter(record => record.nodeId === input.nodeId && record.state === "ready")
+      .map(record => ({ ...record, lastSessionActivityAt: record.lastSessionActivityAt!, linkedCardsClosed: record.linkedCardsClosed ?? false }));
+  }
 
   async list(input: Parameters<WorktreeHost["list"]>[0]) {
     return [...this.records.values()]

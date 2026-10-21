@@ -57,6 +57,7 @@ import {
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
+import { WorktreeSweeper } from "../worktree/worktree_sweeper.js";
 import { composeWorktreeService, resolveWorktreeWorkspace } from "./worktree_runtime_composition.js";
 import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
 import { composePurposeDecisionRunner, composeWorkerAdmissionAuthorizer } from "../card-orchestration/runtime_composition.js";
@@ -265,6 +266,13 @@ export async function composeWorkerRuntime(
   worktreeService = composeWorktreeService(env, orchHostClientDeps, () =>
     listActiveTaskWorkspaceDirs(taskManager.listTasks(),
       (profileId) => agentRegistry.get(profileId)?.workspace_dir));
+  const worktreeSweeper = worktreeService ? new WorktreeSweeper({
+    sweep: () => worktreeService!.sweep({
+      onFetchError: (repoId, err) => logger.warn({ repoId, err }, "Worktree sweep fetch failed; using current refs"),
+    }),
+    logger,
+  }) : undefined;
+  worktreeSweeper?.start();
   db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
   const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({
@@ -483,6 +491,7 @@ export async function composeWorkerRuntime(
     mcpRuntime,
     scheduleService,
     sessionPageBindingService,
+    ...(worktreeSweeper ? { worktreeSweeper } : {}),
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
     ...(claudeRuntime.startupRecovery
       ? { claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery }
