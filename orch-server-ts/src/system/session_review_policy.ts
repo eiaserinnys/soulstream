@@ -2,6 +2,7 @@ import type { SqlClient } from "../control_plane/control_plane_types.js";
 
 export const SESSION_REVIEW_POLICY_KEY = "session_review_policy";
 export const QUALIFIED_BROWSER_SOURCE = "browser";
+export const CARD_LAUNCH_CALLER_FIELD = "card_launch";
 
 export type SessionReviewDecision = {
   reviewRequired: boolean;
@@ -232,9 +233,12 @@ export function evaluateInitialSessionReview(
   policy: Pick<SessionReviewPolicy, "sourceAllowlist">,
 ): SessionReviewDecision {
   const source = nonEmptyString(callerInfo?.source);
-  const reviewRequired = source === QUALIFIED_BROWSER_SOURCE
-    ? hasQualifiedBrowserIdentity(callerInfo)
-    : source !== undefined && policy.sourceAllowlist.includes(source);
+  // Card-launched assignee sessions require review regardless of caller source.
+  const reviewRequired = callerInfo?.[CARD_LAUNCH_CALLER_FIELD] === true || (
+    source === QUALIFIED_BROWSER_SOURCE
+      ? hasQualifiedBrowserIdentity(callerInfo)
+      : source !== undefined && policy.sourceAllowlist.includes(source)
+  );
   return {
     reviewRequired,
     reviewState: "not_required",
