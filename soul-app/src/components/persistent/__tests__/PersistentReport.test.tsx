@@ -1,5 +1,5 @@
 import React from 'react';
-import { AccessibilityInfo, Keyboard, Platform, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Keyboard, Platform, StyleSheet, Text } from 'react-native';
 import * as ReactNative from 'react-native';
 import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import { PersistentReportPager } from '../PersistentReportPager';
@@ -118,6 +118,44 @@ test('phone keyboard collapses context/buttons, keeps two-line action, and resto
   expect(dismiss).toHaveBeenCalledTimes(1);
   measurePersistentReports(screen);
   expect(screen.getByTestId('report-context')).toBeTruthy();
+});
+
+test('eligible card titles open the card sheet even while the phone report is compact', () => {
+  const listeners: Record<string, () => void> = {};
+  jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
+    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+  });
+  const dismissKeyboard = jest.spyOn(Keyboard, 'dismiss');
+  const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review', card_numbers: [531] };
+  const onOpen = jest.fn();
+  const api = { listCards: jest.fn().mockResolvedValue({ cards: [] }) } as any;
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[cardEntry]} index={0} api={api} onSelect={jest.fn()} onDismiss={jest.fn()}
+      onFocusComposer={jest.fn()} renderCardDetails={() => null} renderCardStatus={() => null} onOpenCardDetails={onOpen}
+      send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen);
+  act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
+  measurePersistentReports(screen);
+  fireEvent.press(screen.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  expect(onOpen).toHaveBeenCalledWith(cardEntry);
+  expect(dismissKeyboard).not.toHaveBeenCalled();
+});
+
+test('card expansion is limited to a bound ID or one card number', () => {
+  const unbound = { ...reportReviewEntries[2], card_numbers: [531, 532] };
+  const onOpen = jest.fn();
+  const api = { listCards: jest.fn().mockResolvedValue({ cards: [] }) } as any;
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[unbound]} index={0} api={api} onSelect={jest.fn()} onDismiss={jest.fn()}
+      onFocusComposer={jest.fn()} renderCardDetails={() => null} renderCardStatus={() => <Text testID="report-status">상태</Text>} onOpenCardDetails={onOpen}
+      send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen);
+  expect(screen.getByTestId('report-title').props.onPress).toBeUndefined();
+  expect(screen.queryByTestId('report-status')).toBeNull();
+  fireEvent.press(screen.getByTestId('report-title'));
+  expect(onOpen).not.toHaveBeenCalled();
 });
 
 test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 그린다', () => {

@@ -28,14 +28,19 @@ jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
     <Pressable testID="close-card-overlay" onPress={onClose} />
   </View> : null };
 });
+jest.mock('../../components/persistent/PersistentReportCardExpansion', () => {
+  const { View } = require('react-native');
+  return { PersistentReportCardExpansion: ({ entry }: any) => <View testID={`report-card-expansion-${entry.key}`} /> };
+});
 jest.mock('../../components/settings/PersistentSessionPasSettingsModal', () => ({ PersistentSessionPasSettingsModal: () => null }));
 jest.mock('../SettingsScreen', () => ({ SettingsScreen: () => null }));
 jest.mock('../../hooks/useUsageSummary', () => ({ useUsageSummary: jest.fn() }));
 
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../../navigation/PersistentSessionContext';
 import { PersistentSessionScreen } from '../PersistentSessionScreen';
+import { ChatUiControllerProvider } from '../../components/chat-ui/ChatUiControllerProvider';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import type { StoreApi } from 'zustand';
 import { StyleSheet, View } from 'react-native';
@@ -47,6 +52,8 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useUsageSummary } from '../../hooks/useUsageSummary';
 import { useTokens } from '../../theme';
+import { AppModalSurface } from '../../components/AppModalSurface';
+import { measurePersistentReports } from '../../test-utils/persistent-report-layout';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -158,6 +165,65 @@ test('phone report deck touch leaves page swipes to the deck and conversation sw
 
   view.unmount();
   measure.mockRestore();
+});
+
+test('card report opens an iPhone page sheet and expands inline on iPad', async () => {
+  const cardReport = { key: 'card_531', kind: 'see' as const, title: '검수 결과', card_numbers: [531], card_id: 'card-531',
+    card_status: 'review', context: '결과를 확인해 주세요.', action: '', options: [], state: 'open' as const, answer: '', updated_at: '2026-10-21T00:00:00Z' };
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
+  });
+  mockDevice = 'phone';
+  useSettingsStore.setState({ serverUrl: '' });
+  const phone = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-card-phone', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-card-phone', [cardReport]);
+  });
+  act(() => phone.getByTestId('persistent-session-screen').props.onLayout());
+  const phoneBody = phone.getByTestId('persistent-body-probe');
+  act(() => phoneBody.props.onComposerLayout({ x: 0, y: 560, width: 350, height: 76 }, { x: 0, y: 20, width: 350, height: 56 }));
+  const phonePager = phoneBody.props.reportView
+    ? render(<ChatUiControllerProvider sessionId="pas-card-phone" appendGeneratedText={() => ({ ok: true })}>{phoneBody.props.reportView}</ChatUiControllerProvider>)
+    : phone;
+  measurePersistentReports(phonePager);
+  await waitFor(() => expect(phonePager.getByTestId('report-title')).toBeTruthy());
+  fireEvent.press(phonePager.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  const modal = phone.UNSAFE_getByType(AppModalSurface);
+  expect(modal.props.variant).toBe('expanded');
+  expect(modal.props.presentationStyle).toBe('pageSheet');
+  expect(phone.getByTestId('persistent-session-report-card-sheet')).toBeTruthy();
+  expect(phone.getByText('검수 대기')).toBeTruthy();
+  expect(phone.getByTestId('report-card-expansion-card_531')).toBeTruthy();
+  if (phonePager !== phone) phonePager.unmount();
+  phone.unmount();
+
+  mockDevice = 'tabletLandscape';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
+  const tabletMeasure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
+    else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 720);
+  });
+  const tablet = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-card-tablet', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-card-tablet', [cardReport]);
+  });
+  act(() => tablet.getByTestId('persistent-session-screen').props.onLayout());
+  const tabletBody = tablet.getByTestId('persistent-body-probe');
+  act(() => tabletBody.props.onComposerLayout({ x: 0, y: 560, width: 480, height: 76 }, { x: 0, y: 20, width: 480, height: 56 }));
+  const tabletPager = tabletBody.props.reportView
+    ? render(<ChatUiControllerProvider sessionId="pas-card-tablet" appendGeneratedText={() => ({ ok: true })}>{tabletBody.props.reportView}</ChatUiControllerProvider>)
+    : tablet;
+  measurePersistentReports(tabletPager);
+  await waitFor(() => expect(tabletPager.getByTestId('report-title')).toBeTruthy());
+  fireEvent.press(tabletPager.getByTestId('report-title'));
+  expect(tabletPager.getByTestId('report-card-expansion-card_531')).toBeTruthy();
+  expect(tablet.queryByTestId('persistent-session-report-card-sheet')).toBeNull();
+  if (tabletPager !== tablet) tabletPager.unmount();
+  tablet.unmount();
+  tabletMeasure.mockRestore(); dimensions.mockRestore(); measure.mockRestore();
 });
 
 test('열 크기가 같은 x 이동도 다시 실측해 몸 하단과 선 접점을 유지한다', () => {

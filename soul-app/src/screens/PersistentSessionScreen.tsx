@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, BackHandler, PanResponder, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
+import { Alert, BackHandler, PanResponder, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -15,12 +15,17 @@ import { PersistentReportPager } from '../components/persistent/PersistentReport
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
+import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
 import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/persistentSessionFrame';
 import { PersistentSessionPasSettingsModal } from '../components/settings/PersistentSessionPasSettingsModal';
 import { persistentChatDisplaySettings, savePersistentSessionSettings } from '../components/settings/persistentSessionSettingsActions';
 import { useDisplayPreferenceActions } from '../components/settings/useDisplayPreferenceActions';
+import { AppModalSurface } from '../components/AppModalSurface';
+import { GlassButton } from '../components/GlassSurface';
+import { CardStatusChip } from '../components/planner/CardRow';
+import { cardDetailStyles } from '../components/planner/CardDetail.styles';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
 import { useUsageSummary } from '../hooks/useUsageSummary';
 import { decodeAuthJwt } from '../auth/jwt-payload';
@@ -30,6 +35,8 @@ import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
+import type { PersistentReportEntry } from '../api/types';
+import { isPersistentReportCardExpandable, persistentReportStatusCard } from '../lib/persistent-report-card';
 
 export interface PersistentSessionScreenProps {
   active?: boolean;
@@ -49,6 +56,7 @@ export function PersistentSessionScreen(props: PersistentSessionScreenProps) {
 }
 function PersistentSessionContents({ active = true, chatActive = active, onOpenPhoneCard, onHome, inputComposerRef }: PersistentSessionScreenProps & { inputComposerRef: React.RefObject<ChatInputComposerHandle | null> }) {
   const t = useTokens();
+  const cardStyles = useMemo(() => cardDetailStyles(t), [t]);
   const device = useDeviceType();
   const phone = device === 'phone';
   const { fontScale } = useWindowDimensions();
@@ -81,6 +89,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     : null);
   const { handleAppearanceChange } = useDisplayPreferenceActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reportCard, setReportCard] = useState<PersistentReportEntry | null>(null);
   const [savingCharacter, setSavingCharacter] = useState(false);
   const appRef = React.useRef<View>(null);
   const mainRef = React.useRef<View>(null);
@@ -133,6 +142,12 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} bubble={!!geometry?.reportBubble} maxHeight={geometry?.reportBubble?.maxHeight}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
+    renderCardStatus={entry => {
+      const card = persistentReportStatusCard(entry);
+      return card ? <CardStatusChip card={card} detail /> : null;
+    }}
+    renderCardDetails={!phone ? entry => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} /> : undefined}
+    onOpenCardDetails={phone ? setReportCard : undefined}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
@@ -270,5 +285,21 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
+    {phone && reportCard && isPersistentReportCardExpandable(reportCard) ? <AppModalSurface visible modalId="modal_card_detail"
+      variant="expanded" presentationStyle="pageSheet" onRequestClose={() => setReportCard(null)} surfaceTestID="persistent-session-report-card-sheet">
+      <View style={cardStyles.header}><View style={cardStyles.headerRow}>
+        <GlassButton iconOnly size="compact" accessibilityLabel="닫기" onPress={() => setReportCard(null)}>
+          <Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} />
+        </GlassButton>
+        <Text style={cardStyles.heading} numberOfLines={2}>
+          {persistentReportStatusCard(reportCard) ? <><CardStatusChip card={persistentReportStatusCard(reportCard)!} detail />{' '}</> : null}
+          {reportCard.title}
+        </Text>
+      </View></View>
+      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }}
+        showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <PersistentReportCardExpansion key={reportCard.key} api={api} entry={reportCard} />
+      </ScrollView>
+    </AppModalSurface> : null}
   </SafeAreaView>;
 }

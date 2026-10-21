@@ -48,8 +48,9 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const heading = <View testID="report-head" style={styles.heading}>
     <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header" style={styles.title}
       {...reportWebProps({ tabIndex: -1 })}
-      {...(onToggleCard ? { onPress: onToggleCard, accessibilityRole: 'button' as const, accessibilityState: { expanded: Boolean(expandedContent) } } : {})}
-      {...(compact ? { onPress: (event: { stopPropagation(): void }) => { event.stopPropagation(); onExpand(); }, accessibilityHint: '누르면 펼칩니다',
+      {...(onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onToggleCard(); }, accessibilityRole: 'button' as const,
+        accessibilityState: { expanded: Boolean(expandedContent) } } : {})}
+      {...(compact && !onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onExpand(); }, accessibilityHint: '누르면 펼칩니다',
         accessibilityActions: [{ name: 'expand', label: '펼치기' }], onAccessibilityAction: onExpand } : {})}>{entry.title}</Text>
     {entry.card_numbers.map(number => <View key={number} style={styles.chipSlot}>
       <CompactTouchTarget testID="report-card-link" surfaceTestID="report-card-pill" accessibilityRole="link"
