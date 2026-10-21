@@ -170,6 +170,7 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
     reportBubble: { widthScale: 1, minimumHeight: 0 },
   });
   expect(geometry.reportBubble).toBeNull();
+  expect(geometry.reportViewMaxHeight).toBe(geometry.lineY - (76 + 16) - 44 - 4);
   const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531] };
   const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
     <PersistentReportPager entries={[cardEntry]} index={0} api={null} bubble={false} maxHeight={geometry.reportViewMaxHeight}
