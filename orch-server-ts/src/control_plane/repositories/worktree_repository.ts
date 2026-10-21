@@ -66,20 +66,31 @@ export class WorktreeRepository {
     const rows = await this.sql<Array<WorktreeRow & {
       last_session_activity_at: Date; linked_cards_closed: boolean;
     }>>`
-      SELECT w.*, activity.last_session_activity_at, activity.linked_cards_closed
-      FROM worktrees w
-      CROSS JOIN LATERAL (
-        SELECT GREATEST(w.created_at, MAX(s.updated_at)) AS last_session_activity_at,
-          COUNT(c.id) > 0 AND BOOL_AND(c.status IN ('done', 'cancelled')) AS linked_cards_closed
-        FROM sessions s LEFT JOIN cards c ON c.id = s.card_id
-        WHERE s.worktree_id = w.id OR s.session_id = w.created_by_session_id
-      ) activity
-      WHERE w.node_id = ${input.nodeId} AND w.state = 'ready'
-        AND NOT EXISTS (
-          SELECT 1 FROM sessions active
-          WHERE active.worktree_id = w.id AND active.status IN ('initializing', 'running')
-        )
-      ORDER BY w.created_at, w.id
+      WITH candidates AS (
+        SELECT w.* FROM worktrees w
+        WHERE w.node_id = ${input.nodeId} AND w.state = 'ready'
+          AND NOT EXISTS (
+            SELECT 1 FROM sessions active
+            WHERE active.worktree_id = w.id AND active.status IN ('initializing', 'running')
+          )
+      ), linked AS (
+        SELECT c.id AS worktree_id, s.session_id, s.updated_at, s.card_id
+        FROM candidates c JOIN sessions s ON s.worktree_id = c.id
+        UNION
+        SELECT c.id, s.session_id, s.updated_at, s.card_id
+        FROM candidates c JOIN sessions s ON s.session_id = c.created_by_session_id
+      )
+      SELECT c.*,
+        GREATEST(c.created_at, activity.last_session_activity_at) AS last_session_activity_at,
+        COALESCE(activity.linked_cards_closed, false) AS linked_cards_closed
+      FROM candidates c
+      LEFT JOIN (
+        SELECT l.worktree_id, MAX(l.updated_at) AS last_session_activity_at,
+          COUNT(cd.id) > 0 AND BOOL_AND(cd.status IN ('done', 'cancelled')) AS linked_cards_closed
+        FROM linked l LEFT JOIN cards cd ON cd.id = l.card_id
+        GROUP BY l.worktree_id
+      ) activity ON activity.worktree_id = c.id
+      ORDER BY c.created_at, c.id
     `;
     return rows.map(row => ({ ...project(row),
       lastSessionActivityAt: row.last_session_activity_at.toISOString(),

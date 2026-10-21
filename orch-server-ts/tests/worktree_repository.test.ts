@@ -37,12 +37,18 @@ describe("WorktreeRepository sweeper", () => {
     expect(result).toEqual([expect.objectContaining({ id: "wt", lastSessionActivityAt: "2026-10-01T00:00:00.000Z", linkedCardsClosed: true })]);
     const call = calls[0]!;
     expect(call.values).toContain("node-a");
-    expect(call.query).toMatch(/w\.state = 'ready'/);
+    expect(call.query).toMatch(/WITH candidates AS \([\s\S]*SELECT w\.\* FROM worktrees w[\s\S]*w\.node_id = \? AND w\.state = 'ready'/);
     expect(call.query).toMatch(/NOT EXISTS[\s\S]*worktree_id = w\.id[\s\S]*'initializing', 'running'/);
-    expect(call.query).toMatch(/GREATEST\(w\.created_at,\s*MAX\(s\.updated_at\)\)/);
-    expect(call.query).toMatch(/s\.worktree_id = w\.id OR s\.session_id = w\.created_by_session_id/);
-    expect(call.query).toMatch(/COUNT\(c\.id\) > 0/);
-    expect(call.query).toMatch(/BOOL_AND\(c\.status IN \('done', 'cancelled'\)\)/);
+    expect(call.query).toMatch(/FROM candidates c JOIN sessions s ON s\.worktree_id = c\.id/);
+    expect(call.query).toMatch(/\bUNION\s+SELECT c\.id, s\.session_id, s\.updated_at, s\.card_id\s+FROM candidates c JOIN sessions s ON s\.session_id = c\.created_by_session_id/);
+    expect(call.query).toMatch(/GREATEST\(c\.created_at,\s*activity\.last_session_activity_at\)/);
+    expect(call.query).toMatch(/MAX\(l\.updated_at\) AS last_session_activity_at/);
+    expect(call.query).toMatch(/COUNT\(cd\.id\) > 0/);
+    expect(call.query).toMatch(/BOOL_AND\(cd\.status IN \('done', 'cancelled'\)\)/);
+    expect(call.query).toMatch(/GROUP BY l\.worktree_id[\s\S]*\) activity ON activity\.worktree_id = c\.id/);
+    expect(call.query).toMatch(/COALESCE\(activity\.linked_cards_closed, false\)/);
+    expect(call.query).toMatch(/ORDER BY c\.created_at, c\.id/);
+    expect(call.query).not.toMatch(/s\.worktree_id = w\.id OR s\.session_id = w\.created_by_session_id/);
     expect(call.query).not.toContain("w.updated_at");
   });
 
