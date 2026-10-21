@@ -139,7 +139,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={bubble ? { height: bubbleHeight, flexShrink: 0,
+      keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.track, inlineExpanded && { height: inlineHeight }]} style={bubble ? { height: bubbleHeight, flexShrink: 0,
         // The surface's existing horizontal borders belong to its height;
         // let the viewport span them without adding two more pixels.
         marginVertical: -StyleSheet.hairlineWidth } : inlineExpanded ? { height: inlineHeight, flexShrink: 0 }

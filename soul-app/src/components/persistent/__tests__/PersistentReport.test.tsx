@@ -182,15 +182,18 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   fireEvent.press(screen.getByTestId('report-context'));
   const deck = () => StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
   const track = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style);
+  const trackContent = () => StyleSheet.flatten(screen.getByTestId('report-track').props.contentContainerStyle);
   expect(screen.getByTestId('inline-card-expansion')).toBeTruthy();
   expect(screen.getByTestId('report-scroll')).toBeTruthy();
   expect(deck().maxHeight).toBe(geometry.reportViewMaxHeight);
 
   const reading = screen.getByTestId('report-scroll');
+  expect(StyleSheet.flatten(reading.props.style)).toMatchObject({ flexShrink: 1, minHeight: 0 });
   fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 160 } } });
   fireEvent(reading, 'contentSizeChange', 390, 1200);
   fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
   expect(track().height).toBe(geometry.reportViewMaxHeight);
+  expect(trackContent().height).toBe(geometry.reportViewMaxHeight);
 });
 
 test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 그린다', () => {
