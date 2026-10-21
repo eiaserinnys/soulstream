@@ -70,14 +70,15 @@ describe("session statistics native usage number format", () => {
       cache_creation_input_tokens: 41_375,
       output_tokens: 1_746,
     }));
+    // The observed model attributes the provider; cache write without TTL stays unpriced.
     expect(fact).toMatchObject({
-      provider: "unknown",
+      provider: "claude",
       input_total: 510_663,
       output_total: 1_746,
       total_tokens: 512_409,
       cache_read: 469_276,
       cache_write: 41_375,
-      known_cost_usd: null,
+      known_cost_usd: 0.1288232,
     });
     expect((fact?.total_tokens ?? 0) - (fact?.cache_read ?? 0)).toBe(43_133);
     expect((fact?.input_total ?? 0) - (fact?.cache_read ?? 0) - (fact?.cache_write ?? 0)).toBe(12);
