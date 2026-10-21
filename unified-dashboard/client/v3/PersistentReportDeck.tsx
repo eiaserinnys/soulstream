@@ -15,10 +15,11 @@ import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
 export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number };
-type Props = { sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention };
+type Props = { renderCardDetails?(entry: PersistentReportEntry): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
-export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport }: Props) {
+export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderCardDetails, renderCardStatus }: Props) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const report = usePersistentReport()!;
   const { entries, visibleKey } = report;
   const sending = usePersistentReportSend(sessionId, notify, transport);
@@ -53,7 +54,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const bubble = seat?.target && seat.body ? seat.layout : null;
   const inBubble = Boolean(bubble);
   const ready = seat?.ready !== false;
-  const measurementRevision = JSON.stringify(entries.map(entry => [entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options, entry.card_numbers]));
+  const measurementRevision = JSON.stringify([expandedKey, entries.map(entry => [entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options, entry.card_numbers])]);
   const layoutKey = JSON.stringify([sessionId, inBubble, bubble?.width ?? seat?.inlineWidth, bubble?.maxHeight, ready, entries.length > 0]);
   const sizing = useReportDeckHeight(root, measurementRevision, sessionId, layoutKey, bubble?.maxHeight);
   const focusWithin = useRef(false);
@@ -108,7 +109,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     onPointerDownCapture={sizing.hold}
     onFocusCapture={() => { focusWithin.current = true; }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && (event.relatedTarget || event.target.isConnected)) focusWithin.current = false; }}
-    onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); go(index + (event.key === 'ArrowRight' ? 1 : -1)); } }}>
+    onKeyDown={event => { if (renderCardDetails && (event.target as Element).closest('input,textarea,[contenteditable=true]')) return; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); go(index + (event.key === 'ArrowRight' ? 1 : -1)); } }}>
     <div ref={track} className="pas-report-track" data-testid="report-track" tabIndex={entries.length > 1 ? 0 : -1} role="group" aria-label="보고 장. 좌우 화살표로 넘깁니다"
       onScroll={event => {
         const node = event.currentTarget;
@@ -125,6 +126,9 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         sizing.endScroll();
       }}>
       {entries.map((entry, position) => {
+        const expandable = Boolean(renderCardDetails && entry.card_numbers.length);
+        const expanded = expandable && expandedKey === entry.key;
+        const toggle = () => setExpandedKey(expanded ? null : entry.key);
         const answer = report.answer(entry);
         const answered = answer !== undefined;
         const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && !answered);
@@ -138,11 +142,13 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
           }} ref={node => { if (node) node.dataset.more = String(node.scrollHeight - node.scrollTop - node.clientHeight > 1); }}>
             <div className="pas-report-content">
               <div className="pas-report-heading">
-                <h2 className="pas-report-title">{entry.title}</h2>
+                <h2 className="pas-report-title">{expandable ? <button type="button" className="pas-report-expand" aria-expanded={expanded} onClick={toggle}>{entry.title}</button> : entry.title}</h2>
                 {entry.card_numbers.map(number => <ReportCardLink key={number} number={number} pending={pendingCardNumbers} lookupCards={lookupCards} />)}
+                {renderCardStatus?.(entry)}
               </div>
-              <p className="pas-report-context">{entry.context}</p>
+              {(!expanded || entry.kind === 'ask') && <p className="pas-report-context" onClick={expandable ? toggle : undefined}>{entry.context}</p>}
               {!answered && entry.action !== '' && <p className="pas-report-todo"><ReportAction text={entry.action} /></p>}
+              {expanded && renderCardDetails?.(entry)}
             </div>
           </div>
           {(entries.length > 1 || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">

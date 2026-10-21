@@ -70,3 +70,7 @@
 }
 
 @media (max-width: 639px) { .pas-report { --pas-report-row-height: calc(var(--spacing) * 9); } }
+
+.pas-report-expand { font: inherit; color: inherit; text-align: inherit; cursor: pointer; border-radius: var(--v3-space-1); outline: none; }
+.pas-report-expand:focus-visible { box-shadow: 0 0 0 var(--v3-space-1) var(--ring); }
+.pas-report-card-preview { display: flex; flex-direction: column; gap: var(--v3-space-4); min-width: 0; }

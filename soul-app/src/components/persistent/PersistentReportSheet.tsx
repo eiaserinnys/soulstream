@@ -15,7 +15,8 @@ export function reportTag(entry: PersistentReportEntry) {
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, bubbleHeight, busy = false,
-  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady }: {
+  canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard }: {
+  expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
@@ -25,7 +26,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   onReady?(): void;
 }) {
   const t = useTokens();
-  const signature = JSON.stringify([entry.title, entry.context, entry.action, entry.options, entry.card_numbers, compact]);
+  const signature = JSON.stringify([entry.title, entry.context, entry.action, entry.options, entry.card_numbers, compact, Boolean(expandedContent)]);
   const [asked, setAsked] = useState({ signature, reading: 0, foot: 0 });
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
   const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && entry.state === 'open');
@@ -47,6 +48,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const heading = <View testID="report-head" style={styles.heading}>
     <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header" style={styles.title}
       {...reportWebProps({ tabIndex: -1 })}
+      {...(onToggleCard ? { onPress: onToggleCard, accessibilityRole: 'button' as const, accessibilityState: { expanded: Boolean(expandedContent) } } : {})}
       {...(compact ? { onPress: (event: { stopPropagation(): void }) => { event.stopPropagation(); onExpand(); }, accessibilityHint: '누르면 펼칩니다',
         accessibilityActions: [{ name: 'expand', label: '펼치기' }], onAccessibilityAction: onExpand } : {})}>{entry.title}</Text>
     {entry.card_numbers.map(number => <View key={number} style={styles.chipSlot}>
@@ -58,19 +60,21 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
           <Text testID="report-card-number" style={styles.cardNumber}>#{number}</Text></View>
       </CompactTouchTarget>
     </View>)}
+    {cardStatus}
   </View>;
   const hasAction = entry.action !== '';
   const todo = hasAction ? <Text testID="report-todo" numberOfLines={compact ? 2 : undefined} style={styles.todo}>
     {reportActionParts(entry.action).map((part, i) => typeof part === 'string' ? part : <Text key={i} testID="report-link"
       accessibilityRole="link" style={styles.link} onPress={event => { event.stopPropagation(); onLink(part.url); }}>{part.label}</Text>)}
   </Text> : null;
-  const context = <Text testID="report-context" numberOfLines={compact ? 2 : undefined} style={styles.context}>{entry.context}</Text>;
+  const context = <Text testID="report-context" numberOfLines={compact ? 2 : undefined} style={styles.context} onPress={onToggleCard}>{entry.context}</Text>;
   const frame = <View testID="report-reading"
     onLayout={!bubble ? event => measure('reading', event.nativeEvent.layout.height + t.uiSpacing.md
       + (compact ? t.uiSpacing.lg + (count > 1 ? t.uiSpacing.sm + t.foundation.typography.meta.lineHeight : 0) : 0)) : undefined}
     style={[styles.reading, answer && !bubble && !compact && asked.reading ? { minHeight: Math.max(0, asked.reading - t.uiSpacing.md) } : null]}>
-    {heading}{!compact ? context : null}
+    {heading}{!compact && (!expandedContent || entry.kind === 'ask') ? context : null}
     {answer ? compact ? received : null : hasAction ? todo : compact ? context : null}
+    {expandedContent}
   </View>;
   const foot = hasFooter
     ? <View testID="report-footer" style={styles.foot} onLayout={event => measure('foot', event.nativeEvent.layout.height)}>

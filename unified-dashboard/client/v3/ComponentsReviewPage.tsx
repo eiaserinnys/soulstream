@@ -116,6 +116,7 @@ export function ComponentsReviewPage() {
     onToggleToday: async () => setInToday(value => !value), onMoveToParent: () => open("상위 폴더 이동"),
   };
 
+  if (new URLSearchParams(window.location.search).get('sample') === 'pas-card') return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">시안 · PAS 카드 제자리 펼침</p><PersistentReportReviewSample cardPreview bubble before={new URLSearchParams(window.location.search).get('before') === '1'} /></div>;
   return <SessionMenuProvider sessions={[reviewSession]}
     onRename={async()=>open("세션 이름 변경")} onDelete={async()=>open("세션 삭제")}
     onMove={async(_id,target)=>open(`폴더 이동 · ${target.page.title}`)} onCreated={()=>open("세션 승계")}>
@@ -258,6 +259,7 @@ export function ComponentsReviewPage() {
           </section>
           <section id="components-bubbles" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>말풍선과 첨부</h3></div>
+            <Sample name="PAS 카드 펼침 시안 · 머지 금지" state="카드와 질문"><PersistentReportReviewSample cardPreview bubble /></Sample>
             <Sample name="PersistentReportDeck" state="PAS 보고 · 넘김 · 답 · 확인했어"><PersistentReportReviewSample /></Sample>
             <Sample name="PersistentReportDeck" state="PAS 말풍선 · 1440"><PersistentReportReviewSample bubble /></Sample>
             <Sample name="CardTimeline / UserMessage / AssistantMessage" state="보고 · 이미지 확대 · 첨부 열기">

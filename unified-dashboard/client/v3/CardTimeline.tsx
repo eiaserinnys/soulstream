@@ -14,7 +14,8 @@ import { type AttachmentReadContext, attachmentUrlHasContext, cardAttachmentSele
 
 type MarkdownSourceLink = NonNullable<ComponentProps<typeof MarkdownContent>["sourceLinkComponent"]>;
 
-export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage}: {
+export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage,commentsOnly=false}: {
+ commentsOnly?:boolean;
  initialImage?:{src:string;alt:string};
  card:CardRow;detail?:CardDetail;portraitUrl:string|null;userPortraitUrl?:string|null;
  onAnswer(questionId:string,answer:string):void;pending:boolean;
@@ -126,8 +127,8 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
     body:<>{comment.itemId!==undefined&&comment.itemId!==null?<p className="v3-card-comment-target">대상: {comment.itemId}번 {target?.title??"항목"}</p>:null}<MarkdownContent content={commentMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,references,trigger)} sourceLinkComponent={linkComponent}/></>};
   }),
  ];
- return entries.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
- },[card,detail,expanded,pending,onAnswer,openImage,openReference,origin,internalLinkClick]);
+ return entries.filter(entry=>!commentsOnly||entry.kind==="커멘트").sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+ },[card,detail,commentsOnly,expanded,pending,onAnswer,openImage,openReference,origin,internalLinkClick]);
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next;});
  const viewerStatuses:Record<string,CardAttachmentStatus>={};
  for(const [key,status] of Object.entries(attachmentStates)){

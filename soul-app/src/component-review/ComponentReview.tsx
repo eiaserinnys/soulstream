@@ -50,6 +50,7 @@ import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { ReviewContentLinkDocument } from './ReviewContentLinkDocument';
 import { ReviewChatUiPrimitives } from './ReviewChatUiPrimitives';
 import { ReviewChatUi } from './ReviewChatUi';
+import { ReviewPasCardExpand } from './ReviewPasCardExpand';
 import { ReviewAttachments } from './ReviewAttachments';
 
 const sections = [
@@ -59,6 +60,7 @@ const sections = [
   { value: 'nativeSettings', label: '앱 설정' },
   { value: 'pasSettings', label: 'PAS 설정' },
   { value: 'persistent', label: '영구 세션' },
+  { value: 'pasCardExpand', label: 'PAS 카드 펼침 시안' },
   { value: 'surfaces', label: '표면' },
   { value: 'board', label: '보드' },
   { value: 'boardActions', label: '보드 액션' },
@@ -168,6 +170,7 @@ function Gallery() {
     padding: t.cardLayout.padding, gap: t.uiSpacing.xl,
     backgroundColor: t.colors.background,
   }), [t]);
+  if (section === 'pasCardExpand') return <ReviewPasCardExpand />;
   if (section === 'chatUiComposer') return <ReviewChatUiComposer />;
   if (section === 'nativeSettings' || section === 'pasSettings') return <ReviewNativeSettings/>;
   if (section === 'persistent') {
@@ -271,7 +274,7 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
   const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent'
     || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
     || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi' || params.get('section') === 'chatUiRenderer';
-  const fullHeightSample = cardChecks || chatUiComposerSample || params.get('section') === 'cardImages'
+  const fullHeightSample = params.get('section') === 'pasCardExpand' || cardChecks || chatUiComposerSample || params.get('section') === 'cardImages'
     || params.get('section') === 'attachments';
   if (!pasImageSample && !fullHeightSample && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 

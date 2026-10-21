@@ -5,13 +5,13 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import "./v3-card-check-items.css";
 
 interface NowSlot { key:string; text:string; turn:CardNow["turn"]; ask:string|null; at:string }
-interface NowPanelProps {now?:CardNow|null;nowHistory?:readonly CardNowHistoryEntry[]|null;itemsCount:number;activeCount:number;onComplete?():void;pending?:boolean}
+interface NowPanelProps {embedded?:boolean;now?:CardNow|null;nowHistory?:readonly CardNowHistoryEntry[]|null;itemsCount:number;activeCount:number;onComplete?():void;pending?:boolean}
 
 export function CardNowPanel(props: NowPanelProps) {
  return props.now?<CardNowPanelView {...props} now={props.now}/>:null;
 }
 
-function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount,onComplete,pending}: NowPanelProps&{now:CardNow}) {
+function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount,onComplete,pending,embedded=false}: NowPanelProps&{now:CardNow}) {
  const panel=useRef<HTMLElement>(null),measure=useRef<HTMLDivElement>(null),frozenHeight=useRef<number|null>(null);
  const [selectedAt,setSelectedAt]=useState<string|null>(null);
  const [height,setHeight]=useState<number|null>(null);
@@ -22,7 +22,7 @@ function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount,onComplete,p
  const index=selectedAt===null?slots.length-1:Math.max(0,slots.findIndex(slot=>slot.key===selectedAt));
  const latest=index===slots.length-1,entry=latest?slots.at(-1)!:slots[index];
  const hasNavigation=stored.length>1;
- const allChecked=itemsCount>0&&activeCount===0;
+ const allChecked=!embedded&&itemsCount>0&&activeCount===0;
  const move=(next:number)=>{
   if(next<0||next>=slots.length)return;
   if(next===slots.length-1){frozenHeight.current=null;setHeight(null);setSelectedAt(null);return;}
