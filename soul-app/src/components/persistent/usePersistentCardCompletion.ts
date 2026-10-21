@@ -12,6 +12,7 @@ export interface CardCompletionRecent {
   cardId: string;
   number: number | null;
   label: string;
+  expiresAt: number;
 }
 
 export interface CardCompletion {
@@ -60,7 +61,8 @@ export function usePersistentCardCompletion(api: ApiClient | null): CardCompleti
       if (timer.current) clearTimeout(timer.current);
       completedCard.current = result.card;
       const number = entry.card_numbers[0] ?? null;
-      const nextRecent = { cardId: result.card.id, number, label: number === null ? '완료됨' : `#${number} 완료됨` };
+      const expiresAt = Date.now() + CARD_COMPLETION_UNDO_MS;
+      const nextRecent = { cardId: result.card.id, number, label: number === null ? '완료됨' : `#${number} 완료됨`, expiresAt };
       setRecent(nextRecent);
       timer.current = setTimeout(() => {
         timer.current = null;

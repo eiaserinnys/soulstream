@@ -6,7 +6,8 @@ jest.mock('react-native-reanimated', () => {
   return {
     __esModule: true,
     default: Animated,
-    useSharedValue: (initialValue) => require('react').useRef({ value: initialValue }).current,
+    useSharedValue: jest.fn((initialValue) => require('react').useRef({ value: initialValue }).current),
+    useAnimatedProps: jest.fn((updater) => updater()),
     useAnimatedStyle: (updater) => updater(),
     // GestureDetector still initializes this hook for runOnJS gestures.
     useEvent: (callback) => callback,

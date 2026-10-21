@@ -26,13 +26,14 @@ test('completion moves a review card to done and clears its undo row after five 
   jest.useFakeTimers();
   const { api, entry, getCard, setCardStatus } = completionHarness();
   const { result, unmount } = renderHook(() => usePersistentCardCompletion(api));
+  const completedAt = Date.now();
 
   await act(async () => { await result.current.complete(entry); });
 
   expect(getCard).toHaveBeenCalledTimes(1);
   expect(setCardStatus).toHaveBeenCalledTimes(1);
   expect(setCardStatus).toHaveBeenCalledWith('card-531', 'done', 1, 'soul-app-card-completion-operation-id', undefined);
-  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, label: '#531 완료됨' });
+  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: completedAt + 5000 });
   await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
   expect(result.current.recent).toBeNull();
   unmount();

@@ -30,6 +30,7 @@ const mockOpen = jest.fn(() => Promise.resolve());
 jest.mock('../../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpen }));
 beforeEach(() => {
   mockDevice = 'phone'; jest.clearAllMocks();
+  (AccessibilityInfo.isReduceMotionEnabled as jest.Mock).mockReturnValue(new Promise(() => {}));
   useSessionStore.setState({ persistentReportsBySession: {} });
 });
 afterEach(() => jest.restoreAllMocks());
@@ -141,7 +142,7 @@ test('review cards use complete while blocked cards keep acknowledge and the dis
 });
 
 test('card questions keep their options; undo appears on the current card and on the empty deck', async () => {
-  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨' }, busy: false,
+  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
     complete: jest.fn(), undo: jest.fn().mockResolvedValue(true) };
   const question = { ...reportReviewEntries[2], key: 'cq_question', kind: 'ask' as const, options: ['확인', '보류'],
     card_id: 'card-531', card_status: 'review' };
@@ -163,7 +164,7 @@ test('card questions keep their options; undo appears on the current card and on
 test('tablet navigation lifts above the visible completion undo row', () => {
   mockDevice = 'tablet';
   const t = renderHook(() => useTokens()).result.current;
-  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨' }, busy: false,
+  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
     complete: jest.fn(), undo: jest.fn() };
   const review = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review' };
   const screen = pager([review, reportReviewEntries[0]], undefined, completion);
@@ -175,7 +176,7 @@ test('tablet navigation lifts above the visible completion undo row', () => {
 
 test('empty bubble undo deck has no measured report height', () => {
   const t = renderHook(() => useTokens()).result.current;
-  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨' }, busy: false,
+  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
     complete: jest.fn(), undo: jest.fn() };
   const screen = pager([], undefined, completion, { bubble: true, maxHeight: 440 });
   const deckStyle = StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
