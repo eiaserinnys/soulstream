@@ -175,7 +175,9 @@ export class PersistentSessionControl {
     const stored = readStoredPersistentSettings(task.metadata);
     const base: StoredPersistentSettings = stored ?? {
       default_model: currentModelOf(task),
-      fallback_model: input.enabled === true ? { ...PERSISTENT_SETTINGS_DEFAULTS.fallback_model } : null,
+      fallback_models: input.enabled === true
+        ? PERSISTENT_SETTINGS_DEFAULTS.fallback_models.map((model) => ({ ...model }))
+        : [],
       show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
       show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
       show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,
@@ -196,7 +198,7 @@ export class PersistentSessionControl {
         : patch.show_turn_usage ? "collapsed" : "hidden");
     return {
       default_model: defaultModel,
-      fallback_model: patch.fallback_model !== undefined ? patch.fallback_model : base.fallback_model,
+      fallback_models: patch.fallback_models !== undefined ? patch.fallback_models : base.fallback_models,
       show_generation_separator: patch.show_generation_separator ?? base.show_generation_separator,
       show_character: patch.show_character ?? base.show_character,
       show_jev_candidates: patch.show_jev_candidates ?? base.show_jev_candidates,
@@ -292,7 +294,7 @@ export class PersistentSessionControl {
       throw new Error("Persistent session metadata persistence unavailable");
     }
     const currentBackend = this.deps.resolveCurrentBackend?.(task) ?? task.modelPresetBackend;
-    if (currentBackend !== "claude" && currentBackend !== "codex") {
+    if (currentBackend !== "claude" && currentBackend !== "codex" && currentBackend !== "antigravity") {
       throw new Error(`Persistent generation rollover does not support current backend: ${currentBackend ?? "unknown"}`);
     }
 
@@ -304,7 +306,7 @@ export class PersistentSessionControl {
       throw new Error(`Model catalog is not configured; cannot resolve preset: ${modelPresetId}`);
     }
     const targetPreset = this.deps.modelCatalog.resolve(modelPresetId);
-    if (targetPreset.backend !== "claude" && targetPreset.backend !== "codex") {
+    if (targetPreset.backend !== "claude" && targetPreset.backend !== "codex" && targetPreset.backend !== "antigravity") {
       throw new Error(`Persistent generation rollover does not support target backend: ${targetPreset.backend}`);
     }
     const reasoningEffort = resolveReasoningEffortForCreate(

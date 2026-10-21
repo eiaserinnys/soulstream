@@ -9,7 +9,7 @@ const modelSelection = z.object({
 
 const settingFields = {
   default_model: modelSelection.optional(),
-  fallback_model: modelSelection.nullable().optional(),
+  fallback_models: z.array(modelSelection).max(3).optional(),
   show_generation_separator: z.boolean().optional(),
   show_character: z.boolean().optional(),
   show_jev_candidates: z.boolean().optional(),
@@ -28,6 +28,7 @@ export const persistentSessionSettingsTools = {
       description:
         "영구 세션 설정을 저장한다. 기본 모델을 바꾸면 설정창과 같이 다음 실행에서 새 세대로 바뀐다. "
         + "문맥 초기화와 함께 바꾸려면 이어서 request_session_generation_rollover(reset_context=true)를 부른다. "
+        + "fallback_models는 기본 모델 다음의 대체 순위 목록이다(앞이 2순위). 주면 목록 전체를 바꾸고, 빈 배열이면 대체가 없다. "
         + "표시 토글만 바꾸면 세대는 그대로다.",
       inputSchema: {
         session_id: z.string().min(1),

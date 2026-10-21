@@ -41,6 +41,14 @@ function makeRolloverControl(
       supported_efforts: ["low", "medium", "high"],
       default_effort: "medium",
     },
+    "antigravity-preset": {
+      id: "antigravity-preset",
+      model: "gemini-3-pro-preview",
+      backend: "antigravity",
+      env: {},
+      supported_efforts: ["low", "medium", "high"],
+      default_effort: "high",
+    },
     "agents-preset": {
       id: "agents-preset",
       model: "gpt-5",
@@ -351,6 +359,24 @@ describe("PersistentSessionControl", () => {
     })).rejects.toThrow();
     expect(enqueueMetadataEffect).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["current", "codex-preset", "antigravity"],
+    ["target", "antigravity-preset", "claude"],
+  ] as const)("accepts Antigravity as the %s generation backend", async (_where, targetPreset, currentBackend) => {
+    const task = makeRolloverTask({ modelPresetBackend: currentBackend as never });
+    const { control, enqueueMetadataEffect } = makeRolloverControl(task);
+
+    await control.requestGenerationRollover(task.agentSessionId, {
+      modelPreset: targetPreset,
+      reason: "automatic fallback",
+    });
+
+    expect(enqueueMetadataEffect).toHaveBeenCalledOnce();
+    expect(task.persistentGeneration?.pending).toMatchObject({
+      targetModelPreset: targetPreset,
+    });
+  });
 });
 
 describe("PersistentSessionControl.applySettings", () => {
@@ -424,7 +450,7 @@ describe("PersistentSessionControl.applySettings", () => {
         type: "persistent_settings",
         value: {
           default_model: sonnet,
-          fallback_model: null,
+          fallback_models: [],
           show_generation_separator: true,
           show_character: false,
           show_jev_candidates: false,

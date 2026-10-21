@@ -6,6 +6,7 @@
  */
 
 export const PERSISTENT_SETTINGS_METADATA_TYPE = "persistent_settings";
+export const PERSISTENT_FALLBACK_MODELS_MAX = 3;
 
 export const PERSISTENT_TURN_USAGE_MODES = ["collapsed", "expanded", "hidden"] as const;
 export type PersistentTurnUsageMode = (typeof PERSISTENT_TURN_USAGE_MODES)[number];
@@ -18,7 +19,7 @@ export type PersistentModelSelection = {
 
 export type PersistentSessionSettings = {
   default_model: PersistentModelSelection;
-  fallback_model: PersistentModelSelection | null;
+  fallback_models: PersistentModelSelection[];
   show_generation_separator: boolean;
   show_character: boolean;
   /** 채팅 창의 Jev 후보 줄을 보일지 여부. */
@@ -41,7 +42,7 @@ export type StoredPersistentSettings = Omit<PersistentSessionSettings, "default_
 
 /** 최초 등록 때 서버가 채우는 기본값. 기본 모델은 세션의 현재 모델에서 온다. */
 export const PERSISTENT_SETTINGS_DEFAULTS = {
-  fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+  fallback_models: [{ model_preset: "codex-6.1-sol", reasoning_effort: "high" }],
   show_generation_separator: true,
   show_character: true,
   show_jev_candidates: false,
@@ -49,7 +50,9 @@ export const PERSISTENT_SETTINGS_DEFAULTS = {
   show_turn_usage: false,
   animate_character: true,
   show_work_details: false,
-} as const satisfies Omit<PersistentSessionSettings, "default_model">;
+} as const satisfies Omit<PersistentSessionSettings, "default_model" | "fallback_models"> & {
+  fallback_models: readonly PersistentModelSelection[];
+};
 
 export type PersistentPendingTarget = {
   target_model_preset: string;
@@ -60,7 +63,7 @@ type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
 const SETTINGS_KEYS = [
   "default_model",
-  "fallback_model",
+  "fallback_models",
   "show_generation_separator",
   "show_character",
   "show_jev_candidates",
@@ -82,14 +85,31 @@ export function parsePersistentSettingsPatch(input: unknown): ParseResult<Persis
     if (!parsed.ok) return parsed;
     patch.default_model = parsed.value;
   }
-  if (input.fallback_model !== undefined) {
-    if (input.fallback_model === null) {
-      patch.fallback_model = null;
-    } else {
-      const parsed = parseModelSelection(input.fallback_model, "settings.fallback_model");
-      if (!parsed.ok) return parsed;
-      patch.fallback_model = parsed.value;
+  if (input.fallback_models !== undefined) {
+    if (!Array.isArray(input.fallback_models)) {
+      return { ok: false, message: "settings.fallback_models must be an array" };
     }
+    if (input.fallback_models.length > PERSISTENT_FALLBACK_MODELS_MAX) {
+      return {
+        ok: false,
+        message: `settings.fallback_models must have at most ${PERSISTENT_FALLBACK_MODELS_MAX} entries`,
+      };
+    }
+    const models: PersistentModelSelection[] = [];
+    const seen = new Set<string>();
+    for (let index = 0; index < input.fallback_models.length; index += 1) {
+      const parsed = parseModelSelection(input.fallback_models[index], `settings.fallback_models[${index}]`);
+      if (!parsed.ok) return parsed;
+      if (seen.has(parsed.value.model_preset)) {
+        return {
+          ok: false,
+          message: `settings.fallback_models has duplicate model_preset: ${parsed.value.model_preset}`,
+        };
+      }
+      seen.add(parsed.value.model_preset);
+      models.push(parsed.value);
+    }
+    patch.fallback_models = models;
   }
   if (input.turn_usage_mode !== undefined) {
     if (!isPersistentTurnUsageMode(input.turn_usage_mode)) {
@@ -119,13 +139,29 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
   if (value === undefined) return undefined;
   const record = isRecord(value) ? value : {};
   const defaultModel = parseModelSelection(record.default_model, "default_model");
-  const fallbackModel = parseModelSelection(record.fallback_model, "fallback_model");
+  let fallbackModels: PersistentModelSelection[];
+  if (Array.isArray(record.fallback_models)) {
+    fallbackModels = [];
+    const seen = new Set<string>();
+    for (const value of record.fallback_models) {
+      if (fallbackModels.length >= PERSISTENT_FALLBACK_MODELS_MAX) break;
+      const parsed = parseModelSelection(value, "fallback_models");
+      if (!parsed.ok || seen.has(parsed.value.model_preset)) continue;
+      seen.add(parsed.value.model_preset);
+      fallbackModels.push(parsed.value);
+    }
+  } else if (Object.prototype.hasOwnProperty.call(record, "fallback_model")) {
+    const legacyFallback = parseModelSelection(record.fallback_model, "fallback_model");
+    fallbackModels = legacyFallback.ok ? [legacyFallback.value] : [];
+  } else {
+    fallbackModels = PERSISTENT_SETTINGS_DEFAULTS.fallback_models.map((model) => ({ ...model }));
+  }
   const turnUsageMode = isPersistentTurnUsageMode(record.turn_usage_mode)
     ? record.turn_usage_mode
     : record.show_turn_usage === false ? "hidden" : "collapsed";
   return {
     default_model: defaultModel.ok ? defaultModel.value : null,
-    fallback_model: fallbackModel.ok ? fallbackModel.value : null,
+    fallback_models: fallbackModels,
     show_generation_separator: typeof record.show_generation_separator === "boolean"
       ? record.show_generation_separator
       : PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,

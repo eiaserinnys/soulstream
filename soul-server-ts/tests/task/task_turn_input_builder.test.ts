@@ -472,6 +472,30 @@ describe("TaskTurnInputBuilder", () => {
     expect(task.needsFullContextReinjection).toBe(false);
   });
 
+  it("passes systemPrompt on the first Antigravity generation input", async () => {
+    const task = makeTask({
+      codexThreadId: "native-old",
+      modelPresetBackend: "antigravity",
+      activeGenerationRollover: {
+        number: 2,
+        reason: "automatic fallback",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        fromBackendSessionId: "native-old",
+        previousBackend: "claude",
+        previousModelPreset: "claude-default",
+      },
+      needsFullContextReinjection: true,
+      interventionQueue: [{ text: "다음 요청", user: "Alice" }],
+    });
+    const { builder } = makeSubject();
+
+    const input = await builder.prepareInitialTurnInput(task, { ...claudeAgent, backend: "antigravity" });
+
+    expect(input.generationRollover).toBe(true);
+    expect(input.systemPrompt).toBe("system instructions");
+    expect(input.prompt).not.toContain("system instructions");
+  });
+
   it("rejects an applying generation when its context manifest has an error source", async () => {
     const task = makeTask({
       codexThreadId: "native-old",

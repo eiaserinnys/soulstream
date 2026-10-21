@@ -29,7 +29,7 @@ function makeTask(): Task {
       type: "persistent_settings",
       value: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
-        fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+        fallback_models: [{ model_preset: "codex-6.1-sol", reasoning_effort: "high" }],
       },
     }],
     createdAt: new Date("2026-10-05T00:00:00.000Z"),
@@ -180,7 +180,7 @@ describe("buildPersistentDecisionInput", () => {
       keepalive_count: 1,
       current_preset: "claude-opus",
       default_model: "claude-opus",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       preset_providers: { "claude-opus": "claude", "codex-6.1-sol": "codex" },
       checkpoint_tokens_by_preset: { "codex-6.1-sol": 28_000 },
       accounts: {
@@ -193,6 +193,59 @@ describe("buildPersistentDecisionInput", () => {
     expect(input.accounts.claude?.weekly_remaining_percent).toBe(65);
     expect(input.accounts.codex?.weekly_remaining_percent).toBe(55);
     expect(providerUsage.fetchUsage).not.toHaveBeenCalled();
+  });
+
+  it("keeps Antigravity fallbacks, skips unsupported backends, and collects their account usage", async () => {
+    const task = makeTask();
+    task.metadata = [{
+      type: "persistent_settings",
+      value: {
+        default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+        fallback_models: [
+          { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+          { model_preset: "opencode-unsupported", reasoning_effort: "high" },
+          { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+        ],
+      },
+    }];
+    rememberProviderUsageObservation("claude", makeUsage(35, 20), now.toISOString());
+    rememberProviderUsageObservation("antigravity", makeUsage(40, 30), now.toISOString());
+    rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
+    const fetchUsage = vi.fn();
+    const warn = vi.fn();
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({
+            id,
+            backend: id === "gemini-4-argon"
+              ? "antigravity"
+              : id === "opencode-unsupported"
+                ? "opencode"
+                : id.startsWith("claude") ? "claude" : "codex",
+          }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
+        logger: { warn },
+      },
+    );
+
+    expect(input.fallback_models).toEqual(["gemini-4-argon", "codex-6.1-sol"]);
+    expect(input.preset_providers).toMatchObject({
+      "claude-opus": "claude",
+      "gemini-4-argon": "antigravity",
+      "codex-6.1-sol": "codex",
+    });
+    expect(input.preset_providers).not.toHaveProperty("opencode-unsupported");
+    expect(input.accounts.antigravity?.short_remaining_percent).toBe(70);
+    expect(warn).toHaveBeenCalledWith(
+      { sessionId: task.agentSessionId, preset: "opencode-unsupported", backend: "opencode" },
+      "persistent decision skipped unsupported fallback preset",
+    );
+    expect(fetchUsage).not.toHaveBeenCalled();
   });
 
   it("forces one usage refresh for limit_hit even when observations are fresh", async () => {

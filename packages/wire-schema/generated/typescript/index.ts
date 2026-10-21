@@ -2241,10 +2241,41 @@ export interface SetPersistentSessionSettings {
       model_preset: string;
       reasoning_effort: string | null;
     };
-    fallback_model?: {
-      model_preset: string;
-      reasoning_effort: string | null;
-    } | null;
+    /**
+     * @maxItems 3
+     */
+    fallback_models?:
+      | []
+      | [
+          {
+            model_preset: string;
+            reasoning_effort: string | null;
+          }
+        ]
+      | [
+          {
+            model_preset: string;
+            reasoning_effort: string | null;
+          },
+          {
+            model_preset: string;
+            reasoning_effort: string | null;
+          }
+        ]
+      | [
+          {
+            model_preset: string;
+            reasoning_effort: string | null;
+          },
+          {
+            model_preset: string;
+            reasoning_effort: string | null;
+          },
+          {
+            model_preset: string;
+            reasoning_effort: string | null;
+          }
+        ];
     show_generation_separator?: boolean;
     show_character?: boolean;
     show_jev_candidates?: boolean;

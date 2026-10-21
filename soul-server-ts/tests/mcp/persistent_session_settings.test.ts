@@ -39,7 +39,14 @@ describe("update_persistent_session_settings MCP forwarding", () => {
 
         const result = await client.callTool({
           name: "update_persistent_session_settings",
-          arguments: { session_id: "target-session", show_turn_usage: false },
+          arguments: {
+            session_id: "target-session",
+            show_turn_usage: false,
+            fallback_models: [
+              { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+              { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+            ],
+          },
         });
 
         expect(result.isError).not.toBe(true);
@@ -47,7 +54,14 @@ describe("update_persistent_session_settings MCP forwarding", () => {
         const [url, request] = fetch.mock.calls[0]!;
         expect(String(url)).toBe("https://orchestrator.example/api/mcp/host/update_persistent_session_settings");
         expect(JSON.parse(String(request?.body))).toEqual({
-          args: { session_id: "target-session", show_turn_usage: false },
+          args: {
+            session_id: "target-session",
+            show_turn_usage: false,
+            fallback_models: [
+              { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+              { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+            ],
+          },
           context: { principal: "internal", caller_session_id: "caller-session", node_id: "node-1" },
         });
       } finally {
@@ -92,7 +106,7 @@ describe("update_persistent_session_settings MCP forwarding", () => {
           name: "update_persistent_session_settings",
           arguments: {
             session_id: "target-session",
-            fallback_model: { model_preset: "codex-6.1-sol", unrecognized: true },
+            fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
           },
         });
         expect(fallbackModelResult.isError).toBe(true);
