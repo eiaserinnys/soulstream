@@ -233,6 +233,37 @@ describe("PAS reports on production PostgreSQL schema", () => {
     const unrelatedNumber=(await cards.getCard(unrelated))!.card.number!;
     expect((await reports.put('pas',{...entry('unrelated-card'),card_numbers:[unrelatedNumber]})).ok).toBe(true);
   });
+  it("links a child card through its assigned parent only when the parent creator is persistent", async () => {
+    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id IN ('pas','normal')`;
+    await sql`INSERT INTO sessions(session_id,folder_id,node_id,metadata,agent_id)
+      VALUES('pas-child-worker','report-folder','test-node','[]','report-agent'),
+        ('nonpersistent-child-worker','report-folder','test-node','[]','report-agent')`;
+
+    const parent=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',actorUserId:null,folderId:'report-folder',
+      title:'PAS 부모 카드',request:'요청',assignee:{kind:'session',sessionId:'pas-child-worker'}})).operation.target_id;
+    const child=(await cards.createCard({actorKind:'agent',actorSessionId:'pas-child-worker',actorUserId:null,folderId:'report-folder',
+      title:'담당 세션의 자식 카드',request:'요청'})).operation.target_id;
+    expect(parent).not.toBe(child);
+    await cards.setCardStatus({...human,cardId:child,status:'review'});
+    const childNumber=(await cards.getCard(child))!.card.number!;
+    expect((await reports.get('pas')).some(e=>e.key===`card_${child}`)).toBe(true);
+    expect(await reports.put('pas',{...entry('linked-child'),card_numbers:[childNumber]}))
+      .toMatchObject({ok:false,errors:[{path:'card_numbers',reason:'이 카드는 서버가 판에 올립니다. 담당이 상황판과 카드 질문을 쓰게 하세요'}]});
+
+    const nonpersistentParent=(await cards.createCard({actorKind:'agent',actorSessionId:'normal',actorUserId:null,folderId:'report-folder',
+      title:'일반 세션 부모 카드',request:'요청',assignee:{kind:'session',sessionId:'nonpersistent-child-worker'}})).operation.target_id;
+    const nonpersistentChild=(await cards.createCard({actorKind:'agent',actorSessionId:'nonpersistent-child-worker',actorUserId:null,folderId:'report-folder',
+      title:'일반 세션의 자식 카드',request:'요청'})).operation.target_id;
+    expect(nonpersistentParent).not.toBe(nonpersistentChild);
+    await cards.setCardStatus({...human,cardId:nonpersistentChild,status:'review'});
+    const boardSessions=await sql<{session_id:string}[]>`SELECT session_id FROM sessions
+      WHERE session_type IS DISTINCT FROM 'llm'
+        AND metadata @> '[{"type":"persistent_session","value":{"enabled":true}}]'::jsonb`;
+    expect(boardSessions.map(row=>row.session_id)).toContain('pas');
+    for (const {session_id} of boardSessions)
+      expect((await reports.get(session_id)).some(e=>e.key===`card_${nonpersistentChild}`)).toBe(false);
+  });
   it("replaces a legacy PAS card entry and respects manual dismissal until the card changes", async () => {
     for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
     await sql`UPDATE cards SET assignee_kind='agent',assignee_agent_id='report-agent',assignee_session_id=NULL WHERE assignee_session_id='pas'`;
