@@ -8,6 +8,10 @@ export function isPersistentReportCardExpandable(entry: PersistentReportEntry): 
   return Boolean(entry.card_id) || entry.card_numbers.length === 1;
 }
 
+export function isReviewCardEntry(entry: PersistentReportEntry): boolean {
+  return entry.key.startsWith(CARD_ENTRY_KEY_PREFIX) && entry.card_status === 'review' && Boolean(entry.card_id);
+}
+
 export function isServerCardReport(entry: PersistentReportEntry): boolean {
   return entry.key.startsWith(CARD_ENTRY_KEY_PREFIX) || entry.key.startsWith(CARD_QUESTION_KEY_PREFIX);
 }

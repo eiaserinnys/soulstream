@@ -40,6 +40,7 @@ export function reportStyles(t: DesignTokens, _bleed: number, showNav: boolean) 
     // wrap-reverse flips the cross axis: flex-start aligns each row to its bottom.
     foot: { flexDirection: 'row', flexWrap: 'wrap-reverse', alignItems: 'flex-start', columnGap: t.uiSpacing.sm,
       rowGap: t.uiSpacing.sm, paddingHorizontal: t.uiSpacing.lg, paddingTop: t.uiSpacing.md, paddingBottom: t.uiSpacing.lg },
+    undoRow: { flexBasis: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: t.hitTarget.min },
     navSlot: { width: showNav ? t.hitTarget.min * 2 + t.uiSpacing.xxl + t.uiSpacing.xs * 2 - iconOverhang : t.uiSpacing.xxl,
       height: showNav ? t.hitTarget.min : type.meta.lineHeight },
     nav: { position: 'absolute', left: t.uiSpacing.lg - (showNav ? iconOverhang : 0), bottom: t.uiSpacing.lg,

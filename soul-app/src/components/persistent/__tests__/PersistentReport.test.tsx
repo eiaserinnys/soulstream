@@ -34,22 +34,22 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
-function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void) {
+function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void, completion?: any) {
   const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn((_text: string, _reply?: ReportReplyDraft) => ({ ok: true as const }));
   const api = { listCards: jest.fn().mockResolvedValue({ cards: [{ id: 'public-card', number: 270 }] }) } as any;
+  const send = { busy: false, close: jest.fn(() => true), canCancel: () => false, cancelSent: () => false,
+    cancel: jest.fn(), sendOption: jest.fn() } as any;
   function Harness() {
     const [index, setIndex] = React.useState(0);
     return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={(_id, text, reply) => onAppend(text, reply)}>
       <PersistentReportPager entries={entries} index={index} api={api}
         onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()}
-        onDeckTouch={onDeckTouch}
-        send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false,
-          cancel: jest.fn(), sendOption: jest.fn() } as any} />
+        onDeckTouch={onDeckTouch} completion={completion} send={send} />
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
   measurePersistentReports(screen);
-  return { ...screen, onSelect, onDismiss, onAppend, api };
+  return { ...screen, onSelect, onDismiss, onAppend, api, send };
 }
 
 function cardSheet({ expandedContent, onToggleCard, onExpand = jest.fn() }: {
@@ -115,6 +115,48 @@ test('zero sheets renders nothing; one sheet has no page or arrows and see alway
   expect(screen.queryByTestId('report-nav')).toBeNull();
   fireEvent.press(screen.getByLabelText('확인했어'));
   expect(screen.onDismiss).toHaveBeenCalledWith('result');
+});
+
+test('review cards use complete while blocked cards keep acknowledge and the dismiss path', async () => {
+  const completion = { recent: null, busy: false, complete: jest.fn().mockResolvedValue(true), undo: jest.fn() };
+  const review = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review', card_numbers: [531] };
+  const reviewScreen = pager([review], undefined, completion);
+  expect(reviewScreen.getByLabelText('완료')).toBeTruthy();
+  await act(async () => { fireEvent.press(reviewScreen.getByLabelText('완료')); });
+  expect(completion.complete).toHaveBeenCalledTimes(1);
+  expect(completion.complete).toHaveBeenCalledWith(review);
+  expect(reviewScreen.onDismiss).not.toHaveBeenCalled();
+  reviewScreen.unmount();
+
+  const blocked = { ...review, key: 'card_blocked', card_status: 'blocked' };
+  const blockedCompletion = { ...completion, complete: jest.fn() };
+  const blockedScreen = pager([blocked], undefined, blockedCompletion);
+  expect(blockedScreen.getByLabelText('확인했어')).toBeTruthy();
+  expect(blockedScreen.queryByLabelText('완료')).toBeNull();
+  await act(async () => { fireEvent.press(blockedScreen.getByLabelText('확인했어')); });
+  expect(blockedCompletion.complete).not.toHaveBeenCalled();
+  expect(blockedScreen.send.close).toHaveBeenCalledWith(blocked);
+  expect(blockedScreen.onDismiss).toHaveBeenCalledWith(blocked.key);
+});
+
+test('card questions keep their options; undo appears on the current card and on the empty deck', async () => {
+  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨' }, busy: false,
+    complete: jest.fn(), undo: jest.fn().mockResolvedValue(true) };
+  const question = { ...reportReviewEntries[2], key: 'cq_question', kind: 'ask' as const, options: ['확인', '보류'],
+    card_id: 'card-531', card_status: 'review' };
+  const screen = pager([question], undefined, completion);
+  expect(screen.getByLabelText('확인')).toBeTruthy();
+  expect(screen.queryByLabelText('완료')).toBeNull();
+  expect(screen.getByTestId('report-undo-label').props.children).toBe('#531 완료됨');
+  await act(async () => { fireEvent.press(screen.getByTestId('report-undo')); });
+  expect(completion.undo).toHaveBeenCalledTimes(1);
+  screen.unmount();
+
+  const empty = pager([], undefined, completion);
+  expect(empty.getByTestId('report-deck')).toBeTruthy();
+  expect(empty.getByTestId('report-undo-label').props.children).toBe('#531 완료됨');
+  fireEvent.press(empty.getByTestId('report-undo'));
+  expect(completion.undo).toHaveBeenCalledTimes(2);
 });
 
 test('report deck exposes touch start, end, and cancel to its owner', () => {
