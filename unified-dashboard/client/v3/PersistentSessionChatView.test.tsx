@@ -10,6 +10,7 @@ const { getSession, setDisplaySettings, settingsState } = vi.hoisted(() => ({
   setDisplaySettings: vi.fn(),
   settingsState: { current: null as {sessionId:string} | null },
 }));
+const { deckProps } = vi.hoisted(() => ({ deckProps: { current: null as Record<string, any> | null } }));
 
 vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
@@ -25,7 +26,7 @@ vi.mock("../lib/persistent-sessions", () => ({
   createPersistentSessionsApi: () => ({ get: getSession }),
 }));
 vi.mock('@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider',()=>({PersistentReportProvider:({children}:{children:ReactNode})=>children}));
-vi.mock('./PersistentReportDeck',()=>({PersistentReportDeck:({seat}:{seat?:{layout:unknown}})=><section data-testid="report-deck" data-bubble={Boolean(seat?.layout)}/> }));
+vi.mock('./PersistentReportDeck',()=>({PersistentReportDeck:(props:Record<string, any>)=>{deckProps.current=props;return <section data-testid="report-deck" data-bubble={Boolean(props.seat?.layout)}/>;}}));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -36,6 +37,7 @@ describe("PersistentSessionChatView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     settingsState.current=null;
+    deckProps.current=null;
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
@@ -86,6 +88,19 @@ describe("PersistentSessionChatView", () => {
     expect(host?.querySelector('[data-testid="report-deck"]')).not.toBeNull();
     expect(getSession).not.toHaveBeenCalled();
     expect(setDisplaySettings).not.toHaveBeenCalled();
+  });
+  it("connects the report deck to the production card expansion and status renderer", async () => {
+    const entry = { key: "card_example", kind: "see" as const, title: "카드 장", card_numbers: [], card_id: "card-id", card_status: "review", context: "", action: "", options: [], state: "open" as const, answer: "", updated_at: "first" };
+    act(() => root?.render(<PersistentSessionChatView sessionId="pas-card" showReport loadDisplaySettings={false} reportEntries={[entry]} />));
+    expect(deckProps.current?.renderCardDetails).toBeTypeOf("function");
+    expect(deckProps.current?.renderCardStatus).toBeTypeOf("function");
+    const lookupCards = vi.fn().mockResolvedValue(undefined);
+    const detail = deckProps.current!.renderCardDetails(entry, lookupCards);
+    const status = deckProps.current!.renderCardStatus(entry);
+    expect(detail.type).toBeTypeOf("function");
+    expect(detail.props.entry).toBe(entry);
+    expect(detail.props.lookupCards).toBe(lookupCards);
+    expect(status.props.entry).toBe(entry);
   });
   it.each(['success','failure'])('defers only while settings load, then renders the available report after %s',async outcome=>{
     let resolve!: (value:unknown)=>void, reject!: (reason:unknown)=>void;

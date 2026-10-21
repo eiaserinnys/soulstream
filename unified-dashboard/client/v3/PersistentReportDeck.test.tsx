@@ -18,13 +18,22 @@ vi.mock('@seosoyoung/soul-ui/components/LiquidGlassProvider', () => ({ useGlassS
 const one: PersistentReportEntry = { key: 'one', kind: 'ask', title: '확인', card_numbers: [270], context: '맥락', action: '[출처](https://example.test/)', options: ['응'], state: 'open', answer: '', updated_at: 'first' };
 const two = { ...one, key: 'two', kind: 'see' as const, options: [], title: '볼 장' };
 const emptyAsk = { ...one, key: 'empty-ask', options: [] };
+const serverCardEntry: PersistentReportEntry & { card_id: string; card_status: 'running' } = {
+  ...two, key: `card_${cardRow.id}`, card_numbers: [], card_id: cardRow.id, card_status: 'running',
+};
+const serverQuestionEntry: PersistentReportEntry & { card_id: string; card_status: 'blocked'; question_id: string } = {
+  ...serverCardEntry, key: 'cq_question-id', kind: 'ask', options: [], card_status: 'blocked', question_id: 'question-id',
+};
 let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
 let portalTarget: HTMLDivElement | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
 const render = () => act(async () => root.render(<InternalLinkProvider internalOrigins={['https://example.test']} openTarget={openTarget}><PersistentReportProvider sessionId="a" entries={entries}>
-  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss} seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : undefined} />
+  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss}
+    renderCardDetails={entry => <div data-testid={`card-details-${entry.key}`}>운영 카드 칸</div>}
+    renderCardStatus={entry => <span data-testid={`card-status-${entry.key}`}>{entry.key.startsWith('cq_') ? '질문' : '카드 상태'}</span>}
+    seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : undefined} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 let contentHeight = 0;
@@ -61,6 +70,20 @@ it.each([two, emptyAsk])('acknowledges and closes a %s report with closed-only c
     { key: 'persistent_report_closed', content: { key: entry.key, title: entry.title } },
   ] });
   expect(dismiss).toHaveBeenCalledWith(entry.key);
+});
+it('expands a server card by its card_id when the title has no number', async () => {
+  entries = [serverCardEntry]; await render();
+  const title = button(serverCardEntry.title);
+  expect(title.getAttribute('aria-expanded')).toBe('false');
+  await act(async () => title.click());
+  expect(host.querySelector(`[data-testid="card-details-${serverCardEntry.key}"]`)?.textContent).toBe('운영 카드 칸');
+  expect(host.querySelector(`[data-testid="card-status-${serverCardEntry.key}"]`)?.textContent).toBe('카드 상태');
+});
+it.each([['card', serverCardEntry], ['open question', serverQuestionEntry]])('acknowledges a server %s by deleting it without sending a PAS intervention', async (_label, entry) => {
+  entries = [entry]; await render();
+  await act(async () => button('확인했어').click());
+  expect(dismiss).toHaveBeenCalledWith(entry.key);
+  expect(transport).not.toHaveBeenCalled();
 });
 it('does not show the acknowledgement for an answered ask or close when a send is retained', async () => {
   const answered = { ...one, state: 'answered' as const, answer: '응' };

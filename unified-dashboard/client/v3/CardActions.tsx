@@ -8,10 +8,10 @@ export function useCardCompletion(card:CardRow) {
  const complete=async()=>{setPending(true);try{await useCardStore.getState().mutate(card.id,"/status",{status:"done",expectedVersion:card.version});}catch{}finally{setPending(false);}};
  return {pending,onComplete:()=>void complete()};
 }
-export function cardStatusLabel(card:CardRow) {
+export function cardStatusLabel(card:Pick<CardRow,"status"|"blockedKind"> & Partial<Pick<CardRow,"blockedDetail">>) {
  return {todo:"드래프트",queued:"대기",blocked:card.blockedKind==="question"?"질문":card.blockedKind==="limit"?"한도 대기":"막힘",running:"실행 중",review:"검수 대기",done:"완료",cancelled:"취소"}[card.status];
 }
 
-export function CardStatusChip({card}:{card:CardRow}) {
+export function CardStatusChip({card}:{card:Pick<CardRow,"status"|"blockedKind"> & Partial<Pick<CardRow,"blockedDetail">>}) {
  return <StatusChip label={`카드 ${card.status==="running"?"진행 중":cardStatusLabel(card)}`} tone={card.status==="blocked"&&card.blockedKind==="question"?"question":card.status} className={`v3-card-status--${card.status}`}/>;
 }
