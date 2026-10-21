@@ -83,7 +83,7 @@ const candidateEvents = [
 
 const generationField: SettingField = { key: "review-generation", field_name: "show_generation_separator", label: "세대 구분선 표시", description: "세대가 바뀐 자리에 구분선을 보여 줍니다.", value: true, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
 const candidatesField: SettingField = { key: "review-candidates", field_name: "show_jev_candidates", label: "Jev 후보 표시", description: "내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다.", value: true, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
-const workDetailsField: SettingField = { key: "review-work-details", field_name: "show_work_details", label: "작업 세부 표시", description: "요약과 도구 기록 같은 줄을 보여 줍니다.", value: false, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
+const workDetailsField: SettingField = { key: "review-work-details", field_name: "show_work_details", label: "작업 세부 표시", description: "요약과 도구 기록을 보여 줍니다.", value: false, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
 
 export function PersistentChatDisplayReviewSample() {
   const [showGeneration, setShowGeneration] = useState(true);

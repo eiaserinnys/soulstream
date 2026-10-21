@@ -36,7 +36,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupManuscriptMessages, groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
-import { ChatManuscriptList, ChatManuscriptFooter, isManuscriptNarration, manuscriptItemSpacingClass } from "./ChatManuscriptList";
+import { ChatManuscriptList, ChatManuscriptFooter, isManuscriptNarration, manuscriptActivityNarrationIds, manuscriptItemSpacingClass } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
@@ -227,13 +227,23 @@ function ChatViewContent({
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );
-  const grouped = useMemo(
-    () => isManuscript
-      ? groupManuscriptMessages(visibleMessages).filter((item) => showWorkDetails || item.type !== "activity-group")
-      : groupMessages(visibleMessages),
-    [isManuscript, showWorkDetails, visibleMessages],
+  const manuscriptGrouped = useMemo(
+    () => (isManuscript ? groupManuscriptMessages(visibleMessages) : null),
+    [isManuscript, visibleMessages],
   );
-  const chatStatus = activeSessionSummary?.status ?? "unknown";
+  const activityNarrationIds = useMemo(
+    () => (manuscriptGrouped === null ? new Set<string>() : manuscriptActivityNarrationIds(manuscriptGrouped)),
+    [manuscriptGrouped],
+  );
+  const grouped = useMemo(
+    () => {
+      if (manuscriptGrouped === null) return groupMessages(visibleMessages);
+      return showWorkDetails
+        ? manuscriptGrouped
+        : manuscriptGrouped.filter((item) => item.type !== "activity-group");
+    },
+    [manuscriptGrouped, showWorkDetails, visibleMessages],
+  );  const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
     () => buildChatTimelineItems(grouped, visibleMessages, chatStatus, pendingChatSend),
     [grouped, visibleMessages, chatStatus, pendingChatSend],
@@ -853,9 +863,10 @@ function ChatViewContent({
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(index, item) => {
           const message = item.type === "single" ? item.msg : null;
-          const narration = isManuscript && isManuscriptNarration(
-            item,
-            timelineItems[index - firstItemIndex + 1],
+          const narrationItem = item.type === "summary-group" ? item.anchor : item;
+          const narration = isManuscript && (
+            isManuscriptNarration(item, timelineItems[index - firstItemIndex + 1])
+            || (narrationItem.type === "single" && activityNarrationIds.has(narrationItem.msg.treeNodeId))
           );
           const toolGroupKey = (item.type === "tool-group" || item.type === "activity-group") && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)

@@ -49,6 +49,16 @@ describe("projectPersistentWorkDetails", () => {
     expect(result[2]!.contextItems).toEqual([{ key: "report", label: "보고", content: "내용" }]);
   });
 
+  it("keeps the assigned card chip while hiding turn summaries", () => {
+    const chip = makeMessage("assigned-card-1", "assigned_card_context", { content: "카드" });
+    const summary = makeMessage("summary-2", "turn_summary", { content: "요약" });
+
+    const result = projectPersistentWorkDetails([chip, summary], false);
+
+    expect(result).toEqual([chip]);
+    expect(result[0]).toBe(chip);
+  });
+
   it("returns the same messages unchanged when shown", () => {
     const summary = makeMessage("summary-1", "turn_summary", { content: "요약" });
     const complete = makeMessage("complete-2", "complete", {

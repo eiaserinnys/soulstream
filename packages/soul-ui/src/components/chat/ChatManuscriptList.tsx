@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import type { ListProps } from "react-virtuoso";
+import type { MessageOrGroup } from "../../lib/grouping";
 import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 /** Keep user spacing inside Virtuoso's measured box, including optimistic sends. */
@@ -30,6 +31,22 @@ export function isManuscriptNarration(
     nextAnchor.msg.role === "tool"
     || (nextAnchor.msg.role === "assistant" && nextAnchor.msg.treeNodeType === "thinking")
   );
+}
+
+/**
+ * 작업 세부가 꺼져 activity-group을 지운 뒤에도, 그 앞 응답이 서술(작은 보조 글)로
+ * 남도록 treeNodeId를 모은다. 판정 규칙은 isManuscriptNarration과 같다.
+ */
+export function manuscriptActivityNarrationIds(items: readonly MessageOrGroup[]): Set<string> {
+  const ids = new Set<string>();
+  for (let index = 0; index < items.length - 1; index += 1) {
+    const next = items[index + 1];
+    if (next.type !== "activity-group") continue;
+    if (!isManuscriptNarration(items[index], next)) continue;
+    const anchor = narrationAnchor(items[index]);
+    if (anchor?.type === "single") ids.add(anchor.msg.treeNodeId);
+  }
+  return ids;
 }
 
 function isUserRow(item: ChatTimelineItem | undefined): boolean {

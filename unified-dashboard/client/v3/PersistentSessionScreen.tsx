@@ -90,7 +90,10 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   const mainRef = useRef<HTMLElement>(null);
   const usageRef = useRef<HTMLDivElement>(null);
   const displaySettings = useDashboardStore(state => state.persistentSessionDisplaySettings);
-  const showWorkDetails = displaySettings?.sessionId === sessionId && displaySettings.showWorkDetails === true;
+  const showWorkDetails = Boolean(sessionId)
+    && displaySettings !== null
+    && displaySettings.sessionId === sessionId
+    && displaySettings.showWorkDetails;
   const [visible, setVisible] = useState(() => !document.hidden);
   useEffect(() => { const changed = () => setVisible(!document.hidden); document.addEventListener('visibilitychange', changed); return () => document.removeEventListener('visibilitychange', changed); }, []);
   const [usageAvailable, setUsageAvailable] = useState(() => window.matchMedia('(min-width: 1101px)').matches);
