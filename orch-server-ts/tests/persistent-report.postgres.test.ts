@@ -140,11 +140,12 @@ describe("PAS reports on production PostgreSQL schema", () => {
     try {
       await cards.setCardStatus({...human,cardId,status:'done'});
       expect(sync).toHaveBeenCalledTimes(1);
-      expect(sync).toHaveBeenCalledWith(cardId);
+      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:true});
       await cards.setCardStatus({...human,cardId,status:'done'});
       expect(sync).toHaveBeenCalledTimes(1);
       await cards.patchCard({...human,cardId,title:'제목 수정'});
       expect(sync).toHaveBeenCalledTimes(2);
+      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:false});
       await cards.patchCard({...human,cardId,archived:true});
       expect(sync).toHaveBeenCalledTimes(3);
       await cards.setCardStatus({...human,cardId,status:'cancelled'});
@@ -153,6 +154,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
       expect(sync).toHaveBeenCalledTimes(4);
       await cards.askQuestion({...human,cardId,text:'판단?',options:['진행']});
       expect(sync).toHaveBeenCalledTimes(5);
+      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:true});
       const question = (await cards.getCard(cardId))!.questions[0]!.id;
       await cards.answerQuestion({...human,cardId,questionId:String(question),answer:'진행'});
       expect(sync).toHaveBeenCalledTimes(6);

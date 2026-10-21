@@ -130,9 +130,17 @@ export class PersistentReportService {
     if (!key.startsWith(CARD_QUESTION_KEY_PREFIX)) return { errors: null, decision: { action: "none" } };
     return this.cardQuestionDecision(sql, key.slice(CARD_QUESTION_KEY_PREFIX.length), option);
   }
-  /** Card commit is complete. Align the server-owned card entries on every connected or related board. */
-  async syncCard(cardId: string): Promise<void> {
+  /**
+   * Card commit is complete. Align the server-owned card entries on every connected board, and with scanBoards on every board
+   * that holds an entry for this card. The board scan reads every session's metadata (about 0.5s on the live DB), so the
+   * caller asks for it only when entries outside the connected boards can change: question asked/answered/withdrawn or card finished.
+   */
+  async syncCard(cardId: string, options: { scanBoards: boolean } = { scanBoards: true }): Promise<void> {
     const targets = await this.connectedSessions(this.sql, cardId);
+    if (!options.scanBoards) {
+      for (const sessionId of targets) await this.mutate(sessionId, (sql, entries) => this.syncCardOnBoard(sql, entries, cardId, sessionId));
+      return;
+    }
     const related = await this.sql<{session_id:string}[]>`WITH candidates AS MATERIALIZED (
       SELECT session_id,metadata FROM sessions WHERE metadata @> '[{"type":"persistent_report"}]'::jsonb
     ) SELECT session_id FROM candidates
@@ -195,10 +203,12 @@ export class PersistentReportService {
   }
   /** 카드 C를 만들었거나 실행시켰거나 후속 커멘트를 보낸 영구 세션들. */
   private async connectedSessions(sql: RepositorySql | SqlClient, cardId: string): Promise<Set<string>> {
+    // Start from the card's few actor sessions and look sessions up by key; an EXISTS over sessions scans the whole table.
     const rows = await sql<ConnectedSessionRow[]>`SELECT s.session_id,s.session_type,s.metadata FROM sessions s
-      WHERE EXISTS (SELECT 1 FROM cards c WHERE c.id=${cardId} AND c.created_session_id=s.session_id)
-        OR EXISTS (SELECT 1 FROM folder_operations o WHERE o.target_kind='card' AND o.target_id=${cardId}
-          AND o.operation_type IN ('create_card','execute_card','add_card_comment') AND o.actor_session_id=s.session_id)`;
+      WHERE s.session_id IN (
+        SELECT created_session_id FROM cards WHERE id=${cardId} AND created_session_id IS NOT NULL
+        UNION SELECT actor_session_id FROM folder_operations WHERE target_kind='card' AND target_id=${cardId}
+          AND operation_type IN ('create_card','execute_card','add_card_comment') AND actor_session_id IS NOT NULL)`;
     return new Set(rows.filter(row=>row.session_type !== "llm" && readPersistentEnabled(row.metadata)).map(row=>row.session_id));
   }
   /** 이 세션이 카드 C의 연결 세션인가. 판에 카드 장을 올릴지 판정한다. */

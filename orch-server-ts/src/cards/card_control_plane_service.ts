@@ -550,7 +550,9 @@ export class CardControlPlaneService {
         const cardChanged = previousStatus !== committedCard?.status || previousCard?.title !== committedCard?.title
           || previousCard?.archived !== committedCard?.archived || JSON.stringify(previousCard?.now) !== JSON.stringify(committedCard?.now);
         if (!this.reports || (!questionChanged && !cardChanged)) return;
-        try { await this.reports.syncCard(card.id); }
+        const finished = previousStatus !== committedCard?.status
+          && (committedCard?.status === "done" || committedCard?.status === "cancelled");
+        try { await this.reports.syncCard(card.id,{ scanBoards:questionChanged || finished }); }
         catch (error) { this.warn(`PAS report sync failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
