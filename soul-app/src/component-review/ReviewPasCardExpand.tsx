@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../api/client';
-import type { CardCheckItem, CardDetail } from '../api/cardTypes';
+import type { CardAttachmentAssetEvidence, CardCheckItem, CardDetail } from '../api/cardTypes';
 import type { PersistentReportEntry } from '../api/types';
 import { cardFixture } from '../test-support/cards';
 import { useDeviceType, useTokens } from '../theme';
@@ -33,11 +33,18 @@ const card = cardFixture({ id: 'preview-pas-card', number: 531, status: 'review'
   now: { text: '웹과 앱의 제자리 펼침 시안을 준비했습니다.', turn: 'user', ask: '화면과 증거를 확인해 주세요.', updatedAt: at, sessionId: 'preview-agent' },
 });
 const image = (module: number) => new URL(Asset.fromModule(module).uri, window.location.origin).href;
+function previewEvidence(module: number, label: string): CardAttachmentAssetEvidence {
+  const url = image(module);
+  return { type: 'image', url, label, attachment_id: label,
+    descriptor: { attachment_id: label, name: label + '.png', mime_type: 'image/png', byte_size: 1593049,
+      checksum_sha256: null, width: 64, height: 64, preview_kind: 'image', preview_mime_type: 'image/png' },
+    read_context: { type: 'card', id: card.id }, previewUrl: url, originalUrl: url };
+}
 const items: CardCheckItem[] = [
   { id: 1, title: '판 안에서 결과와 증거를 읽습니다', state: 'done', result: '제목을 누르면 같은 자리에서 펼쳐집니다.',
-    evidence: [{ type: 'image', url: image(require('../../assets/icon.png')), label: '펼친 화면' }], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
+    evidence: [previewEvidence(require('../../assets/icon.png'), '펼친 화면')], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
   { id: 2, title: '담당에게 바로 커멘트를 남깁니다', state: 'done', result: 'PAS 대화를 떠나지 않고 글을 보냅니다.',
-    evidence: [{ type: 'image', url: image(require('../../assets/icon-symbol.png')), label: '입력 화면' }], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
+    evidence: [previewEvidence(require('../../assets/icon-symbol.png'), '입력 화면')], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
   { id: 3, title: '실기기 화면 확인', state: 'todo', result: null, evidence: [], caveat: 'iPhone 실기기에서는 아직 확인하지 못했습니다.', rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: null, display: 'todo' },
 ];
 const initialEntries: (PersistentReportEntry & { card_id: string; card_status: string })[] = [
