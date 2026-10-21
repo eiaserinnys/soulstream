@@ -57,7 +57,7 @@ it('renders only the current sheet into the accessible/tab surface, navigates by
   expect(host.querySelector('.pas-report-kind')).toBeNull();
   expect(host.querySelector('[data-current="true"]')?.getAttribute('aria-label')).toContain('답 받음');
   expect(host.querySelector('.pas-report-footer')).not.toBeNull();
-  expect(host.querySelector('.pas-report-heading')?.firstElementChild?.tagName).toBe('H2');
+  expect(host.querySelector('.pas-report-heading-main')?.firstElementChild?.tagName).toBe('H2');
   const track = host.querySelector<HTMLElement>('[data-testid="report-track"]')!;
   track.focus();
   await act(async () => track.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
@@ -82,6 +82,29 @@ it('expands a server card by its card_id when the title has no number', async ()
   await act(async () => title.click());
   expect(host.querySelector(`[data-testid="card-details-${serverCardEntry.key}"]`)?.textContent).toBe('운영 카드 칸');
   expect(host.querySelector(`[data-testid="card-status-${serverCardEntry.key}"]`)?.textContent).toBe('카드 상태');
+});
+
+it('toggles an expandable report from its window control', async () => {
+  entries = [serverCardEntry]; await render();
+
+  const expand = button('확대');
+  expect(expand.getAttribute('aria-expanded')).toBe('false');
+  await act(async () => expand.click());
+  expect(button('축소').getAttribute('aria-expanded')).toBe('true');
+  expect(host.querySelector(`[data-testid="card-details-${serverCardEntry.key}"]`)).not.toBeNull();
+
+  await act(async () => button('축소').click());
+  expect(button('확대').getAttribute('aria-expanded')).toBe('false');
+  expect(host.querySelector(`[data-testid="card-details-${serverCardEntry.key}"]`)).toBeNull();
+});
+
+it('does not show a window control for a report without expandable card details', async () => {
+  entries = [{ ...two, key: 'plain-report', card_numbers: [] }]; await render();
+
+  expect(host.querySelector('.pas-report-heading')?.textContent).toContain('볼 장');
+  expect(host.querySelector('.pas-report-title button')).toBeNull();
+  expect(host.querySelector('.pas-report-heading[data-window]')).toBeNull();
+  expect(host.querySelector('.pas-report-window')).toBeNull();
 });
 
 it('keeps inline report height within its measured chat column and scrolls the reading area', async () => {
