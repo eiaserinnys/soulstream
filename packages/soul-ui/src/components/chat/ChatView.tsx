@@ -24,6 +24,7 @@ import { useDashboardStore, type ChatSessionStoreScope } from "../../stores/dash
 import { DashboardIconCap } from "../DashboardIconCap";
 import { ChatStoreScopeProvider, useChatFlattenTree, useChatStore, useChatStoreApi } from "../../stores/chat-store-scope";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
+import { projectPersistentWorkDetails } from "../../lib/persistent-work-details-projection";
 import { projectChatOutputAttachments } from "../../lib/chat-output-attachment-projection";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
@@ -35,7 +36,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupManuscriptMessages, groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
-import { ChatManuscriptList, ChatManuscriptFooter, isManuscriptNarration, manuscriptItemSpacingClass } from "./ChatManuscriptList";
+import { ChatManuscriptList, ChatManuscriptFooter, isManuscriptNarration, manuscriptActivityNarrationIds, manuscriptItemSpacingClass } from "./ChatManuscriptList";
 import { useMessageHistoryBuffer, VIEWPORT_FILL_MARGIN_PX } from "./useMessageHistoryBuffer";
 import { hasFilledHistoryViewport } from "./ChatView.viewport-geometry";
 import {
@@ -185,6 +186,9 @@ function ChatViewContent({
   const turnUsageMode = persistentSessionDisplaySettings?.sessionId === activeSessionKey
     ? persistentSessionDisplaySettings.turnUsageMode ?? "collapsed"
     : "collapsed";
+  const showWorkDetails = persistentSessionDisplaySettings?.sessionId === activeSessionKey
+    ? persistentSessionDisplaySettings.showWorkDetails
+    : true;
   const flattenedMessages = useMemo(
     () => isManuscript
       ? flattenMessages(tree, { includePersistentTurnUsage: true })
@@ -201,9 +205,12 @@ function ChatViewContent({
       const cacheKeepaliveFiltered = projectCacheKeepaliveTurns(
         projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
       );
-      return projectPersistentTurnUsage(cacheKeepaliveFiltered, turnUsageMode);
+      return projectPersistentTurnUsage(
+        projectPersistentWorkDetails(cacheKeepaliveFiltered, showWorkDetails),
+        turnUsageMode,
+      );
     },
-    [isManuscript, messages, turnUsageMode],
+    [isManuscript, messages, showWorkDetails, turnUsageMode],
   );
   const visibleMessages = useMemo(
     () => {
@@ -220,9 +227,22 @@ function ChatViewContent({
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );
-  const grouped = useMemo(
-    () => isManuscript ? groupManuscriptMessages(visibleMessages) : groupMessages(visibleMessages),
+  const manuscriptGrouped = useMemo(
+    () => (isManuscript ? groupManuscriptMessages(visibleMessages) : null),
     [isManuscript, visibleMessages],
+  );
+  const activityNarrationIds = useMemo(
+    () => (manuscriptGrouped === null ? new Set<string>() : manuscriptActivityNarrationIds(manuscriptGrouped)),
+    [manuscriptGrouped],
+  );
+  const grouped = useMemo(
+    () => {
+      if (manuscriptGrouped === null) return groupMessages(visibleMessages);
+      return showWorkDetails
+        ? manuscriptGrouped
+        : manuscriptGrouped.filter((item) => item.type !== "activity-group");
+    },
+    [manuscriptGrouped, showWorkDetails, visibleMessages],
   );
   const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
@@ -844,9 +864,10 @@ function ChatViewContent({
         computeItemKey={(_index, item) => messageOrGroupKey(item)}
         itemContent={(index, item) => {
           const message = item.type === "single" ? item.msg : null;
-          const narration = isManuscript && isManuscriptNarration(
-            item,
-            timelineItems[index - firstItemIndex + 1],
+          const narrationItem = item.type === "summary-group" ? item.anchor : item;
+          const narration = isManuscript && (
+            isManuscriptNarration(item, timelineItems[index - firstItemIndex + 1])
+            || (narrationItem.type === "single" && activityNarrationIds.has(narrationItem.msg.treeNodeId))
           );
           const toolGroupKey = (item.type === "tool-group" || item.type === "activity-group") && activeSessionKey !== null
             ? toolGroupExpansionKey(activeSessionKey, item)
@@ -959,7 +980,7 @@ function ChatViewContent({
         </button>
       </div>}
 
-      {showRuntimeStrips ? <ChatRuntimeCompactStrips sessionId={activeSessionKey} /> : null}
+      {showRuntimeStrips ? <ChatRuntimeCompactStrips sessionId={activeSessionKey} variant={isManuscript ? "caption" : "default"} /> : null}
 
       <ChatInput
         presentation={presentation}

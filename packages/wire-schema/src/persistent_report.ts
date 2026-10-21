@@ -2,10 +2,16 @@
 export const PERSISTENT_REPORT_METADATA_TYPE = "persistent_report";
 export const PERSISTENT_REPORT_LIMIT = 12;
 export const PERSISTENT_REPORT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
+/** 카드 질문을 판에 올릴 때 쓰는 예약 key 접두사. `cq_` + 질문 UUID. */
+export const CARD_QUESTION_KEY_PREFIX = "cq_";
+/** 카드 상태를 판에 올릴 때 쓰는 예약 key 접두사. `card_` + 카드 UUID. */
+export const CARD_ENTRY_KEY_PREFIX = "card_";
 export interface PersistentReportEntry {
   key: string; kind: "ask" | "see"; title: string; card_numbers: number[];
   context: string; action: string; options: string[]; question_id?: string;
   state: "open" | "answered"; answer: string; updated_at: string;
+  /** 서버만 쓰는 카드 연결 칸. PAS 입력으로는 받지 않는다. */
+  card_id?: string; card_status?: string;
 }
 export type PersistentReportEntryInput = Omit<PersistentReportEntry, "updated_at" | "state" | "answer" | "options"> & {
   state?: PersistentReportEntry["state"]; answer?: string; options?: string[];

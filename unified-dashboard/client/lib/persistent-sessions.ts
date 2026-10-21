@@ -10,6 +10,8 @@ export type PersistentSettings = {
   show_generation_separator: boolean;
   show_character: boolean;
   show_jev_candidates: boolean;
+  /** PAS 화면의 요약, 도구, 맥락, 예약 줄을 보일지 여부. 서버 배포 전 응답에는 없을 수 있다. */
+  show_work_details?: boolean;
   animate_character: boolean;
   turn_usage_mode: PersistentTurnUsageMode;
   /** Legacy projection returned by the server for older clients. */
@@ -55,6 +57,7 @@ export type PersistentDisplaySettingsWrite = Pick<
   | "show_character"
   | "animate_character"
   | "show_jev_candidates"
+  | "show_work_details"
   | "turn_usage_mode"
 >;
 

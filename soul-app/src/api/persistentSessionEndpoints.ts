@@ -17,6 +17,7 @@ export interface PersistentSessionSettings {
   show_generation_separator?: boolean;
   show_character?: boolean;
   show_jev_candidates?: boolean;
+  show_work_details?: boolean;
   animate_character?: boolean;
   turn_usage_mode: PersistentTurnUsageMode;
   /** Compatibility response derived from turn_usage_mode. */
@@ -56,6 +57,7 @@ export interface PersistentSessionSettingsPatch {
   show_generation_separator?: boolean;
   show_character?: boolean;
   show_jev_candidates?: boolean;
+  show_work_details?: boolean;
   animate_character?: boolean;
   turn_usage_mode?: PersistentTurnUsageMode;
 }

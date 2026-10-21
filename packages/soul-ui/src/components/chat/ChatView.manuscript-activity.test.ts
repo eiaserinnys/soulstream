@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { groupManuscriptMessages } from "../../lib/grouping";
-import { isManuscriptNarration } from "./ChatManuscriptList";
+import { isManuscriptNarration, manuscriptActivityNarrationIds } from "./ChatManuscriptList";
 import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 function message(
@@ -98,6 +98,22 @@ describe("manuscript activity projection", () => {
     })).toBe(true);
     expect(isManuscriptNarration(asSingle(narration), asSingle(thinking))).toBe(true);
     expect(isManuscriptNarration(asSingle(final), undefined)).toBe(false);
+  });
+
+  it("keeps an answer dimmed after the activity row is filtered out", () => {
+    const projected = groupManuscriptMessages([
+      message("narration", "assistant", "text"),
+      message("tool", "tool", "tool"),
+      message("final", "assistant", "text"),
+    ]);
+    const narrationIds = manuscriptActivityNarrationIds(projected);
+    const visible = projected.filter((item) => item.type !== "activity-group");
+    const dimmed = (item: (typeof visible)[number] | undefined) => item?.type === "single"
+      && narrationIds.has(item.msg.treeNodeId);
+
+    expect([...narrationIds]).toEqual(["narration"]);
+    expect(dimmed(visible[0])).toBe(true);
+    expect(dimmed(visible[1])).toBe(false);
   });
 
   it("unwraps summary anchors and leaves incomplete or non-prose rows unchanged", () => {

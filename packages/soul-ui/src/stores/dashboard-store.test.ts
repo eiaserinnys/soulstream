@@ -103,8 +103,30 @@ describe("persistent session display settings", () => {
       showJevCandidates: true,
       showCharacter: false,
       animateCharacter: false,
+      showWorkDetails: false,
       turnUsageMode: "hidden",
     });
+  });
+
+  it("maps show_work_details to showWorkDetails and defaults to false when absent", () => {
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("persistent-session-settings", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      turn_usage_mode: "collapsed",
+      show_work_details: true,
+    });
+    expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showWorkDetails).toBe(true);
+
+    useDashboardStore.getState().setPersistentSessionDisplaySettings("persistent-session-settings", {
+      show_generation_separator: true,
+      show_jev_candidates: true,
+      show_character: true,
+      animate_character: true,
+      turn_usage_mode: "collapsed",
+    });
+    expect(useDashboardStore.getState().persistentSessionDisplaySettings?.showWorkDetails).toBe(false);
   });
 });
 import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";

@@ -90,7 +90,7 @@ describe("PersistentSessionsTab", () => {
     // 기본 모델을 그대로 둔 저장은 기록된 추론 수준을 보존하고 숨은 설정은 보내지 않는다.
     expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
       display_name: "리뷰 관제 수정",
-      settings: { default_model: { model_preset: "preset-a", reasoning_effort: "high" } },
+      settings: { default_model: { model_preset: "preset-a", reasoning_effort: "high" }, show_work_details: false },
     });
     await waitFor(() => expect(document.body.textContent).toContain("리뷰 관제 수정"));
 
@@ -99,7 +99,7 @@ describe("PersistentSessionsTab", () => {
     await waitFor(() => expect(calls.filter((call) => call.method === "PUT")).toHaveLength(2));
     expect(calls.filter((call) => call.method === "PUT")[1]?.body).toEqual({
       display_name: "리뷰 관제 수정",
-      settings: { default_model: { model_preset: "preset-b", reasoning_effort: null } },
+      settings: { default_model: { model_preset: "preset-b", reasoning_effort: null }, show_work_details: false },
     });
     await waitFor(() => expect(inputValues()).toContain("다음 실행부터 preset-b"));
 
@@ -149,6 +149,7 @@ describe("PersistentSessionsTab", () => {
         default_model: { model_preset: "preset-a", reasoning_effort: "high" },
         show_generation_separator: false,
         show_jev_candidates: false,
+        show_work_details: false,
       },
     });
     await waitFor(() => expect(nameInput().value).toBe("토글 중에도 남는 이름"));
@@ -193,6 +194,7 @@ describe("PersistentSessionsTab", () => {
         show_character: false,
         animate_character: false,
         turn_usage_mode: "hidden",
+        show_work_details: false,
       },
     });
   });

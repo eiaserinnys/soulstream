@@ -42,6 +42,7 @@ export function isManuscriptNarration(
   next: ChatRenderItem | undefined,
 ): boolean {
   if (item.kind !== 'event') return false;
+  if (item.manuscriptNarration === true) return true;
   if (item.event.type !== 'assistant_message' && item.event.type !== 'text_delta') return false;
   if (item.event.data?.ui !== undefined) return false;
   return next?.kind === 'activity'
