@@ -69,7 +69,7 @@
 .pas-report-undo { display: flex; align-items: center; justify-content: space-between; gap: var(--v3-space-2); min-height: var(--pas-report-row-height); }
 .pas-report-undo [data-slot="button"] { padding-inline: 0; font: var(--v3-type-meta) var(--v3-font-family); gap: var(--v3-space-1); }
 .pas-undo-ring { position: relative; display: inline-grid; place-items: center; inline-size: 1lh; block-size: 1lh; flex: none; }
-.pas-undo-ring > svg { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; transform: rotate(-90deg); }
+.pas-undo-ring > svg:first-child { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; transform: rotate(-90deg); }
 .pas-undo-ring circle { fill: none; stroke-width: 2; }
 .pas-undo-ring-track { stroke: var(--v3-stroke-default); }
 .pas-undo-ring-fill { stroke: var(--v3-accent); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; animation: pas-undo-fill var(--pas-undo-ms) linear forwards; animation-delay: inherit; }
