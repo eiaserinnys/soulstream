@@ -427,10 +427,11 @@ describe("PersistentSessionControl.applySettings", () => {
           fallback_model: null,
           show_generation_separator: true,
           show_character: false,
-          show_jev_candidates: true,
+          show_jev_candidates: false,
           turn_usage_mode: "hidden",
           show_turn_usage: false,
           animate_character: false,
+          show_work_details: false,
         },
       },
       { replaceExistingType: "persistent_settings", waitForAck: true },
@@ -479,13 +480,15 @@ describe("PersistentSessionControl.applySettings", () => {
     const task = makeRolloverTask();
     const { control, persistedEntries } = makeRolloverControl(task);
 
-    await control.applySettings(task.agentSessionId, { settings: { show_jev_candidates: false } });
+    await control.applySettings(task.agentSessionId, { settings: { show_jev_candidates: true } });
+    await control.applySettings(task.agentSessionId, { settings: { show_work_details: true } });
     await control.applySettings(task.agentSessionId, { settings: { show_turn_usage: false, animate_character: false } });
     await control.applySettings(task.agentSessionId, { settings: { show_character: false } });
 
     const saved = persistedEntries.filter((entry) => entry.type === "persistent_settings").at(-1)?.value;
     expect(saved).toMatchObject({
-      show_jev_candidates: false,
+      show_jev_candidates: true,
+      show_work_details: true,
       show_character: false,
       show_turn_usage: false,
       animate_character: false,

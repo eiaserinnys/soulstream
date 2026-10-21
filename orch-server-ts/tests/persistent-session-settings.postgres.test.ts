@@ -164,16 +164,16 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     expect(again.body.model_change).toBe("none");
     expect(generationWrites()).toBe(1);
 
-    // Partial saves keep what they do not mention, including a saved false toggle.
-    const jevOff = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_jev_candidates: false } });
-    expect(jevOff.body.session).toMatchObject({
-      settings: { default_model: { model_preset: "claude-sonnet", reasoning_effort: "medium" }, show_jev_candidates: false },
+    // Partial saves keep what they do not mention, including a saved toggle.
+    const jevOn = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_jev_candidates: true } });
+    expect(jevOn.body.session).toMatchObject({
+      settings: { default_model: { model_preset: "claude-sonnet", reasoning_effort: "medium" }, show_jev_candidates: true },
     });
     const characterOff = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_character: false } });
     expect(characterOff.body.session).toMatchObject({
       settings: {
         default_model: { model_preset: "claude-sonnet", reasoning_effort: "medium" },
-        show_jev_candidates: false,
+        show_jev_candidates: true,
         show_character: false,
         show_generation_separator: true,
       },
@@ -184,7 +184,7 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     expect(usageAndMotionOff.body.session).toMatchObject({
       settings: {
         default_model: { model_preset: "claude-sonnet", reasoning_effort: "medium" },
-        show_jev_candidates: false,
+        show_jev_candidates: true,
         show_character: false,
         show_generation_separator: true,
         show_turn_usage: false,
@@ -194,6 +194,16 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     const rereadUsage = await call("GET", "/api/persistent-sessions/pas-edit");
     expect(rereadUsage.body.session!.settings)
       .toMatchObject({ show_turn_usage: false, animate_character: false });
+
+    const workDetailsOn = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_work_details: true } });
+    expect(workDetailsOn.status).toBe(200);
+    expect(workDetailsOn.body.session).toMatchObject({ settings: { show_work_details: true } });
+    const workDetailsPartial = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_character: true } });
+    expect(workDetailsPartial.body.session).toMatchObject({
+      settings: { show_work_details: true, show_character: true },
+    });
+    const rereadWorkDetails = await call("GET", "/api/persistent-sessions/pas-edit");
+    expect(rereadWorkDetails.body.session!.settings).toMatchObject({ show_work_details: true });
 
     const legacyTrue = await call("PUT", "/api/persistent-sessions/pas-edit", { settings: { show_turn_usage: true } });
     expect(legacyTrue.status).toBe(200);
@@ -285,26 +295,29 @@ describePostgres("PAS settings API on PostgreSQL", () => {
     expect(list.body.sessions![0]).toMatchObject({
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
-        fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true,
-        show_turn_usage: true, turn_usage_mode: "collapsed", animate_character: true,
+        fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: false,
+        show_turn_usage: false, turn_usage_mode: "hidden", animate_character: true, show_work_details: false,
       },
     });
-    // The saved entry predates show_jev_candidates and the new fields: all read as true without being rewritten.
+    // The saved entry predates show_jev_candidates and the new fields: they read as the current defaults
+    // without being rewritten.
     expect(list.body.sessions![2]).toMatchObject({
       settings: {
         default_model: { model_preset: "claude-sonnet", reasoning_effort: "low" },
         fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
         show_generation_separator: false,
-        show_jev_candidates: true,
-        show_turn_usage: true,
-        turn_usage_mode: "collapsed",
+        show_jev_candidates: false,
+        show_turn_usage: false,
+        turn_usage_mode: "hidden",
         animate_character: true,
+        show_work_details: false,
       },
     });
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_jev_candidates");
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_turn_usage");
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("turn_usage_mode");
     expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("animate_character");
+    expect(JSON.stringify(await metadataOf("pas-late"))).not.toContain("show_work_details");
     expect(list.body.create_defaults).toEqual({
       node_id: NODE_ID,
       preferred_agent_id: PAS_AGENT,
@@ -313,10 +326,11 @@ describePostgres("PAS settings API on PostgreSQL", () => {
         fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
         show_generation_separator: true,
         show_character: true,
-        show_jev_candidates: true,
-        show_turn_usage: true,
-        turn_usage_mode: "collapsed",
+        show_jev_candidates: false,
+        show_turn_usage: false,
+        turn_usage_mode: "hidden",
         animate_character: true,
+        show_work_details: false,
       },
       initial_instruction: "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.",
       unavailable_reason: null,
@@ -368,7 +382,8 @@ describePostgres("PAS settings API on PostgreSQL", () => {
         fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
         show_generation_separator: true,
         show_character: true,
-        show_jev_candidates: true,
+        show_jev_candidates: false,
+        show_work_details: false,
       },
       runtime: { pending: null },
     });

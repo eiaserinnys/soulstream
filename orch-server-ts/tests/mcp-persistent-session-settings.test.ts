@@ -21,6 +21,7 @@ const currentSettings: PersistentSessionSettings = {
   turn_usage_mode: "collapsed",
   show_turn_usage: true,
   animate_character: true,
+  show_work_details: true,
 };
 
 function setup() {
@@ -192,6 +193,22 @@ describe("update_persistent_session_settings MCP tool", () => {
     expect(h.modelChanges).toEqual(["none"]);
     expect(result.structuredContent).toMatchObject({
       settings: { turn_usage_mode: "hidden", show_turn_usage: false },
+    });
+  });
+
+  it("saves show_work_details through the MCP contract and keeps it on a partial save", async () => {
+    const h = setup();
+    h.rows.set("mcp-session", h.makeRow("mcp-session"));
+
+    const off = await h.call({ session_id: "mcp-session", show_work_details: false });
+    expect(off.isError).not.toBe(true);
+    expect(h.commandPayloads[0]).toMatchObject({ settings: { show_work_details: false } });
+    expect(h.commandPayloads[0]!.settings).not.toHaveProperty("default_model");
+    expect(off.structuredContent).toMatchObject({ settings: { show_work_details: false } });
+
+    const partial = await h.call({ session_id: "mcp-session", show_character: false });
+    expect(partial.structuredContent).toMatchObject({
+      settings: { show_work_details: false, show_character: false },
     });
   });
 

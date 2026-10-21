@@ -23,6 +23,7 @@ export type PersistentSettingsView = {
   turn_usage_mode: PersistentTurnUsageMode;
   show_turn_usage: boolean;
   animate_character: boolean;
+  show_work_details: boolean;
 };
 
 export type PersistentSessionResource = {
@@ -71,6 +72,7 @@ export function buildPersistentSessionResource(
         turn_usage_mode: PERSISTENT_SETTINGS_DEFAULTS.turn_usage_mode,
         show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
         animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
+        show_work_details: PERSISTENT_SETTINGS_DEFAULTS.show_work_details,
       }
     : {
         default_model: stored.default_model ?? { model_preset: null, reasoning_effort: null },
@@ -81,6 +83,7 @@ export function buildPersistentSessionResource(
         turn_usage_mode: stored.turn_usage_mode,
         show_turn_usage: stored.show_turn_usage,
         animate_character: stored.animate_character,
+        show_work_details: stored.show_work_details,
       };
   const agentId = stringOrNull(row.agent_id);
   return {

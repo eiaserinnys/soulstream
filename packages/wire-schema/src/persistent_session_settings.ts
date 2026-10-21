@@ -27,6 +27,8 @@ export type PersistentSessionSettings = {
   /** 호환 응답·metadata 키. 정본은 turn_usage_mode다. */
   show_turn_usage: boolean;
   animate_character: boolean;
+  /** PAS 화면의 요약, 도구, 맥락, 예약 줄을 보일지 여부. */
+  show_work_details: boolean;
 };
 
 /** 부분 입력. 생략한 키는 저장된 값을 보존한다. */
@@ -42,10 +44,11 @@ export const PERSISTENT_SETTINGS_DEFAULTS = {
   fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
   show_generation_separator: true,
   show_character: true,
-  show_jev_candidates: true,
-  turn_usage_mode: "collapsed",
-  show_turn_usage: true,
+  show_jev_candidates: false,
+  turn_usage_mode: "hidden",
+  show_turn_usage: false,
   animate_character: true,
+  show_work_details: false,
 } as const satisfies Omit<PersistentSessionSettings, "default_model">;
 
 export type PersistentPendingTarget = {
@@ -64,6 +67,7 @@ const SETTINGS_KEYS = [
   "turn_usage_mode",
   "show_turn_usage",
   "animate_character",
+  "show_work_details",
 ] as const;
 
 export function parsePersistentSettingsPatch(input: unknown): ParseResult<PersistentSettingsPatch> {
@@ -99,6 +103,7 @@ export function parsePersistentSettingsPatch(input: unknown): ParseResult<Persis
     "show_jev_candidates",
     "show_turn_usage",
     "animate_character",
+    "show_work_details",
   ] as const) {
     const value = input[key];
     if (value === undefined) continue;
@@ -136,6 +141,9 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
     animate_character: typeof record.animate_character === "boolean"
       ? record.animate_character
       : PERSISTENT_SETTINGS_DEFAULTS.animate_character,
+    show_work_details: typeof record.show_work_details === "boolean"
+      ? record.show_work_details
+      : PERSISTENT_SETTINGS_DEFAULTS.show_work_details,
   };
 }
 

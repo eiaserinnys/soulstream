@@ -2251,6 +2251,7 @@ export interface SetPersistentSessionSettings {
     turn_usage_mode?: "collapsed" | "expanded" | "hidden";
     show_turn_usage?: boolean;
     animate_character?: boolean;
+    show_work_details?: boolean;
   };
   requestId?: string;
   request_id?: string;

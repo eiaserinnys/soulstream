@@ -182,6 +182,7 @@ export class PersistentSessionControl {
       turn_usage_mode: PERSISTENT_SETTINGS_DEFAULTS.turn_usage_mode,
       show_turn_usage: PERSISTENT_SETTINGS_DEFAULTS.show_turn_usage,
       animate_character: PERSISTENT_SETTINGS_DEFAULTS.animate_character,
+      show_work_details: PERSISTENT_SETTINGS_DEFAULTS.show_work_details,
     };
     const defaultModel = patch.default_model !== undefined
       ? this.normalizeDefaultModel(patch.default_model)
@@ -202,6 +203,7 @@ export class PersistentSessionControl {
       turn_usage_mode: turnUsageMode,
       show_turn_usage: turnUsageMode !== "hidden",
       animate_character: patch.animate_character ?? base.animate_character,
+      show_work_details: patch.show_work_details ?? base.show_work_details,
     };
   }
 
