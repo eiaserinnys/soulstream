@@ -45,11 +45,16 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const answer = entry.kind === 'ask' && entry.state === 'answered';
   const page = `${index + 1} / ${count}`;
   const received = <Text testID="report-received" style={styles.todo}><Text style={styles.receivedLabel}>받은 답  </Text>{entry.answer}</Text>;
-  const heading = <View testID="report-head" style={styles.heading}>
-    <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header" style={styles.title}
+  const readingPath = surfaceHeight !== undefined || bubble || !!expandedContent;
+  const expanded = Boolean(expandedContent);
+  const heading = <View style={onToggleCard ? styles.headingRow : undefined}>
+    <View testID="report-head" style={[styles.heading, onToggleCard ? styles.headingContent : undefined]}>
+    <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header"
+      style={[styles.title, onToggleCard ? { paddingVertical: Math.max(0,
+        (t.foundation.iconFrame.compact - t.foundation.typography.cardTitle.lineHeight) / 2) } : undefined]}
       {...reportWebProps({ tabIndex: -1 })}
       {...(onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onToggleCard(); }, accessibilityRole: 'button' as const,
-        accessibilityState: { expanded: Boolean(expandedContent) } } : {})}
+        accessibilityState: { expanded } } : {})}
       {...(compact && !onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onExpand(); }, accessibilityHint: '누르면 펼칩니다',
         accessibilityActions: [{ name: 'expand', label: '펼치기' }], onAccessibilityAction: onExpand } : {})}>{entry.title}</Text>
     {entry.card_numbers.map(number => <View key={number} style={styles.chipSlot}>
@@ -62,6 +67,14 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
       </CompactTouchTarget>
     </View>)}
     {cardStatus}
+    </View>
+    {onToggleCard ? <View style={styles.toggleSeat}>
+      <GlassButton testID="report-window-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.round}
+        accessibilityLabel={expanded ? '축소' : '확대'} accessibilityState={{ expanded }}
+        onPress={onToggleCard}>
+        <Ionicons name={expanded ? 'contract-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
+      </GlassButton>
+    </View> : null}
   </View>;
   const hasAction = entry.action !== '';
   const todo = hasAction ? <Text testID="report-todo" numberOfLines={compact ? 2 : undefined} style={styles.todo}>
@@ -70,10 +83,10 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   </Text> : null;
   const context = <Text testID="report-context" numberOfLines={compact ? 2 : undefined} style={styles.context} onPress={onToggleCard}>{entry.context}</Text>;
   const frame = <View testID="report-reading"
-    onLayout={!bubble ? event => measure('reading', event.nativeEvent.layout.height + t.uiSpacing.md
+    onLayout={!readingPath ? event => measure('reading', event.nativeEvent.layout.height + t.uiSpacing.md
       + (compact ? t.uiSpacing.lg + (count > 1 ? t.uiSpacing.sm + t.foundation.typography.meta.lineHeight : 0) : 0)) : undefined}
     style={[styles.reading, answer && !bubble && !compact && asked.reading ? { minHeight: Math.max(0, asked.reading - t.uiSpacing.md) } : null]}>
-    {heading}{!compact && (!expandedContent || entry.kind === 'ask') ? context : null}
+    {!readingPath ? heading : null}{!compact && (!expandedContent || entry.kind === 'ask') ? context : null}
     {answer ? compact ? received : null : hasAction ? todo : compact ? context : null}
     {expandedContent}
   </View>;
@@ -106,7 +119,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     onPress={compact ? onExpand : undefined} onTouchStart={() => onInteraction?.(true)} onTouchEnd={() => onInteraction?.(false)}
     onTouchCancel={() => onInteraction?.(false)} {...reportWebProps({ inert: !current, tabIndex: -1, role: 'group' })}
     style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }, surfaceHeight !== undefined ? { height: surfaceHeight } : null, !compact && styles.resting]}>
-    {surfaceHeight !== undefined || bubble || expandedContent ? <PersistentReportReading current={current} styles={styles} onHeight={height => measure('reading', height)}>{frame}</PersistentReportReading>
+    {readingPath ? <PersistentReportReading current={current} styles={styles} header={heading} onHeight={height => measure('reading', height)}>{frame}</PersistentReportReading>
       : <View style={[styles.body, compact ? styles.compact : null, { flexGrow: 1 }]}>{frame}
         {compact && count > 1 ? <Text testID="report-page" style={styles.page} accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
           accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}

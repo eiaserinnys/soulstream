@@ -12,6 +12,7 @@ import type { ChatInputComposerHandle } from '../components/chat/ChatInputCompos
 import { usePersistentReport } from '../components/persistent/usePersistentReport';
 import { usePersistentReportSend } from '../components/persistent/usePersistentReportSend';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
+import { PersistentReportCardSheetHeader } from '../components/persistent/PersistentReportCardSheetHeader';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
@@ -26,7 +27,6 @@ import { useDisplayPreferenceActions } from '../components/settings/useDisplayPr
 import { AppModalSurface } from '../components/AppModalSurface';
 import { GlassButton } from '../components/GlassSurface';
 import { CardStatusChip } from '../components/planner/CardRow';
-import { cardDetailStyles } from '../components/planner/CardDetail.styles';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
 import { useUsageSummary } from '../hooks/useUsageSummary';
 import { useOpenContentLink } from '../hooks/useOpenContentLink';
@@ -58,7 +58,6 @@ export function PersistentSessionScreen(props: PersistentSessionScreenProps) {
 }
 function PersistentSessionContents({ active = true, chatActive = active, onOpenPhoneCard, onHome, inputComposerRef }: PersistentSessionScreenProps & { inputComposerRef: React.RefObject<ChatInputComposerHandle | null> }) {
   const t = useTokens();
-  const cardStyles = useMemo(() => cardDetailStyles(t), [t]);
   const device = useDeviceType();
   const phone = device === 'phone';
   const { fontScale } = useWindowDimensions();
@@ -322,15 +321,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     </View>
     {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"
       variant="expanded" presentationStyle="pageSheet" onRequestClose={closeReportCard} onDismiss={onReportCardSheetDismiss} surfaceTestID="persistent-session-report-card-sheet">
-      <View style={cardStyles.header}><View style={cardStyles.headerRow}>
-        <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="닫기" onPress={closeReportCard}>
-          <Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} />
-        </GlassButton>
-        <Text style={cardStyles.heading} numberOfLines={2}>
-          {persistentReportStatusCard(reportCardSheetEntry) ? <><CardStatusChip card={persistentReportStatusCard(reportCardSheetEntry)!} detail />{' '}</> : null}
-          {reportCardSheetEntry.title}
-        </Text>
-      </View></View>
+      <PersistentReportCardSheetHeader entry={reportCardSheetEntry} onCollapse={closeReportCard} />
       <ScrollView style={{ flex: 1, minHeight: 0 }} ref={reportCardScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }}
         onLayout={reportCardScroll.keepComposerVisible} onContentSizeChange={reportCardScroll.keepComposerVisible}
         showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
