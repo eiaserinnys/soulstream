@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { Platform, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../api/client';
 import type { CardAttachmentAssetEvidence, CardCheckItem, CardComment, CardDetail } from '../api/cardTypes';
 import type { PersistentReportEntry } from '../api/types';
@@ -12,6 +11,7 @@ import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { ChatUiControllerProvider } from '../components/chat-ui/ChatUiControllerProvider';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
+import { PersistentReportCardSheetHeader } from '../components/persistent/PersistentReportCardSheetHeader';
 import { ReportComposerFocusContext, useReportComposerScroll } from '../components/persistent/useReportComposerScroll';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
@@ -19,7 +19,6 @@ import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/pers
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
 import { CardStatusChip } from '../components/planner/CardRow';
 import { cardDetailStyles } from '../components/planner/CardDetail.styles';
-import { GlassButton } from '../components/GlassSurface';
 import { AppModalSurface } from '../components/AppModalSurface';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
@@ -133,10 +132,7 @@ export function ReviewPasCardExpand() {
       {layout.reportBubble ? <View style={{ position: 'absolute', left: layout.reportBubble.left, bottom: height - layout.reportBubble.bottom, width: layout.reportBubble.width }}>{pager}</View> : null}
     </View>
     {sheet ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => setSheet(null)} surfaceTestID="pas-card-preview-sheet">
-      <View style={styles.header}><View style={styles.headerRow}>
-        <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="닫기" onPress={() => setSheet(null)}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} /></GlassButton>
-      <Text style={styles.heading} numberOfLines={2}>{persistentReportStatusCard(sheet) ? <><CardStatusChip card={persistentReportStatusCard(sheet)!} detail />{' '}</> : null}{sheet.title}</Text>
-      </View></View>
+      <PersistentReportCardSheetHeader entry={sheet} onCollapse={() => setSheet(null)} />
       <ScrollView style={{ flex: 1, minHeight: 0 }} ref={sheetScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false}
         onLayout={sheetScroll.keepComposerVisible} onContentSizeChange={sheetScroll.keepComposerVisible}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"

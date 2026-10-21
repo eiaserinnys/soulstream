@@ -52,6 +52,62 @@ function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) =>
   return { ...screen, onSelect, onDismiss, onAppend, api };
 }
 
+function cardSheet({ expandedContent, onToggleCard, onExpand = jest.fn() }: {
+  expandedContent?: React.ReactNode; onToggleCard?: () => void; onExpand?: () => void;
+}) {
+  const entry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531] };
+  function Harness() {
+    const t = useTokens();
+    return <PersistentReportSheet entry={entry} index={0} count={1} current compact showNav={false} width={318}
+      styles={reportStyles(t, 0, false)} titleRef={jest.fn()} onStep={jest.fn()} onExpand={onExpand}
+      onOption={jest.fn()} onDismiss={jest.fn()} onCard={jest.fn()} onLink={jest.fn()}
+      expandedContent={expandedContent} onToggleCard={onToggleCard} />;
+  }
+  return render(<Harness />);
+}
+
+test('expandable card has one toggle button that changes the card without expanding the report sheet', () => {
+  const onToggleCard = jest.fn(), onExpand = jest.fn();
+  const screen = cardSheet({ onToggleCard, onExpand });
+  const button = screen.getByTestId('report-window-toggle');
+  expect(button.props.accessibilityLabel).toBe('확대');
+  expect(button.props.accessibilityState).toMatchObject({ expanded: false });
+
+  fireEvent.press(button);
+
+  expect(onToggleCard).toHaveBeenCalledTimes(1);
+  expect(onExpand).not.toHaveBeenCalled();
+});
+
+test('expanded card changes its window toggle to collapse', () => {
+  const screen = cardSheet({ expandedContent: <Text>카드 본문</Text>, onToggleCard: jest.fn() });
+  const button = screen.getByTestId('report-window-toggle');
+  expect(button.props.accessibilityLabel).toBe('축소');
+  expect(button.props.accessibilityState).toMatchObject({ expanded: true });
+});
+
+test('report without a card toggle keeps the existing header without a window button', () => {
+  const screen = cardSheet({});
+  expect(screen.queryByTestId('report-window-toggle')).toBeNull();
+});
+
+test('answered reading path preserves its measured height on the whole scroll content', () => {
+  const entry = { ...reportReviewEntries[0], key: 'answered-card-reading', card_numbers: [531] };
+  function Harness({ currentEntry }: { currentEntry: PersistentReportEntry }) {
+    const t = useTokens();
+    return <PersistentReportSheet entry={currentEntry} index={0} count={1} current compact={false} showNav={false} width={318}
+      styles={reportStyles(t, 0, false)} titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()}
+      onDismiss={jest.fn()} onCard={jest.fn()} onLink={jest.fn()} expandedContent={<Text>카드 본문</Text>} onToggleCard={jest.fn()} />;
+  }
+  const screen = render(<Harness currentEntry={entry} />);
+  const measuredHeight = 432;
+  fireEvent(screen.getByTestId('report-scroll'), 'contentSizeChange', 318, measuredHeight);
+  screen.rerender(<Harness currentEntry={{ ...entry, state: 'answered', answer: '응' }} />);
+
+  expect(StyleSheet.flatten(screen.getByTestId('report-scroll').props.contentContainerStyle).minHeight).toBe(measuredHeight);
+  expect(StyleSheet.flatten(screen.getByTestId('report-reading').props.style).minHeight).toBeUndefined();
+});
+
 test('zero sheets renders nothing; one sheet has no page or arrows and see always has dismiss', () => {
   expect(pager([]).queryByTestId('report-deck')).toBeNull();
   const screen = pager([reportReviewEntries[2]]);
@@ -189,6 +245,8 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   expect(deck().maxHeight).toBe(geometry.reportViewMaxHeight);
 
   const reading = screen.getByTestId('report-scroll');
+  expect(reading.props.stickyHeaderIndices).toEqual([0]);
+  expect(within(reading).getByTestId('report-sticky-head')).toBeTruthy();
   expect(StyleSheet.flatten(reading.props.style)).toMatchObject({ flexShrink: 1, minHeight: 0 });
   fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 160 } } });
   fireEvent(reading, 'contentSizeChange', 390, 1200);

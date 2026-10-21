@@ -196,7 +196,7 @@ test('phone report deck touch leaves page swipes to the deck and conversation sw
   screen.props.onResponderGrant(conversationSwipe.event);
   const released = touchEvent(5, 150, 228);
   screen.props.onResponderMove(released);
-  screen.props.onResponderRelease(released);
+  act(() => screen.props.onResponderRelease(released));
   expect(store.getState().scene).toBe('cards');
 
   view.unmount();
@@ -258,6 +258,13 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
   expect(mockOpenContentLink).toHaveBeenCalledWith('/?card=card-531');
   act(() => closeAfterOpen());
   expect(mockOpenContentLink).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(phone.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(true));
+  expect(phone.getByLabelText('축소')).toBeTruthy();
+  expect(phone.queryByLabelText('닫기')).toBeNull();
+  fireEvent.press(phone.getByLabelText('축소'));
+  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(false));
   phone.unmount();
 
   mockDevice = 'tabletLandscape';
