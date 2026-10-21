@@ -5,7 +5,7 @@ import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 export const CARD_COMPLETION_UNDO_MS = 5000;
 export type CardTransition = (cardId: string, status: 'done' | 'review') => Promise<void>;
 type CompletionEntry = Pick<PersistentReportEntry, 'card_numbers'> & { card_id: string };
-type RecentCompletion = { cardId: string; label: string };
+type RecentCompletion = { cardId: string; label: string; expiresAt: number };
 
 class CardStatusChangedError extends Error {}
 
@@ -43,7 +43,8 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
     try {
       await runTransition(entry.card_id, 'done', 'review');
       clearTimer();
-      const next = { cardId: entry.card_id, label: entry.card_numbers[0] === undefined ? '완료됨' : `#${entry.card_numbers[0]} 완료됨` };
+      const expiresAt = Date.now() + CARD_COMPLETION_UNDO_MS;
+      const next = { cardId: entry.card_id, label: entry.card_numbers[0] === undefined ? '완료됨' : `#${entry.card_numbers[0]} 완료됨`, expiresAt };
       recentRef.current = next;
       setRecent(next);
       timer.current = setTimeout(() => {

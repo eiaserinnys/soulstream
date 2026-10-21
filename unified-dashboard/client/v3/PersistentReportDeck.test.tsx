@@ -42,6 +42,7 @@ const button = (name: string) => Array.from(host.querySelectorAll('button')).fin
 let contentHeight = 0;
 beforeEach(async () => {
   vi.clearAllMocks(); cardTransition = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
     const expanded = this.classList.contains('pas-report-content') && Boolean(this.querySelector('.pas-report-expand[aria-expanded="true"]'));
@@ -50,7 +51,7 @@ beforeEach(async () => {
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); Reflect.deleteProperty(document, 'fonts'); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { act(() => root.unmount()); host.remove(); Reflect.deleteProperty(document, 'fonts'); Reflect.deleteProperty(window, 'matchMedia'); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it('renders only the current sheet into the accessible/tab surface, navigates by arrows and sends directly', async () => {
   expect(host.querySelector('[data-testid="report-sheet-two"]')?.getAttribute('aria-hidden')).toBe('true');
   await act(async () => button('응').click());
@@ -122,6 +123,7 @@ it('completes a review card without dismissing it directly and exposes the undo 
   entries = []; await render();
   expect(host.querySelector('.pas-report-sheet[data-undo-only]')).not.toBeNull();
   expect(host.querySelector('.pas-report-undo')?.textContent).toContain('되돌리기');
+  expect(host.querySelector('.pas-report-undo .pas-undo-ring[aria-hidden="true"]')).not.toBeNull();
   expect(focusInput).toHaveBeenCalled();
   await act(async () => button('되돌리기').click());
   expect(cardTransition).toHaveBeenLastCalledWith(cardRow.id, 'review');
