@@ -13,13 +13,14 @@ import {
 } from "node:fs";
 
 // This module intentionally exceeds 500 lines: it is the single Git mutation
-// boundary whose identity, ref-CAS, and non-force removal invariants must stay
+// boundary whose identity, ref-CAS, and guarded removal invariants must stay
 // visible together. Timeout-partial recovery is split into its own tested module.
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { basename, isAbsolute, join, relative, resolve, win32 } from "node:path";
 
 import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
+import { removeIgnoredWorktreePaths } from "./worktree_ignored_cleanup.js";
 import {
   beginWorktreeCreationAttempt,
   finishWorktreeCreationAttempt,
@@ -240,6 +241,11 @@ export class WorktreeGit {
     return { ...entry, kind: "managed", identity: input.worktreeId };
   }
 
+  async removeIgnored(input: { path: string; ignored: string[] }): Promise<void> {
+    this.assertPathInsideProjectsRoot(input.path);
+    await removeIgnoredWorktreePaths(input.path, input.ignored, this.operationSignal.getStore());
+  }
+
   async remove(input: {
     repoId: string;
     path: string;
@@ -265,7 +271,7 @@ export class WorktreeGit {
     }
     for (const link of links) rmSync(link.path, { force: true });
     try {
-      await this.git(repo, ["worktree", "remove", path], this.options.createTimeoutMs ?? this.options.timeoutMs);
+      await this.git(repo, ["worktree", "remove", "--force", path], this.options.createTimeoutMs ?? this.options.timeoutMs);
       await this.git(repo, ["worktree", "prune"]);
     } catch (error) {
       try {
@@ -313,7 +319,7 @@ export class WorktreeGit {
             `${registration.branch ?? "detached"} != ${input.branch}`,
           );
         }
-        if (input.allowMissingBranch && input.expectedSha === null
+        if (input.allowMissingBranch
           && await this.branchHead(input.repoId, input.branch) === null) return "registered_missing";
         this.assertRecordedRemovalHead(input.expectedSha);
         if (registration.head !== input.expectedSha) {
@@ -340,7 +346,7 @@ export class WorktreeGit {
       }
       return "registered";
     }
-    if (!pathStat && input.allowMissingBranch && input.expectedSha === null
+    if (!pathStat && input.allowMissingBranch
       && await this.branchHead(input.repoId, input.branch) === null) return "unregistered_missing";
     this.assertRecordedRemovalHead(input.expectedSha);
     await this.assertBranchHead(input.repoId, input.branch, input.expectedSha);

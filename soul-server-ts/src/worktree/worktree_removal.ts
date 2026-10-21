@@ -57,7 +57,7 @@ export async function removeWorktreeLocked(options: {
           path: record.canonicalPath,
           worktreeId: record.worktreeIdentity,
         });
-      } else if (expectedSha) {
+      } else if (expectedSha && !(sweeper && missing && workspaceState === "unregistered_missing")) {
         await options.git.finishPartialRemoval({
           repoId: record.repoId,
           path: record.canonicalPath,
@@ -88,6 +88,7 @@ export async function removeWorktreeLocked(options: {
       branch: record.branch,
     });
     record = await options.host.beginRemove({ ...actor, worktreeId: record.id, expectedSha });
+    await options.git.removeIgnored({ path: record.canonicalPath, ignored: dirty.ignored });
     await options.git.remove({
       repoId: record.repoId,
       path: record.canonicalPath,

@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -17,6 +18,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as dependencyLinks from "../src/worktree/worktree_dependency_links.js";
+import { GitProcessError } from "../src/worktree/worktree_process.js";
 import { WorktreeGit } from "../src/worktree/worktree_git.js";
 import { RepositoryLock } from "../src/worktree/worktree_repository_lock.js";
 import { WorktreeService, WorktreeServiceError } from "../src/worktree/worktree_service.js";
@@ -48,16 +50,35 @@ function fixture(active: string[] = []) {
   git(repo, "add", ".");
   git(repo, "commit", "-m", "base");
   const host = new MemoryWorktreeHost();
+  const worktreeGit = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
   const service = new WorktreeService({
     nodeId: "node-a",
     projectsRoot,
-    git: new WorktreeGit({ projectsRoot, timeoutMs: 5_000 }),
+    git: worktreeGit,
     createTimeoutMs: 5_000,
     lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 }),
     host,
     listActiveWorkspaceDirs: () => active,
   });
-  return { projectsRoot, repo, host, service };
+  return { projectsRoot, repo, host, service, worktreeGit };
+}
+
+async function submoduleFixture() {
+  const setup = fixture();
+  const origin = join(setup.projectsRoot, "theme-source");
+  mkdirSync(origin);
+  git(origin, "init", "-b", "main");
+  git(origin, "config", "user.email", "test@example.com");
+  git(origin, "config", "user.name", "Test");
+  writeFileSync(join(origin, "theme.txt"), "original theme\n");
+  git(origin, "add", "."); git(origin, "commit", "-m", "theme");
+  git(setup.repo, "-c", "protocol.file.allow=always", "submodule", "add", origin, "themes/PaperMod");
+  git(setup.repo, "commit", "-am", "add submodule");
+  const created = await setup.service.create({ actorSessionId: "owner", repoId: "demo", branch: "submodule-test", mode: "new" });
+  const path = String(created.path);
+  git(path, "-c", "protocol.file.allow=always", "submodule", "update", "--init");
+  expect(git(path, "status", "--porcelain")).toBe("");
+  return { ...setup, created, path, submodule: join(path, "themes", "PaperMod") };
 }
 
 function configurePnpmRepo(
@@ -93,6 +114,76 @@ async function captureWorktreeError(operation: Promise<unknown>): Promise<Worktr
 }
 
 describe("WorktreeService", () => {
+  it.each(["modified", "untracked"])("rejects %s submodule contents through the existing dirty gate", async (kind) => {
+    const { service, worktreeGit, created, path, submodule } = await submoduleFixture();
+    const userFile = join(submodule, kind === "modified" ? "theme.txt" : "user.txt");
+    writeFileSync(userFile, "preserve user work");
+    expect(git(path, "status", "--porcelain")).toContain("themes/PaperMod");
+    expect(await worktreeGit.inspectDirty(path, [])).toMatchObject({ tracked: ["themes/PaperMod"] });
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .rejects.toMatchObject({ code: "WORKTREE_DIRTY", details: { tracked: ["themes/PaperMod"] } });
+    expect(readFileSync(userFile, "utf8")).toBe("preserve user work");
+  });
+
+  it("removes a clean worktree with an initialized submodule", async () => {
+    const { service, created, path, submodule } = await submoduleFixture();
+    expect(readFileSync(join(submodule, "theme.txt"), "utf8")).toBe("original theme\n");
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .resolves.toMatchObject({ removed: true });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("resumes after interrupted ignored cleanup without deleting tracked files", async () => {
+    const { service, worktreeGit, host } = fixture();
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: "interrupted-ignored", mode: "new" });
+    const path = String(created.path), id = String(created.worktreeId);
+    for (const name of ["first", "remaining"]) {
+      mkdirSync(join(path, "node_modules", name), { recursive: true });
+      writeFileSync(join(path, "node_modules", name, "cache"), Buffer.alloc(4 * 1024 * 1024));
+    }
+    const gitRemove = vi.spyOn(worktreeGit, "remove");
+    vi.spyOn(worktreeGit, "removeIgnored").mockImplementationOnce(async () => {
+      expect(host.records.get(id)?.state).toBe("removing");
+      rmSync(join(path, "node_modules", "first"), { recursive: true });
+      throw new GitProcessError("PROCESS_TIMEOUT", "simulated ignored cleanup interruption", true);
+    });
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: id })).rejects.toMatchObject({ code: "PROCESS_TIMEOUT" });
+    expect(gitRemove).not.toHaveBeenCalled();
+    expect(host.records.get(id)?.state).toBe("ready");
+    expect(readFileSync(join(path, "README.md"), "utf8")).toBe("base\n");
+    expect(git(path, "status", "--porcelain")).toBe("");
+    expect(existsSync(join(path, "node_modules", "remaining", "cache"))).toBe(true);
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: id })).resolves.toMatchObject({ removed: true });
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("removes ignored symlinks without touching their external targets", async () => {
+    const { service, projectsRoot } = fixture();
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: "external-ignored", mode: "new" });
+    const path = String(created.path), external = join(projectsRoot, "external-data");
+    mkdirSync(external); writeFileSync(join(external, "user.txt"), "preserve");
+    mkdirSync(join(path, "node_modules"));
+    symlinkSync(external, join(path, "node_modules", "external"), "dir");
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .resolves.toMatchObject({ removed: true });
+    expect(readFileSync(join(external, "user.txt"), "utf8")).toBe("preserve");
+  });
+
+  it.each([false, true])("sweeps missing directories and branches despite a recorded SHA (registered=%s)", async (registered) => {
+    const { service, repo, host } = fixture();
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: "ghost", mode: "new" });
+    const path = String(created.path), id = String(created.worktreeId);
+    if (registered) rmSync(path, { recursive: true });
+    else git(repo, "worktree", "remove", path);
+    git(repo, "update-ref", "-d", "refs/heads/ghost");
+    host.records.set(id, { ...host.records.get(id)!, branchDeleteExpectedSha: String(created.head),
+      lastSessionActivityAt: new Date().toISOString(), linkedCardsClosed: false });
+    const result = await service.sweep({ now: Date.now() + 4 * 60 * 60_000 });
+    expect(result).toMatchObject({ removed: 1, failed: 0 });
+    expect(host.records.get(id)?.state).toBe("removed");
+    expect(git(repo, "worktree", "list", "--porcelain")).not.toContain(path);
+  });
+
   it.each(["tracked", "untracked"])("preserves %s changes even alongside ignored dependencies", async (kind) => {
     const { service } = fixture();
     const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: `dirty/${kind}`, mode: "new" });
