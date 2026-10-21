@@ -624,6 +624,7 @@ export class WorktreeGit {
       "-z",
       "--no-renames",
       "--untracked-files=normal",
+      "--ignore-submodules=none",
     ])).stdout.split("\0").filter(Boolean);
     const tracked: string[] = [];
     const untracked: string[] = [];

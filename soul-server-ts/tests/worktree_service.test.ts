@@ -125,6 +125,20 @@ describe("WorktreeService", () => {
     expect(readFileSync(userFile, "utf8")).toBe("preserve user work");
   });
 
+  it("preserves modified and untracked submodule files when .gitmodules ignores dirty contents", async () => {
+    const { service, created, path, submodule } = await submoduleFixture();
+    git(path, "config", "--file", ".gitmodules", "submodule.themes/PaperMod.ignore", "dirty");
+    git(path, "add", ".gitmodules"); git(path, "commit", "-m", "ignore dirty submodule contents");
+    const modified = join(submodule, "theme.txt"), untracked = join(submodule, "user.txt");
+    writeFileSync(modified, "modified user work"); writeFileSync(untracked, "untracked user work");
+    expect(git(path, "status", "--porcelain")).toBe("");
+    expect(git(path, "status", "--porcelain", "--ignore-submodules=none")).toContain("themes/PaperMod");
+    await expect(service.remove({ actorSessionId: "owner", worktreeId: String(created.worktreeId) }))
+      .rejects.toMatchObject({ code: "WORKTREE_DIRTY", details: { tracked: ["themes/PaperMod"] } });
+    expect(readFileSync(modified, "utf8")).toBe("modified user work");
+    expect(readFileSync(untracked, "utf8")).toBe("untracked user work");
+  });
+
   it("removes a clean worktree with an initialized submodule", async () => {
     const { service, created, path, submodule } = await submoduleFixture();
     expect(readFileSync(join(submodule, "theme.txt"), "utf8")).toBe("original theme\n");
