@@ -52,12 +52,12 @@ it('keeps the continuous animation offset stable across unrelated rerenders', ()
   const expiresAt = Date.now() + 5_000;
   act(() => root.render(<UndoCountdownRing expiresAt={expiresAt} durationMs={5_000} />));
   const ring = host.querySelector<HTMLElement>('.pas-undo-ring')!;
-  const initialDelay = ring.style.animationDelay;
+  const initialDelay = ring.style.getPropertyValue('--pas-undo-delay');
 
   vi.setSystemTime(Date.now() + 2_000);
   act(() => root.render(<UndoCountdownRing expiresAt={expiresAt} durationMs={5_000} />));
 
-  expect(ring.style.animationDelay).toBe(initialDelay);
+  expect(ring.style.getPropertyValue('--pas-undo-delay')).toBe(initialDelay);
 });
 
 it('renders five discrete segments and follows reduced-motion changes at elapsed-second boundaries', async () => {
