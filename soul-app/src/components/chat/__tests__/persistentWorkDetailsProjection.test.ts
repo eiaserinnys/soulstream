@@ -3,21 +3,52 @@ import type { ChatRenderItem, TurnSummaryRenderItem } from '../groupChatEvents';
 import { projectPersistentWorkDetails } from '../persistentWorkDetailsProjection';
 
 const completeEvent = { id: '10', type: 'complete', data: {} } as unknown as SessionEvent;
+const turnSummaryEvent = { id: '10', type: 'turn_summary', data: {} } as unknown as SessionEvent;
 const summary: TurnSummaryRenderItem = {
   kind: 'turn-summary',
-  event: completeEvent,
+  event: turnSummaryEvent,
   content: '턴 요약',
   anchorEventId: 10,
   key: 'summary-10',
 };
+const assignedCardChip: TurnSummaryRenderItem = {
+  kind: 'turn-summary',
+  event: { id: '11', type: 'debug', data: { kind: 'assigned_card_context_snapshot' } } as unknown as SessionEvent,
+  content: '담당 카드 현황',
+  anchorEventId: 11,
+  key: 'turn-summary-11',
+};
+const assistantMessage: ChatRenderItem = {
+  kind: 'event',
+  event: { id: '12', type: 'assistant_message', data: { text: '응답' } } as unknown as SessionEvent,
+  key: 'assistant-12',
+};
+const activity: ChatRenderItem = { kind: 'activity', items: [], key: 'activity-13' };
 const usage = { title: '컨텍스트 12%', lines: ['정가 $0.01'] };
 
-test('활동 줄과 요약 줄을 숨긴다', () => {
+test('활동 줄과 실제 요약 줄을 숨긴다', () => {
   const items: ChatRenderItem[] = [
     { kind: 'activity', items: [], key: 'activity-1' },
     summary,
   ];
   expect(projectPersistentWorkDetails(items)).toEqual([]);
+});
+
+test('활동 앞 응답에는 원고형 서술 표식을 붙인다', () => {
+  expect(projectPersistentWorkDetails([assistantMessage, activity])).toEqual([
+    { ...assistantMessage, manuscriptNarration: true },
+  ]);
+});
+
+test('담당 카드 칩은 요약 배열 안에 있어도 남긴다', () => {
+  const items: ChatRenderItem[] = [
+    assignedCardChip,
+    { kind: 'event', event: completeEvent, key: 'event-2', summaries: [assignedCardChip] },
+  ];
+  expect(projectPersistentWorkDetails(items)).toEqual([
+    assignedCardChip,
+    { kind: 'event', event: completeEvent, key: 'event-2', summaries: [assignedCardChip] },
+  ]);
 });
 
 test('이벤트와 도구 항목의 summaries만 제거하고 항목은 남긴다', () => {
@@ -29,7 +60,7 @@ test('이벤트와 도구 항목의 summaries만 제거하고 항목은 남긴�
     summaries: [summary],
   };
   expect(projectPersistentWorkDetails([eventItem, toolItem])).toEqual([
-    { kind: 'event', event: completeEvent, key: 'event-1' },
+    { kind: 'event', event: completeEvent, key: 'event-1', summaries: undefined },
     expect.objectContaining({ kind: 'tool', key: 'tool-1', summaries: undefined }),
   ]);
 });
