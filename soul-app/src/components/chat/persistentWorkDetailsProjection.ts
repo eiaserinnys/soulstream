@@ -41,7 +41,9 @@ export function projectPersistentWorkDetails(items: ChatRenderItem[]): ChatRende
     if (item.kind === 'activity') {
       const previous = items[index - 1];
       if (previous && isNarrationCandidate(previous)) {
-        projected[projected.length - 1] = { ...previous, manuscriptNarration: true };
+        // 바로 앞 응답은 이미 요약을 걷어낸 채 projected 끝에 있다. 원본이 아니라 그 값을 쓴다.
+        const last = projected[projected.length - 1] as ChatEventRenderItem;
+        projected[projected.length - 1] = { ...last, manuscriptNarration: true };
       }
       continue;
     }

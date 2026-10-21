@@ -104,3 +104,15 @@ test('지속 지시 기록 캡션은 남기고 요약만 지운다', () => {
     },
   ]);
 });
+
+test('서술 표식을 붙여도 그 응답에서 걷어낸 요약은 되살아나지 않는다', () => {
+  const narrationWithSummary: ChatRenderItem = {
+    ...(assistantMessage as Extract<ChatRenderItem, { kind: 'event' }>),
+    summaries: [summary],
+  };
+  const projected = projectPersistentWorkDetails([narrationWithSummary, activity]);
+  expect(projected).toHaveLength(1);
+  const [first] = projected as Array<Extract<ChatRenderItem, { kind: 'event' }>>;
+  expect(first.manuscriptNarration).toBe(true);
+  expect(first.summaries).toBeUndefined();
+});
