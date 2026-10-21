@@ -128,7 +128,7 @@ export function ClaudeRuntimeTasksPanel({
   );
 
   const expandedBody = (
-    <div className={runtimePanelScrollClass("space-y-2")}>
+    <div id={bodyId} className={runtimePanelScrollClass("space-y-2")}>
       {error ? (
         <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
           {error}

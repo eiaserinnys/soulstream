@@ -58,6 +58,7 @@ export function ClaudeRuntimeNotificationsPanel({
       </div>
     </>
   );
+  const captionExpandedBody = <div id={bodyId}>{expandedBody}</div>;
 
   if (variant === "caption") {
     return (
@@ -81,7 +82,7 @@ export function ClaudeRuntimeNotificationsPanel({
           />
           {refreshButton}
         </div>
-        {expanded ? expandedBody : null}
+        {expanded ? captionExpandedBody : null}
       </section>
     );
   }

@@ -12,6 +12,7 @@ import type {
 } from "../stores/claude-runtime-state";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
+import { DashboardIconCap } from "./DashboardIconCap";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";
 import { CollapsibleCaptionHeader } from "./chat/CollapsibleCaption";
 
@@ -111,8 +112,24 @@ export function ClaudeRuntimeSchedulesPanel({
     </Button>
   );
 
+  const captionRefreshButton = (
+    <DashboardIconCap
+      label="새로고침"
+      size="small"
+      appearance="bare"
+      disabled={loading}
+      onClick={() => void refresh()}
+      className="shrink-0 self-end text-foreground disabled:text-muted-foreground"
+      data-testid="schedule-refresh-button"
+    >
+      {loading
+        ? <Loader2 className="size-5 animate-spin" strokeWidth={1.4} aria-hidden="true" />
+        : <RefreshCw className="size-5" strokeWidth={1.4} aria-hidden="true" />}
+    </DashboardIconCap>
+  );
+
   const expandedBody = (
-    <div className={runtimePanelScrollClass("space-y-2")}>
+    <div id={bodyId} className={runtimePanelScrollClass("space-y-2")}>
       {error ? (
         <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
           {error}
@@ -165,7 +182,7 @@ export function ClaudeRuntimeSchedulesPanel({
 
   if (variant === "caption") {
     return (
-      <section className="px-3 py-2" data-slot="claude-runtime-schedules-caption">
+      <section className="-mx-1 px-1 py-2 pl-4" data-slot="claude-runtime-schedules-caption">
         <div className="flex items-center justify-between gap-2">
           <CollapsibleCaptionHeader
             id={bodyId}
@@ -174,7 +191,7 @@ export function ClaudeRuntimeSchedulesPanel({
               <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
                 <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
                 <span className="shrink-0 font-medium">예약 {schedules.length}</span>
-                {nextRunAt ? <span className="min-w-0 truncate">다음 {formatDateTime(nextRunAt)}</span> : null}
+                {nextRunAt ? <span className="min-w-0 truncate">다음 {formatCaptionDateTime(nextRunAt)}</span> : null}
                 {errorCount > 0 ? <span className="shrink-0 chat-tone-danger-text">오류 {errorCount}</span> : null}
               </span>
             }
@@ -184,7 +201,7 @@ export function ClaudeRuntimeSchedulesPanel({
             className="min-w-0 flex-1 motion-safe:active:scale-100"
             data-slot="manuscript-schedules-toggle"
           />
-          {refreshButton}
+          {captionRefreshButton}
         </div>
         {expanded ? expandedBody : null}
       </section>
@@ -245,6 +262,17 @@ function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function formatCaptionDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function statusClassName(status: ClaudeRuntimeScheduleStatus, tone: "default" | "calm"): string {

@@ -243,7 +243,8 @@ function ChatViewContent({
         : manuscriptGrouped.filter((item) => item.type !== "activity-group");
     },
     [manuscriptGrouped, showWorkDetails, visibleMessages],
-  );  const chatStatus = activeSessionSummary?.status ?? "unknown";
+  );
+  const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
     () => buildChatTimelineItems(grouped, visibleMessages, chatStatus, pendingChatSend),
     [grouped, visibleMessages, chatStatus, pendingChatSend],

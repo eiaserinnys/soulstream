@@ -41,7 +41,7 @@ const REVIEW_RUNTIME: ClaudeRuntimeView = {
       kind: "cron",
       status: "active",
       cronExpression: "0 9 * * *",
-      nextRunAt: "2026-10-08T00:00:00.000Z",
+      nextRunAt: "2026-10-22T00:00:00.000Z",
     },
   },
 };
@@ -129,10 +129,11 @@ function ManuscriptColumn() {
     const savedSuggestion = store.lastPromptSuggestions[REVIEW_SESSION];
     store.setActiveSession(REVIEW_SESSION);
     store.setActiveSessionSummary({
-      agentSessionId: REVIEW_SESSION, status: "completed", sessionType: "claude", eventCount: 10,
+      agentSessionId: REVIEW_SESSION, status: "completed", sessionType: "claude", backend: "claude", eventCount: 10,
       nodeId: "eiaserinnys",
       createdAt: "2026-10-06T00:00:00Z", updatedAt: "2026-10-06T00:00:00Z",
     });
+    useDashboardStore.setState({ claudeRuntime: REVIEW_RUNTIME });
     store.setPersistentSessionDisplaySettings(REVIEW_SESSION, {
       show_generation_separator: true,
       show_jev_candidates: true,
@@ -260,6 +261,27 @@ function ManuscriptColumn() {
       { type: "tool_start", tool_use_id: "review-read-b", tool_name: "Read", tool_input: { file_path: "soul-app/src/components/chat/ChatEventList.tsx" } },
       { type: "tool_result", tool_use_id: "review-read-b", tool_name: "Read", result: "앱 타임라인을 확인했습니다." },
       { type: "assistant_message", content: "두 경로의 순서와 표시를 확인했습니다." },
+      { type: "user_message", user: "User", text: "#526 카드를 확인해줘.", input_id: "review-assigned-card-input" },
+      {
+        type: "debug",
+        kind: "assigned_card_context_snapshot",
+        content: "담당 카드 상황 요약",
+        timestamp: 1,
+        capture: {
+          source: "prepared_model_input",
+          sessionId: REVIEW_SESSION,
+          registrationId: "review-registration",
+          executionCommandId: "review-command",
+          inputId: "review-assigned-card-input",
+          identityMissing: false,
+          snapshot: {
+            total: 1,
+            omitted: 0,
+            capturedAt: "2026-10-21T00:00:00Z",
+            cards: [{ id: "review-assigned-card", title: "PAS #526", status: "running" }],
+          },
+        },
+      },
     ] as SoulSSEEvent[];
     const narrationInputIndex = events.findIndex(event => event.type === "user_message" && event.input_id === NARRATION_REVIEW_INPUT_ID);
     const thinkingEvent = events.find((event): event is Extract<SoulSSEEvent, { type: "thinking" }> => event.type === "thinking");
@@ -384,7 +406,7 @@ function ManuscriptColumn() {
       }}>작업 세부 표시</button>
     </div>
     <div className="h-screen min-h-0" data-testid="manuscript-review-column">
-      {ready && <ChatView presentation="manuscript" historyEnabled={false} fileUploadUrl="/api/attachments/sessions" />}
+      {ready && <ChatView presentation="manuscript" historyEnabled={false} showRuntimeStrips={showWorkDetails} fileUploadUrl="/api/attachments/sessions" />}
     </div>
   </div>;
 }
