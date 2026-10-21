@@ -38,6 +38,9 @@
 .pas-report-reading { flex: 1 1 auto; min-height: 0; min-width: 0; }
 .pas-report[data-bubble="true"] .pas-report-reading { overflow-y: auto; margin-inline: calc(var(--v3-space-4) * -1); padding-inline: var(--v3-space-4); }
 .pas-report[data-bubble="true"] .pas-report-reading[data-more="true"] { box-shadow: inset 0 -1px var(--persistent-session-line); }
+.pas-report[data-inline-max-height="true"] { max-height: calc(var(--pas-report-inline-max-height) - var(--v3-space-2) - var(--v3-space-2)); }
+.pas-report[data-inline-max-height="true"] .pas-report-reading { overflow-y: auto; }
+.pas-report[data-inline-max-height="true"] .pas-report-reading[data-more="true"] { box-shadow: inset 0 -1px var(--persistent-session-line); }
 .pas-report-content { display: flex; flex-direction: column; gap: var(--v3-space-2); min-width: 0; }
 .pas-report-heading { display: flex; align-items: center; flex-wrap: wrap; gap: var(--v3-space-1) var(--v3-space-2); min-width: 0; }
 .pas-report-title { flex: 0 0 auto; max-width: 100%; margin: 0; font: var(--v3-type-card) var(--v3-font-family); color: var(--foreground); overflow-wrap: anywhere; word-break: keep-all; }
@@ -64,6 +67,7 @@
 @media (max-width: 767px) {
   /* Start below the existing task control; the control keeps its own seat. */
   .persistent-session-main > .pas-report { margin-top: calc(var(--v3-space-2) + var(--v3-action-size) + var(--v3-space-2)); }
+  .pas-report[data-inline-max-height="true"] { max-height: calc(var(--pas-report-inline-max-height) - var(--v3-space-2) - var(--v3-action-size) - var(--v3-space-2) - var(--v3-space-2)); }
   .pas-report-nav button { display: none; }
   .pas-report-count { text-align: left; }
   .pas-report[data-many="true"] .pas-report-footer { margin-inline-start: calc(var(--v3-space-8) + var(--v3-space-2)); }

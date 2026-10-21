@@ -152,7 +152,7 @@ describe("card dispatch and session lifecycle", () => {
             const created=await service.createCard({...human,folderId:'dispatch-folder',title:'실제 경계',request:'原文',attachments,queue:true,assignee:{kind:'agent',agentId:'roselin'},nodeId:'eiaserinnys',modelPreset:'sol',idempotencyKey:key()});
             await runtime.dispatcher.drain();
             expect(createSession).toHaveBeenCalledWith(expect.objectContaining({attachment_paths:[attachments[0]!.path]}),expect.anything());
-            expect(createSession).toHaveBeenCalledWith(expect.objectContaining({caller_info:{source:'system',email:human.actorUserId}}),expect.anything());
+            expect(createSession).toHaveBeenCalledWith(expect.objectContaining({caller_info:{source:'system',email:human.actorUserId,card_launch:true}}),expect.anything());
             const sessionId=createSession.mock.calls[0]![0].agentSessionId;
             await service.patchCard({ ...human, cardId: created.operation.target_id, assignee: { kind: 'session', sessionId } });
             await h.sql`UPDATE sessions SET status='error',termination_reason='limit_hit',termination_event_id=1 WHERE session_id=${sessionId}`;
@@ -180,7 +180,7 @@ describe("card dispatch and session lifecycle", () => {
             await service.createCard({actorKind:'agent',actorSessionId:'queue-creator',actorUserId:null,folderId:'dispatch-folder',
                 title:'대기열 주인',request:'실행',queue:true,assignee:{kind:'agent',agentId:'roselin'},nodeId:'eiaserinnys',modelPreset:'sol',idempotencyKey:key()});
             await runtime.dispatcher.drain();
-            expect(createSession).toHaveBeenCalledWith(expect.objectContaining({caller_info:{source:'system',email}}),expect.anything());
+            expect(createSession).toHaveBeenCalledWith(expect.objectContaining({caller_info:{source:'system',email,card_launch:true}}),expect.anything());
         }finally{await runtime.dispatcher.drain();}
     });
     it("includes user comments and spoken instructions but excludes agent replies from dispatch input", async () => {

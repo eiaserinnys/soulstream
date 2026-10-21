@@ -34,6 +34,8 @@ export interface PersistentSessionLayoutInput {
   inputRowHeight: number;
   /** Gap between the bottom of the input row and the composer's baseline. */
   rowBottomGap: number;
+  /** Height reserved for the global chat input and its chat-root vertical padding. */
+  inlineComposerReserve?: number;
   pointerFine: boolean;
   showCharacter: boolean;
   phoneConfigured: boolean;
@@ -63,6 +65,8 @@ export interface PersistentSessionLayout {
   toggle: PersistentSessionRect | null;
   /** Horizontal distance the baseline extends left from main to the body. */
   lineLeftReach: number;
+  /** Maximum inline report height, measured in the main chat column. */
+  reportInlineMaxHeight: number;
   /** Null when disabled or the screen cannot seat a report above the portrait. */
   reportBubble: PersistentSessionReportBubbleLayout | null;
 }
@@ -71,7 +75,7 @@ export interface PersistentSessionLayout {
 export function calculatePersistentSessionLayout(
   input: PersistentSessionLayoutInput,
 ): PersistentSessionLayout {
-  const { app, header, main, baselineBottom, inputRowHeight, rowBottomGap, pointerFine, showCharacter, phoneConfigured } = input;
+  const { app, header, main, baselineBottom, inputRowHeight, rowBottomGap, inlineComposerReserve = 0, pointerFine, showCharacter, phoneConfigured } = input;
   const lineY = Math.round(baselineBottom - app.top) - 1;
   const leftWidth = main.left - app.left;
   const bodyBottom = lineY + BASELINE_EDGE;
@@ -98,10 +102,11 @@ export function calculatePersistentSessionLayout(
   const isConstrained = phoneConfigured
     || app.width < MIN_VIEWPORT_WIDTH
     || bodyWidth < MIN_CHARACTER_WIDTH;
+  const reportInlineMaxHeight = Math.max(0, main.height - (inlineComposerReserve ?? 0));
 
   if (isConstrained) {
     return { lineY, reportViewMaxHeight: input.reportBubble ? Math.max(0, lineY - safeTop - inputRowHeight - rowBottomGap) : 0,
-      body: null, toggle: null, lineLeftReach: 0, reportBubble: null };
+      body: null, toggle: null, lineLeftReach: 0, reportInlineMaxHeight, reportBubble: null };
   }
 
   const body = showCharacter
@@ -128,6 +133,7 @@ export function calculatePersistentSessionLayout(
     body,
     toggle,
     lineLeftReach: showCharacter ? Math.max(0, leftWidth - bodyLeft) : 0,
+    reportInlineMaxHeight,
     reportBubble,
   };
 }

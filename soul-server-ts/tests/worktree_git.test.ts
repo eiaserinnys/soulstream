@@ -272,9 +272,16 @@ describe("WorktreeGit", () => {
       .toBe(git(repo, "rev-parse", "main"));
   });
 
-  it("restores managed dependency links when Git removal refuses the worktree", async () => {
+  it("restores managed dependency links when Git removal fails", async () => {
     const { projectsRoot, repo } = makeRepository();
-    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000,
+      processRunner: async (input) => {
+        if (input.args[0] === "worktree" && input.args[1] === "remove") {
+          throw new GitProcessError("PROCESS_FAILED", "simulated Git removal failure", true);
+        }
+        return await runBoundedProcess(input);
+      },
+    });
     const created = await worktrees.create({
       actorSessionId: "owner",
       repoId: "demo",
@@ -286,7 +293,6 @@ describe("WorktreeGit", () => {
     mkdirSync(target);
     const link = join(created.path, "node_modules");
     symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
-    writeFileSync(join(created.path, "README.md"), "modified\n");
 
     await expect(worktrees.remove({
       repoId: "demo",

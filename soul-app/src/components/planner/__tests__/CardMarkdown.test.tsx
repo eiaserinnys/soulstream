@@ -1,7 +1,10 @@
 import React from 'react';
 import { fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
-import { useTokens } from '../../../theme';
+import { createPlannerVisualRoles, createSessionVisualRoles, useTokens } from '../../../theme';
+import { LIGHT_COLORS } from '../../../theme/colors';
+import { createAssistantMarkdownStyle } from '../../../theme/assistantMarkdownStyle';
+import { plannerMarkdownStyle } from '../PlannerMarkdownText';
 import { useSettingsStore } from '../../../store/settingsStore';
 
 jest.mock('react-native-enriched-markdown', () => ({ EnrichedMarkdownText: (props: any) => require('react').createElement(require('react-native').Text, { ...props, testID: 'markdown' }, props.markdown) }));
@@ -86,6 +89,7 @@ test.each([
   for (const key of ['paragraph', 'list', 'code', 'codeBlock', 'blockquote', 'table', 'taskList']) {
     expect(cardStyle[key]).toEqual(chatStyle[key]);
   }
+  for (const key of ['h4', 'h5', 'h6']) expect(cardStyle[key]).toEqual(chatStyle[key]);
   const { result } = renderHook(() => useTokens());
   for (const key of ['h1', 'h2', 'h3']) {
     expect(cardStyle[key]).toEqual({ color: result.current.colors.textPrimary, ...result.current.foundation.typography.cardTitle });
@@ -95,6 +99,64 @@ test.each([
   // 폴더/편집기 소비자의 기본 스타일은 그대로 유지한다.
   const folder = render(<PlannerMarkdownText markdown={markdown} />);
   expect(folder.getByTestId('markdown').props.markdownStyle).toMatchObject({ paragraph: { fontSize: 15 }, h1: { fontSize: 28 }, h2: { fontSize: 18 }, h3: { fontSize: 16 } });
+});
+
+test('planner 표는 채팅 마크다운의 토큰 스타일을 공유한다', () => {
+  const { result } = renderHook(() => useTokens());
+  const chatTable = createAssistantMarkdownStyle(result.current).table;
+  const planner = render(<PlannerMarkdownText markdown="| A | B |\n| --- | --- |\n| 값 | 값 |" />);
+
+  expect(planner.getByTestId('markdown').props.markdownStyle.table).toEqual(chatTable);
+});
+
+test('planner와 채팅 마크다운의 h4~h6 및 구분선·코드 테두리는 테마 토큰을 쓴다', () => {
+  const { result } = renderHook(() => useTokens());
+  const roles = createPlannerVisualRoles(result.current);
+  const planner = render(<PlannerMarkdownText markdown="#### 넷째\n\n##### 다섯째\n\n###### 여섯째\n\n---\n\n`코드`\n\n```ts\nconst ok = true;\n```" />);
+  const plannerStyle = planner.getByTestId('markdown').props.markdownStyle;
+
+  for (const key of ['h4', 'h5', 'h6']) {
+    expect(plannerStyle[key]).toEqual({
+      color: result.current.colors.textPrimary,
+      ...roles.typography.body,
+      fontWeight: '700',
+    });
+  }
+  expect(plannerStyle.thematicBreak).toEqual({ color: result.current.colors.border });
+  expect(plannerStyle.code.borderColor).toBe(result.current.colors.border);
+  expect(plannerStyle.codeBlock).toMatchObject({ borderColor: result.current.colors.accent, borderWidth: 0 });
+
+  for (const narration of [false, true]) {
+    const chatStyle = createAssistantMarkdownStyle(result.current, narration);
+    expect(chatStyle.h4).toEqual(chatStyle.h3);
+    expect(chatStyle.h5).toEqual(chatStyle.h3);
+    expect(chatStyle.h6).toEqual(chatStyle.h3);
+    expect(chatStyle.thematicBreak).toEqual({ color: result.current.colors.border });
+    expect(chatStyle.code).toMatchObject({ borderColor: result.current.colors.border });
+    expect(chatStyle.codeBlock).toMatchObject({ borderColor: result.current.colors.accent, borderWidth: 0 });
+  }
+});
+
+test('planner 체크 완료 항목은 본문 색상으로 표시한다', () => {
+  const { result } = renderHook(() => useTokens());
+  const planner = render(<PlannerMarkdownText markdown="- [x] 완료" />);
+
+  expect(planner.getByTestId('markdown').props.markdownStyle.taskList.checkedTextColor)
+    .toBe(result.current.colors.textPrimary);
+});
+
+test('HTML 카드 보고서는 문서 기본 바탕으로 렌더된다', () => {
+  const report = render(<CardReportView report={{
+    id: 'html-report', cardId: 'card', title: '보고', format: 'html',
+    body: '<h1>HTML 보고</h1>', createdAt: '',
+  }} />);
+  const webView = report.getByTestId('card-report-html-html-report');
+  const { result } = renderHook(() => useTokens());
+
+  expect(webView.props.source.html).toContain('<style>:where(:root){color-scheme:light;}</style>');
+  expect(webView.props.style.backgroundColor).toBe(LIGHT_COLORS.background);
+  expect(StyleSheet.flatten(report.getByTestId('card-report-html-frame-html-report').props.style))
+    .toEqual({ overflow: 'hidden', borderRadius: createSessionVisualRoles(result.current).chat.attachment.radius });
 });
 
 test.each([390, 1194])('펼친 보고 %s는 기존 썸네일 간격과 전체폭 왼쪽 본문을 사용한다', (width) => {

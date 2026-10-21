@@ -88,6 +88,7 @@ export const useCardStore = create<CardState>((set,get) => ({
     try {
       const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey,...(itemId===undefined?{}:{itemId})});
       patch(comment);
+      set(state => ({errors:{...state.errors,[id]:""}}));
       if(itemId!==undefined)try{await get().loadCard(id);}catch{/* loadCard keeps the saved comment and exposes its refresh error */}
       return comment;
     } catch (error) {

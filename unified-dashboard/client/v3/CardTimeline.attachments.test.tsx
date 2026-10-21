@@ -56,6 +56,42 @@ it("opens card markdown attachments with fetched metadata and keeps external lin
  expect(requestEntry.querySelector<HTMLAnchorElement>('a[href="https://example.test/guide"]')?.target).toBe("_blank");
 });
 
+it.each([false,true])("keeps short comments fully readable without an expand action (commentsOnly=%s)",async(commentsOnly)=>{
+ vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){}});
+ await act(()=>root.render(<CardTimeline card={card} detail={detail} commentsOnly={commentsOnly} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ const comment=container.querySelector('[data-card-entry="커멘트"]')!;
+ const bubble=comment.querySelector<HTMLElement>('[data-slot="chat-message-bubble"]')!;
+ expect(comment.querySelector('.v3-card-collapse-hint')).toBeNull();
+ expect(bubble.getAttribute("role")).not.toBe("button");
+ expect(bubble.hasAttribute("aria-expanded")).toBe(false);
+ if(!commentsOnly)expect(comment.querySelector('.v3-card-three-lines')).toBeNull();
+});
+
+it.each([false,true])("only folds overflowing PAS comments (commentsOnly=%s)",async(commentsOnly)=>{
+ vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){}});
+ vi.spyOn(HTMLElement.prototype,"scrollHeight","get").mockReturnValue(240);
+ vi.spyOn(HTMLElement.prototype,"clientHeight","get").mockReturnValue(60);
+ const longComment={...detail.comments![0]!,body:Array.from({length:8},(_,index)=>`긴 후속 지시 문장 ${index+1}`).join("\n\n")};
+ await act(()=>root.render(<CardTimeline card={card} detail={{...detail,comments:[longComment]}} commentsOnly={commentsOnly} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ const comment=container.querySelector('[data-card-entry="커멘트"]')!;
+ const bubble=comment.querySelector<HTMLElement>('[data-slot="chat-message-bubble"]')!;
+ if(!commentsOnly){
+  expect(comment.querySelector('.v3-card-three-lines')).toBeNull();
+  expect(comment.querySelector('.v3-card-collapse-hint')).toBeNull();
+  expect(bubble.getAttribute("role")).not.toBe("button");
+  return;
+ }
+ expect(bubble.getAttribute("aria-expanded")).toBe("false");
+ expect(comment.querySelector('.v3-card-three-lines')?.textContent).toContain("긴 후속 지시 문장 1");
+ expect(comment.querySelector('.v3-card-collapse-hint')?.textContent).toBe("더 보기");
+ await act(()=>bubble.click());
+ expect(bubble.getAttribute("aria-expanded")).toBe("true");
+ expect(comment.querySelector('.v3-card-three-lines')).toBeNull();
+ expect(comment.querySelector('.v3-card-collapse-hint')?.textContent).toBe("접기");
+ await act(()=>bubble.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true})));
+ expect(bubble.getAttribute("aria-expanded")).toBe("false");
+});
+
 it("uses explicit session context for card body attachments and shows 403 without retry",async()=>{
  const sessionUrl="/api/attachments/session-image/content?context_type=session&context_id=session-1";
  const fetchMock=vi.fn(async(_input:RequestInfo|URL)=>new Response(null,{status:403}));

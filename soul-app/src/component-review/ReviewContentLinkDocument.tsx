@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer, useNavigationContainerRef, type Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View } from 'react-native';
 import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
@@ -23,12 +23,12 @@ function EmptyHome() {
   return <View style={{ flex: 1 }} />;
 }
 
-function PhoneDocumentSample() {
+function PhoneDocumentSample({ theme }: { theme: Theme }) {
   const navigation = useNavigationContainerRef<PhoneReviewStack>();
   const openDocument = useCallback(() => {
     navigation.navigate('MarkdownDocument', { documentId: contentLinkDocumentId });
   }, [navigation]);
-  return <NavigationContainer ref={navigation} onReady={openDocument}>
+  return <NavigationContainer ref={navigation} theme={theme} onReady={openDocument}>
     <PhoneStack.Navigator initialRouteName="Home" screenOptions={{ headerShown: false }}>
       <PhoneStack.Screen name="Home" component={EmptyHome} />
       <PhoneStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} />
@@ -51,6 +51,8 @@ function TabletDocumentSample() {
 export function ReviewContentLinkDocument() {
   const t = useTokens();
   const device = useDeviceType();
+  const dark = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('theme') === 'dark';
+  const navigationTheme = dark ? DarkTheme : DefaultTheme;
   const value = typeof window === 'undefined' ? 'ready' : new URLSearchParams(window.location.search).get('documentState');
   const state: DocumentState = value === 'loading' || value === 'error' ? value : 'ready';
   return <View style={{ flex: 1, backgroundColor: t.colors.background }}>
@@ -63,7 +65,7 @@ export function ReviewContentLinkDocument() {
         window.location.assign(url.toString());
       }} options={states} />
     <View style={{ flex: 1 }}>
-      {device === 'phone' ? <PhoneDocumentSample /> : <TabletDocumentSample />}
+      {device === 'phone' ? <PhoneDocumentSample theme={navigationTheme} /> : <TabletDocumentSample />}
     </View>
   </View>;
 }

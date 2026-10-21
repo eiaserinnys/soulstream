@@ -10,6 +10,7 @@ export interface OpenCodeExit {
   code: number | null;
   signal: NodeJS.Signals | null;
   error?: string;
+  rateLimitDetected: boolean;
   rateLimitSessionId?: string;
 }
 
@@ -116,6 +117,7 @@ export function launchOpenCodeProcess(options: {
         code,
         signal,
         ...(failure ? { error: failure } : {}),
+        rateLimitDetected,
         ...(rateLimitSessionId ? { rateLimitSessionId } : {}),
       });
     });

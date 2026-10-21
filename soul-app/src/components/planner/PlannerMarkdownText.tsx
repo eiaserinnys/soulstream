@@ -2,7 +2,7 @@ import React from 'react';
 import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
 import { View } from 'react-native';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
-import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
+import { createAssistantMarkdownStyle, markdownTableStyle } from '../../theme/assistantMarkdownStyle';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
@@ -55,16 +55,21 @@ export function plannerMarkdownStyle(t: DesignTokens, note = false) {
     h1: { color: textColor, ...planner.typography.display },
     h2: { color: textColor, ...planner.typography.section },
     h3: { color: textColor, ...planner.typography.cardTitle },
+    h4: { color: textColor, ...planner.typography.body, fontWeight: '700' },
+    h5: { color: textColor, ...planner.typography.body, fontWeight: '700' },
+    h6: { color: textColor, ...planner.typography.body, fontWeight: '700' },
     strong: { color: textColor, fontWeight: '700' },
     em: { color: textColor, fontStyle: 'italic' },
     link: { color: c.link },
-    code: { backgroundColor: c.surfaceCode, color: c.codeText, fontFamily: 'Courier' },
+    code: { backgroundColor: c.surfaceCode, color: c.codeText, fontFamily: 'Courier', borderColor: c.border },
     codeBlock: {
       backgroundColor: c.surfaceCode,
       color: textColor,
       fontFamily: 'Courier',
       padding: t.uiSpacing.sm,
       borderRadius: t.radius.sm,
+      borderColor: c.accent,
+      borderWidth: 0,
     },
     blockquote: {
       color: c.textSecondary,
@@ -79,6 +84,9 @@ export function plannerMarkdownStyle(t: DesignTokens, note = false) {
       bulletColor: c.textMuted,
       markerColor: c.textMuted,
     },
+    taskList: { checkedTextColor: textColor },
+    table: markdownTableStyle(t),
+    thematicBreak: { color: c.border },
   } as any;
 }
 

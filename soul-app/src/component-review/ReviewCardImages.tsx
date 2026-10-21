@@ -4,6 +4,7 @@ import type { CardAttachmentAssetEvidence, CardCheckItem, CardDetail } from '../
 import { cardFixture } from '../test-support/cards';
 import { CardTimeline } from '../components/planner/CardTimeline';
 import { CardCheckItems } from '../components/planner/CardCheckItems';
+import { CardReportView } from '../components/planner/CardReportView';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { AttachmentImage } from '../components/AttachmentImage';
@@ -36,6 +37,10 @@ export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverU
     { id: 'app-absolute', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment',
       body: `앱에서 저장한 절대 URL 커멘트\n\n![앱 첨부](${absolute})`, createdAt: '2026-10-02T00:02:00Z' },
   ] };
+  const htmlReport = {
+    id: 'public-html-report', cardId: card.id, title: 'HTML 보고', format: 'html' as const,
+    body: '<p>공개 카드 HTML 보고 본문</p>', createdAt: at,
+  };
   const widthCard = cardFixture({ id: 'report-width', request: '보고를 펼쳐 읽어 주세요.', status: 'review', assigneeAgentId: null, createdAt: at });
   const widthDetail: CardDetail = { card: widthCard, sessions: [],
     questions: [{ id: 'width-question', cardId: widthCard.id, sessionId: 'public-session', text: '확인해 주시겠습니까?', options: null, answer: null, askedAt: at }],
@@ -117,6 +122,10 @@ export function ReviewCardImages({ serverUrl, bundledImages = false }: { serverU
   return <ContentLinkProvider><ScrollView testID="card-image-review" style={{ flex: 1, backgroundColor: t.colors.background }}
     contentContainerStyle={{ padding: t.foundation.pageInset, gap: t.uiSpacing.lg }} showsVerticalScrollIndicator={false}>
     <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>공개 fixture · RN web 배치와 조작 검수입니다. 네이티브 인증은 별도 계약으로 확인합니다.</Text>
+    <View testID="review-card-html-report" style={{ gap: t.uiSpacing.sm }}>
+      <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드 HTML 보고</Text>
+      <CardReportView report={htmlReport} />
+    </View>
     <View testID="card-evidence-fixture" style={{ gap: t.uiSpacing.sm }}>
       <Text style={{ ...t.foundation.typography.section, color: t.colors.textPrimary }}>카드 증거 첨부</Text>
       <CardCheckItems cardId={attachmentCard.id} items={[evidence, orderItem, singleItem]} pendingConfirmations={{}} initiallyConfirmedIds={[]} newlyConfirmedIds={[]}

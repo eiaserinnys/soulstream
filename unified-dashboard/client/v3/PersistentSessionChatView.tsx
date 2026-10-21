@@ -6,6 +6,7 @@ import type { ChatUiComposerHandle, ChatUiOperationsHandle, RegisterGeneratedTex
 import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportDeck';
 import { usePersistentReportDismiss } from './usePersistentReportDismiss';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
+import { PasCardExpansion, PasCardExpansionStatus } from './PasCardExpansion';
 
 type PersistentSessionChatViewProps = {
   sessionId: string;
@@ -55,7 +56,9 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   }, [loadDisplaySettings, sessionId, setDisplaySettings, storeScope]);
   if (!showReport) return <ChatView {...props} storeScope={storeScope} />;
   return <PersistentReportProvider sessionId={sessionId} entries={visibleEntries}>
-    {(!loadDisplaySettings || listedSettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss} />}
+    {(!loadDisplaySettings || listedSettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss}
+      renderCardDetails={(entry, lookupCards) => <PasCardExpansion key={entry.key} entry={entry} lookupCards={lookupCards} />}
+      renderCardStatus={entry => <PasCardExpansionStatus entry={entry} />} />}
     <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />
   </PersistentReportProvider>;
 }

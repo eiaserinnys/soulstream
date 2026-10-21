@@ -60,6 +60,8 @@ test('카드 첨부 표본은 C-10 증거와 보고 본문 내부 링크를 따�
 
   expect(screen.getByTestId('card-evidence-fixture')).toBeTruthy();
   expect(screen.getByTestId('card-body-attachment-fixture')).toBeTruthy();
+  expect(screen.getByTestId('card-report-html-public-html-report').props.source.html)
+    .toContain('<style>:where(:root){color-scheme:light;}</style>');
   expect(screen.getAllByLabelText('카드 화면.png').length).toBe(3);
   expect(screen.getAllByText('카드 설명.txt').length).toBeGreaterThan(0);
   expect(screen.getAllByText('찾을 수 없음')).toHaveLength(2);

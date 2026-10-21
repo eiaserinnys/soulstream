@@ -25,6 +25,10 @@ export function usePersistentSessionGeometry({ app, header, main, composer, enab
       const composerRect = composerElement.getBoundingClientRect();
       const chatRoot = composerElement.closest<HTMLElement>('[data-slot="chat-root"]')!;
       const input = composerElement.closest<HTMLElement>('[data-testid="chat-input"]')!;
+      const chatRootStyle = getComputedStyle(chatRoot);
+      const inlineComposerReserve = input.getBoundingClientRect().height
+        + (parseFloat(chatRootStyle.paddingTop) || 0)
+        + (parseFloat(chatRootStyle.paddingBottom) || 0);
       // The reading column owns the bottom seat. An overflowing inline report
       // must not move the portrait by pushing the composer's measured Y outward.
       const belowComposer = input.getBoundingClientRect().bottom - composerRect.bottom;
@@ -35,7 +39,7 @@ export function usePersistentSessionGeometry({ app, header, main, composer, enab
       const safeBottom = parseFloat(style.paddingBottom) || 0;
       const viewportBottom = window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : appRect.bottom;
       const usableApp = { left: appRect.left, top: appRect.top, width: appRect.width, height: Math.min(appRect.bottom, viewportBottom) - appRect.top - safeBottom };
-      setGeometry({ ...calculatePersistentSessionLayout({ app: usableApp, header: headerRect, main: mainRect, baselineBottom, inputRowHeight, rowBottomGap, pointerFine: pointer.matches, showCharacter, phoneConfigured: false, reportBubble: { widthScale: 0.8, minimumHeight: REPORT_BUBBLE_MINIMUM_HEIGHT } }), mainLeft: mainRect.left - appRect.left, mainWidth: mainRect.width });
+      setGeometry({ ...calculatePersistentSessionLayout({ app: usableApp, header: headerRect, main: mainRect, baselineBottom, inputRowHeight, rowBottomGap, inlineComposerReserve, pointerFine: pointer.matches, showCharacter, phoneConfigured: false, reportBubble: { widthScale: 0.8, minimumHeight: REPORT_BUBBLE_MINIMUM_HEIGHT } }), mainLeft: mainRect.left - appRect.left, mainWidth: mainRect.width });
     };
     const schedule = () => { if (frame === null) frame = requestAnimationFrame(measure); };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);

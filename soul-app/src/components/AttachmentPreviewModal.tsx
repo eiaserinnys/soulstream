@@ -10,7 +10,8 @@ import {
 import { createApiClient } from '../api/client';
 import { isHtmlAttachmentView, isMarkdownAttachmentView, type AttachmentView } from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
-import { buildCustomViewBindings, renderCustomViewHtml } from '../lib/custom-view-renderer';
+import { buildCustomViewBindings, renderDocumentHtml } from '../lib/custom-view-renderer';
+import { LIGHT_COLORS } from '../theme/colors';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
 import { AttachmentMetadataPreview } from './AttachmentMetadataPreview';
@@ -111,7 +112,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   }, [item, retryKey, textContent, html]);
 
   const htmlDocument = useMemo(
-    () => state.kind === 'html' ? renderCustomViewHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
+    () => state.kind === 'html' ? renderDocumentHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
     [state],
   );
   // The document page uses the whole frame; text and states keep the padded, centered box.
@@ -147,7 +148,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
       return <>
         <WebView testID="attachment-preview-html" source={{ html: htmlDocument ?? '' }}
           originWhitelist={['about:blank', 'https://pages.eiaserinnys.me']} javaScriptEnabled allowFileAccess={false}
-          scrollEnabled style={{ flex: 1, width: '100%', backgroundColor: tokens.colors.surfaceCode }} />
+          scrollEnabled style={{ flex: 1, width: '100%', backgroundColor: LIGHT_COLORS.background }} />
         {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted, padding: tokens.spacing.sm }}>앞부분만 표시</Text> : null}
       </>;
     }

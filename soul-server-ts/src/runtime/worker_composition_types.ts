@@ -26,6 +26,7 @@ import type { ClaudeRuntimeStartupRecovery } from "./claude_runtime_startup_reco
 import type { TaskRuntimeComposition } from "./task_runtime_composition.js";
 import type { NodeStallMonitor } from "./node_stall_monitor.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
+import type { WorktreeSweeper } from "../worktree/worktree_sweeper.js";
 
 export interface WorkerCompositionParams {
   env: Env;
@@ -56,6 +57,7 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   mcpRuntime: McpRuntime;
   scheduleService: SoulstreamScheduleService;
   sessionPageBindingService: SessionPageBindingService;
+  worktreeSweeper?: WorktreeSweeper;
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   claudeRuntimeStartupRecovery?: ClaudeRuntimeStartupRecovery;
   eventOutbox: EventOutbox;

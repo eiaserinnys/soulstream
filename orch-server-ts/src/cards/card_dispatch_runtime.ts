@@ -37,6 +37,7 @@ import {
 } from "./card_dispatch_settings.js";
 import { CardOrchestrationRepository } from "./card_orchestration_repository.js";
 import { CardOrchestrationCoordinator } from "./card_orchestration_coordinator.js";
+import { CARD_LAUNCH_CALLER_FIELD } from "../system/session_review_policy.js";
 import {
   readCardOrchestrationSettings,
   updateCardOrchestrationSettings,
@@ -204,7 +205,10 @@ export async function createCardDispatchRuntime(options: {
           attachmentPaths: attachments.attachment_paths,
           attachmentIds: attachments.attachment_ids,
           attachmentBindings: attachments.attachment_bindings,
-          callerInfo: await queuedCallerInfo(input.cardId),
+          callerInfo: {
+            ...await queuedCallerInfo(input.cardId),
+            [CARD_LAUNCH_CALLER_FIELD]: true,
+          },
         },
       );
     },
@@ -476,7 +480,10 @@ export async function createCardDispatchRuntime(options: {
       return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
         {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
           attachmentPaths:attachments.attachment_paths,attachmentIds:attachments.attachment_ids,
-          attachmentBindings:attachments.attachment_bindings,callerInfo:await executionCallerInfo(input)});
+          attachmentBindings:attachments.attachment_bindings,callerInfo:{
+            ...await executionCallerInfo(input),
+            [CARD_LAUNCH_CALLER_FIELD]:true,
+          }});
     },
     ensure:async input=>{
       const detail=(await (await serviceProvider()).getCard(input.cardId))!;

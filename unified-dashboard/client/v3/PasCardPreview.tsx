@@ -1,12 +1,8 @@
 import { useState } from 'react';
-import { Button, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
 import type { CardDetail } from '@seosoyoung/soul-ui/cards/card-types';
 import { reviewCard, reviewCardItems, reviewNow, reviewDetail } from './components-review-fixtures';
-import { CardNowPanel } from './CardNowPanel';
-import { CardCheckItems } from './CardCheckItems';
-import { CardTimeline } from './CardTimeline';
-import { CardCommentInput } from './CardCommentInput';
-import { CardStatusChip } from './CardActions';
+import { PasCardExpansion, PasCardExpansionStatus } from './PasCardExpansion';
 
 export const pasPreviewCard = { ...reviewCard, id: 'preview-pas-card', number: 531, status: 'review' as const,
   title: 'PAS 판에서 결과와 증거를 확인하고 담당에게 커멘트까지 남기는 화면',
@@ -23,30 +19,24 @@ export const pasPreviewEntries: (PersistentReportEntry & { card_id: string; card
   { key: 'cq_preview-question', question_id: 'preview-question', kind: 'ask', title: '입력 위치 확인', card_numbers: [531],
     card_id: pasPreviewCard.id, card_status: 'blocked', context: '추가 커멘트를 장 안에서 바로 쓸까요?', action: '', options: ['장 안에서', '카드에서'], state: 'open', answer: '', updated_at: 'preview' },
 ];
+
 export function PasCardPreviewStatus({ entry }: { entry: PersistentReportEntry }) {
-  return <CardStatusChip card={{ ...pasPreviewCard, status: entry.key.startsWith('cq_') ? 'blocked' : 'review', blockedKind: entry.key.startsWith('cq_') ? 'question' : null }} />;
+  return <PasCardExpansionStatus entry={entry} />;
 }
-export function PasCardPreview({ entry, onAnswer }: { entry: PersistentReportEntry; onAnswer(answer: string): void }) {
-  const [focusRequest, setFocusRequest] = useState(0);
-  const [items, setItems] = useState(pasPreviewCard.items);
-  const [comments, setComments] = useState(() => [
-    { cardId: pasPreviewCard.id, authorId: null, sessionId: null, kind: 'comment' as const, createdAt: '2026-10-05T08:00:00Z', id: 'preview-user', authorKind: 'user' as const, body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.' },
-    { cardId: pasPreviewCard.id, authorId: null, sessionId: null, kind: 'comment' as const, id: 'preview-agent', authorKind: 'agent' as const, body: '결과와 증거를 장 안에 모았습니다.', createdAt: '2026-10-05T08:01:00Z' },
-  ]);
-  const question = entry.key.startsWith('cq_');
-  const card = { ...pasPreviewCard, items };
-  const detail: CardDetail = { ...reviewDetail, card, reports: [], questions: [], comments: comments.slice(-2) };
-  return <div className="pas-report-card-preview" data-testid="pas-card-preview">
-    <CardNowPanel embedded now={card.now} itemsCount={items.length} activeCount={items.filter(item => item.display !== 'confirmed').length} />
-    <CardCheckItems items={items} onConfirmChange={async (id, confirmed) => {
-      setItems(current => current.map(item => item.id === id ? { ...item, display: confirmed ? 'confirmed' : 'reported', confirmed: confirmed ? { at: card.updatedAt, rev: item.rev } : null } : item));
-    }} onTargetItem={() => setFocusRequest(saved => saved + 1)} />
-    <CardTimeline card={card} detail={detail} portraitUrl="/system-portrait.png" commentsOnly pending={false} onAnswer={() => {}} />
-    <Button variant="link" render={<a href="/?card=preview-pas-card" onClick={event => event.preventDefault()} />}>카드 열기</Button>
-    <CardCommentInput focusRequest={focusRequest} cardId={entry.key} pending={false} placeholder={question ? '질문에 답하기' : '커멘트'} onSend={async body => {
-      if (question) onAnswer(body);
-      else setComments(current => [...current, { ...current[0], id: String(current.length), body, createdAt: new Date().toISOString(), authorKind: 'user' }]);
-      return true;
-    }} />
-  </div>;
+
+export function PasCardPreview({ entry, lookupCards, onAnswer }: {
+  entry: PersistentReportEntry;
+  lookupCards: () => Promise<void>;
+  onAnswer(answer: string): void;
+}) {
+  const [detail, setDetail] = useState<CardDetail>(() => ({
+    ...reviewDetail,
+    card: pasPreviewCard,
+    comments: [
+      { cardId: pasPreviewCard.id, authorId: '', sessionId: null, kind: 'comment', createdAt: '2026-10-05T08:00:00Z', id: 'preview-user', authorKind: 'user', body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.' },
+      { cardId: pasPreviewCard.id, authorId: 'roselin', sessionId: null, kind: 'comment', id: 'preview-agent', authorKind: 'agent', body: '결과와 증거를 장 안에 모았습니다.', createdAt: '2026-10-05T08:01:00Z' },
+    ],
+    questions: entry.question_id ? [{ id: entry.question_id, text: entry.title, options: null, answer: null, askedAt: '2026-10-05T08:00:00Z', answeredAt: null }] : [],
+  }));
+  return <PasCardExpansion entry={entry} lookupCards={lookupCards} sampleDetail={detail} samplePortraitUrl="/system-portrait.png" onSampleChange={setDetail} onAnswer={onAnswer} />;
 }

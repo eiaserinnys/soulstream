@@ -38,6 +38,18 @@ describe("session review policy", () => {
     }, policy).reviewRequired).toBe(false);
   });
 
+  it("always reviews card-launched sessions and requires a boolean marker", () => {
+    const policy = { sourceAllowlist: [] };
+    expect(evaluateInitialSessionReview({ source: "system", card_launch: true }, policy).reviewRequired)
+      .toBe(true);
+    expect(evaluateInitialSessionReview({ source: "browser", card_launch: true }, policy).reviewRequired)
+      .toBe(true);
+    expect(evaluateInitialSessionReview({ source: "system" }, policy).reviewRequired)
+      .toBe(false);
+    expect(evaluateInitialSessionReview({ source: "system", card_launch: "true" }, policy).reviewRequired)
+      .toBe(false);
+  });
+
   it("uses only the stored allowlist for non-browser review classification", () => {
     const policy = { sourceAllowlist: ["external-llm", "clipper"] };
     expect(evaluateInitialSessionReview({ source: "external-llm" }, policy).reviewRequired)

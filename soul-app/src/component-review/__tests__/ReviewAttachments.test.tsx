@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { useSettingsStore } from '../../store/settingsStore';
 import { ReviewAttachments } from '../ReviewAttachments';
+import { createAttachmentReviewApi } from '../fixture-client';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../lib/attachment-image-size', () => ({
@@ -82,4 +83,16 @@ test('component review registers the HTML document sample alone and mixed with a
   const mixed = within(screen.getByTestId('review-attachments-html-mixed'));
   expect(mixed.getByText('공개 검수용 문서.html')).toBeTruthy();
   expect(mixed.getByLabelText('표본 첫 이미지.png 크게 보기')).toBeTruthy();
+});
+
+test('Markdown 검수 표본은 요청된 각 서식 요소를 포함한다', async () => {
+  const sample = await createAttachmentReviewApi().readAttachmentText(
+    'review-attachment-markdown', { type: 'owner' }, new AbortController().signal,
+  );
+
+  for (const element of [
+    '# Argon 톤 제안', '- 차분한 바탕', '| 역할 | 값 |', '`인라인 코드`', '```ts',
+    '> 인용 문장입니다.', '[톤 제안 원문]', '**굵게**', '*기울임*', '~~취소선~~',
+    '- [ ] 확인할 항목', '- [x] 확인한 항목', '---',
+  ]) expect(sample.text).toContain(element);
 });

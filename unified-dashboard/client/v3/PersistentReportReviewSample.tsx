@@ -19,7 +19,7 @@ export function PersistentReportReviewSample({ bubble = false, cardPreview = fal
   const source = cardPreview ? pasPreviewEntries : reportReviewEntries;
   const [entries, setEntries] = useState(source);
   useEffect(() => { if (cardPreview) useCardStore.getState().putCards([pasPreviewCard]); }, [cardPreview]);
-  const preview = cardPreview && !before ? { renderCardStatus: (entry: typeof source[number]) => <PasCardPreviewStatus entry={entry} />, renderCardDetails: (entry: typeof source[number]) => <PasCardPreview key={entry.key} entry={entry} onAnswer={answer => setEntries(current => current.map(item => item.key === entry.key ? { ...item, answer, state: 'answered', updated_at: 'preview-answer' } : item))} /> } : {};
+  const preview = cardPreview && !before ? { renderCardStatus: (entry: typeof source[number]) => <PasCardPreviewStatus entry={entry} />, renderCardDetails: (entry: typeof source[number], lookupCards: () => Promise<void>) => <PasCardPreview key={entry.key} entry={entry} lookupCards={lookupCards} onAnswer={answer => setEntries(current => current.map(item => item.key === entry.key ? { ...item, answer, state: 'answered', updated_at: 'preview-answer' } : item))} /> } : {};
   const dismiss = useCallback(async (key: string) => setEntries(current => current.filter(entry => entry.key !== key)), []);
   return <PersistentReportProvider sessionId={sessionId} entries={entries}>
     <div className="persistent-session-screen">
