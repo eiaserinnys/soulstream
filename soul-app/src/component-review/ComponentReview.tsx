@@ -50,6 +50,7 @@ import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { ReviewContentLinkDocument } from './ReviewContentLinkDocument';
 import { ReviewChatUiPrimitives } from './ReviewChatUiPrimitives';
 import { ReviewChatUi } from './ReviewChatUi';
+import { ReviewPasCardExpand } from './ReviewPasCardExpand';
 import { ReviewAttachments } from './ReviewAttachments';
 
 const sections = [
@@ -59,6 +60,7 @@ const sections = [
   { value: 'nativeSettings', label: '앱 설정' },
   { value: 'pasSettings', label: 'PAS 설정' },
   { value: 'persistent', label: '영구 세션' },
+  { value: 'pasCardExpand', label: 'PAS 카드 펼침 시안' },
   { value: 'surfaces', label: '표면' },
   { value: 'board', label: '보드' },
   { value: 'boardActions', label: '보드 액션' },
@@ -90,6 +92,7 @@ export function initializeReview() {
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
   const cardChecks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardChecks';
   const settingsSection = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
+  const pasCardExpand = settingsSection === 'pasCardExpand';
   const chatUiComposer = settingsSection === 'chatUiComposer';
   const chatUiFlow = settingsSection === 'chatUiRenderer';
   const nativeSettings = settingsSection === 'nativeSettings' || settingsSection === 'pasSettings';
@@ -100,7 +103,7 @@ export function initializeReview() {
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasCardExpand || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
   if (attachments) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
@@ -168,6 +171,7 @@ function Gallery() {
     padding: t.cardLayout.padding, gap: t.uiSpacing.xl,
     backgroundColor: t.colors.background,
   }), [t]);
+  if (section === 'pasCardExpand') return <ReviewPasCardExpand />;
   if (section === 'chatUiComposer') return <ReviewChatUiComposer />;
   if (section === 'nativeSettings' || section === 'pasSettings') return <ReviewNativeSettings/>;
   if (section === 'persistent') {
@@ -234,7 +238,7 @@ function Gallery() {
   if (next === 'entryShell' || next === 'folderTabs') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
       if (next === 'contentLinks' || next === 'contentLinkDocument' || next === 'attachments') useSettingsStore.setState({ serverUrl: window.location.origin });
       if (next === 'attachments') useAuthStore.setState({ jwt: null, authRejected: false });
-      if (next === 'cardImages') useSettingsStore.setState({ serverUrl: window.location.origin });
+      if (next === 'cardImages' || next === 'pasCardExpand') useSettingsStore.setState({ serverUrl: window.location.origin });
       setSection(next);
     }} options={sections} wrap={section === 'dialogues'} />
     {section === 'dialogues' ? <ReviewDialogues /> : null}
@@ -271,7 +275,7 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
   const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent'
     || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
     || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi' || params.get('section') === 'chatUiRenderer';
-  const fullHeightSample = cardChecks || chatUiComposerSample || params.get('section') === 'cardImages'
+  const fullHeightSample = params.get('section') === 'pasCardExpand' || cardChecks || chatUiComposerSample || params.get('section') === 'cardImages'
     || params.get('section') === 'attachments';
   if (!pasImageSample && !fullHeightSample && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 

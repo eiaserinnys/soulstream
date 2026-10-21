@@ -14,6 +14,7 @@ function layout(overrides: Partial<Parameters<typeof calculatePersistentSessionL
     baselineBottom: 800,
     inputRowHeight,
     rowBottomGap,
+    inlineComposerReserve: 0,
     pointerFine: true,
     showCharacter: true,
     phoneConfigured: false,
@@ -97,7 +98,28 @@ describe('calculatePersistentSessionLayout', () => {
       main: { left: 204, top: 56, width: 360, height: 200 },
       header: { left: 0, top: 0, width: 768, height: 56 },
       baselineBottom: 190,
-    })).toMatchObject({ body: null, toggle: null, lineLeftReach: 0 });
+    })).toMatchObject({ body: null, toggle: null, lineLeftReach: 0, reportInlineMaxHeight: 200 });
+  });
+
+  it('keeps an inline report within the available chat column on narrow screens', () => {
+    expect(layout({
+      app: { left: 0, top: 0, width: 390, height: 844 },
+      header: { left: 0, top: 0, width: 390, height: 56 },
+      main: { left: 0, top: 56, width: 390, height: 756 },
+      baselineBottom: 812,
+      phoneConfigured: true,
+    })).toMatchObject({ body: null, reportBubble: null, reportInlineMaxHeight: 756 });
+  });
+
+  it('reserves the global composer and its vertical padding in the inline height', () => {
+    expect(layout({
+      app: { left: 0, top: 0, width: 390, height: 844 },
+      header: { left: 0, top: 0, width: 390, height: 56 },
+      main: { left: 0, top: 56, width: 390, height: 756 },
+      baselineBottom: 812,
+      inlineComposerReserve: 76,
+      phoneConfigured: true,
+    })).toMatchObject({ reportInlineMaxHeight: 680 });
   });
 
   it('does not hide the toggle merely because the baseline is near the viewport bottom', () => {

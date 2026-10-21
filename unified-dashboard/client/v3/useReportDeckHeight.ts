@@ -7,6 +7,7 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
   const holding = useRef(false), pressing = useRef(false), scrolling = useRef(false);
   const pending = useRef<{ revision: unknown; layoutKey: string; height: number } | undefined>(undefined);
   const beforeAnswer = useRef(new Map<string, number>());
+  const readingPositions = useRef(new WeakMap<HTMLElement, { top: number; atBottom: boolean }>());
   const measureCurrent = useRef<() => void>(() => {});
   const previousLayout = useRef(layoutKey);
   const releaseIfSettled = useCallback(() => {
@@ -15,15 +16,29 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
   }, []);
   const reset = useCallback(() => { pressing.current = false; scrolling.current = false; releaseIfSettled(); }, [releaseIfSettled]);
   useLayoutEffect(() => {
-    if (previousLayout.current !== layoutKey) { beforeAnswer.current.clear(); reset(); previousLayout.current = layoutKey; }
+    if (previousLayout.current !== layoutKey) { beforeAnswer.current.clear(); readingPositions.current = new WeakMap(); reset(); previousLayout.current = layoutKey; }
     const node = root.current;
     if (!node?.isConnected) { reset(); return; }
     let width = node.clientWidth;
+    const position = (reading: HTMLElement) => ({ top: reading.scrollTop,
+      atBottom: reading.scrollHeight > reading.clientHeight + 1 && Math.abs(reading.scrollHeight - reading.scrollTop - reading.clientHeight) <= 1 });
+    const rememberScroll = (event: Event) => {
+      const reading = event.target;
+      if (reading instanceof HTMLElement && reading.classList.contains('pas-report-reading')) readingPositions.current.set(reading, position(reading));
+    };
+    node.addEventListener('scroll', rememberScroll, true);
     const measure = () => {
       if (!node.isConnected) return;
       if (width !== node.clientWidth) { width = node.clientWidth; beforeAnswer.current.clear(); reset(); }
       // Never measure through an old height or the scrollbar it temporarily creates.
       const oldHeight = node.style.height, oldMaximum = node.style.maxHeight;
+      const readings = [...node.querySelectorAll<HTMLElement>('.pas-report-reading')];
+      const positions = readings.map(reading => {
+        const current = position(reading), previous = readingPositions.current.get(reading);
+        // Content can grow before ResizeObserver fires. Retain the last bottom
+        // position unless the user has moved away from it in the meantime.
+        return { ...current, atBottom: current.atBottom || (previous?.atBottom === true && previous.top === current.top) };
+      });
       node.style.height = 'auto'; node.style.maxHeight = 'none';
       const keys = new Set<string>();
       const sizes = [...node.querySelectorAll<HTMLElement>('.pas-report-sheet')].map(sheet => {
@@ -38,6 +53,15 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
       });
       for (const key of beforeAnswer.current.keys()) if (!keys.has(key)) beforeAnswer.current.delete(key);
       node.style.height = oldHeight; node.style.maxHeight = oldMaximum;
+      readings.forEach((reading, index) => {
+        reading.scrollTop = positions[index].atBottom ? reading.scrollHeight : positions[index].top;
+        const composer = reading.querySelector<HTMLElement>('.pas-report-card-preview .v3-card-comment-dock');
+        if (composer?.contains(document.activeElement)) {
+          // Caret scrolling may have moved the viewport before this resize.
+          reading.scrollTop += Math.max(0, composer.getBoundingClientRect().bottom - reading.getBoundingClientRect().bottom);
+        }
+        readingPositions.current.set(reading, position(reading));
+      });
       pending.current = { revision, layoutKey, height: Math.ceil(Math.max(0, ...sizes)) + 2 };
       if (!holding.current) setMeasurement(pending.current);
       node.querySelectorAll<HTMLElement>('.pas-report-reading').forEach(reading => {
@@ -69,7 +93,7 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     node.querySelectorAll('.pas-report-content, .pas-report-footer, .pas-report-reading').forEach(child => observer.observe(child));
-    return () => { observer.disconnect(); measureCurrent.current = () => {}; };
+    return () => { observer.disconnect(); node.removeEventListener('scroll', rememberScroll, true); measureCurrent.current = () => {}; };
   }, [root, revision, sessionId, layoutKey, reset]);
   useEffect(() => {
     mounted.current = true;

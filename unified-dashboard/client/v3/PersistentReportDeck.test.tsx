@@ -18,20 +18,33 @@ vi.mock('@seosoyoung/soul-ui/components/LiquidGlassProvider', () => ({ useGlassS
 const one: PersistentReportEntry = { key: 'one', kind: 'ask', title: '확인', card_numbers: [270], context: '맥락', action: '[출처](https://example.test/)', options: ['응'], state: 'open', answer: '', updated_at: 'first' };
 const two = { ...one, key: 'two', kind: 'see' as const, options: [], title: '볼 장' };
 const emptyAsk = { ...one, key: 'empty-ask', options: [] };
+const serverCardEntry: PersistentReportEntry & { card_id: string; card_status: 'running' } = {
+  ...two, key: `card_${cardRow.id}`, card_numbers: [], card_id: cardRow.id, card_status: 'running',
+};
+const serverQuestionEntry: PersistentReportEntry & { card_id: string; card_status: 'blocked'; question_id: string } = {
+  ...serverCardEntry, key: 'cq_question-id', kind: 'ask', options: [], card_status: 'blocked', question_id: 'question-id',
+};
 let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
 let portalTarget: HTMLDivElement | null = null;
+let inlineMaxHeight: number | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
 const render = () => act(async () => root.render(<InternalLinkProvider internalOrigins={['https://example.test']} openTarget={openTarget}><PersistentReportProvider sessionId="a" entries={entries}>
-  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss} seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : undefined} />
+  <PersistentReportDeck sessionId="a" notify={notify} transport={transport} focusInput={focusInput} dismissReport={dismiss}
+    renderCardDetails={entry => <div data-testid={`card-details-${entry.key}`}>운영 카드 칸</div>}
+    renderCardStatus={entry => <span data-testid={`card-status-${entry.key}`}>{entry.key.startsWith('cq_') ? '질문' : '카드 상태'}</span>}
+    seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : inlineMaxHeight === null ? undefined : { target: null, body: null, layout: null, inlineMaxHeight }} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 let contentHeight = 0;
 beforeEach(async () => {
-  vi.clearAllMocks(); contentHeight = 100; portalTarget = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  vi.clearAllMocks(); contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) { return { height: this.classList.contains('pas-report-content') ? contentHeight : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect; });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
+    const expanded = this.classList.contains('pas-report-content') && Boolean(this.querySelector('.pas-report-expand[aria-expanded="true"]'));
+    return { height: this.classList.contains('pas-report-content') ? contentHeight + (expanded ? 300 : 0) : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect;
+  });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, opts: ScrollToOptions) { this.scrollLeft = opts.left ?? 0; } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host); await render();
 });
@@ -61,6 +74,55 @@ it.each([two, emptyAsk])('acknowledges and closes a %s report with closed-only c
     { key: 'persistent_report_closed', content: { key: entry.key, title: entry.title } },
   ] });
   expect(dismiss).toHaveBeenCalledWith(entry.key);
+});
+it('expands a server card by its card_id when the title has no number', async () => {
+  entries = [serverCardEntry]; await render();
+  const title = button(serverCardEntry.title);
+  expect(title.getAttribute('aria-expanded')).toBe('false');
+  await act(async () => title.click());
+  expect(host.querySelector(`[data-testid="card-details-${serverCardEntry.key}"]`)?.textContent).toBe('운영 카드 칸');
+  expect(host.querySelector(`[data-testid="card-status-${serverCardEntry.key}"]`)?.textContent).toBe('카드 상태');
+});
+
+it('keeps inline report height within its measured chat column and scrolls the reading area', async () => {
+  entries = [serverCardEntry]; contentHeight = 500; inlineMaxHeight = 250;
+  await render();
+  const deck = host.querySelector<HTMLElement>('[data-testid="report-deck"]')!;
+  expect(deck.dataset.inlineMaxHeight).toBe('true');
+  expect(deck.style.getPropertyValue('--pas-report-inline-max-height')).toBe('250px');
+  expect(deck.dataset.overflow).toBe('true');
+  expect(host.querySelector('.pas-report-reading')).not.toBeNull();
+});
+
+it('keeps answered height separate for expanded and collapsed states', async () => {
+  const answerable = { ...serverQuestionEntry, title: '응답 가능한 카드', options: ['응'] };
+  entries = [answerable]; await render();
+  const deck = host.querySelector<HTMLElement>('[data-testid="report-deck"]')!;
+  const collapsedHeight = deck.style.height;
+  await act(async () => button('응답 가능한 카드').click());
+  const expandedHeight = deck.style.height;
+  expect(expandedHeight).not.toBe(collapsedHeight);
+  expect(JSON.parse(host.querySelector<HTMLElement>('.pas-report-sheet')!.dataset.publication!)[2]).toBe(true);
+  await act(async () => button('응').click());
+  await act(async () => button('응답 가능한 카드').click());
+  expect(JSON.parse(host.querySelector<HTMLElement>('.pas-report-sheet')!.dataset.publication!)[2]).toBe(false);
+  expect(deck.style.height).toBe(collapsedHeight);
+});
+
+it('collapses the open card when pagination changes the current report', async () => {
+  entries = [{ ...serverCardEntry, title: '운영 카드' }, { ...two, key: 'next-report', title: '다음 보고' }];
+  await render();
+  await act(async () => button('운영 카드').click());
+  expect(host.querySelector(`[data-testid="card-details-${serverCardEntry.key}"]`)).not.toBeNull();
+  await act(async () => button('다음 장').click());
+  expect(host.querySelector('[data-current="true"]')?.getAttribute('aria-label')).toContain('다음 보고');
+  expect(host.querySelector(`[data-testid="card-details-${serverCardEntry.key}"]`)).toBeNull();
+});
+it.each([['card', serverCardEntry], ['open question', serverQuestionEntry]])('acknowledges a server %s by deleting it without sending a PAS intervention', async (_label, entry) => {
+  entries = [entry]; await render();
+  await act(async () => button('확인했어').click());
+  expect(dismiss).toHaveBeenCalledWith(entry.key);
+  expect(transport).not.toHaveBeenCalled();
 });
 it('does not show the acknowledgement for an answered ask or close when a send is retained', async () => {
   const answered = { ...one, state: 'answered' as const, answer: '응' };

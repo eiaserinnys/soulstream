@@ -28,6 +28,7 @@ interface Props {
   sendComment(body: string, onAccepted?: () => void, itemId?: number): Promise<boolean>;
   runMutation(mutation: () => Promise<CardMutationResult>, onAccepted?: () => void): Promise<boolean>;
   embedded?: boolean;
+  placeholder?: string;
   targetItem?: Pick<CardCheckItem, 'id' | 'title'> | null;
   onReleaseTarget?(): void;
   onTargetSent?(): void;
@@ -36,7 +37,7 @@ interface Props {
 
 export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Props>(function CardCommentComposer({
   api, cardId, sessionId, nodeId, question, cardLoaded, locked, sending, onBusyChange, sendComment, runMutation,
-  embedded = false, targetItem, onReleaseTarget, onTargetSent, onSent,
+  embedded = false, placeholder = '커멘트', targetItem, onReleaseTarget, onTargetSent, onSent,
 }, ref) {
   const t = useTokens();
   const chatStyles = useMemo(() => makeChatStyles(t), [t]);
@@ -93,7 +94,7 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
     </View> : null}
     <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={disabled}
       styles={chatStyles} textSecondaryColor={t.colors.textSecondary} textMutedColor={t.colors.textMuted} />
-    <ChatComposer input={text} onChangeInput={setText} placeholder="커멘트" inputAccessibilityLabel="커멘트" sendAccessibilityLabel="커멘트 보내기"
+    <ChatComposer input={text} onChangeInput={setText} placeholder={placeholder} inputAccessibilityLabel={placeholder} sendAccessibilityLabel={placeholder === "커멘트" ? "커멘트 보내기" : "답 보내기"}
       onPickAttachment={pickAttachment} onSend={() => { void send(); }} uploading={attachments.uploading} sending={sending}
       disabled={disabled || !api} sendDisabled={!cardLoaded} voiceControls={null} embedded={embedded}
       onInputRef={(input) => { inputRef.current = input; }} />

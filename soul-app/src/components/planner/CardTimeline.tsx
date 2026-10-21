@@ -29,7 +29,7 @@ type Source = RequestSource | CardQuestion | CardReport | CardComment;
 type EntryType = 'request' | 'question' | 'answer' | 'report' | 'comment';
 type TimelineItem = { id: string; type: EntryType; source: Source; at: string; sessionId?: string | null };
 
-export const CardTimeline = React.memo(function CardTimeline({ detail, onChooseAnswer }: { detail: CardDetail; onChooseAnswer(answer: string): void }) {
+export const CardTimeline = React.memo(function CardTimeline({ detail, onChooseAnswer, commentsOnly = false }: { commentsOnly?: boolean; detail: CardDetail; onChooseAnswer(answer: string): void }) {
   const catalog = useSessionStore((state) => state.sessions);
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
@@ -46,7 +46,7 @@ export const CardTimeline = React.memo(function CardTimeline({ detail, onChooseA
     ...(detail.comments ?? []).filter((comment) => comment.kind !== 'note')
       .map((comment): TimelineItem => ({ id: `comment-${comment.id}`, type: 'comment', source: comment, at: comment.createdAt, sessionId: comment.sessionId })),
   ].sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
-  return <View testID="card-timeline" style={styles.timeline}>{items.map((item) => {
+  return <View testID="card-timeline" style={styles.timeline}>{items.filter(item => !commentsOnly || item.type === 'comment').map((item) => {
     const author = catalog[item.sessionId ?? ''] ?? detail.sessions.find((session) => session.agentSessionId === item.sessionId) ?? assigned;
     return <TimelineMessage key={item.id} id={item.id} type={item.type} source={item.source} author={author}
       cardId={detail.card.id} agentId={detail.card.assigneeAgentId} nodeId={detail.card.nodeId} target={item.type === 'comment' && (item.source as CardComment).itemId != null ? cardItemTargetText((item.source as CardComment).itemId!, detail.card.items?.find(row => row.id === (item.source as CardComment).itemId)?.title) : undefined} onChooseAnswer={onChooseAnswer} />;

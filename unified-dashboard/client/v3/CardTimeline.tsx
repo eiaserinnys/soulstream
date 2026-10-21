@@ -1,5 +1,5 @@
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type HTMLAttributes, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type HTMLAttributes, type ReactNode } from "react";
 import { Button, MarkdownContent, useInternalLinkClick } from "@seosoyoung/soul-ui";
 import { UserMessage } from "@seosoyoung/soul-ui/components/chat/UserMessage";
 import { AssistantMessage } from "@seosoyoung/soul-ui/components/chat/AssistantMessage";
@@ -14,13 +14,16 @@ import { type AttachmentReadContext, attachmentUrlHasContext, cardAttachmentSele
 
 type MarkdownSourceLink = NonNullable<ComponentProps<typeof MarkdownContent>["sourceLinkComponent"]>;
 
-export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage}: {
+export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage,commentsOnly=false}: {
+ commentsOnly?:boolean;
  initialImage?:{src:string;alt:string};
  card:CardRow;detail?:CardDetail;portraitUrl:string|null;userPortraitUrl?:string|null;
  onAnswer(questionId:string,answer:string):void;pending:boolean;
 }) {
  const {chatTypographyStyle}=useChatTypography();
  const internalLinkClick=useInternalLinkClick();
+ const timeline=useRef<HTMLDivElement>(null);
+ const [overflowingComments,setOverflowingComments]=useState<ReadonlySet<string>>(()=>new Set());
  const [expanded,setExpanded]=useState<ReadonlySet<string>>(()=>new Set());
  const [image,setImage]=useState<{src:string;alt:string;attachment?:ChatAttachmentItem}|null>(initialImage??null);
  const [imageAttachments,setImageAttachments]=useState<readonly ChatAttachmentItem[]>([]);
@@ -84,6 +87,25 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  };
  useEffect(()=>()=>attachmentRequest.current?.abort(),[]);
 
+ // Measure the clamped body so short comments never advertise an expand action.
+ useLayoutEffect(()=>{
+  if(!commentsOnly)return;
+  const bodies=[...timeline.current!.querySelectorAll<HTMLElement>('[data-comment-preview]')];
+  const measure=()=>setOverflowingComments(current=>{
+   const next=new Set(current);
+   for(const body of bodies){
+    const id=body.dataset.commentPreview!;
+    if(expanded.has(id))continue;
+    if(body.scrollHeight>body.clientHeight+1)next.add(id);else next.delete(id);
+   }
+   return next.size===current.size&&[...next].every(id=>current.has(id))?current:next;
+  });
+  measure();
+  const observer=new ResizeObserver(measure);
+  bodies.forEach(body=>observer.observe(body));
+  return ()=>observer.disconnect();
+ },[commentsOnly,detail,expanded]);
+
  // Opening the viewer must keep the original Markdown nodes mounted for focus restoration.
  const entries=useMemo(()=>{
  const openMarkdownImage=(src:string,alt:string,references:readonly CardAttachmentReference[],trigger?:HTMLElement)=>{
@@ -122,18 +144,18 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
    const commentMarkdown=contextualizeMarkdownAttachmentUrls(comment.body,card.id,origin);
    const references=markdownAttachmentReferences(commentMarkdown,card.id,origin);
    const linkComponent=sourceLinkComponent(card.id,origin,references,openReference,internalLinkClick,comment.authorKind!=="agent");
-   return {id:comment.id,at:comment.createdAt,kind:"커멘트",spoken:comment.kind==="spoken",role:comment.authorKind==="agent"?"assistant" as const:"user" as const,
-    body:<>{comment.itemId!==undefined&&comment.itemId!==null?<p className="v3-card-comment-target">대상: {comment.itemId}번 {target?.title??"항목"}</p>:null}<MarkdownContent content={commentMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,references,trigger)} sourceLinkComponent={linkComponent}/></>};
+   return {id:comment.id,at:comment.createdAt,kind:"커멘트",spoken:comment.kind==="spoken",collapsible:commentsOnly&&overflowingComments.has(comment.id),role:comment.authorKind==="agent"?"assistant" as const:"user" as const,
+    body:<>{comment.itemId!==undefined&&comment.itemId!==null?<p className="v3-card-comment-target">대상: {comment.itemId}번 {target?.title??"항목"}</p>:null}<div data-comment-preview={commentsOnly?comment.id:undefined} className={commentsOnly&&!expanded.has(comment.id)?"v3-card-three-lines":undefined}><MarkdownContent content={commentMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,references,trigger)} sourceLinkComponent={linkComponent}/></div>{commentsOnly&&overflowingComments.has(comment.id)?<span className="v3-card-collapse-hint">{expanded.has(comment.id)?"접기":"더 보기"}</span>:null}</>};
   }),
  ];
- return entries.sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
- },[card,detail,expanded,pending,onAnswer,openImage,openReference,origin,internalLinkClick]);
+ return entries.filter(entry=>!commentsOnly||entry.kind==="커멘트").sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+ },[card,detail,commentsOnly,expanded,overflowingComments,pending,onAnswer,openImage,openReference,origin,internalLinkClick]);
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next;});
  const viewerStatuses:Record<string,CardAttachmentStatus>={};
  for(const [key,status] of Object.entries(attachmentStates)){
   if(status)viewerStatuses[key]={message:status.message,...(status.retryable?{onRetry:()=>void retryReference(key)}:{})};
  }
- return <><div className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
+ return <><div ref={timeline} className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
   const msg:ChatMessage={id:entry.id,treeNodeId:entry.id,treeNodeType:"card",role:entry.role,content:""};
   const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}{entry.withdrawn?<span>철회됨</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):""}</time></div>;
   const bubbleProps:HTMLAttributes<HTMLDivElement>|undefined=entry.collapsible?{

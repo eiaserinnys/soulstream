@@ -22,13 +22,17 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId }: {
+export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails }: {
+  renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
+  renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
+  onOpenCardDetails?(entry: PersistentReportEntry): void;
   entries: PersistentReportEntry[]; index: number; api: ApiClient | null;
   onSelect(index: number): void; onDismiss(key: string): Promise<boolean | void>;
   onFocusComposer(): void;
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
 }) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const t = useTokens();
   const { setNotice } = useChatUiActions();
   const phone = useDeviceType() === 'phone';
@@ -46,7 +50,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   const measuredHeights = useRef(new Map<string, number>());
   const readyHeights = useRef(new Set<string>());
   const openHeights = useRef(new Map<string, number>());
-  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers]);
+  const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, expandedKey === entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers]);
   const pressing = useRef(false);
   const [height, setHeight] = useState(0);
   const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
@@ -118,7 +122,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     if (card) await openLink(`/?card=${encodeURIComponent(card.id)}`);
   }
   // RN 0.86 View exposes nativeEvent.key; RN web exposes key directly.
-  const onKeyDown = (event: { key?: string; nativeEvent?: { key?: string }; preventDefault?(): void }) => {
+  const onKeyDown = (event: { key?: string; nativeEvent?: { key?: string }; target?: { tagName?: string; isContentEditable?: boolean }; preventDefault?(): void }) => {
+    if ((renderCardDetails || onOpenCardDetails) && (event.target?.tagName === 'INPUT' || event.target?.tagName === 'TEXTAREA' || event.target?.isContentEditable)) return;
     const key = event.nativeEvent?.key ?? event.key;
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
     event.preventDefault?.(); step(key === 'ArrowRight' ? 1 : -1);
@@ -148,6 +153,12 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         if (next !== index) { if (focusInside()) moveFocus.current = true; onSelect(next); }
       }} scrollEventThrottle={16}>
       {width > 0 ? entries.map((entry, i) => <PersistentReportSheet key={measureKey(entry)} entry={entry}
+        expandedContent={expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
+        cardStatus={renderCardStatus?.(entry)}
+        onToggleCard={renderCardDetails || onOpenCardDetails ? () => {
+          if (onOpenCardDetails) onOpenCardDetails(entry);
+          else setExpandedKey(saved => saved === entry.key ? null : entry.key);
+        } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
         bubble={bubble} bubbleHeight={bubbleHeight} busy={send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
