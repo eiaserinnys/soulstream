@@ -81,6 +81,7 @@ describe("advertised MCP tool inventory", () => {
           default_model: expect.any(Object),
           show_turn_usage: expect.any(Object),
           turn_usage_mode: expect.any(Object),
+          show_work_details: expect.any(Object),
         },
       },
     });

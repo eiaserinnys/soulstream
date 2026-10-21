@@ -16,6 +16,7 @@ const settingFields = {
   turn_usage_mode: z.enum(PERSISTENT_TURN_USAGE_MODES).optional(),
   show_turn_usage: z.boolean().optional(),
   animate_character: z.boolean().optional(),
+  show_work_details: z.boolean().optional(),
 };
 
 export const persistentSessionSettingsTools = {
