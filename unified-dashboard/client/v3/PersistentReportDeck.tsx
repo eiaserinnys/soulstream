@@ -7,7 +7,8 @@ import type { PersistentSessionReportBubbleLayout, PersistentSessionRect } from 
 import { submitIntervention } from '@seosoyoung/soul-ui/components/chat/submitIntervention';
 import { usePersistentReportSend } from './usePersistentReportSend';
 import { useReportDeckHeight } from './useReportDeckHeight';
-import { usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';
+import { CARD_COMPLETION_UNDO_MS, usePersistentCardCompletion, type CardTransition } from './usePersistentCardCompletion';
+import { UndoCountdownRing } from './UndoCountdownRing';
 import { ChevronLeft, ChevronRight, Link, Maximize2, Minimize2 } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { cardRequest } from '@seosoyoung/soul-ui/cards/card-api';
@@ -138,7 +139,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
       }}>
       {!entries.length && completion.recent ? <article className="pas-report-sheet" data-current="true" data-undo-only data-publication={JSON.stringify([sessionId, 'undo', completion.recent.cardId])}>
         <div className="pas-report-reading"><div className="pas-report-content" /></div>
-        <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}>되돌리기</Button></div>
+        <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>
       </article> : entries.map((entry, position) => {
         const cardEntry = entry as ReportCardEntry;
         const completionEligible = entry.key.startsWith('card_') && cardEntry.card_status === 'review' && Boolean(cardEntry.card_id);
@@ -188,7 +189,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
               {sending.canCancel(entry) && (sending.cancelRequested(entry) ? <span className="pas-report-cancel-sent">취소 요청 보냄</span> : <Button variant="ghost" size="xs" disabled={disabled || sending.sending} onClick={() => void sending.cancel(entry)}>취소 요청</Button>)}
             </div>}
           </div>}
-          {position === index && completion.recent && <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}>되돌리기</Button></div>}
+          {position === index && completion.recent && <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>}
         </article>;
       })}
     </div>

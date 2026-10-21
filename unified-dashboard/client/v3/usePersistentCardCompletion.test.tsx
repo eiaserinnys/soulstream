@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardDetail } from '@seosoyoung/soul-ui/cards/card-types';
-import { usePersistentCardCompletion } from './usePersistentCardCompletion';
+import { CARD_COMPLETION_UNDO_MS, usePersistentCardCompletion } from './usePersistentCardCompletion';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const cardId = 'card-for-completion';
@@ -37,10 +37,11 @@ beforeEach(async () => {
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 it('loads the current card and completes once with its latest version', async () => {
+  const completedAt = Date.now();
   await act(async () => completion.complete(entry));
   expect(loadCard).toHaveBeenCalledTimes(1); expect(loadCard).toHaveBeenCalledWith(cardId);
   expect(mutate).toHaveBeenCalledTimes(1); expect(mutate).toHaveBeenCalledWith(cardId, '/status', { status: 'done', expectedVersion: 8 });
-  expect(completion.recent).toEqual({ cardId, label: '#531 완료됨' });
+  expect(completion.recent).toEqual({ cardId, label: '#531 완료됨', expiresAt: completedAt + CARD_COMPLETION_UNDO_MS });
 });
 
 it('rejects completion when the latest card status is no longer review', async () => {

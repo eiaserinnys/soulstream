@@ -122,6 +122,7 @@ it('completes a review card without dismissing it directly and exposes the undo 
   entries = []; await render();
   expect(host.querySelector('.pas-report-sheet[data-undo-only]')).not.toBeNull();
   expect(host.querySelector('.pas-report-undo')?.textContent).toContain('되돌리기');
+  expect(host.querySelector('.pas-report-undo .pas-undo-ring[aria-hidden="true"]')).not.toBeNull();
   expect(focusInput).toHaveBeenCalled();
   await act(async () => button('되돌리기').click());
   expect(cardTransition).toHaveBeenLastCalledWith(cardRow.id, 'review');
