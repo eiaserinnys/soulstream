@@ -5,9 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useReportDeckHeight } from './useReportDeckHeight';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement; let root: ReturnType<typeof createRoot>; let sizing: ReturnType<typeof useReportDeckHeight>;
-function Harness({ contentHeight, layoutKey = 'a', composer = false }: { contentHeight: number; layoutKey?: string; composer?: boolean }) {
-  const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, contentHeight, 'a', layoutKey);
-  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}>{[contentHeight, Math.max(0, contentHeight - 50)].map((height, index) => <article key={index} className="pas-report-sheet" data-publication={`${contentHeight}-${index}`} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-reading"><div className="pas-report-content" data-height={height}>{composer&&index===0?<div className="pas-report-card-preview"><div className="v3-card-comment-dock"><textarea aria-label="커멘트"/></div></div>:null}</div></div><div className="pas-report-footer" data-height="32"/></article>)}</section>;
+function Harness({ contentHeight, layoutKey = 'a', composer = false, undo = false }: { contentHeight: number; layoutKey?: string; composer?: boolean; undo?: boolean }) {
+  const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, JSON.stringify([contentHeight, undo]), 'a', layoutKey);
+  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}>{[contentHeight, Math.max(0, contentHeight - 50)].map((height, index) => <article key={index} className="pas-report-sheet" data-publication={`${contentHeight}-${index}`} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-reading"><div className="pas-report-content" data-height={height}>{composer&&index===0?<div className="pas-report-card-preview"><div className="v3-card-comment-dock"><textarea aria-label="커멘트"/></div></div>:null}</div></div><div className="pas-report-footer" data-height="32"/>{undo&&index===0?<div className="pas-report-undo" data-height="24"/>:null}</article>)}</section>;
 }
 const render = (height: number) => act(async () => root.render(<Harness contentHeight={height}/>));
 beforeEach(() => {
@@ -16,6 +16,11 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); Reflect.deleteProperty(document,'fonts'); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('adds the undo row and its sheet gap to intrinsic height', async () => {
+  await render(100); expect(sizing.height).toBe(174);
+  await act(async () => root.render(<Harness contentHeight={100} undo/>));
+  expect(sizing.height).toBe(210);
+});
 it('holds updated heights from pointer down through horizontal settling, including release outside the deck', async () => {
   await render(100); expect(host.firstElementChild?.getAttribute('style')).toContain('174px');
   sizing.hold(); sizing.startScroll(); await render(200);
@@ -66,14 +71,16 @@ it('measures before showing after font success or failure, shows cached fonts im
   }
 });
 
-it('preserves answered A across timestamp changes and B updates, and drops A when its content changes',async()=>{
+it('keeps undo height separate from the answered height cache across timestamp changes and B updates',async()=>{
   Object.defineProperty(document,'fonts',{configurable:true,value:{check:()=>true,ready:Promise.resolve(),addEventListener:vi.fn(),removeEventListener:vi.fn()}});
-  function Publications({answered=false,aUpdated='first',bUpdated='first',aContent='original'}:{answered?:boolean;aUpdated?:string;bUpdated?:string;aContent?:string}){
-    const ref=useRef<HTMLElement|null>(null); sizing=useReportDeckHeight(ref,JSON.stringify([aUpdated,bUpdated,aContent]),'a');
-    return <section ref={ref} style={{height:sizing.height}}>{[['A',aContent,answered?80:300,answered],['B','original',100,false]].map(([key,updated,height,answer])=><article key={String(key)} className="pas-report-sheet" data-publication={JSON.stringify(['a',key,updated])} data-answered={answer} style={{paddingTop:12,paddingBottom:16,rowGap:12}}><div className="pas-report-content" data-height={height}/><div className="pas-report-footer" data-height="32"/></article>)}</section>;
+  function Publications({answered=false,undo=false,aUpdated='first',bUpdated='first',aContent='original'}:{answered?:boolean;undo?:boolean;aUpdated?:string;bUpdated?:string;aContent?:string}){
+    const ref=useRef<HTMLElement|null>(null); sizing=useReportDeckHeight(ref,JSON.stringify([aUpdated,bUpdated,aContent,undo]),'a');
+    return <section ref={ref} style={{height:sizing.height}}>{[['A',aContent,answered?80:300,answered],['B','original',100,false]].map(([key,updated,height,answer])=><article key={String(key)} className="pas-report-sheet" data-publication={JSON.stringify(['a',key,updated])} data-answered={answer} style={{paddingTop:12,paddingBottom:16,rowGap:12}}><div className="pas-report-content" data-height={height}/><div className="pas-report-footer" data-height="32"/>{undo&&key==='A'?<div className="pas-report-undo" data-height="24"/>:null}</article>)}</section>;
   }
   await act(async()=>root.render(<Publications/>)); expect(sizing.height).toBe(374);
   await act(async()=>root.render(<Publications answered/>));
+  await act(async()=>root.render(<Publications answered undo/>)); expect(sizing.height).toBe(410);
+  await act(async()=>root.render(<Publications answered/>)); expect(sizing.height).toBe(374);
   await act(async()=>root.render(<Publications answered bUpdated="new"/>)); expect(sizing.height).toBe(374);
   await act(async()=>root.render(<Publications answered aUpdated="server-answered" bUpdated="new"/>)); expect(sizing.height).toBe(374);
   await act(async()=>root.render(<Publications answered aUpdated="rewritten" aContent="new" bUpdated="new"/>)); expect(sizing.height).toBe(174);
