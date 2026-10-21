@@ -1,7 +1,7 @@
 import { DEFAULT_CONFIG } from "./persistent_decision_config.js";
 
 export type DecisionTrigger = "arrival" | "turn_end" | "limit_hit";
-export type Provider = "claude" | "codex";
+export type Provider = "claude" | "codex" | "antigravity";
 export type DecisionAction =
   | "continue"
   | "new_generation"
@@ -26,7 +26,7 @@ export interface DecisionInput {
   keepalive_count: number;
   current_preset: string;
   default_model: string;
-  fallback_model: string;
+  fallback_models: string[];
   preset_providers: Record<string, Provider>;
   checkpoint_tokens_by_preset: Record<string, number | undefined>;
   accounts: Partial<Record<Provider, AccountObservation>>;
@@ -86,6 +86,34 @@ export function decidePersistentGeneration(
   const context = createDecisionContext(input, config);
 
   if (input.trigger === "arrival") {
+    const currentAccount = accountForPreset(input, input.current_preset);
+    const currentShortExhausted = !isStaleForValue(
+      input,
+      currentAccount,
+      currentAccount?.short_remaining_percent,
+      config,
+    ) && currentAccount!.short_remaining_percent! < config.generation_short_floor;
+    const currentWeeklyExhausted = !isStaleForValue(
+      input,
+      currentAccount,
+      currentAccount?.weekly_remaining_percent,
+      config,
+    ) && currentAccount!.weekly_remaining_percent! <= 0;
+    if (currentShortExhausted || currentWeeklyExhausted) {
+      const eligibleCandidates = eligibleOtherProviderCandidates(input, config);
+      if (eligibleCandidates.length > 0) {
+        const selection = selectPreset(input, config, eligibleCandidates, 0);
+        return createResult(
+          context,
+          "new_generation",
+          "arrival.current_exhausted",
+          "현재 모델의 계정 여유가 바닥나 순위상 다음으로 쓸 수 있는 모델로 새 세대를 엽니다.",
+          { preset_rule: selection.rule },
+          selection.targetPreset,
+        );
+      }
+    }
+
     if (context.idleSeconds > context.presetConfig.cache_ttl_seconds) {
       const coldThreshold = config.cold_ratio * context.checkpointTokens;
       if (input.context_tokens > coldThreshold) {
@@ -128,6 +156,15 @@ export function decidePersistentGeneration(
         "let_cool",
         "turn_end.over_budget",
         "문맥이 예산을 넘었으므로 세대를 식히고 다음 입력에서 다시 판단합니다.",
+      );
+    }
+
+    if (input.preset_providers[input.current_preset] === "antigravity") {
+      return createResult(
+        context,
+        "let_cool",
+        "turn_end.no_keepalive_provider",
+        "이 계정은 캐시 유지 호출을 하지 않습니다.",
       );
     }
 
@@ -196,25 +233,7 @@ export function decidePersistentGeneration(
     );
   }
 
-  const currentProvider = input.preset_providers[input.current_preset];
-  // limit_hit.switch requires a fresh other-provider observation with at least
-  // generation_short_floor remaining in the short window and positive 7-day quota.
-  const eligibleCandidates = uniquePresets(input.default_model, input.fallback_model)
-    .filter((preset) =>
-      preset !== input.current_preset
-      && input.preset_providers[preset] !== currentProvider,
-    )
-    .filter((preset) => {
-      const account = accountForPreset(input, preset);
-      return meetsShortFloorOrHasNoShortWindow(
-        input,
-        account,
-        config.generation_short_floor,
-        config,
-      )
-        && !isStaleForValue(input, account, account?.weekly_remaining_percent, config)
-        && account!.weekly_remaining_percent! > 0;
-    });
+  const eligibleCandidates = eligibleOtherProviderCandidates(input, config);
 
   if (eligibleCandidates.length > 0) {
     // Forced switching does not reserve the default model's weekly quota.
@@ -305,7 +324,7 @@ function newGenerationResult(
 function selectPreset(
   input: DecisionInput,
   config: PersistentDecisionConfig,
-  candidatePresets: string[] = uniquePresets(input.default_model, input.fallback_model),
+  candidatePresets: string[] = rankedCandidates(input),
   defaultWeeklyReserve: number = config.default_weekly_reserve,
 ): PresetSelection {
   const afterShortFloor = candidatePresets.filter((preset) => {
@@ -324,7 +343,7 @@ function selectPreset(
   }
 
   if (
-    afterShortFloor.length === 2
+    afterShortFloor.length >= 2
     && afterShortFloor.some((preset) => {
       const account = accountForPreset(input, preset);
       return (
@@ -353,7 +372,34 @@ function selectPreset(
     return { targetPreset: afterWeeklyFloor[0]!, rule: "preset.single" };
   }
 
-  return { targetPreset: input.default_model, rule: "preset.default" };
+  const targetPreset = afterWeeklyFloor[0]!;
+  return {
+    targetPreset,
+    rule: targetPreset === input.default_model ? "preset.default" : "preset.rank",
+  };
+}
+
+function eligibleOtherProviderCandidates(
+  input: DecisionInput,
+  config: PersistentDecisionConfig,
+): string[] {
+  const currentProvider = input.preset_providers[input.current_preset];
+  return rankedCandidates(input)
+    .filter((preset) =>
+      preset !== input.current_preset
+      && input.preset_providers[preset] !== currentProvider,
+    )
+    .filter((preset) => {
+      const account = accountForPreset(input, preset);
+      return meetsShortFloorOrHasNoShortWindow(
+        input,
+        account,
+        config.generation_short_floor,
+        config,
+      )
+        && !isStaleForValue(input, account, account?.weekly_remaining_percent, config)
+        && account!.weekly_remaining_percent! > 0;
+    });
 }
 
 function isStaleForValue(
@@ -408,10 +454,8 @@ function accountForPreset(
   return input.accounts[input.preset_providers[preset]!];
 }
 
-function uniquePresets(defaultModel: string, fallbackModel: string): string[] {
-  return defaultModel === fallbackModel
-    ? [defaultModel]
-    : [defaultModel, fallbackModel];
+function rankedCandidates(input: DecisionInput): string[] {
+  return [...new Set([input.default_model, ...input.fallback_models])];
 }
 
 function copyInput(input: DecisionInput): DecisionInput {
@@ -419,9 +463,8 @@ function copyInput(input: DecisionInput): DecisionInput {
     ...input,
     preset_providers: { ...input.preset_providers },
     checkpoint_tokens_by_preset: { ...input.checkpoint_tokens_by_preset },
-    accounts: {
-      ...(input.accounts.claude ? { claude: { ...input.accounts.claude } } : {}),
-      ...(input.accounts.codex ? { codex: { ...input.accounts.codex } } : {}),
-    },
+    accounts: Object.fromEntries(Object.entries(input.accounts).flatMap(([provider, account]) =>
+      account ? [[provider, { ...account }]] : [],
+    )) as DecisionInput["accounts"],
   };
 }

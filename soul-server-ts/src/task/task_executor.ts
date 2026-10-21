@@ -625,25 +625,29 @@ export class TaskExecutor {
     if (isCacheKeepaliveInput(firstIntervention)) return;
 
     const now = new Date();
-    const input = await buildPersistentDecisionInput(
-      { task, trigger: "arrival", now },
-      {
-        db: this.db,
-        modelCatalog: this.modelCatalog,
-        providerUsage: runtime.providerUsage,
-        logger: this.logger,
-      },
-    );
-    const decision = decidePersistentGeneration(input);
+    let decision;
+    try {
+      const input = await buildPersistentDecisionInput(
+        { task, trigger: "arrival", now },
+        {
+          db: this.db,
+          modelCatalog: this.modelCatalog,
+          providerUsage: runtime.providerUsage,
+          logger: this.logger,
+        },
+      );
+      decision = decidePersistentGeneration(input);
+    } catch (err) {
+      this.logger.warn(
+        { sessionId: task.agentSessionId, trigger: "arrival", err },
+        "persistent decision skipped",
+      );
+      return;
+    }
     await this.recordPersistentDecision(task, "arrival", decision);
     if (decision.action !== "new_generation" || !decision.target_preset) return;
 
-    const settings = readStoredPersistentSettings(task.metadata);
-    const targetSelection = settings?.default_model?.model_preset === decision.target_preset
-      ? settings.default_model
-      : settings?.fallback_model?.model_preset === decision.target_preset
-        ? settings.fallback_model
-        : undefined;
+    const targetSelection = persistentSelectionForTarget(task, decision.target_preset);
     const reasoningEffort = targetSelection?.reasoning_effort;
     await runtime.persistentSessions.requestGenerationRollover(task.agentSessionId, {
       modelPreset: decision.target_preset,
@@ -662,24 +666,33 @@ export class TaskExecutor {
     await runtime.scheduleService.deleteCacheKeepaliveSchedules(task.agentSessionId);
 
     const now = new Date();
-    const input = await buildPersistentDecisionInput(
-      {
-        task,
-        trigger: "turn_end",
-        now,
-        ...(completeEventEndedAt(completeEvent)
-          ? { lastCallEndedAt: completeEventEndedAt(completeEvent) }
-          : {}),
-      },
-      {
-        db: this.db,
-        modelCatalog: this.modelCatalog,
-        providerUsage: runtime.providerUsage,
-        logger: this.logger,
-      },
-    );
+    let decision;
+    try {
+      const input = await buildPersistentDecisionInput(
+        {
+          task,
+          trigger: "turn_end",
+          now,
+          ...(completeEventEndedAt(completeEvent)
+            ? { lastCallEndedAt: completeEventEndedAt(completeEvent) }
+            : {}),
+        },
+        {
+          db: this.db,
+          modelCatalog: this.modelCatalog,
+          providerUsage: runtime.providerUsage,
+          logger: this.logger,
+        },
+      );
+      decision = decidePersistentGeneration(input);
+    } catch (err) {
+      this.logger.warn(
+        { sessionId: task.agentSessionId, trigger: "turn_end", err },
+        "persistent decision skipped",
+      );
+      return;
+    }
     const keepaliveResult = keepaliveResultFor(completeEvent, interventions);
-    const decision = decidePersistentGeneration(input);
     await this.recordPersistentDecision(task, "turn_end", decision, keepaliveResult);
     if (decision.action === "schedule_keepalive" && decision.wake_at) {
       await runtime.scheduleService.scheduleCacheKeepalive(
@@ -701,30 +714,34 @@ export class TaskExecutor {
 
     const now = new Date();
     const limitResetAt = task.rateLimitStopInfo?.resetsAt;
-    const input = await buildPersistentDecisionInput(
-      {
-        task,
-        trigger: "limit_hit",
-        now,
-        ...(limitResetAt !== undefined ? { limitResetAt } : {}),
-      },
-      {
-        db: this.db,
-        modelCatalog: this.modelCatalog,
-        providerUsage: runtime.providerUsage,
-        logger: this.logger,
-      },
-    );
-    const decision = decidePersistentGeneration(input);
+    let decision;
+    try {
+      const input = await buildPersistentDecisionInput(
+        {
+          task,
+          trigger: "limit_hit",
+          now,
+          ...(limitResetAt !== undefined ? { limitResetAt } : {}),
+        },
+        {
+          db: this.db,
+          modelCatalog: this.modelCatalog,
+          providerUsage: runtime.providerUsage,
+          logger: this.logger,
+        },
+      );
+      decision = decidePersistentGeneration(input);
+    } catch (err) {
+      this.logger.warn(
+        { sessionId: task.agentSessionId, trigger: "limit_hit", err },
+        "persistent decision skipped",
+      );
+      return;
+    }
     await this.recordPersistentDecision(task, "limit_hit", decision);
 
     if (decision.action === "new_generation" && decision.target_preset) {
-      const settings = readStoredPersistentSettings(task.metadata);
-      const targetSelection = settings?.default_model?.model_preset === decision.target_preset
-        ? settings.default_model
-        : settings?.fallback_model?.model_preset === decision.target_preset
-          ? settings.fallback_model
-          : undefined;
+      const targetSelection = persistentSelectionForTarget(task, decision.target_preset);
       const reasoningEffort = targetSelection?.reasoning_effort;
       await runtime.persistentSessions.requestGenerationRollover(task.agentSessionId, {
         modelPreset: decision.target_preset,
@@ -2013,6 +2030,12 @@ export class TaskExecutor {
   ): Promise<void> {
     for (const receipt of receipts) await receipt.consume(task);
   }
+}
+
+function persistentSelectionForTarget(task: Task, targetPreset: string) {
+  const settings = readStoredPersistentSettings(task.metadata);
+  if (settings?.default_model?.model_preset === targetPreset) return settings.default_model;
+  return settings?.fallback_models.find((selection) => selection.model_preset === targetPreset);
 }
 
 function errorMessage(error: unknown): string {

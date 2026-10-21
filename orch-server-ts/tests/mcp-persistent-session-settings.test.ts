@@ -14,7 +14,7 @@ import {
 
 const currentSettings: PersistentSessionSettings = {
   default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
-  fallback_model: null,
+  fallback_models: [{ model_preset: "codex-6.1-sol", reasoning_effort: "high" }],
   show_generation_separator: true,
   show_character: true,
   show_jev_candidates: true,
@@ -104,7 +104,11 @@ function setup() {
     presets: {
       resolveStaticForNode: (_nodeId: string, id: string) => ({
         id,
-        backend: id.startsWith("claude-") ? "claude" : "codex",
+        backend: id.startsWith("claude-")
+          ? "claude"
+          : id === "gemini-4-argon"
+            ? "antigravity"
+            : id.startsWith("opencode-") ? "opencode" : "codex",
         available: true,
         supported_efforts: ["high", "medium"],
         default_effort: "high",
@@ -146,6 +150,52 @@ describe("update_persistent_session_settings MCP tool", () => {
       settings: { default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" } },
     }, { warn: vi.fn() })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_MODEL_PRESET" });
     expect(h.requireAvailable).toHaveBeenNthCalledWith(2, "eiaserinnys", "codex-6.1-sol", undefined);
+  });
+
+  it("saves ordered fallback ranks through MCP and returns them on read", async () => {
+    const h = setup();
+    h.rows.set("mcp-session", h.makeRow("mcp-session"));
+    const fallbacks = [
+      { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+      { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+    ];
+
+    const updated = await h.call({ session_id: "mcp-session", fallback_models: fallbacks });
+    const reloaded = await h.service.get({} as never, "mcp-session");
+
+    expect(updated.isError).not.toBe(true);
+    expect(h.commandPayloads[0]).toMatchObject({ settings: { fallback_models: fallbacks } });
+    expect((updated.structuredContent as { settings: unknown }).settings).toMatchObject({
+      fallback_models: fallbacks,
+      fallback_model: fallbacks[0],
+    });
+    expect(reloaded.session.settings.fallback_models).toEqual(fallbacks);
+  });
+
+  it("rejects unsupported backends in fallback ranks with 422", async () => {
+    const h = setup();
+    h.rows.set("mcp-session", h.makeRow("mcp-session"));
+
+    await expect(h.service.update({} as never, "mcp-session", {
+      settings: {
+        fallback_models: [{ model_preset: "opencode-unsupported", reasoning_effort: "high" }],
+      },
+    })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_MODEL_PRESET" });
+  });
+
+  it("reads legacy single fallback metadata and null as a list", () => {
+    const legacySelection = { model_preset: "codex-6.1-sol", reasoning_effort: "high" };
+    const legacy = readStoredPersistentSettings([{
+      type: "persistent_settings",
+      value: { default_model: legacySelection, fallback_model: legacySelection },
+    }]);
+    const legacyNull = readStoredPersistentSettings([{
+      type: "persistent_settings",
+      value: { default_model: legacySelection, fallback_model: null },
+    }]);
+
+    expect(legacy?.fallback_models).toEqual([legacySelection]);
+    expect(legacyNull?.fallback_models).toEqual([]);
   });
 
   it("uses the PUT service update path, verifies caller access, and returns the stored settings", async () => {

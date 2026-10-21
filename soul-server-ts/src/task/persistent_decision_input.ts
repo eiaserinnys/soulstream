@@ -19,7 +19,7 @@ import type {
   DecisionInput,
   DecisionTrigger,
 } from "./persistent_decision.js";
-import type { ModelCatalog } from "../model_catalog.js";
+import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
@@ -62,14 +62,34 @@ export async function buildPersistentDecisionInput(
   const settings = readStoredPersistentSettings(task.metadata);
   const currentPreset = task.modelPreset!;
   const defaultModel = settings?.default_model?.model_preset ?? currentPreset;
-  const fallbackModel = settings?.fallback_model?.model_preset
-    ?? PERSISTENT_SETTINGS_DEFAULTS.fallback_model.model_preset;
-  const presetProviders = Object.fromEntries(
-    [...new Set([currentPreset, defaultModel, fallbackModel])].map((preset) => [
-      preset,
-      providerForPreset(preset, deps.modelCatalog),
-    ]),
-  );
+  const fallbackModels = (settings?.fallback_models ?? PERSISTENT_SETTINGS_DEFAULTS.fallback_models)
+    .map((selection) => selection.model_preset);
+  const presetProviders: Record<string, DecisionProvider> = {};
+  presetProviders[currentPreset] = providerForPreset(currentPreset, deps.modelCatalog);
+  presetProviders[defaultModel] = providerForPreset(defaultModel, deps.modelCatalog);
+  const supportedFallbackModels: string[] = [];
+  for (const preset of fallbackModels) {
+    let resolved: { backend: string; provider: DecisionProvider | undefined };
+    try {
+      resolved = resolveProvider(preset, deps.modelCatalog);
+    } catch (error) {
+      if (!(error instanceof UnknownModelPresetError)) throw error;
+      deps.logger.warn(
+        { sessionId: task.agentSessionId, preset, backend: "unknown" },
+        "persistent decision skipped unsupported fallback preset",
+      );
+      continue;
+    }
+    if (resolved.provider === undefined) {
+      deps.logger.warn(
+        { sessionId: task.agentSessionId, preset, backend: resolved.backend },
+        "persistent decision skipped unsupported fallback preset",
+      );
+      continue;
+    }
+    presetProviders[preset] = resolved.provider;
+    supportedFallbackModels.push(preset);
+  }
   const checkpointTokens = collectCheckpointTokensByPreset(task, generationMetadataEvents);
   const lastComplete = [...orderedEvents].reverse().find((event) => event.event_type === "complete");
   const lastCallEndedAt = options.lastCallEndedAt
@@ -80,6 +100,7 @@ export async function buildPersistentDecisionInput(
     task.agentSessionId,
     now,
     trigger === "limit_hit",
+    [...new Set(Object.values(presetProviders))],
     deps.providerUsage,
     deps.logger,
   );
@@ -93,8 +114,8 @@ export async function buildPersistentDecisionInput(
     keepalive_count: countKeepalivesSinceHumanInput(orderedEvents),
     current_preset: currentPreset,
     default_model: defaultModel,
-    fallback_model: fallbackModel,
-    preset_providers: presetProviders as Record<string, DecisionProvider>,
+    fallback_models: supportedFallbackModels,
+    preset_providers: presetProviders,
     checkpoint_tokens_by_preset: checkpointTokens,
     accounts,
     ...(options.limitResetAt ? { limit_reset_at: options.limitResetAt } : {}),
@@ -171,10 +192,10 @@ async function collectAccounts(
   sessionId: string,
   now: Date,
   forceRefresh: boolean,
+  providers: DecisionProvider[],
   providerUsage: ProviderUsageCommandHandler,
   logger: Pick<Logger, "warn">,
 ): Promise<DecisionInput["accounts"]> {
-  const providers: DecisionProvider[] = ["claude", "codex"];
   const stale = providers.some((provider) => !isFreshObservation(
     readProviderUsageObservation(provider)?.observed_at ?? null,
     now,
@@ -240,11 +261,24 @@ function providerForPreset(
   preset: string,
   modelCatalog: Pick<ModelCatalog, "resolve">,
 ): DecisionProvider {
-  const backend = modelCatalog.resolve(preset).backend;
-  if (backend !== "claude" && backend !== "codex") {
+  const { backend, provider } = resolveProvider(preset, modelCatalog);
+  if (provider === undefined) {
     throw new Error(`Persistent decision does not support preset backend: ${backend}`);
   }
-  return backend;
+  return provider;
+}
+
+function resolveProvider(
+  preset: string,
+  modelCatalog: Pick<ModelCatalog, "resolve">,
+): { backend: string; provider: DecisionProvider | undefined } {
+  const backend = modelCatalog.resolve(preset).backend;
+  return {
+    backend,
+    provider: backend === "claude" || backend === "codex" || backend === "antigravity"
+      ? backend
+      : undefined,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

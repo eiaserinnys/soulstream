@@ -60,7 +60,7 @@ function makeTask(): Task {
       type: "persistent_settings",
       value: {
         default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
-        fallback_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+        fallback_models: [{ model_preset: "claude-opus", reasoning_effort: "high" }],
       },
     }],
     claudeContextUsage: { usedTokens: 1_000, maxTokens: 200_000 },
@@ -76,10 +76,12 @@ function makeModelCatalog(): Pick<ModelCatalog, "resolve"> {
     resolve: vi.fn((id: string) => ({
       id,
       label: id,
-      backend: id.startsWith("claude") ? "claude" as const : "codex" as const,
+      backend: id === "gemini-4-argon"
+        ? "antigravity" as const
+        : id.startsWith("claude") ? "claude" as const : "codex" as const,
       model: `${id}-model`,
       env: {},
-      supported_efforts: ["high" as const],
+      supported_efforts: ["low" as const, "medium" as const, "high" as const],
     })),
   };
 }
@@ -234,6 +236,38 @@ function taskExecutor(
 describe("TaskExecutor persistent decision wiring", () => {
   beforeEach(() => resetProviderUsageObservationMemo());
 
+  it("skips a persistent decision input error without failing the execution", async () => {
+    const task = makeTask();
+    task.interventionQueue.push({ text: "continue", user: "Alice" });
+    const runtime = makeRuntime(task, []);
+    vi.mocked(runtime.db.readEvents).mockRejectedValueOnce(new Error("decision events unavailable"));
+    const warn = vi.spyOn(logger, "warn");
+    const executor = taskExecutor(
+      task,
+      runtime,
+      () => makeEngine([
+        { type: "session", session_id: "native-current" } as SSEEventPayload,
+        {
+          type: "complete",
+          usage: {},
+          timestamp: Date.now() / 1_000,
+          first_call: { input_tokens: 1_000, cached_input_tokens: 0 },
+        } as unknown as SSEEventPayload,
+      ]),
+      makeContextBuilder(),
+      { setModelSelection: vi.fn(async () => undefined) },
+    );
+
+    const execution = executor.startNewExecution(task, agent);
+    await expect(execution).resolves.toBeUndefined();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: task.agentSessionId, trigger: "arrival" }),
+      "persistent decision skipped",
+    );
+    warn.mockRestore();
+  });
+
   it("persists the keepalive purpose marker on both intervention and resumed input events", () => {
     const intervention = {
       text: "cache keepalive",
@@ -346,13 +380,13 @@ describe("TaskExecutor persistent decision wiring", () => {
       scenario: "warm",
       contextTokens: 159_263,
       idleMs: 60_000,
-      expectedRule: "arrival.warm.over_budget",
+      expectedRule: "arrival.current_exhausted",
     },
     {
       scenario: "cold",
       contextTokens: 55_175,
       idleMs: 3_600_000,
-      expectedRule: "arrival.cold.over_ratio",
+      expectedRule: "arrival.current_exhausted",
     },
   ])("runs the PAS $scenario arrival on Codex when Sonnet weekly quota is exhausted", async ({
     contextTokens,
@@ -365,7 +399,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       type: "persistent_settings",
       value: {
         default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
-        fallback_model: { model_preset: "claude-sonnet", reasoning_effort: "high" },
+        fallback_models: [{ model_preset: "claude-sonnet", reasoning_effort: "high" }],
       },
     }];
     task.interventionQueue.push({ text: "continue", user: "Alice" });
@@ -969,3 +1003,65 @@ function makeResumeScheduleRuntime(persistence: ReturnType<typeof makeEventPersi
   );
   return { db, service, getSchedule: () => schedule };
 }
+
+describe("TaskExecutor ranked persistent fallback target", () => {
+  beforeEach(() => resetProviderUsageObservationMemo());
+
+  it("uses the selected second fallback's reasoning effort", async () => {
+    const task = makeTask();
+    task.claudeContextUsage = { usedTokens: 1_000, maxTokens: 200_000 };
+    task.metadata = [{
+      type: "persistent_settings",
+      value: {
+        default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+        fallback_models: [
+          { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+          { model_preset: "codex-6.1-sol", reasoning_effort: "medium" },
+        ],
+      },
+    }];
+    task.interventionQueue.push({ text: "continue", user: "Alice" });
+    const now = Date.now();
+    const runtime = makeRuntime(task, [{
+      id: 1,
+      session_id: task.agentSessionId,
+      event_type: "complete",
+      payload: {},
+      searchable_text: "",
+      created_at: new Date(now - 60_000),
+    }]);
+    const claudeUsage = makeUsage();
+    claudeUsage.shortUsedPercent = 95;
+    const antigravityUsage = makeUsage();
+    antigravityUsage.shortUsedPercent = 95;
+    rememberProviderUsageObservation("claude", claudeUsage);
+    rememberProviderUsageObservation("antigravity", antigravityUsage);
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
+    const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
+    const executor = taskExecutor(
+      task,
+      runtime,
+      () => makeEngine([
+        { type: "session", session_id: "native-codex" } as SSEEventPayload,
+        {
+          type: "complete",
+          usage: {},
+          timestamp: Date.now() / 1_000,
+          first_call: { input_tokens: 1_000, cached_input_tokens: 0 },
+        } as unknown as SSEEventPayload,
+      ]),
+      makeContextBuilder(),
+      { setModelSelection: vi.fn(async () => undefined) },
+    );
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(requestRollover).toHaveBeenCalledWith(task.agentSessionId, {
+      modelPreset: "codex-6.1-sol",
+      reasoningEffort: "medium",
+      reason: "auto:arrival.current_exhausted",
+    });
+  });
+});

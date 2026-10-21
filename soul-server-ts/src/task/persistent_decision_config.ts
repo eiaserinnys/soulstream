@@ -25,6 +25,8 @@ export const DEFAULT_CONFIG: PersistentDecisionConfig = {
   provider_defaults: {
     claude: claudeOpus,
     codex: codexSol,
+    // Gemini cache TTL has not been measured; use the Codex values temporarily.
+    antigravity: codexSol,
   },
   budget_tokens: 120_000,
   cold_ratio: 1.25,

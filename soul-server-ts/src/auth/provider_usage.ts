@@ -244,7 +244,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
           attempts,
         ),
       );
-      if ((provider === "claude" || provider === "codex") && limits.status !== "error") {
+      if ((provider === "claude" || provider === "codex" || provider === "antigravity") && limits.status !== "error") {
         rememberProviderUsageObservation(provider, limits);
       }
       providerUsageSummary(

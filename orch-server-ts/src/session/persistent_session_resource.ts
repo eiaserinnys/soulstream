@@ -16,6 +16,8 @@ export type PersistentModelSelectionView = {
 
 export type PersistentSettingsView = {
   default_model: PersistentModelSelectionView;
+  fallback_models: PersistentModelSelectionView[];
+  /** Read-only projection for deployed app compatibility; fallback_models is canonical. */
   fallback_model: PersistentModelSelectionView | null;
   show_generation_separator: boolean;
   show_character: boolean;
@@ -65,6 +67,7 @@ export function buildPersistentSessionResource(
   const settings: PersistentSettingsView = stored === undefined
     ? {
         default_model: { model_preset: current.model_preset, reasoning_effort: current.reasoning_effort },
+        fallback_models: [],
         fallback_model: null,
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
@@ -76,7 +79,17 @@ export function buildPersistentSessionResource(
       }
     : {
         default_model: stored.default_model ?? { model_preset: null, reasoning_effort: null },
-        fallback_model: stored.fallback_model,
+        fallback_models: stored.fallback_models.map((model) => ({
+          model_preset: model.model_preset,
+          reasoning_effort: model.reasoning_effort,
+        })),
+        // Read-only projection for deployed app compatibility; fallback_models is canonical.
+        fallback_model: stored.fallback_models[0]
+          ? {
+              model_preset: stored.fallback_models[0].model_preset,
+              reasoning_effort: stored.fallback_models[0].reasoning_effort,
+            }
+          : null,
         show_generation_separator: stored.show_generation_separator,
         show_character: stored.show_character,
         show_jev_candidates: stored.show_jev_candidates,

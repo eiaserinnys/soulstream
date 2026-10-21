@@ -25,10 +25,11 @@ function makeInput(overrides: Partial<DecisionInput> = {}): DecisionInput {
     keepalive_count: 0,
     current_preset: "claude-opus",
     default_model: "claude-opus",
-    fallback_model: "codex-6.1-sol",
+    fallback_models: ["codex-6.1-sol"],
     preset_providers: {
       "claude-opus": "claude",
       "codex-6.1-sol": "codex",
+      "gemini-4-argon": "antigravity",
       "claude-sonnet": "claude",
     },
     checkpoint_tokens_by_preset: {},
@@ -41,6 +42,13 @@ function makeInput(overrides: Partial<DecisionInput> = {}): DecisionInput {
         observed_at: NOW,
       },
       codex: {
+        weekly_headroom: 0,
+        weekly_remaining_percent: 50,
+        short_remaining_percent: 60,
+        short_reset_at: "2026-10-06T13:00:00.000Z",
+        observed_at: NOW,
+      },
+      antigravity: {
         weekly_headroom: 0,
         weekly_remaining_percent: 50,
         short_remaining_percent: 60,
@@ -187,7 +195,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "claude-opus",
       default_model: "claude-opus",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 20, short_remaining_percent: 10, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
     expected: {
@@ -208,7 +216,7 @@ const decisionCases: DecisionCase[] = [
       keepalive_count: 0,
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       preset_providers: { "claude-sonnet": "claude", "codex-6.1-sol": "codex" },
       checkpoint_tokens_by_preset: {},
       accounts: {
@@ -230,7 +238,7 @@ const decisionCases: DecisionCase[] = [
     },
     expected: {
       action: "new_generation",
-      rule: "arrival.cold.over_ratio",
+      rule: "arrival.current_exhausted",
       target_preset: "codex-6.1-sol",
     },
     expectedSnapshot: { preset_rule: "preset.single" },
@@ -241,7 +249,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "codex-6.1-sol",
       default_model: "codex-6.1-sol",
-      fallback_model: "claude-sonnet",
+      fallback_models: ["claude-sonnet"],
       context_tokens: 159_263,
       last_call_ended_at: NOW,
       preset_providers: { "codex-6.1-sol": "codex", "claude-sonnet": "claude" },
@@ -275,7 +283,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "codex-6.1-sol",
       default_model: "codex-6.1-sol",
-      fallback_model: "claude-sonnet",
+      fallback_models: ["claude-sonnet"],
       context_tokens: 55_175,
       last_call_ended_at: "2026-10-06T10:59:59.000Z",
       preset_providers: { "codex-6.1-sol": "codex", "claude-sonnet": "claude" },
@@ -309,7 +317,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "codex-6.1-sol",
       default_model: "codex-6.1-sol",
-      fallback_model: "claude-sonnet",
+      fallback_models: ["claude-sonnet"],
       context_tokens: 159_263,
       last_call_ended_at: NOW,
       preset_providers: { "codex-6.1-sol": "codex", "claude-sonnet": "claude" },
@@ -343,7 +351,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "codex-6.1-sol",
       default_model: "codex-6.1-sol",
-      fallback_model: "claude-sonnet",
+      fallback_models: ["claude-sonnet"],
       context_tokens: 159_263,
       last_call_ended_at: NOW,
       preset_providers: { "codex-6.1-sol": "codex", "claude-sonnet": "claude" },
@@ -383,7 +391,7 @@ const decisionCases: DecisionCase[] = [
       keepalive_count: 0,
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       preset_providers: { "claude-sonnet": "claude", "codex-6.1-sol": "codex" },
       checkpoint_tokens_by_preset: {},
       accounts: {
@@ -420,7 +428,7 @@ const decisionCases: DecisionCase[] = [
       keepalive_count: 0,
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       preset_providers: { "claude-sonnet": "claude", "codex-6.1-sol": "codex" },
       checkpoint_tokens_by_preset: {},
       accounts: {
@@ -459,7 +467,7 @@ const decisionCases: DecisionCase[] = [
       keepalive_count: 0,
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       preset_providers: { "claude-sonnet": "claude", "codex-6.1-sol": "codex" },
       checkpoint_tokens_by_preset: {},
       accounts: {
@@ -496,7 +504,7 @@ const decisionCases: DecisionCase[] = [
       keepalive_count: 0,
       current_preset: "codex-6.1-sol",
       default_model: "codex-6.1-sol",
-      fallback_model: "claude-sonnet",
+      fallback_models: ["claude-sonnet"],
       preset_providers: { "codex-6.1-sol": "codex", "claude-sonnet": "claude" },
       checkpoint_tokens_by_preset: {},
       accounts: {
@@ -520,7 +528,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "claude-opus",
       default_model: "claude-opus",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
       accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 20, short_remaining_percent: 50, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: "2026-10-06T11:39:59.000Z" } },
     },
@@ -532,7 +540,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "claude-opus",
       default_model: "claude-opus",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
       accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 20, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
@@ -544,7 +552,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "claude-opus",
       default_model: "claude-opus",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
       accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: 0, short_remaining_percent: 50, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
@@ -556,7 +564,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "claude-opus",
       default_model: "claude-opus",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
       accounts: { codex: { weekly_headroom: 0, weekly_remaining_percent: null, short_remaining_percent: 50, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
@@ -568,7 +576,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "claude-opus",
       default_model: "claude-opus",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
       accounts: { codex: { weekly_headroom: 0, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW } },
     },
@@ -607,7 +615,7 @@ const decisionCases: DecisionCase[] = [
     input: {
       trigger: "arrival",
       context_tokens: 120_001,
-      fallback_model: "claude-opus",
+      fallback_models: ["claude-opus"],
     },
     expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "claude-opus" },
     expectedSnapshot: { preset_rule: "preset.single" },
@@ -632,7 +640,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "codex-6.1-sol",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       context_tokens: 120_001,
       last_call_ended_at: NOW,
       preset_providers: { "claude-sonnet": "claude", "codex-6.1-sol": "codex" },
@@ -650,7 +658,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       context_tokens: 120_001,
       accounts: {
         claude: { weekly_headroom: 0, weekly_remaining_percent: 9, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
@@ -666,7 +674,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       context_tokens: 120_001,
       accounts: {
         claude: { weekly_headroom: 0, weekly_remaining_percent: 10, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
@@ -682,7 +690,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "codex-6.1-sol",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
       accounts: {
         claude: { weekly_headroom: 0, weekly_remaining_percent: 5, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
@@ -698,7 +706,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       context_tokens: 120_001,
       accounts: {
         claude: { weekly_headroom: 0, weekly_remaining_percent: 9, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
@@ -714,7 +722,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       context_tokens: 120_001,
       accounts: {
         claude: { weekly_headroom: 0, weekly_remaining_percent: 9, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
@@ -730,14 +738,14 @@ const decisionCases: DecisionCase[] = [
       trigger: "arrival",
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       context_tokens: 120_001,
       accounts: {
         claude: { weekly_headroom: 0, weekly_remaining_percent: 80, short_remaining_percent: 9, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
         codex: { weekly_headroom: 0, weekly_remaining_percent: 50, short_remaining_percent: 60, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
       },
     },
-    expected: { action: "new_generation", rule: "arrival.warm.over_budget", target_preset: "codex-6.1-sol" },
+    expected: { action: "new_generation", rule: "arrival.current_exhausted", target_preset: "codex-6.1-sol" },
     expectedSnapshot: { preset_rule: "preset.single" },
   },
   {
@@ -746,7 +754,7 @@ const decisionCases: DecisionCase[] = [
       trigger: "limit_hit",
       current_preset: "claude-sonnet",
       default_model: "claude-sonnet",
-      fallback_model: "codex-6.1-sol",
+      fallback_models: ["codex-6.1-sol"],
       limit_reset_at: "2026-10-06T13:00:00.000Z",
       accounts: {
         claude: { weekly_headroom: 0, weekly_remaining_percent: 80, short_remaining_percent: 0, short_reset_at: "2026-10-06T13:00:00.000Z", observed_at: NOW },
@@ -789,5 +797,84 @@ describe("decidePersistentGeneration", () => {
     }
     expect(result.inputs_snapshot).toMatchObject(input);
     expect(result.reason).toMatch(/^.+[。.]$/u);
+  });
+});
+
+describe("ranked persistent fallback models", () => {
+  const healthyAccount = {
+    weekly_headroom: 0,
+    weekly_remaining_percent: 50,
+    short_remaining_percent: 60,
+    short_reset_at: "2026-10-06T13:00:00.000Z",
+    observed_at: NOW,
+  };
+
+  it("selects the first healthy ranked fallback on limit_hit", () => {
+    const result = decidePersistentGeneration(makeInput({
+      trigger: "limit_hit",
+      fallback_models: ["gemini-4-argon", "codex-6.1-sol"],
+      preset_providers: { "gemini-4-argon": "antigravity" },
+      accounts: { antigravity: healthyAccount, codex: healthyAccount },
+    }));
+
+    expect(result).toMatchObject({
+      action: "new_generation",
+      rule: "limit_hit.switch",
+      target_preset: "gemini-4-argon",
+    });
+  });
+
+  it.each([
+    ["short-window floor", { ...healthyAccount, short_remaining_percent: 5 }],
+    ["weekly quota", { ...healthyAccount, weekly_remaining_percent: 0 }],
+  ])("skips Antigravity when its %s is exhausted", (_cause, antigravityAccount) => {
+    const result = decidePersistentGeneration(makeInput({
+      trigger: "limit_hit",
+      fallback_models: ["gemini-4-argon", "codex-6.1-sol"],
+      preset_providers: { "gemini-4-argon": "antigravity" },
+      accounts: { antigravity: antigravityAccount, codex: healthyAccount },
+    }));
+
+    expect(result).toMatchObject({
+      action: "new_generation",
+      rule: "limit_hit.switch",
+      target_preset: "codex-6.1-sol",
+    });
+  });
+
+  it("moves on from an exhausted current Claude account during arrival", () => {
+    const result = decidePersistentGeneration(makeInput({
+      trigger: "arrival",
+      fallback_models: ["gemini-4-argon", "codex-6.1-sol"],
+      preset_providers: { "gemini-4-argon": "antigravity" },
+      accounts: {
+        claude: { ...healthyAccount, short_remaining_percent: 5 },
+        antigravity: healthyAccount,
+        codex: healthyAccount,
+      },
+    }));
+
+    expect(result).toMatchObject({
+      action: "new_generation",
+      rule: "arrival.current_exhausted",
+      target_preset: "gemini-4-argon",
+      reason: "현재 모델의 계정 여유가 바닥나 순위상 다음으로 쓸 수 있는 모델로 새 세대를 엽니다.",
+    });
+  });
+
+  it("does not schedule a keepalive for an Antigravity current model", () => {
+    const result = decidePersistentGeneration(makeInput({
+      trigger: "turn_end",
+      current_preset: "gemini-4-argon",
+      fallback_models: ["gemini-4-argon", "codex-6.1-sol"],
+      preset_providers: { "gemini-4-argon": "antigravity" },
+      accounts: { antigravity: healthyAccount },
+    }));
+
+    expect(result).toMatchObject({
+      action: "let_cool",
+      rule: "turn_end.no_keepalive_provider",
+      reason: "이 계정은 캐시 유지 호출을 하지 않습니다.",
+    });
   });
 });

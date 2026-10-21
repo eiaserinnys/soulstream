@@ -1,6 +1,6 @@
 import type { ProviderUsageName, ProviderLimits } from "./provider_usage.js";
 
-export type DecisionProvider = Extract<ProviderUsageName, "claude" | "codex">;
+export type DecisionProvider = Extract<ProviderUsageName, "claude" | "codex" | "antigravity">;
 
 export interface ProviderUsageObservation {
   result: ProviderLimits;

@@ -150,6 +150,21 @@ export class PersistentSessionSettingsService {
     if (settings?.default_model !== undefined) {
       settings = { ...settings, default_model: await this.normalizeDefaultModel(row, settings.default_model) };
     }
+    if (settings?.fallback_models !== undefined) {
+      const nodeId = typeof row.node_id === "string" ? row.node_id : "";
+      const storedFallbacks = readStoredPersistentSettings(row.metadata)?.fallback_models ?? [];
+      settings = {
+        ...settings,
+        fallback_models: settings.fallback_models.map((selection) => {
+          const previous = storedFallbacks.find((item) => item.model_preset === selection.model_preset);
+          return this.normalizeModel(nodeId, selection, {
+            requireAvailable: false,
+            allowLimitRejected: true,
+            keepEffort: previous?.reasoning_effort,
+          });
+        }),
+      };
+    }
     if (body.display_name !== undefined && body.display_name !== row.display_name) {
       await this.deps.catalog.renameSession(sessionId, body.display_name);
     }
@@ -286,11 +301,11 @@ export class PersistentSessionSettingsService {
       }
       throw error;
     }
-    if (preset.backend !== "claude" && preset.backend !== "codex") {
+    if (preset.backend !== "claude" && preset.backend !== "codex" && preset.backend !== "antigravity") {
       throw new PersistentSessionApiError(
         422,
         "INVALID_MODEL_PRESET",
-        `Persistent sessions support claude and codex presets only: ${preset.id}`,
+        `Persistent sessions support claude, codex and antigravity presets only: ${preset.id}`,
       );
     }
     if (requested.reasoning_effort !== null) {
@@ -369,7 +384,10 @@ export class PersistentSessionSettingsService {
       preferred_agent_id: preferredAgentId,
       settings: {
         default_model: defaultModel,
-        fallback_model: { ...PERSISTENT_SETTINGS_DEFAULTS.fallback_model },
+        fallback_models: PERSISTENT_SETTINGS_DEFAULTS.fallback_models.map((model) => ({ ...model })),
+        fallback_model: PERSISTENT_SETTINGS_DEFAULTS.fallback_models[0]
+          ? { ...PERSISTENT_SETTINGS_DEFAULTS.fallback_models[0] }
+          : null,
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
         show_jev_candidates: PERSISTENT_SETTINGS_DEFAULTS.show_jev_candidates,

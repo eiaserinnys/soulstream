@@ -204,13 +204,18 @@ export function prepareGenerationTurnInput(
     ...message,
     context: message.context?.filter((item) => item.key !== "assigned_cards"),
   })));
-  const isClaude = effectiveTaskBackend(task, agent) === "claude";
+  const backend = effectiveTaskBackend(task, agent);
+  const usesSeparateSystemPrompt = backend === "claude" || backend === "antigravity" || backend === "opencode";
   const composedPrompt = composeFirstTurnPromptWithMaterial({
     ...context,
-    effectiveSystemPrompt: isClaude ? undefined : context.effectiveSystemPrompt,
+    effectiveSystemPrompt: usesSeparateSystemPrompt ? undefined : context.effectiveSystemPrompt,
     assembledPrompt: composed.prompt,
   }, composed.inputMaterialParts);
-  const systemPrompt = isClaude ? context.effectiveSystemPrompt : undefined;
+  const systemPrompt = backend === "claude"
+    ? context.effectiveSystemPrompt
+    : backend === "antigravity" || backend === "opencode"
+      ? context.effectiveSystemPrompt ?? ""
+      : undefined;
   const systemParts = systemPrompt
     ? resolveSystemInputMaterialParts(context.inputMaterialBreakdown?.systemParts, systemPrompt)
     : [];
