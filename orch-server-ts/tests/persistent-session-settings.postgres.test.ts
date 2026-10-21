@@ -323,6 +323,7 @@ describePostgres("PAS settings API on PostgreSQL", () => {
       preferred_agent_id: PAS_AGENT,
       settings: {
         default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+        fallback_models: [{ model_preset: "codex-6.1-sol", reasoning_effort: "high" }],
         fallback_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
         show_generation_separator: true,
         show_character: true,
