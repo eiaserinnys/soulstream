@@ -55,7 +55,7 @@ it("saves one display field immediately and publishes only the returned settings
   click("지속 지시");
   click("표시와 모션");
   expect([...document.body.querySelectorAll<HTMLButtonElement>("[role=switch]")].map((control) => control.getAttribute("aria-label"))).toEqual([
-    "캐릭터 표시", "캐릭터 움직임", "세대 구분선 표시", "Jev 후보 표시",
+    "캐릭터 표시", "캐릭터 움직임", "세대 구분선 표시", "Jev 후보 표시", "작업 세부 표시",
   ]);
   const switchControl = switchFor("캐릭터 표시");
   expect(switchControl?.getAttribute("aria-checked")).toBe("true");
@@ -152,7 +152,7 @@ it.each([
   await settle();
   expect(calls.filter((call) => call.method === "PUT").map((call) => call.body)).toEqual([
     { settings: { [key]: false } },
-    { display_name: "보존할 이름 초안", settings: { default_model: { model_preset: "sample-sol", reasoning_effort: null } } },
+    { display_name: "보존할 이름 초안", settings: { default_model: { model_preset: "sample-sol", reasoning_effort: null }, show_work_details: false } },
   ]);
   expect(resource.settings[key]).toBe(false);
   expect(useDashboardStore.getState().persistentSessionDisplaySettings?.[storeKey]).toBe(false);
@@ -228,7 +228,7 @@ it("uses the shared account detail draft and save action", async () => {
 
   expect(calls).toEqual([{
     method: "PUT",
-    body: { display_name: "수정한 검수 세션", settings: { default_model: { model_preset: "sample-opus", reasoning_effort: null } } },
+    body: { display_name: "수정한 검수 세션", settings: { default_model: { model_preset: "sample-opus", reasoning_effort: null }, show_work_details: false } },
   }]);
   expect(document.body.textContent).toContain("수정한 검수 세션");
 });
