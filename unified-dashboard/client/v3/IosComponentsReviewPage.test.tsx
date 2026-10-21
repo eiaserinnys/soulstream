@@ -65,14 +65,14 @@ it("checks the same-origin index once before displaying the named iframe", async
   }));
 });
 
-it("opens all 22 originals in grouped single-sample frames without the legacy host", async () => {
+it("opens all 23 originals in grouped single-sample frames without the legacy host", async () => {
   fetchMock.mockResolvedValue({ ok: true });
   await act(async () => root.render(<IosComponentsReviewPage section="dialogues" />));
   const frames = [...container.querySelectorAll('iframe')];
-  expect(frames).toHaveLength(22);
+  expect(frames).toHaveLength(23);
   expect([...container.querySelectorAll('[data-group]')].slice(0, 6).map(group => group.querySelectorAll('iframe').length)).toEqual([3, 6, 3, 4, 3, 3]);
   expect(frames.every(frame => frame.getAttribute('src')?.startsWith('/assets/ios-components/index.html?section=dialogues&sample='))).toBe(true);
-  expect(new Set(frames.map(frame => frame.getAttribute('src'))).size).toBe(22);
+  expect(new Set(frames.map(frame => frame.getAttribute('src'))).size).toBe(23);
   expect(container.querySelector('iframe[title="첨부 미리보기"]')?.getAttribute('src')).toBe('/assets/ios-components/index.html?section=dialogues&sample=attachment-preview');
   expect(container.textContent).toContain('phone');
   expect(container.querySelector('.v3-ios-components-review')).toBeNull();
