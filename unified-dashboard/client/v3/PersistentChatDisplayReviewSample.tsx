@@ -4,6 +4,7 @@ import { createProcessingContext } from "@seosoyoung/soul-ui/stores/processing-c
 import { processEventsBatch } from "@seosoyoung/soul-ui/stores/event-processor";
 import { flattenTree } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import { projectPersistentChatDisplayMessages } from "@seosoyoung/soul-ui/lib/persistent-jev-candidates";
+import { projectPersistentWorkDetails } from "@seosoyoung/soul-ui/lib/persistent-work-details-projection";
 import { SettingFieldWidget, type SettingField } from "../components/config/SettingFieldWidget";
 
 const inputId = "components-review-input";
@@ -82,10 +83,12 @@ const candidateEvents = [
 
 const generationField: SettingField = { key: "review-generation", field_name: "show_generation_separator", label: "세대 구분선 표시", description: "세대가 바뀐 자리에 구분선을 보여 줍니다.", value: true, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
 const candidatesField: SettingField = { key: "review-candidates", field_name: "show_jev_candidates", label: "Jev 후보 표시", description: "내 입력 아래에 Jev가 찾은 후보를 접힌 줄로 보여 줍니다.", value: true, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
+const workDetailsField: SettingField = { key: "review-work-details", field_name: "show_work_details", label: "작업 세부 표시", description: "요약과 도구 기록을 보여 줍니다.", value: false, value_type: "bool", sensitive: false, hot_reloadable: true, read_only: false };
 
 export function PersistentChatDisplayReviewSample() {
   const [showGeneration, setShowGeneration] = useState(true);
   const [showCandidates, setShowCandidates] = useState(true);
+  const [showWorkDetails, setShowWorkDetails] = useState(false);
   const messages = useMemo(() => {
     const context = createProcessingContext();
     const result = processEventsBatch([
@@ -93,7 +96,7 @@ export function PersistentChatDisplayReviewSample() {
       { event: { type: "complete", timestamp: 1.5, result: "Session completed" } as never, eventId: 2 },
       { event: { type: "generation_started", timestamp: 2 } as never, eventId: 3 },
       { event: { type: "assistant_message", timestamp: 3, content: "새 세대의 답변입니다.", tool_use_id: "review-after" } as never, eventId: 4 },
-      { event: { type: "user_message", timestamp: 4, text: "관련 후보를 찾아줘", input_id: inputId } as never, eventId: 5 },
+      { event: { type: "user_message", timestamp: 4, text: "관련 후보를 찾아줘", input_id: inputId, context: [{ key: "review-context", label: "검수 컨텍스트", content: "카드 #526 표시 확인" }] } as never, eventId: 5 },
       { event: candidateEvents[0] as never, eventId: 6 },
       { event: { type: "user_message", timestamp: 6, text: "2점 이상인 후보는?", input_id: emptyInputId } as never, eventId: 7 },
       { event: candidateEvents[1] as never, eventId: 8 },
@@ -105,15 +108,16 @@ export function PersistentChatDisplayReviewSample() {
     ], context, null, "components-review-pas", null, 0, true);
     return flattenTree(result.root);
   }, []);
-  const visibleMessages = useMemo(() => projectPersistentChatDisplayMessages(messages, {
+  const visibleMessages = useMemo(() => projectPersistentChatDisplayMessages(projectPersistentWorkDetails(messages, showWorkDetails), {
     show_generation_separator: showGeneration,
     show_jev_candidates: showCandidates,
-  }), [messages, showGeneration, showCandidates]);
+  }), [messages, showGeneration, showCandidates, showWorkDetails]);
 
   return <div className="space-y-2" data-testid="persistent-chat-display-review-sample">
     <div>
       <SettingFieldWidget field={generationField} value={String(showGeneration)} onChange={(value) => setShowGeneration(value === "true")} />
       <SettingFieldWidget field={candidatesField} value={String(showCandidates)} onChange={(value) => setShowCandidates(value === "true")} />
+      <SettingFieldWidget field={workDetailsField} value={String(showWorkDetails)} onChange={(value) => setShowWorkDetails(value === "true")} />
     </div>
     {visibleMessages.map((msg) => <ChatMessageItem key={msg.treeNodeId} msg={msg} />)}
   </div>;

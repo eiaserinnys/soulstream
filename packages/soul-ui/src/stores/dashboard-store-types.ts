@@ -96,6 +96,7 @@ export interface DashboardState {
     showCharacter: boolean;
     animateCharacter: boolean;
     turnUsageMode: PersistentTurnUsageMode;
+    showWorkDetails: boolean;
   } | null;
   /** 뷰 모드 — URL 해시에서 파생. */
   viewMode: DashboardViewMode;
@@ -273,6 +274,7 @@ export interface DashboardActions {
     show_character: boolean;
     animate_character: boolean;
     turn_usage_mode: PersistentTurnUsageMode;
+    show_work_details?: boolean;
   } | null) => void;
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;

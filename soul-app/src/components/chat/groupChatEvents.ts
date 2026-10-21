@@ -26,6 +26,7 @@ export type ChatEventRenderItem = {
   summaries?: TurnSummaryRenderItem[];
   turnUsageCaption?: TurnUsageCaption;
   turnUsageMode?: PersistentTurnUsageMode;
+  manuscriptNarration?: boolean;
 };
 
 export type ChatToolRenderItem = {
@@ -94,6 +95,7 @@ export type ChatRenderItem =
 export interface PersistentDisplayProjectionSettings {
   showGenerationSeparator: boolean;
   showJevCandidates: boolean;
+  showWorkDetails?: boolean;
 }
 
 function shouldHideManuscriptEvent(event: SessionEvent): boolean {

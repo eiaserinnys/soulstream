@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { CalendarClock, Loader2, RefreshCw, Trash2 } from "lucide-react";
 
 import {
@@ -12,12 +12,15 @@ import type {
 } from "../stores/claude-runtime-state";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
+import { DashboardIconCap } from "./DashboardIconCap";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";
+import { CollapsibleCaptionHeader } from "./chat/CollapsibleCaption";
 
 interface ClaudeRuntimeSchedulesPanelProps {
   sessionId: string;
   runtime: ClaudeRuntimeView | null;
   tone?: "default" | "calm";
+  variant?: "default" | "caption";
 }
 
 const TERMINAL_STATUSES = new Set<ClaudeRuntimeScheduleStatus>([
@@ -34,7 +37,9 @@ export function ClaudeRuntimeSchedulesPanel({
   sessionId,
   runtime,
   tone = "default",
+  variant = "default",
 }: ClaudeRuntimeSchedulesPanelProps) {
+  const bodyId = useId();
   const [fetchedSchedules, setFetchedSchedules] = useState<ClaudeRuntimeScheduleView[]>([]);
   const [deletedScheduleIds, setDeletedScheduleIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(false);
@@ -95,6 +100,114 @@ export function ClaudeRuntimeSchedulesPanel({
 
   if (schedules.length === 0 && !loading && !error) return null;
 
+  const refreshButton = (
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      title="새로고침"
+      disabled={loading}
+      onClick={() => void refresh()}
+    >
+      {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+    </Button>
+  );
+
+  const captionRefreshButton = (
+    <DashboardIconCap
+      label="새로고침"
+      size="small"
+      appearance="bare"
+      disabled={loading}
+      onClick={() => void refresh()}
+      className="shrink-0 self-end text-foreground disabled:text-muted-foreground"
+      data-testid="schedule-refresh-button"
+    >
+      {loading
+        ? <Loader2 className="size-5 animate-spin" strokeWidth={1.4} aria-hidden="true" />
+        : <RefreshCw className="size-5" strokeWidth={1.4} aria-hidden="true" />}
+    </DashboardIconCap>
+  );
+
+  const expandedBody = (
+    <div id={bodyId} className={runtimePanelScrollClass("space-y-2")}>
+      {error ? (
+        <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
+          {error}
+        </div>
+      ) : null}
+
+      {schedules.map((schedule) => {
+        const canDelete = canDeleteClaudeRuntimeSchedule(schedule.status);
+        const busy = busyScheduleId === schedule.scheduleId;
+        return (
+          <div
+            key={schedule.scheduleId}
+            className="rounded-md border border-border bg-muted/20 p-2"
+          >
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={statusClassName(schedule.status, tone)}>
+                    {schedule.status}
+                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {schedule.kind}
+                  </span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {schedule.scheduleId}
+                  </span>
+                </div>
+                <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                  {schedule.prompt ?? schedule.cronExpression ?? "scheduled prompt"}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : "no next run"}
+                </div>
+              </div>
+              <Button
+                variant="destructive-outline"
+                size="icon-xs"
+                title="삭제"
+                disabled={!canDelete || busy}
+                onClick={() => void removeSchedule(schedule.scheduleId)}
+              >
+                {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  if (variant === "caption") {
+    return (
+      <section className="-mx-1 px-1 py-2 pl-4" data-slot="claude-runtime-schedules-caption">
+        <div className="flex items-center justify-between gap-2">
+          <CollapsibleCaptionHeader
+            id={bodyId}
+            expanded={expanded}
+            title={
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                <CalendarClock className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="shrink-0 font-medium">예약 {schedules.length}</span>
+                {nextRunAt ? <span className="min-w-0 truncate">다음 {formatCaptionDateTime(nextRunAt)}</span> : null}
+                {errorCount > 0 ? <span className="shrink-0 chat-tone-danger-text">오류 {errorCount}</span> : null}
+              </span>
+            }
+            align="start"
+            alignmentInset="content"
+            onToggle={() => setExpanded((value) => !value)}
+            className="min-w-0 flex-1 motion-safe:active:scale-100"
+            data-slot="manuscript-schedules-toggle"
+          />
+          {captionRefreshButton}
+        </div>
+        {expanded ? expandedBody : null}
+      </section>
+    );
+  }
+
   return (
     <section className="border-t border-border/70 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
@@ -123,68 +236,10 @@ export function ClaudeRuntimeSchedulesPanel({
             </span>
           ) : null}
         </button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          title="새로고침"
-          disabled={loading}
-          onClick={() => void refresh()}
-        >
-          {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-        </Button>
+        {refreshButton}
       </div>
 
-      {expanded ? (
-        <div className={runtimePanelScrollClass("space-y-2")}>
-          {error ? (
-            <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
-              {error}
-            </div>
-          ) : null}
-
-          {schedules.map((schedule) => {
-            const canDelete = canDeleteClaudeRuntimeSchedule(schedule.status);
-            const busy = busyScheduleId === schedule.scheduleId;
-            return (
-              <div
-                key={schedule.scheduleId}
-                className="rounded-md border border-border bg-muted/20 p-2"
-              >
-                <div className="flex items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className={statusClassName(schedule.status, tone)}>
-                        {schedule.status}
-                      </span>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {schedule.kind}
-                      </span>
-                      <span className="truncate font-mono text-xs text-muted-foreground">
-                        {schedule.scheduleId}
-                      </span>
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      {schedule.prompt ?? schedule.cronExpression ?? "scheduled prompt"}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : "no next run"}
-                    </div>
-                  </div>
-                  <Button
-                    variant="destructive-outline"
-                    size="icon-xs"
-                    title="삭제"
-                    disabled={!canDelete || busy}
-                    onClick={() => void removeSchedule(schedule.scheduleId)}
-                  >
-                    {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      {expanded ? expandedBody : null}
     </section>
   );
 }
@@ -207,6 +262,17 @@ function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function formatCaptionDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function statusClassName(status: ClaudeRuntimeScheduleStatus, tone: "default" | "calm"): string {

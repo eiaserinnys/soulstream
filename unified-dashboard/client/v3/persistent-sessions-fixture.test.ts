@@ -21,6 +21,7 @@ describe("persistent sessions review fixture", () => {
       "show_generation_separator",
       "show_jev_candidates",
       "show_turn_usage",
+      "show_work_details",
       "turn_usage_mode",
     ]);
     expect(json.sessions[0].settings.animate_character).toBe(true);

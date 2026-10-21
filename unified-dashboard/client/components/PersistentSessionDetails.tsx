@@ -23,6 +23,7 @@ export type PersistentSessionDetailsDraft = {
   animateCharacter: boolean;
   showGenerationSeparator: boolean;
   showJevCandidates: boolean;
+  showWorkDetails: boolean;
   turnUsageMode: PersistentTurnUsageMode;
 };
 
@@ -35,6 +36,7 @@ const DISPLAY_SETTING: Record<DisplayField, keyof PersistentSession["settings"]>
   animateCharacter: "animate_character",
   showGenerationSeparator: "show_generation_separator",
   showJevCandidates: "show_jev_candidates",
+  showWorkDetails: "show_work_details",
 };
 
 const PARTIAL_SAVE_NOTE = "일부 변경이 저장됐을 수 있습니다. 다시 읽거나 저장해 주세요.";
@@ -47,6 +49,7 @@ export function persistentSessionDetailsDraft(session: PersistentSession): Persi
     animateCharacter: session.settings.animate_character,
     showGenerationSeparator: session.settings.show_generation_separator,
     showJevCandidates: session.settings.show_jev_candidates,
+    showWorkDetails: session.settings.show_work_details === true,
     turnUsageMode: session.settings.turn_usage_mode,
   };
 }
@@ -274,6 +277,7 @@ export function PersistentSessionDetails({
         <DisplayToggle field="animateCharacter" label="캐릭터 움직임" value={draft.animateCharacter} resourceValue={resource.settings.animate_character} pending={pending} saving={pending && savingDisplayField === "animateCharacter"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
         <DisplayToggle field="showGenerationSeparator" label="세대 구분선 표시" value={draft.showGenerationSeparator} resourceValue={resource.settings.show_generation_separator} pending={pending} saving={pending && savingDisplayField === "showGenerationSeparator"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
         <DisplayToggle field="showJevCandidates" label="Jev 후보 표시" value={draft.showJevCandidates} resourceValue={resource.settings.show_jev_candidates} pending={pending} saving={pending && savingDisplayField === "showJevCandidates"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
+        <DisplayToggle field="showWorkDetails" label="작업 세부 표시" description="요약과 도구 기록을 보여 줍니다." value={draft.showWorkDetails} resourceValue={resource.settings.show_work_details === true} pending={pending} saving={pending && savingDisplayField === "showWorkDetails"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
         <TurnUsageModeField value={draft.turnUsageMode} resourceValue={resource.settings.turn_usage_mode} pending={pending} saving={pending && savingDisplayField === "turnUsageMode"} immediate={immediateDisplaySave} disabled={nodeUnknown} onChange={onFieldChange} />
       </> : null}
     </div>
@@ -385,5 +389,5 @@ function sameModel(a: ModelSelection, b: ModelSelection) {
 function errorMessage(value: unknown) { return value instanceof Error ? value.message : String(value); }
 
 function emptyDetailsDraft(): PersistentSessionDetailsDraft {
-  return { displayName: "", modelPreset: "", showCharacter: true, animateCharacter: true, showGenerationSeparator: true, showJevCandidates: true, turnUsageMode: "collapsed" };
+  return { displayName: "", modelPreset: "", showCharacter: true, animateCharacter: true, showGenerationSeparator: true, showJevCandidates: true, showWorkDetails: false, turnUsageMode: "collapsed" };
 }

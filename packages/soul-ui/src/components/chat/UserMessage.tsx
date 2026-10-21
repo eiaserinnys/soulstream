@@ -89,7 +89,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext, header, 
         </div>
         {attachments}
         {msg.contextItems && msg.contextItems.length > 0 && (
-          <ContextBlock items={msg.contextItems} />
+          <ContextBlock items={msg.contextItems} variant={manuscript ? "caption" : "default"} />
         )}
       </div>
       {!manuscript && <ProfileAvatar

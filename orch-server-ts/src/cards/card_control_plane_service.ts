@@ -531,6 +531,7 @@ export class CardControlPlaneService {
     if (!card) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v !== undefined));
     let previousStatus:CardStatus | undefined,previousAssigneeSessionId:string | null | undefined,committedCard:CardRow | undefined;
+    let previousCard:Pick<CardRow,"now"|"title"|"archived"|"number"> | undefined;
     const result=await this.core.mutate({ folderId:card.folder_id,targetKind:"card",targetId:card.id,operationType,actor:params,
       idempotencyKey:params.idempotencyKey,reason:params.reason,payload:clean,
       apply:async (sql,eventId) => {
@@ -538,16 +539,21 @@ export class CardControlPlaneService {
         if (!locked) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
         if (params.expectedVersion !== undefined && locked.version !== params.expectedVersion) throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
         previousStatus=locked.status;
+        previousCard={now:locked.now,title:locked.title,archived:locked.archived,number:locked.number};
         previousAssigneeSessionId=locked.assignee_session_id;
         await apply(sql,locked,eventId,clean);
         committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
       },
       afterCommit: async () => {
+        const questionChanged = operationType === "ask_card_question" || operationType === "answer_card_question"
+          || operationType === "withdraw_card_question";
+        const cardChanged = previousStatus !== committedCard?.status || previousCard?.title !== committedCard?.title
+          || previousCard?.archived !== committedCard?.archived || JSON.stringify(previousCard?.now) !== JSON.stringify(committedCard?.now);
+        if (!this.reports || (!questionChanged && !cardChanged)) return;
         const finished = previousStatus !== committedCard?.status
           && (committedCard?.status === "done" || committedCard?.status === "cancelled");
-        if (!this.reports || (operationType !== "answer_card_question" && operationType !== "withdraw_card_question" && !finished)) return;
-        try { await this.reports.pruneForCard(card.id); }
-        catch (error) { this.warn(`PAS report pruning failed after card ${card.id} committed: ${String(error)}`); }
+        try { await this.reports.syncCard(card.id,{ scanBoards:questionChanged || finished }); }
+        catch (error) { this.warn(`PAS report sync failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
     if (!result.idempotent && notifyMutation) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});

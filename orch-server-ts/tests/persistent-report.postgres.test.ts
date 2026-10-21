@@ -107,6 +107,10 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await cards.askQuestion({...human,cardId:first,text:'판단?',options:['진행']});
     const question=(await cards.getCard(first))!.questions[0]!.id;
     await reports.put('pas',{...entry('question'),question_id:question});
+    await cards.patchCard({...human,cardId:first,title:'질문 카드 제목 변경'});
+    expect((await reports.get('pas')).find(e=>e.key==='question')).toMatchObject({key:'question',title:'question',question_id:String(question)});
+    expect((await reports.get('pas')).find(e=>e.key==='question')).not.toHaveProperty('card_id');
+    expect((await reports.get('pas')).find(e=>e.key==='question')).not.toHaveProperty('card_status');
     await cards.answerQuestion({...human,cardId:first,questionId:String(question),answer:'진행'});
     expect((await reports.get('pas')).some(e=>e.key==='question')).toBe(false);
 
@@ -130,25 +134,154 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect(publish.mock.lastCall?.[0][0]).toMatchObject({persistent_report:[]});
     await app.close();
   });
-  it("prunes only when entering done/cancelled or answering a question, not when editing a finished card", async () => {
+  it("syncs after card state, title, archive, now and question changes, but not comments", async () => {
     const cardId = (await cards.createCard({...human,folderId:'report-folder',title:'내림 호출',request:''})).operation.target_id;
-    const prune = vi.spyOn(PersistentReportService.prototype, 'pruneForCard');
+    const sync = vi.spyOn(PersistentReportService.prototype, 'syncCard');
     try {
       await cards.setCardStatus({...human,cardId,status:'done'});
-      expect(prune).toHaveBeenCalledTimes(1);
-      expect(prune).toHaveBeenCalledWith(cardId);
+      expect(sync).toHaveBeenCalledTimes(1);
+      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:true});
       await cards.setCardStatus({...human,cardId,status:'done'});
+      expect(sync).toHaveBeenCalledTimes(1);
       await cards.patchCard({...human,cardId,title:'제목 수정'});
+      expect(sync).toHaveBeenCalledTimes(2);
+      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:false});
       await cards.patchCard({...human,cardId,archived:true});
-      expect(prune).toHaveBeenCalledTimes(1);
+      expect(sync).toHaveBeenCalledTimes(3);
       await cards.setCardStatus({...human,cardId,status:'cancelled'});
-      expect(prune).toHaveBeenCalledTimes(2);
+      expect(sync).toHaveBeenCalledTimes(4);
+      await cards.addComment({...human,cardId,body:'기록만 남깁니다'});
+      expect(sync).toHaveBeenCalledTimes(4);
       await cards.askQuestion({...human,cardId,text:'판단?',options:['진행']});
-      expect(prune).toHaveBeenCalledTimes(2);
+      expect(sync).toHaveBeenCalledTimes(5);
+      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:true});
       const question = (await cards.getCard(cardId))!.questions[0]!.id;
       await cards.answerQuestion({...human,cardId,questionId:String(question),answer:'진행'});
-      expect(prune).toHaveBeenCalledTimes(3);
-    } finally { prune.mockRestore(); }
+      expect(sync).toHaveBeenCalledTimes(6);
+    } finally { sync.mockRestore(); }
+  });
+  it("keeps one card entry current, swaps it for an open question, and removes it outside review or blocked", async () => {
+    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='pas'`;
+    const cardId=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',actorUserId:null,folderId:'report-folder',
+      title:'카드 장 동기화',request:'요청',assignee:{kind:'session',sessionId:'pas'}})).operation.target_id;
+    await cards.updateCardNow({actorKind:'agent',actorSessionId:'pas',cardId,now:'현재 상황판',turn:'user',ask:'검수해 주세요'});
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    let board=await reports.get('pas');
+    expect(board).toHaveLength(1);
+    expect(board[0]).toMatchObject({key:`card_${cardId}`,kind:'see',title:'카드 장 동기화',card_numbers:[(await cards.getCard(cardId))!.card.number],
+      context:'검수해 주세요',action:'',options:[],state:'open',answer:'',card_id:cardId,card_status:'review'});
+
+    await cards.updateCardNow({actorKind:'agent',actorSessionId:'pas',cardId,now:'새 상황판',turn:'user',ask:'수정된 검수를 봐 주세요'});
+    board=await reports.get('pas');
+    expect(board).toHaveLength(1);
+    expect(board[0]).toMatchObject({key:`card_${cardId}`,context:'수정된 검수를 봐 주세요',card_status:'review'});
+
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'pas',cardId,text:'진행할까요?',options:['진행','중단']});
+    const questionId=String((await cards.getCard(cardId))!.questions[0]!.id);
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+    expect((await reports.putQuestion('pas',questionId)).ok).toBe(true);
+    expect((await reports.get('pas'))).toMatchObject([{key:`cq_${questionId}`,card_id:cardId,card_status:'blocked'}]);
+    await cards.answerQuestion({...human,cardId,questionId,answer:'진행'});
+    expect((await reports.get('pas')).some(e=>e.key===`cq_${questionId}`)).toBe(false);
+
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    expect((await reports.get('pas')).map(e=>e.key)).toEqual([`card_${cardId}`]);
+    await cards.setCardStatus({...human,cardId,status:'running'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(true);
+    await cards.setCardStatus({...human,cardId,status:'done'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+  });
+  it("links only persistent creator and operation sessions and rejects PAS-owned keys and card numbers", async () => {
+    const enabled=[{type:'persistent_session',value:{enabled:true}}];
+    await sql`UPDATE cards SET assignee_kind='agent',assignee_agent_id='report-agent',assignee_session_id=NULL WHERE assignee_session_id='pas'`;
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='pas'`;
+    await sql`INSERT INTO sessions(session_id,folder_id,node_id,metadata,agent_id) VALUES
+      ('pas-unrelated','report-folder','test-node',${sql.json(enabled)},'report-agent')`;
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='normal'`;
+    const creatorCard=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',actorUserId:null,folderId:'report-folder',
+      title:'생성 카드',request:'요청'})).operation.target_id;
+    const creatorNumber=(await cards.getCard(creatorCard))!.card.number!;
+    await cards.setCardStatus({...human,cardId:creatorCard,status:'review'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${creatorCard}`)).toBe(true);
+    expect((await reports.get('pas-unrelated'))).toEqual([]);
+
+    const executeCard=(await cards.createCard({...human,folderId:'report-folder',title:'실행 카드',request:'요청'})).operation.target_id;
+    await sql`INSERT INTO folder_operations(id,folder_id,target_kind,target_id,operation_type,actor_session_id)
+      VALUES(${`pas-sync-execute-${executeCard}`},'report-folder','card',${executeCard},'execute_card','pas')`;
+    await cards.setCardStatus({...human,cardId:executeCard,status:'review'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${executeCard}`)).toBe(true);
+
+    const commentCard=(await cards.createCard({...human,folderId:'report-folder',title:'후속 지시 카드',request:'요청'})).operation.target_id;
+    await cards.addComment({actorKind:'agent',actorSessionId:'pas',cardId:commentCard,body:'후속 지시',mode:'spoken'});
+    await cards.setCardStatus({...human,cardId:commentCard,status:'review'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${commentCard}`)).toBe(true);
+
+    const nonpersistent=(await cards.createCard({actorKind:'agent',actorSessionId:'normal',actorUserId:null,folderId:'report-folder',
+      title:'일반 세션 카드',request:'요청'})).operation.target_id;
+    await cards.setCardStatus({...human,cardId:nonpersistent,status:'review'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${nonpersistent}`)).toBe(false);
+    expect((await reports.get('pas-unrelated')).some(e=>e.key===`card_${nonpersistent}`)).toBe(false);
+
+    expect(await reports.put('pas',{...entry('card_reserved'),key:'card_reserved'})).toMatchObject({ok:false,errors:[{path:'key',reason:'서버가 쓰는 key입니다'}]});
+    expect(await reports.put('pas',{...entry('cq_reserved'),key:'cq_reserved'})).toMatchObject({ok:false,errors:[{path:'key',reason:'서버가 쓰는 key입니다'}]});
+    expect(await reports.put('pas',{...entry('linked-card'),card_numbers:[creatorNumber]}))
+      .toMatchObject({ok:false,errors:[{path:'card_numbers',reason:'이 카드는 서버가 판에 올립니다. 담당이 상황판과 카드 질문을 쓰게 하세요'}]});
+    const unrelated=(await cards.createCard({...human,folderId:'report-folder',title:'무관한 카드',request:'요청'})).operation.target_id;
+    const unrelatedNumber=(await cards.getCard(unrelated))!.card.number!;
+    expect((await reports.put('pas',{...entry('unrelated-card'),card_numbers:[unrelatedNumber]})).ok).toBe(true);
+  });
+  it("links a child card through its assigned parent only when the parent creator is persistent", async () => {
+    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id IN ('pas','normal')`;
+    await sql`INSERT INTO sessions(session_id,folder_id,node_id,metadata,agent_id)
+      VALUES('pas-child-worker','report-folder','test-node','[]','report-agent'),
+        ('nonpersistent-child-worker','report-folder','test-node','[]','report-agent')`;
+
+    const parent=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',actorUserId:null,folderId:'report-folder',
+      title:'PAS 부모 카드',request:'요청',assignee:{kind:'session',sessionId:'pas-child-worker'}})).operation.target_id;
+    const child=(await cards.createCard({actorKind:'agent',actorSessionId:'pas-child-worker',actorUserId:null,folderId:'report-folder',
+      title:'담당 세션의 자식 카드',request:'요청'})).operation.target_id;
+    expect(parent).not.toBe(child);
+    await cards.setCardStatus({...human,cardId:child,status:'review'});
+    const childNumber=(await cards.getCard(child))!.card.number!;
+    expect((await reports.get('pas')).some(e=>e.key===`card_${child}`)).toBe(true);
+    expect(await reports.put('pas',{...entry('linked-child'),card_numbers:[childNumber]}))
+      .toMatchObject({ok:false,errors:[{path:'card_numbers',reason:'이 카드는 서버가 판에 올립니다. 담당이 상황판과 카드 질문을 쓰게 하세요'}]});
+
+    const nonpersistentParent=(await cards.createCard({actorKind:'agent',actorSessionId:'normal',actorUserId:null,folderId:'report-folder',
+      title:'일반 세션 부모 카드',request:'요청',assignee:{kind:'session',sessionId:'nonpersistent-child-worker'}})).operation.target_id;
+    const nonpersistentChild=(await cards.createCard({actorKind:'agent',actorSessionId:'nonpersistent-child-worker',actorUserId:null,folderId:'report-folder',
+      title:'일반 세션의 자식 카드',request:'요청'})).operation.target_id;
+    expect(nonpersistentParent).not.toBe(nonpersistentChild);
+    await cards.setCardStatus({...human,cardId:nonpersistentChild,status:'review'});
+    const boardSessions=await sql<{session_id:string}[]>`SELECT session_id FROM sessions
+      WHERE session_type IS DISTINCT FROM 'llm'
+        AND metadata @> '[{"type":"persistent_session","value":{"enabled":true}}]'::jsonb`;
+    expect(boardSessions.map(row=>row.session_id)).toContain('pas');
+    for (const {session_id} of boardSessions)
+      expect((await reports.get(session_id)).some(e=>e.key===`card_${nonpersistentChild}`)).toBe(false);
+  });
+  it("replaces a legacy PAS card entry and respects manual dismissal until the card changes", async () => {
+    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    await sql`UPDATE cards SET assignee_kind='agent',assignee_agent_id='report-agent',assignee_session_id=NULL WHERE assignee_session_id='pas'`;
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='pas'`;
+    const cardId=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',actorUserId:null,folderId:'report-folder',
+      title:'이행할 카드',request:'요청',assignee:{kind:'session',sessionId:'pas'}})).operation.target_id;
+    const cardNumber=(await cards.getCard(cardId))!.card.number!;
+    const legacy={...entry('legacy-card-entry'),card_numbers:[cardNumber],state:'open',answer:'',updated_at:new Date().toISOString()};
+    await sql`SELECT session_apply_metadata_entry('pas',${JSON.stringify({type:'persistent_report',value:{entries:[legacy]}})},'persistent_report',NOW())`;
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    expect((await reports.get('pas')).map(e=>e.key)).toEqual([`card_${cardId}`]);
+
+    await reports.remove('pas',`card_${cardId}`);
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+    await cards.addComment({...human,cardId,body:'기록만 남깁니다'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+    await cards.updateCardNow({actorKind:'agent',actorSessionId:'pas',cardId,now:'상황판 변경',turn:'agent'});
+    expect((await reports.get('pas')).map(e=>e.key)).toEqual([`card_${cardId}`]);
   });
   it("keeps a see entry unchanged when a reply context is received", async () => {
     await reports.put('pas',{...entry('see-only'),kind:'see',options:undefined});
@@ -165,7 +298,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
     const questionId=String((await cards.getCard(cardId))!.questions.at(-1)!.id);
     expect((await reports.putQuestion('pas',questionId)).ok).toBe(true);
     const placed=(await reports.get('pas')).find(e=>e.key===`cq_${questionId}`)!;
-    expect(placed).toMatchObject({kind:'ask',question_id:questionId,options:['진행','중단'],state:'open',answer:''});
+    expect(placed).toMatchObject({kind:'ask',question_id:questionId,options:['진행','중단'],state:'open',answer:'',card_id:cardId,card_status:'blocked'});
     expect(placed.card_numbers).toEqual([(await cards.getCard(cardId))!.card.number]);
     await reports.putQuestion('pas',questionId);
     expect((await reports.get('pas')).filter(e=>e.key===`cq_${questionId}`)).toHaveLength(1);

@@ -285,6 +285,7 @@ test('applies a successful display update to the open chat after the settings mo
     settings: {
       show_generation_separator: true,
       show_jev_candidates: false,
+      show_work_details: false,
       show_character: false,
       animate_character: false,
       turn_usage_mode: 'collapsed',
