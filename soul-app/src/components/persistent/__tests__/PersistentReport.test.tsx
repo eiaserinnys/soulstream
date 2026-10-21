@@ -34,7 +34,8 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
-function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void, completion?: any) {
+function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void, completion?: any,
+  options: { bubble?: boolean; maxHeight?: number } = {}) {
   const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn((_text: string, _reply?: ReportReplyDraft) => ({ ok: true as const }));
   const api = { listCards: jest.fn().mockResolvedValue({ cards: [{ id: 'public-card', number: 270 }] }) } as any;
   const send = { busy: false, close: jest.fn(() => true), canCancel: () => false, cancelSent: () => false,
@@ -44,7 +45,7 @@ function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) =>
     return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={(_id, text, reply) => onAppend(text, reply)}>
       <PersistentReportPager entries={entries} index={index} api={api}
         onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()}
-        onDeckTouch={onDeckTouch} completion={completion} send={send} />
+        onDeckTouch={onDeckTouch} completion={completion} send={send} bubble={options.bubble} maxHeight={options.maxHeight} />
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
@@ -157,6 +158,34 @@ test('card questions keep their options; undo appears on the current card and on
   expect(empty.getByTestId('report-undo-label').props.children).toBe('#531 완료됨');
   fireEvent.press(empty.getByTestId('report-undo'));
   expect(completion.undo).toHaveBeenCalledTimes(2);
+});
+
+test('tablet navigation lifts above the visible completion undo row', () => {
+  mockDevice = 'tablet';
+  const t = renderHook(() => useTokens()).result.current;
+  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨' }, busy: false,
+    complete: jest.fn(), undo: jest.fn() };
+  const review = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review' };
+  const screen = pager([review, reportReviewEntries[0]], undefined, completion);
+  const actualBottom = StyleSheet.flatten(screen.getByTestId('report-nav').props.style).bottom;
+  const originalBottom = reportStyles(t, 0, true).nav.bottom;
+
+  expect(actualBottom).toBe(originalBottom + t.hitTarget.min + t.uiSpacing.sm);
+});
+
+test('empty bubble undo deck has no measured report height', () => {
+  const t = renderHook(() => useTokens()).result.current;
+  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨' }, busy: false,
+    complete: jest.fn(), undo: jest.fn() };
+  const screen = pager([], undefined, completion, { bubble: true, maxHeight: 440 });
+  const deckStyle = StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
+  const footerStyle = StyleSheet.flatten(screen.getByTestId('report-footer').props.style);
+
+  expect(deckStyle.height).toBeUndefined();
+  expect(deckStyle.maxHeight).toBeUndefined();
+  expect(screen.getByTestId('report-undo-label')).toBeTruthy();
+  expect(footerStyle.paddingTop).toBe(t.uiSpacing.md);
+  expect(footerStyle.paddingBottom).toBe(t.uiSpacing.lg);
 });
 
 test('report deck exposes touch start, end, and cancel to its owner', () => {

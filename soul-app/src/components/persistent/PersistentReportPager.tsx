@@ -145,7 +145,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
     } };
     return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
       pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
-      style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }, !ready && { opacity: 0 }]}
+      style={[styles.deck, !bubble && styles.band, !ready && { opacity: 0 }]}
       {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}>
       <View testID="report-footer" style={[styles.foot, { marginTop: 'auto' }]}><PersistentReportUndoRow undo={undo} styles={styles} /></View>
     </View>;
@@ -223,7 +223,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
         }} onCard={number => void openCard(number)} onLink={url => void openLink(url)} />
       }) : null}
     </ScrollView>
-    {count > 1 && !compact && !phone ? <View testID="report-nav" style={styles.nav}>
+    {count > 1 && !compact && !phone ? <View testID="report-nav" style={[styles.nav, completion?.recent
+      ? { bottom: t.uiSpacing.lg + t.hitTarget.min + t.uiSpacing.sm } : null]}>
       <ReportNavButton interaction={navInteraction} testID="report-prev-touch" iconOnly variant="plain" size="compact" accessibilityLabel="앞 장" disabled={index === 0} onPress={() => step(-1)}>
         <Ionicons name="chevron-back" size={t.iconSize.navigation} color={index === 0 ? t.colors.textPlaceholder : t.colors.textPrimary} />
       </ReportNavButton>
