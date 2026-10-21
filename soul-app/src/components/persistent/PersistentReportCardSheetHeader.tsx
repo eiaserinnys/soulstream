@@ -15,14 +15,17 @@ export function PersistentReportCardSheetHeader({ entry, onCollapse }: {
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const statusCard = persistentReportStatusCard(entry);
   const iconOverhang = (t.hitTarget.min - t.foundation.iconFrame.compact) / 2;
+  const titleLineHeight = t.foundation.typography.section.lineHeight;
+  const iconFrameSize = t.foundation.iconFrame.compact;
 
   return <View style={styles.header}>
-    <View style={styles.headerRow}>
-      <Text style={styles.heading} numberOfLines={2}>
+    <View style={[styles.headerRow, { alignItems: 'flex-start' }]}>
+      <Text style={[styles.heading, { paddingVertical: Math.max(0, (iconFrameSize - titleLineHeight) / 2) }]} numberOfLines={2}>
         {statusCard ? <><CardStatusChip card={statusCard} detail />{' '}</> : null}
         {entry.title}
       </Text>
-      <View style={{ marginRight: -iconOverhang }}>
+      <View style={{ marginTop: Math.max(0, (titleLineHeight - iconFrameSize) / 2) - iconOverhang,
+        marginBottom: -iconOverhang, marginRight: -iconOverhang }}>
         <GlassButton testID="persistent-report-card-sheet-collapse" iconOnly size="compact"
           borderRadius={t.foundation.radius.round} accessibilityLabel="축소" accessibilityState={{ expanded: true }}
           onPress={onCollapse}>

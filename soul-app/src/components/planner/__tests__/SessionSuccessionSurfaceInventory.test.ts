@@ -42,15 +42,18 @@ test('SessionSuccessionSheet는 iOS 키보드 조정을 바깥 native ScrollView
   expect(source).not.toContain('useFocusedViewportEndFollow');
 });
 
-test('PAS 카드 시트와 검수 샘플은 iOS 키보드 회피와 원형 닫기 버튼을 공유한다', () => {
+test('PAS 카드 시트와 검수 샘플은 iOS 키보드 회피와 원형 축소 버튼을 공유한다', () => {
   for (const path of ['screens/PersistentSessionScreen.tsx', 'component-review/ReviewPasCardExpand.tsx']) {
     const source = read(path);
     const scroll = source.match(/<ScrollView style=\{\{ flex: 1, minHeight: 0 \}\}[\s\S]*?<\/ScrollView>/)?.[0];
     expect(scroll).toBeDefined();
     expect(scroll).toContain('keyboardDismissMode="interactive"');
     expect(scroll).toContain("automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}");
-    expect(source).toMatch(/<GlassButton\s+iconOnly\s+size="compact"\s+borderRadius=\{t\.foundation\.radius\.round\}/);
+    expect(source).toMatch(/<PersistentReportCardSheetHeader\b/);
   }
+  const header = read('components/persistent/PersistentReportCardSheetHeader.tsx');
+  expect(header).toMatch(/<GlassButton\s+testID="persistent-report-card-sheet-collapse"\s+iconOnly\s+size="compact"\s+borderRadius=\{t\.foundation\.radius\.round\}/);
+  expect(header).toContain("name=\"contract-outline\"");
 });
 
 function read(relativePath: string): string {

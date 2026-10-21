@@ -91,6 +91,23 @@ test('report without a card toggle keeps the existing header without a window bu
   expect(screen.queryByTestId('report-window-toggle')).toBeNull();
 });
 
+test('answered reading path preserves its measured height on the whole scroll content', () => {
+  const entry = { ...reportReviewEntries[0], key: 'answered-card-reading', card_numbers: [531] };
+  function Harness({ currentEntry }: { currentEntry: PersistentReportEntry }) {
+    const t = useTokens();
+    return <PersistentReportSheet entry={currentEntry} index={0} count={1} current compact={false} showNav={false} width={318}
+      styles={reportStyles(t, 0, false)} titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()}
+      onDismiss={jest.fn()} onCard={jest.fn()} onLink={jest.fn()} expandedContent={<Text>카드 본문</Text>} onToggleCard={jest.fn()} />;
+  }
+  const screen = render(<Harness currentEntry={entry} />);
+  const measuredHeight = 432;
+  fireEvent(screen.getByTestId('report-scroll'), 'contentSizeChange', 318, measuredHeight);
+  screen.rerender(<Harness currentEntry={{ ...entry, state: 'answered', answer: '응' }} />);
+
+  expect(StyleSheet.flatten(screen.getByTestId('report-scroll').props.contentContainerStyle).minHeight).toBe(measuredHeight);
+  expect(StyleSheet.flatten(screen.getByTestId('report-reading').props.style).minHeight).toBeUndefined();
+});
+
 test('zero sheets renders nothing; one sheet has no page or arrows and see always has dismiss', () => {
   expect(pager([]).queryByTestId('report-deck')).toBeNull();
   const screen = pager([reportReviewEntries[2]]);

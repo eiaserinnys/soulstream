@@ -3,8 +3,9 @@ import { ScrollView, View } from 'react-native';
 import type { reportStyles } from './persistentReportStyles';
 import { ReportComposerFocusContext, useReportComposerScroll } from './useReportComposerScroll';
 /** Only the reading block scrolls; the sheet footer is its sibling. */
-export function PersistentReportReading({ current, styles, children, header, onHeight }: {
-  current: boolean; styles: ReturnType<typeof reportStyles>; children: React.ReactNode; header?: React.ReactNode; onHeight(height: number): void;
+export function PersistentReportReading({ current, styles, children, header, contentMinHeight, onHeight }: {
+  current: boolean; styles: ReturnType<typeof reportStyles>; children: React.ReactNode; header?: React.ReactNode;
+  contentMinHeight?: number; onHeight(height: number): void;
 }) {
   const { scroll, onFocusChange, keepComposerVisible } = useReportComposerScroll();
   const size = useRef({ view: 0, content: 0, top: 0 });
@@ -15,7 +16,8 @@ export function PersistentReportReading({ current, styles, children, header, onH
   return <View testID="report-scroll-frame" style={styles.scroll}>
     <ReportComposerFocusContext.Provider value={onFocusChange}>
     <ScrollView ref={scroll} testID="report-scroll" style={styles.scroll}
-      contentContainerStyle={header === undefined ? styles.body : [styles.body, { paddingTop: 0 }]}
+      contentContainerStyle={[styles.body, header === undefined ? undefined : { paddingTop: 0 },
+        contentMinHeight === undefined ? undefined : { minHeight: contentMinHeight }]}
       stickyHeaderIndices={header === undefined ? undefined : [0]}
       keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator
       onLayout={event => { size.current.view = event.nativeEvent.layout.height; update(); keepComposerVisible(); }}
