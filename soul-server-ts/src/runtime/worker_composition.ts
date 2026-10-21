@@ -57,8 +57,7 @@ import {
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
-import { WorktreeSweeper } from "../worktree/worktree_sweeper.js";
-import { composeWorktreeService, resolveWorktreeWorkspace } from "./worktree_runtime_composition.js";
+import { composeWorktreeService, composeWorktreeSweeper, resolveWorktreeWorkspace } from "./worktree_runtime_composition.js";
 import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
 import { composePurposeDecisionRunner, composeWorkerAdmissionAuthorizer } from "../card-orchestration/runtime_composition.js";
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
@@ -263,16 +262,9 @@ export async function composeWorkerRuntime(
     sessionMutations,
     observePersistentResume, attachmentRuntime.taskRuntime.prepareAttachmentInput,
   );
-  worktreeService = composeWorktreeService(env, orchHostClientDeps, () =>
-    listActiveTaskWorkspaceDirs(taskManager.listTasks(),
-      (profileId) => agentRegistry.get(profileId)?.workspace_dir));
-  const worktreeSweeper = worktreeService ? new WorktreeSweeper({
-    sweep: () => worktreeService!.sweep({
-      onFetchError: (repoId, err) => logger.warn({ repoId, err }, "Worktree sweep fetch failed; using current refs"),
-    }),
-    logger,
-  }) : undefined;
-  worktreeSweeper?.start();
+  worktreeService = composeWorktreeService(env, orchHostClientDeps,
+    () => listActiveTaskWorkspaceDirs(taskManager.listTasks(), (profileId) => agentRegistry.get(profileId)?.workspace_dir));
+  const worktreeSweeper = composeWorktreeSweeper(worktreeService, logger);
   db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
   const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({

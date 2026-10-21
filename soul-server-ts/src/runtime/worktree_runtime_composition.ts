@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
 import { WorktreeHostClient } from "../control_plane/worktree_host_client.js";
@@ -8,6 +9,22 @@ import { WorktreeGit } from "../worktree/worktree_git.js";
 import { WORKTREE_OPERATION_TIMEOUT_MS } from "../worktree/worktree_timeouts.js";
 import { RepositoryLock } from "../worktree/worktree_repository_lock.js";
 import { WorktreeService } from "../worktree/worktree_service.js";
+import { WorktreeSweeper } from "../worktree/worktree_sweeper.js";
+
+export function composeWorktreeSweeper(
+  worktreeService: WorktreeService | undefined,
+  logger: Pick<Logger, "info" | "warn">,
+): WorktreeSweeper | undefined {
+  if (!worktreeService) return undefined;
+  const sweeper = new WorktreeSweeper({
+    sweep: () => worktreeService.sweep({
+      onFetchError: (repoId, err) => logger.warn({ repoId, err }, "Worktree sweep fetch failed; using current refs"),
+    }),
+    logger,
+  });
+  sweeper.start();
+  return sweeper;
+}
 
 export function composeWorktreeService(
   env: Env,
