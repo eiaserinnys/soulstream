@@ -46,7 +46,7 @@ export function UndoCountdownRing({ expiresAt, durationMs }: { expiresAt: number
   const segmentDasharray = `${Array.from({ length: completedSegments }, () => '18 2').join(' ')} 0 100`;
 
   return <span className="pas-undo-ring" aria-hidden="true" data-reduced-motion={reducedMotion || undefined} style={{
-    '--pas-undo-ms': `${durationMs}ms`, animationDelay: `-${elapsed}ms`,
+    '--pas-undo-ms': `${durationMs}ms`, '--pas-undo-delay': `-${elapsed}ms`,
   } as CSSProperties}>
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle className="pas-undo-ring-track" cx="12" cy="12" r="11" pathLength={100} />

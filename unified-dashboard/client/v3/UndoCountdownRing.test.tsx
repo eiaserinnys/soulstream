@@ -35,8 +35,15 @@ afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); 
 it('starts at the elapsed point and stays hidden from the accessible button name', () => {
   act(() => root.render(<UndoCountdownRing expiresAt={Date.now() + 3_000} durationMs={5_000} />));
   const ring = host.querySelector<HTMLElement>('.pas-undo-ring')!;
+  const fill = ring.querySelector<SVGCircleElement>('.pas-undo-ring-fill')!;
   expect(ring.getAttribute('aria-hidden')).toBe('true');
-  expect(ring.style.animationDelay).toBe('-2000ms');
+  const computedDelay = getComputedStyle(fill).animationDelay;
+  if (computedDelay && computedDelay !== '0s' && !computedDelay.includes('var(')) {
+    expect(computedDelay).toBe('-2s');
+  } else {
+    expect(fill.classList.contains('pas-undo-ring-fill')).toBe(true);
+    expect(ring.style.getPropertyValue('--pas-undo-delay')).toBe('-2000ms');
+  }
   expect(ring.style.getPropertyValue('--pas-undo-ms')).toBe('5000ms');
   expect(ring.querySelector('.pas-undo-ring-clock')?.getAttribute('aria-hidden')).toBe('true');
 });
