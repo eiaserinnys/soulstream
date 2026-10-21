@@ -149,7 +149,11 @@ export function parseIdentity(
       addIssue(issues, "normalization_error");
     }
   }
-  const provider = snapshot?.provider ?? inferProvider(rawModel, payload?.usage);
+  // An unknown snapshot only says the runner could not map its requested alias (e.g. "opus");
+  // the observed model in the event is still evidence for the provider.
+  const provider = snapshot !== null && snapshot.provider !== "unknown"
+    ? snapshot.provider
+    : inferProvider(rawModel, payload?.usage);
   const backend = snapshot?.backend ?? stringOrNull(payload?.backend);
   const model = rawModel;
   return {
