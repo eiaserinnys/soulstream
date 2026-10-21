@@ -38,13 +38,14 @@ it("starts with the current Korea calendar date and makes one overview request",
   expect(document.querySelectorAll("[data-bucket-index]")).toHaveLength(0);
   const summary = document.querySelector(".usage-stats-summary");
   expect(summary).not.toBeNull();
-  const tokenMetric = summary?.querySelector(".usage-stats-summary-metric");
+  const [tokenMetric, costMetric] = summary?.querySelectorAll(".usage-stats-summary-metric") ?? [];
   expect(tokenMetric?.lastElementChild?.textContent).toBe("캐시 읽기 제외");
-  const costRows = summary?.querySelectorAll(".usage-stats-share-list > .usage-stats-share-row");
-  expect(costRows).toHaveLength(2);
-  expect([...(costRows ?? [])].map(row => row.querySelector(".usage-stats-share-value")?.textContent)).toEqual(["", ""]);
-  expect(summary?.querySelector(".usage-stats-share-list")?.classList.contains("usage-stats-share-list-no-share")).toBe(true);
-  expect(summary?.querySelectorAll(".usage-stats-share-percent")).toHaveLength(0);
+  expect(costMetric?.lastElementChild?.textContent).toBe("캐시 읽기 포함");
+  expect(summary?.querySelector(".usage-stats-share-list")).toBeNull();
+  expect(summary?.querySelectorAll("details")).toHaveLength(0);
+  expect(summary?.textContent).not.toContain("비캐시");
+  expect(summary?.textContent).not.toContain("토큰 상세");
+  expect(summary?.textContent).not.toContain("집계 기준");
 });
 
 function aggregate(totalTokens: number | null): UsageStatsAggregate {
@@ -186,20 +187,15 @@ it("shows the cache split and uses provider tokens for the coverage denominator"
   await act(async () => root.render(<UsageStatsTab request={request} />));
 
   const summary = document.querySelector(".usage-stats-summary")!;
-  const tokenMetric = summary.querySelector(".usage-stats-summary-metric")!;
+  const [tokenMetric, costMetric] = summary.querySelectorAll(".usage-stats-summary-metric");
   expect(tokenMetric.lastElementChild?.textContent).toBe("캐시 읽기 60 제외");
-  const rows = [...summary.querySelectorAll<HTMLElement>(".usage-stats-share-list > .usage-stats-share-row")];
-  expect(rows.map(row => row.querySelector(".usage-stats-share-name")?.textContent)).toEqual(["비캐시", "캐시 읽기"]);
-  expect(rows.map(row => row.querySelector(".usage-stats-share-value")?.textContent)).toEqual(["$78.45", "$45.00"]);
-  expect(rows.every(row => row.tagName === "DIV" && row.querySelector(".usage-stats-share-track") === null)).toBe(true);
+  expect(costMetric?.lastElementChild?.textContent).toBe("캐시 읽기 $45.00 포함");
+  expect(summary.querySelector(".usage-stats-share-list")).toBeNull();
+  expect(summary.querySelectorAll("details")).toHaveLength(0);
+  expect(summary.textContent).not.toContain("비캐시");
+  expect(summary.textContent).not.toContain("토큰 상세");
+  expect(summary.textContent).not.toContain("집계 기준");
   expect(summary.textContent).toContain("기록 토큰 50% 환산");
-
-  const tokenDetails = summary.querySelector("details")!;
-  await act(async () => (tokenDetails.querySelector("summary") as HTMLElement).click());
-  const detailRows = [...tokenDetails.querySelectorAll("dl > div")];
-  expect(detailRows[0]?.querySelector("dt")?.textContent).toBe("입력 (캐시 포함)");
-  expect(detailRows[1]?.querySelector("dt")?.textContent).toBe("그중 일반 입력");
-  expect(detailRows[1]?.querySelector("dd")?.textContent).toBe("40");
 });
 
 it("switches only graph and comparison values between cache-excluded and included metrics", async () => {
@@ -310,8 +306,9 @@ it("marks partial cache split values and coverage", async () => {
   await act(async () => root.render(<UsageStatsTab request={request} />));
 
   const summary = document.querySelector(".usage-stats-summary")!;
-  expect(summary.querySelector(".usage-stats-summary-metric")?.lastElementChild?.textContent).toBe("캐시 읽기 60+ 제외");
-  expect([...summary.querySelectorAll(".usage-stats-share-value")].map(value => value.textContent)).toEqual(["$78.45+", "$45.00+"]);
+  expect(summary.querySelectorAll(".usage-stats-summary-metric")[0]?.lastElementChild?.textContent).toBe("캐시 읽기 60+ 제외");
+  expect(summary.querySelectorAll(".usage-stats-summary-metric")[1]?.lastElementChild?.textContent).toBe("캐시 읽기 $45.00+ 포함");
+  expect(summary.querySelector(".usage-stats-share-list")).toBeNull();
   expect(summary.textContent).toContain("일부만 환산");
 });
 
@@ -677,7 +674,8 @@ it("distinguishes an unknown empty range from explicit zero without input guidan
   expect(summary).toContain("미확인");
   const unknownSummary = document.querySelector(".usage-stats-summary")!;
   expect(unknownSummary.querySelector(".usage-stats-summary-metric")?.lastElementChild?.textContent).toBe("캐시 읽기 미기록");
-  expect([...unknownSummary.querySelectorAll(".usage-stats-share-value")].map(value => value.textContent)).toEqual(["미확인", "미확인"]);
+  expect(unknownSummary.querySelectorAll(".usage-stats-summary-metric")[1]?.lastElementChild?.textContent).toBe("캐시 읽기 미확인");
+  expect(unknownSummary.querySelector(".usage-stats-share-list")).toBeNull();
   expect(document.querySelector(".usage-stats-chart-message")?.textContent).toBe("미기록");
   expect(document.querySelector(".usage-stats-input-material")).toBeNull();
   expect(document.body.textContent).not.toContain("입력 자료 구성");
@@ -699,7 +697,8 @@ it("distinguishes an unknown empty range from explicit zero without input guidan
   expect(document.querySelector(".usage-stats-chart-message")?.textContent).toBe("이 기간에 기록이 없습니다");
   const zeroSummary = document.querySelector(".usage-stats-summary")!;
   expect(zeroSummary.querySelector(".usage-stats-summary-metric")?.lastElementChild?.textContent).toBe("캐시 읽기 0 제외");
-  expect([...zeroSummary.querySelectorAll(".usage-stats-share-value")].map(value => value.textContent)).toEqual(["$0.00", "$0.00"]);
+  expect(zeroSummary.querySelectorAll(".usage-stats-summary-metric")[1]?.lastElementChild?.textContent).toBe("캐시 읽기 $0.00 포함");
+  expect(zeroSummary.querySelector(".usage-stats-share-list")).toBeNull();
   expect(document.querySelector(".usage-stats-input-material")).toBeNull();
   expect(document.body.textContent).not.toContain("입력 자료 구성");
   expect(document.body.textContent).not.toContain("막대에서 날짜를 고르세요");

@@ -9,7 +9,6 @@ import {
   formatUsageStatsModelLabel,
   formatUsageStatsPeriodLabel,
   formatUsageStatsProviderLabel,
-  formatUsageStatsTokenCount,
   formatUsageStatsUsd,
   formatUsageStatsValue,
   formatUsageStatsApproximateTokens,
@@ -213,11 +212,6 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
     overviewLoading || detailLoading ? null : displayedAggregate?.metrics,
     overviewLoading || detailLoading ? null : displayedAggregate?.coverage,
   );
-  const summaryCostRows = [
-    { key: "non-cache", name: USAGE_STATS_LABELS.nonCacheCost, value: cacheSplit.nonCacheCost, share: null },
-    { key: "cache-read", name: USAGE_STATS_LABELS.cacheReadCost, value: cacheSplit.cacheReadCost, share: null },
-  ] as const;
-  const summaryCostHasShare = summaryCostRows.some(row => row.share !== null);
   const coverageLabel = displayedAggregate ? formatUsageStatsCoverage(
     displayedAggregate.coverage.priced_total_tokens,
     displayedAggregate.metrics.provider_total_tokens,
@@ -328,44 +322,13 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
             </Button> : null}
             <div className="usage-stats-summary-values">
               <div className="usage-stats-summary-metric"><span>토큰</span><strong>{summaryValue("tokens")}</strong><span>{cacheSplit.cacheReadLine}</span></div>
-              <div className="usage-stats-summary-metric"><span>정가</span><strong>{summaryValue("cost")}</strong></div>
-            </div>
-            <div className={`usage-stats-share-list${summaryCostHasShare ? "" : " usage-stats-share-list-no-share"}`}>
-              {summaryCostRows.map(row => <UsageShareRow
-                key={row.key}
-                name={row.name}
-                value={row.value}
-                share={row.share}
-                showShareColumn={summaryCostHasShare}
-              />)}
+              <div className="usage-stats-summary-metric"><span>정가</span><strong>{summaryValue("cost")}</strong><span>{cacheSplit.cacheReadCostLine}</span></div>
             </div>
             <div className="usage-stats-summary-meta" aria-live="polite">
               {overviewLoading || detailLoading ? null : displayedAggregate?.coverage.missing_usage_turns ? <span>미기록 턴 {displayedAggregate.coverage.missing_usage_turns}</span> : null}
               {overviewLoading || detailLoading ? null : coverageLabel ? <span>{coverageLabel}</span> : null}
               {overview?.projection_status.state === "backfilling" ? <span>이전 기록 정리 중</span> : null}
             </div>
-            <details className="config-advanced usage-stats-disclosure">
-              <summary>{USAGE_STATS_LABELS.tokenDetails}</summary>
-            {overviewLoading || detailLoading ? <p className="usage-stats-muted">불러오는 중…</p> : displayedAggregate ? <dl className="usage-stats-token-details">
-                <div><dt>{USAGE_STATS_LABELS.input}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.input_total, false)}</dd></div>
-                <div><dt>{USAGE_STATS_LABELS.uncachedInput}</dt><dd>{cacheSplit.ordinaryInput}</dd></div>
-                <div><dt>{USAGE_STATS_LABELS.cacheRead}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.cache_read, false)}</dd></div>
-                <div><dt>{USAGE_STATS_LABELS.cacheWrite}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.cache_write, false)}</dd></div>
-                <div><dt>{USAGE_STATS_LABELS.output}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.output_total, false)}</dd></div>
-                <div><dt>{USAGE_STATS_LABELS.reasoning}</dt><dd>{formatUsageStatsTokenCount(displayedAggregate.metrics.reasoning_output, false)}</dd></div>
-              </dl> : <p className="usage-stats-muted">{overviewLoading || detailLoading ? "불러오는 중…" : "미기록"}</p>}
-            </details>
-            <details className="config-advanced usage-stats-disclosure">
-              <summary>집계 기준</summary>
-              <div className="usage-stats-basis">
-                <p>2026-10-19 공개 API 정가 USD 환산(standard, 기본 컨텍스트). 구독 실지출 아님</p>
-                <p>단가 출처: <a href="https://developers.openai.com/api/docs/pricing?tab=suite" target="_blank" rel="noreferrer">OpenAI</a>, <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noreferrer">Claude</a>, <a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noreferrer">Gemini</a>, <a href="https://api-docs.deepseek.com/quick_start/pricing/" target="_blank" rel="noreferrer">DeepSeek</a>, <a href="https://platform.kimi.ai/docs/pricing/chat" target="_blank" rel="noreferrer">Kimi</a></p>
-                <p>날짜는 턴이 끝난 시각, Asia/Seoul, 주는 월요일 시작</p>
-                <p>프로젝트는 지금 보이는 최상위 폴더 기준</p>
-                <p>{USAGE_STATS_LABELS.inputEstimateBasis}</p>
-                <p>{USAGE_STATS_LABELS.inputEstimateCaveat}</p>
-              </div>
-            </details>
           </div>
 
           <div className="usage-stats-chart-heading">
