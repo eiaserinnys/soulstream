@@ -76,7 +76,7 @@ export function renderDocumentHtml(
 ): string {
   return renderCustomViewHtml(html, bindings).replace(
     /(<meta http-equiv="Content-Security-Policy"[^>]*>)/i,
-    '$1<style>:root{color-scheme:light;background-color:Canvas;}</style>',
+    '$1<style>:where(:root){color-scheme:light;}</style>',
   );
 }
 

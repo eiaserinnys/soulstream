@@ -3,6 +3,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AttachmentReadError } from '../../api/attachmentEndpoints';
 import type { AttachmentView } from '../../lib/attachment-view';
+import { LIGHT_COLORS } from '../../theme/colors';
 import { PlannerMarkdownText } from '../planner/PlannerMarkdownText';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 
@@ -213,7 +214,7 @@ test('an HTML attachment marked informational still opens as a rendered document
   expect(mockReadAttachmentText).toHaveBeenCalledWith('attachment-1', { type: 'card', id: 'card-1' }, expect.any(AbortSignal));
   expect(screen.getByTestId('attachment-preview-html').props.accessibilityLabel).toContain('문서 본문');
   expect(screen.getByTestId('attachment-preview-html').props.source.html)
-    .toContain('<style>:root{color-scheme:light;background-color:Canvas;}</style>');
+    .toContain('<style>:where(:root){color-scheme:light;}</style>');
   // The document layout gives the frame the available height instead of a media frame.
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).flex).toBe(1);
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeUndefined();
@@ -244,6 +245,8 @@ test('an HTML document reads its body through the injected loader instead of the
 
   await waitFor(() => expect(screen.getByTestId('attachment-preview-html')).toBeTruthy());
   expect(loadText).toHaveBeenCalledWith(expect.any(AbortSignal));
+  expect(screen.getByTestId('attachment-preview-html').props.style.backgroundColor)
+    .toBe(LIGHT_COLORS.background);
   expect(mockReadAttachmentText).not.toHaveBeenCalled();
 });
 

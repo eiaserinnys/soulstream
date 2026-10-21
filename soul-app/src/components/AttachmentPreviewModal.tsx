@@ -11,6 +11,7 @@ import { createApiClient } from '../api/client';
 import { isHtmlAttachmentView, isMarkdownAttachmentView, type AttachmentView } from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
 import { buildCustomViewBindings, renderDocumentHtml } from '../lib/custom-view-renderer';
+import { LIGHT_COLORS } from '../theme/colors';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
 import { AttachmentMetadataPreview } from './AttachmentMetadataPreview';
@@ -147,7 +148,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
       return <>
         <WebView testID="attachment-preview-html" source={{ html: htmlDocument ?? '' }}
           originWhitelist={['about:blank', 'https://pages.eiaserinnys.me']} javaScriptEnabled allowFileAccess={false}
-          scrollEnabled style={{ flex: 1, width: '100%', backgroundColor: tokens.colors.surfaceCode }} />
+          scrollEnabled style={{ flex: 1, width: '100%', backgroundColor: LIGHT_COLORS.background }} />
         {current.truncated ? <Text style={{ ...roles.metadata, color: roles.textMuted, padding: tokens.spacing.sm }}>앞부분만 표시</Text> : null}
       </>;
     }

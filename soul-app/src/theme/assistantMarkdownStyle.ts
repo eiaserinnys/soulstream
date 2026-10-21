@@ -32,12 +32,16 @@ export function createAssistantMarkdownStyle(t: DesignTokens, narration = false)
       h1: { color: narrationColor, fontSize: narration ? narrationFontSize : t.chatFontSize.screenTitle, fontWeight: '700' },
       h2: { color: narrationColor, fontSize: narration ? narrationFontSize : t.chatFontSize.rowTitle, fontWeight: '700' },
       h3: { color: narrationColor, fontSize: narrationFontSize, fontWeight: '700' },
+      h4: { color: narrationColor, fontSize: narrationFontSize, fontWeight: '700' },
+      h5: { color: narrationColor, fontSize: narrationFontSize, fontWeight: '700' },
+      h6: { color: narrationColor, fontSize: narrationFontSize, fontWeight: '700' },
       strong: { color: narrationColor, fontWeight: '700' },
       em: { color: narrationColor, fontStyle: 'italic' as const },
       link: { color: c.link },
       code: {
         backgroundColor: c.surfaceCode,
         color: c.codeText,
+        borderColor: c.border,
         fontFamily: 'Courier',
         fontSize: t.fontSize.body,
       },
@@ -69,5 +73,6 @@ export function createAssistantMarkdownStyle(t: DesignTokens, narration = false)
       },
       // Shared table contract: the body text is explicit because the library default is dark gray.
       table: markdownTableStyle(t),
+      thematicBreak: { color: c.border },
     } as any; // 기존 채팅의 네이티브 스타일 값과 타입 허용 범위를 그대로 보존한다.
 }
