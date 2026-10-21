@@ -61,7 +61,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const heading = <View style={onToggleCard ? styles.headingRow : undefined}>
     <View testID="report-head" style={[styles.heading, onToggleCard ? styles.headingContent : undefined]}>
     <Text ref={titleRef} testID="report-title" accessible accessibilityRole="header"
-      style={[styles.title, onToggleCard ? { paddingVertical: Math.max(0,
+      style={[styles.title, Platform.OS === 'web' ? { outlineWidth: 0 } : undefined, onToggleCard ? { paddingVertical: Math.max(0,
         (t.foundation.iconFrame.compact - t.foundation.typography.cardTitle.lineHeight) / 2) } : undefined]}
       {...reportWebProps({ tabIndex: -1 })}
       {...(onToggleCard ? { onPress: (event?: { stopPropagation?(): void }) => { event?.stopPropagation?.(); onToggleCard(); }, accessibilityRole: 'button' as const,
