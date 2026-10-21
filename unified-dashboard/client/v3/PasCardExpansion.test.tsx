@@ -11,7 +11,7 @@ import { PasCardExpansion } from './PasCardExpansion';
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock('@seosoyoung/soul-ui/cards/card-api', async importOriginal => ({ ...await importOriginal<object>(), cardRequest: request, cardMutationKey: () => 'mutation-key', confirmCardItem: (cardId: string, itemId: number, confirmed: boolean) => request(`/api/cards/${cardId}/items/${itemId}/confirm`, 'POST', { confirmed }) }));
 vi.mock('@seosoyoung/soul-ui', async importOriginal => ({ ...await importOriginal<object>(), useAuth: () => ({ user: { picture: '/user.png' } }) }));
-vi.mock('./CardNowPanel', () => ({ CardNowPanel: ({ now, itemsCount }: { now?: { text: string; ask?: string | null } | null; itemsCount: number }) => <div data-testid="now" data-ask={now?.ask ?? ''}>{now?.text}:{itemsCount}</div> }));
+vi.mock('./CardNowPanel', () => ({ CardNowPanel: ({ now, itemsCount, hideTurn }: { hideTurn?: boolean; now?: { text: string; ask?: string | null } | null; itemsCount: number }) => <div data-testid="now" data-ask={now?.ask ?? ''} data-hide-turn={Boolean(hideTurn)}>{now?.text}:{itemsCount}</div> }));
 vi.mock('./CardCheckItems', () => ({ CardCheckItems: ({ items, onConfirmChange, onTargetItem }: { items?: readonly { id: number }[] | null; onConfirmChange(id: number, confirmed: boolean): void | Promise<void>; onTargetItem(id: number): void }) => <div data-testid="items">
   <span>{items?.length ?? 0}</span><button data-testid="confirm-item" onClick={() => void onConfirmChange(4, true)}>확인</button><button data-testid="target-item" onClick={() => onTargetItem(4)}>고칠 점 남기기</button>
 </div> }));
@@ -124,7 +124,7 @@ it('routes a targeted correction to an item comment before answering an open que
 it('omits the duplicated ask from CardNowPanel while an open question is shown on the card', async () => {
   await render({ ...entry, question_id: 'question-target' });
   expect(host.querySelector('[data-testid="now"]')?.textContent).toBe('현재 상황:1');
-  expect(host.querySelector('[data-testid="now"]')?.getAttribute('data-ask')).toBe('');
+  expect(host.querySelector('[data-testid="now"]')?.getAttribute('data-hide-turn')).toBe('true');
 });
 
 it('places card-store mutation errors directly above the composer when the card is loaded', async () => {
@@ -144,4 +144,25 @@ it('uses a card comment when no unanswered, unwithdrawn question remains', async
   expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('커멘트');
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
   expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글' }));
+});
+
+it('places store read errors immediately after the now panel', async () => {
+ await act(async () => useCardStore.setState({ errors: { [card.id]: '상세 조회 실패' } }));
+ const alert = host.querySelector('[role="alert"].v3-card-error');
+ expect(alert?.previousElementSibling).toBe(host.querySelector('[data-testid="now"]'));
+});
+
+it.each(['comment', 'answer', 'item'])('keeps %s send errors local, above the input, and clears them after retry', async kind => {
+ if(kind==='comment'){
+  detail={...detail,questions:[]};
+  await act(async()=>useCardStore.setState({details:{[card.id]:detail}}));
+ }
+ if(kind==='item')await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="target-item"]')!.click());
+ request.mockRejectedValueOnce(new Error('전송 실패'));
+ await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
+ const alerts=host.querySelectorAll('[role="alert"].v3-card-error');
+ expect(alerts).toHaveLength(1);
+ expect(alerts[0].nextElementSibling).toBe(host.querySelector('[data-testid="input"]'));
+ await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
+ expect(host.querySelector('[role="alert"].v3-card-error')).toBeNull();
 });

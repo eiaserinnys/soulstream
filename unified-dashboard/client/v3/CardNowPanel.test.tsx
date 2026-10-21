@@ -51,3 +51,11 @@ describe("card now panel",()=>{
 it("retains the user turn fallback when ask is empty",()=>{
  expect(renderToStaticMarkup(<CardNowPanel now={{...now,ask:""}} itemsCount={1} activeCount={1}/>)).toContain('<strong>내 차례</strong>');
 });
+
+it("hides the whole turn row in the open-question variant while leaving the default intact",()=>{
+ const html=renderToStaticMarkup(<CardNowPanel embedded hideTurn now={now} itemsCount={1} activeCount={1}/>);
+ expect(html).toContain("현재 상황");
+ expect(html).not.toContain("v3-card-now-turn");
+ expect(html).not.toContain("확인해 주세요");
+ expect(renderToStaticMarkup(<CardNowPanel embedded now={now} itemsCount={1} activeCount={1}/>)).toContain("v3-card-now-turn");
+});

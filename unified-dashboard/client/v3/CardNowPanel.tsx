@@ -5,13 +5,13 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import "./v3-card-check-items.css";
 
 interface NowSlot { key:string; text:string; turn:CardNow["turn"]; ask:string|null; at:string }
-interface NowPanelProps {embedded?:boolean;now?:CardNow|null;nowHistory?:readonly CardNowHistoryEntry[]|null;itemsCount:number;activeCount:number;onComplete?():void;pending?:boolean}
+interface NowPanelProps {hideTurn?:boolean;embedded?:boolean;now?:CardNow|null;nowHistory?:readonly CardNowHistoryEntry[]|null;itemsCount:number;activeCount:number;onComplete?():void;pending?:boolean}
 
 export function CardNowPanel(props: NowPanelProps) {
  return props.now?<CardNowPanelView {...props} now={props.now}/>:null;
 }
 
-function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount,onComplete,pending,embedded=false}: NowPanelProps&{now:CardNow}) {
+function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount,onComplete,pending,embedded=false,hideTurn=false}: NowPanelProps&{now:CardNow}) {
  const panel=useRef<HTMLElement>(null),measure=useRef<HTMLDivElement>(null),frozenHeight=useRef<number|null>(null);
  const [selectedAt,setSelectedAt]=useState<string|null>(null);
  const [height,setHeight]=useState<number|null>(null);
@@ -42,17 +42,17 @@ function CardNowPanelView({now,nowHistory=[],itemsCount,activeCount,onComplete,p
  const current:NowSlot={key:`measure:${now.updatedAt}`,text:now.text,turn:now.turn,ask:now.ask,at:now.updatedAt};
  return <div className="v3-card-now-frame"><section ref={panel} className={`v3-card-now-panel${latest?"":" v3-card-now-panel--past"}`} style={style} data-testid="card-now-panel" data-now-view={latest?"current":"past"}>
   <NowPanelContents entry={entry} index={index} total={slots.length} latest={latest} hasNavigation={hasNavigation} allChecked={allChecked}
-   onPrevious={()=>move(index-1)} onNext={()=>move(index+1)} onLatest={()=>move(slots.length-1)} onComplete={onComplete} pending={pending}/>
+   onPrevious={()=>move(index-1)} onNext={()=>move(index+1)} onLatest={()=>move(slots.length-1)} onComplete={onComplete} pending={pending} hideTurn={hideTurn}/>
   </section>
   <div ref={measure} className="v3-card-now-panel v3-card-now-measure" aria-hidden="true" inert>
-   <NowPanelContents entry={current} index={slots.length-1} total={slots.length} latest hasNavigation={hasNavigation} allChecked={allChecked} onPrevious={()=>{}} onNext={()=>{}} onLatest={()=>{}} onComplete={onComplete} pending={pending}/>
+   <NowPanelContents entry={current} index={slots.length-1} total={slots.length} latest hasNavigation={hasNavigation} allChecked={allChecked} onPrevious={()=>{}} onNext={()=>{}} onLatest={()=>{}} onComplete={onComplete} pending={pending} hideTurn={hideTurn}/>
   </div>
  </div>;
 }
 
-function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onPrevious,onNext,onLatest,onComplete,pending}: {
+function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onPrevious,onNext,onLatest,onComplete,pending,hideTurn}: {
  entry:NowSlot;index:number;total:number;latest:boolean;hasNavigation:boolean;allChecked:boolean;
- onPrevious():void;onNext():void;onLatest():void;onComplete?():void;pending?:boolean;
+ onPrevious():void;onNext():void;onLatest():void;onComplete?():void;pending?:boolean;hideTurn?:boolean;
 }) {
  const dateLabel=formatUpdated(entry.at);
  return <>
@@ -65,11 +65,11 @@ function NowPanelContents({entry,index,total,latest,hasNavigation,allChecked,onP
    </div>:null}
   </div>
   <p className="v3-card-now-text">{entry.text}</p>
-  {latest?<div className={`v3-card-now-turn v3-card-now-turn--${allChecked?"complete":entry.turn}`} role="group" aria-label={allChecked?"모두 확인했습니다":turnLabel(entry.turn)}>
+  {latest?(hideTurn?null:<div className={`v3-card-now-turn v3-card-now-turn--${allChecked?"complete":entry.turn}`} role="group" aria-label={allChecked?"모두 확인했습니다":turnLabel(entry.turn)}>
    {allChecked?<><strong>모두 확인했습니다</strong><span>완료로 옮길까요?</span>
     <Button size="default" variant="ghost" className="v3-card-now-complete" disabled={pending||!onComplete} onClick={onComplete}>완료</Button></>
     :<>{entry.turn!=="user"||!entry.ask?<strong>{turnLabel(entry.turn)}</strong>:null}{entry.ask?<span>{entry.ask}</span>:null}</>}
-  </div>:<div className="v3-card-now-past-hint"><button type="button" onClick={onLatest}>최신으로</button></div>}
+  </div>):<div className="v3-card-now-past-hint"><button type="button" onClick={onLatest}>최신으로</button></div>}
  </>;
 }
 

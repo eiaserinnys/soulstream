@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, useAuth, useDashboardStore, useInternalLinkClick, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { cardMutationKey } from '@seosoyoung/soul-ui/cards/card-api';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
@@ -35,6 +35,8 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
   const [targetItemId, setTargetItemId] = useState<number | null>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   const [pending, setPending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const lastSendError = useRef<string | null>(null);
   const card = sampleDetail?.card ?? storedCard;
   const detail = sampleDetail ?? storedDetail;
   const isSample = Boolean(sampleDetail && onSampleChange);
@@ -55,7 +57,8 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
     void useCardStore.getState().loadCard(cardId).catch(() => undefined);
   }, [cardId, isSample]);
 
-  const errorAlert = error ? <p role="alert" className="v3-card-error">{error}</p> : null;
+  // Store mutations also publish errors; their local alert owns those messages.
+  const errorAlert = error && error !== lastSendError.current ? <p role="alert" className="v3-card-error">{error}</p> : null;
   if (!card) return errorAlert ?? <div className="v3-detail-section">카드를 불러오는 중…</div>;
 
   const questions = detail?.questions ?? [];
@@ -111,8 +114,12 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
         await useCardStore.getState().addComment(cardId, body.trim(), cardMutationKey());
       }
       setTargetItemId(null);
+      setSendError(null);
       return true;
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastSendError.current = message;
+      setSendError(message);
       return false;
     } finally {
       setPending(false);
@@ -120,12 +127,13 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
   };
 
   return <div className="pas-report-card-preview" data-testid="pas-card-expansion">
-    <CardNowPanel embedded now={question && card.now ? { ...card.now, ask: null } : card.now} itemsCount={items.length} activeCount={summary.activeCount} />
+    <CardNowPanel embedded hideTurn={Boolean(question)} now={card.now} itemsCount={items.length} activeCount={summary.activeCount} />
+    {errorAlert}
     <CardCheckItems items={items} pendingConfirmations={pendingConfirmations} onConfirmChange={confirmItem} onTargetItem={targetItem} />
     <CardTimeline card={card} detail={commentsDetail} portraitUrl={portraitUrl} userPortraitUrl={user?.picture ?? ''} commentsOnly pending={pending} onAnswer={() => {}} />
     {cardId ? <Button variant="link" className="text-foreground" render={<a href={`/?card=${encodeURIComponent(cardId)}`} onClick={internalLinkClick} />}>카드 열기</Button> : null}
     {targetItemId !== null ? <div className="v3-card-target-notice" role="status"><span>대상: {targetItemId}번 {targetItemRow?.title ?? '항목'}</span><button type="button" aria-label="커멘트 대상 해제" onClick={() => setTargetItemId(null)}>해제</button></div> : null}
-    {errorAlert}
+    {sendError ? <p role="alert" className="v3-card-error">{sendError}</p> : null}
     <CardCommentInput cardId={cardId ?? entry.key} nodeId={card.nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequest}
       placeholder={targetItemId !== null ? '커멘트' : question ? '질문에 답하기' : '커멘트'} onSend={send} />
   </div>;
