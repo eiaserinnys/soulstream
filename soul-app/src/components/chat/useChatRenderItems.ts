@@ -12,6 +12,7 @@ import {
   type ChatRenderItem,
 } from './groupChatEvents';
 import { projectManuscriptActivity } from './manuscriptActivityProjection';
+import { projectPersistentWorkDetails } from './persistentWorkDetailsProjection';
 import { replaceEqualDeep } from '../../lib/structural-sharing';
 import { bottomFollowTargetKey } from './bottomFollow';
 import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
@@ -101,9 +102,15 @@ export function useChatRenderItems({
     () => [...baseRenderItems, ...bottomRenderItems],
     [baseRenderItems, bottomRenderItems],
   );
+  const hideWorkDetails = presentation === 'manuscript'
+    && persistentDisplaySettings !== undefined
+    && persistentDisplaySettings.showWorkDetails !== true;
   const presentedItems = useMemo(
-    () => projectManuscriptActivity(chronologicalItems, presentation === 'manuscript'),
-    [chronologicalItems, presentation],
+    () => {
+      const presented = projectManuscriptActivity(chronologicalItems, presentation === 'manuscript');
+      return hideWorkDetails ? projectPersistentWorkDetails(presented) : presented;
+    },
+    [chronologicalItems, hideWorkDetails, presentation],
   );
   const incomingReversedItems = useMemo(
     () => [...presentedItems].reverse(),

@@ -94,6 +94,7 @@ export type ChatRenderItem =
 export interface PersistentDisplayProjectionSettings {
   showGenerationSeparator: boolean;
   showJevCandidates: boolean;
+  showWorkDetails?: boolean;
 }
 
 function shouldHideManuscriptEvent(event: SessionEvent): boolean {

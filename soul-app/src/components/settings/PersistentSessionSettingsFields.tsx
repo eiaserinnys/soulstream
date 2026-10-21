@@ -28,6 +28,7 @@ export type PersistentSessionDisplayField =
   | 'animate_character'
   | 'show_generation_separator'
   | 'show_jev_candidates'
+  | 'show_work_details'
   | 'turn_usage_mode';
 
 export type PersistentSessionDisplayValues = Omit<Record<PersistentSessionDisplayField, boolean>, 'turn_usage_mode'> & {
@@ -137,6 +138,7 @@ export function persistentSessionDisplayValues(session: PersistentSessionResourc
     animate_character: session.settings.animate_character !== false,
     show_generation_separator: session.settings.show_generation_separator === true,
     show_jev_candidates: session.settings.show_jev_candidates === true,
+    show_work_details: session.settings.show_work_details === true,
     turn_usage_mode: session.settings.turn_usage_mode,
   };
 }
@@ -252,6 +254,14 @@ export function PersistentSessionSettingsFields({
       testID="persistent-show-jev-candidates"
       help="내 입력 아래에 후보를 보여 줍니다."
       onValueChange={(value) => onDisplayChange('show_jev_candidates', value)}
+    />
+    <SettingsToggleRow
+      label="작업 세부 표시"
+      value={display.show_work_details}
+      disabled={displaySaving}
+      testID="persistent-show-work-details"
+      help="요약과 도구 기록 같은 줄을 보여 줍니다."
+      onValueChange={(value) => onDisplayChange('show_work_details', value)}
     />
     <View style={{ gap: t.spacing.xs }}>
       <Text style={styles.label}>턴 끝 사용량</Text>

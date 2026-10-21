@@ -54,6 +54,7 @@ export function usePersistentChatDisplaySettings(
     persistentDisplaySettings: current ? {
       showGenerationSeparator: current.show_generation_separator,
       showJevCandidates: current.show_jev_candidates,
+      showWorkDetails: current.show_work_details === true,
     } : undefined,
     turnUsageMode: current?.turn_usage_mode ?? 'collapsed',
   };
