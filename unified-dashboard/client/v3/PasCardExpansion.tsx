@@ -54,7 +54,8 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
     void useCardStore.getState().loadCard(cardId).catch(() => undefined);
   }, [cardId, isSample]);
 
-  if (!card) return <div className="v3-detail-section" role={error ? 'alert' : undefined}>{error ?? '카드를 불러오는 중…'}</div>;
+  const errorAlert = error ? <p role="alert" className="v3-card-error">{error}</p> : null;
+  if (!card) return errorAlert ?? <div className="v3-detail-section">카드를 불러오는 중…</div>;
 
   const questions = detail?.questions ?? [];
   const isOpenQuestion = (question: NonNullable<CardDetail['questions']>[number]) =>
@@ -118,6 +119,7 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
 
   return <div className="pas-report-card-preview" data-testid="pas-card-expansion">
     <CardNowPanel embedded now={card.now} itemsCount={items.length} activeCount={summary.activeCount} />
+    {errorAlert}
     <CardCheckItems items={items} pendingConfirmations={pendingConfirmations} onConfirmChange={confirmItem} onTargetItem={targetItem} />
     <CardTimeline card={card} detail={commentsDetail} portraitUrl={portraitUrl} userPortraitUrl="" commentsOnly pending={pending} onAnswer={() => {}} />
     {cardId ? <Button variant="link" className="text-foreground" render={<a href={`/?card=${encodeURIComponent(cardId)}`} onClick={internalLinkClick} />}>카드 열기</Button> : null}

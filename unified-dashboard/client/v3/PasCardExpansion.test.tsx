@@ -64,6 +64,32 @@ it('loads the linked card and shows only its current panel, items, and two lates
   expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: card.id }, `/?card=${card.id}`);
 });
 
+it('shows a detail load error when the card is already in the store list', async () => {
+  const listedCard = { ...card, id: 'listed-card', title: '목록에 있는 카드' };
+  const listedEntry = { ...entry, key: `card_${listedCard.id}`, card_id: listedCard.id };
+  await act(async () => useCardStore.setState({ byId: { ...useCardStore.getState().byId, [listedCard.id]: listedCard } }));
+  request.mockClear();
+  request.mockRejectedValueOnce(new Error('상세 조회 실패'));
+
+  await render(listedEntry);
+
+  expect(request).toHaveBeenCalledWith(`/api/cards/${listedCard.id}`);
+  expect(useCardStore.getState().byId[listedCard.id]).toEqual(listedCard);
+  expect(host.querySelector('[role="alert"].v3-card-error')?.textContent).toBe('상세 조회 실패');
+});
+
+it('shows a failed card comment send from the card store', async () => {
+  detail = { ...detail, questions: detail.questions.map(question => ({ ...question, answer: '답', answeredAt: '2026-10-01T04:00:00Z' })) };
+  await act(async () => useCardStore.setState({ details: { [card.id]: detail } }));
+  request.mockClear();
+  request.mockRejectedValueOnce(new Error('커멘트 전송 실패'));
+
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
+
+  expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글' }));
+  expect(host.querySelector('[role="alert"].v3-card-error')?.textContent).toBe('커멘트 전송 실패');
+});
+
 it('confirms a check item through the existing card store action', async () => {
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="confirm-item"]')!.click());
   expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/items/4/confirm`, 'POST', { confirmed: true });
