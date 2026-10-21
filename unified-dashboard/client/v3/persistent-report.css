@@ -75,9 +75,8 @@
 .pas-undo-ring-fill { stroke: var(--v3-accent); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; animation: pas-undo-fill var(--pas-undo-ms) linear forwards; animation-delay: inherit; }
 .pas-undo-ring-clock { inline-size: 1em; block-size: 1em; color: var(--v3-text-secondary); }
 @keyframes pas-undo-fill { to { stroke-dashoffset: 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .pas-undo-ring-fill { animation-timing-function: steps(5, end); }
-}
+.pas-undo-ring[data-reduced-motion="true"] .pas-undo-ring-track { stroke-dasharray: 18 2; }
+.pas-undo-ring[data-reduced-motion="true"] .pas-undo-ring-fill { animation: none; stroke-dashoffset: 0; stroke-linecap: butt; }
 .pas-report-count { min-width: var(--v3-space-8); text-align: center; font: var(--v3-type-meta) var(--v3-font-family); color: var(--v3-text-secondary); font-variant-numeric: tabular-nums; }
 .pas-report-tail { position: absolute; left: var(--pas-report-tail-left); top: 100%; width: var(--v3-space-4); height: var(--v3-space-4); background: var(--persistent-session-panel); border-right: 1px solid var(--persistent-session-line); border-bottom: 1px solid var(--persistent-session-line); transform: translate(-50%, -50%) skewX(-45deg) rotate(45deg); pointer-events: none; }
 .pas-report-tail[data-direction="right"] { transform: translate(-50%, -50%) skewX(45deg) rotate(45deg); }
