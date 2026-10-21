@@ -260,7 +260,7 @@ export function PersistentSessionSettingsFields({
       value={display.show_work_details}
       disabled={displaySaving}
       testID="persistent-show-work-details"
-      help="요약과 도구 기록 같은 줄을 보여 줍니다."
+      help="요약과 도구 기록을 보여 줍니다."
       onValueChange={(value) => onDisplayChange('show_work_details', value)}
     />
     <View style={{ gap: t.spacing.xs }}>

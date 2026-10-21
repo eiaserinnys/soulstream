@@ -213,7 +213,7 @@ test('작업 세부 표시 토글은 도움말을 보여 주고 저장 시 show_
   const screen = await openList();
   await openEditor(screen);
   await waitFor(() => expect(screen.getByTestId('persistent-show-work-details')).toBeTruthy());
-  expect(screen.getByText('요약과 도구 기록 같은 줄을 보여 줍니다.')).toBeTruthy();
+  expect(screen.getByText('요약과 도구 기록을 보여 줍니다.')).toBeTruthy();
   expect(screen.getByTestId('persistent-show-work-details').props.value).toBe(false);
 
   fireEvent(screen.getByTestId('persistent-show-work-details'), 'valueChange', true);
