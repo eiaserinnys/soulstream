@@ -35,6 +35,21 @@ describe("projectPersistentWorkDetails", () => {
     expect(result[1]!.contextItems).toBeUndefined();
   });
 
+  it("drops context on intervention messages sent while the PAS is running", () => {
+    const intervention = {
+      ...makeMessage("intervention-1", "intervention", {
+        contextItems: [{ key: "reply", label: "보고 답", content: "내용" }],
+      }),
+      role: "intervention",
+    } as ChatMessage;
+
+    const hidden = projectPersistentWorkDetails([intervention], false);
+    expect(hidden[0]!.contextItems).toBeUndefined();
+
+    const shown = projectPersistentWorkDetails([intervention], true);
+    expect(shown[0]!.contextItems).toHaveLength(1);
+  });
+
   it("leaves unrelated messages untouched when hidden", () => {
     const assistant = makeMessage("assistant-1", "assistant_message", { content: "응답" });
     const tool = makeMessage("tool-2", "tool", { content: "Read" });

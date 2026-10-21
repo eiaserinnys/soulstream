@@ -13,7 +13,8 @@ export function projectPersistentWorkDetails(
   return messages.flatMap((message) => {
     if (message.treeNodeType === "turn_summary") return [];
     const hidesSummaryCaption = message.turnSummaryCaption !== undefined;
-    const hidesUserContext = message.role === "user" && message.contextItems !== undefined;
+    const hidesUserContext = (message.role === "user" || message.role === "intervention")
+      && message.contextItems !== undefined;
     if (!hidesSummaryCaption && !hidesUserContext) return [message];
     const next = { ...message };
     if (hidesSummaryCaption) delete next.turnSummaryCaption;
