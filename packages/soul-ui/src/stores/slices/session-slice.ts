@@ -104,6 +104,7 @@ export function createSessionSlice(
       showCharacter: settings.show_character,
       animateCharacter: settings.animate_character,
       turnUsageMode: settings.turn_usage_mode,
+      showWorkDetails: settings.show_work_details === true,
     } : null });
   },
 

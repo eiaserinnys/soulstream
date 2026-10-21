@@ -2,6 +2,8 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import { ChatView, useDashboardStore } from "@seosoyoung/soul-ui";
 import { ChatMessageItem } from "@seosoyoung/soul-ui/components/chat/ChatMessageItem";
 import { useChatTypography } from "@seosoyoung/soul-ui/components/chat/useChatTypography";
+import { ClaudeRuntimeSchedulesPanel } from "@seosoyoung/soul-ui/components/ClaudeRuntimeSchedulesPanel";
+import type { ClaudeRuntimeView } from "@seosoyoung/soul-ui/stores/claude-runtime-state";
 import { getSessionResetState } from "@seosoyoung/soul-ui/stores/slices/_session-reset";
 import { flattenTree, type ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import type { SoulSSEEvent } from "@seosoyoung/soul-ui/shared/types";
@@ -28,6 +30,21 @@ const ARGON_REVIEW_EMPTY_TEXT_NODE_IDS = ARGON_REVIEW_EMPTY_STREAM_IDS.map(id =>
 const ARGON_REVIEW_RESPONSE_STREAM_ID = "argon-review-response";
 const ARGON_REVIEW_RESPONSE = "Argon의 정상 응답입니다. 원문을 보존합니다 ✨";
 const ARGON_REVIEW_COMPLETE_TOTAL_COST = 0.385;
+const REVIEW_RUNTIME: ClaudeRuntimeView = {
+  updatedAt: 0,
+  tasks: {},
+  notifications: {},
+  remoteTriggers: {},
+  schedules: {
+    "review-schedule-1": {
+      scheduleId: "review-schedule-1",
+      kind: "cron",
+      status: "active",
+      cronExpression: "0 9 * * *",
+      nextRunAt: "2026-10-08T00:00:00.000Z",
+    },
+  },
+};
 
 export const DEFAULT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full max-w-[520px] bg-background";
 export const MANUSCRIPT_CHAT_REVIEW_COLUMN_CLASS_NAME = "w-full lg:w-[568px] shrink-0 bg-[var(--persistent-session-paper)] p-6 overflow-hidden";
@@ -101,6 +118,7 @@ const messages: ChatMessage[] = [
 function ManuscriptColumn() {
   const [ready, setReady] = useState(false);
   const [turnUsageMode, setTurnUsageMode] = useState<PersistentTurnUsageMode>("collapsed");
+  const [showWorkDetails, setShowWorkDetails] = useState(false);
   useLayoutEffect(() => {
     const store = useDashboardStore.getState();
     const saved = Object.fromEntries(
@@ -121,6 +139,7 @@ function ManuscriptColumn() {
       show_character: true,
       animate_character: true,
       turn_usage_mode: "collapsed",
+      show_work_details: false,
     });
     const events = [
       { type: "assistant_message", content: "첫 줄부터 흐리지 않고 읽을 수 있습니다.\n\n대화 글자는 운영의 설정을 따릅니다." },
@@ -148,7 +167,7 @@ function ManuscriptColumn() {
         attachments: [PAS_8309_ATTACHMENT_PATHS[0], ...PAS_251_LANDSCAPE_ATTACHMENT_PATHS, "/notes/review.txt"],
         node_id: "eiaserinnys",
       },
-      { type: "user_message", user: "User", text: "첨부 이미지와 파일 링크입니다.\n\n- 첫째 메모\n- 둘째 메모\n\n```ts\nconst manuscript = true;\n```\n\n| 항목 | 값 |\n| --- | --- |\n| 모양 | 원고형 |\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf](https://example.com/review-note.pdf)" },
+      { type: "user_message", user: "User", text: "첨부 이미지와 파일 링크입니다.\n\n- 첫째 메모\n- 둘째 메모\n\n```ts\nconst manuscript = true;\n```\n\n| 항목 | 값 |\n| --- | --- |\n| 모양 | 원고형 |\n\n![샘플 이미지](/icon-192.png)\n\n[검수 메모.pdf](https://example.com/review-note.pdf)", context: [{ key: "review-context", label: "검수 컨텍스트", content: "카드 #526 작업 세부 표시 확인" }] },
       { type: "assistant_message", content: "마지막 문장 아래에도 여유가 있습니다." },
       { type: "context_usage", used_tokens: 645_367, max_tokens: 1_024_000, percent: 63, estimated: true },
       { type: "complete", result: "응답 완료", usage: { input_tokens: 6, cache_read_input_tokens: 645_361, output_tokens: 6_139 }, total_cost_usd: 0.62, turn_cost_usd: 0.62, session_cost_usd: 17.91 },
@@ -346,10 +365,23 @@ function ManuscriptColumn() {
           show_character: true,
           animate_character: true,
           turn_usage_mode: mode,
+          show_work_details: showWorkDetails,
         });
       }}>
         {mode === "collapsed" ? "접어서" : mode === "expanded" ? "펼쳐서" : "숨김"}
       </button>)}
+      <button aria-pressed={showWorkDetails} onClick={() => {
+        const next = !showWorkDetails;
+        setShowWorkDetails(next);
+        useDashboardStore.getState().setPersistentSessionDisplaySettings(REVIEW_SESSION, {
+          show_generation_separator: true,
+          show_jev_candidates: true,
+          show_character: true,
+          animate_character: true,
+          turn_usage_mode: turnUsageMode,
+          show_work_details: next,
+        });
+      }}>작업 세부 표시</button>
     </div>
     <div className="h-screen min-h-0" data-testid="manuscript-review-column">
       {ready && <ChatView presentation="manuscript" historyEnabled={false} fileUploadUrl="/api/attachments/sessions" />}
@@ -377,6 +409,10 @@ export function PersistentManuscriptChatReviewSample() {
       <p className="px-3 py-2 text-sm font-medium text-muted-foreground">기본 모양</p>
       {messages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId="components-review-pas" />)}
       {rawReviewMessages.map(msg => <ChatMessageItem key={msg.id} msg={msg} sessionId={REVIEW_SESSION} />)}
+      <div className="mt-4 border-t border-border/70 pt-2" data-testid="manuscript-schedules-caption-sample">
+        <p className="px-3 py-1 text-sm font-medium text-muted-foreground">예약 머리줄</p>
+        <ClaudeRuntimeSchedulesPanel sessionId={REVIEW_SESSION} runtime={REVIEW_RUNTIME} tone="calm" variant="caption" />
+      </div>
     </div>
     <ManuscriptColumn />
   </div>;

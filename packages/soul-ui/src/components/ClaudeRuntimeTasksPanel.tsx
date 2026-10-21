@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Bot, GitBranch, ListChecks, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
 
@@ -17,11 +17,13 @@ import type {
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
 import { DisclosureActionIcon } from "./DisclosureActionIcon";
+import { CollapsibleCaptionHeader } from "./chat/CollapsibleCaption";
 
 interface ClaudeRuntimeTasksPanelProps {
   sessionId: string;
   runtime: ClaudeRuntimeView | null;
   tone?: "default" | "calm";
+  variant?: "default" | "caption";
 }
 
 const TERMINAL_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
@@ -35,7 +37,9 @@ export function ClaudeRuntimeTasksPanel({
   sessionId,
   runtime,
   tone = "default",
+  variant = "default",
 }: ClaudeRuntimeTasksPanelProps) {
+  const bodyId = useId();
   const [fetchedTasks, setFetchedTasks] = useState<ClaudeRuntimeTaskView[]>([]);
   const [fetchedModes, setFetchedModes] = useState<{
     planMode?: ClaudeRuntimeModeView | null;
@@ -111,6 +115,131 @@ export function ClaudeRuntimeTasksPanel({
 
   if (tasks.length === 0 && !hasModeState && !loading && !error) return null;
 
+  const refreshButton = (
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      title="새로고침"
+      disabled={loading}
+      onClick={() => void refresh()}
+    >
+      {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+    </Button>
+  );
+
+  const expandedBody = (
+    <div className={runtimePanelScrollClass("space-y-2")}>
+      {error ? (
+        <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
+          {error}
+        </div>
+      ) : null}
+
+      {hasModeState ? (
+        <div className="flex flex-wrap gap-1.5">
+          {planMode ? (
+            <ModeBadge
+              icon={<ListChecks className="size-3" />}
+              label={planMode.active ? "Plan mode" : "Plan off"}
+              active={planMode.active}
+              tone={tone}
+            />
+          ) : null}
+          {worktreeMode ? (
+            <ModeBadge
+              icon={<GitBranch className="size-3" />}
+              label={worktreeLabel(worktreeMode)}
+              active={worktreeMode.active}
+              tone={tone}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {tasks.map((task) => {
+        const output = outputs[task.taskId];
+        const terminal = TERMINAL_STATUSES.has(task.status);
+        const busy = busyTaskId === task.taskId;
+        return (
+          <div
+            key={task.taskId}
+            className="rounded-md border border-border bg-muted/20 p-2"
+          >
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={statusClassName(task.status, tone)}>{task.status}</span>
+                  <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                    {taskKindLabel(task)}
+                  </span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {task.taskId}
+                  </span>
+                </div>
+                <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                  {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? "SDK task"}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  title="출력 보기"
+                  disabled={busy}
+                  onClick={() => void openOutput(task.taskId)}
+                >
+                  {busy ? <Loader2 className="animate-spin" /> : <TerminalSquare />}
+                </Button>
+                <Button
+                  variant="destructive-outline"
+                  size="icon-xs"
+                  title="중단"
+                  disabled={terminal || busy}
+                  onClick={() => void stopTask(task.taskId)}
+                >
+                  <Square />
+                </Button>
+              </div>
+            </div>
+            {output ? (
+              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-background p-2 text-xs text-foreground">
+                {output.output || output.message || "출력이 없습니다"}
+              </pre>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  if (variant === "caption") {
+    return (
+      <section className="px-3 py-2" data-slot="claude-runtime-tasks-caption">
+        <div className="flex items-center justify-between gap-2">
+          <CollapsibleCaptionHeader
+            id={bodyId}
+            expanded={expanded}
+            title={
+              <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                <Bot className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="shrink-0 font-medium">백그라운드 작업 {tasks.length}</span>
+                {runningCount > 0 ? <span className="shrink-0">실행 중 {runningCount}</span> : null}
+                {errorCount > 0 ? <span className="shrink-0 chat-tone-danger-text">오류 {errorCount}</span> : null}
+              </span>
+            }
+            align="start"
+            alignmentInset="content"
+            onToggle={() => setExpanded((value) => !value)}
+            className="min-w-0 flex-1 motion-safe:active:scale-100"
+            data-slot="manuscript-tasks-toggle"
+          />
+          {refreshButton}
+        </div>
+        {expanded ? expandedBody : null}
+      </section>
+    );
+  }
+
   return (
     <section className="border-t border-border/70 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
@@ -143,101 +272,10 @@ export function ClaudeRuntimeTasksPanel({
             </span>
           ) : null}
         </button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          title="새로고침"
-          disabled={loading}
-          onClick={() => void refresh()}
-        >
-          {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-        </Button>
+        {refreshButton}
       </div>
 
-      {expanded ? (
-        <div className={runtimePanelScrollClass("space-y-2")}>
-          {error ? (
-            <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
-              {error}
-            </div>
-          ) : null}
-
-          {hasModeState ? (
-            <div className="flex flex-wrap gap-1.5">
-              {planMode ? (
-                <ModeBadge
-                  icon={<ListChecks className="size-3" />}
-                  label={planMode.active ? "Plan mode" : "Plan off"}
-                  active={planMode.active}
-                  tone={tone}
-                />
-              ) : null}
-              {worktreeMode ? (
-                <ModeBadge
-                  icon={<GitBranch className="size-3" />}
-                  label={worktreeLabel(worktreeMode)}
-                  active={worktreeMode.active}
-                  tone={tone}
-                />
-              ) : null}
-            </div>
-          ) : null}
-
-          {tasks.map((task) => {
-            const output = outputs[task.taskId];
-            const terminal = TERMINAL_STATUSES.has(task.status);
-            const busy = busyTaskId === task.taskId;
-            return (
-              <div
-                key={task.taskId}
-                className="rounded-md border border-border bg-muted/20 p-2"
-              >
-                <div className="flex items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className={statusClassName(task.status, tone)}>{task.status}</span>
-                      <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                        {taskKindLabel(task)}
-                      </span>
-                      <span className="truncate font-mono text-xs text-muted-foreground">
-                        {task.taskId}
-                      </span>
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? "SDK task"}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="icon-xs"
-                      title="출력 보기"
-                      disabled={busy}
-                      onClick={() => void openOutput(task.taskId)}
-                    >
-                      {busy ? <Loader2 className="animate-spin" /> : <TerminalSquare />}
-                    </Button>
-                    <Button
-                      variant="destructive-outline"
-                      size="icon-xs"
-                      title="중단"
-                      disabled={terminal || busy}
-                      onClick={() => void stopTask(task.taskId)}
-                    >
-                      <Square />
-                    </Button>
-                  </div>
-                </div>
-                {output ? (
-                  <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-background p-2 text-xs text-foreground">
-                    {output.output || output.message || "출력이 없습니다"}
-                  </pre>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      {expanded ? expandedBody : null}
     </section>
   );
 }

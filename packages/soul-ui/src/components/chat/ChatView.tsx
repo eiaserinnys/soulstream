@@ -24,6 +24,7 @@ import { useDashboardStore, type ChatSessionStoreScope } from "../../stores/dash
 import { DashboardIconCap } from "../DashboardIconCap";
 import { ChatStoreScopeProvider, useChatFlattenTree, useChatStore, useChatStoreApi } from "../../stores/chat-store-scope";
 import { projectPersistentTurnUsage } from "../../lib/persistent-turn-usage-projection";
+import { projectPersistentWorkDetails } from "../../lib/persistent-work-details-projection";
 import { projectChatOutputAttachments } from "../../lib/chat-output-attachment-projection";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
@@ -185,6 +186,9 @@ function ChatViewContent({
   const turnUsageMode = persistentSessionDisplaySettings?.sessionId === activeSessionKey
     ? persistentSessionDisplaySettings.turnUsageMode ?? "collapsed"
     : "collapsed";
+  const showWorkDetails = persistentSessionDisplaySettings?.sessionId === activeSessionKey
+    ? persistentSessionDisplaySettings.showWorkDetails
+    : true;
   const flattenedMessages = useMemo(
     () => isManuscript
       ? flattenMessages(tree, { includePersistentTurnUsage: true })
@@ -201,9 +205,12 @@ function ChatViewContent({
       const cacheKeepaliveFiltered = projectCacheKeepaliveTurns(
         projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
       );
-      return projectPersistentTurnUsage(cacheKeepaliveFiltered, turnUsageMode);
+      return projectPersistentTurnUsage(
+        projectPersistentWorkDetails(cacheKeepaliveFiltered, showWorkDetails),
+        turnUsageMode,
+      );
     },
-    [isManuscript, messages, turnUsageMode],
+    [isManuscript, messages, showWorkDetails, turnUsageMode],
   );
   const visibleMessages = useMemo(
     () => {
@@ -221,8 +228,10 @@ function ChatViewContent({
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );
   const grouped = useMemo(
-    () => isManuscript ? groupManuscriptMessages(visibleMessages) : groupMessages(visibleMessages),
-    [isManuscript, visibleMessages],
+    () => isManuscript
+      ? groupManuscriptMessages(visibleMessages).filter((item) => showWorkDetails || item.type !== "activity-group")
+      : groupMessages(visibleMessages),
+    [isManuscript, showWorkDetails, visibleMessages],
   );
   const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
@@ -959,7 +968,7 @@ function ChatViewContent({
         </button>
       </div>}
 
-      {showRuntimeStrips ? <ChatRuntimeCompactStrips sessionId={activeSessionKey} /> : null}
+      {showRuntimeStrips ? <ChatRuntimeCompactStrips sessionId={activeSessionKey} variant={isManuscript ? "caption" : "default"} /> : null}
 
       <ChatInput
         presentation={presentation}

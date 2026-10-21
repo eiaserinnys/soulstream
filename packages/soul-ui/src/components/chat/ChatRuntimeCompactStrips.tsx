@@ -6,9 +6,10 @@ import { shouldShowClaudeRuntimePanels } from "../claude-runtime-visibility";
 
 interface ChatRuntimeCompactStripsProps {
   sessionId: string;
+  variant?: "default" | "caption";
 }
 
-export function ChatRuntimeCompactStrips({ sessionId }: ChatRuntimeCompactStripsProps) {
+export function ChatRuntimeCompactStrips({ sessionId, variant = "default" }: ChatRuntimeCompactStripsProps) {
   const runtime = useChatStore((s) => s.claudeRuntime);
   const backend = useChatStore((s) => s.activeSessionSummary?.backend);
 
@@ -16,9 +17,9 @@ export function ChatRuntimeCompactStrips({ sessionId }: ChatRuntimeCompactStrips
 
   return (
     <div className="shrink-0">
-      <ClaudeRuntimeTasksPanel sessionId={sessionId} runtime={runtime} tone="calm" />
-      <ClaudeRuntimeSchedulesPanel sessionId={sessionId} runtime={runtime} tone="calm" />
-      <ClaudeRuntimeNotificationsPanel sessionId={sessionId} tone="calm" />
+      <ClaudeRuntimeTasksPanel sessionId={sessionId} runtime={runtime} tone="calm" variant={variant} />
+      <ClaudeRuntimeSchedulesPanel sessionId={sessionId} runtime={runtime} tone="calm" variant={variant} />
+      <ClaudeRuntimeNotificationsPanel sessionId={sessionId} tone="calm" variant={variant} />
     </div>
   );
 }
