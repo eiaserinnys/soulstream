@@ -1,5 +1,16 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
+const mockOpenContentLink = jest.fn();
+const mockApi = {
+  listCards: jest.fn().mockResolvedValue({ cards: [] }),
+  getCard: jest.fn(),
+  dismissPersistentReport: jest.fn(),
+  confirmCardItem: jest.fn(),
+  addCardComment: jest.fn(),
+  answerCardQuestion: jest.fn(),
+};
+jest.mock('../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpenContentLink }));
+jest.mock('../../api/client', () => ({ createApiClient: () => mockApi }));
 let mockDevice = 'phone';
 jest.mock('../../theme/useDeviceType', () => ({ useDeviceType: () => mockDevice, deviceTypeToBaseKey: (device: string) => device === 'phone' ? 'phone' : 'tablet' }));
 jest.mock('../../components/chat/ChatBody', () => {
@@ -28,9 +39,10 @@ jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
     <Pressable testID="close-card-overlay" onPress={onClose} />
   </View> : null };
 });
-jest.mock('../../components/persistent/PersistentReportCardExpansion', () => {
+jest.mock('../../components/AppModalSurface', () => {
   const { View } = require('react-native');
-  return { PersistentReportCardExpansion: ({ entry }: any) => <View testID={`report-card-expansion-${entry.key}`} /> };
+  return { AppModalSurface: ({ visible, modalId, onRequestClose, onDismiss, children, surfaceTestID }: any) =>
+    <View testID={surfaceTestID} visible={visible} modalId={modalId} onRequestClose={onRequestClose} onDismiss={onDismiss}>{children}</View> };
 });
 jest.mock('../../components/settings/PersistentSessionPasSettingsModal', () => ({ PersistentSessionPasSettingsModal: () => null }));
 jest.mock('../SettingsScreen', () => ({ SettingsScreen: () => null }));
@@ -53,7 +65,10 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { useUsageSummary } from '../../hooks/useUsageSummary';
 import { useTokens } from '../../theme';
 import { AppModalSurface } from '../../components/AppModalSurface';
+import { GlassButton } from '../../components/GlassSurface';
 import { measurePersistentReports } from '../../test-utils/persistent-report-layout';
+import type { CardDetail } from '../../api/cardTypes';
+import { cardFixture } from '../../test-support/cards';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -61,6 +76,11 @@ function ScreenHarness({ active = true, show = true }: { active?: boolean; show?
   return <PersistentSessionProvider><Capture />{show ? <PersistentSessionScreen active={active} onHome={jest.fn()} /> : null}</PersistentSessionProvider>;
 }
 beforeEach(() => {
+  mockOpenContentLink.mockReset();
+  useSettingsStore.setState({ serverUrl: '' });
+  const card = cardFixture({ id: 'card-531', number: 531, status: 'review', assigneeSessionId: 'pas-card-phone',
+    now: { text: '검수 결과를 확인해 주세요.', turn: 'user', ask: '확인 항목도 살펴봐 주세요.', updatedAt: '2026-10-21T00:00:00Z', sessionId: 'pas-card-phone' } });
+  mockApi.getCard.mockReset().mockResolvedValue({ card: { ...card, items: [] }, reports: [], questions: [], sessions: [], nowHistory: [], comments: [] } as CardDetail);
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
   jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
 });
@@ -175,7 +195,7 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
     else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
   });
   mockDevice = 'phone';
-  useSettingsStore.setState({ serverUrl: '' });
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
   const phone = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
   act(() => {
     store.getState().open({ session_id: 'pas-card-phone', display_name: '관제', persistent: true } as any);
@@ -195,7 +215,20 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
   expect(modal.props.presentationStyle).toBe('pageSheet');
   expect(phone.getByTestId('persistent-session-report-card-sheet')).toBeTruthy();
   expect(phone.getByText('검수 대기')).toBeTruthy();
-  expect(phone.getByTestId('report-card-expansion-card_531')).toBeTruthy();
+  await waitFor(() => expect(phone.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
+  expect(mockOpenContentLink).not.toHaveBeenCalled();
+  const closeAfterOpen = phone.UNSAFE_getByType(AppModalSurface).props.onDismiss;
+  const openCard = phone.UNSAFE_getAllByType(GlassButton).find(button => button.props.accessibilityLabel === '카드 열기');
+  expect(openCard).toBeDefined();
+  act(() => openCard!.props.onPress());
+  await waitFor(() => expect(phone.UNSAFE_getByType(AppModalSurface).props.visible).toBe(false));
+  const closingSheet = phone.UNSAFE_getByType(AppModalSurface);
+  expect(mockOpenContentLink).not.toHaveBeenCalled();
+  act(() => closingSheet.props.onDismiss());
+  expect(mockOpenContentLink).toHaveBeenCalledTimes(1);
+  expect(mockOpenContentLink).toHaveBeenCalledWith('/?card=card-531');
+  act(() => closeAfterOpen());
+  expect(mockOpenContentLink).toHaveBeenCalledTimes(1);
   if (phonePager !== phone) phonePager.unmount();
   phone.unmount();
 
@@ -219,7 +252,7 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
   measurePersistentReports(tabletPager);
   await waitFor(() => expect(tabletPager.getByTestId('report-title')).toBeTruthy());
   fireEvent.press(tabletPager.getByTestId('report-title'));
-  expect(tabletPager.getByTestId('report-card-expansion-card_531')).toBeTruthy();
+  await waitFor(() => expect(tabletPager.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
   expect(tablet.queryByTestId('persistent-session-report-card-sheet')).toBeNull();
   if (tabletPager !== tablet) tabletPager.unmount();
   tablet.unmount();

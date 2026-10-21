@@ -18,7 +18,11 @@ import { GlassButton } from '../GlassSurface';
 
 type Lookup = { key: string; number: number; cardId: string | null; loading: boolean; error?: string };
 
-export function PersistentReportCardExpansion({ api, entry }: { api: ApiClient | null; entry: PersistentReportEntry }) {
+export function PersistentReportCardExpansion({ api, entry, onOpenCard }: {
+  api: ApiClient | null;
+  entry: PersistentReportEntry;
+  onOpenCard?(cardId: string): void;
+}) {
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const { width } = useWindowDimensions();
@@ -60,9 +64,11 @@ export function PersistentReportCardExpansion({ api, entry }: { api: ApiClient |
   const onBusyChange = useCallback((busy: boolean) => setComposerBusy(busy), []);
   const onChooseAnswer = useCallback((answer: string) => composer.current?.chooseAnswer(answer), []);
   const focusComposer = useCallback(() => composer.current?.focus(), []);
-  const onOpenCard = useCallback(() => {
-    if (cardId) void openLink(`/?card=${encodeURIComponent(cardId)}`);
-  }, [cardId, openLink]);
+  const handleOpenCard = useCallback(() => {
+    if (!cardId) return;
+    if (onOpenCard) onOpenCard(cardId);
+    else void openLink(`/?card=${encodeURIComponent(cardId)}`);
+  }, [cardId, onOpenCard, openLink]);
 
   if (!api) return <Text style={styles.error}>카드를 불러오지 못했습니다.</Text>;
   if (number === null && !entry.card_id) return <Text style={styles.error}>카드 연결을 찾지 못했습니다.</Text>;
@@ -77,7 +83,7 @@ export function PersistentReportCardExpansion({ api, entry }: { api: ApiClient |
       initiallyConfirmedIds={[]} newlyConfirmedIds={[]} onConfirm={itemActions.confirm}
       onSetTarget={item => { setTargetItem(item); requestAnimationFrame(focusComposer); }} onRecentConfirmation={() => {}} paneWidth={width} />
     {timelineDetail ? <CardTimeline detail={timelineDetail} onChooseAnswer={onChooseAnswer} commentsOnly /> : null}
-    <GlassButton variant="plain" size="compact" accessibilityLabel="카드 열기" onPress={onOpenCard}>
+    <GlassButton testID="persistent-report-card-open" variant="plain" size="compact" accessibilityLabel="카드 열기" onPress={handleOpenCard}>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.link }}>카드 열기</Text>
     </GlassButton>
     <CardCommentComposer ref={composer} api={api} cardId={cardId} sessionId={detail.card.assigneeSessionId} nodeId={detail.card.nodeId}

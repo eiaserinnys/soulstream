@@ -28,6 +28,7 @@ import { CardStatusChip } from '../components/planner/CardRow';
 import { cardDetailStyles } from '../components/planner/CardDetail.styles';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
 import { useUsageSummary } from '../hooks/useUsageSummary';
+import { useOpenContentLink } from '../hooks/useOpenContentLink';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { useAuthStore } from '../store/authStore';
@@ -90,6 +91,27 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const { handleAppearanceChange } = useDisplayPreferenceActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [reportCard, setReportCard] = useState<PersistentReportEntry | null>(null);
+  const [reportCardSheetEntry, setReportCardSheetEntry] = useState<PersistentReportEntry | null>(null);
+  const pendingReportCardLink = React.useRef<string | null>(null);
+  const openContentLink = useOpenContentLink();
+  const showReportCard = React.useCallback((entry: PersistentReportEntry) => {
+    pendingReportCardLink.current = null;
+    setReportCard(entry);
+    setReportCardSheetEntry(entry);
+  }, []);
+  const closeReportCard = React.useCallback(() => {
+    setReportCard(null);
+  }, []);
+  const openReportCardFromSheet = React.useCallback((cardId: string) => {
+    pendingReportCardLink.current = cardId;
+    closeReportCard();
+  }, [closeReportCard]);
+  const onReportCardSheetDismiss = React.useCallback(() => {
+    const cardId = pendingReportCardLink.current;
+    pendingReportCardLink.current = null;
+    setReportCardSheetEntry(null);
+    if (cardId) void openContentLink(`/?card=${encodeURIComponent(cardId)}`);
+  }, [openContentLink]);
   const [savingCharacter, setSavingCharacter] = useState(false);
   const appRef = React.useRef<View>(null);
   const mainRef = React.useRef<View>(null);
@@ -147,7 +169,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       return card ? <CardStatusChip card={card} detail /> : null;
     }}
     renderCardDetails={!phone ? entry => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} /> : undefined}
-    onOpenCardDetails={phone ? setReportCard : undefined}
+    onOpenCardDetails={phone ? showReportCard : undefined}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
@@ -285,20 +307,20 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
-    {phone && reportCard && isPersistentReportCardExpandable(reportCard) ? <AppModalSurface visible modalId="modal_card_detail"
-      variant="expanded" presentationStyle="pageSheet" onRequestClose={() => setReportCard(null)} surfaceTestID="persistent-session-report-card-sheet">
+    {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"
+      variant="expanded" presentationStyle="pageSheet" onRequestClose={closeReportCard} onDismiss={onReportCardSheetDismiss} surfaceTestID="persistent-session-report-card-sheet">
       <View style={cardStyles.header}><View style={cardStyles.headerRow}>
-        <GlassButton iconOnly size="compact" accessibilityLabel="닫기" onPress={() => setReportCard(null)}>
+        <GlassButton iconOnly size="compact" accessibilityLabel="닫기" onPress={closeReportCard}>
           <Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} />
         </GlassButton>
         <Text style={cardStyles.heading} numberOfLines={2}>
-          {persistentReportStatusCard(reportCard) ? <><CardStatusChip card={persistentReportStatusCard(reportCard)!} detail />{' '}</> : null}
-          {reportCard.title}
+          {persistentReportStatusCard(reportCardSheetEntry) ? <><CardStatusChip card={persistentReportStatusCard(reportCardSheetEntry)!} detail />{' '}</> : null}
+          {reportCardSheetEntry.title}
         </Text>
       </View></View>
       <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }}
         showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <PersistentReportCardExpansion key={reportCard.key} api={api} entry={reportCard} />
+        <PersistentReportCardExpansion key={reportCardSheetEntry.key} api={api} entry={reportCardSheetEntry} onOpenCard={openReportCardFromSheet} />
       </ScrollView>
     </AppModalSurface> : null}
   </SafeAreaView>;
