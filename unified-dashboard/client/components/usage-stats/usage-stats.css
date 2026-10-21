@@ -117,53 +117,13 @@
   gap: var(--v3-space-3);
 }
 
+.config-dialog .usage-stats-summary-meta:empty {
+  display: none;
+}
+
 .config-dialog .usage-stats-date-chip {
   width: fit-content;
   gap: var(--v3-space-2);
-}
-
-.config-dialog .usage-stats-disclosure {
-  min-width: 0;
-}
-
-.config-dialog .usage-stats-token-details {
-  display: grid;
-  gap: var(--v3-space-2);
-  margin: 0;
-}
-
-.config-dialog .usage-stats-token-details > div {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--v3-space-3);
-}
-
-.config-dialog .usage-stats-token-details dt,
-.config-dialog .usage-stats-basis,
-.config-dialog .usage-stats-basis a {
-  color: var(--v3-text-secondary);
-  font: var(--v3-type-meta) var(--v3-font-family);
-}
-
-.config-dialog .usage-stats-token-details dd {
-  margin: 0;
-  color: var(--v3-text-primary);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.config-dialog .usage-stats-basis {
-  display: grid;
-  gap: var(--v3-space-2);
-}
-
-.config-dialog .usage-stats-basis p {
-  margin: 0;
-}
-
-.config-dialog .usage-stats-basis a {
-  text-decoration: underline;
-  text-underline-offset: var(--v3-space-2);
 }
 
 .config-dialog .usage-stats-chart-heading {
@@ -192,10 +152,6 @@
   min-width: 0;
   margin-top: var(--v3-space-3);
   touch-action: pan-y;
-}
-
-.config-dialog .usage-stats-disclosure > summary {
-  justify-content: flex-start;
 }
 
 .config-dialog .usage-stats-axis-label {
@@ -337,10 +293,6 @@
   grid-template-columns: minmax(0, 1fr) auto minmax(2em, auto);
   align-items: baseline;
   gap: var(--v3-space-2);
-}
-
-.config-dialog .usage-stats-share-list-no-share .usage-stats-share-head {
-  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .config-dialog .usage-stats-share-name {

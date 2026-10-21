@@ -121,10 +121,8 @@ test('날짜 상세 로딩 중에는 기존 요약과 그래프를 유지하고 
   expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('불러오는 중…');
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('불러오는 중…');
   expect(screen.getByTestId('usage-stats-cache-read-excluded').props.children).toBe('캐시 읽기 제외');
-  expect(screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children).toBe('');
-  expect(screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children).toBe('');
-  expect(screen.queryByTestId('usage-stats-cost-split-non-cache-track')).toBeNull();
-  expect(screen.queryByTestId('usage-stats-cost-split-cache-read-track')).toBeNull();
+  expect(screen.getByTestId('usage-stats-cache-read-cost-included').props.children).toBe('캐시 읽기 포함');
+  expect(screen.queryByTestId('usage-stats-cost-split')).toBeNull();
   expect(screen.getByTestId('usage-stats-observed-tokens').props.children).toBe('불러오는 중…');
   expect(within(screen.getByTestId('usage-stats-models')).getByText('불러오는 중…')).toBeTruthy();
   for (const row of overview.by_model) {
@@ -245,8 +243,7 @@ test('캐시 포함 선택은 요약을 유지하고 그래프와 모델·프로
     screen.getByTestId('usage-stats-total-tokens').props.children,
     screen.getByTestId('usage-stats-reference-cost').props.children,
     screen.getByTestId('usage-stats-cache-read-excluded').props.children,
-    screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children,
-    screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children,
+    screen.getByTestId('usage-stats-cache-read-cost-included').props.children,
   ];
   const model = overview.by_model[0];
   const modelId = model.model !== null
@@ -283,8 +280,7 @@ test('캐시 포함 선택은 요약을 유지하고 그래프와 모델·프로
     screen.getByTestId('usage-stats-total-tokens').props.children,
     screen.getByTestId('usage-stats-reference-cost').props.children,
     screen.getByTestId('usage-stats-cache-read-excluded').props.children,
-    screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children,
-    screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children,
+    screen.getByTestId('usage-stats-cache-read-cost-included').props.children,
   ]).toEqual(summary);
   expect(request).toHaveBeenCalledTimes(1);
 
@@ -303,8 +299,7 @@ test('캐시 포함 선택은 요약을 유지하고 그래프와 모델·프로
     screen.getByTestId('usage-stats-total-tokens').props.children,
     screen.getByTestId('usage-stats-reference-cost').props.children,
     screen.getByTestId('usage-stats-cache-read-excluded').props.children,
-    screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children,
-    screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children,
+    screen.getByTestId('usage-stats-cache-read-cost-included').props.children,
   ]).toEqual(summary);
 
   fireEvent.press(screen.getByTestId('settings-segment-usage-stats-cache-read-include'));
@@ -397,6 +392,7 @@ test('미확인 빈 기간에는 입력 자료 안내를 숨기고 그래프는 
   const screen = render(<UsageStatsSettingsSection />);
   await ready(screen);
 
+  expect(screen.queryByTestId('usage-stats-summary-meta')).toBeNull();
   expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('미기록');
   expect(within(screen.getByTestId('usage-stats-model-chart-chart')).getByText('미기록')).toBeTruthy();
   expect(screen.queryByTestId('settings-section-usage-stats-input')).toBeNull();
@@ -477,8 +473,8 @@ test('기록 없음은 0 요약과 빈 차트를 보이고 프로젝트와 입�
   expect(screen.getByTestId('usage-stats-total-tokens').props.children).toBe('0');
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('$0.00');
   expect(screen.getByTestId('usage-stats-cache-read-excluded').props.children).toBe('캐시 읽기 0 제외');
-  expect(screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children).toBe('$0.00');
-  expect(screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children).toBe('$0.00');
+  expect(screen.getByTestId('usage-stats-cache-read-cost-included').props.children).toBe('캐시 읽기 $0.00 포함');
+  expect(screen.queryByTestId('usage-stats-cost-split')).toBeNull();
   expect(screen.getByText('이 기간에 기록이 없습니다')).toBeTruthy();
   expect(screen.queryByText('프로젝트별')).toBeNull();
   expect(screen.queryByText('입력 자료 구성')).toBeNull();
@@ -501,8 +497,7 @@ const cacheSplitScenarios = [
     pricedTokens: 225_000_000,
     expected: {
       cacheReadLine: '캐시 읽기 3.1억 제외',
-      nonCacheCost: '$45.00',
-      cacheReadCost: '$78.45',
+      cacheReadCostLine: '캐시 읽기 $78.45 포함',
       coverageLabel: '기록 토큰 50% 환산',
     },
   },
@@ -522,8 +517,7 @@ const cacheSplitScenarios = [
     pricedTokens: 225_000_000,
     expected: {
       cacheReadLine: '캐시 읽기 3.1억+ 제외',
-      nonCacheCost: '$45.00+',
-      cacheReadCost: '$78.45+',
+      cacheReadCostLine: '캐시 읽기 $78.45+ 포함',
       coverageLabel: '일부만 환산',
     },
   },
@@ -543,14 +537,13 @@ const cacheSplitScenarios = [
     pricedTokens: null,
     expected: {
       cacheReadLine: '캐시 읽기 미기록',
-      nonCacheCost: '미확인',
-      cacheReadCost: '미확인',
+      cacheReadCostLine: '캐시 읽기 미확인',
       coverageLabel: '일부만 환산',
     },
   },
 ] as const;
 
-test.each(cacheSplitScenarios)('$name 캐시 분할 값과 캐시 포함 환산 분모를 표시한다', async scenario => {
+test.each(cacheSplitScenarios)('$name 캐시 읽기 정가 줄과 캐시 포함 환산 분모를 표시한다', async scenario => {
   const overview = buildUsageStatsOverview(weekQuery);
   Object.assign(overview.totals.metrics, {
     total_tokens: scenario.totalTokens,
@@ -575,46 +568,12 @@ test.each(cacheSplitScenarios)('$name 캐시 분할 값과 캐시 포함 환산 
   await ready(screen);
 
   expect(screen.getByTestId('usage-stats-cache-read-excluded').props.children).toBe(scenario.expected.cacheReadLine);
-  expect(screen.getByTestId('usage-stats-cost-split-non-cache-value').props.children).toBe(scenario.expected.nonCacheCost);
-  expect(screen.getByTestId('usage-stats-cost-split-cache-read-value').props.children).toBe(scenario.expected.cacheReadCost);
+  expect(screen.getByTestId('usage-stats-cache-read-cost-included').props.children).toBe(scenario.expected.cacheReadCostLine);
+  expect(screen.queryByTestId('usage-stats-cost-split')).toBeNull();
+  expect(screen.queryByText('토큰 상세')).toBeNull();
+  expect(screen.queryByText('집계 기준')).toBeNull();
+  expect(screen.queryByText('비캐시')).toBeNull();
   expect(screen.getByText(scenario.expected.coverageLabel)).toBeTruthy();
-});
-
-test('토큰 상세에서 그중 일반 입력을 입력 다음에 보여준다', async () => {
-  const overview = buildUsageStatsOverview(weekQuery);
-  overview.totals.metrics.ordinary_input = 50_000_000;
-  overview.totals.coverage.token_partials.ordinary_input = false;
-  global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  }));
-  const screen = render(<UsageStatsSettingsSection />);
-  await ready(screen);
-
-  fireEvent.press(screen.getByText('토큰 상세'));
-  const labels = ['입력 (캐시 포함)', '그중 일반 입력', '그중 캐시 읽기', '그중 캐시 쓰기', '출력', '그중 추론'];
-  const labelPositions = labels.map(label => screen.getByText(label));
-  expect(screen.getByText('50,000,000')).toBeTruthy();
-  expect(labelPositions).toHaveLength(6);
-});
-
-test.each([
-  { name: '양수', value: 40_000_000, expected: '40,000,000+' },
-  { name: '0', value: 0, expected: '미기록' },
-])('부분 기록된 일반 입력 $name 값은 공통 포맷을 사용한다', async scenario => {
-  const overview = buildUsageStatsOverview(weekQuery);
-  overview.totals.metrics.ordinary_input = scenario.value;
-  overview.totals.coverage.token_partials.ordinary_input = true;
-  global.fetch = jest.fn(async () => new Response(JSON.stringify(overview), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  }));
-  const screen = render(<UsageStatsSettingsSection />);
-  await ready(screen);
-
-  fireEvent.press(screen.getByText('토큰 상세'));
-  expect(screen.getByText('그중 일반 입력')).toBeTruthy();
-  expect(screen.getByTestId('usage-stats-ordinary-input-value').props.children).toBe(scenario.expected);
 });
 
 test('모델 필터는 해제할 수 있고 실패 상태의 재시도는 데이터를 다시 표시한다', async () => {
@@ -701,6 +660,13 @@ test('웹 대시보드 프로젝트의 미기록 턴은 요약 전체 정가와 
   await chooseView(screen, '프로젝트별');
   fireEvent.press(screen.getByTestId('usage-stats-project-row-project-web-dashboard'));
   await ready(screen);
+  const metaChildren = React.Children.toArray(
+    screen.getByTestId('usage-stats-summary-meta').props.children,
+  ) as React.ReactElement<{ testID?: string; children?: React.ReactNode }>[];
+  expect(metaChildren.map(child => child.props.testID ?? child.props.children)).toEqual([
+    'usage-stats-missing-turns',
+    expect.stringMatching(/환산$/),
+  ]);
   expect(screen.getByTestId('usage-stats-reference-cost').props.children).toBe('$13.00+');
   fireEvent.press(screen.getByTestId('settings-segment-usage-stats-measure-cost'));
   expect(screen.getByTestId('usage-stats-project-row-project-web-dashboard-value').props.children).toBe('$12.86+');

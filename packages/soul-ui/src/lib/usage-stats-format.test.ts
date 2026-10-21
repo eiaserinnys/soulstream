@@ -137,30 +137,20 @@ describe("usage statistics formatting", () => {
 
   it("formats the cache split with per-component and per-line partial marks", () => {
     expect(USAGE_STATS_LABELS).toMatchObject({
-      nonCacheCost: "비캐시",
-      cacheReadCost: "캐시 읽기",
       cacheReadExcludedRule: "캐시 읽기 제외",
-      uncachedInput: "그중 일반 입력",
+      cacheReadIncludedRule: "캐시 읽기 포함",
       cacheReadToggleGroup: "캐시 읽기",
       cacheReadExclude: "캐시 제외",
       cacheReadInclude: "캐시 포함",
     });
     expect(formatUsageStatsCacheSplit(null, null)).toEqual({
       cacheReadLine: "캐시 읽기 제외",
-      nonCacheCost: "",
-      cacheReadCost: "",
-      ordinaryInput: "",
+      cacheReadCostLine: "캐시 읽기 포함",
     });
     expect(formatUsageStatsCacheSplit(splitMetrics(), coverageWith())).toEqual({
       cacheReadLine: "캐시 읽기 60 제외",
-      nonCacheCost: "$78.45",
-      cacheReadCost: "$45.00",
-      ordinaryInput: "40",
+      cacheReadCostLine: "캐시 읽기 $45.00 포함",
     });
-    expect(formatUsageStatsCacheSplit(
-      { ...splitMetrics(), ordinary_input: 1_000_000 },
-      coverageWith(),
-    ).ordinaryInput).toBe("1,000,000");
     const partialCosts = splitMetrics();
     partialCosts.reference_cost_breakdown = {
       cache_read: { known_cost_usd: 45, is_partial: true },
@@ -171,9 +161,7 @@ describe("usage statistics formatting", () => {
       coverageWith({ cache_read: true, ordinary_input: true, provider_total_tokens: true }),
     )).toEqual({
       cacheReadLine: "캐시 읽기 60+ 제외",
-      nonCacheCost: "$78.45+",
-      cacheReadCost: "$45.00+",
-      ordinaryInput: "40+",
+      cacheReadCostLine: "캐시 읽기 $45.00+ 포함",
     });
   });
 
@@ -187,9 +175,7 @@ describe("usage statistics formatting", () => {
     };
     expect(formatUsageStatsCacheSplit(missing, coverageWith({ cache_read: true, ordinary_input: true }))).toEqual({
       cacheReadLine: "캐시 읽기 미기록",
-      nonCacheCost: "미확인",
-      cacheReadCost: "미확인",
-      ordinaryInput: "미기록",
+      cacheReadCostLine: "캐시 읽기 미확인",
     });
 
     const partialZero = splitMetrics();
@@ -201,9 +187,7 @@ describe("usage statistics formatting", () => {
     };
     expect(formatUsageStatsCacheSplit(partialZero, coverageWith({ cache_read: true, ordinary_input: true }))).toEqual({
       cacheReadLine: "캐시 읽기 미기록",
-      nonCacheCost: "미확인",
-      cacheReadCost: "미확인",
-      ordinaryInput: "미기록",
+      cacheReadCostLine: "캐시 읽기 미확인",
     });
 
     const measuredZero = splitMetrics();
@@ -215,9 +199,7 @@ describe("usage statistics formatting", () => {
     };
     expect(formatUsageStatsCacheSplit(measuredZero, coverageWith())).toEqual({
       cacheReadLine: "캐시 읽기 0 제외",
-      nonCacheCost: "$0.00",
-      cacheReadCost: "$0.00",
-      ordinaryInput: "0",
+      cacheReadCostLine: "캐시 읽기 $0.00 포함",
     });
   });
 
@@ -227,17 +209,14 @@ describe("usage statistics formatting", () => {
       coverageWith({ ordinary_input: true }),
     );
     expect(result.cacheReadLine).toBe("캐시 읽기 60 제외");
-    expect(result.cacheReadCost).toBe("$45.00");
-    expect(result.nonCacheCost).toBe("$78.45");
-    expect(result.ordinaryInput).toBe("40+");
+    expect(result.cacheReadCostLine).toBe("캐시 읽기 $45.00 포함");
 
     const components = splitMetrics();
     components.reference_cost_breakdown = {
       cache_read: { known_cost_usd: 45, is_partial: true },
       non_cache: { known_cost_usd: 78.45, is_partial: false },
     };
-    expect(formatUsageStatsCacheSplit(components, coverageWith()).cacheReadCost).toBe("$45.00+");
-    expect(formatUsageStatsCacheSplit(components, coverageWith()).nonCacheCost).toBe("$78.45");
+    expect(formatUsageStatsCacheSplit(components, coverageWith()).cacheReadCostLine).toBe("캐시 읽기 $45.00+ 포함");
   });
 
   it("guards the cost row with provider_total_tokens instead of total_tokens", () => {

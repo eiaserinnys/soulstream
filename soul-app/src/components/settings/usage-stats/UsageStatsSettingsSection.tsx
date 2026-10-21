@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Text, View, type TextStyle } from 'react-native';
-import { BackendNodeCardHeader } from '../BackendNodeCard';
+import { ActivityIndicator, Platform, Text, View, type TextStyle } from 'react-native';
 import { useSettingsWorkspace } from '../SettingsWorkspaceContext';
 import { GlassButton } from '../../GlassSurface';
 import { SettingsOptionRow } from '../SettingsOptionRow';
@@ -19,7 +18,6 @@ import {
   formatUsageStatsModelLabel,
   formatUsageStatsPeriodLabel,
   formatUsageStatsProviderLabel,
-  formatUsageStatsTokenCount,
   formatUsageStatsCacheSplit,
   shiftUsageStatsAnchor,
   usageStatsCalendarRange,
@@ -32,7 +30,6 @@ import {
   usageStatsMetricValue,
 } from '../../../../../packages/soul-ui/src/lib/usage-stats-format';
 import type {
-  UsageStatsAggregate,
   UsageStatsPeriod,
   UsageStatsProvider,
   UsageStatsQuery,
@@ -98,8 +95,6 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
   const [measure, setMeasure] = useState<Measure>('tokens');
   const [includeCacheRead, setIncludeCacheRead] = useState(false);
   const [view, setView] = useState<'model' | 'project'>('model');
-  const [metricsExpanded, setMetricsExpanded] = useState(false);
-  const [basisExpanded, setBasisExpanded] = useState(false);
 
   const query = useMemo<UsageStatsQuery>(() => ({
     period,
@@ -313,35 +308,25 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
               <View style={{ flex: 1, minWidth: 0, gap: t.spacing.xs }}>
                 <Text style={{ ...t.foundation.typography.meta, color: t.colors.textTertiary }}>정가</Text>
                 <Text testID="usage-stats-reference-cost" numberOfLines={1} style={{ ...t.foundation.typography.section, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{costValue}</Text>
+                <Text
+                  testID="usage-stats-cache-read-cost-included"
+                  numberOfLines={2}
+                  lineBreakStrategyIOS="hangul-word"
+                  style={[
+                    { ...t.foundation.typography.meta, color: t.colors.textTertiary },
+                    Platform.OS === 'web' ? ({ wordBreak: 'keep-all' } as TextStyle) : undefined,
+                  ]}
+                >
+                  {cacheSplit.cacheReadCostLine}
+                </Text>
               </View>
             </View>
-            <View testID="usage-stats-cost-split" style={{ gap: t.spacing.md }}>
-              <UsageShareRow
-                testID="usage-stats-cost-split-non-cache"
-                label={USAGE_STATS_LABELS.nonCacheCost}
-                value={cacheSplit.nonCacheCost}
-                share={null}
-                color={t.colors.accent}
-              />
-              <UsageShareRow
-                testID="usage-stats-cost-split-cache-read"
-                label={USAGE_STATS_LABELS.cacheReadCost}
-                value={cacheSplit.cacheReadCost}
-                share={null}
-                color={t.colors.accent}
-              />
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }}>
-              {coverageLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text> : null}
-              {activeAggregate && activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : null}
-            </View>
-            <DisclosureButton label={USAGE_STATS_LABELS.tokenDetails} expanded={metricsExpanded} onPress={() => setMetricsExpanded(value => !value)} />
-            {metricsExpanded ? detailLoading
-              ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>불러오는 중…</Text>
-              : activeAggregate ? <MetricBreakdown aggregate={activeAggregate} ordinaryInput={cacheSplit.ordinaryInput} /> : null
-              : null}
-            <DisclosureButton label="집계 기준" expanded={basisExpanded} onPress={() => setBasisExpanded(value => !value)} />
-            {basisExpanded ? <AggregationBasis /> : null}
+            {coverageLabel || (activeAggregate?.coverage.missing_usage_turns ?? 0) > 0 ? (
+              <View testID="usage-stats-summary-meta" style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm }}>
+                {activeAggregate && activeAggregate.coverage.missing_usage_turns > 0 ? <Text testID="usage-stats-missing-turns" style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>미기록 턴 {activeAggregate.coverage.missing_usage_turns}</Text> : null}
+                {coverageLabel ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{coverageLabel}</Text> : null}
+              </View>
+            ) : null}
             <View testID="usage-stats-models" style={{ gap: t.spacing.md }}>
               <View testID="usage-stats-view-measure-row" style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}>
                 <View style={{ flex: 1, minWidth: 0 }}>
@@ -449,46 +434,4 @@ function StatusSection({ flattened, state, loading, onRetry }: { flattened: bool
         ? <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>이 통계를 볼 권한이 없습니다.</Text>
         : <View style={{ gap: t.spacing.sm }}><Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>통계를 불러오지 못했습니다.</Text><GlassButton disabled={loading} onPress={onRetry}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 불러오기</Text></GlassButton></View>;
   return <SettingsSection id="usage-stats-status" title="사용량" flattened={flattened}><View style={{ padding: t.cardLayout.padding }}>{content}</View></SettingsSection>;
-}
-
-function DisclosureButton({ label, expanded, onPress }: { label: string; expanded: boolean; onPress(): void }) {
-  const t = useTokens();
-  return <BackendNodeCardHeader accessibilityLabel={label} expanded={expanded} onPress={onPress}>
-    <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>{label}</Text>
-  </BackendNodeCardHeader>;
-}
-
-function MetricBreakdown({ aggregate, ordinaryInput }: { aggregate: UsageStatsAggregate; ordinaryInput: string }) {
-  const t = useTokens();
-  const metrics = aggregate.metrics;
-  const rows = [
-    { label: USAGE_STATS_LABELS.input, value: formatUsageStatsTokenCount(metrics.input_total, false) },
-    { label: USAGE_STATS_LABELS.uncachedInput, value: ordinaryInput, testID: 'usage-stats-ordinary-input-value' },
-    { label: USAGE_STATS_LABELS.cacheRead, value: formatUsageStatsTokenCount(metrics.cache_read, false) },
-    { label: USAGE_STATS_LABELS.cacheWrite, value: formatUsageStatsTokenCount(metrics.cache_write, false) },
-    { label: USAGE_STATS_LABELS.output, value: formatUsageStatsTokenCount(metrics.output_total, false) },
-    { label: USAGE_STATS_LABELS.reasoning, value: formatUsageStatsTokenCount(metrics.reasoning_output, false) },
-  ] as const;
-  return <View style={{ gap: t.spacing.xs }}>
-    {rows.map(row => <View key={row.label} style={{ flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm }}><Text style={{ flex: 1, ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{row.label}</Text><Text testID={'testID' in row ? row.testID : undefined} style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary, fontVariant: ['tabular-nums'] }}>{row.value}</Text></View>)}
-  </View>;
-}
-
-function AggregationBasis() {
-  const t = useTokens();
-  const style = { ...t.foundation.typography.meta, color: t.colors.textSecondary };
-  return <View style={{ gap: t.spacing.xs }}>
-    <Text style={style}>2026-10-19 공개 API 정가 USD 환산(standard, 기본 컨텍스트). 구독 실지출 아님</Text>
-    <Text style={style}>단가 출처: {[
-      ['OpenAI', 'https://developers.openai.com/api/docs/pricing?tab=suite'],
-      ['Claude', 'https://platform.claude.com/docs/en/about-claude/pricing'],
-      ['Gemini', 'https://ai.google.dev/gemini-api/docs/pricing'],
-      ['DeepSeek', 'https://api-docs.deepseek.com/quick_start/pricing/'],
-      ['Kimi', 'https://platform.kimi.ai/docs/pricing/chat'],
-    ].map(([label, url], index) => <Text key={label} accessibilityRole="link" onPress={() => { void Linking.openURL(url); }} style={{ color: t.colors.accent }}>{index ? ', ' : ''}{label}</Text>)}</Text>
-    <Text style={style}>날짜는 턴이 끝난 시각, Asia/Seoul, 주는 월요일 시작</Text>
-    <Text style={style}>프로젝트는 지금 보이는 최상위 폴더 기준</Text>
-    <Text style={style}>{USAGE_STATS_LABELS.inputEstimateBasis}</Text>
-    <Text style={style}>{USAGE_STATS_LABELS.inputEstimateCaveat}</Text>
-  </View>;
 }
