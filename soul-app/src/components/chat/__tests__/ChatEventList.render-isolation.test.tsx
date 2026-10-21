@@ -5,7 +5,7 @@ import type { StreamingSlots } from '../../../store/chatStore';
 import type { SessionEvent } from '../../../api/types';
 import type { ChatBodyStyles } from '../ChatBody.styles';
 import type { ChatRenderItem, PersistentDisplayProjectionSettings } from '../groupChatEvents';
-import { ChatEventList } from '../ChatEventList';
+import { ChatEventList, isManuscriptNarration } from '../ChatEventList';
 import { useChatBottomFollow } from '../useChatBottomFollow';
 import { useChatRenderItems } from '../useChatRenderItems';
 import { ChatUiControllerProvider, useChatUiController } from '../../chat-ui/ChatUiControllerProvider';
@@ -199,6 +199,23 @@ describe('chat row render isolation', () => {
 
     expect(mockNarrationByEvent.get('progress')).toBe(true);
     expect(mockNarrationByEvent.get('final')).toBe(false);
+  });
+
+  it('keeps a marked manuscript narration without an activity successor', () => {
+    const marked: ChatRenderItem = {
+      kind: 'event',
+      event: ev('marked', 'assistant_message', { text: '응답' }),
+      key: 'marked',
+      manuscriptNarration: true,
+    };
+    expect(isManuscriptNarration(marked, undefined)).toBe(true);
+
+    const unmarked: ChatRenderItem = {
+      kind: 'event',
+      event: ev('unmarked', 'assistant_message', { text: '응답' }),
+      key: 'unmarked',
+    };
+    expect(isManuscriptNarration(unmarked, undefined)).toBe(false);
   });
 
   it('does not dim assistant rows carrying a UI publication', () => {

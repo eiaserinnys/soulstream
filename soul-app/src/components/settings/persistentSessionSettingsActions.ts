@@ -54,6 +54,7 @@ export function persistentChatDisplaySettings(session: PersistentSessionResource
   return {
     show_generation_separator: session.settings.show_generation_separator === true,
     show_jev_candidates: session.settings.show_jev_candidates === true,
+    show_work_details: session.settings.show_work_details === true,
     show_character: session.settings.show_character !== false,
     animate_character: session.settings.animate_character !== false,
     turn_usage_mode: session.settings.turn_usage_mode,

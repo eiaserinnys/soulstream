@@ -202,10 +202,25 @@ test('saves both chat display toggles and applies the response to the matching o
   await waitFor(() => expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings).toEqual({
     show_generation_separator: true,
     show_jev_candidates: true,
+    show_work_details: false,
     show_character: true,
     animate_character: true,
     turn_usage_mode: 'collapsed',
   }));
+});
+
+test('작업 세부 표시 토글은 도움말을 보여 주고 저장 시 show_work_details를 보낸다', async () => {
+  const screen = await openList();
+  await openEditor(screen);
+  await waitFor(() => expect(screen.getByTestId('persistent-show-work-details')).toBeTruthy());
+  expect(screen.getByText('요약과 도구 기록을 보여 줍니다.')).toBeTruthy();
+  expect(screen.getByTestId('persistent-show-work-details').props.value).toBe(false);
+
+  fireEvent(screen.getByTestId('persistent-show-work-details'), 'valueChange', true);
+  fireEvent.press(screen.getByTestId('settings-scope-save'));
+  await waitFor(() => expect(api.updatePersistentSession).toHaveBeenCalledWith('pas-1', expect.objectContaining({
+    settings: expect.objectContaining({ show_work_details: true }),
+  })));
 });
 
 test('locks both display toggles while the first save is pending', async () => {
@@ -234,6 +249,7 @@ test('locks both display toggles while the first save is pending', async () => {
   expect(useChatStore.getState().persistentDisplaySettingsBySession['pas-1']?.settings).toEqual({
     show_generation_separator: true,
     show_jev_candidates: true,
+    show_work_details: false,
     show_character: true,
     animate_character: true,
     turn_usage_mode: 'collapsed',

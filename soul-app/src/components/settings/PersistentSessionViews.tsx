@@ -101,14 +101,15 @@ export function PersistentSessionsList({
   );
 }
 
-type Draft = { name: string; agentId: string; modelPreset: string; folderId: string; firstMessage: string; showCharacter: boolean; animateCharacter: boolean; showGenerationSeparator: boolean; showJevCandidates: boolean; turnUsageMode: PersistentTurnUsageMode };
-const emptyDraft = (): Draft => ({ name: '', agentId: '', modelPreset: '', folderId: '', firstMessage: '', showCharacter: true, animateCharacter: true, showGenerationSeparator: false, showJevCandidates: false, turnUsageMode: 'collapsed' });
+type Draft = { name: string; agentId: string; modelPreset: string; folderId: string; firstMessage: string; showCharacter: boolean; animateCharacter: boolean; showGenerationSeparator: boolean; showJevCandidates: boolean; showWorkDetails: boolean; turnUsageMode: PersistentTurnUsageMode };
+const emptyDraft = (): Draft => ({ name: '', agentId: '', modelPreset: '', folderId: '', firstMessage: '', showCharacter: true, animateCharacter: true, showGenerationSeparator: false, showJevCandidates: false, showWorkDetails: false, turnUsageMode: 'collapsed' });
 const draftFromSession = (session: PersistentSessionResource): Draft => ({
   ...emptyDraft(), name: session.display_name ?? '', agentId: session.agent_id ?? '', modelPreset: session.settings.default_model.model_preset ?? '',
   showCharacter: session.settings.show_character !== false,
   animateCharacter: session.settings.animate_character !== false,
   showGenerationSeparator: session.settings.show_generation_separator === true,
   showJevCandidates: session.settings.show_jev_candidates === true,
+  showWorkDetails: session.settings.show_work_details === true,
   turnUsageMode: session.settings.turn_usage_mode,
 });
 const sameModel = (a: PersistentSessionModel, b: PersistentSessionModel) =>
@@ -289,6 +290,9 @@ export function PersistentSessionEditor({
         if (draft.showJevCandidates !== baseline.showJevCandidates) {
           settings.show_jev_candidates = draft.showJevCandidates;
         }
+        if (draft.showWorkDetails !== baseline.showWorkDetails) {
+          settings.show_work_details = draft.showWorkDetails;
+        }
         if (draft.turnUsageMode !== baseline.turnUsageMode) settings.turn_usage_mode = draft.turnUsageMode;
         saved = await savePersistentSessionSettings(api, session.session_id, settings, name);
       }
@@ -354,7 +358,7 @@ export function PersistentSessionEditor({
   const displayChange = (field: PersistentSessionDisplayField, value: PersistentSessionDisplayValue) => {
     const draftField: Record<PersistentSessionDisplayField, keyof Draft> = {
       show_character: 'showCharacter', animate_character: 'animateCharacter',
-      show_generation_separator: 'showGenerationSeparator', show_jev_candidates: 'showJevCandidates', turn_usage_mode: 'turnUsageMode',
+      show_generation_separator: 'showGenerationSeparator', show_jev_candidates: 'showJevCandidates', show_work_details: 'showWorkDetails', turn_usage_mode: 'turnUsageMode',
     };
     if (mode !== 'pas') {
       if (field === 'turn_usage_mode') update({ turnUsageMode: value as PersistentTurnUsageMode });
@@ -378,6 +382,7 @@ export function PersistentSessionEditor({
           animateCharacter: next.animateCharacter,
           showGenerationSeparator: next.showGenerationSeparator,
           showJevCandidates: next.showJevCandidates,
+          showWorkDetails: next.showWorkDetails,
           turnUsageMode: next.turnUsageMode,
         }));
         setBaseline((current) => ({
@@ -386,6 +391,7 @@ export function PersistentSessionEditor({
           animateCharacter: next.animateCharacter,
           showGenerationSeparator: next.showGenerationSeparator,
           showJevCandidates: next.showJevCandidates,
+          showWorkDetails: next.showWorkDetails,
           turnUsageMode: next.turnUsageMode,
         }));
       })
@@ -420,6 +426,7 @@ export function PersistentSessionEditor({
         animate_character: draft.animateCharacter,
         show_generation_separator: draft.showGenerationSeparator,
         show_jev_candidates: draft.showJevCandidates,
+        show_work_details: draft.showWorkDetails,
         turn_usage_mode: draft.turnUsageMode,
       }}
       displaySaving={saving}

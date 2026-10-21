@@ -33,6 +33,51 @@ describe('useChatRenderItems manuscript activity', () => {
     expect(result.current.bottomFollowItemKey).toBe('activity-tool-1');
   });
 
+  it('원고형에서 작업 세부 표시가 꺼져 있으면 활동 행과 도구 요약을 숨긴다', () => {
+    const toolStart = ev('1', 'tool_start', { tool_use_id: 'tool-1', tool_name: 'Read' });
+    const { result } = renderHook(() => useChatRenderItems({
+      events: [toolStart],
+      pendingOptimistic: undefined,
+      streamingSlots: undefined,
+      sessionStatus: 'completed',
+      presentation: 'manuscript',
+      persistentDisplaySettings: { showGenerationSeparator: true, showJevCandidates: true, showWorkDetails: false },
+    }));
+
+    expect(result.current.reversedItems.map((item) => item.kind)).not.toContain('activity');
+    expect(result.current.reversedItems.map((item) => item.kind)).not.toContain('tool');
+  });
+
+  it('원고형에서 작업 세부 표시를 켜면 활동 행을 그대로 둔다', () => {
+    const toolStart = ev('1', 'tool_start', { tool_use_id: 'tool-1', tool_name: 'Read' });
+    const { result } = renderHook(() => useChatRenderItems({
+      events: [toolStart],
+      pendingOptimistic: undefined,
+      streamingSlots: undefined,
+      sessionStatus: 'completed',
+      presentation: 'manuscript',
+      persistentDisplaySettings: { showGenerationSeparator: true, showJevCandidates: true, showWorkDetails: true },
+    }));
+
+    expect(result.current.reversedItems).toEqual([
+      expect.objectContaining({ kind: 'activity', key: 'activity-tool-1' }),
+    ]);
+  });
+
+  it('일반 채팅에서는 작업 세부 표시가 꺼져 있어도 도구 행을 숨기지 않는다', () => {
+    const toolStart = ev('1', 'tool_start', { tool_use_id: 'tool-1', tool_name: 'Read' });
+    const { result } = renderHook(() => useChatRenderItems({
+      events: [toolStart],
+      pendingOptimistic: undefined,
+      streamingSlots: undefined,
+      sessionStatus: 'completed',
+      presentation: 'default',
+      persistentDisplaySettings: { showGenerationSeparator: true, showJevCandidates: true, showWorkDetails: false },
+    }));
+
+    expect(result.current.reversedItems.map((item) => item.kind)).toEqual(['tool']);
+  });
+
   it('일반 채팅에서는 이벤트와 도구 행을 따로 유지한다', () => {
     const toolStart = ev('1', 'tool_start', { tool_use_id: 'tool-1' });
     const toolResult = ev('2', 'tool_result', { tool_use_id: 'tool-1' });

@@ -168,6 +168,12 @@ export const persistentChatEvents: SessionEvent[] = [
   } },
   { id: '934', type: 'assistant_message', data: { text: PAS_REVIEW_ASSISTANT_RESPONSE } },
 ];
+const persistentWorkDetailsSample: SessionEvent = {
+  id: '935',
+  type: 'tool_start',
+  data: { tool_use_id: 'review-work-details-tool', tool_name: 'exec_command', input: { command: 'npm test' } },
+};
+
 const persistentTurnSummary: SessionEvent = {
   id: '940',
   type: 'turn_summary',
@@ -182,15 +188,17 @@ function ReviewPersistentChatProjection() {
   const t = useTokens();
   const { width, height } = useWindowDimensions();
   const columnWidth = getPersistentReviewColumnWidth(width);
-  const includeTurnSummary = typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).get('turnSummary') === '1';
+  const reviewParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const includeTurnSummary = reviewParams?.get('turnSummary') === '1';
+  const includeWorkDetailsSample = reviewParams?.get('workDetails') === '1';
   const settings = useChatStore(state => {
     return state.persistentDisplaySettingsBySession['review-pas-1']?.settings ?? null;
   });
   const showGenerationSeparator = settings?.show_generation_separator === true;
   const showJevCandidates = settings?.show_jev_candidates === true;
+  const showWorkDetails = settings?.show_work_details === true;
   const turnUsageMode = settings?.turn_usage_mode ?? 'collapsed';
-  const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates', value: boolean) => {
+  const updateDisplaySetting = (key: 'show_generation_separator' | 'show_jev_candidates' | 'show_work_details', value: boolean) => {
     const current = useChatStore.getState().persistentDisplaySettingsBySession['review-pas-1'];
     if (!current?.settings) return;
     useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, [key]: value });
@@ -201,7 +209,7 @@ function ReviewPersistentChatProjection() {
     useChatStore.getState().applyPersistentDisplaySettings('review-pas-1', { ...current.settings, turn_usage_mode: value });
   };
   useEffect(() => {
-    initializePersistentReviewChat(includeTurnSummary);
+    initializePersistentReviewChat(includeTurnSummary, includeWorkDetailsSample);
     if (typeof window === 'undefined') return;
     const reviewWindow = window as Window & {
       __appendReviewManuscriptStream?: (text: string) => void;
@@ -227,13 +235,15 @@ function ReviewPersistentChatProjection() {
       delete reviewWindow.__appendReviewManuscriptStream;
       delete reviewWindow.__clearReviewManuscriptStream;
     };
-  }, [includeTurnSummary]);
+  }, [includeTurnSummary, includeWorkDetailsSample]);
   return <View testID="review-persistent-chat-projection" style={{ gap: t.spacing.md }}>
     <View>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>세대 구분선 표시</Text>
       <Switch accessibilityLabel="검수 창 세대 구분선 표시" testID="review-persistent-generation-toggle" value={showGenerationSeparator} onValueChange={value => updateDisplaySetting('show_generation_separator', value)} />
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>Jev 후보 표시</Text>
       <Switch accessibilityLabel="검수 창 Jev 후보 표시" testID="review-persistent-jev-toggle" value={showJevCandidates} onValueChange={value => updateDisplaySetting('show_jev_candidates', value)} />
+      <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>작업 세부 표시</Text>
+      <Switch accessibilityLabel="검수 창 작업 세부 표시" testID="review-persistent-work-details-toggle" value={showWorkDetails} onValueChange={value => updateDisplaySetting('show_work_details', value)} />
       <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>턴 끝 사용량</Text>
       <SettingsSegmentedControl<PersistentTurnUsageMode>
         id="review-persistent-turn-usage"
@@ -266,15 +276,18 @@ function getPersistentReviewColumnWidth(viewportWidth: number): number {
   return viewportWidth >= 768 ? 480 : 350;
 }
 
-function initializePersistentReviewChat(includeTurnSummary: boolean) {
+function initializePersistentReviewChat(includeTurnSummary: boolean, includeWorkDetailsSample = false) {
   const store = useChatStore.getState();
-  store.mergeEvents('review-pas-1', includeTurnSummary
-    ? [...persistentChatEvents, persistentTurnSummary]
-    : persistentChatEvents);
+  store.mergeEvents('review-pas-1', [
+    ...persistentChatEvents,
+    ...(includeTurnSummary ? [persistentTurnSummary] : []),
+    ...(includeWorkDetailsSample ? [persistentWorkDetailsSample] : []),
+  ]);
   const requestId = store.beginPersistentDisplaySettingsLoad('review-pas-1');
   store.finishPersistentDisplaySettingsLoad('review-pas-1', requestId, {
     show_generation_separator: true,
     show_jev_candidates: true,
+    show_work_details: false,
     turn_usage_mode: 'collapsed',
   });
 }

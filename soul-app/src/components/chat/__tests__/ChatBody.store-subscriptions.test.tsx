@@ -297,7 +297,7 @@ describe('ChatBody store subscription boundary', () => {
     const view = await renderSettled();
     expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual({
       show_character: false, animate_character: false, show_generation_separator: true,
-      show_jev_candidates: true, turn_usage_mode: 'hidden',
+      show_jev_candidates: true, show_work_details: false, turn_usage_mode: 'hidden',
     });
     view.unmount();
   });
@@ -388,7 +388,7 @@ describe('ChatBody store subscription boundary', () => {
     expect(mockApiClient.getPersistentSession).toHaveBeenCalledTimes(2);
     expect(useChatStore.getState().persistentDisplaySettingsBySession[SID]?.settings).toEqual({
       show_character: false, animate_character: true, show_generation_separator: false,
-      show_jev_candidates: true, turn_usage_mode: 'hidden',
+      show_jev_candidates: true, show_work_details: false, turn_usage_mode: 'hidden',
     });
     expect(view.getByTestId('chat-composer-input').props.value).toBe('작성 중인 문장');
     view.unmount();
