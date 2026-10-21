@@ -201,23 +201,24 @@ export class PersistentReportService {
     entries.splice(0,entries.length,...next);
     return null;
   }
-  /** 카드 C를 만들었거나 실행시켰거나 후속 커멘트를 보낸 영구 세션들. */
+  /** 카드 C와 C의 담당 세션이 담당자로 연결된 한 단계 부모 카드에 관여한 영구 세션들. */
   private async connectedSessions(sql: RepositorySql | SqlClient, cardId: string): Promise<Set<string>> {
-    // Start from the card's few actor sessions and look sessions up by key; an EXISTS over sessions scans the whole table.
-    const rows = await sql<ConnectedSessionRow[]>`SELECT s.session_id,s.session_type,s.metadata FROM sessions s
-      WHERE s.session_id IN (
-        SELECT created_session_id FROM cards WHERE id=${cardId} AND created_session_id IS NOT NULL
-        UNION SELECT actor_session_id FROM folder_operations WHERE target_kind='card' AND target_id=${cardId}
-          AND operation_type IN ('create_card','execute_card','add_card_comment') AND actor_session_id IS NOT NULL)`;
+    // Collect the related card IDs first, then find their actors by primary key; an EXISTS over sessions scans the whole table.
+    const rows = await sql<ConnectedSessionRow[]>`WITH card_ids AS MATERIALIZED (
+        SELECT id FROM cards WHERE id=${cardId}
+        UNION SELECT id FROM cards WHERE assignee_session_id=(SELECT created_session_id FROM cards WHERE id=${cardId}) AND id<>${cardId}
+      ), actor_sessions AS (
+        SELECT created_session_id AS session_id FROM cards WHERE id IN (SELECT id FROM card_ids) AND created_session_id IS NOT NULL
+        UNION SELECT actor_session_id FROM folder_operations WHERE target_kind='card' AND target_id IN (SELECT id FROM card_ids)
+          AND operation_type IN ('create_card','execute_card','add_card_comment') AND actor_session_id IS NOT NULL
+      )
+      SELECT s.session_id,s.session_type,s.metadata FROM sessions s
+      WHERE s.session_id IN (SELECT session_id FROM actor_sessions)`;
     return new Set(rows.filter(row=>row.session_type !== "llm" && readPersistentEnabled(row.metadata)).map(row=>row.session_id));
   }
   /** 이 세션이 카드 C의 연결 세션인가. 판에 카드 장을 올릴지 판정한다. */
   private async isBoardCard(sql: RepositorySql, sessionId: string, cardId: string): Promise<boolean> {
-    const row = (await sql<{ok:boolean}[]>`SELECT (
-      EXISTS (SELECT 1 FROM cards WHERE id=${cardId} AND created_session_id=${sessionId})
-        OR EXISTS (SELECT 1 FROM folder_operations WHERE target_kind='card' AND target_id=${cardId}
-          AND operation_type IN ('create_card','execute_card','add_card_comment') AND actor_session_id=${sessionId})) AS ok`)[0];
-    return row?.ok === true;
+    return (await this.connectedSessions(sql, cardId)).has(sessionId);
   }
   private async mutate(sessionId: string, apply: (sql:RepositorySql, entries:PersistentReportEntry[])=>Promise<PersistentReportIssue[] | null>): Promise<PersistentReportResult> {
     const outcome = await this.sql.begin(async sql => {
