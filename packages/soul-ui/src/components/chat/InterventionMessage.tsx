@@ -48,7 +48,7 @@ export const InterventionMessage = memo(function InterventionMessage({ msg, pres
             wire의 context_items를 ContextBlock으로 표시 — 첫 턴/auto-resume/running intervention
             세 경로 모두 동일 UX 표면. */}
         {msg.contextItems && msg.contextItems.length > 0 && (
-          <ContextBlock items={msg.contextItems} />
+          <ContextBlock items={msg.contextItems} variant={manuscript ? "caption" : "default"} />
         )}
       </div>
       {!manuscript && <ProfileAvatar
