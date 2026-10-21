@@ -7,7 +7,7 @@ import { useReportDeckHeight } from './useReportDeckHeight';
 let host: HTMLDivElement; let root: ReturnType<typeof createRoot>; let sizing: ReturnType<typeof useReportDeckHeight>;
 function Harness({ contentHeight }: { contentHeight: number }) {
   const ref = useRef<HTMLElement | null>(null); sizing = useReportDeckHeight(ref, contentHeight, 'a');
-  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}><article className="pas-report-sheet" data-publication={contentHeight} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-content" data-height={contentHeight}/><div className="pas-report-footer" data-height="32"/></article></section>;
+  return <section ref={ref} inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} style={{ height: sizing.height, opacity: sizing.waitingForFont ? 0 : undefined, fontStyle: "normal", fontWeight: "400", fontSize: "14px", fontFamily: "ReportTest" }} onScrollEnd={sizing.endScroll}>{[contentHeight, Math.max(0, contentHeight - 50)].map((height, index) => <article key={index} className="pas-report-sheet" data-publication={`${contentHeight}-${index}`} style={{ paddingTop: 12, paddingBottom: 16, rowGap: 12 }}><div className="pas-report-reading"><div className="pas-report-content" data-height={height}/></div><div className="pas-report-footer" data-height="32"/></article>)}</section>;
 }
 const render = (height: number) => act(async () => root.render(<Harness contentHeight={height}/>));
 beforeEach(() => {
@@ -29,6 +29,20 @@ it('holds smooth pagination without a pointer and releases an ordinary press as 
   act(() => window.dispatchEvent(new Event('pointerup'))); expect(sizing.height).toBe(374);
 });
 
+it('restores each reading column scroll position after measuring a new revision', async () => {
+  await render(100);
+  const readings = [...host.querySelectorAll<HTMLElement>('.pas-report-reading')];
+  const tops = [431, 173];
+  const writes = readings.map((reading, index) => {
+    let current = tops[index]!;
+    Object.defineProperty(reading, 'scrollTop', { configurable: true, get: () => current, set: value => { current = value; } });
+    return vi.spyOn(reading, 'scrollTop', 'set');
+  });
+  await render(200);
+  expect(readings.map(reading => reading.scrollTop)).toEqual(tops);
+  expect(writes.map(write => write.mock.calls.at(-1)?.[0])).toEqual(tops);
+});
+
 it('measures before showing after font success or failure, shows cached fonts immediately, and never hides again', async () => {
   for (const outcome of ['success', 'failure', 'cached'] as const) {
     let finish!: () => void, fail!: () => void;
@@ -43,7 +57,7 @@ it('measures before showing after font success or failure, shows cached fonts im
     } else {
       expect(deck.style.opacity).toBe('0'); expect(deck.hasAttribute('inert')).toBe(true); expect(deck.getAttribute('aria-hidden')).toBe('true');
       // The actual font changes the intrinsic height before the pending load settles.
-      deck.querySelector<HTMLElement>('.pas-report-content')!.dataset.height = '100';
+      deck.querySelectorAll<HTMLElement>('.pas-report-content').forEach(content => { content.dataset.height = '100'; });
       await act(async () => outcome === 'success' ? finish() : fail());
       expect(sizing.height).toBe(174); expect(deck.style.opacity).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
     }

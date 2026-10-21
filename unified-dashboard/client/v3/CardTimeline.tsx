@@ -123,8 +123,8 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
    const commentMarkdown=contextualizeMarkdownAttachmentUrls(comment.body,card.id,origin);
    const references=markdownAttachmentReferences(commentMarkdown,card.id,origin);
    const linkComponent=sourceLinkComponent(card.id,origin,references,openReference,internalLinkClick,comment.authorKind!=="agent");
-   return {id:comment.id,at:comment.createdAt,kind:"커멘트",spoken:comment.kind==="spoken",role:comment.authorKind==="agent"?"assistant" as const:"user" as const,
-    body:<>{comment.itemId!==undefined&&comment.itemId!==null?<p className="v3-card-comment-target">대상: {comment.itemId}번 {target?.title??"항목"}</p>:null}<MarkdownContent content={commentMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,references,trigger)} sourceLinkComponent={linkComponent}/></>};
+   return {id:comment.id,at:comment.createdAt,kind:"커멘트",spoken:comment.kind==="spoken",collapsible:true,role:comment.authorKind==="agent"?"assistant" as const:"user" as const,
+    body:<>{comment.itemId!==undefined&&comment.itemId!==null?<p className="v3-card-comment-target">대상: {comment.itemId}번 {target?.title??"항목"}</p>:null}<div className={expanded.has(comment.id)?undefined:"v3-card-three-lines"}><MarkdownContent content={commentMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,references,trigger)} sourceLinkComponent={linkComponent}/></div><span className="v3-card-collapse-hint">{expanded.has(comment.id)?"접기":"더 보기"}</span></>};
   }),
  ];
  return entries.filter(entry=>!commentsOnly||entry.kind==="커멘트").sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));

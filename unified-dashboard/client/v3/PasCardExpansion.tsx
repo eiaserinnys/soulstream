@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, useDashboardStore, useInternalLinkClick, type PersistentReportEntry } from '@seosoyoung/soul-ui';
+import { Button, useAuth, useDashboardStore, useInternalLinkClick, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { cardMutationKey } from '@seosoyoung/soul-ui/cards/card-api';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardComment, CardDetail, CardRow } from '@seosoyoung/soul-ui/cards/card-types';
@@ -24,6 +24,7 @@ const EMPTY_PENDING_CONFIRMATIONS: Readonly<Record<number, boolean>> = {};
 export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortraitUrl, onSampleChange, onAnswer }: Props) {
   const byId = useCardStore(state => state.byId);
   const catalog = useDashboardStore(state => state.catalog);
+  const { user } = useAuth();
   const internalLinkClick = useInternalLinkClick();
   const cardNumber = entry.card_numbers.length === 1 ? entry.card_numbers[0] : null;
   const cardId = entry.card_id ?? Object.values(byId).find(card => card.number === cardNumber)?.id;
@@ -63,6 +64,7 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
   const question = (entry.question_id ? questions.find(item => item.id === entry.question_id && isOpenQuestion(item)) : undefined)
     ?? questions.find(isOpenQuestion);
   const items = card.items ?? [];
+  const targetItemRow = targetItemId === null ? undefined : items.find(item => item.id === targetItemId);
   const summary = summarizeCardItems(items, pendingConfirmations);
   const recentComments = [...(detail?.comments ?? [])]
     .filter(comment => comment.kind !== 'note')
@@ -118,13 +120,14 @@ export function PasCardExpansion({ entry, lookupCards, sampleDetail, samplePortr
   };
 
   return <div className="pas-report-card-preview" data-testid="pas-card-expansion">
-    <CardNowPanel embedded now={card.now} itemsCount={items.length} activeCount={summary.activeCount} />
-    {errorAlert}
+    <CardNowPanel embedded now={question && card.now ? { ...card.now, ask: null } : card.now} itemsCount={items.length} activeCount={summary.activeCount} />
     <CardCheckItems items={items} pendingConfirmations={pendingConfirmations} onConfirmChange={confirmItem} onTargetItem={targetItem} />
-    <CardTimeline card={card} detail={commentsDetail} portraitUrl={portraitUrl} userPortraitUrl="" commentsOnly pending={pending} onAnswer={() => {}} />
+    <CardTimeline card={card} detail={commentsDetail} portraitUrl={portraitUrl} userPortraitUrl={user?.picture ?? ''} commentsOnly pending={pending} onAnswer={() => {}} />
     {cardId ? <Button variant="link" className="text-foreground" render={<a href={`/?card=${encodeURIComponent(cardId)}`} onClick={internalLinkClick} />}>카드 열기</Button> : null}
+    {targetItemId !== null ? <div className="v3-card-target-notice" role="status"><span>대상: {targetItemId}번 {targetItemRow?.title ?? '항목'}</span><button type="button" aria-label="커멘트 대상 해제" onClick={() => setTargetItemId(null)}>해제</button></div> : null}
+    {errorAlert}
     <CardCommentInput cardId={cardId ?? entry.key} nodeId={card.nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequest}
-      placeholder={question ? '질문에 답하기' : '커멘트'} onSend={send} />
+      placeholder={targetItemId !== null ? '커멘트' : question ? '질문에 답하기' : '커멘트'} onSend={send} />
   </div>;
 }
 

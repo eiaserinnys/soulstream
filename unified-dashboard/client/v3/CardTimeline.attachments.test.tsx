@@ -56,6 +56,18 @@ it("opens card markdown attachments with fetched metadata and keeps external lin
  expect(requestEntry.querySelector<HTMLAnchorElement>('a[href="https://example.test/guide"]')?.target).toBe("_blank");
 });
 
+it("shows long user comments as a three-line preview with the existing expand control",async()=>{
+ const longComment={...detail.comments![0]!,body:Array.from({length:8},(_,index)=>`긴 후속 지시 문장 ${index+1}`).join("\n\n")};
+ await act(()=>root.render(<CardTimeline card={card} detail={{...detail,comments:[longComment]}} portraitUrl={null} pending={false} onAnswer={()=>{}}/>));
+ const comment=container.querySelector('[data-card-entry="커멘트"]')!;
+ const bubble=comment.querySelector<HTMLElement>('[data-slot="chat-message-bubble"]')!;
+ expect(bubble.getAttribute("aria-expanded")).toBe("false");
+ expect(comment.querySelector('.v3-card-three-lines')?.textContent).toContain("긴 후속 지시 문장 1");
+ await act(()=>bubble.click());
+ expect(bubble.getAttribute("aria-expanded")).toBe("true");
+ expect(comment.querySelector('.v3-card-three-lines')).toBeNull();
+});
+
 it("uses explicit session context for card body attachments and shows 403 without retry",async()=>{
  const sessionUrl="/api/attachments/session-image/content?context_type=session&context_id=session-1";
  const fetchMock=vi.fn(async(_input:RequestInfo|URL)=>new Response(null,{status:403}));

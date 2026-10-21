@@ -14,7 +14,7 @@ import type { CardRow } from '@seosoyoung/soul-ui/cards/card-types';
 import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
-export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number };
+export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number; inlineMaxHeight?: number };
 type Props = { renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
@@ -50,17 +50,21 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     if (lookupScope.current.numbers.some(number => !known.has(number) && !lookupScope.current.missing.has(number))) void lookupCards();
   }, [byId, numbersKey, lookupCards]);
   const index = Math.max(0, entries.findIndex(entry => entry.key === visibleKey));
+  const currentKey = entries[index]?.key ?? null;
+  const activeExpandedKey = expandedKey === currentKey ? expandedKey : null;
   const track = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLElement | null>(null);
   const bubble = seat?.target && seat.body ? seat.layout : null;
   const inBubble = Boolean(bubble);
   const ready = seat?.ready !== false;
-  const measurementRevision = JSON.stringify([expandedKey, entries.map(entry => {
+  const measurementRevision = JSON.stringify([activeExpandedKey, entries.map(entry => {
     const cardEntry = entry as ReportCardEntry;
     return [entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, cardEntry.card_id, cardEntry.card_status];
   })]);
-  const layoutKey = JSON.stringify([sessionId, inBubble, bubble?.width ?? seat?.inlineWidth, bubble?.maxHeight, ready, entries.length > 0]);
-  const sizing = useReportDeckHeight(root, measurementRevision, sessionId, layoutKey, bubble?.maxHeight);
+  const inlineMaxHeight = bubble ? undefined : seat?.inlineMaxHeight;
+  const maximumHeight = bubble?.maxHeight ?? inlineMaxHeight;
+  const layoutKey = JSON.stringify([sessionId, inBubble, bubble?.width ?? seat?.inlineWidth, maximumHeight, ready, activeExpandedKey, entries.length > 0]);
+  const sizing = useReportDeckHeight(root, measurementRevision, sessionId, layoutKey, maximumHeight);
   const focusWithin = useRef(false);
   const flying = useRef<number | null>(null);
   useEffect(() => {
@@ -74,6 +78,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   }, []);
   const current = useRef({ index });
   current.current = { index };
+  useEffect(() => { setExpandedKey(null); }, [visibleKey]);
 
   const go = (target: number) => {
     const node = track.current;
@@ -108,7 +113,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   if (!entries.length || !ready) return null;
   // The global reduced-motion duration must not interpolate the initial font
   // gate's opacity or measured height for a frame.
-  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-overflow={sizing.overflowing} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
+  const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-inline-max-height={inlineMaxHeight !== undefined || undefined} data-overflow={sizing.overflowing} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(inlineMaxHeight !== undefined ? { '--pas-report-inline-max-height': `${inlineMaxHeight}px` } : {}), ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
     inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} aria-label="지금의 보고" aria-roledescription="carousel"
     onPointerDownCapture={sizing.hold}
     onFocusCapture={() => { focusWithin.current = true; }}
@@ -132,14 +137,14 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
       {entries.map((entry, position) => {
         const cardEntry = entry as ReportCardEntry;
         const expandable = Boolean(renderCardDetails && (cardEntry.card_id || entry.card_numbers.length === 1));
-        const expanded = expandable && expandedKey === entry.key;
+        const expanded = expandable && activeExpandedKey === entry.key;
         const toggle = () => setExpandedKey(expanded ? null : entry.key);
         const answer = report.answer(entry);
         const answered = answer !== undefined;
         const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && !answered);
         const tag = entry.kind === 'see' ? '보실 것' : answered ? '답 받음' : '답하실 것';
         return <article key={entry.key} className="pas-report-sheet" data-testid={`report-sheet-${entry.key}`} data-current={position === index}
-          data-answered={answered} data-publication={JSON.stringify([sessionId, entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, cardEntry.card_id, cardEntry.card_status])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
+          data-answered={answered} data-publication={JSON.stringify([sessionId, entry.key, expanded, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, cardEntry.card_id, cardEntry.card_status])} inert={position !== index} aria-hidden={position !== index} tabIndex={-1} aria-roledescription="slide"
           aria-label={`${entries.length > 1 ? `${position + 1} / ${entries.length}, ` : ''}${tag}, ${entry.title}`}>
           <div className="pas-report-reading v3-session-panel-scroll" onScroll={event => {
             const node = event.currentTarget;

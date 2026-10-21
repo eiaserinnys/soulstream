@@ -24,6 +24,8 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
       if (width !== node.clientWidth) { width = node.clientWidth; beforeAnswer.current.clear(); reset(); }
       // Never measure through an old height or the scrollbar it temporarily creates.
       const oldHeight = node.style.height, oldMaximum = node.style.maxHeight;
+      const readings = [...node.querySelectorAll<HTMLElement>('.pas-report-reading')];
+      const scrollTops = readings.map(reading => reading.scrollTop);
       node.style.height = 'auto'; node.style.maxHeight = 'none';
       const keys = new Set<string>();
       const sizes = [...node.querySelectorAll<HTMLElement>('.pas-report-sheet')].map(sheet => {
@@ -38,6 +40,7 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
       });
       for (const key of beforeAnswer.current.keys()) if (!keys.has(key)) beforeAnswer.current.delete(key);
       node.style.height = oldHeight; node.style.maxHeight = oldMaximum;
+      readings.forEach((reading, index) => { reading.scrollTop = scrollTops[index] ?? 0; });
       pending.current = { revision, layoutKey, height: Math.ceil(Math.max(0, ...sizes)) + 2 };
       if (!holding.current) setMeasurement(pending.current);
       node.querySelectorAll<HTMLElement>('.pas-report-reading').forEach(reading => {
