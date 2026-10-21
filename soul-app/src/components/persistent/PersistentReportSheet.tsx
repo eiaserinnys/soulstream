@@ -8,18 +8,24 @@ import { GlassButton } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { PersistentReportReading } from './PersistentReportReading';
 import type { reportStyles } from './persistentReportStyles';
+import { UndoCountdownRing } from './UndoCountdownRing';
+import { CARD_COMPLETION_UNDO_MS, type CardCompletionRecent } from './usePersistentCardCompletion';
 
 export const reportWebProps = (props: Record<string, unknown>) => Platform.OS === 'web' ? props : {};
 export function reportTag(entry: PersistentReportEntry) {
   return entry.kind === 'see' ? '보실 것' : entry.state === 'answered' ? '답 받음' : '답하실 것';
 }
 export function PersistentReportUndoRow({ undo, styles }: {
-  undo: { label: string; busy: boolean; onUndo(): void }; styles: ReturnType<typeof reportStyles>;
+  undo: { label: string; busy: boolean; expiresAt: number; onUndo(): void }; styles: ReturnType<typeof reportStyles>;
 }) {
+  const t = useTokens();
   return <View style={styles.undoRow}>
     <Text testID="report-undo-label" style={styles.receivedLabel}>{undo.label}</Text>
     <View style={styles.cancelEdge}><GlassButton testID="report-undo" variant="plain" size="compact" disabled={undo.busy}
-      accessibilityLabel="되돌리기" onPress={undo.onUndo}><Text style={styles.cancelLabel}>되돌리기</Text></GlassButton></View>
+      accessibilityLabel="되돌리기" onPress={undo.onUndo}><View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
+        <UndoCountdownRing expiresAt={undo.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS} />
+        <Text style={styles.cancelLabel}>되돌리기</Text>
+      </View></GlassButton></View>
   </View>;
 }
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
@@ -27,7 +33,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard,
   acknowledgeLabel = '확인했어', undo }: {
   expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
-  acknowledgeLabel?: string; undo?: { label: string; busy: boolean; onUndo(): void };
+  acknowledgeLabel?: string; undo?: Pick<CardCompletionRecent, 'label' | 'expiresAt'> & { busy: boolean; onUndo(): void };
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;

@@ -140,7 +140,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   };
   if (!count) {
     if (!completion?.recent || compact) return null;
-    const undo = { label: completion.recent.label, busy: completion.busy, onUndo: () => {
+    const undo = { label: completion.recent.label, expiresAt: completion.recent.expiresAt, busy: completion.busy, onUndo: () => {
       void completion.undo().then(ok => { if (!ok) setNotice('되돌리지 못했어.'); });
     } };
     return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
@@ -178,7 +178,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
       {width > 0 ? entries.map((entry, i) => {
         const expandable = isPersistentReportCardExpandable(entry);
         const reviewCard = isReviewCardEntry(entry);
-        const undo = i === index && completion?.recent ? { label: completion.recent.label, busy: completion.busy, onUndo: () => {
+        const undo = i === index && completion?.recent ? { label: completion.recent.label, expiresAt: completion.recent.expiresAt,
+          busy: completion.busy, onUndo: () => {
           void completion.undo().then(ok => { if (!ok) setNotice('되돌리지 못했어.'); });
         } } : undefined;
         return <PersistentReportSheet key={JSON.stringify([sessionId, entry.key])} entry={entry}
