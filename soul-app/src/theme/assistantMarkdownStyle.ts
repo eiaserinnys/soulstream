@@ -1,6 +1,22 @@
 import type { MarkdownStyle } from 'react-native-enriched-markdown';
 import type { DesignTokens } from './tokens';
 
+export function markdownTableStyle(t: DesignTokens) {
+  const c = t.colors;
+  return {
+    color: c.textPrimary,
+    borderColor: c.border,
+    borderWidth: 1,
+    borderRadius: t.radius.sm,
+    headerBackgroundColor: c.surfaceCode,
+    headerTextColor: c.textPrimary,
+    rowEvenBackgroundColor: c.surface,
+    rowOddBackgroundColor: c.surface,
+    cellPaddingHorizontal: t.spacing.sm,
+    cellPaddingVertical: t.spacing.sm,
+  };
+}
+
 export function createAssistantMarkdownStyle(t: DesignTokens, narration = false): MarkdownStyle {
   const c = t.colors;
   const narrationColor = narration ? c.textSecondary : c.textPrimary;
@@ -51,23 +67,7 @@ export function createAssistantMarkdownStyle(t: DesignTokens, narration = false)
         bulletColor: c.textMuted,
         markerColor: c.textMuted,
       },
-      // react-native-enriched-markdown TableStyle (BaseBlockStyle 상속).
-      // 다크모드에서 표가 배경과 구분되지 않던 결함 해소: 헤더 배경/텍스트, 테두리,
-      // 셀 패딩을 토큰 기반으로 명시. zebra(짝/홀 색차)는 셀 보더로 충분하다고 판단하여
-      // 동일 색상으로 비활성.
-      // color: BaseBlockStyle.color로 셀 본문 텍스트 색을 명시 — 미지정 시 라이브러리
-      // 기본값(어두운 회색)으로 떨어져 다크모드에서 가독성 결함이 보고됨 (사용자 보고).
-      table: {
-        color: c.textPrimary,
-        borderColor: c.border,
-        borderWidth: 1,
-        borderRadius: t.radius.sm,
-        headerBackgroundColor: c.surfaceCode,
-        headerTextColor: c.textPrimary,
-        rowEvenBackgroundColor: c.surface,
-        rowOddBackgroundColor: c.surface,
-        cellPaddingHorizontal: t.spacing.sm,
-        cellPaddingVertical: t.spacing.sm,
-      },
+      // Shared table contract: the body text is explicit because the library default is dark gray.
+      table: markdownTableStyle(t),
     } as any; // 기존 채팅의 네이티브 스타일 값과 타입 허용 범위를 그대로 보존한다.
 }

@@ -70,6 +70,16 @@ export function renderCustomViewHtml(
   return `<!doctype html><html><head>${meta}</head><body>${fragment}</body></html>`;
 }
 
+export function renderDocumentHtml(
+  html: string,
+  bindings: CustomViewBindings,
+): string {
+  return renderCustomViewHtml(html, bindings).replace(
+    /(<meta http-equiv="Content-Security-Policy"[^>]*>)/i,
+    '$1<style>:root{color-scheme:light;background-color:Canvas;}</style>',
+  );
+}
+
 function parseAttributes(raw: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const match of raw.matchAll(ATTRIBUTE_RE)) {

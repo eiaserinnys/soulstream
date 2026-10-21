@@ -212,6 +212,8 @@ test('an HTML attachment marked informational still opens as a rendered document
   await waitFor(() => expect(screen.getByTestId('attachment-preview-html')).toBeTruthy());
   expect(mockReadAttachmentText).toHaveBeenCalledWith('attachment-1', { type: 'card', id: 'card-1' }, expect.any(AbortSignal));
   expect(screen.getByTestId('attachment-preview-html').props.accessibilityLabel).toContain('문서 본문');
+  expect(screen.getByTestId('attachment-preview-html').props.source.html)
+    .toContain('<style>:root{color-scheme:light;background-color:Canvas;}</style>');
   // The document layout gives the frame the available height instead of a media frame.
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).flex).toBe(1);
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeUndefined();

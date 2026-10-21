@@ -2,7 +2,7 @@ import React from 'react';
 import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
 import { View } from 'react-native';
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
-import { createAssistantMarkdownStyle } from '../../theme/assistantMarkdownStyle';
+import { createAssistantMarkdownStyle, markdownTableStyle } from '../../theme/assistantMarkdownStyle';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
 
@@ -79,6 +79,8 @@ export function plannerMarkdownStyle(t: DesignTokens, note = false) {
       bulletColor: c.textMuted,
       markerColor: c.textMuted,
     },
+    taskList: { checkedTextColor: textColor },
+    table: markdownTableStyle(t),
   } as any;
 }
 

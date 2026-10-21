@@ -1,7 +1,7 @@
 import { cardFixture } from '../../test-support/cards';
 import type { FolderSnapshot } from '../../api/cardTypes';
 import type { Session } from '../../api/types';
-import { buildCustomViewBindings, renderCustomViewHtml } from '../custom-view-renderer';
+import { buildCustomViewBindings, renderCustomViewHtml, renderDocumentHtml } from '../custom-view-renderer';
 
 test('card/folder/session soul-bind를 안전하게 치환한다', () => {
   const snapshot = {
@@ -23,4 +23,19 @@ test('card/folder/session soul-bind를 안전하게 치환한다', () => {
   expect(html).toContain('&lt;검수&gt; / 1 / running');
   expect(html).toContain("default-src 'none'");
   expect(bindings.folders['folder-1']).toEqual({ completed: 1, total: 1 });
+});
+
+test('문서 렌더러는 기본 바탕을 CSP 뒤, 작성자 스타일 앞에 둔다', () => {
+  const html = renderDocumentHtml(
+    '<html><head><style>body { background: lavender; }</style></head><body>문서</body></html>',
+    buildCustomViewBindings(null, {}),
+  );
+  const csp = html.indexOf('Content-Security-Policy');
+  const baseStyle = html.indexOf('<style>:root{color-scheme:light;background-color:Canvas;}</style>');
+  const authorStyle = html.indexOf('<style>body { background: lavender; }</style>');
+
+  expect(html).toContain('<meta charset="utf-8">');
+  expect(csp).toBeGreaterThan(-1);
+  expect(baseStyle).toBeGreaterThan(csp);
+  expect(authorStyle).toBeGreaterThan(baseStyle);
 });

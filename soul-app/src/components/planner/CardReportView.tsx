@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Platform, View, useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { CardReport } from '../../api/cardTypes';
-import { buildCustomViewBindings, renderCustomViewHtml } from '../../lib/custom-view-renderer';
+import { buildCustomViewBindings, renderDocumentHtml } from '../../lib/custom-view-renderer';
 import { useTokens } from '../../theme';
 import { PlannerMarkdownText } from './PlannerMarkdownText';
 import { segmentCardReportImages } from '../../lib/card-report-images';
@@ -26,7 +26,7 @@ function CardReportContent({ report }: { report: CardReport }) {
   const t = useTokens();
   const { width } = useWindowDimensions();
   const [height, setHeight] = useState(t.foundation.minHeight.memo);
-  const html = useMemo(() => renderCustomViewHtml(report.body, buildCustomViewBindings(null, {})), [report.body]);
+  const html = useMemo(() => renderDocumentHtml(report.body, buildCustomViewBindings(null, {})), [report.body]);
   if (report.format === 'markdown') return <CardMarkdownReport report={report} />;
   return <WebView key={`${report.id}:${width}`} testID={`card-report-html-${report.id}`} source={{ html }}
     originWhitelist={['about:blank', 'https://pages.eiaserinnys.me']} javaScriptEnabled allowFileAccess={false}

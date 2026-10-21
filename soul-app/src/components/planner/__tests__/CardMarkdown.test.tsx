@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, renderHook, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { useTokens } from '../../../theme';
+import { createAssistantMarkdownStyle } from '../../../theme/assistantMarkdownStyle';
 import { useSettingsStore } from '../../../store/settingsStore';
 
 jest.mock('react-native-enriched-markdown', () => ({ EnrichedMarkdownText: (props: any) => require('react').createElement(require('react-native').Text, { ...props, testID: 'markdown' }, props.markdown) }));
@@ -95,6 +96,32 @@ test.each([
   // 폴더/편집기 소비자의 기본 스타일은 그대로 유지한다.
   const folder = render(<PlannerMarkdownText markdown={markdown} />);
   expect(folder.getByTestId('markdown').props.markdownStyle).toMatchObject({ paragraph: { fontSize: 15 }, h1: { fontSize: 28 }, h2: { fontSize: 18 }, h3: { fontSize: 16 } });
+});
+
+test('planner 표는 채팅 마크다운의 토큰 스타일을 공유한다', () => {
+  const { result } = renderHook(() => useTokens());
+  const chatTable = createAssistantMarkdownStyle(result.current).table;
+  const planner = render(<PlannerMarkdownText markdown="| A | B |\n| --- | --- |\n| 값 | 값 |" />);
+
+  expect(planner.getByTestId('markdown').props.markdownStyle.table).toEqual(chatTable);
+});
+
+test('planner 체크 완료 항목은 본문 색상으로 표시한다', () => {
+  const { result } = renderHook(() => useTokens());
+  const planner = render(<PlannerMarkdownText markdown="- [x] 완료" />);
+
+  expect(planner.getByTestId('markdown').props.markdownStyle.taskList.checkedTextColor)
+    .toBe(result.current.colors.textPrimary);
+});
+
+test('HTML 카드 보고서는 문서 기본 바탕으로 렌더된다', () => {
+  const report = render(<CardReportView report={{
+    id: 'html-report', cardId: 'card', title: '보고', format: 'html',
+    body: '<h1>HTML 보고</h1>', createdAt: '',
+  }} />);
+
+  expect(report.getByTestId('card-report-html-html-report').props.source.html)
+    .toContain('<style>:root{color-scheme:light;background-color:Canvas;}</style>');
 });
 
 test.each([390, 1194])('펼친 보고 %s는 기존 썸네일 간격과 전체폭 왼쪽 본문을 사용한다', (width) => {

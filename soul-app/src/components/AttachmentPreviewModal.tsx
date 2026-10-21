@@ -10,7 +10,7 @@ import {
 import { createApiClient } from '../api/client';
 import { isHtmlAttachmentView, isMarkdownAttachmentView, type AttachmentView } from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
-import { buildCustomViewBindings, renderCustomViewHtml } from '../lib/custom-view-renderer';
+import { buildCustomViewBindings, renderDocumentHtml } from '../lib/custom-view-renderer';
 import { createSessionVisualRoles, useTokens } from '../theme';
 import { GlassButton } from './GlassSurface';
 import { AttachmentMetadataPreview } from './AttachmentMetadataPreview';
@@ -111,7 +111,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   }, [item, retryKey, textContent, html]);
 
   const htmlDocument = useMemo(
-    () => state.kind === 'html' ? renderCustomViewHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
+    () => state.kind === 'html' ? renderDocumentHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
     [state],
   );
   // The document page uses the whole frame; text and states keep the padded, centered box.
