@@ -49,20 +49,48 @@ test('starts continuous progress at elapsed time and resumes from expiresAt afte
 
   expect(sharedValue).toHaveBeenLastCalledWith(0.4);
   expect(timing).toHaveBeenLastCalledWith(1, { duration: 3000, easing: Easing.linear });
+  const t = renderHook(() => useTokens()).result.current;
+  const center = t.foundation.typography.meta.lineHeight / 2;
+  expect(resumed.UNSAFE_root.findByProps({ testID: 'undo-countdown-ring-svg' }).props.rotation).toBeUndefined();
+  const fill = resumed.UNSAFE_root.findByProps({ testID: 'undo-countdown-ring-progress' });
+  expect(fill.props.rotation).toBe(-90);
+  expect(fill.props.originX).toBe(center);
+  expect(fill.props.originY).toBe(center);
   resumed.unmount();
 });
 
-test('reduced motion advances in five discrete one-second steps', async () => {
+test('reduced motion uses five separated arcs, starting with one and reaching five by 4.x seconds', async () => {
   (AccessibilityInfo.isReduceMotionEnabled as jest.Mock).mockResolvedValue(true);
-  const view = render(<UndoCountdownRing expiresAt={Date.now() + 5000} durationMs={5000} />);
+  const expiresAt = Date.now() + 5000;
+  const view = render(<UndoCountdownRing expiresAt={expiresAt} durationMs={5000} />);
   await act(async () => {});
 
-  const progress = sharedValue.mock.results.at(-1)?.value;
-  expect(progress.value).toBe(0);
+  const t = renderHook(() => useTokens()).result.current;
+  const size = t.foundation.typography.meta.lineHeight;
+  const strokeWidth = size * 2 / 24;
+  const circumference = 2 * Math.PI * ((size - strokeWidth) / 2);
+  const segment = circumference / 5 - strokeWidth;
+  const gap = strokeWidth;
+  const track = view.UNSAFE_root.findByProps({ testID: 'undo-countdown-ring-track' });
+  const expectedTrack = Array.from({ length: 5 }, () => [segment, gap]).flat();
+  const getFillDashArray = () => view.UNSAFE_root.findByProps({ testID: 'undo-countdown-ring-progress' }).props.strokeDasharray;
+  const expectedFill = (count: number) => [...Array.from({ length: count }, () => [segment, gap]).flat(), 0, circumference];
+
+  expect(track.props.strokeDasharray).toEqual(expectedTrack);
+  expect(getFillDashArray()).toEqual(expectedFill(1));
+  expect(view.UNSAFE_root.findByProps({ testID: 'undo-countdown-ring-svg' }).props.rotation).toBeUndefined();
+  expect(track.props.rotation).toBe(-90);
+  expect(track.props.originX).toBe(size / 2);
+  expect(track.props.originY).toBe(size / 2);
+  const fill = view.UNSAFE_root.findByProps({ testID: 'undo-countdown-ring-progress' });
+  expect(fill.props.rotation).toBe(-90);
+  expect(fill.props.originX).toBe(size / 2);
+  expect(fill.props.originY).toBe(size / 2);
   expect(timing).not.toHaveBeenCalled();
-  for (let step = 1; step <= 4; step += 1) {
-    await act(async () => { jest.advanceTimersByTime(1000); });
-    expect(progress.value).toBe(step / 5);
-  }
+
+  await act(async () => { jest.advanceTimersByTime(2500); });
+  expect(getFillDashArray()).toEqual(expectedFill(3));
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  expect(getFillDashArray()).toEqual(expectedFill(5));
   view.unmount();
 });

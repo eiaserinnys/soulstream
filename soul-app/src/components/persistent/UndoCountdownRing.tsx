@@ -11,6 +11,11 @@ function elapsedProgress(expiresAt: number, durationMs: number, now: number) {
   return Math.max(0, Math.min(1, (now - (expiresAt - durationMs)) / durationMs));
 }
 
+function filledSegmentCount(expiresAt: number, durationMs: number, now: number) {
+  const elapsed = Math.max(0, now - (expiresAt - durationMs));
+  return Math.min(5, Math.floor(elapsed / 1000) + 1);
+}
+
 export function UndoCountdownRing({ expiresAt, durationMs }: { expiresAt: number; durationMs: number }) {
   const t = useTokens();
   const size = t.foundation.typography.meta.lineHeight;
@@ -19,10 +24,9 @@ export function UndoCountdownRing({ expiresAt, durationMs }: { expiresAt: number
   const circumference = 2 * Math.PI * radius;
   const [reducedMotion, setReducedMotion] = React.useState(true);
   const [motionPreferenceKnown, setMotionPreferenceKnown] = React.useState(false);
+  const [filledSegments, setFilledSegments] = React.useState(() => filledSegmentCount(expiresAt, durationMs, Date.now()));
   const startAt = expiresAt - durationMs;
-  const elapsedAtMount = Math.max(0, Date.now() - startAt);
-  const initialProgress = Math.min(5, Math.floor(elapsedAtMount / 1000)) / 5;
-  const progress = useSharedValue(initialProgress);
+  const progress = useSharedValue(elapsedProgress(expiresAt, durationMs, Date.now()));
 
   React.useEffect(() => {
     let cancelled = false;
@@ -41,22 +45,22 @@ export function UndoCountdownRing({ expiresAt, durationMs }: { expiresAt: number
 
   React.useEffect(() => {
     if (!motionPreferenceKnown) return;
-    const currentProgress = elapsedProgress(expiresAt, durationMs, Date.now());
-    progress.value = currentProgress;
     if (reducedMotion) {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const step = () => {
-        const elapsed = Math.max(0, Date.now() - startAt);
-        progress.value = Math.min(5, Math.floor(elapsed / 1000)) / 5;
+        const now = Date.now();
+        const elapsed = Math.max(0, now - startAt);
+        setFilledSegments(filledSegmentCount(expiresAt, durationMs, now));
         if (elapsed < durationMs) {
-          const toNextStep = 1000 - (elapsed % 1000);
-          timer = setTimeout(step, Math.min(toNextStep, durationMs - elapsed));
+          const nextBoundary = startAt + (Math.floor(elapsed / 1000) + 1) * 1000;
+          timer = setTimeout(step, Math.max(1, Math.min(nextBoundary - now, expiresAt - now)));
         }
       };
       step();
       return () => { if (timer) clearTimeout(timer); };
     }
 
+    progress.value = elapsedProgress(expiresAt, durationMs, Date.now());
     const remaining = Math.max(0, expiresAt - Date.now());
     if (remaining === 0) progress.value = 1;
     else progress.value = withTiming(1, { duration: remaining, easing: Easing.linear });
@@ -67,16 +71,29 @@ export function UndoCountdownRing({ expiresAt, durationMs }: { expiresAt: number
     strokeDashoffset: circumference * (1 - progress.value),
   }));
   const center = size / 2;
+  const segmentLength = circumference / 5 - strokeWidth;
+  const trackDashArray = reducedMotion
+    ? Array.from({ length: 5 }, () => [segmentLength, strokeWidth]).flat()
+    : circumference;
+  const progressDashArray = reducedMotion
+    ? [...Array.from({ length: filledSegments }, () => [segmentLength, strokeWidth]).flat(), 0, circumference]
+    : circumference;
+  const rotation = { rotation: -90 as const, originX: center, originY: center };
 
   return <View testID="undo-countdown-ring" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
     aria-hidden style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
     <Svg testID="undo-countdown-ring-svg" width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-      style={StyleSheet.absoluteFill} rotation={-90} originX={center} originY={center}>
+      style={StyleSheet.absoluteFill}>
       <Circle testID="undo-countdown-ring-track" cx={center} cy={center} r={radius} fill="none"
-        stroke={t.persistentSession.line} strokeWidth={strokeWidth} />
-      <AnimatedCircle testID="undo-countdown-ring-progress" cx={center} cy={center} r={radius} fill="none"
-        stroke={t.colors.accent} strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={circumference}
-        animatedProps={animatedProps} />
+        stroke={t.persistentSession.line} strokeWidth={strokeWidth} strokeDasharray={trackDashArray}
+        strokeLinecap={reducedMotion ? 'butt' : 'round'} {...rotation} />
+      {reducedMotion
+        ? <Circle testID="undo-countdown-ring-progress" cx={center} cy={center} r={radius} fill="none"
+          stroke={t.colors.accent} strokeWidth={strokeWidth} strokeLinecap="butt" strokeDasharray={progressDashArray}
+          strokeDashoffset={0} {...rotation} />
+        : <AnimatedCircle testID="undo-countdown-ring-progress" cx={center} cy={center} r={radius} fill="none"
+          stroke={t.colors.accent} strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={progressDashArray}
+          animatedProps={animatedProps} {...rotation} />}
     </Svg>
     <Ionicons name="time-outline" size={t.foundation.typography.label.fontSize} color={t.colors.textSecondary} />
   </View>;
