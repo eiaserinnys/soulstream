@@ -34,6 +34,7 @@ import { handleRunnerInterventionCommand } from
   "../src/runner/runner_intervention_command.js";
 import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
 import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
+import { RunnerParentOutbox } from "../src/runner/runner_parent_outbox.js";
 import { runnerRegistrationIdentityPath, writeRunnerRegistrationIdentity } from
   "../src/runner/runner_registration_identity.js";
 import {
@@ -195,6 +196,107 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(failClosed).toMatchObject({ registration_id: null });
     expect(failClosed).not.toHaveProperty("execution_generation");
     reopened.close();
+  });
+
+  it("reads a mixed-registration tail without changing stored record identities", async () => {
+    const path = await temporaryDatabasePath();
+    await writeRegistrationIdentity(path, "registration-a");
+    const writerA = await RunnerSqliteEventOutbox.create(path);
+    await writerA.initializeBootstrap(bootstrapInput());
+    const firstA = await writerA.append(eventInput("registration A first"));
+    const secondA = await writerA.append(eventInput("registration A second"));
+    writerA.close();
+
+    await writeRegistrationIdentity(path, "registration-b");
+    const writerB = await RunnerSqliteEventOutbox.create(path);
+    const eventB = await writerB.append(eventInput("registration B"));
+    writerB.close();
+
+    const reader = await RunnerSqliteEventOutbox.openReadOnly(path);
+    try {
+      const batch = await reader.readBatchAfter(firstA.source_seq - 1);
+      expect(batch?.events.map((record) => ({
+        source_seq: record.source_seq,
+        registration_id: record.registration_id,
+        payload_hash: record.payload_hash,
+      }))).toEqual([
+        {
+          source_seq: firstA.source_seq,
+          registration_id: "registration-a",
+          payload_hash: firstA.payload_hash,
+        },
+        {
+          source_seq: secondA.source_seq,
+          registration_id: "registration-a",
+          payload_hash: secondA.payload_hash,
+        },
+        {
+          source_seq: eventB.source_seq,
+          registration_id: "registration-b",
+          payload_hash: eventB.payload_hash,
+        },
+      ]);
+      await expect(reader.readRecord(firstA.source_seq)).resolves.toEqual(firstA);
+    } finally {
+      reader.close();
+    }
+  });
+
+  it("pumps a retired registration tail through dead-letter ACKs to the host checkpoint", async () => {
+    const path = await temporaryDatabasePath();
+    await writeRegistrationIdentity(path, "registration-a");
+    const writerA = await RunnerSqliteEventOutbox.create(path);
+    await writerA.initializeBootstrap(bootstrapInput());
+    const firstA = await writerA.append(eventInput("registration A first"));
+    const secondA = await writerA.append(eventInput("registration A second"));
+    writerA.close();
+
+    await writeRegistrationIdentity(path, "registration-b");
+    const writerB = await RunnerSqliteEventOutbox.create(path);
+    const eventB = await writerB.append(eventInput("registration B"));
+    writerB.close();
+
+    const parent = await RunnerParentOutbox.open(path, "session-a");
+    const onError = vi.fn();
+    const sent: EventOutboxBatch[] = [];
+    const pump = new EventOutboxPump(parent, onError);
+    try {
+      const acknowledged = pump.waitForAcknowledgement(eventB, { timeoutMs: 1_000 });
+      pump.connect(async (batch) => {
+        sent.push(batch);
+        await pump.handleAck({
+          type: "event_append_ack",
+          stream_id: batch.stream_id,
+          acked_through: batch.events.at(-1)!.source_seq,
+          events: batch.events.map((record) => record.registration_id === "registration-a"
+            ? {
+              source_seq: record.source_seq,
+              dead_letter: {
+                code: "STALE_REGISTRATION",
+                reason: "runner registration is no longer active",
+                rejected_at: "2026-10-21T00:00:00.000Z",
+              },
+            }
+            : { source_seq: record.source_seq, event_id: 9300 + record.source_seq }),
+        });
+      });
+
+      await expect(acknowledged).resolves.toBe(9300 + eventB.source_seq);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.events.map((record) => ({
+        source_seq: record.source_seq,
+        registration_id: record.registration_id,
+      }))).toEqual([
+        { source_seq: firstA.source_seq, registration_id: "registration-a" },
+        { source_seq: secondA.source_seq, registration_id: "registration-a" },
+        { source_seq: eventB.source_seq, registration_id: "registration-b" },
+      ]);
+      expect(parent.ackedSeq).toBe(eventB.source_seq);
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      pump.disconnect();
+      parent.close();
+    }
   });
 
   it("atomically rotates the durable backend session id with its orch-bound event", async () => {
@@ -2563,6 +2665,17 @@ async function temporaryDatabasePath(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "soulstream-runner-outbox-"));
   tempDirectories.push(directory);
   return join(directory, "outbox.sqlite");
+}
+
+async function writeRegistrationIdentity(path: string, registrationId: string): Promise<void> {
+  await writeRunnerRegistrationIdentity(dirname(path), {
+    schemaVersion: 1,
+    registrationId,
+    sessionId: "session-a",
+    codeSha: `${registrationId}-code-sha`,
+    pid: process.pid,
+    startIdentity: `${registrationId}-start`,
+  });
 }
 
 function bootstrapInput(): RunnerBootstrapInput {
