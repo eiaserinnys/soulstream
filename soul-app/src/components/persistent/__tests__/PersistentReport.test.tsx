@@ -14,6 +14,7 @@ import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDi
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 import type { PersistentReportEntry } from '../../../api/types';
 import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
+import { calculatePersistentSessionLayout } from '../../../../../packages/soul-ui/src/lib/persistent-session-layout';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 // Forward View refs to the host so createNodeMock supplies the actual native
@@ -156,6 +157,40 @@ test('card expansion is limited to a bound ID or one card number', () => {
   expect(screen.queryByTestId('report-status')).toBeNull();
   fireEvent.press(screen.getByTestId('report-title'));
   expect(onOpen).not.toHaveBeenCalled();
+});
+
+test('expanded inline report uses the layout height cap and scrolls its reading block', () => {
+  mockDevice = 'tablet';
+  const geometry = calculatePersistentSessionLayout({
+    app: { left: 0, top: 0, width: 834, height: 1194 },
+    header: { left: 0, top: 0, width: 834, height: 76 },
+    main: { left: 217, top: 76, width: 400, height: 1074 },
+    baselineBottom: 1149, inputRowHeight: 44, rowBottomGap: 4,
+    pointerFine: false, showCharacter: false, phoneConfigured: false,
+    reportBubble: { widthScale: 1, minimumHeight: 0 },
+  });
+  expect(geometry.reportBubble).toBeNull();
+  const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531] };
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[cardEntry]} index={0} api={null} bubble={false} maxHeight={geometry.reportViewMaxHeight}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
+      renderCardDetails={() => <Text testID="inline-card-expansion">긴 카드 세부</Text>}
+      send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen);
+
+  fireEvent.press(screen.getByTestId('report-context'));
+  const deck = () => StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
+  const track = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style);
+  expect(screen.getByTestId('inline-card-expansion')).toBeTruthy();
+  expect(screen.getByTestId('report-scroll')).toBeTruthy();
+  expect(deck().maxHeight).toBe(geometry.reportViewMaxHeight);
+
+  const reading = screen.getByTestId('report-scroll');
+  fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 160 } } });
+  fireEvent(reading, 'contentSizeChange', 390, 1200);
+  fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
+  expect(track().height).toBe(geometry.reportViewMaxHeight);
 });
 
 test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 그린다', () => {

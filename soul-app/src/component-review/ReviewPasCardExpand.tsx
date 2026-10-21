@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Platform, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -111,7 +111,7 @@ export function ReviewPasCardExpand() {
   const details = (entry: PersistentReportEntry) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} />;
   const pager = <PersistentReportPager entries={entries} index={Math.min(index, entries.length - 1)} api={api} sessionId="preview-pas"
     onSelect={setIndex} onDismiss={async key => { setEntries(saved => saved.filter(item => item.key !== key)); }} onFocusComposer={noop}
-    bubble={Boolean(layout.reportBubble)} maxHeight={layout.reportBubble?.maxHeight}
+    bubble={Boolean(layout.reportBubble)} maxHeight={layout.reportBubble?.maxHeight ?? layout.reportViewMaxHeight}
     renderCardStatus={entry => { const statusCard = persistentReportStatusCard(entry); return statusCard ? <CardStatusChip card={statusCard} detail /> : null; }}
     renderCardDetails={phone ? undefined : details} onOpenCardDetails={phone ? setSheet : undefined}
     send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false, sendOption: async (entry: PersistentReportEntry, option: string) => answer(entry, option) } as any} />;
@@ -132,10 +132,12 @@ export function ReviewPasCardExpand() {
     </View>
     {sheet ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => setSheet(null)} surfaceTestID="pas-card-preview-sheet">
       <View style={styles.header}><View style={styles.headerRow}>
-        <GlassButton iconOnly size="compact" accessibilityLabel="닫기" onPress={() => setSheet(null)}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} /></GlassButton>
+        <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="닫기" onPress={() => setSheet(null)}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} /></GlassButton>
       <Text style={styles.heading} numberOfLines={2}>{persistentReportStatusCard(sheet) ? <><CardStatusChip card={persistentReportStatusCard(sheet)!} detail />{' '}</> : null}{sheet.title}</Text>
       </View></View>
-      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">{details(sheet)}</ScrollView>
+      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>{details(sheet)}</ScrollView>
     </AppModalSurface> : null}
   </ChatUiControllerProvider></ContentLinkProvider>;
 }

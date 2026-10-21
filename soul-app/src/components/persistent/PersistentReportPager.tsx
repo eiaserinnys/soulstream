@@ -69,6 +69,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   latestMeasurement.current = { entries, commitHeight, measureKey };
   useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
+  const inlineExpanded = !bubble && expandedKey !== null && renderCardDetails !== undefined;
+  const inlineHeight = inlineExpanded ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   // Publication edits wait for height without hiding an already visible deck.
   // A new session/layout still measures before its first presentation.
   const ready = presentedLayout === layoutKey;
@@ -132,14 +134,16 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   if (!count) return null;
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
     pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
-    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
+    style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight },
+      inlineExpanded && { height: inlineHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
     onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled" contentContainerStyle={styles.track} style={bubble ? { height: bubbleHeight, flexShrink: 0,
         // The surface's existing horizontal borders belong to its height;
         // let the viewport span them without adding two more pixels.
-        marginVertical: -StyleSheet.hairlineWidth } : height ? { height } : undefined}
+        marginVertical: -StyleSheet.hairlineWidth } : inlineExpanded ? { height: inlineHeight, flexShrink: 0 }
+          : height ? { height } : undefined}
       onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
       onLayout={event => setWidth(event.nativeEvent.layout.width)} onContentSizeChange={align}
       onScroll={event => {

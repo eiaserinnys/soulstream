@@ -88,3 +88,33 @@ test('resolves a single card number, shows only its latest comments, and keeps i
   await act(async () => fireEvent.press(screen.getByLabelText('카드 열기')));
   expect(mockOpenCardLink).toHaveBeenCalledWith('/?card=card-531');
 });
+
+test('omits the checklist and comment timeline when both have no rows', async () => {
+  const empty = makeDetail();
+  empty.card = { ...empty.card, items: [] };
+  empty.comments = [];
+  const api = { getCard: jest.fn().mockResolvedValue(empty) } as unknown as ApiClient;
+  const screen = render(<PersistentReportCardExpansion api={api} entry={{ ...entry, card_id: card.id }} />);
+
+  await waitFor(() => expect(screen.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
+  expect(screen.queryByTestId('card-check-items')).toBeNull();
+  expect(screen.queryByTestId('card-timeline')).toBeNull();
+  expect(screen.getByLabelText('카드 열기')).toBeTruthy();
+  expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
+});
+
+test('shows a folded card read error and retries in place', async () => {
+  const detail = makeDetail();
+  const api = { getCard: jest.fn()
+    .mockRejectedValueOnce(new Error('Request failed with status 503'))
+    .mockResolvedValueOnce(detail) } as unknown as ApiClient;
+  const screen = render(<PersistentReportCardExpansion api={api} entry={{ ...entry, card_id: card.id }} />);
+
+  await waitFor(() => expect(screen.getByText('카드를 불러오지 못했습니다.')).toBeTruthy());
+  expect(screen.queryByText('Request failed with status 503')).toBeNull();
+  expect(screen.getByTestId('persistent-report-card-retry')).toBeTruthy();
+  await act(async () => { fireEvent.press(screen.getByTestId('persistent-report-card-retry')); });
+  await waitFor(() => expect(screen.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
+  expect(api.getCard).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText('카드를 불러오지 못했습니다.')).toBeNull();
+});

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, BackHandler, PanResponder, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
+import { Alert, BackHandler, PanResponder, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -162,7 +162,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const geometry = heldGeometry.current;
   const pager = geometry ? <PersistentReportPager entries={reportSend.entries} index={report.index} api={api}
     sessionId={session?.session_id} onReady={setReportReady}
-    send={reportSend} bubble={!!geometry?.reportBubble} maxHeight={geometry?.reportBubble?.maxHeight}
+    send={reportSend} bubble={!!geometry.reportBubble}
+    maxHeight={geometry.reportBubble?.maxHeight ?? geometry.reportViewMaxHeight}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
     renderCardStatus={entry => {
       const card = persistentReportStatusCard(entry);
@@ -310,7 +311,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"
       variant="expanded" presentationStyle="pageSheet" onRequestClose={closeReportCard} onDismiss={onReportCardSheetDismiss} surfaceTestID="persistent-session-report-card-sheet">
       <View style={cardStyles.header}><View style={cardStyles.headerRow}>
-        <GlassButton iconOnly size="compact" accessibilityLabel="닫기" onPress={closeReportCard}>
+        <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="닫기" onPress={closeReportCard}>
           <Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary} />
         </GlassButton>
         <Text style={cardStyles.heading} numberOfLines={2}>
@@ -319,7 +320,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         </Text>
       </View></View>
       <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ padding: t.foundation.pageInset }}
-        showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
         <PersistentReportCardExpansion key={reportCardSheetEntry.key} api={api} entry={reportCardSheetEntry} onOpenCard={openReportCardFromSheet} />
       </ScrollView>
     </AppModalSurface> : null}

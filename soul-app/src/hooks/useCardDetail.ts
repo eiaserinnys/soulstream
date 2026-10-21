@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CardDetail } from '../api/cardTypes';
 import { replaceEqualDeep } from '../lib/structural-sharing';
 import type { ApiClient } from '../api/client';
@@ -15,6 +15,16 @@ export function useCardDetail(api: ApiClient | null, cardId: string | null) {
   }, [received]);
   const [error, setError] = useState<string | null>(null);
   const scope = useAuthScopeGeneration();
+  const refresh = useCallback(async () => {
+    if (!api || !cardId) return;
+    setError(null);
+    try {
+      await refreshCard(api, cardId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      throw cause;
+    }
+  }, [api, cardId, scope]);
   useEffect(() => {
     setError(null);
     if (!api || !cardId) return;
@@ -24,5 +34,5 @@ export function useCardDetail(api: ApiClient | null, cardId: string | null) {
     });
     return () => { cancelled = true; };
   }, [api, cardId, scope]);
-  return { detail, error };
+  return { detail, error, refresh };
 }
