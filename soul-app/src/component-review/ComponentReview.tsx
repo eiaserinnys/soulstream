@@ -92,6 +92,7 @@ export function initializeReview() {
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
   const cardChecks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardChecks';
   const settingsSection = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
+  const pasCardExpand = settingsSection === 'pasCardExpand';
   const chatUiComposer = settingsSection === 'chatUiComposer';
   const chatUiFlow = settingsSection === 'chatUiRenderer';
   const nativeSettings = settingsSection === 'nativeSettings' || settingsSection === 'pasSettings';
@@ -102,7 +103,7 @@ export function initializeReview() {
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasCardExpand || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
   if (attachments) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
@@ -237,7 +238,7 @@ function Gallery() {
   if (next === 'entryShell' || next === 'folderTabs') useSettingsStore.setState({ serverUrl: 'https://public-fixture.invalid' });
       if (next === 'contentLinks' || next === 'contentLinkDocument' || next === 'attachments') useSettingsStore.setState({ serverUrl: window.location.origin });
       if (next === 'attachments') useAuthStore.setState({ jwt: null, authRejected: false });
-      if (next === 'cardImages') useSettingsStore.setState({ serverUrl: window.location.origin });
+      if (next === 'cardImages' || next === 'pasCardExpand') useSettingsStore.setState({ serverUrl: window.location.origin });
       setSection(next);
     }} options={sections} wrap={section === 'dialogues'} />
     {section === 'dialogues' ? <ReviewDialogues /> : null}
