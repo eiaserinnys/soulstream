@@ -145,13 +145,13 @@ describe("user card execution transport",()=>{
         assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
       const ownedCurrent=(await cards.getCard(ownedCard))!.card;
       await execution.execute({actorKind:"agent",actorSessionId:"owned-caller",actorUserId:null,cardId:ownedCard,expectedVersion:ownedCurrent.version,idempotencyKey:"owned-execution"});
-      expect(createSession).toHaveBeenLastCalledWith(expect.objectContaining({caller_info:{source:"system",email:ownerEmail}}),expect.anything());
+      expect(createSession).toHaveBeenLastCalledWith(expect.objectContaining({caller_info:{source:"system",email:ownerEmail,card_launch:true}}),expect.anything());
 
       const ownerlessCard=(await cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,folderId:"work",title:"주인 없는 실행",request:"수행",
         assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
       const ownerlessCurrent=(await cards.getCard(ownerlessCard))!.card;
       await execution.execute({actorKind:"agent",actorSessionId:"ownerless-caller",actorUserId:null,cardId:ownerlessCard,expectedVersion:ownerlessCurrent.version,idempotencyKey:"ownerless-execution"});
-      expect(createSession).toHaveBeenLastCalledWith(expect.objectContaining({caller_info:{source:"system"}}),expect.anything());
+      expect(createSession).toHaveBeenLastCalledWith(expect.objectContaining({caller_info:{source:"system",card_launch:true}}),expect.anything());
       expect(createSession.mock.calls.at(-1)![0].caller_info).not.toHaveProperty("email");
 
       const resumeCard=(await cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,folderId:"work",title:"에이전트 재개",request:"수행",
@@ -169,7 +169,7 @@ describe("user card execution transport",()=>{
       const browserExecution=await execution.execute({actorKind:"user",actorSessionId:null,actorUserId:ownerEmail,cardId:browserCard,
         expectedVersion:browserCurrent.version,idempotencyKey:"browser-execution"});
       const browserPayload=createSession.mock.calls.at(-1)![0];
-      expect(browserPayload.caller_info).toEqual({source:"browser"});
+      expect(browserPayload.caller_info).toEqual({source:"browser",card_launch:true});
       expect(await h.sql`SELECT actor_user_id FROM card_execution_requests WHERE id=${browserExecution.execution.requestId}`)
         .toEqual([{actor_user_id:ownerEmail}]);
       expect(await resolveSessionOwner(browserExecution.execution.sessionId)).toEqual({
