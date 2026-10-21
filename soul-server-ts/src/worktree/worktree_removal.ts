@@ -2,13 +2,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { WorktreeGit, WorktreeGitError } from "./worktree_git.js";
 import { WorktreeServiceError } from "./worktree_service.js";
-import { baseDependencyLinksIntoWorktree } from "./worktree_dependency_links.js";
+import { baseDependencyLinksIntoWorktree, dependencyLinksIntoWorktree, type CollectedBaseDependencyLink } from "./worktree_dependency_links.js";
 import type { WorktreeHost, WorktreeRecord, WorktreeRemovalActor } from "./worktree_types.js";
 
 // Caller owns the repository lock and operation deadline for the entire lifecycle.
 export async function removeWorktreeLocked(options: {
   projectsRoot: string; git: WorktreeGit; host: WorktreeHost;
   assertWorkspaceUnused: (path: string) => void;
+  baseDependencyLinks?: readonly CollectedBaseDependencyLink[];
 }, initialRecord: WorktreeRecord, actor: WorktreeRemovalActor): Promise<WorktreeRecord> {
   let record = initialRecord;
   try {
@@ -16,9 +17,9 @@ export async function removeWorktreeLocked(options: {
     const sweeper = "sweeperNodeId" in actor;
     if (!(sweeper && missing)) {
       options.assertWorkspaceUnused(record.canonicalPath);
-      const links = await baseDependencyLinksIntoWorktree(
-        join(options.projectsRoot, record.repoId), record.canonicalPath,
-      );
+      const links = options.baseDependencyLinks === undefined
+        ? await baseDependencyLinksIntoWorktree(join(options.projectsRoot, record.repoId), record.canonicalPath)
+        : dependencyLinksIntoWorktree(options.baseDependencyLinks, record.canonicalPath);
       if (links.length > 0) {
         throw new WorktreeServiceError(
           "WORKTREE_BASE_DEPENDENCY_IN_USE",

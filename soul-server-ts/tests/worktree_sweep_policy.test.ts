@@ -17,6 +17,9 @@ describe("worktree sweep policy", () => {
     ["removed", { merged: true }],
     ["removed", { linkedCardsClosed: true }],
     ["removed", { idleMs: SWEEP_IDLE_MS }],
+    // HEAD == createdFromSha: the sweep supplies merged=false despite origin ancestry.
+    ["not_finished", { idleMs: SWEEP_RECENT_MS + 1, merged: false, linkedCardsClosed: false }],
+    ["removed", { idleMs: SWEEP_RECENT_MS + 1, merged: false, linkedCardsClosed: true }],
   ])("returns %s for %j", (expected, patch) => {
     expect(decideWorktreeSweep({ ...safe, ...patch })).toBe(expected);
   });

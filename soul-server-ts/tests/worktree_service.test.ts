@@ -16,6 +16,7 @@ import { dirname, join, relative, resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as dependencyLinks from "../src/worktree/worktree_dependency_links.js";
 import { WorktreeGit } from "../src/worktree/worktree_git.js";
 import { RepositoryLock } from "../src/worktree/worktree_repository_lock.js";
 import { WorktreeService, WorktreeServiceError } from "../src/worktree/worktree_service.js";
@@ -24,6 +25,7 @@ import type { WorktreeHost, WorktreeRecord } from "../src/worktree/worktree_type
 const roots: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -123,6 +125,24 @@ describe("WorktreeService", () => {
     expect(git(repo, "rev-parse", "refs/heads/remove-timeout")).toBe(created.head);
   });
 
+  it.each([false, true])("keeps an unchanged initial HEAD unless its card is closed (%s)", async (closed) => {
+    const { projectsRoot, repo, service, host } = fixture();
+    const origin = join(projectsRoot, "remote.git");
+    git(projectsRoot, "init", "--bare", "-b", "main", origin);
+    git(repo, "remote", "add", "origin", origin);
+    git(repo, "push", "origin", "main");
+    git(repo, "remote", "set-head", "origin", "main");
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: "waiting", mode: "new" });
+    const id = String(created.worktreeId);
+    const now = Date.now() + 4 * 60 * 60_000;
+    host.records.set(id, { ...host.records.get(id)!,
+      lastSessionActivityAt: new Date(now - 4 * 60 * 60_000).toISOString(), linkedCardsClosed: closed });
+    expect(git(String(created.path), "rev-parse", "HEAD")).toBe(host.records.get(id)!.createdFromSha);
+    const result = await service.sweep({ now });
+    expect(result).toMatchObject({ removed: closed ? 1 : 0, not_finished: closed ? 0 : 1 });
+    expect(existsSync(String(created.path))).toBe(!closed);
+  });
+
   it("sweeps only finished clean pushed worktrees, once per repo, preserving branches", async () => {
     const active: string[] = [];
     const { projectsRoot, repo, service, host } = fixture(active);
@@ -139,10 +159,14 @@ describe("WorktreeService", () => {
       const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch: `sweep/${kind}`, mode: "new" });
       const path = String(created.path), id = String(created.worktreeId);
       paths.set(kind, path); ids.set(kind, id);
-      if (!["merged", "missing", "prunable", "no_branch"].includes(kind)) {
+      if (!["missing", "prunable", "no_branch"].includes(kind)) {
         writeFileSync(join(path, "feature.txt"), kind);
         git(path, "add", "."); git(path, "commit", "-m", kind);
         if (kind !== "unpushed") git(path, "push", "origin", `sweep/${kind}`);
+        if (kind === "merged") {
+          git(repo, "merge", "--ff-only", `sweep/${kind}`);
+          git(repo, "push", "origin", "main");
+        }
       }
       const record = host.records.get(id)!;
       host.records.set(id, { ...record, lastSessionActivityAt: kind === "recent" ? new Date(now).toISOString() : kind === "idle" ? new Date(now - 8 * 24 * 60 * 60_000).toISOString() : old,
@@ -170,11 +194,25 @@ describe("WorktreeService", () => {
     let fetches = 0;
     const sweepGit = new WorktreeGit({ projectsRoot, timeoutMs: 5_000, createTimeoutMs: 5_000,
       processRunner: async (input) => { if (input.args[0] === "fetch") fetches++; return runBoundedProcess(input); } });
+    const lock = new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 });
+    const originalWithLock = lock.withLock.bind(lock);
+    let lockHeld = false;
+    vi.spyOn(lock, "withLock").mockImplementation(async (key, action) => originalWithLock(key, async () => {
+      lockHeld = true;
+      try { return await action(); } finally { lockHeld = false; }
+    }));
+    const originalCollect = dependencyLinks.collectBaseDependencyLinks;
+    const collect = vi.spyOn(dependencyLinks, "collectBaseDependencyLinks").mockImplementation(async (base) => {
+      expect(lockHeld).toBe(false);
+      return await originalCollect(base);
+    });
     const sweeper = new WorktreeService({ nodeId: "node-a", projectsRoot, git: sweepGit, createTimeoutMs: 5_000, host,
-      lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 }), listActiveWorkspaceDirs: () => active });
+      lock, listActiveWorkspaceDirs: () => active });
     const result = await sweeper.sweep({ now });
     expect(result).toMatchObject({ candidates: 16, removed: 6, recent: 2, in_use: 2, base_links: 1, changes: 2, unpushed: 1, not_finished: 1, failed: 1 });
     expect(fetches).toBe(1);
+    expect(collect).toHaveBeenCalledTimes(1);
+    expect(collect).toHaveBeenCalledWith(repo);
     for (const kind of ["merged", "closed", "idle", "missing", "prunable", "no_branch"]) {
       expect(existsSync(paths.get(kind)!)).toBe(false);
       expect(host.records.get(ids.get(kind)!)?.state).toBe("removed");

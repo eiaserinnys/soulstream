@@ -9,9 +9,17 @@ export interface BaseDependencyLink {
   target: string;
 }
 
-/** Inspect dependency directories without traversing symlinks into other workspaces. */
+export interface CollectedBaseDependencyLink extends BaseDependencyLink {
+  resolvedTarget: string;
+}
+
 export async function baseDependencyLinksIntoWorktree(base: string, worktree: string): Promise<BaseDependencyLink[]> {
-  const links: BaseDependencyLink[] = [];
+  return dependencyLinksIntoWorktree(await collectBaseDependencyLinks(base), worktree);
+}
+
+/** Inspect dependency directories without traversing symlinks into other workspaces. */
+export async function collectBaseDependencyLinks(base: string): Promise<CollectedBaseDependencyLink[]> {
+  const links: CollectedBaseDependencyLink[] = [];
   const visit = async (path: string, entry?: Dirent): Promise<void> => {
     const stat = entry ?? await lstat(path);
     if (stat.isSymbolicLink()) {
@@ -23,9 +31,7 @@ export async function baseDependencyLinksIntoWorktree(base: string, worktree: st
         // A dangling link still records which workspace it depends on.
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
-      if (containsPath(worktree, target) || containsPath(worktree, resolvedTarget)) {
-        links.push({ path: relative(base, path).replaceAll("\\", "/"), target: resolvedTarget });
-      }
+      links.push({ path: relative(base, path).replaceAll("\\", "/"), target, resolvedTarget });
       return;
     }
     if (stat.isDirectory()) {
@@ -36,6 +42,15 @@ export async function baseDependencyLinksIntoWorktree(base: string, worktree: st
   };
   for (const directory of await nodeModulesDirectories(base)) await visit(directory);
   return links.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export function dependencyLinksIntoWorktree(
+  links: readonly CollectedBaseDependencyLink[],
+  worktree: string,
+): BaseDependencyLink[] {
+  return links
+    .filter(link => containsPath(worktree, link.target) || containsPath(worktree, link.resolvedTarget))
+    .map(link => ({ path: link.path, target: link.resolvedTarget }));
 }
 
 function containsPath(parent: string, child: string): boolean {
