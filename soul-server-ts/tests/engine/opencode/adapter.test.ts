@@ -266,6 +266,7 @@ describe("OpenCodeEngineAdapter", () => {
         {
           type: "error",
           fatal: true,
+          error_code: "opencode_rate_limit_exceeded",
           message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
         },
       ]);
@@ -299,6 +300,7 @@ describe("OpenCodeEngineAdapter", () => {
       expect(events[1]).toMatchObject({
         type: "error",
         fatal: true,
+        error_code: "opencode_rate_limit_exceeded",
         message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
       });
       expect(events.filter((event) => event.type === "error")).toHaveLength(1);
@@ -330,6 +332,7 @@ describe("OpenCodeEngineAdapter", () => {
       expect(events.at(-1)).toMatchObject({
         type: "error",
         fatal: true,
+        error_code: "opencode_rate_limit_exceeded",
         message: "OpenCode free tier rate limit exceeded (Rate limit exceeded). Try again later or use another model.",
       });
     } finally {
