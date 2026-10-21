@@ -182,7 +182,7 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   fireEvent.press(screen.getByTestId('report-context'));
   const deck = () => StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
   const track = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style);
-  const trackContent = () => StyleSheet.flatten(screen.getByTestId('report-track').props.contentContainerStyle);
+  const sheet = () => StyleSheet.flatten(screen.getByTestId('report-sheet-card_531').props.style);
   expect(screen.getByTestId('inline-card-expansion')).toBeTruthy();
   expect(screen.getByTestId('report-scroll')).toBeTruthy();
   expect(deck().maxHeight).toBe(geometry.reportViewMaxHeight);
@@ -193,7 +193,7 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   fireEvent(reading, 'contentSizeChange', 390, 1200);
   fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
   expect(track().height).toBe(geometry.reportViewMaxHeight);
-  expect(trackContent().height).toBe(geometry.reportViewMaxHeight);
+  expect(sheet().height).toBe(geometry.reportViewMaxHeight);
 });
 
 test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 그린다', () => {
@@ -509,7 +509,7 @@ test('bubble reports intrinsic height only after both reading and footer are mea
   function Harness() {
     const t = useTokens();
     return <PersistentReportSheet entry={reportReviewEntries[1]} index={0} count={1} current compact={false}
-      showNav={false} width={318} styles={reportStyles(t, 0, false)} bubble bubbleHeight={440}
+      showNav={false} width={318} styles={reportStyles(t, 0, false)} bubble surfaceHeight={440}
       titleRef={jest.fn()} onStep={jest.fn()} onExpand={jest.fn()} onOption={jest.fn()} onDismiss={jest.fn()}
       onCard={jest.fn()} onLink={jest.fn()} onHeight={onHeight} />;
   }

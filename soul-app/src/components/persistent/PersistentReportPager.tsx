@@ -167,7 +167,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
           else setExpandedKey(saved => saved === entry.key ? null : entry.key);
         } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
-        bubble={bubble} bubbleHeight={bubbleHeight} busy={isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
+        bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineExpanded ? inlineHeight : undefined}
+        busy={isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
         onReady={() => {
           const id = measureKey(entry), latest = latestMeasurement.current;
