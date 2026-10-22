@@ -155,8 +155,7 @@ export class NodeEventIngressController {
             eventId: item.eventId,
           }, item.sessionEffectApplication, item.feedProjectionApplication, item.feedLastEventId);
       // receiveCommittedEvent updates the session cache as a side effect. Apply the
-      // effect before publishing session_ended so cache-reading sinks such as
-      // PushNotifier observe the committed final assistant text.
+      // effect before publishing so downstream observers see the committed session state.
       const effectEvents = sessionUpdate
         ? this.options.receiveCommittedEvent(sessionUpdate)
         : undefined;

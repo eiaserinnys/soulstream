@@ -80,6 +80,27 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await Promise.all([reports.put('pas',entry('left')),reports.put('pas',entry('right'))]);
     expect((await reports.get('pas')).map(e=>e.key).sort()).toEqual(['left','right']);
   });
+  it("notifies only changed open puts and keeps the timestamp for identical content", async () => {
+    const onPosted = vi.fn();
+    const posting = new PersistentReportService(adapted, publish, onPosted);
+    const payload = entry('posted');
+    expect(await posting.put('pas',payload)).toMatchObject({ok:true,changed:true});
+    const first = (await posting.get('pas')).find(e=>e.key==='posted')!;
+    expect(onPosted).toHaveBeenCalledTimes(1);
+    expect(onPosted).toHaveBeenCalledWith({sessionId:'pas',entry:expect.objectContaining({key:'posted',state:'open'})});
+
+    await new Promise(resolve=>setTimeout(resolve,5));
+    expect(await posting.put('pas',payload)).toMatchObject({ok:true,changed:false});
+    expect((await posting.get('pas')).find(e=>e.key==='posted')!.updated_at).toBe(first.updated_at);
+    expect(onPosted).toHaveBeenCalledTimes(1);
+
+    expect(await posting.put('pas',{...payload,context:'수정된 맥락'})).toMatchObject({ok:true,changed:true});
+    expect(onPosted).toHaveBeenCalledTimes(2);
+    expect(await posting.put('pas',{...entry('answered'),state:'answered',answer:'진행'})).toMatchObject({ok:true,changed:true});
+    expect(onPosted).toHaveBeenCalledTimes(2);
+    await posting.remove('pas','posted');
+    expect(onPosted).toHaveBeenCalledTimes(2);
+  });
   it("answers one open entry once, passes reply/visible contexts and ignores nonhuman or missing entries", async () => {
     const context = [{key:'persistent_report_reply',content:{key:'left',option:'진행'}}, {key:'persistent_report_visible',content:{key:'left',title:'left'}}];
     const parsed = intervenePayload('pas',{text:'left: 진행',context_items:context});
@@ -366,9 +387,10 @@ describe("PAS reports on production PostgreSQL schema", () => {
     const findUserByEmail = async (email: string) => ({ email, isAdmin: false, allowedFolderIds: [] });
     const resolveOwner = createSessionOwnerResolver({ getSession: id => reads.getSession(id), findUserByEmail, findExternalAgent: async () => null });
     const dispatch = new CardDispatchRepository(async () => sql as never);
+    let placement: Awaited<ReturnType<typeof placeCardQuestionOnOwnerBoards>> | undefined;
     const withBoard = new CardControlPlaneService(adapted, dbPort, undefined, undefined, publish, undefined, undefined, async ({ cardId, questionId }) => {
       const ownerEmail = await resolveCardOwnerEmail(cardId, { cardCreatorActor: id => dispatch.cardCreatorActor(id), findUserByEmail, resolveSessionOwner: resolveOwner });
-      await placeCardQuestionOnOwnerBoards({ questionId, ownerEmail, resolveSessionOwner: resolveOwner,
+      placement = await placeCardQuestionOnOwnerBoards({ questionId, ownerEmail, resolveSessionOwner: resolveOwner,
         listPersistentSessions: () => reads.listPersistentSessions(),
         putQuestion: (sessionId, qid) => reports.putQuestion(sessionId, qid) });
     });
@@ -379,6 +401,14 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await withBoard.askQuestion({ ...human, cardId, text: '새 질문', options: ['진행', '중단'] });
     const newId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
     expect(newId).not.toBe(oldId);
+    expect(placement?.placed.slice().sort()).toEqual(['owner-a','owner-b']);
+    expect(placement?.failed).toEqual([]);
+    expect(placement?.changed.slice().sort()).toEqual(['owner-a','owner-b']);
+    const repeated = await placeCardQuestionOnOwnerBoards({ questionId:newId, ownerEmail:'director@example.com', resolveSessionOwner:resolveOwner,
+      listPersistentSessions:()=>reads.listPersistentSessions(), putQuestion:(sessionId,qid)=>reports.putQuestion(sessionId,qid) });
+    expect(repeated.placed.slice().sort()).toEqual(['owner-a','owner-b']);
+    expect(repeated.failed).toEqual([]);
+    expect(repeated.changed).toEqual([]);
     for (const s of ['owner-a', 'owner-b']) {
       const placed = (await reports.get(s)).filter(e => e.question_id === newId);
       expect(placed).toHaveLength(1);

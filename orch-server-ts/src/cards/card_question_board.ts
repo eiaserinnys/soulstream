@@ -35,15 +35,19 @@ export async function placeCardQuestionOnOwnerBoards(input: {
   resolveSessionOwner: SessionOwnerResolver;
   listPersistentSessions: () => Promise<readonly { session_id: string; session_type: string | null }[]>;
   putQuestion: (sessionId: string, questionId: string) => Promise<PersistentReportResult>;
-}): Promise<{ placed: string[]; failed: string[] }> {
-  if (!input.ownerEmail) return { placed: [], failed: [] };
+}): Promise<{ placed: string[]; failed: string[]; changed: string[] }> {
+  if (!input.ownerEmail) return { placed: [], failed: [], changed: [] };
   const placed: string[] = [];
   const failed: string[] = [];
+  const changed: string[] = [];
   for (const session of await input.listPersistentSessions()) {
     if (session.session_type === "llm") continue;
     if ((await input.resolveSessionOwner(session.session_id))?.ownerEmail !== input.ownerEmail) continue;
-    if ((await input.putQuestion(session.session_id, input.questionId)).ok) placed.push(session.session_id);
-    else failed.push(session.session_id);
+    const result = await input.putQuestion(session.session_id, input.questionId);
+    if (result.ok) {
+      placed.push(session.session_id);
+      if (result.changed) changed.push(session.session_id);
+    } else failed.push(session.session_id);
   }
-  return { placed, failed };
+  return { placed, failed, changed };
 }

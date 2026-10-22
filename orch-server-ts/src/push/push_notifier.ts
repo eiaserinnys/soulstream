@@ -1,12 +1,8 @@
 import type { NodeRegistryEvent } from "../node/registry.js";
-import { PushNotificationDedupe } from "./push_notification_dedupe.js";
-import type { PushRegistrationRepository } from "./push_routes.js";
-import {
-  responseWaitSignal,
-  type ResponseWaitSignal,
-} from "./response_wait_signal.js";
-import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
 import type { CardNotification } from "../cards/card_dispatcher.js";
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
+import type { PushRegistrationRepository } from "./push_routes.js";
+import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
 
 export { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
 export {
@@ -54,12 +50,13 @@ export type PushNotifierOptions = {
   readonly provider: PushNotificationProvider;
   readonly repository: PushNotificationRepository;
   readonly catalog: PushNotificationCatalog;
-  readonly sessionLookup: (sessionId: string) => Record<string, unknown> | undefined;
-  readonly loadSessionReviewState: (
+  /** Legacy event-path dependencies remain optional for callers that still provide them. */
+  readonly sessionLookup?: (sessionId: string) => Record<string, unknown> | undefined;
+  readonly loadSessionReviewState?: (
     sessionId: string,
   ) => Promise<PushSessionReviewState | undefined>;
   readonly resolveNodeEmail: (nodeId: string) => string | undefined;
-  readonly foregroundObservers: SessionForegroundObserverTracker;
+  readonly foregroundObservers?: SessionForegroundObserverTracker;
   readonly onInfo?: (event: PushNotificationLogEvent) => void;
   readonly onWarning: (message: string, error?: unknown) => void;
   readonly nowMs?: () => number;
@@ -83,19 +80,11 @@ export type PushNotificationLogEvent = {
     | "llm_session";
 };
 
-const INPUT_REQUEST_SOURCES = new Set(["slack", "browser", "soul-app", "agent"]);
-const TERMINAL_NOTIFICATION_TITLES = new Map([
-  ["completed", "세션 완료"],
-  ["error", "세션 오류"],
-]);
 export const PUSH_TOOL_INPUT_TTL_MS = 60 * 60_000;
 export const PUSH_EVENT_MAX_AGE_MS = 10 * 60_000;
 const PUSH_BODY_MAX = 100;
-const INPUT_EXCERPT_MAX = 50;
 
 export class PushNotifier {
-  private readonly toolInputs = new Map<string, { value: unknown; atMs: number }>();
-  private readonly notificationDedupe = new PushNotificationDedupe();
   private readonly pending = new Set<Promise<void>>();
   private readonly warn: (message: string, error?: unknown) => void;
   private readonly nowMs: () => number;
@@ -107,26 +96,78 @@ export class PushNotifier {
   }
 
   async notifyCard(input: CardNotification): Promise<boolean> {
-    if (this.closed) return false;
-    const folders=await this.options.catalog.listFolders();
-    if (folders.some(folder=>{
-      const value=recordValue(folder);
-      return value?.id === input.folderId && recordValue(value.settings)?.excludeFromNotification === true;
-    })) return false;
-    const title=input.kind === "review" ? `검수 요청: ${input.title}` : input.title;
-    return this.sendToUser(input.nodeId,title,input.kind === "question" ? input.question ?? "" : title,
-      {cardId:input.cardId,folderId:input.folderId,kind:`card_${input.kind}`});
+    if (this.closed || input.kind !== "review") return false;
+    return this.trackSend(this.notifyReviewCard(input));
   }
 
-  accept(events: readonly NodeRegistryEvent[]): void {
-    if (this.closed) return;
-    for (const event of events) {
-      const task = this.handleEvent(event).catch((error: unknown) => {
-        this.warn("Push notifier event failed", error);
-      });
-      this.pending.add(task);
-      void task.finally(() => this.pending.delete(task));
+  private async notifyReviewCard(input: CardNotification): Promise<boolean> {
+    if (await this.folderExcludes(input.folderId)) return false;
+    const title = `검수 요청: ${input.title}`;
+    return this.sendToUser(input.nodeId, title, title, {
+      cardId: input.cardId,
+      folderId: input.folderId,
+      kind: "card_review",
+    });
+  }
+
+  async notifyPersistentReport(input: {
+    ownerEmail: string;
+    sessionId: string;
+    entry: PersistentReportEntry;
+    cardId?: string;
+    questionId?: string;
+    folderId?: string;
+  }): Promise<boolean> {
+    if (this.closed || !input.ownerEmail.trim() || input.entry.state !== "open") {
+      return false;
     }
+    return this.trackSend(this.notifyPersistentReportOwner(input));
+  }
+
+  private async notifyPersistentReportOwner(input: {
+    ownerEmail: string;
+    sessionId: string;
+    entry: PersistentReportEntry;
+    cardId?: string;
+    questionId?: string;
+    folderId?: string;
+  }): Promise<boolean> {
+    let folderId = input.folderId;
+    try {
+      if (input.cardId !== undefined) {
+        if (input.folderId === undefined || await this.folderExcludes(input.folderId)) {
+          return false;
+        }
+      } else {
+        folderId ??= (await this.options.catalog.findSessionFolderId(input.sessionId)) ?? undefined;
+        if (folderId !== undefined && await this.folderExcludes(folderId)) return false;
+      }
+    } catch (error) {
+      this.warn(`Push folder settings lookup failed for ${input.sessionId}`, error);
+    }
+
+    const title = input.entry.kind === "ask"
+      ? `확인 요청: ${input.entry.title}`
+      : `지금의 보고: ${input.entry.title}`;
+    const body = truncate(firstMeaningful(
+      input.entry.context,
+      input.entry.action,
+      input.entry.title,
+    ), PUSH_BODY_MAX);
+    return this.sendToEmail(input.ownerEmail.trim(), title, body, {
+      kind: "persistent_report",
+      persistentSessionId: input.sessionId,
+      entryKey: input.entry.key,
+      reportKind: input.entry.kind,
+      ...(input.cardId ? { cardId: input.cardId } : {}),
+      ...(input.questionId ? { questionId: input.questionId } : {}),
+      ...(input.folderId ? { folderId: input.folderId } : {}),
+    });
+  }
+
+  /** Session events continue to update in-app state through their existing SSE path. */
+  accept(events: readonly NodeRegistryEvent[]): void {
+    void events;
   }
 
   async flush(): Promise<void> {
@@ -140,205 +181,34 @@ export class PushNotifier {
     await this.flush();
   }
 
-  private async handleEvent(event: NodeRegistryEvent): Promise<void> {
-    if (event.type === "node_unregistered") {
-      this.clearNodeState(event.nodeId);
-      return;
-    }
-    // Terminal snapshots are observations, not transitions. Only session_ended may notify.
-    if (event.type === "node_session_session_updated") return;
-    if (event.type !== "node_session_event") return;
-
-    const sessionId = sessionIdFrom(event.data);
-    const payload = recordValue(event.data.event) ?? recordValue(event.data.payload);
-    if (sessionId === undefined || payload === undefined) return;
-    if (payload.type === "session_ended") {
-      if (this.isStalePushEvent(sessionId, payload)) return;
-      const eventKey = this.claimEvent(sessionId, payload, "session_ended");
-      if (eventKey === null) return;
-      const sent = await this.handleSessionEnded(
-        event.nodeId,
-        sessionId,
-        event.data,
-        payload,
-        eventKey,
-      );
-      if (sent) this.logSent(sessionId, eventKey, "session_ended");
-      return;
-    }
-    this.cacheToolInput(event.nodeId, sessionId, payload);
-    const toolUseId = stringValue(payload.tool_use_id, payload.toolUseId);
-    const inputKey = toolInputKey(event.nodeId, sessionId, toolUseId);
-    const signal = responseWaitSignal(
-      payload,
-      this.toolInputs.get(inputKey)?.value,
-    );
-    if (signal?.kind === "exit_plan_mode") this.toolInputs.delete(inputKey);
-    if (signal !== undefined) {
-      if (this.isStalePushEvent(sessionId, payload)) return;
-      const eventKey = this.claimEvent(sessionId, payload, signal.kind);
-      if (eventKey === null) return;
-      const sent = await this.handleInputRequest(event.nodeId, sessionId, event.data, signal);
-      if (sent) this.logSent(sessionId, eventKey, signal.kind);
-    }
-  }
-
-  private claimEvent(
-    sessionId: string,
-    event: Record<string, unknown>,
-    notificationKind: PushNotificationLogEvent["notification_kind"],
-  ): string | undefined | null {
-    const claim = this.notificationDedupe.claim(sessionId, event, this.nowMs());
-    if (claim === undefined) {
-      this.warn(`Push notification event identity missing for ${sessionId}`);
-      return undefined;
-    }
-    if (!claim.duplicate) return claim.eventKey;
-    this.options.onInfo?.({
-      action: "suppressed",
-      session_id: sessionId,
-      event_key: claim.eventKey,
-      notification_kind: notificationKind,
-      reason: "duplicate_event_identity",
-    });
-    return null;
-  }
-
-  private logSent(
-    sessionId: string,
-    eventKey: string | undefined,
-    notificationKind: PushNotificationLogEvent["notification_kind"],
-  ): void {
-    this.options.onInfo?.({
-      action: "sent",
-      session_id: sessionId,
-      event_key: eventKey ?? "missing",
-      notification_kind: notificationKind,
-      reason: "notification_dispatched",
-    });
-  }
-
-  private isStalePushEvent(sessionId: string, event: Record<string, unknown>): boolean {
-    const createdAtMs = pushEventCreatedAtMs(event);
-    if (createdAtMs === undefined || this.nowMs() - createdAtMs <= PUSH_EVENT_MAX_AGE_MS) return false;
-    this.warn(`Push notification skipped for stale event ${sessionId}`);
-    return true;
-  }
-
-  private async handleSessionEnded(
-    nodeId: string,
-    sessionId: string,
-    envelope: Record<string, unknown>,
-    event: Record<string, unknown>,
-    eventKey: string | undefined,
-  ): Promise<boolean> {
-    const reviewState = await this.options.loadSessionReviewState(sessionId);
-    if (reviewState === undefined) {
-      this.logSuppressed(sessionId, eventKey, "review_state_unavailable");
-      return false;
-    }
-    if (reviewState.sessionType?.toLowerCase() === "llm") {
-      this.logSuppressed(sessionId, eventKey, "llm_session");
-      return false;
-    }
-    if (!reviewState.reviewRequired) {
-      this.logSuppressed(sessionId, eventKey, "review_not_required");
-      return false;
-    }
-    const payload: Record<string, unknown> = {
-      ...(this.options.sessionLookup(sessionId) ?? {}),
-      ...envelope,
-      ...event,
-      session_type: reviewState.sessionType,
-      review_required: reviewState.reviewRequired,
+  getStats(): {
+    toolInputs: number;
+    notificationEvents: number;
+    pendingSends: number;
+  } {
+    return {
+      toolInputs: 0,
+      notificationEvents: 0,
+      pendingSends: this.pending.size,
     };
-    const source = normalizedString(payload.caller_source, payload.callerSource);
-    const status = normalizedString(payload.status);
-    const title = TERMINAL_NOTIFICATION_TITLES.get(status);
-    if (title === undefined) return false;
-    if (await this.folderExcludes(sessionId, payload)) return false;
+  }
 
-    return await this.sendToUser(nodeId, title, completionBody(payload, title), {
-      sessionId,
-      status,
-      sessionType: reviewState.sessionType,
-      callerSource: source,
+  sweepExpired(nowMs = this.nowMs()): {
+    toolInputs: number;
+    notificationEvents: number;
+    total: number;
+  } {
+    void nowMs;
+    return { toolInputs: 0, notificationEvents: 0, total: 0 };
+  }
+
+  private async folderExcludes(folderId: string): Promise<boolean> {
+    const folders = await this.options.catalog.listFolders();
+    return folders.some((folder) => {
+      const record = recordValue(folder);
+      const settings = recordValue(record?.settings);
+      return record?.id === folderId && settings?.excludeFromNotification === true;
     });
-  }
-
-  private logSuppressed(
-    sessionId: string,
-    eventKey: string | undefined,
-    reason: Extract<PushNotificationLogEvent["reason"],
-      "review_state_unavailable" | "review_not_required" | "llm_session">,
-  ): void {
-    this.options.onInfo?.({
-      action: "suppressed",
-      session_id: sessionId,
-      event_key: eventKey ?? "missing",
-      notification_kind: "session_ended",
-      reason,
-    });
-  }
-
-  private async handleInputRequest(
-    nodeId: string,
-    sessionId: string,
-    envelope: Record<string, unknown>,
-    signal: ResponseWaitSignal,
-  ): Promise<boolean> {
-    const session = this.options.sessionLookup(sessionId) ?? {};
-    const payload = { ...session, ...envelope };
-    const sessionType = normalizedString(payload.session_type, payload.sessionType);
-    if (sessionType === "llm") return false;
-    const source = normalizedString(payload.caller_source, payload.callerSource);
-    if (!INPUT_REQUEST_SOURCES.has(source)) return false;
-    if (this.options.foregroundObservers.count(sessionId) > 0) return false;
-    if (await this.folderExcludes(sessionId, payload)) return false;
-
-    const sessionName = firstMeaningful(
-      payload.session_name,
-      payload.sessionName,
-      payload.display_name,
-      payload.displayName,
-      payload.prompt,
-      sessionId.slice(0, 8),
-    );
-    const prompt = meaningful(signal.prompt) || "에이전트가 입력을 기다리고 있습니다";
-    return await this.sendToUser(
-      nodeId,
-      signal.title,
-      `${truncate(sessionName, 40)}: ${truncate(prompt, INPUT_EXCERPT_MAX)}`,
-      {
-        sessionId,
-        kind: "input_request",
-        responseWaitKind: signal.kind,
-        sessionType,
-        callerSource: source,
-      },
-    );
-  }
-
-  private async folderExcludes(
-    sessionId: string,
-    payload: Record<string, unknown>,
-  ): Promise<boolean> {
-    try {
-      const storedFolderId = await this.options.catalog.findSessionFolderId(sessionId);
-      const folderId = storedFolderId === undefined
-        ? nullableString(payload.folder_id, payload.folderId)
-        : storedFolderId;
-      if (folderId === null) return false;
-      const folders = await this.options.catalog.listFolders();
-      return folders.some((folder) => {
-        const record = recordValue(folder);
-        const settings = recordValue(record?.settings);
-        return record?.id === folderId && settings?.excludeFromNotification === true;
-      });
-    } catch (error) {
-      this.warn(`Push folder settings lookup failed for ${sessionId}`, error);
-      return false;
-    }
   }
 
   private async sendToUser(
@@ -349,6 +219,15 @@ export class PushNotifier {
   ): Promise<boolean> {
     const email = this.options.resolveNodeEmail(nodeId)?.trim();
     if (!email) return false;
+    return this.sendToEmail(email, title, body, data);
+  }
+
+  private async sendToEmail(
+    email: string,
+    title: string,
+    body: string,
+    data: Readonly<Record<string, unknown>>,
+  ): Promise<boolean> {
     let tokens: readonly PushDeviceToken[];
     try {
       tokens = await this.options.repository.listTokens(email);
@@ -378,87 +257,16 @@ export class PushNotifier {
     return results.some(Boolean);
   }
 
-  private cacheToolInput(
-    nodeId: string,
-    sessionId: string,
-    event: Record<string, unknown>,
-  ): void {
-    if (event.type !== "tool_start") return;
-    if (stringValue(event.tool_name, event.toolName) !== "ExitPlanMode") return;
-    const toolUseId = stringValue(event.tool_use_id, event.toolUseId);
-    if (toolUseId.length === 0) return;
-    this.toolInputs.set(toolInputKey(nodeId, sessionId, toolUseId), {
-      value: event.tool_input ?? event.toolInput,
-      atMs: this.nowMs(),
+  private trackSend(send: Promise<boolean>): Promise<boolean> {
+    const tracked = send.catch((error: unknown) => {
+      this.warn("Push notification send failed", error);
+      return false;
     });
+    const pending = tracked.then(() => undefined);
+    this.pending.add(pending);
+    void pending.then(() => this.pending.delete(pending));
+    return tracked;
   }
-
-  getStats(): {
-    toolInputs: number;
-    notificationEvents: number;
-    pendingSends: number;
-  } {
-    return {
-      toolInputs: this.toolInputs.size,
-      notificationEvents: this.notificationDedupe.size,
-      pendingSends: this.pending.size,
-    };
-  }
-
-  sweepExpired(nowMs = this.nowMs()): {
-    toolInputs: number;
-    notificationEvents: number;
-    total: number;
-  } {
-    let toolInputs = 0;
-    for (const [key, entry] of this.toolInputs) {
-      if (nowMs - entry.atMs >= PUSH_TOOL_INPUT_TTL_MS) {
-        this.toolInputs.delete(key);
-        toolInputs += 1;
-      }
-    }
-    const notificationEvents = this.notificationDedupe.sweepExpired(nowMs);
-    return { toolInputs, notificationEvents, total: toolInputs + notificationEvents };
-  }
-
-  private clearNodeState(nodeId: string): void {
-    const prefix = `${nodeId}\u0000`;
-    for (const key of this.toolInputs.keys()) {
-      if (key.startsWith(prefix)) this.toolInputs.delete(key);
-    }
-  }
-}
-
-function completionBody(data: Record<string, unknown>, fallbackTitle: string): string {
-  const lastMessage = recordValue(data.last_message ?? data.lastMessage);
-  return truncate(firstMeaningful(
-    data.last_assistant_text,
-    data.lastAssistantText,
-    lastMessage?.preview,
-    data.display_name,
-    data.displayName,
-    data.last_progress_text,
-    data.lastProgressText,
-    fallbackTitle,
-  ), PUSH_BODY_MAX);
-}
-
-function sessionIdFrom(data: Record<string, unknown>): string | undefined {
-  return optionalString(data.agentSessionId, data.agent_session_id, data.sessionId, data.session_id);
-}
-
-function pushEventCreatedAtMs(event: Record<string, unknown>): number | undefined {
-  const value = event.created_at ?? event.createdAt ?? event.timestamp;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value < 10_000_000_000 ? value * 1_000 : value;
-  }
-  if (typeof value !== "string") return undefined;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function toolInputKey(nodeId: string, sessionId: string, toolUseId: string): string {
-  return `${nodeId}\u0000${sessionId}\u0000${toolUseId}`;
 }
 
 function firstMeaningful(...values: unknown[]): string {
@@ -477,30 +285,10 @@ function meaningful(value: unknown): string {
 
 function truncate(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
-  let text = value.slice(0, maxLength).trimEnd();
+  let text = value.slice(0, maxLength - 1).trimEnd();
   const lastSpace = text.lastIndexOf(" ");
-  if (lastSpace > maxLength * 0.6) text = text.slice(0, lastSpace);
+  if (lastSpace > (maxLength - 1) * 0.6) text = text.slice(0, lastSpace);
   return `${text}…`;
-}
-
-function normalizedString(...values: unknown[]): string {
-  return stringValue(...values).toLowerCase();
-}
-
-function optionalString(...values: unknown[]): string | undefined {
-  const value = stringValue(...values);
-  return value || undefined;
-}
-
-function nullableString(...values: unknown[]): string | null {
-  return optionalString(...values) ?? null;
-}
-
-function stringValue(...values: unknown[]): string {
-  for (const value of values) {
-    if (typeof value === "string" && value.length > 0) return value;
-  }
-  return "";
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

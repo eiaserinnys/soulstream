@@ -1,665 +1,277 @@
 import { describe, expect, it, vi } from "vitest";
-
+import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import {
-  PUSH_NOTIFICATION_DEDUPE_TTL_MS,
   PushNotifier,
   SessionForegroundObserverTracker,
   type NodeRegistryEvent,
-  type PushNotificationRepository,
+  type PushNotificationCatalog,
   type PushNotificationProvider,
-  type PushSessionReviewState,
+  type PushNotificationRepository,
   type PushNotifierOptions,
   type PushSendResult,
 } from "../src/index.js";
-import { InMemoryNodeRegistry } from "../src/node/registry.js";
-import { createSessionCacheSeedSink } from "../src/node/session_cache_seed_sink.js";
 
 const OK: PushSendResult = { ok: true, invalidToken: false };
 
 describe("PushNotifier", () => {
-  it("suppresses a repeated session_ended event by persistent event identity", async () => {
-    const onInfo = vi.fn();
-    const harness = createHarness({ onInfo });
-    const event = sessionEnded("node-a", "session-a", "completed", { _event_id: 1056 });
-
-    harness.notifier.accept([event, event]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).toHaveBeenCalledTimes(1);
-    expect(onInfo.mock.calls.map(([event]) => event)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        action: "suppressed",
-        session_id: "session-a",
-        event_key: "session-a:1056",
-        reason: "duplicate_event_identity",
-      }),
-      expect.objectContaining({
-        action: "sent",
-        session_id: "session-a",
-        event_key: "session-a:1056",
-        reason: "notification_dispatched",
-      }),
-    ]));
-  });
-
-  it("suppresses a repeated input request by persistent event identity", async () => {
-    const harness = createHarness();
-    const event = inputRequest("node-a", "session-a", {
-      _event_id: 1057,
-      request_id: "request-1057",
-    });
-
-    harness.notifier.accept([event, event]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("sends completion and error notifications from session_ended transitions only", async () => {
-    const harness = createHarness();
-
-    harness.notifier.accept([
-      updated("node-a", "session-a", "running"),
-      sessionEnded("node-a", "session-a", "completed"),
-      updated("node-a", "session-a", "completed"),
-      sessionEnded("node-a", "session-b", "error"),
-      updated("node-a", "session-b", "error"),
-      sessionEvent("node-a", "session-a", { type: "session_ended", status: "interrupted" }),
-    ]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).toHaveBeenCalledTimes(2);
-    expect(harness.provider.send).toHaveBeenCalledWith(
-      "token-1",
-      "세션 완료",
-      "작업을 마쳤습니다.",
-      expect.objectContaining({ sessionId: "session-a", status: "completed" }),
-    );
-    expect(harness.provider.send).toHaveBeenCalledWith(
-      "token-1",
-      "세션 오류",
-      "세션 오류",
-      expect.objectContaining({ sessionId: "session-b", status: "error" }),
-    );
-  });
-
-  it("sends a review-required completion while the restart DB seed is still in flight", async () => {
-    const registry = new InMemoryNodeRegistry();
-    const registered = registry.registerNode({ type: "node_register", node_id: "node-a" });
-    let releaseSeed!: (value: {
-      sessions: Record<string, unknown>[];
-      sessionList: [];
-      total: number;
-      cursor: null;
-      nextCursor: null;
-      hasMore: false;
-    }) => void;
-    const seedResult = new Promise<{
-      sessions: Record<string, unknown>[];
-      sessionList: [];
-      total: number;
-      cursor: null;
-      nextCursor: null;
-      hasMore: false;
-    }>((resolve) => {
-      releaseSeed = resolve;
-    });
-    const onNodeReady = vi.fn();
-    const seedSink = createSessionCacheSeedSink({
-      registry,
-      repository: { listSessionSnapshots: async () => await seedResult },
-      logError: vi.fn(),
-      onNodeReady,
-    });
-    seedSink([registered.event]);
-
-    const harness = createHarness({
-      sessions: new Map(),
-      sessionLookup: (sessionId) => registry.sessionCache.findSession(sessionId)?.payload,
-      loadSessionReviewState: vi.fn(async () => ({
-        sessionType: "claude",
-        reviewRequired: true,
-      })),
-    });
-    registry.receiveNodeMessage(
-      { nodeId: "node-a", connectionId: registered.node.connectionId },
-      {
-        type: "session_updated",
-        agentSessionId: "session-a",
-        status: "completed",
-        review_state: "needs_review",
-        last_event_id: 1043,
-      },
-      { committedIngress: true },
-    );
-    expect(registry.sessionCache.findSession("session-a")?.payload)
-      .toMatchObject({ status: "completed", review_state: "needs_review" });
-    expect(registry.sessionCache.findSession("session-a")?.payload)
-      .not.toHaveProperty("reviewRequired");
-    harness.notifier.accept([
-      sessionEnded("node-a", "session-a", "completed", { _event_id: 1070 }),
-    ]);
-    await harness.notifier.flush();
-
-    releaseSeed({
-      sessions: [{ agent_session_id: "session-a", status: "completed", reviewRequired: true }],
-      sessionList: [],
-      total: 1,
-      cursor: null,
-      nextCursor: null,
-      hasMore: false,
-    });
-    await vi.waitFor(() => expect(onNodeReady).toHaveBeenCalledTimes(1));
-    expect(registry.sessionCache.findSession("session-a")?.payload)
-      .not.toHaveProperty("reviewRequired");
-    expect(harness.provider.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses the database review state over a stale false cache during normal operation", async () => {
+  it("does not send session completion, resume compensation, or input-wait pushes", async () => {
     const loadSessionReviewState = vi.fn(async () => ({
       sessionType: "claude",
       reviewRequired: true,
     }));
-    const harness = createHarness({
-      sessions: new Map([[
-        "session-a",
-        { ...userSession("browser"), review_required: false },
-      ]]),
-      loadSessionReviewState,
-    });
-
-    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
-
-    expect(loadSessionReviewState).toHaveBeenCalledTimes(1);
-    expect(loadSessionReviewState).toHaveBeenCalledWith("session-a");
-    expect(harness.provider.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses the database review state to suppress a stale true cache", async () => {
-    const onInfo = vi.fn();
-    const harness = createHarness({
-      sessions: new Map([["session-a", userSession("browser")]]),
-      loadSessionReviewState: async () => ({
-        sessionType: "claude",
-        reviewRequired: false,
-      }),
-      onInfo,
-    });
-
-    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).not.toHaveBeenCalled();
-    expect(onInfo).toHaveBeenCalledWith(expect.objectContaining({
-      action: "suppressed",
-      session_id: "session-a",
-      reason: "review_not_required",
-    }));
-  });
-
-  it("prefers final text carried by the completion wire over stale cached text", async () => {
-    const harness = createHarness({
-      sessions: new Map([[
-        "session-a",
-        { ...userSession("browser"), last_assistant_text: "previous turn" },
-      ]]),
-    });
+    const harness = createHarness({ loadSessionReviewState });
 
     harness.notifier.accept([
-      sessionEnded("node-a", "session-a", "completed", {
-        last_assistant_text: "fresh final answer",
+      sessionEnded("completed", "completed"),
+      sessionEnded("error", "error"),
+      sessionEnded("interrupted", "interrupted"),
+      sessionEvent("compensated", {
+        type: "session_ended",
+        status: "completed",
+        _dedupe_key: "resume_compensation:compensated:7",
       }),
-    ]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).toHaveBeenCalledWith(
-      "token-1",
-      "세션 완료",
-      "fresh final answer",
-      expect.objectContaining({ sessionId: "session-a", status: "completed" }),
-    );
-  });
-
-  it("keeps last_message preview fallback when an older node omits final text", async () => {
-    const harness = createHarness({
-      sessions: new Map([[
-        "session-a",
-        {
-          ...userSession("browser"),
-          last_message: { preview: "fallback preview" },
-        },
-      ]]),
-    });
-
-    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).toHaveBeenCalledWith(
-      "token-1",
-      "세션 완료",
-      "fallback preview",
-      expect.objectContaining({ sessionId: "session-a", status: "completed" }),
-    );
-  });
-
-  it("clears stale cached final text when the completion wire carries null", async () => {
-    const harness = createHarness({
-      sessions: new Map([[
-        "session-a",
-        {
-          ...userSession("browser"),
-          last_assistant_text: "previous turn",
-          last_message: { preview: "fallback preview" },
-        },
-      ]]),
-    });
-
-    harness.notifier.accept([
-      sessionEnded("node-a", "session-a", "completed", { last_assistant_text: null }),
-    ]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).toHaveBeenCalledWith(
-      "token-1",
-      "세션 완료",
-      "fallback preview",
-      expect.objectContaining({ sessionId: "session-a", status: "completed" }),
-    );
-  });
-
-  it.each([
-    ["claude", "clipper", "reviewRequired", true, 1],
-    ["claude", "external-llm", "review_required", true, 1],
-    ["claude", "browser", "review_required", false, 0],
-    ["claude", "browser", "review_required", true, 1],
-    ["llm", "browser", "review_required", true, 0],
-  ] as const)(
-    "uses review eligibility for completion for %s/%s/%s=%s",
-    async (sessionType, callerSource, reviewField, reviewRequired, expected) => {
-      const harness = createHarness({
-        sessions: new Map([[
-          "session-a",
-          {
-            session_type: sessionType,
-            caller_source: callerSource,
-            [reviewField]: reviewRequired,
-          },
-        ]]),
-      });
-      harness.notifier.accept([
-        sessionEnded("node-a", "session-a", "completed"),
-      ]);
-      await harness.notifier.flush();
-      expect(harness.provider.send).toHaveBeenCalledTimes(expected);
-    },
-  );
-
-  it("skips input requests from an external llm caller", async () => {
-    const sessions = new Map<string, Record<string, unknown>>([
-      [
-        "session-a",
-        {
-          session_type: "claude",
-          caller_source: "llm",
-          prompt: "External delegation",
-        },
-      ],
-    ]);
-    const harness = createHarness({ sessions });
-
-    harness.notifier.accept([
-      inputRequest("node-a", "session-a", {
-        request_id: "request-llm",
-        questions: [{ question: "Continue?", options: [] }],
-      }),
+      sessionEvent("question", { type: "input_request", questions: [{ question: "Continue?", options: [] }] }),
+      sessionEvent("plan", { type: "claude_runtime_mode_state", mode: "plan", active: false }),
+      sessionEvent("permission", { type: "claude_runtime_notification", notification_type: "permission" }),
+      sessionEvent("approval", { type: "tool_approval_requested", tool_name: "Bash" }),
+      sessionUpdated("completed"),
     ]);
     await harness.notifier.flush();
 
     expect(harness.provider.send).not.toHaveBeenCalled();
+    expect(loadSessionReviewState).not.toHaveBeenCalled();
+    expect(harness.notifier.getStats()).toEqual({
+      toolInputs: 0,
+      notificationEvents: 0,
+      pendingSends: 0,
+    });
+    expect(harness.notifier.sweepExpired(99_000)).toEqual({
+      toolInputs: 0,
+      notificationEvents: 0,
+      total: 0,
+    });
   });
 
-  it("normalizes input request envelopes with cached session metadata", async () => {
-    const sessions = new Map<string, Record<string, unknown>>([
-      [
-        "session-a",
-        {
-          session_type: "claude",
-          caller_source: "agent",
-          prompt: "Investigate notification path",
-          folder_id: "folder-a",
-        },
-      ],
-    ]);
-    const harness = createHarness({ sessions });
+  it("sends only review card notifications and preserves folder exclusions", async () => {
+    const harness = createHarness();
 
-    harness.notifier.accept([
-      inputRequest("node-a", "session-a", {
-        request_id: "request-a",
-        questions: [{ question: "Proceed with the migration?", options: [] }],
-      }),
-    ]);
-    await harness.notifier.flush();
+    expect(await harness.notifier.notifyCard({
+      nodeId: "node-a",
+      cardId: "card-a",
+      folderId: "folder-a",
+      title: "작업",
+      kind: "question",
+      question: "방향 확인",
+    })).toBe(false);
+    expect(await harness.notifier.notifyCard({
+      nodeId: "node-a",
+      cardId: "card-a",
+      folderId: "folder-a",
+      title: "작업",
+      kind: "review",
+    })).toBe(true);
+    expect(await harness.notifier.notifyCard({
+      nodeId: "node-a",
+      cardId: "card-b",
+      folderId: "hidden",
+      title: "제외",
+      kind: "review",
+    })).toBe(false);
 
-    expect(harness.provider.send).toHaveBeenCalledWith(
-      "token-1",
-      "입력 요청",
-      "Investigate notification path: Proceed with the migration?",
-      expect.objectContaining({
-        sessionId: "session-a",
-        kind: "input_request",
-        responseWaitKind: "ask_user_question",
-        callerSource: "agent",
-      }),
-    );
+    expect(harness.provider.send).toHaveBeenCalledOnce();
+    expect(harness.provider.send).toHaveBeenCalledWith("token-1", "검수 요청: 작업", "검수 요청: 작업", {
+      cardId: "card-a",
+      folderId: "folder-a",
+      kind: "card_review",
+    });
   });
 
-  it("skips input requests while the session has a foreground observer", async () => {
-    const observers = new SessionForegroundObserverTracker();
-    const release = observers.observe("session-a");
-    const harness = createHarness({ observers });
+  it("sends open report entries to the owner using the PAS payload keys", async () => {
+    const harness = createHarness();
+    const ask = reportEntry({
+      key: "ask-1",
+      kind: "ask",
+      title: "선택 확인",
+      context: "가장 중요한 내용",
+    });
+    const see = reportEntry({
+      key: "see-1",
+      kind: "see",
+      title: "진행 상황",
+      context: "",
+      action: "지금 확인할 내용",
+    });
 
-    harness.notifier.accept([inputRequest("node-a", "session-a")]);
-    await harness.notifier.flush();
+    expect(await harness.notifier.notifyPersistentReport({
+      ownerEmail: " owner@example.com ",
+      sessionId: "pas-session",
+      entry: ask,
+    })).toBe(true);
+    expect(await harness.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: see,
+      cardId: "card-a",
+      questionId: "question-a",
+      folderId: "folder-a",
+    })).toBe(true);
+
+    expect(harness.provider.send).toHaveBeenNthCalledWith(1, "token-1", "확인 요청: 선택 확인", "가장 중요한 내용", {
+      kind: "persistent_report",
+      persistentSessionId: "pas-session",
+      entryKey: "ask-1",
+      reportKind: "ask",
+    });
+    expect(harness.provider.send).toHaveBeenNthCalledWith(2, "token-1", "지금의 보고: 진행 상황", "지금 확인할 내용", {
+      kind: "persistent_report",
+      persistentSessionId: "pas-session",
+      entryKey: "see-1",
+      reportKind: "see",
+      cardId: "card-a",
+      questionId: "question-a",
+      folderId: "folder-a",
+    });
+    expect(harness.provider.send.mock.calls[0]![3]).not.toHaveProperty("sessionId");
+  });
+
+  it("applies PAS and card folder exclusions, but sends if folder lookup fails", async () => {
+    const excluded = createHarness({
+      catalog: createCatalog({
+        folders: [{ id: "folder-a", settings: { excludeFromNotification: true } }],
+      }),
+    });
+    expect(await excluded.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: reportEntry({}),
+    })).toBe(false);
+
+    expect(await excluded.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: reportEntry({}),
+      cardId: "card-a",
+      folderId: "folder-a",
+    })).toBe(false);
+    expect(await excluded.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: reportEntry({}),
+      cardId: "card-a",
+    })).toBe(false);
+    expect(excluded.provider.send).not.toHaveBeenCalled();
+
+    const lookupFailed = createHarness({ catalog: createCatalog({ fail: true }) });
+    expect(await lookupFailed.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: reportEntry({}),
+    })).toBe(true);
+    expect(lookupFailed.provider.send).toHaveBeenCalledOnce();
+    expect(lookupFailed.warn).toHaveBeenCalledOnce();
+  });
+
+  it("does not send answered entries or entries without a usable owner email", async () => {
+    const harness = createHarness();
+    const answered = reportEntry({ state: "answered", answer: "진행" });
+
+    expect(await harness.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: answered,
+    })).toBe(false);
+    expect(await harness.notifier.notifyPersistentReport({
+      ownerEmail: "   ",
+      sessionId: "pas-session",
+      entry: reportEntry({}),
+    })).toBe(false);
+    await harness.notifier.close();
+    expect(await harness.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: reportEntry({}),
+    })).toBe(false);
     expect(harness.provider.send).not.toHaveBeenCalled();
-
-    release();
-    harness.notifier.accept([inputRequest("node-a", "session-a")]);
-    await harness.notifier.flush();
-    expect(harness.provider.send).toHaveBeenCalledTimes(1);
   });
 
-  it("supports plan, permission, and tool approval input request titles", async () => {
-    const harness = createHarness({
-      sessions: new Map([
-        ["plan", userSession("browser")],
-        ["permission", userSession("slack")],
-        ["approval", userSession("agent")],
-      ]),
-    });
-
-    harness.notifier.accept([
-      sessionEvent("node-a", "plan", {
-        type: "tool_start",
-        tool_name: "ExitPlanMode",
-        tool_use_id: "tool-plan",
-        tool_input: { plan: "Apply the notifier migration." },
-      }),
-      sessionEvent("node-a", "plan", {
-        type: "claude_runtime_mode_state",
-        mode: "plan",
-        active: false,
-        tool_name: "ExitPlanMode",
-        tool_use_id: "tool-plan",
-      }),
-      sessionEvent("node-a", "permission", {
-        type: "claude_runtime_notification",
-        notification_type: "permission",
-        title: "Permission needed",
-        message: "Approve Bash?",
-      }),
-      sessionEvent("node-a", "approval", {
-        type: "tool_approval_requested",
-        tool_name: "Bash",
-        tool_input: { command: "pnpm test" },
-      }),
-    ]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send.mock.calls.map((call) => call[1])).toEqual([
-      "플랜 검토 요청",
-      "권한 요청",
-      "도구 승인 요청",
-    ]);
-    expect(harness.provider.send.mock.calls.map((call) => call[2])).toEqual([
-      "plan: Apply the notifier migration.",
-      "permissi: Permission needed: Approve Bash?",
-      "approval: Bash: pnpm test",
-    ]);
-  });
-
-  it("uses assignment folder settings, wire fallback, and graceful lookup fallback", async () => {
-    const excludedCatalog = createCatalog({ excluded: true });
-    const assignmentHarness = createHarness({ catalog: excludedCatalog });
-    assignmentHarness.notifier.accept([inputRequest("node-a", "session-a")]);
-    await assignmentHarness.notifier.flush();
-    expect(assignmentHarness.provider.send).not.toHaveBeenCalled();
-
-    const wireHarness = createHarness({
-      catalog: createCatalog({ excluded: true, assignments: {} }),
-      sessions: new Map([["session-a", { ...userSession("browser"), folder_id: "folder-a" }]]),
-    });
-    wireHarness.notifier.accept([inputRequest("node-a", "session-a")]);
-    await wireHarness.notifier.flush();
-    expect(wireHarness.provider.send).not.toHaveBeenCalled();
-
-    const failingHarness = createHarness({ catalog: createCatalog({ fail: true }) });
-    failingHarness.notifier.accept([inputRequest("node-a", "session-a")]);
-    await failingHarness.notifier.flush();
-    expect(failingHarness.provider.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("fans out to every device and cleans only DeviceNotRegistered tokens", async () => {
+  it("fans out to every device and removes only invalid tokens", async () => {
     const repository = createRepository([
       { deviceId: "device-ok", expoToken: "token-ok" },
       { deviceId: "device-rate", expoToken: "token-rate" },
       { deviceId: "device-dead", expoToken: "token-dead" },
     ]);
-    const provider = createProvider(async (token) => {
-      if (token === "token-rate") {
-        return { ok: false, invalidToken: false, error: "MessageRateExceeded" };
-      }
-      if (token === "token-dead") {
-        return { ok: false, invalidToken: true, error: "DeviceNotRegistered" };
-      }
+    const provider = createProvider(async token => {
+      if (token === "token-rate") return { ok: false, invalidToken: false, error: "MessageRateExceeded" };
+      if (token === "token-dead") return { ok: false, invalidToken: true, error: "DeviceNotRegistered" };
       return OK;
     });
     const harness = createHarness({ repository, provider });
 
-    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
+    await harness.notifier.notifyCard({
+      nodeId: "node-a",
+      cardId: "card-a",
+      folderId: "folder-a",
+      title: "작업",
+      kind: "review",
+    });
 
     expect(provider.send).toHaveBeenCalledTimes(3);
-    expect(repository.deleteToken).toHaveBeenCalledTimes(1);
-    expect(repository.deleteToken).toHaveBeenCalledWith(
-      "user@example.com",
-      "device-dead",
-    );
+    expect(repository.deleteToken).toHaveBeenCalledOnce();
+    expect(repository.deleteToken).toHaveBeenCalledWith("owner@example.com", "device-dead");
   });
 
-  it("isolates repository/provider failures and drains accepted work before close", async () => {
-    let releaseSend: (() => void) | undefined;
-    const blocked = new Promise<void>((resolve) => {
-      releaseSend = resolve;
-    });
+  it("flush and close wait for tracked report sends", async () => {
+    let releaseSend!: () => void;
+    const blocked = new Promise<void>(resolve => { releaseSend = resolve; });
     const provider = createProvider(async () => {
       await blocked;
       throw new Error("transport failed");
     });
-    const warnings = vi.fn();
-    const harness = createHarness({ provider, onWarning: warnings });
+    const harness = createHarness({ provider });
+    const sending = harness.notifier.notifyPersistentReport({
+      ownerEmail: "owner@example.com",
+      sessionId: "pas-session",
+      entry: reportEntry({}),
+    });
+    await vi.waitFor(() => expect(provider.send).toHaveBeenCalledOnce());
+    expect(harness.notifier.getStats().pendingSends).toBe(1);
 
-    expect(() => {
-      harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    }).not.toThrow();
-    const closing = harness.notifier.close();
     let closed = false;
-    void closing.then(() => { closed = true; });
+    const closing = harness.notifier.close().then(() => { closed = true; });
     await Promise.resolve();
     expect(closed).toBe(false);
-    releaseSend?.();
-    await closing;
-    expect(warnings).toHaveBeenCalled();
-  });
-
-  it("does not turn review acknowledge or node re-registration snapshots into completions", async () => {
-    const harness = createHarness();
-    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
-    harness.notifier.accept([
-      updated("node-a", "session-a", "completed", {
-        review_required: true,
-        review_state: "acknowledged",
-      }),
-    ]);
-    await harness.notifier.flush();
-    harness.notifier.accept([{ type: "node_unregistered", nodeId: "node-a", connectionId: "c", reason: "disconnect" }]);
-    await harness.notifier.flush();
-    harness.notifier.accept([updated("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
-    expect(harness.provider.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not resend after the former ten-minute dedup window expires", async () => {
-    let nowMs = 1_000;
-    const harness = createHarness({ nowMs: () => nowMs });
-    harness.notifier.accept([
-      sessionEnded("node-a", "session-a", "completed"),
-      updated("node-a", "session-a", "completed"),
-    ]);
-    await harness.notifier.flush();
-
-    nowMs += 10 * 60_000;
-    harness.notifier.sweepExpired(nowMs);
-    harness.notifier.accept([updated("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
-    expect(harness.provider.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not resend a terminal snapshot after the notifier is reconstructed", async () => {
-    const repository = createRepository();
-    const provider = createProvider(async () => OK);
-    const first = createHarness({ repository, provider });
-    first.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    await first.notifier.flush();
-
-    const restarted = createHarness({ repository, provider });
-    restarted.notifier.accept([updated("node-a", "session-a", "completed")]);
-    await restarted.notifier.flush();
-
-    expect(provider.send).toHaveBeenCalledTimes(1);
-  });
-
-  it("notifies again when the same session runs and reaches a fresh terminal transition", async () => {
-    const harness = createHarness();
-    harness.notifier.accept([
-      sessionEnded("node-a", "session-a", "completed", { _event_id: 11 }),
-      updated("node-a", "session-a", "running"),
-      sessionEnded("node-a", "session-a", "completed", { _event_id: 22 }),
-    ]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).toHaveBeenCalledTimes(2);
-  });
-
-  it("preserves folder exclusion for terminal transition notifications", async () => {
-    const harness = createHarness({ catalog: createCatalog({ excluded: true }) });
-    harness.notifier.accept([sessionEnded("node-a", "session-a", "completed")]);
-    await harness.notifier.flush();
-
-    expect(harness.provider.send).not.toHaveBeenCalled();
-  });
-
-  it("deletes ExitPlanMode input after signal creation and sweeps orphaned input after one hour", async () => {
-    let nowMs = 1_000;
-    const harness = createHarness({
-      nowMs: () => nowMs,
-      sessions: new Map([["session-a", userSession("browser")]]),
-    });
-    harness.notifier.accept([
-      sessionEvent("node-a", "session-a", {
-        type: "tool_start",
-        tool_name: "ExitPlanMode",
-        tool_use_id: "tool-plan",
-        tool_input: { plan: "Apply the notifier migration." },
-      }),
-    ]);
-    await harness.notifier.flush();
-    expect(harness.notifier.getStats().toolInputs).toBe(1);
-
-    harness.notifier.accept([
-      sessionEvent("node-a", "session-a", {
-        type: "claude_runtime_mode_state",
-        mode: "plan",
-        active: false,
-        tool_name: "ExitPlanMode",
-        tool_use_id: "tool-plan",
-      }),
-    ]);
-    await harness.notifier.flush();
-    expect(harness.notifier.getStats().toolInputs).toBe(0);
-
-    harness.notifier.accept([
-      sessionEvent("node-a", "session-a", {
-        type: "tool_start",
-        tool_name: "ExitPlanMode",
-        tool_use_id: "tool-orphan",
-        tool_input: { plan: "Never completed" },
-      }),
-    ]);
-    await harness.notifier.flush();
-    nowMs += 60 * 60_000;
-    expect(harness.notifier.sweepExpired(nowMs).toolInputs).toBe(1);
-    expect(harness.notifier.getStats().toolInputs).toBe(0);
-  });
-
-  it("sweeps notification identities after their independent TTL", async () => {
-    let nowMs = 1_000;
-    const harness = createHarness({ nowMs: () => nowMs });
-    harness.notifier.accept([
-      sessionEnded("node-a", "session-a", "completed", { _event_id: 1058 }),
-    ]);
-    await harness.notifier.flush();
-    expect(harness.notifier.getStats().notificationEvents).toBe(1);
-
-    nowMs += PUSH_NOTIFICATION_DEDUPE_TTL_MS;
-    expect(harness.notifier.sweepExpired(nowMs).notificationEvents).toBe(1);
-    expect(harness.notifier.getStats().notificationEvents).toBe(0);
+    releaseSend();
+    await Promise.all([sending, closing]);
+    expect(closed).toBe(true);
+    expect(harness.warn).toHaveBeenCalled();
+    expect(harness.notifier.getStats().pendingSends).toBe(0);
   });
 });
 
 function createHarness(options: {
   repository?: ReturnType<typeof createRepository>;
   provider?: ReturnType<typeof createProvider>;
-  catalog?: ReturnType<typeof createCatalog>;
-  sessions?: Map<string, Record<string, unknown>>;
-  observers?: SessionForegroundObserverTracker;
-  onInfo?: PushNotifierOptions["onInfo"];
-  onWarning?: (message: string, error?: unknown) => void;
-  nowMs?: () => number;
-  sessionLookup?: (sessionId: string) => Record<string, unknown> | undefined;
-  loadSessionReviewState?: (
-    sessionId: string,
-  ) => Promise<PushSessionReviewState | undefined>;
+  catalog?: PushNotificationCatalog;
+  onWarning?: PushNotifierOptions["onWarning"];
+  loadSessionReviewState?: PushNotifierOptions["loadSessionReviewState"];
 } = {}) {
   const repository = options.repository ?? createRepository();
   const provider = options.provider ?? createProvider(async () => OK);
-  const sessions = options.sessions ?? new Map([
-    ["session-a", { ...userSession("browser"), last_assistant_text: "작업을 마쳤습니다." }],
-    ["session-b", userSession("slack")],
-  ]);
+  const warn = options.onWarning ?? vi.fn();
+  const loadSessionReviewState = options.loadSessionReviewState ?? vi.fn(async () => undefined);
   return {
     repository,
     provider,
+    warn,
     notifier: new PushNotifier({
       provider,
       repository,
       catalog: options.catalog ?? createCatalog(),
-      sessionLookup: options.sessionLookup ?? ((sessionId) => sessions.get(sessionId)),
-      loadSessionReviewState: options.loadSessionReviewState ?? (async (sessionId) => {
-        const session = sessions.get(sessionId);
-        if (!session) return undefined;
-        const sessionType = session.session_type ?? session.sessionType;
-        return {
-          sessionType: typeof sessionType === "string" ? sessionType : null,
-          reviewRequired: (session.review_required ?? session.reviewRequired) === true,
-        };
-      }),
-      resolveNodeEmail: () => "user@example.com",
-      foregroundObservers: options.observers ?? new SessionForegroundObserverTracker(),
-      onInfo: options.onInfo,
-      onWarning: options.onWarning ?? vi.fn(),
-      nowMs: options.nowMs,
+      sessionLookup: () => undefined,
+      loadSessionReviewState,
+      resolveNodeEmail: () => " owner@example.com ",
+      foregroundObservers: new SessionForegroundObserverTracker(),
+      onWarning: warn,
     }),
   };
 }
@@ -679,81 +291,59 @@ function createProvider(send: PushNotificationProvider["send"]) {
 function createCatalog(options: {
   excluded?: boolean;
   fail?: boolean;
-  assignments?: Record<string, { folderId: string | null }>;
-} = {}) {
+  folders?: readonly unknown[];
+} = {}): PushNotificationCatalog {
   return {
-    async findSessionFolderId(sessionId: string) {
+    async findSessionFolderId() {
       if (options.fail) throw new Error("catalog unavailable");
-      const assignments = options.assignments ?? {
-        "session-a": { folderId: "folder-a" },
-      };
-      return assignments[sessionId]?.folderId;
+      return "folder-a";
     },
     async listFolders() {
       if (options.fail) throw new Error("catalog unavailable");
-      return [{
-        id: "folder-a",
-        settings: { excludeFromNotification: options.excluded === true },
-      }];
+      return options.folders ?? [
+        { id: "folder-a", settings: { excludeFromNotification: options.excluded === true } },
+        { id: "hidden", settings: { excludeFromNotification: true } },
+      ];
     },
   };
 }
 
-function userSession(source: string): Record<string, unknown> {
-  return { session_type: "claude", caller_source: source, review_required: true };
+function reportEntry(overrides: Partial<PersistentReportEntry>): PersistentReportEntry {
+  return {
+    key: "report-1",
+    kind: "ask",
+    title: "확인",
+    card_numbers: [],
+    context: "내용",
+    action: "",
+    options: ["진행"],
+    state: "open",
+    answer: "",
+    updated_at: "2026-10-22T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
-function updated(
-  nodeId: string,
-  sessionId: string,
-  status: string,
-  extra: Record<string, unknown> = {},
-): NodeRegistryEvent {
+function sessionUpdated(sessionId: string): NodeRegistryEvent {
   return {
     type: "node_session_session_updated",
-    nodeId,
-    data: {
-      agent_session_id: sessionId,
-      status,
-      session_type: "claude",
-      caller_source: "browser",
-      ...extra,
-    },
+    nodeId: "node-a",
+    data: { agent_session_id: sessionId, status: "completed" },
   };
 }
 
-function inputRequest(
-  nodeId: string,
-  sessionId: string,
-  extra: Record<string, unknown> = {},
-): NodeRegistryEvent {
-  return sessionEvent(nodeId, sessionId, {
-    type: "input_request",
-    questions: [{ question: "Continue?", options: [] }],
-    ...extra,
-  });
-}
-
-function sessionEnded(
-  nodeId: string, sessionId: string, status: "completed" | "error",
-  extra: Record<string, unknown> = {},
-): NodeRegistryEvent {
-  return sessionEvent(nodeId, sessionId, {
+function sessionEnded(sessionId: string, status: string): NodeRegistryEvent {
+  return sessionEvent(sessionId, {
     type: "session_ended",
     status,
     termination_reason: status === "completed" ? "completed_ok" : "error_aborted",
-    ...extra,
   });
 }
 
-function sessionEvent(
-  nodeId: string,
-  sessionId: string,
-  event: Record<string, unknown>,
-): NodeRegistryEvent {
+function sessionEvent(sessionId: string, event: Record<string, unknown>): NodeRegistryEvent {
   return {
     type: "node_session_event",
-    nodeId,
+    nodeId: "node-a",
     data: {
       type: "event",
       agentSessionId: sessionId,
@@ -762,4 +352,4 @@ function sessionEvent(
   };
 }
 
-let nextEventId = 10_000;
+let nextEventId = 1;

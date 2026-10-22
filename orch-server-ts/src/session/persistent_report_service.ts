@@ -9,6 +9,7 @@ import type { SqlClient, RepositorySql } from "../cards/control_plane/card_types
 
 export type PersistentReportUpdate = { agent_session_id: string; node_id: string | null; persistent_report: PersistentReportEntry[] };
 export type PublishPersistentReports = (updates: PersistentReportUpdate[]) => void | Promise<void>;
+export type OnPersistentReportPosted = (input: { sessionId: string; entry: PersistentReportEntry }) => void | Promise<void>;
 /** 판에서 온 답을 어떻게 처리할지 라우트에 알리는 결정. reject는 사용자에게 그대로 돌려줄 오류다. */
 export type PersistentReportReplyDecision =
   | { action: "none" }
@@ -21,13 +22,17 @@ type CardQuestionRow = { card_id: string; options: string[] | null; answer: stri
 type CardStateRow = { id: string; number: number | null; title: string; status: string; archived: boolean; blocked_detail: string | null; now: { text?: string; turn?: string; ask?: string | null } | null };
 
 export class PersistentReportService {
-  constructor(private readonly sql: SqlClient, private readonly publish: PublishPersistentReports) {}
+  constructor(
+    private readonly sql: SqlClient,
+    private readonly publish: PublishPersistentReports,
+    private readonly onPosted?: OnPersistentReportPosted,
+  ) {}
   async get(sessionId: string): Promise<PersistentReportEntry[]> {
     const row = (await this.sql<ReportRow[]>`SELECT metadata FROM sessions WHERE session_id=${sessionId}`)[0];
     return readPersistentReport(row?.metadata);
   }
   async put(sessionId: string, input: unknown): Promise<PersistentReportResult> {
-    return this.mutate(sessionId, async (sql, entries) => {
+    const result = await this.mutate(sessionId, async (sql, entries) => {
       const rawKey = input !== null && typeof input === "object" && "key" in input && typeof (input as { key: unknown }).key === "string"
         ? (input as { key: string }).key : null;
       if (rawKey !== null && (rawKey.startsWith(CARD_QUESTION_KEY_PREFIX) || rawKey.startsWith(CARD_ENTRY_KEY_PREFIX)))
@@ -42,6 +47,15 @@ export class PersistentReportService {
       }
       return this.upsertEntry(sql, entries, parsed.value);
     });
+    const key = input !== null && typeof input === "object" && "key" in input
+      && typeof (input as { key: unknown }).key === "string"
+      ? (input as { key: string }).key
+      : undefined;
+    if (result.ok && result.changed && this.onPosted && key !== undefined) {
+      const entry = result.persistent_report.find(candidate => candidate.key === key && candidate.state === "open");
+      if (entry) await this.onPosted({ sessionId, entry });
+    }
+    return result;
   }
   /**
    * 담당이 남긴 카드 질문을 그 카드 소유 사용자의 「지금의 보고」 판에 `cq_<질문ID>` 장으로 올린다.
@@ -76,6 +90,7 @@ export class PersistentReportService {
     }
     const index = entries.findIndex(e => e.key === entry.key);
     if (index < 0 && entries.length >= PERSISTENT_REPORT_LIMIT) return [{ path: "entries", reason: "장은 12개까지입니다" }];
+    if (index >= 0 && sameReportEntry(entries[index]!, entry)) return null;
     const stored = { ...entry, updated_at: new Date().toISOString() };
     if (index < 0) entries.push(stored); else entries[index] = stored;
     return null;
@@ -238,6 +253,28 @@ export class PersistentReportService {
     if (outcome.update) await this.publish([outcome.update]);
     return outcome.result;
   }
+}
+
+function sameReportEntry(
+  existing: PersistentReportEntry,
+  next: Omit<PersistentReportEntry, "updated_at">,
+): boolean {
+  return existing.key === next.key
+    && existing.kind === next.kind
+    && existing.title === next.title
+    && sameArray(existing.card_numbers, next.card_numbers)
+    && existing.context === next.context
+    && existing.action === next.action
+    && sameArray(existing.options, next.options)
+    && existing.question_id === next.question_id
+    && existing.state === next.state
+    && existing.answer === next.answer
+    && existing.card_id === next.card_id
+    && existing.card_status === next.card_status;
+}
+
+function sameArray<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 export async function writePersistentReportTx(sql: RepositorySql, row: Pick<ReportRow,"session_id"|"node_id">, entries: PersistentReportEntry[]): Promise<PersistentReportUpdate> {

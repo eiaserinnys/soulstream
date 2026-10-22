@@ -216,13 +216,12 @@ describe("card dispatch and session lifecycle", () => {
         expect((await cards.getCard(next))!.card.status).toBe('running');
         expect(await repo.occupancy()).toEqual({ eiaserinnys: 2 });
     });
-    it("sends one question alert when a brief update immediately precedes the question", async () => {
+    it("does not send a legacy card push when a question is asked", async () => {
         const { id, sessionId } = await start();
         await cards.patchCard({ ...human, cardId: id, brief: '분석 완료', idempotencyKey: key() });
         await cards.askQuestion({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, text: '방향 확인', options: ['진행'], idempotencyKey: key() });
         await dispatcher.drain();
-        expect(notify).toHaveBeenCalledTimes(1);
-        expect(notify).toHaveBeenCalledWith(expect.objectContaining({ question: '방향 확인' }));
+        expect(notify).not.toHaveBeenCalled();
     });
     it("sends the answered question to its session and keeps the card running", async () => {
         const { id, sessionId } = await start();
@@ -235,7 +234,19 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.drain();
         expect(messages).toHaveBeenCalledWith(sessionId, '질문에 답이 왔습니다: 진행? → 진행. 카드 상태: 실행 중.');
         expect((await cards.getCard(id))!.card.status).toBe('running');
-        expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'question', title: '작업', question: '진행?' }));
+        expect(notify).not.toHaveBeenCalled();
+    });
+    it("sends one review alert when a card enters review and ignores later review edits", async () => {
+        const { id, sessionId } = await start();
+        await cards.addReport({ ...human, cardId: id, title: '보고', format: 'markdown', body: '결과', idempotencyKey: key() });
+        await cards.requestCardReview({ ...human, cardId: id, idempotencyKey: key() });
+        await dispatcher.drain();
+        await cards.patchCard({ ...human, cardId: id, assignee: { kind: 'session', sessionId } });
+        await cards.updateCardNow({ actorKind: 'agent', actorSessionId: sessionId, cardId: id, now: '추가 확인', turn: 'agent' });
+        await cards.setCardStatus({ ...human, cardId: id, status: 'review', idempotencyKey: key() });
+        await dispatcher.drain();
+        expect(notify).toHaveBeenCalledTimes(1);
+        expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review', title: '작업' }));
     });
     it("keeps manually selected running even when the session has finished", async () => {
         const { id, sessionId } = await start();
@@ -365,7 +376,7 @@ describe("card dispatch and session lifecycle", () => {
             await dispatcher.drain();
             expect((await app.inject(request)).statusCode).toBe(201);
             await dispatcher.drain();
-            expect(notify).toHaveBeenCalledTimes(1);
+            expect(notify).not.toHaveBeenCalled();
         }
         finally {
             await app.close();
@@ -393,8 +404,7 @@ it("reuses existing push fan-out and folder exclusions for card questions and re
     await notifier.notifyCard({ nodeId: 'node', cardId: 'c', folderId: 'f', title: '카드', kind: 'question', question: '질문 본문' });
     await notifier.notifyCard({ nodeId: 'node', cardId: 'c', folderId: 'f', title: '카드', kind: 'review' });
     await notifier.notifyCard({ nodeId: 'node', cardId: 'c', folderId: 'hidden', title: '제외', kind: 'review' });
-    expect(send).toHaveBeenNthCalledWith(1, 'token', '카드', '질문 본문', expect.objectContaining({ cardId: 'c', kind: 'card_question' }));
-    expect(send).toHaveBeenNthCalledWith(2, 'token', '검수 요청: 카드', '검수 요청: 카드', expect.objectContaining({ cardId: 'c', kind: 'card_review' }));
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith('token', '검수 요청: 카드', '검수 요청: 카드', expect.objectContaining({ cardId: 'c', kind: 'card_review' }));
     await notifier.close();
 });
