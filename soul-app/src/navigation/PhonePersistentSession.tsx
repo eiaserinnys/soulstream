@@ -24,13 +24,11 @@ export function PhonePersistentSession({ navigation }: { navigation: any }) {
   }), [host.store, home, navigation]));
   useFocusEffect(useCallback(() => {
     setCardDetailOpen(false);
-    host.store.setState({ selectedCardId: null });
-  }, [host.store]));
+  }, []));
   const openCard = useCallback((cardId: string) => {
-    host.store.getState().selectCard(cardId);
     setCardDetailOpen(true);
     navigation.navigate('CardDetail', { cardId });
-  }, [host.store, navigation]);
+  }, [navigation]);
   return <PersistentSessionScreen active={focused} chatActive={focused || cardDetailOpen}
     onOpenPhoneCard={openCard} onHome={home} />;
 }

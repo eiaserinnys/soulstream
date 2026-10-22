@@ -125,7 +125,10 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       || (location.kind === 'markdownDocument' && location.fromPersistent);
     if (pas) {
       host.store.setState({ visible: true });
-      if (location.kind === 'cardDetail') host.store.getState().selectCard(location.cardId);
+      if (location.kind === 'cardDetail') {
+        if (family === 'tablet') host.store.getState().selectCard(location.cardId);
+        else host.store.setState({ scene: 'cards', selectedCardId: null });
+      }
     } else host.store.getState().leave();
 
     if (family === 'phone') {
@@ -179,7 +182,10 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       const search = useSearchStore.getState();
       if (effects.searchActive) { search.setQuery(effects.searchQuery ?? ''); search.openTabletSearch(); }
       else search.closeTabletSearch();
-      if (effects.pasSelectedCardId !== undefined) host.store.setState({ selectedCardId: effects.pasSelectedCardId });
+      if (effects.pasSelectedCardId !== undefined) {
+        if (effects.pasSelectedCardId) host.store.getState().selectCard(effects.pasSelectedCardId);
+        else host.store.setState({ selectedCardId: null });
+      }
       if (effects.lastMainFocus) ui.setLastMainFocus(effects.lastMainFocus);
       // A document above a card/folder keeps that underlying context.
       if (location.kind === 'markdownDocument' && !location.fromPersistent) {
