@@ -285,15 +285,15 @@ describe("production live event fanout", () => {
           termination_reason: "completed_ok",
         },
       }));
-      await waitForCondition(() =>
-        database.queries.some((query) => query.includes("FROM push_tokens"))
-      );
+      expect((await realtime.next("session_ended", 1_000)).data).toMatchObject({
+        type: "session_ended",
+        status: "completed",
+      });
+      expect(database.queries.some((query) => query.includes("FROM push_tokens"))).toBe(false);
       await application.closeResources();
-      observedConsumers.add("push-notifier");
       expect([...observedConsumers].sort()).toEqual([
         "node-stream",
         "per-session-realtime",
-        "push-notifier",
         "sessions-stream",
       ]);
     } finally {
