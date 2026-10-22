@@ -41,7 +41,9 @@ function hasManuscriptAttachment(message: ChatMessage): boolean {
   };
   return (attachmentFields.attachments?.length ?? 0) > 0
     || (attachmentFields.outputAttachments?.length ?? 0) > 0
-    || (message.attachmentPaths?.length ?? 0) > 0;
+    || (message.attachmentPaths?.length ?? 0) > 0
+    || (message.attachmentIds?.length ?? 0) > 0
+    || (message.attachmentCount ?? 0) > 0;
 }
 
 /** Removes silent responses from delegated and report-closed PAS turns. */
@@ -63,7 +65,11 @@ export function projectManuscriptSilentResponses(messages: ChatMessage[]): ChatM
 
     if (
       message.role !== "assistant"
-      || (message.treeNodeType !== "text" && message.treeNodeType !== undefined)
+      || (
+        message.treeNodeType !== "text"
+        && message.treeNodeType !== "assistant_message"
+        && message.treeNodeType !== undefined
+      )
       || hasManuscriptAttachment(message)
     ) {
       return true;

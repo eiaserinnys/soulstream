@@ -244,6 +244,43 @@ describe("projectManuscriptMessages", () => {
     ]);
   });
 
+  it("hides durable assistant history responses and preserves canonical attachment signals", () => {
+    const agentInput = message("history-agent-input", "user", "agent");
+    const historySilent = {
+      ...message("history-silent", "assistant"),
+      content: "[SILENT]",
+      treeNodeType: "assistant_message",
+    };
+    const closedInput = {
+      ...message("history-closed-input", "user", "browser"),
+      contextItems: [{ key: "persistent_report_closed", label: "보고 닫힘", content: "닫힘" }],
+    };
+    const historyAck = {
+      ...message("history-ack", "assistant"),
+      content: "네.",
+      treeNodeType: "assistant_message",
+    };
+    const attachedByIds = {
+      ...message("attached-by-ids", "assistant"),
+      content: "[SILENT]",
+      attachmentIds: ["attachment-1"],
+    };
+    const attachedByCount = {
+      ...message("attached-by-count", "assistant"),
+      content: "네.",
+      attachmentCount: 1,
+    };
+
+    expect(projectManuscriptSilentResponses([
+      agentInput,
+      historySilent,
+      closedInput,
+      historyAck,
+      attachedByIds,
+      attachedByCount,
+    ])).toEqual([agentInput, closedInput, attachedByIds, attachedByCount]);
+  });
+
   it("hides a standalone acknowledgement after an automatic delivery notice", () => {
     const notice = {
       ...message("notice", "notification"),

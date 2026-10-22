@@ -165,8 +165,15 @@ function isAssistantTextEvent(event: SessionEvent): boolean {
 
 function hasAssistantAttachments(event: SessionEvent): boolean {
   const data = event.data as Record<string, unknown> | undefined;
-  return [data?.attachment_ids, data?.attachments, data?.outputAttachments]
-    .some((attachments) => Array.isArray(attachments) && attachments.length > 0);
+  const hasAttachmentIds = [
+    data?.attachment_ids,
+    data?.attachments,
+    data?.outputAttachments,
+    data?.attachmentIds,
+  ].some((attachments) => Array.isArray(attachments) && attachments.length > 0);
+  return hasAttachmentIds
+    || Number(data?.attachment_count) > 0
+    || Number(data?.attachmentCount) > 0;
 }
 
 /** Removes PAS-only delivery notices and delegated-agent input rows. */
