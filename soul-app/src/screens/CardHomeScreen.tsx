@@ -9,12 +9,17 @@ import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
 import { CardBoardWorkspace, type CardBoardWorkspaceHandle, type FolderCardDisplay } from '../components/planner/CardBoardWorkspace';
 import { useCardDisplay } from '../hooks/useCardDisplay';
 import { FloatingSessionComposer } from '../components/planner/FloatingSessionComposer';
+import { usePhoneRailMode } from '../navigation/tabContract';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const CardHomeScreen = forwardRef<CardBoardWorkspaceHandle, {
   onOpen(id: string): void; onSessionCreated?(id: string): void;
   externalHeader?: boolean; cardDisplay?: FolderCardDisplay; api?: ApiClient | null;
 }>(function CardHomeScreen({ onOpen, onSessionCreated, externalHeader, cardDisplay: controlledDisplay, api: injectedApi }, ref) {
   const t = useTokens();
+  const railMode = usePhoneRailMode();
+  const insets = useSafeAreaInsets();
+  const bottomOffset = railMode ? Math.max(insets.bottom, t.uiSpacing.md) : t.uiSpacing.md;
   const setFloatingComposerBottomInset = useUIStore((state) => state.setFloatingComposerBottomInset);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => injectedApi !== undefined ? injectedApi : serverUrl ? createApiClient(serverUrl) : null, [injectedApi, serverUrl]);
@@ -22,8 +27,8 @@ export const CardHomeScreen = forwardRef<CardBoardWorkspaceHandle, {
   return <AppKeyboardAvoidingView testID="card-home-screen" style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <View testID="card-home-content" style={{ flex: 1, position: 'relative' }}>
       <CardBoardWorkspace ref={ref} api={api} cardDisplay={controlledDisplay ?? cardDisplay} externalHeader={externalHeader} onOpen={onOpen} reserveHomeComposerSpace />
-      <FloatingSessionComposer api={api} style={{ position: 'absolute', left: t.uiSpacing.lg, right: t.uiSpacing.lg, bottom: t.uiSpacing.md }}
-        onCoveredHeightChange={setFloatingComposerBottomInset} onSessionCreated={onSessionCreated} />
+      <FloatingSessionComposer api={api} style={{ position: 'absolute', left: t.uiSpacing.lg, right: t.uiSpacing.lg, bottom: bottomOffset }}
+        onCoveredHeightChange={(height) => setFloatingComposerBottomInset(height + (bottomOffset - t.uiSpacing.md))} onSessionCreated={onSessionCreated} />
     </View>
   </AppKeyboardAvoidingView>;
 });

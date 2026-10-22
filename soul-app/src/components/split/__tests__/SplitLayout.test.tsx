@@ -4,10 +4,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUIStore } from '../../../store/uiStore';
 import { SplitLayout } from '../SplitLayout';
 
-let mockDevice: 'tabletLandscape' | 'tabletPortrait' = 'tabletLandscape';
+let mockWindow = { width: 1366, height: 1024, scale: 1, fontScale: 1 };
 
-jest.mock('../../../theme/useDeviceType', () => ({
-  useDeviceType: () => mockDevice,
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 jest.mock('../../../hooks/useSessionsStream', () => ({
   useSessionsStream: jest.fn(),
@@ -35,7 +39,7 @@ describe('SplitLayout persisted width hydration gate', () => {
   beforeEach(() => {
     hydrated = false;
     finishHydration = undefined;
-    mockDevice = 'tabletLandscape';
+    mockWindow = { width: 1366, height: 1024, scale: 1, fontScale: 1 };
     jest.spyOn(useUIStore.persist, 'hasHydrated').mockImplementation(() => hydrated);
     jest.spyOn(useUIStore.persist, 'onHydrate').mockImplementation(() => jest.fn());
     jest.spyOn(useUIStore.persist, 'onFinishHydration').mockImplementation((listener) => {
@@ -63,11 +67,24 @@ describe('SplitLayout persisted width hydration gate', () => {
 
   test('이미 hydration이 끝났으면 방향에 맞는 shell을 첫 렌더에 표시한다', () => {
     hydrated = true;
-    mockDevice = 'tabletPortrait';
+    mockWindow = { width: 1024, height: 1366, scale: 1, fontScale: 1 };
 
     const screen = render(<SplitLayout />);
 
     expect(screen.getByTestId('two-pane-layout')).toBeTruthy();
+  });
+
+  test('안전 영역 1068 이상에서만 3단을 그린다', () => {
+    hydrated = true;
+    mockWindow = { width: 1024, height: 768, scale: 1, fontScale: 1 };
+
+    const twoPane = render(<SplitLayout />);
+    expect(twoPane.getByTestId('two-pane-layout')).toBeTruthy();
+    twoPane.unmount();
+
+    mockWindow = { width: 1068, height: 768, scale: 1, fontScale: 1 };
+    const threePane = render(<SplitLayout />);
+    expect(threePane.getByTestId('three-pane-layout')).toBeTruthy();
   });
 
   test('저장소 hydration이 실패하면 기본 폭 shell로 복구한다', async () => {

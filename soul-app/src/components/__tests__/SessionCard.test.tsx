@@ -470,3 +470,15 @@ describe('SessionCard', () => {
     });
   });
 });
+
+test('좁은 피드는 시간을 identity 행으로 옮기고 오른쪽 상태 열을 접는다', () => {
+  const wide = render(<SessionCard session={makeSession()} onPress={() => {}} />);
+  expect(wide.getByTestId('session-card-right-rail')).toBeTruthy();
+  expect(wide.getByTestId('session-card-time')).toBeTruthy();
+  wide.unmount();
+
+  const narrow = render(<SessionCard session={makeSession()} onPress={() => {}} narrow />);
+  expect(narrow.getByTestId('session-card-identity-row')).toBeTruthy();
+  expect(narrow.getByTestId('session-card-time')).toBeTruthy();
+  expect(narrow.queryByTestId('session-card-right-rail')).toBeNull();
+});

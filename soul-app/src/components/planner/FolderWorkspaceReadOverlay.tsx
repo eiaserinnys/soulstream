@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -13,6 +13,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApiClient } from '../../api/client';
 import { useSettingsStore } from '../../store/settingsStore';
 import { getSessionDisplayName } from '../../lib/session-display-name';
@@ -24,45 +25,253 @@ import { ChatPane, ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane
 import { TabletPaneHeader } from '../split/TabletPaneHeader';
 import { AppGlassCard } from '../AppGlassCard';
 import { CardDetailContent } from './CardDetailSheet';
+import { GlassButton } from '../GlassSurface';
 import { FolderWorkspace } from './FolderWorkspace';
 import { retryPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../lib/planner-folder-title-save';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
-import { FOLDER_WORKSPACE_BACKDROP_COLOR, getCardDetailPaneWidth, getFolderWorkspaceOverlayWidth } from '../../lib/folder-workspace-layout';
+import {
+  FOLDER_WORKSPACE_BACKDROP_COLOR,
+  getCardDetailPaneWidth,
+  getFolderWorkspaceOverlayWidth,
+  shouldUseSinglePanel,
+} from '../../lib/folder-workspace-layout';
 
 const ANIMATION_MS = 240;
 
-export function FolderWorkspaceReadOverlay({ host = 'root' }: { host?: 'root' | 'board' }) {
+export function FolderWorkspaceReadOverlay({ host = 'root', parentWidth }: {
+  host?: 'root' | 'board';
+  /** 오버레이가 놓이는 컨테이너의 폭. 생략하면 화면 폭을 쓴다. */
+  parentWidth?: number;
+}) {
   const expanded = useUIStore((state) => state.cardBoardExpanded);
-  return expanded === (host === 'board') ? <FolderWorkspaceOverlayContent /> : null;
+  return expanded === (host === 'board')
+    ? <FolderWorkspaceOverlayContent parentWidth={parentWidth} />
+    : null;
 }
 
-export function CardDetailPane({ api, cardId, detailWidth, onClose, onOpenSession }: {
+export function CardDetailPane({ api, cardId, detailWidth, hideRightBorder = false, onClose, onOpenSession }: {
   api: ReturnType<typeof createApiClient> | null;
   cardId: string;
   detailWidth?: number;
+  hideRightBorder?: boolean;
   onClose(): void;
   onOpenSession?(id: string): void;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  return <View testID="task-workspace-task-pane" style={[styles.folderPane, detailWidth === undefined ? null : { width: detailWidth }]}>
+  return <View testID="task-workspace-task-pane" style={[styles.folderPane, detailWidth === undefined ? { flex: 1, borderRightWidth: 0 } : { width: detailWidth }, hideRightBorder ? { borderRightWidth: 0 } : null]}>
     <CardDetailContent key={cardId} api={api} cardId={cardId} inline onClose={onClose} onOpenSession={onOpenSession} />
   </View>;
 }
 
-export function CardConversationPane({ active, sessionId, onClose, hideChat = false, ownsSessionConnection = true }: {
+export function CardConversationPane({ active, sessionId, onClose, hideChat = false, ownsSessionConnection = true, chatHeaderLeading, back }: {
   active: boolean;
   sessionId?: string | null;
   onClose?: () => void;
   hideChat?: boolean;
   ownsSessionConnection?: boolean;
+  chatHeaderLeading?: React.ReactNode;
+  back?: React.ReactNode;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   return <View testID="task-workspace-chat-pane" style={styles.chatPane}>
-    {hideChat ? null : <ChatPane active={active} sessionId={sessionId} onClose={onClose} ownsSessionConnection={ownsSessionConnection} />}
+    {hideChat ? null : <ChatPane active={active} sessionId={sessionId} onClose={onClose}
+      ownsSessionConnection={ownsSessionConnection} headerLeading={back ?? chatHeaderLeading} />}
   </View>;
+}
+
+/** 카드/폴더 상세 열. 2열에서는 폭을 받고, 단일 열에서는 남는 폭을 다 쓴다. */
+export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, active, width, hideRightBorder = false, onClose, onOpenSession, onOpenFolder }: {
+  api: ReturnType<typeof createApiClient> | null;
+  cardId: string | null;
+  pageId: string | null;
+  sessionId: string | null;
+  active: boolean;
+  width?: number;
+  hideRightBorder?: boolean;
+  onClose(): void;
+  onOpenSession?(id: string): void;
+  onOpenFolder?(folderId: string, projectPageId: string): void;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const resolution = useUIStore((state) => state.sessionFolderResolution);
+  const focusEventId = useUIStore((state) => state.focusEventId);
+  const storyOpenRequestId = useUIStore((state) => state.storyOpenRequestId);
+  const session = useSessionStore((state) => (
+    sessionId ? state.sessions[sessionId] : undefined
+  ));
+
+  if (cardId) {
+    return <CardDetailPane api={api} cardId={cardId} detailWidth={width} hideRightBorder={hideRightBorder}
+      onClose={onClose} onOpenSession={onOpenSession} />;
+  }
+
+  return (
+    <View testID="task-workspace-task-pane" style={[styles.folderPane, width === undefined ? { flex: 1, borderRightWidth: 0 } : { width }, hideRightBorder ? { borderRightWidth: 0 } : null]}>
+      {pageId ? (
+        <FolderWorkspace
+          api={api}
+          folderPageId={pageId}
+          active={active}
+          onOpenSession={onOpenSession}
+          onClose={onClose}
+          onOpenFolder={onOpenFolder}
+        />
+      ) : (
+        <>
+          <TabletPaneHeader style={styles.headerRow}>
+            <Text style={styles.title} numberOfLines={3}>
+              {sessionId
+                ? getSessionDisplayName(session, sessionId)
+                : '세션을 선택하세요'}
+            </Text>
+            <TouchableOpacity
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="세션 패널 닫기"
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={t.iconSize.navigation} color={t.colors.textMuted} />
+            </TouchableOpacity>
+          </TabletPaneHeader>
+          <ScrollView contentContainerStyle={styles.folderContent}>
+            {resolution?.status === 'loading' ? (
+              <View testID="session-task-loading" style={styles.stateRow}>
+                <ActivityIndicator color={t.colors.accent} />
+                <Text style={styles.sessionOnlyHint}>폴더 연결을 확인하는 중입니다.</Text>
+              </View>
+            ) : resolution?.status === 'error' ? (
+              <View testID="session-task-error" style={styles.errorState}>
+                <Text style={styles.sessionOnlyHint}>
+                  {resolution.message ?? '폴더 연결을 확인하지 못했습니다.'}
+                </Text>
+                {sessionId && resolution.retryable ? (
+                  <TouchableOpacity
+                    testID="session-task-retry"
+                    accessibilityRole="button"
+                    accessibilityLabel="폴더 연결 다시 시도"
+                    style={styles.retryButton}
+                    onPress={() => retryPlannerSessionWorkspace(
+                      sessionId,
+                      focusEventId,
+                      storyOpenRequestId,
+                    )}
+                  >
+                    <Text style={styles.retryText}>다시 시도</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : (
+              <Text testID="session-task-unlinked" style={styles.sessionOnlyHint}>
+                이 세션은 폴더에 연결되어 있지 않아 세션 채팅만 표시합니다.
+              </Text>
+            )}
+          </ScrollView>
+        </>
+      )}
+    </View>
+  );
+}
+
+/**
+ * 좁은 오버레이용 단일 열. 상세를 먼저 보여 주고 세션을 열면 대화로 넘어간다.
+ * 헤더의 뒤로 버튼으로 상세에 돌아오며, 카드/폴더가 바뀌면 상세로 리셋한다.
+ */
+export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, active, initialStep = !cardId && !pageId && sessionId ? 'chat' : 'detail', overlayWidth, onClose, onOpenSession, onOpenFolder }: {
+  api: ReturnType<typeof createApiClient> | null;
+  cardId: string | null;
+  pageId: string | null;
+  sessionId: string | null;
+  active: boolean;
+  initialStep?: 'detail' | 'chat';
+  overlayWidth?: number;
+  onClose(): void;
+  onOpenSession?(id: string): void;
+  onOpenFolder?(folderId: string, projectPageId: string): void;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const resolution = useUIStore((state) => state.sessionFolderResolution);
+  const [step, setStep] = useState<'detail' | 'chat'>(initialStep);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(sessionId);
+  const stepKey = cardId || pageId
+    ? `${cardId ?? ''}:${pageId ?? ''}:${initialStep}`
+    : `session:${sessionId ?? ''}:${initialStep}`;
+  const lastStepKey = useRef(stepKey);
+  useEffect(() => {
+    setSelectedSessionId(sessionId);
+    if (lastStepKey.current !== stepKey) {
+      lastStepKey.current = stepKey;
+      setStep(initialStep);
+    }
+  }, [initialStep, sessionId, stepKey]);
+  const openSession = (id: string) => {
+    setSelectedSessionId(id);
+    onOpenSession?.(id);
+    setStep('chat');
+  };
+  const canReturnToDetail = Boolean(cardId || pageId);
+  const backButton = (
+    <GlassButton
+      testID="folder-workspace-step-back"
+      iconOnly
+      size="compact"
+      borderRadius={t.foundation.radius.round}
+      accessibilityLabel="상세로 돌아가기"
+      onPress={() => setStep('detail')}
+    >
+      <Ionicons
+        name="chevron-back"
+        size={t.foundation.typography.body.fontSize}
+        color={t.colors.textPrimary}
+      />
+    </GlassButton>
+  );
+  // 폴더·카드에 연결되지 않은 단독 세션은 상세 안내 화면 없이 대화를 바로 보여 준다.
+  const unlinkedSession = !resolution || resolution.status === 'unlinked';
+  if (!cardId && !pageId && sessionId && unlinkedSession) {
+    return (
+      <View testID="folder-workspace-single-panel" style={styles.singlePanel}>
+        <CardConversationPane active={active} sessionId={sessionId} onClose={onClose} />
+      </View>
+    );
+  }
+  return (
+    <View testID="folder-workspace-single-panel" style={styles.singlePanel}>
+      {canReturnToDetail ? <View style={{ flex: 1, minHeight: 0, display: step === 'detail' ? 'flex' : 'none' }}>
+        <FolderWorkspaceDetailPane
+          api={api}
+          cardId={cardId}
+          pageId={pageId}
+          sessionId={sessionId}
+          active={active && step === 'detail'}
+          hideRightBorder
+          onClose={onClose}
+          onOpenSession={openSession}
+          onOpenFolder={onOpenFolder}
+        />
+      </View> : step === 'detail' ? <FolderWorkspaceDetailPane
+        api={api}
+        cardId={cardId}
+        pageId={pageId}
+        sessionId={sessionId}
+        active={active}
+        hideRightBorder
+        onClose={onClose}
+        onOpenSession={openSession}
+        onOpenFolder={onOpenFolder}
+      /> : null}
+      {step === 'chat' ? <CardConversationPane
+        active={active}
+        sessionId={selectedSessionId}
+        onClose={onClose}
+        back={canReturnToDetail ? backButton : undefined}
+      /> : null}
+    </View>
+  );
 }
 
 export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose, onOpenSession, sessionId, onCloseChat, hideChat = false, ownsSessionConnection = true }: {
@@ -128,10 +337,10 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
   </View>;
 }
 
-function FolderWorkspaceOverlayContent() {
+function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
   const { width: screenWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const visible = useUIStore((state) => state.folderOverlayVisible);
   const cardId = useUIStore((state) => state.selectedCardId);
   const initialCardSessionId = useUIStore((state) => state.initialCardSessionId);
@@ -139,23 +348,29 @@ function FolderWorkspaceOverlayContent() {
   const detail = useCardStore((state) => cardId ? state.details[cardId] : undefined);
   const pageId = useUIStore((state) => state.selectedFolderPageId);
   const sessionId = useUIStore((state) => state.activeSessionId);
-  const resolution = useUIStore((state) => state.sessionFolderResolution);
-  const focusEventId = useUIStore((state) => state.focusEventId);
-  const storyOpenRequestId = useUIStore((state) => state.storyOpenRequestId);
+  const initialStep: 'detail' | 'chat' = initialCardSessionId || (!cardId && sessionId) ? 'chat' : 'detail';
   const close = useUIStore((state) => state.closeFolderOverlay);
   const setActiveSessionId = useUIStore((state) => state.setActiveSessionId);
   const initializeCardSessionSelection = useUIStore((state) => state.initializeCardSessionSelection);
-  const session = useSessionStore((state) => (
-    sessionId ? state.sessions[sessionId] : undefined
-  ));
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  const overlayWidth = getFolderWorkspaceOverlayWidth(screenWidth);
-  const sheetWidth = overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);
-  const folderPaneWidth = cardId
-    ? getCardDetailPaneWidth(overlayWidth)
-    : resolveFolderPaneWidth(overlayWidth, t.tabletShell.folderPane);
+  // 레일 모드에서는 화면 폭에서 좌우 안전 여백을 뺀 폭이 실제 시트 가용 폭이다.
+  const safeParentWidth = Math.max(0, parentWidth ?? (screenWidth - insets.left - insets.right));
+  const overlayWidth = getFolderWorkspaceOverlayWidth(safeParentWidth);
+  const singlePanel = shouldUseSinglePanel(overlayWidth);
+  const sheetWidth = singlePanel
+    ? overlayWidth
+    : overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);
+  const folderPaneWidth = singlePanel
+    ? undefined
+    : cardId
+      ? getCardDetailPaneWidth(overlayWidth)
+      : resolveFolderPaneWidth(overlayWidth, t.tabletShell.folderPane);
   const requestClose = () => coordinateFolderWorkspaceClose(pageId, close);
+  const openFolder = (folderId: string, projectPageId: string) => {
+    useUIStore.getState().setActiveSection({ kind: 'project', folderId, projectPageId });
+    useUIStore.getState().openFolderOverlay(projectPageId);
+  };
 
   // Feed-selected sessions win once; normal card opens keep assignee-first behavior.
   useEffect(() => {
@@ -174,79 +389,41 @@ function FolderWorkspaceOverlayContent() {
   ]);
 
   return (
-    <CardPanelOverlayFrame visible={visible} width={sheetWidth} onClose={requestClose}>
-      <>
-        {cardId ? <CardDetailPane api={api} cardId={cardId} detailWidth={folderPaneWidth}
-          onClose={close} onOpenSession={setActiveSessionId} /> : <>
-          <View testID="task-workspace-task-pane" style={[styles.folderPane, { width: folderPaneWidth }]}>
-            {pageId ? (
-              <FolderWorkspace
-                api={api}
-                folderPageId={pageId}
-                active={visible}
-                onOpenSession={setActiveSessionId}
-                onClose={close}
-                onOpenFolder={(folderId, projectPageId) => {
-                  useUIStore.getState().setActiveSection({ kind: 'project', folderId, projectPageId });
-                  useUIStore.getState().openFolderOverlay(projectPageId);
-                }}
-              />
-            ) : (
-              <>
-                <TabletPaneHeader style={styles.headerRow}>
-                  <Text style={styles.title} numberOfLines={3}>
-                    {sessionId
-                      ? getSessionDisplayName(session, sessionId)
-                      : '세션을 선택하세요'}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={close}
-                    accessibilityRole="button"
-                    accessibilityLabel="세션 패널 닫기"
-                    style={styles.closeButton}
-                  >
-                    <Ionicons name="close" size={t.iconSize.navigation} color={t.colors.textMuted} />
-                  </TouchableOpacity>
-                </TabletPaneHeader>
-                <ScrollView contentContainerStyle={styles.folderContent}>
-                  {resolution?.status === 'loading' ? (
-                    <View testID="session-task-loading" style={styles.stateRow}>
-                      <ActivityIndicator color={t.colors.accent} />
-                      <Text style={styles.sessionOnlyHint}>폴더 연결을 확인하는 중입니다.</Text>
-                    </View>
-                  ) : resolution?.status === 'error' ? (
-                    <View testID="session-task-error" style={styles.errorState}>
-                      <Text style={styles.sessionOnlyHint}>
-                        {resolution.message ?? '폴더 연결을 확인하지 못했습니다.'}
-                      </Text>
-                      {sessionId && resolution.retryable ? (
-                        <TouchableOpacity
-                          testID="session-task-retry"
-                          accessibilityRole="button"
-                          accessibilityLabel="폴더 연결 다시 시도"
-                          style={styles.retryButton}
-                          onPress={() => retryPlannerSessionWorkspace(
-                            sessionId,
-                            focusEventId,
-                            storyOpenRequestId,
-                          )}
-                        >
-                          <Text style={styles.retryText}>다시 시도</Text>
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-                  ) : (
-                    <Text testID="session-task-unlinked" style={styles.sessionOnlyHint}>
-                      이 세션은 폴더에 연결되어 있지 않아 세션 채팅만 표시합니다.
-                    </Text>
-                  )}
-                </ScrollView>
-              </>
-            )}
-          </View>
-        </>}
-        <CardConversationPane active={visible} />
-      </>
+    <CardPanelOverlayFrame
+      visible={visible}
+      width={sheetWidth}
+      onClose={requestClose}
+      direction={singlePanel ? 'column' : 'row'}
+    >
+      {singlePanel ? (
+        <FolderWorkspaceSinglePanel
+          api={api}
+          cardId={cardId}
+          pageId={pageId}
+          sessionId={sessionId}
+          active={visible}
+          initialStep={initialStep}
+          overlayWidth={overlayWidth}
+          onClose={close}
+          onOpenSession={setActiveSessionId}
+          onOpenFolder={openFolder}
+        />
+      ) : (
+        <>
+          <FolderWorkspaceDetailPane
+            api={api}
+            cardId={cardId}
+            pageId={pageId}
+            sessionId={sessionId}
+            active={visible}
+            width={folderPaneWidth}
+            onClose={close}
+            onOpenSession={setActiveSessionId}
+            onOpenFolder={openFolder}
+          />
+          <CardConversationPane active={visible} />
+        </>
+      )}
     </CardPanelOverlayFrame>
   );
 }
@@ -311,6 +488,7 @@ function makeStyles(t: DesignTokens) {
     },
     retryText: { color: t.colors.accent, ...planner.typography.label },
     chatPane: { flex: 1, minWidth: 0 },
+    singlePanel: { flex: 1, minWidth: 0 },
   });
 }
 

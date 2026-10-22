@@ -36,7 +36,10 @@ export function ThreePaneLayout() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [measuredRowWidth, setMeasuredRowWidth] = useState<number | null>(null);
+  // 화면 폭·안전 영역이 바뀌면 이전 프레임 측정값을 쓰지 않는다.
+  const layoutKey = `${windowWidth}:${insets.left}:${insets.right}`;
+  const [measuredRow, setMeasuredRow] = useState<{ width: number; key: string } | null>(null);
+  const measuredRowWidth = measuredRow?.key === layoutKey ? measuredRow.width : null;
 
   const paneLeftWidth = useUIStore((s) => s.paneLeftWidth);
   const paneMiddleWidth = useUIStore((s) => s.paneMiddleWidth);
@@ -57,7 +60,10 @@ export function ThreePaneLayout() {
         <View
           pointerEvents={folderOverlayVisible ? 'none' : 'auto'}
           style={styles.row}
-          onLayout={({ nativeEvent }) => setMeasuredRowWidth(nativeEvent.layout.width)}
+          onLayout={({ nativeEvent }) => setMeasuredRow({
+            width: nativeEvent.layout.width,
+            key: layoutKey,
+          })}
         >
           <SplitPanelSurface testID="split-panel-sidebar" style={[styles.pane, { width: paneWidths.left }]}>
             <SidebarPane showSearch />
@@ -74,7 +80,7 @@ export function ThreePaneLayout() {
             )}
           />
           <SplitPanelSurface testID="split-panel-main" style={[styles.pane, { width: paneWidths.middle }]}>
-            <MainListPane />
+            <MainListPane paneWidth={paneWidths.middle} />
           </SplitPanelSurface>
           <Splitter
             initialWidth={paneWidths.middle}

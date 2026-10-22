@@ -8,6 +8,7 @@ import { MarkdownDocumentContent } from '../components/planner/MarkdownDocumentC
 import { useSettingsStore } from '../store/settingsStore';
 import { useTokens, type DesignTokens } from '../theme';
 import { openPhoneChat } from './phoneSessionNavigation';
+import { usePhoneRailMode } from './tabContract';
 
 export type MarkdownDocumentRouteParams = { documentId: string };
 
@@ -21,6 +22,7 @@ export function getDefaultTabBarStyle(colors: DesignTokens['colors']): ViewStyle
 
 function PhoneDetailScreenFrame({ navigation, children }: { navigation: any; children: React.ReactNode }) {
   const t = useTokens();
+  const railMode = usePhoneRailMode();
   useFocusEffect(useCallback(() => {
     const tabs = navigation.getParent();
     tabs?.setOptions({ tabBarStyle: { ...getDefaultTabBarStyle(t.colors), display: 'none' } });
@@ -32,7 +34,7 @@ function PhoneDetailScreenFrame({ navigation, children }: { navigation: any; chi
       tabs?.setOptions({ tabBarStyle: getDefaultTabBarStyle(t.colors) });
     };
   }, [navigation, t.colors]));
-  return <SafeAreaView edges={['top', 'left', 'right']} style={{ flex: 1, paddingTop: t.uiSpacing.md }}>{children}</SafeAreaView>;
+  return <SafeAreaView edges={railMode ? ['top', 'left'] : ['top', 'left', 'right']} style={{ flex: 1, paddingTop: t.uiSpacing.md }}>{children}</SafeAreaView>;
 }
 
 export function PhoneCardDetail({ route, navigation }: {

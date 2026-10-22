@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -12,8 +12,9 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { openPlannerFolderWorkspace } from '../../lib/planner-folder-workspace';
 import { useSessionStore } from '../../store/sessionStore';
 import { useUIStore } from '../../store/uiStore';
-import { useTokens, type DesignTokens } from '../../theme';
+import { createSurfaceRoles, useTokens, type DesignTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
+import { AppGlassCard } from '../AppGlassCard';
 import { RootSectionHeaderTitle } from '../navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../planner/DailyHeaderActions';
 import { TabletPaneHeader } from './TabletPaneHeader';
@@ -26,17 +27,24 @@ import { CompletedCardsToggle } from '../planner/CompletedCardsToggle';
 import { useAuthScopeGeneration } from '../../lib/auth-scope';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
+import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet';
+
+/** 이 폭 미만이면 보드 헤더 액션을 오버플로 메뉴로 접는다. */
+export const MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH = 380;
 
 export function MainListPane({
   onMenuPress,
   topInsetPadding = false,
   showSearch = false,
+  paneWidth,
 }: {
   onMenuPress?: () => void;
   topInsetPadding?: boolean;
   showSearch?: boolean;
+  paneWidth?: number;
 }) {
   const t = useTokens();
+  const c = t.colors;
   const styles = useMemo(() => makeStyles(t), [t]);
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
@@ -54,7 +62,10 @@ export function MainListPane({
     ...Object.fromEntries(Object.entries(views).filter(([, view]) => view === 'board').map(([key]) => [key, true])),
   }));
   const setView = (value: 'existing' | 'board') => { setMainPaneView(viewKey, value); if (value === 'board') setVisited((old) => ({ ...old, [viewKey]: true })); };
-  const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
+  const folderId = activeSection.kind === 'project' ? activeSection.folderId : undefined;
+  const cardDisplay = useCardDisplay(folderId);
+  const compactHeader = paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH;
+  const [overflowOpen, setOverflowOpen] = useState(false);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
@@ -109,7 +120,15 @@ export function MainListPane({
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-        {view === 'board' && !effectiveShowSearch ? <>
+        {view === 'board' && !effectiveShowSearch && compactHeader ? (
+          <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+            testID="board-header-overflow-button" accessibilityLabel="보드 메뉴"
+            accessibilityState={{ expanded: overflowOpen }}
+            onPress={() => setOverflowOpen((open) => !open)}>
+            <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textPrimary} />
+          </LiquidGlassButton>
+        ) : null}
+        {view === 'board' && !effectiveShowSearch && !compactHeader ? <>
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
             <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
@@ -167,6 +186,90 @@ export function MainListPane({
           />
         ) : null}
       </View>
+      {compactHeader && overflowOpen ? (
+        <>
+          <Pressable
+            testID="board-header-overflow-backdrop"
+            accessibilityRole="button"
+            accessibilityLabel="보드 메뉴 닫기"
+            onPress={() => setOverflowOpen(false)}
+            style={[
+              StyleSheet.absoluteFill,
+              { minWidth: t.hitTarget.min, minHeight: t.hitTarget.min, zIndex: 19 },
+            ]}
+          />
+          <View style={{
+            position: 'absolute',
+            top: (topInsetPadding ? insets.top : 0) + t.tabletShell.header.minHeight,
+            right: t.tabletShell.header.paddingHorizontal,
+            minWidth: 200,
+            zIndex: 20,
+          }}>
+          <AppGlassCard
+            role="modal"
+            cornerRadius={t.foundation.radius.card}
+            testID="board-header-overflow-menu"
+            style={{ overflow: 'hidden' }}
+          >
+          <GroupedGlassSheet
+            surface="inherited"
+            style={{ backgroundColor: createSurfaceRoles(t).modal.fallbackColor }}
+          >
+            <GroupedGlassRow
+              compact
+              style={{ justifyContent: 'flex-start', paddingHorizontal: t.uiSpacing.md }}
+              testID="board-header-overflow-create"
+              accessibilityLabel="드래프트 카드 추가"
+              onPress={() => {
+                setOverflowOpen(false);
+                boardRef.current?.openCreate();
+              }}
+            >
+              <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+                <Ionicons name="add-outline" size={t.iconSize.standard} color={c.textPrimary} />
+                <Text style={[t.foundation.typography.body, { color: c.textPrimary }]}>드래프트 카드 추가</Text>
+              </View>
+            </GroupedGlassRow>
+            <GroupedGlassRow
+              compact
+              style={{ justifyContent: 'flex-start', paddingHorizontal: t.uiSpacing.md }}
+              testID="board-header-overflow-hide-done"
+              accessibilityLabel="완료·취소 숨김"
+              selected={!cardDisplay.includeCompleted}
+              onPress={() => {
+                setOverflowOpen(false);
+                cardDisplay.onChange(!cardDisplay.includeCompleted);
+              }}
+            >
+              <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+                <Ionicons
+                  name={!cardDisplay.includeCompleted ? 'eye-off-outline' : 'eye-outline'}
+                  size={t.iconSize.standard}
+                  color={!cardDisplay.includeCompleted ? c.accent : c.textPrimary}
+                />
+                <Text style={[t.foundation.typography.body, { color: !cardDisplay.includeCompleted ? c.accent : c.textPrimary }]}>완료·취소 숨김</Text>
+              </View>
+            </GroupedGlassRow>
+              <GroupedGlassRow
+                compact
+                style={{ justifyContent: 'flex-start', paddingHorizontal: t.uiSpacing.md }}
+                testID="board-header-overflow-expand"
+                accessibilityLabel="보드 확대"
+                onPress={() => {
+                  setOverflowOpen(false);
+                  boardRef.current?.openExpanded();
+                }}
+              >
+                <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
+                  <Ionicons name="expand-outline" size={t.iconSize.standard} color={c.textPrimary} />
+                  <Text style={[t.foundation.typography.body, { color: c.textPrimary }]}>보드 확대</Text>
+                </View>
+              </GroupedGlassRow>
+          </GroupedGlassSheet>
+          </AppGlassCard>
+        </View>
+        </>
+      ) : null}
     </View>
   );
 }

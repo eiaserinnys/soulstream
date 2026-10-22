@@ -1,8 +1,14 @@
 import { StyleSheet } from 'react-native';
 import { createSessionVisualRoles, type DesignTokens } from '../theme';
 
-/** Shared SessionCard and card-row frame; small removes one text row only. */
-export function makeSessionCardStyles(t: DesignTokens, embedded: boolean, small = false) {
+/**
+ * Shared SessionCard and card-row frame; small removes one text row only.
+ */
+export function makeSessionCardStyles(
+  t: DesignTokens,
+  embedded: boolean,
+  small = false,
+) {
   const sessionRoles = createSessionVisualRoles(t);
   const AVATAR = sessionRoles.feed.avatar;
   const c = t.colors;

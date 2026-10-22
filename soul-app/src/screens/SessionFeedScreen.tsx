@@ -13,11 +13,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApiClient } from '../api/client';
 import type { Session } from '../api/types';
 import { SessionCardById } from '../components/SessionCardById';
+
+/** 이 폭 미만이면 카드가 시간을 identity 행으로 옮기고 상태 열을 접는다. */
+export const NARROW_FEED_MAX_WIDTH = 400;
 import { classifySessionFeed } from '../lib/session-feed-groups';
 import { useSessionStore } from '../store/sessionStore';
 import { useNodeConnectivityStore } from '../store/nodeConnectivityStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { createSessionVisualRoles, useTokens, type DesignTokens } from '../theme';
+import { createSessionVisualRoles, useDeviceType, useTokens, type DesignTokens } from '../theme';
 import { usePlannerContextMenus } from '../hooks/usePlannerContextMenus';
 import { SessionSuccessionHost } from '../components/planner/SessionSuccessionHost';
 import { HomeComposerSpacer } from '../components/planner/HomeComposerSpacer';
@@ -47,6 +50,7 @@ export function SessionFeedScreen({
 }) {
   const renderStartedAtMs = monotonicRenderTime();
   const t = useTokens();
+  const device = useDeviceType();
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const feedSessionIds = useSessionStore((state) => state.feedSessionIds);
@@ -99,6 +103,8 @@ export function SessionFeedScreen({
   const handleLongPress = useCallback((sessionId: string) => {
     openSessionMenuRef.current({ sessionId });
   }, []);
+  const [feedWidth, setFeedWidth] = useState(0);
+  const narrowFeed = device !== 'phone' && feedWidth > 0 && feedWidth < NARROW_FEED_MAX_WIDTH;
   const [visibleSessionIds, setVisibleSessionIds] = useState<ReadonlySet<string>>(() => new Set());
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken<FeedRow>[] }) => {
@@ -120,9 +126,10 @@ export function SessionFeedScreen({
         animationActive={active && visibleSessionIds.has(item.sessionId)}
         onPress={handleOpenSession}
         onLongPress={handleLongPress}
+        narrow={narrowFeed}
       />
     );
-  }, [active, visibleSessionIds, handleLongPress, handleOpenSession, styles.empty, styles.heading]);
+  }, [active, visibleSessionIds, handleLongPress, handleOpenSession, narrowFeed, styles.empty, styles.heading]);
   const renderEmpty = useCallback(() => {
     if (catalogLoadState === 'loading') {
       return (
@@ -179,7 +186,12 @@ export function SessionFeedScreen({
   ), [chatStyles.footerLoader, feedPage.status, reserveHomeComposerSpace, retryFeedPage, styles, t.colors.accent]);
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      onLayout={({ nativeEvent }) => setFeedWidth((prev) => (
+        prev === nativeEvent.layout.width ? prev : nativeEvent.layout.width
+      ))}
+    >
       <FlatList
         testID="phone-feed-body"
         style={styles.container}

@@ -45,7 +45,11 @@ export function TwoPaneWithDrawer() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const { width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [measuredRowWidth, setMeasuredRowWidth] = useState<number | null>(null);
+  // 회전·폴드 직후에는 이전 프레임의 측정값이 남아 pane 폭이 한 번 튄다.
+  // 화면 폭·안전 영역이 바뀌면 무효가 되는 key와 함께 보관한다.
+  const layoutKey = `${screenWidth}:${insets.left}:${insets.right}`;
+  const [measuredRow, setMeasuredRow] = useState<{ width: number; key: string } | null>(null);
+  const measuredRowWidth = measuredRow?.key === layoutKey ? measuredRow.width : null;
 
   const paneMiddleWidth = useUIStore((s) => s.paneMiddleWidth);
   const paneMiddleWidthTwoPane = useUIStore((s) => s.paneMiddleWidthTwoPane);
@@ -92,12 +96,16 @@ export function TwoPaneWithDrawer() {
         <View
           pointerEvents={folderOverlayVisible ? 'none' : 'auto'}
           style={styles.row}
-          onLayout={({ nativeEvent }) => setMeasuredRowWidth(nativeEvent.layout.width)}
+          onLayout={({ nativeEvent }) => setMeasuredRow({
+            width: nativeEvent.layout.width,
+            key: layoutKey,
+          })}
         >
           <SplitPanelSurface testID="split-panel-main" style={[styles.pane, { width: resolvedMiddleWidth }]}>
             <MainListPane
               onMenuPress={() => setDrawerOpen(true)}
               showSearch
+              paneWidth={resolvedMiddleWidth}
             />
           </SplitPanelSurface>
           <Splitter

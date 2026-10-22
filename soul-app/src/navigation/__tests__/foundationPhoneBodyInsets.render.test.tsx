@@ -2,7 +2,7 @@ jest.mock('expo-document-picker', () => ({}));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-image-picker', () => ({ MediaTypeOptions: { Images: 'Images' } }));
 jest.mock('../../theme/useDeviceType', () => ({
-  TABLET_BREAKPOINT: 700,
+  TABLET_BREAKPOINT: 600,
   useDeviceType: () => 'phone',
   deviceTypeToBaseKey: () => 'phone',
 }));

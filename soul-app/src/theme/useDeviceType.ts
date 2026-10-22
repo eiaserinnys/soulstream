@@ -1,4 +1,32 @@
+import { useContext } from 'react';
 import { useWindowDimensions } from 'react-native';
+import { PhoneRailModeContext } from '../navigation/tabContract';
+
+function useOptionalPhoneRailMode(): boolean {
+  try {
+    return useContext(PhoneRailModeContext);
+  } catch {
+    return false;
+  }
+}
+
+function useOptionalSafeAreaInsets(): { left: number; right: number } | null {
+  try {
+    const safeArea = require('react-native-safe-area-context') as {
+      SafeAreaInsetsContext?: React.Context<{ left: number; right: number } | null>;
+      useSafeAreaInsets?: () => { left: number; right: number };
+    };
+    if (safeArea.SafeAreaInsetsContext) {
+      return useContext(safeArea.SafeAreaInsetsContext);
+    }
+    if (typeof safeArea.useSafeAreaInsets === 'function') {
+      return safeArea.useSafeAreaInsets();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 /**
  * 디바이스 + 방향 기반 레이아웃 모드.
@@ -9,25 +37,31 @@ import { useWindowDimensions } from 'react-native';
 export type DeviceType = 'phone' | 'tabletPortrait' | 'tabletLandscape';
 
 /**
- * Tablet 분기 임계값 (단변 기준 pt).
+ * Tablet 분기 임계값 (단변과 안전 영역 제외 폭 기준 pt).
  *
- * 768이 아닌 700으로 잡는 이유:
- *  - iPad mini의 세로폭이 744pt이므로 768 기준이면 phone으로 잘못 분류됨
- *  - iPhone 15 Pro Max도 가장 긴 단변(landscape 기준 width)이 430pt라 700 미만
- *  - 따라서 700이면 모든 iPad는 tablet, 모든 iPhone은 phone으로 정확히 분기됨
+ * 700이 아닌 600으로 잡는 이유:
+ *  - iPhone Duo 바깥 화면(5.4형)은 466×678, 678×466이라 단변이 둘 다 466이다.
+ *  - 안쪽 화면(7.6형)은 669×951, 626×890, 951×669, 890×626이다.
+ *    단변과 안전 영역 제외 폭이 모두 626pt 이상이라 태블릿이다.
+ *  - iPhone 15 Pro Max의 최대 단변은 430pt라 여전히 phone이다.
  */
-export const TABLET_BREAKPOINT = 700;
+export const TABLET_BREAKPOINT = 600;
+export const TWO_PANE_MIN_SAFE_WIDTH = 616;
 
 /**
  * 디바이스 타입 + 방향을 동적으로 판정한다.
  * - useWindowDimensions로 화면 크기 변경(회전, Stage Manager, Split View)에 자동 반응
- * - shortSide < TABLET_BREAKPOINT → 'phone' (Stage Manager로 좁아진 윈도우 포함)
+ * - shortSide < TABLET_BREAKPOINT 또는 safeWidth < TWO_PANE_MIN_SAFE_WIDTH → 'phone'
+ *   (Stage Manager로 좁아진 윈도우와 좁은 안전 영역 포함)
  * - tablet인 경우 width > height → 'tabletLandscape', 아니면 'tabletPortrait'
  */
 export function useDeviceType(): DeviceType {
   const { width, height } = useWindowDimensions();
+  const railMode = useOptionalPhoneRailMode();
+  const insets = useOptionalSafeAreaInsets();
   const shortSide = Math.min(width, height);
-  if (shortSide < TABLET_BREAKPOINT) return 'phone';
+  const safeWidth = width - (insets?.left ?? 0) - (insets?.right ?? 0);
+  if (railMode || shortSide < TABLET_BREAKPOINT || safeWidth < TWO_PANE_MIN_SAFE_WIDTH) return 'phone';
   return width > height ? 'tabletLandscape' : 'tabletPortrait';
 }
 

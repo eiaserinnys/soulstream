@@ -18,8 +18,10 @@ export const ChatPaneMinimumBottomPaddingContext = createContext<number | undefi
 /**
  * 우측 채팅 패널 — 상단 인라인 헤더(상태 도트 + 세션 이름) + ChatBody.
  */
-export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose, ownsSessionConnection = true }: {
+export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose, ownsSessionConnection = true, headerLeading }: {
   active?: boolean; sessionId?: string | null; onClose?: () => void; ownsSessionConnection?: boolean;
+  /** 헤더 왼쪽에 붙는 슬롯. 좁은 단일 열에서 상세로 돌아가는 버튼이 들어온다. */
+  headerLeading?: React.ReactNode;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -49,6 +51,7 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
         testID="tablet-chat-header"
         style={styles.headerSurface}
       >
+        {headerLeading}
         {sessionId ? (
           <>
             <StatusDot status={session?.status} />

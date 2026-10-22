@@ -18,12 +18,18 @@ import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-titl
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+let mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
 const mockOverlayChatMounted = jest.fn();
 const mockOverlayChatUnmounted = jest.fn();
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: () => mockWindowDimensions,
 }));
+
+jest.mock('react-native-safe-area-context', () => {
+  const mock = jest.requireActual('react-native-safe-area-context/jest/mock').default;
+  return { ...mock, useSafeAreaInsets: () => mockInsets };
+});
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
@@ -383,4 +389,42 @@ test('세션 담당이 아닌 카드의 소속 세션이나 불일치 ID를 자�
   useUIStore.getState().openCardOverlay(detail.card.id);
   render(<FolderWorkspaceReadOverlay />);
   expect(useUIStore.getState().activeSessionId).toBe('previous');
+});
+
+test('단독 세션은 640 미만 단일 열에서도 대화를 바로 보여 준다', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openSessionOverlay('session-only');
+
+  const screen = render(<FolderWorkspaceReadOverlay />);
+
+  expect(screen.getByTestId('folder-workspace-single-panel')).toBeTruthy();
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+  expect(screen.queryByTestId('task-workspace-task-pane')).toBeNull();
+  mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+});
+
+test('카드 오버레이는 640 미만에서 상세만 먼저 보여 준다', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useCardStore.getState().putDetail(cardDetail('card-single', null));
+  useUIStore.getState().openCardOverlay('card-single');
+
+  const screen = render(<FolderWorkspaceReadOverlay />);
+
+  expect(screen.getByTestId('folder-workspace-single-panel')).toBeTruthy();
+  expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
+  expect(screen.queryByTestId('task-workspace-chat-pane')).toBeNull();
+  mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+});
+
+test('가로 레일 모드(오른쪽 안전 여백 84)에서는 두 열을 유지한다', () => {
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  mockInsets = { top: 0, bottom: 24, left: 0, right: 84 };
+  useUIStore.getState().openSessionOverlay('session-only');
+
+  const screen = render(<FolderWorkspaceReadOverlay />);
+
+  expect(screen.queryByTestId('folder-workspace-single-panel')).toBeNull();
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+  mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+  mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
 });
