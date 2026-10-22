@@ -37,7 +37,10 @@
       "uploadSourceMaps": true,
       "buildArtifactPaths": [
         "ios/build/*.dSYM.zip"
-      ]
+      ],
+      "ios": {
+        "image": "macos-tahoe-26.6-xcode-27.1"
+      }
     }
   }
 }
