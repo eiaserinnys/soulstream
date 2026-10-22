@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { act, renderHook } from '@testing-library/react-native';
+import React from 'react';
+import { act, render, renderHook } from '@testing-library/react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useDraftStore } from '../../store/draftStore';
+import { LayoutContinuityProvider } from '../../navigation/LayoutContinuityContext';
 import { usePersistentDraft } from '../usePersistentDraft';
 
 const jwt = (email: string, exp = 9999999999) => `header.${Buffer.from(JSON.stringify({ email, sub: email, exp })).toString('base64url')}.signature`;
@@ -97,4 +99,85 @@ test('clearing server text is a real edit; discarding restores the server value'
   expect(view.result.current.hasDraft).toBe(true);
   act(() => view.result.current.clear());
   expect(view.result.current.value).toBe('서버 지침');
+});
+
+const probe = {
+  value: '',
+  hasDraft: false,
+  setValue: (_: string) => {},
+  clear: () => {},
+  clearIfMatches: (_: string) => {},
+};
+
+function DraftProbe({ role, target, initialValue = '' }: { role: string; target: string; initialValue?: string }) {
+  const draft = usePersistentDraft(role, [target], initialValue);
+  probe.value = draft.value;
+  probe.hasDraft = draft.hasDraft;
+  probe.setValue = draft.setValue as (value: string) => void;
+  probe.clear = draft.clear;
+  probe.clearIfMatches = draft.clearIfMatches;
+  return null;
+}
+
+function DraftHarness({ epoch, role = 'chat', target = 'session', initialValue = '' }: {
+  epoch: number;
+  role?: string;
+  target?: string;
+  initialValue?: string;
+}) {
+  return (
+    <LayoutContinuityProvider>
+      <DraftProbe key={epoch} role={role} target={target} initialValue={initialValue} />
+    </LayoutContinuityProvider>
+  );
+}
+
+test('unidentified user draft is restored after a layout remount through the continuity memory map', () => {
+  useAuthStore.setState({ jwt: null });
+  const view = render(<DraftHarness epoch={0} />);
+  act(() => probe.setValue('메모리 초안'));
+  expect(probe.value).toBe('메모리 초안');
+  expect(Object.keys(useDraftStore.getState().drafts)).toHaveLength(0);
+
+  act(() => { view.rerender(<DraftHarness epoch={1} />); });
+  expect(probe.value).toBe('메모리 초안');
+  expect(probe.hasDraft).toBe(true);
+  expect(Object.keys(useDraftStore.getState().drafts)).toHaveLength(0);
+});
+
+test('memory drafts stay isolated by role, target and auth scope generation', () => {
+  useAuthStore.setState({ jwt: null });
+  const view = render(<DraftHarness epoch={0} />);
+  act(() => probe.setValue('메모리 초안'));
+
+  act(() => { view.rerender(<DraftHarness epoch={1} role="card-comment" />); });
+  expect(probe.value).toBe('');
+  act(() => { view.rerender(<DraftHarness epoch={2} role="chat" target="other" />); });
+  expect(probe.value).toBe('');
+  act(() => { view.rerender(<DraftHarness epoch={3} />); });
+  expect(probe.value).toBe('메모리 초안');
+
+  act(() => { useSettingsStore.setState({ serverUrl: 'https://two.example' }); });
+  act(() => { view.rerender(<DraftHarness epoch={4} />); });
+  expect(probe.value).toBe('');
+});
+
+test('submitted or discarded memory draft is cleared without touching the persisted store', () => {
+  useAuthStore.setState({ jwt: null });
+  const view = render(<DraftHarness epoch={0} />);
+  act(() => probe.setValue('전송 원문'));
+  act(() => probe.clearIfMatches('다른 값'));
+  act(() => { view.rerender(<DraftHarness epoch={1} />); });
+  expect(probe.value).toBe('전송 원문');
+
+  act(() => probe.clearIfMatches('전송 원문'));
+  expect(probe.value).toBe('');
+  act(() => { view.rerender(<DraftHarness epoch={2} />); });
+  expect(probe.value).toBe('');
+
+  act(() => probe.setValue('버릴 초안'));
+  act(() => probe.clear());
+  act(() => { view.rerender(<DraftHarness epoch={3} />); });
+  expect(probe.value).toBe('');
+  expect(Object.keys(useDraftStore.getState().drafts)).toHaveLength(0);
 });
