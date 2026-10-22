@@ -58,7 +58,7 @@ export function CardDetailPane({ api, cardId, detailWidth, onClose, onOpenSessio
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  return <View testID="task-workspace-task-pane" style={[styles.folderPane, detailWidth === undefined ? null : { width: detailWidth }]}>
+  return <View testID="task-workspace-task-pane" style={[styles.folderPane, detailWidth === undefined ? { flex: 1, borderRightWidth: 0 } : { width: detailWidth }]}>
     <CardDetailContent key={cardId} api={api} cardId={cardId} inline onClose={onClose} onOpenSession={onOpenSession} />
   </View>;
 }
@@ -106,7 +106,7 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
   }
 
   return (
-    <View testID="task-workspace-task-pane" style={[styles.folderPane, width === undefined ? null : { width }]}>
+    <View testID="task-workspace-task-pane" style={[styles.folderPane, width === undefined ? { flex: 1, borderRightWidth: 0 } : { width }]}>
       {pageId ? (
         <FolderWorkspace
           api={api}
@@ -190,14 +190,18 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   const styles = useMemo(() => makeStyles(t), [t]);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
   const [step, setStep] = useState<'detail' | 'chat'>('detail');
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(sessionId);
   const stepKey = `${cardId ?? ''}:${pageId ?? ''}`;
   const lastStepKey = useRef(stepKey);
   useEffect(() => {
-    if (lastStepKey.current === stepKey) return;
-    lastStepKey.current = stepKey;
-    setStep('detail');
-  }, [stepKey]);
+    setSelectedSessionId(sessionId);
+    if (lastStepKey.current !== stepKey) {
+      lastStepKey.current = stepKey;
+      setStep('detail');
+    }
+  }, [sessionId, stepKey]);
   const openSession = (id: string) => {
+    setSelectedSessionId(id);
     onOpenSession?.(id);
     setStep('chat');
   };
@@ -217,7 +221,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   if (!cardId && !pageId && sessionId && unlinkedSession) {
     return (
       <View testID="folder-workspace-single-panel" style={styles.singlePanel}>
-        <CardConversationPane active={active} onClose={onClose} />
+        <CardConversationPane active={active} sessionId={sessionId} onClose={onClose} />
       </View>
     );
   }
@@ -235,7 +239,8 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
           onOpenFolder={onOpenFolder}
         />
       ) : (
-        <CardConversationPane active={active} chatHeaderLeading={back} />
+        <CardConversationPane active={active} sessionId={selectedSessionId ?? sessionId}
+          onClose={onClose} chatHeaderLeading={back} />
       )}
     </View>
   );

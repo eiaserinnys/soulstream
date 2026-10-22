@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { ScrollView, Text, View } from 'react-native';
 import { useTokens } from '../theme';
 import { SessionCardView } from '../components/SessionCardView';
 import { PhoneRailTabCluster } from '../navigation/TabNavigator';
+import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
 import {
   CardConversationPane,
   FolderWorkspaceDetailPane,
@@ -16,6 +18,7 @@ import { resolvePersistentConversationLeft } from '../lib/persistent-session-col
 import { MainListPane } from '../components/split/MainListPane';
 import { calculateTwoPaneWidths } from '../components/split/paneWidths';
 import { dialogueSessions } from './dialogue-fixtures';
+import { createReviewApi } from './fixtures';
 
 /**
  * 아이폰 듀오 6개 창 크기에서 새 반응형 규칙을 실제 컴포넌트로 보여 준다.
@@ -59,130 +62,139 @@ function PasColumnStrip({ width, left }: { width: number; left: number }) {
 export function ReviewIphoneDuo() {
   const t = useTokens();
   const session = dialogueSessions[0];
+  const api = useMemo(() => createReviewApi('normal'), []);
+  const navigationTheme = {
+    ...DefaultTheme,
+    colors: { ...DefaultTheme.colors, background: t.colors.background },
+  };
   return (
-    <View testID="review-iphone-duo" style={{ flex: 1, backgroundColor: t.colors.background }}>
-      <ScrollView horizontal contentContainerStyle={{ padding: t.spacing.lg, gap: t.spacing.lg }}>
-        {IPHONE_DUO_FRAMES.map((frame) => {
-          const safeWidth = frame.width - frame.insetRight;
-          const bodyWidth = safeWidth - STAGE_PADDING * 2;
-          // 실제 2단은 좌우 outerInset(12)을 뺀 행 폭에서 계산한다.
-          const middle = calculateTwoPaneWidths(Math.max(0, safeWidth - 24)).middle;
-          const overlayWidth = getFolderWorkspaceOverlayWidth(safeWidth);
-          const single = shouldUseSinglePanel(overlayWidth);
-          const pasLeft = resolvePersistentConversationLeft({
-            appWidth: safeWidth,
-            columnWidth: frame.id.startsWith('inner-landscape') ? 480 : 400,
-            tasksWidth: frame.id.startsWith('inner-landscape') ? 240 : 170,
-            phone: false,
-            cardsScene: true,
-            pageInset: t.foundation.pageInset,
-            gap: t.spacing.md,
-            cardPanelRightOffset: t.foundation.pageInset - t.uiSpacing.sm,
-          });
-          return (
-            <View key={frame.id} style={{ gap: t.spacing.sm }}>
-              <View style={{ gap: 2 }}>
-                <Text style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary }}>
-                  {frame.label}
-                </Text>
-                <Text testID={`iphone-duo-frame-${frame.id}`}
-                  style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>
-                  {frame.width} × {frame.height} · 레일 {frame.insetRight} · 본문 {safeWidth} · 피드 {bodyWidth} · 오버레이 {overlayWidth}
-                </Text>
-              </View>
-              <View
-                testID={`iphone-duo-stage-${frame.id}`}
-                style={{
-                  width: frame.width,
-                  height: frame.height,
-                  flexDirection: 'row',
-                  borderRadius: t.foundation.radius.panel,
-                  borderWidth: 1,
-                  borderColor: t.colors.border,
-                  backgroundColor: t.colors.background,
-                  overflow: 'hidden',
-                }}
-              >
-                <View style={{ flex: 1, padding: STAGE_PADDING, gap: t.uiSpacing.sm }}>
-                  <SessionCardView
-                    session={session}
-                    onPress={() => {}}
-                    folderName="공개 폴더"
-                    serverUrl=""
-                    jwt={null}
-                    review={{ acknowledge: async () => {}, inFlight: false }}
-                    narrow={frame.rail ? bodyWidth < 400 : middle < 400}
-                    embedded
-                    testID={`iphone-duo-card-${frame.id}`}
-                  />
-                  {frame.rail ? (
-                    <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>
-                      {frame.id === 'outer-landscape'
-                        ? '설정 1열 유지 (SETTINGS_FORM_COLUMNS_MIN_WIDTH = 700)'
-                        : '설정 wide 해제 (device = phone)'}
+    <NavigationContainer theme={navigationTheme}>
+      <PersistentSessionProvider>
+        <View testID="review-iphone-duo" style={{ flex: 1, backgroundColor: t.colors.background }}>
+          <ScrollView horizontal contentContainerStyle={{ padding: t.spacing.lg, gap: t.spacing.lg }}>
+            {IPHONE_DUO_FRAMES.map((frame) => {
+              const safeWidth = frame.width - frame.insetRight;
+              const bodyWidth = safeWidth - STAGE_PADDING * 2;
+              // 실제 2단은 좌우 outerInset(12)을 뺀 행 폭에서 계산한다.
+              const middle = calculateTwoPaneWidths(Math.max(0, safeWidth - 24)).middle;
+              const overlayWidth = getFolderWorkspaceOverlayWidth(safeWidth);
+              const single = shouldUseSinglePanel(overlayWidth);
+              const pasLeft = resolvePersistentConversationLeft({
+                appWidth: safeWidth,
+                columnWidth: frame.id.startsWith('inner-landscape') ? 480 : 400,
+                tasksWidth: frame.id.startsWith('inner-landscape') ? 240 : 170,
+                phone: false,
+                cardsScene: true,
+                pageInset: t.foundation.pageInset,
+                gap: t.spacing.md,
+                cardPanelRightOffset: t.foundation.pageInset - t.uiSpacing.sm,
+              });
+              return (
+                <View key={frame.id} style={{ gap: t.spacing.sm }}>
+                  <View style={{ gap: 2 }}>
+                    <Text style={{ ...t.foundation.typography.cardTitle, color: t.colors.textPrimary }}>
+                      {frame.label}
                     </Text>
-                  ) : (
-                    <>
-                      {frame.id.startsWith('inner-portrait') ? (
-                        <View style={{ width: middle, height: 200 }}>
-                          <MainListPane paneWidth={middle} />
-                        </View>
-                      ) : null}
-                      {single ? (
-                        <View style={{ width: overlayWidth, flex: 1, minHeight: 0 }}>
-                          <FolderWorkspaceSinglePanel
-                            api={null}
-                            cardId={null}
-                            pageId={null}
-                            sessionId={null}
-                            active
-                            onClose={() => {}}
-                          />
-                        </View>
-                      ) : (
-                        <View style={{
-                          width: overlayWidth,
-                          flex: 1,
-                          minHeight: 0,
-                          flexDirection: 'row',
-                          borderWidth: 1,
-                          borderColor: t.colors.border,
-                          borderRadius: t.foundation.radius.panel,
-                          overflow: 'hidden',
-                        }}>
-                          <FolderWorkspaceDetailPane
-                            api={null}
-                            cardId={null}
-                            pageId={null}
-                            sessionId={null}
-                            active
-                            width={overlayWidth - Math.round(overlayWidth * 0.5)}
-                            onClose={() => {}}
-                          />
-                          <CardConversationPane active />
-                        </View>
-                      )}
-                      <PasColumnStrip width={safeWidth} left={pasLeft} />
-                    </>
-                  )}
-                </View>
-                {frame.rail ? (
-                  <View style={{
-                    width: DUO_RAIL_WIDTH,
-                    paddingBottom: 24,
-                    alignItems: 'center',
-                    justifyContent: 'flex-end',
-                    borderLeftWidth: 1,
-                    borderLeftColor: t.colors.border,
-                  }}>
-                    <PhoneRailTabCluster active="DailyTab" onSelect={() => {}} />
+                    <Text testID={`iphone-duo-frame-${frame.id}`}
+                      style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>
+                      {frame.width} × {frame.height} · 레일 {frame.insetRight} · 본문 {safeWidth} · 피드 {bodyWidth} · 오버레이 {overlayWidth}
+                    </Text>
                   </View>
-                ) : null}
-              </View>
-            </View>
-          );
-        })}
-      </ScrollView>
-    </View>
+                  <View
+                    testID={`iphone-duo-stage-${frame.id}`}
+                    style={{
+                      width: frame.width,
+                      height: frame.height,
+                      flexDirection: 'row',
+                      borderRadius: t.foundation.radius.panel,
+                      borderWidth: 1,
+                      borderColor: t.colors.border,
+                      backgroundColor: t.colors.background,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <View style={{ flex: 1, padding: STAGE_PADDING, gap: t.uiSpacing.sm }}>
+                      <SessionCardView
+                        session={session}
+                        onPress={() => {}}
+                        folderName="공개 폴더"
+                        serverUrl=""
+                        jwt={null}
+                        review={{ acknowledge: async () => {}, inFlight: false }}
+                        narrow={frame.rail ? bodyWidth < 400 : middle < 400}
+                        embedded
+                        testID={`iphone-duo-card-${frame.id}`}
+                      />
+                      {frame.rail ? (
+                        <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>
+                          {frame.id === 'outer-landscape'
+                            ? '설정 1열 유지 (SETTINGS_FORM_COLUMNS_MIN_WIDTH = 700)'
+                            : '설정 wide 해제 (device = phone)'}
+                        </Text>
+                      ) : (
+                        <>
+                          {frame.id.startsWith('inner-portrait') ? (
+                            <View style={{ width: middle, height: 200 }}>
+                              <MainListPane paneWidth={middle} />
+                            </View>
+                          ) : null}
+                          {single ? (
+                            <View style={{ width: overlayWidth, flex: 1, minHeight: 0 }}>
+                              <FolderWorkspaceSinglePanel
+                                api={api}
+                                cardId={null}
+                                pageId="public-page"
+                                sessionId={session.agentSessionId}
+                                active
+                                onClose={() => {}}
+                              />
+                            </View>
+                          ) : (
+                            <View style={{
+                              width: overlayWidth,
+                              flex: 1,
+                              minHeight: 0,
+                              flexDirection: 'row',
+                              borderWidth: 1,
+                              borderColor: t.colors.border,
+                              borderRadius: t.foundation.radius.panel,
+                              overflow: 'hidden',
+                            }}>
+                              <FolderWorkspaceDetailPane
+                                api={api}
+                                cardId={null}
+                                pageId="public-page"
+                                sessionId={session.agentSessionId}
+                                active
+                                width={overlayWidth - Math.round(overlayWidth * 0.5)}
+                                onClose={() => {}}
+                              />
+                              <CardConversationPane active sessionId={session.agentSessionId} />
+                            </View>
+                          )}
+                          <PasColumnStrip width={safeWidth} left={pasLeft} />
+                        </>
+                      )}
+                    </View>
+                    {frame.rail ? (
+                      <View style={{
+                        width: DUO_RAIL_WIDTH,
+                        paddingBottom: 24,
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        borderLeftWidth: 1,
+                        borderLeftColor: t.colors.border,
+                      }}>
+                        <PhoneRailTabCluster active="DailyTab" onSelect={() => {}} />
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </PersistentSessionProvider>
+    </NavigationContainer>
   );
 }
