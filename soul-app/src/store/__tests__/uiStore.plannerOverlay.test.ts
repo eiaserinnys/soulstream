@@ -8,6 +8,7 @@ beforeEach(() => {
     folderOverlayVisible: false,
     initialCardSessionId: null,
     activeSessionId: null,
+    overlaySessionExplicit: false,
     focusEventId: null,
     storyOpenRequestId: null,
     sessionFolderResolution: null,
@@ -176,10 +177,10 @@ test('자정이 지나면 오늘을 보고 있던 daily만 새 날짜로 이동�
   expect(useUIStore.getState().activeSection).toEqual({ kind: 'daily', date: '2026-07-15' });
 });
 
-test('iPad 카드는 폴더 패널 자리에 열고 오른쪽 세션과 포커스를 유지한다', () => {
+test('일반 카드 열기는 이전 세션을 비우고 자동 선택을 명시 선택과 구분한다', () => {
   useUIStore.setState({ activeSessionId: 'right-session', focusEventId: 42 });
   useUIStore.getState().openCardOverlay('card-1');
-  expect(useUIStore.getState()).toMatchObject({ selectedCardId: 'card-1', folderOverlayVisible: true, activeSessionId: 'right-session', focusEventId: 42 });
+  expect(useUIStore.getState()).toMatchObject({ selectedCardId: 'card-1', folderOverlayVisible: true, activeSessionId: null, overlaySessionExplicit: false, focusEventId: 42 });
   useUIStore.getState().openFolderOverlay('folder-page');
   expect(useUIStore.getState().selectedCardId).toBeNull();
 });
@@ -210,4 +211,19 @@ test('middle-pane choices and composer height are nonpersistent, with global boa
   expect(saved).not.toHaveProperty('mainPaneViews');
   expect(saved).not.toHaveProperty('floatingComposerBottomInset');
   useUIStore.setState({ mainPaneViews: { global: 'board' }, floatingComposerBottomInset: 0 });
+});
+
+test('card initialization keeps the explicit flag while user session actions set it', () => {
+  useUIStore.getState().openCardOverlay('automatic');
+  useUIStore.getState().initializeCardSessionSelection('automatic', 'assignee');
+  expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'assignee', overlaySessionExplicit: false });
+  useUIStore.getState().setActiveSessionId('chosen');
+  expect(useUIStore.getState().overlaySessionExplicit).toBe(true);
+  useUIStore.getState().closeFolderOverlay();
+  expect(useUIStore.getState().overlaySessionExplicit).toBe(false);
+  useUIStore.getState().openCardOverlay('explicit', 'chosen');
+  useUIStore.getState().initializeCardSessionSelection('explicit', 'chosen');
+  expect(useUIStore.getState().overlaySessionExplicit).toBe(true);
+  useUIStore.getState().clearCardOverlay();
+  expect(useUIStore.getState().overlaySessionExplicit).toBe(false);
 });

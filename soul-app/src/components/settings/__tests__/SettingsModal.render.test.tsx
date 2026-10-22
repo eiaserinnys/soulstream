@@ -1,6 +1,6 @@
 import React from 'react';
-import { Modal, Text } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { Alert, Modal, Text } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -10,7 +10,12 @@ import { SettingsModal } from '../SettingsModal';
 import { createApiClient } from '../../../api/client';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
-const api = { getConfig: jest.fn().mockResolvedValue({ mode: 'single' }), getAuthStatus: jest.fn().mockResolvedValue({ authenticated: true, user: { isAdmin: true } }) };
+const api = {
+  listNodes: jest.fn().mockResolvedValue({ nodes: [] }),
+  listRecurringJobs: jest.fn().mockResolvedValue({ jobs: [] }),
+  listNodeAgents: jest.fn().mockResolvedValue({ agents: [] }),
+  listModelPresets: jest.fn().mockResolvedValue({ model_presets: [] }),
+  getConfig: jest.fn().mockResolvedValue({ mode: 'single' }), getAuthStatus: jest.fn().mockResolvedValue({ authenticated: true, user: { isAdmin: true } }) };
 beforeEach(() => { mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 }; jest.mocked(createApiClient).mockReturnValue(api as any); useAuthStore.setState({ jwt: null }); useSettingsStore.setState({ serverUrl: '' }); });
 test('iPad page sheet bounds sibling sidebar/detail beneath its header', () => {
   mockDimensions.width = 1024;
@@ -45,7 +50,7 @@ test('compact width opens the index, then returns from a detail without closing'
   expect(screen.getByTestId('settings-phone-index')).toBeTruthy(); expect(onClose).not.toHaveBeenCalled();
 });
 
-test('the open-on-start switch writes an account and server local preference immediately', () => {
+test('the open-on-start switch writes an account and server local preference immediately', async () => {
   const payload = Buffer.from(JSON.stringify({ email: 'review@example.com', sub: 'review@example.com', exp: 2_000_000_000 })).toString('base64url');
   useAuthStore.setState({ jwt: `header.${payload}.signature` });
   useSettingsStore.setState({ serverUrl: 'https://soul.test', persistentSessionDevicePrefs: {} } as never);
@@ -54,6 +59,8 @@ test('the open-on-start switch writes an account and server local preference imm
   const toggle = screen.getByTestId('settings-persistent-session-open-on-start');
   expect(toggle.props.value).toBe(false);
   fireEvent(toggle, 'valueChange', true);
+  await act(async () => {});
+  screen.unmount();
 
   expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul.test', 'review@example.com'))
     .toEqual({
@@ -63,4 +70,53 @@ test('the open-on-start switch writes an account and server local preference imm
       showWeeklyUsage: false,
       weeklyUsageNodeSelection: null,
     });
+});
+
+import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
+import { SETTINGS_WORKSPACE_CONTINUITY_KEY } from '../../../navigation/settingsWorkspaceContinuity';
+import { SettingsScreen } from '../../../screens/SettingsScreen';
+
+test('settings remount restores the recurring editor, name and prompt; discard clears both fields', async () => {
+  useSettingsStore.setState({ serverUrl: 'https://soul.test' });
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Seed() {
+    const continuity = useLayoutContinuity();
+    memory = continuity;
+    React.useEffect(() => {
+      continuity.setViewState(SETTINGS_WORKSPACE_CONTINUITY_KEY, {
+        category: 'recurring-jobs', jobs: { kind: 'editor' }, persistent: { kind: 'list' },
+      });
+    }, [continuity]);
+    return null;
+  }
+  const shell = (shown: boolean, explicit = false) => <LayoutContinuityProvider><Seed />
+    {shown ? explicit ? <SettingsScreen category="connection" /> : <SettingsModal visible onClose={jest.fn()} /> : null}
+  </LayoutContinuityProvider>;
+  const view = render(shell(false));
+  await act(async () => { view.rerender(shell(true)); });
+  await waitFor(() => expect(view.getByLabelText('작업 내용').props.editable).toBe(true));
+  fireEvent.changeText(view.getByLabelText('작업 이름'), '접어도 남는 작업');
+  fireEvent.changeText(view.getByLabelText('작업 내용'), '접어도 남는 내용');
+  await act(async () => { view.rerender(shell(false)); });
+  mockDimensions = { ...mockDimensions, width: 669, height: 951 };
+  await act(async () => { view.rerender(shell(true)); });
+  expect(view.getByLabelText('작업 이름').props.value).toBe('접어도 남는 작업');
+  expect(view.getByLabelText('작업 내용').props.value).toBe('접어도 남는 내용');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  fireEvent.press(view.getByLabelText('변경 버리기'));
+  const discard = alert.mock.calls[0][2]?.find(button => button.style === 'destructive');
+  expect(discard).toBeDefined();
+  act(() => { discard?.onPress?.(); });
+  expect(view.getByLabelText('작업 이름').props.value).toBe('');
+  expect(view.getByLabelText('작업 내용').props.value).toBe('');
+  expect(memory.getViewState(JSON.stringify(['recurring-job-editor-draft', 'new']))).toBeUndefined();
+  alert.mockRestore();
+  await act(async () => { view.rerender(shell(false)); });
+  await act(async () => { view.rerender(shell(true)); });
+  expect(view.getByLabelText('작업 이름').props.value).toBe('');
+  expect(view.getByLabelText('작업 내용').props.value).toBe('');
+  await act(async () => { view.rerender(shell(false)); });
+  await act(async () => { view.rerender(shell(true, true)); });
+  expect(view.getByTestId('settings-server-input')).toBeTruthy();
+  view.unmount();
 });

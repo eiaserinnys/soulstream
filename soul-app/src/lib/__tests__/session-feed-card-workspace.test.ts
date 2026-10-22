@@ -102,6 +102,19 @@ test('카드가 없는 폴더 세션은 기존 folder opener로 위임한다', a
   );
 });
 
+test('연결 조회 전 로딩 오버레이를 열고 폴더 해석에 대화 위치를 전달한다', async () => {
+  let resolveSessions!: (value: unknown[]) => void;
+  mockApi.getSessionsByIds.mockImplementation(() => new Promise(resolve => { resolveSessions = resolve; }));
+  const request = openFeedSessionCardWorkspace('feed-folder', 31, 77);
+  expect(useUIStore.getState()).toMatchObject({
+    folderOverlayVisible: true, activeSessionId: 'feed-folder', focusEventId: 31, storyOpenRequestId: 77,
+    sessionFolderResolution: { sessionId: 'feed-folder', status: 'loading' },
+  });
+  resolveSessions([{ agentSessionId: 'feed-folder', cardId: null, folderId: 'folder-1' }]);
+  await expect(request).resolves.toBe(true);
+  expect(mockOpenPlannerSessionWorkspace).toHaveBeenCalledWith('feed-folder', 31, 77, 'feed');
+});
+
 test('카드 목록 조회 실패는 오류 표면에 남고 미연결 세션으로 열지 않는다', async () => {
   mockApi.listCards.mockRejectedValue(new Error('카드 조회 실패'));
 

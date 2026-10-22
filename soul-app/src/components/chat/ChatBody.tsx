@@ -357,11 +357,13 @@ export function ChatBody({
     onScrollBeginDrag,
     onScrollOffsetChange,
     onContentSizeChange,
+    onLayout: onListLayout,
   } = useChatBottomFollow({
     flatListRef,
     sessionId,
     bottomItemKey: bottomFollowItemKey,
     presentation,
+    ready: !historyLoading,
   });
 
   useEffect(() => {
@@ -496,6 +498,7 @@ export function ChatBody({
         mvcpEnabled={mvcpEnabled}
         highlightedItemKey={highlightedItemKey}
         onContentSizeChange={onContentSizeChange}
+        onLayout={onListLayout}
         onScrollToIndexFailed={handleScrollToIndexFailed}
         presentation={presentation}
         showNewMessage={showNewMessage}

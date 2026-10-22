@@ -314,6 +314,10 @@ export function readTabletLocation(
         originTab: fromPersistent ? 'PersistentTab' : previousTab,
         kind: 'markdownDocument',
         documentId,
+        ...(!fromPersistent && context.folderOverlayVisible ? {
+          folder: context.selectedFolder ?? folderOfLocation(context.previousLocation),
+          cardId: context.selectedCardId ?? undefined,
+        } : {}),
         fromPersistent: fromPersistent ? true : undefined,
       };
     }
@@ -401,7 +405,10 @@ function tabletMainLocation(context: TabletLocationContext): NormalizedNavigatio
   }
 }
 
-export function buildPhoneState(location: NormalizedNavigationLocation): InitialState {
+export function buildPhoneState(
+  location: NormalizedNavigationLocation,
+  previousPhoneState?: NavigationState | PartialState<NavigationState> | InitialState | null,
+): InitialState {
   const stacks = new Map<PhoneTabName, RouteSpec[]>([
     ['DailyTab', [{ name: 'Daily' }]],
     ['FolderTab', [{ name: 'FolderList' }]],
@@ -409,23 +416,28 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
     ['FeedTab', [{ name: 'Feed' }]],
     ['SettingsTab', [{ name: 'Settings' }]],
   ]);
+  const updatedTabs = new Set<PhoneTabName>();
+  const setStack = (tab: PhoneTabName, routes: RouteSpec[]) => {
+    updatedTabs.add(tab);
+    stacks.set(tab, routes);
+  };
   let activeTab: PhoneTabName = 'DailyTab';
 
   switch (location.kind) {
     case 'daily':
       activeTab = 'DailyTab';
-      stacks.set('DailyTab', [{ name: 'Daily' }]);
+      setStack('DailyTab', [{ name: 'Daily' }]);
       break;
     case 'dailyHistory':
       activeTab = 'DailyTab';
-      stacks.set('DailyTab', [{ name: 'Daily' }, { name: 'DailyHistory' }]);
+      setStack('DailyTab', [{ name: 'Daily' }, { name: 'DailyHistory' }]);
       break;
     case 'folderList':
       activeTab = 'FolderTab';
       break;
     case 'folderWorkspace': {
       activeTab = folderTabOf(location.originTab);
-      stacks.set(activeTab, folderStack(activeTab, location.folder));
+      setStack(activeTab, folderStack(activeTab, location.folder));
       break;
     }
     case 'feed':
@@ -433,7 +445,7 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
       break;
     case 'search':
       activeTab = 'FeedTab';
-      stacks.set('FeedTab', [
+      setStack('FeedTab', [
         { name: 'Feed' },
         location.initialQuery === undefined
           ? { name: 'Search' }
@@ -444,18 +456,18 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
       activeTab = 'FeedTab';
       const returnTab = location.returnTab ?? (location.folder ? 'FolderTab' : 'FeedTab');
       const cardTab = returnTab === 'FeedTab' ? undefined : returnTab;
-      stacks.set('FeedTab', [
+      setStack('FeedTab', [
         { name: 'Feed' },
         ...(cardTab === undefined && location.cardId ? [{ name: 'CardDetail', params: { cardId: location.cardId } }] : []),
         { name: 'Chat', params: chatParams(location, returnTab) },
       ]);
       if (location.folder) {
         const folderTab = folderTabOf(returnTab);
-        stacks.set(folderTab, folderStack(folderTab, location.folder));
+        setStack(folderTab, folderStack(folderTab, location.folder));
       }
       if (cardTab && location.cardId) {
         const base = stacks.get(cardTab) ?? [];
-        stacks.set(cardTab, [...base, { name: 'CardDetail', params: { cardId: location.cardId } }]);
+        setStack(cardTab, [...base, { name: 'CardDetail', params: { cardId: location.cardId } }]);
       }
       break;
     }
@@ -467,7 +479,7 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
         routes.push({ name: 'FolderWorkspace', params: folderParams(location.folder) });
       }
       routes.push({ name: 'CardDetail', params: { cardId: location.cardId } });
-      stacks.set(activeTab, routes);
+      setStack(activeTab, routes);
       break;
     }
     case 'persistentSession':
@@ -484,7 +496,7 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
         routes.push({ name: 'CardDetail', params: { cardId: location.cardId } });
       }
       routes.push({ name: 'MarkdownDocument', params: { documentId: location.documentId } });
-      stacks.set(activeTab, routes);
+      setStack(activeTab, routes);
       break;
     }
     case 'settings':
@@ -492,11 +504,12 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
       break;
     case 'recurringJobs': {
       activeTab = 'SettingsTab';
-      stacks.set('SettingsTab', recurringJobRoutes(location.panel));
+      setStack('SettingsTab', recurringJobRoutes(location.panel));
       break;
     }
   }
 
+  updatedTabs.add(activeTab);
   return {
     type: 'tab',
     key: 'phone-tabs',
@@ -504,7 +517,10 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
     routes: PHONE_TABS.map(tab => ({
       key: `phone-${tab}`,
       name: tab,
-      state: stackState(tab, stacks.get(tab) ?? []),
+      state: !updatedTabs.has(tab)
+        && routesOf(previousPhoneState as AnyNavState | null).find(route => route.name === tab)?.state?.routes.length
+        ? routesOf(previousPhoneState as AnyNavState | null).find(route => route.name === tab)!.state
+        : stackState(tab, stacks.get(tab) ?? []),
     })),
   } as unknown as InitialState;
 }

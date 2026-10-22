@@ -1,9 +1,9 @@
+import { LayoutContinuityProvider } from './LayoutContinuityContext';
+import { AdaptiveNavigationHost } from './AdaptiveNavigationHost';
 import React from 'react';
-import { TabletNavigator } from './TabletNavigator';
 import { PersistentSessionProvider } from './PersistentSessionContext';
 import { PersistentSessionStartup } from './PersistentSessionStartup';
 import type { DeviceType } from '../theme/useDeviceType';
-import { TabNavigator } from './TabNavigator';
 import { UiUsageEventsHost } from '../components/UiUsageEventsHost';
 import { recordCurrentPlannerUsageView } from '../lib/planner-folder-workspace';
 import { ContentLinkProvider } from './ContentLinkProvider';
@@ -53,7 +53,7 @@ export function AuthenticatedAppSubtree({
 
 function AuthenticatedAppInstance({ device, startupReady, sessionIntent, onOpenPersistent, onPersistentLeaveReady }: Pick<Props, 'device' | 'startupReady' | 'sessionIntent' | 'onOpenPersistent' | 'onPersistentLeaveReady'>) {
   return <PersistentSessionProvider sessionIntent={sessionIntent} onLeaveReady={onPersistentLeaveReady}>
-    <ContentLinkProvider>{device === 'phone' ? <TabNavigator /> : <TabletNavigator />}</ContentLinkProvider>
+    <LayoutContinuityProvider><ContentLinkProvider><AdaptiveNavigationHost device={device} /></ContentLinkProvider></LayoutContinuityProvider>
     {onOpenPersistent ? <PersistentSessionStartup ready={startupReady === true} sessionIntent={sessionIntent === true} onOpen={onOpenPersistent} /> : null}
   </PersistentSessionProvider>;
 }

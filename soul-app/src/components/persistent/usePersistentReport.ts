@@ -1,3 +1,4 @@
+import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import { useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
@@ -13,16 +14,19 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
   snapshot: PersistentReportEntry[] | undefined, pending: PendingOptimisticEvent | undefined) {
   const live = useSessionStore(state => enabled && sessionId ? state.persistentReportsBySession[sessionId] : undefined);
   const server = enabled ? live?.entries ?? snapshot ?? EMPTY_REPORT : EMPTY_REPORT;
+  const continuity = useOptionalLayoutContinuity();
+  const memoryKey = JSON.stringify(['pas', sessionId]);
+  const saved = continuity?.getViewState<{ reportKey?: string; reportIndex?: number }>(memoryKey);
   const [view, setView] = useState<{ sessionId: string | undefined; key?: string; index: number;
-    dismissals: Map<string, Promise<boolean>> }>({ sessionId, index: 0, dismissals: new Map() });
-  if (view.sessionId !== sessionId) setView({ sessionId, index: 0, dismissals: new Map() });
+    dismissals: Map<string, Promise<boolean>> }>({ sessionId, key: saved?.reportKey, index: saved?.reportIndex ?? 0, dismissals: new Map() });
+  if (view.sessionId !== sessionId) setView({ sessionId, key: saved?.reportKey, index: saved?.reportIndex ?? 0, dismissals: new Map() });
   const dismissals = view.dismissals;
   const visibleEntries = view.sessionId === sessionId && dismissals.size
     ? server.filter(entry => !dismissals.has(dismissalId(sessionId, entry))) : server;
   const found = view.sessionId === sessionId ? visibleEntries.findIndex(entry => entry.key === view.key) : -1;
   const index = found >= 0 ? found : Math.max(0, Math.min(view.sessionId === sessionId ? view.index : 0, visibleEntries.length - 1));
   const key = visibleEntries[index]?.key;
-  if (view.sessionId === sessionId && (view.key !== key || view.index !== index)) setView({ ...view, key, index });
+  if ((live !== undefined || snapshot !== undefined) && view.sessionId === sessionId && (view.key !== key || view.index !== index)) setView({ ...view, key, index });
   const reply = pending?.pendingStatus === 'sending' && pending.reportBase === server
     ? pendingReportReply(pending.contextItems) : undefined;
   const entries = reply ? visibleEntries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
@@ -32,6 +36,7 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
     entries, index, server,
     select(index: number) {
       const next = Math.max(0, Math.min(entries.length - 1, index));
+      continuity?.setViewState(memoryKey, { ...continuity.getViewState<object>(memoryKey), reportKey: entries[next]?.key, reportIndex: next });
       setView(current => ({ ...current, index: next, key: entries[next]?.key }));
     },
     getSendContext(text: string, reply: ReportReplyDraft | null) {

@@ -58,6 +58,7 @@ jest.mock('../../split/ChatPane', () => {
       return React.createElement(
         require('react-native').View,
         { testID: 'overlay-chat', ...(props as object), minimumBottomPadding },
+        (props as { headerLeading?: React.ReactNode }).headerLeading,
       );
     },
   };
@@ -355,14 +356,14 @@ test('카드 상세로 바꿔도 기존 오른쪽 ChatPane을 다시 마운트�
   expect(mockOverlayChatUnmounted).not.toHaveBeenCalled();
 });
 
-test('카드 담당 없으면 기존 대화를 유지하고 이후 갱신은 자동 선택하지 않는다', async () => {
+test('카드 담당 없으면 이전 대화를 비우고 이후 갱신은 자동 선택하지 않는다', async () => {
   useUIStore.setState({ activeSessionId: 'previous' });
   useUIStore.getState().openCardOverlay('card-empty');
   render(<FolderWorkspaceReadOverlay />);
   await act(async () => useCardStore.getState().putDetail(cardDetail('card-empty', null)));
-  expect(useUIStore.getState().activeSessionId).toBe('previous');
+  expect(useUIStore.getState().activeSessionId).toBeNull();
   await act(async () => useCardStore.getState().putDetail(cardDetail('card-empty', 'late-owner')));
-  expect(useUIStore.getState().activeSessionId).toBe('previous');
+  expect(useUIStore.getState().activeSessionId).toBeNull();
 });
 
 test('다른 카드 담당을 열되 수동 선택은 상세 갱신으로 덮지 않는다', async () => {
@@ -388,7 +389,7 @@ test('세션 담당이 아닌 카드의 소속 세션이나 불일치 ID를 자�
   useUIStore.setState({ activeSessionId: 'previous' });
   useUIStore.getState().openCardOverlay(detail.card.id);
   render(<FolderWorkspaceReadOverlay />);
-  expect(useUIStore.getState().activeSessionId).toBe('previous');
+  expect(useUIStore.getState().activeSessionId).toBeNull();
 });
 
 test('단독 세션은 640 미만 단일 열에서도 대화를 바로 보여 준다', () => {
@@ -427,4 +428,58 @@ test('가로 레일 모드(오른쪽 안전 여백 84)에서는 두 열을 유�
   expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
   mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
   mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+});
+
+
+import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
+test('single-panel back synchronously records detail and clears only the explicit selection flag', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openCardOverlay('back-step', 'session-only');
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  const screen = render(<LayoutContinuityProvider><Capture /><FolderWorkspaceReadOverlay /></LayoutContinuityProvider>);
+  const key = JSON.stringify(['folder-overlay', 'back-step']);
+  expect(memory.getViewState(key)).toBe('chat');
+  fireEvent.press(screen.getByTestId('folder-workspace-step-back'));
+  expect(memory.getViewState(key)).toBe('detail');
+  expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'session-only', overlaySessionExplicit: false });
+  expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
+});
+
+test('a new explicit session request shows chat after returning to the same card detail', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openCardOverlay('reopen-step', 'session-only');
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  const screen = render(<LayoutContinuityProvider><Capture /><FolderWorkspaceReadOverlay /></LayoutContinuityProvider>);
+  const key = JSON.stringify(['folder-overlay', 'reopen-step']);
+  fireEvent.press(screen.getByTestId('folder-workspace-step-back'));
+  expect(memory.getViewState(key)).toBe('detail');
+  expect(useUIStore.getState()).toMatchObject({ initialCardSessionId: null, overlaySessionExplicit: false });
+  act(() => { useUIStore.getState().openCardOverlay('reopen-step', 'session-only'); });
+  expect(memory.getViewState(key)).toBe('chat');
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+});
+
+test('folder detail survives portrait-landscape-portrait after leaving its session', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openFolderOverlay('folder-rotation', 'session-only');
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  const shell = () => <LayoutContinuityProvider><Capture /><FolderWorkspaceReadOverlay /></LayoutContinuityProvider>;
+  const screen = render(shell());
+  const key = JSON.stringify(['folder-overlay', 'folder-rotation']);
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('folder-workspace-step-back'));
+  expect(memory.getViewState(key)).toBe('detail');
+  expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'session-only', overlaySessionExplicit: false });
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  screen.rerender(shell());
+  expect(screen.queryByTestId('folder-workspace-single-panel')).toBeNull();
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  screen.rerender(shell());
+  expect(screen.getByTestId('folder-workspace-single-panel')).toBeTruthy();
+  expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
+  expect(screen.queryByTestId('task-workspace-chat-pane')).toBeNull();
+  expect(memory.getViewState(key)).toBe('detail');
 });

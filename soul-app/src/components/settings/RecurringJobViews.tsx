@@ -1,4 +1,5 @@
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
+import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -118,7 +119,11 @@ export function RecurringJobEditor({
   const previewRevision = useRef(0);
   useEffect(() => { ++identityRevision.current; return () => { ++identityRevision.current; ++previewRevision.current; }; }, [serverUrl, jobId]);
   const [job, setJob] = useState<RecurringJobDto | null>(null);
-  const [draft, setDraft] = useState<EditorDraft>(emptyDraft());
+  const continuity = useOptionalLayoutContinuity();
+  const draftMemoryKey = JSON.stringify(['recurring-job-editor-draft', jobId ?? 'new']);
+  const [draft, setDraft] = useState<EditorDraft>(() => continuity?.getViewState<EditorDraft>(draftMemoryKey) ?? emptyDraft());
+  // A reset baseline is not an unsaved draft; the next edit resumes persistence.
+  const clearedDraft = useRef<EditorDraft | null>(null);
   const promptDraft = usePersistentDraft('recurring-prompt', [jobId ?? 'new'], draft.prompt);
   const [targetsReload, setTargetsReload] = useState(0);
   const [nodesError, setNodesError] = useState<string | null>(null);
@@ -146,9 +151,10 @@ export function RecurringJobEditor({
     return () => { active = false; };
   }, [serverUrl, targetsReload]);
   const loadExisting = useCallback(async ({ preserveDraft = false }: { preserveDraft?: boolean } = {}) => {
+    const savedDraft = continuity?.getViewState<EditorDraft>(draftMemoryKey);
     if (!serverUrl || !jobId) {
       setJob(null);
-      if (!preserveDraft) setDraft(emptyDraft());
+      if (!preserveDraft) setDraft(savedDraft ?? emptyDraft());
       setLoading(false);
       return true;
     }
@@ -164,7 +170,7 @@ export function RecurringJobEditor({
         return false;
       }
       setJob(found);
-      if (!preserveDraft) setDraft(draftFromJob(found));
+      if (!preserveDraft) setDraft(savedDraft ?? draftFromJob(found));
       return true;
     } catch (cause) {
       if (request === identityRevision.current) setError(errorMessage(cause));
@@ -172,8 +178,16 @@ export function RecurringJobEditor({
     } finally {
       if (request === identityRevision.current) setLoading(false);
     }
-  }, [jobId, serverUrl]);
+  }, [continuity, draftMemoryKey, jobId, serverUrl]);
   useEffect(() => { void loadExisting(); }, [loadExisting]);
+  useEffect(() => {
+    if (draft !== clearedDraft.current) continuity?.setViewState(draftMemoryKey, draft);
+  }, [continuity, draftMemoryKey, draft]);
+  const resetDraft = (next: EditorDraft) => {
+    clearedDraft.current = next;
+    continuity?.setViewState(draftMemoryKey, undefined);
+    setDraft(next);
+  };
   useEffect(() => {
     if (!serverUrl || !draft.nodeId) { setAgents([]); setPresets([]); return; }
     let active = true; setAgents([]); setPresets([]); setLoadingTargets(true); setTargetsError(null);
@@ -212,7 +226,7 @@ export function RecurringJobEditor({
         ? (await api.updateRecurringJob(job.job_id, { ...write, expected_version: job.version })).job
         : (await api.createRecurringJob({ ...write, idempotency_key: idempotency('create') })).job;
       if (request !== identityRevision.current) return;
-      setJob(saved); setDraft(draftFromJob(saved)); promptDraft.clearIfMatches(submittedPrompt); onDone(saved);
+      setJob(saved); resetDraft(draftFromJob(saved)); promptDraft.clearIfMatches(submittedPrompt); onDone(saved);
     } catch (cause) {
       if (request !== identityRevision.current) return;
       if (isVersionConflict(cause) && job) {
@@ -260,7 +274,7 @@ export function RecurringJobEditor({
   const dirty = promptDraft.ready && JSON.stringify(currentDraft) !== JSON.stringify(job ? draftFromJob(job) : emptyDraft());
   const workspace = useSettingsSaveScope('recurring-jobs', {
     dirty, busy: saving || loading, canSave: promptDraft.ready && !loading && !job?.archived_at && (!jobId || Boolean(job)), save,
-    discard: () => { setDraft(job ? draftFromJob(job) : emptyDraft()); promptDraft.clear(); setError(null); },
+    discard: () => { resetDraft(job ? draftFromJob(job) : emptyDraft()); promptDraft.clear(); setError(null); },
   });
   const saveScreen = workspace ? () => workspace.select('recurring-jobs') : undefined;
   const confirmArchive = () => { if (dirty) confirmSettingsDiscard(() => { promptDraft.clear(); void archive(); }, saveScreen); else void archive(); };

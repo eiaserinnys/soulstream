@@ -847,3 +847,19 @@ test.each([false, true])('a presented deck stays visible while added/revised pub
   measurePersistentReports(screen, { width: 318 });
   expect(deck().props.pointerEvents).toBe('auto');
 });
+
+
+import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
+test('selected report key survives the presentation unmount and remount', () => {
+  let report!: ReturnType<typeof usePersistentReport>;
+  function Probe() {
+    report = usePersistentReport('pas-fold', true, null, reportReviewEntries, undefined);
+    return <Text testID="report-selection">{report.index}</Text>;
+  }
+  const shell = (shown: boolean) => <LayoutContinuityProvider>{shown ? <Probe /> : null}</LayoutContinuityProvider>;
+  const view = render(shell(true));
+  act(() => report.select(1));
+  view.rerender(shell(false));
+  view.rerender(shell(true));
+  expect(view.getByTestId('report-selection').props.children).toBe(1);
+});

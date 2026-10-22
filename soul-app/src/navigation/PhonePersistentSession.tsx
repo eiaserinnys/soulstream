@@ -10,7 +10,7 @@ import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
 export function PhonePersistentSession({ navigation }: { navigation: any }) {
   const host = usePersistentSessionHost();
   const focused = useIsFocused();
-  const [cardDetailOpen, setCardDetailOpen] = useState(false);
+  const [cardDetailOpen, setCardDetailOpen] = useState(() => navigation.getState?.().routes?.some((route: { name: string }) => route.name === 'CardDetail') ?? false);
   usePhoneConversationKeyboard(navigation);
   const home = useCallback(() => {
     host.store.getState().leave();
