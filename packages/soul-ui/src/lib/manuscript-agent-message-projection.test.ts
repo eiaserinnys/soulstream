@@ -328,7 +328,7 @@ describe("projectManuscriptMessages", () => {
     const humanComplete = { ...message("human-silent-complete", "system"), treeNodeType: "complete" };
     const closedInput = {
       ...message("closed-silent-input", "user", "browser"),
-      contextItems: [{ key: "persistent_report_closed" }],
+      contextItems: [{ key: "persistent_report_closed", label: "보고 닫힘", content: "닫힘" }],
     };
     const closedGeneration = { ...message("closed-silent-generation", "system"), treeNodeType: "generation_started" };
     const closedSilent = { ...message("closed-silent-response", "assistant"), content: "네." };
