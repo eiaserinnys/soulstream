@@ -303,6 +303,44 @@ describe('groupChatEvents', () => {
     ]);
   });
 
+  it('manuscript PAS는 입력 뒤 캡션을 숨김 여는 행 사이의 턴 종료로 보지 않는다', () => {
+    const agentInput = ev('grouped-agent-input', 'user_message', {
+      text: '위임 보고',
+      caller_info: { source: 'agent' },
+    });
+    const jevCandidates = {
+      kind: 'jev-candidates' as const,
+      title: '후보',
+      lines: ['후보'],
+      anchorEventId: 1,
+      key: 'grouped-jev',
+    };
+    const notice = ev('grouped-notice', 'session_notification', {
+      delivery_intent: 'completion_notification',
+    });
+    const generation = ev('grouped-generation', 'generation_started');
+    const answer = ev('grouped-answer', 'assistant_message', { text: '확인한 내용을 전달합니다.' });
+    const complete = ev('grouped-complete', 'complete');
+    const endCaptions = { kind: 'turn-end-captions' as const, event: complete, key: 'grouped-captions' };
+    const eventItem = (event: SessionEvent) => ({ kind: 'event' as const, event, key: `evt-${event.id}` });
+
+    expect(projectManuscriptMessages([
+      eventItem(agentInput),
+      jevCandidates,
+      eventItem(notice),
+      eventItem(generation),
+      eventItem(answer),
+      endCaptions,
+      eventItem(complete),
+    ])).toEqual([
+      jevCandidates,
+      eventItem(generation),
+      eventItem(answer),
+      endCaptions,
+      eventItem(complete),
+    ]);
+  });
+
   it('tool_start와 같은 tool_use_id의 tool_result는 단일 그룹으로 묶는다 (핵심 매칭)', () => {
     const inputTruncation = { original_bytes: 2048, attachment: null };
     const resultTruncation = { original_bytes: 4096, attachment: null };

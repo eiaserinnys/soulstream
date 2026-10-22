@@ -185,9 +185,9 @@ function isManuscriptTurnEndCaption(item: ChatRenderItem): boolean {
 }
 
 function isManuscriptTurnEnd(item: ChatRenderItem): boolean {
-  return isManuscriptTurnEndCaption(item)
+  return item.kind === 'turn-end-captions'
     || (item.kind === 'event'
-      && (item.event.type === 'complete' || item.event.type === 'context_usage' || item.event.type === 'error'));
+      && (item.event.type === 'complete' || item.event.type === 'error'));
 }
 
 function hideOrphanedManuscriptTurnCaptions(items: ChatRenderItem[]): ChatRenderItem[] {
