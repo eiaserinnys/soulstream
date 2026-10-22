@@ -1883,7 +1883,7 @@
     "name": "list_remote_agents_config_snapshots"
   },
   {
-    "description": "세션 이벤트 목록 페이지네이션. tool_content로 tool_use/tool_result 길이 제어 (Python 정합).",
+    "description": "세션 이벤트 목록을 페이지네이션한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. 진행 중 세션은 확인 시각을 until로 고정한다(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). tool_content로 tool_use/tool_result 길이 제어 (Python 정합).",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1912,6 +1912,7 @@
           "type": "string"
         },
         "since": {
+          "description": "오프셋이 포함된 ISO 8601 시각. 시작을 포함하며 until과 함께 지정한다.",
           "minLength": 1,
           "type": "string"
         },
@@ -1931,6 +1932,7 @@
           "type": "integer"
         },
         "until": {
+          "description": "오프셋이 포함된 ISO 8601 시각. 끝은 제외하며 since와 함께 지정한다.",
           "minLength": 1,
           "type": "string"
         }
