@@ -203,7 +203,7 @@ describe("AutoResumeTransition", () => {
     });
 
     await transition.resume(task, {
-      text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",
       user: "Soulstream Scheduler",
       callerInfo: { source: "system", user_id: "soulstream-scheduler" },
       purpose: "cache_keepalive",

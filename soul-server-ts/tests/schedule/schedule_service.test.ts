@@ -96,7 +96,7 @@ describe("SoulstreamScheduleService", () => {
     expect(db.createSchedule).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "sess-1",
       kind: "wakeup",
-      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",
       sourceTool: "persistent_cache_keepalive",
       recurring: false,
       runOnceAt: new Date("2026-01-01T00:50:00.000Z"),

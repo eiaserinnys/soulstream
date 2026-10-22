@@ -119,9 +119,79 @@ function shouldHideManuscriptEvent(event: SessionEvent): boolean {
   return event.type === 'user_message' && data?.source === 'agent';
 }
 
+const SILENT_MANUSCRIPT_TOKEN = '[SILENT]';
+
+export function isManuscriptSilentTokenText(text: string, isStreaming = false): boolean {
+  const trimmed = text.trim();
+  return trimmed === SILENT_MANUSCRIPT_TOKEN
+    || (isStreaming && trimmed.length > 0 && SILENT_MANUSCRIPT_TOKEN.startsWith(trimmed));
+}
+
+export function isStandaloneKoreanYesAck(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed === '네.' || trimmed === '네';
+}
+
+function isSuppressedManuscriptTurnEvent(event: SessionEvent): boolean {
+  const data = event.data as Record<string, unknown> | undefined;
+  const contextItems = [data?.context_items, data?.contextItems]
+    .filter(Array.isArray)
+    .flat() as unknown[];
+  const hasClosedReportContext = contextItems.some((item) => (
+    typeof item === 'object'
+    && item !== null
+    && (item as Record<string, unknown>).key === 'persistent_report_closed'
+  ));
+
+  return shouldHideManuscriptEvent(event)
+    || data?.purpose === 'cache_keepalive'
+    || hasClosedReportContext;
+}
+
+function startsManuscriptTurn(event: SessionEvent): boolean {
+  const data = event.data as Record<string, unknown> | undefined;
+  return event.type === 'user_message'
+    || event.type === 'intervention_sent'
+    || (event.type === 'realtime_transcript' && data?.role === 'user')
+    || event.type === 'session_notification';
+}
+
+function isAssistantTextEvent(event: SessionEvent): boolean {
+  const data = event.data as Record<string, unknown> | undefined;
+  return event.type === 'assistant_message'
+    || event.type === 'text_delta'
+    || (event.type === 'realtime_transcript' && data?.role !== 'user');
+}
+
+function hasAssistantAttachments(event: SessionEvent): boolean {
+  const data = event.data as Record<string, unknown> | undefined;
+  return [data?.attachment_ids, data?.attachments, data?.outputAttachments]
+    .some((attachments) => Array.isArray(attachments) && attachments.length > 0);
+}
+
 /** Removes PAS-only delivery notices and delegated-agent input rows. */
 export function projectManuscriptMessages(items: ChatRenderItem[]): ChatRenderItem[] {
-  return items.filter(item => item.kind !== 'event' || !shouldHideManuscriptEvent(item.event));
+  let inSuppressedTurn = false;
+
+  return items.filter((item) => {
+    if (item.kind !== 'event') return true;
+
+    const event = item.event;
+    const data = event.data as Record<string, unknown> | undefined;
+    if (startsManuscriptTurn(event)) {
+      inSuppressedTurn = isSuppressedManuscriptTurnEvent(event);
+    }
+
+    if (shouldHideManuscriptEvent(event)) return false;
+    if (!isAssistantTextEvent(event) || hasAssistantAttachments(event)) return true;
+
+    const text = textPayload(event);
+    const isStreaming = item.key.startsWith('stream-assistant')
+      || event.type === 'text_delta'
+      || Boolean(data?._live_only);
+    if (isManuscriptSilentTokenText(text, isStreaming)) return false;
+    return !(inSuppressedTurn && isStandaloneKoreanYesAck(text));
+  });
 }
 
 function streamingIdentity(event: SessionEvent): string | null {

@@ -52,24 +52,37 @@ export function useChatRenderItems({
     [events, pendingOptimistic],
   );
   const { displayEvents, suppressStreaming } = keepaliveProjection;
-  const baseRenderItems = useMemo<ChatRenderItem[]>(
+  const placedRenderItems = useMemo<ChatRenderItem[]>(
     () => {
       const grouped = groupChatEvents(displayEvents, snapshotStreams, persistentDisplaySettings);
       const withOutputAttachments = projectOutputAttachments(grouped, displayEvents);
       const presented = presentation === 'manuscript'
         ? projectPersistentTurnUsage(withOutputAttachments, displayEvents, turnUsageMode)
         : withOutputAttachments;
-      const placed = placePendingOptimistic(presented, pendingOptimistic);
-      return presentation === 'manuscript'
-        ? projectManuscriptMessages(placed)
-        : placed;
+      return placePendingOptimistic(presented, pendingOptimistic);
     },
     [displayEvents, pendingOptimistic, persistentDisplaySettings, presentation, snapshotStreams, turnUsageMode],
   );
-  const streamingRenderItems = useMemo(
-    () => suppressStreaming ? [] : streamingSlotRenderItems(streamingSlots),
-    [streamingSlots, suppressStreaming],
+  const baseRenderItems = useMemo<ChatRenderItem[]>(
+    () => presentation === 'manuscript'
+      ? projectManuscriptMessages(placedRenderItems)
+      : placedRenderItems,
+    [placedRenderItems, presentation],
   );
+  const streamingRenderItems = useMemo(
+    () => {
+      if (suppressStreaming) return [];
+      const rawStreamingItems = streamingSlotRenderItems(streamingSlots);
+      if (presentation !== 'manuscript' || rawStreamingItems.length === 0) return rawStreamingItems;
+
+      const streamingKeys = new Set(rawStreamingItems.map((item) => item.key));
+      return projectManuscriptMessages([...placedRenderItems, ...rawStreamingItems])
+        .filter((item) => streamingKeys.has(item.key));
+    },
+    [placedRenderItems, presentation, streamingSlots, suppressStreaming],
+  );
+  // Keep raw assistant liveness even when manuscript projection intentionally hides its row.
+  // This avoids replacing a deliberate silent response with a typing row.
   const hasStreamingAssistant = Boolean(
     !suppressStreaming && (
       streamingSlots?.assistant
@@ -77,6 +90,7 @@ export function useChatRenderItems({
     ),
   );
   const hasHistoricalStreamingAssistantText = useMemo(
+    // Keep active raw delta state even if manuscript projection filters its row.
     () => hasActiveStreamingAssistantText(displayEvents, snapshotStreams),
     [displayEvents, snapshotStreams],
   );

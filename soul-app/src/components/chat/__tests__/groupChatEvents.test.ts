@@ -1,6 +1,8 @@
 import {
   groupChatEvents,
   hasActiveStreamingAssistantText,
+  isManuscriptSilentTokenText,
+  isStandaloneKoreanYesAck,
   placePendingOptimistic,
   projectManuscriptMessages,
   streamingSlotRenderItems,
@@ -133,6 +135,57 @@ describe('groupChatEvents', () => {
     expect(groupChatEvents(events).map((item) =>
       item.kind === 'event' ? item.event.type : item.kind,
     )).toEqual(['context_usage', 'complete']);
+  });
+
+  it('manuscript PAS는 침묵 구호와 비사용자 턴의 단독 긍정 답변을 숨긴다', () => {
+    const events = [
+      ev('agent-input', 'user_message', { text: '보고', caller_info: { source: 'agent' } }),
+      ev('agent-generation', 'generation_started', {}),
+      ev('agent-ack', 'assistant_message', { text: ' 네. ' }),
+      ev('agent-silent', 'assistant_message', { text: ' [SILENT] ' }),
+      ev('agent-reply', 'assistant_message', { text: '조사 결과를 전달합니다.' }),
+      ev('attached-ack', 'assistant_message', { text: '네.', attachments: ['/report.png'] }),
+      ev('attached-silent', 'assistant_message', { text: '[SILENT]', outputAttachments: [{ id: 'file-1' }] }),
+      ev('notice', 'session_notification', { delivery_intent: 'completion_notification', text: '전달' }),
+      ev('notice-generation', 'generation_started', {}),
+      ev('notice-ack', 'assistant_message', { text: '네' }),
+      ev('closed-input', 'user_message', {
+        text: '입력',
+        context_items: [{ key: 'persistent_report_closed', label: '보고 닫힘', content: '닫힘' }],
+      }),
+      ev('closed-generation', 'generation_started', {}),
+      ev('closed-ack', 'assistant_message', { text: '네.' }),
+      ev('keepalive-input', 'user_message', { text: '유지', purpose: 'cache_keepalive' }),
+      ev('keepalive-generation', 'generation_started', {}),
+      ev('keepalive-ack', 'assistant_message', { text: '네.' }),
+      ev('human-input', 'user_message', { text: '일반 사용자 입력' }),
+      ev('human-ack', 'assistant_message', { text: '네.' }),
+      ev('human-silent', 'assistant_message', { text: '[SILENT]' }),
+      ev('silent-prefix', 'text_delta', { delta: ' [SIL' }),
+      ev('assistant-transcript', 'realtime_transcript', { role: 'assistant', text: '[SILENT]' }),
+    ];
+    const items = events.map((event) => ({ kind: 'event' as const, event, key: `evt-${event.id}` }));
+
+    expect(isManuscriptSilentTokenText(' [SILENT] ')).toBe(true);
+    expect(isManuscriptSilentTokenText(' [SIL', true)).toBe(true);
+    expect(isManuscriptSilentTokenText('[SIL', false)).toBe(false);
+    expect(isStandaloneKoreanYesAck(' 네. ')).toBe(true);
+    expect(isStandaloneKoreanYesAck('네, 답변입니다.')).toBe(false);
+    expect(projectManuscriptMessages(items).filter((item) => item.kind === 'event').map((item) =>
+      item.kind === 'event' ? item.event.id : item.kind,
+    )).toEqual([
+      'agent-generation',
+      'agent-reply',
+      'attached-ack',
+      'attached-silent',
+      'notice-generation',
+      'closed-input',
+      'closed-generation',
+      'keepalive-input',
+      'keepalive-generation',
+      'human-input',
+      'human-ack',
+    ]);
   });
 
   it('tool_start와 같은 tool_use_id의 tool_result는 단일 그룹으로 묶는다 (핵심 매칭)', () => {

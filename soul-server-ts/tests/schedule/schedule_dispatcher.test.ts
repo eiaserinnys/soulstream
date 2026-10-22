@@ -69,7 +69,7 @@ describe("ScheduleDispatcher", () => {
   it("marks a persistent cache keepalive when dispatching its durable wakeup", async () => {
     const schedule = makeSchedule({
       sourceTool: "persistent_cache_keepalive",
-      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",
     });
     const service = makeService({
       claimDueSchedules: [{ schedule, claimToken: "claim-keepalive" }],
@@ -93,7 +93,7 @@ describe("ScheduleDispatcher", () => {
     expect(taskManager.addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({
         purpose: "cache_keepalive",
-        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",
       }),
       expect.any(Function),
     );
@@ -105,7 +105,7 @@ describe("ScheduleDispatcher", () => {
   ])("finishes a cache keepalive without dispatch when the session has %s", async (_label, task) => {
     const schedule = makeSchedule({
       sourceTool: "persistent_cache_keepalive",
-      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",
     });
     const now = new Date("2026-01-01T00:00:00Z");
     const service = makeService({
@@ -136,7 +136,7 @@ describe("ScheduleDispatcher", () => {
   it("finishes a keepalive if the session starts running after the idle check", async () => {
     const schedule = makeSchedule({
       sourceTool: "persistent_cache_keepalive",
-      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+      prompt: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",
     });
     const now = new Date("2026-01-01T00:00:00Z");
     const service = makeService({
