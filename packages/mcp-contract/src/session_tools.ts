@@ -100,7 +100,7 @@ export const sessionTools = {
     } },
   list_session_events: { name: "list_session_events", audience: "all", config: {
       description:
-        "세션 이벤트 목록 페이지네이션. tool_content로 tool_use/tool_result 길이 제어 (Python 정합).",
+        "세션 이벤트 목록을 페이지네이션한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. 진행 중 세션은 확인 시각을 until로 고정한다(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). tool_content로 tool_use/tool_result 길이 제어 (Python 정합).",
       inputSchema: {
         session_id: z.string(),
         cursor: z.number().int().min(0).default(0),
@@ -114,8 +114,16 @@ export const sessionTools = {
         tool_content: z
           .enum(["truncate", "full", "omit"])
           .default("truncate"),
-        since: z.string().min(1).optional(),
-        until: z.string().min(1).optional(),
+        since: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("오프셋이 포함된 ISO 8601 시각. 시작을 포함하며 until과 함께 지정한다."),
+        until: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("오프셋이 포함된 ISO 8601 시각. 끝은 제외하며 since와 함께 지정한다."),
       },
     } },
   get_session_event: { name: "get_session_event", audience: "all", config: {
