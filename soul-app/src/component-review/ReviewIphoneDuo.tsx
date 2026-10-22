@@ -142,7 +142,7 @@ export function ReviewIphoneDuo() {
                       <SafeAreaInsetsContext.Provider value={frameInsets}>
                         <PhoneRailModeContext.Provider value={frame.rail}>
                         <NavigationContainer theme={navigationTheme}>
-                          <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frameInsets, right: 0 } : frameInsets}>
+                          <SafeAreaInsetsContext.Provider value={{ ...frameInsets, right: 0 }}>
                             <View style={{ width: safeWidth, height: '100%', minWidth: 0, minHeight: 0 }}>
                               {mainContent}
                             </View>

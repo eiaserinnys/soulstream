@@ -12,8 +12,9 @@ import { useSettingsStore } from '../../store/settingsStore';
 import { openPlannerFolderWorkspace } from '../../lib/planner-folder-workspace';
 import { useSessionStore } from '../../store/sessionStore';
 import { useUIStore } from '../../store/uiStore';
-import { useTokens, type DesignTokens } from '../../theme';
+import { createSurfaceRoles, useTokens, type DesignTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
+import { AppGlassCard } from '../AppGlassCard';
 import { RootSectionHeaderTitle } from '../navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../planner/DailyHeaderActions';
 import { TabletPaneHeader } from './TabletPaneHeader';
@@ -204,7 +205,16 @@ export function MainListPane({
             minWidth: 200,
             zIndex: 20,
           }}>
-          <GroupedGlassSheet surface="glass" testID="board-header-overflow-menu">
+          <AppGlassCard
+            role="modal"
+            cornerRadius={t.foundation.radius.card}
+            testID="board-header-overflow-menu"
+            style={{ overflow: 'hidden' }}
+          >
+          <GroupedGlassSheet
+            surface="inherited"
+            style={{ backgroundColor: createSurfaceRoles(t).modal.fallbackColor }}
+          >
             <GroupedGlassRow
               compact
               style={{ justifyContent: 'flex-start', paddingHorizontal: t.uiSpacing.md }}
@@ -256,6 +266,7 @@ export function MainListPane({
                 </View>
               </GroupedGlassRow>
           </GroupedGlassSheet>
+          </AppGlassCard>
         </View>
         </>
       ) : null}
