@@ -37,7 +37,10 @@ test('iPhone orientation allows portrait and landscape while iPad keeps four ori
 test('production iOS build pins the Xcode 27.1 image', () => {
   const eas = readJson('eas.json');
 
-  expect(eas.build.production.ios.image).toBe('macos-tahoe-26.6-xcode-27.1');
+  expect(eas.build.production.autoIncrement).toBe(true);
+  expect(eas.build.production.ios).toEqual({
+    image: 'macos-tahoe-26.6-xcode-27.1',
+  });
 });
 
 test('Expo SDK and React Native keep the SDK 57 contract', () => {

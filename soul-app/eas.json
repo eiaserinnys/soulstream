@@ -39,7 +39,6 @@
         "ios/build/*.dSYM.zip"
       ],
       "ios": {
-        "autoIncrement": "buildNumber",
         "image": "macos-tahoe-26.6-xcode-27.1"
       }
     }
