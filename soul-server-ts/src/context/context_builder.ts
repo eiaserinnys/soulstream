@@ -18,6 +18,10 @@ import {
   fetchCogitoContextItem,
   type CogitoContextConfig,
 } from "./cogito_context.js";
+import {
+  fetchNodeResourcesContextItem,
+  type NodeResourcesContextConfig,
+} from "./node_resources_context.js";
 import type { ContextItem } from "./prompt_assembler.js";
 import {
   buildCallerInfoUpdateContextItem,
@@ -98,6 +102,7 @@ export interface ContextBuilderConfig {
   nodeId: string;
   atom: AtomConfig;
   cogito?: CogitoContextConfig;
+  nodeResources?: NodeResourcesContextConfig;
   captureAssignedCardContext?: (capture: AssignedCardContextCapture) => Promise<void>;
 }
 export class ExecutionContextBuilder {
@@ -152,6 +157,9 @@ export class ExecutionContextBuilder {
       if (runningSessionsItem) {
         contextItems.push(runningSessionsItem);
       }
+    }
+    if (await this.shouldIncludeNodeResources(task)) {
+      contextItems.push(await fetchNodeResourcesContextItem(this.cfg.nodeResources!, this.logger));
     }
     const assignedCardItem = await this.buildAssignedCardContext(task, options.inputId);
     if (assignedCardItem) contextItems.push(assignedCardItem);
@@ -313,7 +321,14 @@ export class ExecutionContextBuilder {
           task.agentSessionId,
           resumeContext.predecessor,
         );
-    const cogitoContextItem = minimal ? null : await this._fetchCogitoContext();
+    const [cogitoContextItem, nodeResourcesItem] = await Promise.all([
+      minimal ? Promise.resolve(null) : this._fetchCogitoContext(),
+      this.cfg.nodeResources
+        && (task.persistent === true
+          || readPersistentEnabled(resumeContext.session?.metadata ?? task.metadata))
+        ? fetchNodeResourcesContextItem(this.cfg.nodeResources, this.logger)
+        : Promise.resolve(null),
+    ]);
     const { workingDir, maxTurns } = resolveProfileRuntimeSettings(task, this.registry);
     const prepared = assemblePreparedContext({
       nodeId: this.cfg.nodeId,
@@ -337,6 +352,7 @@ export class ExecutionContextBuilder {
       generationCheckpointItem: checkpoint?.item ?? null,
       persistentReportItem: task.persistent || readPersistentEnabled(resumeContext.session?.metadata)
         ? buildPersistentReportContext(resumeContext.session?.metadata ?? task.metadata) : null,
+      nodeResourcesItem,
       nativeSessionId: generation ? null : task.codexThreadId ?? null,
       cogitoContextItem,
       workingDir,
@@ -478,6 +494,22 @@ export class ExecutionContextBuilder {
       this.logger.warn({ err }, "_fetchCogitoContext: unexpected failure");
       return null;
     }
+  }
+
+  private async shouldIncludeNodeResources(task: Task): Promise<boolean> {
+    if (!this.cfg.nodeResources) return false;
+    if (task.persistent === true) return true;
+    let metadata: unknown = task.metadata;
+    try {
+      const session = await this.db.getSession(task.agentSessionId);
+      metadata = session?.metadata ?? task.metadata;
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "node resources PAS metadata unavailable",
+      );
+    }
+    return readPersistentEnabled(metadata);
   }
 
 }

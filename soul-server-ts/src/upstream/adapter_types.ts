@@ -15,6 +15,7 @@ import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js
 import type { EventOutboxPumpTransport } from "./event_outbox_pump.js";
 import type { ReleaseActivationState } from "../release/release_activation_state.js";
 import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
+import type { NodeResourceCollector } from "./node_resource_collector.js";
 
 export interface UpstreamConfig {
   url: string;
@@ -54,6 +55,7 @@ export interface UpstreamDependencies {
   reconnectPolicy?: ReconnectPolicyBoundary;
   decisionRunner?: Pick<PurposeDecisionRunner, "create" | "cancel" | "prepare">;
   authorizeOrchestrationWorker?: AuthorizeOrchestrationWorker;
+  resourceCollector?: Pick<NodeResourceCollector, "collectSync" | "close">;
 }
 
 export interface ReconnectPolicyBoundary {

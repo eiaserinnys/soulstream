@@ -15,6 +15,7 @@ import {
   snapshotNode,
   supportsAppHeartbeat,
 } from "./registry_helpers.js";
+import { parseNodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 import { PerNodeSessionCache } from "./session_cache.js";
 import { collectDirectNodeSessionEvents } from "./session_message_events.js";
 import { resolvedCommandEvents } from "./registry_command_events.js";
@@ -93,6 +94,7 @@ export class InMemoryNodeRegistry {
 
     const nowMs = this.nowMs();
     const existing = this.nodes.get(registration.node_id);
+    const resources = parseNodeResourceSnapshot(registration.resources) ?? existing?.resources;
     const events: Array<NodeRegisteredEvent | NodeUnregisteredEvent> = [];
     let replacedConnectionId: string | undefined;
 
@@ -122,6 +124,7 @@ export class InMemoryNodeRegistry {
         ? [...registration.supported_backends]
         : ["claude"],
       userInfo: isRecord(registration.user) ? { ...registration.user } : {},
+      ...(resources ? { resources } : {}),
       connected: true,
       connectedAtMs: nowMs,
       disconnectedAtMs: undefined,
@@ -216,6 +219,8 @@ export class InMemoryNodeRegistry {
     if (isRecord(registration.user) && Object.keys(registration.user).length > 0) {
       node.userInfo = { ...registration.user };
     }
+    const resources = parseNodeResourceSnapshot(registration.resources);
+    if (resources) node.resources = resources;
 
     const events: NodeRegistryEvent[] = [
       {
@@ -255,6 +260,12 @@ export class InMemoryNodeRegistry {
         ? left.connectionId.localeCompare(right.connectionId)
         : nodeOrder;
     });
+  }
+
+  listAllNodes(): NodeConnectionSnapshot[] {
+    return [...this.nodes.values()]
+      .map(snapshotNode)
+      .sort((left, right) => left.nodeId.localeCompare(right.nodeId));
   }
 
   listConnectedNodesInRegistrationOrder(): NodeConnectionSnapshot[] {
@@ -359,6 +370,8 @@ export class InMemoryNodeRegistry {
 
     if (message.type === "app_heartbeat_ping") {
       node.heartbeat.lastPingAtMs = nowMs;
+      const resources = parseNodeResourceSnapshot(message.resources);
+      if (resources) node.resources = resources;
       return [{ type: "node_heartbeat_ping", nodeId }];
     }
 

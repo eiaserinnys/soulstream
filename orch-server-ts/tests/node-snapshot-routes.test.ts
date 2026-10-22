@@ -106,6 +106,53 @@ describe("node snapshot and stream route harness", () => {
     await app.close();
   });
 
+  it("includes disconnected nodes and their last resource snapshot on request", async () => {
+    let nowMs = 1_700_000_000_000;
+    const { app, registry } = createHarness(() => nowMs);
+    const resources = {
+      collectedAt: "2026-10-22T03:00:00.000Z",
+      cpu: { usagePercent: 12.5, cores: 4, loadAvg1m: 0.25 },
+      memory: { usagePercent: 50, usedBytes: 512, availableBytes: 512, totalBytes: 1024 },
+      disk: null,
+      diskQueue: null,
+    };
+    const registered = registry.registerNode({
+      ...registration("node-a"),
+      resources,
+    });
+    registerNode(registry, "node-b");
+    nowMs += 2_000;
+    registry.disconnectNode("node-a", {
+      connectionId: registered.node.connectionId,
+      reason: "test_disconnect",
+    });
+
+    expect((await app.inject({ method: "GET", url: "/api/nodes" })).json().nodes)
+      .toHaveLength(1);
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/nodes?includeDisconnected=true",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().nodes).toEqual([
+      expect.objectContaining({
+        nodeId: "node-a",
+        status: "disconnected",
+        connected: false,
+        disconnectedAt: "2023-11-14T22:13:22.000Z",
+        disconnectedAtMs: 1_700_000_002_000,
+        resources,
+      }),
+      expect.objectContaining({ nodeId: "node-b", status: "connected" }),
+    ]);
+    expect((await app.inject({
+      method: "GET",
+      url: "/api/nodes?includeDisconnected=1",
+    })).json().nodes).toHaveLength(2);
+
+    await app.close();
+  });
+
   it("sends the initial node stream snapshot as a bare JSON array", async () => {
     const { app, registry } = createHarness(() => 1_700_000_000_000, {
       closeAfterInitialSnapshot: true,

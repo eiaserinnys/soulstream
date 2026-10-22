@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { Logger } from "pino";
 
 import type { NodeRegister } from "@soulstream/wire-schema";
+import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -20,6 +21,7 @@ export interface RegistrationParams {
   worktreeMcpEnabled?: boolean;
   controlChannelEnabled?: boolean;
   releaseActivationState?: ReleaseActivationState;
+  resources?: NodeResourceSnapshot;
   /**
    * portrait 파일 read 실패(설정 오류·권한 등)를 운영자에게 노출하기 위한 logger. 미주입 시
    * 실패는 silent (테스트·legacy 호환).
@@ -123,6 +125,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
         : {}),
     },
     supported_backends: supportedBackends,
+    ...(params.resources ? { resources: params.resources } : {}),
     ...(modelPresets ? { model_presets: modelPresets } : {}),
     agents: agents.map((a) => {
       const entry: NonNullable<NodeRegister["agents"]>[number] = {

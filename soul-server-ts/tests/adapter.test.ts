@@ -12,6 +12,7 @@ import type { EventOutboxPump } from "../src/upstream/event_outbox_pump.js";
 import type { ReconnectPolicyBoundary } from "../src/upstream/adapter.js";
 import { ReleaseActivationState } from "../src/release/release_activation_state.js";
 import type { ReleaseManifestV1 } from "../src/release/release_manifest.js";
+import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
@@ -50,6 +51,7 @@ function makeDeps(
     reconnectPolicy?: ReconnectPolicyBoundary;
     taskManager?: TaskManager;
     taskExecutor?: TaskExecutor;
+    resourceCollector?: { collectSync: () => NodeResourceSnapshot; close: () => void };
   } = {},
 ) {
   const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
@@ -87,6 +89,7 @@ function makeDeps(
     reconnectPolicy: opts.reconnectPolicy,
     listLiveRunnerSessionIds: opts.listLiveRunnerSessionIds,
     waitForRunnerReconciliation: opts.waitForRunnerReconciliation,
+    resourceCollector: opts.resourceCollector,
   };
 }
 
@@ -258,6 +261,52 @@ describe("UpstreamAdapter", () => {
     ]);
 
     await adapter.shutdown();
+  });
+
+  it("node_register와 app heartbeat에 자원을 싣고 종료 시 collector를 닫는다", async () => {
+    const resources: NodeResourceSnapshot = {
+      collectedAt: "2026-10-22T03:00:00.000Z",
+      cpu: { usagePercent: 10, cores: 2, loadAvg1m: 0.1 },
+      memory: { usagePercent: 25, usedBytes: 256, availableBytes: 768, totalBytes: 1024 },
+      disk: null,
+      diskQueue: null,
+    };
+    const resourceCollector = {
+      collectSync: vi.fn(() => resources),
+      close: vi.fn(),
+    };
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "resource-node",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        heartbeatIntervalMs: 50,
+      },
+      silentLogger,
+      makeDeps({ resourceCollector }),
+    );
+
+    void adapter.run();
+    await waitFor(() => orch.receivedMessages.some((message) =>
+      typeof message === "object" && message !== null
+      && (message as Record<string, unknown>).type === "app_heartbeat_ping"));
+
+    const registration = orch.receivedMessages.find((message) =>
+      typeof message === "object" && message !== null
+      && (message as Record<string, unknown>).type === "node_register") as Record<string, unknown>;
+    const heartbeat = orch.receivedMessages.find((message) =>
+      typeof message === "object" && message !== null
+      && (message as Record<string, unknown>).type === "app_heartbeat_ping") as Record<string, unknown>;
+    expect(registration.resources).toEqual(resources);
+    expect(heartbeat.resources).toEqual(resources);
+
+    await adapter.shutdown();
+    expect(resourceCollector.close).toHaveBeenCalledOnce();
   });
 
   it("node_register 뒤 outbox pump를 연결하고 event_append_ack를 전용 처리한다", async () => {

@@ -55,6 +55,7 @@ export interface PreparedContextAssemblyInput {
   predecessorSummaryItem: ContextItem | null;
   generationCheckpointItem: ContextItem | null;
   persistentReportItem?: ContextItem | null;
+  nodeResourcesItem?: ContextItem | null;
   nativeSessionId: string | null;
   cogitoContextItem: ContextItem | null;
   workingDir?: string;
@@ -109,6 +110,10 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
   const contextParts: Array<InputMaterialPartV1[] | null> = [null];
   if (args.persistentReportItem) {
     combinedContextItems.push(args.persistentReportItem);
+    contextParts.push(null);
+  }
+  if (args.nodeResourcesItem) {
+    combinedContextItems.push(args.nodeResourcesItem);
     contextParts.push(null);
   }
   if (args.pageContextItem) {

@@ -20,7 +20,8 @@
     "./persistent-session-instructions": "./src/persistent_session_instructions.ts",
     "./persistent-report": "./src/persistent_report.ts",
     "./resume-after-limit": "./src/resume_after_limit.ts",
-    "./session-statistics": "./src/session_statistics.ts"
+    "./session-statistics": "./src/session_statistics.ts",
+    "./node-resources": "./src/node_resources.ts"
   },
   "scripts": {
     "generate": "bash scripts/generate.sh",

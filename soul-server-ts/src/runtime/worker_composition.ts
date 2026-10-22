@@ -202,6 +202,11 @@ export async function composeWorkerRuntime(
         headers: orchProxyConfig.headers,
         ...DEFAULT_COGITO_CONTEXT_LIMITS,
       },
+      nodeResources: {
+        baseUrl: orchProxyConfig.baseUrl,
+        headers: orchProxyConfig.headers,
+        timeoutMs: DEFAULT_COGITO_CONTEXT_LIMITS.timeoutMs,
+      },
     },
     logger,
     pageContextResolver,

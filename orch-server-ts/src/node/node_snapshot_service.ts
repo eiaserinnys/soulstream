@@ -1,4 +1,5 @@
 import type { InMemoryNodeRegistry, NodeConnectionSnapshot } from "./registry.js";
+import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
 export type NodeSnapshotRecord = {
   nodeId: string;
@@ -15,6 +16,9 @@ export type NodeSnapshotRecord = {
   heartbeat: NodeConnectionSnapshot["heartbeat"];
   pendingCommandCount: number;
   connected: boolean;
+  disconnectedAt?: string;
+  disconnectedAtMs?: number;
+  resources?: NodeResourceSnapshot;
 };
 
 export type NodeSnapshotListResponse = {
@@ -32,10 +36,10 @@ export class NodeSnapshotService {
     this.registry = options.registry;
   }
 
-  listNodes(): NodeSnapshotListResponse {
+  listNodes(options: { includeDisconnected?: boolean } = {}): NodeSnapshotListResponse {
     return {
       nodes: this.registry
-        .listConnectedNodes()
+        [options.includeDisconnected === true ? "listAllNodes" : "listConnectedNodes"]()
         .map((node) => this.projectNode(node)),
     };
   }
@@ -61,6 +65,13 @@ export class NodeSnapshotService {
       heartbeat: node.heartbeat,
       pendingCommandCount: node.pendingCommandCount,
       connected: node.connected,
+      ...(node.disconnectedAtMs !== undefined
+        ? {
+            disconnectedAt: new Date(node.disconnectedAtMs).toISOString(),
+            disconnectedAtMs: node.disconnectedAtMs,
+          }
+        : {}),
+      ...(node.resources ? { resources: node.resources } : {}),
     };
   }
 }

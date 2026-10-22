@@ -119,6 +119,7 @@ export class UpstreamAdapter {
     this.running = false;
     this.stopAppHeartbeat();
     this.deps.eventOutboxPump?.disconnect();
+    this.deps.resourceCollector?.close();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
     }
@@ -160,6 +161,7 @@ export class UpstreamAdapter {
       runnerProcessEnabled: this.config.runnerProcessEnabled,
       worktreeMcpEnabled: this.config.worktreeMcpEnabled,
       releaseActivationState: this.config.releaseActivationState,
+      resources: this.deps.resourceCollector?.collectSync(),
       logger: this.logger,
     });
 
@@ -321,6 +323,7 @@ export class UpstreamAdapter {
           worktreeMcpEnabled: this.config.worktreeMcpEnabled,
           logger: this.logger,
           releaseActivationState: this.config.releaseActivationState,
+          resources: this.deps.resourceCollector?.collectSync(),
         }),
       );
       const catchUpReady = this.deps.eventOutboxPump
@@ -414,6 +417,7 @@ export class UpstreamAdapter {
       void this.sendOnSocket(ws, {
         type: APP_HEARTBEAT_PING,
         sentAt: new Date().toISOString(),
+        resources: this.deps.resourceCollector?.collectSync(),
       }).catch((err) => {
         this.logger.warn({ err }, "Failed to send app heartbeat ping");
         if (ws.readyState === WebSocket.OPEN) {

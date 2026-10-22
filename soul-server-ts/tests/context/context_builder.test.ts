@@ -19,6 +19,7 @@ import {
 } from "../../src/context/context_builder.js";
 import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
 import type { CogitoContextConfig } from "../../src/context/cogito_context.js";
+import type { NodeResourcesContextConfig } from "../../src/context/node_resources_context.js";
 import { ATOM_CONTEXT_HEADER } from "../../src/context/atom_context.js";
 import { CONTEXT_COMPILER_VERSION } from "../../src/context/compiler/index.js";
 import {
@@ -68,12 +69,67 @@ it('injects the persisted report on initial PAS context rather than stale task m
   expect(result.combinedContextItems.filter(i=>i.key==='persistent_report')).toEqual([{key:'persistent_report',label:'지금의 보고',content:`지금의 보고 (1장)\n${JSON.stringify(board)}`}]);
 });
 
+it("injects node resources on initial, generation and non-full PAS follow-up contexts", async () => {
+  const originalFetch = globalThis.fetch;
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ nodes: [] }),
+  });
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+  try {
+    const builder = makeBuilder({
+      getGenerationCheckpointMaterial: vi.fn().mockResolvedValue({
+        story: {
+          highlight: null,
+          narrative: null,
+          unfoldedTurnSummaries: [],
+          narrativeThroughEventId: null,
+          foldCount: 0,
+          updatedAt: null,
+        },
+        lastSummarizedFinalResponseEventId: null,
+        recent: { records: [], omittedUnsummarized: 0 },
+        childSessions: [],
+        childSessionTotal: 0,
+        totals: { events: 0, turnSummaries: 0 },
+      }),
+      getSupervisedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-22T03:00:00.000Z",
+        counts: { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 },
+        cards: [],
+        openQuestions: [],
+        openQuestionTotal: 0,
+      }),
+    } as unknown as Partial<SessionDB>, undefined, false, undefined, undefined, {
+      baseUrl: "https://orch.test",
+      headers: {},
+      timeoutMs: 50,
+    });
+    const task = makeTask({ persistent: true });
+    const initial = await builder.build(task, codexAgent);
+    const generation = await builder.buildGenerationContext(task, codexAgent);
+    const followup = await builder.buildFollowupContext(task, codexAgent);
+
+    for (const items of [initial.combinedContextItems, generation.combinedContextItems, followup.contextItems]) {
+      expect(items).toContainEqual({
+        key: "node_resources",
+        label: "노드 자원 상태",
+        content: "노드 자원 상태 (연결된 노드 없음)",
+      });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function makeBuilder(
   dbOverrides: Partial<SessionDB> = {},
   registry?: AgentRegistry,
   atomEnabled = false,
   cogito?: CogitoContextConfig,
   pageContextResolver?: PageContextResolver,
+  nodeResources?: NodeResourcesContextConfig,
 ): ExecutionContextBuilder {
   const getSession = vi.fn().mockResolvedValue(null);
   const getFolderById = vi.fn().mockResolvedValue(null);
@@ -93,6 +149,7 @@ function makeBuilder(
         apiKey: atomEnabled ? "k" : "",
       },
       ...(cogito ? { cogito } : {}),
+      ...(nodeResources ? { nodeResources } : {}),
     },
     silentLogger,
     pageContextResolver,

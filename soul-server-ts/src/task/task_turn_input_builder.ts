@@ -185,7 +185,8 @@ export class TaskTurnInputBuilder {
     const selectedContext = selectAlignedInputMaterialItems(
       contextItems,
       ctx?.inputMaterialBreakdown?.contextParts,
-      (item) => !isCacheKeepaliveInput(firstIntervention) || item.key !== "assigned_cards",
+      (item) => !isCacheKeepaliveInput(firstIntervention)
+        || (item.key !== "assigned_cards" && item.key !== "node_resources"),
     );
     const formattedContext = formatContextItemsWithMaterial(
       selectedContext.items,

@@ -1,4 +1,5 @@
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
 import type {
   NodeCommandRequestIdGenerator,
@@ -74,6 +75,7 @@ export type NodeConnectionSnapshot = {
   heartbeat: NodeHeartbeatState;
   controlAckMetrics: Record<string, ControlAckLatencyMetric>;
   pendingCommandCount: number;
+  resources?: NodeResourceSnapshot;
 };
 
 export type NodeRegisteredEvent = {
@@ -249,4 +251,5 @@ export type MutableNodeConnection = {
   controlAckMetrics: Record<string, ControlAckLatencyMetric>;
   pendingCommands: PendingNodeCommands;
   runningSessionIds: Set<string> | undefined;
+  resources?: NodeResourceSnapshot;
 };
