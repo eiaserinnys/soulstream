@@ -1,6 +1,6 @@
 import React from 'react';
-import { Modal, Text } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { Alert, Modal, Text } from 'react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -76,10 +76,12 @@ import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigati
 import { SETTINGS_WORKSPACE_CONTINUITY_KEY } from '../../../navigation/settingsWorkspaceContinuity';
 import { SettingsScreen } from '../../../screens/SettingsScreen';
 
-test('settings remount restores the recurring editor and an explicit category takes priority', async () => {
+test('settings remount restores the recurring editor, name and prompt; discard clears both fields', async () => {
   useSettingsStore.setState({ serverUrl: 'https://soul.test' });
+  let memory!: ReturnType<typeof useLayoutContinuity>;
   function Seed() {
     const continuity = useLayoutContinuity();
+    memory = continuity;
     React.useEffect(() => {
       continuity.setViewState(SETTINGS_WORKSPACE_CONTINUITY_KEY, {
         category: 'recurring-jobs', jobs: { kind: 'editor' }, persistent: { kind: 'list' },
@@ -92,10 +94,27 @@ test('settings remount restores the recurring editor and an explicit category ta
   </LayoutContinuityProvider>;
   const view = render(shell(false));
   await act(async () => { view.rerender(shell(true)); });
-  expect(view.getByLabelText('작업 이름')).toBeTruthy();
+  await waitFor(() => expect(view.getByLabelText('작업 내용').props.editable).toBe(true));
+  fireEvent.changeText(view.getByLabelText('작업 이름'), '접어도 남는 작업');
+  fireEvent.changeText(view.getByLabelText('작업 내용'), '접어도 남는 내용');
+  await act(async () => { view.rerender(shell(false)); });
+  mockDimensions = { ...mockDimensions, width: 669, height: 951 };
+  await act(async () => { view.rerender(shell(true)); });
+  expect(view.getByLabelText('작업 이름').props.value).toBe('접어도 남는 작업');
+  expect(view.getByLabelText('작업 내용').props.value).toBe('접어도 남는 내용');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  fireEvent.press(view.getByLabelText('변경 버리기'));
+  const discard = alert.mock.calls[0][2]?.find(button => button.style === 'destructive');
+  expect(discard).toBeDefined();
+  act(() => { discard?.onPress?.(); });
+  expect(view.getByLabelText('작업 이름').props.value).toBe('');
+  expect(view.getByLabelText('작업 내용').props.value).toBe('');
+  expect(memory.getViewState(JSON.stringify(['recurring-job-editor-draft', 'new']))).toBeUndefined();
+  alert.mockRestore();
   await act(async () => { view.rerender(shell(false)); });
   await act(async () => { view.rerender(shell(true)); });
-  expect(view.getByLabelText('작업 이름')).toBeTruthy();
+  expect(view.getByLabelText('작업 이름').props.value).toBe('');
+  expect(view.getByLabelText('작업 내용').props.value).toBe('');
   await act(async () => { view.rerender(shell(false)); });
   await act(async () => { view.rerender(shell(true, true)); });
   expect(view.getByTestId('settings-server-input')).toBeTruthy();

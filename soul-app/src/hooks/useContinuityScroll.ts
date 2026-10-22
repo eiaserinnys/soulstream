@@ -14,11 +14,13 @@ export function useContinuityScroll(key: string, scrollTo: (y: number) => void, 
   const restore = useCallback(() => {
     const state = metrics.current;
     if (!ready || !state.pending || state.height <= 0 || state.content <= 0) return false;
-    const offset = Math.max(0, Math.min(state.pending.offsetY, state.content - state.height));
-    state.pending = undefined;
+    const maxOffset = Math.max(0, state.content - state.height);
+    const target = state.pending.offsetY;
+    const offset = Math.max(0, Math.min(target, maxOffset));
+    if (target <= maxOffset) state.pending = undefined;
     state.offset = offset;
     move.current(offset);
-    return true;
+    return target <= maxOffset;
   }, [ready]);
   useLayoutEffect(() => { restore(); }, [key, restore]);
   return {

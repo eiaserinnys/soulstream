@@ -10,20 +10,26 @@ import {
 let requestSequence = 0;
 
 /** Resolve a feed session's card before using the existing folder or standalone opener. */
-export async function openFeedSessionCardWorkspace(sessionId: string): Promise<boolean> {
+export async function openFeedSessionCardWorkspace(
+  sessionId: string,
+  focusEventId?: number | null,
+  storyOpenRequestId?: number | null,
+): Promise<boolean> {
   const sequence = ++requestSequence;
   cancelPlannerSessionWorkspaceOpen();
   const scope = captureAuthScope();
   if (!scope.serverUrl) {
     useUIStore.getState().openSessionResolutionError(
       sessionId,
-      null,
+      focusEventId ?? null,
       '서버 연결 설정이 없습니다.',
       false,
+      storyOpenRequestId,
     );
     return false;
   }
 
+  useUIStore.getState().openResolvingSessionOverlay(sessionId, focusEventId, storyOpenRequestId);
   const client = createApiClient(scope.serverUrl, { authScope: scope });
   try {
     const sessions = await client.getSessionsByIds([sessionId]);
@@ -43,15 +49,16 @@ export async function openFeedSessionCardWorkspace(sessionId: string): Promise<b
     }
 
     useUIStore.getState().clearCardOverlay();
-    return openPlannerSessionWorkspace(sessionId, undefined, undefined, 'feed');
+    return openPlannerSessionWorkspace(sessionId, focusEventId, storyOpenRequestId, 'feed');
   } catch (error) {
     if (sequence !== requestSequence || !isAuthScopeCurrent(scope)) return false;
     const detail = error instanceof Error ? error.message : String(error);
     useUIStore.getState().openSessionResolutionError(
       sessionId,
-      null,
+      focusEventId ?? null,
       `세션의 연결 카드를 확인하지 못했습니다. ${detail}`,
       false,
+      storyOpenRequestId,
     );
     return false;
   }

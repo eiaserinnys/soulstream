@@ -7,6 +7,7 @@ jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
 import { createApiClient } from '../../../api/client';
 import { ApiHttpError } from '../../../api/clientCore';
 import { RecurringJobEditor } from '../RecurringJobViews';
+import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
 
 const job = {
   job_id: 'job-1', name: '음악 추천', prompt: '기존 지시문', timezone: 'Asia/Seoul',
@@ -127,4 +128,32 @@ test('빈 내용은 한 줄에서 시작하고 실제 contentSize에 맞춰 자�
   fireEvent.changeText(input, '첫 줄\n둘째 줄\n셋째 줄');
   fireEvent(input, 'contentSizeChange', { nativeEvent: { contentSize: { height: 110 } } });
   expect(StyleSheet.flatten(screen.getByLabelText('작업 내용').props.style).height).toBeGreaterThanOrEqual(110);
+});
+
+test('an existing job reload preserves the remounted full draft and a successful save clears it', async () => {
+  const api = {
+    listNodes: jest.fn().mockResolvedValue({ nodes: [{ nodeId: 'node-a' }] }),
+    listRecurringJobs: jest.fn().mockResolvedValue({ jobs: [job] }),
+    listNodeAgents: jest.fn().mockResolvedValue({ agents: [{ id: 'agent-a', name: '에이전트 A' }] }),
+    listModelPresets: jest.fn().mockResolvedValue({ model_presets: [] }),
+    updateRecurringJob: jest.fn().mockResolvedValue({ job: { ...job, name: '보존할 이름', prompt: '보존할 내용', version: 5 } }),
+  };
+  jest.mocked(createApiClient).mockReturnValue(api as any);
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  const shell = (shown: boolean) => <LayoutContinuityProvider><Capture />{shown
+    ? <RecurringJobEditor serverUrl="https://soul.test" jobId="job-1" onDone={jest.fn()} onOpenHistory={jest.fn()} /> : null}
+  </LayoutContinuityProvider>;
+  const view = render(shell(true));
+  await waitFor(() => expect(view.getByLabelText('작업 이름').props.value).toBe(job.name));
+  fireEvent.changeText(view.getByLabelText('작업 이름'), '보존할 이름');
+  fireEvent.changeText(view.getByLabelText('작업 내용'), '보존할 내용');
+  view.rerender(shell(false));
+  await act(async () => { view.rerender(shell(true)); });
+  expect(api.listRecurringJobs).toHaveBeenCalledTimes(2);
+  expect(view.getByLabelText('작업 이름').props.value).toBe('보존할 이름');
+  expect(view.getByLabelText('작업 내용').props.value).toBe('보존할 내용');
+  await act(async () => { fireEvent.press(view.getByText('저장')); });
+  expect(api.updateRecurringJob).toHaveBeenCalledWith('job-1', expect.objectContaining({ name: '보존할 이름', prompt: '보존할 내용' }));
+  expect(memory.getViewState(JSON.stringify(['recurring-job-editor-draft', 'job-1']))).toBeUndefined();
 });

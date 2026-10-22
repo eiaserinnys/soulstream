@@ -19,9 +19,19 @@ jest.mock('../../screens/RecurringJobsScreen', () => ({ RecurringJobsScreen: () 
 jest.mock('../../screens/RecurringJobEditorScreen', () => ({ RecurringJobEditorScreen: () => null }));
 jest.mock('../../screens/RecurringJobHistoryScreen', () => ({ RecurringJobHistoryScreen: () => null }));
 jest.mock('../../components/planner/FolderWorkspace', () => ({ FolderWorkspace: () => null }));
-jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: () => null }));
-jest.mock('../../components/split/SplitLayout', () => ({ SplitLayout: () => require('react').createElement(require('react-native').View, { testID: 'real-main' }) }));
+jest.mock('../../components/planner/MarkdownDocumentContent', () => ({ MarkdownDocumentContent: () => null }));
+jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: ({ cardId }: { cardId: string }) => {
+  const draft = require('../../hooks/usePersistentDraft').usePersistentDraft('card-comment', [cardId], '');
+  return require('react').createElement(require('react-native').TextInput, { testID: 'card-draft', value: draft.value, editable: draft.ready, onChangeText: draft.setValue });
+} }));
+jest.mock('../../components/split/SplitLayout', () => ({ SplitLayout: () => {
+  const React = require('react');
+  const cardId = require('../../store/uiStore').useUIStore((state: any) => state.selectedCardId);
+  return React.createElement(require('react-native').View, { testID: 'real-main' },
+    cardId ? React.createElement(require('../../components/planner/CardDetailSheet').CardDetailContent, { cardId }) : null);
+} }));
 jest.mock('../../screens/PersistentSessionScreen', () => ({ PersistentSessionScreen: () => null }));
+jest.mock('../../api/client', () => ({ createApiClient: jest.fn(() => mockApi) }));
 
 
 import React from 'react';
@@ -37,6 +47,25 @@ import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import { useContinuityScroll } from '../../hooks/useContinuityScroll';
 import { useChatBottomFollow } from '../../components/chat/useChatBottomFollow';
 import { View, Text, Pressable } from 'react-native';
+import { SafeAreaInsetsContext, SafeAreaFrameContext } from 'react-native-safe-area-context';
+import { useSettingsStore } from '../../store/settingsStore';
+import { useAuthStore } from '../../store/authStore';
+import { usePlannerStore } from '../../store/plannerStore';
+import { useSessionStore } from '../../store/sessionStore';
+import { resetPlannerSessionResolverForTest } from '../../lib/planner-folder-workspace';
+
+const mockApi = { getSessionsByIds: jest.fn(), listCards: jest.fn(), getPlannerFolder: jest.fn() };
+beforeEach(() => {
+  jest.clearAllMocks();
+  useSettingsStore.setState({ serverUrl: 'https://continuity.test' });
+  useAuthStore.setState({ jwt: null });
+  useUIStore.setState(useUIStore.getInitialState());
+  usePlannerStore.getState().resetForTest();
+  useSessionStore.setState({ sessions: {}, catalog: { folders: [], sessions: {} } });
+  resetPlannerSessionResolverForTest();
+  mockApi.getSessionsByIds.mockImplementation(async (ids: string[]) => ids.map(agentSessionId => ({ agentSessionId, folderId: null })));
+  mockApi.listCards.mockResolvedValue({ cards: [] });
+});
 
 test.each(['Chat', 'CardDetail', 'FolderWorkspace', 'MarkdownDocument', 'Settings', 'PersistentSession'] as const)(
   '%s survives phone → tablet portrait → landscape → phone', async target => {
@@ -68,7 +97,7 @@ test.each(['Chat', 'CardDetail', 'FolderWorkspace', 'MarkdownDocument', 'Setting
         navigation.navigate('PersistentTab', { screen: 'CardDetail', params: { cardId: 'pas-card' } });
       }
     });
-    view.rerender(shell('tabletPortrait'));
+    await act(async () => { view.rerender(shell('tabletPortrait')); });
     await waitFor(() => expect(navigation.getRootState().routes[0].name).toBe('Main'));
     const tabletKey = navigation.getRootState().key;
     if (target === 'Chat') expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'session-a', folderOverlayVisible: true });
@@ -92,12 +121,12 @@ test('tablet overlay closure and a newer selection win over the old phone snapsh
   const view = render(shell('phone'));
   await waitFor(() => expect(navigation.isReady()).toBe(true));
   act(() => { navigation.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'old' } }); });
-  view.rerender(shell('tabletPortrait'));
+  await act(async () => { view.rerender(shell('tabletPortrait')); });
   await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
   act(() => { useUIStore.getState().openSessionOverlay('new'); });
   view.rerender(shell('phone'));
   await waitFor(() => expect(navigation.getCurrentRoute()?.params).toMatchObject({ sessionId: 'new' }));
-  view.rerender(shell('tabletPortrait'));
+  await act(async () => { view.rerender(shell('tabletPortrait')); });
   await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
   act(() => { useUIStore.getState().closeFolderOverlay(); });
   view.rerender(shell('phone'));
@@ -197,7 +226,7 @@ test('an automatically selected card assignee remains supporting context when fo
   const view = render(shell('phone'));
   await waitFor(() => expect(navigation.isReady()).toBe(true));
   act(() => { navigation.navigate('DailyTab', { screen: 'CardDetail', params: { cardId: 'auto-card' } }); });
-  view.rerender(shell('tabletPortrait'));
+  await act(async () => { view.rerender(shell('tabletPortrait')); });
   await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
   act(() => { useUIStore.getState().initializeCardSessionSelection('auto-card', 'assignee'); });
   expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'assignee', overlaySessionExplicit: false });
@@ -231,4 +260,88 @@ test('a new explicit card-session request supersedes the remembered detail step'
   await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Chat'));
   expect(navigation.getCurrentRoute()?.params).toMatchObject({ sessionId: 'new-session' });
   view.unmount();
+});
+
+test('a delayed phone rail inset preserves the restored nested card stack and draft', async () => {
+  const navigation = createNavigationContainerRef<any>();
+  const shell = (device: 'phone' | 'tabletPortrait', right: number) =>
+    <SafeAreaFrameContext.Provider value={{ x: 0, y: 0, width: device === 'phone' ? 466 : 669, height: device === 'phone' ? 678 : 951 }}>
+      <SafeAreaInsetsContext.Provider value={{ top: 20, bottom: 20, left: 0, right }}>
+        <PersistentSessionProvider><LayoutContinuityProvider>
+          <AdaptiveNavigationHost device={device} containerRef={navigation} />
+        </LayoutContinuityProvider></PersistentSessionProvider>
+      </SafeAreaInsetsContext.Provider>
+    </SafeAreaFrameContext.Provider>;
+  const view = render(shell('tabletPortrait', 0));
+  await waitFor(() => expect(navigation.isReady()).toBe(true));
+  act(() => { useUIStore.getState().openCardOverlay('rail-card'); });
+  await waitFor(() => expect(view.getByTestId('card-draft').props.editable).toBe(true));
+  fireEvent.changeText(view.getByTestId('card-draft'), '접는 중에도 보존');
+  expect(view.getByTestId('card-draft').props.value).toBe('접는 중에도 보존');
+  view.rerender(shell('phone', 0));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('CardDetail'));
+  const routeKey = navigation.getCurrentRoute()?.key;
+  view.rerender(shell('phone', 84));
+  await act(async () => {});
+  expect(navigation.getCurrentRoute()).toMatchObject({ key: routeKey, name: 'CardDetail', params: { cardId: 'rail-card' } });
+  expect(view.getByTestId('card-draft').props.value).toBe('접는 중에도 보존');
+  view.unmount();
+});
+
+test('unfolding a feed chat resolves its linked folder through the real feed opener', async () => {
+  mockApi.getSessionsByIds.mockResolvedValue([{
+    agentSessionId: 'linked-feed', folderId: 'linked-folder', cardId: null,
+    displayName: '연결 대화', status: 'completed', createdAt: '', updatedAt: '',
+  }]);
+  mockApi.getPlannerFolder.mockResolvedValue({
+    folder: { id: 'linked-folder', name: '연결 폴더', parentFolderId: null, archived: false, status: 'open', version: 1 },
+    page: { id: 'linked-page', title: '연결 폴더', metadata: {} }, blocks: [], cards: [],
+    subfolders: { items: [], nextCursor: null }, sessions: { items: [], nextCursor: null },
+  });
+  const navigation = createNavigationContainerRef<any>();
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  const shell = (device: 'phone' | 'tabletPortrait') => <PersistentSessionProvider><LayoutContinuityProvider>
+    <Capture />
+    <AdaptiveNavigationHost device={device} containerRef={navigation} />
+  </LayoutContinuityProvider></PersistentSessionProvider>;
+  const view = render(shell('phone'));
+  await waitFor(() => expect(navigation.isReady()).toBe(true));
+  act(() => { navigation.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'linked-feed', focusEventId: 31, storyOpenRequestId: 77 } }); });
+  await act(async () => { view.rerender(shell('tabletPortrait')); });
+  await waitFor(() => expect(useUIStore.getState()).toMatchObject({
+    selectedFolderPageId: 'linked-page', activeSessionId: 'linked-feed',
+    folderOverlayVisible: true, sessionFolderResolution: null, focusEventId: 31, storyOpenRequestId: 77,
+  }));
+  expect(mockApi.getPlannerFolder).toHaveBeenCalledWith('linked-folder', { includeCompleted: false });
+  expect(usePlannerStore.getState().selectedFolderSnapshot?.page.title).toBe('연결 폴더');
+  expect(memory.getLastLocation()).toMatchObject({
+    kind: 'chat', sessionId: 'linked-feed',
+    folder: { folderPageId: 'linked-page', folderTitle: '연결 폴더', folderId: 'linked-folder' },
+  });
+  view.unmount();
+});
+
+test('partial list measurements retain the pending offset until the full content is available', () => {
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  let scroll!: ReturnType<typeof useContinuityScroll>;
+  const key = JSON.stringify(['feed', 'global']);
+  const scrollTo = jest.fn();
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  function Probe() { scroll = useContinuityScroll(key, scrollTo); return null; }
+  const shell = (shown: boolean) => <LayoutContinuityProvider><Capture />{shown ? <Probe /> : null}</LayoutContinuityProvider>;
+  const view = render(shell(false));
+  memory.writeScroll(key, { offsetY: 479 });
+  view.rerender(shell(true));
+  act(() => {
+    scroll.onLayout({ nativeEvent: { layout: { height: 790 } } } as any);
+    expect(scroll.onContentSizeChange(669, 796)).toBe(false);
+    scroll.onScroll({ nativeEvent: { contentOffset: { y: 6 } } } as any);
+  });
+  expect(scrollTo).toHaveBeenLastCalledWith(6);
+  expect(memory.readScroll(key)).toEqual({ offsetY: 479 });
+  act(() => { expect(scroll.onContentSizeChange(669, 2000)).toBe(true); });
+  expect(scrollTo).toHaveBeenLastCalledWith(479);
+  act(() => { scroll.onScroll({ nativeEvent: { contentOffset: { y: 479 } } } as any); });
+  expect(memory.readScroll(key)).toEqual({ offsetY: 479 });
 });

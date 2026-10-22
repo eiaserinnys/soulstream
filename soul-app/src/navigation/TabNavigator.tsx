@@ -534,15 +534,13 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
   return (
     <Tab.Navigator
       tabBar={railMode ? (props) => <PhoneRailTabBar {...props} /> : undefined}
-      screenLayout={railMode
-        ? ({ children }) => (
-          <PhoneRailModeContext.Provider value={true}>
-            <SafeAreaInsetsContext.Provider value={{ ...insets, right: 0 }}>
-              {children}
-            </SafeAreaInsetsContext.Provider>
-          </PhoneRailModeContext.Provider>
-        )
-        : undefined}
+      screenLayout={({ children }) => (
+        <PhoneRailModeContext.Provider value={railMode}>
+          <SafeAreaInsetsContext.Provider value={railMode ? { ...insets, right: 0 } : insets}>
+            {children}
+          </SafeAreaInsetsContext.Provider>
+        </PhoneRailModeContext.Provider>
+      )}
       initialRouteName={restoredTab ?? (host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB)}
       screenOptions={{
         headerShown: false,

@@ -204,6 +204,7 @@ export function SessionFeedScreen({
         keyExtractor={feedRowKey}
         contentInsetAdjustmentBehavior="automatic"
         {...SESSION_FEED_VIRTUALIZATION}
+        initialNumToRender={memory.hasPosition ? Math.max(SESSION_FEED_VIRTUALIZATION.initialNumToRender, rows.length) : SESSION_FEED_VIRTUALIZATION.initialNumToRender}
         contentContainerStyle={[
           styles.content,
           topInsetPadding && { paddingTop: insets.top + t.spacing.md },

@@ -4,6 +4,8 @@ import { useTokens, type DeviceType } from '../theme';
 import { useUIStore } from '../store/uiStore';
 import { useSearchStore } from '../store/searchStore';
 import { useSessionStore } from '../store/sessionStore';
+import { usePlannerStore } from '../store/plannerStore';
+import { openFeedSessionCardWorkspace } from '../lib/session-feed-card-workspace';
 import { recordStaticNavigationRoute } from '../lib/session-diagnostics';
 import { navigationRef } from './navigationRef';
 import { useNavigationViewUsageEvents } from './useNavigationViewUsageEvents';
@@ -51,6 +53,8 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       : ui.activeSessionId;
     const folder = useSessionStore.getState().catalog.folders.find(item => item.projectPageId === ui.selectedFolderPageId);
     const previousFolder = previousLocation && 'folder' in previousLocation ? previousLocation.folder : undefined;
+    const snapshot = usePlannerStore.getState().selectedFolderSnapshot;
+    const selectedFolder = snapshot?.page.id === ui.selectedFolderPageId ? snapshot : null;
     return readTabletLocation(state, {
       previousLocation, lastMainFocus: ui.lastMainFocus, activeSection: ui.activeSection,
       folderOverlayVisible: ui.folderOverlayVisible, selectedCardId: ui.selectedCardId,
@@ -59,8 +63,8 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       // Both platforms use SettingsScreen's workspace, including recurring jobs.
       selectedFolder: ui.selectedFolderPageId ? {
         folderPageId: ui.selectedFolderPageId,
-        folderTitle: folder?.name ?? (previousFolder?.folderPageId === ui.selectedFolderPageId ? previousFolder.folderTitle : ''),
-        folderId: folder?.id ?? (previousFolder?.folderPageId === ui.selectedFolderPageId ? previousFolder.folderId : undefined),
+        folderTitle: folder?.name ?? selectedFolder?.page.title ?? (previousFolder?.folderPageId === ui.selectedFolderPageId ? previousFolder.folderTitle : ''),
+        folderId: folder?.id ?? selectedFolder?.folderId ?? (previousFolder?.folderPageId === ui.selectedFolderPageId ? previousFolder.folderId : undefined),
       } : null,
       searchActive: useSearchStore.getState().tabletActive,
       searchQuery: useSearchStore.getState().query,
@@ -163,7 +167,7 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       }
       if (effects.sessionOverlay) {
         const overlay = effects.sessionOverlay;
-        ui.openSessionOverlay(overlay.sessionId, overlay.focusEventId, overlay.storyOpenRequestId);
+        void openFeedSessionCardWorkspace(overlay.sessionId, overlay.focusEventId, overlay.storyOpenRequestId);
       }
       if (effects.settingsVisible) ui.openSettings();
       if (effects.recurringJobsPanel) {
