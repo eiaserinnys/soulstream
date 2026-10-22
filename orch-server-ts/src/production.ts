@@ -1,5 +1,6 @@
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
-import type { PublishPersistentReports } from "./session/persistent_report_service.js";
+import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
+import { CARD_QUESTION_KEY_PREFIX } from "@soulstream/wire-schema/persistent-report";
 import { OwnedAgentService } from "./owned-agents/service.js";
 import { createSessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
@@ -58,7 +59,6 @@ import {
 import {
   PushNotifier,
   SessionForegroundObserverTracker,
-  type PushNotificationLogEvent,
 } from "./push/push_notifier.js";
 import {
   createOrchestratorRuntimeServices,
@@ -268,12 +268,14 @@ export async function createLiveProductionApplication(
     repository: new SessionDeletionRepository(sqlResolver),
   });
   let publishPersistentReports: PublishPersistentReports = () => undefined;
+  let notifyPersistentReportPosted: OnPersistentReportPosted = () => undefined;
   const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(
     sqlResolver,
     sessionDeletionService,
     searchDbConnectionFactory,
     reportSearchCancelError,
     updates => publishPersistentReports(updates),
+    input => notifyPersistentReportPosted(input),
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
@@ -340,19 +342,12 @@ export async function createLiveProductionApplication(
       }
     },
   });
-  let logPushNotification: ((event: PushNotificationLogEvent) => void) | undefined;
   const pushNotifier = new PushNotifier({
     provider: createExpoPushProvider(),
     repository: pushRepository,
     catalog: dbCatalogRepository.folderRouteProvider,
-    sessionLookup: (sessionId) =>
-      registry.sessionCache.findSession(sessionId)?.payload,
-    loadSessionReviewState: (sessionId) =>
-      dbCatalogRepository.loadSessionReviewState(sessionId),
     resolveNodeEmail: (nodeId) =>
       stringValue(registry.getUserInfo(nodeId).email) || config.allowed_email || undefined,
-    foregroundObservers,
-    onInfo: (event) => logPushNotification?.(event),
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
   let publishReconciledSessionUpdate:
@@ -416,7 +411,6 @@ export async function createLiveProductionApplication(
     additionalNodeEventSinks: [
       sessionCacheSeed,
       sessionReconciliation,
-      (events) => pushNotifier.accept(events),
       (events) => turnSummaryPipeline?.accept(events),
       (events) => recurringJobScheduler?.accept(events),
       (events) => cardDispatcher?.accept(events),
@@ -629,6 +623,18 @@ export async function createLiveProductionApplication(
     findExternalAgent: ownedAgentService.findAgent,
     findCardExecutionUser: id => cardExecutionOwnerRepository.cardExecutionActorUser(id),
   });
+  notifyPersistentReportPosted = async ({ sessionId, entry }) => {
+    try {
+      const owner = await resolveSessionOwner(sessionId);
+      if (!owner?.ownerEmail) {
+        context.warn(`지금의 보고 알림 생략(${sessionId}/${entry.key}): 소유자를 찾지 못했습니다`);
+        return;
+      }
+      await pushNotifier.notifyPersistentReport({ ownerEmail: owner.ownerEmail, sessionId, entry });
+    } catch (error) {
+      context.warn(warningMessage(`지금의 보고 알림 발송 실패(${sessionId}/${entry.key})`, error));
+    }
+  };
   const orchestrationAccess = createCardOrchestrationAccess({
     getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
     listFolders: async () => providers.folderRoutes.provider.listFolders(),
@@ -650,6 +656,23 @@ export async function createLiveProductionApplication(
         listPersistentSessions: async () => (await persistenceRepositoryProvider()).sessionReads.listPersistentSessions(),
         putQuestion: async (boardSessionId,qid) => (await persistenceRepositoryProvider()).persistentReports!.putQuestion(boardSessionId,qid),
       });
+      if (ownerEmail && outcome.changed.length > 0) {
+        const boardSessionId = [...outcome.changed].sort()[0]!;
+        const entries = await (await persistenceRepositoryProvider()).persistentReports!.get(boardSessionId);
+        const entry = entries.find(item => item.key === `${CARD_QUESTION_KEY_PREFIX}${questionId}` && item.state === "open");
+        const cardService = await cardDispatchRuntime?.serviceProvider();
+        const cardDetail = await cardService?.getCard(cardId);
+        if (entry && cardDetail) {
+          await pushNotifier.notifyPersistentReport({
+            ownerEmail,
+            sessionId: boardSessionId,
+            entry,
+            cardId,
+            questionId,
+            folderId: cardDetail.card.folder_id,
+          });
+        }
+      }
       if (outcome.placed.length === 0 || outcome.failed.length > 0)
         context.warn(`카드 질문 ${questionId} 판 게시: 성공 ${outcome.placed.length}, 실패 ${outcome.failed.length}`);
     },
@@ -790,12 +813,6 @@ export async function createLiveProductionApplication(
       authorizeWorker:cardDispatchRuntime.authorizeWorker,
     },
   });
-  logPushNotification = (event) => {
-    app.log.info(
-      { pushNotification: event },
-      event.action === "sent" ? "Push notification sent" : "Push notification suppressed",
-    );
-  };
   turnSummaryPipeline = createLiveTurnSummaryPipeline({
     config,
     configPath: overrides.turnSummaryConfigPath ??

@@ -222,13 +222,13 @@ describe("external MCP card writes", () => {
     expect(result).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringContaining("Only trusted session actors may select a comment mode") }] });
     expect((await cards.getCard("card"))!.comments).toEqual([]);
   });
-  it("records a null-session question, notifies the user, and stores the answer without external push or errors", async () => {
+  it("records a null-session question without legacy push and stores the answer without external push or errors", async () => {
     const result = await call("ask_card_question", { card_id: "card", text: "닷 질문", options: ["진행", "대기"] });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent?.guidance).toBe("질문이 등록되었다. 이 턴을 끝내고 답을 기다린다.");
     const question = (await cards.getCard("card"))!.questions[0]!;
     expect(question).toMatchObject({ session_id: null, text: "닷 질문", options: ["진행", "대기"] });
-    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ cardId: "card", kind: "question", question: "닷 질문" }));
+    expect(notify).not.toHaveBeenCalled();
     messages.mockClear();
     await cards.answerQuestion({ actorKind: "user", actorUserId: "director", actorSessionId: null, cardId: "card", questionId: String(question.id), answer: "진행" });
     await dispatcher.drain(); await dispatcher.drain();

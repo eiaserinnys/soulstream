@@ -160,10 +160,6 @@ export class CardDispatcher {
             if (comment) await cards.markCommentDelivered(card.id,commentId);
           } catch (error) { this.options.warn(`card ${card.id} change delivery failed: ${String(error)}`); }
         }
-        if (op.operation_type === "ask_card_question" || op.operation_type === "set_card_status"
-            && previousStatus !== "blocked" && payload.status === "blocked" && payload.blocked_kind === "question") {
-            await this.notify(card, "question", String(payload.text ?? card.blocked_detail ?? ""));
-        }
         if (op.operation_type === "set_card_status" && previousStatus !== "review" && payload.status === "review")
             await this.notify(card, "review");
         if (op.operation_type === "answer_card_question") {
