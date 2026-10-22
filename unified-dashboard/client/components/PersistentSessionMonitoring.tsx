@@ -247,7 +247,10 @@ export function persistentSessionQuotaRows(resource: PersistentSession, presets:
   const references = [
     { role: "현재", presetId: resource.runtime.current_model.model_preset },
     { role: "기본", presetId: resource.settings.default_model.model_preset },
-    { role: "대체", presetId: resource.settings.fallback_model?.model_preset ?? null },
+    ...(resource.settings.fallback_models ?? []).map((model, index, models) => ({
+      role: models.length === 1 ? "대체" : `대체 ${index + 1}`,
+      presetId: model.model_preset,
+    })),
   ];
   for (const reference of references) {
     if (!reference.presetId) continue;

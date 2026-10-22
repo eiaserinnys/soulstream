@@ -45,7 +45,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
   });
   await page.addInitScript(() => localStorage.setItem('soul-dashboard-theme', 'dark'));
   let entries = reportReviewEntries;
-  const settings = { default_model: { model_preset: null, reasoning_effort: null }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: false, show_turn_usage: true, turn_usage_mode: 'collapsed' };
+  const settings = { default_model: { model_preset: null, reasoning_effort: null }, fallback_models: [], show_generation_separator: true, show_character: true, show_jev_candidates: true, animate_character: false, show_turn_usage: true, turn_usage_mode: 'collapsed' };
   const resource = () => ({ session_id: chatUiSession, display_name: '보고 검수', node_id: 'eiaserinnys', folder_id: 'rb-alpha', agent_id: 'roselin_codex', agent_name: '로젤린', persistent: true, persistent_report: entries, settings, runtime: { current_model: { model_preset: null, reasoning_effort: null, model: 'codex' }, pending: null } });
   const deletes: string[] = [];
   let failDismiss = true;
@@ -343,7 +343,7 @@ test('PAS HTTP/SSE report pager, direct reply/cancellation/failure/retry, latest
 test('PAS list settings show reports while GET hangs and survive its failure with later SSE updates',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   const fixture=await installChatUiRoutes(page,{ui:false,count:3});
-  const settings={default_model:{model_preset:null,reasoning_effort:null},fallback_model:null,show_generation_separator:true,show_character:true,show_jev_candidates:true,animate_character:false,show_turn_usage:true,turn_usage_mode:'collapsed'};
+  const settings={default_model:{model_preset:null,reasoning_effort:null},fallback_models:[],show_generation_separator:true,show_character:true,show_jev_candidates:true,animate_character:false,show_turn_usage:true,turn_usage_mode:'collapsed'};
   const resource={session_id:chatUiSession,display_name:'설정 조회 실패 검수',node_id:'eiaserinnys',folder_id:'rb-alpha',agent_id:'roselin_codex',agent_name:'로젤린',persistent:true,settings,persistent_report:reportReviewEntries,runtime:{current_model:{model_preset:null,reasoning_effort:null,model:'codex'},pending:null}};
   const lookup=gate(),reportUpdate=gate(); let lookupRequests=0,streamRequests=0;
   await page.route('**/api/persistent-sessions**',async route=>{

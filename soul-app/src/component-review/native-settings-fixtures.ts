@@ -22,18 +22,22 @@ const state = () => new URLSearchParams(window.location.search).get('state');
 
 // Persistent agent sessions. Ids, agents and presets match the public node fixtures served by dialogueApi.
 // The store keeps every session the way the server does: GET answers for released and plain sessions too, the list shows persistent ones only.
-type PasInit = { id: string; name: string; agentId: string; preset: string; effort?: string | null; current?: string; currentEffort?: string | null; pending?: { preset: string; effort: string | null } | null; folderId?: string; persistent?: boolean };
+type PasModelSelection = { model_preset: string | null; reasoning_effort: string | null };
+type PasInit = { id: string; name: string; agentId: string; preset: string; effort?: string | null; current?: string; currentEffort?: string | null; pending?: { preset: string; effort: string | null } | null; folderId?: string; persistent?: boolean; fallbackModels?: PasModelSelection[] };
 const pasAgentNames: Record<string, string> = { 'public-agent': '공개 예시 에이전트', 'public-other-agent': '다른 예시 에이전트' };
-const pasSettings = (preset: string, effort: string | null) => ({ default_model: { model_preset: preset, reasoning_effort: effort }, fallback_model: null, show_generation_separator: true, show_character: true, show_jev_candidates: true, show_work_details: false, animate_character: true, turn_usage_mode: 'collapsed' as const, show_turn_usage: true });
+const pasSettings = (preset: string, effort: string | null, fallbackModels: PasModelSelection[] = []) => ({ default_model: { model_preset: preset, reasoning_effort: effort }, fallback_models: fallbackModels, show_generation_separator: true, show_character: true, show_jev_candidates: true, show_work_details: false, animate_character: true, turn_usage_mode: 'collapsed' as const, show_turn_usage: true });
 const pasSession = (init: PasInit): PersistentSessionResource => ({
   session_id: init.id, display_name: init.name, node_id: 'public-node', folder_id: init.folderId ?? 'public-project', agent_id: init.agentId, agent_name: pasAgentNames[init.agentId] ?? init.agentId,
-  persistent: init.persistent ?? true, settings: pasSettings(init.preset, init.effort ?? null),
+  persistent: init.persistent ?? true, settings: pasSettings(init.preset, init.effort ?? null, init.fallbackModels),
   runtime: { current_model: { model_preset: init.current ?? init.preset, reasoning_effort: init.currentEffort === undefined ? init.effort ?? null : init.currentEffort, model: `${init.current ?? init.preset}-내부 모델` },
     pending: init.pending ? { target_model_preset: init.pending.preset, target_reasoning_effort: init.pending.effort } : null },
 });
 const pasStore = new Map<string, PersistentSessionResource>([
   pasSession({ id: 'review-pas-1', name: '공개 예시 관제 세션', agentId: 'public-agent', preset: 'public-model' }),
-  pasSession({ id: 'review-pas-2', name: '공개 예시 두 번째 영구 세션', agentId: 'public-other-agent', preset: 'public-model', current: 'public-exhausted-model', pending: { preset: 'public-model', effort: null } }),
+  pasSession({ id: 'review-pas-2', name: '공개 예시 두 번째 영구 세션', agentId: 'public-other-agent', preset: 'claude-opus', current: 'claude-opus', fallbackModels: [
+    { model_preset: 'gemini-4-argon', reasoning_effort: 'high' },
+    { model_preset: 'codex-6.1-sol', reasoning_effort: 'high' },
+  ] }),
   pasSession({ id: 'review-pas-3', name: '공개 예시 세 번째 영구 세션 이름이 길어지면 줄바꿈되거나 말줄임으로 끊깁니다', agentId: 'public-agent', preset: 'public-exhausted-model', current: 'public-model' }),
 ].map(item => [item.session_id, item]));
 const pasInstructions = new Map<string, PersistentSessionInstruction[]>([
@@ -153,7 +157,7 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
     const result = await dialogueApi.listModelPresets(nodeId);
     return {
       ...result,
-      model_presets: result.model_presets.map((preset) => ({
+      model_presets: [...result.model_presets.map((preset) => ({
         ...preset,
         weekly_headroom: preset.id === 'public-unavailable-model' ? {
           status: 'unavailable' as const,
@@ -172,7 +176,43 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
           observed_at: '2026-10-06T01:00:00Z',
           quota_label: '7일',
         },
-      })),
+      })), {
+        id: 'claude-opus',
+        label: 'Claude Opus',
+        backend: 'claude',
+        available: true,
+        reason: null,
+        reason_label: null,
+        resets_at: null,
+        usage_warning: false,
+        weekly_headroom: {
+          status: 'ok' as const,
+          headroom: 12.5,
+          remaining_percent: 72.5,
+          window_remaining_percent: 50,
+          resets_at: '2026-10-09T01:00:00Z',
+          observed_at: '2026-10-06T01:00:00Z',
+          quota_label: '7일',
+        },
+      }, {
+        id: 'codex-6.1-sol',
+        label: 'Codex 6.1 Sol',
+        backend: 'codex',
+        available: true,
+        reason: null,
+        reason_label: null,
+        resets_at: null,
+        usage_warning: false,
+        weekly_headroom: {
+          status: 'ok' as const,
+          headroom: 12.5,
+          remaining_percent: 72.5,
+          window_remaining_percent: 50,
+          resets_at: '2026-10-09T01:00:00Z',
+          observed_at: '2026-10-06T01:00:00Z',
+          quota_label: '7일',
+        },
+      }],
     };
   },
   getTimeline: async (_sessionId: string, params?: { eventTypes?: string[]; debugKinds?: string[]; before?: string }) => {

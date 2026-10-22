@@ -6,7 +6,7 @@ export type ModelSelection = { model_preset: string | null; reasoning_effort: st
 
 export type PersistentSettings = {
   default_model: ModelSelection;
-  fallback_model: ModelSelection | null;
+  fallback_models: ModelSelection[];
   show_generation_separator: boolean;
   show_character: boolean;
   show_jev_candidates: boolean;

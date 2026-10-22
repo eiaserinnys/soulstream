@@ -619,7 +619,7 @@ export async function installV3VisualQaRoutes(
           node_id: "eiaserinnys", preferred_agent_id: "seosoyoung",
           settings: {
             default_model: { model_preset: null, reasoning_effort: null },
-            fallback_model: null, show_generation_separator: true,
+            fallback_models: [], show_generation_separator: true,
             show_character: true, animate_character: true,
             show_jev_candidates: true, show_turn_usage: true,
           },

@@ -9,7 +9,7 @@ mkdirSync(output, { recursive: true });
 const sessionId = "run-alpha-2";
 const settings = {
   default_model: { model_preset: null, reasoning_effort: null },
-  fallback_model: null,
+  fallback_models: [],
   show_generation_separator: true,
   show_character: true,
   show_jev_candidates: true,

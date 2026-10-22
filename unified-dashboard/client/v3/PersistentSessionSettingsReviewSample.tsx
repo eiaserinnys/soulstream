@@ -14,8 +14,11 @@ const resource: PersistentSession = {
   agent_name: "로젤린",
   persistent: true,
   settings: {
-    default_model: { model_preset: "sample-opus", reasoning_effort: null },
-    fallback_model: null,
+    default_model: { model_preset: "claude-opus", reasoning_effort: "xhigh" },
+    fallback_models: [
+      { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+      { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+    ],
     show_generation_separator: true,
     show_character: true,
     animate_character: true,
@@ -24,7 +27,7 @@ const resource: PersistentSession = {
     show_turn_usage: true,
   },
   runtime: {
-    current_model: { model_preset: "sample-sol", reasoning_effort: "high", model: "sample-sol-model" },
+    current_model: { model_preset: "claude-opus", reasoning_effort: "xhigh", model: "claude-opus-model" },
     pending: { target_model_preset: "sample-opus", target_reasoning_effort: null },
   },
 };
@@ -33,15 +36,17 @@ const modelPresetCatalog = {
   status: "ready" as const,
   nodeId: "sample-node",
   presets: [
-    { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
-    { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
+    { id: "claude-opus", label: "Claude Opus 5.5", backend: "claude", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
+    { id: "codex-6.1-sol", label: "Codex 6.1 Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false },
   ],
 };
 
 const modelAvailability: ModelPresetAvailability[] = [
-  { id: "sample-opus", label: "Opus", backend: "claude", available: true, reason: null, reason_label: null, resets_at: "2026-10-08T00:00:00.000Z", usage_warning: false,
+  { id: "claude-opus", label: "Claude Opus 5.5", backend: "claude", available: true, reason: null, reason_label: null, resets_at: "2026-10-08T00:00:00.000Z", usage_warning: false,
     weekly_headroom: { status: "ok", headroom: 12.5, remaining_percent: 72.5, window_remaining_percent: 60, resets_at: "2026-10-08T00:00:00.000Z", observed_at: "2026-10-06T02:00:00.000Z", quota_label: "7일" } },
-  { id: "sample-sol", label: "Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+  { id: "gemini-4-argon", label: "Gemini 4 Argon", backend: "antigravity", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
+    weekly_headroom: { status: "ok", headroom: 1.4, remaining_percent: 99.7, window_remaining_percent: 98.3, resets_at: null, observed_at: "2026-10-06T02:01:00.000Z", quota_label: "7일" } },
+  { id: "codex-6.1-sol", label: "Codex 6.1 Sol", backend: "codex", available: true, reason: null, reason_label: null, resets_at: null, usage_warning: false,
     weekly_headroom: { status: "ok", headroom: -56.6, remaining_percent: 21, window_remaining_percent: 77.6, resets_at: null, observed_at: "2026-10-06T02:01:00.000Z", quota_label: "7일" } },
 ];
 
