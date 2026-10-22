@@ -86,7 +86,10 @@ describe("SessionStoryReadRepository", () => {
       foldCount: 0,
       updatedAt: null,
     });
-    expect(calls[1]?.text).toContain("ROW_NUMBER() OVER (ORDER BY id ASC)");
+    expect(calls[1]?.text).toContain("WITH folded AS");
+    expect(calls[1]?.text).toContain("ROW_NUMBER() OVER (ORDER BY e.id ASC)");
+    expect(calls[1]?.text).toContain("AND id <= ?");
+    expect(calls[1]?.text).toContain("AND e.id > ?");
     expect(calls[1]?.values).toContain(0);
   });
 

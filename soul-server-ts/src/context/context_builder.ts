@@ -55,10 +55,10 @@ export type { PreparedContext } from "./prepared_context_assembly.js";
 import {
   buildPersistentCheckpoint,
   PERSISTENT_CHECKPOINT_BUDGET,
-  PERSISTENT_CHECKPOINT_READ_LIMITS,
   PERSISTENT_SUPERVISION_SCOPE,
   type PersistentCheckpointStats,
 } from "./persistent_checkpoint.js";
+import { readGenerationCheckpointMaterial } from "./persistent_checkpoint_material.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 import {
@@ -347,39 +347,14 @@ export class ExecutionContextBuilder {
 
   private async readPersistentCheckpoint(task: Task) {
     const sessionId = task.agentSessionId;
-    let materialUnavailable = false;
-    const materialPromise = this.db
-      .getGenerationCheckpointMaterial(sessionId, PERSISTENT_CHECKPOINT_READ_LIMITS)
-      .catch((err: unknown) => {
-        if (!isSessionDataHostError(err)) throw err;
-        materialUnavailable = true;
-        this.logger.warn(
-          { err, sessionId },
-          "generation checkpoint material unavailable; continuing without history",
-        );
-        return {
-          story: {
-            highlight: null,
-            narrative: null,
-            unfoldedTurnSummaries: [],
-            narrativeThroughEventId: null,
-            foldCount: 0,
-            updatedAt: null,
-          },
-          lastSummarizedFinalResponseEventId: null,
-          recent: { records: [], omittedUnsummarized: 0 },
-          childSessions: [],
-          childSessionTotal: 0,
-          totals: { turnSummaries: 0 },
-        };
-      });
+    const materialPromise = readGenerationCheckpointMaterial(this.db, this.logger, sessionId);
     const cardsPromise = this.db.getSupervisedCardContext({
       sessionId,
       ...PERSISTENT_SUPERVISION_SCOPE,
       cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
       questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
     });
-    const [material, cards] = await Promise.all([materialPromise, cardsPromise]);
+    const [{ material, unavailable }, cards] = await Promise.all([materialPromise, cardsPromise]);
     return buildPersistentCheckpoint({
       material,
       cards,
@@ -392,7 +367,7 @@ export class ExecutionContextBuilder {
       ownSessionId: sessionId,
       resetContext: task.activeGenerationRollover?.resetContext === true,
       keepInstructions: task.activeGenerationRollover?.keepInstructions !== false,
-      materialUnavailable,
+      materialUnavailable: unavailable,
     }, PERSISTENT_CHECKPOINT_BUDGET);
   }
 
