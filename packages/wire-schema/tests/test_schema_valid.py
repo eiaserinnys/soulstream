@@ -936,6 +936,7 @@ def test_generation_started_event_contract() -> None:
             "summarized_through_turn": 4,
             "recent_from_event_id": 21,
             "recent_to_event_id": 28,
+            "material_unavailable": True,
         },
         "timestamp": 1731700000,
     }

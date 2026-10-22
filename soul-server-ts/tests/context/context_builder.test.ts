@@ -2120,7 +2120,7 @@ describe("generation checkpoint context", () => {
       recent: { records: [], omittedUnsummarized: 0 },
       childSessions: [],
       childSessionTotal: 0,
-      totals: { events: 0, turnSummaries: 0 },
+      totals: { turnSummaries: 0 },
     });
     const getSupervisedCardContext = vi.fn().mockResolvedValue({
       capturedAt: "2026-10-05T00:00:00.000Z",
@@ -2158,6 +2158,83 @@ describe("generation checkpoint context", () => {
     expect(getAssignedCardContext).toHaveBeenCalledTimes(1);
   });
 
+  it("continues a generation with cards and instructions when checkpoint history is unavailable", async () => {
+    const getGenerationCheckpointMaterial = vi.fn().mockRejectedValue(new SessionDataHostError({
+      operation: "generation_checkpoint_material",
+      retryable: true,
+      message: "aborted due to timeout",
+    }));
+    const getSupervisedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-10-05T00:00:00.000Z",
+      counts: { running: 1, blocked: 0, review: 0, queued: 0, todo: 0 },
+      cards: [{
+        id: "checkpoint-card",
+        title: "Card survives history timeout",
+        status: "running",
+        blockedKind: null,
+        assignee: { kind: "human", agentId: null, sessionId: null },
+      }],
+      openQuestions: [],
+      openQuestionTotal: 0,
+    });
+    const builder = makeBuilder({
+      getGenerationCheckpointMaterial,
+      getSupervisedCardContext,
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-05T00:00:00.000Z", total: 0, omitted: 0, cards: [],
+      }),
+    } as unknown as Partial<SessionDB>);
+    const task = makeTask({
+      agentSessionId: ownSessionIdForContextTest,
+      metadata: [{
+        type: "persistent_instructions",
+        value: [{
+          id: "instruction-1",
+          text: "Keep the active deployment constraint.",
+          source_turns: ["T42"],
+          source_event_ids: [42],
+          created_at: "2026-10-05T00:00:00.000Z",
+          updated_at: "2026-10-05T00:00:00.000Z",
+          status: "active",
+          origin: "user",
+        }],
+      }],
+    });
+
+    const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
+    const checkpoint = String(context.combinedContextItems.find((item) => item.key === "persistent_checkpoint")?.content);
+
+    expect(checkpoint).toContain("## 이전 대화 기록을 불러오지 못함");
+    expect(checkpoint).toContain("## 현재 상태");
+    expect(checkpoint).toContain("Card survives history timeout");
+    expect(checkpoint).toContain("Keep the active deployment constraint.");
+    expect(context.checkpointStats.materialUnavailable).toBe(true);
+    expect(getSupervisedCardContext).toHaveBeenCalledOnce();
+  });
+
+  it("continues to propagate ordinary errors from checkpoint material reads", async () => {
+    const error = new Error("unexpected material failure");
+    const builder = makeBuilder({
+      getGenerationCheckpointMaterial: vi.fn().mockRejectedValue(error),
+      getSupervisedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-05T00:00:00.000Z",
+        counts: { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 },
+        cards: [],
+        openQuestions: [],
+        openQuestionTotal: 0,
+      }),
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-05T00:00:00.000Z", total: 0, omitted: 0, cards: [],
+      }),
+    } as unknown as Partial<SessionDB>);
+
+    await expect(builder.buildGenerationContext(
+      makeTask({ agentSessionId: ownSessionIdForContextTest }),
+      codexAgent,
+      "generation-input",
+    )).rejects.toBe(error);
+  });
+
   it("injects active instructions newest first with their source turns", async () => {
     const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
       story: {
@@ -2172,7 +2249,7 @@ describe("generation checkpoint context", () => {
       recent: { records: [], omittedUnsummarized: 0 },
       childSessions: [],
       childSessionTotal: 0,
-      totals: { events: 0, turnSummaries: 0 },
+      totals: { turnSummaries: 0 },
     });
     const getSupervisedCardContext = vi.fn().mockResolvedValue({
       capturedAt: "2026-10-05T00:00:00.000Z",
@@ -2275,7 +2352,7 @@ describe("generation checkpoint context", () => {
       },
       childSessions: [],
       childSessionTotal: 0,
-      totals: { events: 13, turnSummaries: 12 },
+      totals: { turnSummaries: 12 },
     });
     const getSupervisedCardContext = vi.fn().mockResolvedValue({
       capturedAt: "2026-10-05T08:00:00.000Z",
@@ -2348,7 +2425,7 @@ describe("generation checkpoint context", () => {
         createdAt: "2026-10-05T00:00:00.000Z",
       }],
       childSessionTotal: 1,
-      totals: { events: 0, turnSummaries: 0 },
+      totals: { turnSummaries: 0 },
     });
     const getSupervisedCardContext = vi.fn().mockResolvedValue({
       capturedAt: "2026-10-05T00:00:00.000Z",
@@ -2493,7 +2570,7 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
         recent: { records: [], omittedUnsummarized: 0 },
         childSessions: [],
         childSessionTotal: 0,
-        totals: { events: 0, turnSummaries: 0 },
+        totals: { turnSummaries: 0 },
       }),
       getSupervisedCardContext: vi.fn().mockResolvedValue({
         capturedAt: "2026-10-05T00:00:00.000Z",

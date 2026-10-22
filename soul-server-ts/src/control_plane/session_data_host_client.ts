@@ -250,7 +250,7 @@ export class SessionDataHostClient implements SessionDataHost {
     sessionId: string,
     limits: GenerationCheckpointReadLimits,
   ): Promise<GenerationCheckpointMaterial> {
-    return this.turnCritical("generation_checkpoint_material", [sessionId, limits]);
+    return this.generationCheckpoint("generation_checkpoint_material", [sessionId, limits]);
   }
 
   private interactive<T>(operation: string, args: unknown[], signal?: AbortSignal): Promise<T> {
@@ -263,6 +263,11 @@ export class SessionDataHostClient implements SessionDataHost {
 
   private turnCritical<T>(operation: string, args: unknown[]): Promise<T> {
     return this.request(operation, args, 1_500, 2);
+  }
+
+  private generationCheckpoint<T>(operation: string, args: unknown[]): Promise<T> {
+    // This composite read runs once at generation rollover, so it needs more than the turn hot-path budget.
+    return this.request(operation, args, 5_000, 2);
   }
 
   private async request<T>(operation: string, args: unknown[], timeoutMs: number, attempts: number, signal?: AbortSignal): Promise<T> {

@@ -55,10 +55,8 @@ import { buildPredecessorSummaryContextItem } from "./predecessor_summary_contex
 import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { assemblePreparedContext, type PreparedContext } from "./prepared_context_assembly.js";
 export type { PreparedContext } from "./prepared_context_assembly.js";
-import {
-  loadPersistentCheckpoint,
-  type PersistentCheckpointStats,
-} from "./persistent_checkpoint.js";
+import type { PersistentCheckpointStats } from "./persistent_checkpoint.js";
+import { loadPersistentCheckpointContext } from "./persistent_checkpoint_material.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 import {
@@ -257,7 +255,7 @@ export class ExecutionContextBuilder {
       BOARD_WORKSPACE_SESSION_LIMIT,
     );
     const checkpoint = generation
-      ? await loadPersistentCheckpoint(this.db, task)
+      ? await loadPersistentCheckpointContext(this.db, this.logger, task)
       : null;
     const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);

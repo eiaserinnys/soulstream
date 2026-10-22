@@ -12,6 +12,7 @@ const logger = pino({ level: "silent" });
 describe("SessionDataHostClient", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("keeps the complete read operation inventory explicit", () => {
@@ -85,7 +86,7 @@ describe("SessionDataHostClient", () => {
           recent: { records: [], omittedUnsummarized: 0 },
           childSessions: [],
           childSessionTotal: 0,
-          totals: { events: 0, turnSummaries: 0 },
+          totals: { turnSummaries: 0 },
         },
       };
       return new Response(JSON.stringify(result[operation ?? ""]), { status: 200 });
@@ -193,6 +194,26 @@ describe("SessionDataHostClient", () => {
         args: ["s1", 1, null, 10],
       },
     ]);
+  });
+
+  it("gives generation checkpoint material a 5000ms budget for two attempts", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "busy" }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+
+    await client.getGenerationCheckpointMaterial("s1", {
+      recentEventLimit: 20,
+      unsummarizedEventLimit: 200,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([5_000, 5_000]);
   });
 
   it("uses one host request for the complete resume context", async () => {

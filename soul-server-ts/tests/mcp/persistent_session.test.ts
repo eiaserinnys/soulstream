@@ -511,7 +511,7 @@ describe("request_session_generation_rollover MCP tool", () => {
             },
             childSessions: [],
             childSessionTotal: 0,
-            totals: { events: 13, turnSummaries: 12 },
+            totals: { turnSummaries: 12 },
           },
           cards: {
             capturedAt: "2026-10-05T08:00:00.000Z",
