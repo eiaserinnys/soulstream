@@ -33,7 +33,7 @@ import { RecurringJobHistoryScreen } from '../screens/RecurringJobHistoryScreen'
 import { useSessionsStream } from '../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassSurface } from '../components/GlassSurface';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
 import { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
@@ -87,6 +87,10 @@ export function PhoneRailTabCluster({ active, onSelect }: {
 }) {
   const t = useTokens();
   const c = t.colors;
+  const scene = usePersistentSessionScene(state => state.scene);
+  const persistentLabel = active !== 'PersistentTab'
+    ? '영구 세션 열기'
+    : scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
   return <GlassSurface role="chrome" testID="phone-rail-tab-cluster" cornerRadius={24}
     style={{ width: RAIL_CAPSULE_WIDTH }}>
     <View style={{ width: RAIL_CAPSULE_WIDTH, paddingVertical: 6, gap: 2, alignItems: 'center' }}>
@@ -98,7 +102,7 @@ export function PhoneRailTabCluster({ active, onSelect }: {
           key={name}
           testID={`phone-tab-${name}`}
           accessibilityRole="tab"
-          accessibilityLabel={config.title}
+          accessibilityLabel={name === 'PersistentTab' ? persistentLabel : config.title}
           accessibilityState={{ selected }}
           onPress={() => onSelect(name)}
           style={{
@@ -117,8 +121,13 @@ export function PhoneRailTabCluster({ active, onSelect }: {
   </GlassSurface>;
 }
 
-function PhoneRailTabBar({ state, navigation, insets }: BottomTabBarProps) {
-  const active = state.routes[state.index]?.name as keyof RootTabParamList;
+function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+  const activeRoute = state.routes[state.index];
+  const active = activeRoute?.name as keyof RootTabParamList;
+  // 하위 화면이 탭바를 숨기면 레일 열 폭은 유지하고 캡슐만 감춘다.
+  const hidden = StyleSheet.flatten(
+    (activeRoute ? descriptors[activeRoute.key]?.options?.tabBarStyle : undefined) as ViewStyle | undefined,
+  )?.display === 'none';
   const select = (name: keyof RootTabParamList) => {
     const route = state.routes.find((item) => item.name === name);
     if (!route) return;
@@ -136,7 +145,7 @@ function PhoneRailTabBar({ state, navigation, insets }: BottomTabBarProps) {
       justifyContent: 'flex-end',
     }}
   >
-    <PhoneRailTabCluster active={active} onSelect={select} />
+    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} />}
   </View>;
 }
 
@@ -496,6 +505,13 @@ function PhoneTabNavigator() {
   return (
     <Tab.Navigator
       tabBar={railMode ? (props) => <PhoneRailTabBar {...props} /> : undefined}
+      screenLayout={railMode
+        ? ({ children }) => (
+          <SafeAreaInsetsContext.Provider value={{ ...insets, left: 0, right: 0 }}>
+            {children}
+          </SafeAreaInsetsContext.Provider>
+        )
+        : undefined}
       initialRouteName={host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB}
       screenOptions={{
         headerShown: false,
@@ -503,7 +519,7 @@ function PhoneTabNavigator() {
         tabBarShowLabel: false,
         tabBarPosition: railMode ? 'right' : 'bottom',
         tabBarButton: CenteredPhoneTabButton,
-        tabBarStyle: railMode ? { display: 'none' } : getDefaultTabBarStyle(c),
+        tabBarStyle: getDefaultTabBarStyle(c),
         tabBarBackground: () => <TabBarGlassBackground />,
         tabBarActiveTintColor: c.accent,
         tabBarInactiveTintColor: c.textMuted,

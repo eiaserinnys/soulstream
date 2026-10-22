@@ -23,9 +23,20 @@ test('레일 탭 클러스터는 5개 루트 탭을 같은 testID로 노출한�
   for (const name of ['DailyTab', 'FolderTab', 'PersistentTab', 'FeedTab', 'SettingsTab']) {
     expect(screen.getByTestId(`phone-tab-${name}`)).toBeTruthy();
   }
+  expect(screen.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('영구 세션 열기');
   expect(screen.getByTestId('phone-tab-DailyTab').props.accessibilityState).toMatchObject({ selected: true });
   expect(screen.getByTestId('phone-tab-FeedTab').props.accessibilityState).toMatchObject({ selected: false });
 
   fireEvent.press(screen.getByTestId('phone-tab-FeedTab'));
   expect(onSelect).toHaveBeenCalledWith('FeedTab');
+});
+
+test('PAS 탭이 활성이고 대화 장면이면 카드 목록 보기로 안내한다', () => {
+  const screen = render(
+    <NavigationContainer>
+      <PhoneRailTabCluster active="PersistentTab" onSelect={jest.fn()} />
+    </NavigationContainer>,
+  );
+
+  expect(screen.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('카드 목록 보기');
 });

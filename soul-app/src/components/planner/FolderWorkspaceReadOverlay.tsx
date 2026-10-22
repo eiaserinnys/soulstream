@@ -13,6 +13,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createApiClient } from '../../api/client';
 import { useSettingsStore } from '../../store/settingsStore';
 import { getSessionDisplayName } from '../../lib/session-display-name';
@@ -187,6 +188,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
+  const resolution = useUIStore((state) => state.sessionFolderResolution);
   const [step, setStep] = useState<'detail' | 'chat'>('detail');
   const stepKey = `${cardId ?? ''}:${pageId ?? ''}`;
   const lastStepKey = useRef(stepKey);
@@ -210,6 +212,15 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
       <Ionicons name="chevron-back" size={t.iconSize.navigation} color={t.colors.textPrimary} />
     </TouchableOpacity>
   );
+  // 폴더·카드에 연결되지 않은 단독 세션은 상세 안내 화면 없이 대화를 바로 보여 준다.
+  const unlinkedSession = !resolution || resolution.status === 'unlinked';
+  if (!cardId && !pageId && sessionId && unlinkedSession) {
+    return (
+      <View testID="folder-workspace-single-panel" style={styles.singlePanel}>
+        <CardConversationPane active={active} onClose={onClose} />
+      </View>
+    );
+  }
   return (
     <View testID="folder-workspace-single-panel" style={styles.singlePanel}>
       {step === 'detail' ? (
@@ -296,6 +307,7 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
 function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }) {
   const t = useTokens();
   const { width: screenWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const visible = useUIStore((state) => state.folderOverlayVisible);
   const cardId = useUIStore((state) => state.selectedCardId);
   const initialCardSessionId = useUIStore((state) => state.initialCardSessionId);
@@ -308,7 +320,8 @@ function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }
   const initializeCardSessionSelection = useUIStore((state) => state.initializeCardSessionSelection);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  const safeParentWidth = Math.max(0, parentWidth ?? screenWidth);
+  // 레일 모드에서는 화면 폭에서 좌우 안전 여백을 뺀 폭이 실제 시트 가용 폭이다.
+  const safeParentWidth = Math.max(0, parentWidth ?? (screenWidth - insets.left - insets.right));
   const overlayWidth = getFolderWorkspaceOverlayWidth(safeParentWidth);
   const singlePanel = shouldUseSinglePanel(overlayWidth);
   const sheetWidth = singlePanel
