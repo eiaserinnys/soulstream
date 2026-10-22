@@ -154,7 +154,7 @@ describe('groupChatEvents', () => {
       ev('notice-ack', 'assistant_message', { text: '네' }),
       ev('closed-input', 'user_message', {
         text: '입력',
-        context_items: [{ key: 'persistent_report_closed', label: '보고 닫힘', content: '닫힘' }],
+        context: [{ key: 'persistent_report_closed', label: '보고 닫힘', content: '닫힘' }],
       }),
       ev('closed-generation', 'generation_started', {}),
       ev('closed-ack', 'assistant_message', { text: '네.' }),
@@ -191,6 +191,115 @@ describe('groupChatEvents', () => {
       'keepalive-generation',
       'human-input',
       'human-ack',
+    ]);
+  });
+
+  it('manuscript PAS는 숨겨진 입력과 무응답 턴의 끝 캡션을 함께 숨긴다', () => {
+    const agentInput = ev('caption-agent-input', 'user_message', {
+      text: '보고',
+      caller_info: { source: 'agent' },
+    });
+    const generation = ev('caption-generation', 'generation_started');
+    const notice = ev('caption-notice', 'session_notification', {
+      delivery_intent: 'completion_notification',
+    });
+    const silent = ev('caption-silent', 'assistant_message', { text: '[SILENT]' });
+    const complete = ev('caption-complete', 'complete');
+    const contextUsage = ev('caption-usage', 'context_usage');
+    const endCaptions = { kind: 'turn-end-captions' as const, event: complete, key: 'captions-hidden' };
+    const summary = {
+      kind: 'turn-summary' as const,
+      event: complete,
+      content: '요약',
+      anchorEventId: 1,
+      key: 'summary-hidden',
+    };
+    const jevCandidates = {
+      kind: 'jev-candidates' as const,
+      title: '후보',
+      lines: ['후보'],
+      anchorEventId: 1,
+      key: 'jev-hidden',
+    };
+    const eventItem = (event: SessionEvent) => ({ kind: 'event' as const, event, key: `evt-${event.id}` });
+
+    expect(projectManuscriptMessages([
+      eventItem(agentInput),
+      eventItem(generation),
+      eventItem(notice),
+      eventItem(silent),
+      summary,
+      jevCandidates,
+      eventItem(contextUsage),
+      endCaptions,
+      eventItem(complete),
+    ])).toEqual([eventItem(generation)]);
+  });
+
+  it('manuscript PAS는 사람 행, 답변 또는 오류가 남는 턴의 캡션을 보존한다', () => {
+    const eventItem = (event: SessionEvent) => ({ kind: 'event' as const, event, key: `evt-${event.id}` });
+    const answerInput = ev('answer-input', 'user_message', {
+      text: '위임 보고',
+      caller_info: { source: 'agent' },
+    });
+    const answer = ev('answer', 'assistant_message', { text: '확인한 내용을 전달합니다.' });
+    const answerComplete = ev('answer-complete', 'complete');
+    const humanInput = ev('human-input-caption', 'user_message', { text: '일반 입력' });
+    const humanGeneration = ev('human-generation-caption', 'generation_started');
+    const humanSilent = ev('human-silent-caption', 'assistant_message', { text: '[SILENT]' });
+    const humanComplete = ev('human-complete-caption', 'complete');
+    const closedInput = ev('closed-input-caption', 'user_message', {
+      text: '보고 닫힘 입력',
+      context: [{ key: 'persistent_report_closed' }],
+    });
+    const closedGeneration = ev('closed-generation-caption', 'generation_started');
+    const closedAck = ev('closed-ack-caption', 'assistant_message', { text: '네.' });
+    const closedComplete = ev('closed-complete-caption', 'complete');
+    const errorInput = ev('error-input-caption', 'user_message', {
+      text: '위임 보고',
+      caller_info: { source: 'agent' },
+    });
+    const error = ev('error-caption', 'error', { message: '실패' });
+    const errorComplete = ev('error-complete-caption', 'complete');
+    const answerCaptions = { kind: 'turn-end-captions' as const, event: answerComplete, key: 'answer-captions' };
+    const humanCaptions = { kind: 'turn-end-captions' as const, event: humanComplete, key: 'human-captions' };
+    const closedCaptions = { kind: 'turn-end-captions' as const, event: closedComplete, key: 'closed-captions' };
+    const errorCaptions = { kind: 'turn-end-captions' as const, event: errorComplete, key: 'error-captions' };
+
+    expect(projectManuscriptMessages([
+      eventItem(answerInput),
+      eventItem(answer),
+      answerCaptions,
+      eventItem(answerComplete),
+      eventItem(humanInput),
+      eventItem(humanGeneration),
+      eventItem(humanSilent),
+      humanCaptions,
+      eventItem(humanComplete),
+      eventItem(closedInput),
+      eventItem(closedGeneration),
+      eventItem(closedAck),
+      closedCaptions,
+      eventItem(closedComplete),
+      eventItem(errorInput),
+      eventItem(error),
+      errorCaptions,
+      eventItem(errorComplete),
+    ])).toEqual([
+      eventItem(answer),
+      answerCaptions,
+      eventItem(answerComplete),
+      eventItem(humanInput),
+      eventItem(humanGeneration),
+      humanCaptions,
+      eventItem(humanComplete),
+      eventItem(closedInput),
+      eventItem(closedGeneration),
+      closedCaptions,
+      eventItem(closedComplete),
+      eventItem(error),
+      errorCaptions,
+      eventItem(errorComplete),
     ]);
   });
 

@@ -134,7 +134,7 @@ export function isStandaloneKoreanYesAck(text: string): boolean {
 
 function isSuppressedManuscriptTurnEvent(event: SessionEvent): boolean {
   const data = event.data as Record<string, unknown> | undefined;
-  const contextItems = [data?.context_items, data?.contextItems]
+  const contextItems = [data?.context, data?.context_items, data?.contextItems]
     .filter(Array.isArray)
     .flat() as unknown[];
   const hasClosedReportContext = contextItems.some((item) => (
@@ -176,11 +176,71 @@ function hasAssistantAttachments(event: SessionEvent): boolean {
     || Number(data?.attachmentCount) > 0;
 }
 
+function isManuscriptTurnEndCaption(item: ChatRenderItem): boolean {
+  return item.kind === 'turn-end-captions'
+    || item.kind === 'turn-summary'
+    || item.kind === 'jev-candidates'
+    || (item.kind === 'event'
+      && (item.event.type === 'complete' || item.event.type === 'context_usage'));
+}
+
+function isManuscriptTurnEnd(item: ChatRenderItem): boolean {
+  return isManuscriptTurnEndCaption(item)
+    || (item.kind === 'event'
+      && (item.event.type === 'complete' || item.event.type === 'context_usage' || item.event.type === 'error'));
+}
+
+function hideOrphanedManuscriptTurnCaptions(items: ChatRenderItem[]): ChatRenderItem[] {
+  const removedIndexes = new Set<number>();
+  let turnStartIndex = -1;
+  let allOpenersHidden = false;
+  let hasSurvivingResponseOrError = false;
+  let hasResponseOrEnd = false;
+
+  const finishTurn = (endIndex: number) => {
+    if (turnStartIndex < 0 || !allOpenersHidden || hasSurvivingResponseOrError) return;
+    for (let index = turnStartIndex; index < endIndex; index += 1) {
+      if (isManuscriptTurnEndCaption(items[index])) removedIndexes.add(index);
+    }
+  };
+
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (item.kind === 'event' && startsManuscriptTurn(item.event)) {
+      const hidden = shouldHideManuscriptEvent(item.event);
+      const joinsHiddenOpeners = turnStartIndex >= 0
+        && allOpenersHidden
+        && !hasResponseOrEnd
+        && hidden;
+
+      if (!joinsHiddenOpeners) {
+        finishTurn(index);
+        turnStartIndex = index;
+        allOpenersHidden = hidden;
+        hasSurvivingResponseOrError = false;
+        hasResponseOrEnd = false;
+      }
+      continue;
+    }
+
+    if (turnStartIndex < 0) continue;
+    if (item.kind === 'event' && (isAssistantTextEvent(item.event) || item.event.type === 'error')) {
+      hasSurvivingResponseOrError = true;
+      hasResponseOrEnd = true;
+    } else if (isManuscriptTurnEnd(item)) {
+      hasResponseOrEnd = true;
+    }
+  }
+
+  finishTurn(items.length);
+  return items.filter((_, index) => !removedIndexes.has(index));
+}
+
 /** Removes PAS-only delivery notices and delegated-agent input rows. */
 export function projectManuscriptMessages(items: ChatRenderItem[]): ChatRenderItem[] {
   let inSuppressedTurn = false;
 
-  return items.filter((item) => {
+  const responsesFiltered = items.filter((item) => {
     if (item.kind !== 'event') return true;
 
     const event = item.event;
@@ -189,7 +249,6 @@ export function projectManuscriptMessages(items: ChatRenderItem[]): ChatRenderIt
       inSuppressedTurn = isSuppressedManuscriptTurnEvent(event);
     }
 
-    if (shouldHideManuscriptEvent(event)) return false;
     if (!isAssistantTextEvent(event) || hasAssistantAttachments(event)) return true;
 
     const text = textPayload(event);
@@ -199,6 +258,9 @@ export function projectManuscriptMessages(items: ChatRenderItem[]): ChatRenderIt
     if (isManuscriptSilentTokenText(text, isStreaming)) return false;
     return !(inSuppressedTurn && isStandaloneKoreanYesAck(text));
   });
+
+  return hideOrphanedManuscriptTurnCaptions(responsesFiltered)
+    .filter((item) => item.kind !== 'event' || !shouldHideManuscriptEvent(item.event));
 }
 
 function streamingIdentity(event: SessionEvent): string | null {
