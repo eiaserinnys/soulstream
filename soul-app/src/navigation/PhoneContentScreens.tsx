@@ -1,3 +1,4 @@
+import { useOptionalPersistentSessionHost } from './PersistentSessionContext';
 import React, { useCallback, useMemo } from 'react';
 import type { ViewStyle } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -41,6 +42,12 @@ export function PhoneCardDetail({ route, navigation }: {
   route: { params: { cardId: string } };
   navigation: any;
 }) {
+  const host = useOptionalPersistentSessionHost();
+  React.useEffect(() => navigation.addListener('beforeRemove', () => {
+    if (navigation.getParent()?.getState?.().routes?.[navigation.getParent().getState().index]?.name === 'PersistentTab') {
+      host?.store.setState({ selectedCardId: null });
+    }
+  }), [navigation, host?.store]);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   return <PhoneDetailScreenFrame navigation={navigation}>

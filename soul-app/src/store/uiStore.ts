@@ -1,3 +1,4 @@
+import type { MainFocusKind } from '../navigation/layoutNavigationState';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { withDiagnosticStateStorage } from './diagnosticStateStorage';
 import { create } from 'zustand';
@@ -31,6 +32,8 @@ export type SessionFolderResolutionState =
   | null;
 
 interface UIState {
+  lastMainFocus: MainFocusKind;
+  setLastMainFocus(focus: MainFocusKind): void;
   /** 포그라운드 복귀 때 다시 계산되는 로컬 오늘 날짜. */
   todayDate: string;
   /** 좌측 사이드바에서 선택된 항목 — 중앙 메인 패널의 내용을 결정. */
@@ -142,6 +145,8 @@ const PANE_MIDDLE_DEFAULT = 480;
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
+      lastMainFocus: 'cards',
+      setLastMainFocus: (lastMainFocus) => set({ lastMainFocus }),
       todayDate: localDate(),
       activeSection: { kind: 'daily', date: localDate() },
       mainPaneViews: { global: 'board' },
@@ -166,7 +171,7 @@ export const useUIStore = create<UIState>()(
       paneMiddleWidth: PANE_MIDDLE_DEFAULT,
       paneMiddleWidthTwoPane: null,
 
-      setActiveSection: (section) => set({ activeSection: section }),
+      setActiveSection: (section) => set({ activeSection: section, lastMainFocus: section.kind === 'daily' ? 'cards' : 'folder' }),
       refreshTodayDate: (now = new Date()) => set((state) => {
         const nextToday = localDate(now);
         if (nextToday === state.todayDate) return state;
@@ -196,6 +201,7 @@ export const useUIStore = create<UIState>()(
       }),
       clearStoryOpenRequestId: () => set({ storyOpenRequestId: null }),
       openCardOverlay: (cardId, initialSessionId) => set((state) => ({
+        lastMainFocus: 'cards',
         selectedCardId: cardId,
         initialCardSessionId: initialSessionId ?? null,
         cardSessionSelectionHandled: false,
@@ -223,6 +229,7 @@ export const useUIStore = create<UIState>()(
         cardSessionSelectionHandled: false,
       }),
       openFolderOverlay: (pageId, sessionId, eventId, storyOpenRequestId) => set((state) => ({
+        lastMainFocus: 'folder',
         selectedFolderPageId: pageId,
         selectedCardId: null,
         initialCardSessionId: null,
@@ -234,6 +241,7 @@ export const useUIStore = create<UIState>()(
         sessionFolderResolution: null,
       })),
       openResolvingSessionOverlay: (sessionId, eventId, storyOpenRequestId) => set({
+        lastMainFocus: 'feed',
         selectedFolderPageId: null,
         selectedCardId: null,
         initialCardSessionId: null,
@@ -245,6 +253,7 @@ export const useUIStore = create<UIState>()(
         sessionFolderResolution: { sessionId, status: 'loading' },
       }),
       openSessionOverlay: (sessionId, eventId, storyOpenRequestId) => set({
+        lastMainFocus: 'feed',
         selectedFolderPageId: null,
         selectedCardId: null,
         initialCardSessionId: null,
@@ -350,6 +359,7 @@ export const useUIStore = create<UIState>()(
 subscribeAuthScope(() => {
   const todayDate = localDate();
   useUIStore.setState({
+    lastMainFocus: 'cards',
     todayDate,
     activeSection: { kind: 'daily', date: todayDate },
     mainPaneViews: { global: 'board' },

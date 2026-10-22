@@ -1,3 +1,4 @@
+import { useOptionalLayoutContinuity } from '../navigation/LayoutContinuityContext';
 import React, { useMemo, useState } from 'react';
 import { Alert, BackHandler, PanResponder, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions, type LayoutRectangle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -95,12 +96,19 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     ? state.persistentDisplaySettingsBySession[session.session_id]?.settings ?? null
     : null);
   const { handleAppearanceChange } = useDisplayPreferenceActions();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [reportCard, setReportCard] = useState<PersistentReportEntry | null>(null);
-  const [reportCardSheetEntry, setReportCardSheetEntry] = useState<PersistentReportEntry | null>(null);
+  const continuity = useOptionalLayoutContinuity();
+  const pasKey = JSON.stringify(['pas', session?.session_id]);
+  const savedPas = continuity?.getViewState<{ settingsOpen?: boolean; expandedKey?: string | null }>(pasKey);
+  const [settingsOpen, setSettingsOpen] = useState(savedPas?.settingsOpen ?? false);
+  const [reportCard, setReportCard] = useState<PersistentReportEntry | null>(() => report.entries.find(entry => entry.key === savedPas?.expandedKey) ?? null);
+  const [reportCardSheetEntry, setReportCardSheetEntry] = useState<PersistentReportEntry | null>(() => report.entries.find(entry => entry.key === savedPas?.expandedKey) ?? null);
   const reportCardScroll = useReportComposerScroll();
-  const [reportExpansion, setReportExpansion] = useState<{ sessionId?: string; key: string | null }>({ key: null });
+  const [reportExpansion, setReportExpansion] = useState<{ sessionId?: string; key: string | null }>({ sessionId: session?.session_id, key: savedPas?.expandedKey ?? null });
   const expandedReportKey = reportExpansion.sessionId === session?.session_id ? reportExpansion.key : null;
+  React.useEffect(() => {
+    continuity?.setViewState(pasKey, { ...continuity.getViewState<object>(pasKey), settingsOpen,
+      expandedKey: phone ? reportCard?.key ?? null : expandedReportKey });
+  }, [continuity, pasKey, settingsOpen, phone, reportCard?.key, expandedReportKey]);
   const [reportSeatHeight, setReportSeatHeight] = useState(0);
   const pendingReportCardLink = React.useRef<string | null>(null);
   const openContentLink = useOpenContentLink();

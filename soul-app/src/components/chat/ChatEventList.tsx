@@ -74,6 +74,7 @@ interface Props {
   mvcpEnabled: boolean;
   highlightedItemKey?: string | null;
   onContentSizeChange: (height: number) => void;
+  onLayout?: (height: number) => void;
   onScrollToIndexFailed?: (info: {
     index: number;
     highestMeasuredFrameIndex: number;
@@ -104,6 +105,7 @@ export const ChatEventList = memo(function ChatEventList({
   mvcpEnabled,
   highlightedItemKey = null,
   onContentSizeChange,
+  onLayout,
   onScrollToIndexFailed,
   presentation = 'default',
   showNewMessage = false,
@@ -174,6 +176,7 @@ export const ChatEventList = memo(function ChatEventList({
           : undefined
       }
       onContentSizeChange={(_w, h) => onContentSizeChange(h)}
+      onLayout={event => onLayout?.(event.nativeEvent.layout.height)}
       onScrollToIndexFailed={onScrollToIndexFailed}
       ListFooterComponent={
         historyLoading && !reachedTop ? (

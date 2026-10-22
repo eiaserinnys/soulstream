@@ -416,7 +416,7 @@ export function FolderWorkspace({
           ) : null}
         </TabletPaneHeader>
       ) : null}
-      <FolderWorkspaceList api={api} folderId={folderSummary.folderId} active={active} cardDisplay={cardDisplay} onOpenSession={onOpenSession} onNearEnd={notifySessionNearEnd}
+      <FolderWorkspaceList scrollMemoryKey={JSON.stringify(['folder', folderPageId, 'sessions'])} api={api} folderId={folderSummary.folderId} active={active} cardDisplay={cardDisplay} onOpenSession={onOpenSession} onNearEnd={notifySessionNearEnd}
         contentContainerStyle={styles.content}
         header={<>
         {pageDetail.error ? <Text style={styles.error}>{pageDetail.error}</Text> : null}

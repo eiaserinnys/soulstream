@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useContinuityScroll } from '../../hooks/useContinuityScroll';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ApiClient } from '../../api/client';
@@ -22,6 +23,8 @@ export function MarkdownDocumentContent({ api, documentId, onClose }: {
   const [document, setDocument] = useState<MarkdownDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const scroll = useRef<ScrollView>(null);
+  const memory = useContinuityScroll(JSON.stringify(['document', documentId]), y => scroll.current?.scrollTo({ y, animated: false }), !loading && !!document);
 
   useEffect(() => {
     let active = true;
@@ -53,7 +56,9 @@ export function MarkdownDocumentContent({ api, documentId, onClose }: {
       </View>
     </View>
     <View style={styles.bodyFrame}>
-      <ScrollView testID="markdown-document-scroll" contentContainerStyle={phone
+      <ScrollView ref={scroll} onScroll={memory.onScroll} onLayout={memory.onLayout}
+        onContentSizeChange={memory.onContentSizeChange} onScrollBeginDrag={memory.onScrollBeginDrag}
+        scrollEventThrottle={16} testID="markdown-document-scroll" contentContainerStyle={phone
         ? [styles.content, { paddingBottom: insets.bottom + t.uiSpacing.xxl }]
         : [styles.content, { paddingBottom: t.uiSpacing.xxl }]}
         keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

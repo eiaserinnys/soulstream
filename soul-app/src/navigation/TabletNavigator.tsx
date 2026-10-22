@@ -23,12 +23,15 @@ export type TabletStackParamList = {
 };
 const Stack = createNativeStackNavigator<TabletStackParamList>();
 
+const RestoredTabletContext = React.createContext(false);
+
 function TabletMain({ navigation }: NativeStackScreenProps<TabletStackParamList, 'Main'>) {
+  const restored = React.useContext(RestoredTabletContext);
   const host = usePersistentSessionHost();
   useEffect(() => {
     // 좁은 iPad 창에서 돌아와도 Main을 먼저 마운트해 기존 스트림을 유지한다.
-    if (host.store.getState().visible) navigation.navigate('PersistentSession');
-  }, [host.store, navigation]);
+    if (!restored && host.store.getState().visible) navigation.navigate('PersistentSession');
+  }, [host.store, navigation, restored]);
   return <SplitLayout />;
 }
 
@@ -90,12 +93,12 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, child
   </View>;
 }
 
-export function TabletNavigator() {
+export function TabletNavigator({ restored = false }: { restored?: boolean } = {}) {
   const t = useTokens();
-  return <Stack.Navigator initialRouteName="Main" screenOptions={{ headerShown: false, contentStyle: createSurfaceRoles(t).canvas.tokenStyle }}>
+  return <RestoredTabletContext.Provider value={restored}><Stack.Navigator initialRouteName="Main" screenOptions={{ headerShown: false, contentStyle: createSurfaceRoles(t).canvas.tokenStyle }}>
     <Stack.Screen name="Main" component={TabletMain} />
     <Stack.Screen name="PersistentSession" component={TabletPersistentSession} />
     <Stack.Screen name="CardDetail" component={TabletCardDetail} options={{ presentation: 'transparentModal' }} />
     <Stack.Screen name="MarkdownDocument" component={TabletMarkdownDocument} options={{ presentation: 'transparentModal' }} />
-  </Stack.Navigator>;
+  </Stack.Navigator></RestoredTabletContext.Provider>;
 }

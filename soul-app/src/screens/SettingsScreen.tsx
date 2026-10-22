@@ -1,3 +1,5 @@
+import { useOptionalLayoutContinuity } from '../navigation/LayoutContinuityContext';
+import { SETTINGS_WORKSPACE_CONTINUITY_KEY, type SettingsWorkspaceContinuityState } from '../navigation/settingsWorkspaceContinuity';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,9 +43,14 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
   const wide = !connectionOnly && device !== 'phone' && width >= TABLET_BREAKPOINT;
   const detectedAdmin = useDashboardAdminStatus(showAdmin === undefined);
   const isAdmin = showAdmin ?? detectedAdmin;
-  const [category, setCategory] = useState<SettingsCategory | null>(connectionOnly ? 'connection' : initialCategory ?? null);
-  const [jobs, setJobs] = useState<SettingsJobDestination>({ kind: 'list' });
-  const [persistent, setPersistent] = useState<SettingsPersistentDestination>(initialPersistentDestination ?? { kind: 'list' });
+  const continuity = useOptionalLayoutContinuity();
+  const savedWorkspace = !connectionOnly ? continuity?.getViewState<SettingsWorkspaceContinuityState>(SETTINGS_WORKSPACE_CONTINUITY_KEY) : undefined;
+  const [category, setCategory] = useState<SettingsCategory | null>(connectionOnly ? 'connection' : initialCategory ?? savedWorkspace?.category ?? null);
+  const [jobs, setJobs] = useState<SettingsJobDestination>(savedWorkspace?.jobs ?? { kind: 'list' });
+  const [persistent, setPersistent] = useState<SettingsPersistentDestination>(initialPersistentDestination ?? savedWorkspace?.persistent ?? { kind: 'list' });
+  useEffect(() => {
+    if (!connectionOnly) continuity?.setViewState(SETTINGS_WORKSPACE_CONTINUITY_KEY, { category, jobs, persistent });
+  }, [continuity, connectionOnly, category, jobs, persistent]);
   const [scopes, setScopes] = useState<Partial<Record<SettingsCategory, SettingsSaveScope>>>({});
   const register = useCallback((id: SettingsCategory, scope: SettingsSaveScope | null) => setScopes(current => {
     const next = { ...current }; if (scope) next[id] = scope; else delete next[id]; return next;

@@ -1,9 +1,8 @@
+import { AdaptiveNavigationHost } from '../navigation/AdaptiveNavigationHost';
+import { LayoutContinuityProvider } from '../navigation/LayoutContinuityContext';
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, Text, View, type AlertButton } from 'react-native';
-import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
-import { TabNavigator } from '../navigation/TabNavigator';
-import { TabletNavigator } from '../navigation/TabletNavigator';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { useDeviceType } from '../theme';
 import { useTokens } from '../theme';
@@ -53,13 +52,9 @@ function EntryShellAlertHarness() {
 export function ReviewEntryShell() {
   const device = useDeviceType();
   const t = useTokens();
-  const navigationTheme = {
-    ...DefaultTheme,
-    colors: { ...DefaultTheme.colors, background: t.colors.background },
-  };
-  return <View style={{ flex: 1 }}><NavigationContainer theme={navigationTheme}><PersistentSessionProvider>
-    <ContentLinkProvider>{device === 'phone' ? <TabNavigator /> : <TabletNavigator />}</ContentLinkProvider>
-  </PersistentSessionProvider></NavigationContainer>
+  return <View style={{ flex: 1 }}><PersistentSessionProvider><LayoutContinuityProvider>
+    <ContentLinkProvider><AdaptiveNavigationHost device={device} /></ContentLinkProvider>
+  </LayoutContinuityProvider></PersistentSessionProvider>
     <EntryShellAlertHarness />
   </View>;
 }

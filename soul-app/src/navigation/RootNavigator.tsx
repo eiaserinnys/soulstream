@@ -311,7 +311,7 @@ export function RootNavigator({
   }, [authScopeGeneration, device]);
 
   useEffect(() => {
-    if (!pendingNotification || !usageDestinationReady || !startup.navigationReady) return;
+    if (!pendingNotification || !usageDestinationReady || !startup.navigationReady || !navigationRef.isReady()) return;
     if (device !== 'phone' && !uiStoreHydrated) return;
     const sid = pendingNotification;
     if (device === 'phone') leavePersistent.current?.();

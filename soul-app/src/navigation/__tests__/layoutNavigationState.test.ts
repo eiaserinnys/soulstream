@@ -472,3 +472,13 @@ describe('readTabletLocation', () => {
     expect(readTabletLocation(persistentTop)).toEqual({ originTab: 'PersistentTab', kind: 'persistentSession' });
   });
 });
+
+test('inactive phone stacks keep their routes and index while explicitly written chat context wins', () => {
+  const previous = phoneState('SettingsTab', [{ name: 'Settings' }, { name: 'RecurringJobHistory', params: { jobId: 'old' } }]);
+  const next = buildPhoneState({ originTab: 'FeedTab', kind: 'chat', sessionId: 'new', returnTab: 'FolderTab', folder }, previous);
+  expect(tabStack(next, 'SettingsTab')).toEqual(tabStack(previous, 'SettingsTab'));
+  expect(next.routes.find(route => route.name === 'SettingsTab')!.state!.index).toBe(1);
+  expect(tabStack(next, 'FeedTab').map(route => route.name)).toEqual(['Feed', 'Chat']);
+  expect(tabStack(next, 'FolderTab').map(route => route.name)).toEqual(['FolderList', 'FolderWorkspace']);
+  expect(buildPhoneState({ originTab: 'FeedTab', kind: 'feed' }, null)).toEqual(buildPhoneState({ originTab: 'FeedTab', kind: 'feed' }));
+});

@@ -1,6 +1,5 @@
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -11,7 +10,6 @@ import { useTokens } from './src/theme';
 import { UsageWidgetCredentialSync } from './src/widgets/usageWidgetBridge';
 import { AppNoticeBanner } from './src/components/AppNoticeBanner';
 import { useNavigationViewUsageEvents } from './src/navigation/useNavigationViewUsageEvents';
-import { recordStaticNavigationRoute } from './src/lib/session-diagnostics';
 
 /**
  * NavigationContainer에 동적 테마를 주입하기 위한 내부 컴포넌트.
@@ -20,8 +18,7 @@ import { recordStaticNavigationRoute } from './src/lib/session-diagnostics';
  */
 function ThemedNavigationRoot() {
   const t = useTokens();
-  const c = t.colors;
-  const { recordNavigationView, snapshotNavigationView } = useNavigationViewUsageEvents();
+  const { snapshotNavigationView } = useNavigationViewUsageEvents();
   const snapshotAuthenticatedNavigation = React.useCallback(
     () => snapshotNavigationView(navigationRef.getRootState()),
     [snapshotNavigationView],
@@ -29,37 +26,7 @@ function ThemedNavigationRoot() {
 
   return (
     <>
-      <NavigationContainer
-        ref={navigationRef}
-        onReady={() => {
-          const state = navigationRef.getRootState();
-          recordNavigationView(state, true);
-          recordStaticNavigationRoute(state);
-        }}
-        onStateChange={(state) => {
-          recordNavigationView(state, false);
-          recordStaticNavigationRoute(state);
-        }}
-        theme={{
-          dark: t.mode === 'dark',
-          colors: {
-            primary: c.accent,
-            background: c.background,
-            card: c.surface,
-            text: c.textPrimary,
-            border: c.border,
-            notification: c.error,
-          },
-          fonts: {
-            regular: { fontFamily: 'System', fontWeight: '400' },
-            medium: { fontFamily: 'System', fontWeight: '500' },
-            bold: { fontFamily: 'System', fontWeight: '700' },
-            heavy: { fontFamily: 'System', fontWeight: '800' },
-          },
-        }}
-      >
-        <RootNavigator onUiUsageEventsEnabled={snapshotAuthenticatedNavigation} />
-      </NavigationContainer>
+      <RootNavigator onUiUsageEventsEnabled={snapshotAuthenticatedNavigation} />
       <AppNoticeBanner />
       {/* 시스템 상태 바(시계·배터리)도 모드에 맞춘다 — light 모드에선 검정 글자, dark 모드에선 흰 글자. */}
       <StatusBar style={t.mode === 'dark' ? 'light' : 'dark'} />

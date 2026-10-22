@@ -1,3 +1,5 @@
+import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
+import { useContinuityScroll } from '../../hooks/useContinuityScroll';
 import {CardTransitionSettings} from './CardTransitionSettings';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
@@ -90,9 +92,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const [frameWidth, setFrameWidth] = useState(windowWidth);
   const [dockHeight, setDockHeight] = useState(0);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
-  const [tabChoice, setTabChoice] = useState<{ cardId: string; value: CardDetailTab } | null>(null);
-  const [visitState, setVisitState] = useState<CardDetailVisitState | null>(null);
-  const [targetChoice, setTargetChoice] = useState<{ cardId: string; item: CardCheckItem } | null>(null);
+  const continuity = useOptionalLayoutContinuity();
+  const viewKey = JSON.stringify(['card-view', cardId]);
+  const savedView = continuity?.getViewState<{ tab: CardDetailTab; visit: CardDetailVisitState | null; targetItemId?: number }>(viewKey);
+  const [tabChoice, setTabChoice] = useState<{ cardId: string; value: CardDetailTab } | null>(() => savedView ? { cardId, value: savedView.tab } : null);
+  const [visitState, setVisitState] = useState<CardDetailVisitState | null>(savedView?.visit ?? null);
+  const [targetChoice, setTargetChoice] = useState<{ cardId: string; itemId: number } | null>(() => savedView?.targetItemId !== undefined ? { cardId, itemId: savedView.targetItemId } : null);
   const [unreadChoice, setUnreadChoice] = useState<{ cardId: string; value: boolean } | null>(null);
   const [noticeChoice, setNoticeChoice] = useState<{ cardId: string; value: boolean } | null>(null);
   const assignmentAttempt=useRef<{key:string;value:string}|null>(null);
@@ -106,13 +111,14 @@ export function CardDetailContent(props: CardDetailContentProps) {
     initiallyConfirmedIds: (detail.card.items ?? []).filter((item) => item.display === 'confirmed').map((item) => item.id),
     newlyConfirmedIds: [],
   } : null;
-  if (firstVisit && visitState?.cardId !== cardId) setVisitState(firstVisit);
+  if (firstVisit && visitState?.cardId !== cardId) setVisitState(savedView?.visit ?? firstVisit);
   const currentVisit = visitState?.cardId === cardId ? visitState : firstVisit;
   const initialTab = currentVisit?.initialTab ?? 'comments';
-  const tab = tabChoice?.cardId === cardId ? tabChoice.value : initialTab;
+  const tab = tabChoice?.cardId === cardId ? tabChoice.value : savedView?.tab ?? initialTab;
   const itemSummary = useMemo(() => summarizeCardItems(cardItems, itemActions.pendingConfirmations),
     [cardItems, itemActions.pendingConfirmations]);
-  const targetItem = targetChoice?.cardId === cardId ? targetChoice.item : null;
+  const targetItemId = targetChoice?.cardId === cardId ? targetChoice.itemId : targetChoice ? savedView?.targetItemId : undefined;
+  const targetItem = cardItems.find(item => item.id === targetItemId) ?? null;
   const commentUnread = unreadChoice?.cardId === cardId && unreadChoice.value;
   const sendNotice = noticeChoice?.cardId === cardId && noticeChoice.value;
   const allConfirmed = itemSummary.total > 0 && itemSummary.unconfirmed.length === 0;
@@ -122,7 +128,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const startPhase = statusAction.execution?.phase;
   const actionLabel = startPhase === 'pending' ? '시작 중…' : startPhase ? (startPhase === 'delayed' ? '다시 확인' : '다시 시도') : startable ? '시작하기' : '완료';
   const timelineStamp = detail ? `${detail.questions.length}:${detail.reports.length}:${detail.comments?.filter((comment) => comment.kind !== 'note').length ?? 0}` : '';
-  const scrollStamp = useRef('');
+  const scrollMemory = useContinuityScroll(JSON.stringify(['card', cardId]), y => scroll.current?.scrollTo({ y, animated: false }), !!detail);
+  const scrollStamp = useRef(scrollMemory.hasPosition ? timelineStamp : '');
+  const initialScroll = useRef(true);
+  useEffect(() => {
+    if (detail) continuity?.setViewState(viewKey, { tab, visit: currentVisit, targetItemId: targetItem?.id });
+  }, [continuity, viewKey, detail, tab, currentVisit, targetItem]);
   const assigned = useSessionStore((state) => card?.assigneeSessionId ? state.sessions[card.assigneeSessionId] : undefined)
     ?? detail?.sessions.find((session) => session.agentSessionId === card?.assigneeSessionId);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
@@ -147,7 +158,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
     }
   };
   const setItemTarget = (item: CardCheckItem) => {
-    setTargetChoice({ cardId, item });
+    setTargetChoice({ cardId, itemId: item.id });
     requestAnimationFrame(() => composer.current?.focus());
   };
   const setRecentConfirmation = (itemId: number, confirmed: boolean) => {
@@ -171,6 +182,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
   }, [cardId, sendNotice]);
   useEffect(() => {
     if (!detail || detail.card.id !== cardId) return;
+    if (initialScroll.current && scrollMemory.hasPosition) {
+      initialScroll.current = false;
+      scrollStamp.current = timelineStamp;
+      return;
+    }
+    initialScroll.current = false;
     if (tab !== 'comments') {
       requestAnimationFrame(() => scroll.current?.scrollTo({ y: 0, animated: false }));
       return;
@@ -251,12 +268,15 @@ export function CardDetailContent(props: CardDetailContentProps) {
       </View>
       <View style={styles.bodyFrame}>
         {detail && tab === 'sessions' ? <View testID="card-sessions" style={{ flex: 1, marginBottom: dockBottom }}>
-          <FolderSessionHistory api={api} small virtualized sessionIds={sessionIds} sessionSummaries={sessionSummaries} onOpenSession={openSession}
+          <FolderSessionHistory scrollMemoryKey={JSON.stringify(['card', cardId])} api={api} small virtualized sessionIds={sessionIds} sessionSummaries={sessionSummaries} onOpenSession={openSession}
             contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]} />
         </View> : <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
           contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
-          onContentSizeChange={() => {
+          onScroll={scrollMemory.onScroll} onScrollBeginDrag={scrollMemory.onScrollBeginDrag}
+          onLayout={scrollMemory.onLayout} scrollEventThrottle={16}
+          onContentSizeChange={(width, height) => {
+            if (scrollMemory.onContentSizeChange(width, height)) { scrollStamp.current = timelineStamp; return; }
             if (tab === 'comments' && timelineStamp && scrollStamp.current !== timelineStamp) {
               scrollStamp.current = timelineStamp;
               scroll.current?.scrollToEnd({ animated: false });

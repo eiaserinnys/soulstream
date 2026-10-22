@@ -1,3 +1,4 @@
+import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -195,7 +196,10 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
-  const [step, setStep] = useState<'detail' | 'chat'>(initialStep);
+  const continuity = useOptionalLayoutContinuity();
+  const memoryKey = JSON.stringify(['folder-overlay', pageId ?? cardId ?? sessionId]);
+  const [step, setStep] = useState<'detail' | 'chat'>(() => continuity?.getViewState<'detail' | 'chat'>(memoryKey) ?? initialStep);
+  useEffect(() => { continuity?.setViewState(memoryKey, step); }, [continuity, memoryKey, step]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(sessionId);
   const stepKey = cardId || pageId
     ? `${cardId ?? ''}:${pageId ?? ''}:${initialStep}`
@@ -205,7 +209,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
     setSelectedSessionId(sessionId);
     if (lastStepKey.current !== stepKey) {
       lastStepKey.current = stepKey;
-      setStep(initialStep);
+      setStep(continuity?.getViewState<'detail' | 'chat'>(memoryKey) ?? initialStep);
     }
   }, [initialStep, sessionId, stepKey]);
   const openSession = (id: string) => {

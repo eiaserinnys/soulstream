@@ -1,3 +1,4 @@
+import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, findNodeHandle, Platform, Text, View, type LayoutChangeEvent, type LayoutRectangle, type TextInput } from 'react-native';
 import { isReportReply, type ReportReplyDraft, type ReportSendContext } from '../../lib/persistent-report';
@@ -91,7 +92,13 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }) : false);
   const input = inputDraft.value;
   const textInputRef = useRef<TextInput | null>(null);
-  const reportReplyRef = useRef<ReportReplyDraft | null>(null);
+  const continuity = useOptionalLayoutContinuity();
+  const replyKey = JSON.stringify(['chat-reply', sessionId]);
+  const reportReplyRef = useRef<ReportReplyDraft | null>(continuity?.getComposerReplyTarget<ReportReplyDraft>(replyKey) ?? null);
+  const setReportReply = useCallback((reply: ReportReplyDraft | null) => {
+    reportReplyRef.current = reply;
+    continuity?.setComposerReplyTarget(replyKey, reply);
+  }, [continuity, replyKey]);
   const [generatedUndo, setGeneratedUndo] = useState<{ before: string; after: string } | null>(null);
   const [generatedSelection, setGeneratedSelection] = useState<{ start: number; end: number } | undefined>();
   const [interrupting, setInterrupting] = useState(false);
@@ -154,17 +161,17 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   }, []);
 
   const clearComposerInput = useCallback(() => {
-    reportReplyRef.current = null;
+    setReportReply(null);
     inputRef.current = '';
     composeFlowRef.current = null;
     setGeneratedUndo(null);
     setGeneratedSelection(undefined);
     inputDraft.clear();
     onComposerClearedForSend?.();
-  }, [inputDraft.clear, onComposerClearedForSend]);
+  }, [inputDraft.clear, onComposerClearedForSend, setReportReply]);
 
   const handleInputChange = useCallback((value: string) => {
-    if (!isReportReply(value, reportReplyRef.current)) reportReplyRef.current = null;
+    if (!isReportReply(value, reportReplyRef.current)) setReportReply(null);
     const previous = inputRef.current;
     if (previous !== value) {
       setGeneratedUndo(null);
@@ -185,7 +192,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     if (previous && !value) composeFlowRef.current = null;
     inputRef.current = value;
     inputDraft.setValue(value);
-  }, [sessionId, inputDraft.setValue]);
+  }, [sessionId, inputDraft.setValue, setReportReply]);
 
   const handleSendUsage = useCallback((event: ChatSendUsageEvent) => {
     const flowId = event.flowId === undefined
@@ -291,20 +298,20 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     if (after.length > CHAT_COMPOSER_MAX_LENGTH) return { ok: false, reason: 'too_long' };
 
     handleInputChange(after);
-    if (reportReply) reportReplyRef.current = isReportReply(after, reportReply) ? reportReply : null;
+    if (reportReply) setReportReply(isReportReply(after, reportReply) ? reportReply : null);
     setGeneratedUndo({ before, after });
     focusInputAtSelection({ start: after.length, end: after.length });
     return { ok: true };
-  }, [focusInputAtSelection, handleInputChange, inputDisabled, inputDraft.ready, sending, sessionId]);
+  }, [focusInputAtSelection, handleInputChange, inputDisabled, inputDraft.ready, sending, sessionId, setReportReply]);
 
   const undoGeneratedText = useCallback(() => {
-    reportReplyRef.current = null;
+    setReportReply(null);
     const undo = generatedUndo;
     if (!undo || inputRef.current !== undo.after) return;
     handleInputChange(undo.before);
     setGeneratedUndo(null);
     focusInputAtSelection({ start: undo.before.length, end: undo.before.length });
-  }, [focusInputAtSelection, generatedUndo, handleInputChange]);
+  }, [focusInputAtSelection, generatedUndo, handleInputChange, setReportReply]);
 
   const handleGeneratedSelectionChange = useCallback(() => {
     setGeneratedSelection(undefined);
@@ -314,7 +321,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     const restored = restorePendingOptimistic(eventId, inputRef.current);
     if (!restored) return;
     inputRef.current = restored.inputText;
-    reportReplyRef.current = isReportReply(restored.inputText, restored.reportReply) ? restored.reportReply : null;
+    setReportReply(isReportReply(restored.inputText, restored.reportReply) ? restored.reportReply : null);
     setGeneratedUndo(null);
     setGeneratedSelection(undefined);
     inputDraft.setValue(restored.inputText);
@@ -334,7 +341,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
       path: attachment.path,
       name: attachment.name ?? attachment.path,
     })));
-  }, [restoreAttachments, restorePendingOptimistic, sessionId, inputDraft.setValue]);
+  }, [restoreAttachments, restorePendingOptimistic, sessionId, inputDraft.setValue, setReportReply]);
 
   const handleInterrupt = async () => {
     if (!api || !sessionId || interrupting) return;

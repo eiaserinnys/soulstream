@@ -1,3 +1,4 @@
+import { useContinuityScroll } from '../../hooks/useContinuityScroll';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle, type ViewToken } from 'react-native';
 import type { ApiClient } from '../../api/client';
@@ -30,7 +31,9 @@ export function FolderSessionHistory({
   nearEndRef,
   virtualized = false,
   contentContainerStyle,
+  scrollMemoryKey,
 }: {
+  scrollMemoryKey?: string;
   virtualized?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   api: ApiClient | null;
@@ -51,6 +54,8 @@ export function FolderSessionHistory({
     folderId,
     active && !!folderId && !explicitSessionIds,
   );
+  const list = useRef<FlatList<any>>(null);
+  const memory = useContinuityScroll(scrollMemoryKey ?? JSON.stringify(['sessions', folderId]), y => list.current?.scrollToOffset({ offset: y, animated: false }), !loading);
   const wantMoreRef = useRef(false);
   const tryLoad = useCallback(() => {
     if (!wantMoreRef.current || explicitSessionIds || !data?.nextCursor || loading || error) return;
@@ -248,7 +253,9 @@ export function FolderSessionHistory({
       </TouchableOpacity>
     ) : null}
   </>;
-  if (virtualized) return <FlatList testID="task-run-history-list" style={{ flex: 1 }}
+  if (virtualized) return <FlatList ref={list} onScroll={memory.onScroll} onLayout={memory.onLayout}
+    onContentSizeChange={memory.onContentSizeChange} onScrollBeginDrag={memory.onScrollBeginDrag}
+    scrollEventThrottle={16} testID="task-run-history-list" style={{ flex: 1 }}
     data={rows} keyExtractor={({ session }) => session.agentSessionId}
     renderItem={({ item }) => renderRow(item)}
     contentContainerStyle={[contentContainerStyle, styles.container]}

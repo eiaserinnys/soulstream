@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FlatList } from 'react-native';
 import type { ChatRenderItem } from './groupChatEvents';
 import {
@@ -11,6 +12,7 @@ interface UseChatBottomFollowArgs {
   sessionId: string | undefined;
   bottomItemKey: string | null;
   presentation?: 'default' | 'manuscript';
+  ready?: boolean;
 }
 
 /**
@@ -25,8 +27,23 @@ export function useChatBottomFollow({
   sessionId,
   bottomItemKey,
   presentation = 'default',
+  ready = true,
 }: UseChatBottomFollowArgs) {
-  const isAtBottomRef = useRef(true);
+  const continuity = useOptionalLayoutContinuity();
+  const memoryKey = JSON.stringify(['chat', sessionId]);
+  const saved = continuity?.readScroll(memoryKey);
+  const restorePending = useRef(saved?.followBottom === false ? saved : undefined);
+  const offsetRef = useRef(saved?.offsetY ?? 0);
+  const geometry = useRef({ height: 0, content: 0 });
+  const restoreReadingPosition = useCallback(() => {
+    if (!ready || !restorePending.current || geometry.current.content <= 0) return false;
+    const offset = Math.max(0, Math.min(restorePending.current.offsetY, geometry.current.content - geometry.current.height));
+    restorePending.current = undefined;
+    offsetRef.current = offset;
+    flatListRef.current?.scrollToOffset({ offset, animated: false });
+    return true;
+  }, [flatListRef, ready]);
+  const isAtBottomRef = useRef(saved?.followBottom !== false);
   const pendingBottomRef = useRef(false);
   const previousBottomItemKeyRef = useRef<string | null>(null);
   const contentMeasuredRef = useRef(false);
@@ -49,24 +66,31 @@ export function useChatBottomFollow({
   }, [flatListRef]);
 
   const requestBottomFollow = useCallback(() => {
+    restorePending.current = undefined;
+    continuity?.writeScroll(memoryKey, { offsetY: 0, followBottom: true });
     setShowNewMessage(false);
     scheduleBottomScroll();
-  }, [scheduleBottomScroll]);
+  }, [continuity, memoryKey, scheduleBottomScroll]);
 
   const suspendBottomFollow = useCallback(() => {
+    restorePending.current = undefined;
+    continuity?.writeScroll(memoryKey, { offsetY: offsetRef.current, followBottom: false });
     isAtBottomRef.current = false;
     pendingBottomRef.current = false;
     cancelScheduledScroll();
-  }, [cancelScheduledScroll]);
+  }, [cancelScheduledScroll, continuity, memoryKey]);
 
   const onScrollOffsetChange = useCallback((offsetY: number) => {
+    if (restorePending.current) return;
+    offsetRef.current = offsetY;
     const isAtBottom = isNearInvertedListBottom(offsetY);
+    continuity?.writeScroll(memoryKey, { offsetY, followBottom: isAtBottom });
     isAtBottomRef.current = isAtBottom;
     if (isAtBottom) {
       pendingBottomRef.current = false;
       setShowNewMessage(false);
     }
-  }, []);
+  }, [continuity, memoryKey]);
 
   const onContentSizeChange = useCallback((height: number) => {
     if (height <= 0) return;
@@ -74,20 +98,27 @@ export function useChatBottomFollow({
       contentMeasuredRef.current = true;
       flatListRef.current?.recordInteraction();
     }
+    geometry.current.content = height;
+    if (restorePending.current) { restoreReadingPosition(); return; }
     if (isAtBottomRef.current || pendingBottomRef.current) {
       scheduleBottomScroll();
     }
-  }, [flatListRef, scheduleBottomScroll]);
+  }, [flatListRef, restoreReadingPosition, scheduleBottomScroll]);
+
+  useLayoutEffect(() => { restoreReadingPosition(); }, [restoreReadingPosition]);
 
   useEffect(() => {
-    isAtBottomRef.current = true;
+    const position = continuity?.readScroll(memoryKey);
+    restorePending.current = position?.followBottom === false ? position : undefined;
+    offsetRef.current = position?.offsetY ?? 0;
+    isAtBottomRef.current = position?.followBottom !== false;
     pendingBottomRef.current = false;
     previousBottomItemKeyRef.current = null;
     contentMeasuredRef.current = false;
     setShowNewMessage(false);
     cancelScheduledScroll();
     return cancelScheduledScroll;
-  }, [cancelScheduledScroll, sessionId]);
+  }, [cancelScheduledScroll, continuity, memoryKey, sessionId]);
 
   useEffect(() => {
     const previousKey = previousBottomItemKeyRef.current;
@@ -113,5 +144,12 @@ export function useChatBottomFollow({
     onScrollBeginDrag: suspendBottomFollow,
     onScrollOffsetChange,
     onContentSizeChange,
+    onLayout: (height: number) => {
+      if (geometry.current.height && geometry.current.height !== height && !isAtBottomRef.current) {
+        restorePending.current = { offsetY: offsetRef.current, followBottom: false };
+      }
+      geometry.current.height = height;
+      restoreReadingPosition();
+    },
   };
 }

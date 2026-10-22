@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, Text } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -63,4 +63,33 @@ test('the open-on-start switch writes an account and server local preference imm
       showWeeklyUsage: false,
       weeklyUsageNodeSelection: null,
     });
+});
+
+import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
+import { SETTINGS_WORKSPACE_CONTINUITY_KEY } from '../../../navigation/settingsWorkspaceContinuity';
+import { SettingsScreen } from '../../../screens/SettingsScreen';
+
+test('settings remount restores the recurring editor and an explicit category takes priority', async () => {
+  function Seed() {
+    const continuity = useLayoutContinuity();
+    React.useEffect(() => {
+      continuity.setViewState(SETTINGS_WORKSPACE_CONTINUITY_KEY, {
+        category: 'recurring-jobs', jobs: { kind: 'editor' }, persistent: { kind: 'list' },
+      });
+    }, [continuity]);
+    return null;
+  }
+  const shell = (shown: boolean, explicit = false) => <LayoutContinuityProvider><Seed />
+    {shown ? explicit ? <SettingsScreen category="connection" /> : <SettingsModal visible onClose={jest.fn()} /> : null}
+  </LayoutContinuityProvider>;
+  const view = render(shell(false));
+  await act(async () => { view.rerender(shell(true)); });
+  expect(view.getByLabelText('작업 이름')).toBeTruthy();
+  await act(async () => { view.rerender(shell(false)); });
+  await act(async () => { view.rerender(shell(true)); });
+  expect(view.getByLabelText('작업 이름')).toBeTruthy();
+  await act(async () => { view.rerender(shell(false)); });
+  await act(async () => { view.rerender(shell(true, true)); });
+  expect(view.getByTestId('settings-server-input')).toBeTruthy();
+  view.unmount();
 });

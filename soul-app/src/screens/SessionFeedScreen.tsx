@@ -1,3 +1,4 @@
+import { useContinuityScroll } from '../hooks/useContinuityScroll';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -58,6 +59,8 @@ export function SessionFeedScreen({
   const retryCatalog = useSessionStore((state) => state.retryCatalog);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
+  const scroll = useRef<FlatList<FeedRow>>(null);
+  const memory = useContinuityScroll(JSON.stringify(['feed', 'global']), y => scroll.current?.scrollToOffset({ offset: y, animated: false }), catalogLoadState === 'ready');
   const { feedPage, loadMore, retryFeedPage } = useFeedPagination(api);
   const chatStyles = useMemo(() => makeChatStyles(t), [t]);
   const menus = usePlannerContextMenus(api);
@@ -193,7 +196,9 @@ export function SessionFeedScreen({
       ))}
     >
       <FlatList
-        testID="phone-feed-body"
+        testID="phone-feed-body" ref={scroll} onScroll={memory.onScroll}
+        onLayout={memory.onLayout} onContentSizeChange={memory.onContentSizeChange}
+        onScrollBeginDrag={memory.onScrollBeginDrag} scrollEventThrottle={16}
         style={styles.container}
         data={rows}
         keyExtractor={feedRowKey}

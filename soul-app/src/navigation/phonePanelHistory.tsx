@@ -33,7 +33,9 @@ export function createPhonePanelHistory(): PhonePanelHistory {
 const PhonePanelHistoryContext = React.createContext<PhonePanelHistory | null>(null);
 
 export function PhonePanelHistoryProvider({ children }: { children: React.ReactNode }) {
-  const [history] = React.useState(createPhonePanelHistory);
+  const inherited = React.useContext(PhonePanelHistoryContext);
+  const [local] = React.useState(createPhonePanelHistory);
+  const history = inherited ?? local;
   return (
     <PhonePanelHistoryContext.Provider value={history}>
       {children}

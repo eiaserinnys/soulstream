@@ -511,21 +511,22 @@ const TAB_COMPONENTS: Record<
   SettingsTab: SettingsNavigator,
 };
 
-export function TabNavigator() {
+export function TabNavigator({ initialTab }: { initialTab?: string } = {}) {
   return (
     <PhonePanelHistoryProvider>
-      <PhoneTabNavigator />
+      <PhoneTabNavigator initialTab={initialTab} />
     </PhonePanelHistoryProvider>
   );
 }
 
-function PhoneTabNavigator() {
+function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
   useSessionsStream();
   useNodeConnectivityStream();
   const panelHistory = usePhonePanelHistory();
   const host = usePersistentSessionHost();
   const scene = usePersistentSessionScene(state => state.scene);
-  const [focusedTab, setFocusedTab] = useState<keyof RootTabParamList>(host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB);
+  const restoredTab = ROOT_TAB_ORDER.find(name => name === initialTab);
+  const [focusedTab, setFocusedTab] = useState<keyof RootTabParamList>(restoredTab ?? (host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB));
   const t = useTokens();
   const c = t.colors;
   const insets = useSafeAreaInsets();
@@ -542,7 +543,7 @@ function PhoneTabNavigator() {
           </PhoneRailModeContext.Provider>
         )
         : undefined}
-      initialRouteName={host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB}
+      initialRouteName={restoredTab ?? (host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB)}
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: 'transparent' },

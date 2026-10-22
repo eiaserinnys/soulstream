@@ -1,3 +1,4 @@
+import { useContinuityScroll } from '../../hooks/useContinuityScroll';
 import React,{useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
 import { FlatList,Text,View,useWindowDimensions,type StyleProp,type ViewStyle,type ViewToken } from 'react-native';
 import type { ApiClient } from '../../api/client';
@@ -18,8 +19,8 @@ export function isListNearEnd(contentHeight:number,offsetY:number,layoutHeight:n
 }
 
 /** One vertical native list owns the folder and completed rows; no nested virtual scroll. */
-export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledDisplay,header,footer,contentContainerStyle,onOpenSession,onNearEnd}:{
-  api:ApiClient|null;folderId:string;active:boolean;cardDisplay?:FolderCardDisplay;header:ReactNode;footer:ReactNode;
+export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledDisplay,header,footer,contentContainerStyle,onOpenSession,onNearEnd,scrollMemoryKey}:{
+  scrollMemoryKey?:string;api:ApiClient|null;folderId:string;active:boolean;cardDisplay?:FolderCardDisplay;header:ReactNode;footer:ReactNode;
   contentContainerStyle:StyleProp<ViewStyle>;onOpenSession?(id:string):void;onNearEnd?():void;
 }) {
   const t=useTokens(),paper=createPostItRoles(t,'compact'),window=useWindowDimensions();
@@ -28,6 +29,7 @@ export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledD
   const [width,setWidth]=useState(window.width),[selected,setSelected]=useState<string|null>(null);
   const columns=completedGridLayout(width-2*t.foundation.pageInset,paper.width,paper.gap,0).columns;
   const list=useRef<FlatList<CardDto>>(null);
+  const memory=useContinuityScroll(scrollMemoryKey??JSON.stringify(['folder',folderId,'sessions']),y=>list.current?.scrollToOffset({offset:y,animated:false}));
   const scrollMetrics=useRef({offsetY:0,layoutHeight:0,contentHeight:0});
   const currentBrowser=useRef(browser);currentBrowser.current=browser;
   const checkNearEnd=()=>{
@@ -38,12 +40,13 @@ export function FolderWorkspaceList({api,folderId,active,cardDisplay:controlledD
     const current=currentBrowser.current,last=current.cards.at(-1);
     if(last&&viewableItems.some(row=>row.isViewable&&row.item.id===last.id))current.loadMore();
   },[]);
-  useEffect(()=>{if(display.includeCompleted)list.current?.scrollToOffset({offset:0,animated:false});},[browser.resetKey]);
+  useEffect(()=>{if(display.includeCompleted&&!memory.hasPosition)list.current?.scrollToOffset({offset:0,animated:false});},[browser.resetKey]);
   return <>
     <FlatList ref={list} testID="task-workspace-scroll" key={columns} style={{flex:1}} data={browser.cards} numColumns={columns}
-      onLayout={event=>{setWidth(event.nativeEvent.layout.width);scrollMetrics.current.layoutHeight=event.nativeEvent.layout.height;checkNearEnd();}}
-      onScroll={event=>{scrollMetrics.current.offsetY=event.nativeEvent.contentOffset.y;checkNearEnd();}}
-      onContentSizeChange={(_,height)=>{scrollMetrics.current.contentHeight=height;checkNearEnd();}} scrollEventThrottle={16}
+      onLayout={event=>{memory.onLayout(event);setWidth(event.nativeEvent.layout.width);scrollMetrics.current.layoutHeight=event.nativeEvent.layout.height;checkNearEnd();}}
+      onScroll={event=>{memory.onScroll(event);scrollMetrics.current.offsetY=event.nativeEvent.contentOffset.y;checkNearEnd();}}
+      onScrollBeginDrag={memory.onScrollBeginDrag}
+      onContentSizeChange={(width,height)=>{memory.onContentSizeChange(width,height);scrollMetrics.current.contentHeight=height;checkNearEnd();}} scrollEventThrottle={16}
       contentContainerStyle={[contentContainerStyle,{gap:paper.gap}]} keyboardShouldPersistTaps="handled"
       keyExtractor={card=>card.id} columnWrapperStyle={columns>1?{gap:paper.gap}:undefined}
       initialNumToRender={columns*2} maxToRenderPerBatch={columns*2} windowSize={5} showsVerticalScrollIndicator={false}
