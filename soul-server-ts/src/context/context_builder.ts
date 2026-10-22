@@ -347,15 +347,39 @@ export class ExecutionContextBuilder {
 
   private async readPersistentCheckpoint(task: Task) {
     const sessionId = task.agentSessionId;
-    const [material, cards] = await Promise.all([
-      this.db.getGenerationCheckpointMaterial(sessionId, PERSISTENT_CHECKPOINT_READ_LIMITS),
-      this.db.getSupervisedCardContext({
-        sessionId,
-        ...PERSISTENT_SUPERVISION_SCOPE,
-        cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
-        questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
-      }),
-    ]);
+    let materialUnavailable = false;
+    const materialPromise = this.db
+      .getGenerationCheckpointMaterial(sessionId, PERSISTENT_CHECKPOINT_READ_LIMITS)
+      .catch((err: unknown) => {
+        if (!isSessionDataHostError(err)) throw err;
+        materialUnavailable = true;
+        this.logger.warn(
+          { err, sessionId },
+          "generation checkpoint material unavailable; continuing without history",
+        );
+        return {
+          story: {
+            highlight: null,
+            narrative: null,
+            unfoldedTurnSummaries: [],
+            narrativeThroughEventId: null,
+            foldCount: 0,
+            updatedAt: null,
+          },
+          lastSummarizedFinalResponseEventId: null,
+          recent: { records: [], omittedUnsummarized: 0 },
+          childSessions: [],
+          childSessionTotal: 0,
+          totals: { turnSummaries: 0 },
+        };
+      });
+    const cardsPromise = this.db.getSupervisedCardContext({
+      sessionId,
+      ...PERSISTENT_SUPERVISION_SCOPE,
+      cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
+      questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
+    });
+    const [material, cards] = await Promise.all([materialPromise, cardsPromise]);
     return buildPersistentCheckpoint({
       material,
       cards,
@@ -368,6 +392,7 @@ export class ExecutionContextBuilder {
       ownSessionId: sessionId,
       resetContext: task.activeGenerationRollover?.resetContext === true,
       keepInstructions: task.activeGenerationRollover?.keepInstructions !== false,
+      materialUnavailable,
     }, PERSISTENT_CHECKPOINT_BUDGET);
   }
 

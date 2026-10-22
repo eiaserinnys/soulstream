@@ -584,7 +584,7 @@ describe("TaskTurnInputBuilder", () => {
         recent: { records: [], omittedUnsummarized: 0 },
         childSessions: [],
         childSessionTotal: 0,
-        totals: { events: 0, turnSummaries: 0 },
+        totals: { turnSummaries: 0 },
       }),
       getSupervisedCardContext: vi.fn().mockResolvedValue({
         capturedAt: "2026-10-05T00:00:00.000Z",

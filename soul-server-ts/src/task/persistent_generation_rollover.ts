@@ -281,6 +281,7 @@ export async function publishStarted(
       summarized_through_turn: checkpoint.summarizedThroughTurn,
       recent_from_event_id: checkpoint.recentFromEventId,
       recent_to_event_id: checkpoint.recentToEventId,
+      ...(checkpoint.materialUnavailable === true ? { material_unavailable: true } : {}),
     },
     context_reset: active.resetContext === true,
     _dedupe_key:

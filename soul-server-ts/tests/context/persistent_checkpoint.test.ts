@@ -25,7 +25,7 @@ function makeMaterial(overrides: Partial<GenerationCheckpointMaterial> = {}): Ge
     recent: { records: [], omittedUnsummarized: 0 },
     childSessions: [],
     childSessionTotal: 0,
-    totals: { events: 0, turnSummaries: 0 },
+    totals: { turnSummaries: 0 },
     ...overrides,
   };
 }
@@ -76,6 +76,29 @@ function makeStandingInstructions(): string[] {
 }
 
 describe("buildPersistentCheckpoint", () => {
+  it("adds the unavailable-history notice only for degraded non-reset checkpoints", () => {
+    const base = {
+      material: makeMaterial(),
+      cards: makeCards(),
+      standingInstructions: [],
+      ownSessionId,
+    };
+    const unavailableNotice = [
+      "## 이전 대화 기록을 불러오지 못함",
+      "이번 세대를 여는 동안 이전 대화 기록(줄거리, 턴 요약, 최근 대화)을 불러오지 못해 이 체크포인트에는 카드 현황과 상시 지시만 담겼습니다. 이번 메시지가 이전 대화에 기대고 있으면 답하기 전에 list_persistent_session_history나 expand_session_turn 도구로 최근 턴을 먼저 확인하세요.",
+    ].join("\n");
+
+    const normal = itemText(base);
+    const unavailable = itemText({ ...base, materialUnavailable: true });
+    const reset = itemText({ ...base, materialUnavailable: true, resetContext: true });
+
+    expect(normal.text).not.toContain("이전 대화 기록을 불러오지 못함");
+    expect(unavailable.text).toContain(unavailableNotice);
+    expect(unavailable.stats.materialUnavailable).toBe(true);
+    expect(reset.text).not.toContain("이전 대화 기록을 불러오지 못함");
+    expect(reset.stats.materialUnavailable).toBe(true);
+  });
+
   it("writes complete card and session IDs through the identifier formatter", () => {
     const childId = "8a13f280-86be-4bd5-a2e4-9199f82aa63c";
     const childCardId = "61954137-8402-4ca3-947e-4105bf7a8139";
@@ -268,7 +291,7 @@ describe("buildPersistentCheckpoint", () => {
         ],
         omittedUnsummarized: 0,
       },
-      totals: { events: 16, turnSummaries: 5 },
+      totals: { turnSummaries: 5 },
     });
     const budget = { ...PERSISTENT_CHECKPOINT_BUDGET, summaryTokens: 70, totalTokens: 2_000, recentMinimumTokens: 300 };
     const { text, stats } = itemText({ material, cards: makeCards(), standingInstructions: [], ownSessionId }, budget);
@@ -323,7 +346,7 @@ describe("buildPersistentCheckpoint", () => {
         ],
         omittedUnsummarized: 12,
       },
-      totals: { events: 202, turnSummaries: 24 },
+      totals: { turnSummaries: 24 },
     });
     const { text, stats } = itemText({ material, cards: makeCards(), standingInstructions: instructions, ownSessionId });
 
@@ -401,7 +424,7 @@ describe("buildPersistentCheckpoint", () => {
         }],
         omittedUnsummarized: 0,
       },
-      totals: { events: 13, turnSummaries: 12 },
+      totals: { turnSummaries: 12 },
     });
     const { text, stats } = itemText({
       material,

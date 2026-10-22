@@ -1335,6 +1335,7 @@ export interface SSEEventGenerationStarted {
     summarized_through_turn: number | null;
     recent_from_event_id: number | null;
     recent_to_event_id: number | null;
+    material_unavailable?: true;
   };
   timestamp: number;
   [k: string]: unknown;

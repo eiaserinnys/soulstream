@@ -260,17 +260,38 @@ export class EventReadRepository {
     eventTypes?: string[],
   ): Promise<HostEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
-    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-      SELECT id, session_id, event_type, payload, searchable_text, created_at
-      FROM events
-      WHERE session_id = ${sessionId}
-        AND (
-          ${types as unknown as string[] | null}::text[] IS NULL
-          OR event_type = ANY(${types as unknown as string[] | null}::text[])
-        )
-      ORDER BY id DESC
-      LIMIT ${limit}
-    `;
+    const rows = types === null
+      ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          SELECT id, session_id, event_type, payload, searchable_text, created_at
+          FROM events
+          WHERE session_id = ${sessionId}
+            AND (
+              ${types as unknown as string[] | null}::text[] IS NULL
+              OR event_type = ANY(${types as unknown as string[] | null}::text[])
+            )
+          ORDER BY id DESC
+          LIMIT ${limit}
+        `
+      : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          WITH picked AS (
+            SELECT recent.id
+            FROM (SELECT DISTINCT unnest(${types}::text[]) AS event_type) requested
+            CROSS JOIN LATERAL (
+              SELECT e.id
+              FROM events e
+              WHERE e.session_id = ${sessionId}
+                AND e.event_type = requested.event_type
+              ORDER BY e.id DESC
+              LIMIT ${limit}
+            ) recent
+            ORDER BY recent.id DESC
+            LIMIT ${limit}
+          )
+          SELECT e.id, e.session_id, e.event_type, e.payload, e.searchable_text, e.created_at
+          FROM picked
+          JOIN events e ON e.session_id = ${sessionId} AND e.id = picked.id
+          ORDER BY e.id DESC
+        `;
     return rows.map(normalizeEvent).reverse();
   }
 
@@ -281,18 +302,40 @@ export class EventReadRepository {
     eventTypes?: string[],
   ): Promise<HostEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
-    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
-      SELECT id, session_id, event_type, payload, searchable_text, created_at
-      FROM events
-      WHERE session_id = ${sessionId}
-        AND id <= ${beforeId}
-        AND (
-          ${types as unknown as string[] | null}::text[] IS NULL
-          OR event_type = ANY(${types as unknown as string[] | null}::text[])
-        )
-      ORDER BY id DESC
-      LIMIT ${limit}
-    `;
+    const rows = types === null
+      ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          SELECT id, session_id, event_type, payload, searchable_text, created_at
+          FROM events
+          WHERE session_id = ${sessionId}
+            AND id <= ${beforeId}
+            AND (
+              ${types as unknown as string[] | null}::text[] IS NULL
+              OR event_type = ANY(${types as unknown as string[] | null}::text[])
+            )
+          ORDER BY id DESC
+          LIMIT ${limit}
+        `
+      : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          WITH picked AS (
+            SELECT recent.id
+            FROM (SELECT DISTINCT unnest(${types}::text[]) AS event_type) requested
+            CROSS JOIN LATERAL (
+              SELECT e.id
+              FROM events e
+              WHERE e.session_id = ${sessionId}
+                AND e.event_type = requested.event_type
+                AND e.id <= ${beforeId}
+              ORDER BY e.id DESC
+              LIMIT ${limit}
+            ) recent
+            ORDER BY recent.id DESC
+            LIMIT ${limit}
+          )
+          SELECT e.id, e.session_id, e.event_type, e.payload, e.searchable_text, e.created_at
+          FROM picked
+          JOIN events e ON e.session_id = ${sessionId} AND e.id = picked.id
+          ORDER BY e.id DESC
+        `;
     return rows.map(normalizeEvent).reverse();
   }
 
@@ -303,25 +346,57 @@ export class EventReadRepository {
     eventTypes?: string[],
   ): Promise<{ events: HostEventRow[]; total: number }> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
-    const rows = await this.sql<Array<Omit<HostEventRow, "payload"> & {
-      payload: unknown;
-      total_count: number | string;
-    }>>`
-      SELECT id, session_id, event_type, payload, searchable_text, created_at,
-        COUNT(*) OVER ()::integer AS total_count
-      FROM events
-      WHERE session_id = ${sessionId}
-        AND id > ${afterId}
-        AND (
-          ${types as unknown as string[] | null}::text[] IS NULL
-          OR event_type = ANY(${types as unknown as string[] | null}::text[])
-        )
-      ORDER BY id DESC
-      LIMIT ${limit}
-    `;
+    const readRows = types === null
+      ? this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          SELECT id, session_id, event_type, payload, searchable_text, created_at
+          FROM events
+          WHERE session_id = ${sessionId}
+            AND id > ${afterId}
+            AND (
+              ${types as unknown as string[] | null}::text[] IS NULL
+              OR event_type = ANY(${types as unknown as string[] | null}::text[])
+            )
+          ORDER BY id DESC
+          LIMIT ${limit}
+        `
+      : this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+          WITH picked AS (
+            SELECT recent.id
+            FROM (SELECT DISTINCT unnest(${types}::text[]) AS event_type) requested
+            CROSS JOIN LATERAL (
+              SELECT e.id
+              FROM events e
+              WHERE e.session_id = ${sessionId}
+                AND e.event_type = requested.event_type
+                AND e.id > ${afterId}
+              ORDER BY e.id DESC
+              LIMIT ${limit}
+            ) recent
+            ORDER BY recent.id DESC
+            LIMIT ${limit}
+          )
+          SELECT e.id, e.session_id, e.event_type, e.payload, e.searchable_text, e.created_at
+          FROM picked
+          JOIN events e ON e.session_id = ${sessionId} AND e.id = picked.id
+          ORDER BY e.id DESC
+        `;
+    const countRows = types === null
+      ? this.sql<Array<{ total_count: number | string }>>`
+          SELECT COUNT(*)::integer AS total_count
+          FROM events
+          WHERE session_id = ${sessionId} AND id > ${afterId}
+        `
+      : this.sql<Array<{ total_count: number | string }>>`
+          SELECT COUNT(*)::integer AS total_count
+          FROM events
+          WHERE session_id = ${sessionId}
+            AND id > ${afterId}
+            AND event_type = ANY(${types}::text[])
+        `;
+    const [rows, totals] = await Promise.all([readRows, countRows]);
     return {
-      events: rows.map(({ total_count: _totalCount, ...row }) => normalizeEvent(row)).reverse(),
-      total: Number(rows[0]?.total_count ?? 0),
+      events: rows.map(normalizeEvent).reverse(),
+      total: Number(totals[0]?.total_count ?? 0),
     };
   }
 

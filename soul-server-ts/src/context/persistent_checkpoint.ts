@@ -35,6 +35,7 @@ export interface PersistentCheckpointStats {
   summarizedThroughTurn: number | null;
   recentFromEventId: number | null;
   recentToEventId: number | null;
+  materialUnavailable?: true;
 }
 
 export const PERSISTENT_CHECKPOINT_BUDGET: PersistentCheckpointBudget = {
@@ -62,6 +63,10 @@ export const PERSISTENT_SUPERVISION_SCOPE: { folderIds: string[] | null } = {
 
 const CHECKPOINT_HEAD = "이전 턴의 자세한 원문은 expand_session_turn 도구로 확인할 수 있습니다. "
   + "`#412`, `#412.s2` 같은 번호는 도구의 `card_id`, `session_id` 인자에 그대로 쓸 수 있습니다.";
+const CHECKPOINT_MATERIAL_UNAVAILABLE = [
+  "## 이전 대화 기록을 불러오지 못함",
+  "이번 세대를 여는 동안 이전 대화 기록(줄거리, 턴 요약, 최근 대화)을 불러오지 못해 이 체크포인트에는 카드 현황과 상시 지시만 담겼습니다. 이번 메시지가 이전 대화에 기대고 있으면 답하기 전에 list_persistent_session_history나 expand_session_turn 도구로 최근 턴을 먼저 확인하세요.",
+].join("\n");
 
 export function buildPersistentCheckpoint(
   input: {
@@ -71,6 +76,7 @@ export function buildPersistentCheckpoint(
     ownSessionId: string;
     resetContext?: boolean;
     keepInstructions?: boolean;
+    materialUnavailable?: boolean;
   },
   budget: PersistentCheckpointBudget = PERSISTENT_CHECKPOINT_BUDGET,
 ): { item: ContextItem; stats: PersistentCheckpointStats } {
@@ -80,7 +86,10 @@ export function buildPersistentCheckpoint(
     ? ""
     : buildInstructionsSection(input.standingInstructions);
   const requiredText = joinSections([
-    ...(resetContext ? [] : [CHECKPOINT_HEAD]),
+    ...(resetContext ? [] : [
+      CHECKPOINT_HEAD,
+      ...(input.materialUnavailable === true ? [CHECKPOINT_MATERIAL_UNAVAILABLE] : []),
+    ]),
     state,
     instructions,
   ]);
@@ -122,7 +131,10 @@ export function buildPersistentCheckpoint(
     );
   }
   const text = joinSections([
-    ...(resetContext ? [] : [CHECKPOINT_HEAD]),
+    ...(resetContext ? [] : [
+      CHECKPOINT_HEAD,
+      ...(input.materialUnavailable === true ? [CHECKPOINT_MATERIAL_UNAVAILABLE] : []),
+    ]),
     state,
     instructions,
     story,
@@ -143,6 +155,7 @@ export function buildPersistentCheckpoint(
       : null,
     recentFromEventId: recent.records[0]?.event_id ?? null,
     recentToEventId: recent.records.at(-1)?.event_id ?? null,
+    ...(input.materialUnavailable === true ? { materialUnavailable: true as const } : {}),
   };
   return {
     item: {
