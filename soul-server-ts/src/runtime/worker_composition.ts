@@ -61,9 +61,7 @@ import { composeWorktreeService, composeWorktreeSweeper, resolveWorktreeWorkspac
 import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
 import { composePurposeDecisionRunner, composeWorkerAdmissionAuthorizer } from "../card-orchestration/runtime_composition.js";
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
-export async function composeWorkerRuntime(
-  params: WorkerCompositionParams,
-): Promise<WorkerComposition> {
+export async function composeWorkerRuntime(params: WorkerCompositionParams): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath, antigravityCliPath, agentProfileSource } = params;
   const modelCatalog =
     params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
@@ -186,6 +184,7 @@ export async function composeWorkerRuntime(
     new DefaultPageContextAssembler(),
     logger,
   );
+  const nodeContextConfig = { baseUrl: orchProxyConfig.baseUrl, headers: orchProxyConfig.headers, ...DEFAULT_COGITO_CONTEXT_LIMITS };
   const contextBuilder = new ExecutionContextBuilder(
     db,
     agentRegistry,
@@ -197,21 +196,15 @@ export async function composeWorkerRuntime(
         serverUrl: env.ATOM_SERVER_URL ?? "",
         apiKey: env.ATOM_API_KEY ?? "",
       },
-      cogito: {
-        baseUrl: orchProxyConfig.baseUrl,
-        headers: orchProxyConfig.headers,
-        ...DEFAULT_COGITO_CONTEXT_LIMITS,
-      },
+      cogito: nodeContextConfig,
+      nodeResources: nodeContextConfig,
     },
     logger,
     pageContextResolver,
   );
   const detachedClaudeEventPublisher = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? new TaskEngineEventPublisher({
-        broadcaster,
-        logger,
-        persistence,
-        transientEventLogAggregator,
+        broadcaster, logger, persistence, transientEventLogAggregator,
       })
     : undefined;
   let taskRuntime!: TaskRuntimeComposition, taskManager!: TaskManager;

@@ -46,6 +46,13 @@ export function snapshotNode(
       ]),
     ),
     pendingCommandCount: node.pendingCommands.pendingCount,
+    ...(node.resources ? { resources: {
+      collectedAt: node.resources.collectedAt,
+      cpu: { ...node.resources.cpu },
+      memory: { ...node.resources.memory },
+      disk: node.resources.disk ? { ...node.resources.disk } : null,
+      diskQueue: node.resources.diskQueue ? { ...node.resources.diskQueue } : null,
+    } } : {}),
   };
 }
 

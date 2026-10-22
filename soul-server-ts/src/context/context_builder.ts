@@ -1,5 +1,4 @@
 /** Builds input context; agent and folder instructions form the system prompt. */
-import { readPersistentInstructions } from "@soulstream/wire-schema/persistent-session-instructions";
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import { buildPersistentReportContext } from "./persistent_report_context.js";
@@ -18,6 +17,10 @@ import {
   fetchCogitoContextItem,
   type CogitoContextConfig,
 } from "./cogito_context.js";
+import {
+  resolvePasNodeResourcesContextItem,
+  type NodeResourcesContextConfig,
+} from "./node_resources_context.js";
 import type { ContextItem } from "./prompt_assembler.js";
 import {
   buildCallerInfoUpdateContextItem,
@@ -52,13 +55,8 @@ import { buildPredecessorSummaryContextItem } from "./predecessor_summary_contex
 import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { assemblePreparedContext, type PreparedContext } from "./prepared_context_assembly.js";
 export type { PreparedContext } from "./prepared_context_assembly.js";
-import {
-  buildPersistentCheckpoint,
-  PERSISTENT_CHECKPOINT_BUDGET,
-  PERSISTENT_SUPERVISION_SCOPE,
-  type PersistentCheckpointStats,
-} from "./persistent_checkpoint.js";
-import { readGenerationCheckpointMaterial } from "./persistent_checkpoint_material.js";
+import type { PersistentCheckpointStats } from "./persistent_checkpoint.js";
+import { loadPersistentCheckpointContext } from "./persistent_checkpoint_material.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
 import {
@@ -98,6 +96,7 @@ export interface ContextBuilderConfig {
   nodeId: string;
   atom: AtomConfig;
   cogito?: CogitoContextConfig;
+  nodeResources?: NodeResourcesContextConfig;
   captureAssignedCardContext?: (capture: AssignedCardContextCapture) => Promise<void>;
 }
 export class ExecutionContextBuilder {
@@ -153,6 +152,10 @@ export class ExecutionContextBuilder {
         contextItems.push(runningSessionsItem);
       }
     }
+    const nodeResourcesItem = await resolvePasNodeResourcesContextItem(
+      this.db, this.cfg.nodeResources, task, undefined, this.logger,
+    );
+    if (nodeResourcesItem) contextItems.push(nodeResourcesItem);
     const assignedCardItem = await this.buildAssignedCardContext(task, options.inputId);
     if (assignedCardItem) contextItems.push(assignedCardItem);
     return { contextItems };
@@ -252,7 +255,7 @@ export class ExecutionContextBuilder {
       BOARD_WORKSPACE_SESSION_LIMIT,
     );
     const checkpoint = generation
-      ? await this.readPersistentCheckpoint(task)
+      ? await loadPersistentCheckpointContext(this.db, this.logger, task)
       : null;
     const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
@@ -313,7 +316,12 @@ export class ExecutionContextBuilder {
           task.agentSessionId,
           resumeContext.predecessor,
         );
-    const cogitoContextItem = minimal ? null : await this._fetchCogitoContext();
+    const [cogitoContextItem, nodeResourcesItem] = await Promise.all([
+      minimal ? Promise.resolve(null) : this._fetchCogitoContext(),
+      resolvePasNodeResourcesContextItem(
+        this.db, this.cfg.nodeResources, task, resumeContext.session ?? null, this.logger,
+      ),
+    ]);
     const { workingDir, maxTurns } = resolveProfileRuntimeSettings(task, this.registry);
     const prepared = assemblePreparedContext({
       nodeId: this.cfg.nodeId,
@@ -337,38 +345,13 @@ export class ExecutionContextBuilder {
       generationCheckpointItem: checkpoint?.item ?? null,
       persistentReportItem: task.persistent || readPersistentEnabled(resumeContext.session?.metadata)
         ? buildPersistentReportContext(resumeContext.session?.metadata ?? task.metadata) : null,
+      nodeResourcesItem,
       nativeSessionId: generation ? null : task.codexThreadId ?? null,
       cogitoContextItem,
       workingDir,
       maxTurns,
     });
     return checkpoint ? { ...prepared, checkpointStats: checkpoint.stats } : prepared;
-  }
-
-  private async readPersistentCheckpoint(task: Task) {
-    const sessionId = task.agentSessionId;
-    const materialPromise = readGenerationCheckpointMaterial(this.db, this.logger, sessionId);
-    const cardsPromise = this.db.getSupervisedCardContext({
-      sessionId,
-      ...PERSISTENT_SUPERVISION_SCOPE,
-      cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
-      questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
-    });
-    const [{ material, unavailable }, cards] = await Promise.all([materialPromise, cardsPromise]);
-    return buildPersistentCheckpoint({
-      material,
-      cards,
-      standingInstructions: readPersistentInstructions(task.metadata)
-        .filter((instruction) => instruction.status === "active")
-        .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
-        .map((instruction) => instruction.source_turns.length > 0
-          ? `- (${instruction.source_turns.join(", ")}) ${instruction.text}`
-          : `- ${instruction.text}`),
-      ownSessionId: sessionId,
-      resetContext: task.activeGenerationRollover?.resetContext === true,
-      keepInstructions: task.activeGenerationRollover?.keepInstructions !== false,
-      materialUnavailable: unavailable,
-    }, PERSISTENT_CHECKPOINT_BUDGET);
   }
 
   /**

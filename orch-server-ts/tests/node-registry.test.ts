@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
 import {
   InMemoryNodeRegistry,
@@ -384,6 +385,60 @@ describe("Node registry and per-node session cache primitive", () => {
       connected: true,
       heartbeat: { supported: false },
     });
+  });
+
+  it("keeps the latest resources through register, refresh, heartbeat and disconnect", () => {
+    let nowMs = 1_000;
+    const registry = new InMemoryNodeRegistry({ nowMs: () => nowMs });
+    const resources: NodeResourceSnapshot = {
+      collectedAt: "2026-10-22T03:00:00.000Z",
+      cpu: { usagePercent: 20, cores: 8, loadAvg1m: 0.4 },
+      memory: { usagePercent: 40, usedBytes: 400, availableBytes: 600, totalBytes: 1000 },
+      disk: null,
+      diskQueue: null,
+    };
+    const refreshed: NodeResourceSnapshot = {
+      ...resources,
+      collectedAt: "2026-10-22T03:01:00.000Z",
+      cpu: { ...resources.cpu, usagePercent: 30 },
+    };
+    const heartbeat: NodeResourceSnapshot = {
+      ...refreshed,
+      collectedAt: "2026-10-22T03:02:00.000Z",
+      cpu: { ...refreshed.cpu, usagePercent: 35 },
+    };
+    const registration: NodeRegistrationPayload = {
+      ...fixture.registration,
+      type: "node_register",
+      node_id: "resource-node",
+      resources,
+    };
+    const first = registry.registerNode(registration);
+
+    expect(first.node.resources).toEqual(resources);
+    registry.disconnectNode("resource-node", { connectionId: first.node.connectionId, reason: "test" });
+    const reconnected = registry.registerNode({
+      ...fixture.registration,
+      type: "node_register",
+      node_id: "resource-node",
+    });
+    expect(reconnected.node.resources).toEqual(resources);
+
+    registry.refreshNodeRegistration(
+      { nodeId: "resource-node", connectionId: reconnected.node.connectionId },
+      { type: "node_register", node_id: "resource-node", resources: refreshed },
+    );
+    expect(registry.getConnectedNode("resource-node")?.resources).toEqual(refreshed);
+
+    registry.receiveNodeMessage("resource-node", {
+      type: "app_heartbeat_ping",
+      resources: heartbeat,
+    });
+    expect(registry.getConnectedNode("resource-node")?.resources).toEqual(heartbeat);
+
+    registry.disconnectNode("resource-node", { connectionId: reconnected.node.connectionId, reason: "test" });
+    expect(registry.listAllNodes().map((node) => [node.nodeId, node.status, node.resources]))
+      .toEqual([["resource-node", "disconnected", heartbeat]]);
   });
 
   it("recognizes request-id-free direct node session messages and updates the session cache", () => {

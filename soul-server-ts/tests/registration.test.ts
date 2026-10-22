@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it, beforeEach, afterAll, beforeAll } from "vitest";
 import type { NodeRegister } from "@soulstream/wire-schema";
+import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
 import { AgentRegistry } from "../src/agent_registry.js";
 import { ModelCatalog } from "../src/model_catalog.js";
@@ -32,6 +33,26 @@ const claudeAgent = {
 describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
   beforeEach(() => {
     _resetPortraitCacheForTest();
+  });
+
+  it("includes a provided node resource snapshot", () => {
+    const resources: NodeResourceSnapshot = {
+      collectedAt: "2026-10-22T03:00:00.000Z",
+      cpu: { usagePercent: 12.5, cores: 4, loadAvg1m: 0.25 },
+      memory: { usagePercent: 50, usedBytes: 512, availableBytes: 512, totalBytes: 1024 },
+      disk: null,
+      diskQueue: null,
+    };
+    const msg = buildRegistrationMsg({
+      nodeId: "resource-node",
+      host: "127.0.0.1",
+      port: 4205,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+      resources,
+    });
+
+    expect(msg.resources).toEqual(resources);
   });
 
   it("agentRegistry 결과로 agents·supported_backends·max_concurrent 채움", () => {

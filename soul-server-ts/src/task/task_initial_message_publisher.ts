@@ -48,7 +48,7 @@ export class TaskInitialMessagePublisher {
       attachmentPaths: task.attachmentPaths,
       attachmentIds: task.attachmentIds,
       attachmentBindings: task.attachmentBindings,
-      contextItems: (ctx ? ctx.combinedContextItems : task.contextItems)?.filter(item=>item.key !== "assigned_cards" && item.key !== "persistent_report"),
+      contextItems: (ctx ? ctx.combinedContextItems : task.contextItems)?.filter(item=>item.key !== "assigned_cards" && item.key !== "persistent_report" && item.key !== "node_resources"),
     });
     await persistUserMessageEvent(task, event, this.deps);
     if (!task.executionRegistration) {

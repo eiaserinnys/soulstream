@@ -12,6 +12,7 @@ import type { SoulstreamScheduleService } from "../schedule/schedule_service.js"
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
+import { NodeResourceCollector } from "../upstream/node_resource_collector.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import {
   composeRunnerReconciliationReporter,
@@ -80,6 +81,7 @@ export function composeWorkerUpstreamAdapter({
     logger,
     {
       agentRegistry,
+      resourceCollector: new NodeResourceCollector({ diskPath: process.cwd() }),
       taskManager,
       taskExecutor,
       attachmentStore,

@@ -95,14 +95,22 @@ export function registerNodeSnapshotRoutes(
   app: FastifyInstance,
   options: NodeSnapshotRouteOptions,
 ): void {
-  app.get("/api/nodes", async () => executeNodeSnapshotRoute(options));
+  app.get("/api/nodes", async (request) => {
+    const query = request.query as { includeDisconnected?: unknown };
+    return executeNodeSnapshotRoute(options, {
+      includeDisconnected: query.includeDisconnected === "true" || query.includeDisconnected === "1",
+    });
+  });
   app.get("/api/nodes/stream", async (request, reply) =>
     sendNodeStream(request, reply, options),
   );
 }
 
-export function executeNodeSnapshotRoute(options: Pick<NodeSnapshotRouteOptions, "snapshotService">) {
-  return options.snapshotService.listNodes();
+export function executeNodeSnapshotRoute(
+  options: Pick<NodeSnapshotRouteOptions, "snapshotService">,
+  query: { includeDisconnected?: boolean } = {},
+) {
+  return options.snapshotService.listNodes(query);
 }
 
 export function formatNodeStreamFrame(frame: NodeStreamFrame): string {

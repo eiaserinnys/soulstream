@@ -996,12 +996,13 @@ describe("TaskTurnInputBuilder", () => {
       purpose: "cache_keepalive" as const,
     }, false],
     ["ordinary input", { text: "continue", user: "u" }, true],
-  ])("%s %s assigned-card reminder context", async (_label, intervention, shouldIncludeAssignedCards) => {
+  ])("%s %s assigned-card and resource reminder context", async (_label, intervention, shouldIncludeAssignedCards) => {
     const { builder } = makeSubject({
       contextBuilder: {
         buildFollowupContext: vi.fn().mockResolvedValue({
           contextItems: [
             { key: "assigned_cards", label: "Assigned Cards", content: "assigned card reminder" },
+            { key: "node_resources", label: "노드 자원 상태", content: "node resource status" },
             { key: "running_sessions", label: "Running Sessions", content: "other context" },
           ],
         }),
@@ -1012,6 +1013,7 @@ describe("TaskTurnInputBuilder", () => {
 
     expect(input.prompt).toContain("other context");
     expect(input.prompt.includes("assigned card reminder")).toBe(shouldIncludeAssignedCards);
+    expect(input.prompt.includes("node resource status")).toBe(shouldIncludeAssignedCards);
     expect(input.inputMaterialParts?.reduce(
       (sum, part) => sum + (part.raw_chars_utf16 ?? 0),
       0,
