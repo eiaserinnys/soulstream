@@ -32,6 +32,8 @@ export function usePersistentDraft(
   const memoryDraft = key === null && continuity
     ? continuity.getMemoryDraft(generation, role, memoryTarget)
     : undefined;
+  const [, setMemoryEpoch] = useState(0);
+  const bumpMemory = useCallback(() => setMemoryEpoch(epoch => epoch + 1), []);
   const [local, setLocal] = useState<{ key: string | null; value: string } | null>(null);
   const saved = useDraftStore(state => key && hydrated ? state.drafts[key] : undefined);
   const ready = hydrated;
@@ -44,43 +46,48 @@ export function usePersistentDraft(
   const setValue = useCallback((update: SetStateAction<string>) => {
     if (!ready) return;
     if (!key) {
-      setLocal(previous => {
-        const current = previous?.key === localKey ? previous.value : memoryDraft ?? initialValue;
-        const next = typeof update === 'function' ? (update as (previous: string) => string)(current) : update;
-        continuity?.setMemoryDraft(generation, role, memoryTarget, next);
-        return { key: localKey, value: next };
-      });
+      const current = localValue ?? memoryDraft ?? initialValue;
+      const next = typeof update === 'function' ? (update as (previous: string) => string)(current) : update;
+      if (continuity) {
+        continuity.setMemoryDraft(generation, role, memoryTarget, next);
+        bumpMemory();
+      }
+      setLocal({ key: localKey, value: next });
       return;
     }
     const current = useDraftStore.getState().drafts[key];
     const next = typeof update === 'function' ? (update as (previous: string) => string)(current ?? initialValue) : update;
     if (next === initialValue) useDraftStore.getState().remove(key);
     else useDraftStore.getState().write(key, next);
-  }, [key, localKey, ready, initialValue, continuity, generation, role, memoryTarget, memoryDraft]);
+  }, [key, localKey, ready, initialValue, continuity, generation, role, memoryTarget, localValue, memoryDraft, bumpMemory]);
   const clear = useCallback(() => {
     if (key) useDraftStore.getState().remove(key);
     else {
-      const current = localValue ?? memoryDraft;
+      const current = memoryDraft ?? localValue;
       if (current !== undefined) continuity?.clearMemoryDraftIfMatches(generation, role, memoryTarget, current);
-      setLocal({ key: localKey, value: initialValue });
+      setLocal(null);
+      bumpMemory();
     }
-  }, [key, continuity, generation, role, memoryTarget, localKey, localValue, memoryDraft, initialValue]);
+  }, [key, continuity, generation, role, memoryTarget, localValue, memoryDraft, bumpMemory]);
   const clearIfMatches = useCallback((submitted: string) => {
     if (key) useDraftStore.getState().remove(key, submitted);
     else {
       continuity?.clearMemoryDraftIfMatches(generation, role, memoryTarget, submitted);
-      const current = localValue ?? memoryDraft ?? initialValue;
-      setLocal({ key: localKey, value: current === submitted ? initialValue : current });
+      setLocal(previous => previous?.key === localKey && previous.value === submitted ? null : previous);
+      if (continuity) bumpMemory();
     }
-  }, [key, continuity, generation, role, memoryTarget, localKey, localValue, memoryDraft, initialValue]);
+  }, [key, localKey, continuity, generation, role, memoryTarget, bumpMemory]);
   return {
     value,
     setValue,
     clear,
     clearIfMatches,
     ready,
-    hasDraft: saved !== undefined
-      || (key === null && (localValue !== undefined ? localValue !== initialValue : memoryDraft !== undefined && memoryDraft !== initialValue)),
+    hasDraft: saved !== undefined || (key === null && (
+      continuity
+        ? memoryDraft !== undefined ? memoryDraft !== initialValue : localValue !== undefined
+        : localValue !== undefined
+    )),
     key,
   };
 }

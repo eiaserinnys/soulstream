@@ -1,4 +1,7 @@
+import React from 'react';
+import { act, renderHook } from '@testing-library/react-native';
 import { ROOT_TAB_ORDER } from '../tabContract';
+import { LayoutContinuityProvider, useLayoutContinuity } from '../LayoutContinuityContext';
 import {
   buildPhoneState,
   buildTabletState,
@@ -32,8 +35,12 @@ const topRoute = (state: any): any => {
 
 const folder = { folderPageId: 'page-1', folderTitle: '프로젝트', folderId: 'folder-1' };
 
-const tabletContextFromEffects = (effects: TabletContinuityEffects): TabletLocationContext => ({
+const tabletContextFromEffects = (
+  effects: TabletContinuityEffects,
+  previousLocation?: NormalizedNavigationLocation,
+): TabletLocationContext => ({
   lastMainFocus: effects.lastMainFocus,
+  previousLocation: previousLocation ?? null,
   folderOverlayVisible: Boolean(effects.folderOverlay || effects.cardOverlay || effects.sessionOverlay),
   selectedFolder: effects.folderOverlay
     ? {
@@ -110,8 +117,8 @@ describe('readPhoneLocation', () => {
       fromPersistent: true,
     });
 
-    expect(readPhoneLocation(phoneState('SettingsTab', [{ name: 'Settings' }]), { settingsCategory: 'work' }))
-      .toEqual({ originTab: 'SettingsTab', kind: 'settings', category: 'work' });
+    expect(readPhoneLocation(phoneState('SettingsTab', [{ name: 'Settings' }]), { settingsCategory: 'recurring-jobs' }))
+      .toEqual({ originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' });
     expect(readPhoneLocation(phoneState('SettingsTab', [{ name: 'Settings' }, { name: 'RecurringJobs' }])))
       .toEqual({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'list' } });
     expect(readPhoneLocation(phoneState('SettingsTab', [
@@ -172,7 +179,7 @@ describe('buildPhoneState', () => {
   });
 
   test('설정과 반복 작업 패널을 실제 route로 만든다', () => {
-    const settings = buildPhoneState({ originTab: 'SettingsTab', kind: 'settings', category: 'work' });
+    const settings = buildPhoneState({ originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' });
     expect(tabIndex(settings)).toBe('SettingsTab');
     expect(tabStack(settings, 'SettingsTab').map(route => route.name)).toEqual(['Settings']);
 
@@ -195,14 +202,23 @@ describe('buildPhoneState', () => {
     ['persistentSession', { originTab: 'PersistentTab', kind: 'persistentSession' }],
     ['PAS cardDetail', { originTab: 'PersistentTab', kind: 'cardDetail', cardId: 'card-2', pasCard: true }],
     ['Persistent markdown', { originTab: 'PersistentTab', kind: 'markdownDocument', documentId: 'doc-2', fromPersistent: true }],
-    ['settings', { originTab: 'SettingsTab', kind: 'settings', category: 'work' }],
+    ['cardDetail from daily', { originTab: 'DailyTab', kind: 'cardDetail', cardId: 'card-3' }],
+    ['cardDetail from folder', { originTab: 'FolderTab', kind: 'cardDetail', cardId: 'card-4', folder }],
+    ['markdown from feed', { originTab: 'FeedTab', kind: 'markdownDocument', documentId: 'doc-3' }],
+    ['markdown from daily folder', { originTab: 'DailyTab', kind: 'markdownDocument', documentId: 'doc-4', folder }],
+    ['chat with folder', { originTab: 'FolderTab', kind: 'chat', sessionId: 'session-1', folder, returnTab: 'FolderTab' }],
+    ['chat with daily folder', { originTab: 'DailyTab', kind: 'chat', sessionId: 'session-2', folder, returnTab: 'DailyTab' }],
+    ['chat with PAS card', { originTab: 'FeedTab', kind: 'chat', sessionId: 'session-3', cardId: 'card-5', returnTab: 'PersistentTab' }],
+    ['settings', { originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' }],
     ['recurring list', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'list' } }],
     ['recurring editor', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'editor' } }],
     ['recurring history', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'history', jobId: 'job-2' } }],
   ])('%s 위치는 phone 상태 왕복에서 보존된다', (_label, location) => {
     const expected = location.kind === 'settings'
       ? { originTab: 'SettingsTab', kind: 'settings', category: null }
-      : location;
+      : location.kind === 'chat'
+        ? { ...location, originTab: 'FeedTab' }
+        : location;
     expect(readPhoneLocation(buildPhoneState(location))).toEqual(expected);
   });
 });
@@ -244,13 +260,13 @@ describe('buildTabletState', () => {
   });
 
   test('설정·반복 작업은 설정 효과로 표현한다', () => {
-    const settings = buildTabletState({ originTab: 'SettingsTab', kind: 'settings', category: 'work' });
-    expect(settings.tabletEffects).toMatchObject({ settingsVisible: true, settingsCategory: 'work' });
+    const settings = buildTabletState({ originTab: 'SettingsTab', kind: 'settings', category: 'recurring-jobs' });
+    expect(settings.tabletEffects).toMatchObject({ settingsVisible: true, settingsCategory: 'recurring-jobs' });
 
     const editor = buildTabletState({ originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'editor', jobId: 'job-1' } });
     expect(editor.tabletEffects).toMatchObject({
       settingsVisible: true,
-      settingsCategory: 'work',
+      settingsCategory: 'recurring-jobs',
       recurringJobsPanel: { kind: 'editor', jobId: 'job-1' },
     });
   });
@@ -263,6 +279,10 @@ describe('buildTabletState', () => {
     ['feed', { originTab: 'FeedTab', kind: 'feed' }],
     ['search', { originTab: 'FeedTab', kind: 'search', initialQuery: '검색어' }],
     ['chat', { originTab: 'FeedTab', kind: 'chat', sessionId: 'session-1' }],
+    ['chat with folder', { originTab: 'FolderTab', kind: 'chat', sessionId: 'session-2', folder, returnTab: 'FolderTab' }],
+    ['chat with card', { originTab: 'FeedTab', kind: 'chat', sessionId: 'session-3', cardId: 'card-5' }],
+    ['cardDetail from daily', { originTab: 'DailyTab', kind: 'cardDetail', cardId: 'card-3' }],
+    ['markdown from feed', { originTab: 'FeedTab', kind: 'markdownDocument', documentId: 'doc-3' }],
     ['persistentSession', { originTab: 'PersistentTab', kind: 'persistentSession' }],
     ['PAS cardDetail', { originTab: 'PersistentTab', kind: 'cardDetail', cardId: 'card-2', pasCard: true }],
     ['Persistent markdown', { originTab: 'PersistentTab', kind: 'markdownDocument', documentId: 'doc-2', fromPersistent: true }],
@@ -271,13 +291,57 @@ describe('buildTabletState', () => {
     ['recurring history', { originTab: 'SettingsTab', kind: 'recurringJobs', panel: { kind: 'history', jobId: 'job-2' } }],
   ])('%s 위치는 tablet 효과 왕복에서 보존된다', (_label, location) => {
     const built = buildTabletState(location);
-    const restored = readTabletLocation(built.initialState, tabletContextFromEffects(built.tabletEffects));
+    const restored = readTabletLocation(
+      built.initialState,
+      tabletContextFromEffects(built.tabletEffects, location),
+    );
     const expected = location.kind === 'recurringJobs'
       ? { ...location, originTab: 'SettingsTab', panel: location.panel }
       : location.kind === 'chat' && !location.folder && !location.cardId
         ? { ...location, returnTab: 'FeedTab' }
         : location;
     expect(restored).toEqual(expected);
+  });
+});
+
+describe('LayoutContinuityProvider', () => {
+  const wrapper = ({ children }: { children: React.ReactNode }) =>
+    React.createElement(LayoutContinuityProvider, null, children);
+
+  test('스크롤·초안·답장 대상·뷰 상태와 레이아웃 스냅샷을 메모리에 보관한다', () => {
+    const { result } = renderHook(() => useLayoutContinuity(), { wrapper });
+
+    act(() => {
+      result.current.setScrollPosition('feed', { offsetY: 120, followBottom: true });
+      result.current.writeScroll('folder', { offsetY: 8 });
+      result.current.setMemoryDraft('auth-scope-1', 'chat', 'session-1', '초안');
+      result.current.setComposerReplyTarget('session-1', { itemId: 4 });
+      result.current.setViewState('settings', { category: 'recurring-jobs' });
+      result.current.setPhoneStateSnapshot({ type: 'tab', key: 'phone', index: 0, routes: [] } as never);
+      result.current.setLastLocation({ originTab: 'DailyTab', kind: 'daily' });
+    });
+
+    expect(result.current.getScrollPosition('feed')).toEqual({ offsetY: 120, followBottom: true });
+    expect(result.current.readScroll('folder')).toEqual({ offsetY: 8 });
+    expect(result.current.getMemoryDraft('auth-scope-1', 'chat', 'session-1')).toBe('초안');
+    expect(result.current.getMemoryDraft('auth-scope-1', 'chat', 'session-2')).toBeUndefined();
+    expect(result.current.getComposerReplyTarget<{ itemId: number }>('session-1')).toEqual({ itemId: 4 });
+    expect(result.current.getViewState<{ category: string }>('settings')).toEqual({ category: 'recurring-jobs' });
+    expect(result.current.getPhoneStateSnapshot()).toMatchObject({ key: 'phone' });
+    expect(result.current.getTabletStateSnapshot()).toBeNull();
+    expect(result.current.getLastLocation()).toEqual({ originTab: 'DailyTab', kind: 'daily' });
+
+    act(() => result.current.clearMemoryDraftIfMatches('auth-scope-1', 'chat', 'session-1', '다른 값'));
+    expect(result.current.getMemoryDraft('auth-scope-1', 'chat', 'session-1')).toBe('초안');
+    act(() => result.current.clearMemoryDraftIfMatches('auth-scope-1', 'chat', 'session-1', '초안'));
+    expect(result.current.getMemoryDraft('auth-scope-1', 'chat', 'session-1')).toBeUndefined();
+
+    act(() => {
+      result.current.setComposerReplyTarget('session-1', null);
+      result.current.setLastLocation(null);
+    });
+    expect(result.current.getComposerReplyTarget('session-1')).toBeUndefined();
+    expect(result.current.getLastLocation()).toBeNull();
   });
 });
 

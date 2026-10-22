@@ -1,10 +1,10 @@
-// 모듈 크기 예외: 이 파일은 정규화 위치·효과 타입 정의(약 130줄)와 실제 route 이름/params 매핑
-// 테이블이 본체다. #562 위임서가 변경 파일을 5개로 고정했으므로 별도 타입 모듈로 분리하지 않는다.
+// 모듈 크기 예외: 이 파일은 정규화 위치·효과 타입 정의와 실제 route 이름/params 매핑 테이블이
+// 본체다. #562 위임서가 변경 파일을 5개로 고정했으므로 별도 타입 모듈로 분리하지 않는다.
 import type { InitialState, NavigationState, PartialState } from '@react-navigation/native';
 import { ROOT_TAB_ORDER } from './tabContract';
+import type { PhoneReturnTab } from './phonePanelHistory';
 
-export type PhoneTabName = 'DailyTab' | 'FolderTab' | 'FeedTab' | 'PersistentTab' | 'SettingsTab';
-export type PhoneReturnTab = 'DailyTab' | 'FolderTab' | 'FeedTab';
+export type PhoneTabName = (typeof ROOT_TAB_ORDER)[number];
 export type MainFocusKind = 'cards' | 'feed' | 'folder' | 'dailyHistory' | 'search';
 export type RecurringJobsPanelState =
   | { kind: 'list' }
@@ -96,14 +96,10 @@ type LooseState = { index?: number; routes?: LooseRoute[] };
 type RouteSpec = { name: string; params?: Record<string, unknown> };
 
 const PHONE_TABS = ROOT_TAB_ORDER as readonly PhoneTabName[];
-const PHONE_RETURN_TABS: readonly PhoneReturnTab[] = ['DailyTab', 'FolderTab', 'FeedTab'];
+const RECURRING_JOBS_CATEGORY = 'recurring-jobs';
 
 function isPhoneTab(name: unknown): name is PhoneTabName {
   return typeof name === 'string' && (PHONE_TABS as readonly string[]).includes(name);
-}
-
-function isPhoneReturnTab(name: unknown): name is PhoneReturnTab {
-  return typeof name === 'string' && (PHONE_RETURN_TABS as readonly string[]).includes(name);
 }
 
 function loose(state: AnyNavState | undefined | null): LooseState {
@@ -146,11 +142,25 @@ function folderOfRoute(route: LooseRoute, folderById?: Record<string, FolderWork
   return folderById?.[folder.folderPageId] ?? folder;
 }
 
-function findBelow(routes: LooseRoute[], topIndex: number, predicate: (route: LooseRoute) => boolean): LooseRoute | undefined {
-  for (let index = Math.min(topIndex, routes.length) - 1; index >= 0; index -= 1) {
-    if (predicate(routes[index])) return routes[index];
+function lastFolder(routes: LooseRoute[], folderById?: Record<string, FolderWorkspaceContext>): FolderWorkspaceContext | undefined {
+  for (let index = routes.length - 1; index >= 0; index -= 1) {
+    if (routes[index].name === 'FolderWorkspace') return folderOfRoute(routes[index], folderById);
   }
   return undefined;
+}
+
+function lastCardId(routes: LooseRoute[]): string | undefined {
+  for (let index = routes.length - 1; index >= 0; index -= 1) {
+    if (routes[index].name !== 'CardDetail') continue;
+    const cardId = stringParam(routes[index].params, 'cardId');
+    if (cardId !== undefined) return cardId;
+  }
+  return undefined;
+}
+
+function stackRoutesInTab(rootState: AnyNavState | undefined, tab: PhoneTabName): LooseRoute[] {
+  const tabRoute = routesOf(rootState).find(route => route.name === tab);
+  return routesOf(tabRoute?.state);
 }
 
 function stackRoutesOf(route: LooseRoute | undefined): { routes: LooseRoute[]; topIndex: number; top: LooseRoute | undefined } {
@@ -158,6 +168,10 @@ function stackRoutesOf(route: LooseRoute | undefined): { routes: LooseRoute[]; t
   const top = activeRoute(route?.state);
   const topIndex = top ? routes.indexOf(top) : routes.length - 1;
   return { routes, topIndex, top };
+}
+
+function folderOfLocation(location: NormalizedNavigationLocation | null | undefined): FolderWorkspaceContext | undefined {
+  return location && 'folder' in location ? location.folder : undefined;
 }
 
 export function readPhoneLocation(
@@ -170,10 +184,9 @@ export function readPhoneLocation(
 
   if (!top) return defaultPhoneLocation(originTab);
 
-  const folderRoute = findBelow(routes, topIndex, route => route.name === 'FolderWorkspace');
-  const folder = folderRoute ? folderOfRoute(folderRoute, context.folderById) : undefined;
-  const cardRoute = findBelow(routes, topIndex, route => route.name === 'CardDetail' && typeof route.params?.cardId === 'string');
-  const cardId = stringParam(cardRoute?.params, 'cardId');
+  const belowTop = routes.slice(0, Math.max(topIndex, 0));
+  const folder = lastFolder(belowTop, context.folderById);
+  const cardId = lastCardId(belowTop);
 
   switch (top.name) {
     case 'Daily':
@@ -193,7 +206,9 @@ export function readPhoneLocation(
     case 'Search':
       return { originTab, kind: 'search', initialQuery: stringParam(top.params, 'initialQuery') };
     case 'Chat': {
-      const returnTab = isPhoneReturnTab(top.params?.returnTab) ? top.params?.returnTab : undefined;
+      const returnTab = isPhoneTab(top.params?.returnTab) ? top.params?.returnTab : undefined;
+      const contextTab = returnTab ?? originTab;
+      const contextRoutes = contextTab === originTab ? routes : stackRoutesInTab(state, contextTab);
       const usageEntry = top.params?.usageEntry === 'notification' ? 'notification' as const : undefined;
       return {
         originTab,
@@ -203,8 +218,8 @@ export function readPhoneLocation(
         storyOpenRequestId: numberParam(top.params, 'storyOpenRequestId'),
         usageEntry,
         returnTab,
-        folder,
-        cardId,
+        folder: folder ?? lastFolder(contextRoutes, context.folderById) ?? folderOfLocation(context.previousLocation),
+        cardId: cardId ?? lastCardId(contextRoutes),
       };
     }
     case 'CardDetail': {
@@ -334,26 +349,17 @@ function tabletMainLocation(context: TabletLocationContext): NormalizedNavigatio
     const folder = context.selectedFolder ?? undefined;
     const sessionId = context.activeSessionId ?? undefined;
     const cardId = context.selectedCardId ?? undefined;
+    const previousTab = context.previousLocation?.originTab ?? 'DailyTab';
     if (cardId) {
       return sessionId
-        ? {
-          originTab: context.previousLocation?.originTab ?? 'DailyTab',
-          kind: 'chat',
-          sessionId,
-          cardId,
-          folder,
-        }
-        : {
-          originTab: context.previousLocation?.originTab ?? 'DailyTab',
-          kind: 'cardDetail',
-          cardId,
-          folder,
-        };
+        ? { originTab: previousTab, kind: 'chat', sessionId, cardId, folder }
+        : { originTab: previousTab, kind: 'cardDetail', cardId, folder };
     }
     if (folder) {
+      const originTab = context.previousLocation?.originTab ?? 'FolderTab';
       return sessionId
-        ? { originTab: 'FolderTab', kind: 'chat', sessionId, folder, returnTab: 'FolderTab' }
-        : { originTab: 'FolderTab', kind: 'folderWorkspace', folder };
+        ? { originTab, kind: 'chat', sessionId, folder, returnTab: originTab === 'DailyTab' ? 'DailyTab' : 'FolderTab' }
+        : { originTab, kind: 'folderWorkspace', folder };
     }
     if (sessionId) {
       return { originTab: 'FeedTab', kind: 'chat', sessionId, returnTab: 'FeedTab' };
@@ -402,13 +408,11 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
     case 'folderList':
       activeTab = 'FolderTab';
       break;
-    case 'folderWorkspace':
-      activeTab = 'FolderTab';
-      stacks.set('FolderTab', [
-        { name: 'FolderList' },
-        { name: 'FolderWorkspace', params: folderParams(location.folder) },
-      ]);
+    case 'folderWorkspace': {
+      activeTab = folderTabOf(location.originTab);
+      stacks.set(activeTab, folderStack(activeTab, location.folder));
       break;
+    }
     case 'feed':
       activeTab = 'FeedTab';
       break;
@@ -424,33 +428,28 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
     case 'chat': {
       activeTab = 'FeedTab';
       const returnTab = location.returnTab ?? (location.folder ? 'FolderTab' : 'FeedTab');
+      const cardTab = returnTab === 'FeedTab' ? undefined : returnTab;
       stacks.set('FeedTab', [
         { name: 'Feed' },
-        ...(location.cardId ? [{ name: 'CardDetail', params: { cardId: location.cardId } }] : []),
+        ...(cardTab === undefined && location.cardId ? [{ name: 'CardDetail', params: { cardId: location.cardId } }] : []),
         { name: 'Chat', params: chatParams(location, returnTab) },
       ]);
       if (location.folder) {
-        stacks.set('FolderTab', [
-          { name: 'FolderList' },
-          { name: 'FolderWorkspace', params: folderParams(location.folder) },
-        ]);
+        const folderTab = folderTabOf(returnTab);
+        stacks.set(folderTab, folderStack(folderTab, location.folder));
+      }
+      if (cardTab && location.cardId) {
+        const base = stacks.get(cardTab) ?? [];
+        stacks.set(cardTab, [...base, { name: 'CardDetail', params: { cardId: location.cardId } }]);
       }
       break;
     }
     case 'cardDetail': {
       const pasCard = location.pasCard || location.originTab === 'PersistentTab';
-      activeTab = pasCard ? 'PersistentTab' : cardTab(location.originTab);
-      const routes: RouteSpec[] = [];
-      if (activeTab === 'DailyTab') {
-        routes.push({ name: 'Daily' });
-        if (location.folder) routes.push({ name: 'FolderWorkspace', params: folderParams(location.folder) });
-      } else if (activeTab === 'FolderTab') {
-        routes.push({ name: 'FolderList' });
-        if (location.folder) routes.push({ name: 'FolderWorkspace', params: folderParams(location.folder) });
-      } else if (activeTab === 'FeedTab') {
-        routes.push({ name: 'Feed' });
-      } else {
-        routes.push({ name: 'PersistentSession' });
+      activeTab = pasCard ? 'PersistentTab' : dayOrPasTab(location.originTab);
+      const routes: RouteSpec[] = [baseRoute(activeTab)];
+      if (!pasCard && location.folder && (activeTab === 'DailyTab' || activeTab === 'FolderTab')) {
+        routes.push({ name: 'FolderWorkspace', params: folderParams(location.folder) });
       }
       routes.push({ name: 'CardDetail', params: { cardId: location.cardId } });
       stacks.set(activeTab, routes);
@@ -461,21 +460,13 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
       break;
     case 'markdownDocument': {
       const fromPersistent = location.fromPersistent || location.originTab === 'PersistentTab';
-      activeTab = fromPersistent ? 'PersistentTab' : documentTab(location.originTab);
-      const routes: RouteSpec[] = [];
-      if (activeTab === 'PersistentTab') {
-        routes.push({ name: 'PersistentSession' });
-      } else if (activeTab === 'DailyTab') {
-        routes.push({ name: 'Daily' });
-        if (location.folder) routes.push({ name: 'FolderWorkspace', params: folderParams(location.folder) });
-        if (location.cardId) routes.push({ name: 'CardDetail', params: { cardId: location.cardId } });
-      } else if (activeTab === 'FolderTab') {
-        routes.push({ name: 'FolderList' });
-        if (location.folder) routes.push({ name: 'FolderWorkspace', params: folderParams(location.folder) });
-        if (location.cardId) routes.push({ name: 'CardDetail', params: { cardId: location.cardId } });
-      } else {
-        routes.push({ name: 'Feed' });
-        if (location.cardId) routes.push({ name: 'CardDetail', params: { cardId: location.cardId } });
+      activeTab = fromPersistent ? 'PersistentTab' : dayOrPasTab(location.originTab);
+      const routes: RouteSpec[] = [baseRoute(activeTab)];
+      if (!fromPersistent && location.folder && (activeTab === 'DailyTab' || activeTab === 'FolderTab')) {
+        routes.push({ name: 'FolderWorkspace', params: folderParams(location.folder) });
+      }
+      if (!fromPersistent && location.cardId) {
+        routes.push({ name: 'CardDetail', params: { cardId: location.cardId } });
       }
       routes.push({ name: 'MarkdownDocument', params: { documentId: location.documentId } });
       stacks.set(activeTab, routes);
@@ -503,12 +494,32 @@ export function buildPhoneState(location: NormalizedNavigationLocation): Initial
   } as unknown as InitialState;
 }
 
-function cardTab(originTab: PhoneTabName): PhoneTabName {
-  return originTab === 'SettingsTab' ? 'DailyTab' : originTab;
+function baseRoute(tab: PhoneTabName): RouteSpec {
+  switch (tab) {
+    case 'FolderTab':
+      return { name: 'FolderList' };
+    case 'FeedTab':
+      return { name: 'Feed' };
+    case 'PersistentTab':
+      return { name: 'PersistentSession' };
+    case 'SettingsTab':
+      return { name: 'Settings' };
+    default:
+      return { name: 'Daily' };
+  }
 }
 
-function documentTab(originTab: PhoneTabName): PhoneTabName {
-  return originTab === 'SettingsTab' ? 'DailyTab' : originTab;
+function folderTabOf(originTab: PhoneTabName): PhoneTabName {
+  return originTab === 'DailyTab' ? 'DailyTab' : 'FolderTab';
+}
+
+function dayOrPasTab(originTab: PhoneTabName): PhoneTabName {
+  if (originTab === 'FeedTab' || originTab === 'PersistentTab') return originTab;
+  return originTab === 'FolderTab' ? 'FolderTab' : 'DailyTab';
+}
+
+function folderStack(tab: PhoneTabName, folder: FolderWorkspaceContext): RouteSpec[] {
+  return [baseRoute(tab), { name: 'FolderWorkspace', params: folderParams(folder) }];
 }
 
 function folderParams(folder: FolderWorkspaceContext): Record<string, unknown> {
@@ -544,12 +555,11 @@ function recurringJobRoutes(panel: RecurringJobsPanelState): RouteSpec[] {
 }
 
 function stackState(tab: PhoneTabName, routes: RouteSpec[]): Record<string, unknown> {
-  const specs = routes.length > 0 ? routes : [{ name: 'Idle' }];
   return {
     type: 'stack',
     key: `stack-${tab}`,
-    index: specs.length - 1,
-    routes: specs.map((route, index) => ({
+    index: routes.length - 1,
+    routes: routes.map((route, index) => ({
       key: `route-${tab}-${index}`,
       name: route.name,
       ...(route.params === undefined ? {} : { params: route.params }),
@@ -651,7 +661,7 @@ export function buildTabletState(location: NormalizedNavigationLocation): {
     case 'recurringJobs':
       return main({
         settingsVisible: true,
-        settingsCategory: 'work',
+        settingsCategory: RECURRING_JOBS_CATEGORY,
         recurringJobsPanel: location.panel,
       });
   }
