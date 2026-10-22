@@ -34,6 +34,7 @@ import { useUsageSummary } from '../hooks/useUsageSummary';
 import { useOpenContentLink } from '../hooks/useOpenContentLink';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
+import { usePhoneRailMode } from '../navigation/tabContract';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
@@ -63,6 +64,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const t = useTokens();
   const device = useDeviceType();
   const phone = device === 'phone';
+  const railMode = usePhoneRailMode();
   const { fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const host = usePersistentSessionHost();
@@ -228,7 +230,9 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       onPress={onPress} testID={testID} surfaceTestID={`${testID}-visual`}>
       <Ionicons name={icon} size={t.iconSize.navigation} color={selected ? t.colors.accent : t.colors.textPrimary} />
     </LiquidGlassButton>;
-  return <SafeAreaView testID="persistent-session-safe-area" edges={['top', 'left', 'right']}
+  return <SafeAreaView testID="persistent-session-safe-area" edges={phone
+    ? railMode ? ['top', 'bottom', 'left'] : ['top', 'bottom', 'left', 'right']
+    : ['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
     <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
       <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',

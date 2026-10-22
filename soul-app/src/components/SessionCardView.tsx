@@ -70,8 +70,8 @@ export function SessionCardView({
 }) {
   const t = useTokens();
   const styles = useMemo(
-    () => makeSessionCardStyles(t, embedded, small, narrow),
-    [small, embedded, narrow, t],
+    () => makeSessionCardStyles(t, embedded, small),
+    [small, embedded, t],
   );
 
   // 표시명 폴백 정본은 lib/session-display-name.ts (카드·채팅 헤더 공용).
@@ -198,7 +198,7 @@ export function SessionCardView({
               {displayName}
             </Text>
           </View>
-          <View testID="session-card-identity-row" style={styles.identityRow}>
+          <View testID="session-card-identity-row" style={narrow ? [styles.identityRow, { justifyContent: 'space-between', gap: t.uiSpacing.sm }] : styles.identityRow}>
             <Text
               testID="session-card-identity"
               style={styles.identity}

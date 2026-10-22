@@ -3,13 +3,11 @@ import { createSessionVisualRoles, type DesignTokens } from '../theme';
 
 /**
  * Shared SessionCard and card-row frame; small removes one text row only.
- * narrow(< 400pt 피드)는 시간을 identity 행 오른쪽으로 옮겨 상태 열 폭을 회수한다.
  */
 export function makeSessionCardStyles(
   t: DesignTokens,
   embedded: boolean,
   small = false,
-  narrow = false,
 ) {
   const sessionRoles = createSessionVisualRoles(t);
   const AVATAR = sessionRoles.feed.avatar;
@@ -114,12 +112,11 @@ export function makeSessionCardStyles(
     identityRow: {
       flexDirection: 'row' as const,
       alignItems: 'center' as const,
-      justifyContent: narrow ? 'space-between' as const : undefined,
-      gap: narrow ? t.uiSpacing.sm : t.uiSpacing.xs,
+      gap: t.uiSpacing.xs,
       minWidth: 0,
     },
     identity: {
-      ...(narrow ? { flex: 1 } : { flexShrink: 1 }),
+      flexShrink: 1,
       minWidth: 0,
       ...sessionRoles.typography.meta,
       color: c.textSecondary,

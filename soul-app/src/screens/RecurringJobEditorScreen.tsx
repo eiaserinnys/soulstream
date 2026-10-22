@@ -4,11 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RecurringJobEditor } from '../components/settings/RecurringJobViews';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTokens } from '../theme';
+import { usePhoneRailMode } from '../navigation/tabContract';
 
 export function RecurringJobEditorScreen({ route, navigation }: { route: { params?: { jobId?: string } }; navigation: any }) {
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const t = useTokens();
-  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, paddingHorizontal: t.foundation.pageInset }}>
+  const railMode = usePhoneRailMode();
+  return <SafeAreaView edges={railMode ? ['bottom', 'left'] : ['bottom', 'left', 'right']} style={{ flex: 1, paddingHorizontal: t.foundation.pageInset }}>
     <RecurringJobEditor
       serverUrl={serverUrl}
       jobId={route.params?.jobId}

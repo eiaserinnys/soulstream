@@ -1,5 +1,5 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   type BottomTabBarButtonProps,
   type BottomTabBarProps,
@@ -7,7 +7,7 @@ import {
   type BottomTabNavigationProp,
   type BottomTabScreenProps,
 } from '@react-navigation/bottom-tabs';
-import { PlatformPressable } from '@react-navigation/elements';
+import { getDefaultHeaderHeight, PlatformPressable } from '@react-navigation/elements';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   CommonActions,
@@ -35,7 +35,7 @@ import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
-import { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
+import { INITIAL_ROOT_TAB, PhoneRailModeContext, ROOT_TAB_ORDER } from './tabContract';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { createApiClient } from '../api/client';
 import { useSettingsStore } from '../store/settingsStore';
@@ -91,9 +91,9 @@ export function PhoneRailTabCluster({ active, onSelect }: {
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
     : scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
-  return <GlassSurface role="chrome" testID="phone-rail-tab-cluster" cornerRadius={24}
+  return <GlassSurface role="chrome" testID="phone-rail-tab-cluster" cornerRadius={t.foundation.radius.round}
     style={{ width: RAIL_CAPSULE_WIDTH }}>
-    <View style={{ width: RAIL_CAPSULE_WIDTH, paddingVertical: 6, gap: 2, alignItems: 'center' }}>
+    <View style={{ width: RAIL_CAPSULE_WIDTH, paddingVertical: t.spacing.xs, gap: t.uiSpacing.xs / 2, alignItems: 'center' }}>
       {ROOT_TAB_ORDER.map((name) => {
         const config = ROOT_SECTION_CONFIG[name];
         const selected = name === active;
@@ -122,8 +122,19 @@ export function PhoneRailTabCluster({ active, onSelect }: {
 }
 
 function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+  const t = useTokens();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const activeRoute = state.routes[state.index];
   const active = activeRoute?.name as keyof RootTabParamList;
+  const nestedState = (activeRoute as typeof activeRoute & {
+    state?: { index?: number; routes?: Array<{ name?: string }> };
+  } | undefined)?.state;
+  const nestedRouteName = nestedState?.routes?.[nestedState.index ?? 0]?.name;
+  const showHeaderCap = active === 'SettingsTab'
+    ? ['RecurringJobs', 'RecurringJobEditor', 'RecurringJobHistory'].includes(nestedRouteName ?? '')
+    : active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab'
+      ? nestedRouteName !== 'CardDetail' && nestedRouteName !== 'MarkdownDocument'
+      : false;
   // 하위 화면이 탭바를 숨기면 레일 열 폭은 유지하고 캡슐만 감춘다.
   const hidden = StyleSheet.flatten(
     (activeRoute ? descriptors[activeRoute.key]?.options?.tabBarStyle : undefined) as ViewStyle | undefined,
@@ -139,12 +150,29 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBa
   return <View
     testID="phone-rail-tab-rail"
     style={{
+      position: 'relative',
       width: Math.max(insets.right, RAIL_MIN_INSET_WIDTH),
-      paddingBottom: Math.max(insets.bottom, 24),
+      paddingBottom: Math.max(insets.bottom, t.uiSpacing.xxl),
       alignItems: 'center',
       justifyContent: 'flex-end',
     }}
   >
+    {showHeaderCap ? <View
+      testID="phone-rail-header-cap"
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: getDefaultHeaderHeight(
+          { width: Math.max(0, windowWidth - insets.left - insets.right), height: windowHeight },
+          false,
+          insets.top,
+        ),
+        backgroundColor: createSurfaceRoles(t).chrome.tokenStyle.backgroundColor,
+      }}
+    /> : null}
     {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} />}
   </View>;
 }
@@ -507,15 +535,17 @@ function PhoneTabNavigator() {
       tabBar={railMode ? (props) => <PhoneRailTabBar {...props} /> : undefined}
       screenLayout={railMode
         ? ({ children }) => (
-          <SafeAreaInsetsContext.Provider value={{ ...insets, left: 0, right: 0 }}>
-            {children}
-          </SafeAreaInsetsContext.Provider>
+          <PhoneRailModeContext.Provider value={true}>
+            <SafeAreaInsetsContext.Provider value={{ ...insets, right: 0 }}>
+              {children}
+            </SafeAreaInsetsContext.Provider>
+          </PhoneRailModeContext.Provider>
         )
         : undefined}
       initialRouteName={host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: 'transparent', ...(railMode ? { paddingLeft: insets.left } : {}) },
+        sceneStyle: { backgroundColor: 'transparent' },
         tabBarShowLabel: false,
         tabBarPosition: railMode ? 'right' : 'bottom',
         tabBarButton: CenteredPhoneTabButton,

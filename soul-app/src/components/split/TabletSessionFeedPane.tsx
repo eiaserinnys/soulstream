@@ -17,14 +17,17 @@ import { recordUiUsageEvent } from '../../lib/ui-usage-events';
  * 태블릿 portrait·landscape가 공유하는 session feed chrome 구현.
  * 새 화면이 아니라 기존 두 adaptive surface의 header와 feed 진입 경계를 한 곳에서 소유한다.
  */
-export function TabletSessionFeedPane() {
+export function TabletSessionFeedPane({ width, onOpenSession }: {
+  width?: number;
+  onOpenSession?: (sessionId: string) => void;
+} = {}) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchActive = useSearchStore((state) => state.tabletActive);
   const folderOverlayVisible = useUIStore((state) => state.folderOverlayVisible);
 
   return (
-    <>
+    <View style={[styles.container, width === undefined ? null : { width }]}>
       <TabletPaneHeader testID="tablet-feed-header">
         <View testID="tablet-feed-title" style={styles.title}>
           <RootSectionHeaderTitle
@@ -80,18 +83,17 @@ export function TabletSessionFeedPane() {
           <SessionFeedScreen
             active={!folderOverlayVisible}
             reserveHomeComposerSpace
-            onOpenSession={(sessionId) =>
-              openFeedSessionCardWorkspace(sessionId)
-            }
+            onOpenSession={onOpenSession ?? ((sessionId) => openFeedSessionCardWorkspace(sessionId))}
           />
         )}
       </View>
-    </>
+    </View>
   );
 }
 
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
+    container: { flex: 1, minWidth: 0, minHeight: 0 },
     title: { flexShrink: 1 },
     body: { flex: 1 },
     closeAction: {

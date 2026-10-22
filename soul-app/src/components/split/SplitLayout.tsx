@@ -37,8 +37,7 @@ export function SplitLayout() {
   return (
     <SearchKeyboardCommandsHost>
       {mode === 'three-pane' ? <ThreePaneLayout />
-        : mode === 'two-pane' ? <TwoPaneWithDrawer />
-          : null}
+        : <TwoPaneWithDrawer />}
     </SearchKeyboardCommandsHost>
   );
 }

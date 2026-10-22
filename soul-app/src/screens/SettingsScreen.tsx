@@ -9,6 +9,7 @@ import { SETTINGS_CATEGORIES, type SettingsCategory } from '../components/settin
 import { SettingsWorkspaceContext, confirmSettingsDiscard, type SettingsSaveScope, type SettingsJobDestination, type SettingsPersistentDestination } from '../components/settings/SettingsWorkspaceContext';
 import { useDashboardAdminStatus } from '../components/settings/useDashboardAdminStatus';
 import { TABLET_BREAKPOINT, useDeviceType, useTokens, type DesignTokens } from '../theme';
+import { usePhoneRailMode } from '../navigation/tabContract';
 import { SettingsContent } from './SettingsContent';
 
 /** 2열 폼을 켜는 최소 폭. 듀오 바깥 화면(678×466) 가로에서는 1열을 유지한다. */
@@ -35,6 +36,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
   const styles = useMemo(() => makeStyles(t), [t]);
   const window = useWindowDimensions();
   const device = useDeviceType();
+  const railMode = usePhoneRailMode();
   const [width, setWidth] = useState(window.width);
   const wide = !connectionOnly && device !== 'phone' && width >= TABLET_BREAKPOINT;
   const detectedAdmin = useDashboardAdminStatus(showAdmin === undefined);
@@ -82,7 +84,12 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
   }, [scopes]);
   const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= SETTINGS_FORM_COLUMNS_MIN_WIDTH, jobs, setJobs, persistent, setPersistent, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, persistent, register, guard, changeConnection]);
   return <SettingsWorkspaceContext.Provider value={context}>
-    <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : bottomSafeAreaOwner === 'parent' ? ['left', 'right', 'top'] : ['left', 'right', 'bottom', 'top']} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+    <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : {
+      left: 'additive',
+      right: railMode ? 'off' : 'additive',
+      top: 'additive',
+      bottom: bottomSafeAreaOwner === 'parent' ? 'off' : 'additive',
+    }} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View testID="settings-modal-header" style={styles.header}>
           {!connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}

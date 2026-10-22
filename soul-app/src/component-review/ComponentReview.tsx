@@ -33,7 +33,13 @@ import { ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewLongFolders } from './ReviewLongFolders';
 import { ReviewAutoRefresh } from './ReviewAutoRefresh';
 import { ReviewCardImages } from './ReviewCardImages';
-import { folders, folderTabReviewFolders } from './fixtures';
+import {
+  entryShellCatalogSessions,
+  entryShellFolders,
+  entryShellSessions,
+  folders,
+  folderTabReviewFolders,
+} from './fixtures';
 import { getDialoguePreviewSample } from './dialogue-inventory';
 import { ReviewDialoguePreview } from './ReviewDialoguePreview';
 import { ReviewDialogues } from './ReviewDialogues';
@@ -94,6 +100,7 @@ export function initializeReview() {
   const cardImages = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardImages';
   const cardChecks = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'cardChecks';
   const settingsSection = typeof window !== 'undefined' ? new URLSearchParams(window.location?.search).get('section') : null;
+  const iphoneDuo = settingsSection === 'iphoneDuo';
   const pasCardExpand = settingsSection === 'pasCardExpand';
   const chatUiComposer = settingsSection === 'chatUiComposer';
   const chatUiFlow = settingsSection === 'chatUiRenderer';
@@ -105,7 +112,7 @@ export function initializeReview() {
   const firstNativeConnection = nativeSettings && new URLSearchParams(window.location.search).get('entry') === 'first';
   const dialogues = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'dialogues';
   const chat = typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('section') === 'chat';
-  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasCardExpand || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
+  useSettingsStore.setState({ serverUrl: firstNativeConnection ? '' : cardImages || pasCardExpand || chat || contentLinks || contentLinkDocument || attachments || chatUiComposer || chatUiFlow ? window.location.origin : entryShell || folderTabs || dialogues || nativeSettings || cardChecks || persistent || iphoneDuo ? 'https://public-fixture.invalid' : '', nodeId: 'public-node', appearance: typeof window !== 'undefined' && new URLSearchParams(window.location?.search).get('theme') === 'dark' ? 'dark' : 'light' });
   if (pasImageSample) useAuthStore.setState({ jwt: null, authRejected: false });
   if (attachments) useAuthStore.setState({ jwt: null, authRejected: false });
   if (chat) {
@@ -117,7 +124,7 @@ export function initializeReview() {
       turn_usage_mode: 'collapsed',
     });
   }
-  if (nativeSettings || persistent || contentLinks || contentLinkDocument || chatUiComposer || chatUiFlow) {
+  if (nativeSettings || persistent || contentLinks || contentLinkDocument || chatUiComposer || chatUiFlow || iphoneDuo) {
     useAuthStore.setState({ jwt: firstNativeConnection ? null : 'header.eyJlbWFpbCI6InB1YmxpYy1yZXZpZXdAZXhhbXBsZS5pbnZhbGlkIiwic3ViIjoicHVibGljLXJldmlld0BleGFtcGxlLmludmFsaWQiLCJuYW1lIjoiUHVibGljIFJldmlldyIsInBpY3R1cmUiOiIiLCJleHAiOjIwMDAwMDAwMDB9.signature', authRejected: false });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-error') useSettingsStore.setState({ wallpaper: { mode: 'photo', customImage: window.location.origin + '/assets/ios-components/unavailable-photo.jpg' } });
     if (new URLSearchParams(window.location.search).get('state') === 'photo-fallback') useSettingsStore.setState({ wallpaper: { mode: 'photo' } });
@@ -157,6 +164,23 @@ export function initializeReview() {
     });
   } else {
     useSessionStore.setState({ catalog: { folders: folderTabs ? (new URLSearchParams(window.location.search).get('state') === 'empty' ? [] : folderTabReviewFolders) : dialogues ? dialogueFolders : longSelection ? folders.map((folder, index) => index === 0 ? { ...folder, name: '아주 긴 프로젝트 폴더 이름으로 한 줄 말줄임을 확인합니다' } : folder) : folders, sessions: dialogues || persistent ? fixtureSessions : {} }, ...(dialogues || persistent ? { sessions: fixtureSessions } : {}), catalogLoadState: 'ready' });
+  }
+  if (iphoneDuo) {
+    const iphoneDuoSessions = Object.fromEntries(
+      [
+        ...reviewSessionPortraits(dialogueSessions),
+        ...entryShellSessions.map((session) => ({ ...session, agentPortraitUrl: dialogueImageUrl() })),
+      ].map((session) => [session.agentSessionId, session]),
+    );
+    useSessionStore.setState({
+      sessions: iphoneDuoSessions,
+      catalog: { folders: entryShellFolders, sessions: entryShellCatalogSessions },
+      feedMembership: Object.fromEntries(entryShellSessions.map((session) => [session.agentSessionId, 'candidate' as const])),
+      feedSessionIds: entryShellSessions.map((session) => session.agentSessionId),
+      feedPage: { hasMore: false, nextCursor: null, status: 'idle' },
+      catalogReady: true,
+      catalogLoadState: 'ready',
+    });
   }
 }
 
@@ -271,10 +295,19 @@ export function ComponentReview() {
 
 function getNativeSettingsSafeAreaFixture(search: string, width: number, height: number): { frame: Rect; insets: EdgeInsets } | null {
   const params = new URLSearchParams(search);
+  const iphoneDuo = params.get('section') === 'iphoneDuo';
   const pasImageSample = params.get('section') === 'chat' && params.get('sample') === 'pas-images';
   const chatUiComposerSample = params.get('section') === 'chatUiComposer';
   const contentLinkSample = params.get('section') === 'contentLinks' || params.get('section') === 'contentLinkDocument';
   if (params.get('safeArea') !== 'fixture' && !pasImageSample && !contentLinkSample && !chatUiComposerSample) return null;
+  if (iphoneDuo) {
+    const insets: EdgeInsets = Math.min(width, height) < 600
+      ? { top: 24, right: 84, bottom: 24, left: 0 }
+      : width < height
+        ? { top: 72, right: 0, bottom: 24, left: 0 }
+        : { top: 24, right: 84, bottom: 24, left: 0 };
+    return { frame: { x: 0, y: 0, width, height }, insets };
+  }
   const cardChecks = params.get('section') === 'cardChecks' || params.get('section') === 'persistent'
     || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
     || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi' || params.get('section') === 'chatUiRenderer';

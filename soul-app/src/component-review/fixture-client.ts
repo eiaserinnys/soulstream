@@ -434,6 +434,17 @@ export function createApiClient(baseUrl = ''): ApiClient {
       getStarredFolders: async () => ({ items: empty ? [] : starredFolders, nextCursor: null }) } as unknown as ApiClient;
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
+  if (section === 'iphoneDuo') return {
+    ...entryShellApi,
+    ...nativeSettingsApi,
+    getCard: entryShellApi.getCard,
+    listCards: entryShellApi.listCards,
+    listCompletedCards: entryShellApi.listCompletedCards,
+    getCatalog: entryShellApi.getCatalog,
+    getFeedPage: entryShellApi.getFeedPage,
+    getSessionsByIds: entryShellApi.getSessionsByIds,
+    catalogStreamUrl: entryShellApi.catalogStreamUrl,
+  } as unknown as ApiClient;
   if (section === 'nativeSettings') return { ...nativeSettingsApi, ...usageEndpoints } as unknown as ApiClient;
   if (section === 'persistent') {
     const api = createPersistentFullscreenReviewApi(window.location.search);
