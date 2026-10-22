@@ -90,4 +90,25 @@ describe("createChatSessionStore", () => {
     });
     expect(useDashboardStore.getState().tree).toBeNull();
   });
+
+  it("clears the composer pending cell when the event stores attachment paths separately", () => {
+    const scope = createChatSessionStore("assigned-session");
+    const attachmentPath = "/tmp/composer.png";
+    useDashboardStore.getState().setPendingChatSend("assigned-session", {
+      ...pending,
+      messageText: `${pending.messageText}\n\n[첨부 파일 로컬 경로: ${attachmentPath}]`,
+      attachmentPaths: [attachmentPath],
+    });
+
+    scope.store.getState().processEvent({
+      type: "user_message",
+      user: "director",
+      text: pending.text,
+      timestamp: 1_790_000_001,
+      attachments: [attachmentPath],
+    } as unknown as SoulSSEEvent, 11);
+
+    expect(useDashboardStore.getState().pendingChatSends["assigned-session"]).toBeUndefined();
+    expect(useDashboardStore.getState().tree).toBeNull();
+  });
 });

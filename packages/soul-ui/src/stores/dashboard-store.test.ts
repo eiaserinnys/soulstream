@@ -2623,6 +2623,60 @@ describe("dashboard-store", () => {
       });
     });
 
+    it("clears a sending cell when user_message stores attachment paths separately", () => {
+      useDashboardStore.getState().setPendingChatSend("session-pending", {
+        ...pending,
+        status: "sending",
+      });
+
+      useDashboardStore.getState().processEvents([{
+        event: {
+          type: "user_message",
+          user: "director",
+          text: "처리해 주세요",
+          context: [{
+            key: "persistent_report_visible",
+            content: { key: "card-example", title: "보고서" },
+          }],
+          input_id: "input-example",
+          timestamp: 1_790_000_003,
+          attachments: ["/tmp/scene.png"],
+          attachment_ids: ["attachment-example"],
+          attachment_count: 1,
+        } as unknown as import("../shared/types").SoulSSEEvent,
+        eventId: 13,
+      }]);
+
+      expect(useDashboardStore.getState().pendingChatSends["session-pending"]).toBeUndefined();
+    });
+
+    it("clears a sending cell when intervention_sent stores attachment paths separately", () => {
+      useDashboardStore.getState().setPendingChatSend("session-pending", {
+        ...pending,
+        status: "sending",
+      });
+
+      useDashboardStore.getState().processEvents([{
+        event: {
+          type: "intervention_sent",
+          user: "dashboard",
+          text: "처리해 주세요",
+          context: [{
+            key: "persistent_report_visible",
+            content: { key: "card-example", title: "보고서" },
+          }],
+          input_id: "input-example",
+          timestamp: 1_790_000_004,
+          attachments: ["/tmp/scene.png"],
+          attachment_ids: ["attachment-example"],
+          attachment_count: 1,
+        } as unknown as import("../shared/types").SoulSSEEvent,
+        eventId: 14,
+      }]);
+
+      expect(useDashboardStore.getState().pendingChatSends["session-pending"]).toBeUndefined();
+    });
+
     it("clears the cell for a matching user_message loaded from history", () => {
       useDashboardStore.getState().processHistoryEvents([{
         event: {
