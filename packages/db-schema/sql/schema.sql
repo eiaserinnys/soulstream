@@ -1055,6 +1055,8 @@ CREATE INDEX IF NOT EXISTS idx_events_session_id_id ON events (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_event_type_cover
     ON events USING btree (event_type)
     INCLUDE (session_id, id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_session_type_id
+    ON events (session_id, event_type, id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_dedupe_key
     ON events (session_id, dedupe_key)
     WHERE dedupe_key IS NOT NULL;

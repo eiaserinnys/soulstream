@@ -265,6 +265,7 @@ describe("worker composition boundary", () => {
       "runtime/worker_upstream_composition.ts",
       "runtime/task_runtime_composition.ts",
       "context/context_builder.ts",
+      "context/persistent_checkpoint_material.ts",
       "context/context_builder_helpers.ts",
       "context/page_context_resolver.ts",
       "context/page_context_repository.ts",

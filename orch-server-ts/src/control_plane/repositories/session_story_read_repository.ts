@@ -338,17 +338,22 @@ export class SessionStoryReadRepository {
       LIMIT 1
     `;
     const digest = digestRows[0];
+    const watermark = digest?.narrative_through_event_id ?? 0;
     const summaryRows = await this.sql<SummaryRow[]>`
-      WITH ordered_summaries AS (
-        SELECT id, payload, created_at,
-          ROW_NUMBER() OVER (ORDER BY id ASC)::integer AS turn_number
+      WITH folded AS (
+        SELECT COUNT(*)::integer AS folded_count
         FROM events
-        WHERE session_id = ${sessionId} AND event_type = 'turn_summary'
+        WHERE session_id = ${sessionId}
+          AND event_type = 'turn_summary'
+          AND id <= ${watermark}
       )
-      SELECT id, payload, created_at, turn_number
-      FROM ordered_summaries
-      WHERE id > ${digest?.narrative_through_event_id ?? 0}
-      ORDER BY id ASC
+      SELECT e.id, e.payload, e.created_at,
+        ((SELECT folded_count FROM folded) + ROW_NUMBER() OVER (ORDER BY e.id ASC))::integer AS turn_number
+      FROM events e
+      WHERE e.session_id = ${sessionId}
+        AND e.event_type = 'turn_summary'
+        AND e.id > ${watermark}
+      ORDER BY e.id ASC
     `;
     return {
       highlight: digest?.highlight ?? null,

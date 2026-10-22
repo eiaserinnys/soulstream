@@ -3800,7 +3800,8 @@
             },
             "summarized_through_turn": { "type": ["integer", "null"], "minimum": 0 },
             "recent_from_event_id": { "type": ["integer", "null"], "minimum": 1 },
-            "recent_to_event_id": { "type": ["integer", "null"], "minimum": 1 }
+            "recent_to_event_id": { "type": ["integer", "null"], "minimum": 1 },
+            "material_unavailable": { "const": true }
           }
         },
         "timestamp": { "type": "number" }

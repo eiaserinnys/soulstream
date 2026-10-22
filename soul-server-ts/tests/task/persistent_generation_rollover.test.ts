@@ -495,9 +495,15 @@ describe("beginGenerationRolloverIfPending", () => {
       },
       _dedupe_key: "generation_started:session-1:2:2026-10-05T00:00:00.000Z",
     });
+    expect((event.checkpoint as Record<string, unknown>).material_unavailable).toBeUndefined();
     expect(event.timestamp).toBeGreaterThan(Date.now() / 1000 - 5);
     expect(event.timestamp).toBeLessThan(Date.now() / 1000 + 1);
     expect(task.lastEventId).toBe(26);
+
+    await publishStarted(task, { ...checkpoint, materialUnavailable: true }, persistence);
+    const unavailableEvent = enqueueEventAndWaitForSessionAck.mock.calls[1]?.[1] as unknown as
+      Record<string, unknown>;
+    expect(unavailableEvent.checkpoint).toMatchObject({ material_unavailable: true });
   });
 
   it("marks a reset generation on the start event and its completed first-call sample", async () => {

@@ -138,7 +138,8 @@ describe("SessionReadCompositeRepository", () => {
     expect(material.childSessions).toHaveLength(2);
     expect(material.childSessions.map((child) => child.reference)).toEqual(["#412.s2", null]);
     expect(material.childSessionTotal).toBe(2);
-    expect(material.totals).toEqual({ events: 2, turnSummaries: 0 });
+    expect(material.totals).toEqual({ turnSummaries: 0 });
+    expect(eventReads.countEvents).not.toHaveBeenCalled();
     expect(sessions.listActiveChildSessionsSummary).toHaveBeenCalledWith("owner");
   });
 

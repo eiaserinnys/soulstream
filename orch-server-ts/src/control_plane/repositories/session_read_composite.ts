@@ -83,9 +83,8 @@ export class SessionReadCompositeRepository {
     sessionId: string,
     limits: GenerationCheckpointReadLimits,
   ): Promise<GenerationCheckpointMaterial> {
-    const [story, eventTotal, summaryTotals, childSessionResult] = await Promise.all([
+    const [story, summaryTotals, childSessionResult] = await Promise.all([
       this.stories.getSessionStory(sessionId),
-      this.events.countEvents(sessionId),
       this.stories.countTurnSummaries(sessionId),
       this.sessions.listActiveChildSessionsSummary(sessionId),
     ]);
@@ -141,7 +140,6 @@ export class SessionReadCompositeRepository {
       })),
       childSessionTotal: childSessionResult.total,
       totals: {
-        events: eventTotal,
         turnSummaries: summaryTotals.totalCount,
       },
     };

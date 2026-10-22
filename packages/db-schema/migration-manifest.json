@@ -524,6 +524,10 @@
     {
       "id": "129_session_statistics_daily_groups.sql",
       "sha256": "b08398cdb3ad2a8ecd73c8a5e96fcbd5f8cd6e0faedd81ce782d16a0d29c84af"
+    },
+    {
+      "id": "130_events_session_type_id_index.sql",
+      "sha256": "85c50cbb0979f57a5a8288aa9e9c12708985ba2307a3dfd14ee58fd998558b80"
     }
   ]
 }

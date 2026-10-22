@@ -49,7 +49,6 @@ export interface GenerationCheckpointMaterial {
   }>;
   readonly childSessionTotal: number;
   readonly totals: {
-    readonly events: number;
     readonly turnSummaries: number;
   };
 }
