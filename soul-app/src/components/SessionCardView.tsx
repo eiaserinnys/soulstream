@@ -36,6 +36,8 @@ export interface SessionCardProps {
   timeTestID?: string;
   small?: boolean;
   embedded?: boolean;
+  /** 피드 폭 < 400pt. 시간을 identity 행으로 옮기고 빈 상태 열을 접는다. */
+  narrow?: boolean;
   accessibilityLabelPrefix?: string;
 }
 
@@ -59,6 +61,7 @@ export function SessionCardView({
   timeTestID = 'session-card-time',
   small = false,
   embedded = false,
+  narrow = false,
   accessibilityLabelPrefix,
   folderName, serverUrl, jwt, review,
 }: SessionCardProps & {
@@ -66,7 +69,10 @@ export function SessionCardView({
   review: { acknowledge(): Promise<void>; inFlight: boolean };
 }) {
   const t = useTokens();
-  const styles = useMemo(() => makeSessionCardStyles(t, embedded, small), [small, embedded, t]);
+  const styles = useMemo(
+    () => makeSessionCardStyles(t, embedded, small, narrow),
+    [small, embedded, narrow, t],
+  );
 
   // 표시명 폴백 정본은 lib/session-display-name.ts (카드·채팅 헤더 공용).
   const displayName = getSessionDisplayName(session, session.agentSessionId);
@@ -201,6 +207,11 @@ export function SessionCardView({
             >
               {small ? [agentLabel, session.nodeId, modelLabel ?? session.modelPreset].filter(Boolean).join(' · ') : identityText}
             </Text>
+            {narrow ? (
+              <Text testID={timeTestID} style={styles.time} numberOfLines={1}>
+                {formatRelativeTime(activityTimestamp)}
+              </Text>
+            ) : null}
           </View>
           {!small && <View testID="session-card-context-row" style={styles.contextRow}>
             <Text
@@ -213,6 +224,7 @@ export function SessionCardView({
             </Text>
           </View>}
         </View>
+        {!narrow || needsReview ? (
         <View testID="session-card-right-rail" style={styles.rightRail}>
           {pendingAttentionLabel ? (
             <View
@@ -254,10 +266,13 @@ export function SessionCardView({
               </Text>
             </View>
           )}
-          <Text testID={timeTestID} style={styles.time} numberOfLines={1}>
-            {formatRelativeTime(activityTimestamp)}
-          </Text>
+          {!narrow ? (
+            <Text testID={timeTestID} style={styles.time} numberOfLines={1}>
+              {formatRelativeTime(activityTimestamp)}
+            </Text>
+          ) : null}
         </View>
+        ) : null}
       </View>
       </AnimatedPressable>
     </AppGlassCard>

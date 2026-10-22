@@ -41,6 +41,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import type { PersistentReportEntry } from '../api/types';
 import { isPersistentReportCardExpandable, persistentReportStatusCard } from '../lib/persistent-report-card';
+import { resolvePersistentConversationLeft } from '../lib/persistent-session-column';
 
 export interface PersistentSessionScreenProps {
   active?: boolean;
@@ -131,7 +132,20 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const portrait = app ? app.height > app.width : false;
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
   const columnWidth = phone ? Math.max(0, (app?.width ?? 0) - t.foundation.pageInset * 2) : widths.conversation;
-  const columnLeft = app ? (app.width - columnWidth) / 2 : 0;
+  // 카드 장면에서는 우측 카드 패널(tasks)과 겹치지 않도록 대화 열을 왼쪽으로 밀되,
+  // 화면 중앙보다 오른쪽으로는 가지 않는다. 넓은 화면에서는 중앙 배치가 유지된다.
+  const columnLeft = app
+    ? resolvePersistentConversationLeft({
+      appWidth: app.width,
+      columnWidth,
+      tasksWidth: widths.tasks,
+      phone,
+      cardsScene: scene === 'cards',
+      pageInset: t.foundation.pageInset,
+      gap: t.spacing.md,
+      cardPanelRightOffset: t.foundation.pageInset - t.uiSpacing.sm,
+    })
+    : 0;
   const hasWeeklyUsage = Boolean(session?.node_id && showWeeklyUsage);
   const usageSummary = useUsageSummary({ enabled: active && !phone && hasWeeklyUsage, nodeId: session?.node_id ?? null,
     selectedNodeId: selectedUsageNodeId, api });

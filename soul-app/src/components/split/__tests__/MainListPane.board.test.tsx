@@ -114,3 +114,31 @@ test('폴더 탭은 요청한 검색창과 기존 본문을 유지한다', () =>
   expect(screen.getByTestId('folder-existing')).toBeTruthy();
   expect(screen.queryByLabelText('보드 확대')).toBeNull();
 });
+
+test('좁은 목록 패널은 보드 액션을 오버플로 메뉴로 접는다', async () => {
+  useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
+  const screen = render(<MainListPane paneWidth={333} />);
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+
+  expect(screen.getByTestId('board-header-overflow-button')).toBeTruthy();
+  expect(screen.queryByLabelText('보드 확대')).toBeNull();
+  expect(screen.queryByLabelText('드래프트 카드 추가')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('board-header-overflow-button'));
+  expect(screen.getByTestId('board-header-overflow-menu')).toBeTruthy();
+  expect(screen.getByTestId('board-header-overflow-create')).toBeTruthy();
+  expect(screen.getByTestId('board-header-overflow-hide-done')).toBeTruthy();
+  expect(screen.getByTestId('board-header-overflow-expand')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('board-header-overflow-hide-done'));
+  expect(screen.queryByTestId('board-header-overflow-menu')).toBeNull();
+  await waitFor(() => expect(Object.values(useSettingsStore.getState().cardIncludeCompleted)).toContain(true));
+});
+
+test('넓은 목록 패널은 기존 보드 액션을 그대로 노출한다', async () => {
+  useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
+  const screen = render(<MainListPane paneWidth={480} />);
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  expect(screen.getByLabelText('보드 확대')).toBeTruthy();
+  expect(screen.queryByTestId('board-header-overflow-button')).toBeNull();
+});

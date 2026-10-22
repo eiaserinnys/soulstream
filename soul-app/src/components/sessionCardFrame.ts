@@ -1,8 +1,16 @@
 import { StyleSheet } from 'react-native';
 import { createSessionVisualRoles, type DesignTokens } from '../theme';
 
-/** Shared SessionCard and card-row frame; small removes one text row only. */
-export function makeSessionCardStyles(t: DesignTokens, embedded: boolean, small = false) {
+/**
+ * Shared SessionCard and card-row frame; small removes one text row only.
+ * narrow(< 400pt 피드)는 시간을 identity 행 오른쪽으로 옮겨 상태 열 폭을 회수한다.
+ */
+export function makeSessionCardStyles(
+  t: DesignTokens,
+  embedded: boolean,
+  small = false,
+  narrow = false,
+) {
   const sessionRoles = createSessionVisualRoles(t);
   const AVATAR = sessionRoles.feed.avatar;
   const c = t.colors;
@@ -106,11 +114,12 @@ export function makeSessionCardStyles(t: DesignTokens, embedded: boolean, small 
     identityRow: {
       flexDirection: 'row' as const,
       alignItems: 'center' as const,
-      gap: t.uiSpacing.xs,
+      justifyContent: narrow ? 'space-between' as const : undefined,
+      gap: narrow ? t.uiSpacing.sm : t.uiSpacing.xs,
       minWidth: 0,
     },
     identity: {
-      flexShrink: 1,
+      ...(narrow ? { flex: 1 } : { flexShrink: 1 }),
       minWidth: 0,
       ...sessionRoles.typography.meta,
       color: c.textSecondary,

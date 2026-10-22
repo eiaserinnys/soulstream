@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useDeviceType } from '../../theme/useDeviceType';
+import { useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSessionsStream } from '../../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../../hooks/useNodeConnectivityStream';
 import {
@@ -9,12 +10,13 @@ import {
 } from '../../store/uiStore';
 import { ThreePaneLayout } from './ThreePaneLayout';
 import { TwoPaneWithDrawer } from './TwoPaneWithDrawer';
+import { resolveSplitLayoutMode } from './paneWidths';
 import { SearchKeyboardCommandsHost } from '../search/SearchKeyboardCommandsHost';
 
 /**
  * 태블릿용 split 레이아웃 진입점.
  *
- * useDeviceType에 따라 가로(3-pane) / 세로(2-pane + drawer)로 자동 분기한다.
+ * 안전 영역을 뺀 폭으로 3-pane / 2-pane + drawer / compact를 분기한다.
  * 폰 사이즈는 RootNavigator에서 따로 TabNavigator로 분기되므로 여기엔 도달하지 않는다.
  *
  * 폰 TabNavigator가 useSessionsStream을 탭 레벨에서 마운트하던 것과 같은 역할을
@@ -23,16 +25,20 @@ import { SearchKeyboardCommandsHost } from '../search/SearchKeyboardCommandsHost
 export function SplitLayout() {
   useSessionsStream();
   useNodeConnectivityStream();
-  const device = useDeviceType();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const mode = resolveSplitLayoutMode(
+    Math.max(0, width - insets.left - insets.right),
+  );
   const hydrated = useUIStoreHydrated();
 
   if (!hydrated) return null;
 
   return (
     <SearchKeyboardCommandsHost>
-      {device === 'tabletLandscape'
-        ? <ThreePaneLayout />
-        : <TwoPaneWithDrawer />}
+      {mode === 'three-pane' ? <ThreePaneLayout />
+        : mode === 'two-pane' ? <TwoPaneWithDrawer />
+          : null}
     </SearchKeyboardCommandsHost>
   );
 }

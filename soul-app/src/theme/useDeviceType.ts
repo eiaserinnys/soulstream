@@ -11,12 +11,13 @@ export type DeviceType = 'phone' | 'tabletPortrait' | 'tabletLandscape';
 /**
  * Tablet 분기 임계값 (단변 기준 pt).
  *
- * 768이 아닌 700으로 잡는 이유:
- *  - iPad mini의 세로폭이 744pt이므로 768 기준이면 phone으로 잘못 분류됨
- *  - iPhone 15 Pro Max도 가장 긴 단변(landscape 기준 width)이 430pt라 700 미만
- *  - 따라서 700이면 모든 iPad는 tablet, 모든 iPhone은 phone으로 정확히 분기됨
+ * 700이 아닌 600으로 잡는 이유:
+ *  - iPhone Duo 바깥 화면(5.4형)은 466×678, 678×466이라 단변이 466/678이다.
+ *    앞은 phone, 뒤는 tablet으로 갈라져야 하므로 경계는 466과 678 사이에 둔다.
+ *  - 안쪽 화면(7.6형) 669×951, 626×890은 단변이 626/669라 모두 tablet이다.
+ *  - iPhone 15 Pro Max의 최대 단변은 430pt라 여전히 phone이다.
  */
-export const TABLET_BREAKPOINT = 700;
+export const TABLET_BREAKPOINT = 600;
 
 /**
  * 디바이스 타입 + 방향을 동적으로 판정한다.

@@ -8,6 +8,7 @@ interface Props {
   onPress: (sessionId: string) => void;
   onLongPress?: (sessionId: string) => void;
   accessibilityLabelPrefix?: string;
+  narrow?: boolean;
 }
 
 export const SessionCardById = memo(function SessionCardById({
@@ -16,6 +17,7 @@ export const SessionCardById = memo(function SessionCardById({
   onPress,
   onLongPress,
   accessibilityLabelPrefix,
+  narrow,
 }: Props) {
   const session = useSessionStore((s) => s.sessions[sessionId]);
   const handlePress = useCallback(() => onPress(sessionId), [onPress, sessionId]);
@@ -32,6 +34,7 @@ export const SessionCardById = memo(function SessionCardById({
       onPress={handlePress}
       onLongPress={onLongPress ? handleLongPress : undefined}
       accessibilityLabelPrefix={accessibilityLabelPrefix}
+      narrow={narrow}
     />
   );
 });

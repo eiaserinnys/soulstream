@@ -67,7 +67,8 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, child
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const sheetWidth = getCardDetailPaneWidth(getFolderWorkspaceOverlayWidth(width));
+  const safeWidth = Math.max(0, width - insets.left - insets.right);
+  const sheetWidth = getCardDetailPaneWidth(getFolderWorkspaceOverlayWidth(safeWidth));
   const outerInset = t.tabletShell.outerInset;
   return <View style={{ flex: 1, display: focused ? 'flex' : 'none' }}>
     <TouchableWithoutFeedback onPress={() => navigation.goBack()} accessibilityLabel={accessibilityLabel}>
@@ -76,7 +77,7 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, child
     <View style={{
       position: 'absolute',
       top: insets.top + outerInset,
-      right: outerInset,
+      right: insets.right + outerInset,
       bottom: outerInset,
       width: sheetWidth,
     }}>

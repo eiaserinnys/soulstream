@@ -8,8 +8,11 @@ import { SettingsCategorySidebar } from '../components/settings/SettingsCategory
 import { SETTINGS_CATEGORIES, type SettingsCategory } from '../components/settings/settingsCategories';
 import { SettingsWorkspaceContext, confirmSettingsDiscard, type SettingsSaveScope, type SettingsJobDestination, type SettingsPersistentDestination } from '../components/settings/SettingsWorkspaceContext';
 import { useDashboardAdminStatus } from '../components/settings/useDashboardAdminStatus';
-import { TABLET_BREAKPOINT, useTokens, type DesignTokens } from '../theme';
+import { TABLET_BREAKPOINT, useDeviceType, useTokens, type DesignTokens } from '../theme';
 import { SettingsContent } from './SettingsContent';
+
+/** 2열 폼을 켜는 최소 폭. 듀오 바깥 화면(678×466) 가로에서는 1열을 유지한다. */
+export const SETTINGS_FORM_COLUMNS_MIN_WIDTH = 700;
 
 interface Props {
   extraBottomPadding?: number;
@@ -31,8 +34,9 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const window = useWindowDimensions();
+  const device = useDeviceType();
   const [width, setWidth] = useState(window.width);
-  const wide = !connectionOnly && width >= TABLET_BREAKPOINT;
+  const wide = !connectionOnly && device !== 'phone' && width >= TABLET_BREAKPOINT;
   const detectedAdmin = useDashboardAdminStatus(showAdmin === undefined);
   const isAdmin = showAdmin ?? detectedAdmin;
   const [category, setCategory] = useState<SettingsCategory | null>(connectionOnly ? 'connection' : initialCategory ?? null);
@@ -76,7 +80,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
     if (dirty) confirmSettingsDiscard(() => { Object.entries(scopes).forEach(([id, scope]) => { if (id !== 'connection') scope?.discard(); }); action(); }, () => setCategory(dirty.id));
     else action();
   }, [scopes]);
-  const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= TABLET_BREAKPOINT, jobs, setJobs, persistent, setPersistent, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, persistent, register, guard, changeConnection]);
+  const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= SETTINGS_FORM_COLUMNS_MIN_WIDTH, jobs, setJobs, persistent, setPersistent, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, persistent, register, guard, changeConnection]);
   return <SettingsWorkspaceContext.Provider value={context}>
     <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : bottomSafeAreaOwner === 'parent' ? ['left', 'right', 'top'] : ['left', 'right', 'bottom', 'top']} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

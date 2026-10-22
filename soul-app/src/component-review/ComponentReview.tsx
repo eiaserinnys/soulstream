@@ -52,6 +52,7 @@ import { ReviewChatUiPrimitives } from './ReviewChatUiPrimitives';
 import { ReviewChatUi } from './ReviewChatUi';
 import { ReviewPasCardExpand } from './ReviewPasCardExpand';
 import { ReviewAttachments } from './ReviewAttachments';
+import { ReviewIphoneDuo } from './ReviewIphoneDuo';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
@@ -81,6 +82,7 @@ const sections = [
   { value: 'autoRefresh', label: '자동 갱신' },
   { value: 'cardImages', label: '카드 이미지' },
   { value: 'dialogues', label: '다이얼로그' },
+  { value: 'iphoneDuo', label: '아이폰 듀오' },
 ] as const;
 type Section = typeof sections[number]['value'];
 
@@ -198,6 +200,7 @@ function Gallery() {
   if (section === 'boardConnected') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoardWorkspace/></View>;
   if (section === 'board') return <View style={{flex:1,padding:t.uiSpacing.sm,backgroundColor:t.colors.background}}><ReviewBoard/></View>;
   if(section==='folderWorkspace')return <View style={{flex:1,backgroundColor:t.colors.background}}><ReviewFolderWorkspace/></View>;
+  if(section==='iphoneDuo')return <ReviewIphoneDuo/>;
   if (section === 'folderTabs') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewFolderTabs /></View>;
   if (section === 'entryShell' || section === 'contentLinks') return <View style={{ flex: 1, backgroundColor: t.colors.background }}><ReviewEntryShell /></View>;
   if (section === 'contentLinkDocument') return <ReviewContentLinkDocument />;

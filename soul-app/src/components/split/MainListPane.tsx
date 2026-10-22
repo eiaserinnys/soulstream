@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -14,6 +14,7 @@ import { useSessionStore } from '../../store/sessionStore';
 import { useUIStore } from '../../store/uiStore';
 import { useTokens, type DesignTokens } from '../../theme';
 import { LiquidGlassButton } from '../LiquidGlassButton';
+import { GlassSurface } from '../GlassSurface';
 import { RootSectionHeaderTitle } from '../navigation/RootSectionHeaderTitle';
 import { DailyHeaderActions } from '../planner/DailyHeaderActions';
 import { TabletPaneHeader } from './TabletPaneHeader';
@@ -27,14 +28,19 @@ import { useAuthScopeGeneration } from '../../lib/auth-scope';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 
+/** 이 폭 미만이면 보드 헤더 액션을 오버플로 메뉴로 접는다. */
+export const MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH = 380;
+
 export function MainListPane({
   onMenuPress,
   topInsetPadding = false,
   showSearch = false,
+  paneWidth,
 }: {
   onMenuPress?: () => void;
   topInsetPadding?: boolean;
   showSearch?: boolean;
+  paneWidth?: number;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -55,6 +61,8 @@ export function MainListPane({
   }));
   const setView = (value: 'existing' | 'board') => { setMainPaneView(viewKey, value); if (value === 'board') setVisited((old) => ({ ...old, [viewKey]: true })); };
   const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
+  const narrowHeader = paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH;
+  const [overflowOpen, setOverflowOpen] = useState(false);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
   const serverUrl = useSettingsStore((state) => state.serverUrl);
@@ -109,7 +117,32 @@ export function MainListPane({
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-        {view === 'board' && !effectiveShowSearch ? <>
+        {view === 'board' && !effectiveShowSearch && narrowHeader ? (
+          <View style={styles.overflowAnchor}>
+            <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
+              testID="board-header-overflow-button" accessibilityLabel="보드 메뉴"
+              accessibilityState={{ expanded: overflowOpen }}
+              onPress={() => setOverflowOpen((open) => !open)}>
+              <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textPrimary} />
+            </LiquidGlassButton>
+            {overflowOpen ? (
+              <GlassSurface role="chrome" cornerRadius={t.foundation.radius.card}
+                testID="board-header-overflow-menu" style={styles.overflowMenu}>
+                <OverflowAction testID="board-header-overflow-create" icon="add-outline"
+                  label="드래프트 카드 추가"
+                  onPress={() => { setOverflowOpen(false); boardRef.current?.openCreate(); }} />
+                <OverflowAction testID="board-header-overflow-hide-done"
+                  icon={cardDisplay.includeCompleted ? 'eye-off-outline' : 'eye-outline'}
+                  label={cardDisplay.includeCompleted ? '완료 숨기기' : '완료 보기'}
+                  onPress={() => { setOverflowOpen(false); cardDisplay.onChange(!cardDisplay.includeCompleted); }} />
+                <OverflowAction testID="board-header-overflow-expand" icon="expand-outline"
+                  label="보드 확대"
+                  onPress={() => { setOverflowOpen(false); boardRef.current?.openExpanded(); }} />
+              </GlassSurface>
+            ) : null}
+          </View>
+        ) : null}
+        {view === 'board' && !effectiveShowSearch && !narrowHeader ? <>
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
             <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
@@ -171,6 +204,27 @@ export function MainListPane({
   );
 }
 
+function OverflowAction({ testID, icon, label, onPress }: {
+  testID: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  onPress(): void;
+}) {
+  const t = useTokens();
+  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} onPress={onPress}
+    style={({ pressed }) => ({
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: t.uiSpacing.sm,
+      paddingVertical: t.uiSpacing.sm,
+      paddingHorizontal: t.uiSpacing.md,
+      opacity: pressed ? 0.6 : 1,
+    })}>
+    <Ionicons name={icon} size={t.iconSize.standard} color={t.colors.textPrimary} />
+    <Text style={{ color: t.colors.textPrimary, ...t.foundation.typography.body }}>{label}</Text>
+  </Pressable>;
+}
+
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     container: { flex: 1 },
@@ -180,5 +234,14 @@ function makeStyles(t: DesignTokens) {
       minHeight: t.hitTarget.min,
     },
     body: { flex: 1 },
+    overflowAnchor: { position: 'relative' },
+    overflowMenu: {
+      position: 'absolute',
+      top: t.hitTarget.min + t.uiSpacing.sm,
+      right: 0,
+      minWidth: 184,
+      paddingVertical: t.uiSpacing.sm,
+      zIndex: 10,
+    },
   });
 }

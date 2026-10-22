@@ -1,7 +1,8 @@
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
 import {
   type BottomTabBarButtonProps,
+  type BottomTabBarProps,
   createBottomTabNavigator,
   type BottomTabNavigationProp,
   type BottomTabScreenProps,
@@ -9,6 +10,7 @@ import {
 import { PlatformPressable } from '@react-navigation/elements';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
+  CommonActions,
   useFocusEffect,
   useIsFocused,
   type CompositeScreenProps,
@@ -31,6 +33,7 @@ import { RecurringJobHistoryScreen } from '../screens/RecurringJobHistoryScreen'
 import { useSessionsStream } from '../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassSurface } from '../components/GlassSurface';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
 import { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
@@ -68,6 +71,74 @@ function TabBarGlassBackground() {
 }
 
 const PHONE_TAB_BUTTON_CENTER_STYLE: ViewStyle = { justifyContent: 'center' };
+
+/** 우측 시스템 레일이 생기는 최소 안전 영역 폭. 듀오 바깥 화면은 84pt다. */
+export const RAIL_MIN_INSET_WIDTH = 48;
+const RAIL_CAPSULE_WIDTH = 48;
+const RAIL_ITEM_HEIGHT = 50;
+
+/**
+ * 아이폰 듀오 바깥 화면처럼 오른쪽에 시스템 레일이 있는 환경의 세로 탭 클러스터.
+ * 하단 탭바 대신 같은 5개 루트 탭을 유리 캡슐에 담아 레일 하단에 둔다.
+ */
+export function PhoneRailTabCluster({ active, onSelect }: {
+  active: keyof RootTabParamList;
+  onSelect(name: keyof RootTabParamList): void;
+}) {
+  const t = useTokens();
+  const c = t.colors;
+  return <GlassSurface role="chrome" testID="phone-rail-tab-cluster" cornerRadius={24}
+    style={{ width: RAIL_CAPSULE_WIDTH }}>
+    <View style={{ width: RAIL_CAPSULE_WIDTH, paddingVertical: 6, gap: 2, alignItems: 'center' }}>
+      {ROOT_TAB_ORDER.map((name) => {
+        const config = ROOT_SECTION_CONFIG[name];
+        const selected = name === active;
+        const color = selected ? c.accent : c.textMuted;
+        return <PlatformPressable
+          key={name}
+          testID={`phone-tab-${name}`}
+          accessibilityRole="tab"
+          accessibilityLabel={config.title}
+          accessibilityState={{ selected }}
+          onPress={() => onSelect(name)}
+          style={{
+            width: RAIL_CAPSULE_WIDTH - 4,
+            height: RAIL_ITEM_HEIGHT,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {name === 'PersistentTab'
+            ? <PersistentPhoneTabIcon color={color} size={t.iconSize.standard} active={selected} />
+            : <Ionicons name={config.icon} color={color} size={t.iconSize.standard} />}
+        </PlatformPressable>;
+      })}
+    </View>
+  </GlassSurface>;
+}
+
+function PhoneRailTabBar({ state, navigation, insets }: BottomTabBarProps) {
+  const active = state.routes[state.index]?.name as keyof RootTabParamList;
+  const select = (name: keyof RootTabParamList) => {
+    const route = state.routes.find((item) => item.name === name);
+    if (!route) return;
+    const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+    if (!event.defaultPrevented && name !== active) {
+      navigation.dispatch({ ...CommonActions.navigate(name), target: state.key });
+    }
+  };
+  return <View
+    testID="phone-rail-tab-rail"
+    style={{
+      width: Math.max(insets.right, RAIL_MIN_INSET_WIDTH),
+      paddingBottom: Math.max(insets.bottom, 24),
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+    }}
+  >
+    <PhoneRailTabCluster active={active} onSelect={select} />
+  </View>;
+}
 
 function CenteredPhoneTabButton(props: BottomTabBarButtonProps) {
   return (
@@ -420,15 +491,19 @@ function PhoneTabNavigator() {
   const [focusedTab, setFocusedTab] = useState<keyof RootTabParamList>(host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB);
   const t = useTokens();
   const c = t.colors;
+  const insets = useSafeAreaInsets();
+  const railMode = insets.right >= RAIL_MIN_INSET_WIDTH;
   return (
     <Tab.Navigator
+      tabBar={railMode ? (props) => <PhoneRailTabBar {...props} /> : undefined}
       initialRouteName={host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: 'transparent' },
+        sceneStyle: { backgroundColor: 'transparent', ...(railMode ? { paddingLeft: insets.left } : {}) },
         tabBarShowLabel: false,
+        tabBarPosition: railMode ? 'right' : 'bottom',
         tabBarButton: CenteredPhoneTabButton,
-        tabBarStyle: getDefaultTabBarStyle(c),
+        tabBarStyle: railMode ? { display: 'none' } : getDefaultTabBarStyle(c),
         tabBarBackground: () => <TabBarGlassBackground />,
         tabBarActiveTintColor: c.accent,
         tabBarInactiveTintColor: c.textMuted,

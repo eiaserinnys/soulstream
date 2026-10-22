@@ -384,3 +384,27 @@ test('세션 담당이 아닌 카드의 소속 세션이나 불일치 ID를 자�
   render(<FolderWorkspaceReadOverlay />);
   expect(useUIStore.getState().activeSessionId).toBe('previous');
 });
+
+test('오버레이 폭 640 미만은 단일 열로 상세를 먼저 보여 준다', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openSessionOverlay('session-only');
+
+  const screen = render(<FolderWorkspaceReadOverlay />);
+
+  expect(screen.getByTestId('folder-workspace-single-panel')).toBeTruthy();
+  expect(screen.queryByTestId('task-workspace-chat-pane')).toBeNull();
+  expect(screen.queryByTestId('overlay-chat')).toBeNull();
+  mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+});
+
+test('오버레이 폭 640 이상은 상세와 대화를 나란히 둔다', () => {
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  useUIStore.getState().openSessionOverlay('session-only');
+
+  const screen = render(<FolderWorkspaceReadOverlay />);
+
+  expect(screen.queryByTestId('folder-workspace-single-panel')).toBeNull();
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+  expect(screen.getByTestId('overlay-chat')).toBeTruthy();
+  mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+});
