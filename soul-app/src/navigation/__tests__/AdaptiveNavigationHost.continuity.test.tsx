@@ -94,12 +94,12 @@ test('tablet overlay closure and a newer selection win over the old phone snapsh
   act(() => { navigation.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'old' } }); });
   view.rerender(shell('tabletPortrait'));
   await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
-  act(() => useUIStore.getState().openSessionOverlay('new'));
+  act(() => { useUIStore.getState().openSessionOverlay('new'); });
   view.rerender(shell('phone'));
   await waitFor(() => expect(navigation.getCurrentRoute()?.params).toMatchObject({ sessionId: 'new' }));
   view.rerender(shell('tabletPortrait'));
   await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
-  act(() => useUIStore.getState().closeFolderOverlay());
+  act(() => { useUIStore.getState().closeFolderOverlay(); });
   view.rerender(shell('phone'));
   await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Feed'));
   view.unmount();
@@ -125,7 +125,7 @@ test('unidentified draft and a reading scroll offset survive a composer remount'
   list.current.scrollToOffset.mockClear();
   view.rerender(shell(true));
   expect(view.getByTestId('draft').props.children).toBe('작성 중');
-  act(() => follow.onContentSizeChange(2000));
+  act(() => { follow.onContentSizeChange(2000); });
   expect(list.current.scrollToOffset).toHaveBeenCalledWith({ offset: 330, animated: false });
 });
 
@@ -155,4 +155,54 @@ test('measured scroll owner waits for real content, clamps, and honors a new dra
     scroll.onScroll({ nativeEvent: { contentOffset: { y: 125 } } } as any);
   });
   expect(memory.readScroll('card')?.offsetY).toBe(125);
+});
+
+test.each(['card', 'folder'] as const)('%s detail wins after leaving chat and folding', async kind => {
+  const navigation = createNavigationContainerRef<any>();
+  let continuity!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { continuity = useLayoutContinuity(); return null; }
+  const shell = (device: 'phone' | 'tabletPortrait') =>
+    <PersistentSessionProvider><LayoutContinuityProvider><Capture />
+      <AdaptiveNavigationHost device={device} containerRef={navigation} />
+    </LayoutContinuityProvider></PersistentSessionProvider>;
+  useUIStore.getState().closeFolderOverlay();
+  useUIStore.setState({ selectedFolderPageId: null });
+  const view = render(shell('tabletPortrait'));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
+  const overlayKey = kind === 'card' ? 'detail-card' : 'detail-folder';
+  act(() => {
+    if (kind === 'card') useUIStore.getState().openCardOverlay(overlayKey, null);
+    else useUIStore.getState().openFolderOverlay(overlayKey, null);
+    continuity.setViewState(JSON.stringify(['folder-overlay', overlayKey]), 'chat');
+    useUIStore.getState().setActiveSessionId('explicit-session');
+  });
+  expect(continuity.getLastLocation()?.kind).toBe('chat');
+  act(() => {
+    continuity.setViewState(JSON.stringify(['folder-overlay', overlayKey]), 'detail');
+    useUIStore.setState({ overlaySessionExplicit: false });
+  });
+  expect(useUIStore.getState().activeSessionId).toBe('explicit-session');
+  expect(continuity.getLastLocation()?.kind).toBe(kind === 'card' ? 'cardDetail' : 'folderWorkspace');
+  view.rerender(shell('phone'));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe(kind === 'card' ? 'CardDetail' : 'FolderWorkspace'));
+  view.unmount();
+});
+
+test('an automatically selected card assignee remains supporting context when folded', async () => {
+  const navigation = createNavigationContainerRef<any>();
+  const shell = (device: 'phone' | 'tabletPortrait') => <PersistentSessionProvider><LayoutContinuityProvider>
+    <AdaptiveNavigationHost device={device} containerRef={navigation} />
+  </LayoutContinuityProvider></PersistentSessionProvider>;
+  useUIStore.setState({ selectedFolderPageId: null });
+  const view = render(shell('phone'));
+  await waitFor(() => expect(navigation.isReady()).toBe(true));
+  act(() => { navigation.navigate('DailyTab', { screen: 'CardDetail', params: { cardId: 'auto-card' } }); });
+  view.rerender(shell('tabletPortrait'));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
+  act(() => { useUIStore.getState().initializeCardSessionSelection('auto-card', 'assignee'); });
+  expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'assignee', overlaySessionExplicit: false });
+  view.rerender(shell('phone'));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('CardDetail'));
+  expect(navigation.getCurrentRoute()?.params).toMatchObject({ cardId: 'auto-card' });
+  view.unmount();
 });

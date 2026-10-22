@@ -213,6 +213,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
     }
   }, [initialStep, sessionId, stepKey]);
   const openSession = (id: string) => {
+    continuity?.setViewState(memoryKey, 'chat');
     setSelectedSessionId(id);
     onOpenSession?.(id);
     setStep('chat');
@@ -225,7 +226,11 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
       size="compact"
       borderRadius={t.foundation.radius.round}
       accessibilityLabel="상세로 돌아가기"
-      onPress={() => setStep('detail')}
+      onPress={() => {
+        setStep('detail');
+        continuity?.setViewState(memoryKey, 'detail');
+        useUIStore.setState({ overlaySessionExplicit: false });
+      }}
     >
       <Ionicons
         name="chevron-back"

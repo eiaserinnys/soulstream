@@ -40,12 +40,23 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       return readPhoneLocation(state, { previousLocation, settingsCategory: workspace?.category });
     }
     const ui = useUIStore.getState();
+    const overlayKey = ui.selectedFolderPageId ?? ui.selectedCardId;
+    const overlayStep = overlayKey
+      ? continuity.getViewState<'detail' | 'chat'>(JSON.stringify(['folder-overlay', overlayKey]))
+      : undefined;
+    const effectiveActiveSessionId = overlayKey
+      ? (overlayStep === 'detail'
+        ? null
+        : overlayStep === 'chat'
+          ? ui.activeSessionId
+          : (ui.overlaySessionExplicit ? ui.activeSessionId : null))
+      : ui.activeSessionId;
     const folder = useSessionStore.getState().catalog.folders.find(item => item.projectPageId === ui.selectedFolderPageId);
     const previousFolder = previousLocation && 'folder' in previousLocation ? previousLocation.folder : undefined;
     return readTabletLocation(state, {
       previousLocation, lastMainFocus: ui.lastMainFocus, activeSection: ui.activeSection,
       folderOverlayVisible: ui.folderOverlayVisible, selectedCardId: ui.selectedCardId,
-      activeSessionId: ui.activeSessionId, settingsVisible: ui.settingsVisible,
+      activeSessionId: effectiveActiveSessionId, settingsVisible: ui.settingsVisible,
       settingsCategory: workspace?.category,
       // Both platforms use SettingsScreen's workspace, including recurring jobs.
       selectedFolder: ui.selectedFolderPageId ? {
@@ -129,12 +140,17 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       ui.closeSettings();
       if (!sameCard) { ui.clearCardOverlay(); ui.setActiveSessionId(null); }
       if (effects.activeSectionKind === 'daily') ui.setActiveSection({ kind: 'daily', date: ui.todayDate });
+      const overlayKey = effects.folderOverlay?.folderPageId ?? effects.cardOverlay?.cardId;
+      if (overlayKey) {
+        continuity.setViewState(JSON.stringify(['folder-overlay', overlayKey]),
+          (effects.folderOverlay?.sessionId ?? effects.cardOverlay?.sessionId) ? 'chat' : 'detail');
+      }
       if (effects.folderOverlay) {
         const overlay = effects.folderOverlay;
         ui.openFolderOverlay(overlay.folderPageId, overlay.sessionId ?? null);
       }
       if (effects.cardOverlay) {
-        if (sameCard) useUIStore.setState({ folderOverlayVisible: true, activeSessionId: effects.cardOverlay.sessionId ?? cardSession });
+        if (sameCard) useUIStore.setState({ folderOverlayVisible: true, activeSessionId: effects.cardOverlay.sessionId ?? cardSession, overlaySessionExplicit: Boolean(effects.cardOverlay.sessionId) });
         else ui.openCardOverlay(effects.cardOverlay.cardId, effects.cardOverlay.sessionId ?? null);
       }
       if (effects.sessionOverlay) {

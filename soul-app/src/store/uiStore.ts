@@ -45,6 +45,8 @@ interface UIState {
   setFloatingComposerBottomInset: (height: number) => void;
   /** 업무/세션 오버레이의 ChatPane에 표시할 세션. null이면 빈 상태. */
   activeSessionId: string | null;
+  /** True only when a session was explicitly opened from this overlay. */
+  overlaySessionExplicit: boolean;
   /** 업무 오버레이 ChatPane에서 스크롤할 이벤트 anchor. */
   focusEventId: number | null;
   /** 검색 결과가 기존 세션 스토리 패널을 펼치도록 보내는 일회성 요청. */
@@ -154,6 +156,7 @@ export const useUIStore = create<UIState>()(
       floatingComposerBottomInset: 0,
       setFloatingComposerBottomInset: (floatingComposerBottomInset) => set({ floatingComposerBottomInset }),
       activeSessionId: null,
+      overlaySessionExplicit: false,
       focusEventId: null,
       storyOpenRequestId: null,
       selectedFolderPageId: null,
@@ -185,12 +188,14 @@ export const useUIStore = create<UIState>()(
       }),
       setActiveSessionId: (id) => set({
         activeSessionId: id,
+        overlaySessionExplicit: Boolean(id),
         focusEventId: null,
         storyOpenRequestId: null,
       }),
       openSessionAtEvent: (id, eventId) =>
         set({
           activeSessionId: id,
+          overlaySessionExplicit: Boolean(id),
           focusEventId: eventId ?? null,
           storyOpenRequestId: null,
         }),
@@ -200,14 +205,15 @@ export const useUIStore = create<UIState>()(
         return { focusEventId: null };
       }),
       clearStoryOpenRequestId: () => set({ storyOpenRequestId: null }),
-      openCardOverlay: (cardId, initialSessionId) => set((state) => ({
+      openCardOverlay: (cardId, initialSessionId) => set({
         lastMainFocus: 'cards',
         selectedCardId: cardId,
         initialCardSessionId: initialSessionId ?? null,
         cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
-        activeSessionId: initialSessionId ?? state.activeSessionId,
-      })),
+        activeSessionId: initialSessionId ?? null,
+        overlaySessionExplicit: Boolean(initialSessionId),
+      }),
       initializeCardSessionSelection: (cardId, sessionId) => set((state) => {
         if (
           !state.folderOverlayVisible
@@ -224,6 +230,7 @@ export const useUIStore = create<UIState>()(
         };
       }),
       clearCardOverlay: () => set({
+        overlaySessionExplicit: false,
         selectedCardId: null,
         initialCardSessionId: null,
         cardSessionSelectionHandled: false,
@@ -236,6 +243,7 @@ export const useUIStore = create<UIState>()(
         cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId === undefined ? state.activeSessionId : sessionId,
+        overlaySessionExplicit: Boolean(sessionId),
         focusEventId: eventId ?? null,
         storyOpenRequestId: storyOpenRequestId ?? null,
         sessionFolderResolution: null,
@@ -248,6 +256,7 @@ export const useUIStore = create<UIState>()(
         cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId,
+        overlaySessionExplicit: Boolean(sessionId),
         focusEventId: eventId ?? null,
         storyOpenRequestId: storyOpenRequestId ?? null,
         sessionFolderResolution: { sessionId, status: 'loading' },
@@ -260,6 +269,7 @@ export const useUIStore = create<UIState>()(
         cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId,
+        overlaySessionExplicit: Boolean(sessionId),
         focusEventId: eventId ?? null,
         storyOpenRequestId: storyOpenRequestId ?? null,
         sessionFolderResolution: { sessionId, status: 'unlinked' },
@@ -277,6 +287,7 @@ export const useUIStore = create<UIState>()(
         cardSessionSelectionHandled: false,
         folderOverlayVisible: true,
         activeSessionId: sessionId,
+        overlaySessionExplicit: Boolean(sessionId),
         focusEventId: eventId,
         storyOpenRequestId: storyOpenRequestId ?? null,
         sessionFolderResolution: { sessionId, status: 'error', message, retryable },
@@ -308,6 +319,7 @@ export const useUIStore = create<UIState>()(
           cardSessionSelectionHandled: false,
           folderOverlayVisible: false,
           activeSessionId: null,
+          overlaySessionExplicit: false,
           focusEventId: null,
           storyOpenRequestId: null,
           sessionFolderResolution: null,
@@ -316,6 +328,7 @@ export const useUIStore = create<UIState>()(
         };
       }),
       closeFolderOverlay: () => set({
+        overlaySessionExplicit: false,
         selectedCardId: null,
         initialCardSessionId: null,
         cardSessionSelectionHandled: false,
@@ -365,6 +378,7 @@ subscribeAuthScope(() => {
     mainPaneViews: { global: 'board' },
     floatingComposerBottomInset: 0,
     activeSessionId: null,
+    overlaySessionExplicit: false,
     focusEventId: null,
     selectedFolderPageId: null,
     selectedCardId: null,

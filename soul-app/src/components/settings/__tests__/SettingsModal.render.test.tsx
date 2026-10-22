@@ -10,7 +10,12 @@ import { SettingsModal } from '../SettingsModal';
 import { createApiClient } from '../../../api/client';
 import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
-const api = { getConfig: jest.fn().mockResolvedValue({ mode: 'single' }), getAuthStatus: jest.fn().mockResolvedValue({ authenticated: true, user: { isAdmin: true } }) };
+const api = {
+  listNodes: jest.fn().mockResolvedValue({ nodes: [] }),
+  listRecurringJobs: jest.fn().mockResolvedValue({ jobs: [] }),
+  listNodeAgents: jest.fn().mockResolvedValue({ agents: [] }),
+  listModelPresets: jest.fn().mockResolvedValue({ model_presets: [] }),
+  getConfig: jest.fn().mockResolvedValue({ mode: 'single' }), getAuthStatus: jest.fn().mockResolvedValue({ authenticated: true, user: { isAdmin: true } }) };
 beforeEach(() => { mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 }; jest.mocked(createApiClient).mockReturnValue(api as any); useAuthStore.setState({ jwt: null }); useSettingsStore.setState({ serverUrl: '' }); });
 test('iPad page sheet bounds sibling sidebar/detail beneath its header', () => {
   mockDimensions.width = 1024;
@@ -45,7 +50,7 @@ test('compact width opens the index, then returns from a detail without closing'
   expect(screen.getByTestId('settings-phone-index')).toBeTruthy(); expect(onClose).not.toHaveBeenCalled();
 });
 
-test('the open-on-start switch writes an account and server local preference immediately', () => {
+test('the open-on-start switch writes an account and server local preference immediately', async () => {
   const payload = Buffer.from(JSON.stringify({ email: 'review@example.com', sub: 'review@example.com', exp: 2_000_000_000 })).toString('base64url');
   useAuthStore.setState({ jwt: `header.${payload}.signature` });
   useSettingsStore.setState({ serverUrl: 'https://soul.test', persistentSessionDevicePrefs: {} } as never);
@@ -54,6 +59,8 @@ test('the open-on-start switch writes an account and server local preference imm
   const toggle = screen.getByTestId('settings-persistent-session-open-on-start');
   expect(toggle.props.value).toBe(false);
   fireEvent(toggle, 'valueChange', true);
+  await act(async () => {});
+  screen.unmount();
 
   expect(useSettingsStore.getState().getPersistentSessionDevicePreference('https://soul.test', 'review@example.com'))
     .toEqual({
@@ -70,6 +77,7 @@ import { SETTINGS_WORKSPACE_CONTINUITY_KEY } from '../../../navigation/settingsW
 import { SettingsScreen } from '../../../screens/SettingsScreen';
 
 test('settings remount restores the recurring editor and an explicit category takes priority', async () => {
+  useSettingsStore.setState({ serverUrl: 'https://soul.test' });
   function Seed() {
     const continuity = useLayoutContinuity();
     React.useEffect(() => {
