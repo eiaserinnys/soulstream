@@ -34,7 +34,7 @@ const SCHEDULE_TOOL_NAMES = new Set([
   "CronList",
   "CronDelete",
 ]);
-export const CACHE_KEEPALIVE_PROMPT = "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.";
+export const CACHE_KEEPALIVE_PROMPT = "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.";
 
 export class SoulstreamScheduleService {
   constructor(

@@ -5,7 +5,7 @@ import { projectPersistentChatDisplayMessages } from "./persistent-jev-candidate
 import { projectPersistentTurnUsage } from "./persistent-turn-usage-projection";
 import { createNodeFromEvent } from "../stores/node-factory";
 
-const keepaliveText = "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.";
+const keepaliveText = "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.";
 
 function transcript(events: SoulSSEEvent[]): ReturnType<typeof flattenTree> {
   const root: EventTreeNode = {
@@ -31,7 +31,7 @@ describe("cache keepalive transcript projection", () => {
       { type: "complete", result: "done", attachments: [], session_cost_usd: 0.01, turn_cost_usd: 0.01 },
       { type: "user_message", input_id: "keepalive", text: keepaliveText, purpose: "cache_keepalive" },
       { type: "generation_started", context_reset: true },
-      { type: "assistant_message", content: "ok" },
+      { type: "assistant_message", content: "[SILENT]" },
       { type: "complete", result: "done", attachments: [], session_cost_usd: 0.04, turn_cost_usd: 0.03 },
       {
         type: "debug",
@@ -78,7 +78,7 @@ describe("cache keepalive transcript projection", () => {
   it("keeps a generation divider after the keepalive complete visible", () => {
     const messages = projectPersistentTurnUsage(transcript([
       { type: "user_message", input_id: "keepalive", text: keepaliveText, purpose: "cache_keepalive" },
-      { type: "assistant_message", content: "ok" },
+      { type: "assistant_message", content: "[SILENT]" },
       { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.01 },
       { type: "generation_started", context_reset: true },
       { type: "user_message", input_id: "human", text: "사람 입력" },

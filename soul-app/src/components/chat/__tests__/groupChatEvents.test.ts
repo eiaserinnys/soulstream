@@ -1,6 +1,8 @@
 import {
   groupChatEvents,
   hasActiveStreamingAssistantText,
+  isManuscriptSilentTokenText,
+  isStandaloneKoreanYesAck,
   placePendingOptimistic,
   projectManuscriptMessages,
   streamingSlotRenderItems,
@@ -133,6 +135,210 @@ describe('groupChatEvents', () => {
     expect(groupChatEvents(events).map((item) =>
       item.kind === 'event' ? item.event.type : item.kind,
     )).toEqual(['context_usage', 'complete']);
+  });
+
+  it('manuscript PAS는 침묵 구호와 비사용자 턴의 단독 긍정 답변을 숨긴다', () => {
+    const events = [
+      ev('agent-input', 'user_message', { text: '보고', caller_info: { source: 'agent' } }),
+      ev('agent-generation', 'generation_started', {}),
+      ev('agent-ack', 'assistant_message', { text: ' 네. ' }),
+      ev('agent-silent', 'assistant_message', { text: ' [SILENT] ' }),
+      ev('agent-reply', 'assistant_message', { text: '조사 결과를 전달합니다.' }),
+      ev('attached-ack', 'assistant_message', { text: '네.', attachments: ['/report.png'] }),
+      ev('attached-silent', 'assistant_message', { text: '[SILENT]', outputAttachments: [{ id: 'file-1' }] }),
+      ev('attached-ids-silent', 'assistant_message', { text: '[SILENT]', attachmentIds: ['file-2'] }),
+      ev('attached-count-snake-silent', 'assistant_message', { text: '[SILENT]', attachment_count: 1 }),
+      ev('attached-count-camel-ack', 'assistant_message', { text: '네.', attachmentCount: 1 }),
+      ev('notice', 'session_notification', { delivery_intent: 'completion_notification', text: '전달' }),
+      ev('notice-generation', 'generation_started', {}),
+      ev('notice-ack', 'assistant_message', { text: '네' }),
+      ev('closed-input', 'user_message', {
+        text: '입력',
+        context: [{ key: 'persistent_report_closed', label: '보고 닫힘', content: '닫힘' }],
+      }),
+      ev('closed-generation', 'generation_started', {}),
+      ev('closed-ack', 'assistant_message', { text: '네.' }),
+      ev('keepalive-input', 'user_message', { text: '유지', purpose: 'cache_keepalive' }),
+      ev('keepalive-generation', 'generation_started', {}),
+      ev('keepalive-ack', 'assistant_message', { text: '네.' }),
+      ev('human-input', 'user_message', { text: '일반 사용자 입력' }),
+      ev('human-ack', 'assistant_message', { text: '네.' }),
+      ev('human-silent', 'assistant_message', { text: '[SILENT]' }),
+      ev('silent-prefix', 'text_delta', { delta: ' [SIL' }),
+      ev('assistant-transcript', 'realtime_transcript', { role: 'assistant', text: '[SILENT]' }),
+    ];
+    const items = events.map((event) => ({ kind: 'event' as const, event, key: `evt-${event.id}` }));
+
+    expect(isManuscriptSilentTokenText(' [SILENT] ')).toBe(true);
+    expect(isManuscriptSilentTokenText(' [SIL', true)).toBe(true);
+    expect(isManuscriptSilentTokenText('[SIL', false)).toBe(false);
+    expect(isStandaloneKoreanYesAck(' 네. ')).toBe(true);
+    expect(isStandaloneKoreanYesAck('네, 답변입니다.')).toBe(false);
+    expect(projectManuscriptMessages(items).filter((item) => item.kind === 'event').map((item) =>
+      item.kind === 'event' ? item.event.id : item.kind,
+    )).toEqual([
+      'agent-generation',
+      'agent-reply',
+      'attached-ack',
+      'attached-silent',
+      'attached-ids-silent',
+      'attached-count-snake-silent',
+      'attached-count-camel-ack',
+      'notice-generation',
+      'closed-input',
+      'closed-generation',
+      'keepalive-input',
+      'keepalive-generation',
+      'human-input',
+      'human-ack',
+    ]);
+  });
+
+  it('manuscript PAS는 숨겨진 입력과 무응답 턴의 끝 캡션을 함께 숨긴다', () => {
+    const agentInput = ev('caption-agent-input', 'user_message', {
+      text: '보고',
+      caller_info: { source: 'agent' },
+    });
+    const generation = ev('caption-generation', 'generation_started');
+    const notice = ev('caption-notice', 'session_notification', {
+      delivery_intent: 'completion_notification',
+    });
+    const silent = ev('caption-silent', 'assistant_message', { text: '[SILENT]' });
+    const complete = ev('caption-complete', 'complete');
+    const contextUsage = ev('caption-usage', 'context_usage');
+    const endCaptions = { kind: 'turn-end-captions' as const, event: complete, key: 'captions-hidden' };
+    const summary = {
+      kind: 'turn-summary' as const,
+      event: complete,
+      content: '요약',
+      anchorEventId: 1,
+      key: 'summary-hidden',
+    };
+    const jevCandidates = {
+      kind: 'jev-candidates' as const,
+      title: '후보',
+      lines: ['후보'],
+      anchorEventId: 1,
+      key: 'jev-hidden',
+    };
+    const eventItem = (event: SessionEvent) => ({ kind: 'event' as const, event, key: `evt-${event.id}` });
+
+    expect(projectManuscriptMessages([
+      eventItem(agentInput),
+      eventItem(generation),
+      eventItem(notice),
+      eventItem(silent),
+      summary,
+      jevCandidates,
+      eventItem(contextUsage),
+      endCaptions,
+      eventItem(complete),
+    ])).toEqual([eventItem(generation)]);
+  });
+
+  it('manuscript PAS는 사람 행, 답변 또는 오류가 남는 턴의 캡션을 보존한다', () => {
+    const eventItem = (event: SessionEvent) => ({ kind: 'event' as const, event, key: `evt-${event.id}` });
+    const answerInput = ev('answer-input', 'user_message', {
+      text: '위임 보고',
+      caller_info: { source: 'agent' },
+    });
+    const answer = ev('answer', 'assistant_message', { text: '확인한 내용을 전달합니다.' });
+    const answerComplete = ev('answer-complete', 'complete');
+    const humanInput = ev('human-input-caption', 'user_message', { text: '일반 입력' });
+    const humanGeneration = ev('human-generation-caption', 'generation_started');
+    const humanSilent = ev('human-silent-caption', 'assistant_message', { text: '[SILENT]' });
+    const humanComplete = ev('human-complete-caption', 'complete');
+    const closedInput = ev('closed-input-caption', 'user_message', {
+      text: '보고 닫힘 입력',
+      context: [{ key: 'persistent_report_closed' }],
+    });
+    const closedGeneration = ev('closed-generation-caption', 'generation_started');
+    const closedAck = ev('closed-ack-caption', 'assistant_message', { text: '네.' });
+    const closedComplete = ev('closed-complete-caption', 'complete');
+    const errorInput = ev('error-input-caption', 'user_message', {
+      text: '위임 보고',
+      caller_info: { source: 'agent' },
+    });
+    const error = ev('error-caption', 'error', { message: '실패' });
+    const errorComplete = ev('error-complete-caption', 'complete');
+    const answerCaptions = { kind: 'turn-end-captions' as const, event: answerComplete, key: 'answer-captions' };
+    const humanCaptions = { kind: 'turn-end-captions' as const, event: humanComplete, key: 'human-captions' };
+    const closedCaptions = { kind: 'turn-end-captions' as const, event: closedComplete, key: 'closed-captions' };
+    const errorCaptions = { kind: 'turn-end-captions' as const, event: errorComplete, key: 'error-captions' };
+
+    expect(projectManuscriptMessages([
+      eventItem(answerInput),
+      eventItem(answer),
+      answerCaptions,
+      eventItem(answerComplete),
+      eventItem(humanInput),
+      eventItem(humanGeneration),
+      eventItem(humanSilent),
+      humanCaptions,
+      eventItem(humanComplete),
+      eventItem(closedInput),
+      eventItem(closedGeneration),
+      eventItem(closedAck),
+      closedCaptions,
+      eventItem(closedComplete),
+      eventItem(errorInput),
+      eventItem(error),
+      errorCaptions,
+      eventItem(errorComplete),
+    ])).toEqual([
+      eventItem(answer),
+      answerCaptions,
+      eventItem(answerComplete),
+      eventItem(humanInput),
+      eventItem(humanGeneration),
+      humanCaptions,
+      eventItem(humanComplete),
+      eventItem(closedInput),
+      eventItem(closedGeneration),
+      closedCaptions,
+      eventItem(closedComplete),
+      eventItem(error),
+      errorCaptions,
+      eventItem(errorComplete),
+    ]);
+  });
+
+  it('manuscript PAS는 입력 뒤 캡션을 숨김 여는 행 사이의 턴 종료로 보지 않는다', () => {
+    const agentInput = ev('grouped-agent-input', 'user_message', {
+      text: '위임 보고',
+      caller_info: { source: 'agent' },
+    });
+    const jevCandidates = {
+      kind: 'jev-candidates' as const,
+      title: '후보',
+      lines: ['후보'],
+      anchorEventId: 1,
+      key: 'grouped-jev',
+    };
+    const notice = ev('grouped-notice', 'session_notification', {
+      delivery_intent: 'completion_notification',
+    });
+    const generation = ev('grouped-generation', 'generation_started');
+    const answer = ev('grouped-answer', 'assistant_message', { text: '확인한 내용을 전달합니다.' });
+    const complete = ev('grouped-complete', 'complete');
+    const endCaptions = { kind: 'turn-end-captions' as const, event: complete, key: 'grouped-captions' };
+    const eventItem = (event: SessionEvent) => ({ kind: 'event' as const, event, key: `evt-${event.id}` });
+
+    expect(projectManuscriptMessages([
+      eventItem(agentInput),
+      jevCandidates,
+      eventItem(notice),
+      eventItem(generation),
+      eventItem(answer),
+      endCaptions,
+      eventItem(complete),
+    ])).toEqual([
+      jevCandidates,
+      eventItem(generation),
+      eventItem(answer),
+      endCaptions,
+      eventItem(complete),
+    ]);
   });
 
   it('tool_start와 같은 tool_use_id의 tool_result는 단일 그룹으로 묶는다 (핵심 매칭)', () => {

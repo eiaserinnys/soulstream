@@ -515,11 +515,11 @@ describe("ChatView long-session initial bottom focus", () => {
       {
         type: "user_message",
         input_id: "keepalive-1001",
-        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 'ok'만 답하십시오.",
+        text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",
         purpose: "cache_keepalive",
       },
       { type: "generation_started", context_reset: true },
-      { type: "assistant_message", text: "ok" },
+      { type: "assistant_message", text: "[SILENT]" },
       { type: "complete", result: "done", attachments: [], turn_cost_usd: 0.01, session_cost_usd: 0.04 },
       {
         type: "debug",

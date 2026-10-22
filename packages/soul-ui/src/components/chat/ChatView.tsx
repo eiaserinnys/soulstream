@@ -28,7 +28,10 @@ import { projectPersistentWorkDetails } from "../../lib/persistent-work-details-
 import { projectChatOutputAttachments } from "../../lib/chat-output-attachment-projection";
 import { projectManuscriptAssignedCardContexts } from "../../lib/assigned-card-context-projection";
 import { placeTurnSummariesAtCompleteCaptions } from "../../lib/turn-summary-projection";
-import { projectManuscriptMessages } from "../../lib/manuscript-agent-message-projection";
+import {
+  projectManuscriptMessages,
+  projectManuscriptSilentResponses,
+} from "../../lib/manuscript-agent-message-projection";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
 import { projectCacheKeepaliveTurns } from "../../lib/persistent-cache-keepalive";
 import { ChatInput } from "../ChatInput";
@@ -205,8 +208,9 @@ function ChatViewContent({
       const cacheKeepaliveFiltered = projectCacheKeepaliveTurns(
         projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
       );
+      const silentResponsesFiltered = projectManuscriptSilentResponses(cacheKeepaliveFiltered);
       return projectPersistentTurnUsage(
-        projectPersistentWorkDetails(cacheKeepaliveFiltered, showWorkDetails),
+        projectPersistentWorkDetails(silentResponsesFiltered, showWorkDetails),
         turnUsageMode,
       );
     },

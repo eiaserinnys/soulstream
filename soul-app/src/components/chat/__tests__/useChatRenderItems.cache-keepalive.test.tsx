@@ -36,12 +36,12 @@ const humanTurn = [
 
 const keepaliveTurn = [
   event('4', 'user_message', {
-    text: '캐시 유지용 호출입니다. 도구를 쓰지 말고 \'ok\'만 답하십시오.',
+    text: '캐시 유지용 호출입니다. 도구를 쓰지 말고 \'[SILENT]\'만 답하십시오.',
     input_id: 'keepalive-input',
     purpose: CACHE_KEEPALIVE_PURPOSE,
   }),
   event('5', 'generation_started', { context_reset: true }),
-  event('6', 'assistant_message', { text: 'ok' }),
+  event('6', 'assistant_message', { text: '[SILENT]' }),
   event('7', 'complete', { turn_cost_usd: 0.01, session_cost_usd: 12.41 }),
   event('8', 'debug', {
     kind: 'persistent_instruction_recorded',
@@ -57,7 +57,7 @@ const sameTurnWithoutMarker = keepaliveTurn.map((item) => item.id === '4'
 
 const sameTextHumanTurn = [
   event('9', 'user_message', {
-    text: '캐시 유지용 호출입니다. 도구를 쓰지 말고 \'ok\'만 답하십시오.',
+    text: '캐시 유지용 호출입니다. 도구를 쓰지 말고 \'[SILENT]\'만 답하십시오.',
     input_id: 'human-input',
   }),
   event('10a', 'context_usage', { used_tokens: 50, max_tokens: 100, percent: 50 }),
@@ -65,12 +65,16 @@ const sameTextHumanTurn = [
   event('11', 'complete', { turn_cost_usd: 0.2, session_cost_usd: 12.61 }),
 ];
 
-function renderItems(events: SessionEvent[], streamingSlots?: StreamingSlots) {
+function renderItems(
+  events: SessionEvent[],
+  streamingSlots?: StreamingSlots,
+  sessionStatus: string = 'completed',
+) {
   return useChatRenderItems({
     events,
     pendingOptimistic: undefined,
     streamingSlots,
-    sessionStatus: 'completed',
+    sessionStatus,
     presentation: 'manuscript',
     persistentDisplaySettings: { showGenerationSeparator: true, showJevCandidates: false },
     turnUsageMode: 'collapsed',
@@ -124,11 +128,11 @@ test('an intervention_sent keepalive input also removes the full turn span', () 
   const events = [
     ...humanTurn,
     event('12', 'intervention_sent', {
-      text: '캐시 유지용 호출입니다. 도구를 쓰지 말고 \'ok\'만 답하십시오.',
+      text: '캐시 유지용 호출입니다. 도구를 쓰지 말고 \'[SILENT]\'만 답하십시오.',
       input_id: 'intervention-keepalive',
       purpose: CACHE_KEEPALIVE_PURPOSE,
     }),
-    event('13', 'assistant_message', { text: 'ok' }),
+    event('13', 'assistant_message', { text: '[SILENT]' }),
     event('14', 'complete', { turn_cost_usd: 0.01 }),
     event('15', 'debug', {
       kind: 'persistent_instruction_recorded',
@@ -144,7 +148,7 @@ test('an intervention_sent keepalive input also removes the full turn span', () 
 });
 
 test('an active keepalive turn hides its streaming answer through generation_started and does not create a new-message row', () => {
-  const liveAnswer = event('live-keepalive', 'assistant_message', { text: 'ok' });
+  const liveAnswer = event('live-keepalive', 'assistant_message', { text: '[SILENT]' });
   const { result } = renderHook(() => renderItems(
     [...humanTurn, keepaliveTurn[0]!, keepaliveTurn[1]!],
     { assistant: liveAnswer },
@@ -152,6 +156,45 @@ test('an active keepalive turn hides its streaming answer through generation_sta
 
   expect(sourceEventIds(result.current.reversedItems)).toContain('5');
   expect(sourceEventIds(result.current.reversedItems)).not.toContain('live-keepalive');
+  expect(result.current.reversedItems.some((item) => item.kind === 'typing')).toBe(false);
+  expect(result.current.bottomFollowItemKey).toBe('evt-3');
+});
+
+test('a live silence prefix in manuscript PAS stays hidden without a typing row or empty stream target', () => {
+  const liveAnswer = event('live-silent', 'assistant_message', { text: ' [SIL' });
+  const { result } = renderHook(() => renderItems(humanTurn, { assistant: liveAnswer }, 'running'));
+
+  expect(sourceEventIds(result.current.reversedItems)).not.toContain('live-silent');
+  expect(result.current.reversedItems.some((item) => item.kind === 'typing')).toBe(false);
+  expect(result.current.bottomFollowItemKey).toBe('evt-3');
+});
+
+test('a live standalone acknowledgement in an agent turn stays hidden in manuscript PAS', () => {
+  const events = [
+    ...humanTurn,
+    event('agent-input', 'user_message', { text: '보고', caller_info: { source: 'agent' } }),
+    event('agent-generation', 'generation_started', {}),
+  ];
+  const liveAnswer = event('live-agent-ack', 'assistant_message', { text: ' 네. ' });
+  const { result } = renderHook(() => renderItems(events, { assistant: liveAnswer }, 'running'));
+
+  expect(sourceEventIds(result.current.reversedItems)).toContain('agent-generation');
+  expect(sourceEventIds(result.current.reversedItems)).not.toContain('live-agent-ack');
+  expect(result.current.reversedItems.some((item) => item.kind === 'typing')).toBe(false);
+  expect(result.current.bottomFollowItemKey).toBe('evt-3');
+});
+
+test('a hidden historical silence delta does not create a typing row or stream target', () => {
+  const events = [
+    ...humanTurn,
+    event('historical-start', 'text_start', {}),
+    event('historical-delta', 'text_delta', { text: ' [SIL' }),
+  ];
+  const { result } = renderHook(() => renderItems(events, undefined, 'running'));
+
+  expect(sourceEventIds(result.current.reversedItems)).not.toEqual(
+    expect.arrayContaining(['historical-start', 'historical-delta']),
+  );
   expect(result.current.reversedItems.some((item) => item.kind === 'typing')).toBe(false);
   expect(result.current.bottomFollowItemKey).toBe('evt-3');
 });
@@ -172,7 +215,7 @@ test('a keepalive-only append does not change the manuscript bottom key used by 
 test('a divider after keepalive complete stays visible and the following human turn is unchanged', () => {
   const events = [
     event('20', 'user_message', { input_id: 'keepalive-after-complete', text: '유지 턴', purpose: CACHE_KEEPALIVE_PURPOSE }),
-    event('21', 'assistant_message', { text: 'ok' }),
+    event('21', 'assistant_message', { text: '[SILENT]' }),
     event('22', 'complete', { turn_cost_usd: 0.01, session_cost_usd: 12.42 }),
     event('23', 'generation_started', { context_reset: true }),
     event('24', 'user_message', { input_id: 'human-after-complete', text: '사람 입력' }),
@@ -189,7 +232,7 @@ test('a divider after keepalive complete stays visible and the following human t
 test('unanchored post-terminal rows stay visible while H3 and Jev rows anchored to keepalive stay hidden', () => {
   const events = [
     event('30', 'user_message', { input_id: 'keepalive-anchor', text: '유지 턴', purpose: CACHE_KEEPALIVE_PURPOSE }),
-    event('31', 'assistant_message', { text: 'ok' }),
+    event('31', 'assistant_message', { text: '[SILENT]' }),
     event('32', 'complete', { turn_cost_usd: 0.01 }),
     event('33', 'system', { text: 'unanchored after complete' }),
     event('34', 'debug', {
