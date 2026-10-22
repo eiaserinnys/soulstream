@@ -174,6 +174,14 @@ function folderOfLocation(location: NormalizedNavigationLocation | null | undefi
   return location && 'folder' in location ? location.folder : undefined;
 }
 
+function effectiveOriginTab(location: NormalizedNavigationLocation | null | undefined): PhoneTabName | undefined {
+  if (!location) return undefined;
+  if (location.kind === 'chat' && location.returnTab) return location.returnTab;
+  if (location.kind === 'cardDetail' && location.pasCard) return 'PersistentTab';
+  if (location.kind === 'markdownDocument' && location.fromPersistent) return 'PersistentTab';
+  return location.originTab;
+}
+
 export function readPhoneLocation(
   state: NavigationState | PartialState<NavigationState> | undefined,
   context: PhoneReadContext = {},
@@ -346,19 +354,26 @@ function tabletMainLocation(context: TabletLocationContext): NormalizedNavigatio
   }
 
   if (context.folderOverlayVisible) {
-    const folder = context.selectedFolder ?? undefined;
+    const folder = context.selectedFolder ?? folderOfLocation(context.previousLocation);
     const sessionId = context.activeSessionId ?? undefined;
     const cardId = context.selectedCardId ?? undefined;
-    const previousTab = context.previousLocation?.originTab ?? 'DailyTab';
+    const previousTab = effectiveOriginTab(context.previousLocation);
     if (cardId) {
+      const returnTab = previousTab ?? (folder ? 'FolderTab' : 'DailyTab');
       return sessionId
-        ? { originTab: previousTab, kind: 'chat', sessionId, cardId, folder }
-        : { originTab: previousTab, kind: 'cardDetail', cardId, folder };
+        ? { originTab: 'FeedTab', kind: 'chat', sessionId, cardId, folder, returnTab }
+        : {
+          originTab: returnTab,
+          kind: 'cardDetail',
+          cardId,
+          folder,
+          ...(returnTab === 'PersistentTab' ? { pasCard: true } : {}),
+        };
     }
     if (folder) {
-      const originTab = context.previousLocation?.originTab ?? 'FolderTab';
+      const originTab = previousTab === 'DailyTab' ? 'DailyTab' : 'FolderTab';
       return sessionId
-        ? { originTab, kind: 'chat', sessionId, folder, returnTab: originTab === 'DailyTab' ? 'DailyTab' : 'FolderTab' }
+        ? { originTab: 'FeedTab', kind: 'chat', sessionId, folder, returnTab: originTab }
         : { originTab, kind: 'folderWorkspace', folder };
     }
     if (sessionId) {
@@ -601,6 +616,12 @@ export function buildTabletState(location: NormalizedNavigationLocation): {
         searchQuery: location.initialQuery ?? '',
       });
     case 'chat':
+      if (location.cardId) {
+        return main({
+          lastMainFocus: 'cards',
+          cardOverlay: { cardId: location.cardId, sessionId: location.sessionId },
+        });
+      }
       if (location.folder) {
         return main({
           lastMainFocus: 'folder',
@@ -609,12 +630,6 @@ export function buildTabletState(location: NormalizedNavigationLocation): {
             folderId: location.folder.folderId ?? null,
             sessionId: location.sessionId,
           },
-        });
-      }
-      if (location.cardId) {
-        return main({
-          lastMainFocus: 'cards',
-          cardOverlay: { cardId: location.cardId, sessionId: location.sessionId },
         });
       }
       return main({

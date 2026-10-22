@@ -297,8 +297,13 @@ describe('buildTabletState', () => {
     );
     const expected = location.kind === 'recurringJobs'
       ? { ...location, originTab: 'SettingsTab', panel: location.panel }
-      : location.kind === 'chat' && !location.folder && !location.cardId
-        ? { ...location, returnTab: 'FeedTab' }
+      : location.kind === 'chat'
+        ? {
+          ...location,
+          originTab: 'FeedTab',
+          returnTab: location.returnTab ?? location.originTab,
+          ...(location.cardId ? { folder: location.folder } : {}),
+        }
         : location;
     expect(restored).toEqual(expected);
   });
@@ -346,6 +351,59 @@ describe('LayoutContinuityProvider', () => {
 });
 
 describe('readTabletLocation', () => {
+  test('채팅의 복귀 탭과 폴더·카드 스택을 태블릿 왕복 뒤에도 보존한다', () => {
+    const dailyFolderChat: NormalizedNavigationLocation = {
+      originTab: 'FeedTab',
+      kind: 'chat',
+      sessionId: 'session-daily-folder',
+      folder,
+      returnTab: 'DailyTab',
+    };
+    const dailyTablet = buildTabletState(dailyFolderChat);
+    const dailyRestored = readTabletLocation(
+      dailyTablet.initialState,
+      tabletContextFromEffects(dailyTablet.tabletEffects, dailyFolderChat),
+    );
+    expect(dailyRestored).toEqual(dailyFolderChat);
+    expect(tabStack(buildPhoneState(dailyRestored), 'DailyTab').map(route => route.name))
+      .toEqual(['Daily', 'FolderWorkspace']);
+
+    const folderCardChat: NormalizedNavigationLocation = {
+      originTab: 'FeedTab',
+      kind: 'chat',
+      sessionId: 'session-folder-card',
+      folder,
+      cardId: 'card-folder',
+      returnTab: 'FolderTab',
+    };
+    const folderCardTablet = buildTabletState(folderCardChat);
+    expect(folderCardTablet.tabletEffects.cardOverlay)
+      .toEqual({ cardId: 'card-folder', sessionId: 'session-folder-card' });
+    const folderCardRestored = readTabletLocation(
+      folderCardTablet.initialState,
+      tabletContextFromEffects(folderCardTablet.tabletEffects, folderCardChat),
+    );
+    expect(folderCardRestored).toEqual(folderCardChat);
+    expect(tabStack(buildPhoneState(folderCardRestored), 'FolderTab').map(route => route.name))
+      .toEqual(['FolderList', 'FolderWorkspace', 'CardDetail']);
+
+    const pasCardChat: NormalizedNavigationLocation = {
+      originTab: 'FeedTab',
+      kind: 'chat',
+      sessionId: 'session-pas-card',
+      cardId: 'card-pas',
+      returnTab: 'PersistentTab',
+    };
+    const pasTablet = buildTabletState(pasCardChat);
+    const pasRestored = readTabletLocation(
+      pasTablet.initialState,
+      tabletContextFromEffects(pasTablet.tabletEffects, pasCardChat),
+    );
+    expect(pasRestored).toEqual(pasCardChat);
+    expect(tabStack(buildPhoneState(pasRestored), 'PersistentTab').map(route => route.name))
+      .toEqual(['PersistentSession', 'CardDetail']);
+  });
+
   test('Main 위 효과의 우선순위를 지킨다', () => {
     const main = buildTabletState({ originTab: 'DailyTab', kind: 'daily' }).initialState;
 
@@ -357,7 +415,7 @@ describe('readTabletLocation', () => {
       folderOverlayVisible: true,
       selectedFolder: folder,
       activeSessionId: 'session-1',
-    })).toEqual({ originTab: 'FolderTab', kind: 'chat', sessionId: 'session-1', folder, returnTab: 'FolderTab' });
+    })).toEqual({ originTab: 'FeedTab', kind: 'chat', sessionId: 'session-1', folder, returnTab: 'FolderTab' });
     expect(readTabletLocation(main, { folderOverlayVisible: true, selectedFolder: folder }))
       .toEqual({ originTab: 'FolderTab', kind: 'folderWorkspace', folder });
     expect(readTabletLocation(main, { folderOverlayVisible: true, activeSessionId: 'session-2' }))
