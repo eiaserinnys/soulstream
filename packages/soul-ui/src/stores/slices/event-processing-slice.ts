@@ -25,6 +25,7 @@ import type { StateCreator } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
 import type { SessionNotice, EventTreeNode, SoulSSEEvent } from "@shared/types";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
+import { pendingChatSendMatchesEvent } from "../pending-chat-send-match";
 import {
   type ProcessingContext,
   createProcessingContext,
@@ -49,13 +50,7 @@ function clearMatchingPendingChatSend(
   if (!sessionId) return undefined;
   const pending = pendingChatSends[sessionId];
   if (!pending) return undefined;
-  const delivered = events.some(({ event }) => {
-    const candidate = event as SoulSSEEvent & { text?: unknown };
-    return (
-      (candidate.type === "user_message" || candidate.type === "intervention_sent") &&
-      candidate.text === pending.messageText
-    );
-  });
+  const delivered = events.some(({ event }) => pendingChatSendMatchesEvent(pending, event));
   if (!delivered) return undefined;
   const next = { ...pendingChatSends };
   delete next[sessionId];
