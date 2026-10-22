@@ -445,3 +445,41 @@ test('single-panel back synchronously records detail and clears only the explici
   expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'session-only', overlaySessionExplicit: false });
   expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
 });
+
+test('a new explicit session request shows chat after returning to the same card detail', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openCardOverlay('reopen-step', 'session-only');
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  const screen = render(<LayoutContinuityProvider><Capture /><FolderWorkspaceReadOverlay /></LayoutContinuityProvider>);
+  const key = JSON.stringify(['folder-overlay', 'reopen-step']);
+  fireEvent.press(screen.getByTestId('folder-workspace-step-back'));
+  expect(memory.getViewState(key)).toBe('detail');
+  expect(useUIStore.getState()).toMatchObject({ initialCardSessionId: null, overlaySessionExplicit: false });
+  act(() => { useUIStore.getState().openCardOverlay('reopen-step', 'session-only'); });
+  expect(memory.getViewState(key)).toBe('chat');
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+});
+
+test('folder detail survives portrait-landscape-portrait after leaving its session', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openFolderOverlay('folder-rotation', 'session-only');
+  let memory!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { memory = useLayoutContinuity(); return null; }
+  const shell = () => <LayoutContinuityProvider><Capture /><FolderWorkspaceReadOverlay /></LayoutContinuityProvider>;
+  const screen = render(shell());
+  const key = JSON.stringify(['folder-overlay', 'folder-rotation']);
+  expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('folder-workspace-step-back'));
+  expect(memory.getViewState(key)).toBe('detail');
+  expect(useUIStore.getState()).toMatchObject({ activeSessionId: 'session-only', overlaySessionExplicit: false });
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  screen.rerender(shell());
+  expect(screen.queryByTestId('folder-workspace-single-panel')).toBeNull();
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  screen.rerender(shell());
+  expect(screen.getByTestId('folder-workspace-single-panel')).toBeTruthy();
+  expect(screen.getByTestId('task-workspace-task-pane')).toBeTruthy();
+  expect(screen.queryByTestId('task-workspace-chat-pane')).toBeNull();
+  expect(memory.getViewState(key)).toBe('detail');
+});

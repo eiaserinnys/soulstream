@@ -198,7 +198,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   const resolution = useUIStore((state) => state.sessionFolderResolution);
   const continuity = useOptionalLayoutContinuity();
   const memoryKey = JSON.stringify(['folder-overlay', pageId ?? cardId ?? sessionId]);
-  const [step, setStep] = useState<'detail' | 'chat'>(() => continuity?.getViewState<'detail' | 'chat'>(memoryKey) ?? initialStep);
+  const [step, setStep] = useState<'detail' | 'chat'>(() => initialStep === 'chat' ? 'chat' : (continuity?.getViewState<'detail' | 'chat'>(memoryKey) ?? 'detail'));
   useEffect(() => { continuity?.setViewState(memoryKey, step); }, [continuity, memoryKey, step]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(sessionId);
   const stepKey = cardId || pageId
@@ -209,9 +209,11 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
     setSelectedSessionId(sessionId);
     if (lastStepKey.current !== stepKey) {
       lastStepKey.current = stepKey;
-      setStep(continuity?.getViewState<'detail' | 'chat'>(memoryKey) ?? initialStep);
+      const nextStep = initialStep === 'chat' ? 'chat' : (continuity?.getViewState<'detail' | 'chat'>(memoryKey) ?? 'detail');
+      continuity?.setViewState(memoryKey, nextStep);
+      setStep(nextStep);
     }
-  }, [initialStep, sessionId, stepKey]);
+  }, [continuity, initialStep, memoryKey, sessionId, stepKey]);
   const openSession = (id: string) => {
     continuity?.setViewState(memoryKey, 'chat');
     setSelectedSessionId(id);
@@ -229,7 +231,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
       onPress={() => {
         setStep('detail');
         continuity?.setViewState(memoryKey, 'detail');
-        useUIStore.setState({ overlaySessionExplicit: false });
+        useUIStore.setState({ overlaySessionExplicit: false, initialCardSessionId: null });
       }}
     >
       <Ionicons
@@ -357,7 +359,11 @@ function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }
   const detail = useCardStore((state) => cardId ? state.details[cardId] : undefined);
   const pageId = useUIStore((state) => state.selectedFolderPageId);
   const sessionId = useUIStore((state) => state.activeSessionId);
-  const initialStep: 'detail' | 'chat' = initialCardSessionId || (!cardId && sessionId) ? 'chat' : 'detail';
+  const overlaySessionExplicit = useUIStore((state) => state.overlaySessionExplicit);
+  const initialStep: 'detail' | 'chat' =
+    initialCardSessionId || (overlaySessionExplicit && Boolean(sessionId)) || (!cardId && !pageId && Boolean(sessionId))
+      ? 'chat'
+      : 'detail';
   const close = useUIStore((state) => state.closeFolderOverlay);
   const setActiveSessionId = useUIStore((state) => state.setActiveSessionId);
   const initializeCardSessionSelection = useUIStore((state) => state.initializeCardSessionSelection);

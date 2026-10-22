@@ -32,10 +32,13 @@ export function RecurringJobsSettingsSection({
   const [localPanel, setLocalPanel] = useState<WidePanel>({ kind: 'list' });
   const panel = workspace?.jobs ?? localPanel;
   const setPanel = workspace?.setJobs ?? setLocalPanel;
-  const [editorId, setEditorId] = useState<string | undefined>();
-  const [historyId, setHistoryId] = useState<string | null>(null);
+  const [editorId, setEditorId] = useState<string | undefined>(panel.kind === 'list' ? undefined : panel.jobId);
+  const [historyId, setHistoryId] = useState<string | null>(panel.kind === 'history' ? panel.jobId : null);
   const [listRevision, setListRevision] = useState(0);
-  const [hasEditor, setHasEditor] = useState(false);
+  const [hasEditor, setHasEditor] = useState(panel.kind === 'editor' || panel.kind === 'history');
+  const showEditor = hasEditor || panel.kind === 'editor';
+  const activeEditorId = panel.kind === 'editor' ? panel.jobId : editorId;
+  const activeHistoryId = panel.kind === 'history' ? panel.jobId : historyId;
   const openEditor = (jobId?: string) => {
     const open = () => { setEditorId(jobId); if (editorId !== jobId) setHistoryId(null); setHasEditor(true); setPanel({ kind: 'editor', jobId }); };
     if (workspace && hasEditor && editorId !== jobId) workspace.guard('recurring-jobs', open); else open();
@@ -45,8 +48,8 @@ export function RecurringJobsSettingsSection({
     const page = (kind: WidePanel['kind']) => settingsPanelPage(t, hidden(kind));
     return <View testID="wide-recurring-jobs-panel" style={{ flex: 1, minHeight: 0 }}>
       <ScrollView {...page('list')} testID="settings-jobs-list-scroll"><RecurringJobsList serverUrl={serverUrl} onCreate={() => openEditor()} onEdit={job => openEditor(job.job_id)} refreshKey={listRevision}/></ScrollView>
-      {hasEditor ? <ScrollView {...page('editor')} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={editorId ?? 'new'} serverUrl={serverUrl} jobId={editorId} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}
-      {historyId ? <ScrollView {...page('history')} testID="settings-jobs-history-scroll"><RecurringJobHistory serverUrl={serverUrl} jobId={historyId} onOpenSession={sessionId => openPlannerSessionWorkspace(sessionId)}/></ScrollView> : null}
+      {showEditor ? <ScrollView {...page('editor')} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={activeEditorId ?? 'new'} serverUrl={serverUrl} jobId={activeEditorId} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}
+      {activeHistoryId ? <ScrollView {...page('history')} testID="settings-jobs-history-scroll"><RecurringJobHistory serverUrl={serverUrl} jobId={activeHistoryId} onOpenSession={sessionId => openPlannerSessionWorkspace(sessionId)}/></ScrollView> : null}
     </View>;
   }
   if (onOpenRecurringJobs) {

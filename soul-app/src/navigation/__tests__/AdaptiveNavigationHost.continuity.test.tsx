@@ -206,3 +206,29 @@ test('an automatically selected card assignee remains supporting context when fo
   expect(navigation.getCurrentRoute()?.params).toMatchObject({ cardId: 'auto-card' });
   view.unmount();
 });
+
+test('a new explicit card-session request supersedes the remembered detail step', async () => {
+  const navigation = createNavigationContainerRef<any>();
+  let continuity!: ReturnType<typeof useLayoutContinuity>;
+  function Capture() { continuity = useLayoutContinuity(); return null; }
+  const shell = (device: 'phone' | 'tabletPortrait') =>
+    <PersistentSessionProvider><LayoutContinuityProvider><Capture />
+      <AdaptiveNavigationHost device={device} containerRef={navigation} />
+    </LayoutContinuityProvider></PersistentSessionProvider>;
+  useUIStore.setState({ selectedFolderPageId: null });
+  const view = render(shell('tabletPortrait'));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
+  act(() => {
+    useUIStore.getState().openCardOverlay('reopened-card');
+    continuity.setViewState(JSON.stringify(['folder-overlay', 'reopened-card']), 'detail');
+    useUIStore.setState({ overlaySessionExplicit: false });
+  });
+  expect(continuity.getLastLocation()?.kind).toBe('cardDetail');
+  act(() => { useUIStore.getState().openCardOverlay('reopened-card', 'new-session'); });
+  expect(continuity.getViewState(JSON.stringify(['folder-overlay', 'reopened-card']))).toBe('chat');
+  expect(continuity.getLastLocation()).toMatchObject({ kind: 'chat', sessionId: 'new-session' });
+  view.rerender(shell('phone'));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Chat'));
+  expect(navigation.getCurrentRoute()?.params).toMatchObject({ sessionId: 'new-session' });
+  view.unmount();
+});

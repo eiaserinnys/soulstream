@@ -47,9 +47,7 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
     const effectiveActiveSessionId = overlayKey
       ? (overlayStep === 'detail'
         ? null
-        : overlayStep === 'chat'
-          ? ui.activeSessionId
-          : (ui.overlaySessionExplicit ? ui.activeSessionId : null))
+        : (ui.overlaySessionExplicit || overlayStep === 'chat') ? ui.activeSessionId : null)
       : ui.activeSessionId;
     const folder = useSessionStore.getState().catalog.folders.find(item => item.projectPageId === ui.selectedFolderPageId);
     const previousFolder = previousLocation && 'folder' in previousLocation ? previousLocation.folder : undefined;
@@ -85,7 +83,17 @@ export function AdaptiveNavigationHost({ device, containerRef = navigationRef }:
       if (requestedFamily.current !== prepared.family || prepared.family !== 'tablet' || !latestState.current) return;
       continuity.setLastLocation(readLocation('tablet', latestState.current));
     };
-    const subscriptions = [useUIStore.subscribe(recordOverlay), useSearchStore.subscribe((state, previous) => {
+    const subscriptions = [useUIStore.subscribe((state, previous) => {
+      const overlayKey = state.selectedFolderPageId ?? state.selectedCardId;
+      const previousKey = previous.selectedFolderPageId ?? previous.selectedCardId;
+      if (overlayKey && state.overlaySessionExplicit && state.activeSessionId
+        && (!previous.overlaySessionExplicit || state.activeSessionId !== previous.activeSessionId || previousKey !== overlayKey)) {
+        continuity.setViewState(JSON.stringify(['folder-overlay', overlayKey]), 'chat');
+      } else if (overlayKey && !state.overlaySessionExplicit && previousKey !== overlayKey) {
+        continuity.setViewState(JSON.stringify(['folder-overlay', overlayKey]), 'detail');
+      }
+      recordOverlay();
+    }), useSearchStore.subscribe((state, previous) => {
       if (!state.tabletActive && previous.tabletActive && useUIStore.getState().lastMainFocus === 'search') {
         useUIStore.getState().setLastMainFocus('feed');
       }
