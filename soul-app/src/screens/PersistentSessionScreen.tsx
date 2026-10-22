@@ -231,7 +231,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       <Ionicons name={icon} size={t.iconSize.navigation} color={selected ? t.colors.accent : t.colors.textPrimary} />
     </LiquidGlassButton>;
   return <SafeAreaView testID="persistent-session-safe-area" edges={phone
-    ? railMode ? ['top', 'bottom', 'left'] : ['top', 'bottom', 'left', 'right']
+    ? railMode ? ['top', 'bottom', 'left'] : ['top', 'left', 'right']
     : ['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
     <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>

@@ -1,6 +1,32 @@
 import { useContext } from 'react';
 import { useWindowDimensions } from 'react-native';
-import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { PhoneRailModeContext } from '../navigation/tabContract';
+
+function useOptionalPhoneRailMode(): boolean {
+  try {
+    return useContext(PhoneRailModeContext);
+  } catch {
+    return false;
+  }
+}
+
+function useOptionalSafeAreaInsets(): { left: number; right: number } | null {
+  try {
+    const safeArea = require('react-native-safe-area-context') as {
+      SafeAreaInsetsContext?: React.Context<{ left: number; right: number } | null>;
+      useSafeAreaInsets?: () => { left: number; right: number };
+    };
+    if (safeArea.SafeAreaInsetsContext) {
+      return useContext(safeArea.SafeAreaInsetsContext);
+    }
+    if (typeof safeArea.useSafeAreaInsets === 'function') {
+      return safeArea.useSafeAreaInsets();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 /**
  * 디바이스 + 방향 기반 레이아웃 모드.
@@ -31,10 +57,11 @@ export const TWO_PANE_MIN_SAFE_WIDTH = 616;
  */
 export function useDeviceType(): DeviceType {
   const { width, height } = useWindowDimensions();
-  const insets = useContext(SafeAreaInsetsContext);
+  const railMode = useOptionalPhoneRailMode();
+  const insets = useOptionalSafeAreaInsets();
   const shortSide = Math.min(width, height);
   const safeWidth = width - (insets?.left ?? 0) - (insets?.right ?? 0);
-  if (shortSide < TABLET_BREAKPOINT || safeWidth < TWO_PANE_MIN_SAFE_WIDTH) return 'phone';
+  if (railMode || shortSide < TABLET_BREAKPOINT || safeWidth < TWO_PANE_MIN_SAFE_WIDTH) return 'phone';
   return width > height ? 'tabletLandscape' : 'tabletPortrait';
 }
 

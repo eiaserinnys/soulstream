@@ -19,7 +19,8 @@ function EntryDriver({ ready, phone }: { ready: boolean; phone: boolean }) {
 function CardOverlayEntryDriver({ ready, phone }: { ready: boolean; phone: boolean }) {
   const host = usePersistentSessionHost();
   useEffect(() => {
-    if (!ready || new URLSearchParams(window.location.search).get('sample') !== 'card-overlay') return;
+    const sample = new URLSearchParams(window.location.search).get('sample');
+    if (!ready || (sample !== 'card-overlay' && sample !== 'pas')) return;
     host.store.getState().open({ session_id: 'review-pas-1', display_name: '영구 관제 세션', node_id: 'public-node',
       folder_id: null, agent_id: 'public-agent', agent_name: '로젤린', persistent: true, settings: {},
       runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null } } as any);
@@ -40,7 +41,7 @@ export function ReviewPersistentFullscreen() {
       onReady={() => setReady(true)}>
       {phone ? <TabNavigator /> : <TabletNavigator />}
     </NavigationContainer>
-    {sample === 'card-overlay' ? <CardOverlayEntryDriver ready={ready} phone={phone} />
+    {sample === 'card-overlay' || sample === 'pas' ? <CardOverlayEntryDriver ready={ready} phone={phone} />
       : sample !== 'screen' && sample !== 'report' && sample !== 'usage'
         ? <PersistentSessionStartup ready={ready} sessionIntent={false} onOpen={() => { navigation.navigate(phone ? 'PersistentTab' : 'PersistentSession'); }} />
         : <EntryDriver ready={ready} phone={phone} />}

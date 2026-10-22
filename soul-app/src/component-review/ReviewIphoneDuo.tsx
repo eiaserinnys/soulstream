@@ -13,7 +13,8 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { PhoneRailModeContext } from '../navigation/tabContract';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { PhoneRailTabCluster } from '../navigation/TabNavigator';
-import { PersistentSessionProvider } from '../navigation/PersistentSessionContext';
+import { PersistentSessionProvider, usePersistentSessionHost } from '../navigation/PersistentSessionContext';
+import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import {
   CardConversationPane,
   FolderWorkspaceDetailPane,
@@ -38,6 +39,19 @@ export const IPHONE_DUO_FRAMES = [
   { id: 'inner-landscape', label: '안쪽 가로', width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   { id: 'inner-landscape-short', label: '안쪽 가로(높이 626)', width: 890, height: 626, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
 ] as const;
+
+function DuoPasCardOverlayStage() {
+  const host = usePersistentSessionHost();
+  useEffect(() => {
+    host.store.getState().open({
+      session_id: 'review-pas-1', display_name: '영구 관제 세션', node_id: 'public-node',
+      folder_id: null, agent_id: 'public-agent', agent_name: '로젤린', persistent: true, settings: {},
+      runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null },
+    } as any);
+    host.store.getState().swipe('left');
+  }, [host.store]);
+  return <PersistentSessionScreen active onHome={() => {}} />;
+}
 
 export function ReviewIphoneDuo() {
   const t = useTokens();
@@ -106,7 +120,7 @@ export function ReviewIphoneDuo() {
                           />
                           <CardConversationPane active sessionId="public-shell-session-0" />
                         </View>
-                        : <ReviewPersistentCardOverlay />;
+                        : <PersistentSessionProvider><DuoPasCardOverlayStage /></PersistentSessionProvider>;
               const activeTab = frame.id === 'outer-portrait' ? 'FeedTab' : 'SettingsTab';
               return (
                 <View key={frame.id} style={{ gap: t.spacing.sm }}>
@@ -127,11 +141,10 @@ export function ReviewIphoneDuo() {
                     <SafeAreaFrameContext.Provider value={frameRect}>
                       <SafeAreaInsetsContext.Provider value={frameInsets}>
                         <PhoneRailModeContext.Provider value={frame.rail}>
+                        <NavigationContainer theme={navigationTheme}>
                           <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frameInsets, right: 0 } : frameInsets}>
                             <View style={{ width: safeWidth, height: '100%', minWidth: 0, minHeight: 0 }}>
-                              {frame.id === 'inner-landscape-short'
-                                ? mainContent
-                                : <NavigationContainer theme={navigationTheme}>{mainContent}</NavigationContainer>}
+                              {mainContent}
                             </View>
                           </SafeAreaInsetsContext.Provider>
                           {frame.rail ? <View style={{
@@ -144,6 +157,7 @@ export function ReviewIphoneDuo() {
                           }}>
                             <PhoneRailTabCluster active={activeTab} onSelect={() => {}} />
                           </View> : frame.insets.right > 0 ? <View style={{ width: frame.insets.right }} /> : null}
+                        </NavigationContainer>
                         </PhoneRailModeContext.Provider>
                       </SafeAreaInsetsContext.Provider>
                     </SafeAreaFrameContext.Provider>

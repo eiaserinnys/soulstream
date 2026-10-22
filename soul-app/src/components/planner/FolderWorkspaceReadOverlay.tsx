@@ -197,7 +197,9 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   const resolution = useUIStore((state) => state.sessionFolderResolution);
   const [step, setStep] = useState<'detail' | 'chat'>(initialStep);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(sessionId);
-  const stepKey = `${cardId ?? ''}:${pageId ?? ''}:${sessionId ?? ''}:${initialStep}`;
+  const stepKey = cardId || pageId
+    ? `${cardId ?? ''}:${pageId ?? ''}:${initialStep}`
+    : `session:${sessionId ?? ''}:${initialStep}`;
   const lastStepKey = useRef(stepKey);
   useEffect(() => {
     setSelectedSessionId(sessionId);
@@ -246,7 +248,6 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
           pageId={pageId}
           sessionId={sessionId}
           active={active && step === 'detail'}
-          width={overlayWidth}
           hideRightBorder
           onClose={onClose}
           onOpenSession={openSession}
@@ -258,7 +259,6 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
         pageId={pageId}
         sessionId={sessionId}
         active={active}
-        width={overlayWidth}
         hideRightBorder
         onClose={onClose}
         onOpenSession={openSession}
