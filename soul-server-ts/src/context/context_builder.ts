@@ -1,5 +1,4 @@
 /** Builds input context; agent and folder instructions form the system prompt. */
-import { readPersistentInstructions } from "@soulstream/wire-schema/persistent-session-instructions";
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import { buildPersistentReportContext } from "./persistent_report_context.js";
@@ -19,7 +18,7 @@ import {
   type CogitoContextConfig,
 } from "./cogito_context.js";
 import {
-  fetchNodeResourcesContextItem,
+  resolvePasNodeResourcesContextItem,
   type NodeResourcesContextConfig,
 } from "./node_resources_context.js";
 import type { ContextItem } from "./prompt_assembler.js";
@@ -57,10 +56,7 @@ import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { assemblePreparedContext, type PreparedContext } from "./prepared_context_assembly.js";
 export type { PreparedContext } from "./prepared_context_assembly.js";
 import {
-  buildPersistentCheckpoint,
-  PERSISTENT_CHECKPOINT_BUDGET,
-  PERSISTENT_CHECKPOINT_READ_LIMITS,
-  PERSISTENT_SUPERVISION_SCOPE,
+  loadPersistentCheckpoint,
   type PersistentCheckpointStats,
 } from "./persistent_checkpoint.js";
 import { BOARD_WORKSPACE_SESSION_LIMIT } from "./board_workspace_item.js";
@@ -158,9 +154,10 @@ export class ExecutionContextBuilder {
         contextItems.push(runningSessionsItem);
       }
     }
-    if (await this.shouldIncludeNodeResources(task)) {
-      contextItems.push(await fetchNodeResourcesContextItem(this.cfg.nodeResources!, this.logger));
-    }
+    const nodeResourcesItem = await resolvePasNodeResourcesContextItem(
+      this.db, this.cfg.nodeResources, task, undefined, this.logger,
+    );
+    if (nodeResourcesItem) contextItems.push(nodeResourcesItem);
     const assignedCardItem = await this.buildAssignedCardContext(task, options.inputId);
     if (assignedCardItem) contextItems.push(assignedCardItem);
     return { contextItems };
@@ -260,7 +257,7 @@ export class ExecutionContextBuilder {
       BOARD_WORKSPACE_SESSION_LIMIT,
     );
     const checkpoint = generation
-      ? await this.readPersistentCheckpoint(task)
+      ? await loadPersistentCheckpoint(this.db, task)
       : null;
     const folder = await this._resolveFolder(task, resumeContext.session);
     const sessionAtomSpecs = extractAtomContextSourceSpecs(task.contextItems);
@@ -323,11 +320,9 @@ export class ExecutionContextBuilder {
         );
     const [cogitoContextItem, nodeResourcesItem] = await Promise.all([
       minimal ? Promise.resolve(null) : this._fetchCogitoContext(),
-      this.cfg.nodeResources
-        && (task.persistent === true
-          || readPersistentEnabled(resumeContext.session?.metadata ?? task.metadata))
-        ? fetchNodeResourcesContextItem(this.cfg.nodeResources, this.logger)
-        : Promise.resolve(null),
+      resolvePasNodeResourcesContextItem(
+        this.db, this.cfg.nodeResources, task, resumeContext.session ?? null, this.logger,
+      ),
     ]);
     const { workingDir, maxTurns } = resolveProfileRuntimeSettings(task, this.registry);
     const prepared = assemblePreparedContext({
@@ -359,32 +354,6 @@ export class ExecutionContextBuilder {
       maxTurns,
     });
     return checkpoint ? { ...prepared, checkpointStats: checkpoint.stats } : prepared;
-  }
-
-  private async readPersistentCheckpoint(task: Task) {
-    const sessionId = task.agentSessionId;
-    const [material, cards] = await Promise.all([
-      this.db.getGenerationCheckpointMaterial(sessionId, PERSISTENT_CHECKPOINT_READ_LIMITS),
-      this.db.getSupervisedCardContext({
-        sessionId,
-        ...PERSISTENT_SUPERVISION_SCOPE,
-        cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
-        questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
-      }),
-    ]);
-    return buildPersistentCheckpoint({
-      material,
-      cards,
-      standingInstructions: readPersistentInstructions(task.metadata)
-        .filter((instruction) => instruction.status === "active")
-        .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
-        .map((instruction) => instruction.source_turns.length > 0
-          ? `- (${instruction.source_turns.join(", ")}) ${instruction.text}`
-          : `- ${instruction.text}`),
-      ownSessionId: sessionId,
-      resetContext: task.activeGenerationRollover?.resetContext === true,
-      keepInstructions: task.activeGenerationRollover?.keepInstructions !== false,
-    }, PERSISTENT_CHECKPOINT_BUDGET);
   }
 
   /**
@@ -494,22 +463,6 @@ export class ExecutionContextBuilder {
       this.logger.warn({ err }, "_fetchCogitoContext: unexpected failure");
       return null;
     }
-  }
-
-  private async shouldIncludeNodeResources(task: Task): Promise<boolean> {
-    if (!this.cfg.nodeResources) return false;
-    if (task.persistent === true) return true;
-    let metadata: unknown = task.metadata;
-    try {
-      const session = await this.db.getSession(task.agentSessionId);
-      metadata = session?.metadata ?? task.metadata;
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "node resources PAS metadata unavailable",
-      );
-    }
-    return readPersistentEnabled(metadata);
   }
 
 }

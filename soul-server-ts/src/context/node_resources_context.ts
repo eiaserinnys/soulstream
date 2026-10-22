@@ -1,7 +1,11 @@
+import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 import { parseNodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 import type { Logger } from "pino";
 
+import type { SessionDB } from "../db/session_db.js";
+import type { SessionRow } from "../db/session_db_types.js";
+import type { Task } from "../task/task_models.js";
 import type { ContextItem } from "./prompt_assembler.js";
 
 export interface NodeResourcesContextConfig {
@@ -12,6 +16,35 @@ export interface NodeResourcesContextConfig {
 
 const DEFAULT_TIMEOUT_MS = 1500;
 const UNAVAILABLE_CONTENT = "노드 자원 상태 조회 불가 (오케스트레이터 응답 없음)";
+
+export async function resolvePasNodeResourcesContextItem(
+  db: Pick<SessionDB, "getSession">,
+  cfg: NodeResourcesContextConfig | undefined,
+  task: Pick<Task, "agentSessionId" | "persistent" | "metadata">,
+  preloadedSession: Pick<SessionRow, "metadata"> | null | undefined,
+  logger: Logger,
+): Promise<ContextItem | null> {
+  if (!cfg) return null;
+  if (task.persistent === true) return await fetchNodeResourcesContextItem(cfg, logger);
+
+  let metadata: unknown = task.metadata;
+  if (preloadedSession !== undefined) {
+    metadata = preloadedSession?.metadata ?? task.metadata;
+  } else {
+    try {
+      const session = await db.getSession(task.agentSessionId);
+      metadata = session?.metadata ?? task.metadata;
+    } catch (err) {
+      logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "node resources PAS metadata unavailable",
+      );
+    }
+  }
+  return readPersistentEnabled(metadata)
+    ? await fetchNodeResourcesContextItem(cfg, logger)
+    : null;
+}
 
 export async function fetchNodeResourcesContextItem(
   cfg: NodeResourcesContextConfig,
