@@ -3008,7 +3008,7 @@
     "name": "list_card_notes"
   },
   {
-    "description": "폴더와 상태별 카드 요약을 기본 20건 반환합니다. nextCursor가 있으면 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
+    "description": "폴더와 상태별 카드 요약을 기본 20건 반환합니다. query가 있으면 검색 모드로 동작해 관련도 순으로 반환하고 cursor와 all은 무시합니다. query가 없으면 nextCursor가 있을 때 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3034,6 +3034,11 @@
           "maximum": 50,
           "minimum": 1,
           "type": "integer"
+        },
+        "query": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
         },
         "status": {
           "enum": [
@@ -3644,7 +3649,7 @@
     "name": "list_remote_agents_config_snapshots"
   },
   {
-    "description": "세션 이벤트 목록 페이지네이션. tool_content로 tool_use/tool_result 길이 제어 (Python 정합).",
+    "description": "세션 이벤트 목록을 페이지네이션한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. 진행 중 세션은 확인 시각을 until로 고정한다(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). tool_content로 tool_use/tool_result 길이 제어 (Python 정합).",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3673,6 +3678,7 @@
           "type": "string"
         },
         "since": {
+          "description": "오프셋이 포함된 ISO 8601 시각. 시작을 포함하며 until과 함께 지정한다.",
           "minLength": 1,
           "type": "string"
         },
@@ -3692,6 +3698,7 @@
           "type": "integer"
         },
         "until": {
+          "description": "오프셋이 포함된 ISO 8601 시각. 끝은 제외하며 since와 함께 지정한다.",
           "minLength": 1,
           "type": "string"
         }
@@ -6499,6 +6506,52 @@
       "type": "object"
     },
     "name": "run_recurring_job"
+  },
+  {
+    "description": "카드의 제목, 번호, 요청 원문, 인계 요약, 확인 항목(결과와 증거 링크 포함), 노트, 보고에서 검색어를 찾아 매치 구간 발췌(snippet)와 함께 관련도 순으로 반환합니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "description": "반환할 최대 카드 수. 정수 1~50, 생략 시 20.",
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "todo",
+            "queued",
+            "blocked",
+            "running",
+            "review",
+            "done",
+            "cancelled"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_cards"
   },
   {
     "description": "한 폴더 안에서 최근 갱신된 최대 2000개 세션과 마크다운의 표시명·제목·본문을 검색한다. truncated=true면 더 오래된 항목은 검색되지 않았다.",

@@ -13,6 +13,10 @@ describe("SessionStoryReadRepository", () => {
         has_turn_summaries: true,
         has_story_digest: true,
         has_highlight: true,
+        card_id: "card-a",
+        card_number: "610",
+        card_title: "관련 카드",
+        card_status: "done",
       },
       {
         session_id: "session-b",
@@ -20,6 +24,10 @@ describe("SessionStoryReadRepository", () => {
         has_turn_summaries: false,
         has_story_digest: false,
         has_highlight: false,
+        card_id: null,
+        card_number: null,
+        card_title: null,
+        card_status: null,
       },
     ]]);
 
@@ -32,12 +40,20 @@ describe("SessionStoryReadRepository", () => {
         hasTurnSummaries: true,
         hasStoryDigest: true,
         hasHighlight: true,
+        cardId: "card-a",
+        cardNumber: 610,
+        cardTitle: "관련 카드",
+        cardStatus: "done",
       }],
       ["session-b", {
         turnCount: 0,
         hasTurnSummaries: false,
         hasStoryDigest: false,
         hasHighlight: false,
+        cardId: null,
+        cardNumber: null,
+        cardTitle: null,
+        cardStatus: null,
       }],
     ]);
     expect(calls[0]?.text).toContain("user_message");
@@ -45,6 +61,9 @@ describe("SessionStoryReadRepository", () => {
     expect(calls[0]?.text).toContain("session_notification");
     expect(calls[0]?.text).toContain("turn_summary");
     expect(calls[0]?.text).toContain("session_digests");
+    expect(calls[0]?.text).toContain("linked_card.id AS card_id");
+    expect(calls[0]?.text).toContain("card.assignee_session_id = session.session_id");
+    expect(calls[0]?.text).toContain("card.completed_session_id = session.session_id");
     expect(calls[0]?.values).toEqual([["session-a", "session-b"]]);
   });
 

@@ -651,12 +651,24 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       source: "card_completed",
       excerpt: "Unique execution verification",
     }));
+    expect(execution.session_results?.find((row) => row.session_id === "actual-work-session"))
+      .toMatchObject({ card_id: "execution-item", card_title: "Unique execution verification", card_status: "done" });
     await sql`UPDATE sessions SET display_name = 'actual-work-session' WHERE session_id = 'actual-work-session'`;
 
     await sql`
       UPDATE sessions SET display_name = 'task result metadata'
       WHERE session_id IN ('referenced-session', 'metadata-only-session')
     `;
+    await sql`INSERT INTO cards (
+      id, folder_id, position_key, title, status, assignee_kind, assignee_session_id
+    ) VALUES (
+      'assigned-card', 'folder-allowed', 'a', 'Assigned card', 'running', 'session', 'metadata-only-session'
+    )`;
+    await sql`INSERT INTO cards (
+      id, folder_id, position_key, title, status, completed_session_id
+    ) VALUES (
+      'completed-decoy', 'folder-allowed', 'b', 'Completed decoy', 'done', 'metadata-only-session'
+    )`;
     const taskTitleSearch = await provider.search({
       q: "task result",
       top_k: 20,
@@ -673,12 +685,15 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       expect(taskTitleSearch.session_results?.find((row) => row.session_id === sessionId)?.folder_id)
         .toBe("folder-allowed");
     }
+    expect(taskTitleSearch.session_results?.find((row) => row.session_id === "metadata-only-session"))
+      .toMatchObject({ card_id: "assigned-card", card_title: "Assigned card", card_status: "running" });
     await sql`
       UPDATE sessions SET display_name = session_id
       WHERE session_id IN ('referenced-session', 'metadata-only-session')
     `;
 
     await sql`UPDATE sessions SET display_name = 'output artifact marker' WHERE session_id = 'source-item-session'`;
+    await sql`UPDATE cards SET assignee_kind='session', assignee_session_id='source-item-session' WHERE id='history-item'`;
     const outputSearch = await provider.search({
       q: "output artifact marker",
       top_k: 10,
@@ -693,6 +708,28 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     });
     expect(outputSearch.session_results?.find((row) => row.session_id === "source-item-session")?.evidence)
       .toContainEqual(expect.objectContaining({ source: "source_card" }));
+    expect(outputSearch.session_results?.find((row) => row.session_id === "source-item-session"))
+      .toMatchObject({
+        card_id: "source-item",
+        card_number: expect.any(Number),
+        card_title: "Output artifact marker",
+        card_status: "todo",
+      });
+    await sql`UPDATE sessions SET folder_id = NULL WHERE session_id = 'source-item-session'`;
+    const unfiledSearch = await provider.search({
+      q: "output artifact marker",
+      top_k: 10,
+      search_session_id: false,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      event_categories: "messages,responses",
+      include_session_results: true,
+      session_search_mode: "lexical",
+    });
+    expect(unfiledSearch.session_results?.find((row) => row.session_id === "source-item-session"))
+      .toMatchObject({ card_id: "source-item", card_title: "Output artifact marker", card_status: "todo" });
+    await sql`UPDATE sessions SET folder_id = 'task-primary' WHERE session_id = 'source-item-session'`;
     await sql`UPDATE sessions SET display_name = 'source-item-session' WHERE session_id = 'source-item-session'`;
   });
 

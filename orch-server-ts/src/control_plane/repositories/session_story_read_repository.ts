@@ -49,6 +49,10 @@ export interface HostSessionSearchMetadata {
   readonly hasTurnSummaries: boolean;
   readonly hasStoryDigest: boolean;
   readonly hasHighlight: boolean;
+  readonly cardId: string | null;
+  readonly cardNumber: number | null;
+  readonly cardTitle: string | null;
+  readonly cardStatus: string | null;
 }
 
 export class SessionStoryReadRepository {
@@ -68,6 +72,10 @@ export class SessionStoryReadRepository {
       has_turn_summaries: boolean;
       has_story_digest: boolean;
       has_highlight: boolean;
+      card_id: string | null;
+      card_number: number | string | null;
+      card_title: string | null;
+      card_status: string | null;
     }>>`
       WITH requested AS (
         SELECT UNNEST(${sessionIds}::text[]) AS session_id
@@ -84,18 +92,43 @@ export class SessionStoryReadRepository {
         COALESCE(BOOL_OR(e.event_type = 'turn_summary'), false)
           AS has_turn_summaries,
         (d.session_id IS NOT NULL) AS has_story_digest,
-        COALESCE(NULLIF(BTRIM(d.highlight), '') IS NOT NULL, false)
-          AS has_highlight
+        COALESCE(NULLIF(BTRIM(d.highlight), '') IS NOT NULL, false) AS has_highlight,
+        linked_card.id AS card_id,
+        linked_card.number AS card_number,
+        linked_card.title AS card_title,
+        linked_card.status AS card_status
       FROM requested
+      LEFT JOIN sessions session ON session.session_id = requested.session_id
       LEFT JOIN events e ON e.session_id = requested.session_id
       LEFT JOIN session_digests d ON d.session_id = requested.session_id
-      GROUP BY requested.session_id, d.session_id, d.highlight
+      LEFT JOIN LATERAL (
+        SELECT card.id, card.number, card.title, card.status
+        FROM cards card
+        WHERE card.id = session.card_id
+          OR (card.assignee_session_id = session.session_id AND card.archived = FALSE)
+          OR (card.completed_session_id = session.session_id AND card.archived = FALSE)
+        ORDER BY
+          CASE
+            WHEN card.id = session.card_id THEN 0
+            WHEN card.assignee_session_id = session.session_id THEN 1
+            ELSE 2
+          END,
+          card.updated_at DESC,
+          card.id ASC
+        LIMIT 1
+      ) linked_card ON TRUE
+      GROUP BY requested.session_id, d.session_id, d.highlight,
+        linked_card.id, linked_card.number, linked_card.title, linked_card.status
     `;
     return rows.map((row) => [row.session_id, {
       turnCount: Number(row.turn_count),
       hasTurnSummaries: row.has_turn_summaries,
       hasStoryDigest: row.has_story_digest,
       hasHighlight: row.has_highlight,
+      cardId: row.card_id ?? null,
+      cardNumber: row.card_number === null ? null : Number(row.card_number),
+      cardTitle: row.card_title ?? null,
+      cardStatus: row.card_status ?? null,
     }]);
   }
 

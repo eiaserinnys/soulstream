@@ -90,6 +90,10 @@ describe("search_sessions", () => {
         folder_name: "세션 검색",
         relevance: 0.87,
         best_match: { excerpt: "요청을 찾아 정리했다." },
+        card_id: "card-1",
+        card_number: 610,
+        card_title: "관련 카드",
+        card_status: "done",
         session_url: "https://soulstream.test/sessions/session-1",
       }],
     }));
@@ -113,6 +117,10 @@ describe("search_sessions", () => {
         folder_name: "세션 검색",
         relevance: 0.87,
         excerpt: "요청을 찾아 정리했다.",
+        card_id: "card-1",
+        card_number: 610,
+        card_title: "관련 카드",
+        card_status: "done",
         session_url: "https://soulstream.test/sessions/session-1",
       }],
     });

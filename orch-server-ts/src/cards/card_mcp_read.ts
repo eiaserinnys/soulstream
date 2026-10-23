@@ -6,6 +6,7 @@ import {
   type CardMcpCursorPosition,
   type CardMcpListQuery,
   type CardMcpReadKind,
+  type CardMcpSearchQuery,
   type CardMcpSectionPage,
 } from "./control_plane/card_mcp_read_repository.js";
 import type { SqlClient } from "./control_plane/card_types.js";
@@ -25,6 +26,14 @@ const listInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional(),
   cursor: z.string().min(1).optional(),
   all: z.boolean().optional(),
+  query: z.string().min(1).max(500).optional(),
+}).strict();
+
+const searchInputSchema = z.object({
+  query: z.string().min(1).max(500),
+  folder_id: z.string().min(1).optional(),
+  status: z.enum(CARD_STATUSES).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
 }).strict();
 
 const getInputSchema = z.object({
@@ -36,7 +45,9 @@ const getInputSchema = z.object({
 }).strict();
 
 export type CardMcpListInput = z.infer<typeof listInputSchema>;
+export type CardMcpSearchInput = z.infer<typeof searchInputSchema>;
 export type CardMcpGetInput = z.infer<typeof getInputSchema>;
+export type CardMcpSearchMatchSource = "number" | "title" | "now" | "items" | "request" | "brief" | "notes" | "reports" | "comments";
 export type CardMcpListCard = {
   id: string;
   number: number | null;
@@ -47,7 +58,22 @@ export type CardMcpListCard = {
   assigneeSessionId: string | null;
   assigneeUserId: string | null;
   updatedAt: string;
+  folderId?: string;
+  now?: unknown;
+  matchSource?: CardMcpSearchMatchSource;
+  snippet?: string;
 };
+export type CardMcpSearchResult = CardMcpListCard & {
+  folderId: string;
+  now: unknown;
+  matchSource: CardMcpSearchMatchSource;
+  snippet: string;
+};
+export interface CardMcpSearchResponse {
+  query: string;
+  results: CardMcpSearchResult[];
+  truncated: boolean;
+}
 export interface CardMcpListResponse {
   cards: CardMcpListCard[];
   nextCursor: string | null;
@@ -78,6 +104,18 @@ function parseInput<T>(schema: z.ZodType<T>, input: unknown): T {
   const result = schema.safeParse(input ?? {});
   if (!result.success) invalid(result.error.issues[0]?.message ?? "Invalid card request");
   return result.data;
+}
+
+function buildCardSearchSnippet(text: string, tokens: readonly string[]): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const lower = normalized.toLowerCase();
+  const firstMatch = tokens.map((token) => lower.indexOf(token.toLowerCase()))
+    .filter((position) => position >= 0)
+    .reduce((first, position) => Math.min(first, position), Number.POSITIVE_INFINITY);
+  if (!Number.isFinite(firstMatch)) return normalized.slice(0, 160);
+  const start = Math.max(0, firstMatch - 64);
+  const end = Math.min(normalized.length, start + 160);
+  return `${start > 0 ? "..." : ""}${normalized.slice(start, end).trim()}${end < normalized.length ? "..." : ""}`;
 }
 
 function encodeOpaque(value: unknown): string {
@@ -223,6 +261,11 @@ export class CardMcpReadService {
 
   async listCards(input: CardMcpListInput, allowedFolderIds: readonly string[] | null): Promise<CardMcpListResponse> {
     const parsed = parseInput(listInputSchema, input);
+    if (parsed.query !== undefined) {
+      const searched = await this.searchCards({ query: parsed.query, folder_id: parsed.folder_id,
+        status: parsed.status, limit: parsed.limit }, allowedFolderIds);
+      return { cards: searched.results, nextCursor: null, truncated: searched.truncated };
+    }
     const folderId = parsed.folder_id ?? null;
     const status = parsed.status ?? null;
     const all = parsed.all === true;
@@ -246,6 +289,30 @@ export class CardMcpReadService {
       nextCursor: result.truncated && last ? encodeListCursor(folderId, status, last) : null,
       truncated: result.truncated,
     };
+  }
+
+  async searchCards(input: CardMcpSearchInput, allowedFolderIds: readonly string[] | null): Promise<CardMcpSearchResponse> {
+    const parsed = parseInput(searchInputSchema, input);
+    const query: CardMcpSearchQuery = {
+      query: parsed.query,
+      folderId: parsed.folder_id ?? null,
+      status: parsed.status ?? null,
+      limit: parsed.limit ?? 20,
+      allowedFolderIds,
+    };
+    const result = await this.repository.searchCards(query);
+    const tokens = parsed.query.trim().split(/\s+/).filter(Boolean)
+      .map((token) => /^#\d+$/.test(token) ? token.slice(1) : token);
+    const results = result.rows.map((row) => ({
+      ...serializeCardRow({
+        id: row.id, number: row.number, folder_id: row.folder_id, title: row.title, status: row.status, now: row.now,
+        assignee_kind: row.assignee_kind, assignee_agent_id: row.assignee_agent_id,
+        assignee_session_id: row.assignee_session_id, assignee_user_id: row.assignee_user_id, updated_at: row.updated_at,
+      }) as CardMcpSearchResult,
+      matchSource: row.match_source as CardMcpSearchMatchSource,
+      snippet: buildCardSearchSnippet(row.snippet_text, tokens),
+    }));
+    return { query: parsed.query, results, truncated: result.truncated };
   }
 
   async getCard(

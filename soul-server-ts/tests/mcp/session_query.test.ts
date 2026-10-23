@@ -1249,6 +1249,10 @@ describe("search_session_history", () => {
           has_turn_summaries: false,
           has_story_digest: false,
           has_highlight: false,
+          card_id: null,
+          card_number: null,
+          card_title: null,
+          card_status: null,
         },
       ],
     });
@@ -1350,6 +1354,10 @@ describe("search_session_history", () => {
           has_turn_summaries: false,
           has_story_digest: false,
           has_highlight: false,
+          card_id: null,
+          card_number: null,
+          card_title: null,
+          card_status: null,
         },
       ],
     });
@@ -1407,6 +1415,10 @@ describe("search_session_history", () => {
         hasTurnSummaries: true,
         hasStoryDigest: false,
         hasHighlight: false,
+        cardId: "card-1",
+        cardNumber: 610,
+        cardTitle: "관련 카드",
+        cardStatus: "done",
       }],
     ]));
     const client = await createClient(makeRuntime({
@@ -1427,6 +1439,10 @@ describe("search_session_history", () => {
         has_turn_summaries: true,
         has_story_digest: false,
         has_highlight: false,
+        card_id: "card-1",
+        card_number: 610,
+        card_title: "관련 카드",
+        card_status: "done",
       }),
       expect.objectContaining({
         session_id: "s1",
