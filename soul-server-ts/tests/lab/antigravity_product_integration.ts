@@ -13,6 +13,7 @@ import pino from "pino";
 import { parse } from "yaml";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
 import { AntigravityEngineAdapter } from "../../src/engine/antigravity/adapter.js";
 import { resolveAntigravityCliPath } from "../../src/engine/antigravity_cli_path.js";
 import { AntigravityEventMapper, type AntigravityEvent } from "../../src/engine/antigravity/events.js";
@@ -32,13 +33,19 @@ const memory = `MEMORY_${Date.now()}`;
 const sessionId = `agy-lab-${Date.now()}`;
 const probeHeader = "fixture-auth-only";
 const stdioReceipt = join(root, "stdio-receipt.json");
-const httpReceipts: Array<{ path: string; header: boolean; session: boolean; tool: string }> = [];
+const httpReceipts: Array<{ path: string; header: boolean; session: boolean; tool: string; variant?: string }> = [];
 const http = createServer(async (request, response) => {
   const server = new McpServer({ name: "agy-lab", version: "1.0.0" });
   server.registerTool("probe_echo", { description: "Return HTTP probe marker" }, async () => {
     httpReceipts.push({ path: request.url ?? "", header: request.headers["x-probe"] === probeHeader,
       session: request.headers["x-soulstream-agent-session-id"] === sessionId, tool: "probe_echo" });
     return { content: [{ type: "text", text: "HTTP_PROBE_OK" }] };
+  });
+  if (request.url === "/mcp") server.registerTool("probe_variant", { description: "Record the requested source variant",
+    inputSchema: { variant: z.enum(["clean", "logo", ""]) } }, async ({ variant }) => {
+    httpReceipts.push({ path: request.url ?? "", header: request.headers["x-probe"] === probeHeader,
+      session: request.headers["x-soulstream-agent-session-id"] === sessionId, tool: "probe_variant", variant });
+    return { content: [{ type: "text", text: variant === "" ? "EMPTY_VARIANT_OK" : "NONEMPTY_VARIANT" }] };
   });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   response.on("close", () => { void transport.close(); void server.close(); });
@@ -141,7 +148,7 @@ const base = { agentSessionId: sessionId, model: "gemini-3.8-flash", reasoningEf
 const logsBefore = await defaultLogs();
 try {
   if (process.argv[3] !== "interruption-only") {
-  const first = await run({ ...base, systemPrompt, prompt: `기억할 암호는 ${memory}다. write_to_file로 written.txt에 FILE_OK를 쓰고 run_command로 printf 'SHELL_OK' > shell.txt 를 실행하라. http-probe의 probe_echo, stdio-probe의 probe_env, soulstream의 probe_echo를 각각 실제 호출하라. 끝나면 기억 암호와 각 결과를 한글로 답하라.` }, async event => {
+  const first = await run({ ...base, systemPrompt, prompt: `기억할 암호는 ${memory}다. write_to_file로 written.txt에 FILE_OK를 쓰고 run_command로 printf 'SHELL_OK' > shell.txt 를 실행하라. http-probe의 probe_echo와 stdio-probe의 probe_env, soulstream의 probe_echo를 각각 실제 호출하라. 그리고 http-probe의 probe_variant를 variant 값으로 빈 문자열 ""을 명시해 호출하고 EMPTY_VARIANT_OK 결과를 확인하라. 끝나면 기억 암호와 각 결과를 한글로 답하라.` }, async event => {
     if (event.type === "session") await definitionEvidence();
   });
   const id = first.events.find(x => x.type === "session")?.session_id; assert.equal(typeof id, "string");
@@ -151,7 +158,9 @@ try {
   const tools = pairs(first.events);
   assert(tools.includes("write_to_file")); assert(tools.includes("run_command"));
   assert(tools.includes("mcp/http-probe/probe_echo")); assert(tools.includes("mcp/stdio-probe/probe_env")); assert(tools.includes("mcp/soulstream/probe_echo"));
+  assert(tools.includes("mcp/http-probe/probe_variant"));
   assert(httpReceipts.some(x => x.path === "/mcp" && x.header));
+  assert(httpReceipts.some(x => x.path === "/mcp" && x.header && x.tool === "probe_variant" && x.variant === ""));
   assert(httpReceipts.some(x => x.path === "/mcp/internal" && x.header && x.session));
   assert.equal(JSON.parse(await readFile(stdioReceipt, "utf8")).ok, true);
   assertTurnUsage(first.events, first.usage, first.raw.find(x=>x.event==='init')?.init?.model);

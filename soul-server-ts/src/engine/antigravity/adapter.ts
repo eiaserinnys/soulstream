@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
+import nodeProcess from "node:process";
 import { join } from "node:path";
 import type { Logger } from "pino";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
@@ -11,6 +12,7 @@ import type { EngineExecuteParams, EngineInterventionResult, EnginePort, EngineU
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import { writeAntigravityAgentDefinition } from "./agent_definition.js";
 import { addAntigravityUsage, AntigravityEventMapper, type AntigravityUsage } from "./events.js";
+import { resolveAntigravityMcpProxyLaunch } from "./mcp_schema_proxy_launch.js";
 import { antigravityArguments, antigravityUserMessage } from "./params.js";
 import { launchAntigravityProcess } from "./process.js";
 
@@ -65,7 +67,8 @@ export class AntigravityEngineAdapter implements EnginePort {
         definition = await writeAntigravityAgentDefinition({
           agentSessionId: params.agentSessionId, systemPrompt: params.systemPrompt,
           resolvedMcpServers: this.options.resolvedMcpServers, internalMcpUrl: this.options.internalMcpUrl,
-          useMcp: params.useMcp, logger: this.logger,
+          useMcp: params.useMcp, mcpProxyLaunch: resolveAntigravityMcpProxyLaunch(import.meta.url, nodeProcess.execPath),
+          logger: this.logger,
         });
       }
       process = launchAntigravityProcess({ executablePath: this.options.executablePath,

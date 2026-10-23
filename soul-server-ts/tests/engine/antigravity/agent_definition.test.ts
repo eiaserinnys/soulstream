@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import { describe, expect, it, vi } from "vitest";
 import { writeAntigravityAgentDefinition } from "../../../src/engine/antigravity/agent_definition.js";
 import { ANTIGRAVITY_AGENT_TOOLS } from "../../../src/engine/antigravity/agent_tools.js";
+import type { AntigravityMcpProxyLaunch } from "../../../src/engine/antigravity/mcp_schema_proxy_launch.js";
 import { makeTempDirSync } from "../../helpers/temp_dir.js";
 
 const testHome = makeTempDirSync("agy-definition-home-");
@@ -15,9 +16,14 @@ describe("user-level session-specific Antigravity definition", () => {
     const sessionDirectory = makeTempDirSync("agy-definition-");
     const warn = vi.fn();
     const systemPrompt = "한글 시스템 지시\n".repeat(10000);
+    const mcpProxyLaunch: AntigravityMcpProxyLaunch = {
+      command: "/absolute/node",
+      args: ["/absolute/runner/runner_entry.js", "--antigravity-mcp-schema-proxy"],
+    };
     const definition = await writeAntigravityAgentDefinition({
       agentSessionId: "session-test", systemPrompt,
       internalMcpUrl: "http://127.0.0.1:4206/mcp", useMcp: true,
+      mcpProxyLaunch,
       resolvedMcpServers: [
         { name: "http", type: "streamable_http", url: "http://localhost:4321/probe", headers: { "x-test": "fixture-secret" } },
         { name: "soulstream", type: "streamable_http", url: "http://obsolete.invalid/mcp", headers: { Authorization: "fixture-secret" } },
@@ -35,10 +41,18 @@ describe("user-level session-specific Antigravity definition", () => {
     expect(frontmatter.tools).toHaveLength(26);
     expect(frontmatter.tools).toEqual(expect.arrayContaining(["ask_question", "ask_permission", "ask_custom_permission", "run_command", "write_to_file"]));
     expect(frontmatter.mcpServers).toEqual([
-      { name: "http", url: "http://localhost:4321/probe", headers: { "x-test": "fixture-secret" } },
+      { name: "http", command: mcpProxyLaunch.command, args: mcpProxyLaunch.args,
+        env: { SOULSTREAM_ANTIGRAVITY_MCP_UPSTREAM: JSON.stringify({ type: "streamable_http",
+          url: "http://localhost:4321/probe", headers: { "x-test": "fixture-secret" } }) } },
       { name: "soulstream", url: "http://127.0.0.1:4206/mcp/internal", headers: { Authorization: "fixture-secret", "x-soulstream-agent-session-id": "session-test" } },
-      { name: "stdio", command: "node", args: ["probe.mjs"], env: { PROBE: "표식" }, cwd: "/tmp/probe" },
+      { name: "stdio", command: mcpProxyLaunch.command, args: mcpProxyLaunch.args,
+        env: { SOULSTREAM_ANTIGRAVITY_MCP_UPSTREAM: JSON.stringify({ type: "stdio", command: "node",
+          args: ["probe.mjs"], env: { PROBE: "표식" }, cwd: "/tmp/probe" }) } },
     ]);
+    for (const server of frontmatter.mcpServers.filter((x: { command?: string }) => x.command === mcpProxyLaunch.command)) {
+      expect(server.args).not.toContain("fixture-secret");
+      expect(server.cwd).toBeUndefined();
+    }
     expect(statSync(definition.directory).mode & 0o777).toBe(0o700);
     const neighbor = join(definition.directory, "other.md");
     writeFileSync(neighbor, "unrelated");
@@ -65,6 +79,16 @@ describe("user-level session-specific Antigravity definition", () => {
     const definition = await writeAntigravityAgentDefinition({ agentSessionId: "session", systemPrompt: "지시", useMcp: false,
       resolvedMcpServers: [{ type: "streamable_http", name: "probe", url: "http://localhost:4321" }], logger: pino({ level: "silent" }) });
     expect(readFileSync(join(definition.directory, `${definition.name}.md`), "utf8")).not.toContain("localhost");
+    await definition.remove();
+  });
+  it("requires the proxy launch only for enabled external HTTP and stdio servers", async () => {
+    await expect(writeAntigravityAgentDefinition({ agentSessionId: "missing-proxy", systemPrompt: "지시",
+      resolvedMcpServers: [{ name: "external", type: "streamable_http", url: "http://localhost:4321" }],
+      logger: pino({ level: "silent" }) })).rejects.toThrow(/proxy launch/i);
+    const definition = await writeAntigravityAgentDefinition({ agentSessionId: "internal-only", systemPrompt: "지시",
+      internalMcpUrl: "http://127.0.0.1:4206/mcp",
+      resolvedMcpServers: [{ name: "soulstream", type: "streamable_http", url: "http://obsolete.invalid/mcp" }],
+      logger: pino({ level: "silent" }) });
     await definition.remove();
   });
 });

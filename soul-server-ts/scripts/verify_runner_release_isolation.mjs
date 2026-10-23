@@ -1,10 +1,16 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, chmod, mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const temporaryRoot = await mkdtemp(join(tmpdir(), "soulstream-runner-release-isolation-"));
@@ -111,10 +117,79 @@ try {
   process.stdout.write(
     `isolated runner release verified: ${release.release_id} (${entries.join(", ")})\n`,
   );
+  await verifyAntigravityProxySnapshot(release.release_root, temporaryRoot);
 } finally {
   runner?.kill("SIGKILL");
   if (releaseRoot) await chmod(releaseRoot, 0o755).catch(() => undefined);
   await rm(temporaryRoot, { recursive: true, force: true });
+}
+
+async function verifyAntigravityProxySnapshot(snapshotRoot, temporaryRoot) {
+  const variants = [];
+  const httpServer = createServer(async (request, response) => {
+    const server = new McpServer({ name: "runner-snapshot-proxy-fixture", version: "1" });
+    server.registerTool("set_variant", {
+      description: "Record the exact variant value",
+      inputSchema: { variant: z.enum(["clean", "logo", ""]) },
+    }, async ({ variant }) => {
+      variants.push(variant);
+      return { content: [{ type: "text", text: variant === "" ? "EMPTY_STRING_OK" : "UNEXPECTED_VALUE" }] };
+    });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    response.on("close", () => { void transport.close(); void server.close(); });
+    try {
+      if (request.headers["x-release-isolation"] !== "fixture") {
+        response.writeHead(401).end();
+        return;
+      }
+      await server.connect(transport);
+      await transport.handleRequest(request, response);
+    } catch {
+      if (!response.headersSent) response.writeHead(500);
+      if (!response.writableEnded) response.end();
+    }
+  });
+  await new Promise(resolveListen => httpServer.listen(0, "127.0.0.1", resolveListen));
+  const address = httpServer.address();
+  if (!address || typeof address === "string") throw new Error("proxy fixture did not bind a TCP port");
+
+  const proxyConfig = {
+    type: "streamable_http",
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    headers: { "x-release-isolation": "fixture" },
+  };
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [join(snapshotRoot, "runner_entry.js"), "--antigravity-mcp-schema-proxy"],
+    cwd: snapshotRoot,
+    env: { ...sanitizedEnvironment(), SOULSTREAM_ANTIGRAVITY_MCP_UPSTREAM: JSON.stringify(proxyConfig) },
+    stderr: "pipe",
+  });
+  let stderr = "";
+  transport.stderr?.on("data", chunk => { stderr += String(chunk); });
+  const client = new Client({ name: "runner-snapshot-proxy-test", version: "1" });
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    const tool = listed.tools.find(item => item.name === "set_variant");
+    const variantSchema = tool?.inputSchema.properties?.variant;
+    if (!variantSchema || "enum" in variantSchema || !String(variantSchema.description).includes("The empty string \"\" is a valid value")) {
+      throw new Error("runner snapshot proxy did not sanitize the tool input schema");
+    }
+    const result = await client.callTool({ name: "set_variant", arguments: { variant: "" } });
+    if (!result.content.some(item => item.type === "text" && item.text === "EMPTY_STRING_OK")) {
+      throw new Error("runner snapshot proxy did not preserve the empty-string tool argument");
+    }
+    await client.close();
+    if (stderr.length > 0) throw new Error("runner snapshot proxy wrote unexpected stderr");
+    if (JSON.stringify(variants) !== JSON.stringify([""])) {
+      throw new Error("runner snapshot fixture did not receive the empty-string argument");
+    }
+    process.stdout.write("isolated runner Antigravity MCP proxy verified\n");
+  } finally {
+    await Promise.allSettled([client.close(), transport.close()]);
+    await new Promise(resolveClose => httpServer.close(() => resolveClose()));
+  }
 }
 
 function sanitizedEnvironment() {
