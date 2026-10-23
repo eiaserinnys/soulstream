@@ -726,7 +726,6 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       event_categories: "messages,responses",
       include_session_results: true,
       session_search_mode: "lexical",
-      allowedFolderIds: null,
     });
     expect(unfiledSearch.session_results?.find((row) => row.session_id === "source-item-session"))
       .toMatchObject({ card_id: "source-item", card_title: "Output artifact marker", card_status: "todo" });
