@@ -94,6 +94,7 @@ function cardHarness(
   const createdMutation = { ...mutation, snapshot: { ...mutation.snapshot, cards: [{ ...card, status: "todo" }] } };
   const mcpRead = {
     listCards: vi.fn().mockResolvedValue({ cards: [], nextCursor: null, truncated: false }),
+    searchCards: vi.fn().mockResolvedValue({ query: "키워드", results: [], truncated: false }),
     getCard: vi.fn().mockResolvedValue(readResult),
   };
   const service = {
@@ -191,6 +192,17 @@ describe("card MCP execution", () => {
       include: ["request", "notes"], limit: 4, text_limit: 600, cursors: { notes: "section-cursor" },
     }, ["folder-1", "child-1"]);
     expect(h.service.getCard).not.toHaveBeenCalled();
+  });
+  it("routes card search through the read service and forwards list query mode", async () => {
+    const h = cardHarness([{ id: "folder-1" }, { id: "child-1", parentFolderId: "folder-1" }, { id: "folder-2" }],
+      { restricted: true, allowedFolderIds: ["folder-1"] });
+    await call(h.options, "search_cards", { query: "키워드", folder_id: "child-1", status: "running", limit: 7 });
+    expect(h.mcpRead.searchCards).toHaveBeenCalledWith({ query: "키워드", folder_id: "child-1", status: "running", limit: 7 },
+      ["folder-1", "child-1"]);
+
+    await call(h.options, "list_cards", { query: "키워드", cursor: "ignored", all: true });
+    expect(h.mcpRead.listCards).toHaveBeenLastCalledWith({ query: "키워드", cursor: "ignored", all: true },
+      ["folder-1", "child-1"]);
   });
   it("returns compact card mutation and item results without echoing saved content", async () => {
     const h = cardHarness();

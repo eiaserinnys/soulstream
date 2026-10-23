@@ -11,7 +11,7 @@ import { makeTaskCreationHarness } from "../task/task_creation_harness.js";
 
 // Reuses folder.test.ts tool registration and task_creation.test.ts creation harness;
 // direct callbacks isolate the new card wire contract without opening an MCP server.
-const names = ["create_card", "list_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
+const names = ["create_card", "list_cards", "search_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
   "request_card_review", "ask_card_question", "move_card", "start_card_work", "set_card_status", "set_card_items",
   "add_card_item", "report_card_item", "update_card_now", "add_card_note", "list_card_notes"];
 const logger = pino({ level: "silent" });
@@ -39,6 +39,7 @@ describe("card MCP contract", () => {
     const { entries } = harness();
     const limitCases = [
       { tool: "list_cards", field: "limit", max: 50, description: "페이지당 카드 수. 정수 1~50, 생략 시 20. 다음 페이지는 cursor로 읽는다." },
+      { tool: "search_cards", field: "limit", max: 50, description: "반환할 최대 카드 수. 정수 1~50, 생략 시 20." },
       { tool: "get_card", field: "limit", max: 50, description: "각 목록 페이지의 항목 수. 정수 1~50, 생략 시 20." },
       { tool: "get_card", field: "text_limit", max: 4000, description: "텍스트 전문 한 페이지의 문자 수. 정수 1~4000, 생략 시 4000. 다음 페이지는 해당 전문의 nextCursor를 cursors에 넣어 읽는다." },
       { tool: "list_card_notes", field: "limit", max: 100, description: "페이지당 노트 수. 정수 1~100, 생략 시 20. 다음 페이지는 nextCursor를 before로 전달한다." },

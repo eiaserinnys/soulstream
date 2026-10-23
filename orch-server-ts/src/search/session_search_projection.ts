@@ -8,6 +8,10 @@ export type SessionSearchCandidateRow = Record<string, unknown>;
 
 export type SessionSearchResult = {
   readonly session_id: string;
+  readonly card_id: string | null;
+  readonly card_number: number | null;
+  readonly card_title: string | null;
+  readonly card_status: string | null;
   readonly folder_id: string | null;
   readonly node_id: string | null;
   readonly status: string | null;
@@ -100,6 +104,10 @@ export function projectSessionSearchResults(
       const eventId = best.evidence.event_id;
       return {
         session_id: sessionId,
+        card_id: stringValue(row.card_id),
+        card_number: numberValueOrNull(row.card_number),
+        card_title: stringValue(row.card_title),
+        card_status: stringValue(row.card_status),
         folder_id: stringValue(row.folder_id),
         node_id: stringValue(row.node_id),
         status: stringValue(row.status),

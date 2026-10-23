@@ -14,6 +14,11 @@
           "minLength": 1,
           "type": "string"
         },
+        "item_id": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
         "mode": {
           "enum": [
             "spoken",
@@ -24,11 +29,6 @@
         "text": {
           "minLength": 1,
           "type": "string"
-        },
-        "item_id": {
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
         }
       },
       "required": [
@@ -650,13 +650,13 @@
         "request": {
           "type": "string"
         },
-        "title": {
-          "minLength": 1,
-          "type": "string"
-        },
         "run": {
           "description": "true면 만든 직후 run_card와 같은 방식으로 바로 실행한다. queue와 함께 쓰지 않는다.",
           "type": "boolean"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
@@ -1040,6 +1040,16 @@
           "minLength": 1,
           "type": "string"
         },
+        "cursors": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
         "include": {
           "items": {
             "enum": [
@@ -1063,25 +1073,15 @@
           "minimum": 1,
           "type": "integer"
         },
+        "since": {
+          "minLength": 1,
+          "type": "string"
+        },
         "text_limit": {
           "description": "텍스트 전문 한 페이지의 문자 수. 정수 1~4000, 생략 시 4000. 다음 페이지는 해당 전문의 nextCursor를 cursors에 넣어 읽는다.",
           "maximum": 4000,
           "minimum": 1,
           "type": "integer"
-        },
-        "cursors": {
-          "additionalProperties": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "since": {
-          "minLength": 1,
-          "type": "string"
         }
       },
       "required": [
@@ -1440,14 +1440,21 @@
     "name": "get_session_turn_summaries"
   },
   {
-    "description": "폴더와 상태별 카드 요약을 기본 20건 반환합니다. nextCursor가 있으면 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
+    "description": "폴더와 상태별 카드 요약을 기본 20건 반환합니다. query가 있으면 검색 모드로 동작해 관련도 순으로 반환하고 cursor와 all은 무시합니다. query가 없으면 nextCursor가 있을 때 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "all": {
+          "type": "boolean"
+        },
         "caller_session_id": {
+          "type": "string"
+        },
+        "cursor": {
+          "minLength": 1,
           "type": "string"
         },
         "folder_id": {
@@ -1460,12 +1467,10 @@
           "minimum": 1,
           "type": "integer"
         },
-        "cursor": {
+        "query": {
+          "maxLength": 500,
           "minLength": 1,
           "type": "string"
-        },
-        "all": {
-          "type": "boolean"
         },
         "status": {
           "enum": [
@@ -3104,14 +3109,14 @@
     "inputSchema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "ask": {
+          "type": "string"
+        },
         "caller_session_id": {
           "type": "string"
         },
         "card_id": {
           "minLength": 1,
-          "type": "string"
-        },
-        "ask": {
           "type": "string"
         }
       },
@@ -3144,6 +3149,52 @@
       "type": "object"
     },
     "name": "run_card"
+  },
+  {
+    "description": "카드의 제목, 번호, 요청 원문, 인계 요약, 확인 항목(결과와 증거 링크 포함), 노트, 보고에서 검색어를 찾아 매치 구간 발췌(snippet)와 함께 관련도 순으로 반환합니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "folder_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "description": "반환할 최대 카드 수. 정수 1~50, 생략 시 20.",
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "todo",
+            "queued",
+            "blocked",
+            "running",
+            "review",
+            "done",
+            "cancelled"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_cards"
   },
   {
     "description": "한 폴더 안에서 최근 갱신된 최대 2000개 세션과 마크다운의 표시명·제목·본문을 검색한다. truncated=true면 더 오래된 항목은 검색되지 않았다.",

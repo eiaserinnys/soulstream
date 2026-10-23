@@ -81,8 +81,16 @@ test("card reads expose the bounded small-result and paging contract", () => {
 
   const list = z.object(cardTools.list_cards.config.inputSchema).strict();
   assert.equal(list.safeParse({ folder_id: "folder-1", status: "running", caller_session_id: "session-1",
-    limit: 50, cursor: "next", all: false }).success, true);
+    limit: 50, cursor: "next", all: false, query: "키워드" }).success, true);
   assert.equal(list.safeParse({ limit: 51 }).success, false);
+  assert.equal(list.safeParse({ query: "" }).success, false);
+
+  const search = z.object(cardTools.search_cards.config.inputSchema).strict();
+  assert.equal(cardTools.search_cards.audience, "all");
+  assert.equal(search.safeParse({ query: "키워드", caller_session_id: "session-1", limit: 50 }).success, true);
+  assert.equal(search.safeParse({ query: "", caller_session_id: "session-1" }).success, false);
+  assert.equal(search.safeParse({ query: "키".repeat(501), caller_session_id: "session-1" }).success, false);
+  assert.equal(search.safeParse({ query: "키워드", caller_session_id: "session-1", limit: 51 }).success, false);
 });
 test("invariant detects each forbidden class even with an explicit false hint", () => {
   for (const definition of [

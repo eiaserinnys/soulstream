@@ -79,7 +79,9 @@ const sessionSearchHandlers = {
         results: results.map(result => ({ session_id: result.session_id, title: result.title, agent_name: result.agent_name,
           node_id: result.node_id, status: result.status, created_at: result.created_at, updated_at: result.updated_at,
           folder_name: result.folder_name, relevance: result.relevance ?? null,
-          excerpt: (result.best_match as { excerpt?: string } | null)?.excerpt ?? null, session_url: result.session_url })) });
+          excerpt: (result.best_match as { excerpt?: string } | null)?.excerpt ?? null, session_url: result.session_url,
+          card_id: result.card_id ?? null, card_number: result.card_number ?? null,
+          card_title: result.card_title ?? null, card_status: result.card_status ?? null })) });
     } catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }
   },
   delete_session: async (options, args, context) => {

@@ -98,6 +98,10 @@ export interface SessionSearchMetadata {
   readonly hasTurnSummaries: boolean;
   readonly hasStoryDigest: boolean;
   readonly hasHighlight: boolean;
+  readonly cardId?: string | null;
+  readonly cardNumber?: number | null;
+  readonly cardTitle?: string | null;
+  readonly cardStatus?: string | null;
 }
 
 export interface SessionDigestSearchMatch {

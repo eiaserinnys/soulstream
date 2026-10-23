@@ -224,6 +224,10 @@ export const sessionQueryHandlers = {
             hasTurnSummaries: false,
             hasStoryDigest: false,
             hasHighlight: false,
+            cardId: null,
+            cardNumber: null,
+            cardTitle: null,
+            cardStatus: null,
           };
           return {
             ...result,
@@ -231,6 +235,10 @@ export const sessionQueryHandlers = {
             has_turn_summaries: sessionMetadata.hasTurnSummaries,
             has_story_digest: sessionMetadata.hasStoryDigest,
             has_highlight: sessionMetadata.hasHighlight,
+            card_id: sessionMetadata.cardId ?? null,
+            card_number: sessionMetadata.cardNumber ?? null,
+            card_title: sessionMetadata.cardTitle ?? null,
+            card_status: sessionMetadata.cardStatus ?? null,
           };
         });
         const observations = consumptionBoundary.enabled

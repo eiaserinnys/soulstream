@@ -3,6 +3,20 @@ import { describe, expect, it } from "vitest";
 import { projectSessionSearchResults } from "../src/search/session_search_projection.js";
 
 describe("product session search projection", () => {
+  it("preserves linked card metadata and normalizes absent fields to null", () => {
+    const results = projectSessionSearchResults([
+      { ...candidate("with-card", 1, "original", 1, "search evidence"),
+        card_id: "card-1", card_number: "610", card_title: "관련 카드", card_status: "done" },
+      candidate("without-card", 2, "original", 1, "search evidence"),
+    ], "search evidence", 10);
+
+    expect(results.find((result) => result.session_id === "with-card")).toMatchObject({
+      card_id: "card-1", card_number: 610, card_title: "관련 카드", card_status: "done",
+    });
+    expect(results.find((result) => result.session_id === "without-card")).toMatchObject({
+      card_id: null, card_number: null, card_title: null, card_status: null,
+    });
+  });
   it("projects Date and string session timestamps as ISO strings", () => {
     const results = projectSessionSearchResults([
       {

@@ -15,6 +15,14 @@ export interface CardMcpListQuery {
   after: { folderId: string; positionKey: string; id: string } | null;
 }
 
+export interface CardMcpSearchQuery {
+  query: string;
+  folderId: string | null;
+  status: string | null;
+  limit: number;
+  allowedFolderIds: readonly string[] | null;
+}
+
 export interface CardMcpListRow extends Record<string, unknown> {
   id: string;
   number: number | null;
@@ -27,6 +35,22 @@ export interface CardMcpListRow extends Record<string, unknown> {
   assignee_session_id: string | null;
   assignee_user_id: string | null;
   updated_at: Date;
+}
+
+export interface CardMcpSearchRow extends Record<string, unknown> {
+  id: string;
+  number: number | null;
+  folder_id: string;
+  title: string;
+  status: string;
+  now: unknown;
+  assignee_kind: string | null;
+  assignee_agent_id: string | null;
+  assignee_session_id: string | null;
+  assignee_user_id: string | null;
+  updated_at: Date | string;
+  match_source: string;
+  snippet_text: string;
 }
 
 export interface CardMcpCurrent {
@@ -76,6 +100,116 @@ export class CardMcpReadRepository {
       LIMIT ${query.all ? null : query.limit + 1}
     `;
     const truncated = !query.all && rows.length > query.limit;
+    return { rows: truncated ? rows.slice(0, query.limit) : rows, truncated };
+  }
+
+  async searchCards(query: CardMcpSearchQuery): Promise<{ rows: CardMcpSearchRow[]; truncated: boolean }> {
+    if (query.folderId && SYSTEM_FOLDER_IDS.includes(query.folderId as (typeof SYSTEM_FOLDER_IDS)[number]))
+      return { rows: [], truncated: false };
+    if (query.folderId && query.allowedFolderIds !== null && !query.allowedFolderIds.includes(query.folderId))
+      throw httpError(403, "Folder access denied", "FOLDER_ACCESS_DENIED");
+
+    const tokens = query.query.trim().split(/\s+/).filter(Boolean)
+      .map((token) => /^#\d+$/.test(token) ? token.slice(1) : token);
+    if (tokens.length === 0) return { rows: [], truncated: false };
+
+    const rows = await this.sql<CardMcpSearchRow[]>`
+      WITH params AS (
+        SELECT ${tokens}::text[] AS tokens
+      ),
+      filtered_cards AS (
+        SELECT
+          c.id, c.number, c.folder_id, c.title, c.status, c.now,
+          c.assignee_kind, c.assignee_agent_id, c.assignee_session_id, c.assignee_user_id, c.updated_at,
+          COALESCE(c.items::text, '') AS item_text,
+          COALESCE(c.request, '') AS request_text,
+          COALESCE(c.brief, '') AS brief_text,
+          concat_ws(E'\n', c.now->>'text', c.now->>'ask') AS now_text,
+          COALESCE(comment_text.note_text, '') AS note_text,
+          COALESCE(comment_text.comment_text, '') AS comment_text,
+          COALESCE(report_text.report_text, '') AS report_text,
+          concat_ws(E'\n', c.title, c.items::text, c.request, c.brief, c.now->>'text', c.now->>'ask',
+            comment_text.note_text, report_text.report_text, comment_text.comment_text) AS searchable_text
+        FROM cards c
+        LEFT JOIN LATERAL (
+          SELECT
+            string_agg(body, E'\n') FILTER (WHERE kind = 'note') AS note_text,
+            string_agg(body, E'\n') FILTER (WHERE kind <> 'note') AS comment_text
+          FROM card_comments
+          WHERE card_id = c.id
+        ) comment_text ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT string_agg(concat_ws(E'\n', title, body), E'\n') AS report_text
+          FROM card_reports
+          WHERE card_id = c.id
+        ) report_text ON TRUE
+        WHERE c.archived = FALSE AND c.folder_id NOT IN ('claude', 'llm')
+          AND (${query.folderId}::text IS NULL OR c.folder_id = ${query.folderId})
+          AND (${query.status}::text IS NULL OR c.status = ${query.status})
+          AND (${query.allowedFolderIds}::text[] IS NULL OR c.folder_id = ANY(${query.allowedFolderIds}::text[]))
+      ),
+      matched_cards AS (
+        SELECT filtered_cards.*, params.tokens,
+          EXISTS (
+            SELECT 1 FROM unnest(params.tokens) AS token(value)
+            WHERE filtered_cards.number::text = token.value
+          ) AS exact_number_match,
+          (
+            SELECT count(*)::integer
+            FROM unnest(params.tokens) AS token(value)
+            WHERE filtered_cards.number::text = token.value
+              OR filtered_cards.searchable_text ILIKE '%' || token.value || '%'
+          ) AS matched_token_count
+        FROM filtered_cards CROSS JOIN params
+      ),
+      match_mode AS (
+        SELECT EXISTS (
+          SELECT 1 FROM matched_cards
+          WHERE matched_token_count = cardinality(tokens)
+        ) AS has_and_match
+      ),
+      eligible_cards AS (
+        SELECT matched_cards.*
+        FROM matched_cards CROSS JOIN match_mode
+        WHERE matched_token_count > 0
+          AND (match_mode.has_and_match = FALSE OR matched_token_count = cardinality(tokens))
+      ),
+      selected_matches AS (
+        SELECT eligible_cards.*, selected_match.match_source, selected_match.snippet_text, selected_match.priority
+        FROM eligible_cards
+        CROSS JOIN LATERAL (
+          SELECT match_options.match_source, match_options.snippet_text, match_options.priority
+          FROM (VALUES
+            ('number', eligible_cards.number::text, eligible_cards.exact_number_match, 0),
+            ('title', eligible_cards.title, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.title ILIKE '%' || token.value || '%'), 1),
+            ('items', eligible_cards.item_text, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.item_text ILIKE '%' || token.value || '%'), 2),
+            ('request', eligible_cards.request_text, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.request_text ILIKE '%' || token.value || '%'), 3),
+            ('brief', eligible_cards.brief_text, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.brief_text ILIKE '%' || token.value || '%'), 4),
+            ('now', eligible_cards.now_text, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.now_text ILIKE '%' || token.value || '%'), 5),
+            ('notes', eligible_cards.note_text, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.note_text ILIKE '%' || token.value || '%'), 6),
+            ('reports', eligible_cards.report_text, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.report_text ILIKE '%' || token.value || '%'), 7),
+            ('comments', eligible_cards.comment_text, EXISTS (SELECT 1 FROM unnest(eligible_cards.tokens) AS token(value)
+              WHERE eligible_cards.comment_text ILIKE '%' || token.value || '%'), 8)
+          ) AS match_options(match_source, snippet_text, matched, priority)
+          WHERE match_options.matched
+          ORDER BY match_options.priority
+          LIMIT 1
+        ) selected_match
+      )
+      SELECT id, number, folder_id, title, status, now, assignee_kind, assignee_agent_id,
+        assignee_session_id, assignee_user_id, updated_at, match_source, snippet_text
+      FROM selected_matches
+      ORDER BY matched_token_count DESC, priority, updated_at DESC, id DESC
+      LIMIT ${query.limit + 1}
+    `;
+    const truncated = rows.length > query.limit;
     return { rows: truncated ? rows.slice(0, query.limit) : rows, truncated };
   }
 

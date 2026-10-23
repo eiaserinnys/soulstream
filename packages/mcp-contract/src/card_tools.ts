@@ -31,9 +31,16 @@ export const cardTools = {
     inputSchema: scope,
   }, audience: "all" },
   list_cards: { name: "list_cards", config: {
-    description: "폴더와 상태별 카드 요약을 기본 20건 반환합니다. nextCursor가 있으면 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
+    description: "폴더와 상태별 카드 요약을 기본 20건 반환합니다. query가 있으면 검색 모드로 동작해 관련도 순으로 반환하고 cursor와 all은 무시합니다. query가 없으면 nextCursor가 있을 때 cursor로 다음 페이지를 읽고, 전체가 필요하면 all=true를 명시하세요. all은 limit이나 cursor와 함께 쓸 수 없습니다.",
     inputSchema: { folder_id: id.optional(), status: z.enum(CARD_STATUSES).optional(), caller_session_id: callerSessionIdSchema,
+      query: z.string().min(1).max(500).optional(),
       limit: z.number().int().min(1).max(50).optional().describe("페이지당 카드 수. 정수 1~50, 생략 시 20. 다음 페이지는 cursor로 읽는다."), cursor: id.optional(), all: z.boolean().optional() },
+  }, audience: "all" },
+  search_cards: { name: "search_cards", config: {
+    description: "카드의 제목, 번호, 요청 원문, 인계 요약, 확인 항목(결과와 증거 링크 포함), 노트, 보고에서 검색어를 찾아 매치 구간 발췌(snippet)와 함께 관련도 순으로 반환합니다.",
+    inputSchema: { query: z.string().min(1).max(500), folder_id: id.optional(), status: z.enum(CARD_STATUSES).optional(),
+      limit: z.number().int().min(1).max(50).optional().describe("반환할 최대 카드 수. 정수 1~50, 생략 시 20."),
+      caller_session_id: callerSessionIdSchema },
   }, audience: "all" },
   get_card: { name: "get_card", config: {
     description: "기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",

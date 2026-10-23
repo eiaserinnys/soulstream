@@ -256,7 +256,11 @@ export async function loadSessionDocumentCandidateRows(input: {
       session.updated_at AS session_updated_at,
       folder_evidence.name AS folder_name,
       folder_evidence.folder_evidence_kind,
-      folder_evidence.folder_evidence_title
+      folder_evidence.folder_evidence_title,
+      linked_card.id AS card_id,
+      linked_card.number AS card_number,
+      linked_card.title AS card_title,
+      linked_card.status AS card_status
     FROM requested
     JOIN sessions session ON session.session_id = requested.session_id
     LEFT JOIN LATERAL (
@@ -314,6 +318,22 @@ export async function loadSessionDocumentCandidateRows(input: {
         linked_folder.id ASC
       LIMIT 1
     ) folder_evidence ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT card.id, card.number, card.title, card.status
+      FROM cards card
+      WHERE card.id = session.card_id
+        OR (card.assignee_session_id = session.session_id AND card.archived = FALSE)
+        OR (card.completed_session_id = session.session_id AND card.archived = FALSE)
+      ORDER BY
+        CASE
+          WHEN card.id = session.card_id THEN 0
+          WHEN card.assignee_session_id = session.session_id THEN 1
+          ELSE 2
+        END,
+        card.updated_at DESC,
+        card.id ASC
+      LIMIT 1
+    ) linked_card ON TRUE
     WHERE COALESCE(session.session_type, '') <> 'llm'
       AND (${allowedFolders}::text[] IS NULL OR session.folder_id = ANY(${allowedFolders}::text[]))
       AND (${filters?.node_id ?? null}::text IS NULL OR session.node_id = ${filters?.node_id ?? null}::text)

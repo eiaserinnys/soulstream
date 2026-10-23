@@ -143,6 +143,74 @@ describe("external MCP card writes", () => {
     expect(forbiddenRead.isError).toBe(true);
     expect(forbiddenRead.content[0]?.text).toContain("Folder access denied");
   });
+  it("searches card fields, notes, reports and comments with source excerpts", async () => {
+    await h.sql`UPDATE cards SET title='title-search-token', now='{"text":"now-search-token","ask":"now-ask-token"}'::jsonb,
+      request='request-search-token', brief='brief-search-token',
+      items='[{"id":1,"title":"item-title-search-token","state":"done","result":"item-result-search-token",
+        "caveat":"item-caveat-search-token","evidence":[{"type":"link","url":"https://example.test/item-evidence-search-token","label":"item-label-search-token"}]}]'::jsonb
+      WHERE id='card'`;
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body) VALUES
+      ('search-note','card','agent','note','note-search-token'),
+      ('search-comment','card','user','comment','comment-search-token')`;
+    await h.sql`INSERT INTO card_reports(id,card_id,title,format,body) VALUES
+      ('search-report','card','report-title-search-token','markdown','report-body-search-token')`;
+
+    const number = (await h.sql`SELECT number FROM cards WHERE id='card'`)[0]!.number;
+    const cases = [
+      ["title-search-token", "title"], ["now-search-token", "now"], ["now-ask-token", "now"],
+      ["request-search-token", "request"], ["brief-search-token", "brief"],
+      ["item-title-search-token", "items"], ["item-result-search-token", "items"],
+      ["item-caveat-search-token", "items"], ["item-label-search-token", "items"],
+      ["item-evidence-search-token", "items"], ["note-search-token", "notes"],
+      ["report-title-search-token", "reports"], ["report-body-search-token", "reports"],
+      ["comment-search-token", "comments"], [`#${number}`, "number"],
+    ] as const;
+    for (const [query, matchSource] of cases) {
+      const response = await call("search_cards", { query });
+      expect(response.isError, query).not.toBe(true);
+      const payload = response.structuredContent as { query: string; results: Array<Record<string, unknown>>; truncated: boolean };
+      expect(payload.query).toBe(query);
+      expect(payload.results[0]).toMatchObject({
+        id: "card", number, folderId: "a", status: "todo", title: "title-search-token", matchSource,
+        snippet: expect.any(String), assigneeKind: "session", assigneeSessionId: "owner", updatedAt: expect.any(String),
+      });
+      if (query === "item-evidence-search-token")
+        expect(payload.results[0]?.snippet).toContain("https://example.test/item-evidence-search-token");
+    }
+
+    const listQuery = await call("list_cards", { query: "title-search-token", all: true, cursor: "ignored" });
+    expect(listQuery.structuredContent).toMatchObject({
+      cards: [expect.objectContaining({ id: "card", matchSource: "title" })], nextCursor: null, truncated: false,
+    });
+  });
+  it("applies folder, status and allowed folder filters to card searches", async () => {
+    await h.sql`UPDATE cards SET request='filter-search-token' WHERE id IN ('card','card-b')`;
+    const limited = await call("search_cards", { query: "filter-search-token", limit: 1 });
+    expect(limited.structuredContent).toMatchObject({
+      results: [expect.objectContaining({ matchSource: "request" })], truncated: true,
+    });
+    access = { restricted: true, allowedFolderIds: ["a"] };
+
+    const matches = await call("search_cards", { query: "filter-search-token", folder_id: "a", status: "todo" });
+    expect(matches.structuredContent).toMatchObject({ results: [expect.objectContaining({ id: "card" })], truncated: false });
+    const wrongStatus = await call("search_cards", { query: "filter-search-token", folder_id: "a", status: "done" });
+    expect(wrongStatus.structuredContent).toMatchObject({ results: [], truncated: false });
+    const deniedFolder = await call("search_cards", { query: "filter-search-token", folder_id: "b" });
+    expect(deniedFolder.isError).toBe(true);
+    expect(deniedFolder.content[0]?.text).toContain("Folder access denied");
+  });
+  it("prefers full token matches and ranks OR fallback by matched token count", async () => {
+    await h.sql`UPDATE cards SET request='fallback-first-token fallback-shared-token' WHERE id='card'`;
+    await h.sql`UPDATE cards SET request='fallback-shared-token' WHERE id='card-b'`;
+
+    const andMatch = await call("search_cards", { query: "fallback-first-token fallback-shared-token" });
+    expect(andMatch.structuredContent).toMatchObject({
+      results: [expect.objectContaining({ id: "card" })], truncated: false,
+    });
+    const orFallback = await call("search_cards", { query: "fallback-first-token fallback-shared-token missing-token" });
+    expect((orFallback.structuredContent as { results: Array<{ id: string }> }).results.map(({ id }) => id))
+      .toEqual(["card", "card-b"]);
+  });
   it("lists exactly the eight external writes while retaining internal work start", () => {
     const writes = ["create_card", "update_card_brief", "add_card_report", "add_card_comment", "set_card_status",
       "request_card_review", "ask_card_question", "move_card"] as const;

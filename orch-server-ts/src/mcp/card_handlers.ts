@@ -3,7 +3,7 @@ import { STATUS_CODES } from "node:http";
 import { callWithReferenceTranslation, errorResultFromError, jsonResult, readOrchErrorEnvelopeText, type CallToolResult, type cardTools } from "@soulstream/mcp-contract";
 import { allowed, readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "../cards/card_route_body.js";
 import type { DispatchWorkInput } from "../cards/card_work_dispatch_service.js";
-import type { CardMcpGetInput, CardMcpListInput } from "../cards/card_mcp_read.js";
+import type { CardMcpGetInput, CardMcpListInput, CardMcpSearchInput } from "../cards/card_mcp_read.js";
 import { filterFolders, isFolderAllowed, normalizeAccess } from "../folders/folder_route_access.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { CardOperation } from "../cards/card_operations.js";
@@ -47,6 +47,11 @@ export const cardHandlers = {
     const service = await o.cards.cardServiceProvider!();
     const allowedFolderIds = await mcpAllowedFolderIds(o.cards);
     return service.mcpRead.listCards(listReadInput(a), allowedFolderIds);
+  })),
+  search_cards: (o, a) => run(() => request(async () => {
+    const service = await o.cards.cardServiceProvider!();
+    const allowedFolderIds = await mcpAllowedFolderIds(o.cards);
+    return service.mcpRead.searchCards(searchReadInput(a), allowedFolderIds);
   })),
   get_card: (o, a) => run(() => request(async () => {
     const service = await o.cards.cardServiceProvider!();
@@ -173,6 +178,14 @@ function listReadInput(args: Args): CardMcpListInput {
   if (typeof args.limit === "number") input.limit = args.limit;
   if (typeof args.cursor === "string") input.cursor = args.cursor;
   if (typeof args.all === "boolean") input.all = args.all;
+  if (typeof args.query === "string") input.query = args.query;
+  return input;
+}
+function searchReadInput(args: Args): CardMcpSearchInput {
+  const input: CardMcpSearchInput = { query: String(args.query) };
+  if (typeof args.folder_id === "string") input.folder_id = args.folder_id;
+  if (typeof args.status === "string") input.status = args.status as NonNullable<CardMcpSearchInput["status"]>;
+  if (typeof args.limit === "number") input.limit = args.limit;
   return input;
 }
 function getReadInput(args: Args): CardMcpGetInput {
