@@ -10,6 +10,7 @@ import {
   normalizeSoulstreamInternalMcpUrl,
 } from "../soulstream_internal_mcp.js";
 import { ANTIGRAVITY_AGENT_TOOLS } from "./agent_tools.js";
+import { ANTIGRAVITY_MCP_PROXY_CONFIG_ENV, type AntigravityMcpProxyLaunch } from "./mcp_schema_proxy_launch.js";
 
 interface DefinitionOptions {
   agentSessionId: string;
@@ -17,6 +18,7 @@ interface DefinitionOptions {
   resolvedMcpServers?: ResolvedMcpServer[];
   internalMcpUrl?: string;
   useMcp?: boolean;
+  mcpProxyLaunch?: AntigravityMcpProxyLaunch;
   logger: Pick<Logger, "warn">;
 }
 
@@ -32,23 +34,40 @@ function mcpServers(options: DefinitionOptions): object[] {
     }
     if (server.type === "stdio") {
       if (!server.command || server.full_command) throw new Error(`Antigravity MCP server ${name} requires command and args`);
-      servers.push({ name, command: server.command,
+      servers.push(externalProxyServer(options, name, {
+        type: "stdio", command: server.command,
         ...(server.args !== undefined ? { args: server.args } : {}),
         ...(server.env !== undefined ? { env: server.env } : {}),
         ...(server.cwd !== undefined ? { cwd: server.cwd } : {}),
-      });
+      }));
       continue;
     }
     if (!server.url) throw new Error(`Antigravity MCP server ${name} requires a URL`);
     const internal = isSoulstreamMcpServerName(name);
     if (internal && !options.internalMcpUrl) throw new Error("Antigravity internal MCP URL is required");
-    servers.push({ name,
-      url: internal ? normalizeSoulstreamInternalMcpUrl(options.internalMcpUrl!) : server.url,
-      ...(internal ? { headers: mergeSoulstreamAgentSessionHeader(server.headers, options.agentSessionId) }
-        : server.headers !== undefined ? { headers: server.headers } : {}),
-    });
+    if (internal) {
+      servers.push({ name, url: normalizeSoulstreamInternalMcpUrl(options.internalMcpUrl!),
+        headers: mergeSoulstreamAgentSessionHeader(server.headers, options.agentSessionId) });
+    } else {
+      servers.push(externalProxyServer(options, name, {
+        type: "streamable_http", url: server.url,
+        ...(server.headers !== undefined ? { headers: server.headers } : {}),
+      }));
+    }
   }
   return servers;
+}
+
+function externalProxyServer(
+  options: DefinitionOptions,
+  name: string,
+  upstream: { type: "streamable_http"; url: string; headers?: Record<string, string> }
+    | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string>; cwd?: string },
+): object {
+  const launch = options.mcpProxyLaunch;
+  if (!launch) throw new Error("Antigravity MCP proxy launch is required for external MCP servers");
+  return { name, command: launch.command, args: launch.args,
+    env: { [ANTIGRAVITY_MCP_PROXY_CONFIG_ENV]: JSON.stringify(upstream) } };
 }
 
 /** The CLI grammar requires YAML frontmatter; these delimiters are not document separators. */
