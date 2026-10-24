@@ -221,7 +221,7 @@ export function AttachmentViewer({
     onIndexChange(next);
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!multiItem) return;
+    if (!multiItem || event.target instanceof HTMLMediaElement) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       changeIndex(index - 1);

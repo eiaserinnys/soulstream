@@ -246,6 +246,22 @@ describe("AttachmentViewer", () => {
     expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("3/3");
   });
 
+  it("leaves arrow keys on native media controls for playback", async () => {
+    const items = [
+      remoteMedia("clip.mp3", "audio/mpeg"),
+      attachment({ key: "next", name: "next.txt", byteSize: 0 }),
+    ];
+    await act(async () => root.render(<ViewerHarness items={items} />));
+
+    const audio = document.body.querySelector<HTMLAudioElement>("audio")!;
+    audio.focus();
+    const arrow = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true });
+    await act(async () => audio.dispatchEvent(arrow));
+
+    expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("1/2");
+    expect(arrow.defaultPrevented).toBe(false);
+  });
+
   it("aborts the previous text request when the selected item changes", async () => {
     let resolveFetch!: (response: Response) => void;
     const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
