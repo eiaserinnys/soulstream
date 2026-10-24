@@ -13,6 +13,7 @@ import { createAttachmentEndpoints } from '../../api/attachmentEndpoints';
 import type { AttachmentReadContext } from '../../../../packages/wire-schema/src/attachments';
 import {
   MAX_ATTACHMENT_TEXT_BYTES,
+  attachmentMediaKind,
   isHtmlAttachmentView,
   type AttachmentView,
 } from '../../lib/attachment-view';
@@ -259,9 +260,17 @@ async function readOwnedPathAttachment(
       originalUrl: originalUrl.href,
     },
   };
-  if (!id && isHtmlAttachmentView(item)) {
+  if (!id) {
     const endpoints = createAttachmentEndpoints(api);
-    item.loadText = (textSignal) => endpoints.readLegacyAttachmentText(url.href, textSignal);
+    if (isHtmlAttachmentView(item)) {
+      item.loadText = (textSignal) => endpoints.readLegacyAttachmentText(url.href, textSignal);
+    }
+    if (attachmentMediaKind(item) !== null) {
+      item.loadMedia = (mediaSignal) => endpoints.readLegacyAttachmentMedia(url.href, mediaSignal, {
+        mimeType: item.mimeType,
+        name: item.name,
+      });
+    }
   }
   return { item };
 }

@@ -8,7 +8,15 @@ import {
   View,
 } from 'react-native';
 import { createApiClient } from '../api/client';
-import { isHtmlAttachmentView, isMarkdownAttachmentView, type AttachmentView } from '../lib/attachment-view';
+import {
+  attachmentMediaKind,
+  attachmentMediaMimeType,
+  attachmentContentUrl,
+  isHtmlAttachmentView,
+  isMarkdownAttachmentView,
+  type AttachmentMediaKind,
+  type AttachmentView,
+} from '../lib/attachment-view';
 import { captureAuthScope } from '../lib/auth-scope';
 import { buildCustomViewBindings, renderDocumentHtml } from '../lib/custom-view-renderer';
 import { LIGHT_COLORS } from '../theme/colors';
@@ -31,6 +39,8 @@ type PreviewState =
   | { kind: 'text'; text: string; truncated: boolean }
   | { kind: 'markdown'; text: string; truncated: boolean }
   | { kind: 'html'; text: string; truncated: boolean }
+  | { kind: 'empty' }
+  | { kind: 'media'; mediaKind: AttachmentMediaKind; uri: string; mimeType: string | null }
   | { kind: 'info' }
   | { kind: 'unavailable'; message: string }
   | { kind: 'failed'; message: string; retryable: boolean };
@@ -80,6 +90,7 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const html = isHtmlAttachmentView(item);
   const markdown = !html && item.previewKind === 'text' && isMarkdownAttachmentView(item);
+  const mediaKind = attachmentMediaKind(item);
   const [state, setState] = useState<PreviewState>(() => initialPreviewState(item));
   const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
@@ -87,6 +98,66 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
       setState(html ? { kind: 'html', ...textContent }
         : markdown ? { kind: 'markdown', ...textContent } : { kind: 'text', ...textContent });
       return;
+    }
+    if (item.source.kind === 'unavailable') {
+      setState(initialPreviewState(item));
+      return;
+    }
+    if (mediaKind !== null) {
+      const source = item.source;
+      if (item.byteSize === 0) {
+        setState({ kind: 'empty' });
+        return;
+      }
+      if (source.previewUrl && /^(?:data:|blob:|file:)/i.test(source.previewUrl)) {
+        setState({
+          kind: 'media',
+          mediaKind,
+          uri: source.previewUrl,
+          mimeType: attachmentMediaMimeType(item),
+        });
+        return;
+      }
+
+      const controller = new AbortController();
+      const scope = captureAuthScope();
+      const api = createApiClient(scope.serverUrl, { authScope: scope });
+      let loadedUri: string | null = null;
+      const releaseLoadedUri = () => {
+        if (loadedUri?.startsWith('blob:') && loadedUri !== source.previewUrl
+          && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+          URL.revokeObjectURL(loadedUri);
+        }
+        loadedUri = null;
+      };
+      setState({ kind: 'loading' });
+      const read = item.loadMedia
+        ? item.loadMedia(controller.signal)
+        : typeof api.readAttachmentMedia === 'function'
+          ? api.readAttachmentMedia(source.attachmentId, item.readContext, controller.signal, {
+            mimeType: item.mimeType,
+            name: item.name,
+          })
+          : Promise.resolve({
+            uri: attachmentContentUrl(source.attachmentId, item.readContext),
+            mimeType: attachmentMediaMimeType(item),
+          });
+      void read
+        .then(({ uri, mimeType }) => {
+          loadedUri = uri;
+          if (controller.signal.aborted) {
+            releaseLoadedUri();
+            return;
+          }
+          setState({ kind: 'media', mediaKind, uri, mimeType: mimeType ?? attachmentMediaMimeType(item) });
+        })
+        .catch((error: unknown) => {
+          if (!controller.signal.aborted) setState(readFailureState(error));
+        });
+      return () => {
+        controller.abort();
+        releaseLoadedUri();
+      };
     }
     if ((!html && item.previewKind !== 'text') || item.source.kind !== 'ready' || item.byteSize === 0) {
       setState(initialPreviewState(item));
@@ -109,14 +180,15 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         if (!controller.signal.aborted) setState(readFailureState(error));
       });
     return () => controller.abort();
-  }, [item, retryKey, textContent, html]);
+  }, [item, retryKey, textContent, html, mediaKind]);
 
   const htmlDocument = useMemo(
     () => state.kind === 'html' ? renderDocumentHtml(state.text, CUSTOM_VIEW_BINDINGS) : null,
     [state],
   );
   // The document page uses the whole frame; text and states keep the padded, centered box.
-  const fullBleed = state.kind === 'html' && state.text.length > 0;
+  const fullBleed = (state.kind === 'html' && state.text.length > 0)
+    || (state.kind === 'media' && state.mediaKind === 'video');
   const markdownDocument = state.kind === 'markdown' && state.text.length > 0;
   return <View style={{ flex: 1, width: '100%', ...(fullBleed ? null : {
     padding: t.spacing.md,
@@ -133,6 +205,9 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
         <Text style={{ ...tokens.foundation.typography.meta, color: roles.textMuted }}>{fileExtension(item.name)}</Text>
       </View>;
     }
+    if (current.kind === 'empty') {
+      return <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>빈 파일</Text>;
+    }
     if (current.kind === 'unavailable' || current.kind === 'failed') {
       return <View style={{ alignItems: 'center', gap: tokens.spacing.sm }}>
         <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary, textAlign: 'center' }}>{current.message}</Text>
@@ -140,6 +215,49 @@ function AttachmentPreviewContent({ item, textContent }: { item: AttachmentView;
           <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>다시 시도</Text>
         </GlassButton> : null}
       </View>;
+    }
+    if (current.kind === 'media') {
+      if (Platform.OS === 'web') {
+        const tagName = current.mediaKind;
+        const commonProps = {
+          controls: true,
+          preload: 'metadata' as const,
+          src: current.uri,
+          'aria-label': item.name,
+          onError: () => setState({ kind: 'failed', message: '미리보기를 열 수 없습니다.', retryable: false }),
+        };
+        if (current.mediaKind === 'video') {
+          return <View testID="attachment-preview-video" style={{
+            flex: 1,
+            width: '100%',
+            height: '100%',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>{React.createElement(tagName, {
+            ...commonProps,
+            playsInline: true,
+            style: { width: '100%', height: '100%', maxHeight: '100%', objectFit: 'contain', outline: 'none' },
+          })}</View>;
+        }
+        return <View testID="attachment-preview-audio" style={{
+          width: '100%',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>{React.createElement(tagName, {
+          ...commonProps,
+          style: { width: '100%', maxWidth: 420, outline: 'none' },
+        })}</View>;
+      }
+      return <WebView
+        testID={current.mediaKind === 'video' ? 'attachment-preview-video' : 'attachment-preview-audio'}
+        source={{ html: buildMediaPreviewHtml(current.mediaKind, current.uri, current.mimeType, item.name) }}
+        originWhitelist={['*']}
+        javaScriptEnabled={false}
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        scrollEnabled={false}
+        style={{ flex: 1, width: '100%', backgroundColor: 'transparent' }}
+      />;
     }
     if (current.text.length === 0) {
       return <Text style={{ ...tokens.foundation.typography.body, color: tokens.colors.textPrimary }}>빈 파일</Text>;
@@ -172,6 +290,8 @@ function initialPreviewState(item: AttachmentView): PreviewState {
       : item.source.availability === 'unavailable' ? '사용할 수 없음' : '첨부 정보를 확인할 수 없음';
     return { kind: 'unavailable', message };
   }
+  const mediaKind = attachmentMediaKind(item);
+  if (mediaKind !== null) return item.byteSize === 0 ? { kind: 'empty' } : { kind: 'loading' };
   const html = isHtmlAttachmentView(item);
   const markdown = !html && item.previewKind === 'text' && isMarkdownAttachmentView(item);
   if (html || item.previewKind === 'text') {
@@ -196,4 +316,29 @@ function readFailureState(error: unknown): PreviewState {
 function fileExtension(name: string): string {
   const extension = name.split('.').pop() ?? '';
   return extension && extension !== name ? extension.toUpperCase() : '';
+}
+
+function buildMediaPreviewHtml(
+  mediaKind: AttachmentMediaKind,
+  uri: string,
+  mimeType: string | null,
+  name: string,
+): string {
+  const tag = mediaKind === 'video' ? 'video' : 'audio';
+  const source = escapeHtmlAttribute(uri);
+  const label = escapeHtmlAttribute(name);
+  const mediaType = escapeHtmlAttribute(mimeType ?? '');
+  const inlinePlayback = mediaKind === 'video' ? ' playsinline' : '';
+  const sizeStyle = mediaKind === 'video'
+    ? 'width:100%;height:100%;max-width:100%;object-fit:contain;'
+    : 'width:100%;max-width:420px;max-height:100%;';
+  return `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}body{display:flex;align-items:center;justify-content:center}${tag}{${sizeStyle}}</style></head><body><${tag} controls${inlinePlayback} preload="metadata" src="${source}" aria-label="${label}" data-mime-type="${mediaType}"></${tag}></body></html>`;
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, '&#39;');
 }

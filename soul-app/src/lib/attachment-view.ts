@@ -4,11 +4,14 @@ import type { CardAttachmentAssetEvidence } from '../api/cardTypes';
 export const MAX_ATTACHMENT_TEXT_BYTES = 1024 * 1024;
 
 export type AttachmentPreviewKind = 'image' | 'text' | 'info';
+export type AttachmentMediaKind = 'video' | 'audio';
+export type AttachmentMediaContent = { uri: string; mimeType: string | null };
 
 export type AttachmentView = {
   loadMetadata?: () => Promise<AttachmentView>;
   /** Loads a bounded body for views whose content is not fetched by ID (legacy paths). */
   loadText?: (signal: AbortSignal) => Promise<{ text: string; truncated: boolean }>;
+  loadMedia?: (signal: AbortSignal) => Promise<AttachmentMediaContent>;
   key: string;
   name: string;
   mimeType: string | null;
@@ -99,4 +102,50 @@ export function isHtmlAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'na
 export function isMarkdownAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'name'>): boolean {
   const mimeType = view.mimeType?.split(';', 1)[0]?.trim().toLowerCase();
   return mimeType === 'text/markdown' || /\.(?:md|markdown)$/i.test(view.name);
+}
+
+export function attachmentMediaKind(
+  view: Pick<AttachmentView, 'mimeType' | 'name'>,
+): AttachmentMediaKind | null {
+  const mimeType = view.mimeType?.split(';', 1)[0]?.trim().toLowerCase();
+  if (mimeType?.startsWith('video/')) return 'video';
+  if (mimeType?.startsWith('audio/')) return 'audio';
+  if (/\.(?:mp4|webm|mov|m4v|ogv)$/i.test(view.name)) return 'video';
+  if (/\.(?:mp3|wav|flac|m4a|aac|ogg|oga|opus)$/i.test(view.name)) return 'audio';
+  return null;
+}
+
+export function isVideoAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'name'>): boolean {
+  return attachmentMediaKind(view) === 'video';
+}
+
+export function isAudioAttachmentView(view: Pick<AttachmentView, 'mimeType' | 'name'>): boolean {
+  return attachmentMediaKind(view) === 'audio';
+}
+
+export function attachmentMediaMimeType(
+  view: Pick<AttachmentView, 'mimeType' | 'name'>,
+): string | null {
+  const mimeType = view.mimeType?.trim() ?? null;
+  const normalizedMimeType = mimeType?.split(';', 1)[0]?.trim().toLowerCase() ?? null;
+  if (normalizedMimeType?.startsWith('video/') || normalizedMimeType?.startsWith('audio/')) return mimeType;
+  if (normalizedMimeType !== null && normalizedMimeType !== 'application/octet-stream') return null;
+
+  const extension = /\.([^.]+)$/.exec(view.name)?.[1]?.toLowerCase();
+  switch (extension) {
+    case 'mp4': return 'video/mp4';
+    case 'webm': return 'video/webm';
+    case 'mov': return 'video/quicktime';
+    case 'm4v': return 'video/mp4';
+    case 'ogv': return 'video/ogg';
+    case 'mp3': return 'audio/mpeg';
+    case 'wav': return 'audio/wav';
+    case 'flac': return 'audio/flac';
+    case 'm4a': return 'audio/mp4';
+    case 'aac': return 'audio/aac';
+    case 'ogg':
+    case 'oga': return 'audio/ogg';
+    case 'opus': return 'audio/ogg';
+    default: return null;
+  }
 }

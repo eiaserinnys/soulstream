@@ -1,6 +1,15 @@
 import type { ApiClient } from '../api/client';
 import type { AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
-import { attachmentContentUrl, isHtmlAttachmentView, isLegacyAttachmentImage, type AttachmentView } from './attachment-view';
+import {
+  attachmentContentUrl,
+  attachmentMediaKind,
+  isHtmlAttachmentView,
+  isLegacyAttachmentImage,
+  type AttachmentView,
+} from './attachment-view';
+
+type LegacyAttachmentApi = Pick<ApiClient, 'readLegacyAttachmentText'>
+  & Partial<Pick<ApiClient, 'readLegacyAttachmentMedia'>>;
 
 type AttachmentLinkContext = { context: AttachmentReadContext | null; invalid: boolean };
 type ExactAttachmentLink =
@@ -62,7 +71,7 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt, api 
   path: string;
   context: AttachmentReadContext;
   jwt: string | null;
-  api: Pick<ApiClient, 'readLegacyAttachmentText'> | null;
+  api: LegacyAttachmentApi | null;
 }): Promise<AttachmentView> {
   const url = new URL(href);
   const response = await fetch(url.href, {
@@ -93,6 +102,12 @@ async function readLegacyAttachmentView({ href, nodeId, path, context, jwt, api 
   };
   if (kind === 'text' && api) {
     view.loadText = (signal) => api.readLegacyAttachmentText(url.href, signal);
+  }
+  if (attachmentMediaKind(view) !== null && api?.readLegacyAttachmentMedia) {
+    view.loadMedia = (signal) => api.readLegacyAttachmentMedia!(url.href, signal, {
+      mimeType: view.mimeType,
+      name: view.name,
+    });
   }
   return view;
 }
@@ -131,7 +146,8 @@ export function scopedAttachmentUrl(href: string, serverUrl: string, context?: A
 
 export function attachmentLinkView(link: AttachmentLink, { serverUrl, jwt, api, readContext }: {
   serverUrl: string; jwt: string | null;
-  api: Pick<ApiClient, 'getAttachmentMetadata' | 'readLegacyAttachmentText'> | null;
+  api: Pick<ApiClient, 'getAttachmentMetadata' | 'readLegacyAttachmentText'>
+    & Partial<Pick<ApiClient, 'readLegacyAttachmentMedia'>> | null;
   readContext?: AttachmentReadContext;
 }): AttachmentView | null {
   const parsed = parseExactAttachmentLink(link.href, serverUrl);

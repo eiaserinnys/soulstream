@@ -3,7 +3,12 @@ import { File } from 'expo-file-system';
 import { appendNativeUploadFile, type NativeUploadFile } from './nativeUpload';
 import { NATIVE_MULTIPART_THRESHOLD_BYTES, uploadNativeMultipart } from './nativeMultipartUpload';
 import type { AttachmentDescriptor, AttachmentReadContext } from '../../../packages/wire-schema/src/attachments';
-import { attachmentContentUrl, MAX_ATTACHMENT_TEXT_BYTES } from '../lib/attachment-view';
+import {
+  attachmentContentUrl,
+  attachmentMediaMimeType,
+  MAX_ATTACHMENT_TEXT_BYTES,
+  type AttachmentMediaContent,
+} from '../lib/attachment-view';
 import { parseExactAttachmentLink } from '../lib/attachment-link-view';
 
 export interface AttachmentMetadataResponse {
@@ -53,6 +58,60 @@ export function createAttachmentEndpoints({
     }
   };
 
+  const readAuthenticatedAttachmentMedia = async (
+    url: string,
+    signal?: AbortSignal,
+    options?: { mimeType?: string | null; name?: string },
+  ): Promise<AttachmentMediaContent> => {
+    let response: Response;
+    try {
+      response = await authFetch(url, signal === undefined ? {} : { signal });
+    } catch (error) {
+      if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+      throw new AttachmentReadError('retryable');
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw attachmentReadError(response.status);
+    }
+
+    const responseMimeType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() || null;
+    const mimeType = responseMimeType?.startsWith('video/') || responseMimeType?.startsWith('audio/')
+      ? responseMimeType
+      : attachmentMediaMimeType({ mimeType: options?.mimeType ?? null, name: options?.name ?? '' });
+    if (!mimeType) throw new AttachmentReadError('preview-failed', response.status);
+
+    const canCreateObjectUrl = typeof URL !== 'undefined'
+      && typeof URL.createObjectURL === 'function'
+      && typeof Blob !== 'undefined';
+    if (canCreateObjectUrl && typeof response.blob === 'function') {
+      let blob: Blob;
+      try {
+        blob = await response.blob();
+      } catch (error) {
+        if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+        throw new AttachmentReadError('retryable');
+      }
+      const normalizedMimeType = mimeType.split(';', 1)[0].trim().toLowerCase();
+      const normalizedBlob = blob.type.toLowerCase() === normalizedMimeType
+        ? blob
+        : new Blob([blob], { type: mimeType });
+      return { uri: URL.createObjectURL(normalizedBlob), mimeType };
+    }
+
+    let buffer: ArrayBuffer;
+    try {
+      if (typeof response.arrayBuffer === 'function') buffer = await response.arrayBuffer();
+      else if (typeof response.blob === 'function') buffer = await (await response.blob()).arrayBuffer();
+      else throw new AttachmentReadError('preview-failed', response.status);
+    } catch (error) {
+      if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+      if (error instanceof AttachmentReadError) throw error;
+      throw new AttachmentReadError('retryable');
+    }
+    return { uri: `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`, mimeType };
+  };
+
   return {
     getAttachmentMetadata: async (
       id: string,
@@ -70,6 +129,13 @@ export function createAttachmentEndpoints({
       signal?: AbortSignal,
     ): Promise<{ text: string; truncated: boolean }> =>
       readBoundedAttachmentText(`${base}${attachmentContentUrl(id, context)}`, signal),
+    readAttachmentMedia: (
+      id: string,
+      context: AttachmentReadContext,
+      signal?: AbortSignal,
+      options?: { mimeType?: string | null; name?: string },
+    ): Promise<AttachmentMediaContent> =>
+      readAuthenticatedAttachmentMedia(`${base}${attachmentContentUrl(id, context)}`, signal, options),
     // Legacy files are not addressable by ID; read the original /api/attachments/files URL instead.
     readLegacyAttachmentText: async (
       href: string,
@@ -79,6 +145,16 @@ export function createAttachmentEndpoints({
         throw new AttachmentReadError('preview-failed');
       }
       return readBoundedAttachmentText(new URL(href, base).href, signal);
+    },
+    readLegacyAttachmentMedia: async (
+      href: string,
+      signal?: AbortSignal,
+      options?: { mimeType?: string | null; name?: string },
+    ): Promise<AttachmentMediaContent> => {
+      if (parseExactAttachmentLink(href, base)?.kind !== 'legacy') {
+        throw new AttachmentReadError('preview-failed');
+      }
+      return readAuthenticatedAttachmentMedia(new URL(href, base).href, signal, options);
     },
     // 첨부 파일 업로드 (multipart). multipart Content-Type은 boundary 때문에 fetch가 자동 부착한다.
     uploadAttachment: async (
@@ -124,6 +200,23 @@ export function createAttachmentEndpoints({
       ).then((r) => readJson(r, 'uploadAttachment'));
     },
   };
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let encoded = '';
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index];
+    const second = bytes[index + 1];
+    const third = bytes[index + 2];
+    const value = (first << 16) | ((second ?? 0) << 8) | (third ?? 0);
+    encoded += alphabet[(value >> 18) & 63]
+      + alphabet[(value >> 12) & 63]
+      + (second === undefined ? '=' : alphabet[(value >> 6) & 63])
+      + (third === undefined ? '=' : alphabet[value & 63]);
+  }
+  return encoded;
 }
 
 function contextQuery(context: AttachmentReadContext): string {

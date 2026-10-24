@@ -78,6 +78,12 @@ const fileItems: AttachmentView[] = [
 ];
 
 const htmlItem = infoFile('review-attachment-html', '공개 검수용 문서.html', 'text/html', 10_401);
+const mediaItems: AttachmentView[] = [
+  infoFile('review-attachment-video', '데모 녹화.mp4', 'video/mp4', 81_920),
+  infoFile('review-attachment-audio-mp3', '배경음.mp3', 'audio/mpeg', 32_768),
+  infoFile('review-attachment-audio-wav', '효과음.wav', 'audio/wav', 16_384),
+  infoFile('review-attachment-audio-flac', '원음.flac', 'audio/flac', 49_152),
+];
 
 const mixedItems = [multipleImages[0], textFile('review-attachment-long', '수백 줄 서버 로그와 아주 긴 파일 이름을 가진 공개 검수용 첨부 문서.txt', 12_000), multipleImages[1], fileItems[7]];
 export const attachmentDialogueItems = mixedItems;
@@ -137,6 +143,9 @@ export function ReviewAttachments() {
     </ReviewSection>
     <ReviewSection title="생각 잘림 · 원고형 · 보관 실패" testID="review-attachments-truncation-thinking-manuscript-failed">
       <ThinkingEvent presentation="manuscript" event={thinkingEvent('review-truncation-thinking-manuscript-failed', null)} sessionId="review-truncation" />
+    </ReviewSection>
+    <ReviewSection title="미디어 첨부 (동영상 · 오디오)" testID="review-attachments-media">
+      <MessageAttachments items={mediaItems} role="assistant" />
     </ReviewSection>
   </ScrollView>;
 }
