@@ -53,6 +53,31 @@ test('첨부 검수 fixture는 메타데이터 응답과 HTTP 실패 상태를 �
   }
 });
 
+test('미디어 검수 fixture는 형식별 data URI와 미디어 읽기 실패 상태를 보존한다', async () => {
+  const api = createAttachmentReviewApi();
+  const readContext = { type: 'card' as const, id: 'review-card-attachments' };
+
+  for (const [attachmentId, mimeType] of [
+    ['review-attachment-video', 'video/mp4'],
+    ['review-attachment-audio-mp3', 'audio/mpeg'],
+    ['review-attachment-audio-wav', 'audio/wav'],
+    ['review-attachment-audio-flac', 'audio/flac'],
+  ] as const) {
+    const media = await api.readAttachmentMedia(attachmentId, readContext);
+    expect(media.mimeType).toBe(mimeType);
+    expect(media.uri.startsWith(`data:${mimeType};base64,`)).toBe(true);
+    expect(media.uri.length).toBeGreaterThan(`data:${mimeType};base64,`.length);
+  }
+
+  for (const [attachmentId, kind] of [
+    ['review-attachment-denied', 'denied'],
+    ['review-attachment-missing', 'not-found'],
+    ['review-attachment-retryable', 'retryable'],
+  ] as const) {
+    await expect(api.readAttachmentMedia(attachmentId, readContext)).rejects.toMatchObject({ kind });
+  }
+});
+
 test('카드 첨부 표본은 C-10 증거와 보고 본문 내부 링크를 따로 보여준다', () => {
   const screen = render(<ContentLinkProvider>
     <ReviewCardImages serverUrl="https://review.test" />

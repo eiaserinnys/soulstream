@@ -8,8 +8,12 @@ import { PlannerMarkdownText } from '../planner/PlannerMarkdownText';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 
 const mockReadAttachmentText = jest.fn();
+const mockReadAttachmentMedia = jest.fn();
 jest.mock('../../api/client', () => ({
-  createApiClient: () => ({ readAttachmentText: (...args: unknown[]) => mockReadAttachmentText(...args) }),
+  createApiClient: () => ({
+    readAttachmentText: (...args: unknown[]) => mockReadAttachmentText(...args),
+    readAttachmentMedia: (...args: unknown[]) => mockReadAttachmentMedia(...args),
+  }),
 }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('react-native-enriched-markdown', () => ({
@@ -40,6 +44,8 @@ const makeView = (overrides: Partial<AttachmentView> = {}): AttachmentView => ({
 beforeEach(() => {
   mockReadAttachmentText.mockReset();
   mockReadAttachmentText.mockResolvedValue({ text: '<b>plain text</b> **not markdown**', truncated: false });
+  mockReadAttachmentMedia.mockReset();
+  mockReadAttachmentMedia.mockResolvedValue({ uri: 'data:video/mp4;base64,AAAA', mimeType: 'video/mp4' });
 });
 
 test('text preview renders bounded content as plain text and omits MIME from the modal header', async () => {
@@ -264,4 +270,71 @@ test('a non-HTML attachment keeps the media frame', async () => {
   const screen = render(<AttachmentPreviewModal item={makeView()} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByTestId('attachment-preview-text')).toBeTruthy());
   expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-frame').props.style).height).toBeGreaterThan(0);
+});
+
+test.each([
+  ['데모 녹화.mp4', 'application/octet-stream', 'video', 'video/mp4'],
+  ['배경음.mp3', 'audio/mpeg', 'audio', 'audio/mpeg'],
+  ['효과음.wav', 'audio/wav', 'audio', 'audio/wav'],
+  ['원음.flac', 'audio/flac', 'audio', 'audio/flac'],
+] as const)('%s는 첨부 MIME과 관계없이 미디어 플레이어를 연다', async (name, mimeType, mediaKind, expectedMimeType) => {
+  const item = makeView({
+    key: name,
+    name,
+    mimeType,
+    byteSize: 64,
+    previewKind: 'info',
+  });
+  mockReadAttachmentMedia.mockResolvedValueOnce({
+    uri: `data:${expectedMimeType};base64,AAAA`,
+    mimeType: expectedMimeType,
+  });
+  const screen = render(<AttachmentPreviewModal item={item} onClose={jest.fn()} />);
+
+  const player = await waitFor(() => screen.getByTestId(mediaKind === 'video'
+    ? 'attachment-preview-video' : 'attachment-preview-audio'));
+  expect(mockReadAttachmentMedia).toHaveBeenCalledWith(
+    item.source.kind === 'ready' ? item.source.attachmentId : '',
+    item.readContext,
+    expect.any(AbortSignal),
+    { mimeType, name },
+  );
+  expect(player.props.source.html).toContain(`<${mediaKind} controls`);
+  expect(player.props.source.html).toContain(`type="${expectedMimeType}"`);
+  expect(player.props.source.html).toContain(`src="data:${expectedMimeType};base64,AAAA"`);
+});
+
+test.each([
+  ['empty-video.mp4', 'video/mp4', 'video'],
+  ['empty-audio.mp3', 'audio/mpeg', 'audio'],
+] as const)('%s is shown as an empty file without a media request', (name, mimeType, mediaKind) => {
+  const screen = render(<AttachmentPreviewModal item={makeView({
+    name,
+    mimeType,
+    previewKind: 'info',
+    byteSize: 0,
+  })} onClose={jest.fn()} />);
+
+  expect(screen.getByText('빈 파일')).toBeTruthy();
+  expect(screen.queryByTestId(mediaKind === 'video' ? 'attachment-preview-video' : 'attachment-preview-audio')).toBeNull();
+  expect(mockReadAttachmentMedia).not.toHaveBeenCalled();
+});
+
+test('media 403 failures have no retry and 503 failures can be retried', async () => {
+  mockReadAttachmentMedia.mockRejectedValueOnce(new AttachmentReadError('denied', 403));
+  const denied = render(<AttachmentPreviewModal item={makeView({
+    name: 'denied.mp4', mimeType: 'video/mp4', previewKind: 'info',
+  })} onClose={jest.fn()} />);
+  await waitFor(() => expect(denied.getByText('접근 권한이 없습니다.')).toBeTruthy());
+  expect(denied.queryByText('다시 시도')).toBeNull();
+
+  mockReadAttachmentMedia.mockRejectedValueOnce(new AttachmentReadError('retryable', 503));
+  const retryable = render(<AttachmentPreviewModal item={makeView({
+    key: 'retryable-media', name: 'retryable.mp3', mimeType: 'audio/mpeg', previewKind: 'info',
+  })} onClose={jest.fn()} />);
+  await waitFor(() => expect(retryable.getByText('미리보기를 불러오지 못했습니다.')).toBeTruthy());
+  mockReadAttachmentMedia.mockResolvedValueOnce({ uri: 'data:audio/mpeg;base64,AAAA', mimeType: 'audio/mpeg' });
+  fireEvent.press(retryable.getByText('다시 시도'));
+  await waitFor(() => expect(mockReadAttachmentMedia).toHaveBeenCalledTimes(3));
+  expect(retryable.getByTestId('attachment-preview-audio')).toBeTruthy();
 });

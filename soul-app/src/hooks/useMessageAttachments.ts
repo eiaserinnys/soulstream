@@ -10,6 +10,7 @@ import { AttachmentReadError, createAttachmentEndpoints } from '../api/attachmen
 import type { EventTruncation, SessionEvent } from '../api/types';
 import {
   attachmentContentUrl,
+  attachmentMediaKind,
   isHtmlAttachmentView,
   isLegacyAttachmentImage,
   type AttachmentView,
@@ -246,9 +247,17 @@ async function readLegacyAttachment(
         originalUrl: originalUrl.href,
       },
     };
-    if (isHtmlAttachmentView(view)) {
+    if (isHtmlAttachmentView(view) || attachmentMediaKind(view) !== null) {
       const endpoints = createAttachmentEndpoints(api);
-      view.loadText = (textSignal) => endpoints.readLegacyAttachmentText(url.href, textSignal);
+      if (isHtmlAttachmentView(view)) {
+        view.loadText = (textSignal) => endpoints.readLegacyAttachmentText(url.href, textSignal);
+      }
+      if (attachmentMediaKind(view) !== null) {
+        view.loadMedia = (mediaSignal) => endpoints.readLegacyAttachmentMedia(url.href, mediaSignal, {
+          mimeType: view.mimeType,
+          name: view.name,
+        });
+      }
     }
     return view;
   } catch (error) {
