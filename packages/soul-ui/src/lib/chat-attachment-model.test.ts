@@ -7,11 +7,14 @@ import type {
 } from "@soulstream/wire-schema/attachments";
 import {
   attachmentTextFormat,
+  attachmentMediaFormat,
+  attachmentMediaSourceUrl,
   attachmentContentUrl,
   contextualLegacyUrl,
   loadChatAttachments,
   projectChatAttachmentItems,
 } from "./chat-attachment-model";
+import type { ChatAttachmentItem } from "./chat-attachment-model";
 
 const sessionContext: AttachmentReadContext = { type: "session", id: "session-a" };
 
@@ -83,6 +86,52 @@ describe("chat attachment model", () => {
     expect(contextualLegacyUrl("node / one", "/incoming/a b.png", sessionContext, true)).toBe(
       "/api/attachments/files?nodeId=node%20%2F%20one&path=%2Fincoming%2Fa%20b.png&context_type=session&context_id=session-a&download=true",
     );
+  });
+
+  it("classifies supported media by MIME or filename extension", () => {
+    expect(attachmentMediaFormat({ mimeType: "VIDEO/MP4; codecs=h264", name: "clip.bin" })).toBe("video");
+    expect(attachmentMediaFormat({ mimeType: "video/x-custom", name: "clip.bin" })).toBe("video");
+    expect(attachmentMediaFormat({ mimeType: "application/octet-stream", name: "clip.M4V" })).toBe("video");
+    expect(attachmentMediaFormat({ mimeType: null, name: "voice.oga" })).toBe("audio");
+    expect(attachmentMediaFormat({ mimeType: "audio/x-custom", name: "voice.bin" })).toBe("audio");
+    expect(attachmentMediaFormat({ mimeType: "application/octet-stream", name: "script.py" })).toBeNull();
+  });
+
+  it("builds inline media sources from attachment context and strips download=true", () => {
+    const [asset] = projectChatAttachmentItems({
+      event_id: 46,
+      items: [assetView("media-a", sessionContext, {
+        name: "clip.mp4",
+        mime_type: "video/mp4",
+        preview_kind: "info",
+        preview_mime_type: null,
+      })],
+    });
+    expect(attachmentMediaSourceUrl({ ...asset!, previewUrl: null })).toBe(
+      attachmentContentUrl("media-a", sessionContext),
+    );
+
+    const legacy: ChatAttachmentItem = {
+      key: "legacy:clip",
+      name: "clip.mp3",
+      mimeType: "audio/mpeg",
+      byteSize: 12,
+      previewKind: "info",
+      availability: "unresolved",
+      previewUrl: null,
+      originalUrl: null,
+      legacySources: [],
+      source: { kind: "legacy", nodeId: "node-a", path: "/incoming/clip.mp3", context: sessionContext },
+    };
+    expect(attachmentMediaSourceUrl(legacy)).toBe(
+      contextualLegacyUrl("node-a", "/incoming/clip.mp3", sessionContext),
+    );
+    expect(attachmentMediaSourceUrl({ ...legacy, previewUrl: "/preview.mp3" })).toBe("/preview.mp3");
+    expect(attachmentMediaSourceUrl({
+      ...legacy,
+      source: { kind: "unavailable", context: sessionContext },
+      originalUrl: "/api/attachments/clip?context_type=owner&download=true",
+    })).toBe("/api/attachments/clip?context_type=owner");
   });
 
   it("projects mixed attachment views in source order with explicit availability", () => {

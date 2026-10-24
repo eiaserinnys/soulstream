@@ -9,6 +9,42 @@ const SAFE_INLINE_RASTER_MIME_TYPES = new Set([
   "image/webp",
   "image/avif",
 ]);
+const SAFE_INLINE_MEDIA_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/ogg",
+  "video/x-m4v",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/flac",
+  "audio/x-flac",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/m4a",
+  "audio/aac",
+  "audio/ogg",
+  "audio/webm",
+  "audio/opus",
+]);
+const MEDIA_MIME_TYPES_BY_EXTENSION: Readonly<Record<string, string>> = {
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".m4v": "video/mp4",
+  ".ogv": "video/ogg",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".flac": "audio/flac",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".opus": "audio/ogg",
+};
 const SAFE_TEXT_PREVIEW_MIME_TYPES = new Set([
   "text/plain",
   "text/markdown",
@@ -86,9 +122,15 @@ export function responseHeaders(
   },
 ): Headers {
   const baseMimeType = normalizedMimeType(asset.mimeType);
-  const contentType = responseMimeType(asset.mimeType);
+  const inferredMimeType = baseMimeType === "" || baseMimeType === "application/octet-stream"
+    ? inferMediaMimeTypeFromName(asset.originalName)
+    : null;
+  const effectiveBaseMimeType = inferredMimeType ?? baseMimeType;
+  const contentType = inferredMimeType ?? responseMimeType(asset.mimeType);
   const inline = !download && (
-    SAFE_INLINE_RASTER_MIME_TYPES.has(baseMimeType) || baseMimeType === "text/plain"
+    SAFE_INLINE_RASTER_MIME_TYPES.has(effectiveBaseMimeType) ||
+    effectiveBaseMimeType === "text/plain" ||
+    SAFE_INLINE_MEDIA_MIME_TYPES.has(effectiveBaseMimeType)
   );
   const headers = new Headers({
     "Content-Type": contentType,
@@ -101,6 +143,11 @@ export function responseHeaders(
   if (input.etag) headers.set("ETag", input.etag);
   if (input.lastModified) headers.set("Last-Modified", input.lastModified);
   return headers;
+}
+
+function inferMediaMimeTypeFromName(originalName: string): string | null {
+  const extension = path.posix.extname(originalName.replace(/\\/g, "/")).toLowerCase();
+  return MEDIA_MIME_TYPES_BY_EXTENSION[extension] ?? null;
 }
 
 export function parseContentLength(value: string | null): number | null {
