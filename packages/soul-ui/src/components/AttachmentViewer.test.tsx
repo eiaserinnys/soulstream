@@ -49,6 +49,43 @@ function rangeResponse(text: string): Response {
   });
 }
 
+function remoteMedia(name: string, mimeType: string, byteSize = 12): ChatAttachmentItem {
+  const attachmentId = name;
+  const context = { type: "session" as const, id: "sample" };
+  return attachment({
+    key: `asset:${name}`,
+    name,
+    mimeType,
+    byteSize,
+    previewKind: "info",
+    previewUrl: null,
+    originalUrl: `/api/attachments/${encodeURIComponent(attachmentId)}/content?context_type=session&context_id=sample&download=true`,
+    source: { kind: "asset", attachmentId, context },
+  });
+}
+
+function localMedia(file: File): ChatAttachmentItem {
+  return attachment({
+    key: `local:${file.name}`,
+    name: file.name,
+    mimeType: file.type,
+    byteSize: file.size,
+    previewKind: "info",
+    previewUrl: null,
+    originalUrl: null,
+    source: { kind: "local", file },
+  });
+}
+
+function stubObjectUrls() {
+  const createObjectURL = vi.fn(() => "blob:sample-media");
+  const revokeObjectURL = vi.fn();
+  class URLWithObjectUrls extends globalThis.URL {}
+  Object.assign(URLWithObjectUrls, { createObjectURL, revokeObjectURL });
+  vi.stubGlobal("URL", URLWithObjectUrls);
+  return { createObjectURL, revokeObjectURL };
+}
+
 describe("AttachmentViewer", () => {
   let root: Root;
   let container: HTMLDivElement;
@@ -209,6 +246,22 @@ describe("AttachmentViewer", () => {
     expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("3/3");
   });
 
+  it("leaves arrow keys on native media controls for playback", async () => {
+    const items = [
+      remoteMedia("clip.mp3", "audio/mpeg"),
+      attachment({ key: "next", name: "next.txt", byteSize: 0 }),
+    ];
+    await act(async () => root.render(<ViewerHarness items={items} />));
+
+    const audio = document.body.querySelector<HTMLAudioElement>("audio")!;
+    audio.focus();
+    const arrow = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true });
+    await act(async () => audio.dispatchEvent(arrow));
+
+    expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("1/2");
+    expect(arrow.defaultPrevented).toBe(false);
+  });
+
   it("aborts the previous text request when the selected item changes", async () => {
     let resolveFetch!: (response: Response) => void;
     const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -265,6 +318,118 @@ describe("AttachmentViewer", () => {
     const dialog = document.body.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain("이미지를 불러오지 못했습니다.");
     expect(dialog.textContent?.includes("다시 시도")).toBe(failure === 503 || failure === "network");
+  });
+
+  it("renders remote video and audio from info-kind attachments", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const videoItem = remoteMedia("clip.mp4", "video/mp4");
+    await act(async () => root.render(<ViewerHarness items={[videoItem]} />));
+
+    const video = document.body.querySelector<HTMLVideoElement>("video.chat-attachment-video-player");
+    expect(video?.getAttribute("src")).toBe("/api/attachments/clip.mp4/content?context_type=session&context_id=sample");
+    expect(video?.controls).toBe(true);
+    expect(video?.playsInline).toBe(true);
+    expect(document.body.querySelector(".chat-attachment-media-frame")).not.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["sample-audio.mp3", "audio/mpeg"],
+    ["sample-audio.wav", "audio/wav"],
+    ["sample-audio.flac", "audio/flac"],
+  ])("renders remote audio %s from an info-kind attachment", async (name, mimeType) => {
+    await act(async () => root.render(<ViewerHarness items={[remoteMedia(name, mimeType)]} />));
+
+    const audio = document.body.querySelector<HTMLAudioElement>("audio.chat-attachment-audio-player");
+    expect(audio?.getAttribute("src")).toBe(`/api/attachments/${encodeURIComponent(name)}/content?context_type=session&context_id=sample`);
+    expect(audio?.controls).toBe(true);
+    expect(audio?.preload).toBe("metadata");
+  });
+
+  it.each([
+    ["sample-video.mp4", "video/mp4", "video"],
+    ["sample-audio.mp3", "audio/mpeg", "audio"],
+    ["sample-audio.wav", "audio/wav", "audio"],
+    ["sample-audio.flac", "audio/flac", "audio"],
+  ] as const)("creates and revokes a local %s media URL", async (name, mimeType, format) => {
+    const { createObjectURL, revokeObjectURL } = stubObjectUrls();
+    const file = new File(["sample media"], name, { type: mimeType });
+    await act(async () => root.render(<ViewerHarness items={[localMedia(file)]} />));
+
+    const player = document.body.querySelector<HTMLMediaElement>(`${format}.chat-attachment-${format}-player`);
+    expect(player?.getAttribute("src")).toBe("blob:sample-media");
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+
+    await act(async () => root.render(null));
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:sample-media");
+  });
+
+  it("shows empty media files without requesting or opening them", async () => {
+    const fetchMock = vi.fn();
+    const { createObjectURL } = stubObjectUrls();
+    vi.stubGlobal("fetch", fetchMock);
+    const emptyLocal = new File([], "empty.mp3", { type: "audio/mpeg" });
+    await act(async () => root.render(<ViewerHarness items={[
+      remoteMedia("empty.mp4", "video/mp4", 0),
+      localMedia(emptyLocal),
+    ]} />));
+
+    const status = document.body.querySelector('[role="status"].chat-attachment-state.chat-image-status');
+    expect(status?.textContent).toBe("빈 파일");
+    expect(document.body.querySelector("video, audio")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[aria-label="다음 첨부"]')!.click());
+    expect(document.body.querySelector('[role="status"].chat-attachment-state.chat-image-status')?.textContent).toBe("빈 파일");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [401, "첨부를 읽을 수 없습니다.", false],
+    [403, "첨부를 읽을 수 없습니다.", false],
+    [404, "첨부를 찾을 수 없습니다.", false],
+    [503, "첨부를 불러오지 못했습니다.", true],
+    [200, "미리보기를 불러오지 못했습니다.", false],
+    ["network", "첨부를 불러오지 못했습니다.", true],
+  ] as const)("maps remote media load failure %s", async (failure, message, retryable) => {
+    const fetchMock = vi.fn(async () => {
+      if (failure === "network") throw new TypeError("Failed to fetch");
+      return new Response(null, { status: failure });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<ViewerHarness items={[remoteMedia("clip.mp4", "video/mp4")]} />));
+    const player = document.body.querySelector("video")!;
+    await act(async () => player.dispatchEvent(new Event("error")));
+
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    await vi.waitFor(() => expect(dialog.querySelector('[role="status"]')?.textContent).toContain(message));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/attachments/clip.mp4/content?context_type=session&context_id=sample",
+      expect.objectContaining({ method: "HEAD", credentials: "same-origin" }),
+    );
+    expect(dialog.textContent?.includes("다시 시도")).toBe(retryable);
+  });
+
+  it("retries failed remote media and clears the failure on loaded data", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 503 })));
+    await act(async () => root.render(<ViewerHarness items={[remoteMedia("clip.mp4", "video/mp4")]} />));
+    const firstPlayer = document.body.querySelector("video")!;
+    await act(async () => firstPlayer.dispatchEvent(new Event("error")));
+    const retry = await vi.waitFor(() => {
+      const button = [...document.body.querySelectorAll("button")].find(candidate => candidate.textContent?.includes("다시 시도"));
+      expect(button).toBeDefined();
+      return button!;
+    });
+
+    await act(async () => retry.click());
+    const nextPlayer = document.body.querySelector("video")!;
+    expect(nextPlayer).not.toBe(firstPlayer);
+    expect(document.body.querySelector(".chat-attachment-state")).toBeNull();
+    await act(async () => nextPlayer.dispatchEvent(new Event("loadeddata")));
+    expect(document.body.querySelector(".chat-attachment-state")).toBeNull();
   });
 
   it("shows empty text and an extension icon for info without extra prose", async () => {

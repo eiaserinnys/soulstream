@@ -90,6 +90,88 @@ describe("attachment read service", () => {
     expect(download.get("content-disposition")).toMatch(/^attachment;/);
   });
 
+  it.each([
+    ["clip.mp4", "video/mp4"],
+    ["clip.webm", "video/webm"],
+    ["clip.mov", "video/quicktime"],
+    ["clip.mp3", "audio/mpeg"],
+    ["clip.wav", "audio/wav"],
+    ["clip.flac", "audio/flac"],
+    ["clip.m4a", "audio/mp4"],
+    ["clip.ogg", "audio/ogg"],
+  ])("serves %s inline and preserves byte range streaming", async (originalName, mimeType) => {
+    const asset = { ...committedAsset, originalName, mimeType };
+    const openObject = vi.fn(async (request) => request.range
+      ? new Response("cde", {
+        status: 206,
+        headers: { "content-range": "bytes 2-4/8", "content-length": "3" },
+      })
+      : new Response("12345678", { headers: { "content-length": "8" } }));
+    const { service } = makeService({ asset, read: openObject });
+
+    const full = await service.content(
+      { kind: "user", email: "owner@example.com" },
+      asset.id,
+      { type: "owner" },
+      { method: "GET" },
+    );
+    expect(full.status).toBe(200);
+    expect(full.headers.get("content-type")).toBe(mimeType);
+    expect(full.headers.get("content-disposition")).toMatch(/^inline;/);
+    expect(full.headers.get("accept-ranges")).toBe("bytes");
+
+    const ranged = await service.content(
+      { kind: "user", email: "owner@example.com" },
+      asset.id,
+      { type: "owner" },
+      { method: "GET", range: "bytes=2-4" },
+    );
+    expect(ranged.status).toBe(206);
+    expect(ranged.headers.get("content-range")).toBe("bytes 2-4/8");
+    expect(ranged.headers.get("accept-ranges")).toBe("bytes");
+  });
+
+  it.each([
+    ["clip.flac", "audio/flac"],
+    ["clip.mp4", "video/mp4"],
+  ])("infers safe inline MIME for octet-stream %s", async (originalName, expectedMimeType) => {
+    const asset = { ...committedAsset, originalName, mimeType: "application/octet-stream" };
+    const { service } = makeService({ asset });
+
+    const response = await service.content(
+      { kind: "user", email: "owner@example.com" },
+      asset.id,
+      { type: "owner" },
+      { method: "GET" },
+    );
+
+    expect(response.headers.get("content-type")).toBe(expectedMimeType);
+    expect(response.headers.get("content-disposition")).toMatch(/^inline;/);
+  });
+
+  it.each(["archive.bin", "script.py"])("keeps non-media octet-stream MIME for %s", originalName => {
+    const headers = responseHeaders({ originalName, mimeType: "application/octet-stream" }, false, { contentLength: 4 });
+    expect(headers.get("content-type")).toBe("application/octet-stream");
+    expect(headers.get("content-disposition")).toMatch(/^attachment;/);
+  });
+
+  it.each([
+    ["clip.mp4", "video/mp4"],
+    ["clip.mp3", "audio/mpeg"],
+  ])("forces attachment disposition for download=true on %s", async (originalName, mimeType) => {
+    const asset = { ...committedAsset, originalName, mimeType };
+    const { service } = makeService({ asset });
+
+    const response = await service.content(
+      { kind: "user", email: "owner@example.com" },
+      asset.id,
+      { type: "owner" },
+      { method: "GET", download: true },
+    );
+
+    expect(response.headers.get("content-disposition")).toMatch(/^attachment;/);
+  });
+
   it("classifies only explicit plain text and code MIME types as text previews", async () => {
     const textMimeTypes = [
       "text/plain",

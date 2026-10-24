@@ -25,6 +25,36 @@ export interface ChatAttachmentItem {
   source: ChatAttachmentSource;
 }
 
+export type AttachmentMediaFormat = "video" | "audio";
+
+const VIDEO_FILE_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".ogv"]);
+const AUDIO_FILE_EXTENSIONS = new Set([".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".oga", ".opus"]);
+
+export function attachmentMediaFormat(
+  item: Pick<ChatAttachmentItem, "mimeType" | "name">,
+): AttachmentMediaFormat | null {
+  const mimeType = normalizeMimeType(item.mimeType);
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+
+  const extension = item.name?.match(/\.[^.\\/]+$/)?.[0].toLowerCase() ?? "";
+  if (VIDEO_FILE_EXTENSIONS.has(extension)) return "video";
+  if (AUDIO_FILE_EXTENSIONS.has(extension)) return "audio";
+  return null;
+}
+
+export function attachmentMediaSourceUrl(item: ChatAttachmentItem): string | null {
+  if (item.previewUrl) return item.previewUrl;
+  if (item.source.kind === "asset") {
+    return attachmentContentUrl(item.source.attachmentId, item.source.context, false);
+  }
+  if (item.source.kind === "legacy") {
+    return contextualLegacyUrl(item.source.nodeId, item.source.path, item.source.context, false);
+  }
+  if (item.originalUrl) return withoutDownloadParameter(item.originalUrl);
+  return null;
+}
+
 export function attachmentTextFormat(
   item: Pick<ChatAttachmentItem, "mimeType" | "name">,
 ): "markdown" | "html" | "plain" {
@@ -232,6 +262,20 @@ function safePreviewKind(
 
 function normalizeMimeType(mimeType: string | null): string {
   return mimeType?.trim().toLowerCase().split(";", 1)[0] ?? "";
+}
+
+function withoutDownloadParameter(value: string): string {
+  const hashIndex = value.indexOf("#");
+  const beforeHash = hashIndex === -1 ? value : value.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? "" : value.slice(hashIndex);
+  const queryIndex = beforeHash.indexOf("?");
+  if (queryIndex === -1) return value;
+
+  const pathname = beforeHash.slice(0, queryIndex);
+  const params = new URLSearchParams(beforeHash.slice(queryIndex + 1));
+  params.delete("download");
+  const query = params.toString();
+  return `${pathname}${query ? `?${query}` : ""}${hash}`;
 }
 
 function isSessionEventAttachmentResponse(

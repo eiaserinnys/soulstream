@@ -18,7 +18,12 @@ import { downloadAttachmentOriginal, downloadLocalAttachmentOriginal } from "../
 import { readAttachmentText, readLocalAttachmentText, type AttachmentTextPreview } from "../lib/attachment-text-preview";
 import { AttachmentDownloadError } from "../lib/attachment-download";
 import { AttachmentTextPreviewError } from "../lib/attachment-text-preview";
-import { attachmentTextFormat, type ChatAttachmentItem } from "../lib/chat-attachment-model";
+import {
+  attachmentMediaFormat,
+  attachmentMediaSourceUrl,
+  attachmentTextFormat,
+  type ChatAttachmentItem,
+} from "../lib/chat-attachment-model";
 import { MarkdownContent } from "./MarkdownContent";
 import { CustomViewIframe } from "../custom-view/CustomViewRenderer";
 
@@ -40,6 +45,15 @@ function textErrorMessage(error: unknown): string {
     if (error.status !== null && error.status >= 500) return "첨부를 불러오지 못했습니다.";
   }
   return "미리보기를 불러오지 못했습니다.";
+}
+
+function mediaError(status: number): { message: string; retryable: boolean } {
+  if (status === 401 || status === 403) {
+    return { message: "첨부를 읽을 수 없습니다.", retryable: false };
+  }
+  if (status === 404) return { message: "첨부를 찾을 수 없습니다.", retryable: false };
+  if (status >= 500) return { message: "첨부를 불러오지 못했습니다.", retryable: true };
+  return { message: "미리보기를 불러오지 못했습니다.", retryable: false };
 }
 
 function saveErrorMessage(error: unknown): string {
@@ -66,8 +80,9 @@ export function AttachmentViewer({
 }): ReactNode {
   const item = index === null ? undefined : items[index];
   const localFile = item?.source.kind === "local" ? item.source.file : undefined;
+  const mediaFormat = item ? attachmentMediaFormat(item) : null;
   const previewKey = item
-    ? JSON.stringify([item.key, item.previewUrl, item.byteSize, localFile?.name, localFile?.size])
+    ? JSON.stringify([item.key, item.previewUrl, item.byteSize, item.mimeType, localFile?.name, localFile?.size])
     : "";
   const popupRef = useRef<HTMLDivElement>(null);
   const [imageRetryKey, setImageRetryKey] = useState<string | null>(null);
@@ -75,7 +90,11 @@ export function AttachmentViewer({
   const [textState, setTextState] = useState<TextState | null>(null);
   const [imageFailureKey, setImageFailureKey] = useState<string | null>(null);
   const [imageAttempt, setImageAttempt] = useState(0);
-  const [localImage, setLocalImage] = useState<{ key: string; url: string } | null>(null);
+  const [mediaFailureKey, setMediaFailureKey] = useState<string | null>(null);
+  const [mediaFailureMessage, setMediaFailureMessage] = useState<string | null>(null);
+  const [mediaRetryKey, setMediaRetryKey] = useState<string | null>(null);
+  const [mediaAttempt, setMediaAttempt] = useState(0);
+  const [localPreview, setLocalPreview] = useState<{ key: string; url: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveFailure, setSaveFailure] = useState<{ key: string; message: string } | null>(null);
 
@@ -109,18 +128,26 @@ export function AttachmentViewer({
   }, [item?.key, item?.previewKind, item?.previewUrl, item?.byteSize, item?.availability, localFile, previewKey, retryCount]);
 
   useEffect(() => {
-    if (!item || item.previewKind !== "image" || !localFile || item.previewUrl !== null) {
-      setLocalImage(null);
+    if (!item || !localFile || item.previewUrl !== null || (
+      item.previewKind !== "image" && mediaFormat === null
+    ) || (mediaFormat !== null && localFile.size === 0)) {
+      setLocalPreview(null);
       return;
     }
     const url = URL.createObjectURL(localFile);
-    setLocalImage({ key: previewKey, url });
+    setLocalPreview({ key: previewKey, url });
     return () => URL.revokeObjectURL(url);
-  }, [item?.key, item?.previewKind, item?.previewUrl, localFile, previewKey]);
+  }, [item?.key, item?.previewKind, item?.previewUrl, localFile, mediaFormat, previewKey]);
 
   const imageSource = item?.previewUrl
     ?? (item?.source.kind === "markdown-image" ? item.source.src : undefined)
-    ?? (localImage?.key === previewKey ? localImage.url : undefined);
+    ?? (localPreview?.key === previewKey ? localPreview.url : undefined);
+  const mediaSource = localFile
+    ? (localPreview?.key === previewKey ? localPreview.url : undefined)
+    : item ? attachmentMediaSourceUrl(item) ?? undefined : undefined;
+  const emptyMedia = mediaFormat !== null && (
+    item?.byteSize === 0 || localFile?.size === 0
+  );
 
   // Image error events omit the HTTP status. Probe only a failed remote source
   // to offer retry for server/network failures, never for forbidden/missing files.
@@ -138,9 +165,36 @@ export function AttachmentViewer({
   }, [imageFailureKey, imageSource, previewKey]);
 
   useEffect(() => {
+    if (
+      mediaFailureKey !== previewKey || !mediaSource || mediaSource.startsWith("blob:") || emptyMedia
+    ) return;
+    const controller = new AbortController();
+    void fetch(mediaSource, { method: "HEAD", credentials: "same-origin", signal: controller.signal })
+      .then(async response => {
+        if (!controller.signal.aborted) {
+          const failure = mediaError(response.status);
+          setMediaFailureMessage(failure.message);
+          setMediaRetryKey(failure.retryable ? previewKey : null);
+        }
+        await response.body?.cancel();
+      }).catch(error => {
+        if (!controller.signal.aborted) {
+          const retryable = error instanceof TypeError;
+          setMediaFailureMessage(retryable ? "첨부를 불러오지 못했습니다." : "미리보기를 불러오지 못했습니다.");
+          setMediaRetryKey(retryable ? previewKey : null);
+        }
+      });
+    return () => controller.abort();
+  }, [mediaFailureKey, mediaSource, previewKey, emptyMedia]);
+
+  useEffect(() => {
     setImageFailureKey(null);
     setImageRetryKey(null);
     setImageAttempt(0);
+    setMediaFailureKey(null);
+    setMediaFailureMessage(null);
+    setMediaRetryKey(null);
+    setMediaAttempt(0);
     setSaveFailure(null);
   }, [previewKey]);
 
@@ -154,6 +208,12 @@ export function AttachmentViewer({
   const saveMessage = saveFailure?.key === previewKey ? saveFailure.message : null;
   const text = textState?.key === previewKey ? textState : null;
   const textFormat = item.previewKind === "text" ? attachmentTextFormat(item) : null;
+  const mediaFailure = mediaFailureKey === previewKey
+    ? {
+      message: mediaFailureMessage ?? "미리보기를 불러오지 못했습니다.",
+      retryable: mediaRetryKey === previewKey,
+    }
+    : null;
   const extension = item.name?.includes(".") ? item.name.split(".").pop()!.toUpperCase() : "FILE";
 
   const changeIndex = (next: number) => {
@@ -161,7 +221,7 @@ export function AttachmentViewer({
     onIndexChange(next);
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!multiItem) return;
+    if (!multiItem || event.target instanceof HTMLMediaElement) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       changeIndex(index - 1);
@@ -199,7 +259,7 @@ export function AttachmentViewer({
         </DialogHeader>
         <DialogPanel
           scrollFade={false}
-          scrollable={item.previewKind !== "image" && textFormat !== "html"}
+          scrollable={item.previewKind !== "image" && textFormat !== "html" && mediaFormat === null}
           className="chat-image-viewer-panel"
         >
           {panelContent ?? (item.availability === "missing" ? (
@@ -254,6 +314,65 @@ export function AttachmentViewer({
                 )}
                 {text.result.truncated && <p className="chat-image-status" role="status">파일이 커서 앞부분만 표시합니다.</p>}
               </>
+            )
+          ) : mediaFormat !== null ? (
+            emptyMedia ? (
+              <div className="chat-attachment-state chat-image-status" role="status">빈 파일</div>
+            ) : mediaFailure ? (
+              <div className="chat-attachment-state chat-image-status" role="status">
+                <span>{mediaFailure.message}</span>
+                {mediaFailure.retryable && <Button variant="outline" size="sm" onClick={() => {
+                  setMediaFailureKey(null);
+                  setMediaFailureMessage(null);
+                  setMediaRetryKey(null);
+                  setMediaAttempt(value => value + 1);
+                }}>다시 시도</Button>}
+              </div>
+            ) : mediaSource === undefined && !localFile ? (
+              <div className="chat-attachment-state chat-image-status" role="status">미리보기를 불러오지 못했습니다.</div>
+            ) : (
+              <div className="chat-attachment-media-frame">
+                {mediaFormat === "video" ? (
+                  <video
+                    key={`${previewKey}:${mediaAttempt}`}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    src={mediaSource}
+                    aria-label={item.name ?? "첨부 동영상"}
+                    className="chat-attachment-video-player"
+                    onLoadedData={() => {
+                      setMediaFailureKey(null);
+                      setMediaFailureMessage(null);
+                      setMediaRetryKey(null);
+                    }}
+                    onError={() => {
+                      setMediaFailureMessage("미리보기를 불러오지 못했습니다.");
+                      setMediaRetryKey(null);
+                      setMediaFailureKey(previewKey);
+                    }}
+                  />
+                ) : (
+                  <audio
+                    key={`${previewKey}:${mediaAttempt}`}
+                    controls
+                    preload="metadata"
+                    src={mediaSource}
+                    aria-label={item.name ?? "첨부 오디오"}
+                    className="chat-attachment-audio-player"
+                    onLoadedData={() => {
+                      setMediaFailureKey(null);
+                      setMediaFailureMessage(null);
+                      setMediaRetryKey(null);
+                    }}
+                    onError={() => {
+                      setMediaFailureMessage("미리보기를 불러오지 못했습니다.");
+                      setMediaRetryKey(null);
+                      setMediaFailureKey(previewKey);
+                    }}
+                  />
+                )}
+              </div>
             )
           ) : <div className="chat-attachment-state" role="status"><FileTypeIcon label={extension} /></div>)}
         </DialogPanel>
