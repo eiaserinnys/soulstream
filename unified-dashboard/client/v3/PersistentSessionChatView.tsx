@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ChatView, useDashboardStore, type ChatSessionStoreScope, type PersistentReportEntry } from "@seosoyoung/soul-ui";
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { EMPTY_REPORT } from '@seosoyoung/soul-ui/shared/persistent-report';
 import type { ChatUiComposerHandle, ChatUiOperationsHandle, RegisterGeneratedTextActions, RegisterChatUiOperations } from '@seosoyoung/soul-ui/components/chat-ui/chat-ui-composer';
 import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportDeck';
 import { usePersistentReportDismiss } from './usePersistentReportDismiss';
+import { usePersistentCardCompletion } from './usePersistentCardCompletion';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
 import { PasCardExpansion, PasCardExpansionStatus } from './PasCardExpansion';
 
@@ -31,7 +32,12 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   const notify = useCallback((text: string) => operations.current?.notify(text), []);
   const focusInput = useCallback(() => generated.current?.focusInput?.(), []);
   const getFeedback = useCallback(() => operations.current ?? undefined, []);
-  const { dismiss, visibleEntries } = usePersistentReportDismiss(sessionId, getFeedback, dismissReport, entries);
+  const { dismiss, visibleEntries: dismissedEntries } = usePersistentReportDismiss(sessionId, getFeedback, dismissReport, entries);
+  const completion = usePersistentCardCompletion(notify);
+  const visibleEntries = useMemo(
+    () => completion.filterEntries(dismissedEntries),
+    [completion.filterEntries, completion.revision, dismissedEntries],
+  );
   const setGlobalDisplaySettings = useDashboardStore((state) => state.setPersistentSessionDisplaySettings);
   const setDisplaySettings = storeScope?.store.getState().setPersistentSessionDisplaySettings
     ?? setGlobalDisplaySettings;
@@ -56,7 +62,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   }, [loadDisplaySettings, sessionId, setDisplaySettings, storeScope]);
   if (!showReport) return <ChatView {...props} storeScope={storeScope} />;
   return <PersistentReportProvider sessionId={sessionId} entries={visibleEntries}>
-    {(!loadDisplaySettings || listedSettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss}
+    {(!loadDisplaySettings || listedSettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} completion={completion} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss}
       renderCardDetails={(entry, lookupCards) => <PasCardExpansion key={entry.key} entry={entry} lookupCards={lookupCards} />}
       renderCardStatus={entry => <PasCardExpansionStatus entry={entry} />} />}
     <ChatView {...props} storeScope={storeScope} registerGeneratedTextActions={register} registerChatUiOperations={registerOperations} />

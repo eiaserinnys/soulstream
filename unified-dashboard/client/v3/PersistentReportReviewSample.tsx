@@ -5,7 +5,7 @@ import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persist
 import { calculatePersistentSessionLayout } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
 import { REPORT_BUBBLE_MINIMUM_HEIGHT } from './use-persistent-session-geometry';
 import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportDeck';
-import { PasCardPreview, PasCardPreviewStatus, pasPreviewCard, pasPreviewEntries } from './PasCardPreview';
+import { PasCardPreview, PasCardPreviewStatus, pasPreviewCard, pasPreviewEntries, pasSecondPreviewCard } from './PasCardPreview';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { reportReviewEntries } from './persistent-report-review-data';
 import './persistent-session-screen.css';
@@ -13,6 +13,10 @@ import './persistent-session-screen.css';
 export type CompletionSample = 'review' | 'blocked' | 'undo' | 'undo-only';
 type CompletionSampleEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const reviewCompletionEntry: CompletionSampleEntry = pasPreviewEntries[0]!;
+const secondReviewCompletionEntry: CompletionSampleEntry = {
+  ...reviewCompletionEntry, key: 'card_preview-pas-card-2', card_id: 'preview-pas-card-2', card_numbers: [532],
+  title: '두 번째 검수 카드 장', context: '먼저 완료한 카드는 숨김으로 남습니다.', updated_at: 'second-preview',
+};
 const blockedCompletionEntry: CompletionSampleEntry = {
   ...reviewCompletionEntry, key: 'card_preview-blocked', title: '막힘 카드 장', card_numbers: [], card_id: undefined,
   card_status: 'blocked', context: '막힌 카드의 기존 확인 동작을 유지합니다.', updated_at: 'blocked-preview',
@@ -24,7 +28,7 @@ const nextCompletionEntry: CompletionSampleEntry = {
 const completionSampleEntries: Record<CompletionSample, CompletionSampleEntry[]> = {
   review: [reviewCompletionEntry],
   blocked: [blockedCompletionEntry],
-  undo: [reviewCompletionEntry, blockedCompletionEntry, nextCompletionEntry],
+  undo: [reviewCompletionEntry, secondReviewCompletionEntry, blockedCompletionEntry, nextCompletionEntry],
   'undo-only': [reviewCompletionEntry],
 };
 
@@ -39,13 +43,26 @@ export function PersistentReportReviewSample({ bubble = false, cardPreview = fal
   const [entries, setEntries] = useState(source);
   const previewEnabled = cardPreview || Boolean(completionScenario);
   const [deckVersion, setDeckVersion] = useState(0);
-  useEffect(() => { if (previewEnabled) useCardStore.getState().putCards([pasPreviewCard]); }, [previewEnabled]);
-  const preview = previewEnabled && !before ? { renderCardStatus: (entry: typeof source[number]) => <PasCardPreviewStatus entry={entry} />, renderCardDetails: (entry: typeof source[number], lookupCards: () => Promise<void>) => entry.key === reviewCompletionEntry.key || !completionScenario ? <PasCardPreview key={entry.key} entry={entry} lookupCards={lookupCards} onAnswer={answer => setEntries(current => current.map(item => item.key === entry.key ? { ...item, answer, state: 'answered', updated_at: 'preview-answer' } : item))} /> : null } : {};
+  useEffect(() => { if (previewEnabled) useCardStore.getState().putCards([pasPreviewCard, pasSecondPreviewCard]); }, [previewEnabled]);
+  const preview = previewEnabled && !before ? { renderCardStatus: (entry: typeof source[number]) => <PasCardPreviewStatus entry={entry} />, renderCardDetails: (entry: typeof source[number], lookupCards: () => Promise<void>) => !completionScenario || entry.key === reviewCompletionEntry.key || entry.key === secondReviewCompletionEntry.key ? <PasCardPreview key={entry.key} entry={entry} lookupCards={lookupCards} onAnswer={answer => setEntries(current => current.map(item => item.key === entry.key ? { ...item, answer, state: 'answered', updated_at: 'preview-answer' } : item))} /> : null } : {};
   const dismiss = useCallback(async (key: string) => setEntries(current => current.filter(entry => entry.key !== key)), []);
   const cardTransition = useCallback(async (cardId: string, status: 'done' | 'review') => {
-    if (status === 'done') setEntries(current => current.filter(entry => entry.key !== `card_${cardId}`));
-    else setEntries(current => current.some(entry => entry.key === reviewCompletionEntry.key) ? current : [reviewCompletionEntry, ...current]);
-  }, []);
+    const key = `card_${cardId}`;
+    if (status === 'done') setEntries(current => current.filter(entry => entry.key !== key));
+    else setEntries(current => {
+      if (current.some(entry => entry.key === key)) return current;
+      const restored = source.find(entry => entry.key === key);
+      if (!restored) return current;
+      const sourceIndex = source.findIndex(entry => entry.key === key);
+      let insertAt = sourceIndex === 0 ? 0 : current.length;
+      for (let index = sourceIndex + 1; index < source.length; index += 1) {
+        const anchor = current.findIndex(entry => entry.key === source[index]!.key);
+        if (anchor >= 0) { insertAt = anchor; break; }
+      }
+      const restoredEntry = { ...restored, card_status: 'review', updated_at: `preview-restored-${cardId}` };
+      return [...current.slice(0, insertAt), restoredEntry, ...current.slice(insertAt)];
+    });
+  }, [source]);
   return <PersistentReportProvider sessionId={sessionId} entries={entries}>
     <div className="persistent-session-screen">
       {bubble ? <div style={{ position: 'relative', height: layout.reportBubble!.maxHeight, width: layout.reportBubble!.width }}>
