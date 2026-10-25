@@ -14,9 +14,12 @@ import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDi
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 import type { PersistentReportEntry } from '../../../api/types';
 import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
+import { usePersistentCardCompletion } from '../usePersistentCardCompletion';
+import { cardFixture } from '../../../test-support/cards';
 import { calculatePersistentSessionLayout } from '../../../../../packages/soul-ui/src/lib/persistent-session-layout';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'report-operation-id') }));
 // Forward View refs to the host so createNodeMock supplies the actual native
 // measurement boundary rather than the preset's inert class method.
 jest.mock('react-native/Libraries/Components/View/View', () => {
@@ -862,4 +865,54 @@ test('selected report key survives the presentation unmount and remount', () => 
   view.rerender(shell(false));
   view.rerender(shell(true));
   expect(view.getByTestId('report-selection').props.children).toBe(1);
+});
+
+test('consecutive completions hide each card immediately and undo restores only the last one', async () => {
+  const cards = new Map([
+    ['card-531', cardFixture({ id: 'card-531', number: 531, status: 'review' })],
+    ['card-532', cardFixture({ id: 'card-532', number: 532, status: 'review' })],
+  ]);
+  const api = {
+    getCard: jest.fn(async (id: string) => ({ card: { ...cards.get(id)! }, reports: [], questions: [], sessions: [] })),
+    setCardStatus: jest.fn(async (id: string, status: string, version: number) => {
+      const card = { ...cards.get(id)!, status: status as ReturnType<typeof cardFixture>['status'], version: version + 1 };
+      cards.set(id, card);
+      return { folderId: card.folderId, card };
+    }),
+  } as any;
+  const entries: PersistentReportEntry[] = [
+    { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review', card_numbers: [531], title: '첫째 검수 카드' },
+    { ...reportReviewEntries[2], key: 'card_532', card_id: 'card-532', card_status: 'review', card_numbers: [532], title: '둘째 검수 카드' },
+  ];
+  const send = { busy: false, close: jest.fn(() => true), canCancel: () => false, cancelSent: () => false,
+    cancel: jest.fn(), sendOption: jest.fn() } as any;
+  function Harness() {
+    const [index, setIndex] = React.useState(0);
+    const completion = usePersistentCardCompletion(api);
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true as const })}>
+      <PersistentReportPager entries={entries} index={index} api={api} onSelect={setIndex}
+        onDismiss={jest.fn().mockResolvedValue(undefined)} onFocusComposer={jest.fn()} completion={completion} send={send} />
+    </ChatUiControllerProvider>;
+  }
+  const screen = render(<Harness />);
+  measurePersistentReports(screen);
+
+  expect(screen.getByTestId('report-sheet-card_531')).toBeTruthy();
+  await act(async () => { fireEvent.press(within(screen.getByTestId('report-sheet-card_531')).getByLabelText('완료')); });
+
+  expect(screen.queryByTestId('report-sheet-card_531')).toBeNull();
+  expect(screen.getByTestId('report-sheet-card_532')).toBeTruthy();
+  expect(screen.getByTestId('report-undo-label').props.children).toBe('#531 완료됨');
+
+  await act(async () => { fireEvent.press(within(screen.getByTestId('report-sheet-card_532')).getByLabelText('완료')); });
+
+  expect(screen.queryByTestId('report-sheet-card_532')).toBeNull();
+  expect(screen.getByTestId('report-deck')).toBeTruthy();
+  expect(screen.getByTestId('report-undo-label').props.children).toBe('#532 완료됨');
+
+  await act(async () => { fireEvent.press(screen.getByTestId('report-undo')); });
+
+  expect(screen.getByTestId('report-sheet-card_532')).toBeTruthy();
+  expect(screen.queryByTestId('report-sheet-card_531')).toBeNull();
+  expect(screen.queryByTestId('report-undo-label')).toBeNull();
 });

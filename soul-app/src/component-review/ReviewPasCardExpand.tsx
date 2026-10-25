@@ -32,6 +32,9 @@ const card = cardFixture({ id: 'preview-pas-card', number: 531, status: 'review'
   title: 'PAS 판에서 결과와 증거를 확인하고 담당에게 커멘트까지 남기는 화면',
   now: { text: '웹과 앱의 제자리 펼침 시안을 준비했습니다.', turn: 'user', ask: '화면과 증거를 확인해 주세요.', updatedAt: at, sessionId: 'preview-agent' },
 });
+const secondCard = cardFixture({ id: 'preview-pas-card-2', number: 532, status: 'review', title: '두 번째 검수 카드 장',
+  now: { text: '연속 완료와 되돌리기를 확인할 두 번째 카드입니다.', turn: 'user', ask: '두 번째 카드도 확인해 주세요.', updatedAt: at, sessionId: 'preview-agent' },
+});
 const image = (module: number) => new URL(Asset.fromModule(module).uri, window.location.origin).href;
 function previewEvidence(module: number, label: string): CardAttachmentAssetEvidence {
   const url = image(module);
@@ -49,6 +52,7 @@ const items: CardCheckItem[] = [
 ];
 const initialEntries: (PersistentReportEntry & { card_id: string; card_status: string })[] = [
   { key: 'card_preview', kind: 'see', title: card.title.slice(0, 24) + '…', context: card.now!.ask!, action: '', options: [], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'review', updated_at: at },
+  { key: 'card_preview_2', kind: 'see', title: secondCard.title.slice(0, 24) + '…', context: secondCard.now!.ask!, action: '', options: [], state: 'open', answer: '', card_numbers: [532], card_id: secondCard.id, card_status: 'review', updated_at: at },
   { key: 'cq_preview', question_id: 'preview-question', kind: 'ask', title: '입력 위치 확인', context: '추가 커멘트를 장 안에서 바로 쓸까요?', action: '', options: ['장 안에서', '카드에서'], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'blocked', updated_at: at },
   { key: 'card_blocked_preview', kind: 'see', title: '외부 권한 확인', context: '외부 권한 확인이 필요해 작업이 멈췄습니다.', action: '', options: [], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'blocked', updated_at: at },
 ];
@@ -60,37 +64,52 @@ function reviewEntries() {
 const question = { id: 'preview-question', cardId: card.id, sessionId: 'preview-agent', text: '추가 커멘트를 장 안에서 바로 쓸까요?',
   options: ['장 안에서', '카드에서'], answer: null, askedAt: at };
 function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void): ApiClient {
-  let detail: CardDetail = { card: { ...card, items }, reports: [], questions: [question], sessions: [], nowHistory: [], comments: [
-    { id: 'preview-user', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.', createdAt: at },
-    { id: 'preview-agent', cardId: card.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '결과와 증거를 장 안에 모았습니다.', createdAt: '2026-10-05T08:01:00Z' },
-  ] };
-  const snapshot = (): CardDetail => ({ ...detail, card: { ...detail.card, items: [...(detail.card.items ?? [])] },
+  let details: Record<string, CardDetail> = {
+    [card.id]: { card: { ...card, items }, reports: [], questions: [question], sessions: [], nowHistory: [], comments: [
+      { id: 'preview-user', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.', createdAt: at },
+      { id: 'preview-agent', cardId: card.id, authorKind: 'agent', authorId: null, sessionId: null, kind: 'comment', body: '결과와 증거를 장 안에 모았습니다.', createdAt: '2026-10-05T08:01:00Z' },
+    ] },
+    [secondCard.id]: { card: { ...secondCard }, reports: [], questions: [], sessions: [], nowHistory: [], comments: [] },
+  };
+  const snapshot = (detail: CardDetail): CardDetail => ({ ...detail, card: { ...detail.card, items: [...(detail.card.items ?? [])] },
     questions: [...detail.questions], comments: [...(detail.comments ?? [])] });
   const api: Pick<ApiClient, 'listCards' | 'getCard' | 'setCardStatus' | 'confirmCardItem' | 'addCardComment' | 'answerCardQuestion'> = {
-    listCards: async () => ({ cards: [{ ...detail.card, number: 531 }] }),
-    getCard: async () => snapshot(),
+    listCards: async () => ({ cards: Object.values(details).map(detail => detail.card) }),
+    getCard: async id => {
+      const detail = details[id];
+      if (!detail) throw new Error('공개 예시: 없는 카드입니다.');
+      return snapshot(detail);
+    },
     setCardStatus: async (id, status, expectedVersion) => {
-      if (id !== detail.card.id || expectedVersion !== detail.card.version) throw new Error('공개 예시: 카드가 바뀌었습니다.');
-      detail = { ...detail, card: { ...detail.card, status, version: detail.card.version + 1 } };
+      const detail = details[id];
+      if (!detail || expectedVersion !== detail.card.version) throw new Error('공개 예시: 카드가 바뀌었습니다.');
+      const next = { ...detail, card: { ...detail.card, status, version: detail.card.version + 1 } };
+      details = { ...details, [id]: next };
       onStatusChange(id, status);
-      return { folderId: detail.card.folderId, card: detail.card };
+      return { folderId: next.card.folderId, card: next.card };
     },
     confirmCardItem: async (_cardId, itemId, confirmed) => {
+      const detail = details[card.id];
       const nextItems = (detail.card.items ?? []).map(item => item.id !== itemId ? item : { ...item,
         confirmed: confirmed ? { at, rev: item.rev } : null,
         display: confirmed ? 'confirmed' as const : item.state === 'done' ? 'reported' as const : 'todo' as const });
-      detail = { ...detail, card: { ...detail.card, items: nextItems } };
-      return { folderId: detail.card.folderId, card: detail.card };
+      const next = { ...detail, card: { ...detail.card, items: nextItems } };
+      details = { ...details, [card.id]: next };
+      return { folderId: next.card.folderId, card: next.card };
     },
     addCardComment: async (cardId, input) => {
-      const comment: CardComment = { id: input.idempotencyKey, cardId, authorKind: 'user', authorId: null, sessionId: null,
+      const detail = details[cardId] ?? details[card.id];
+      const comment: CardComment = { id: input.idempotencyKey, cardId: detail.card.id, authorKind: 'user', authorId: null, sessionId: null,
         kind: 'comment', ...(input.itemId === undefined ? {} : { itemId: input.itemId }), body: input.body, createdAt: new Date().toISOString() };
-      detail = { ...detail, comments: [...(detail.comments ?? []), comment] };
+      const next = { ...detail, comments: [...(detail.comments ?? []), comment] };
+      details = { ...details, [detail.card.id]: next };
       return comment;
     },
     answerCardQuestion: async (_cardId, questionId, answer) => {
-      detail = { ...detail, questions: detail.questions.map(item => item.id === questionId ? { ...item, answer, answeredAt: new Date().toISOString() } : item) };
-      return { folderId: detail.card.folderId, card: detail.card };
+      const detail = details[card.id];
+      const next = { ...detail, questions: detail.questions.map(item => item.id === questionId ? { ...item, answer, answeredAt: new Date().toISOString() } : item) };
+      details = { ...details, [card.id]: next };
+      return { folderId: next.card.folderId, card: next.card };
     },
   };
   return api as unknown as ApiClient;
@@ -109,9 +128,9 @@ export function ReviewPasCardExpand() {
   const sheetScroll = useReportComposerScroll();
   const [text, setText] = useState('');
   const api = useMemo(() => createReviewCardApi((id, status) => {
-    if (id !== card.id) return;
+    const reviewEntry = initialEntries.find(entry => entry.card_id === id);
+    if (!reviewEntry) return;
     setEntries(saved => {
-      const reviewEntry = initialEntries.find(entry => entry.key === 'card_preview')!;
       if (status === 'done') return saved.filter(entry => entry.key !== reviewEntry.key);
       return saved.some(entry => entry.key === reviewEntry.key) ? saved : [reviewEntry, ...saved];
     });
