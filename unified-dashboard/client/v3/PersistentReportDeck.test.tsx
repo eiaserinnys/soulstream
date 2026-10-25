@@ -25,9 +25,13 @@ const serverQuestionEntry: PersistentReportEntry & { card_id: string; card_statu
   ...serverCardEntry, key: 'cq_question-id', kind: 'ask', options: [], card_status: 'blocked', question_id: 'question-id',
 };
 const secondCardRow: CardRow = { ...cardRow, id: '9c1f6f16-2b0a-4f5f-8a53-60f2f0c9b271', number: 271 };
+const thirdCardId = '18d20891-f6d1-43dd-aa83-1573c677110a';
 const reviewA: PersistentReportEntry & { card_id: string; card_status: 'review' } = { ...serverCardEntry, card_status: 'review', card_numbers: [270] };
 const reviewB: PersistentReportEntry & { card_id: string; card_status: 'review' } = {
   ...reviewA, key: `card_${secondCardRow.id}`, card_id: secondCardRow.id, title: '두 번째 검수 카드', card_numbers: [271], updated_at: 'second-review',
+};
+const reviewC: PersistentReportEntry & { card_id: string; card_status: 'review' } = {
+  ...reviewA, key: `card_${thirdCardId}`, card_id: thirdCardId, title: '세 번째 검수 카드', card_numbers: [272], updated_at: 'third-review',
 };
 const sheetButton = (host: HTMLElement, key: string, name: string) => Array.from(host.querySelectorAll<HTMLElement>(`[data-testid="report-sheet-${key}"] button`))
   .find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
@@ -135,6 +139,26 @@ it('completes a review card without dismissing it directly and exposes the undo 
   await act(async () => button('되돌리기').click());
   expect(cardTransition).toHaveBeenLastCalledWith(cardRow.id, 'review');
   expect(host.querySelector('.pas-report-undo')).toBeNull();
+});
+
+it('selects a restored card after completion SSE removes it from the provider list', async () => {
+  entries = [reviewA, reviewB, reviewC]; cardTransition = vi.fn(async () => {}); await render();
+
+  await act(async () => button('완료').click());
+  expect(host.querySelector('[data-current="true"]')?.getAttribute('data-testid')).toBe(`report-sheet-${reviewB.key}`);
+  await act(async () => button('완료').click());
+  expect(host.querySelector('[data-current="true"]')?.getAttribute('data-testid')).toBe(`report-sheet-${reviewC.key}`);
+
+  entries = [reviewC]; await render();
+  await act(async () => button('되돌리기').click());
+  expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe('2 / 2');
+
+  await act(async () => button('앞 장').click());
+  const restored = host.querySelector<HTMLElement>(`[data-testid="report-sheet-${reviewB.key}"]`)!;
+  expect(host.querySelector('[aria-live="polite"]')?.textContent).toBe('1 / 2');
+  expect(restored.dataset.current).toBe('true');
+  expect(restored.hasAttribute('inert')).toBe(false);
+  expect(restored.getAttribute('aria-hidden')).toBe('false');
 });
 
 it('keeps completion available for a review card even with an existing answer', async () => {

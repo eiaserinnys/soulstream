@@ -17,17 +17,23 @@ import '@seosoyoung/soul-ui/components/chat-ui/chat-ui.css';
 import './persistent-report.css';
 
 export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number; inlineMaxHeight?: number };
-type Props = { renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition };
+type Props = { renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition; completion?: ReturnType<typeof usePersistentCardCompletion> };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
 
-export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderCardDetails, renderCardStatus, cardTransition }: Props) {
+export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderCardDetails, renderCardStatus, cardTransition, completion: providedCompletion }: Props) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [localVisibleKey, setLocalVisibleKey] = useState<string | null>(null);
   const report = usePersistentReport()!;
   const { entries: rawEntries, visibleKey } = report;
   const sending = usePersistentReportSend(sessionId, notify, transport);
-  const completion = usePersistentCardCompletion(notify, cardTransition);
+  const localCompletion = usePersistentCardCompletion(notify, cardTransition);
+  const completion = providedCompletion ?? localCompletion;
   const entries = useMemo(() => completion.filterEntries(rawEntries), [completion.filterEntries, completion.revision, rawEntries]);
+  const effectiveVisibleKey = localVisibleKey && entries.some(entry => entry.key === localVisibleKey) && !rawEntries.some(entry => entry.key === localVisibleKey)
+    ? localVisibleKey
+    : visibleKey;
+  const selectKey = useCallback((key: string) => { setLocalVisibleKey(key); report.view(key); }, [report]);
   const pendingCardNumbers = useRef(new Set<number>()).current;
   const byId = useCardStore(state => state.byId);
   const numbers = [...new Set(entries.flatMap(entry => entry.card_numbers))].sort((a, b) => a - b);
@@ -53,7 +59,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     const known = new Set(Object.values(byId).map(card => card.number));
     if (lookupScope.current.numbers.some(number => !known.has(number) && !lookupScope.current.missing.has(number))) void lookupCards();
   }, [byId, numbersKey, lookupCards]);
-  const index = Math.max(0, entries.findIndex(entry => entry.key === visibleKey));
+  const index = Math.max(0, entries.findIndex(entry => entry.key === effectiveVisibleKey));
   const currentKey = entries[index]?.key ?? null;
   const activeExpandedKey = expandedKey === currentKey ? expandedKey : null;
   const track = useRef<HTMLDivElement>(null);
@@ -82,7 +88,8 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   }, []);
   const current = useRef({ index });
   current.current = { index };
-  useEffect(() => { setExpandedKey(null); }, [visibleKey]);
+  useEffect(() => { setLocalVisibleKey(null); }, [visibleKey]);
+  useEffect(() => { setExpandedKey(null); }, [effectiveVisibleKey]);
   const entriesKey = entries.map(entry => entry.key).join('\0');
   const prevEntriesKey = useRef(entriesKey);
 
@@ -93,7 +100,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     if ((at === 0 || at === entries.length - 1) && document.activeElement?.closest('.pas-report-nav')) node.focus({ preventScroll: true });
     sizing.startScroll();
     flying.current = at;
-    report.view(entries[at].key);
+    selectKey(entries[at].key);
     node.scrollTo({ left: at * node.clientWidth, behavior: 'smooth' });
   };
   useLayoutEffect(() => {
@@ -117,7 +124,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
     const sheet = root.current.querySelector<HTMLElement>('[data-current="true"]');
     if (sheet?.contains(active) || (root.current.contains(active) && !active?.closest('.pas-report-sheet'))) return;
     if (sheet) sheet.focus({ preventScroll: true });
-  }, [visibleKey, entries.length, focusInput]);
+  }, [effectiveVisibleKey, entries.length, focusInput]);
 
   if (!ready || (!entries.length && !completion.recent)) return null;
   // The global reduced-motion duration must not interpolate the initial font
@@ -137,13 +144,13 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         // the new end must not keep the height lock forever.
         if (entries.length <= 1 || (flying.current !== null && flying.current >= entries.length)) { flying.current = null; sizing.endScroll(); }
         if (flying.current !== null) { if (at !== flying.current) return; flying.current = null; }
-        if (entries[at]) report.view(entries[at].key);
+        if (entries[at]) selectKey(entries[at].key);
         if (Math.abs(node.scrollLeft - at * node.clientWidth) < 0.5) sizing.endScroll();
       }}
       onScrollEnd={event => {
         flying.current = null;
         const at = Math.round(event.currentTarget.scrollLeft / Math.max(1, event.currentTarget.clientWidth));
-        if (entries[at]) report.view(entries[at].key);
+        if (entries[at]) selectKey(entries[at].key);
         sizing.endScroll();
       }}>
       {!entries.length && completion.recent ? <article className="pas-report-sheet" data-current="true" data-undo-only data-publication={JSON.stringify([sessionId, 'undo', completion.recent.cardId])}>
@@ -189,7 +196,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
                 if (completionEligible) {
                   const nextKey = entries[position + 1]?.key ?? entries[position - 1]?.key ?? null;
                   void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] }, entries).then(done => {
-                    if (done && nextKey && report.visibleKey === entry.key) report.view(nextKey);
+                    if (done && nextKey && report.visibleKey === entry.key) selectKey(nextKey);
                   });
                 } else if (acknowledgeable) {
                   if (entry.key.startsWith('card_') || entry.key.startsWith('cq_')) void dismissReport(entry.key);

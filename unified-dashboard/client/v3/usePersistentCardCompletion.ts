@@ -7,7 +7,7 @@ export type CardTransition = (cardId: string, status: 'done' | 'review') => Prom
 export type CompletionEntry = Pick<PersistentReportEntry, 'card_numbers'> & { card_id: string; key?: string; updated_at?: string } & Partial<PersistentReportEntry>;
 type RecentCompletion = { cardId: string; label: string; expiresAt: number };
 type CompletedRecord = { key: string; cardId: string; updatedAt: string; snapshot: PersistentReportEntry | null; nextKey: string | null };
-type RestoredRecord = { key: string; cardId: string; snapshot: PersistentReportEntry; nextKey: string | null };
+type RestoredRecord = { key: string; cardId: string; snapshot: PersistentReportEntry; updatedAt: string; nextKey: string | null };
 
 class CardStatusChangedError extends Error {}
 
@@ -104,7 +104,7 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
       const key = `card_${current.cardId}`;
       const record = completedByKey.current.get(key);
       completedByKey.current.delete(key);
-      if (record?.snapshot) restoredByKey.current.set(key, { key, cardId: current.cardId, snapshot: { ...record.snapshot, card_status: 'review' }, nextKey: record.nextKey });
+      if (record?.snapshot) restoredByKey.current.set(key, { key, cardId: current.cardId, snapshot: { ...record.snapshot, card_status: 'review' }, updatedAt: record.snapshot.updated_at ?? '', nextKey: record.nextKey });
       recentRef.current = null;
       setRecent(null);
       bump(value => value + 1);
@@ -139,7 +139,9 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
     }
     for (const [key, record] of restoredByKey.current) {
       const match = rawEntries.find(item => item.key === key);
-      if (match && match.updated_at !== record.snapshot.updated_at) restoredByKey.current.delete(key);
+      // The same projection can pass through the session view and the deck;
+      // a restored snapshot fed back in must not be mistaken for a server revision.
+      if (match && match !== record.snapshot && match.updated_at !== record.updatedAt) restoredByKey.current.delete(key);
     }
     if (!completedByKey.current.size && !restoredByKey.current.size) return rawEntries;
     const visible = rawEntries.filter(item => !completedByKey.current.has(item.key));
