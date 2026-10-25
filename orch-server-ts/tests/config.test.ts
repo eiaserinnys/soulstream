@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SKILL_CATALOG_NODE_ID } from "../src/skills/skill_catalog.js";
+import { DEFAULT_DOMAIN_CATALOG_NODE_ID, DEFAULT_SKILL_CATALOG_NODE_ID } from "../src/skills/skill_catalog.js";
 
 import {
   ORCH_SERVER_ENVIRONMENT_VARIABLES,
@@ -85,6 +85,7 @@ describe("orch-server-ts config scaffold", () => {
       atom_api_key: "atom-key",
       atom_root_node_id: "root-node",
       skill_catalog_node_id: DEFAULT_SKILL_CATALOG_NODE_ID,
+      domain_catalog_node_id: DEFAULT_DOMAIN_CATALOG_NODE_ID,
       auth_bearer_token: "bearer-token",
       cors_allowed_origins: ["https://one.example", "https://two.example"],
       google_client_id: "google-client",
@@ -148,6 +149,7 @@ describe("orch-server-ts config scaffold", () => {
       dashboard_user_folder_access_configured: false,
       atom_enabled: false,
       atom_root_node_id: null,
+      domain_catalog_node_id: DEFAULT_DOMAIN_CATALOG_NODE_ID,
       auth_bearer_token: "",
       cors_allowed_origins: [],
       google_client_id: "",
@@ -239,12 +241,14 @@ describe("orch-server-ts config scaffold", () => {
       MODEL_CATALOG_PATH: "config/model-catalog.yaml",
       TYPESAFE_API_KEY: "typesafe-key",
       SKILL_CATALOG_NODE_ID: "skill-catalog-node",
+      DOMAIN_CATALOG_NODE_ID: "domain-catalog-node",
     });
 
     expect(config.codex_cli_path).toBe("/configured/codex");
     expect(config.model_catalog_path).toBe("config/model-catalog.yaml");
     expect(config.typesafe_api_key).toBe("typesafe-key");
     expect(config.skill_catalog_node_id).toBe("skill-catalog-node");
+    expect(config.domain_catalog_node_id).toBe("domain-catalog-node");
     expect(config.turn_summary_openai_key).toBe("");
   });
 

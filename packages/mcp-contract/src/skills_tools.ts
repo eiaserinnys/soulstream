@@ -9,4 +9,18 @@ export const skillTools = {
         limit: z.number().int().min(1).max(10).default(5),
       },
     } },
+  match_skill_catalogs: {
+    name: "match_skill_catalogs",
+    audience: "internal",
+    timeoutMs: 190000,
+    config: {
+      description:
+        "스킬의 1차 활동 태그(medium, operations, accepts_input) 가산점과 Jev 전체 카탈로그 의미 평가를 결합해 현재 요청에 필요한 직교/번들 도메인 카탈로그와 오버레이 바인딩을 찾는다.",
+      inputSchema: {
+        intent: z.string().min(1),
+        skill_name: z.string().min(1).optional(),
+        limit: z.number().int().min(1).max(10).default(5),
+      },
+    },
+  },
 } as const satisfies Record<string, McpToolDefinition>;
