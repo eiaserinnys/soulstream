@@ -3,6 +3,7 @@ import { liveCardOutputSchema, type CallToolResult, type McpToolName } from "@so
 import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpCallContext, McpHostOptions } from "../src/mcp/types.js";
 import { createLiveAtomHttpClient } from "../src/runtime/live_atom_route_provider.js";
+import { DEFAULT_DOMAIN_CATALOG_NODE_ID, parseSkillCatalogMarkdown } from "../src/skills/skill_catalog.js";
 
 // Same service-port fixture style as mcp-host-routes.test.ts. These cases replace
 // the worker's direct legacy callback tests; SDK/HTTP/PG snapshots live in the worker tests.
@@ -584,6 +585,11 @@ const atomMarkdown = `## slack-member-recall
 description: >
   Slack member lookup and recall.
 body_node_id: ${SLACK_BODY_NODE_ID}
+activity:
+  medium: prose
+  operations: [plan, retrieve]
+  accepts_input: [member_name]
+probe_intents: [look up a member from a Slack request]
 
 ## work-plan-execute
 description: >
@@ -595,20 +601,110 @@ description: >
   Write prose with a clear rhythm.
 body_node_id: 88888888-9999-4aaa-8bbb-cccccccccccc
 `;
-function skillsHarness(nodeId: string, apiKey = "typesafe-test-key") {
+const domainCatalogMarkdown = `## tagged-high <!-- node:11111111-1111-4111-8111-111111111111 -->
+description: Catalog matching all activity dimensions.
+body_node_id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+axis: [prose.member]
+composition: orthogonal
+applies_to:
+  media: [prose]
+  operations: [retrieve]
+provides_input: [member_name]
+sample_cues: [member lookup]
+
+## untagged-mid <!-- node:22222222-2222-4222-8222-222222222222 -->
+description: Catalog with no activity tag match.
+body_node_id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+axis: [prose.recall]
+composition: orthogonal
+applies_to:
+  media: [still]
+  operations: [edit]
+provides_input: [image_refs]
+
+## tagged-low <!-- node:33333333-3333-4333-8333-333333333333 -->
+description: Lower Jev score with activity tag matches.
+body_node_id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
+axis: [prose.notes]
+composition: orthogonal
+applies_to:
+  media: [prose]
+  operations: [plan]
+provides_input: [member_name]
+
+## tagged-zero <!-- node:44444444-4444-4444-8444-444444444444 -->
+description: Tag match with zero Jev score.
+body_node_id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
+axis: [prose.zero]
+composition: orthogonal
+applies_to:
+  media: [prose]
+  operations: [plan]
+provides_input: [member_name]
+`;
+
+const bindingCatalogMarkdown = `## seosoyoung-canon <!-- node:55555555-5555-4555-8555-555555555555 -->
+description: Seosoyoung character reference catalog.
+body_node_id: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+axis: [subject.identity]
+composition: bundle
+bindings:
+  - target_catalog: character-acting
+    target_axis: subject.expression
+    sheet_template: references/facs/{style}-facs-12.png
+    grid: 4x3
+  - target_catalog: lighting-setup
+    target_axis: light.setup
+    sheet_template: references/lighting/{style}-lighting-12.png
+    grid: 4x3
+
+## character-acting <!-- node:66666666-6666-4666-8666-666666666666 -->
+description: Generic character acting catalog.
+body_node_id: ffffffff-ffff-4fff-8fff-ffffffffffff
+axis: [subject.expression, subject.head-angle]
+composition: orthogonal
+aliases: [acting-cues]
+applies_to:
+  media: [still, video]
+  operations: [plan, generate, edit]
+provides_input: [prompt_cues]
+sample_cues: [AU0 Neutral]
+shards:
+  - name: expression-cues
+    node_id: 99999999-aaaa-4bbb-8ccc-dddddddddddd
+    sample_node_id: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+    cues: [AU0 Neutral]
+
+## psychedelic-maid-canon <!-- node:77777777-7777-4777-8777-777777777777 -->
+description: Another character identity bundle.
+body_node_id: 88888888-8888-4888-8888-888888888888
+axis: [subject.identity]
+composition: bundle
+`;
+
+function skillsHarness(
+  nodeId: string,
+  apiKey = "typesafe-test-key",
+  catalogsNodeId = DEFAULT_DOMAIN_CATALOG_NODE_ID,
+  scoreByName: Record<string, number> = {},
+  domainMarkdown = domainCatalogMarkdown,
+) {
   const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
     const url = new URL(input.toString());
-    if (url.pathname.endsWith("/compile")) return Response.json({ markdown: atomMarkdown });
+    if (url.pathname.endsWith(`/tree/${catalogsNodeId}/compile`)) {
+      return Response.json({ markdown: domainMarkdown });
+    }
+    if (url.pathname.endsWith(`/tree/${nodeId}/compile`)) return Response.json({ markdown: atomMarkdown });
     if (url.toString() === "https://api.typesafe.ai/v1/systemone") {
       const body = JSON.parse(String(init?.body));
       return Response.json({ answers: Object.fromEntries(Object.keys(body.questions).map(key =>
-        [key, { type: "score", score: key === "slack-member-recall" ? 3 : 2 }])) });
+        [key, { type: "score", score: scoreByName[key] ?? (key === "slack-member-recall" ? 3 : 2) }])) });
     }
     throw new Error("Unexpected fetch URL");
   });
   vi.stubGlobal("fetch", fetchMock);
   return { fetchMock, options: { skills: { enabled: true, serverUrl: "https://atom.example.test", apiKey: "atom-test-key",
-    nodeId, typesafeApiKey: apiKey, logger: { warn: vi.fn() }, httpClient: createLiveAtomHttpClient({ fetch: fetchMock }) } } as unknown as McpHostOptions };
+    nodeId, catalogsNodeId, typesafeApiKey: apiKey, logger: { warn: vi.fn() }, httpClient: createLiveAtomHttpClient({ fetch: fetchMock }) } } as unknown as McpHostOptions };
 }
 describe("search_skills MCP execution", () => {
   it("returns an exact name match without calling Typesafe", async () => {
@@ -632,5 +728,91 @@ describe("search_skills MCP execution", () => {
     expect(result.isError).toBe(true);
     expect(result.content).toContainEqual({ type: "text", text: "TYPESAFE_API_KEY is not configured" });
     expect(h.fetchMock.mock.calls.filter(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone")).toHaveLength(0);
+  });
+});
+
+describe("match_skill_catalogs MCP execution", () => {
+  it("adds activity tag boosts without excluding catalogs from Jev evaluation", async () => {
+    expect(parseSkillCatalogMarkdown(atomMarkdown, { warn: vi.fn() })[0]).toMatchObject({
+      activity: { medium: "prose", operations: ["plan", "retrieve"], acceptsInput: ["member_name"] },
+      probeIntents: ["look up a member from a Slack request"],
+    });
+
+    const catalogsNodeId = "99999999-9999-4999-8999-999999999999";
+    const h = skillsHarness("aaaaaaaa-1111-4111-8111-111111111111", "typesafe-test-key", catalogsNodeId, {
+      "tagged-high": 2,
+      "untagged-mid": 2,
+      "tagged-low": 1,
+      "tagged-zero": 0,
+    });
+
+    const result = await call(h.options, "match_skill_catalogs", {
+      intent: "Find the right skills for looking up a Slack member",
+      skill_name: "slack-member-recall",
+      limit: 4,
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      matches: [
+        { name: "tagged-high", jev_score: 2 / 3, tag_boost: 0.25, matched_dimensions: ["medium", "operations", "input"], score: 0.9167 },
+        { name: "untagged-mid", jev_score: 2 / 3, tag_boost: 0, matched_dimensions: [], score: 0.6667 },
+        { name: "tagged-low", jev_score: 1 / 3, tag_boost: 0.25, matched_dimensions: ["medium", "operations", "input"], score: 0.5833 },
+      ],
+      active_bindings: [],
+    });
+    expect((result.structuredContent as any).matches).toHaveLength(3);
+
+    const jevRequest = h.fetchMock.mock.calls.find(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone");
+    expect(JSON.parse(String(jevRequest?.[1]?.body)).state.candidates.map((item: { key: string }) => item.key)).toEqual([
+      "tagged-high", "untagged-mid", "tagged-low", "tagged-zero",
+    ]);
+  });
+
+  it("keeps one bundle per shared axis and activates bindings for selected targets", async () => {
+    const catalogsNodeId = "99999999-8888-4888-8888-999999999999";
+    const h = skillsHarness(
+      "bbbbbbbb-1111-4111-8111-111111111111",
+      "typesafe-test-key",
+      catalogsNodeId,
+      { "seosoyoung-canon": 3, "character-acting": 3, "psychedelic-maid-canon": 2 },
+      bindingCatalogMarkdown,
+    );
+
+    const result = await call(h.options, "match_skill_catalogs", {
+      intent: "Create an expressive portrait of Seosoyoung",
+      skill_name: "unknown-skill",
+      limit: 5,
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      matches: [
+        { name: "seosoyoung-canon", composition: "bundle", axis: ["subject.identity"] },
+        {
+          name: "character-acting",
+          composition: "orthogonal",
+          axis: ["subject.expression", "subject.head-angle"],
+          aliases: ["acting-cues"],
+          applies_to: { media: ["still", "video"], operations: ["plan", "generate", "edit"] },
+          provides_input: ["prompt_cues"],
+          sample_cues: ["AU0 Neutral"],
+          shards: [{
+            name: "expression-cues",
+            node_id: "99999999-aaaa-4bbb-8ccc-dddddddddddd",
+            sample_node_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            cues: ["AU0 Neutral"],
+          }],
+        },
+      ],
+      active_bindings: [{
+        source_catalog: "seosoyoung-canon",
+        target_catalog: "character-acting",
+        target_axis: "subject.expression",
+        sheet_template: "references/facs/{style}-facs-12.png",
+        grid: "4x3",
+      }],
+    });
+    expect((result.structuredContent as any).matches.map((match: { name: string }) => match.name)).not.toContain("psychedelic-maid-canon");
   });
 });

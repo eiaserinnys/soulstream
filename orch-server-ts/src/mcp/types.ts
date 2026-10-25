@@ -53,7 +53,7 @@ export interface McpHostOptions {
   environment?: string;
   folders: FolderControlPlaneHostRouteOptions;
   pages?: { service: PageYjsService; logger: Pick<FastifyBaseLogger, "error"> };
-  skills?: { enabled: boolean; serverUrl: string; apiKey: string; nodeId: string; typesafeApiKey: string; httpClient: AtomHttpClient; logger?: Pick<FastifyBaseLogger, "warn"> };
+  skills?: { enabled: boolean; serverUrl: string; apiKey: string; nodeId: string; catalogsNodeId?: string; typesafeApiKey: string; httpClient: AtomHttpClient; logger?: Pick<FastifyBaseLogger, "warn"> };
   cards: CardRouteBodyOptions & { resolveAccess: () => FolderAccess | Promise<FolderAccess>;
     cardExecutionServiceProvider?: NonNullable<import("../folders/folder_routes.js").FolderRouteOptions["cardExecutionServiceProvider"]>;
     workDispatchServiceProvider?: (authorizeFolder: (folderId: string, actor: DispatchWorkActor) => Promise<void>) => Promise<CardWorkDispatchService>;
