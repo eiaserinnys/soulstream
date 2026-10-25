@@ -24,7 +24,7 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries, index, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion }: {
+export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
@@ -36,6 +36,8 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
   completion?: CardCompletion;
 }) {
+  const entries = useMemo(() => completion?.filterEntries ? completion.filterEntries(rawEntries) : rawEntries, [completion, rawEntries]);
+  const index = Math.min(rawIndex, Math.max(0, entries.length - 1));
   const [localExpandedKey, setLocalExpandedKey] = useState<string | null>(null);
   const expandedKey = controlledExpandedKey === undefined ? localExpandedKey : controlledExpandedKey;
   const setExpandedKey = onExpandedKeyChange ?? setLocalExpandedKey;
@@ -204,7 +206,7 @@ export function PersistentReportPager({ entries, index, api, onSelect, onDismiss
           const currentEntry = latest.entries.find(saved => latest.measureKey(saved) === id);
           if (!currentEntry) return; // A removed/replaced sheet cannot restore an old height.
           measuredHeights.current.set(id, height);
-          if (currentEntry.state === 'open') openHeights.current.set(id, height);
+          if (currentEntry.state === 'open' && !undo) openHeights.current.set(id, height);
           latest.commitHeight();
         }}
         titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}

@@ -23,7 +23,7 @@ export function PersistentReportUndoRow({ undo, styles }: {
     <Text testID="report-undo-label" style={styles.receivedLabel}>{undo.label}</Text>
     <View style={styles.cancelEdge}><GlassButton testID="report-undo" variant="plain" size="compact" disabled={undo.busy}
       accessibilityLabel="되돌리기" onPress={undo.onUndo}><View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xs }}>
-        <UndoCountdownRing expiresAt={undo.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS} />
+        <UndoCountdownRing key={undo.expiresAt} expiresAt={undo.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS} />
         <Text style={styles.cancelLabel}>되돌리기</Text>
       </View></GlassButton></View>
   </View>;
@@ -49,6 +49,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && entry.state === 'open');
   const hasFooter = !compact && (count > 1 || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(undo));
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
+  if (!hasFooter && measured.current.foot !== null) measured.current.foot = null;
   const measure = (part: 'reading' | 'foot', height: number) => {
     measured.current[part] = height;
     // Content size already includes reading padding; footer layout includes

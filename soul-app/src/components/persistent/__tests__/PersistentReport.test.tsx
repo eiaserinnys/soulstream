@@ -14,9 +14,12 @@ import { usePersistentChatDisplaySettings } from '../../chat/usePersistentChatDi
 import { ChatUiControllerProvider } from '../../chat-ui/ChatUiControllerProvider';
 import type { PersistentReportEntry } from '../../../api/types';
 import { measurePersistentReports } from '../../../test-utils/persistent-report-layout';
+import { usePersistentCardCompletion } from '../usePersistentCardCompletion';
+import { cardFixture } from '../../../test-support/cards';
 import { calculatePersistentSessionLayout } from '../../../../../packages/soul-ui/src/lib/persistent-session-layout';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'report-operation-id') }));
 // Forward View refs to the host so createNodeMock supplies the actual native
 // measurement boundary rather than the preset's inert class method.
 jest.mock('react-native/Libraries/Components/View/View', () => {
@@ -862,4 +865,118 @@ test('selected report key survives the presentation unmount and remount', () => 
   view.rerender(shell(false));
   view.rerender(shell(true));
   expect(view.getByTestId('report-selection').props.children).toBe(1);
+});
+
+function completionApi(numbers: number[]) {
+  const cards = new Map(numbers.map(number => [`card-${number}`, cardFixture({ id: `card-${number}`, number, status: 'review' })]));
+  return {
+    getCard: jest.fn(async (id: string) => ({ card: { ...cards.get(id)! }, reports: [], questions: [], sessions: [] })),
+    setCardStatus: jest.fn(async (id: string, status: string, version: number) => {
+      const card = { ...cards.get(id)!, status: status as ReturnType<typeof cardFixture>['status'], version: version + 1 };
+      cards.set(id, card);
+      return { folderId: card.folderId, card };
+    }),
+  } as any;
+}
+
+function cardEntry(number: number): PersistentReportEntry {
+  return { ...reportReviewEntries[2], key: `card_${number}`, card_id: `card-${number}`, card_status: 'review',
+    card_numbers: [number], title: `${number}번 검수 카드` };
+}
+
+function projectedReport(api: any) {
+  return renderHook(() => {
+    const completion = usePersistentCardCompletion(api);
+    const report = usePersistentReport('pas', true, api, undefined, undefined, completion.filterEntries);
+    return { completion, report };
+  });
+}
+
+test('consecutive completions hide each card immediately and undo restores only the last one', async () => {
+  const cards = new Map([
+    ['card-531', cardFixture({ id: 'card-531', number: 531, status: 'review' })],
+    ['card-532', cardFixture({ id: 'card-532', number: 532, status: 'review' })],
+  ]);
+  const api = {
+    getCard: jest.fn(async (id: string) => ({ card: { ...cards.get(id)! }, reports: [], questions: [], sessions: [] })),
+    setCardStatus: jest.fn(async (id: string, status: string, version: number) => {
+      const card = { ...cards.get(id)!, status: status as ReturnType<typeof cardFixture>['status'], version: version + 1 };
+      cards.set(id, card);
+      return { folderId: card.folderId, card };
+    }),
+  } as any;
+  const entries: PersistentReportEntry[] = [
+    { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review', card_numbers: [531], title: '첫째 검수 카드' },
+    { ...reportReviewEntries[2], key: 'card_532', card_id: 'card-532', card_status: 'review', card_numbers: [532], title: '둘째 검수 카드' },
+  ];
+  const send = { busy: false, close: jest.fn(() => true), canCancel: () => false, cancelSent: () => false,
+    cancel: jest.fn(), sendOption: jest.fn() } as any;
+  function Harness() {
+    const [index, setIndex] = React.useState(0);
+    const completion = usePersistentCardCompletion(api);
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true as const })}>
+      <PersistentReportPager entries={entries} index={index} api={api} onSelect={setIndex}
+        onDismiss={jest.fn().mockResolvedValue(undefined)} onFocusComposer={jest.fn()} completion={completion} send={send} />
+    </ChatUiControllerProvider>;
+  }
+  const screen = render(<Harness />);
+  measurePersistentReports(screen);
+
+  expect(screen.getByTestId('report-sheet-card_531')).toBeTruthy();
+  await act(async () => { fireEvent.press(within(screen.getByTestId('report-sheet-card_531')).getByLabelText('완료')); });
+
+  expect(screen.queryByTestId('report-sheet-card_531')).toBeNull();
+  expect(screen.getByTestId('report-sheet-card_532')).toBeTruthy();
+  expect(screen.getByTestId('report-undo-label').props.children).toBe('#531 완료됨');
+
+  await act(async () => { fireEvent.press(within(screen.getByTestId('report-sheet-card_532')).getByLabelText('완료')); });
+
+  expect(screen.queryByTestId('report-sheet-card_532')).toBeNull();
+  expect(screen.getByTestId('report-deck')).toBeTruthy();
+  expect(screen.getByTestId('report-undo-label').props.children).toBe('#532 완료됨');
+
+  await act(async () => { fireEvent.press(screen.getByTestId('report-undo')); });
+
+  expect(screen.getByTestId('report-sheet-card_532')).toBeTruthy();
+  expect(screen.queryByTestId('report-sheet-card_531')).toBeNull();
+  expect(screen.queryByTestId('report-undo-label')).toBeNull();
+});
+
+test('undo keeps the restored card in the projected report after the server report empties', async () => {
+  const api = completionApi([531, 532]);
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [cardEntry(531), cardEntry(532)]));
+  const hook = projectedReport(api);
+
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+
+  act(() => useSessionStore.getState().applyPersistentReport('pas', []));
+  expect(hook.result.current.report.entries).toEqual([]);
+  await act(async () => { await hook.result.current.completion.undo(); });
+
+  expect(hook.result.current.completion.recent).toBeNull();
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_532']);
+  expect(hook.result.current.report.entries.length > 0 || Boolean(hook.result.current.completion.recent)).toBe(true);
+});
+
+test('undo of a completed card keeps the projected order for selecting the restored and server cards', async () => {
+  const api = completionApi([531, 532, 533]);
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [cardEntry(531), cardEntry(532), cardEntry(533)]));
+  const hook = projectedReport(api);
+
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_533']);
+
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [cardEntry(533)]));
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_533']);
+  await act(async () => { await hook.result.current.completion.undo(); });
+
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_532', 'card_533']);
+  act(() => hook.result.current.report.select(0));
+  expect(hook.result.current.report.index).toBe(0);
+  expect(hook.result.current.report.entries[hook.result.current.report.index].key).toBe('card_532');
+  act(() => hook.result.current.report.select(1));
+  expect(hook.result.current.report.index).toBe(1);
+  expect(hook.result.current.report.entries[hook.result.current.report.index].key).toBe('card_533');
 });

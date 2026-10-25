@@ -84,10 +84,10 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const { setNotice } = useChatUiActions();
   const pending = useChatStore(state => session ? state.pendingOptimisticBySession[session.session_id] : undefined);
-  const report = usePersistentReport(session?.session_id, true, api, session?.persistent_report, pending);
+  const completion = usePersistentCardCompletion(api);
+  const report = usePersistentReport(session?.session_id, true, api, session?.persistent_report, pending, completion.filterEntries);
   const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
   const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
-  const completion = usePersistentCardCompletion(api);
   const [reportPressed, setReportPressed] = useState(false);
   const [reportReady, setReportReady] = useState(false);
   const reportTouch = React.useRef(false);

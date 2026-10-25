@@ -11,7 +11,8 @@ function dismissalId(sessionId: string | undefined, entry: PersistentReportEntry
 }
 
 export function usePersistentReport(sessionId: string | undefined, enabled: boolean, api: ApiClient | null,
-  snapshot: PersistentReportEntry[] | undefined, pending: PendingOptimisticEvent | undefined) {
+  snapshot: PersistentReportEntry[] | undefined, pending: PendingOptimisticEvent | undefined,
+  projectEntries?: (entries: PersistentReportEntry[]) => PersistentReportEntry[]) {
   const live = useSessionStore(state => enabled && sessionId ? state.persistentReportsBySession[sessionId] : undefined);
   const server = enabled ? live?.entries ?? snapshot ?? EMPTY_REPORT : EMPTY_REPORT;
   const continuity = useOptionalLayoutContinuity();
@@ -23,14 +24,15 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
   const dismissals = view.dismissals;
   const visibleEntries = view.sessionId === sessionId && dismissals.size
     ? server.filter(entry => !dismissals.has(dismissalId(sessionId, entry))) : server;
-  const found = view.sessionId === sessionId ? visibleEntries.findIndex(entry => entry.key === view.key) : -1;
-  const index = found >= 0 ? found : Math.max(0, Math.min(view.sessionId === sessionId ? view.index : 0, visibleEntries.length - 1));
-  const key = visibleEntries[index]?.key;
+  const projectedEntries = projectEntries ? projectEntries(visibleEntries) : visibleEntries;
+  const found = view.sessionId === sessionId ? projectedEntries.findIndex(entry => entry.key === view.key) : -1;
+  const index = found >= 0 ? found : Math.max(0, Math.min(view.sessionId === sessionId ? view.index : 0, projectedEntries.length - 1));
+  const key = projectedEntries[index]?.key;
   if ((live !== undefined || snapshot !== undefined) && view.sessionId === sessionId && (view.key !== key || view.index !== index)) setView({ ...view, key, index });
   const reply = pending?.pendingStatus === 'sending' && pending.reportBase === server
     ? pendingReportReply(pending.contextItems) : undefined;
-  const entries = reply ? visibleEntries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
-    ? { ...entry, state: 'answered' as const, answer: reply.option } : entry) : visibleEntries;
+  const entries = reply ? projectedEntries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
+    ? { ...entry, state: 'answered' as const, answer: reply.option } : entry) : projectedEntries;
 
   return {
     entries, index, server,
@@ -40,7 +42,8 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
       setView(current => ({ ...current, index: next, key: entries[next]?.key }));
     },
     getSendContext(text: string, reply: ReportReplyDraft | null) {
-      return reportSendContext(server, key, text, reply);
+      // The reply baseline stays the server list; the visible reference follows the projection.
+      return reportSendContext(server, key, text, reply, entries);
     },
     dismiss(key: string): Promise<boolean> {
       const target = server.find(entry => entry.key === key);
