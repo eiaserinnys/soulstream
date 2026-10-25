@@ -24,6 +24,13 @@ const serverCardEntry: PersistentReportEntry & { card_id: string; card_status: '
 const serverQuestionEntry: PersistentReportEntry & { card_id: string; card_status: 'blocked'; question_id: string } = {
   ...serverCardEntry, key: 'cq_question-id', kind: 'ask', options: [], card_status: 'blocked', question_id: 'question-id',
 };
+const secondCardRow: CardRow = { ...cardRow, id: '9c1f6f16-2b0a-4f5f-8a53-60f2f0c9b271', number: 271 };
+const reviewA: PersistentReportEntry & { card_id: string; card_status: 'review' } = { ...serverCardEntry, card_status: 'review', card_numbers: [270] };
+const reviewB: PersistentReportEntry & { card_id: string; card_status: 'review' } = {
+  ...reviewA, key: `card_${secondCardRow.id}`, card_id: secondCardRow.id, title: '두 번째 검수 카드', card_numbers: [271], updated_at: 'second-review',
+};
+const sheetButton = (host: HTMLElement, key: string, name: string) => Array.from(host.querySelectorAll<HTMLElement>(`[data-testid="report-sheet-${key}"] button`))
+  .find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
@@ -41,7 +48,7 @@ const render = () => act(async () => root.render(<InternalLinkProvider internalO
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 let contentHeight = 0;
 beforeEach(async () => {
-  vi.clearAllMocks(); cardTransition = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow]); entries = [one, two];
+  vi.clearAllMocks(); cardTransition = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow, secondCardRow]); entries = [one, two];
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
@@ -362,6 +369,41 @@ it('hides the whole deck with opacity until its initial font settles', async () 
   expect(deck.style.transitionProperty).toBe('none'); expect(deck.hasAttribute('inert')).toBe(true); expect(deck.getAttribute('aria-hidden')).toBe('true');
   await act(async () => finish());
   expect(deck.style.opacity).toBe(''); expect(deck.hasAttribute('inert')).toBe(false); expect(deck.hasAttribute('aria-hidden')).toBe(false);
+});
+
+it('hides each completed review card immediately and restores only the last one', async () => {
+  entries = [reviewA, reviewB]; cardTransition = vi.fn(async () => {}); await render();
+  expect(host.querySelector(`[data-testid="report-sheet-${reviewA.key}"]`)).not.toBeNull();
+
+  await act(async () => sheetButton(host, reviewA.key, '완료').click());
+  expect(cardTransition).toHaveBeenCalledWith(cardRow.id, 'done');
+  expect(host.querySelector(`[data-testid="report-sheet-${reviewA.key}"]`)).toBeNull();
+  expect(host.querySelector(`[data-testid="report-sheet-${reviewB.key}"]`)).not.toBeNull();
+  expect(host.textContent).toContain('#270 완료됨');
+
+  await act(async () => sheetButton(host, reviewB.key, '완료').click());
+  expect(cardTransition).toHaveBeenLastCalledWith(secondCardRow.id, 'done');
+  expect(host.querySelector('.pas-report-sheet[data-undo-only]')).not.toBeNull();
+  expect(host.textContent).toContain('#271 완료됨');
+  expect(host.querySelector('.pas-report-undo .pas-undo-ring[aria-hidden="true"]')).not.toBeNull();
+
+  await act(async () => button('되돌리기').click());
+  expect(cardTransition).toHaveBeenLastCalledWith(secondCardRow.id, 'review');
+  expect(host.querySelector(`[data-testid="report-sheet-${reviewB.key}"]`)).not.toBeNull();
+  expect(host.querySelector(`[data-testid="report-sheet-${reviewA.key}"]`)).toBeNull();
+  expect(host.querySelector('.pas-report-undo')).toBeNull();
+});
+
+it('releases the deck height lock when a later sheet completes', async () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
+  entries = [reviewA, reviewB]; cardTransition = vi.fn(async () => {}); await render();
+  const deck = () => host.querySelector<HTMLElement>('.pas-report')!;
+  expect(deck().style.height).toBe('134px');
+  await act(async () => button('다음 장').click());
+  contentHeight = 40;
+  await act(async () => sheetButton(host, reviewB.key, '완료').click());
+  expect(host.querySelector(`[data-testid="report-sheet-${reviewB.key}"]`)).toBeNull();
+  expect(deck().style.height).toBe('74px');
 });
 
 it('omits the todo line for an unanswered sheet whose action is empty and keeps it when the action is set', async () => {

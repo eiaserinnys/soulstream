@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, DashboardIconCap, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { SourceLink } from '@seosoyoung/soul-ui/components/SourceLink';
 import { usePersistentReport } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
@@ -24,9 +24,10 @@ const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:r
 export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderCardDetails, renderCardStatus, cardTransition }: Props) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const report = usePersistentReport()!;
-  const { entries, visibleKey } = report;
+  const { entries: rawEntries, visibleKey } = report;
   const sending = usePersistentReportSend(sessionId, notify, transport);
   const completion = usePersistentCardCompletion(notify, cardTransition);
+  const entries = useMemo(() => completion.filterEntries(rawEntries), [completion.filterEntries, completion.revision, rawEntries]);
   const pendingCardNumbers = useRef(new Set<number>()).current;
   const byId = useCardStore(state => state.byId);
   const numbers = [...new Set(entries.flatMap(entry => entry.card_numbers))].sort((a, b) => a - b);
@@ -82,6 +83,8 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const current = useRef({ index });
   current.current = { index };
   useEffect(() => { setExpandedKey(null); }, [visibleKey]);
+  const entriesKey = entries.map(entry => entry.key).join('\0');
+  const prevEntriesKey = useRef(entriesKey);
 
   const go = (target: number) => {
     const node = track.current;
@@ -96,12 +99,15 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   useLayoutEffect(() => {
     const node = track.current;
     if (!node) return;
+    // A sheet that left optimistically can leave the deck holding a scroll or
+    // press lock from its own navigation; release it before realigning.
+    if (prevEntriesKey.current !== entriesKey) { prevEntriesKey.current = entriesKey; flying.current = null; sizing.endScroll(); }
     const align = () => { if (sizing.holding.current) return; flying.current = null; node.scrollTo({ left: current.current.index * node.clientWidth, behavior: 'auto' }); };
     align();
     const observer = new ResizeObserver(align);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [entries, sessionId, inBubble, ready]);
+  }, [entries, entriesKey, sessionId, inBubble, ready]);
   useLayoutEffect(() => {
     if (!focusWithin.current || !root.current) return;
     // A removed section still contains its old children in the retained ref.
@@ -127,6 +133,9 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         const node = event.currentTarget;
         sizing.startScroll();
         const at = Math.round(node.scrollLeft / Math.max(1, node.clientWidth));
+        // Completing a later sheet shortens the track; a flight target beyond
+        // the new end must not keep the height lock forever.
+        if (entries.length <= 1 || (flying.current !== null && flying.current >= entries.length)) { flying.current = null; sizing.endScroll(); }
         if (flying.current !== null) { if (at !== flying.current) return; flying.current = null; }
         if (entries[at]) report.view(entries[at].key);
         if (Math.abs(node.scrollLeft - at * node.clientWidth) < 0.5) sizing.endScroll();
@@ -139,7 +148,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
       }}>
       {!entries.length && completion.recent ? <article className="pas-report-sheet" data-current="true" data-undo-only data-publication={JSON.stringify([sessionId, 'undo', completion.recent.cardId])}>
         <div className="pas-report-reading"><div className="pas-report-content" /></div>
-        <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>
+        <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing key={`${completion.recent.cardId}-${completion.recent.expiresAt}`} expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>
       </article> : entries.map((entry, position) => {
         const cardEntry = entry as ReportCardEntry;
         const completionEligible = entry.key.startsWith('card_') && cardEntry.card_status === 'review' && Boolean(cardEntry.card_id);
@@ -177,8 +186,12 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
           {(entries.length > 1 || completionEligible || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">
             {(completionEligible || acknowledgeable || entry.options.length > 0) && !(answered && sizing.overflowing && !completionEligible) && <div className="chat-ui-actions pas-report-actions" aria-hidden={suppressActions || undefined} inert={suppressActions || undefined} style={suppressActions ? { visibility: 'hidden' } : undefined}>
               {(completionEligible ? ['완료'] : acknowledgeable ? ['확인했어'] : entry.options).map(option => <Button key={option} variant="outline" disabled={disabled || sending.sending || (completionEligible && completion.busy)} onClick={() => {
-                if (completionEligible) void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] });
-                else if (acknowledgeable) {
+                if (completionEligible) {
+                  const nextKey = entries[position + 1]?.key ?? entries[position - 1]?.key ?? null;
+                  void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] }, entries).then(done => {
+                    if (done && nextKey && report.visibleKey === entry.key) report.view(nextKey);
+                  });
+                } else if (acknowledgeable) {
                   if (entry.key.startsWith('card_') || entry.key.startsWith('cq_')) void dismissReport(entry.key);
                   else if (sending.close(entry)) void dismissReport(entry.key);
                 } else void sending.reply(entry, option);
@@ -189,7 +202,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
               {sending.canCancel(entry) && (sending.cancelRequested(entry) ? <span className="pas-report-cancel-sent">취소 요청 보냄</span> : <Button variant="ghost" size="xs" disabled={disabled || sending.sending} onClick={() => void sending.cancel(entry)}>취소 요청</Button>)}
             </div>}
           </div>}
-          {position === index && completion.recent && <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>}
+          {position === index && completion.recent && <div className="pas-report-undo"><span className="pas-report-received-label">{completion.recent.label}</span><Button variant="ghost" size="xs" disabled={completion.busy} onClick={() => void completion.undo()}><UndoCountdownRing key={`${completion.recent.cardId}-${completion.recent.expiresAt}`} expiresAt={completion.recent.expiresAt} durationMs={CARD_COMPLETION_UNDO_MS}/>되돌리기</Button></div>}
         </article>;
       })}
     </div>
