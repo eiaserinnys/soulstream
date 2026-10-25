@@ -3881,6 +3881,36 @@
     "name": "list_worktrees"
   },
   {
+    "description": "스킬의 1차 활동 태그(medium, operations, accepts_input) 가산점과 Jev 전체 카탈로그 의미 평가를 결합해 현재 요청에 필요한 직교/번들 도메인 카탈로그와 오버레이 바인딩을 찾는다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "intent": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "limit": {
+          "default": 5,
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "skill_name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "intent"
+      ],
+      "type": "object"
+    },
+    "name": "match_skill_catalogs"
+  },
+  {
     "description": "기존 보드 항목을 다른 폴더로 이동한다.",
     "execution": {
       "taskSupport": "forbidden"

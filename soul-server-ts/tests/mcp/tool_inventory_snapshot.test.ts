@@ -157,7 +157,7 @@ describe("advertised MCP tool inventory", () => {
         required: ["label", "type", "url"],
       },
     ]);
-    expect(internal).toHaveLength(135);
+    expect(internal).toHaveLength(136);
     await expect(serializeInventory(internal)).toMatchFileSnapshot("./fixtures/tool_inventory.internal.json");
   });
 });
