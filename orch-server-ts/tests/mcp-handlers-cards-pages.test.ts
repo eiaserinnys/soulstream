@@ -632,6 +632,16 @@ applies_to:
   operations: [plan]
 provides_input: [member_name]
 
+## tagged-weak <!-- node:55555555-5555-4555-8555-555555555555 -->
+description: Weak Jev score with activity tag matches.
+body_node_id: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+axis: [prose.weak]
+composition: orthogonal
+applies_to:
+  media: [prose]
+  operations: [plan]
+provides_input: [member_name]
+
 ## tagged-zero <!-- node:44444444-4444-4444-8444-444444444444 -->
 description: Tag match with zero Jev score.
 body_node_id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
@@ -689,6 +699,7 @@ function skillsHarness(
   scoreByName: Record<string, number> = {},
   domainMarkdown = domainCatalogMarkdown,
 ) {
+  const logger = { warn: vi.fn() };
   const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
     const url = new URL(input.toString());
     if (url.pathname.endsWith(`/tree/${catalogsNodeId}/compile`)) {
@@ -703,8 +714,8 @@ function skillsHarness(
     throw new Error("Unexpected fetch URL");
   });
   vi.stubGlobal("fetch", fetchMock);
-  return { fetchMock, options: { skills: { enabled: true, serverUrl: "https://atom.example.test", apiKey: "atom-test-key",
-    nodeId, catalogsNodeId, typesafeApiKey: apiKey, logger: { warn: vi.fn() }, httpClient: createLiveAtomHttpClient({ fetch: fetchMock }) } } as unknown as McpHostOptions };
+  return { fetchMock, logger, options: { skills: { enabled: true, serverUrl: "https://atom.example.test", apiKey: "atom-test-key",
+    nodeId, catalogsNodeId, typesafeApiKey: apiKey, logger, httpClient: createLiveAtomHttpClient({ fetch: fetchMock }) } } as unknown as McpHostOptions };
 }
 describe("search_skills MCP execution", () => {
   it("returns an exact name match without calling Typesafe", async () => {
@@ -743,6 +754,7 @@ describe("match_skill_catalogs MCP execution", () => {
       "tagged-high": 2,
       "untagged-mid": 2,
       "tagged-low": 1,
+      "tagged-weak": 0.6,
       "tagged-zero": 0,
     });
 
@@ -765,8 +777,32 @@ describe("match_skill_catalogs MCP execution", () => {
 
     const jevRequest = h.fetchMock.mock.calls.find(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone");
     expect(JSON.parse(String(jevRequest?.[1]?.body)).state.candidates.map((item: { key: string }) => item.key)).toEqual([
-      "tagged-high", "untagged-mid", "tagged-low", "tagged-zero",
+      "tagged-high", "untagged-mid", "tagged-low", "tagged-weak", "tagged-zero",
     ]);
+    expect(JSON.parse(String(jevRequest?.[1]?.body)).state).toMatchObject({
+      skill_name: "slack-member-recall",
+      skill_description: "Slack member lookup and recall.\n",
+    });
+    expect((result.structuredContent as any).matches.map((match: { name: string }) => match.name)).not.toContain("tagged-weak");
+  });
+
+  it("warns when the fetched domain catalog markdown is truncated", async () => {
+    const catalogsNodeId = "99999999-7777-4777-8777-999999999999";
+    const h = skillsHarness(
+      "77777777-6666-4666-8666-777777777777",
+      "typesafe-test-key",
+      catalogsNodeId,
+      {},
+      `${domainCatalogMarkdown}\n<!-- truncated: 200 chars omitted -->`,
+    );
+
+    await call(h.options, "match_skill_catalogs", {
+      intent: "Choose a prose skill catalog",
+      skill_name: "unknown-skill",
+      limit: 1,
+    });
+
+    expect(h.logger.warn).toHaveBeenCalledWith({ nodeId: catalogsNodeId }, "[atom] domain catalog markdown was truncated");
   });
 
   it("keeps one bundle per shared axis and activates bindings for selected targets", async () => {

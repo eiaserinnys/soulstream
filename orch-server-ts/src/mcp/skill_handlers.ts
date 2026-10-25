@@ -141,6 +141,7 @@ export const skillHandlers = {
         query: String(intent),
         items: catalogs.map((catalog) => ({ key: catalog.name, text: catalogEvaluationText(catalog) })),
         apiKey,
+        ...(skill ? { context: { skill_name: skill.name, skill_description: skill.description } } : {}),
       });
       return jsonResult(rankAndComposeCatalogs({
         skill,
