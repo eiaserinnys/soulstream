@@ -7,6 +7,7 @@ export interface AtomFetchConfig { enabled: boolean; serverUrl: string; apiKey: 
 
 export const DEFAULT_SKILL_CATALOG_NODE_ID = "9542295f-6f69-4e7f-95cd-7ce0fbe3512b";
 export const DEFAULT_DOMAIN_CATALOG_NODE_ID = "a715cf8f-dfa8-4300-b922-5ca231cac6ca";
+export const DEFAULT_MIN_JEV_SCORE = 0.25;
 const CACHE_TTL_MS = 60_000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -286,6 +287,10 @@ export async function loadDomainCatalog({ nodeId, atom, logger, httpClient }: Lo
   }
   if (markdown === null) throw new Error("Failed to fetch domain catalog");
 
+  if (markdown.includes("<!-- truncated")) {
+    logger.warn({ nodeId }, "[atom] domain catalog markdown was truncated");
+  }
+
   const entries = parseDomainCatalogMarkdown(markdown, logger);
   domainCatalogCache.set(nodeId, { expiresAt: now + CACHE_TTL_MS, entries });
   return entries;
@@ -342,17 +347,19 @@ export function rankAndComposeCatalogs({
   catalogs,
   jevScores,
   limit,
+  minJevScore = DEFAULT_MIN_JEV_SCORE,
 }: {
   skill: SkillCatalogEntry | undefined;
   catalogs: DomainCatalogEntry[];
   jevScores: Array<{ key: string; score: number }>;
   limit: number;
+  minJevScore?: number;
 }): { matches: RankedDomainCatalogMatch[]; active_bindings: ActiveDomainCatalogBinding[] } {
   const jevScoreByKey = new Map(jevScores.map(({ key, score }) => [key, score]));
   const ranked = catalogs.map((catalog) => {
     const jevScore = jevScoreByKey.get(catalog.name) ?? 0;
     const { tagBoost, matchedDimensions } = computeCatalogTagBoost(skill, catalog);
-    const finalScore = jevScore > 0 ? Number((jevScore + tagBoost).toFixed(4)) : 0;
+    const finalScore = jevScore >= minJevScore ? Number((jevScore + tagBoost).toFixed(4)) : 0;
     return { catalog, jevScore, tagBoost, matchedDimensions, finalScore };
   }).filter(({ finalScore }) => finalScore > 0)
     .sort((left, right) => right.finalScore - left.finalScore);
