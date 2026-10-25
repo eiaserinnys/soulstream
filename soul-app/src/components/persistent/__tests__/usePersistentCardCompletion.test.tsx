@@ -215,3 +215,25 @@ test('a refreshed server entry releases its optimistic hide', async () => {
   expect(result.current.filterEntries!([refreshedA, entryB]).map(entry => entry.key)).toEqual(['card_531', 'card_532']);
   unmount();
 });
+
+test('projecting the same report twice keeps the restored card and its position', async () => {
+  const { api } = twoCardHarness();
+  const { result, unmount } = renderHook(() => usePersistentCardCompletion(api));
+
+  await act(async () => { await result.current.complete(entryA, [entryA, entryB]); });
+  await act(async () => { await result.current.complete(entryB, [entryA, entryB]); });
+  await act(async () => { await result.current.undo(); });
+
+  const first = result.current.filterEntries!([entryA, entryB]);
+  expect(first.map(entry => entry.key)).toEqual(['card_532']);
+  const second = result.current.filterEntries!(first);
+  expect(second.map(entry => entry.key)).toEqual(['card_532']);
+  expect(second[0]).toBe(first[0]);
+
+  const refreshed = result.current.filterEntries!([
+    { ...entryA, updated_at: '2026-10-21T00:05:00Z' },
+    { ...entryB, updated_at: '2026-10-21T00:06:00Z' },
+  ]);
+  expect(refreshed.map(entry => entry.key)).toEqual(['card_531', 'card_532']);
+  unmount();
+});

@@ -867,6 +867,31 @@ test('selected report key survives the presentation unmount and remount', () => 
   expect(view.getByTestId('report-selection').props.children).toBe(1);
 });
 
+function completionApi(numbers: number[]) {
+  const cards = new Map(numbers.map(number => [`card-${number}`, cardFixture({ id: `card-${number}`, number, status: 'review' })]));
+  return {
+    getCard: jest.fn(async (id: string) => ({ card: { ...cards.get(id)! }, reports: [], questions: [], sessions: [] })),
+    setCardStatus: jest.fn(async (id: string, status: string, version: number) => {
+      const card = { ...cards.get(id)!, status: status as ReturnType<typeof cardFixture>['status'], version: version + 1 };
+      cards.set(id, card);
+      return { folderId: card.folderId, card };
+    }),
+  } as any;
+}
+
+function cardEntry(number: number): PersistentReportEntry {
+  return { ...reportReviewEntries[2], key: `card_${number}`, card_id: `card-${number}`, card_status: 'review',
+    card_numbers: [number], title: `${number}번 검수 카드` };
+}
+
+function projectedReport(api: any) {
+  return renderHook(() => {
+    const completion = usePersistentCardCompletion(api);
+    const report = usePersistentReport('pas', true, api, undefined, undefined, completion.filterEntries);
+    return { completion, report };
+  });
+}
+
 test('consecutive completions hide each card immediately and undo restores only the last one', async () => {
   const cards = new Map([
     ['card-531', cardFixture({ id: 'card-531', number: 531, status: 'review' })],
@@ -915,4 +940,43 @@ test('consecutive completions hide each card immediately and undo restores only 
   expect(screen.getByTestId('report-sheet-card_532')).toBeTruthy();
   expect(screen.queryByTestId('report-sheet-card_531')).toBeNull();
   expect(screen.queryByTestId('report-undo-label')).toBeNull();
+});
+
+test('undo keeps the restored card in the projected report after the server report empties', async () => {
+  const api = completionApi([531, 532]);
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [cardEntry(531), cardEntry(532)]));
+  const hook = projectedReport(api);
+
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+
+  act(() => useSessionStore.getState().applyPersistentReport('pas', []));
+  expect(hook.result.current.report.entries).toEqual([]);
+  await act(async () => { await hook.result.current.completion.undo(); });
+
+  expect(hook.result.current.completion.recent).toBeNull();
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_532']);
+  expect(hook.result.current.report.entries.length > 0 || Boolean(hook.result.current.completion.recent)).toBe(true);
+});
+
+test('undo of a completed card keeps the projected order for selecting the restored and server cards', async () => {
+  const api = completionApi([531, 532, 533]);
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [cardEntry(531), cardEntry(532), cardEntry(533)]));
+  const hook = projectedReport(api);
+
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+  await act(async () => { await hook.result.current.completion.complete(hook.result.current.report.entries[0]); });
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_533']);
+
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [cardEntry(533)]));
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_533']);
+  await act(async () => { await hook.result.current.completion.undo(); });
+
+  expect(hook.result.current.report.entries.map(entry => entry.key)).toEqual(['card_532', 'card_533']);
+  act(() => hook.result.current.report.select(0));
+  expect(hook.result.current.report.index).toBe(0);
+  expect(hook.result.current.report.entries[hook.result.current.report.index].key).toBe('card_532');
+  act(() => hook.result.current.report.select(1));
+  expect(hook.result.current.report.index).toBe(1);
+  expect(hook.result.current.report.entries[hook.result.current.report.index].key).toBe('card_533');
 });

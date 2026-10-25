@@ -36,6 +36,7 @@ interface RestoredRecord {
   key: string;
   cardId: string;
   entry: PersistentReportEntry;
+  updatedAt: string;
   nextKey: string | null;
 }
 
@@ -168,7 +169,8 @@ export function usePersistentCardCompletion(api: ApiClient | null): CardCompleti
       if (completed) {
         completedByKey.current.delete(completed.key);
         restoredByKey.current.set(completed.key, {
-          key: completed.key, cardId: source.id, entry: { ...completed.entry, card_status: 'review' }, nextKey: completed.nextKey,
+          key: completed.key, cardId: source.id, entry: { ...completed.entry, card_status: 'review' },
+          updatedAt: completed.updatedAt, nextKey: completed.nextKey,
         });
       }
 
@@ -196,8 +198,13 @@ export function usePersistentCardCompletion(api: ApiClient | null): CardCompleti
         changed = true;
       }
     }
+    // Callers may project the same list more than once (report hook, pager) and the
+    // previous projection can be their input. Only a fresh server publication of the
+    // restored entry ends the restoration.
     for (const key of Array.from(restoredByKey.current.keys())) {
-      if (rawEntries.some(item => item.key === key)) {
+      const record = restoredByKey.current.get(key)!;
+      const live = rawEntries.find(item => item.key === key);
+      if (live && live !== record.entry && live.updated_at !== record.updatedAt) {
         restoredByKey.current.delete(key);
         changed = true;
       }

@@ -13,12 +13,12 @@ export function isReportReply(text: string, reply: ReportReplyDraft | null | und
 }
 
 export function reportSendContext(entries: PersistentReportEntry[], visibleKey: string | undefined,
-  text: string, reply: ReportReplyDraft | null): ReportSendContext {
+  text: string, reply: ReportReplyDraft | null, visibleEntries: PersistentReportEntry[] = entries): ReportSendContext {
   if (isReportReply(text, reply)) return {
     contextItems: [{ key: 'persistent_report_reply', content: { key: reply.key, option: reply.option } }],
     reportBase: entries, reportReply: reply,
   };
-  const visible = entries.find(entry => entry.key === visibleKey);
+  const visible = visibleEntries.find(entry => entry.key === visibleKey);
   return visible ? { contextItems: [{ key: 'persistent_report_visible', content: { key: visible.key, title: visible.title } }] } : {};
 }
 
