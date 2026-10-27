@@ -10,7 +10,7 @@ Instead of treating an agent as a terminal process that disappears after one pro
 
 - **Long-lived agent sessions** with live streaming output, follow-up messages, mid-turn intervention, file attachments, and resumable history.
 - **Structured work cards** inside hierarchical folders, tracking the request, check items with evidence, a one-line status (`now`), user questions, and review completion.
-- **Persistent assistant sessions** with a live report board (shown as 지금의 보고 in the UI), active task lists, session monitoring, and weekly quota headroom.
+- **Persistent assistant sessions** with a live report board, active task lists, session monitoring, and weekly quota headroom.
 - **Five execution backends** configured through node-local agent profiles and model presets: Claude, Codex, OpenAI Agents, Antigravity, and OpenCode.
 - **Multi-node routing** where the TypeScript orchestrator (`orch-server-ts`) dispatches authenticated WebSocket commands to TypeScript workers (`soul-server-ts`).
 - **Built-in MCP tools** for service reflection, session search, git worktrees, on-demand skill loading (`load_skill`), recurring jobs, and card or folder management.
@@ -18,13 +18,11 @@ Instead of treating an agent as a terminal process that disappears after one pro
 
 ## Interface previews
 
-Cards carry the request, check items with results, and the current status. The persistent assistant collects what needs your attention on one board.
-
 ![Card detail in review with check items, recorded results, and the linked review session](docs/screenshots/card-detail.png)
 
 <p>
-  <img src="docs/screenshots/persistent-session.png" alt="Persistent assistant session with the report board and chat" width="72%">
-  <img src="docs/screenshots/mobile.png" alt="The same persistent session on a phone-sized screen" width="24%">
+  <img src="docs/screenshots/persistent-session.png" alt="Persistent assistant session with the report board and chat" width="74.5%">
+  <img src="docs/screenshots/mobile.png" alt="The same persistent session on a phone-sized screen" width="21.5%">
 </p>
 
 The screenshots use demo data served by a Playwright fixture. Regenerate them with `pnpm --dir unified-dashboard capture:readme`.
