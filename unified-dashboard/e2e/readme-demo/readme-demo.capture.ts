@@ -16,6 +16,9 @@ async function prepare(page: Page, label: string, path: string) {
     console.error(`[readme-demo:page-error] ${error.message}`);
   });
   runs.set(page, { label, diagnostics, pageErrors });
+  if (label === "dashboard" || label === "card-detail") {
+    await page.addInitScript(() => localStorage.setItem("ls.webglGlass", "0"));
+  }
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
@@ -44,8 +47,8 @@ async function prepare(page: Page, label: string, path: string) {
 async function expectSettled(page: Page) {
   const statusText = (await page.locator('[role="status"]:visible').allTextContents()).join("\n");
   const visibleText = await page.locator("body").innerText();
-  expect(statusText).not.toMatch(/불러오는 중|시작 중|가져오는 중|수집 중|오류|실패|불러오지 못/i);
-  expect(visibleText).not.toMatch(/불러오는 중|시작 중|가져오는 중|수집 중|불러오지 못/i);
+  expect(statusText).not.toMatch(/불러오는 중|시작 중|가져오는 중|수집 중|오류|실패|불러오지 못|다시 연결하고 있습니다/i);
+  expect(visibleText).not.toMatch(/불러오는 중|시작 중|가져오는 중|수집 중|불러오지 못|연결이 끊겼습니다|연결 오류|다시 연결하고 있습니다/i);
   await expect(page.locator('[role="alert"]:visible')).toHaveCount(0);
   await expect(page.locator(".v3-toast.is-visible:visible")).toHaveCount(0);
 }
@@ -81,10 +84,8 @@ async function capturePersistentSession(browser: Browser) {
     serviceWorkers: "block",
   });
   const page = await context.newPage();
-  let diagnostics: DemoFixtureDiagnostics = { registeredApi: [], unregisteredApi: [] };
-  let pageErrors: string[] = [];
   try {
-    ({ diagnostics, pageErrors } = await prepare(page, "mobile", `/persistent/${readmeDemoIds.sessionIds.persistent}`));
+    const { pageErrors } = await prepare(page, "mobile", `/persistent/${readmeDemoIds.sessionIds.persistent}`);
     await expect(page.getByTestId("persistent-session-screen")).toBeVisible();
     await expect(page.getByText("오늘 끝난 것 정리해 줘", { exact: true })).toBeVisible();
     await expect(page.locator(".pas-report")).toBeVisible();
@@ -103,7 +104,8 @@ async function capturePersistentSession(browser: Browser) {
     }
     expect(pageErrors).toEqual([]);
   } finally {
-    report("mobile", diagnostics, pageErrors);
+    const run = runs.get(page);
+    if (run) report(run.label, run.diagnostics, run.pageErrors);
     await context.close();
   }
 }
@@ -113,7 +115,7 @@ test("대시보드에 폴더, 카드와 실행 중 채팅을 함께 캡처한다
   const runningRow = page.getByTestId(`v3-session-row-${readmeDemoIds.sessionIds.running}`);
   await expect(runningRow).toBeVisible();
   await runningRow.locator(".v3-run-open").click();
-  await expect(page.getByTestId("v3-standalone-session-chat")).toBeVisible();
+  await expect(page.getByRole("region", { name: "세션 채팅" })).toBeVisible();
   const cards = page.getByTestId("v3-folder-cards-section");
   await expect(cards).toContainText("위젯에 시간대별 강수 확률 넣기");
   await expect(cards).toContainText("오프라인에서 마지막 예보 보여 주기");
@@ -128,13 +130,16 @@ test("대시보드에 폴더, 카드와 실행 중 채팅을 함께 캡처한다
 
 test("검수 카드 상세의 확인 항목과 결과를 캡처한다", async ({ page }) => {
   const { pageErrors } = await prepare(page, "card-detail", `/?folder=${readmeDemoIds.folderId}`);
-  const reviewCard = page.locator(`[data-card-id="${readmeDemoIds.cardIds.review}"]`);
+  const reviewCard = page.locator(`.v3-postit-card[data-card-id="${readmeDemoIds.cardIds.review}"]`);
   await expect(reviewCard).toBeVisible();
   await reviewCard.locator(".v3-postit-open").click();
   await expect(page.getByTestId("card-detail")).toBeVisible();
-  await expect(page.getByText("비행기 모드에서 앱을 열어 마지막 예보가 보이는지 봐 주세요", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("card-now-panel")).toContainText("비행기 모드에서 앱을 열어 마지막 예보가 보이는지 봐 주세요");
+  await expect(page.getByText("예보와 갱신 시각을 함께 저장했습니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("오프라인에서도 마지막 예보가 나타납니다.", { exact: true })).toBeVisible();
+  await expect(page.getByText("새 응답을 받으면 저장값이 갱신됩니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("변경 내용을 검수해 주세요", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("v3-card-session-chat")).not.toContainText("위임 관계에서 세션을 선택하세요.");
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
   await settleAndCapture(page, resolve(screenshots, "card-detail.png"));
