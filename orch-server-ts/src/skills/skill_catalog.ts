@@ -2,6 +2,8 @@ import type { FastifyBaseLogger } from "fastify";
 import { parse as parseYaml } from "yaml";
 
 import type { AtomHttpClient } from "../atom/atom_routes.js";
+export { loadAtomNodeBody, loadAtomNodeMetadata } from "./skill_atom_reader.js";
+export type { AtomNodeMetadata, LoadedAtomBody, LoadAtomNodeBodyInput } from "./skill_atom_reader.js";
 
 export interface AtomFetchConfig { enabled: boolean; serverUrl: string; apiKey: string }
 
@@ -15,6 +17,7 @@ export interface SkillCatalogEntry {
   name: string;
   description: string;
   bodyNodeId: string;
+  nodeId?: string;
   notes?: string;
   activity?: { medium?: string; operations?: string[]; acceptsInput?: string[] };
   probeIntents?: string[];
@@ -76,14 +79,15 @@ export function parseSkillCatalogMarkdown(
   logger: CatalogLogger,
 ): SkillCatalogEntry[] {
   const lines = markdown.split("\n");
-  const headings: Array<{ name: string; bodyStart: number }> = [];
+  const headings: Array<{ name: string; nodeId?: string; bodyStart: number }> = [];
   for (const [index, line] of lines.entries()) {
     const heading = /^#{2,6}\s+(.+?)\s*$/.exec(line);
     if (!heading) continue;
+    const nodeId = /<!--\s*node:([0-9a-f-]{36})\b.*?-->/.exec(heading[1]!)?.[1];
     const name = heading[1]!
       .replace(/\s*<!--.*?-->\s*$/, "")
       .trim();
-    headings.push({ name, bodyStart: index + 1 });
+    headings.push({ name, ...(nodeId ? { nodeId } : {}), bodyStart: index + 1 });
   }
 
   const entries: SkillCatalogEntry[] = [];
@@ -114,6 +118,7 @@ export function parseSkillCatalogMarkdown(
       name: heading.name,
       description: typeof data.description === "string" ? data.description : "",
       bodyNodeId,
+      ...(heading.nodeId ? { nodeId: heading.nodeId } : {}),
     };
     if (typeof data.notes === "string") entry.notes = data.notes;
     const activityData = recordValue(data.activity);
@@ -342,6 +347,37 @@ export interface ActiveDomainCatalogBinding {
   grid?: string;
 }
 
+export function catalogEvaluationText(catalog: DomainCatalogEntry): string {
+  return [
+    `${catalog.name}: ${catalog.description}`,
+    catalog.aliases?.length ? `Aliases: ${catalog.aliases.join(", ")}` : undefined,
+    `Axes: ${catalog.axis.join(", ")}`,
+    `Composition: ${catalog.composition}`,
+    catalog.appliesTo?.media?.length ? `Media: ${catalog.appliesTo.media.join(", ")}` : undefined,
+    catalog.appliesTo?.operations?.length ? `Operations: ${catalog.appliesTo.operations.join(", ")}` : undefined,
+    catalog.providesInput?.length ? `Inputs: ${catalog.providesInput.join(", ")}` : undefined,
+    catalog.sampleCues?.length ? `Cues: ${catalog.sampleCues.join("; ")}` : undefined,
+    catalog.shards?.length ? `Shards: ${catalog.shards.map((shard) => `${shard.name}: ${(shard.cues ?? []).join(", ")}`).join("; ")}` : undefined,
+    catalog.bindings?.length ? `Bindings: ${catalog.bindings.map((binding) => `${binding.targetCatalog} (${binding.targetAxis})`).join("; ")}` : undefined,
+  ].filter((line): line is string => Boolean(line)).join("\n");
+}
+
+export function computeActiveBindings(catalogs: DomainCatalogEntry[]): ActiveDomainCatalogBinding[] {
+  const selectedNames = new Set(catalogs.map(({ name }) => name));
+  return catalogs.flatMap((catalog) =>
+    (catalog.bindings ?? []).flatMap((binding): ActiveDomainCatalogBinding[] => {
+      if (!selectedNames.has(binding.targetCatalog)) return [];
+      return [{
+        source_catalog: catalog.name,
+        target_catalog: binding.targetCatalog,
+        target_axis: binding.targetAxis,
+        sheet_template: binding.sheetTemplate,
+        ...(binding.grid ? { grid: binding.grid } : {}),
+      }];
+    }),
+  );
+}
+
 export function rankAndComposeCatalogs({
   skill,
   catalogs,
@@ -377,7 +413,7 @@ export function rankAndComposeCatalogs({
     if (selected.length >= limit) break;
   }
 
-  const selectedNames = new Set(selected.map(({ catalog }) => catalog.name));
+  const selectedCatalogs = selected.map(({ catalog }) => catalog);
   const matches: RankedDomainCatalogMatch[] = selected.map(({ catalog, jevScore, tagBoost, matchedDimensions, finalScore }) => {
     const match: RankedDomainCatalogMatch = {
       name: catalog.name,
@@ -403,18 +439,7 @@ export function rankAndComposeCatalogs({
     return match;
   });
 
-  const active_bindings: ActiveDomainCatalogBinding[] = selected.flatMap(({ catalog }) =>
-    (catalog.bindings ?? []).flatMap((binding): ActiveDomainCatalogBinding[] => {
-      if (!selectedNames.has(binding.targetCatalog)) return [];
-      return [{
-        source_catalog: catalog.name,
-        target_catalog: binding.targetCatalog,
-        target_axis: binding.targetAxis,
-        sheet_template: binding.sheetTemplate,
-        ...(binding.grid ? { grid: binding.grid } : {}),
-      }];
-    }),
-  );
+  const active_bindings = computeActiveBindings(selectedCatalogs);
 
   return { matches, active_bindings };
 }

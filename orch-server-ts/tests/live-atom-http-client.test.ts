@@ -39,6 +39,31 @@ describe("live atom HTTP client", () => {
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("sends Atom MCP POST requests and parses a stateless SSE response", async () => {
+    const payload = { jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: "node metadata" }] } };
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(
+      `event: message\ndata: ${JSON.stringify(payload)}\n\n`,
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    ));
+    const httpClient = createLiveAtomHttpClient({ fetch, timeoutMs: 1234 });
+
+    await expect(httpClient.post?.({
+      url: "https://atom.example.test/mcp",
+      headers: { "x-api-key": "atom-secret", accept: "application/json, text/event-stream" },
+      body: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_node", arguments: { node_id: "node-id" } } },
+    })).resolves.toEqual({ statusCode: 200, body: payload });
+
+    const call = fetch.mock.calls[0];
+    if (call === undefined) throw new Error("fetch was not called");
+    expect(call[0]).toBe("https://atom.example.test/mcp");
+    expect(call[1]).toMatchObject({ method: "POST", headers: {
+      "x-api-key": "atom-secret",
+      accept: "application/json, text/event-stream",
+      "content-type": "application/json",
+    } });
+    expect(JSON.parse(String(call[1].body))).toMatchObject({ method: "tools/call", params: { name: "get_node" } });
+  });
+
   it("returns non-2xx status and response bodies without throwing", async () => {
     const httpClient = createLiveAtomHttpClient({
       fetch: vi.fn(async (_url: string, _init: RequestInit) =>

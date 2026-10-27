@@ -1,6 +1,7 @@
 import type {
   AtomHttpClient,
   AtomHttpRequest,
+  AtomHttpPostRequest,
   AtomHttpResponse,
 } from "../atom/atom_routes.js";
 
@@ -27,6 +28,7 @@ export function createLiveAtomHttpClient(
 
   return {
     get: (request) => sendAtomGet(fetch, timeoutMs, request),
+    post: (request) => sendAtomPost(fetch, timeoutMs, request),
   };
 }
 
@@ -47,6 +49,40 @@ async function sendAtomGet(
       statusCode: response.status,
       body: await readAtomResponseBody(response),
     };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function sendAtomPost(
+  fetch: LiveAtomHttpClientFetch,
+  timeoutMs: number,
+  request: AtomHttpPostRequest,
+): Promise<AtomHttpResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(request.url, {
+      method: "POST",
+      headers: { ...request.headers, "content-type": "application/json" },
+      body: JSON.stringify(request.body),
+      signal: controller.signal,
+    });
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    let body: unknown;
+    if (contentType.includes("text/event-stream")) {
+      const text = await response.text();
+      const data = text.split("\n").find((line) => line.startsWith("data: "))?.slice(6);
+      if (!data) throw new Error("Atom MCP returned no JSON-RPC data event");
+      try {
+        body = JSON.parse(data);
+      } catch {
+        throw new Error("Atom MCP returned invalid JSON-RPC data");
+      }
+    } else {
+      body = await readAtomResponseBody(response);
+    }
+    return { statusCode: response.status, body };
   } finally {
     clearTimeout(timer);
   }

@@ -3881,6 +3881,37 @@
     "name": "list_worktrees"
   },
   {
+    "description": "스킬 본문을 읽고 link 블록의 call, include, pick을 해석해 펼친 본문과 출처, 선택 기록을 돌려준다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "intent": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "pins": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "load_skill"
+  },
+  {
     "description": "스킬의 1차 활동 태그(medium, operations, accepts_input) 가산점과 Jev 전체 카탈로그 의미 평가를 결합해 현재 요청에 필요한 직교/번들 도메인 카탈로그와 오버레이 바인딩을 찾는다.",
     "execution": {
       "taskSupport": "forbidden"

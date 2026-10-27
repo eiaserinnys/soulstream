@@ -23,4 +23,18 @@ export const skillTools = {
       },
     },
   },
+  load_skill: {
+    name: "load_skill",
+    audience: "all",
+    timeoutMs: 170000,
+    config: {
+      description:
+        "스킬 본문을 읽고 link 블록의 call, include, pick을 해석해 펼친 본문과 출처, 선택 기록을 돌려준다.",
+      inputSchema: {
+        name: z.string().min(1),
+        intent: z.string().min(1).optional(),
+        pins: z.array(z.string().min(1)).optional(),
+      },
+    },
+  },
 } as const satisfies Record<string, McpToolDefinition>;

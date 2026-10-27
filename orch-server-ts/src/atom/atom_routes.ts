@@ -25,8 +25,15 @@ export type AtomHttpResponse = {
   body: unknown;
 };
 
+export type AtomHttpPostRequest = {
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+};
+
 export type AtomHttpClient = {
   get: (request: AtomHttpRequest) => Promise<AtomHttpResponse>;
+  post?: (request: AtomHttpPostRequest) => Promise<AtomHttpResponse>;
 };
 
 export type AtomRouteOptions = {

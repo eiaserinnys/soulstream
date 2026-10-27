@@ -581,7 +581,7 @@ describe("live card MCP execution", () => {
 });
 
 const SLACK_BODY_NODE_ID = "66666666-7777-4888-8999-aaaaaaaaaaaa";
-const atomMarkdown = `## slack-member-recall
+const atomMarkdown = `## slack-member-recall <!-- node:12111111-1111-4111-8111-111111111111 -->
 description: >
   Slack member lookup and recall.
 body_node_id: ${SLACK_BODY_NODE_ID}
@@ -591,12 +591,12 @@ activity:
   accepts_input: [member_name]
 probe_intents: [look up a member from a Slack request]
 
-## work-plan-execute
+## work-plan-execute <!-- node:12222222-2222-4222-8222-222222222222 -->
 description: >
   Plan and execute coding work.
 body_node_id: 77777777-8888-4999-8aaa-bbbbbbbbbbbb
 
-## writing-rhythm
+## writing-rhythm <!-- node:12333333-3333-4333-8333-333333333333 -->
 description: >
   Write prose with a clear rhythm.
 body_node_id: 88888888-9999-4aaa-8bbb-cccccccccccc
@@ -700,12 +700,37 @@ function skillsHarness(
   domainMarkdown = domainCatalogMarkdown,
 ) {
   const logger = { warn: vi.fn() };
+  const knownNodeIds = new Set<string>();
   const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
     const url = new URL(input.toString());
     if (url.pathname.endsWith(`/tree/${catalogsNodeId}/compile`)) {
       return Response.json({ markdown: domainMarkdown });
     }
     if (url.pathname.endsWith(`/tree/${nodeId}/compile`)) return Response.json({ markdown: atomMarkdown });
+    if (url.pathname === "/mcp") {
+      const request = JSON.parse(String(init?.body));
+      const requestedNodeId = request.params.arguments.node_id as string;
+      knownNodeIds.add(requestedNodeId);
+      return Response.json({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: { content: [{ type: "text", text: JSON.stringify({ id: requestedNodeId, parent_node_id: null, card: { version: 4 } }) }] },
+      });
+    }
+    const nodeMatch = /^\/tree\/([^/]+)$/.exec(url.pathname);
+    if (nodeMatch) {
+      const requestedNodeId = decodeURIComponent(nodeMatch[1]!);
+      knownNodeIds.add(requestedNodeId);
+      return Response.json({ id: requestedNodeId, parent_node_id: null, card: { version: 4 } });
+    }
+    if (url.pathname === "/api/tree/outline") {
+      return Response.json({ nodes: [...knownNodeIds].map(id => ({ id, child_count: 0 })) });
+    }
+    const bodyCompileMatch = /^\/api\/tree\/([^/]+)\/compile$/.exec(url.pathname);
+    if (bodyCompileMatch) {
+      const bodyNodeId = decodeURIComponent(bodyCompileMatch[1]!);
+      return Response.json({ markdown: `# Loaded body <!-- node:${bodyNodeId} card:88888888-8888-4888-8888-888888888888 -->\n\nBody for ${bodyNodeId}` });
+    }
     if (url.toString() === "https://api.typesafe.ai/v1/systemone") {
       const body = JSON.parse(String(init?.body));
       return Response.json({ answers: Object.fromEntries(Object.keys(body.questions).map(key =>
@@ -739,6 +764,27 @@ describe("search_skills MCP execution", () => {
     expect(result.isError).toBe(true);
     expect(result.content).toContainEqual({ type: "text", text: "TYPESAFE_API_KEY is not configured" });
     expect(h.fetchMock.mock.calls.filter(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone")).toHaveLength(0);
+  });
+});
+
+describe("load_skill MCP execution", () => {
+  it("reads the selected skill body without reading the domain catalog or calling Jev when it has no pick", async () => {
+    const h = skillsHarness("11111111-2222-4333-8444-555555555555");
+    const result = await call(h.options, "load_skill", { name: "slack-member-recall" });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      name: "slack-member-recall",
+      entry_version: 4,
+      body_version: 4,
+      compiled_markdown: expect.stringContaining("Body for 66666666-7777-4888-8999-aaaaaaaaaaaa"),
+      links: [],
+      active_bindings: [],
+      pins: [],
+    });
+    expect(h.fetchMock.mock.calls.some(([input]) => new URL(input.toString()).pathname.endsWith(`/tree/${DEFAULT_DOMAIN_CATALOG_NODE_ID}/compile`))).toBe(false);
+    expect(h.fetchMock.mock.calls.filter(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone")).toHaveLength(0);
+    const bodyCompile = h.fetchMock.mock.calls.find(([input]) => new URL(input.toString()).pathname.endsWith(`/tree/${SLACK_BODY_NODE_ID}/compile`));
+    expect(new URL(bodyCompile![0].toString()).searchParams.get("depth")).toBe("0");
   });
 });
 
