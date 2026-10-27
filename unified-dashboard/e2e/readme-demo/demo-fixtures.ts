@@ -1,4 +1,7 @@
 import type { Page } from "@playwright/test";
+import type { PersistentReportEntry, SessionSummary } from "@seosoyoung/soul-ui";
+import type { CardCheckItem, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import type { PersistentSession, PersistentSessionList } from "../../client/lib/persistent-sessions";
 
 const createdAt = "2026-10-28T08:00:00.000Z";
 const updatedAt = "2026-10-28T09:20:00.000Z";
@@ -35,7 +38,7 @@ const folders = [
   { id: "folder-archive", name: "📦 보관함", sortOrder: 3, parentFolderId: null, projectPageId: pageIds.archive, status: "open", version: 1, archived: false, settings: {} },
 ];
 
-function checkItem(id: number, title: string, state: "todo" | "doing" | "done", result: string | null) {
+function checkItem(id: number, title: string, state: CardCheckItem["state"], result: string | null): CardCheckItem {
   return {
     id, title, state, result, evidence: [], caveat: null, rev: 1, confirmed: null,
     fixOpen: 0, reopened: null, from: null, createdAt, reportedAt: result ? updatedAt : null,
@@ -46,10 +49,10 @@ function checkItem(id: number, title: string, state: "todo" | "doing" | "done", 
 function card({
   id, number, title, status, request, items = [], now = null, blockedKind = null, blockedDetail = null,
 }: {
-  id: string; number: number; title: string; status: string; request: string;
-  items?: ReturnType<typeof checkItem>[]; now?: { text: string; turn: "agent" | "user"; ask: string | null; updatedAt: string; sessionId: string | null } | null;
-  blockedKind?: "question" | null; blockedDetail?: string | null;
-}) {
+  id: string; number: number; title: string; status: CardRow["status"]; request: string;
+  items?: CardCheckItem[]; now?: CardRow["now"];
+  blockedKind?: CardRow["blockedKind"]; blockedDetail?: string | null;
+}): CardRow {
   return {
     id, number, folderId, title, request, brief: request, attachments: [], status,
     blockedKind, blockedDetail, positionKey: `A${String(130 - number).padStart(3, "0")}`,
@@ -65,7 +68,7 @@ function card({
   };
 }
 
-const cards = [
+const cards: CardRow[] = [
   card({
     id: cardIds.running, number: 128, title: "위젯에 시간대별 강수 확률 넣기", status: "running",
     request: "홈 화면 위젯에서 시간대별 강수 확률을 한눈에 보여 주세요.",
@@ -100,51 +103,48 @@ const questions = [{
   options: ["오전 7시", "오전 7시 30분"], answer: null, askedAt: updatedAt, answeredAt: null,
 }];
 
-const sessions = [
+const sessions: SessionSummary[] = [
   {
-    agent_session_id: sessionIds.running, status: "running", event_count: 6, created_at: createdAt,
-    updated_at: updatedAt, display_name: "🔨 위젯 강수 확률 구현", folder_id: folderId,
-    node_id: "build-linux", agent_id: "nova", agent_name: "노바", agent_portrait_url: null,
-    session_type: "llm", llm_provider: "openai", llm_model: "Codex", backend: "codex",
-    model_preset: "codex-6-luna", reasoning_effort: "max", prompt: "위젯에 시간대별 강수 확률을 보여 주세요.",
-    review_state: "not_required", last_event_id: 6, last_read_event_id: 0, card_id: null,
-    last_message: { type: "assistant_message", text: "위젯 폭에 맞춰 두 시간대씩 묶어 표시했습니다.", timestamp: updatedAt },
+    agentSessionId: sessionIds.running, status: "running", eventCount: 6, createdAt, updatedAt,
+    displayName: "🔨 위젯 강수 확률 구현", folderId, nodeId: "build-linux", agentId: "nova", agentName: "노바",
+    sessionType: "llm", llmProvider: "openai", llmModel: "Codex", backend: "codex",
+    modelPreset: "codex-6-luna", reasoningEffort: "max", prompt: "위젯에 시간대별 강수 확률을 보여 주세요.",
+    reviewRequired: false, reviewState: "not_required", lastEventId: 6, lastReadEventId: 0, cardId: null,
+    lastMessage: { type: "assistant_message", preview: "위젯 폭에 맞춰 두 시간대씩 묶어 표시했습니다.", timestamp: updatedAt },
   },
   {
-    agent_session_id: sessionIds.review, status: "completed", event_count: 5, created_at: createdAt,
-    updated_at: updatedAt, completed_at: updatedAt, display_name: "🔍 오프라인 캐시 검수", folder_id: folderId,
-    node_id: "studio-mac", agent_id: "sage", agent_name: "세이지", agent_portrait_url: null,
-    session_type: "llm", llm_provider: "openai", llm_model: "Codex", backend: "codex",
-    model_preset: "codex-6.1-sol", prompt: "오프라인 예보 복구 흐름을 확인해 주세요.",
-    review_state: "needs_review", review_required: true, last_event_id: 5, last_read_event_id: 0,
-    last_message: { type: "assistant_message", text: "저장된 예보와 갱신 시각을 확인했습니다.", timestamp: updatedAt },
+    agentSessionId: sessionIds.review, status: "completed", eventCount: 5, createdAt, updatedAt, completedAt: updatedAt,
+    displayName: "🔍 오프라인 캐시 검수", folderId, nodeId: "studio-mac", agentId: "sage", agentName: "세이지",
+    sessionType: "llm", llmProvider: "openai", llmModel: "Codex", backend: "codex",
+    modelPreset: "codex-6.1-sol", prompt: "오프라인 예보 복구 흐름을 확인해 주세요.",
+    reviewRequired: true, reviewState: "needs_review", lastEventId: 5, lastReadEventId: 0,
+    lastMessage: { type: "assistant_message", preview: "저장된 예보와 갱신 시각을 확인했습니다.", timestamp: updatedAt },
   },
   {
-    agent_session_id: sessionIds.writing, status: "completed", event_count: 4, created_at: createdAt,
-    updated_at: updatedAt, completed_at: updatedAt, display_name: "✍️ 알림 문구 초안", folder_id: folderId,
-    node_id: "studio-mac", agent_id: "lyra", agent_name: "리라", agent_portrait_url: null,
-    session_type: "llm", llm_provider: "openai", llm_model: "Codex", backend: "codex",
-    model_preset: "codex-6-luna", prompt: "아침 알림 문구를 짧게 다듬어 주세요.",
-    review_state: "not_required", last_event_id: 4, last_read_event_id: 0,
-    last_message: { type: "assistant_message", text: "오늘의 하늘을 먼저 살피고, 우산이 필요하면 알려 드릴게요.", timestamp: updatedAt },
+    agentSessionId: sessionIds.writing, status: "completed", eventCount: 4, createdAt, updatedAt, completedAt: updatedAt,
+    displayName: "✍️ 알림 문구 초안", folderId, nodeId: "studio-mac", agentId: "lyra", agentName: "리라",
+    sessionType: "llm", llmProvider: "openai", llmModel: "Codex", backend: "codex",
+    modelPreset: "codex-6-luna", prompt: "아침 알림 문구를 짧게 다듬어 주세요.",
+    reviewRequired: false, reviewState: "not_required", lastEventId: 4, lastReadEventId: 0,
+    lastMessage: { type: "assistant_message", preview: "오늘의 하늘을 먼저 살피고, 우산이 필요하면 알려 드릴게요.", timestamp: updatedAt },
   },
 ];
 
-const persistentReports = [
+const persistentReports: PersistentReportEntry[] = [
   {
     key: "card-127", kind: "see", title: "오프라인 캐시 검수", card_numbers: [127],
     context: "마지막 예보를 저장하고 비행기 모드에서 확인했습니다.", action: "변경 내용을 확인해 주세요.",
-    options: [], state: "open", answer: null, updated_at: updatedAt, card_id: cardIds.review, card_status: "review",
+    options: [], state: "open", answer: "", updated_at: updatedAt, card_id: cardIds.review, card_status: "review",
   },
   {
     key: "question-126", kind: "ask", title: "아침 알림 발송 시간", card_numbers: [126],
     context: "아침 예보 알림을 준비하고 있습니다.", action: "발송 시간을 골라 주세요.",
     options: ["오전 7시", "오전 7시 30분"], question_id: questions[0]!.id,
-    state: "open", answer: null, updated_at: updatedAt, card_id: cardIds.question, card_status: "blocked",
+    state: "open", answer: "", updated_at: updatedAt, card_id: cardIds.question, card_status: "blocked",
   },
 ];
 
-const persistentSession = {
+const persistentSession: PersistentSession = {
   session_id: sessionIds.persistent, display_name: "비서", node_id: "studio-mac",
   folder_id: folderId, agent_id: "lyra", agent_name: "리라", persistent: true,
   settings: {
@@ -156,75 +156,17 @@ const persistentSession = {
   persistent_report: persistentReports,
 };
 
-const persistentSessionSummary = {
-  agent_session_id: sessionIds.persistent, status: "completed", event_count: 2, created_at: createdAt,
-  updated_at: updatedAt, completed_at: updatedAt, display_name: "비서", folder_id: folderId,
-  node_id: "studio-mac", agent_id: "lyra", agent_name: "리라", agent_portrait_url: null,
-  session_type: "llm", llm_provider: "openai", llm_model: "Codex", backend: "codex",
-  model_preset: "codex-6-luna", reasoning_effort: "max", prompt: "오늘 작업을 간결하게 정리합니다.",
-  review_state: "not_required", review_required: false, last_event_id: 2, last_read_event_id: 0,
-  card_id: null,
-  last_message: { type: "assistant_message", text: "오프라인 예보를 검수했고, 알림 문구 초안을 정리했어요.", timestamp: updatedAt },
+const persistentSessionSummary: SessionSummary = {
+  agentSessionId: sessionIds.persistent, status: "completed", eventCount: 2, createdAt, updatedAt, completedAt: updatedAt,
+  displayName: "비서", folderId, nodeId: "studio-mac", agentId: "lyra", agentName: "리라",
+  sessionType: "llm", llmProvider: "openai", llmModel: "Codex", backend: "codex",
+  modelPreset: "codex-6-luna", reasoningEffort: "max", prompt: "오늘 작업을 간결하게 정리합니다.",
+  reviewRequired: false, reviewState: "not_required", lastEventId: 2, lastReadEventId: 0, cardId: null,
+  persistentReport: persistentReports,
+  lastMessage: { type: "assistant_message", preview: "오프라인 예보를 검수했고, 알림 문구 초안을 정리했어요.", timestamp: updatedAt },
 };
 
-const allSessions = [...sessions, persistentSessionSummary];
-
-const sessionSummaries = [
-  ...sessions.map((session) => ({
-  agentSessionId: session.agent_session_id,
-  status: session.status,
-  eventCount: session.event_count,
-  createdAt: session.created_at,
-  updatedAt: session.updated_at,
-  completedAt: session.completed_at,
-  displayName: session.display_name,
-  folderId: session.folder_id,
-  nodeId: session.node_id,
-  agentId: session.agent_id,
-  agentName: session.agent_name,
-  agentPortraitUrl: session.agent_portrait_url,
-  sessionType: session.session_type,
-  llmProvider: session.llm_provider,
-  llmModel: session.llm_model,
-  backend: session.backend,
-  modelPreset: session.model_preset,
-  reasoningEffort: session.reasoning_effort,
-  prompt: session.prompt,
-  reviewRequired: session.review_required,
-  reviewState: session.review_state,
-  lastEventId: session.last_event_id,
-  lastReadEventId: session.last_read_event_id,
-  cardId: session.card_id,
-  lastMessage: session.last_message,
-  })),
-  {
-    agentSessionId: persistentSessionSummary.agent_session_id,
-    status: persistentSessionSummary.status,
-    eventCount: persistentSessionSummary.event_count,
-    createdAt: persistentSessionSummary.created_at,
-    updatedAt: persistentSessionSummary.updated_at,
-    completedAt: persistentSessionSummary.completed_at,
-    displayName: persistentSessionSummary.display_name,
-    folderId: persistentSessionSummary.folder_id,
-    nodeId: persistentSessionSummary.node_id,
-    agentId: persistentSessionSummary.agent_id,
-    agentName: persistentSessionSummary.agent_name,
-    agentPortraitUrl: persistentSessionSummary.agent_portrait_url,
-    sessionType: persistentSessionSummary.session_type,
-    llmProvider: persistentSessionSummary.llm_provider,
-    llmModel: persistentSessionSummary.llm_model,
-    backend: persistentSessionSummary.backend,
-    modelPreset: persistentSessionSummary.model_preset,
-    reasoningEffort: persistentSessionSummary.reasoning_effort,
-    prompt: persistentSessionSummary.prompt,
-    reviewRequired: persistentSessionSummary.review_required,
-    reviewState: persistentSessionSummary.review_state,
-    lastEventId: persistentSessionSummary.last_event_id,
-    lastReadEventId: persistentSessionSummary.last_read_event_id,
-    cardId: persistentSessionSummary.card_id,
-    lastMessage: persistentSessionSummary.last_message,
-  },
-];
+const sessionSummaries: SessionSummary[] = [...sessions, persistentSessionSummary];
 
 const timelineBySession: Record<string, Array<Record<string, unknown>>> = {
   [sessionIds.running]: [
@@ -253,6 +195,10 @@ const nodes = [
 
 function pageDto(id: string, title: string) {
   return { id, title, daily_date: null, version: 1, archived: false, metadata: {}, created_at: createdAt, updated_at: updatedAt };
+}
+
+function boardSessionItem(sessionId: string, y: number) {
+  return { id: `session:${sessionId}`, folderId, itemType: "session", itemId: sessionId, x: 24, y, metadata: {} };
 }
 
 function checkItemQuestionPayload() {
@@ -295,7 +241,12 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     });
     if (path === "/api/ui-events/config") return json({ enabled: false });
     if (path === "/api/folders" && method === "GET") {
-      return json({ folders, sessions: Object.fromEntries(allSessions.map((session) => [session.agent_session_id, { folderId: session.folder_id, displayName: session.display_name }])) });
+      return json({ folders: folders.filter((folder) => !folder.archived), sessions: {} });
+    }
+    const folderMatch = /^\/api\/folders\/([^/]+)$/.exec(path);
+    if (folderMatch && method === "GET") {
+      const folder = folders.find((entry) => entry.id === decodeURIComponent(folderMatch[1]!));
+      return folder ? json({ folder, sections: [], items: [] }) : json({ detail: "folder not found" });
     }
     if (path === "/api/nodes" && method === "GET") return json({ nodes });
     if (path === "/api/nodes/stream") return stream(sse("snapshot", nodes));
@@ -313,17 +264,17 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     if (path === "/api/sessions/stream") {
       return stream(sse("session_list", { type: "session_list", sessions: sessionSummaries, total: sessionSummaries.length }));
     }
-    if (path === "/api/sessions/folder-counts") return json({ counts: { [folderId]: allSessions.length } });
+    if (path === "/api/sessions/folder-counts") return json({ counts: { [folderId]: sessionSummaries.length } });
     if (path === "/api/sessions" && method === "GET") {
       const requested = url.searchParams.getAll("session_id");
       const reviewOnly = url.searchParams.get("review_state") === "needs_review";
-      const rows = allSessions.filter((session) => (!requested.length || requested.includes(session.agent_session_id)) && (!reviewOnly || session.review_state === "needs_review"));
+      const rows = sessionSummaries.filter((session) => (!requested.length || requested.includes(session.agentSessionId)) && (!reviewOnly || session.reviewState === "needs_review"));
       return json({ sessions: rows, total: rows.length });
     }
     if (/^\/api\/sessions\/[^/]+\/events$/.test(path)) {
       const id = decodeURIComponent(path.split("/")[3] ?? "");
       const events = timelineBySession[id] ?? [];
-      return stream(`${sse("history_sync", { type: "history_sync", last_event_id: events.length, is_live: true, status: allSessions.find((session) => session.agent_session_id === id)?.status ?? "completed" })}${events.slice(-1).map((entry) => sse(String(entry.event_type), { type: entry.event_type, ...entry.payload as Record<string, unknown>, _final_for_live_stream: true })).join("")}`);
+      return stream(`${sse("history_sync", { type: "history_sync", last_event_id: events.length, is_live: true, status: sessionSummaries.find((session) => session.agentSessionId === id)?.status ?? "completed" })}${events.slice(-1).map((entry) => sse(String(entry.event_type), { type: entry.event_type, ...entry.payload as Record<string, unknown>, _final_for_live_stream: true })).join("")}`);
     }
     const timelineMatch = /^\/api\/sessions\/([^/]+)\/timeline$/.exec(path);
     if (timelineMatch) return json(timeline(decodeURIComponent(timelineMatch[1]!)));
@@ -331,7 +282,7 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
       const plannerFolders = folders.filter((folder) => !folder.parentFolderId).map((folder) => ({
         folder, page: pageDto(folder.projectPageId!, folder.name), itemCounts: {}, itemTotal: 0, completedItemCount: 0, assignee: null,
       }));
-      return json({ attention: [], running: cards.filter((entry) => entry.status === "running"), queued: cards.filter((entry) => entry.status === "queued"), daily: { page: pageDto(pageIds.daily, "오늘"), blocks: [], state_vector: "" }, folders: plannerFolders, memoBlocks: [], reviewSessionIds: [sessionIds.review] });
+      return json({ attention: cards.filter((entry) => entry.status === "review" || entry.status === "blocked"), running: cards.filter((entry) => entry.status === "running"), queued: cards.filter((entry) => entry.status === "queued"), daily: { page: pageDto(pageIds.daily, "오늘"), blocks: [], state_vector: "" }, folders: plannerFolders, memoBlocks: [], reviewSessionIds: sessionSummaries.filter((session) => session.reviewState === "needs_review").map((session) => session.agentSessionId) });
     }
     if (path === "/api/planner/starred-folders") {
       const item = folders.find((folder) => folder.id === folderId)!;
@@ -342,7 +293,7 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
       const parent = folders.find((folder) => folder.id === folderId)!;
       return json({
         folder: parent, page: pageDto(pageIds.aurora, parent.name), blocks: [],
-        cards: cards.map(({ status }) => ({ status })),
+        cards: cards.filter((entry) => entry.folderId === folderId), sections: [], items: [],
         subfolders: { items: folders.filter((folder) => folder.parentFolderId === folderId), nextCursor: null },
         sessions: { items: sessionSummaries.filter((session) => session.folderId === folderId), nextCursor: null },
       });
@@ -351,9 +302,8 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     if (path.startsWith("/api/planner/folders/") && path.endsWith("/sessions")) return json({ items: sessionSummaries.filter((session) => session.folderId === folderId), nextCursor: null });
     if (path.startsWith("/api/cards") && method === "GET") {
       if (path === "/api/cards") {
-        if (url.searchParams.get("status") === "done") return json({ cards: cards.filter((entry) => entry.status === "done"), nextCursor: null });
         const selected = url.searchParams.get("folderId");
-        return json({ cards: cards.filter((entry) => (!selected || entry.folderId === selected) && entry.status !== "done" && entry.status !== "cancelled"), nextCursor: null });
+        return json({ cards: cards.filter((entry) => !selected || entry.folderId === selected) });
       }
       const id = path.split("/")[3];
       const selectedCard = cards.find((entry) => entry.id === id);
@@ -363,15 +313,31 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
       const sourcePageId = decodeURIComponent(path.split("/")[3] ?? "");
       return json({ agentId: "nova", nodeId: "build-linux", modelPreset: "codex-6-luna", sourcePageId, sourceBlockId: "session-defaults-demo" });
     }
+    if (path === "/api/pages" && method === "GET") {
+      return json({ items: folders.map((folder) => pageDto(folder.projectPageId!, folder.name)), next_cursor: null });
+    }
     if (path.startsWith("/api/pages/") && method === "GET") {
       const id = decodeURIComponent(path.split("/")[3] ?? "");
       const page = pageDto(id, folders.find((folder) => folder.projectPageId === id)?.name ?? "Aurora 날씨 앱");
       return json({ page, blocks: [], state_vector: "" });
     }
-    if (path === "/api/board-items") return json({ boardItems: [] });
+    if (path === "/api/board-items") {
+      const selectedSession = url.searchParams.get("sessionId");
+      const selectedFolder = url.searchParams.get("folderId") ?? folderId;
+      const matchingSessions = sessionSummaries.filter((session) => session.folderId === selectedFolder
+        && (!selectedSession || session.agentSessionId === selectedSession));
+      return json({ boardItems: matchingSessions.map((session, index) => boardSessionItem(session.agentSessionId, index * 72)) });
+    }
     if (path.startsWith("/api/board/")) return json({ items: [], documents: [] });
-    if (path === "/api/persistent-sessions" && method === "GET") return json({ sessions: [persistentSession], total: 1, create_defaults: { node_id: "studio-mac", preferred_agent_id: "lyra", settings: persistentSession.settings, initial_instruction: "짧고 명확하게 답합니다.", unavailable_reason: null } });
+    if (path === "/api/persistent-sessions" && method === "GET") {
+      const list: PersistentSessionList = {
+        sessions: [persistentSession], total: 1,
+        create_defaults: { node_id: "studio-mac", preferred_agent_id: "lyra", settings: persistentSession.settings, initial_instruction: "짧고 명확하게 답합니다.", unavailable_reason: null },
+      };
+      return json(list);
+    }
     if (path === `/api/persistent-sessions/${sessionIds.persistent}` && method === "GET") return json({ session: persistentSession });
+    if (path === `/api/persistent-sessions/${sessionIds.persistent}/instructions` && method === "GET") return json({ instructions: [] });
     if (path === "/api/usage/summary") return json({
       generatedAt: updatedAt, collectedAt: updatedAt,
       nodes: [{ nodeId: "studio-mac", fetchedAt: updatedAt, stale: false, staleSince: null, providers: {
