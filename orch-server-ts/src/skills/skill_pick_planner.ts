@@ -16,13 +16,18 @@ export interface ResolvedIncludeTarget {
 export interface PickPlan {
   block: LinkBlock;
   candidates: DomainCatalogEntry[];
-  preExcluded: Array<{ name: string; reason: "top" | "below_floor" | "bundle_axis" | "already_expanded" }>;
+  preExcluded: Array<{
+    name: string;
+    reason: "top" | "below_floor" | "bundle_axis" | "already_expanded";
+    jev_score?: number;
+  }>;
   pinned: DomainCatalogEntry[];
   includedBefore: DomainCatalogEntry[];
   needsJev: boolean;
   jevCandidates: DomainCatalogEntry[];
   unresolvedCode?: "unresolved_pick" | "jev_failed";
   coveredBy?: string;
+  allBelowFloor?: boolean;
   selections: Array<{
     catalog: DomainCatalogEntry;
     reason: "pinned" | "only" | "jev";
@@ -215,6 +220,8 @@ export async function planPickSelections({
       continue;
     }
 
+    const bundleAxesAtBlockStart = new Map(occupiedBundleAxes);
+
     for (const catalog of plan.candidates) {
       if (expandedCatalogNames.has(catalog.name) && !plan.preExcluded.some((entry) => entry.name === catalog.name)) {
         plan.preExcluded.push({ name: catalog.name, reason: "already_expanded" });
@@ -229,8 +236,12 @@ export async function planPickSelections({
         }
         continue;
       }
-      if (bundleConflict(selection.catalog, occupiedBundleAxes)) {
+      if (bundleConflict(selection.catalog, bundleAxesAtBlockStart)) {
         plan.preExcluded.push({ name: selection.catalog.name, reason: "bundle_axis" });
+        continue;
+      }
+      if (bundleConflict(selection.catalog, occupiedBundleAxes)) {
+        plan.preExcluded.push({ name: selection.catalog.name, reason: "top" });
         continue;
       }
       validPinned.push(selection);
@@ -244,13 +255,14 @@ export async function planPickSelections({
     let slotCount = Math.max(0, fields.top - plan.selections.length);
     const remainingCandidates = plan.candidates.filter((catalog) => {
       if (plan.pinned.some(({ name }) => name === catalog.name) || expandedCatalogNames.has(catalog.name)) return false;
-      if (!bundleConflict(catalog, occupiedBundleAxes)) return true;
+      if (!bundleConflict(catalog, bundleAxesAtBlockStart)) return true;
       if (!plan.preExcluded.some(({ name, reason }) => name === catalog.name && reason === "bundle_axis")) {
         plan.preExcluded.push({ name: catalog.name, reason: "bundle_axis" });
       }
       return false;
     });
-    const useOnly = slotCount > 0 && !fields.optional && remainingCandidates.length <= slotCount;
+    const selectableCandidates = remainingCandidates.filter((catalog) => !bundleConflict(catalog, occupiedBundleAxes));
+    const useOnly = slotCount > 0 && !fields.optional && selectableCandidates.length <= slotCount;
     if (!useOnly && slotCount > 0 && plan.needsJev) {
       if (!input.intent?.trim()) plan.unresolvedCode = "unresolved_pick";
       else if (jevFailed) plan.unresolvedCode = "jev_failed";
@@ -271,13 +283,17 @@ export async function planPickSelections({
         plan.preExcluded.push({ name: candidate.catalog.name, reason: "top" });
         continue;
       }
-      if (bundleConflict(candidate.catalog, occupiedBundleAxes)) {
+      if (bundleConflict(candidate.catalog, bundleAxesAtBlockStart)) {
         plan.preExcluded.push({ name: candidate.catalog.name, reason: "bundle_axis" });
+        continue;
+      }
+      if (bundleConflict(candidate.catalog, occupiedBundleAxes)) {
+        plan.preExcluded.push({ name: candidate.catalog.name, reason: "top" });
         continue;
       }
       if (candidate.reason === "jev" && candidate.score === undefined) continue;
       if (fields.optional && candidate.reason === "jev" && candidate.score! < DEFAULT_MIN_JEV_SCORE) {
-        plan.preExcluded.push({ name: candidate.catalog.name, reason: "below_floor" });
+        plan.preExcluded.push({ name: candidate.catalog.name, reason: "below_floor", jev_score: candidate.score });
         continue;
       }
       plan.selections.push({
@@ -292,8 +308,18 @@ export async function planPickSelections({
     }
     slotCount = Math.max(0, fields.top - plan.selections.length);
     const alreadyExpandedOnly = remainingCandidates.length === 0 && plan.preExcluded.some(({ reason }) => reason === "already_expanded");
+    const belowFloorNames = new Set(
+      plan.preExcluded.filter(({ reason }) => reason === "below_floor").map(({ name }) => name),
+    );
+    plan.allBelowFloor = fields.optional &&
+      !plan.unresolvedCode && !jevFailed && plan.needsJev &&
+      plan.selections.length === 0 && remainingCandidates.length > 0 &&
+      remainingCandidates.every((catalog) => {
+        const score = jevScoreByName.get(catalog.name);
+        return belowFloorNames.has(catalog.name) && score !== undefined && score < DEFAULT_MIN_JEV_SCORE;
+      });
     if (slotCount > 0 && plan.candidates.length === 0 && !alreadyExpandedOnly) plan.unresolvedCode ??= "unresolved_pick";
-    if (slotCount > 0 && !plan.unresolvedCode && !alreadyExpandedOnly && !useOnly && plan.needsJev) {
+    if (slotCount > 0 && !plan.unresolvedCode && !plan.allBelowFloor && !alreadyExpandedOnly && !useOnly && plan.needsJev) {
       plan.unresolvedCode = "unresolved_pick";
     }
     if (plan.unresolvedCode) {

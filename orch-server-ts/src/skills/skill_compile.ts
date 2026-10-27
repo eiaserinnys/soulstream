@@ -35,7 +35,11 @@ export interface CompiledLink {
   optional?: boolean;
   candidates: string[];
   selected: CompiledLinkSelection[];
-  excluded: Array<{ name: string; reason: "top" | "below_floor" | "bundle_axis" | "already_expanded" }>;
+  excluded: Array<{
+    name: string;
+    reason: "top" | "below_floor" | "bundle_axis" | "already_expanded";
+    jev_score?: number;
+  }>;
   note?: string;
   when?: string;
 }
@@ -210,7 +214,7 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
           output += `> 링크 오류: call ${fields.call} 대상을 찾을 수 없습니다.\n`;
         } else {
           output += `> 링크: call ${target.name}${fields.when ? ` (${fields.when})` : ""}\n`;
-          output += `> ${target.description.trim()}\n> 그때 load_skill로 부른다\n`;
+          output += `${target.description.trim().split(/\r?\n/u).map((line) => `> ${line}`).join("\n")}\n> 그때 load_skill로 부른다\n`;
         }
         continue;
       }
@@ -303,6 +307,8 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
       const coveredBy = plan.coveredBy;
       if (coveredBy) {
         output += `> 링크: pick ${axesText(fieldsPick.axis)} → (bundle ${coveredBy}이 담당)\n`;
+      } else if (plan.allBelowFloor) {
+        output += `> 링크: pick ${axesText(fieldsPick.axis)} → 없음 (모든 후보가 Jev 하한 ${DEFAULT_MIN_JEV_SCORE.toFixed(2)} 미만)\n`;
       } else {
         const alreadyExpanded = link.excluded.filter(({ reason }) => reason === "already_expanded").map(({ name }) => name);
         if (alreadyExpanded.length > 0) output += `> 링크: pick ${axesText(fieldsPick.axis)} → ${alreadyExpanded.join(", ")} (위에서 펼침)\n`;
@@ -334,10 +340,12 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
         output += nestedResult;
         if (!nestedResult.endsWith("\n")) output += "\n";
       }
-      const selectedNames = new Set(plan.selections.map(({ catalog }) => catalog.name));
-      for (const candidate of plan.candidates) {
-        if (!selectedNames.has(candidate.name) && !plan.preExcluded.some(({ name }) => name === candidate.name)) {
-          link.excluded.push({ name: candidate.name, reason: "top" });
+      if (!plan.unresolvedCode) {
+        const selectedNames = new Set(plan.selections.map(({ catalog }) => catalog.name));
+        for (const candidate of plan.candidates) {
+          if (!selectedNames.has(candidate.name) && !plan.preExcluded.some(({ name }) => name === candidate.name)) {
+            link.excluded.push({ name: candidate.name, reason: "top" });
+          }
         }
       }
       if (plan.unresolvedCode) {

@@ -59,7 +59,7 @@ describe("pages/live/skills MCP host roundtrip", () => {
     const url = String(input);
     if (url.startsWith("https://atom.test")) {
       if (query === "atom-exception") throw new Error("timeout");
-      expect(new URL(url).search).toBe("?depth=1&max_chars=50000&include_ids=true");
+      expect(new URL(url).search).toBe("?depth=1&include_ids=true");
       const markdown = Array.from({ length: 7 }, (_, i) => `## skill-${i}\ndescription: 스킬 ${i}\nbody_node_id: 00000000-0000-4000-8000-00000000000${i}`).join("\n\n");
       return Response.json({ markdown: query === "atom-empty" ? "" : markdown }, { status: query === "atom-error" ? 503 : 200 });
     }

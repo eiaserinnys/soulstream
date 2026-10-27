@@ -60,6 +60,10 @@ export interface LoadSkillCatalogInput {
   httpClient: AtomHttpClient;
 }
 
+function isTruncatedCatalog(markdown: string): boolean {
+  return /<!--\s*truncated\s*:/i.test(markdown);
+}
+
 const cache = new Map<string, { expiresAt: number; entries: SkillCatalogEntry[] }>();
 const domainCatalogCache = new Map<string, { expiresAt: number; entries: DomainCatalogEntry[] }>();
 
@@ -255,17 +259,21 @@ export async function loadSkillCatalog({ nodeId, atom, logger, httpClient }: Loa
   if (cached && cached.expiresAt > now) return cached.entries;
 
   let markdown: string | null = null;
+  let truncated = false;
   if (atom.enabled && atom.serverUrl) {
     try {
       const url = new URL(`${atom.serverUrl.replace(/\/$/, "")}/api/tree/${nodeId}/compile`);
       url.searchParams.set("depth", "1");
-      url.searchParams.set("max_chars", "50000");
       url.searchParams.set("include_ids", "true");
       const response = await httpClient.get({ url: url.toString(), headers: { "x-api-key": atom.apiKey } });
       const body = response.body as { markdown?: string } | null;
-      if (response.statusCode === 200 && body?.markdown) markdown = body.markdown;
+      if (response.statusCode === 200 && typeof body?.markdown === "string" && body.markdown.length > 0) {
+        truncated = isTruncatedCatalog(body.markdown);
+        if (!truncated) markdown = body.markdown;
+      }
     } catch (error) { logger.warn({ err: error, nodeId }, "[atom] compile error"); }
   }
+  if (truncated) throw new Error("Skill catalog response was truncated");
   if (markdown === null) throw new Error("Failed to fetch skill catalog");
 
   const entries = parseSkillCatalogMarkdown(markdown, logger);
@@ -279,22 +287,22 @@ export async function loadDomainCatalog({ nodeId, atom, logger, httpClient }: Lo
   if (cached && cached.expiresAt > now) return cached.entries;
 
   let markdown: string | null = null;
+  let truncated = false;
   if (atom.enabled && atom.serverUrl) {
     try {
       const url = new URL(`${atom.serverUrl.replace(/\/$/, "")}/api/tree/${nodeId}/compile`);
       url.searchParams.set("depth", "1");
-      url.searchParams.set("max_chars", "50000");
       url.searchParams.set("include_ids", "true");
       const response = await httpClient.get({ url: url.toString(), headers: { "x-api-key": atom.apiKey } });
       const body = response.body as { markdown?: string } | null;
-      if (response.statusCode === 200 && body?.markdown) markdown = body.markdown;
+      if (response.statusCode === 200 && typeof body?.markdown === "string" && body.markdown.length > 0) {
+        truncated = isTruncatedCatalog(body.markdown);
+        if (!truncated) markdown = body.markdown;
+      }
     } catch (error) { logger.warn({ err: error, nodeId }, "[atom] domain catalog compile error"); }
   }
+  if (truncated) throw new Error("Domain catalog response was truncated");
   if (markdown === null) throw new Error("Failed to fetch domain catalog");
-
-  if (markdown.includes("<!-- truncated")) {
-    logger.warn({ nodeId }, "[atom] domain catalog markdown was truncated");
-  }
 
   const entries = parseDomainCatalogMarkdown(markdown, logger);
   domainCatalogCache.set(nodeId, { expiresAt: now + CACHE_TTL_MS, entries });

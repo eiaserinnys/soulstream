@@ -177,7 +177,44 @@ describe("load_skill compiler", () => {
     const result = await h.run("anything");
     expect(result.links[0]?.selected.map(({ name }) => name)).toEqual(["required-low"]);
     expect(result.links[1]?.selected).toEqual([]);
-    expect(result.links[1]?.excluded).toContainEqual({ name: "optional-low", reason: "below_floor" });
+    expect(result.links[1]?.excluded).toContainEqual({ name: "optional-low", reason: "below_floor", jev_score: 0.2 });
+  });
+
+  it("reports an optional pick with every Jev score below the floor as empty, with scored exclusions", async () => {
+    const h = setup("```link\npick: catalog\naxis: [subject.identity]\noptional: true\n```", {
+      catalogs: [catalog("low-a", ["subject.identity"]), catalog("low-b", ["subject.identity"])],
+      score: async (keys) => keys.map((key, index) => ({ key, score: index === 0 ? 0.2 : 0.1 })),
+    });
+
+    const result = await h.run("formal male portrait");
+
+    expect(result.compiled_markdown).toBe("> 링크: pick [subject.identity] → 없음 (모든 후보가 Jev 하한 0.25 미만)\n");
+    expect(result.links[0]?.excluded).toEqual([
+      { name: "low-a", reason: "below_floor", jev_score: 0.2 },
+      { name: "low-b", reason: "below_floor", jev_score: 0.1 },
+    ]);
+    expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
+  });
+
+  it("recognizes all below-floor Jev candidates after an earlier include", async () => {
+    const h = setup([
+      "```link", "include: already-read", "```", "",
+      "```link", "pick: catalog", "axis: [subject.identity]", "optional: true", "```",
+    ].join("\n"), {
+      catalogs: [catalog("already-read", ["subject.identity"]), catalog("low", ["subject.identity"])],
+      bodies: { "body-already-read": body("body-already-read", "already read") },
+      score: async (keys) => keys.map((key) => ({ key, score: 0.2 })),
+    });
+
+    const result = await h.run("formal male portrait");
+
+    expect(result.compiled_markdown).toContain(
+      "> 링크: pick [subject.identity] → 없음 (모든 후보가 Jev 하한 0.25 미만)",
+    );
+    expect(result.compiled_markdown).not.toContain("후보 low:");
+    expect(result.links[1]?.excluded).toContainEqual({ name: "already-read", reason: "already_expanded" });
+    expect(result.links[1]?.excluded).toContainEqual({ name: "low", reason: "below_floor", jev_score: 0.2 });
+    expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
   });
 
   it("opens a skill with a candidate list and jev_failed warning when Jev is unavailable", async () => {
@@ -191,6 +228,23 @@ describe("load_skill compiler", () => {
     expect(result.compiled_markdown).toContain("close: close description");
     expect(result.warnings.map(({ code }) => code)).toContain("jev_failed");
     expect(result.links[0]?.selected).toEqual([]);
+  });
+
+  it("keeps unresolved candidates out of excluded when intent is absent or Jev fails", async () => {
+    const markdown = "```link\npick: catalog\naxis: [camera.framing]\n```";
+    const catalogs = [catalog("wide", ["camera.framing"]), catalog("close", ["camera.framing"])];
+    const withoutIntent = setup(markdown, { catalogs });
+    const noIntentResult = await withoutIntent.run();
+    expect(noIntentResult.links[0]?.candidates).toEqual(["wide", "close"]);
+    expect(noIntentResult.links[0]?.excluded).toEqual([]);
+
+    const failedJev = setup(markdown, {
+      catalogs,
+      score: async () => { throw new Error("Jev unavailable"); },
+    });
+    const failedResult = await failedJev.run("portrait framing");
+    expect(failedResult.links[0]?.candidates).toEqual(["wide", "close"]);
+    expect(failedResult.links[0]?.excluded).toEqual([]);
   });
 
   it("marks a pick block covered by a previously selected bundle", async () => {
@@ -208,6 +262,65 @@ describe("load_skill compiler", () => {
     const result = await h.run("maid portrait");
     expect(result.compiled_markdown).toContain("> 링크: pick [color.palette] → (bundle psychedelic-maid-canon이 담당)");
     expect(result.links[1]?.excluded).toContainEqual({ name: "vivid-palette", reason: "bundle_axis" });
+  });
+
+  it("uses top for candidates covered by a bundle pin in the same pick block", async () => {
+    const markdown = "```link\npick: catalog\naxis: [subject.identity, color.palette]\ntop: 1\n```";
+    const catalogs = [
+      catalog("psychedelic-maid-canon", ["subject.identity", "color.palette"], "bundle"),
+      catalog("vivid-palette", ["color.palette"]),
+    ];
+    const pinned = setup(markdown, { catalogs });
+    pinned.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+    const pinnedResult = await pinned.run(undefined, ["psychedelic-maid-canon"]);
+    expect(pinnedResult.links[0]?.excluded).toContainEqual({ name: "vivid-palette", reason: "top" });
+    expect(pinnedResult.links[0]?.excluded).not.toContainEqual({ name: "vivid-palette", reason: "bundle_axis" });
+
+    const scored = setup(markdown, {
+      catalogs,
+      score: async (keys) => keys.map((key) => ({ key, score: key === "psychedelic-maid-canon" ? 0.9 : 0.8 })),
+    });
+    scored.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+    const scoredResult = await scored.run("psychedelic maid portrait");
+    expect(scoredResult.links[0]?.excluded).toContainEqual({ name: "vivid-palette", reason: "top" });
+    expect(scoredResult.links[0]?.excluded).not.toContainEqual({ name: "vivid-palette", reason: "bundle_axis" });
+  });
+
+  it("uses top for a later pin conflicting with a bundle pin in the same block", async () => {
+    const h = setup("```link\npick: catalog\naxis: [subject.identity, color.palette]\ntop: 2\n```", {
+      catalogs: [
+        catalog("bundle-a", ["subject.identity", "color.palette"], "bundle"),
+        catalog("overlap-b", ["color.palette"]),
+      ],
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+
+    const result = await h.run(undefined, ["bundle-a", "overlap-b"]);
+
+    expect(result.links[0]?.selected.map(({ name }) => name)).toEqual(["bundle-a"]);
+    expect(result.links[0]?.excluded).toContainEqual({ name: "overlap-b", reason: "top" });
+    expect(result.links[0]?.excluded).not.toContainEqual({ name: "overlap-b", reason: "bundle_axis" });
+  });
+
+  it("fills remaining required slots after excluding candidates blocked by a same-block bundle pin", async () => {
+    const h = setup("```link\npick: catalog\naxis: [x, z]\ntop: 2\n```", {
+      catalogs: [
+        catalog("bundle-a", ["x"], "bundle"),
+        catalog("overlap-b", ["x"]),
+        catalog("free-c", ["z"]),
+      ],
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+
+    const result = await h.run(undefined, ["bundle-a"]);
+
+    expect(h.score).not.toHaveBeenCalled();
+    expect(result.links[0]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "bundle-a", reason: "pinned" },
+      { name: "free-c", reason: "only" },
+    ]);
+    expect(result.links[0]?.excluded).toContainEqual({ name: "overlap-b", reason: "top" });
+    expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
   });
 
   it("includes whole documents or sections, renders shard metadata, and expands only nested calls", async () => {
@@ -234,6 +347,18 @@ describe("load_skill compiler", () => {
     expect(result.warnings.map(({ code }) => code)).toEqual(expect.arrayContaining(["invalid_link_block", "nested_link_unresolved"]));
     expect(result.links.some(({ kind }) => kind === "pick")).toBe(false);
     expect(h.readBody.mock.calls.map(([nodeId]) => nodeId)).toEqual(["guide-body", "body-palette"]);
+  });
+
+  it("quotes every line of a multiline call target description", async () => {
+    const h = setup("```link\ncall: helper\n```", {
+      skills: [skill("main", "main-body"), skill("helper", "helper-body", "First sentence.\nSecond sentence.")],
+    });
+
+    const result = await h.run();
+
+    expect(result.compiled_markdown).toContain(
+      "> 링크: call helper\n> First sentence.\n> Second sentence.\n> 그때 load_skill로 부른다\n",
+    );
   });
 
   it("finds included sections in the catalog body node without reading child shard bodies", async () => {
