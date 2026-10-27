@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:e2e:smoke": "pnpm build && playwright test --config playwright.smoke.config.ts",
     "test:e2e:chat-ui": "COMPONENTS_REVIEW_PHASE=chat-ui playwright test --config playwright.chat-ui.config.ts",
-    "test:e2e:pas-report": "playwright test --config playwright.pas-report.config.ts"
+    "test:e2e:pas-report": "playwright test --config playwright.pas-report.config.ts",
+    "capture:readme": "playwright test --config playwright.readme-demo.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
