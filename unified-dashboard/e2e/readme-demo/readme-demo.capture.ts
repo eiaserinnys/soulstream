@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { installReadmeDemoRoutes, readmeDemoIds, type DemoFixtureDiagnostics } from "./demo-fixtures";
+import { installReadmeDemoRoutes, readmeDemoIds, readmeDemoPreferences, type DemoFixtureDiagnostics } from "./demo-fixtures";
 import { installDemoEventSource } from "./demo-event-source";
 
 const screenshots = resolve(dirname(fileURLToPath(import.meta.url)), "../../../docs/screenshots");
@@ -20,6 +20,11 @@ async function prepare(page: Page, label: string, path: string) {
   if (label === "dashboard" || label === "card-detail") {
     await page.addInitScript(() => localStorage.setItem("ls.webglGlass", "0"));
   }
+  // 첫 그림부터 다크와 사진 배경으로 그리도록 서버 설정과 같은 값을 미리 넣는다.
+  await page.addInitScript((wallpaper) => {
+    localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("soul-wallpaper", JSON.stringify(wallpaper));
+  }, readmeDemoPreferences.wallpaper);
   await installDemoEventSource(page);
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "serviceWorker", {
