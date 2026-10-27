@@ -57,9 +57,9 @@ function card({
     id, number, folderId, title, request, brief: request, attachments: [], status,
     blockedKind, blockedDetail, positionKey: `A${String(130 - number).padStart(3, "0")}`,
     queuePositionKey: status === "queued" ? `Q${String(130 - number).padStart(3, "0")}` : null,
-    assigneeKind: status === "review" ? "session" : status === "running" ? "agent" : null,
+    assigneeKind: status === "review" || status === "running" ? "session" : null,
     assigneeAgentId: status === "running" ? "nova" : status === "review" ? "sage" : null,
-    assigneeUserId: null, assigneeSessionId: status === "review" ? sessionIds.review : null,
+    assigneeUserId: null, assigneeSessionId: status === "review" ? sessionIds.review : status === "running" ? sessionIds.running : null,
     nodeId: status === "running" ? "build-linux" : status === "review" ? "studio-mac" : null,
     modelPreset: status === "running" ? "codex-6-luna" : status === "review" ? "codex-6.1-sol" : null,
     version: 1, archived: false, createdAt, updatedAt,
@@ -263,9 +263,16 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
         { id: "sage", name: "세이지", backend: "codex", default_preset: "codex-6.1-sol", portraitUrl: null },
       ] });
     }
-    if (/^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/.test(path)) {
+    const portraitMatch = path.match(/^\/api\/nodes\/[^/]+\/agents\/([^/]+)\/portrait$/);
+    if (portraitMatch) {
       diagnostics.registeredApi.push(`${method} ${path}${url.search}`);
-      return route.fulfill({ status: 200, contentType: "image/svg+xml", body: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='32' fill='#6b83db'/><text x='32' y='42' text-anchor='middle' font-size='28' fill='white'>날</text></svg>" });
+      const portraits: Record<string, [string, string]> = {
+        nova: ["노", "#6b83db"],
+        lyra: ["리", "#c27aa8"],
+        sage: ["세", "#4f9d82"],
+      };
+      const [label, fill] = portraits[portraitMatch[1]] ?? ["?", "#8a94a6"];
+      return route.fulfill({ status: 200, contentType: "image/svg+xml", body: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='32' fill='${fill}'/><text x='32' y='42' text-anchor='middle' font-size='28' fill='white'>${label}</text></svg>` });
     }
     if (path === "/api/sessions/stream") {
       return stream(sse("session_list", { type: "session_list", sessions: sessionSummaries, total: sessionSummaries.length }));

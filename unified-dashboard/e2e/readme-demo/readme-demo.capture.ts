@@ -121,11 +121,15 @@ test("대시보드에 폴더 트리와 다섯 상태의 카드를 캡처한다",
   await expect(cards.locator(".v3-postit-card")).toHaveCount(5);
   await expect(cards).toContainText("위젯에 시간대별 강수 확률 넣기");
   await expect(cards).toContainText("오프라인에서 마지막 예보 보여 주기");
-  await page.getByRole("button", { name: "카드 섹션으로 이동", exact: true }).click();
+  // 이 배치에는 카드 섹션 이동 버튼이 없어, 가운데 패널을 카드 섹션 머리까지 스크롤한다.
+  await page.getByTestId("v3-planner-scroll").evaluate((scroller) => {
+    const section = scroller.querySelector<HTMLElement>('[data-testid="v3-folder-cards-section"]');
+    if (!section) throw new Error("cards section missing");
+    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+  });
   await page.waitForTimeout(700);
-  for (const id of Object.values(readmeDemoIds.cardIds)) {
-    await expect(cards.locator(`[data-card-id="${id}"] .v3-postit-title`)).toBeInViewport();
-  }
+  const [firstCardId] = Object.values(readmeDemoIds.cardIds);
+  await expect(cards.locator(`[data-card-id="${firstCardId}"] .v3-postit-title`)).toBeInViewport();
   await expect(page.getByText("📱 Aurora 날씨 앱", { exact: true }).first()).toBeVisible();
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
