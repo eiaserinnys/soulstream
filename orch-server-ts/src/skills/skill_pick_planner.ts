@@ -236,8 +236,12 @@ export async function planPickSelections({
         }
         continue;
       }
-      if (bundleConflict(selection.catalog, occupiedBundleAxes)) {
+      if (bundleConflict(selection.catalog, bundleAxesAtBlockStart)) {
         plan.preExcluded.push({ name: selection.catalog.name, reason: "bundle_axis" });
+        continue;
+      }
+      if (bundleConflict(selection.catalog, occupiedBundleAxes)) {
+        plan.preExcluded.push({ name: selection.catalog.name, reason: "top" });
         continue;
       }
       validPinned.push(selection);
@@ -303,14 +307,15 @@ export async function planPickSelections({
     }
     slotCount = Math.max(0, fields.top - plan.selections.length);
     const alreadyExpandedOnly = remainingCandidates.length === 0 && plan.preExcluded.some(({ reason }) => reason === "already_expanded");
+    const belowFloorNames = new Set(
+      plan.preExcluded.filter(({ reason }) => reason === "below_floor").map(({ name }) => name),
+    );
     plan.allBelowFloor = fields.optional &&
       !plan.unresolvedCode && !jevFailed && plan.needsJev &&
-      plan.selections.length === 0 && plan.preExcluded.length > 0 &&
-      plan.preExcluded.every(({ reason }) => reason === "below_floor") &&
-      remainingCandidates.length > 0 && remainingCandidates.length === plan.candidates.length &&
+      plan.selections.length === 0 && remainingCandidates.length > 0 &&
       remainingCandidates.every((catalog) => {
         const score = jevScoreByName.get(catalog.name);
-        return score !== undefined && score < DEFAULT_MIN_JEV_SCORE;
+        return belowFloorNames.has(catalog.name) && score !== undefined && score < DEFAULT_MIN_JEV_SCORE;
       });
     if (slotCount > 0 && plan.candidates.length === 0 && !alreadyExpandedOnly) plan.unresolvedCode ??= "unresolved_pick";
     if (slotCount > 0 && !plan.unresolvedCode && !plan.allBelowFloor && !alreadyExpandedOnly && !useOnly && plan.needsJev) {

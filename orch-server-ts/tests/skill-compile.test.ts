@@ -196,6 +196,27 @@ describe("load_skill compiler", () => {
     expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
   });
 
+  it("recognizes all below-floor Jev candidates after an earlier include", async () => {
+    const h = setup([
+      "```link", "include: already-read", "```", "",
+      "```link", "pick: catalog", "axis: [subject.identity]", "optional: true", "```",
+    ].join("\n"), {
+      catalogs: [catalog("already-read", ["subject.identity"]), catalog("low", ["subject.identity"])],
+      bodies: { "body-already-read": body("body-already-read", "already read") },
+      score: async (keys) => keys.map((key) => ({ key, score: 0.2 })),
+    });
+
+    const result = await h.run("formal male portrait");
+
+    expect(result.compiled_markdown).toContain(
+      "> 링크: pick [subject.identity] → 없음 (모든 후보가 Jev 하한 0.25 미만)",
+    );
+    expect(result.compiled_markdown).not.toContain("후보 low:");
+    expect(result.links[1]?.excluded).toContainEqual({ name: "already-read", reason: "already_expanded" });
+    expect(result.links[1]?.excluded).toContainEqual({ name: "low", reason: "below_floor", jev_score: 0.2 });
+    expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
+  });
+
   it("opens a skill with a candidate list and jev_failed warning when Jev is unavailable", async () => {
     const h = setup("```link\npick: catalog\naxis: [camera.framing]\n```", {
       catalogs: [catalog("wide", ["camera.framing"]), catalog("close", ["camera.framing"])],
@@ -263,6 +284,22 @@ describe("load_skill compiler", () => {
     const scoredResult = await scored.run("psychedelic maid portrait");
     expect(scoredResult.links[0]?.excluded).toContainEqual({ name: "vivid-palette", reason: "top" });
     expect(scoredResult.links[0]?.excluded).not.toContainEqual({ name: "vivid-palette", reason: "bundle_axis" });
+  });
+
+  it("uses top for a later pin conflicting with a bundle pin in the same block", async () => {
+    const h = setup("```link\npick: catalog\naxis: [subject.identity, color.palette]\ntop: 2\n```", {
+      catalogs: [
+        catalog("bundle-a", ["subject.identity", "color.palette"], "bundle"),
+        catalog("overlap-b", ["color.palette"]),
+      ],
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+
+    const result = await h.run(undefined, ["bundle-a", "overlap-b"]);
+
+    expect(result.links[0]?.selected.map(({ name }) => name)).toEqual(["bundle-a"]);
+    expect(result.links[0]?.excluded).toContainEqual({ name: "overlap-b", reason: "top" });
+    expect(result.links[0]?.excluded).not.toContainEqual({ name: "overlap-b", reason: "bundle_axis" });
   });
 
   it("includes whole documents or sections, renders shard metadata, and expands only nested calls", async () => {
