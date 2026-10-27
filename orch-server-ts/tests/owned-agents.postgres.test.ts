@@ -100,7 +100,7 @@ describe("central owned agents through REST and real MCP HTTP", () => {
     }
     try {
       const legacy = await connect("unregistered-legacy"), owned = await connect(issued.token), peer = await connect(secondKey.token);
-      expect((await legacy.listTools()).tools).toHaveLength(66);
+      expect((await legacy.listTools()).tools).toHaveLength(67);
       const tools = (await owned.listTools()).tools;
       expect(tools).toHaveLength(74);
       expect(tools.filter(t => t.name in recurringJobTools).map(t => t.name).sort()).toEqual(Object.keys(recurringJobTools).sort());
