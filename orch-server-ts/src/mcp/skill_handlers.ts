@@ -12,6 +12,14 @@ import {
 import { compileSkill } from "../skills/skill_compile.js";
 import type { McpToolHandler } from "./types.js";
 
+function catalogLoadError(error: unknown, fallback: string): string {
+  if (error instanceof Error && (
+    error.message === "Skill catalog response was truncated" ||
+    error.message === "Domain catalog response was truncated"
+  )) return error.message;
+  return fallback;
+}
+
 export const skillHandlers = {
   search_skills: async (options, { query, limit }) => {
       const skills = options.skills;
@@ -29,8 +37,8 @@ export const skillHandlers = {
           logger: skills.logger,
           httpClient: skills.httpClient,
         });
-      } catch {
-        return errorResult("Failed to load skill catalog");
+      } catch (error) {
+        return errorResult(catalogLoadError(error, "Failed to load skill catalog"));
       }
 
       const exact = catalog.find((entry) =>
@@ -95,8 +103,8 @@ export const skillHandlers = {
         logger: skills.logger,
         httpClient: skills.httpClient,
       });
-    } catch {
-      return errorResult("Failed to load domain catalog");
+    } catch (error) {
+      return errorResult(catalogLoadError(error, "Failed to load domain catalog"));
     }
 
     let skill;
@@ -113,8 +121,8 @@ export const skillHandlers = {
           logger: skills.logger,
           httpClient: skills.httpClient,
         });
-      } catch {
-        return errorResult("Failed to load skill catalog");
+      } catch (error) {
+        return errorResult(catalogLoadError(error, "Failed to load skill catalog"));
       }
       skill = skillCatalog.find((entry) =>
         entry.name.trim().toLowerCase() === String(skill_name).trim().toLowerCase(),
@@ -154,8 +162,8 @@ export const skillHandlers = {
         logger: skills.logger,
         httpClient: skills.httpClient,
       });
-    } catch {
-      return errorResult("Failed to load skill catalog");
+    } catch (error) {
+      return errorResult(catalogLoadError(error, "Failed to load skill catalog"));
     }
 
     const skill = catalog.find((entry) =>

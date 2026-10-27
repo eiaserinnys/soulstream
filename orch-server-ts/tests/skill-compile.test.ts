@@ -302,6 +302,27 @@ describe("load_skill compiler", () => {
     expect(result.links[0]?.excluded).not.toContainEqual({ name: "overlap-b", reason: "bundle_axis" });
   });
 
+  it("fills remaining required slots after excluding candidates blocked by a same-block bundle pin", async () => {
+    const h = setup("```link\npick: catalog\naxis: [x, z]\ntop: 2\n```", {
+      catalogs: [
+        catalog("bundle-a", ["x"], "bundle"),
+        catalog("overlap-b", ["x"]),
+        catalog("free-c", ["z"]),
+      ],
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+
+    const result = await h.run(undefined, ["bundle-a"]);
+
+    expect(h.score).not.toHaveBeenCalled();
+    expect(result.links[0]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "bundle-a", reason: "pinned" },
+      { name: "free-c", reason: "only" },
+    ]);
+    expect(result.links[0]?.excluded).toContainEqual({ name: "overlap-b", reason: "top" });
+    expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
+  });
+
   it("includes whole documents or sections, renders shard metadata, and expands only nested calls", async () => {
     const target = skill("guide", "guide-body");
     const h = setup([

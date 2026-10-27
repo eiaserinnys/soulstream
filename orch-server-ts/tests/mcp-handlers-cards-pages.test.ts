@@ -698,6 +698,7 @@ function skillsHarness(
   catalogsNodeId = DEFAULT_DOMAIN_CATALOG_NODE_ID,
   scoreByName: Record<string, number> = {},
   domainMarkdown = domainCatalogMarkdown,
+  skillMarkdown = atomMarkdown,
 ) {
   const logger = { warn: vi.fn() };
   const knownNodeIds = new Set<string>();
@@ -706,7 +707,7 @@ function skillsHarness(
     if (url.pathname.endsWith(`/tree/${catalogsNodeId}/compile`)) {
       return Response.json({ markdown: domainMarkdown });
     }
-    if (url.pathname.endsWith(`/tree/${nodeId}/compile`)) return Response.json({ markdown: atomMarkdown });
+    if (url.pathname.endsWith(`/tree/${nodeId}/compile`)) return Response.json({ markdown: skillMarkdown });
     if (url.pathname === "/mcp") {
       const request = JSON.parse(String(init?.body));
       const requestedNodeId = request.params.arguments.node_id as string;
@@ -750,6 +751,21 @@ describe("search_skills MCP execution", () => {
       name: "slack-member-recall", description: "Slack member lookup and recall.\n", body_node_id: SLACK_BODY_NODE_ID, score: 1 }] });
     expect(h.fetchMock.mock.calls.filter(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone")).toHaveLength(0);
   });
+  it("preserves the truncation error when the skill catalog is truncated", async () => {
+    const h = skillsHarness(
+      "99999999-2222-4333-8444-555555555555",
+      "typesafe-test-key",
+      DEFAULT_DOMAIN_CATALOG_NODE_ID,
+      {},
+      domainCatalogMarkdown,
+      `${atomMarkdown}\n<!-- truncated: 200 chars omitted -->`,
+    );
+
+    const result = await call(h.options, "search_skills", { query: "slack-member-recall" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContainEqual({ type: "text", text: "Skill catalog response was truncated" });
+  });
   it("ranks candidates and respects the requested limit", async () => {
     const h = skillsHarness("99999999-aaaa-4bbb-8ccc-dddddddddddd");
     const result = await call(h.options, "search_skills", { query: "help with a Slack member request", limit: 2 });
@@ -785,6 +801,22 @@ describe("load_skill MCP execution", () => {
     expect(h.fetchMock.mock.calls.filter(([input]) => input.toString() === "https://api.typesafe.ai/v1/systemone")).toHaveLength(0);
     const bodyCompile = h.fetchMock.mock.calls.find(([input]) => new URL(input.toString()).pathname.endsWith(`/tree/${SLACK_BODY_NODE_ID}/compile`));
     expect(new URL(bodyCompile![0].toString()).searchParams.get("depth")).toBe("0");
+  });
+
+  it("preserves the truncation error when load_skill cannot read the skill catalog", async () => {
+    const h = skillsHarness(
+      "99999999-3333-4333-8444-555555555555",
+      "typesafe-test-key",
+      DEFAULT_DOMAIN_CATALOG_NODE_ID,
+      {},
+      domainCatalogMarkdown,
+      `${atomMarkdown}\n<!-- truncated: 200 chars omitted -->`,
+    );
+
+    const result = await call(h.options, "load_skill", { name: "slack-member-recall" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContainEqual({ type: "text", text: "Skill catalog response was truncated" });
   });
 });
 
@@ -832,7 +864,7 @@ describe("match_skill_catalogs MCP execution", () => {
     expect((result.structuredContent as any).matches.map((match: { name: string }) => match.name)).not.toContain("tagged-weak");
   });
 
-  it("warns when the fetched domain catalog markdown is truncated", async () => {
+  it("returns the truncation error when the fetched domain catalog markdown is truncated", async () => {
     const catalogsNodeId = "99999999-7777-4777-8777-999999999999";
     const h = skillsHarness(
       "77777777-6666-4666-8666-777777777777",
@@ -842,13 +874,14 @@ describe("match_skill_catalogs MCP execution", () => {
       `${domainCatalogMarkdown}\n<!-- truncated: 200 chars omitted -->`,
     );
 
-    await call(h.options, "match_skill_catalogs", {
+    const result = await call(h.options, "match_skill_catalogs", {
       intent: "Choose a prose skill catalog",
       skill_name: "unknown-skill",
       limit: 1,
     });
 
-    expect(h.logger.warn).toHaveBeenCalledWith({ nodeId: catalogsNodeId }, "[atom] domain catalog markdown was truncated");
+    expect(result.isError).toBe(true);
+    expect(result.content).toContainEqual({ type: "text", text: "Domain catalog response was truncated" });
   });
 
   it("keeps one bundle per shared axis and activates bindings for selected targets", async () => {

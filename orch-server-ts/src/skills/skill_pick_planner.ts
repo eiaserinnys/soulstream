@@ -261,7 +261,8 @@ export async function planPickSelections({
       }
       return false;
     });
-    const useOnly = slotCount > 0 && !fields.optional && remainingCandidates.length <= slotCount;
+    const selectableCandidates = remainingCandidates.filter((catalog) => !bundleConflict(catalog, occupiedBundleAxes));
+    const useOnly = slotCount > 0 && !fields.optional && selectableCandidates.length <= slotCount;
     if (!useOnly && slotCount > 0 && plan.needsJev) {
       if (!input.intent?.trim()) plan.unresolvedCode = "unresolved_pick";
       else if (jevFailed) plan.unresolvedCode = "jev_failed";
