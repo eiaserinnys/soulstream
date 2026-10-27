@@ -123,26 +123,24 @@ async function capturePersistentSession(browser: Browser) {
 }
 
 test("대시보드에 폴더 트리와 다섯 상태의 카드를 캡처한다", async ({ page }) => {
+  // 기본 패널 폭과 일반 보기에서 가운데 패널을 카드 섹션 머리까지 내린다.
+  // 선택된 폴더는 왼쪽 트리의 강조로 보이므로 폴더 머리보다 카드 내용을 우선한다(위임자 결정).
   const { pageErrors } = await prepare(page, "dashboard", `/?folder=${readmeDemoIds.folderId}`);
   const cards = page.getByTestId("v3-planner-scroll").getByTestId("v3-folder-cards-section");
   await page.getByRole("button", { name: "📱 Aurora 날씨 앱 펼치기", exact: true }).click();
-  // Native minimum side-panel widths leave the largest available main panel.
-  for (const [testId, targetX] of [["v3-session-panel-resize-handle", 1420], ["v3-navigation-resize-handle", 20]] as const) {
-    const box = await page.getByTestId(testId).boundingBox();
-    if (!box) throw new Error(`resize handle missing: ${testId}`);
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(targetX, box.y + box.height / 2, { steps: 6 });
-    await page.mouse.up();
-  }
+  await cards.getByRole("button", { name: "일반 보기", exact: true }).click();
   await cards.getByRole("switch", { name: "완료·취소 숨김" }).click();
   await expect(cards.locator(".v3-postit-card")).toHaveCount(5);
   await expect(cards).toContainText("위젯에 시간대별 강수 확률 넣기");
   await expect(cards).toContainText("오프라인에서 마지막 예보 보여 주기");
-  console.log(`[readme-demo:dashboard-layout] ${JSON.stringify(await cards.evaluate(section => [...section.querySelectorAll<HTMLElement>(".v3-postit-card")].map(card => ({ id: card.dataset.cardId, ...card.getBoundingClientRect().toJSON() }))))}`);
-  await page.getByTestId("v3-planner-scroll").evaluate(element => { element.scrollTop = 0; });
-  await expect(page.getByRole("button", { name: "폴더 제목 편집", exact: true })).toBeInViewport({ ratio: 1 });
-  console.log("[readme-demo:dashboard-choice] 기본 compact 보드, 양쪽 패널을 제품 최소 폭으로 조절, 가운데 스크롤 0. 다섯 장 동시 노출 대신 폴더 머리 유지.");
+  await page.getByTestId("v3-planner-scroll").evaluate((scroller) => {
+    const section = scroller.querySelector<HTMLElement>('[data-testid="v3-folder-cards-section"]');
+    if (!section) throw new Error("cards section missing");
+    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+  });
+  await page.waitForTimeout(700);
+  const [firstCardId] = Object.values(readmeDemoIds.cardIds);
+  await expect(cards.locator(`[data-card-id="${firstCardId}"] .v3-postit-title`)).toBeInViewport();
   await expect(page.getByText("📱 Aurora 날씨 앱", { exact: true }).first()).toBeVisible();
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
