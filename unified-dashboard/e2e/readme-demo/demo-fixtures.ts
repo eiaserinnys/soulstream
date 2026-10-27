@@ -1,7 +1,20 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import type { PersistentReportEntry, SessionSummary } from "@seosoyoung/soul-ui";
 import type { CardCheckItem, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import type { PersistentSession, PersistentSessionList } from "../../client/lib/persistent-sessions";
+
+// 화면 설정은 디렉터가 운영에서 쓰는 값과 같다(다크, 직접 올린 사진 배경, 유리 효과).
+const demoBackgroundUrl = "/api/user/background?v=readme-demo";
+const wallpaperJpeg = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "wallpaper.jpg"));
+export const readmeDemoPreferences = {
+  appearance: "dark",
+  wallpaper: { mode: "photo", customImage: demoBackgroundUrl },
+  glass: { enabled: true, blur: 5, tint: 0.42, specular: 0.25, chromatic: 0.8, refraction: 66 },
+  chatFontSize: 16,
+} as const;
 
 const createdAt = "2026-10-28T08:00:00.000Z";
 const updatedAt = "2026-10-28T09:20:00.000Z";
@@ -253,8 +266,12 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     if (path === "/api/auth/config") return json({ authEnabled: true, devModeEnabled: false });
     if (path === "/api/auth/status") return json({ authenticated: true, user: { email: "demo@example.com", name: "날씨 앱 개발자" } });
     if (path === "/api/user/preferences" || path === "/api/user/preferences/sync") return json({
-      email: "demo@example.com", preferences: {}, hasBackground: false, backgroundUrl: null,
+      email: "demo@example.com", preferences: readmeDemoPreferences, hasBackground: true, backgroundUrl: demoBackgroundUrl,
     });
+    if (path === "/api/user/background") {
+      diagnostics.registeredApi.push(`${method} ${path}${url.search}`);
+      return route.fulfill({ status: 200, contentType: "image/jpeg", body: wallpaperJpeg });
+    }
     if (path === "/api/ui-events/config") return json({ enabled: false });
     if (path === "/api/config/settings") return json({ categories: [] });
     if (/^\/api\/sessions\/[^/]+\/read-position$/.test(path) && method === "PUT") return json({ ok: true });
