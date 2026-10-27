@@ -112,7 +112,7 @@ describe("load_skill compiler", () => {
     ]);
   });
 
-  it("recomputes only candidates after earlier blocks select overlapping catalogs", async () => {
+  it("counts an earlier selection as an occupied slot in a later block", async () => {
     const h = setup([
       "```link", "pick: catalog", "axis: [\"x\"]", "```", "",
       "```link", "pick: catalog", "axis: [\"y\"]", "```",
@@ -128,19 +128,20 @@ describe("load_skill compiler", () => {
       selected.map(({ name, reason }) => ({ name, reason })),
     )).toEqual([
       [{ name: "a", reason: "only" }],
-      [{ name: "b", reason: "only" }],
+      [{ name: "a", reason: "above" }],
     ]);
+    expect(result.links[1]?.excluded).toContainEqual({ name: "b", reason: "top" });
     expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
 
     const withIntent = await h.run("portrait");
     expect(h.score).not.toHaveBeenCalled();
     expect(withIntent.links.filter(({ kind }) => kind === "pick").map(({ selected }) => selected.map(({ name, reason }) => ({ name, reason })))).toEqual([
       [{ name: "a", reason: "only" }],
-      [{ name: "b", reason: "only" }],
+      [{ name: "a", reason: "above" }],
     ]);
   });
 
-  it("counts bundle-axis exclusions before deciding a later block is only", async () => {
+  it("counts an already-expanded bundle against a later block's slots", async () => {
     const h = setup([
       "```link", "pick: catalog", "axis: [\"x\"]", "```", "",
       "```link", "pick: catalog", "axis: [\"y\", \"z\"]", "top: 1", "```",
@@ -160,9 +161,10 @@ describe("load_skill compiler", () => {
       selected.map(({ name, reason }) => ({ name, reason })),
     )).toEqual([
       [{ name: "bundle", reason: "only" }],
-      [{ name: "free-z", reason: "only" }],
+      [{ name: "bundle", reason: "above" }],
     ]);
     expect(result.links[1]?.excluded).toContainEqual({ name: "covered-y", reason: "bundle_axis" });
+    expect(result.links[1]?.excluded).toContainEqual({ name: "free-z", reason: "top" });
   });
 
   it("applies the 0.25 floor only to optional blocks", async () => {
@@ -196,7 +198,7 @@ describe("load_skill compiler", () => {
     expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
   });
 
-  it("recognizes all below-floor Jev candidates after an earlier include", async () => {
+  it("counts a catalog included earlier as a selected above slot", async () => {
     const h = setup([
       "```link", "include: already-read", "```", "",
       "```link", "pick: catalog", "axis: [subject.identity]", "optional: true", "```",
@@ -208,12 +210,12 @@ describe("load_skill compiler", () => {
 
     const result = await h.run("formal male portrait");
 
-    expect(result.compiled_markdown).toContain(
-      "> 링크: pick [subject.identity] → 없음 (모든 후보가 Jev 하한 0.25 미만)",
-    );
-    expect(result.compiled_markdown).not.toContain("후보 low:");
-    expect(result.links[1]?.excluded).toContainEqual({ name: "already-read", reason: "already_expanded" });
-    expect(result.links[1]?.excluded).toContainEqual({ name: "low", reason: "below_floor", jev_score: 0.2 });
+    expect(h.score).not.toHaveBeenCalled();
+    expect(result.links[1]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "already-read", reason: "above" },
+    ]);
+    expect(result.links[1]?.excluded).toContainEqual({ name: "low", reason: "top" });
+    expect(result.links[1]?.excluded).not.toContainEqual({ name: "already-read", reason: "already_expanded" });
     expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
   });
 
@@ -231,23 +233,30 @@ describe("load_skill compiler", () => {
   });
 
   it("keeps unresolved candidates out of excluded when intent is absent or Jev fails", async () => {
-    const markdown = "```link\npick: catalog\naxis: [camera.framing]\n```";
-    const catalogs = [catalog("wide", ["camera.framing"]), catalog("close", ["camera.framing"])];
+    const markdown = "```link\npick: catalog\naxis: [x, z]\ntop: 2\n```";
+    const catalogs = [
+      catalog("bundle-a", ["x"], "bundle"),
+      catalog("overlap-b", ["x"]),
+      catalog("eligible-a", ["z"]),
+      catalog("eligible-b", ["z"]),
+    ];
     const withoutIntent = setup(markdown, { catalogs });
-    const noIntentResult = await withoutIntent.run();
-    expect(noIntentResult.links[0]?.candidates).toEqual(["wide", "close"]);
+    withoutIntent.readBody.mockImplementation(async (nodeId) => body(nodeId, "selected body"));
+    const noIntentResult = await withoutIntent.run(undefined, ["bundle-a"]);
+    expect(noIntentResult.links[0]?.candidates).toEqual(["bundle-a", "overlap-b", "eligible-a", "eligible-b"]);
     expect(noIntentResult.links[0]?.excluded).toEqual([]);
 
     const failedJev = setup(markdown, {
       catalogs,
       score: async () => { throw new Error("Jev unavailable"); },
     });
-    const failedResult = await failedJev.run("portrait framing");
-    expect(failedResult.links[0]?.candidates).toEqual(["wide", "close"]);
+    failedJev.readBody.mockImplementation(async (nodeId) => body(nodeId, "selected body"));
+    const failedResult = await failedJev.run("portrait framing", ["bundle-a"]);
+    expect(failedResult.links[0]?.candidates).toEqual(["bundle-a", "overlap-b", "eligible-a", "eligible-b"]);
     expect(failedResult.links[0]?.excluded).toEqual([]);
   });
 
-  it("marks a pick block covered by a previously selected bundle", async () => {
+  it("marks a pick block's prior bundle as above and reports covered axes", async () => {
     const h = setup([
       "```link", "pick: catalog", "axis: [subject.identity]", "```", "",
       "```link", "pick: catalog", "axis: [color.palette]", "```",
@@ -261,6 +270,9 @@ describe("load_skill compiler", () => {
     h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
     const result = await h.run("maid portrait");
     expect(result.compiled_markdown).toContain("> 링크: pick [color.palette] → (bundle psychedelic-maid-canon이 담당)");
+    expect(result.links[1]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "psychedelic-maid-canon", reason: "above" },
+    ]);
     expect(result.links[1]?.excluded).toContainEqual({ name: "vivid-palette", reason: "bundle_axis" });
   });
 
@@ -286,20 +298,67 @@ describe("load_skill compiler", () => {
     expect(scoredResult.links[0]?.excluded).not.toContainEqual({ name: "vivid-palette", reason: "bundle_axis" });
   });
 
-  it("uses top for a later pin conflicting with a bundle pin in the same block", async () => {
-    const h = setup("```link\npick: catalog\naxis: [subject.identity, color.palette]\ntop: 2\n```", {
+  it("keeps every matching bundle pin beyond top and warns when pinned bundles conflict", async () => {
+    const h = setup("```link\npick: catalog\naxis: [subject.identity]\ntop: 1\n```", {
       catalogs: [
-        catalog("bundle-a", ["subject.identity", "color.palette"], "bundle"),
-        catalog("overlap-b", ["color.palette"]),
+        catalog("bundle-a", ["subject.identity"], "bundle"),
+        catalog("bundle-b", ["subject.identity"], "bundle"),
+        catalog("orthogonal", ["subject.identity"]),
       ],
     });
     h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
 
-    const result = await h.run(undefined, ["bundle-a", "overlap-b"]);
+    const result = await h.run(undefined, ["bundle-a", "bundle-b"]);
 
-    expect(result.links[0]?.selected.map(({ name }) => name)).toEqual(["bundle-a"]);
-    expect(result.links[0]?.excluded).toContainEqual({ name: "overlap-b", reason: "top" });
-    expect(result.links[0]?.excluded).not.toContainEqual({ name: "overlap-b", reason: "bundle_axis" });
+    expect(result.links[0]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "bundle-a", reason: "pinned" },
+      { name: "bundle-b", reason: "pinned" },
+    ]);
+    expect(result.links[0]?.excluded).toContainEqual({ name: "orthogonal", reason: "top" });
+    expect(result.links[0]?.excluded).not.toContainEqual({ name: "bundle-b", reason: "bundle_axis" });
+    expect(result.pins).toEqual(["bundle-a", "bundle-b"]);
+    expect(result.warnings.filter(({ code }) => code === "pin_conflict")).toHaveLength(1);
+  });
+
+  it("warns when bundle pins conflict even if an earlier include already expanded one", async () => {
+    const h = setup("```link\ninclude: bundle-a\n```\n\n```link\npick: catalog\naxis: [subject.identity]\ntop: 1\n```", {
+      catalogs: [
+        catalog("bundle-a", ["subject.identity"], "bundle"),
+        catalog("bundle-b", ["subject.identity"], "bundle"),
+      ],
+      bodies: { "body-bundle-a": body("body-bundle-a", "included body") },
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, `body ${nodeId}`));
+
+    const result = await h.run(undefined, ["bundle-a", "bundle-b"]);
+
+    expect(result.links[1]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "bundle-a", reason: "above" },
+      { name: "bundle-b", reason: "pinned" },
+    ]);
+    expect(result.warnings.filter(({ code }) => code === "pin_conflict")).toHaveLength(1);
+    expect(result.pins).toEqual(["bundle-a", "bundle-b"]);
+  });
+
+  it("calls Jev only for unpinned slots when intent and pins are both present", async () => {
+    const h = setup("```link\npick: catalog\naxis: [camera.framing]\ntop: 2\n```", {
+      catalogs: [
+        catalog("pinned-wide", ["camera.framing"]),
+        catalog("jev-close", ["camera.framing"]),
+        catalog("jev-medium", ["camera.framing"]),
+      ],
+      score: async (keys) => keys.map((key, index) => ({ key, score: index === 0 ? 0.9 : 0.7 })),
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+
+    const result = await h.run("close portrait", ["pinned-wide"]);
+
+    expect(h.score).toHaveBeenCalledTimes(1);
+    expect(h.score.mock.calls[0]![0].items.map(({ key }) => key)).toEqual(["jev-close", "jev-medium"]);
+    expect(result.links[0]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "pinned-wide", reason: "pinned" },
+      { name: "jev-close", reason: "jev" },
+    ]);
   });
 
   it("fills remaining required slots after excluding candidates blocked by a same-block bundle pin", async () => {
@@ -321,6 +380,87 @@ describe("load_skill compiler", () => {
     ]);
     expect(result.links[0]?.excluded).toContainEqual({ name: "overlap-b", reason: "top" });
     expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
+  });
+
+  it("warns when a supplied pin is not a candidate in any pick block", async () => {
+    const h = setup("```link\npick: catalog\naxis: [camera.framing]\n```", {
+      catalogs: [catalog("wide", ["camera.framing"])],
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, "catalog body"));
+
+    const result = await h.run(undefined, ["not-a-candidate"]);
+
+    expect(result.warnings.filter(({ code }) => code === "pin_unused")).toHaveLength(1);
+    expect(result.links[0]?.selected.map(({ name }) => name)).toEqual(["wide"]);
+  });
+
+  it("leaves optional picks empty without intent and emits only one global no_intent warning", async () => {
+    const h = setup([
+      "```link", "pick: catalog", "axis: [optional.axis]", "optional: true", "```", "",
+      "```link", "pick: catalog", "axis: [required.axis]", "top: 1", "```",
+    ].join("\n"), {
+      catalogs: [
+        catalog("optional-a", ["optional.axis"]), catalog("optional-b", ["optional.axis"]),
+        catalog("required-a", ["required.axis"]), catalog("required-b", ["required.axis"]),
+      ],
+    });
+
+    const result = await h.run();
+
+    expect(result.compiled_markdown).toContain("> 링크: pick [optional.axis] → 없음 (intent 없음)");
+    expect(result.links[0]?.selected).toEqual([]);
+    expect(result.links[0]?.excluded).toEqual([
+      { name: "optional-a", reason: "no_intent" },
+      { name: "optional-b", reason: "no_intent" },
+    ]);
+    expect(result.links[1]?.candidates).toEqual(["required-a", "required-b"]);
+    expect(result.links[1]?.excluded).toEqual([]);
+    expect(result.warnings.filter(({ code }) => code === "no_intent")).toHaveLength(1);
+    expect(result.warnings.filter(({ code }) => code === "unresolved_pick")).toHaveLength(1);
+  });
+
+  it("replays Jev, below-floor, and only selections from response pins without intent", async () => {
+    const markdown = [
+      "```link", "pick: catalog", "axis: [optional.chosen]", "optional: true", "```", "",
+      "```link", "pick: catalog", "axis: [optional.empty]", "optional: true", "```", "",
+      "```link", "pick: catalog", "axis: [only.axis]", "```",
+    ].join("\n");
+    const catalogs = [
+      catalog("chosen-high", ["optional.chosen"]), catalog("chosen-low", ["optional.chosen"]),
+      catalog("empty-low-a", ["optional.empty"]), catalog("empty-low-b", ["optional.empty"]),
+      catalog("only-one", ["only.axis"]),
+    ];
+    const first = setup(markdown, {
+      catalogs,
+      score: async (keys) => keys.map((key) => ({
+        key,
+        score: key === "chosen-high" ? 0.9 : key === "chosen-low" ? 0.4 : key === "empty-low-a" ? 0.2 : 0.1,
+      })),
+    });
+    first.readBody.mockImplementation(async (nodeId) => body(nodeId, `## selected: ${nodeId}`));
+    const firstResult = await first.run("formal portrait");
+
+    const replay = setup(markdown, { catalogs });
+    replay.readBody.mockImplementation(async (nodeId) => body(nodeId, `## selected: ${nodeId}`));
+    const replayResult = await replay.run(undefined, firstResult.pins);
+
+    const selectedNames = (result: Awaited<ReturnType<typeof first.run>>) => result.links
+      .filter(({ kind }) => kind === "pick")
+      .map(({ selected }) => selected.map(({ name }) => name));
+    const selectedBodies = (result: Awaited<ReturnType<typeof first.run>>) =>
+      Array.from(result.compiled_markdown.matchAll(/^## selected: (.+)$/gm), ([, nodeId]) => nodeId);
+
+    expect(firstResult.links.map(({ selected }) => selected.map(({ name }) => name))).toEqual([
+      ["chosen-high"], [], ["only-one"],
+    ]);
+    expect(replayResult.links.map(({ selected }) => selected.map(({ name }) => name))).toEqual(selectedNames(firstResult));
+    expect(selectedBodies(replayResult)).toEqual(selectedBodies(firstResult));
+    expect(replayResult.links[1]?.excluded).toEqual([
+      { name: "empty-low-a", reason: "no_intent" },
+      { name: "empty-low-b", reason: "no_intent" },
+    ]);
+    expect(replay.score).not.toHaveBeenCalled();
+    expect(replayResult.warnings.map(({ code }) => code)).not.toContain("no_intent");
   });
 
   it("includes whole documents or sections, renders shard metadata, and expands only nested calls", async () => {
@@ -449,14 +589,20 @@ describe("load_skill compiler", () => {
     expect(result.total_chars).toBeGreaterThan(30_000);
   });
 
-  it("does not choose catalogs that an earlier include already expanded", async () => {
+  it("counts an earlier include as above and does not expand its body again", async () => {
     const h = setup("```link\ninclude: single\n```\n\n```link\npick: catalog\naxis: [light.setup]\n```", {
-      catalogs: [catalog("single", ["light.setup"])],
+      catalogs: [catalog("single", ["light.setup"]), catalog("other", ["light.setup"])],
       bodies: { "body-single": body("body-single", "single source") },
     });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, `${nodeId} source`));
     const result = await h.run();
     expect(h.score).not.toHaveBeenCalled();
-    expect(result.links[1]?.excluded).toContainEqual({ name: "single", reason: "already_expanded" });
+    expect(result.links[1]?.selected.map(({ name, reason }) => ({ name, reason }))).toEqual([
+      { name: "single", reason: "above" },
+    ]);
+    expect(result.links[1]?.excluded).toContainEqual({ name: "other", reason: "top" });
+    expect(result.links[1]?.selected[0]?.source).toMatchObject({ node_id: "body-single", version: 1 });
+    expect(h.readBody).toHaveBeenCalledTimes(1);
     expect(result.compiled_markdown).toContain("> 링크: pick [light.setup] → single (위에서 펼침)");
     expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
   });

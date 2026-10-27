@@ -23,7 +23,7 @@ export interface LinkSource {
 
 export interface CompiledLinkSelection {
   name: string;
-  reason: "include" | "pinned" | "only" | "jev";
+  reason: "include" | "above" | "pinned" | "only" | "jev";
   jev_score?: number;
   source?: LinkSource;
 }
@@ -37,7 +37,7 @@ export interface CompiledLink {
   selected: CompiledLinkSelection[];
   excluded: Array<{
     name: string;
-    reason: "top" | "below_floor" | "bundle_axis" | "already_expanded";
+    reason: "top" | "below_floor" | "bundle_axis" | "no_intent";
     jev_score?: number;
   }>;
   note?: string;
@@ -132,6 +132,7 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
   const warnings: SkillCompileWarning[] = [];
   const links: CompiledLink[] = [];
   const brokenIncludes: BrokenInclude[] = [];
+  const expandedCatalogSources = new Map<string, LinkSource>();
   let catalogs: DomainCatalogEntry[] | undefined;
 
   const remainingMs = () => deadlineAt - Date.now();
@@ -269,6 +270,7 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
           text = `${text}\n\n${renderShardTable(targetCatalog)}`;
         }
         const source = sourceFor(targetBody);
+        if (targetCatalog) expandedCatalogSources.set(normalizedName(targetCatalog.name), source);
         const link: CompiledLink = {
           kind: "include",
           line: block.line,
@@ -300,24 +302,36 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
         optional: fieldsPick.optional,
         candidates: plan.candidates.map(({ name }) => name),
         selected: [],
-        excluded: [...plan.preExcluded],
+        excluded: plan.unresolvedCode ? [] : [...plan.preExcluded],
         ...(fieldsPick.note ? { note: fieldsPick.note } : {}),
       };
       links.push(link);
       const coveredBy = plan.coveredBy;
       if (coveredBy) {
         output += `> 링크: pick ${axesText(fieldsPick.axis)} → (bundle ${coveredBy}이 담당)\n`;
-      } else if (plan.allBelowFloor) {
+      }
+      const alreadyExpanded = plan.selections.filter(({ reason }) => reason === "above").map(({ catalog }) => catalog.name);
+      if (alreadyExpanded.length > 0) {
+        output += `> 링크: pick ${axesText(fieldsPick.axis)} → ${alreadyExpanded.join(", ")} (위에서 펼침)\n`;
+      }
+      if (plan.allBelowFloor) {
         output += `> 링크: pick ${axesText(fieldsPick.axis)} → 없음 (모든 후보가 Jev 하한 ${DEFAULT_MIN_JEV_SCORE.toFixed(2)} 미만)\n`;
-      } else {
-        const alreadyExpanded = link.excluded.filter(({ reason }) => reason === "already_expanded").map(({ name }) => name);
-        if (alreadyExpanded.length > 0) output += `> 링크: pick ${axesText(fieldsPick.axis)} → ${alreadyExpanded.join(", ")} (위에서 펼침)\n`;
+      }
+      if (plan.noIntent) {
+        output += `> 링크: pick ${axesText(fieldsPick.axis)} → 없음 (intent 없음)\n`;
       }
       for (const selection of plan.selections) {
+        if (selection.reason === "above") {
+          const source = expandedCatalogSources.get(normalizedName(selection.catalog.name));
+          if (!source) throw new Error(`No source metadata for previously expanded catalog ${selection.catalog.name}`);
+          link.selected.push({ name: selection.catalog.name, reason: "above", source });
+          continue;
+        }
         ensureTime();
         const selectedBody = await input.readBody(selection.catalog.bodyNodeId);
         ensureTime();
         const source = sourceFor(selectedBody);
+        expandedCatalogSources.set(normalizedName(selection.catalog.name), source);
         link.selected.push({
           name: selection.catalog.name,
           reason: selection.reason,
