@@ -19,8 +19,8 @@ async function prepare(page: Page, label: string, path: string) {
   runs.set(page, { label, diagnostics, pageErrors });
   if (label === "dashboard" || label === "card-detail") {
     await page.addInitScript(() => localStorage.setItem("ls.webglGlass", "0"));
-    await installDemoEventSource(page);
   }
+  await installDemoEventSource(page);
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
@@ -67,6 +67,15 @@ async function settleAndCapture(page: Page, path: string) {
   await page.screenshot({ path, type: "png", animations: "disabled" });
 }
 
+async function settleChatAtBottom(page: Page, container: string) {
+  const scroller = page.locator(`${container} [data-virtuoso-scroller="true"]:visible`);
+  await expect(scroller).toHaveCount(1);
+  await scroller.evaluate(element => element.scrollTo({ top: element.scrollHeight, behavior: "instant" }));
+  await page.waitForTimeout(700);
+  await expect.poll(() => scroller.evaluate(element => Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop))).toBeLessThan(3);
+  console.log(`[readme-demo:chat-bottom] ${JSON.stringify(await scroller.evaluate(element => ({ scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight })))}`);
+}
+
 function report(label: string, diagnostics: DemoFixtureDiagnostics, pageErrors: string[]) {
   console.log(`[readme-demo:${label}] registered API: ${JSON.stringify([...new Set(diagnostics.registeredApi)])}`);
   console.log(`[readme-demo:${label}] unregistered API: ${JSON.stringify([...new Set(diagnostics.unregisteredApi)])}`);
@@ -100,6 +109,7 @@ async function capturePersistentSession(browser: Browser) {
     if (!layout.mobile || layout.scrollWidth > layout.width || !layout.hasChat) {
       console.log(`[readme-demo:mobile] 캡처 생략: ${JSON.stringify(layout)}`);
     } else {
+      await settleChatAtBottom(page, ".persistent-session-main");
       await expectSettled(page);
       await mkdir(screenshots, { recursive: true });
       await settleAndCapture(page, resolve(screenshots, "mobile.png"));
@@ -116,20 +126,23 @@ test("대시보드에 폴더 트리와 다섯 상태의 카드를 캡처한다",
   const { pageErrors } = await prepare(page, "dashboard", `/?folder=${readmeDemoIds.folderId}`);
   const cards = page.getByTestId("v3-planner-scroll").getByTestId("v3-folder-cards-section");
   await page.getByRole("button", { name: "📱 Aurora 날씨 앱 펼치기", exact: true }).click();
-  await cards.getByRole("button", { name: "일반 보기", exact: true }).click();
+  // Native minimum side-panel widths leave the largest available main panel.
+  for (const [testId, targetX] of [["v3-session-panel-resize-handle", 1420], ["v3-navigation-resize-handle", 20]] as const) {
+    const box = await page.getByTestId(testId).boundingBox();
+    if (!box) throw new Error(`resize handle missing: ${testId}`);
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetX, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+  }
   await cards.getByRole("switch", { name: "완료·취소 숨김" }).click();
   await expect(cards.locator(".v3-postit-card")).toHaveCount(5);
   await expect(cards).toContainText("위젯에 시간대별 강수 확률 넣기");
   await expect(cards).toContainText("오프라인에서 마지막 예보 보여 주기");
-  // 이 배치에는 카드 섹션 이동 버튼이 없어, 가운데 패널을 카드 섹션 머리까지 스크롤한다.
-  await page.getByTestId("v3-planner-scroll").evaluate((scroller) => {
-    const section = scroller.querySelector<HTMLElement>('[data-testid="v3-folder-cards-section"]');
-    if (!section) throw new Error("cards section missing");
-    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
-  });
-  await page.waitForTimeout(700);
-  const [firstCardId] = Object.values(readmeDemoIds.cardIds);
-  await expect(cards.locator(`[data-card-id="${firstCardId}"] .v3-postit-title`)).toBeInViewport();
+  console.log(`[readme-demo:dashboard-layout] ${JSON.stringify(await cards.evaluate(section => [...section.querySelectorAll<HTMLElement>(".v3-postit-card")].map(card => ({ id: card.dataset.cardId, ...card.getBoundingClientRect().toJSON() }))))}`);
+  await page.getByTestId("v3-planner-scroll").evaluate(element => { element.scrollTop = 0; });
+  await expect(page.getByRole("button", { name: "폴더 제목 편집", exact: true })).toBeInViewport({ ratio: 1 });
+  console.log("[readme-demo:dashboard-choice] 기본 compact 보드, 양쪽 패널을 제품 최소 폭으로 조절, 가운데 스크롤 0. 다섯 장 동시 노출 대신 폴더 머리 유지.");
   await expect(page.getByText("📱 Aurora 날씨 앱", { exact: true }).first()).toBeVisible();
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
@@ -149,7 +162,11 @@ test("검수 카드 상세의 확인 항목과 결과를 캡처한다", async ({
   await expect(page.getByText("오프라인에서도 마지막 예보가 나타납니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("새 응답을 받으면 저장값이 갱신됩니다.", { exact: true })).toBeVisible();
   await expect(page.getByTestId("card-now-panel").getByText("변경 내용을 검수해 주세요", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("v3-card-session-chat")).toContainText("마지막으로 저장된 예보가 표시되고, 새 응답을 받으면 갱신됩니다.");
+  const chat = page.getByTestId("v3-card-session-chat");
+  await expect(chat).toContainText("저장된 예보와 갱신 시각을 확인했습니다.");
+  await chat.locator('[data-slot="tool-call-group-toggle"]').click();
+  await expect(chat.locator('[data-slot="tool-call-group-items"]')).toBeVisible();
+  await settleChatAtBottom(page, '[data-testid="v3-card-session-chat"]');
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
   await settleAndCapture(page, resolve(screenshots, "card-detail.png"));
@@ -163,6 +180,7 @@ test("영구 세션의 보고 판과 대화, 모바일 배치를 캡처한다", 
   await expect(page.locator(".pas-report")).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "주간 사용량" }).click();
   await expect(page.getByTestId("persistent-session-weekly-usage")).toBeVisible();
+  await settleChatAtBottom(page, ".persistent-session-main");
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
   await settleAndCapture(page, resolve(screenshots, "persistent-session.png"));

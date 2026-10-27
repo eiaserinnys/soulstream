@@ -57,11 +57,11 @@ function card({
     id, number, folderId, title, request, brief: request, attachments: [], status,
     blockedKind, blockedDetail, positionKey: `A${String(130 - number).padStart(3, "0")}`,
     queuePositionKey: status === "queued" ? `Q${String(130 - number).padStart(3, "0")}` : null,
-    assigneeKind: status === "review" || status === "running" ? "session" : null,
-    assigneeAgentId: status === "running" ? "nova" : status === "review" ? "sage" : null,
-    assigneeUserId: null, assigneeSessionId: status === "review" ? sessionIds.review : status === "running" ? sessionIds.running : null,
-    nodeId: status === "running" ? "build-linux" : status === "review" ? "studio-mac" : null,
-    modelPreset: status === "running" ? "codex-6-luna" : status === "review" ? "codex-6.1-sol" : null,
+    assigneeKind: ["review", "running", "blocked"].includes(status) ? "session" : null,
+    assigneeAgentId: status === "running" ? "nova" : status === "review" ? "sage" : status === "blocked" ? "lyra" : null,
+    assigneeUserId: null, assigneeSessionId: status === "review" ? sessionIds.review : status === "running" ? sessionIds.running : status === "blocked" ? sessionIds.writing : null,
+    nodeId: status === "running" ? "build-linux" : status === "review" || status === "blocked" ? "studio-mac" : null,
+    modelPreset: status === "running" || status === "blocked" ? "codex-6-luna" : status === "review" ? "codex-6.1-sol" : null,
     version: 1, archived: false, createdAt, updatedAt,
     ...(status === "done" ? { completedAt: updatedAt } : {}),
     items, now,
@@ -86,6 +86,7 @@ const cards: CardRow[] = [
     request: "아침 예보를 짧고 부드러운 문장으로 알려 주세요.", blockedKind: "question",
     blockedDetail: "발송 시간을 정하면 초안을 마무리할 수 있습니다.",
     items: [checkItem(1, "현재 알림 문구 모으기", "done", "기존 알림 문구 세 가지를 정리했습니다.")],
+    now: { text: "알림 문구 초안 두 가지를 정리했어요", turn: "user", ask: "아침 알림을 7시와 7시 30분 중 언제 보낼까요?", updatedAt, sessionId: sessionIds.writing },
   }),
   card({
     id: cardIds.queued, number: 125, title: "다크 모드 대비 점검", status: "queued",
@@ -113,11 +114,11 @@ const sessions: SessionSummary[] = [
     lastMessage: { type: "assistant_message", preview: "위젯 폭에 맞춰 두 시간대씩 묶어 표시했습니다.", timestamp: updatedAt },
   },
   {
-    agentSessionId: sessionIds.review, status: "completed", eventCount: 5, createdAt, updatedAt, completedAt: updatedAt,
+    agentSessionId: sessionIds.review, status: "completed", eventCount: 10, createdAt, updatedAt, completedAt: updatedAt,
     displayName: "🔍 오프라인 캐시 검수", folderId, nodeId: "studio-mac", agentId: "sage", agentName: "세이지",
     sessionType: "llm", llmProvider: "openai", llmModel: "Codex", backend: "codex",
     modelPreset: "codex-6.1-sol", prompt: "오프라인 예보 복구 흐름을 확인해 주세요.",
-    reviewRequired: true, reviewState: "needs_review", lastEventId: 5, lastReadEventId: 0,
+    reviewRequired: true, reviewState: "needs_review", lastEventId: 10, lastReadEventId: 0,
     lastMessage: { type: "assistant_message", preview: "저장된 예보와 갱신 시각을 확인했습니다.", timestamp: updatedAt },
   },
   {
@@ -156,14 +157,16 @@ const persistentSession: PersistentSession = {
   persistent_report: persistentReports,
 };
 
+const advisorSummary = "세이지가 #127 오프라인 예보 검수를 마쳐서 확인을 기다리고 있어요. #126 아침 알림은 초안이 나와서 발송 시각만 정해 주시면 됩니다. #128 위젯은 노바가 진행 중이에요.";
+
 const persistentSessionSummary: SessionSummary = {
-  agentSessionId: sessionIds.persistent, status: "completed", eventCount: 2, createdAt, updatedAt, completedAt: updatedAt,
+  agentSessionId: sessionIds.persistent, status: "completed", eventCount: 6, createdAt, updatedAt, completedAt: updatedAt,
   displayName: "비서", folderId, nodeId: "studio-mac", agentId: "lyra", agentName: "리라",
   sessionType: "llm", llmProvider: "openai", llmModel: "Codex", backend: "codex",
   modelPreset: "codex-6-luna", reasoningEffort: "max", prompt: "오늘 작업을 간결하게 정리합니다.",
-  reviewRequired: false, reviewState: "not_required", lastEventId: 2, lastReadEventId: 0, cardId: null,
+  reviewRequired: false, reviewState: "not_required", lastEventId: 6, lastReadEventId: 0, cardId: null,
   persistentReport: persistentReports,
-  lastMessage: { type: "assistant_message", preview: "오프라인 예보를 검수했고, 알림 문구 초안을 정리했어요.", timestamp: updatedAt },
+  lastMessage: { type: "assistant_message", preview: advisorSummary, timestamp: updatedAt },
 };
 
 const sessionSummaries: SessionSummary[] = [...sessions, persistentSessionSummary];
@@ -178,12 +181,24 @@ const timelineBySession: Record<string, Array<Record<string, unknown>>> = {
     { id: 6, parent_event_id: "1", event_type: "assistant_message", payload: { content: "위젯 폭에 맞춰 두 시간대씩 묶어 표시했습니다.\n\n```ts\nconst slots = forecast.slice(0, 6);\n```", timestamp: 6, tool_use_id: "assistant-widget-final", _final_for_live_stream: true }, created_at: updatedAt },
   ],
   [sessionIds.persistent]: [
-    { id: 1, parent_event_id: null, event_type: "user_message", payload: { text: "오늘 끝난 것 정리해 줘", timestamp: 1 }, created_at: createdAt },
-    { id: 2, parent_event_id: "1", event_type: "assistant_message", payload: { content: "오프라인 예보 저장을 검수했고, 아침 알림 문구 초안을 정리했어요.\n\n다음은 발송 시간을 정하면 됩니다.", timestamp: 2, tool_use_id: "assistant-advisor-final", _final_for_live_stream: true }, created_at: updatedAt },
+    { id: 1, parent_event_id: null, event_type: "user_message", payload: { text: "오늘은 위젯 강수 확률부터 하자", timestamp: 1 }, created_at: createdAt },
+    { id: 2, parent_event_id: "1", event_type: "assistant_message", payload: { content: "노바에게 #128을 맡겼어요. 시간대별 강수 확률을 위젯 폭에 맞춰 표시하고 있어요.", timestamp: 2, tool_use_id: "advisor-widget", _final_for_live_stream: true }, created_at: createdAt },
+    { id: 3, parent_event_id: null, event_type: "user_message", payload: { text: "오프라인 표시도 검수해 줘", timestamp: 3 }, created_at: createdAt },
+    { id: 4, parent_event_id: "3", event_type: "assistant_message", payload: { content: "세이지가 #127 검수를 맡았습니다. 저장된 예보와 갱신 시각, 네트워크가 돌아온 뒤의 갱신을 확인할 거예요.", timestamp: 4, tool_use_id: "advisor-review", _final_for_live_stream: true }, created_at: createdAt },
+    { id: 5, parent_event_id: null, event_type: "user_message", payload: { text: "오늘 끝난 것 정리해 줘", timestamp: 5 }, created_at: updatedAt },
+    { id: 6, parent_event_id: "5", event_type: "assistant_message", payload: { content: advisorSummary, timestamp: 6, tool_use_id: "assistant-advisor-final", _final_for_live_stream: true }, created_at: updatedAt },
   ],
   [sessionIds.review]: [
     { id: 1, parent_event_id: null, event_type: "user_message", payload: { text: "오프라인 예보 복구 흐름을 확인해 주세요.", timestamp: 1 }, created_at: createdAt },
-    { id: 2, parent_event_id: "1", event_type: "assistant_message", payload: { content: "마지막으로 저장된 예보가 표시되고, 새 응답을 받으면 갱신됩니다.", timestamp: 2, tool_use_id: "assistant-review-final", _final_for_live_stream: true }, created_at: updatedAt },
+    { id: 2, parent_event_id: "1", event_type: "assistant_message", payload: { content: "예보 저장소와 복구 흐름부터 읽고, 비행기 모드와 재연결 테스트를 확인하겠습니다.", timestamp: 2, tool_use_id: "review-plan", _final_for_live_stream: true }, created_at: createdAt },
+    { id: 3, parent_event_id: "1", event_type: "tool_start", payload: { tool_name: "Read", tool_input: { file_path: "src/forecast/ForecastCache.ts" }, tool_use_id: "review-cache", status: "completed", timestamp: 3 }, created_at: createdAt },
+    { id: 4, parent_event_id: "3", event_type: "tool_result", payload: { tool_name: "Read", result: "예보와 updatedAt을 함께 저장하고, 요청 실패 시 마지막 저장값을 반환합니다.", tool_use_id: "review-cache", status: "completed", is_error: false, timestamp: 4 }, created_at: createdAt },
+    { id: 5, parent_event_id: "1", event_type: "tool_start", payload: { tool_name: "Read", tool_input: { file_path: "src/forecast/ForecastCache.test.ts" }, tool_use_id: "review-tests", status: "completed", timestamp: 5 }, created_at: createdAt },
+    { id: 6, parent_event_id: "5", event_type: "tool_result", payload: { tool_name: "Read", result: "오프라인 복구, 갱신 시각 보존, 새 예보 수신 테스트를 확인했습니다.", tool_use_id: "review-tests", status: "completed", is_error: false, timestamp: 6 }, created_at: createdAt },
+    { id: 7, parent_event_id: "1", event_type: "tool_start", payload: { tool_name: "Bash", tool_input: { command: "pnpm test ForecastCache --runInBand" }, tool_use_id: "review-run", status: "completed", timestamp: 7 }, created_at: createdAt },
+    { id: 8, parent_event_id: "7", event_type: "tool_result", payload: { tool_name: "Bash", result: "3 passed: 오프라인 복구 · 갱신 시각 보존 · 새 예보 갱신", tool_use_id: "review-run", status: "completed", is_error: false, timestamp: 8 }, created_at: updatedAt },
+    { id: 9, parent_event_id: "1", event_type: "assistant_message", payload: { content: "세 가지 테스트가 통과했습니다.\n\n- 비행기 모드에서도 마지막 예보가 나타납니다.\n- 저장한 갱신 시각이 예보와 함께 유지됩니다.\n- 새 응답을 받으면 예보와 시각이 함께 바뀝니다.\n\n앱을 오프라인으로 열어 표시를 확인해 주세요. #127은 확인을 기다리고 있습니다.", timestamp: 9, tool_use_id: "review-findings", _final_for_live_stream: true }, created_at: updatedAt },
+    { id: 10, parent_event_id: "1", event_type: "assistant_message", payload: { content: "저장된 예보와 갱신 시각을 확인했습니다.", timestamp: 10, tool_use_id: "assistant-review-final", _final_for_live_stream: true }, created_at: updatedAt },
   ],
 };
 
@@ -206,7 +221,8 @@ function checkItemQuestionPayload() {
 }
 
 function timeline(sessionId: string) {
-  return { messages: timelineBySession[sessionId] ?? [], next_cursor: null };
+  // The timeline API is newest first; the history renderer reverses it before replay.
+  return { messages: [...(timelineBySession[sessionId] ?? [])].reverse(), next_cursor: null };
 }
 
 function sse(event: string, data: unknown) {
@@ -234,7 +250,7 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     };
 
     if (path === "/api/health") return json({ healthy: true, ready: true, draining: false, build_id: "dev" });
-    if (path === "/api/auth/config") return json({ authEnabled: false, devModeEnabled: false });
+    if (path === "/api/auth/config") return json({ authEnabled: true, devModeEnabled: false });
     if (path === "/api/auth/status") return json({ authenticated: true, user: { email: "demo@example.com", name: "날씨 앱 개발자" } });
     if (path === "/api/user/preferences" || path === "/api/user/preferences/sync") return json({
       email: "demo@example.com", preferences: {}, hasBackground: false, backgroundUrl: null,
