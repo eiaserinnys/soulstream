@@ -323,7 +323,12 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
       for (const selection of plan.selections) {
         if (selection.reason === "above") {
           const source = expandedCatalogSources.get(normalizedName(selection.catalog.name));
-          if (!source) throw new Error(`No source metadata for previously expanded catalog ${selection.catalog.name}`);
+          if (!source) {
+            if (brokenIncludes.length === 0) {
+              throw new Error(`No source metadata for previously expanded catalog ${selection.catalog.name}`);
+            }
+            continue;
+          }
           link.selected.push({ name: selection.catalog.name, reason: "above", source });
           continue;
         }

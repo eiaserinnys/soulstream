@@ -518,6 +518,18 @@ describe("load_skill compiler", () => {
     expect(h.readBody).not.toHaveBeenCalledWith("shard-warm");
   });
 
+  it("keeps include resolution details when a later pick sees the failed include as already expanded", async () => {
+    const h = setup("```link\ninclude: palette\n```\n\n```link\npick: catalog\naxis: [color.palette]\n```", {
+      catalogs: [catalog("palette", ["color.palette"])],
+    });
+
+    await expect(h.run()).rejects.toMatchObject({
+      name: "IncludeResolutionError",
+      broken: [{ line: 1, target: "palette", cause: "본문 조회 실패" }],
+      message: expect.stringContaining("compile_subtree로 읽고 블록을 직접 따르라"),
+    });
+  });
+
   it("includes catalog bindings in the combined selection and renders them below the include source", async () => {
     const h = setup("```link\ninclude: style\n```\n\n```link\ninclude: layout\n```", {
       catalogs: [
