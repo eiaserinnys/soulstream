@@ -1,85 +1,49 @@
 # Soulstream
 
-![Soulstream dashboard](assets/soulstream-dashboard.png)
+![Soulstream dashboard](docs/screenshots/dashboard.png)
 
-**Soulstream is a self-hosted control plane for running coding agents as an ongoing service.** It combines a live operations dashboard, durable sessions and workspaces, multi-node execution, and agent-facing MCP tools in one system.
+**Soulstream is a self-hosted control plane for running coding agents as an ongoing service.** It combines a live operations dashboard, durable work cards and sessions, multi-node execution, and agent-facing MCP tools in one system.
 
-Instead of treating an agent as a terminal process that disappears after one prompt, Soulstream gives it a durable place to work: sessions stream in real time, tasks and pages carry context between turns, workers can run on different machines, and the control plane keeps the history in PostgreSQL.
+Instead of treating an agent as a terminal process that disappears after one prompt, Soulstream gives it a durable workspace. Sessions stream in real time, folders and cards carry context across turns, workers run across multiple machines, and the central control plane keeps canonical history in PostgreSQL.
 
-## What Soulstream provides
+## What Soulstream does
 
-- **Long-lived agent sessions** with streaming output, follow-up messages, interruption, review, attachments, and resumable history.
-- **Multiple execution backends** through worker profiles: Claude, Codex, and OpenAI Agents.
-- **A unified dashboard** for daily work, projects, tasks, pages, boards, connected nodes, and live or completed sessions.
-- **Multi-node execution** with a TypeScript orchestrator routing authenticated WebSocket commands to TypeScript workers.
-- **Durable context** assembled from the active task, page, folder, prior turns, attachments, and configured knowledge sources.
-- **MCP access** for agents to inspect the service, browse work, search session history, manage tasks and pages, and coordinate sessions without leaving their runtime.
-- **Release-safe operations** through Haniel manifests that separate central database migration authority from worker-only updates.
+- **Long-lived agent sessions** with live streaming output, follow-up messages, mid-turn intervention, file attachments, and resumable history.
+- **Structured work cards** inside hierarchical folders, tracking the request, check items with evidence, a one-line status (`now`), user questions, and review completion.
+- **Persistent assistant sessions** with a live report board (shown as 지금의 보고 in the UI), active task lists, session monitoring, and weekly quota headroom.
+- **Five execution backends** configured through node-local agent profiles and model presets: Claude, Codex, OpenAI Agents, Antigravity, and OpenCode.
+- **Multi-node routing** where the TypeScript orchestrator (`orch-server-ts`) dispatches authenticated WebSocket commands to TypeScript workers (`soul-server-ts`).
+- **Built-in MCP tools** for service reflection, session search, git worktrees, on-demand skill loading (`load_skill`), recurring jobs, and card or folder management.
+- **Release-safe operations** with [Haniel](https://github.com/eiaserinnys/haniel) manifests that keep PostgreSQL migration authority on the central orchestrator while remote workers stay database-free.
 
-## Architecture
+## Interface previews
 
-![Soulstream architecture](assets/soulstream-architecture.png)
+Cards carry the request, check items with results, and the current status. The persistent assistant collects what needs your attention on one board.
 
-The production control plane is `orch-server-ts`. It serves the built dashboard, owns the public HTTP/SSE surface, keeps the connected-node registry, and persists canonical state in PostgreSQL. `soul-server-ts` workers execute agent turns and connect upstream over WebSocket; their local HTTP surface is limited to health, optional MCP, and node-local support routes.
+![Card detail in review with check items, recorded results, and the linked review session](docs/screenshots/card-detail.png)
 
-The retired Python orchestrator source tree has been removed. Python migration tooling and shared legacy packages remain where the repository still uses them; the live control plane is TypeScript.
+<p>
+  <img src="docs/screenshots/persistent-session.png" alt="Persistent assistant session with the report board and chat" width="72%">
+  <img src="docs/screenshots/mobile.png" alt="The same persistent session on a phone-sized screen" width="24%">
+</p>
 
-## Repository layout
-
-```text
-soulstream/
-├── orch-server-ts/         Production TypeScript orchestrator and API
-├── soul-server-ts/         TypeScript execution worker and MCP server
-├── unified-dashboard/      React dashboard and PWA
-├── packages/
-│   ├── db-schema/          Canonical PostgreSQL schema and migrations
-│   ├── agent-profile-contract/ Shared agent profile contract
-│   ├── fractional-position/ Shared ordering primitive
-│   ├── model-catalog/      Shared model catalog contract
-│   ├── page-model/         Shared page, block, and task-page contracts
-│   ├── search-contract/    Shared search request and result contracts
-│   ├── soul-ui/            Reusable dashboard UI and state modules
-│   ├── wire-schema/        Canonical node ↔ orchestrator protocol
-├── chrome-extension/       Optional page-action client
-├── soul-desktop/           Tauri desktop client
-├── deploy/                 Haniel release and database safety manifests
-├── install/                Windows and Haniel installation templates
-```
-
-The pnpm workspace is declared in `pnpm-workspace.yaml`. The node ↔ orchestrator protocol is defined once in `packages/wire-schema/src/upstream.schema.json`; its generated TypeScript client stays in sync with that schema.
+The screenshots use demo data served by a Playwright fixture. Regenerate them with `pnpm --dir unified-dashboard capture:readme`.
 
 ## Quick start
 
-### Windows installer
+### Windows worker installer
 
-The installer registers a `soul-server-ts` worker with an existing remote `orch-server-ts` control plane. It does not install an orchestrator or own database migrations.
-
-Prerequisites are checked before installation: Python 3.11 or newer and Node.js 22.5 or newer.
-
-Interactive install:
+Register a `soul-server-ts` worker on Windows (requires Python 3.11+ and Node.js 22.5+) against an existing `orch-server-ts` control plane:
 
 ```powershell
 irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
 ```
 
-Non-interactive install:
-
-```powershell
-& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1'))) `
-  -NonInteractive `
-  -UpstreamUrl $env:SOULSTREAM_UPSTREAM_URL `
-  -AuthBearerToken $env:SOULSTREAM_AUTH_BEARER_TOKEN
-```
-
-The default install directory is `%USERPROFILE%\soulstream`, the default agent workspace is `%USERPROFILE%\workspace`, and the default worker port is `3105`. Non-interactive mode requires the remote orchestrator WebSocket URL and its shared service token. Database migrations are applied by the orchestrator's central release manifest.
-
-Haniel auto-apply is disabled by default. It detects new commits and presents them for approval without silently pulling or restarting the service.
+See [Installation](docs/guide/installation.md) for non-interactive parameters and Haniel service defaults.
 
 ### Run from source
 
-For local development, use Node.js 22.5 or newer, pnpm 10.32.1, and PostgreSQL. Run commands from the repository root.
-
-Install and build the active TypeScript surfaces:
+Running the full stack locally requires Node.js 22.5+, pnpm `10.32.1`, and PostgreSQL:
 
 ```bash
 corepack enable
@@ -87,113 +51,22 @@ pnpm install --frozen-lockfile
 pnpm --dir unified-dashboard build
 pnpm --dir orch-server-ts build
 pnpm --dir soul-server-ts build
-```
 
-Prepare a local agent registry and model catalog:
-
-```bash
 cp soul-server-ts/config/agents.yaml.example soul-server-ts/config/agents.yaml
 cp soul-server-ts/config/model-catalog.yaml.example soul-server-ts/config/model-catalog.yaml
-```
 
-Create `.env.soul-server-ts` in the repository root for the worker:
-
-```dotenv
-SOULSTREAM_NODE_ID=local-worker
-SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:5200/ws/node
-EVENT_OUTBOX_DIR=.local/event-outbox
-AGENTS_CONFIG_PATH=soul-server-ts/config/agents.yaml
-MODEL_CATALOG_PATH=soul-server-ts/config/model-catalog.yaml
-MCP_ENABLED=true
-MCP_PATH=/mcp
-MCP_INTERNAL_PORT=4206
-ENVIRONMENT=development
-```
-
-Initialize a fresh, empty database once. The initializer also verifies an already-current database and fails closed when an upgrade requires the Haniel release path.
-
-```bash
 export DATABASE_URL=postgresql://user:password@127.0.0.1:5432/soulstream
 node packages/db-schema/scripts/migrate.mjs fresh-install
 ```
 
-Start the orchestrator. `CLAUDE_OAUTH_CLIENT_ID` must contain a valid OAuth application client ID; the callback URL must be registered with that application.
+See [Installation](docs/guide/installation.md) and [Configuration](docs/guide/configuration.md) for the `.env.soul-server-ts` worker file and orchestrator startup commands.
 
-```bash
-export CLAUDE_OAUTH_CLIENT_ID=your-client-id
-export CLAUDE_OAUTH_CALLBACK_URL=http://127.0.0.1:5200/api/nodes/claude-auth/callback
+## Documentation
 
-ENVIRONMENT=development \
-HOST=127.0.0.1 \
-PORT=5200 \
-DATABASE_URL="$DATABASE_URL" \
-DASHBOARD_DIR="$PWD/unified-dashboard/dist" \
-CLAUDE_OAUTH_CLIENT_ID="$CLAUDE_OAUTH_CLIENT_ID" \
-CLAUDE_OAUTH_CALLBACK_URL="$CLAUDE_OAUTH_CALLBACK_URL" \
-pnpm --dir orch-server-ts start
-```
-
-In a second terminal, start the worker from the repository root so it loads `.env.soul-server-ts`:
-
-```bash
-node soul-server-ts/dist/main.js
-```
-
-The dashboard and orchestrator health endpoint are available at `http://127.0.0.1:5200/` and `http://127.0.0.1:5200/api/health`. The worker health endpoint defaults to `http://127.0.0.1:4205/health`, and its node-local internal MCP endpoint defaults to `http://127.0.0.1:4206/mcp/internal`. The public worker listener has no MCP route.
-
-## Configuration model
-
-Agent profiles live in the YAML selected by `AGENTS_CONFIG_PATH`. Each profile declares an ID, display name, backend, workspace directory, and usually a `default_preset`. Model strings belong in the catalog selected by `MODEL_CATALOG_PATH`, so profile identity and model selection remain separate.
-
-The worker's required runtime settings are:
-
-- `SOULSTREAM_NODE_ID`: unique node identity advertised to the orchestrator.
-- `SOULSTREAM_UPSTREAM_URL`: `ws://` or `wss://` orchestrator node endpoint.
-- `EVENT_OUTBOX_DIR`: node-local durable event retry directory.
-
-`AUTH_BEARER_TOKEN` is required for workers in production. If MCP is enabled in production, `MCP_REQUIRE_AUTH=true` is also required. `HOST` defaults to `127.0.0.1`, the worker `PORT` defaults to `4205`, and the orchestrator `PORT` defaults to `5200`.
-
-The complete current key reference is [orch-server-ts/.env.example](orch-server-ts/.env.example); every assignment is deliberately value-free. The orchestrator requires `ENVIRONMENT`, `HOST`, `DATABASE_URL`, `CLAUDE_OAUTH_CLIENT_ID`, and `CLAUDE_OAUTH_CALLBACK_URL`. Production additionally requires a non-empty `AUTH_BEARER_TOKEN` and an explicit CORS origin policy. Development may deliberately leave the bearer empty. Set `DASHBOARD_DIR` to the built `unified-dashboard/dist` directory to serve the UI from the orchestrator.
-
-Session-search model configuration and the operator's release-time verification steps are documented in [orch-server-ts/docs/session-search-deployment.md](orch-server-ts/docs/session-search-deployment.md).
-
-Keep credentials in environment files or the process manager's secret configuration. Do not commit service tokens, OAuth secrets, database credentials, or provider credentials.
-
-## Development
-
-Use package-local scripts so validation stays proportional to the surface you changed:
-
-```bash
-pnpm --dir orch-server-ts typecheck
-pnpm --dir orch-server-ts test
-
-pnpm --dir soul-server-ts typecheck
-pnpm --dir soul-server-ts test
-
-pnpm --dir unified-dashboard typecheck
-pnpm --dir unified-dashboard test
-pnpm --dir unified-dashboard exec playwright install chromium
-pnpm --dir unified-dashboard test:e2e:smoke
-
-pnpm --dir packages/soul-ui typecheck
-pnpm --dir packages/soul-ui test
-```
-
-Useful contract and component references:
-
-- [MCP server and tool reference](docs/mcp.md)
-- [Node ↔ orchestrator wire contract](packages/wire-schema/src/README.md)
-- [Database schema and release safety](packages/db-schema/README.md)
-- [Task and page invariants](docs/task-page-invariants.md)
-- [Chrome extension](chrome-extension/README.md)
-
-## Deployment with Haniel
-
-[Haniel](https://github.com/eiaserinnys/haniel) is Soulstream's process and release manager. The repository keeps deployment behavior explicit:
-
-- `deploy/release-manifest.json` makes the central orchestrator deployment the shared database migration authority and defines preflight, apply, post-start verification, and recovery.
-- `deploy/release-manifest-worker.json` keeps remote worker deployments database-free; the central orchestrator release owns migrations.
-- `install/haniel-soul-server-ts.example.yaml` is the worker-node integration reference.
-- `install/haniel-worker.yaml.template` is rendered by the Windows worker installer.
-
-Normal service starts never apply schema changes. Database upgrades run through the release manifest so writer quiescence, migration checksums, health checks, and release-journal recovery remain one audited path. Backups are operated independently from deployment.
+- [Concepts](docs/guide/concepts.md): folders, cards, sessions, persistent assistant sessions, agents, model presets, and nodes.
+- [Architecture](docs/guide/architecture.md): system diagram, control plane and worker roles, multi-node routing, backends, and repository layout.
+- [Installation](docs/guide/installation.md): prerequisites, Windows worker installer, source build, database initialization, and local dev servers.
+- [Configuration](docs/guide/configuration.md): orchestrator and worker environment variables, `agents.yaml`, `model-catalog.yaml`, and secret handling.
+- [Agents and tools](docs/guide/agents-and-tools.md): skill catalog (`load_skill`), MCP tool groups, worktrees, pages, recurring jobs, custom views, attachments, and usage stats.
+- [Development](docs/guide/development.md): package typecheck and test scripts, Playwright suites, screenshot regeneration, and internal architecture references.
+- [Deployment](docs/guide/deployment.md): Haniel release manifests, central database migration authority, and worker rollout.
