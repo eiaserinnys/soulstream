@@ -112,21 +112,20 @@ async function capturePersistentSession(browser: Browser) {
   }
 }
 
-test("대시보드에 폴더, 카드와 실행 중 채팅을 함께 캡처한다", async ({ page }) => {
+test("대시보드에 폴더 트리와 다섯 상태의 카드를 캡처한다", async ({ page }) => {
   const { pageErrors } = await prepare(page, "dashboard", `/?folder=${readmeDemoIds.folderId}`);
-  const runningRow = page.getByTestId(`v3-session-row-${readmeDemoIds.sessionIds.running}`);
-  await expect(runningRow).toBeVisible();
-  await runningRow.locator(".v3-run-open").click();
-  await expect(page.getByRole("region", { name: "세션 채팅" })).toBeVisible();
-  // An overlay blurs the folder tree: it cannot stand in for the requested main dashboard.
-  await expect(page.locator(".v3-workspace-scrim"), "폴더 트리를 읽을 수 있는 기본 화면이어야 합니다").toHaveCount(0);
   const cards = page.getByTestId("v3-planner-scroll").getByTestId("v3-folder-cards-section");
+  await page.getByRole("button", { name: "📱 Aurora 날씨 앱 펼치기", exact: true }).click();
+  await cards.getByRole("button", { name: "일반 보기", exact: true }).click();
+  await cards.getByRole("switch", { name: "완료·취소 숨김" }).click();
+  await expect(cards.locator(".v3-postit-card")).toHaveCount(5);
   await expect(cards).toContainText("위젯에 시간대별 강수 확률 넣기");
   await expect(cards).toContainText("오프라인에서 마지막 예보 보여 주기");
-  await expect(page.locator(".v3-chat-pane")).toContainText("위젯 폭에 맞춰 두 시간대씩 묶어 표시했습니다.");
-  await cards.scrollIntoViewIfNeeded();
-  await expect(cards.locator(`[data-card-id="${readmeDemoIds.cardIds.running}"]`)).toBeInViewport();
-  await expect(cards.locator(`[data-card-id="${readmeDemoIds.cardIds.review}"]`)).toBeInViewport();
+  await page.getByRole("button", { name: "카드 섹션으로 이동", exact: true }).click();
+  await page.waitForTimeout(700);
+  for (const id of Object.values(readmeDemoIds.cardIds)) {
+    await expect(cards.locator(`[data-card-id="${id}"] .v3-postit-title`)).toBeInViewport();
+  }
   await expect(page.getByText("📱 Aurora 날씨 앱", { exact: true }).first()).toBeVisible();
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
@@ -141,6 +140,7 @@ test("검수 카드 상세의 확인 항목과 결과를 캡처한다", async ({
   await reviewCard.locator(".v3-postit-open").click();
   await expect(page.getByTestId("card-detail")).toBeVisible();
   await expect(page.getByTestId("card-now-panel")).toContainText("비행기 모드에서 앱을 열어 마지막 예보가 보이는지 봐 주세요");
+  await expect(page.getByTestId("card-now-panel").getByRole("group", { name: "내 차례", exact: true })).toBeVisible();
   await expect(page.getByText("예보와 갱신 시각을 함께 저장했습니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("오프라인에서도 마지막 예보가 나타납니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("새 응답을 받으면 저장값이 갱신됩니다.", { exact: true })).toBeVisible();

@@ -79,7 +79,7 @@ const cards: CardRow[] = [
     id: cardIds.review, number: 127, title: "오프라인에서 마지막 예보 보여 주기", status: "review",
     request: "네트워크가 끊겨도 마지막으로 받은 예보를 읽을 수 있게 해 주세요.",
     items: [checkItem(1, "예보 응답을 로컬에 저장", "done", "예보와 갱신 시각을 함께 저장했습니다."), checkItem(2, "비행기 모드에서 마지막 예보 표시", "done", "오프라인에서도 마지막 예보가 나타납니다."), checkItem(3, "새 예보 수신 뒤 저장값 갱신", "done", "새 응답을 받으면 저장값이 갱신됩니다.")],
-    now: { text: "변경 내용을 검수해 주세요", turn: "agent", ask: "비행기 모드에서 앱을 열어 마지막 예보가 보이는지 봐 주세요", updatedAt, sessionId: sessionIds.review },
+    now: { text: "변경 내용을 검수해 주세요", turn: "user", ask: "비행기 모드에서 앱을 열어 마지막 예보가 보이는지 봐 주세요", updatedAt, sessionId: sessionIds.review },
   }),
   card({
     id: cardIds.question, number: 126, title: "아침 알림 문구 다듬기", status: "blocked",
@@ -309,7 +309,8 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     if (path.startsWith("/api/cards") && method === "GET") {
       if (path === "/api/cards") {
         const selected = url.searchParams.get("folderId");
-        return json({ cards: cards.filter((entry) => !selected || entry.folderId === selected) });
+        const status = url.searchParams.get("status");
+        return json({ cards: cards.filter((entry) => (!selected || entry.folderId === selected) && (!status || entry.status === status)), nextCursor: null });
       }
       const id = path.split("/")[3];
       const selectedCard = cards.find((entry) => entry.id === id);
