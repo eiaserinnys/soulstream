@@ -83,7 +83,7 @@ export interface PersistentSessionHistoryResult {
 }
 
 export const sessionTools = {
-  list_sessions: { name: "list_sessions", audience: "all", config: {
+  list_sessions: { name: "list_sessions", audience: "all", timeoutMs: 35_000, config: {
       description:
         "세션 목록을 페이지네이션하여 조회한다. 경량 필드만 반환 (Python list_sessions 정합).",
       inputSchema: {

@@ -2,7 +2,9 @@ import { clusterTools } from "@soulstream/mcp-contract";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { registerOrchestratorTools } from "../../src/mcp/orchestrator_tools.js";
 import { registerMultiNodeTools } from "../../src/mcp/tools/multi_node.js";
+import { sessionTools } from "../../../packages/mcp-contract/src/session_tools.js";
 
 type ToolHandler = (input?: Record<string, unknown>, request?: unknown) => Promise<unknown>;
 
@@ -29,6 +31,7 @@ function captureTools(): Map<string, ToolHandler> {
     logger: { warn: vi.fn() },
   } as never;
   registerMultiNodeTools(server, runtime);
+  registerOrchestratorTools(server, runtime, [sessionTools.list_sessions]);
   return handlers;
 }
 
@@ -49,6 +52,7 @@ afterEach(() => {
 
 describe("multi-node common forwarding deadlines", () => {
   it("allows command tools 35 seconds while query tools retain the 10-second default", async () => {
+    expect(sessionTools.list_sessions.timeoutMs).toBe(35_000);
     for (const name of ["plan_remote_agent_profile_update", "apply_remote_agent_profile_update", "rollback_remote_agents_config", "create_remote_agent_session"] as const) {
       expect(clusterTools[name].timeoutMs).toBe(35_000);
     }
@@ -77,9 +81,16 @@ describe("multi-node common forwarding deadlines", () => {
       caller_session_id: "caller-session",
       folder_id: null,
     });
+    await invoke(handlers, "list_sessions", {
+      since: "2026-10-26T18:00:00Z",
+      until: "2026-10-27T18:00:00Z",
+      cursor: 0,
+      limit: 100,
+    });
     await invoke(handlers, "list_nodes");
 
     expect(timeout.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([
+      35_000,
       35_000,
       35_000,
       35_000,
