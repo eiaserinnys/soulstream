@@ -1,4 +1,4 @@
-import { parseDocument } from "yaml";
+import { parseDocument, Scalar, type ScalarTag } from "yaml";
 
 export type LinkKind = "call" | "include" | "pick";
 export type LinkFields = {
@@ -31,6 +31,15 @@ export interface ParseLinkBlocksResult {
   blocks: LinkBlock[];
   errors: LinkBlockError[];
 }
+
+const PY_YAML_11_TRUE_VALUES = new Set(["yes", "Yes", "YES", "true", "True", "TRUE", "on", "On", "ON"]);
+const PY_YAML_11_BOOL_TAG: ScalarTag = {
+  identify: (value) => typeof value === "boolean",
+  default: true,
+  tag: "tag:yaml.org,2002:bool",
+  test: /^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/,
+  resolve: (value) => new Scalar(PY_YAML_11_TRUE_VALUES.has(value)),
+};
 
 interface Fence {
   char: "`" | "~";
@@ -130,12 +139,19 @@ function validateFields(value: unknown, source: string): { kind?: LinkKind; fiel
 }
 
 function parseBlock(source: string): { fields?: LinkFields; kind?: LinkKind; code?: string; message?: string } {
-  const document = parseDocument(source, { uniqueKeys: true, version: "1.1" });
+  const document = parseDocument(source, {
+    uniqueKeys: true,
+    version: "1.1",
+    customTags: (tags) => [
+      ...tags.filter((tag) => typeof tag === "string" || tag.tag !== PY_YAML_11_BOOL_TAG.tag),
+      PY_YAML_11_BOOL_TAG,
+    ],
+  });
   if (document.errors.length > 0) {
     const duplicate = document.errors.some((error) => error.code === "DUPLICATE_KEY");
     return { code: duplicate ? "duplicate_key" : "yaml", message: document.errors[0]!.message };
   }
-  return validateFields(document.toJSON(), source);
+  return validateFields(document.toJS(), source);
 }
 
 export function parseLinkBlocks(markdown: string): ParseLinkBlocksResult {

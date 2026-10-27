@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "링크 블록 파서와 절 찾기 공유 테스트 벡터. 서버(TypeScript)와 린트(Python)가 같은 결과를 내야 한다. line은 여는 펜스의 1부터 센 줄 번호. YAML은 1.1 규칙(PyYAML SafeLoader와 같음)으로 읽는다: on, yes 같은 값은 참거짓이다. 정보 문자열은 앞뒤 공백을 뗀 값이 정확히 link일 때만 링크 블록이다. 명시적 null은 기본값이 아니라 형 오류다.",
+  "description": "링크 블록 파서와 절 찾기 공유 테스트 벡터. 서버(TypeScript)와 린트(Python)가 같은 결과를 내야 한다. line은 여는 펜스의 1부터 센 줄 번호. YAML은 1.1 규칙(PyYAML SafeLoader와 같음)으로 읽는다: 참거짓은 PyYAML과 같이 yes, no, true, false, on, off(대소문자 세 꼴)만이고 y, n은 문자열이다. 날짜 꼴은 날짜다. 정보 문자열은 앞뒤 공백을 뗀 값이 정확히 link일 때만 링크 블록이다. 명시적 null은 기본값이 아니라 형 오류다.",
   "parse_cases": [
     {
       "name": "call basic",
@@ -399,6 +399,56 @@
       "markdown": "```link extra\ncall: a\n```\n",
       "blocks": [],
       "errors": []
+    },
+    {
+      "name": "yaml 1.1 y stays string",
+      "markdown": "```link\ncall: y\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "y"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "yaml 1.1 N stays string",
+      "markdown": "```link\ncall: N\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "N"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "yaml 1.1 off is bad_type",
+      "markdown": "```link\ncall: a\nwhen: off\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "yaml 1.1 date is bad_type",
+      "markdown": "```link\ncall: a\nwhen: 2026-10-27\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
     }
   ],
   "section_cases": {
