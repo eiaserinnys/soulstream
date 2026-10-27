@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { installReadmeDemoRoutes, readmeDemoIds, type DemoFixtureDiagnostics } from "./demo-fixtures";
+import { installDemoEventSource } from "./demo-event-source";
 
 const screenshots = resolve(dirname(fileURLToPath(import.meta.url)), "../../../docs/screenshots");
 const baseURL = "http://127.0.0.1:4174";
@@ -18,6 +19,7 @@ async function prepare(page: Page, label: string, path: string) {
   runs.set(page, { label, diagnostics, pageErrors });
   if (label === "dashboard" || label === "card-detail") {
     await page.addInitScript(() => localStorage.setItem("ls.webglGlass", "0"));
+    await installDemoEventSource(page);
   }
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "serviceWorker", {
@@ -116,11 +118,15 @@ test("대시보드에 폴더, 카드와 실행 중 채팅을 함께 캡처한다
   await expect(runningRow).toBeVisible();
   await runningRow.locator(".v3-run-open").click();
   await expect(page.getByRole("region", { name: "세션 채팅" })).toBeVisible();
-  const cards = page.getByTestId("v3-folder-cards-section");
+  // An overlay blurs the folder tree: it cannot stand in for the requested main dashboard.
+  await expect(page.locator(".v3-workspace-scrim"), "폴더 트리를 읽을 수 있는 기본 화면이어야 합니다").toHaveCount(0);
+  const cards = page.getByTestId("v3-planner-scroll").getByTestId("v3-folder-cards-section");
   await expect(cards).toContainText("위젯에 시간대별 강수 확률 넣기");
   await expect(cards).toContainText("오프라인에서 마지막 예보 보여 주기");
   await expect(page.locator(".v3-chat-pane")).toContainText("위젯 폭에 맞춰 두 시간대씩 묶어 표시했습니다.");
   await cards.scrollIntoViewIfNeeded();
+  await expect(cards.locator(`[data-card-id="${readmeDemoIds.cardIds.running}"]`)).toBeInViewport();
+  await expect(cards.locator(`[data-card-id="${readmeDemoIds.cardIds.review}"]`)).toBeInViewport();
   await expect(page.getByText("📱 Aurora 날씨 앱", { exact: true }).first()).toBeVisible();
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
@@ -138,8 +144,8 @@ test("검수 카드 상세의 확인 항목과 결과를 캡처한다", async ({
   await expect(page.getByText("예보와 갱신 시각을 함께 저장했습니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("오프라인에서도 마지막 예보가 나타납니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("새 응답을 받으면 저장값이 갱신됩니다.", { exact: true })).toBeVisible();
-  await expect(page.getByText("변경 내용을 검수해 주세요", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("v3-card-session-chat")).not.toContainText("위임 관계에서 세션을 선택하세요.");
+  await expect(page.getByTestId("card-now-panel").getByText("변경 내용을 검수해 주세요", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("v3-card-session-chat")).toContainText("마지막으로 저장된 예보가 표시되고, 새 응답을 받으면 갱신됩니다.");
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
   await settleAndCapture(page, resolve(screenshots, "card-detail.png"));

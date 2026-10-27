@@ -57,9 +57,9 @@ function card({
     id, number, folderId, title, request, brief: request, attachments: [], status,
     blockedKind, blockedDetail, positionKey: `A${String(130 - number).padStart(3, "0")}`,
     queuePositionKey: status === "queued" ? `Q${String(130 - number).padStart(3, "0")}` : null,
-    assigneeKind: status === "running" || status === "review" ? "agent" : null,
+    assigneeKind: status === "review" ? "session" : status === "running" ? "agent" : null,
     assigneeAgentId: status === "running" ? "nova" : status === "review" ? "sage" : null,
-    assigneeUserId: null, assigneeSessionId: null,
+    assigneeUserId: null, assigneeSessionId: status === "review" ? sessionIds.review : null,
     nodeId: status === "running" ? "build-linux" : status === "review" ? "studio-mac" : null,
     modelPreset: status === "running" ? "codex-6-luna" : status === "review" ? "codex-6.1-sol" : null,
     version: 1, archived: false, createdAt, updatedAt,
@@ -240,6 +240,12 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
       email: "demo@example.com", preferences: {}, hasBackground: false, backgroundUrl: null,
     });
     if (path === "/api/ui-events/config") return json({ enabled: false });
+    if (path === "/api/config/settings") return json({ categories: [] });
+    if (/^\/api\/sessions\/[^/]+\/read-position$/.test(path) && method === "PUT") return json({ ok: true });
+    if (/^\/api\/nodes\/[^/]+\/model-presets$/.test(path)) return json({ model_presets: [
+      { id: "codex-6-luna", label: "Codex", backend: "codex", available: true },
+      { id: "codex-6.1-sol", label: "Codex", backend: "codex", available: true },
+    ] });
     if (path === "/api/folders" && method === "GET") {
       return json({ folders: folders.filter((folder) => !folder.archived), sessions: {} });
     }
@@ -337,6 +343,14 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
       return json(list);
     }
     if (path === `/api/persistent-sessions/${sessionIds.persistent}` && method === "GET") return json({ session: persistentSession });
+    if (path.startsWith("/api/persistent-sessions/") && method === "GET") {
+      const summary = sessions.find(session => session.agentSessionId === path.split("/")[3]);
+      if (summary) return json({ session: {
+        ...persistentSession, session_id: summary.agentSessionId, display_name: summary.displayName,
+        node_id: summary.nodeId, agent_id: summary.agentId, agent_name: summary.agentName,
+        persistent: false, persistent_report: [],
+      } });
+    }
     if (path === `/api/persistent-sessions/${sessionIds.persistent}/instructions` && method === "GET") return json({ instructions: [] });
     if (path === "/api/usage/summary") return json({
       generatedAt: updatedAt, collectedAt: updatedAt,
