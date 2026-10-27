@@ -41,7 +41,7 @@ See [Installation](docs/guide/installation.md) for non-interactive parameters an
 
 ### Run from source
 
-Running the full stack locally requires Node.js 22.5+, pnpm `10.32.1`, and PostgreSQL:
+Running the full stack locally requires Node.js 22.5 or newer, pnpm 10.32.1, and PostgreSQL:
 
 ```bash
 corepack enable
