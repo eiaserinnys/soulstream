@@ -43,7 +43,7 @@ async function connect(era: "modern" | "legacy", url: URL) {
 }
 function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "legacy") {
   const definitions = mcpToolDefinitions.filter(d => d.audience === "all");
-  expect(tools).toHaveLength(66);
+  expect(tools).toHaveLength(67);
   expect(tools.map(t => t.name)).toEqual(definitions.map(d => d.name));
   expect(tools.map(t => t.name).sort()).toEqual(inventory.map(t => t.name));
   expect(tools.some(t => t.name === "run_card")).toBe(true);
@@ -51,7 +51,7 @@ function assertInventory(tools: { name: string }[], era: "modern" | "legacy" = "
     expect(tools.some(t=>t.name===name)).toBe(false);
   expect(cardTools.run_card.audience).toBe("all");
   expect(inventory.find(t => t.name === "create_card")!.inputSchema.properties).toHaveProperty("run");
-  expect(inventory).toHaveLength(66);
+  expect(inventory).toHaveLength(67);
   for (const tool of tools) {
     const expected = inventory.find(t => t.name === tool.name)!;
     // SDK2 modern list projection omits SDK1 execution.taskSupport. Compare every

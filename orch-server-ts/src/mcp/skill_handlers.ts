@@ -1,28 +1,16 @@
 import { errorResult, jsonResult, type skillTools } from "@soulstream/mcp-contract";
 import { rankByRelevance } from "../relevance/typesafe_client.js";
 import {
+  catalogEvaluationText,
   DEFAULT_DOMAIN_CATALOG_NODE_ID,
-  type DomainCatalogEntry,
+  loadAtomNodeBody,
+  loadAtomNodeMetadata,
   loadDomainCatalog,
   loadSkillCatalog,
   rankAndComposeCatalogs,
 } from "../skills/skill_catalog.js";
+import { compileSkill } from "../skills/skill_compile.js";
 import type { McpToolHandler } from "./types.js";
-
-function catalogEvaluationText(catalog: DomainCatalogEntry): string {
-  return [
-    `${catalog.name}: ${catalog.description}`,
-    catalog.aliases?.length ? `Aliases: ${catalog.aliases.join(", ")}` : undefined,
-    `Axes: ${catalog.axis.join(", ")}`,
-    `Composition: ${catalog.composition}`,
-    catalog.appliesTo?.media?.length ? `Media: ${catalog.appliesTo.media.join(", ")}` : undefined,
-    catalog.appliesTo?.operations?.length ? `Operations: ${catalog.appliesTo.operations.join(", ")}` : undefined,
-    catalog.providesInput?.length ? `Inputs: ${catalog.providesInput.join(", ")}` : undefined,
-    catalog.sampleCues?.length ? `Cues: ${catalog.sampleCues.join("; ")}` : undefined,
-    catalog.shards?.length ? `Shards: ${catalog.shards.map(shard => `${shard.name}: ${(shard.cues ?? []).join(", ")}`).join("; ")}` : undefined,
-    catalog.bindings?.length ? `Bindings: ${catalog.bindings.map(binding => `${binding.targetCatalog} (${binding.targetAxis})`).join("; ")}` : undefined,
-  ].filter((line): line is string => Boolean(line)).join("\n");
-}
 
 export const skillHandlers = {
   search_skills: async (options, { query, limit }) => {
@@ -151,6 +139,72 @@ export const skillHandlers = {
       }));
     } catch {
       return errorResult("Skill catalog matching failed");
+    }
+  },
+  load_skill: async (options, { name, intent, pins }) => {
+    const skills = options.skills;
+    if (!skills?.logger) return errorResult("skill loading is not configured");
+
+    const deadlineAt = Date.now() + 170_000;
+    let catalog;
+    try {
+      catalog = await loadSkillCatalog({
+        nodeId: skills.nodeId,
+        atom: { enabled: skills.enabled, serverUrl: skills.serverUrl, apiKey: skills.apiKey },
+        logger: skills.logger,
+        httpClient: skills.httpClient,
+      });
+    } catch {
+      return errorResult("Failed to load skill catalog");
+    }
+
+    const skill = catalog.find((entry) =>
+      entry.name.trim().toLowerCase() === String(name).trim().toLowerCase(),
+    );
+    if (!skill) return errorResult(`Skill not found: ${String(name)}`);
+    if (!skill.nodeId) return errorResult(`Skill catalog entry has no source node id: ${skill.name}`);
+
+    const atom = { enabled: skills.enabled, serverUrl: skills.serverUrl, apiKey: skills.apiKey };
+    try {
+      const [entryMetadata, body] = await Promise.all([
+        loadAtomNodeMetadata({ bodyNodeId: skill.nodeId, nodeId: skills.nodeId, atom, logger: skills.logger, httpClient: skills.httpClient }),
+        loadAtomNodeBody({ bodyNodeId: skill.bodyNodeId, nodeId: skills.nodeId, atom, logger: skills.logger, httpClient: skills.httpClient }),
+      ]);
+      return jsonResult(await compileSkill({
+        skill,
+        entryVersion: entryMetadata.version,
+        body,
+        skills: catalog,
+        readBody: (bodyNodeId) => loadAtomNodeBody({
+          bodyNodeId,
+          nodeId: skills.nodeId,
+          atom,
+          logger: skills.logger!,
+          httpClient: skills.httpClient,
+        }),
+        loadCatalogs: () => loadDomainCatalog({
+          nodeId: skills.catalogsNodeId ?? DEFAULT_DOMAIN_CATALOG_NODE_ID,
+          atom,
+          logger: skills.logger!,
+          httpClient: skills.httpClient,
+        }),
+        score: async ({ query, items, context, timeoutMs }) => {
+          if (!skills.typesafeApiKey) throw new Error("Typesafe API key is unavailable");
+          return rankByRelevance({
+            query,
+            items,
+            context,
+            timeoutMs,
+            strictScores: true,
+            apiKey: skills.typesafeApiKey,
+          });
+        },
+        ...(typeof intent === "string" ? { intent } : {}),
+        ...(Array.isArray(pins) ? { pins: pins as string[] } : {}),
+        deadlineAt,
+      }));
+    } catch (error) {
+      return errorResult(error instanceof Error ? error.message : "Skill loading failed");
     }
   },
 } satisfies Record<keyof typeof skillTools, McpToolHandler>;

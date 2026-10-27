@@ -1998,6 +1998,37 @@
     "name": "list_sessions"
   },
   {
+    "description": "스킬 본문을 읽고 link 블록의 call, include, pick을 해석해 펼친 본문과 출처, 선택 기록을 돌려준다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "intent": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "pins": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "load_skill"
+  },
+  {
     "description": "기존 보드 항목을 다른 폴더로 이동한다.",
     "execution": {
       "taskSupport": "forbidden"

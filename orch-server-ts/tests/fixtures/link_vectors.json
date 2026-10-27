@@ -1,0 +1,339 @@
+{
+  "version": 1,
+  "description": "링크 블록 파서와 절 찾기 공유 테스트 벡터. 서버(TypeScript)와 린트(Python)가 같은 결과를 내야 한다. line은 여는 펜스의 1부터 센 줄 번호.",
+  "parse_cases": [
+    {
+      "name": "call basic",
+      "markdown": "# x\n\n```link\ncall: blog-publish\nwhen: 원고가 확정되면\n```\n",
+      "blocks": [
+        {
+          "line": 3,
+          "kind": "call",
+          "fields": {
+            "call": "blog-publish",
+            "when": "원고가 확정되면"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "include whole doc",
+      "markdown": "```link\ninclude: blog-taxonomy\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "include",
+          "fields": {
+            "include": "blog-taxonomy"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "include quoted section with colon",
+      "markdown": "```link\ninclude: blog-publish\nsection: \"라이브 검증 404: 오탐을 먼저 배제한다\"\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "include",
+          "fields": {
+            "include": "blog-publish",
+            "section": "라이브 검증 404: 오탐을 먼저 배제한다"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "include unquoted section",
+      "markdown": "```link\ninclude: blog-publish\nsection: 발행 스크립트\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "unquoted_section"
+        }
+      ]
+    },
+    {
+      "name": "pick defaults",
+      "markdown": "```link\npick: catalog\naxis: [light.setup]\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "pick",
+          "fields": {
+            "pick": "catalog",
+            "axis": [
+              "light.setup"
+            ],
+            "top": 1,
+            "optional": false
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "pick optional top",
+      "markdown": "```link\npick: catalog\naxis: [subject.identity]\ntop: 1\noptional: true\nnote: 정본 인물이 등장할 때만\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "pick",
+          "fields": {
+            "pick": "catalog",
+            "axis": [
+              "subject.identity"
+            ],
+            "top": 1,
+            "optional": true,
+            "note": "정본 인물이 등장할 때만"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "tilde fence",
+      "markdown": "~~~link\ncall: card-work\n~~~\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "card-work"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "example inside outer fence is not executed",
+      "markdown": "````markdown\n```link\ncall: blog-publish\n```\n````\n",
+      "blocks": [],
+      "errors": []
+    },
+    {
+      "name": "link inside tilde outer fence not executed",
+      "markdown": "~~~\n```link\ncall: x\n```\n~~~\n",
+      "blocks": [],
+      "errors": []
+    },
+    {
+      "name": "two kinds in one block",
+      "markdown": "```link\ncall: a\ninclude: b\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "kind_count"
+        }
+      ]
+    },
+    {
+      "name": "no kind",
+      "markdown": "```link\nnote: hi\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "kind_count"
+        }
+      ]
+    },
+    {
+      "name": "unknown key",
+      "markdown": "```link\ncall: a\nquery: x\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "unknown_key"
+        }
+      ]
+    },
+    {
+      "name": "duplicate key",
+      "markdown": "```link\ncall: a\ncall: b\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "duplicate_key"
+        }
+      ]
+    },
+    {
+      "name": "bad top",
+      "markdown": "```link\npick: catalog\naxis: [x]\ntop: 0\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "pick wrong value",
+      "markdown": "```link\npick: skill\naxis: [x]\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "pick axis missing",
+      "markdown": "```link\npick: catalog\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "yaml error",
+      "markdown": "```link\ncall: [a\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "yaml"
+        }
+      ]
+    },
+    {
+      "name": "other info string ignored",
+      "markdown": "```yaml\ncall: a\n```\n```link-extra\ncall: b\n```\n",
+      "blocks": [],
+      "errors": []
+    },
+    {
+      "name": "indented fence up to 3 spaces",
+      "markdown": "   ```link\n   call: a\n   ```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "a"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "indented fence strips opening indent from content",
+      "markdown": "  ```link\n  call: a\n when: 조건\n  ```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "a",
+            "when": "조건"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "indented fence content keeps deeper indent beyond opening",
+      "markdown": "   ```link\n   pick: catalog\n   axis:\n     - light.setup\n   ```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "pick",
+          "fields": {
+            "pick": "catalog",
+            "axis": [
+              "light.setup"
+            ],
+            "top": 1,
+            "optional": false
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "longer closing fence closes",
+      "markdown": "```link\ncall: a\n````\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "a"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "unclosed fence",
+      "markdown": "```link\ncall: a\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "unclosed"
+        }
+      ]
+    }
+  ],
+  "section_cases": {
+    "markdown": "# SKILL.md <!-- node:00000000-0000-0000-0000-000000000000 card:00000000-0000-0000-0000-000000000001 -->\n# doc\n\n## 발행 `date` 규칙 (260924)\n본문 A\n\n### 하위\n하위 본문\n\n## 라이브 검증 404: 오탐을 먼저 배제한다\n본문 B\n```bash\n# 펜스 안 주석은 제목이 아니다\n```\n\n# 최상위\n끝\n\n## 중복\nx\n\n## 중복\ny\n",
+    "lookups": [
+      {
+        "section": "발행 `date` 규칙 (260924)",
+        "found": true,
+        "text_starts": "## 발행 `date` 규칙 (260924)",
+        "text_contains": [
+          "본문 A",
+          "### 하위",
+          "하위 본문"
+        ],
+        "text_not_contains": [
+          "본문 B"
+        ]
+      },
+      {
+        "section": "발행 date 규칙 (260924)",
+        "found": true,
+        "text_starts": "## 발행 `date` 규칙 (260924)"
+      },
+      {
+        "section": "라이브 검증 404: 오탐을 먼저 배제한다",
+        "found": true,
+        "text_contains": [
+          "본문 B",
+          "# 펜스 안 주석은 제목이 아니다"
+        ],
+        "text_not_contains": [
+          "# 최상위"
+        ]
+      },
+      {
+        "section": "없는 절",
+        "found": false,
+        "code": "missing"
+      },
+      {
+        "section": "중복",
+        "found": false,
+        "code": "ambiguous"
+      }
+    ],
+    "normalize": "strip leading #s, HTML comments <!-- -->, backticks, trim, collapse whitespace; compare equal",
+    "header_strip": "first line '# <title> <!-- node:... -->' produced by compile_subtree is removed before parsing"
+  }
+}

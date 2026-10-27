@@ -21,6 +21,7 @@ export interface RankByRelevanceInput {
   context?: Record<string, string>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  strictScores?: boolean;
 }
 
 export interface RelevanceScore {
@@ -134,6 +135,7 @@ export async function rankByRelevance({
   context,
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  strictScores = false,
 }: RankByRelevanceInput): Promise<RelevanceScore[]> {
   const state = {
     ...context,
@@ -180,6 +182,16 @@ export async function rankByRelevance({
     const answers = typeof data === "object" && data !== null
       ? (data as TypesafeResponse).answers
       : undefined;
+
+    if (strictScores) {
+      return items.map(({ key }) => {
+        const score = answers?.[key]?.score;
+        if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 3) {
+          throw new Error(`Typesafe API returned an invalid score for candidate ${key}`);
+        }
+        return { key, score: score / (SCORE_LEVELS.length - 1) };
+      }).sort((left, right) => right.score - left.score);
+    }
 
     return items
       .map(({ key }) => {
