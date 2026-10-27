@@ -110,8 +110,9 @@ async function capturePersistentSession(browser: Browser) {
 
 test("대시보드에 폴더, 카드와 실행 중 채팅을 함께 캡처한다", async ({ page }) => {
   const { pageErrors } = await prepare(page, "dashboard", `/?folder=${readmeDemoIds.folderId}`);
-  await expect(page.getByTestId(`v3-session-row-${readmeDemoIds.sessionIds.running}`)).toBeVisible();
-  await page.getByTestId(`v3-session-row-${readmeDemoIds.sessionIds.running}`).click({ force: true });
+  const runningRow = page.getByTestId(`v3-session-row-${readmeDemoIds.sessionIds.running}`);
+  await expect(runningRow).toBeVisible();
+  await runningRow.locator(".v3-run-open").click();
   await expect(page.getByTestId("v3-standalone-session-chat")).toBeVisible();
   const cards = page.getByTestId("v3-folder-cards-section");
   await expect(cards).toContainText("위젯에 시간대별 강수 확률 넣기");
@@ -127,9 +128,10 @@ test("대시보드에 폴더, 카드와 실행 중 채팅을 함께 캡처한다
 
 test("검수 카드 상세의 확인 항목과 결과를 캡처한다", async ({ page }) => {
   const { pageErrors } = await prepare(page, "card-detail", `/?folder=${readmeDemoIds.folderId}`);
-  const reviewTitle = page.getByText("오프라인에서 마지막 예보 보여 주기", { exact: true }).last();
-  await expect(reviewTitle).toBeVisible();
-  await reviewTitle.click({ force: true });
+  const reviewCard = page.locator(`[data-card-id="${readmeDemoIds.cardIds.review}"]`);
+  await expect(reviewCard).toBeVisible();
+  await reviewCard.locator(".v3-postit-open").click();
+  await expect(page.getByTestId("card-detail")).toBeVisible();
   await expect(page.getByText("비행기 모드에서 앱을 열어 마지막 예보가 보이는지 봐 주세요", { exact: true })).toBeVisible();
   await expect(page.getByText("오프라인에서도 마지막 예보가 나타납니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("변경 내용을 검수해 주세요", { exact: true })).toBeVisible();
@@ -144,11 +146,14 @@ test("영구 세션의 보고 판과 대화, 모바일 배치를 캡처한다", 
   await expect(page.getByTestId("persistent-session-screen")).toBeVisible();
   await expect(page.getByText("오늘 끝난 것 정리해 줘", { exact: true })).toBeVisible();
   await expect(page.locator(".pas-report")).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: "주간 사용량" }).click({ force: true });
+  await page.getByRole("button", { name: "주간 사용량" }).click();
   await expect(page.getByTestId("persistent-session-weekly-usage")).toBeVisible();
   await expectSettled(page);
   await mkdir(screenshots, { recursive: true });
   await settleAndCapture(page, resolve(screenshots, "persistent-session.png"));
   expect(pageErrors).toEqual([]);
+});
+
+test("모바일 PAS 배치가 지원되면 캡처한다", async ({ browser }) => {
   await capturePersistentSession(browser);
 });

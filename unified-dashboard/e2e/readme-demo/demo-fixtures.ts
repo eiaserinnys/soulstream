@@ -274,7 +274,7 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     if (/^\/api\/sessions\/[^/]+\/events$/.test(path)) {
       const id = decodeURIComponent(path.split("/")[3] ?? "");
       const events = timelineBySession[id] ?? [];
-      return stream(`${sse("history_sync", { type: "history_sync", last_event_id: events.length, is_live: true, status: sessionSummaries.find((session) => session.agentSessionId === id)?.status ?? "completed" })}${events.slice(-1).map((entry) => sse(String(entry.event_type), { type: entry.event_type, ...entry.payload as Record<string, unknown>, _final_for_live_stream: true })).join("")}`);
+      return stream(sse("history_sync", { type: "history_sync", last_event_id: events.length, is_live: true, status: sessionSummaries.find((session) => session.agentSessionId === id)?.status ?? "completed" }));
     }
     const timelineMatch = /^\/api\/sessions\/([^/]+)\/timeline$/.exec(path);
     if (timelineMatch) return json(timeline(decodeURIComponent(timelineMatch[1]!)));
@@ -341,7 +341,7 @@ export async function installReadmeDemoRoutes(page: Page, diagnostics: DemoFixtu
     if (path === "/api/usage/summary") return json({
       generatedAt: updatedAt, collectedAt: updatedAt,
       nodes: [{ nodeId: "studio-mac", fetchedAt: updatedAt, stale: false, staleSince: null, providers: {
-        codex: { status: "auto", weeklyRemainingPercent: 72, weeklyResetAt: Date.parse("2026-11-02T00:00:00.000Z"), shortRemainingPercent: 88, shortResetAt: Date.parse("2026-10-28T12:00:00.000Z"), quotas: [] },
+        codex: { status: "auto", weeklyRemainingPercent: 72, weeklyResetAt: Date.parse("2026-11-02T00:00:00.000Z") / 1_000, shortRemainingPercent: 88, shortResetAt: Date.parse("2026-10-28T12:00:00.000Z") / 1_000, quotas: [] },
         claude: { status: "not_configured", weeklyRemainingPercent: null, weeklyResetAt: null, shortRemainingPercent: null, shortResetAt: null, quotas: [] },
         antigravity: { status: "not_configured", weeklyRemainingPercent: null, weeklyResetAt: null, shortRemainingPercent: null, shortResetAt: null, quotas: [] },
       } }],
