@@ -145,9 +145,6 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
   }
 
   const parsedMain = parseLinkBlocks(input.body.markdown);
-  for (const error of parsedMain.errors) {
-    warnings.push(warning("invalid_link_block", error.message, error.line));
-  }
   const mainPicks = parsedMain.blocks.filter(({ kind }) => kind === "pick");
   const mainIncludes = parsedMain.blocks.filter(({ kind }) => kind === "include");
   const skillByName = new Map(input.skills.map((skill) => [normalizedName(skill.name), skill]));
@@ -321,7 +318,10 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
           ...(selection.jevScore === undefined ? {} : { jev_score: selection.jevScore }),
           source,
         });
-        output += `> 링크: pick ${axesText(fieldsPick.axis)} → ${selection.catalog.name}\n`;
+        const selectionLabel = selection.reason === "jev"
+          ? ` (Jev ${selection.jevScore!.toFixed(2)})`
+          : selection.reason === "pinned" ? " (pins)" : " (only)";
+        output += `> 링크: pick ${axesText(fieldsPick.axis)} → ${selection.catalog.name}${selectionLabel}\n`;
         const bindings = bindingsBySource.get(selection.catalog.name) ?? [];
         if (bindings.length > 0) output += bindings.map(bindingLine).join("\n") + "\n";
         if (!selection.catalog.shards?.length && charCount(selectedBody.markdown) > LARGE_CATALOG_CHARS) {

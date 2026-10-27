@@ -63,7 +63,7 @@ describe("load_skill compiler", () => {
     expect(h.score).not.toHaveBeenCalled();
   });
 
-  it("selects only candidates without Jev and pins replay a Jev selection byte-for-byte", async () => {
+  it("selects only candidates without Jev and pins reproduce the same choice", async () => {
     const only = setup("```link\npick: catalog\naxis: [light.setup]\n```", {
       catalogs: [catalog("single", ["light.setup"])],
     });
@@ -71,6 +71,7 @@ describe("load_skill compiler", () => {
     const onlyResult = await only.run();
     expect(only.score).not.toHaveBeenCalled();
     expect(onlyResult.pins).toEqual(["single"]);
+    expect(onlyResult.compiled_markdown).toContain("> 링크: pick [light.setup] → single (only)");
 
     const markdown = "```link\npick: catalog\naxis: [camera.framing]\n```";
     const first = setup(markdown, {
@@ -86,7 +87,9 @@ describe("load_skill compiler", () => {
     const replayed = await replay.run(undefined, compiled.pins);
     expect(first.score).toHaveBeenCalledTimes(1);
     expect(replay.score).not.toHaveBeenCalled();
-    expect(replayed.compiled_markdown).toBe(compiled.compiled_markdown);
+    expect(compiled.links[0]?.selected.map(({ name }) => name)).toEqual(replayed.links[0]?.selected.map(({ name }) => name));
+    expect(compiled.compiled_markdown).toContain("> 링크: pick [camera.framing] → wide (Jev 0.90)");
+    expect(replayed.compiled_markdown).toContain("> 링크: pick [camera.framing] → wide (pins)");
   });
 
   it("calls Jev once for several blocks and applies top to each block", async () => {
@@ -107,6 +110,59 @@ describe("load_skill compiler", () => {
     expect(result.links.filter((link) => link.kind === "pick").map((link) => link.selected.map(({ name }) => name))).toEqual([
       ["wide"], ["soft"],
     ]);
+  });
+
+  it("recomputes only candidates after earlier blocks select overlapping catalogs", async () => {
+    const h = setup([
+      "```link", "pick: catalog", "axis: [\"x\"]", "```", "",
+      "```link", "pick: catalog", "axis: [\"y\"]", "```",
+    ].join("\n"), {
+      catalogs: [catalog("a", ["x", "y"]), catalog("b", ["y"])],
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, `${nodeId} body`));
+
+    const result = await h.run();
+
+    expect(h.score).not.toHaveBeenCalled();
+    expect(result.links.filter(({ kind }) => kind === "pick").map(({ selected }) =>
+      selected.map(({ name, reason }) => ({ name, reason })),
+    )).toEqual([
+      [{ name: "a", reason: "only" }],
+      [{ name: "b", reason: "only" }],
+    ]);
+    expect(result.warnings.map(({ code }) => code)).not.toContain("unresolved_pick");
+
+    const withIntent = await h.run("portrait");
+    expect(h.score).not.toHaveBeenCalled();
+    expect(withIntent.links.filter(({ kind }) => kind === "pick").map(({ selected }) => selected.map(({ name, reason }) => ({ name, reason })))).toEqual([
+      [{ name: "a", reason: "only" }],
+      [{ name: "b", reason: "only" }],
+    ]);
+  });
+
+  it("counts bundle-axis exclusions before deciding a later block is only", async () => {
+    const h = setup([
+      "```link", "pick: catalog", "axis: [\"x\"]", "```", "",
+      "```link", "pick: catalog", "axis: [\"y\", \"z\"]", "top: 1", "```",
+    ].join("\n"), {
+      catalogs: [
+        catalog("bundle", ["x", "y"], "bundle"),
+        catalog("covered-y", ["y"]),
+        catalog("free-z", ["z"]),
+      ],
+    });
+    h.readBody.mockImplementation(async (nodeId) => body(nodeId, `${nodeId} body`));
+
+    const result = await h.run();
+
+    expect(h.score).not.toHaveBeenCalled();
+    expect(result.links.filter(({ kind }) => kind === "pick").map(({ selected }) =>
+      selected.map(({ name, reason }) => ({ name, reason })),
+    )).toEqual([
+      [{ name: "bundle", reason: "only" }],
+      [{ name: "free-z", reason: "only" }],
+    ]);
+    expect(result.links[1]?.excluded).toContainEqual({ name: "covered-y", reason: "bundle_axis" });
   });
 
   it("applies the 0.25 floor only to optional blocks", async () => {

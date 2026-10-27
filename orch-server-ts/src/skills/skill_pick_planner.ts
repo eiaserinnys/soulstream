@@ -20,6 +20,7 @@ export interface PickPlan {
   pinned: DomainCatalogEntry[];
   includedBefore: DomainCatalogEntry[];
   needsJev: boolean;
+  jevCandidates: DomainCatalogEntry[];
   unresolvedCode?: "unresolved_pick" | "jev_failed";
   coveredBy?: string;
   selections: Array<{
@@ -76,7 +77,6 @@ export async function planPickSelections({
 
   if (mainPicks.length > 0) {
     allCatalogs = await loadCatalogList();
-    const plannedPinnedNames = new Set<string>();
     for (const block of mainPicks) {
       const fields = block.fields as LinkFields & { axis: string[]; top: number; optional: boolean };
       const matching = allCatalogs.filter((catalog) => containsAxis(catalog, fields.axis));
@@ -89,7 +89,7 @@ export async function planPickSelections({
         });
       const includedNames = new Set(includedBefore.map(({ name }) => normalizedName(name)));
       const candidates = matching.filter((catalog) => {
-        if (expandedCatalogNames.has(catalog.name) || plannedPinnedNames.has(catalog.name) || includedNames.has(normalizedName(catalog.name))) {
+        if (includedNames.has(normalizedName(catalog.name))) {
           preExcluded.push({ name: catalog.name, reason: "already_expanded" });
           return false;
         }
@@ -102,54 +102,95 @@ export async function planPickSelections({
         pinnedAlready.add(catalog.name);
         return [catalog];
       });
-      for (const catalog of pinnedCandidates) plannedPinnedNames.add(catalog.name);
-      const slotCount = Math.max(0, fields.top - pinnedCandidates.length);
-      const needsJev = slotCount > 0 && (fields.optional || candidates.length - pinnedCandidates.length > slotCount);
       pickPlans.set(block.startOffset, {
         block,
         candidates,
         preExcluded,
         pinned: pinnedCandidates,
         includedBefore,
-        needsJev,
+        needsJev: false,
+        jevCandidates: [],
         selections: pinnedCandidates.map((catalog) => ({ catalog, reason: "pinned" as const })),
       });
+    }
+  }
+
+  const simulatedExpandedNames = new Set<string>();
+  const simulatedBundleAxes = new Map<string, string>();
+  let selectionUncertain = false;
+  for (const plan of pickPlans.values()) {
+    const fields = plan.block.fields as LinkFields & { axis: string[]; top: number; optional: boolean };
+    for (const catalog of plan.includedBefore) {
+      simulatedExpandedNames.add(catalog.name);
+      if (catalog.composition === "bundle") {
+        for (const axis of catalog.axis) {
+          if (!simulatedBundleAxes.has(axis)) simulatedBundleAxes.set(axis, catalog.name);
+        }
+      }
+    }
+    if (fields.axis.every((axis) => simulatedBundleAxes.has(axis))) continue;
+
+    const simulatedPins: DomainCatalogEntry[] = [];
+    for (const catalog of plan.pinned) {
+      if (simulatedExpandedNames.has(catalog.name) || bundleConflict(catalog, simulatedBundleAxes)) continue;
+      simulatedPins.push(catalog);
+      if (!selectionUncertain) {
+        simulatedExpandedNames.add(catalog.name);
+        if (catalog.composition === "bundle") {
+          for (const axis of catalog.axis) simulatedBundleAxes.set(axis, catalog.name);
+        }
+      }
+    }
+
+    const slotCount = Math.max(0, fields.top - simulatedPins.length);
+    const candidatePool = plan.candidates.filter((catalog) =>
+      !plan.pinned.some(({ name }) => name === catalog.name) &&
+      !simulatedExpandedNames.has(catalog.name) &&
+      !bundleConflict(catalog, simulatedBundleAxes),
+    );
+    plan.needsJev = slotCount > 0 && (fields.optional || candidatePool.length > slotCount);
+    if (plan.needsJev) {
+      plan.jevCandidates = candidatePool;
+      if (input.intent?.trim() && candidatePool.length > 0) selectionUncertain = true;
+      continue;
+    }
+
+    if (selectionUncertain) continue;
+    let selectedCount = simulatedPins.length;
+    for (const catalog of candidatePool) {
+      if (selectedCount >= fields.top || bundleConflict(catalog, simulatedBundleAxes)) continue;
+      simulatedExpandedNames.add(catalog.name);
+      selectedCount += 1;
+      if (catalog.composition === "bundle") {
+        for (const axis of catalog.axis) simulatedBundleAxes.set(axis, catalog.name);
+      }
     }
   }
 
   const needsJevPlans = [...pickPlans.values()].filter((plan) => plan.needsJev);
   let jevScoreByName = new Map<string, number>();
   let jevFailed = false;
-  const jevCandidateNames = [...new Set(needsJevPlans.flatMap((plan) => plan.candidates
-    .filter((catalog) => !plan.pinned.some(({ name }) => name === catalog.name))
-    .map(({ name }) => name)))];
-  if (needsJevPlans.length > 0) {
-    if (!input.intent?.trim()) {
-      for (const plan of needsJevPlans) plan.unresolvedCode = "unresolved_pick";
-    } else if (jevCandidateNames.length > 0) {
-      try {
-        ensureTime();
-        const scores = await input.score({
-          query: input.intent,
-          items: jevCandidateNames.map((name) => {
-            const catalog = allCatalogs.find((entry) => entry.name === name)!;
-            return { key: name, text: catalogEvaluationText(catalog) };
-          }),
-          context: { skill_name: input.skill.name, skill_description: input.skill.description },
-          timeoutMs: Math.max(1, remainingMs()),
-        });
-        if (scores.length !== jevCandidateNames.length || scores.some(({ key, score }) =>
-          !jevCandidateNames.includes(key) || typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1,
-        ) || jevCandidateNames.some((name) => !scores.some(({ key }) => key === name))) {
-          throw new Error("Jev returned incomplete or invalid scores");
-        }
-        jevScoreByName = new Map(scores.map(({ key, score }) => [key, score]));
-      } catch {
-        jevFailed = true;
-        for (const plan of needsJevPlans) plan.unresolvedCode = "jev_failed";
+  const jevCandidateNames = [...new Set(needsJevPlans.flatMap((plan) => plan.jevCandidates.map(({ name }) => name)))];
+  if (needsJevPlans.length > 0 && input.intent?.trim() && jevCandidateNames.length > 0) {
+    try {
+      ensureTime();
+      const scores = await input.score({
+        query: input.intent,
+        items: jevCandidateNames.map((name) => {
+          const catalog = allCatalogs.find((entry) => entry.name === name)!;
+          return { key: name, text: catalogEvaluationText(catalog) };
+        }),
+        context: { skill_name: input.skill.name, skill_description: input.skill.description },
+        timeoutMs: Math.max(1, remainingMs()),
+      });
+      if (scores.length !== jevCandidateNames.length || scores.some(({ key, score }) =>
+        !jevCandidateNames.includes(key) || typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1,
+      ) || jevCandidateNames.some((name) => !scores.some(({ key }) => key === name))) {
+        throw new Error("Jev returned incomplete or invalid scores");
       }
-    } else {
-      for (const plan of needsJevPlans) plan.unresolvedCode = "unresolved_pick";
+      jevScoreByName = new Map(scores.map(({ key, score }) => [key, score]));
+    } catch {
+      jevFailed = true;
     }
   }
 
@@ -183,7 +224,9 @@ export async function planPickSelections({
     const validPinned: PickPlan["selections"] = [];
     for (const selection of plan.selections) {
       if (expandedCatalogNames.has(selection.catalog.name)) {
-        plan.preExcluded.push({ name: selection.catalog.name, reason: "already_expanded" });
+        if (!plan.preExcluded.some(({ name, reason }) => name === selection.catalog.name && reason === "already_expanded")) {
+          plan.preExcluded.push({ name: selection.catalog.name, reason: "already_expanded" });
+        }
         continue;
       }
       if (bundleConflict(selection.catalog, occupiedBundleAxes)) {
@@ -199,10 +242,19 @@ export async function planPickSelections({
     plan.selections = validPinned;
 
     let slotCount = Math.max(0, fields.top - plan.selections.length);
-    const remainingCandidates = plan.candidates.filter((catalog) =>
-      !plan.pinned.some(({ name }) => name === catalog.name) && !expandedCatalogNames.has(catalog.name),
-    );
-    const useOnly = !plan.unresolvedCode && slotCount > 0 && !fields.optional && remainingCandidates.length <= slotCount;
+    const remainingCandidates = plan.candidates.filter((catalog) => {
+      if (plan.pinned.some(({ name }) => name === catalog.name) || expandedCatalogNames.has(catalog.name)) return false;
+      if (!bundleConflict(catalog, occupiedBundleAxes)) return true;
+      if (!plan.preExcluded.some(({ name, reason }) => name === catalog.name && reason === "bundle_axis")) {
+        plan.preExcluded.push({ name: catalog.name, reason: "bundle_axis" });
+      }
+      return false;
+    });
+    const useOnly = slotCount > 0 && !fields.optional && remainingCandidates.length <= slotCount;
+    if (!useOnly && slotCount > 0 && plan.needsJev) {
+      if (!input.intent?.trim()) plan.unresolvedCode = "unresolved_pick";
+      else if (jevFailed) plan.unresolvedCode = "jev_failed";
+    }
     const ranked = remainingCandidates.map((catalog, index) => ({
       catalog,
       score: jevScoreByName.get(catalog.name),
@@ -211,7 +263,9 @@ export async function planPickSelections({
 
     const queue = useOnly
       ? remainingCandidates.map((catalog) => ({ catalog, reason: "only" as const, score: undefined }))
-      : ranked.map(({ catalog, score }) => ({ catalog, reason: "jev" as const, score }));
+      : plan.unresolvedCode
+        ? []
+        : ranked.map(({ catalog, score }) => ({ catalog, reason: "jev" as const, score }));
     for (const candidate of queue) {
       if (plan.selections.length >= fields.top) {
         plan.preExcluded.push({ name: candidate.catalog.name, reason: "top" });
@@ -239,7 +293,7 @@ export async function planPickSelections({
     slotCount = Math.max(0, fields.top - plan.selections.length);
     const alreadyExpandedOnly = remainingCandidates.length === 0 && plan.preExcluded.some(({ reason }) => reason === "already_expanded");
     if (slotCount > 0 && plan.candidates.length === 0 && !alreadyExpandedOnly) plan.unresolvedCode ??= "unresolved_pick";
-    if (slotCount > 0 && !plan.unresolvedCode && !useOnly && plan.needsJev && !jevFailed && input.intent?.trim()) {
+    if (slotCount > 0 && !plan.unresolvedCode && !alreadyExpandedOnly && !useOnly && plan.needsJev) {
       plan.unresolvedCode = "unresolved_pick";
     }
     if (plan.unresolvedCode) {

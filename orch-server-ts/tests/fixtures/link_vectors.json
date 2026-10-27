@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "링크 블록 파서와 절 찾기 공유 테스트 벡터. 서버(TypeScript)와 린트(Python)가 같은 결과를 내야 한다. line은 여는 펜스의 1부터 센 줄 번호.",
+  "description": "링크 블록 파서와 절 찾기 공유 테스트 벡터. 서버(TypeScript)와 린트(Python)가 같은 결과를 내야 한다. line은 여는 펜스의 1부터 센 줄 번호. YAML은 1.1 규칙(PyYAML SafeLoader와 같음)으로 읽는다: on, yes 같은 값은 참거짓이다. 정보 문자열은 앞뒤 공백을 뗀 값이 정확히 link일 때만 링크 블록이다. 명시적 null은 기본값이 아니라 형 오류다.",
   "parse_cases": [
     {
       "name": "call basic",
@@ -288,6 +288,117 @@
           "code": "unclosed"
         }
       ]
+    },
+    {
+      "name": "pick top null is bad_type",
+      "markdown": "```link\npick: catalog\naxis: [x]\ntop: null\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "pick optional null is bad_type",
+      "markdown": "```link\npick: catalog\naxis: [x]\noptional: null\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "call when null is bad_type",
+      "markdown": "```link\ncall: a\nwhen: null\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "empty block is kind_count",
+      "markdown": "```link\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "kind_count"
+        }
+      ]
+    },
+    {
+      "name": "non-mapping block is kind_count",
+      "markdown": "```link\n- a\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "kind_count"
+        }
+      ]
+    },
+    {
+      "name": "yaml 1.1 boolean on is bad_type",
+      "markdown": "```link\ncall: on\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "yaml 1.1 boolean yes is bad_type",
+      "markdown": "```link\ninclude: yes\n```\n",
+      "blocks": [],
+      "errors": [
+        {
+          "line": 1,
+          "code": "bad_type"
+        }
+      ]
+    },
+    {
+      "name": "info string trailing spaces still link",
+      "markdown": "```link   \ncall: a\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "a"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "info string leading space still link",
+      "markdown": "``` link\ncall: a\n```\n",
+      "blocks": [
+        {
+          "line": 1,
+          "kind": "call",
+          "fields": {
+            "call": "a"
+          }
+        }
+      ],
+      "errors": []
+    },
+    {
+      "name": "info string with extra word is not link",
+      "markdown": "```link extra\ncall: a\n```\n",
+      "blocks": [],
+      "errors": []
     }
   ],
   "section_cases": {

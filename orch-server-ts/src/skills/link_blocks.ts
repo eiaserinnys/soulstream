@@ -75,7 +75,7 @@ function hasString(value: unknown): value is string {
 }
 
 function validateFields(value: unknown, source: string): { kind?: LinkKind; fields?: LinkFields; code?: string; message?: string } {
-  if (!isRecord(value)) return { code: "bad_type", message: "link YAML must be a mapping" };
+  if (!isRecord(value)) return { code: "kind_count", message: "link block must contain exactly one of call, include, or pick" };
   const keys = Object.keys(value);
   const allowed = new Set(["call", "include", "section", "when", "note", "pick", "axis", "top", "optional"]);
   if (keys.some((key) => !allowed.has(key))) return { code: "unknown_key", message: "link block contains an unknown key" };
@@ -112,8 +112,8 @@ function validateFields(value: unknown, source: string): { kind?: LinkKind; fiel
   if ("call" in value || "include" in value || "section" in value || "when" in value) {
     return { code: "bad_type", message: "pick has keys belonging to another link kind" };
   }
-  const top = value.top ?? 1;
-  const optional = value.optional ?? false;
+  const top = "top" in value ? value.top : 1;
+  const optional = "optional" in value ? value.optional : false;
   if (!Number.isInteger(top) || (top as number) < 1 || typeof optional !== "boolean") {
     return { code: "bad_type", message: "top must be a positive integer and optional must be boolean" };
   }
@@ -130,7 +130,7 @@ function validateFields(value: unknown, source: string): { kind?: LinkKind; fiel
 }
 
 function parseBlock(source: string): { fields?: LinkFields; kind?: LinkKind; code?: string; message?: string } {
-  const document = parseDocument(source, { uniqueKeys: true });
+  const document = parseDocument(source, { uniqueKeys: true, version: "1.1" });
   if (document.errors.length > 0) {
     const duplicate = document.errors.some((error) => error.code === "DUPLICATE_KEY");
     return { code: duplicate ? "duplicate_key" : "yaml", message: document.errors[0]!.message };
