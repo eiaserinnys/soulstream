@@ -85,6 +85,11 @@ export type UsageSummaryQuota = {
 
 export type UsageSummaryProvider = {
   readonly status: "auto" | "not_configured" | "error";
+  /** Present on Claude providers when account-pool metadata is available. */
+  readonly mode?: "legacy" | "pool";
+  readonly accounts?: readonly ClaudeAccount[];
+  readonly pool?: ClaudeAccountPool | null;
+  readonly fable_pool?: ClaudeAccountPool | null;
   readonly source?: string | null;
   readonly sourceKind?: "remote" | "rollout" | "unknown";
   readonly observedAt?: string | null;

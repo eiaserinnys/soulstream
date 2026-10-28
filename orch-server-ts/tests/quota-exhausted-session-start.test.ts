@@ -41,6 +41,7 @@ function harness(reason: "quota" | "env" | "auth" = "quota") {
   const availability = new ModelPresetAvailabilityService(registry, {
     getSummary: () => summary,
     getLimitRejection: (nodeId, provider) => usageMemory.getLimitRejection(nodeId, provider),
+    getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
   }, () => now);
   transports.attach({ nodeId: "quota-node", connectionId: registration.node.connectionId,
     transport: { send: data => {

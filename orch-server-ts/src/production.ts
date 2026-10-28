@@ -752,6 +752,7 @@ export async function createLiveProductionApplication(
       runtimeServices,
       providers,
       persistenceRepositoryProvider,
+      usageSummaryService!,
       config.cors_allowed_origins,
       folderProjectIdentityService,
       memoryStats,
@@ -1025,6 +1026,7 @@ export function buildProductionRouteOptions(
   persistenceRepositoryProvider: NonNullable<
     CreateAppOptions["persistenceHostRoutes"]
   >["repositoryProvider"],
+  usageSummary: UsageSummaryService,
   corsAllowedOrigins: readonly string[] = [],
   folderProjectIdentityService?: FolderProjectIdentityService,
   memoryStats?: ReturnType<typeof createOrchestratorMemoryStatsCollector>,
@@ -1147,6 +1149,7 @@ export function buildProductionRouteOptions(
       ...providers.nodeClaudeAuthRoutes,
       registry: runtime.registry,
       bridge: runtime.sessionBridge,
+      usageSummary,
     },
     nodeSnapshotRoutes: providers.runtime.nodeSnapshotRoutes,
     nodeWsRoute: providers.runtime.nodeWsRoute,
