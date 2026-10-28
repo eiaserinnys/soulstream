@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -20,6 +21,16 @@ import { useLocalClaudeAccountPoolResume } from "../../src/engine/claude_account
 
 const roots: string[] = [];
 
+function findNamedFiles(root: string, name: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) found.push(...findNamedFiles(path, name));
+    else if (entry.isFile() && entry.name === name) found.push(path);
+  }
+  return found;
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -33,6 +44,8 @@ describe("Claude account pool SDK resume", () => {
     mkdirSync(configDir);
     mkdirSync(sharedProjects);
     symlinkSync(sharedProjects, join(configDir, "projects"), "dir");
+    const credentialsPath = join(configDir, ".credentials.json");
+    const claudeConfigPath = join(configDir, ".claude.json");
     const executablePath = join(root, "capture-claude");
     const capturePath = join(root, "spawn-env.json");
     writeFileSync(executablePath, [
@@ -104,6 +117,8 @@ describe("Claude account pool SDK resume", () => {
     expect(store.load).toHaveBeenCalledOnce();
     rmSync(rawStoreEnv.CLAUDE_CONFIG_DIR, { recursive: true, force: true });
 
+    writeFileSync(credentialsPath, '{"fixture":"not-a-real-credential"}');
+    writeFileSync(claudeConfigPath, '{"fixture":"not-a-real-config"}');
     store.load.mockClear();
     const poolStoreCapturePath = join(root, "pool-store-spawn-env.json");
     const poolStoreEnv = await runResume(
@@ -114,6 +129,12 @@ describe("Claude account pool SDK resume", () => {
     expect(poolStoreEnv.transcript).toBe(rawStoreEnv.transcript);
     expect(store.load).toHaveBeenCalledOnce();
     expect(existsSync(join(sharedProjects, root.replace(/[^a-zA-Z0-9]/g, "-"), `${resumeSessionId}.jsonl`))).toBe(true);
+    expect(findNamedFiles(configDir, ".credentials.json")).toEqual([credentialsPath]);
+    expect(findNamedFiles(configDir, ".claude.json")).toEqual([claudeConfigPath]);
+    expect(findNamedFiles(sharedProjects, ".credentials.json")).toEqual([]);
+    expect(findNamedFiles(sharedProjects, ".claude.json")).toEqual([]);
+    expect(existsSync(credentialsPath)).toBe(true);
+    expect(existsSync(claudeConfigPath)).toBe(true);
     expect(store.append).not.toHaveBeenCalled();
   });
 

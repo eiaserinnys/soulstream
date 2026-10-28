@@ -39,6 +39,8 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 `claude_account_query_settlement.ts:ClaudeAccountQuerySettlement`는 명시 종료와 foreground 실행 중 또는 완료 뒤의 자발적 Query 종료를 같은 정산으로 연결한다. pump와 실제 child가 종료된 뒤 계정 release와 durable 상태 삭제를 한 번 수행한다. `ClaudeAccountSessionActivity.release`는 release의 턴 ID와 활성 assignment의 턴 ID를 대조해 후속 턴의 계정 점유를 보존한다. 재개 기록 복원은 `claude_account_pool_transcript.ts`가 공유 projects의 같은 session 경로에 kernel lock과 원자적 rename을 적용한다.
 
+같은 턴 계정 전환에서는 `claude_adapter.ts`가 한도 거부를 host `reject`로 기록하고 남은 profile을 고른다. `claude_sdk_persistent_session.ts:routeEvent`가 두 한도 신호를 확인하면 `account_switch`로 기존 Query를 닫고 출력·runtime sink의 중간 terminal을 억제한다. `claude_sdk_client.ts:runPersistentLocked`는 pump settle, 실제 child exit, 계정 Query 정산이 끝나기 전 다음 Query를 생성하지 않는다. 다음 Query는 같은 session ID를 resume하고 continuation UUID를 한 번 입력한다. foreground가 Query를 닫지 않는 native follow-up도 같은 client driver를 지나며 최종 Result만 caller로 돌아간다.
+
 이 장을 갱신해야 하는 변경 부류: runner release/spawn·registration identity·kernel writer lock·lifecycle heartbeat·event ingress identity·recovery classification/adoption·termination/dispose·terminal retirement/GC 변경.
 
 ## Antigravity 엔진 선택과 정의 수명 (PR A)

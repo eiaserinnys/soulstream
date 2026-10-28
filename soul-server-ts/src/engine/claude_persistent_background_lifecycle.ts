@@ -67,6 +67,7 @@ export async function terminalizePersistentBackgroundTasks(params: {
   routeEvent(event: ClaudeClientEvent): Promise<void>;
   logger: Pick<Logger, "warn">;
 }): Promise<void> {
+  if (params.reason === "account_switch") return;
   const status =
     params.reason === "explicit_cancel"
       ? "stopped"

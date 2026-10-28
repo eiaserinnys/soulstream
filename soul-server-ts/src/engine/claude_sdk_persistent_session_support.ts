@@ -6,6 +6,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
+import type { ClaudeAccountRateLimitSwitchRequest } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { messageContent, userMessageText } from "./claude_sdk_event_mapper_helpers.js";
@@ -40,6 +41,8 @@ export interface ClaudeSdkPersistentSessionConfig {
   hookOutput: EventQueue<ClaudeClientEvent>;
   detachedEventSink: ClaudeDetachedEventSink;
   runtimeEventSink?: ClaudeRuntimeEventSink;
+  accountRateLimitSwitchEnabled?: boolean;
+  usageCarry?: import("./claude_sdk_usage_carry.js").ClaudeSdkUsageCarry;
   logger: Logger;
   postResultDrainMs: number;
   turnInactivityTimeoutMs: number;
@@ -58,7 +61,10 @@ export type ActiveForeground = {
   origin: { kind: string; id: string };
   rateLimitTerminationState: RateLimitTerminationState;
   rateLimitTerminationInfo?: RateLimitStopInfo;
+  rateLimitSwitchGate: import("./claude_sdk_rate_limit_switch_gate.js").ClaudeSdkRateLimitSwitchGate;
 };
+
+export type ClaudeAccountRateLimitSwitch = ClaudeAccountRateLimitSwitchRequest;
 
 export type InterventionInterruptObservation = {
   promise: Promise<boolean>;

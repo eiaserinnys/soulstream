@@ -21,7 +21,7 @@ describe("Claude account pool environment", () => {
       ANTHROPIC_AUTH_TOKEN: "inherited-auth",
       CLAUDE_AUTH_TOKEN_PATH: "/tmp/legacy-token",
       PATH: "/usr/bin",
-    }, { account_id: "account-a", config_dir: "/accounts/a" });
+    }, { account_id: "account-a", config_dir: "/accounts/a", available_count: 1 });
 
     expect(env).toEqual({ PATH: "/usr/bin", CLAUDE_CONFIG_DIR: "/accounts/a" });
   });
@@ -43,6 +43,7 @@ describe("Claude account pool environment", () => {
     const binding: ClaudeAccountPoolTurn = {
       account_id: "account-a",
       config_dir: "/accounts/a",
+      available_count: 1,
     };
     expect(buildClaudeAccountPoolEnvironment({}, binding).CLAUDE_CONFIG_DIR)
       .toBe("/accounts/a");

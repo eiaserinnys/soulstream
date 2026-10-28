@@ -8,6 +8,7 @@ export type ClaudeForegroundPhase =
 export type ClaudeQueryLifecycle = "open" | "closed" | "fatal";
 
 export type ClaudeRuntimeCloseReason =
+  | "account_switch"
   | "explicit_cancel"
   | "session_delete"
   | "registry_ttl"
@@ -229,6 +230,12 @@ export class ClaudeSessionRuntime<TMessage> {
 
   hasInput(uuid: string): boolean {
     return this.inputs.has(uuid);
+  }
+
+  inputDelivery(uuid: string): "not_sent" | "ambiguous" | "delivered" {
+    const input = this.inputs.get(uuid);
+    if (!input || input.state === "queued") return "not_sent";
+    return input.commandLifecycle ? "delivered" : "ambiguous";
   }
 
   isForegroundResultOwner(uuid: string): boolean {

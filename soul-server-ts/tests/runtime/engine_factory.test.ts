@@ -105,7 +105,11 @@ describe("createEngineFactory", () => {
   it("injects the host Claude account service into the in-process engine", () => {
     const workspaceDir = makeTempDirSync("claude-account-pool-engine-");
     const claudeAccountTurnPort = {
-      select: () => Promise.resolve(null),
+      select: () => Promise.resolve({
+        pool_exhausted: true as const,
+        available_count: 0 as const,
+        earliest_available_at: null,
+      }),
       reject: () => Promise.resolve(),
       release: () => Promise.resolve(),
     };

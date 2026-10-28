@@ -15,6 +15,7 @@ import {
   normalizePersistentTurnOwner,
 } from "./claude_sdk_persistent_session_support.js";
 import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
+import { ClaudeSdkRateLimitSwitchGate } from "./claude_sdk_rate_limit_switch_gate.js";
 
 type StartPersistentForegroundTurnOptions = {
   options: ClaudeRunOptions;
@@ -96,6 +97,7 @@ export function startPersistentForegroundTurn({
     timedOut: false,
     origin,
     rateLimitTerminationState: "none",
+    rateLimitSwitchGate: new ClaudeSdkRateLimitSwitchGate(),
   } satisfies ActiveForeground;
   setActiveForeground(active);
   turnInactivityWatchdog.arm(uuid);
