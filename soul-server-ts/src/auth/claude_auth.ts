@@ -307,6 +307,17 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
     return this.fetchAuthApi(ANTHROPIC_PROFILE_URL, requestId, responseType);
   }
 
+  async fetchProfileWithAccessToken(accessToken: string): Promise<ClaudeAuthApiResponse> {
+    return this.fetchAuthApi(
+      ANTHROPIC_PROFILE_URL,
+      "",
+      "claude_auth_get_profile",
+      undefined,
+      false,
+      accessToken,
+    );
+  }
+
   buildProcessEnv(
     baseEnv: NodeJS.ProcessEnv | Record<string, string | undefined>,
   ): Record<string, string | undefined> {
@@ -325,17 +336,22 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
     responseType: string,
     signal?: AbortSignal,
     observeProviderUsage = false,
+    accessToken?: string,
   ): Promise<ClaudeAuthApiResponse> {
     let token: string | null;
-    try {
-      token = this.store.read()?.accessToken ?? null;
-    } catch (err) {
-      return {
-        type: responseType,
-        requestId,
-        success: false,
-        error: stringifyError(err),
-      };
+    if (accessToken !== undefined) {
+      token = accessToken;
+    } else {
+      try {
+        token = this.store.read()?.accessToken ?? null;
+      } catch (err) {
+        return {
+          type: responseType,
+          requestId,
+          success: false,
+          error: stringifyError(err),
+        };
+      }
     }
     if (!token) {
       return {

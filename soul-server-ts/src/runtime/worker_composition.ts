@@ -49,6 +49,7 @@ import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import { composeClaudeRuntime } from "./claude_runtime_composition.js";
+import { composeClaudeLoginService } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
 import {
@@ -86,6 +87,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     env.CLAUDE_ACCOUNT_POOL_ENABLED && env.CLAUDE_ACCOUNTS_DIR
       ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR })
       : undefined;
+  const claudeLoginService = claudeAccounts
+    ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger })
+    : undefined;
   const providerUsage = new ProviderUsageService({
     claudeAuth, claudeAccounts, modelCatalog, logger,
     antigravity: {
@@ -439,6 +443,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       attachmentStore,
       claudeAuth,
       claudeAccounts,
+      claudeLoginService,
       sessionDb: db,
       realtimeBroker,
       agentConfigService,
@@ -472,6 +477,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     attachmentStore,
     claudeAuth,
     ...(claudeAccounts ? { claudeAccounts } : {}),
+    ...(claudeLoginService ? { claudeLoginService } : {}),
     realtimeBroker,
     agentConfigService,
     mcpRuntime,

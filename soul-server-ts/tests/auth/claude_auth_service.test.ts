@@ -359,4 +359,30 @@ describe("ClaudeAuthService profile/usage API", () => {
       });
     });
   });
+
+  it("fetches a profile with an account token without reading or writing the legacy token store", async () => {
+    const accountToken = "synthetic-account-oauth-token";
+    const httpGet = vi.fn<ClaudeAuthHttpGet>(async () => ({
+      status: 200,
+      text: async () => "",
+      json: async () => ({ account: { uuid: "account-uuid" } }),
+    }));
+    const svc = makeService(undefined, httpGet);
+
+    await expect(svc.fetchProfileWithAccessToken(accountToken)).resolves.toEqual({
+      type: "claude_auth_get_profile",
+      requestId: "",
+      success: true,
+      data: { account: { uuid: "account-uuid" } },
+    });
+    expect(httpGet).toHaveBeenCalledWith(ANTHROPIC_PROFILE_URL, {
+      headers: {
+        Authorization: `Bearer ${accountToken}`,
+        "anthropic-beta": "oauth-2025-04-20",
+      },
+    });
+    expect(svc.status("legacy-status", "claude_auth_status")).toMatchObject({
+      has_token: false,
+    });
+  });
 });
