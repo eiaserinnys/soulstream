@@ -39,6 +39,8 @@
     "AGENT_PROFILE_CACHE_PATH": { "owner": "agents", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "MODEL_CATALOG_PATH": { "owner": "models", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "INCOMING_FILE_DIR": { "owner": "attachments", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "CLAUDE_ACCOUNTS_DIR": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "CLAUDE_ACCOUNT_POOL_ENABLED": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
     "CLAUDE_AUTH_TOKEN_PATH": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CLAUDE_SESSION_RUNTIME_V2_ENABLED": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
     "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },

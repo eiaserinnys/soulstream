@@ -30,6 +30,13 @@ export function createAuthCommandFamily(
       handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     claude_auth_get_usage: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     claude_auth_get_profile: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_auth_accounts_list: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_auth_account_update: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_auth_account_delete: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_auth_login_start: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_auth_login_status: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_auth_login_submit_code: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
+    claude_auth_login_cancel: (cmd) => handleClaudeAuth(deps, cmd as ClaudeAuthCommand),
     provider_usage_get: (cmd) =>
       handleProviderUsage(deps, cmd as ProviderUsageCommand),
   };

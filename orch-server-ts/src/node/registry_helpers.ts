@@ -13,6 +13,10 @@ export function supportsRunnerInventory(capabilities: unknown): boolean {
   return isRecord(capabilities) && capabilities.runner_inventory_v1 === true;
 }
 
+export function supportsClaudeAccountPool(capabilities: unknown): boolean {
+  return isRecord(capabilities) && capabilities.claude_account_pool_v1 === true;
+}
+
 export function runnerInventoryCommandType(
   capabilities: unknown,
 ): "list_runner_inventory" | "list_sessions" {

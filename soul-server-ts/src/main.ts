@@ -151,7 +151,11 @@ async function main(): Promise<void> {
       logger.warn("OPENCODE_CLI_PATH is unset; OpenCode turns will fail explicitly");
     }
   }
-  if (agentRegistry.supportedBackends().includes("claude") && !env.CLAUDE_AUTH_TOKEN_PATH) {
+  if (
+    agentRegistry.supportedBackends().includes("claude") &&
+    !env.CLAUDE_ACCOUNT_POOL_ENABLED &&
+    !env.CLAUDE_AUTH_TOKEN_PATH
+  ) {
     console.error(
       "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
     );

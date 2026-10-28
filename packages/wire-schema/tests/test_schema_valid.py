@@ -363,6 +363,13 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthDeleteToken",
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
+        "ClaudeAuthAccountsList",
+        "ClaudeAuthAccountUpdate",
+        "ClaudeAuthAccountDelete",
+        "ClaudeAuthLoginStart",
+        "ClaudeAuthLoginStatus",
+        "ClaudeAuthLoginSubmitCode",
+        "ClaudeAuthLoginCancel",
         "ClaudeRuntimeListTasks",
         "ClaudeRuntimeTaskOutput",
         "ClaudeRuntimeStopTask",
@@ -386,7 +393,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 83
+    assert len(wire_types) == 90
 
     sse_types = {
         "SSEEventInit",
@@ -781,6 +788,13 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeAuthDeleteToken",
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
+        "ClaudeAuthAccountsList",
+        "ClaudeAuthAccountUpdate",
+        "ClaudeAuthAccountDelete",
+        "ClaudeAuthLoginStart",
+        "ClaudeAuthLoginStatus",
+        "ClaudeAuthLoginSubmitCode",
+        "ClaudeAuthLoginCancel",
         "ClaudeRuntimeListTasks",
         "ClaudeRuntimeTaskOutput",
         "ClaudeRuntimeStopTask",

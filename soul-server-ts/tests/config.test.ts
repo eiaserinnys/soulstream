@@ -31,6 +31,8 @@ describe("parseEnv", () => {
     expect(env.EVENT_OUTBOX_DIR).toBe("/tmp/soulstream-event-outbox-test");
     expect(env.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(true);
     expect(env.SOUL_RUNNER_PROCESS_ENABLED).toBe(false);
+    expect(env.CLAUDE_ACCOUNT_POOL_ENABLED).toBe(false);
+    expect(env.CLAUDE_ACCOUNTS_DIR).toBeUndefined();
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
@@ -254,6 +256,28 @@ describe("parseEnv", () => {
       CLAUDE_AUTH_TOKEN_PATH: "/var/lib/soulstream-ts/claude-auth.json",
     });
     expect(env.CLAUDE_AUTH_TOKEN_PATH).toBe("/var/lib/soulstream-ts/claude-auth.json");
+  });
+
+  it("Claude account pool is off by default and requires an absolute directory when enabled", () => {
+    expect(() => parseEnv({
+      ...minimal,
+      CLAUDE_ACCOUNT_POOL_ENABLED: "true",
+    })).toThrow(/CLAUDE_ACCOUNTS_DIR is required/);
+
+    expect(() => parseEnv({
+      ...minimal,
+      CLAUDE_ACCOUNT_POOL_ENABLED: "true",
+      CLAUDE_ACCOUNTS_DIR: "relative/claude-accounts",
+    })).toThrow(/CLAUDE_ACCOUNTS_DIR must be an absolute path/);
+
+    expect(parseEnv({
+      ...minimal,
+      CLAUDE_ACCOUNT_POOL_ENABLED: "true",
+      CLAUDE_ACCOUNTS_DIR: "/var/lib/soulstream/claude-accounts",
+    })).toMatchObject({
+      CLAUDE_ACCOUNT_POOL_ENABLED: true,
+      CLAUDE_ACCOUNTS_DIR: "/var/lib/soulstream/claude-accounts",
+    });
   });
 
   it("Claude runtime v2 defaults to a ten-minute inactivity gap and explicit kill-switch", () => {
