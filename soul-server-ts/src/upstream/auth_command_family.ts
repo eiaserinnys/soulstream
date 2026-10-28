@@ -53,7 +53,7 @@ async function handleClaudeAuth(
     }
   } catch (err) {
     if (err instanceof ClaudeAuthCommandError) {
-      throw new CommandDispatchError(err.message);
+      throw new CommandDispatchError(err.message, err.code);
     }
     throw err;
   }

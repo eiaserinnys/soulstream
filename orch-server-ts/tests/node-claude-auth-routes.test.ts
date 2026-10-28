@@ -401,3 +401,52 @@ it("accepts Antigravity provider usage through the existing REST route", async (
   expect(sent).toContainEqual(expect.objectContaining({ type: "provider_usage_get", provider: "antigravity" }));
   await app.close();
 });
+
+describe("legacy Claude OAuth routes on account-pool nodes", () => {
+  it("returns login_flow_required before starting PKCE or exchanging codes", async () => {
+    const { app, sessionStore, tokenRequests, sent } = createClaudeAuthHarness({
+      claudeAccountPoolEnabled: true,
+    });
+    sessionStore.seed("legacy-callback-state", {
+      verifier: "legacy-verifier",
+      metadata: { node_id: "fake-node" },
+    });
+
+    const responses = await Promise.all([
+      app.inject({
+        method: "GET",
+        url: "/api/nodes/fake-node/claude-auth/start",
+      }),
+      app.inject({
+        method: "GET",
+        url: "/api/nodes/claude-auth/callback?code=synthetic-auth-code&state=legacy-callback-state",
+      }),
+      app.inject({
+        method: "GET",
+        url: "/api/nodes/fake-node/claude-auth/headless/start",
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/nodes/fake-node/claude-auth/headless/submit-code",
+        payload: { code: "synthetic-auth-code#legacy-state" },
+      }),
+      app.inject({
+        method: "DELETE",
+        url: "/api/nodes/fake-node/claude-auth/token",
+      }),
+    ]);
+
+    for (const response of responses) {
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        error: { code: "login_flow_required" },
+      });
+      expect(response.body).not.toContain("synthetic-auth-code");
+    }
+    expect(sessionStore.created).toEqual([]);
+    expect(tokenRequests).toEqual([]);
+    expect(sent).toEqual([]);
+
+    await app.close();
+  });
+});

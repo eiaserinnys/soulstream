@@ -19,6 +19,7 @@ export interface RegistrationParams {
   modelCatalog?: Pick<ModelCatalog, "advertise">;
   runnerProcessEnabled?: boolean;
   worktreeMcpEnabled?: boolean;
+  claudeAccountPoolEnabled?: boolean;
   controlChannelEnabled?: boolean;
   releaseActivationState?: ReleaseActivationState;
   resources?: NodeResourceSnapshot;
@@ -113,6 +114,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       app_heartbeat_v1: true,
       attachment_import_v1: true,
       runner_inventory_v1: true,
+      ...(params.claudeAccountPoolEnabled ? { claude_account_pool_v1: true } : {}),
       ...(params.controlChannelEnabled ? { control_channel_v1: true } : {}),
       ...(params.runnerProcessEnabled === undefined
         ? {}
