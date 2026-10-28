@@ -1,6 +1,7 @@
 import { createApiClient } from '../client';
 import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
+import type { ClaudeAccountDeleteResult, ClaudeAccountList } from '../../../../packages/soul-ui/src/lib/usage-summary';
 
 function jsonResponse(body: unknown): Response {
   return {
@@ -53,4 +54,28 @@ test('delete and login flow endpoints carry only their contract fields', async (
   expect(calls[0]?.[1].body).toBeUndefined();
   expect(JSON.parse(String(calls[1]?.[1].body))).toEqual({ account_id: 'account-a' });
   expect(JSON.parse(String(calls[3]?.[1].body))).toEqual({ code: 'x' });
+});
+
+test('account DELETE keeps its P6 response and GET keeps both pool summaries', async () => {
+  const pool = {
+    available_count: 1,
+    total_count: 2,
+    best_weekly_remaining_percent: 80,
+    best_weekly_resets_at: null,
+    earliest_available_at: null,
+  };
+  const deleted: ClaudeAccountDeleteResult = { deferred: false, accounts: [], pool };
+  const refreshed: ClaudeAccountList = {
+    mode: 'pool',
+    accounts: [],
+    pool,
+    fable_pool: { ...pool, available_count: 0, best_weekly_remaining_percent: 12 },
+  };
+  (global.fetch as jest.Mock)
+    .mockResolvedValueOnce(jsonResponse(deleted))
+    .mockResolvedValueOnce(jsonResponse(refreshed));
+  const api = createApiClient('https://accounts.example');
+
+  await expect(api.deleteClaudeAuthAccount('node-a', 'account-a')).resolves.toEqual(deleted);
+  await expect(api.getClaudeAuthAccounts('node-a')).resolves.toEqual(refreshed);
 });

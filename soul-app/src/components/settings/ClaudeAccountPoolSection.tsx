@@ -115,7 +115,7 @@ function loginErrorMessage(caught: unknown): string {
   }
   if (code === 'account_exists') return '이미 등록된 계정입니다.';
   if (code === 'account_identity_mismatch') return '기존 계정과 인증 계정이 일치하지 않습니다.';
-  if (code === 'invalid_code' || code === 'code_expired') return '인증 코드가 만료되었거나 이미 사용되었습니다.';
+  if (code === 'invalid_code' || code === 'invalid_login_code' || code === 'code_expired') return '인증 코드가 만료되었거나 이미 사용되었습니다.';
   if (status === 409) return '이미 진행 중인 인증이 있습니다.';
   return '인증에 실패했습니다. 다시 시도해 주세요.';
 }
@@ -141,8 +141,9 @@ function accountAvailable(account: ClaudeAccount): boolean {
 export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
-  const [accounts, setAccounts] = useState<readonly ClaudeAccount[]>(initialList.accounts);
-  const [pool, setPool] = useState(initialList.pool);
+  const [accountList, setAccountList] = useState<ClaudeAccountList>(initialList);
+  const accounts = accountList.accounts;
+  const pool = accountList.pool;
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -157,8 +158,7 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
   const prioritized = useMemo(() => ordered.filter(account => account.enabled), [ordered]);
 
   function applyList(result: ClaudeAccountList) {
-    setAccounts(result.accounts);
-    setPool(result.pool);
+    setAccountList(result);
   }
 
   async function refreshAccounts() {
@@ -207,39 +207,43 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
 
   async function patchAccount(account: ClaudeAccount, patch: { enabled?: boolean; priority?: number | null }) {
     if (busyAccountId) return;
-    const previousAccounts = accounts;
-    const previousPool = pool;
+    const previousList = accountList;
     setBusyAccountId(account.id);
     setNotice(null);
     if (patch.priority !== undefined) {
-      setAccounts(previousAccounts.map(item => item.id === account.id ? { ...item, priority: patch.priority! } : item));
+      setAccountList({
+        ...previousList,
+        accounts: previousList.accounts.map(item => item.id === account.id ? { ...item, priority: patch.priority! } : item),
+      });
     } else if (patch.enabled !== undefined) {
       const beforeAvailable = accountAvailable(account);
       const after = { ...account, enabled: patch.enabled };
       const delta = Number(accountAvailable(after)) - Number(beforeAvailable);
-      setAccounts(previousAccounts.map(item => item.id === account.id ? after : item));
-      if (previousPool) setPool({ ...previousPool,
-        total_count: Math.max(0, previousPool.total_count + Number(patch.enabled) - Number(account.enabled)),
-        available_count: Math.max(0, previousPool.available_count + delta),
+      setAccountList({
+        ...previousList,
+        accounts: previousList.accounts.map(item => item.id === account.id ? after : item),
+        pool: previousList.pool ? {
+          ...previousList.pool,
+          total_count: Math.max(0, previousList.pool.total_count + Number(patch.enabled) - Number(account.enabled)),
+          available_count: Math.max(0, previousList.pool.available_count + delta),
+        } : null,
       });
     }
     try {
       applyList(await api.patchClaudeAuthAccount(nodeId, account.id, patch));
     } catch {
-      setAccounts(previousAccounts);
-      setPool(previousPool);
+      setAccountList(previousList);
       setNotice('계정 설정을 저장하지 못했습니다. 다시 시도해 주세요.');
     } finally { setBusyAccountId(null); }
   }
 
   async function normalizePriorityOrder(account: ClaudeAccount, desiredOrder: readonly ClaudeAccount[]) {
     if (busyAccountId) return;
-    const previousAccounts = accounts;
-    const previousPool = pool;
+    const previousList = accountList;
     const normalized = desiredOrder.map((item, index) => ({ ...item, priority: index + 1 }));
     setBusyAccountId(account.id);
     setNotice(null);
-    setAccounts(normalized);
+    setAccountList({ ...previousList, accounts: normalized });
     try {
       let latest: ClaudeAccountList | null = null;
       for (const item of normalized) {
@@ -257,8 +261,7 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
         }
       } catch { /* keep the last confirmed local list */ }
       if (!reconciled) {
-        setAccounts(previousAccounts);
-        setPool(previousPool);
+        setAccountList(previousList);
       }
       setNotice('우선순위를 저장하지 못했습니다. 다시 시도해 주세요.');
     } finally { setBusyAccountId(null); }
@@ -285,10 +288,10 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
     setNotice(null);
     try {
       const result = await api.deleteClaudeAuthAccount(nodeId, accountId);
-      setAccounts(result.accounts);
-      setPool(result.pool);
+      setAccountList(current => ({ ...current, accounts: result.accounts, pool: result.pool }));
       setConfirmingDelete(null);
       setNotice(result.deferred ? '현재 세션이 끝난 뒤 삭제합니다.' : 'Claude 계정을 삭제했습니다.');
+      await refreshAccounts();
     } catch { setNotice('Claude 계정을 삭제하지 못했습니다. 다시 시도해 주세요.'); }
     finally { setBusyAccountId(null); }
   }

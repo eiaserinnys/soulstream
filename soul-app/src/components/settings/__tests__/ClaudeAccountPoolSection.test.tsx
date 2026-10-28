@@ -166,15 +166,44 @@ test('toggle PATCHes enabled and deletion uses inline confirmation with deferred
   fireEvent.press(view.getByTestId('claude-account-delete-confirm-two'));
   expect(await view.findByText('현재 세션이 끝난 뒤 삭제합니다.')).toBeTruthy();
   expect(api.deleteClaudeAuthAccount).toHaveBeenCalledWith('node-a', 'two');
+  expect(api.getClaudeAuthAccounts).toHaveBeenCalledWith('node-a');
+});
+
+test('DELETE reloads the complete account list and uses its latest pool summaries', async () => {
+  const api = createApi();
+  const refreshedList: ClaudeAccountList = {
+    ...initial,
+    accounts: initial.accounts.filter(entry => entry.id !== 'two'),
+    pool: { ...initial.pool!, available_count: 1, total_count: 2, best_weekly_remaining_percent: 74 },
+    fable_pool: { ...initial.fable_pool!, available_count: 0, total_count: 2, best_weekly_remaining_percent: 12 },
+  };
+  api.deleteClaudeAuthAccount.mockResolvedValueOnce({
+    deferred: false,
+    accounts: refreshedList.accounts,
+    pool: initial.pool,
+  });
+  api.getClaudeAuthAccounts.mockResolvedValueOnce(refreshedList);
+  const { view } = renderPool(api);
+
+  fireEvent.press(view.getByTestId('claude-account-delete-two'));
+  fireEvent.press(view.getByTestId('claude-account-delete-confirm-two'));
+
+  expect(await view.findByText('1/2 가용 (주간 최대 잔여 74%)')).toBeTruthy();
+  expect(view.queryByTestId('claude-account-row-two')).toBeNull();
+  expect(view.getAllByTestId(/^claude-account-row-/)).toHaveLength(2);
+  expect(api.deleteClaudeAuthAccount).toHaveBeenCalledWith('node-a', 'two');
+  expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(1);
+  expect(api.getClaudeAuthAccounts).toHaveBeenCalledWith('node-a');
 });
 
 test.each([
-  ['account_exists', '이미 등록된 계정입니다.'],
-  ['account_identity_mismatch', '기존 계정과 인증 계정이 일치하지 않습니다.'],
-] as const)('login opens the returned auth link, prevents duplicate submission, and maps %s', async (code, message) => {
+  ['account_exists', '이미 등록된 계정입니다.', 409],
+  ['account_identity_mismatch', '기존 계정과 인증 계정이 일치하지 않습니다.', 409],
+  ['invalid_login_code', '인증 코드가 만료되었거나 이미 사용되었습니다.', 400],
+] as const)('login opens the returned auth link, prevents duplicate submission, and maps %s', async (code, message, status) => {
   const api = createApi();
   api.submitClaudeAuthLoginCode.mockRejectedValueOnce(Object.assign(new Error('request failed'), {
-    status: 409,
+    status,
     body: JSON.stringify({ code, message: 'server raw message' }),
   }));
   const { view } = renderPool(api);
