@@ -49,6 +49,156 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
+  async function createSelectorService(
+    usageMap: Record<string, unknown>,
+    accountIds: string[] = [ACC_A, ACC_B],
+  ): Promise<ClaudeAccountService> {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string> | undefined)?.Authorization ?? "";
+      const token = auth.replace(/^Bearer\s+/i, "");
+      return new Response(JSON.stringify(usageMap[token] ?? {}), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const svc = new ClaudeAccountService({
+      accountsDir,
+      homeDir: fakeHomeDir,
+      now: () => nowMs,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    for (const [idx, id] of accountIds.entries()) {
+      const loginId = `earliest-reset-${idx}`;
+      const pending = await svc.createPendingDir(loginId);
+      writeCredentials(pending, {
+        accessToken: `tok-${id}`,
+        expiresAt: nowMs + 24 * 3600_000,
+      });
+      await svc.registerFromPending({
+        loginId,
+        id,
+        email: `${idx}@example.com`,
+        plan: "max_20x",
+      });
+    }
+
+    const list = await svc.getAccountList({ forceRefresh: true });
+    for (const id of accountIds) {
+      const expected = usageMap[`tok-${id}`] as {
+        seven_day?: { utilization?: number };
+      };
+      expect(list.accounts.find((account) => account.id === id)?.usage.seven_day?.used_percent)
+        .toBe(expected.seven_day?.utilization);
+    }
+    return svc;
+  }
+
+  it("uses the earlier applicable weekly reset before usage and Fable headroom", async () => {
+    const svc = await createSelectorService({
+      [`tok-${ACC_A}`]: {
+        five_hour: { utilization: 20, resets_at: "2026-10-28T02:00:00.000Z" },
+        seven_day: { utilization: 65, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day_fable: { utilization: 10, resets_at: "2026-11-03T00:00:00.000Z" },
+      },
+      [`tok-${ACC_B}`]: {
+        five_hour: { utilization: 15, resets_at: "2026-10-28T02:00:00.000Z" },
+        seven_day: { utilization: 15, resets_at: "2026-11-03T00:00:00.000Z" },
+        seven_day_fable: { utilization: 80, resets_at: "2026-10-28T23:00:00.000Z" },
+      },
+    });
+
+    const selected = await svc.select({
+      session_id: "session-weekly-reset",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-6",
+    });
+
+    expect(selected).toMatchObject({ account_id: ACC_A });
+
+    const selectedFable = await svc.select({
+      session_id: "session-weekly-reset-fable",
+      turn_id: "turn-1",
+      model: "claude-fable-5-1",
+    });
+
+    expect(selectedFable).toMatchObject({ account_id: ACC_B });
+  });
+
+  it("uses the earlier five-hour reset when weekly resets are tied", async () => {
+    const svc = await createSelectorService({
+      [`tok-${ACC_A}`]: {
+        five_hour: { utilization: 75, resets_at: "2026-10-28T02:00:00.000Z" },
+        seven_day: { utilization: 15, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day_fable: { utilization: 20, resets_at: "2026-11-03T00:00:00.000Z" },
+      },
+      [`tok-${ACC_B}`]: {
+        five_hour: { utilization: 10, resets_at: "2026-10-28T03:00:00.000Z" },
+        seven_day: { utilization: 15, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day_fable: { utilization: 20, resets_at: "2026-11-03T00:00:00.000Z" },
+      },
+    });
+
+    const selected = await svc.select({
+      session_id: "session-five-hour-reset",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-6",
+    });
+
+    expect(selected).toMatchObject({ account_id: ACC_A });
+  });
+
+  it("treats a past reset as expired and prefers a future reset", async () => {
+    const svc = await createSelectorService({
+      [`tok-${ACC_A}`]: {
+        five_hour: { utilization: 5, resets_at: "2026-10-28T02:00:00.000Z" },
+        seven_day: { utilization: 5, resets_at: "2026-10-27T00:00:00.000Z" },
+        seven_day_fable: { utilization: 0, resets_at: "2026-11-03T00:00:00.000Z" },
+      },
+      [`tok-${ACC_B}`]: {
+        five_hour: { utilization: 80, resets_at: "2026-10-28T02:00:00.000Z" },
+        seven_day: { utilization: 80, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day_fable: { utilization: 0, resets_at: "2026-11-03T00:00:00.000Z" },
+      },
+    });
+
+    const selected = await svc.select({
+      session_id: "session-expired-reset",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-6",
+    });
+
+    expect(selected).toMatchObject({ account_id: ACC_B });
+  });
+
+  it("keeps Fable protection and lower usage tie-breakers when resets are tied", async () => {
+    const svc = await createSelectorService({
+      [`tok-${ACC_A}`]: {
+        five_hour: { utilization: 20, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day: { utilization: 20, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day_fable: { utilization: 5, resets_at: "2026-10-29T00:00:00.000Z" },
+      },
+      [`tok-${ACC_B}`]: {
+        five_hour: { utilization: 10, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day: { utilization: 65, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day_fable: { utilization: 70, resets_at: "2026-10-29T00:00:00.000Z" },
+      },
+      [`tok-${ACC_C}`]: {
+        five_hour: { utilization: 25, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day: { utilization: 55, resets_at: "2026-10-29T00:00:00.000Z" },
+        seven_day_fable: { utilization: 70, resets_at: "2026-10-29T00:00:00.000Z" },
+      },
+    }, [ACC_A, ACC_B, ACC_C]);
+
+    const selected = await svc.select({
+      session_id: "session-tied-resets",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-6",
+    });
+
+    expect(selected).toMatchObject({ account_id: ACC_C });
+  });
+
   it("implements ClaudeLoginAccountPort, creates storage directories (0700), JSON files (0600), and shared symlinks while protecting conflicts", async () => {
     const svc = new ClaudeAccountService({
       accountsDir,

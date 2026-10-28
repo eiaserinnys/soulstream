@@ -93,6 +93,39 @@ export function effectiveWindowUsedPercent(
   return window.used_percent;
 }
 
+export function effectiveWindowResetMs(
+  window: ClaudeUsageWindow | null | undefined,
+  nowMs: number,
+): number | null {
+  if (!window || typeof window.used_percent !== "number" || !Number.isFinite(window.used_percent)) {
+    return null;
+  }
+  if (!window.resets_at) {
+    return null;
+  }
+  const resetMs = Date.parse(window.resets_at);
+  if (!Number.isFinite(resetMs) || resetMs <= nowMs) {
+    return null;
+  }
+  return resetMs;
+}
+
+export function relevantWeeklyResetMs(
+  usage: ClaudeAccountUsage,
+  fableModel: boolean,
+  nowMs: number,
+): number | null {
+  const sevenDayReset = effectiveWindowResetMs(usage.seven_day, nowMs);
+  if (!fableModel) {
+    return sevenDayReset;
+  }
+  const fableReset = effectiveWindowResetMs(usage.fable_weekly, nowMs);
+  if (sevenDayReset !== null && fableReset !== null) {
+    return Math.min(sevenDayReset, fableReset);
+  }
+  return fableReset ?? sevenDayReset;
+}
+
 export function relevantMaxUsedPercent(
   usage: ClaudeAccountUsage,
   fableModel: boolean,
@@ -153,6 +186,21 @@ function comparePriority(a: number | null, b: number | null): number {
     return -1;
   }
   return a - b;
+}
+
+function compareOptionalAscending(a: number | null, b: number | null): number {
+  const hasA = a !== null && Number.isFinite(a);
+  const hasB = b !== null && Number.isFinite(b);
+  if (!hasA && !hasB) {
+    return 0;
+  }
+  if (hasA && !hasB) {
+    return -1;
+  }
+  if (!hasA && hasB) {
+    return 1;
+  }
+  return a! - b!;
 }
 
 function getEligibleCandidates(params: SelectCandidateParams): SelectableAccountCandidate[] {
@@ -218,7 +266,32 @@ export function selectBestCandidate(
         return priDiff;
       }
 
-      // 3. For non-Fable models: prefer higher active Fable usage first to preserve Fable headroom
+      // 3. Measured <98% observations precede unmeasured idle/stale candidates
+      const maxA = a.stale ? null : relevantMaxUsedPercent(a.usage, fableModel, nowMs);
+      const maxB = b.stale ? null : relevantMaxUsedPercent(b.usage, fableModel, nowMs);
+      const measuredA = maxA !== null ? 0 : 1;
+      const measuredB = maxB !== null ? 0 : 1;
+      if (measuredA !== measuredB) {
+        return measuredA - measuredB;
+      }
+
+      // 4. Earliest relevant weekly reset first
+      const weeklyResetA = a.stale ? null : relevantWeeklyResetMs(a.usage, fableModel, nowMs);
+      const weeklyResetB = b.stale ? null : relevantWeeklyResetMs(b.usage, fableModel, nowMs);
+      const weeklyResetDiff = compareOptionalAscending(weeklyResetA, weeklyResetB);
+      if (weeklyResetDiff !== 0) {
+        return weeklyResetDiff;
+      }
+
+      // 5. Earliest 5-hour reset first
+      const fiveHourResetA = a.stale ? null : effectiveWindowResetMs(a.usage.five_hour, nowMs);
+      const fiveHourResetB = b.stale ? null : effectiveWindowResetMs(b.usage.five_hour, nowMs);
+      const fiveHourResetDiff = compareOptionalAscending(fiveHourResetA, fiveHourResetB);
+      if (fiveHourResetDiff !== 0) {
+        return fiveHourResetDiff;
+      }
+
+      // 6. For non-Fable models: prefer higher active Fable usage first to preserve Fable headroom
       if (!fableModel) {
         const fableA = a.stale
           ? -1
@@ -231,21 +304,18 @@ export function selectBestCandidate(
         }
       }
 
-      // 4. Lower relevant max usage first (measured < 98% before unmeasured idle/stale)
-      const maxA = a.stale ? null : relevantMaxUsedPercent(a.usage, fableModel, nowMs);
-      const maxB = b.stale ? null : relevantMaxUsedPercent(b.usage, fableModel, nowMs);
-      const rankA = maxA !== null ? maxA : SOFT_USAGE_CAP_PERCENT;
-      const rankB = maxB !== null ? maxB : SOFT_USAGE_CAP_PERCENT;
-      if (rankA !== rankB) {
-        return rankA - rankB;
+      // 7. Lower relevant max usage first as a remaining tie-breaker
+      const usageDiff = compareOptionalAscending(maxA, maxB);
+      if (usageDiff !== 0) {
+        return usageDiff;
       }
 
-      // 5. Fewer active_sessions
+      // 8. Fewer active_sessions
       if (a.active_sessions !== b.active_sessions) {
         return a.active_sessions - b.active_sessions;
       }
 
-      // 6. id ascending
+      // 9. id ascending
       return a.id.localeCompare(b.id);
     });
 
