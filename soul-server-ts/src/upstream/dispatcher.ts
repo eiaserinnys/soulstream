@@ -25,7 +25,10 @@ import {
 import { createAgentConfigCommandFamily } from "./agent_config_command_family.js";
 import { AttachmentCommands } from "./attachment_commands.js";
 import { createAttachmentCommandFamily } from "./attachment_command_family.js";
-import { ClaudeAuthCommands } from "./claude_auth_commands.js";
+import {
+  ClaudeAuthCommands,
+  type ClaudeAccountsCommandHandler,
+} from "./claude_auth_commands.js";
 import { createAuthCommandFamily } from "./auth_command_family.js";
 import {
   ClaudeRuntimeCommands,
@@ -71,6 +74,7 @@ export interface CommandDispatcherOptions {
   taskExecutor: TaskExecutor;
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
+  claudeAccounts?: ClaudeAccountsCommandHandler;
   /** Missing wiring becomes an explicit command error instead of a silent fallback. */
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;
@@ -114,6 +118,7 @@ export class CommandDispatcher {
       taskExecutor,
       attachmentStore = new FileAttachmentStore(".local/incoming", logger),
       claudeAuth,
+      claudeAccounts,
       sessionDb,
       realtimeBroker,
       providerUsage,
@@ -140,7 +145,11 @@ export class CommandDispatcher {
     });
     const attachmentCommands = new AttachmentCommands(attachmentStore);
     const sessionListCommands = new SessionListCommands(sessionDb, nodeId);
-    const claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
+    const claudeAuthCommands = new ClaudeAuthCommands({
+      agentRegistry,
+      claudeAuth,
+      claudeAccounts,
+    });
     const providerUsageCommands = new ProviderUsageCommands({
       providerUsage:
         providerUsage
