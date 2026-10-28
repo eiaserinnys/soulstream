@@ -12,7 +12,6 @@ import {
   requestClaudeAuthData,
   requestErrorMessage,
   replaceAccount,
-  toAccountList,
 } from "../../lib/claude-auth-api";
 import { ClaudeAccountRow } from "./ClaudeAccountRow";
 import { ClaudeAuthLoginSheet } from "./ClaudeAuthLoginSheet";
@@ -64,12 +63,17 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
   const [actionError, setActionError] = useState<string | null>(null);
   const accountIdsBeforeLogin = useRef<Set<string>>(new Set());
 
-  const refreshAccounts = useCallback(async () => {
+  const reloadAccounts = useCallback(async () => {
     const next = await getClaudeAccounts(request, nodeId);
     queryClient.setQueryData(queryKey, next);
+    return next;
+  }, [nodeId, queryClient, queryKey, request]);
+
+  const refreshAccounts = useCallback(async () => {
+    const next = await reloadAccounts();
     const added = next.accounts.find((account) => !accountIdsBeforeLogin.current.has(account.id));
     if (added) setHighlightAccountId(added.id);
-  }, [nodeId, queryClient, queryKey, request]);
+  }, [reloadAccounts]);
 
   const startLogin = useCallback(async (accountId: string | null = null) => {
     setActionError(null);
@@ -135,7 +139,7 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
     setNotice(null);
     try {
       const result = await requestClaudeAuthData<ClaudeAccountDeleteResult>(request, accountPath(nodeId, accountId), { method: "DELETE" });
-      queryClient.setQueryData(queryKey, toAccountList(result, previous));
+      await reloadAccounts();
       setNotice(result.deferred ? "삭제 예약됨 · 활성 세션 종료 후 제거" : "계정 삭제됨");
       setConfirmingDeleteId(null);
     } catch (error) {
@@ -144,7 +148,7 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
     } finally {
       setBusyAccountId(null);
     }
-  }, [list, nodeId, queryClient, queryKey, request]);
+  }, [list, nodeId, queryClient, queryKey, reloadAccounts, request]);
 
   async function beginLogin(accountId: string | null = null) {
     setBusyAccountId(accountId);

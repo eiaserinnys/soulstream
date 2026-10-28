@@ -93,13 +93,6 @@ export function loginPath(nodeId: string, loginId: string): string {
   return `/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins/${encodeURIComponent(loginId)}`;
 }
 
-export function toAccountList(
-  result: ClaudeAccountDeleteResult,
-  current: ClaudeAccountList,
-): ClaudeAccountList {
-  return { ...current, accounts: result.accounts, pool: result.pool };
-}
-
 export function replaceAccount(
   current: ClaudeAccountList,
   accountId: string,

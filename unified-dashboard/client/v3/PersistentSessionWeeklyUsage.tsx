@@ -1,6 +1,6 @@
 import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, formatWeeklyRemainingPercent } from "@seosoyoung/soul-ui";
 import { ChevronRight, RefreshCw } from "lucide-react";
-import type { ClaudeAccountList, UsageSummaryGauge, UsageSummaryProvider } from "@seosoyoung/soul-ui";
+import type { UsageSummaryGauge } from "@seosoyoung/soul-ui";
 import type { UseUsageSummaryResult } from "../hooks/useUsageSummary";
 
 type Props = Pick<UseUsageSummaryResult, "node" | "gauges" | "loading" | "loadState" | "evaluatedAtMs"> & {
@@ -16,7 +16,6 @@ function emptyMessage({ loading, loadState, node, gauges }: Pick<Props, "loading
   return "수집 대기";
 }
 
-type ClaudePoolProvider = UsageSummaryProvider & Partial<Pick<ClaudeAccountList, "mode" | "accounts" | "pool" | "fable_pool">>;
 type DisplayGauge = Omit<UsageSummaryGauge, "remainingPercent"> & { remainingPercent: number | null };
 
 function localReleaseTime(value: string | null): string | null {
@@ -34,7 +33,7 @@ function epochSeconds(value: string | null): number | null {
 
 export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState, evaluatedAtMs, onRetry, onNextNode }: Props) {
   const message = emptyMessage({ node, gauges, loading, loadState });
-  const claudeProvider = node?.providers.claude as ClaudePoolProvider | null;
+  const claudeProvider = node?.providers.claude;
   const claudePool = claudeProvider?.mode === "pool" ? claudeProvider.pool : null;
   const showPoolCount = !!claudePool && claudePool.total_count >= 2;
   const fullyBlocked = showPoolCount && claudePool.available_count === 0;

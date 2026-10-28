@@ -165,9 +165,27 @@ describe("ClaudeAccountPoolPanel", () => {
 
   it("updates enabled state and confirms deletion inline, showing deferred removal", async () => {
     const initial = list([account("first", 1), account("second", 2)]);
+    const refreshed: ClaudeAccountList = {
+      ...initial,
+      pool: {
+        available_count: 1,
+        total_count: 2,
+        best_weekly_remaining_percent: 41,
+        best_weekly_resets_at: reset,
+        earliest_available_at: null,
+      },
+      fable_pool: {
+        available_count: 0,
+        total_count: 2,
+        best_weekly_remaining_percent: 12,
+        best_weekly_resets_at: reset,
+        earliest_available_at: reset,
+      },
+    };
     const requestMock = vi.fn<typeof fetch>(async (input, init) => {
       if (init?.method === "PATCH") return data(list([account("first", 1), { ...account("second", 2), enabled: false }]));
       if (init?.method === "DELETE") return data({ deferred: true, accounts: initial.accounts, pool: { ...initial.pool!, total_count: 1 } });
+      if (init?.method === "GET") return data(refreshed);
       return data(initial);
     });
     await mount(initial, requestMock as unknown as typeof fetch);
@@ -187,6 +205,8 @@ describe("ClaudeAccountPoolPanel", () => {
     await settle();
     expect(host.textContent).toContain("삭제 예약됨 · 활성 세션 종료 후 제거");
     expect(accountIds()).toEqual(["first", "second"]);
+    expect(requestMock).toHaveBeenCalledWith("/api/nodes/node-a/claude-auth/accounts", expect.objectContaining({ method: "GET" }));
+    expect(client.getQueryData(["claude-auth-accounts", "node-a"])).toEqual(refreshed);
   });
 
   it("polls login states, prevents duplicate code submission, and refreshes the account list on done", async () => {
