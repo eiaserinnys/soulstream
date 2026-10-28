@@ -40,7 +40,10 @@ import type {
 } from "./protocol.js";
 import { mapClaudeClientEvent } from "./claude_event_mapper.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
-import type { RateLimitStopInfo } from "./claude_sdk_rate_limit_stop_failure.js";
+import {
+  makeStopFailureError,
+  type RateLimitStopInfo,
+} from "./claude_sdk_rate_limit_stop_failure.js";
 import {
   buildClaudeEnvironment,
   normalizeClaudeModel,
@@ -58,7 +61,12 @@ import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.j
 import { toClaudeSdkEffort } from "./effort_boundary.js";
 import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 import { isFableModel } from "../claude_accounts/selector.js";
-import type { ClaudeAccountScope, ClaudeAccountSelectionResult } from "../claude_accounts/types.js";
+import type {
+  ClaudeAccountScope,
+  ClaudeAccountSelectionExhausted,
+  ClaudeAccountSelectionResponse,
+  ClaudeAccountSelectionResult,
+} from "../claude_accounts/types.js";
 
 const ACCOUNT_SWITCH_CONTINUATION_PROMPT =
   "계정 한도로 직전 응답이 끊겼습니다. 이미 끝낸 도구 작업은 반복하지 말고 남은 작업을 이어서 하세요.";
@@ -68,12 +76,10 @@ function accountScopeForRateLimit(info: RateLimitStopInfo, model: string): Claud
   return isFableModel(model) ? "fable" : "all";
 }
 
-function earlierResetAt(current: string | undefined, next: string | undefined): string | undefined {
-  if (!next || !Number.isFinite(Date.parse(next))) return current;
-  if (!current || !Number.isFinite(Date.parse(current)) || Date.parse(next) < Date.parse(current)) {
-    return next;
-  }
-  return current;
+function isAccountPoolExhausted(
+  selection: ClaudeAccountSelectionResponse,
+): selection is ClaudeAccountSelectionExhausted {
+  return "pool_exhausted" in selection;
 }
 
 export {
@@ -143,7 +149,7 @@ export interface ClaudeAccountRateLimitSwitchRequest {
 
 export type ClaudeAccountRateLimitSwitchDecision =
   | { kind: "switch"; options: Partial<ClaudeRunOptions> }
-  | { kind: "exhausted"; resetsAt?: string }
+  | { kind: "exhausted"; resetsAt?: string | null }
   | { kind: "cancelled" };
 
 export interface ClaudeClient {
@@ -223,6 +229,8 @@ export class ClaudeEngineAdapter
   private persistentSessionId: string | null = null;
   private activeFrameChannel: InProcessRunnerFrameChannel | null = null;
   private currentTurn: AbortController | null = null;
+  private currentTurnCompletion: Promise<void> | null = null;
+  private currentTurnUsesAccountPool = false;
   private closed = false;
   private readonly inputRequests = new Map<string, "pending" | "responded" | "expired">();
 
@@ -286,6 +294,13 @@ export class ClaudeEngineAdapter
 
     const controller = new AbortController();
     this.currentTurn = controller;
+    let resolveCurrentTurnCompletion!: () => void;
+    const currentTurnCompletion = new Promise<void>((resolve) => {
+      resolveCurrentTurnCompletion = resolve;
+    });
+    this.currentTurnCompletion = currentTurnCompletion;
+    this.currentTurnUsesAccountPool = this.claudeAccountPoolEnabled
+      && params.claudeAccountPoolTarget === true;
     this.activeFrameChannel = channel;
     let lastText: string | undefined;
     let accountTurnId: string | undefined;
@@ -294,15 +309,13 @@ export class ClaudeEngineAdapter
     let accountQueryClosed = false;
     let terminalQuerySettled = false;
     let maxAccountAttempts = 0;
-    let earliestRateLimitResetAt: string | undefined;
     let attemptedAccountIds = new Set<string>();
     let selectedAccount: ClaudeAccountSelectionResult | null = null;
     let accountClient: ClaudeClient | null = null;
 
     try {
       let options = this.buildRunOptions(params, channel, controller.signal);
-      const poolTurn = this.claudeAccountPoolEnabled
-        && params.claudeAccountPoolTarget === true;
+      const poolTurn = this.currentTurnUsesAccountPool;
       if (poolTurn) {
         const sessionId = params.agentSessionId;
         const model = options.model;
@@ -328,16 +341,29 @@ export class ClaudeEngineAdapter
         }
         attemptedAccountIds = new Set(sameTurnState?.attempted_ids ?? []);
         accountSelectionAttempted = true;
-        selectedAccount = await accountPort.select({
+        const initialSelection = await accountPort.select({
           session_id: sessionId,
           turn_id: accountTurnId,
           model,
           exclude_ids: [...attemptedAccountIds],
         });
-        if (controller.signal.aborted || this.closed) return;
-        if (!selectedAccount) {
-          throw new Error(`No Claude account is available for session ${sessionId}`);
+        if (isAccountPoolExhausted(initialSelection)) {
+          if (controller.signal.aborted || this.closed) return;
+          const terminal = makeStopFailureError({
+            ...(initialSelection.earliest_available_at
+              ? { resetsAt: initialSelection.earliest_available_at }
+              : {}),
+          });
+          for (const payload of mapClaudeClientEvent(terminal)) {
+            await channel.emit(engineEventFrame(
+              { ...payload } as Record<string, unknown>,
+              engineEventMetadata(payload),
+            ));
+          }
+          throw new ClaudeClientFatalEventError(terminal.message);
         }
+        selectedAccount = initialSelection;
+        if (controller.signal.aborted || this.closed) return;
         maxAccountAttempts = attemptedAccountIds.size + selectedAccount.available_count;
         const baseOptions = { ...options };
         let turnState = {
@@ -411,10 +437,6 @@ export class ClaudeEngineAdapter
               session_id: sessionId,
             });
             attemptedAccountIds.add(failedAccount.account_id);
-            earliestRateLimitResetAt = earlierResetAt(
-              earliestRateLimitResetAt,
-              request.info.resetsAt,
-            );
             turnState = {
               turn_id: accountTurnId!,
               account_id: failedAccount.account_id,
@@ -428,13 +450,7 @@ export class ClaudeEngineAdapter
             if (!request.sessionId && request.inputDelivery !== "not_sent") {
               return {
                 kind: "exhausted",
-                ...(earliestRateLimitResetAt ? { resetsAt: earliestRateLimitResetAt } : {}),
-              };
-            }
-            if (attemptedAccountIds.size >= maxAccountAttempts) {
-              return {
-                kind: "exhausted",
-                ...(earliestRateLimitResetAt ? { resetsAt: earliestRateLimitResetAt } : {}),
+                resetsAt: request.info.resetsAt ?? null,
               };
             }
 
@@ -445,7 +461,7 @@ export class ClaudeEngineAdapter
               exclude_ids: [...attemptedAccountIds],
             });
             if (signal.aborted || this.closed) {
-              if (nextAccount) {
+              if (!isAccountPoolExhausted(nextAccount)) {
                 await accountPort.release({
                   session_id: sessionId,
                   account_id: nextAccount.account_id,
@@ -454,11 +470,19 @@ export class ClaudeEngineAdapter
               }
               return { kind: "cancelled" };
             }
-            if (!nextAccount) {
+            if (isAccountPoolExhausted(nextAccount)) {
               return {
                 kind: "exhausted",
-                ...(earliestRateLimitResetAt ? { resetsAt: earliestRateLimitResetAt } : {}),
+                resetsAt: nextAccount.earliest_available_at,
               };
+            }
+            if (attemptedAccountIds.size >= maxAccountAttempts) {
+              await accountPort.release({
+                session_id: sessionId,
+                account_id: nextAccount.account_id,
+                turn_id: accountTurnId,
+              });
+              return { kind: "exhausted", resetsAt: null };
             }
 
             selectedAccount = nextAccount;
@@ -589,7 +613,12 @@ export class ClaudeEngineAdapter
         }
       } finally {
         this.currentTurn = null;
+        this.currentTurnUsesAccountPool = false;
         this.activeFrameChannel = null;
+        if (this.currentTurnCompletion === currentTurnCompletion) {
+          this.currentTurnCompletion = null;
+        }
+        resolveCurrentTurnCompletion();
       }
     }
   }
@@ -643,7 +672,11 @@ export class ClaudeEngineAdapter
         message: "Claude client does not support intervention interrupts",
       };
     }
+    const currentTurnCompletion = this.currentTurnCompletion;
     const interrupted = await interrupt.call(client);
+    if (interrupted) {
+      await currentTurnCompletion;
+    }
     return interrupted
       ? {
           status: "not_delivered",

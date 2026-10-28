@@ -21,11 +21,13 @@ import {
   SOULSTREAM_AGENT_ID_ENV,
 } from "../../src/engine/scratch_workspace_env.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
+import { makeStopFailureError } from "../../src/engine/claude_sdk_rate_limit_stop_failure.js";
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
   runnerRequestFrame,
   type RunnerEventFrame,
 } from "../../src/runner/frame_protocol.js";
+import { InProcessRunnerFrameChannel } from "../../src/runner/in_process_frame_channel.js";
 
 const silentLogger = pino({ level: "silent" });
 const roots: string[] = [];
@@ -165,6 +167,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       select: vi.fn().mockResolvedValue({
         account_id: "account-a",
         config_dir: configDir,
+        available_count: 1,
       }),
       reject: vi.fn(),
       release: vi.fn().mockResolvedValue(undefined),
@@ -384,6 +387,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       "2026-10-28T20:00:00.000Z",
       "2026-10-28T15:00:00.000Z",
     ];
+    const earliestAvailableAt = "2026-10-28T09:00:00.000Z";
     const rateLimitTypes = ["five_hour", "fable_weekly", "fable_weekly"];
     const accountIds = ["account-a", "account-b", "account-c"];
     const attempts: ClaudeRunOptions[] = [];
@@ -407,14 +411,10 @@ describe("ClaudeEngineAdapter options parity", () => {
             continue;
           }
           if (decision.kind !== "exhausted") throw new Error("unexpected cancelled account switch");
-          const terminal: ClaudeClientEvent = {
-            type: "error",
-            fatal: true,
-            errorCode: "claude_rate_limit_stop_failure",
-            message: "Claude account pool exhausted",
+          const terminal: ClaudeClientEvent = makeStopFailureError({
             rateLimitType: rateLimitTypes[index],
-            resetsAt: decision.resetsAt,
-          };
+            ...(decision.resetsAt ? { resetsAt: decision.resetsAt } : {}),
+          });
           finalClientEvents.push(terminal);
           yield terminal;
           return;
@@ -425,7 +425,13 @@ describe("ClaudeEngineAdapter options parity", () => {
     const accountTurnPort = {
       select: vi.fn(async (input: { exclude_ids: string[] }) => {
         const accountId = accountIds.find((id) => !input.exclude_ids.includes(id));
-        if (!accountId) return null;
+        if (!accountId) {
+          return {
+            pool_exhausted: true as const,
+            available_count: 0 as const,
+            earliest_available_at: earliestAvailableAt,
+          };
+        }
         const account = {
           account_id: accountId,
           config_dir: `/accounts/${accountId}`,
@@ -484,7 +490,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       && (frame.payload as { type?: string }).type === "error")).toHaveLength(1);
     expect(finalClientEvents).toHaveLength(1);
     expect(accountTurnPort.select.mock.calls.map(([input]) => input.exclude_ids)).toEqual([
-      [], ["account-a"], ["account-a", "account-b"],
+      [], ["account-a"], ["account-a", "account-b"], ["account-a", "account-b", "account-c"],
     ]);
     expect(accountTurnPort.reject.mock.calls.map(([input]) => [input.account_id, input.scope]))
       .toEqual([["account-a", "all"], ["account-b", "fable"], ["account-c", "fable"]]);
@@ -503,10 +509,57 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(state.write.mock.calls.filter(([next]) => next.continuation_sent)).toHaveLength(2);
     expect(finalClientEvents[0]).toMatchObject({
       rateLimitType: "fable_weekly",
-      resetsAt: "2026-10-28T12:00:00.000Z",
+      resetsAt: earliestAvailableAt,
     });
     expect(accountTurnPort.release).toHaveBeenCalledOnce();
     expect(state.clear).toHaveBeenCalledWith("p5-turn");
+  });
+
+  it("returns the pool exhaustion code and recovery time when no account is initially available", async () => {
+    const client: ClaudeClient = {
+      run: vi.fn(async function* () {}),
+      runPersistent: vi.fn(async function* () {}),
+      close: vi.fn(async () => undefined),
+    };
+    const accountTurnPort = {
+      select: vi.fn(async () => ({
+        pool_exhausted: true as const,
+        available_count: 0 as const,
+        earliest_available_at: "2026-10-28T09:00:00.000Z",
+      })),
+      reject: vi.fn(),
+      release: vi.fn(async () => undefined),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      client,
+      processEnv: { PATH: "/usr/bin" },
+      claudeAccountPoolEnabled: true,
+      claudeAccountTurnPort: accountTurnPort,
+    }, silentLogger);
+    const frames: import("../../src/runner/frame_protocol.js").RunnerEventFrame[] = [];
+    let executionError: unknown;
+    try {
+      for await (const frame of engine.executeFrames({
+        agentSessionId: "account-session",
+        inputUuid: "p5-turn",
+        prompt: "original user input",
+        model: "claude-sonnet-4.5",
+        claudeAccountPoolTarget: true,
+      })) frames.push(frame);
+    } catch (error) {
+      executionError = error;
+    }
+
+    expect(executionError).toBeDefined();
+    expect(accountTurnPort.select).toHaveBeenCalledOnce();
+    expect(client.runPersistent).not.toHaveBeenCalled();
+    expect(frames.filter((frame) => frame.kind === "engine_event").map((frame) => frame.payload))
+      .toContainEqual(expect.objectContaining({
+        type: "error",
+        error_code: "claude_rate_limit_stop_failure",
+        resets_at: "2026-10-28T09:00:00.000Z",
+      }));
   });
 
   it.each(["not_sent", "ambiguous"] as const)(
@@ -1529,12 +1582,27 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     );
     const onIntervention = vi.fn().mockResolvedValue("legacy callback intervention");
 
-    const iterator = engine.execute({ prompt: "hi", onIntervention })[Symbol.asyncIterator]();
+    const channel = new InProcessRunnerFrameChannel();
+    channel.start(() => engine.executeToFrameChannel({ prompt: "hi", onIntervention }, channel));
+    const iterator = channel[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toMatchObject({
-      value: { type: "session", session_id: "claude-sess-1" },
+      value: { kind: "engine_event", payload: { type: "session" } },
     });
 
-    await expect(engine.intervene({ prompt: "redirect" })).resolves.toEqual({
+    let interventionSettled = false;
+    const intervention = engine.intervene({ prompt: "redirect" }).then((result) => {
+      interventionSettled = true;
+      return result;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(interventionSettled).toBe(false);
+
+    release.resolve();
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { kind: "engine_event", payload: { type: "complete" } },
+    });
+    await expect(iterator.next()).resolves.toMatchObject({ done: true });
+    await expect(intervention).resolves.toEqual({
       status: "not_delivered",
       mechanism: "interrupt_then_next_turn",
       reason: "next_turn_required",
@@ -1543,12 +1611,6 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     expect(activeSignal?.aborted).toBe(false);
     expect(captured[0]).not.toHaveProperty("onIntervention");
     expect(onIntervention).not.toHaveBeenCalled();
-
-    release.resolve();
-    await expect(iterator.next()).resolves.toMatchObject({
-      value: { type: "complete" },
-    });
-    await expect(iterator.next()).resolves.toMatchObject({ done: true });
   });
 
   it("runtime-v2 adapters reuse a session client and normal close keeps its Query owner alive", async () => {

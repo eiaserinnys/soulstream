@@ -95,8 +95,8 @@ function computeWeeklyRemainingForScope(
   };
 }
 
-function computeEarliestAvailableAt(
-  accounts: ClaudeAccountView[],
+export function computeEarliestAvailableAt(
+  accounts: Array<Pick<ClaudeAccountView, "id" | "enabled" | "auth_state">>,
   blocksByAccount: Record<string, ClaudeAccountBlocksRecord | undefined>,
   scope: ClaudeAccountScope,
   nowMs: number,

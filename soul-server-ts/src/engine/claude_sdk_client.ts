@@ -172,6 +172,10 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
     if (this.isClosed) return;
+    if (!options.onAccountRateLimit) {
+      yield* this.runOneShotAttempt(options, signal, undefined);
+      return;
+    }
     yield* this.accountTurnDriver.run(
       options,
       signal,
@@ -241,6 +245,20 @@ export class ClaudeSdkClient implements ClaudeClient {
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent> {
     if (this.isClosed) return;
+    if (!options.onAccountRateLimit) {
+      yield* this.accountTurnDriver.runPersistentAttempt(
+        options,
+        signal,
+        undefined,
+        (turnOptions, turnSignal, turnUsageCarry, onSession) =>
+          this.runPersistentTurn(turnOptions, turnSignal, turnUsageCarry, onSession),
+        async () => {
+          await this.waitForChildExit();
+          await this.accountQuerySettlement.settle();
+        },
+      );
+      return;
+    }
     yield* this.accountTurnDriver.run(
       options,
       signal,
@@ -359,6 +377,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       this.persistentConfigDir = nextConfigDir;
       this.persistentConfigDirKnown = true;
     }
+    if (usageCarry) persistentSession.setUsageCarry(usageCarry);
     onSession?.(persistentSession);
     this.accountQuerySettlement.bind(options.onAccountQueryClosed);
     options.onAccountQueryStarted?.();

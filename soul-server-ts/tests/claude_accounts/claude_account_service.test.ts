@@ -190,7 +190,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "turn-1",
       model: "claude-sonnet-4-6",
     });
-    expect(selNonFable?.account_id).toBe(ACC_B);
+    expect(selNonFable).toMatchObject({ account_id: ACC_B });
 
     // Same-turn idempotency: if ACC_B becomes >= 98% AND ACC_A gets higher priority (1 < null) mid-turn,
     // repeating select with the SAME turn_id ("turn-1") keeps ACC_B!
@@ -208,7 +208,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "turn-1",
       model: "claude-sonnet-4-6",
     });
-    expect(selSameTurnAfter99?.account_id).toBe(ACC_B);
+    expect(selSameTurnAfter99).toMatchObject({ account_id: ACC_B });
     expect(svc.activeSessions(ACC_B)).toBe(1);
 
     // On the NEXT turn ("turn-2"), 98% soft preference switches away from ACC_B (99%) to ACC_A (<98%)
@@ -217,7 +217,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "turn-2",
       model: "claude-sonnet-4-6",
     });
-    expect(selMovedNextTurn?.account_id).toBe(ACC_A);
+    expect(selMovedNextTurn).toMatchObject({ account_id: ACC_A });
 
     // Same-turn exclude_ids still switches immediately even within the same turn_id ("turn-2")
     await svc.updateAccount(ACC_A, { priority: null });
@@ -235,7 +235,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       model: "claude-sonnet-4-6",
       exclude_ids: [ACC_A],
     });
-    expect(selSameTurnExcluded?.account_id).toBe(ACC_B);
+    expect(selSameTurnExcluded).toMatchObject({ account_id: ACC_B });
     expect(selSameTurnExcluded?.available_count).toBe(2);
 
     // Stale 98% observation does NOT trigger 98% soft-cap avoidance:
@@ -252,7 +252,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       model: "claude-sonnet-4-6",
     });
     // Because ACC_C's 98% observation is stale, it is NOT demoted to >=98% bucket, so its priority 1 wins!
-    expect(selStaleHigh?.account_id).toBe(ACC_C);
+    expect(selStaleHigh).toMatchObject({ account_id: ACC_C });
 
     // Restore ACC_C status and priority
     delete statusMap[`tok-${ACC_C}`];
@@ -274,14 +274,14 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "turn-1",
       model: "claude-fable-5-1",
     });
-    expect(selPriorityOrder?.account_id).toBe(ACC_B);
+    expect(selPriorityOrder).toMatchObject({ account_id: ACC_B });
     const selSecondPriority = await svc.select({
       session_id: "sess-priority-2",
       turn_id: "turn-1",
       model: "claude-fable-5-1",
       exclude_ids: [ACC_B],
     });
-    expect(selSecondPriority?.account_id).toBe(ACC_A);
+    expect(selSecondPriority).toMatchObject({ account_id: ACC_A });
   });
 
   it("selects the most available account when all are above 98%, releases avoidance after reset, and keeps affinity after restart", async () => {
@@ -315,7 +315,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     const selAllHigh = await svc.select({
       session_id: "sess-all-high", turn_id: "turn-1", model: "claude-sonnet-4-6",
     });
-    expect(selAllHigh?.account_id).toBe(ACC_C);
+    expect(selAllHigh).toMatchObject({ account_id: ACC_C });
 
     usageMap[`tok-${ACC_A}`] = {
       five_hour: { utilization: 20, resets_at: "2026-10-28T05:00:00.000Z" },
@@ -326,23 +326,23 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       session_id: "sess-after-reset", turn_id: "turn-1", model: "claude-sonnet-4-6",
       exclude_ids: [ACC_A, ACC_B],
     });
-    expect(bindingBeforeReset?.account_id).toBe(ACC_C);
+    expect(bindingBeforeReset).toMatchObject({ account_id: ACC_C });
     const selBeforeReset = await svc.select({
       session_id: "sess-before-reset", turn_id: "turn-1", model: "claude-sonnet-4-6",
     });
-    expect(selBeforeReset?.account_id).toBe(ACC_A);
+    expect(selBeforeReset).toMatchObject({ account_id: ACC_A });
 
     nowMs = Date.parse("2026-10-28T05:01:00.000Z");
     const selAfterReset = await svc.select({
       session_id: "sess-after-reset", turn_id: "turn-2", model: "claude-sonnet-4-6",
     });
-    expect(selAfterReset?.account_id).toBe(ACC_C);
+    expect(selAfterReset).toMatchObject({ account_id: ACC_C });
 
     const svcRestarted = new ClaudeAccountService(options);
     const selRestartAffinity = await svcRestarted.select({
       session_id: "sess-after-reset", turn_id: "turn-3", model: "claude-sonnet-4-6",
     });
-    expect(selRestartAffinity?.account_id).toBe(ACC_C);
+    expect(selRestartAffinity).toMatchObject({ account_id: ACC_C });
   });
 
   it("migrates a string binding on selection and preserves affinity after restart", async () => {
@@ -356,10 +356,10 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     await svc.updateAccount(ACC_A, { priority: 1 });
     const bindingsPath = path.join(accountsDir, "bindings.json");
     const control = await svc.select({ session_id: "control", turn_id: "turn-1", model: "claude-sonnet-4-6" });
-    expect(control?.account_id).toBe(ACC_A);
+    expect(control).toMatchObject({ account_id: ACC_A });
     fs.writeFileSync(bindingsPath, JSON.stringify({ version: 1, bindings: { control: ACC_A, "legacy-session": ACC_C } }));
     const selected = await svc.select({ session_id: "legacy-session", turn_id: "turn-1", model: "claude-sonnet-4-6" });
-    expect(selected?.account_id).toBe(ACC_C);
+    expect(selected).toMatchObject({ account_id: ACC_C });
     expect(JSON.parse(fs.readFileSync(bindingsPath, "utf8"))).toEqual({
       version: 1,
       bindings: {
@@ -372,7 +372,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     const selectedAfterRestart = await restarted.select({
       session_id: "legacy-session", turn_id: "turn-2", model: "claude-sonnet-4-6",
     });
-    expect(selectedAfterRestart?.account_id).toBe(ACC_C);
+    expect(selectedAfterRestart).toMatchObject({ account_id: ACC_C });
   });
 
   it("selects idle accounts, excludes disabled accounts from selection and total_count, and computes real service pool summary", async () => {
@@ -469,7 +469,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       model: "claude-sonnet-4-6",
       exclude_ids: [ACC_C],
     });
-    expect(idleSelected?.account_id).toBe(ACC_B);
+    expect(idleSelected).toMatchObject({ account_id: ACC_B });
 
     // Re-enable ACC_A, mark ACC_B as logging_in, mark ACC_C as needs_relogin
     await svc.updateAccount(ACC_A, { enabled: true });
@@ -515,7 +515,11 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       model: "claude-sonnet-4-6",
       exclude_ids: [ACC_A],
     });
-    expect(selAfterDisableC).toBeNull();
+    expect(selAfterDisableC).toMatchObject({
+      pool_exhausted: true,
+      available_count: 0,
+      earliest_available_at: null,
+    });
 
     // Mixed indefinite block (resets_at: null) and finite block (resets_at: ISO) on available accounts:
     await svc.endRelogin(ACC_B, "ok");
@@ -583,7 +587,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "t1",
       model: "claude-fable-5-1",
     });
-    expect(fablePick?.account_id).toBe(ACC_B);
+    expect(fablePick).toMatchObject({ account_id: ACC_B });
 
     // Non-Fable model CAN still select ACC_A (when ACC_B is excluded)
     const nonFablePick = await svc.select({
@@ -592,7 +596,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       model: "claude-sonnet-4-6",
       exclude_ids: [ACC_B],
     });
-    expect(nonFablePick?.account_id).toBe(ACC_A);
+    expect(nonFablePick).toMatchObject({ account_id: ACC_A });
 
     // Also add "all" block on ACC_A until 03:00Z (shorter than fable 06:00Z)
     await svc.reject({
@@ -662,7 +666,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "t1",
       model: "claude-sonnet-4-6",
     });
-    expect(selected?.account_id).toBe(ACC_A);
+    expect(selected).toMatchObject({ account_id: ACC_A });
     expect(svc.activeSessions(ACC_A)).toBe(1);
 
     const profileDirA = svc.profileDir(ACC_A)!;
@@ -679,7 +683,11 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "t1",
       model: "claude-sonnet-4-6",
     });
-    expect(nextSel).toBeNull();
+    expect(nextSel).toMatchObject({
+      pool_exhausted: true,
+      available_count: 0,
+      earliest_available_at: null,
+    });
 
     // Release active session -> moves profileDir to retired/ and removes from accounts.json
     await svc.release({ session_id: "sess-active" });
@@ -710,7 +718,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       turn_id: "turn-query-live",
       model: "claude-sonnet-4-6",
     });
-    expect(selected?.account_id).toBe(ACC_A);
+    expect(selected).toMatchObject({ account_id: ACC_A });
 
     await svc.release({
       session_id: "session-query-live",

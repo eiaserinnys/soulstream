@@ -55,6 +55,10 @@ export class ClaudeSdkAccountTurnDriver {
     shouldStop: () => boolean,
   ): AsyncIterable<ClaudeClientEvent> {
     const usageCarry = options.onAccountRateLimit ? new ClaudeSdkUsageCarry() : undefined;
+    if (!options.onAccountRateLimit) {
+      yield* attempt(options, signal, undefined);
+      return;
+    }
     let attemptOptions = options;
     try {
       for (;;) {
@@ -65,9 +69,13 @@ export class ClaudeSdkAccountTurnDriver {
         const decision = await options.onAccountRateLimit(switchRequest, signal);
         if (signal.aborted || shouldStop() || decision.kind === "cancelled") return;
         if (decision.kind === "exhausted") {
+          const rateLimitInfo = { ...switchRequest.info };
+          if (decision.resetsAt !== undefined) {
+            if (decision.resetsAt === null) delete rateLimitInfo.resetsAt;
+            else rateLimitInfo.resetsAt = decision.resetsAt;
+          }
           yield makeStopFailureError({
-            ...switchRequest.info,
-            ...(decision.resetsAt ? { resetsAt: decision.resetsAt } : {}),
+            ...rateLimitInfo,
           });
           return;
         }

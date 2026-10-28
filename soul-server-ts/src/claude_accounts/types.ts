@@ -100,6 +100,16 @@ export interface ClaudeAccountSelectionResult {
   available_count: number;
 }
 
+export interface ClaudeAccountSelectionExhausted {
+  pool_exhausted: true;
+  available_count: 0;
+  earliest_available_at: string | null;
+}
+
+export type ClaudeAccountSelectionResponse =
+  | ClaudeAccountSelectionResult
+  | ClaudeAccountSelectionExhausted;
+
 export interface ClaudeAccountRejectInput {
   account_id: string;
   scope: ClaudeAccountScope;

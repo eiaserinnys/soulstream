@@ -73,7 +73,7 @@ export class ClaudeSdkPersistentSession {
   private readonly hookPump: Promise<void>;
   private readonly turnTimers: ClaudeSdkPersistentTurnTimers;
   private readonly exactResultCache = new ClaudeExactResultCache();
-  private readonly usageCarry: ClaudeSdkUsageCarry;
+  private usageCarry: ClaudeSdkUsageCarry;
   private readonly accountRateLimitSwitchEnabled: boolean;
   private readonly nativeNotificationTracker: ClaudePendingNativeNotificationTracker;
   private activeForeground: ActiveForeground | null = null;
@@ -122,6 +122,10 @@ export class ClaudeSdkPersistentSession {
         this.activeForeground = active;
       },
     });
+  }
+
+  setUsageCarry(usageCarry: ClaudeSdkUsageCarry): void {
+    this.usageCarry = usageCarry;
   }
 
   async interruptForeground(): Promise<boolean> {

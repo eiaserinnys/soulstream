@@ -1,8 +1,13 @@
 import * as fs from "node:fs";
 import { ClaudeAccountNotFoundError } from "./errors.js";
-import { computePoolSummary, pickBestAccountForScope } from "./pool.js";
+import {
+  computeEarliestAvailableAt,
+  computePoolSummary,
+  pickBestAccountForScope,
+} from "./pool.js";
 import {
   countSelectableCandidates,
+  isFableModel,
   projectPublicBlockView,
   selectBestCandidate,
   type SelectableAccountCandidate,
@@ -18,7 +23,7 @@ import type {
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
-  ClaudeAccountSelectionResult,
+  ClaudeAccountSelectionResponse,
   ClaudeAccountUpdatePatch,
   ClaudeAccountView,
   ClaudeLoginAccountPort,
@@ -174,7 +179,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
   async select(
     input: ClaudeAccountSelectionInput,
-  ): Promise<ClaudeAccountSelectionResult | null> {
+  ): Promise<ClaudeAccountSelectionResponse> {
     const nowMs = this.now();
     const accounts = this.store.readAccounts();
     const bindings = this.store.readBindings();
@@ -222,7 +227,16 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         this.sessionActivity.clearAssignment(input.session_id, previousActiveAccountId);
         this.maybeFinalizeDeferredRetire(previousActiveAccountId);
       }
-      return null;
+      return {
+        pool_exhausted: true,
+        available_count: 0,
+        earliest_available_at: computeEarliestAvailableAt(
+          candidates,
+          blocks,
+          isFableModel(input.model) ? "fable" : "all",
+          nowMs,
+        ),
+      };
     }
 
     this.store.ensureProfileSymlinks(chosen.id);

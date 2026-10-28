@@ -56,7 +56,7 @@ function isRateLimitStopFailure(event: ClaudeClientEvent): boolean {
 
 export function makeStopFailureError(
   info?: RateLimitStopInfo,
-): ClaudeClientEvent {
+): Extract<ClaudeClientEvent, { type: "error" }> {
   return {
     type: "error",
     fatal: true,

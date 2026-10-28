@@ -172,10 +172,10 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await client.close();
   });
 
-  it("switches accounts only after the paired rate-limit signals and resumes once after child exit", async () => {
+  it("reuses the Query and carries second-turn usage across a paired rate-limit account switch", async () => {
     const lifecycle: string[] = [];
     const runtimeEvents: import("../../src/engine/claude_client_event.js").ClaudeClientEvent[] = [];
-    const harnesses = [makeHarness(), makeHarness()];
+    const harnesses = [makeHarness({ deferQueryClose: true }), makeHarness()];
     let queryIndex = 0;
     let notifyFirstQueryClose!: () => void;
     const firstQueryCloseRequested = new Promise<void>((resolve) => {
@@ -233,6 +233,24 @@ describe("ClaudeSdkClient persistent runtime", () => {
       },
     }));
 
+    const firstTurn = collect(client.runPersistent({
+      ...runOptions("first successful turn"),
+      inputUuid: "first-successful-turn",
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+      onAccountRateLimit,
+    }, abortSignal()));
+    const firstInput = await harnesses[0]!.nextInput();
+    expect(firstInput.message.content).toBe("first successful turn");
+    harnesses[0]!.push(sdkInit("same-claude-session"));
+    const firstResult = sdkResult("same-claude-session", firstInput.uuid, "first done") as
+      unknown as Record<string, unknown>;
+    firstResult.usage = { input_tokens: 5, output_tokens: 1 };
+    harnesses[0]!.push(firstResult as unknown as SDKMessage);
+    await firstTurn;
+    expect(queryIndex).toBe(1);
+
     const output = collect(client.runPersistent({
       ...runOptions("original user input"),
       turnOrigin: { kind: "runtime_followup", id: "native-task-1" },
@@ -243,7 +261,6 @@ describe("ClaudeSdkClient persistent runtime", () => {
     }, abortSignal()));
     const originalInput = await harnesses[0]!.nextInput();
     expect(originalInput.message.content).toBe("original user input");
-    harnesses[0]!.push(sdkInit("same-claude-session"));
     harnesses[0]!.push(sdkCommandLifecycle(originalInput.uuid!, "started"));
     harnesses[0]!.push({
       type: "rate_limit_event",
@@ -268,6 +285,15 @@ describe("ClaudeSdkClient persistent runtime", () => {
 
     await firstQueryCloseRequested;
     expect(queryIndex).toBe(1);
+    const rejectedResult = sdkResult("same-claude-session", originalInput.uuid, "partial") as
+      unknown as Record<string, unknown>;
+    rejectedResult.usage = {
+      input_tokens: 100,
+      output_tokens: 10,
+      cache_read_input_tokens: 30,
+    };
+    harnesses[0]!.push(rejectedResult as unknown as SDKMessage);
+    harnesses[0]!.releaseClosedQueries();
     const continuationInput = await harnesses[1]!.nextInput();
     expect(lifecycle.indexOf("child-close-1")).toBeGreaterThanOrEqual(0);
     expect(lifecycle.indexOf("child-close-1")).toBeLessThan(lifecycle.indexOf("query-2"));
@@ -275,7 +301,14 @@ describe("ClaudeSdkClient persistent runtime", () => {
     expect(continuationInput.uuid).toBe(continuationUuid);
     expect(continuationInput.message.content).toBe(continuationPrompt);
     harnesses[1]!.push(sdkInit("same-claude-session"));
-    harnesses[1]!.push(sdkResult("same-claude-session", continuationInput.uuid, "finished"));
+    const finalResult = sdkResult("same-claude-session", continuationInput.uuid, "finished") as
+      unknown as Record<string, unknown>;
+    finalResult.usage = {
+      input_tokens: 200,
+      output_tokens: 20,
+      cache_read_input_tokens: 60,
+    };
+    harnesses[1]!.push(finalResult as unknown as SDKMessage);
 
     const events = await output;
     expect(onAccountRateLimit).toHaveBeenCalledOnce();
@@ -289,6 +322,13 @@ describe("ClaudeSdkClient persistent runtime", () => {
     );
     expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
     expect(events.filter((event) => event.type === "result")).toHaveLength(1);
+    expect(events.find((event) => event.type === "result")).toMatchObject({
+      usage: {
+        input_tokens: 300,
+        output_tokens: 30,
+        cache_read_input_tokens: 90,
+      },
+    });
     expect(events.some((event) => event.type === "rate_limit" || event.type === "error"))
       .toBe(false);
     expect(runtimeEvents.some((event) => event.type === "rate_limit"
