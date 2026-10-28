@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input } from "@seosoyoung/soul-ui";
 import { AlertCircle, ExternalLink, Loader2, RotateCcw } from "lucide-react";
 import type { ClaudeAccount, ClaudeAuthLoginFlow } from "@seosoyoung/soul-ui";
 import {
+  cancelClaudeAccountLogin,
   claudeAuthErrorMessage,
   loginPath,
   requestClaudeAuthData,
@@ -23,6 +24,10 @@ type Props = {
 
 function isPolling(flow: ClaudeAuthLoginFlow): boolean {
   return flow.state === "requested" || flow.state === "code_submitted" || flow.state === "verifying";
+}
+
+function isTerminalLoginState(state: ClaudeAuthLoginFlow["state"]): boolean {
+  return state === "done" || state === "failed" || state === "cancelled";
 }
 
 function stateLabel(state: ClaudeAuthLoginFlow["state"]): string {
@@ -49,7 +54,29 @@ export function ClaudeAuthLoginSheet({
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const activeLogin = useRef({ loginId: initialFlow.login_id, shouldCancel: !isTerminalLoginState(initialFlow.state) });
+  const lifecycle = useRef(0);
+  const cancellationContext = useRef({ nodeId, request });
+  cancellationContext.current = { nodeId, request };
   const isChecking = submitting || flow.state === "code_submitted" || flow.state === "verifying";
+
+  const updateFlow = useCallback((next: ClaudeAuthLoginFlow) => {
+    activeLogin.current = { loginId: next.login_id, shouldCancel: !isTerminalLoginState(next.state) };
+    setFlow(next);
+  }, []);
+
+  useEffect(() => {
+    const mountedLifecycle = ++lifecycle.current;
+    return () => {
+      void Promise.resolve().then(() => {
+        if (lifecycle.current !== mountedLifecycle) return;
+        const pending = activeLogin.current;
+        if (!pending.shouldCancel) return;
+        const current = cancellationContext.current;
+        void cancelClaudeAccountLogin(current.request, current.nodeId, pending.loginId).catch(() => {});
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (!isPolling(flow)) return;
@@ -58,7 +85,7 @@ export function ClaudeAuthLoginSheet({
       void requestClaudeAuthData<ClaudeAuthLoginFlow>(request, loginPath(nodeId, flow.login_id))
         .then(async (next) => {
           if (!active) return;
-          setFlow(next);
+          updateFlow(next);
           setActionError(null);
           if (next.error?.existing_account_id) onExistingAccount(next.error.existing_account_id);
           if (next.state === "done") await onComplete();
@@ -74,7 +101,7 @@ export function ClaudeAuthLoginSheet({
       active = false;
       globalThis.clearTimeout(timer);
     };
-  }, [flow, isAdditionalAccount, nodeId, onComplete, onExistingAccount, request]);
+  }, [flow, isAdditionalAccount, nodeId, onComplete, onExistingAccount, request, updateFlow]);
 
   async function submitCode() {
     if (inFlight.current || !code.trim()) return;
@@ -89,7 +116,7 @@ export function ClaudeAuthLoginSheet({
         `${loginPath(nodeId, flow.login_id)}/code`,
         { method: "POST", body: { code: submittedCode } },
       );
-      setFlow(next);
+      updateFlow(next);
       if (next.error?.existing_account_id) onExistingAccount(next.error.existing_account_id);
       if (next.state === "done") await onComplete();
     } catch (error) {
@@ -107,12 +134,14 @@ export function ClaudeAuthLoginSheet({
   async function cancel() {
     if (inFlight.current) return;
     inFlight.current = true;
+    activeLogin.current.shouldCancel = false;
     setSubmitting(true);
     setActionError(null);
     try {
-      await requestClaudeAuthData<ClaudeAuthLoginFlow>(request, loginPath(nodeId, flow.login_id), { method: "DELETE" });
+      await cancelClaudeAccountLogin(request, nodeId, flow.login_id);
       onClose();
     } catch (error) {
+      activeLogin.current.shouldCancel = !isTerminalLoginState(flow.state);
       setActionError(requestErrorMessage(error));
     } finally {
       inFlight.current = false;
@@ -128,7 +157,7 @@ export function ClaudeAuthLoginSheet({
     setCode("");
     try {
       const next = await onRestart();
-      setFlow(next);
+      updateFlow(next);
       if (next.state === "done") await onComplete();
     } catch (error) {
       setActionError(requestErrorMessage(error));

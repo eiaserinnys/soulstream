@@ -93,6 +93,14 @@ export function loginPath(nodeId: string, loginId: string): string {
   return `/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins/${encodeURIComponent(loginId)}`;
 }
 
+export async function cancelClaudeAccountLogin(
+  request: typeof fetch,
+  nodeId: string,
+  loginId: string,
+): Promise<ClaudeAuthLoginFlow> {
+  return requestClaudeAuthData<ClaudeAuthLoginFlow>(request, loginPath(nodeId, loginId), { method: "DELETE" });
+}
+
 export function replaceAccount(
   current: ClaudeAccountList,
   accountId: string,

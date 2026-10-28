@@ -123,19 +123,44 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
     }
   }, [list, nodeId, queryClient, queryKey, request]);
 
-  const moveAccount = useCallback((account: ClaudeAccount, index: number, direction: -1 | 1) => {
+  const moveAccount = useCallback(async (account: ClaudeAccount, index: number, direction: -1 | 1) => {
     const destination = index + direction;
     const neighbor = accounts[destination];
     if (!neighbor) return;
     const targetPriority = neighbor.priority ?? destination + 1;
     const sourcePriority = account.priority ?? index + 1;
-    void patchAccount(account.id, { priority: targetPriority }, (current) => ({
-      ...current,
-      accounts: current.accounts.map((item) => item.id === account.id
+    const previous = queryClient.getQueryData<ClaudeAccountList>(queryKey) ?? list;
+    const next = {
+      ...previous,
+      accounts: previous.accounts.map((item) => item.id === account.id
         ? { ...item, priority: targetPriority }
         : item.id === neighbor.id ? { ...item, priority: sourcePriority } : item),
-    }));
-  }, [accounts, patchAccount]);
+    };
+    queryClient.setQueryData(queryKey, next);
+    setBusyAccountId(account.id);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(nodeId, neighbor.id), {
+        method: "PATCH",
+        body: { priority: sourcePriority },
+      });
+      const returned = await requestClaudeAuthData<ClaudeAccountList>(request, accountPath(nodeId, account.id), {
+        method: "PATCH",
+        body: { priority: targetPriority },
+      });
+      queryClient.setQueryData(queryKey, returned);
+    } catch (error) {
+      try {
+        await reloadAccounts();
+      } catch {
+        queryClient.setQueryData(queryKey, previous);
+      }
+      setActionError(requestErrorMessage(error));
+    } finally {
+      setBusyAccountId(null);
+    }
+  }, [accounts, list, nodeId, queryClient, queryKey, reloadAccounts, request]);
 
   const deleteAccount = useCallback(async (accountId: string) => {
     const previous = queryClient.getQueryData<ClaudeAccountList>(queryKey) ?? list;
