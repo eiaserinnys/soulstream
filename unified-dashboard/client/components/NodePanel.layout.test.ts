@@ -34,10 +34,10 @@ vi.mock("./CogitoHealthPanel", async () => {
   };
 });
 
-vi.mock("./NodeClaudeAuthPanel", async () => {
+vi.mock("./NodeClaudeAuthGate", async () => {
   const React = await import("react");
   return {
-    NodeClaudeAuthPanel: ({ nodeId }: { nodeId: string }) =>
+    NodeClaudeAuthGate: ({ nodeId }: { nodeId: string }) =>
       React.createElement("div", { "data-testid": "node-auth-panel" }, nodeId),
   };
 });
