@@ -1,5 +1,6 @@
 import { DashboardIconCap, formatUsageResetCountdown, formatUsageUpdatedLabel, formatWeeklyRemainingPercent } from "@seosoyoung/soul-ui";
 import { ChevronRight, RefreshCw } from "lucide-react";
+import type { ClaudeAccountList, UsageSummaryGauge, UsageSummaryProvider } from "@seosoyoung/soul-ui";
 import type { UseUsageSummaryResult } from "../hooks/useUsageSummary";
 
 type Props = Pick<UseUsageSummaryResult, "node" | "gauges" | "loading" | "loadState" | "evaluatedAtMs"> & {
@@ -15,11 +16,41 @@ function emptyMessage({ loading, loadState, node, gauges }: Pick<Props, "loading
   return "수집 대기";
 }
 
+type ClaudePoolProvider = UsageSummaryProvider & Partial<Pick<ClaudeAccountList, "mode" | "accounts" | "pool" | "fable_pool">>;
+type DisplayGauge = Omit<UsageSummaryGauge, "remainingPercent"> & { remainingPercent: number | null };
+
+function localReleaseTime(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return `${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(date)} 해제`;
+}
+
+function epochSeconds(value: string | null): number | null {
+  if (!value) return null;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) ? Math.trunc(milliseconds / 1000) : null;
+}
+
 export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState, evaluatedAtMs, onRetry, onNextNode }: Props) {
   const message = emptyMessage({ node, gauges, loading, loadState });
-  const stale = loadState === "connectionError" && gauges.length > 0;
+  const claudeProvider = node?.providers.claude as ClaudePoolProvider | null;
+  const claudePool = claudeProvider?.mode === "pool" ? claudeProvider.pool : null;
+  const showPoolCount = !!claudePool && claudePool.total_count >= 2;
+  const fullyBlocked = showPoolCount && claudePool.available_count === 0;
+  const releaseLabel = fullyBlocked ? localReleaseTime(claudePool?.earliest_available_at ?? null) : null;
+  const displayGauges: DisplayGauge[] = gauges.map(gauge => ({ ...gauge }));
+  if (showPoolCount && !displayGauges.some(gauge => gauge.id === "claude")) {
+    displayGauges.unshift({
+      id: "claude",
+      label: "Claude",
+      remainingPercent: fullyBlocked ? 0 : claudePool.best_weekly_remaining_percent,
+      resetAt: epochSeconds(claudePool.best_weekly_resets_at),
+    });
+  }
+  const stale = loadState === "connectionError" && displayGauges.length > 0;
   const updatedLabel = stale && node ? formatUsageUpdatedLabel(node.fetchedAt, true) : null;
-  const placeholders = gauges.length === 0 ? 2 : 0;
+  const placeholders = displayGauges.length === 0 ? 2 : 0;
   const placeholderRows = Array.from({ length: placeholders }, (_, index) => <div className="persistent-session-weekly-usage-row is-placeholder" aria-hidden="true" key={`placeholder-${index}`}>
     <div className="persistent-session-weekly-usage-labels persistent-session-weekly-usage-placeholder-labels" />
     <div className="persistent-session-weekly-usage-track" />
@@ -32,28 +63,43 @@ export function PersistentSessionWeeklyUsage({ node, gauges, loading, loadState,
     title={stale && updatedLabel ? `갱신 지연, ${updatedLabel}` : undefined}
     data-testid="persistent-session-weekly-usage"
   >
-    {gauges.length === 0 ? placeholderRows : null}
-    {gauges.length ? gauges.map(gauge => {
-      const percent = formatWeeklyRemainingPercent(gauge.remainingPercent);
-      const warning = gauge.remainingPercent < 20;
-      const fullCountdown = formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, false);
-      const compactCountdown = formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, true);
+    {displayGauges.length === 0 ? placeholderRows : null}
+    {displayGauges.length ? displayGauges.map(gauge => {
+      const bestWeekly = claudePool?.best_weekly_remaining_percent;
+      const remaining = gauge.id === "claude" && fullyBlocked
+        ? 0
+        : gauge.id === "claude" && showPoolCount && bestWeekly !== null && bestWeekly !== undefined
+          ? bestWeekly
+          : gauge.remainingPercent;
+      const resetAt = gauge.id === "claude" && showPoolCount
+        ? epochSeconds(claudePool?.best_weekly_resets_at ?? null) ?? gauge.resetAt
+        : gauge.resetAt;
+      const percent = remaining === null ? "—" : formatWeeklyRemainingPercent(remaining);
+      const warning = remaining !== null && remaining < 20;
+      const fullCountdown = gauge.id === "claude" && fullyBlocked && releaseLabel
+        ? `회복 예정 ${releaseLabel}`
+        : remaining === null ? null : formatUsageResetCountdown(resetAt, evaluatedAtMs, false);
+      const compactCountdown = gauge.id === "claude" && fullyBlocked && releaseLabel
+        ? releaseLabel
+        : remaining === null ? null : formatUsageResetCountdown(resetAt, evaluatedAtMs, true);
+      const countState = claudePool?.available_count === 0 ? "danger" : claudePool && claudePool.available_count < claudePool.total_count ? "warn" : undefined;
       return <div className="persistent-session-weekly-usage-row" key={gauge.id}>
         <div className="persistent-session-weekly-usage-labels">
-          <span className="persistent-session-weekly-usage-provider">{gauge.label}</span>
-          {compactCountdown ? <span className="persistent-session-weekly-usage-countdown" aria-label={fullCountdown ? `초기화까지 ${fullCountdown}` : undefined}>{compactCountdown}</span> : null}
+          <span className="persistent-session-weekly-usage-provider">{gauge.label}{gauge.id === "claude" && showPoolCount ? <span className="persistent-session-weekly-usage-pool-count" data-warn={countState === "warn" || undefined} data-danger={countState === "danger" || undefined}>{claudePool?.available_count}/{claudePool?.total_count}</span> : null}</span>
+          {compactCountdown ? <span className="persistent-session-weekly-usage-countdown" aria-label={fullCountdown ? (fullyBlocked ? fullCountdown : `초기화까지 ${fullCountdown}`) : undefined}>{compactCountdown}</span> : null}
           <strong className={warning ? "is-warning" : undefined}>{percent}</strong>
         </div>
         <div
           className={`persistent-session-weekly-usage-track${warning ? " is-warning" : ""}`}
-          role="progressbar"
-          aria-label={`${gauge.label} 주간 잔량`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={gauge.remainingPercent}
-          aria-valuetext={percent}
+          role={remaining === null ? undefined : "progressbar"}
+          aria-hidden={remaining === null || undefined}
+          aria-label={remaining === null ? undefined : `${gauge.label} 주간 잔량`}
+          aria-valuemin={remaining === null ? undefined : 0}
+          aria-valuemax={remaining === null ? undefined : 100}
+          aria-valuenow={remaining ?? undefined}
+          aria-valuetext={remaining === null ? undefined : percent}
         >
-          <i style={{ width: `${gauge.remainingPercent}%` }} />
+          {remaining === null ? null : <i style={{ width: `${remaining}%` }} />}
         </div>
       </div>;
     }) : <div className="persistent-session-weekly-usage-row is-status">
