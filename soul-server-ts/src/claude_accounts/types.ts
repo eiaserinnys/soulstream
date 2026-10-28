@@ -108,6 +108,11 @@ export interface ClaudeAccountRejectInput {
 
 export interface ClaudeAccountReleaseInput {
   session_id: string;
+  account_id?: string;
+  /** The selected turn ended while the Query still owns this profile. */
+  keep_query_active?: boolean;
+  /** The session runtime closed after Query, background work, and child exit. */
+  clear_all?: boolean;
 }
 
 export interface ClaudeAccountUpdatePatch {

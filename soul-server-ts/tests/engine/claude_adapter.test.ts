@@ -161,6 +161,12 @@ describe("ClaudeEngineAdapter options parity", () => {
       reject: vi.fn(),
       release: vi.fn().mockResolvedValue(undefined),
     };
+    const sessionStore = {
+      append: vi.fn(async () => undefined),
+      load: vi.fn(async () => [{ type: "assistant", uuid: "db-transcript" }] as never),
+      listSessions: vi.fn(async () => []),
+      listSubkeys: vi.fn(async () => []),
+    };
     const state = {
       read: () => null,
       write: vi.fn().mockResolvedValue(undefined),
@@ -184,6 +190,8 @@ describe("ClaudeEngineAdapter options parity", () => {
       },
       claudeAccountPoolEnabled: true,
       trackChildExit: true,
+      sessionStore,
+      sessionStoreFlush: "eager",
       claudeAccountTurnPort: accountTurnPort,
       claudeAccountTurnState: state,
       persistentSessionRegistry: registry,
@@ -218,6 +226,17 @@ describe("ClaudeEngineAdapter options parity", () => {
       expect(captured[0]?.env).not.toHaveProperty(key);
     }
     expect(captured[0]?.trackChildExit).toBe(true);
+    expect(captured[0]?.sessionStore).not.toBe(sessionStore);
+    await expect(captured[0]?.sessionStore?.load({
+      projectKey: "project",
+      sessionId: "session-a",
+    } as never)).resolves.toBeNull();
+    const mirrorKey = { projectKey: "project", sessionId: "session-a" };
+    const mirrorEntries = [{ type: "assistant", uuid: "mirrored-entry" }] as never;
+    await captured[0]?.sessionStore?.append(mirrorKey, mirrorEntries);
+    expect(sessionStore.load).not.toHaveBeenCalled();
+    expect(sessionStore.append).toHaveBeenCalledWith(mirrorKey, mirrorEntries);
+    expect(captured[0]?.sessionStoreFlush).toBe("eager");
     expect(state.write).toHaveBeenCalledWith({
       turn_id: "turn-a",
       account_id: "account-a",
@@ -225,8 +244,175 @@ describe("ClaudeEngineAdapter options parity", () => {
       continuation_uuid: null,
       continuation_sent: false,
     });
-    expect(accountTurnPort.release).toHaveBeenCalledWith({ session_id: "session-a" });
+    expect(accountTurnPort.release).toHaveBeenCalledWith({
+      session_id: "session-a",
+      account_id: "account-a",
+    });
     expect(state.clear).toHaveBeenCalledWith("turn-a");
+  });
+
+  it("waits for an old registry close before selecting a successor account", async () => {
+    const events: string[] = [];
+    let finishOldChild!: () => void;
+    const oldChildExit = new Promise<void>((resolve) => {
+      finishOldChild = resolve;
+    });
+    let clientNumber = 0;
+    const accountTurnPort = {
+      select: vi.fn(async () => {
+        events.push("select");
+        return { account_id: "account-a", config_dir: "/accounts/account-a" };
+      }),
+      reject: vi.fn(),
+      release: vi.fn(async (input: { clear_all?: boolean }) => {
+        if (input.clear_all) events.push("previous-close-release");
+      }),
+    };
+    const registry = new ClaudeSessionClientRegistry(
+      (): ClaudeClient => {
+        const current = clientNumber++;
+        return {
+          async *run() {},
+          async *runPersistent() {
+            events.push("successor-run");
+          },
+          close: async () => {
+            if (current === 0) await oldChildExit;
+          },
+          persistentRuntimeActivity: () => null,
+        };
+      },
+      {
+        idleTtlMs: 60_000,
+        maxEntries: 4,
+        onClientClosed: async (sessionId) => {
+          await accountTurnPort.release({ session_id: sessionId, clear_all: true });
+        },
+      },
+    );
+    registry.acquire("session-reentry");
+    const oldClosing = registry.close("session-reentry");
+    await vi.waitFor(() => expect(clientNumber).toBe(1));
+
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: {},
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountTurnPort,
+      claudeAccountTurnState: {
+        read: () => null,
+        write: vi.fn().mockResolvedValue(undefined),
+        clear: vi.fn().mockResolvedValue(undefined),
+      },
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+    const execution = (async () => {
+      for await (const _ of engine.execute({
+        agentSessionId: "session-reentry",
+        prompt: "successor",
+        inputUuid: "turn-reentry",
+        model: "claude-sonnet-4.5",
+        claudeAccountPoolTarget: true,
+      })) {
+        // drain
+      }
+    })();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(accountTurnPort.select).not.toHaveBeenCalled();
+
+    finishOldChild();
+    await Promise.all([oldClosing, execution]);
+    expect(events.indexOf("previous-close-release")).toBeLessThan(events.indexOf("select"));
+    expect(events.indexOf("select")).toBeLessThan(events.indexOf("successor-run"));
+    await registry.shutdown();
+  });
+
+  it("retains account occupancy after foreground completion while the Query remains open", async () => {
+    const activity = {
+      foregroundPhase: "idle" as const,
+      queryLifecycle: "open" as "open" | "closed",
+      backgroundTaskCount: 1 as number,
+      pendingInputRequestCount: 0,
+      pendingRuntimeSignalCount: 0,
+    };
+    let closeQueryBinding: (() => Promise<void>) | undefined;
+    const client: ClaudeClient = {
+      async *run() {},
+      async *runPersistent(options) {
+        options.onAccountQueryStarted?.();
+        closeQueryBinding = options.onAccountQueryClosed;
+      },
+      persistentRuntimeActivity: () => activity,
+      close: vi.fn(async () => {
+        activity.queryLifecycle = "closed";
+        activity.backgroundTaskCount = 0;
+        await closeQueryBinding?.();
+      }),
+    };
+    const accountTurnPort = {
+      select: vi.fn().mockResolvedValue({
+        account_id: "account-a",
+        config_dir: "/accounts/account-a",
+      }),
+      reject: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const state = {
+      read: () => ({
+        turn_id: "turn-live",
+        account_id: "account-a",
+        attempted_ids: [],
+        continuation_uuid: null,
+        continuation_sent: false,
+      }),
+      write: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const registry = new ClaudeSessionClientRegistry(
+      () => client,
+      {
+        idleTtlMs: 60_000,
+        maxEntries: 4,
+        onClientClosed: async (sessionId) => {
+          await accountTurnPort.release({ session_id: sessionId, clear_all: true });
+        },
+      },
+    );
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: { PATH: "/usr/bin" },
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountTurnPort,
+      claudeAccountTurnState: state,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+
+    for await (const _ of engine.execute({
+      agentSessionId: "session-live",
+      prompt: "foreground done",
+      inputUuid: "turn-live",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) {
+      // drain
+    }
+
+    expect(accountTurnPort.release).toHaveBeenCalledWith({
+      session_id: "session-live",
+      account_id: "account-a",
+      keep_query_active: true,
+    });
+    expect(state.clear).not.toHaveBeenCalled();
+    expect(registry.has("session-live")).toBe(true);
+
+    await engine.close();
+    expect(accountTurnPort.release).toHaveBeenLastCalledWith({
+      session_id: "session-live",
+      clear_all: true,
+    });
+    expect(state.clear).toHaveBeenCalledWith("turn-live");
   });
 
   it("does not acquire a Claude client when close aborts a pending account selection", async () => {
@@ -235,9 +421,11 @@ describe("ClaudeEngineAdapter options parity", () => {
       resolveSelection = resolve;
     });
     const captured: ClaudeRunOptions[] = [];
+    const compact = vi.fn(async () => undefined);
     const client: ClaudeClient = {
       ...makeClient([], captured),
       async *runPersistent(options) { captured.push(options); },
+      compact,
     };
     const accountTurnPort = {
       select: vi.fn(() => selection),
@@ -281,10 +469,13 @@ describe("ClaudeEngineAdapter options parity", () => {
     resolveSelection({ account_id: "account-a", config_dir: "/accounts/account-a" });
     await Promise.all([execution, closing]);
 
-    expect(registry.acquire).not.toHaveBeenCalled();
+    expect(registry.acquire).toHaveBeenCalledOnce();
     expect(captured).toHaveLength(0);
     expect(state.write).not.toHaveBeenCalled();
-    expect(accountTurnPort.release).toHaveBeenCalledWith({ session_id: "session-a" });
+    expect(accountTurnPort.release).toHaveBeenCalledWith({
+      session_id: "session-a",
+      account_id: "account-a",
+    });
     expect(state.clear).toHaveBeenCalledWith("turn-a");
   });
 
@@ -317,11 +508,17 @@ describe("ClaudeEngineAdapter options parity", () => {
 
   it("leaves Kimi and flag-off turns on their existing environment path", async () => {
     const captured: ClaudeRunOptions[] = [];
+    const compact = vi.fn(async () => undefined);
     const client: ClaudeClient = {
       ...makeClient([], captured),
       async *runPersistent(options) { captured.push(options); },
+      compact,
     };
     const select = vi.fn();
+    const sessionStore = {
+      append: vi.fn(async () => undefined),
+      load: vi.fn(async () => null),
+    };
     const registry = {
       acquire: () => client,
       close: vi.fn().mockResolvedValue(true),
@@ -336,6 +533,7 @@ describe("ClaudeEngineAdapter options parity", () => {
         ANTHROPIC_API_KEY: "legacy-key",
         CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
       },
+      sessionStore,
       claudeAccountTurnPort: {
         select,
         reject: vi.fn(),
@@ -363,8 +561,10 @@ describe("ClaudeEngineAdapter options parity", () => {
     })) {
       // drain
     }
+    await legacy.compact("session-b");
 
     expect(select).not.toHaveBeenCalled();
+    expect(compact).toHaveBeenCalledWith("session-b");
     expect(captured[0]?.env).toMatchObject({
       ANTHROPIC_API_KEY: "legacy-key",
       CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
@@ -373,6 +573,10 @@ describe("ClaudeEngineAdapter options parity", () => {
       ANTHROPIC_API_KEY: "legacy-key",
       CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
     });
+    expect(captured[0]?.sessionStore).toBe(sessionStore);
+    expect(captured[1]?.sessionStore).toBe(sessionStore);
+    expect(captured[0]?.trackChildExit).toBeUndefined();
+    expect(captured[1]?.trackChildExit).toBeUndefined();
   });
 
   it("claudeAutoMemoryEnabled를 client options의 autoMemoryEnabled로 전달하고 없으면 생략한다", async () => {

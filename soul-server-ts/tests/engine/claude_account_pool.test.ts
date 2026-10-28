@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildClaudeAccountPoolEnvironment,
   assertClaudeAccountPoolOverrides,
+  useLocalClaudeAccountPoolResume,
   type ClaudeAccountPoolTurn,
 } from "../../src/engine/claude_account_pool.js";
 
@@ -39,5 +40,30 @@ describe("Claude account pool environment", () => {
     };
     expect(buildClaudeAccountPoolEnvironment({}, binding).CLAUDE_CONFIG_DIR)
       .toBe("/accounts/a");
+  });
+
+  it("keeps transcript writes and session keys while making pool resume use shared local projects", async () => {
+    const key = { projectKey: "project", sessionId: "session", subpath: "agent" };
+    const entries = [{ type: "assistant", uuid: "entry-1" }] as never;
+    const store = {
+      append: vi.fn(async () => undefined),
+      load: vi.fn(async () => entries),
+      listSessions: vi.fn(async () => []),
+      listSubkeys: vi.fn(async () => ["agent"]),
+      delete: vi.fn(async () => undefined),
+    };
+    const poolStore = useLocalClaudeAccountPoolResume(store as never);
+
+    await expect(poolStore.load(key as never)).resolves.toBeNull();
+    await poolStore.append(key as never, entries);
+    await expect(poolStore.listSessions?.("project")).resolves.toEqual([]);
+    await expect(poolStore.listSubkeys?.(key)).resolves.toEqual(["agent"]);
+    await poolStore.delete?.(key as never);
+
+    expect(store.load).not.toHaveBeenCalled();
+    expect(store.append).toHaveBeenCalledWith(key, entries);
+    expect(store.listSessions).toHaveBeenCalledWith("project");
+    expect(store.listSubkeys).toHaveBeenCalledWith(key);
+    expect(store.delete).toHaveBeenCalledWith(key);
   });
 });

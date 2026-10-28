@@ -47,6 +47,7 @@ import {
 import {
   assertClaudeAccountPoolOverrides,
   buildClaudeAccountPoolEnvironment,
+  useLocalClaudeAccountPoolResume,
   type ClaudeAccountTurnPort,
   type ClaudeAccountTurnStatePort,
 } from "./claude_account_pool.js";
@@ -102,6 +103,10 @@ export interface ClaudeRunOptions {
   loadTimeoutMs?: number;
   /** Install the SDK spawn hook on every platform and retain actual child close. */
   trackChildExit?: boolean;
+  /** Marks that this account is now attached to a persistent SDK Query. */
+  onAccountQueryStarted?: () => void;
+  /** Release a pool account only after this Query and its CLI have settled. */
+  onAccountQueryClosed?: () => Promise<void>;
 }
 
 export interface ClaudeClient {
@@ -144,7 +149,7 @@ export interface ClaudeAdapterConfig {
   persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
-  >;
+  > & { acquireAfterClose?: (sessionId: string) => Promise<ClaudeClient> };
 }
 
 export class ClaudeEngineAdapter
@@ -175,7 +180,7 @@ export class ClaudeEngineAdapter
   private readonly persistentSessionRegistry?: Pick<
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
-  >;
+  > & { acquireAfterClose?: (sessionId: string) => Promise<ClaudeClient> };
   private activeClient: ClaudeClient | null = null;
   private activeExecution: Promise<void> | null = null;
   private persistentSessionId: string | null = null;
@@ -248,7 +253,10 @@ export class ClaudeEngineAdapter
     let lastText: string | undefined;
     let accountTurnId: string | undefined;
     let accountSelectionAttempted = false;
+    let accountQueryStarted = false;
+    let accountQueryClosed = false;
     let selectedAccount: import("../claude_accounts/types.js").ClaudeAccountSelectionResult | null = null;
+    let accountClient: ClaudeClient | null = null;
 
     try {
       const options = this.buildRunOptions(params, channel, controller.signal);
@@ -265,6 +273,9 @@ export class ClaudeEngineAdapter
         if (options.env && Object.hasOwn(options.env, "ANTHROPIC_BASE_URL")) {
           throw new Error("Claude account pool does not allow ANTHROPIC_BASE_URL");
         }
+        accountClient = await this.resolveClient(sessionId, true);
+        this.activeClient = accountClient;
+        if (controller.signal.aborted || this.closed) return;
         accountTurnId = await this.resolveAccountTurnId(params);
         if (controller.signal.aborted || this.closed) return;
         accountSelectionAttempted = true;
@@ -287,9 +298,29 @@ export class ClaudeEngineAdapter
         });
         if (controller.signal.aborted || this.closed) return;
         options.env = buildClaudeAccountPoolEnvironment(options.env, selectedAccount);
+        if (options.sessionStore) {
+          options.sessionStore = useLocalClaudeAccountPoolResume(options.sessionStore);
+        }
+        const selected = selectedAccount;
+        const selectedTurnId = accountTurnId;
+        let queryBindingReleased = false;
+        options.onAccountQueryStarted = () => {
+          accountQueryStarted = true;
+        };
+        options.onAccountQueryClosed = async () => {
+          if (queryBindingReleased) return;
+          queryBindingReleased = true;
+          accountQueryClosed = true;
+          await accountPort.release({
+            session_id: sessionId,
+            account_id: selected.account_id,
+          });
+          if (selectedTurnId) await this.clearAccountTurnIfCurrent(selectedTurnId);
+        };
       }
 
-      const client = this.resolveClient(params.agentSessionId);
+      const client = accountClient ?? await this.resolveClient(params.agentSessionId);
+      accountClient = client;
       this.activeClient = client;
       const events = this.persistentSessionRegistry
         ? client.runPersistent?.(options, controller.signal)
@@ -346,10 +377,20 @@ export class ClaudeEngineAdapter
     } finally {
       try {
         if (accountSelectionAttempted && params.agentSessionId && this.claudeAccountTurnPort) {
-          try {
-            await this.claudeAccountTurnPort.release({ session_id: params.agentSessionId });
-          } finally {
-            if (accountTurnId) await this.claudeAccountTurnState?.clear(accountTurnId);
+          const queryStillActive = accountQueryStarted && !accountQueryClosed;
+          if (selectedAccount) {
+            await this.claudeAccountTurnPort.release({
+              session_id: params.agentSessionId,
+              account_id: selectedAccount.account_id,
+              ...(queryStillActive ? { keep_query_active: true } : {}),
+            });
+            if (!queryStillActive && accountTurnId) {
+              await this.clearAccountTurnIfCurrent(accountTurnId);
+            }
+          } else if (!accountClient?.persistentRuntimeActivity?.()) {
+            await this.claudeAccountTurnPort.release({
+              session_id: params.agentSessionId,
+            });
           }
         }
       } finally {
@@ -607,21 +648,31 @@ export class ClaudeEngineAdapter
     };
   }
 
-  private resolveClient(agentSessionId: string | undefined): ClaudeClient {
+  private async resolveClient(
+    agentSessionId: string | undefined,
+    afterPreviousClose = false,
+  ): Promise<ClaudeClient> {
     if (!this.persistentSessionRegistry) return this.client;
     if (!agentSessionId) {
       throw new Error("Persistent Claude runtime requires agentSessionId");
     }
-    if (this.persistentSessionId === agentSessionId && this.activeClient) {
+    if (!afterPreviousClose && this.persistentSessionId === agentSessionId && this.activeClient) {
       return this.activeClient;
     }
-    if (this.persistentSessionId && this.persistentSessionId !== agentSessionId) {
+    if (
+      this.persistentSessionId
+      && this.persistentSessionId !== agentSessionId
+    ) {
       throw new Error(
         `ClaudeEngineAdapter cannot switch persistent session: ${this.persistentSessionId} -> ${agentSessionId}`,
       );
     }
+    const client = afterPreviousClose && this.persistentSessionRegistry.acquireAfterClose
+      ? await this.persistentSessionRegistry.acquireAfterClose(agentSessionId)
+      : this.persistentSessionRegistry.acquire(agentSessionId);
     this.persistentSessionId = agentSessionId;
-    return this.persistentSessionRegistry.acquire(agentSessionId);
+    this.activeClient = client;
+    return client;
   }
 
   private async resolveAccountTurnId(params: EngineExecuteParams): Promise<string> {
@@ -630,6 +681,13 @@ export class ClaudeEngineAdapter
       ?? params.runnerInterventionIds?.[0];
     if (durableInputId) return durableInputId;
     return this.claudeAccountTurnState?.read()?.turn_id ?? randomUUID();
+  }
+
+  private async clearAccountTurnIfCurrent(turnId: string): Promise<void> {
+    const current = this.claudeAccountTurnState?.read();
+    if (!current || current.turn_id === turnId) {
+      await this.claudeAccountTurnState?.clear(turnId);
+    }
   }
 
   private async resetPersistentClientForBackendRollover(

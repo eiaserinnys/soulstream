@@ -52,6 +52,7 @@ import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 import { resolveProducedAttachmentExecutionContext } from "../attachments/produced_attachment_context.js";
 import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
+import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -245,7 +246,9 @@ export function createRunnerProcessRuntimeFactory(
       config.backend,
       snapshots,
       spawnInput,
-      mode === "offline" ? null : adoptRegisteredRunner(spawner, registration),
+      mode === "offline"
+        ? null
+        : adoptRegisteredRunner(spawner, registration, options),
       mode,
       phaseObservation,
     );
@@ -256,10 +259,27 @@ export function createRunnerProcessRuntimeFactory(
 async function adoptRegisteredRunner(
   spawner: Pick<RunnerProcessSpawner, "adopt">,
   registration: RunnerRegistration,
+  options: RunnerProcessRuntimeFactoryOptions,
 ): Promise<SpawnedRunnerProcess> {
   const adopted = await spawner.adopt(registration);
   if (!adopted) {
     throw new Error(`registered runner is not alive: ${registration.config.sessionId}`);
+  }
+  if (registration.config.claudeAccountPool?.enabled) {
+    const accountState = RunnerClaudeAccountTurnStateStore.readFromDatabase(
+      registration.config.paths.databasePath,
+      registration.config.sessionId,
+    );
+    if (accountState) {
+      const restore = options.claudeAccounts?.restoreActiveBinding;
+      if (!restore) {
+        throw new Error("Claude account pool host cannot restore a live runner binding");
+      }
+      await restore.call(options.claudeAccounts, {
+        session_id: registration.config.sessionId,
+        account_id: accountState.account_id,
+      });
+    }
   }
   return adopted;
 }

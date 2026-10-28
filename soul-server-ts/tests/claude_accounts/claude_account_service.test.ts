@@ -689,6 +689,77 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(fs.readFileSync(sharedProjectFile, "utf8")).toBe("must-survive");
   });
 
+  it("keeps a deferred delete pending after turn release while the account Query is live", async () => {
+    const svc = new ClaudeAccountService({
+      accountsDir,
+      homeDir: fakeHomeDir,
+      now: () => nowMs,
+      fetchImpl: vi.fn(async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+    });
+    const pending = await svc.createPendingDir("login-query-live");
+    writeCredentials(pending, { expiresAt: nowMs + 7200_000 });
+    await svc.registerFromPending({
+      loginId: "login-query-live",
+      id: ACC_A,
+      email: "query-live@example.com",
+      plan: "max_20x",
+    });
+    const selected = await svc.select({
+      session_id: "session-query-live",
+      turn_id: "turn-query-live",
+      model: "claude-sonnet-4-6",
+    });
+    expect(selected?.account_id).toBe(ACC_A);
+
+    await svc.release({
+      session_id: "session-query-live",
+      account_id: ACC_A,
+      keep_query_active: true,
+    });
+    expect(svc.activeSessions(ACC_A)).toBe(1);
+    const deleted = await svc.deleteAccount(ACC_A);
+    expect(deleted.deferred).toBe(true);
+    expect(svc.profileDir(ACC_A)).not.toBeNull();
+
+    await svc.release({ session_id: "session-query-live", account_id: ACC_A });
+    expect(svc.activeSessions(ACC_A)).toBe(0);
+    expect(svc.profileDir(ACC_A)).toBeNull();
+  });
+
+  it("restores live runner occupancy only when its durable binding matches the account", async () => {
+    const options = {
+      accountsDir,
+      homeDir: fakeHomeDir,
+      now: () => nowMs,
+      fetchImpl: vi.fn(async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+    };
+    const original = new ClaudeAccountService(options);
+    const pending = await original.createPendingDir("login-adopt");
+    writeCredentials(pending, { expiresAt: nowMs + 7200_000 });
+    await original.registerFromPending({
+      loginId: "login-adopt",
+      id: ACC_A,
+      email: "adopt@example.com",
+      plan: "max_20x",
+    });
+    await original.select({
+      session_id: "session-adopt",
+      turn_id: "turn-adopt",
+      model: "claude-sonnet-4-6",
+    });
+
+    const restarted = new ClaudeAccountService(options);
+    await expect(restarted.restoreActiveBinding({
+      session_id: "session-adopt",
+      account_id: ACC_A,
+    })).resolves.toBeUndefined();
+    expect(restarted.activeSessions(ACC_A)).toBe(1);
+    await expect(restarted.restoreActiveBinding({
+      session_id: "session-adopt",
+      account_id: ACC_B,
+    })).rejects.toThrow("binding mismatch");
+  });
+
   it("enforces 5-minute usage cache TTL, collects normal and failing accounts concurrently, and handles partial deadline", async () => {
     let accBStatus = 200;
     let hangAccB = false;

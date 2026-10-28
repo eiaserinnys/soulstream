@@ -1,3 +1,5 @@
+import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
+
 import type {
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
@@ -11,6 +13,7 @@ export interface ClaudeAccountTurnPort {
   select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResult | null>;
   reject(input: ClaudeAccountRejectInput): Promise<void>;
   release(input: ClaudeAccountReleaseInput): Promise<void>;
+  restoreActiveBinding?(input: { session_id: string; account_id: string }): Promise<void>;
 }
 
 export interface ClaudeAccountTurnState {
@@ -63,4 +66,19 @@ export function buildClaudeAccountPoolEnvironment(
   for (const key of CREDENTIAL_ENV_KEYS) delete env[key];
   env.CLAUDE_CONFIG_DIR = turn.config_dir;
   return env;
+}
+/**
+ * The SDK's SessionStore.load path materializes DB entries under a temporary
+ * config root and overrides CLAUDE_CONFIG_DIR. Pool profiles share the local
+ * projects tree, so resume from that local transcript while preserving the
+ * external store's append/list/delete mirror behavior.
+ */
+export function useLocalClaudeAccountPoolResume(store: SessionStore): SessionStore {
+  return new Proxy(store, {
+    get(target, property) {
+      if (property === "load") return async () => null;
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }

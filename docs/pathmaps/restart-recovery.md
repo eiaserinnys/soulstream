@@ -38,7 +38,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 ## Claude 계정 풀 P4 상태 복원
 
-`runner/claude_account_turn_state_store.ts:RunnerClaudeAccountTurnStateStore`는 session별 `{turn_id, account_id, attempted_ids, continuation_uuid, continuation_sent}`를 runner SQLite에 기록한다. 살아 있는 runner를 `adoptRegisteredRunner`로 입양하면 child와 현재 binding을 유지한다. child가 죽은 경우에만 replay turn이 저장된 turn ID를 사용해 host `ClaudeAccountService.select`를 다시 호출하므로 P2의 durable affinity가 같은 계정을 돌려준다. 기존 runner config에는 `claudeAccountPool` 필드가 없어도 새 parser가 호환되며, flag가 꺼진 실행은 이 상태 store를 열지 않는다.
+`runner/claude_account_turn_state_store.ts:RunnerClaudeAccountTurnStateStore`는 session별 `{turn_id, account_id, attempted_ids, continuation_uuid, continuation_sent}`를 runner SQLite에 기록한다. 살아 있는 runner 입양은 `adoptRegisteredRunner`가 durable row가 있을 때 SQLite의 `account_id`를 읽고 host `ClaudeAccountService.restoreActiveBinding`에서 `bindings.json`의 session binding 및 계정 존재를 대조한 뒤 `active_sessions` 점유를 복원한다. 검증된 live runner는 재선택 없이 그 계정을 유지한다. row가 없는 Kimi·서드파티 runner는 계정 풀 점유를 복원하지 않는다. row가 있는 상태에서 binding 불일치나 계정 누락은 입양을 실패시킨다. child가 죽은 경우에만 replay turn이 저장된 turn ID를 사용해 host `ClaudeAccountService.select`를 다시 호출하므로 P2의 durable affinity가 같은 계정을 돌려준다. 기존 runner config에는 `claudeAccountPool` 필드가 없어도 새 parser가 호환되며, flag가 꺼진 실행은 이 상태 store를 열지 않는다.
 
 이 장을 갱신해야 하는 변경 부류: worker startup 순서·queued transcript recovery·node-ready/maintenance replay·delivery attempt maintenance·runner scan/classification/adoption·host gap frame forwarding·initial inventory 변경.
 

@@ -105,6 +105,9 @@ export function createRunnerChildEngine(
   }
   const sessionStore = new HostSessionStore(host);
   const accountPoolEnabled = config.claudeAccountPool?.enabled === true;
+  const claudeAccountTurnPort = accountPoolEnabled
+    ? new HostClaudeAccountTurnPort(host)
+    : undefined;
   const registry = config.claudeRuntimeV2Enabled || accountPoolEnabled
     ? new ClaudeSessionClientRegistry(
         (sessionId) => new ClaudeSdkClient({
@@ -144,6 +147,16 @@ export function createRunnerChildEngine(
           idleTtlMs: config.claudeRuntimeIdleTtlMs,
           maxEntries: config.claudeRuntimeMaxEntries,
           logger,
+          ...(claudeAccountTurnPort
+            ? {
+                onClientClosed: async (sessionId) => {
+                  await claudeAccountTurnPort.release({
+                    session_id: sessionId,
+                    clear_all: true,
+                  });
+                },
+              }
+            : {}),
         },
       )
     : undefined;
@@ -158,7 +171,7 @@ export function createRunnerChildEngine(
     claudeAccountPoolEnabled: accountPoolEnabled,
     ...(accountPoolEnabled
       ? {
-          claudeAccountTurnPort: new HostClaudeAccountTurnPort(host),
+          claudeAccountTurnPort: claudeAccountTurnPort!,
           claudeAccountTurnState: RunnerClaudeAccountTurnStateStore.open(
             config.paths.databasePath,
             config.sessionId,

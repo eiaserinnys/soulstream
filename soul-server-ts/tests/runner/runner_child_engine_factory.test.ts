@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRunnerChildEngine } from "../../src/runner/runner_child_engine_factory.js";
 import { parseRunnerChildConfig } from "../../src/runner/runner_child_config.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { openRunnerSqliteReadOnlyDatabase } from
+  "../../src/runner/runner_sqlite_connection.js";
 
 const directories: string[] = [];
 
@@ -91,6 +93,86 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
         ["claude_accounts", "reject", ["session-a", expect.objectContaining({ account_id: "account-a" })]],
         ["claude_accounts", "release", ["session-a", { session_id: "session-a" }]],
       ]);
+    } finally {
+      await engine.close?.();
+    }
+  });
+
+  it("keeps legacy runner Query, compact, spawn, SQLite, and host protocol wiring when the pool flag is absent", async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), "runner-child-legacy-claude-"));
+    directories.push(stateDirectory);
+    const databasePath = join(stateDirectory, "runner.sqlite");
+    const outbox = await RunnerSqliteEventOutbox.create(databasePath);
+    outbox.close();
+    const hostCall = vi.fn(async (
+      _service: string,
+      _operation: string,
+      _args: unknown[],
+      _options: unknown,
+    ) => null);
+    const config = parseRunnerChildConfig({
+      schemaVersion: 1,
+      sessionId: "session-legacy",
+      backend: "claude",
+      agent: {
+        id: "agent-legacy",
+        name: "Legacy Agent",
+        backend: "claude",
+        workspace_dir: "/workspace/legacy",
+      },
+      paths: {
+        sessionDirectory: stateDirectory,
+        databasePath,
+        socketPath: join(stateDirectory, "runner.sock"),
+        pidPath: join(stateDirectory, "runner.pid"),
+        lockPath: join(stateDirectory, "runner.lock"),
+        configPath: join(stateDirectory, "runner-config.json"),
+        logPath: join(stateDirectory, "runner.log"),
+      },
+      codeSha: "sha-legacy",
+      snapshotPath: "/release/sha-legacy/soul-server-ts",
+      codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: false,
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4308/mcp/internal",
+      codexHome: null,
+      rolloutRoot: null,
+    });
+    const engine = createRunnerChildEngine(config, { call: hostCall } as never, pino({ level: "silent" }));
+    const internals = engine as unknown as {
+      claudeAccountPoolEnabled: boolean;
+      trackChildExit: boolean;
+      sessionStoreFlush: string;
+      persistentSessionRegistry?: unknown;
+      claudeAccountTurnPort?: unknown;
+      claudeAccountTurnState?: unknown;
+      sessionStore: { append(key: object, entries: unknown[]): Promise<void> };
+    };
+
+    try {
+      expect(internals.claudeAccountPoolEnabled).toBe(false);
+      expect(internals.trackChildExit).toBe(false);
+      expect(internals.sessionStoreFlush).toBe("batched");
+      expect(internals.persistentSessionRegistry).toBeUndefined();
+      expect(internals.claudeAccountTurnPort).toBeUndefined();
+      expect(internals.claudeAccountTurnState).toBeUndefined();
+      const db = openRunnerSqliteReadOnlyDatabase(databasePath);
+      try {
+        const tables = db.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table'",
+        ).all() as Array<{ name: string }>;
+        expect(tables.map(({ name }) => name)).not.toContain("runner_claude_account_turn");
+      } finally {
+        db.close();
+      }
+
+      await internals.sessionStore.append(
+        { projectKey: "project", sessionId: "session-legacy" },
+        [{ type: "assistant", uuid: "legacy-entry" }],
+      );
+      expect(hostCall.mock.calls.map(([service]) => service)).toEqual(["session_store"]);
     } finally {
       await engine.close?.();
     }

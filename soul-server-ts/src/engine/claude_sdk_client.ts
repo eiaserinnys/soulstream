@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { query as defaultQuery } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Options as ClaudeSdkOptions,
@@ -9,11 +8,11 @@ import type { Logger } from "pino";
 
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
+import { AsyncMutex } from "./async_mutex.js";
 import {
-  buildClaudeCompactRunOptions,
-  consumeClaudeCompact,
-  readCompactedContextUsage,
-} from "./claude_sdk_compact.js";
+  compactClaudeSdkSession,
+  type ClaudeSdkClientCompactOptions,
+} from "./claude_sdk_client_compact.js";
 import { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
 import { isMissingSpawnExecutableError } from "./claude_spawn_errors.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
@@ -32,6 +31,12 @@ import {
 } from "./claude_sdk_persistent_session.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
+import { ClaudeSdkRuntimeControls } from "./claude_sdk_runtime_controls.js";
+import {
+  DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS,
+  DEFAULT_INPUT_REQUEST_TIMEOUT_MS,
+  DEFAULT_POST_RESULT_DRAIN_MS,
+} from "./claude_sdk_client_defaults.js";
 import { makeUserMessage } from "./claude_sdk_user_message.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import type {
@@ -41,24 +46,6 @@ import type {
 } from "./protocol.js";
 
 export { resolveClaudeExecutableFromPath } from "./claude_executable_path.js";
-const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
-/**
- * Result 도착 후 SDK가 발행하는 `prompt_suggestion` 메시지를 받기 위한 short drain 시간.
- *
- * Legacy prompt_suggestion drain timeout 2초 정본 정합.
- * SDK 0.2.x 타입 정의 (sdk.d.ts) 명시:
- * "prompt_suggestion arrives after the result message. Consumers must keep iterating the
- *  stream after result to receive it."
- *
- * 일반 terminal result의 drain phase는 *prompt_suggestion 전용* — 그 외 메시지는 logger.warn
- * 후 무시 (Python receive_loop.py:180-188 narrowing 정책 정합).
- *
- * 단, SDK가 명시적인 continuation 신호를 줄 때는 stream을 계속 읽는다:
- *   - compact retry: 빈 result 뒤 실제 `system/compact_boundary`가 도착한 경우
- *   - AskUserQuestion/tool_use 재개: `stop_reason="tool_use"` result 뒤 다음 SDK 메시지가 도착한 경우
- */
-const DEFAULT_POST_RESULT_DRAIN_MS = 2_000;
-const DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS = 6 * 60 * 60 * 1_000;
 export type ClaudeSdkQueryParams = {
   prompt: string | AsyncIterable<SDKUserMessage>;
   options?: ClaudeSdkOptions;
@@ -85,7 +72,6 @@ export interface ClaudeSdkClientConfig {
   persistentTurnInactivityTimeoutMs?: number;
   runtimeFollowupNoOutputTimeoutMs?: number;
 }
-
 export class ClaudeSdkClient implements ClaudeClient {
   private readonly queryFn: ClaudeSdkQueryFn;
   private readonly logger: Logger;
@@ -96,6 +82,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly eventMapper: ClaudeSdkEventMapper;
   private readonly toolPermissionController: ClaudeSdkToolPermissionController;
   private readonly postResultDrainer: ClaudePostResultDrain;
+  private readonly runtimeControls: ClaudeSdkRuntimeControls;
+  private readonly compactContext: ClaudeSdkClientCompactOptions;
   private readonly detachedEventSink: ClaudeDetachedEventSink;
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly persistentTurnInactivityTimeoutMs: number;
@@ -109,6 +97,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private persistentSession: ClaudeSdkPersistentSession | null = null;
   private persistentConfigDir: string | null = null;
   private persistentConfigDirKnown = false;
+  private persistentAccountQueryClosed: (() => Promise<void>) | null = null;
   private readonly childExitPromises = new Set<Promise<void>>();
   private readonly turnMutex = new AsyncMutex();
 
@@ -126,6 +115,37 @@ export class ClaudeSdkClient implements ClaudeClient {
       inputRequestTimeoutMs,
       eventMapper: this.eventMapper,
     });
+    this.runtimeControls = new ClaudeSdkRuntimeControls({
+      logger: this.logger,
+      runtimeState: this.runtimeState,
+      toolPermissionController: this.toolPermissionController,
+      activeQuery: () => this.activeQuery,
+      persistentSession: () => this.persistentSession,
+      lastRunOptions: () => this.lastRunOptions,
+      closePersistentAndSettle: (persistent, reason) =>
+        this.closePersistentAndSettle(persistent, reason),
+      waitForChildExit: () => this.waitForChildExit(),
+    });
+    this.compactContext = {
+      queryFn: this.queryFn,
+      logger: this.logger,
+      resolveClaudeExecutablePath: this.resolveClaudeExecutablePath,
+      eventMapper: this.eventMapper,
+      runtimeState: this.runtimeState,
+      toolPermissionController: this.toolPermissionController,
+      lastRunOptions: () => this.lastRunOptions,
+      lastWorkspaceDir: () => this.lastWorkspaceDir,
+      lastEnv: () => this.lastEnv,
+      persistentSession: () => this.persistentSession,
+      setActiveQuery: (query) => { this.activeQuery = query; },
+      isActiveQuery: (query) => this.activeQuery === query,
+      trackChildExit: (closed) => this.trackChildExit(closed),
+      waitForChildExit: () => this.waitForChildExit(),
+      closePersistentAndSettle: (persistent) =>
+        this.closePersistentAndSettle(persistent, "explicit_cancel"),
+      normalizeExecutionError: (error, executablePath) =>
+        this.normalizeExecutionError(error, executablePath),
+    };
     this.postResultDrainer = new ClaudePostResultDrain({
       logger: this.logger,
       postResultDrainMs: this.postResultDrainMs,
@@ -210,6 +230,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       await pump.catch(() => undefined);
       if (this.activeQueryPump === pump) this.activeQueryPump = null;
       if (options.trackChildExit) await this.waitForChildExit();
+      await options.onAccountQueryClosed?.();
     }
   }
 
@@ -230,6 +251,24 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   private async *runPersistentLocked(
+    options: ClaudeRunOptions,
+    signal: AbortSignal,
+  ): AsyncIterable<ClaudeClientEvent> {
+    try {
+      yield* this.runPersistentTurn(options, signal);
+    } finally {
+      const persistentSession = this.persistentSession;
+      if (
+        options.trackChildExit
+        && (!persistentSession || persistentSession.snapshot().queryLifecycle !== "open")
+      ) {
+        await this.waitForChildExit();
+        await this.settlePersistentAccountQuery();
+      }
+    }
+  }
+
+  private async *runPersistentTurn(
     options: ClaudeRunOptions,
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent> {
@@ -258,6 +297,8 @@ export class ClaudeSdkClient implements ClaudeClient {
         this.activeQuery = null;
       }
       persistentSession = null;
+      if (options.trackChildExit) await this.waitForChildExit();
+      await this.settlePersistentAccountQuery();
     }
     if (!persistentSession && options.trackChildExit) {
       await this.waitForChildExit();
@@ -319,16 +360,12 @@ export class ClaudeSdkClient implements ClaudeClient {
       this.persistentConfigDir = nextConfigDir;
       this.persistentConfigDirKnown = true;
     }
+    if (options.onAccountQueryClosed) this.persistentAccountQueryClosed = options.onAccountQueryClosed;
+    options.onAccountQueryStarted?.();
 
     try {
       for await (const event of persistentSession.runTurn(options, signal)) {
         yield event;
-      }
-      if (
-        options.trackChildExit
-        && persistentSession.snapshot().queryLifecycle !== "open"
-      ) {
-        await this.waitForChildExit();
       }
     } catch (err) {
       throw this.normalizeExecutionError(err);
@@ -348,193 +385,37 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   private async compactLocked(sessionId: string): Promise<CompactedContextUsage | undefined> {
-    if (!this.lastWorkspaceDir || !this.lastRunOptions) {
-      throw new Error("ClaudeSdkClient.compact requires a previous run context");
-    }
-
-    const persistentSession = this.persistentSession;
-    if (persistentSession?.snapshot().queryLifecycle === "open") {
-      const options = buildClaudeCompactRunOptions(
-        this.lastRunOptions,
-        this.lastWorkspaceDir,
-        sessionId,
-        this.lastEnv,
-      );
-      options.inputUuid = randomUUID();
-      let observedCompactBoundary = false;
-      for await (const event of persistentSession.runTurn(
-        options,
-        new AbortController().signal,
-      )) {
-        if (event.type === "compact_completed") observedCompactBoundary = true;
-      }
-      if (!observedCompactBoundary) {
-        throw new Error("Claude compact finished without compact_boundary");
-      }
-      return await readCompactedContextUsage(persistentSession.query(), this.logger);
-    }
-
-    if (persistentSession && this.lastRunOptions.trackChildExit) {
-      await this.closePersistentAndSettle(persistentSession, "explicit_cancel");
-    } else if (this.lastRunOptions.trackChildExit) {
-      await this.waitForChildExit();
-    }
-
-    const controller = new AbortController();
-    const output = createEventQueue<ClaudeClientEvent>();
-    const queryOptions = buildClaudeSdkOptions({
-      options: buildClaudeCompactRunOptions(
-        this.lastRunOptions,
-        this.lastWorkspaceDir,
-        sessionId,
-        this.lastEnv,
-      ),
-      abortController: controller,
-      output,
-      logger: this.logger,
-      resolveClaudeExecutablePath: this.resolveClaudeExecutablePath,
-      eventMapper: this.eventMapper,
-      runtimeState: this.runtimeState,
-      toolPermissionController: this.toolPermissionController,
-      ...(this.lastRunOptions.trackChildExit
-        ? { onChildProcessClosed: (closed) => this.trackChildExit(closed) }
-        : {}),
-    });
-    let query: ClaudeSdkQuery;
-    try {
-      query = this.queryFn({ prompt: "/compact", options: queryOptions });
-    } catch (err) {
-      throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
-    }
-    this.activeQuery = query;
-
-    try {
-      await consumeClaudeCompact(query);
-    } catch (err) {
-      throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
-    } finally {
-      if (this.activeQuery === query) this.activeQuery = null;
-      if (this.lastRunOptions.trackChildExit) await this.waitForChildExit();
-    }
-    return undefined;
+    return await compactClaudeSdkSession(sessionId, this.compactContext);
   }
 
   sendControlFrame(frame: RunnerControlFrame): boolean {
-    if (frame.kind !== "input_response") return false;
-    return this.toolPermissionController.deliverInputResponse(frame.correlationId, frame.answers);
+    return this.runtimeControls.sendControlFrame(frame);
   }
 
   persistentRuntimeActivity(): ClaudePersistentRuntimeActivity | null {
-    const snapshot = this.persistentSession?.snapshot();
-    if (!snapshot) return null;
-    return {
-      foregroundPhase: snapshot.foregroundPhase,
-      queryLifecycle: snapshot.queryLifecycle,
-      backgroundTaskCount: snapshot.backgroundTaskIds.length,
-      pendingInputRequestCount:
-        this.toolPermissionController.pendingInputRequestCount(),
-      pendingRuntimeSignalCount:
-        (this.runtimeState.hasPendingWork() ? 1 : 0) +
-        this.persistentSession!.pendingNativeNotificationCount(),
-    };
+    return this.runtimeControls.persistentRuntimeActivity();
   }
 
   injectAtToolBoundary(input: EngineUserInput): boolean {
-    return this.persistentSession?.injectAtToolBoundary(input) ?? false;
+    return this.runtimeControls.injectAtToolBoundary(input);
   }
 
   async backgroundClaudeRuntimeTasks(
     toolUseId?: string,
   ): Promise<ClaudeBackgroundTaskControlResult> {
-    const query = this.activeQuery;
-    if (!query) {
-      return {
-        status: "no_active_query",
-        message: "No active Claude SDK query",
-      };
-    }
-    try {
-      const backgrounded = await query.backgroundTasks(toolUseId);
-      if (!backgrounded) {
-        return {
-          status: "no_match",
-          message: toolUseId
-            ? `No foreground Claude task matched toolUseId: ${toolUseId}`
-            : "No foreground Claude task was backgrounded",
-        };
-      }
-      return { status: "ok" };
-    } catch (err) {
-      return {
-        status: "failed",
-        message: err instanceof Error ? err.message : String(err),
-      };
-    }
+    return await this.runtimeControls.backgroundClaudeRuntimeTasks(toolUseId);
   }
 
   async stopClaudeRuntimeTask(taskId: string): Promise<ClaudeBackgroundTaskControlResult> {
-    const query = this.activeQuery;
-    if (!query) {
-      return {
-        status: "no_active_query",
-        message: "No active Claude SDK query",
-      };
-    }
-    try {
-      await query.stopTask(taskId);
-      if (this.lastRunOptions?.trackChildExit && this.persistentSession) {
-        await this.closePersistentAndSettle(this.persistentSession, "explicit_cancel");
-      }
-      return { status: "ok" };
-    } catch (err) {
-      return {
-        status: "failed",
-        message: err instanceof Error ? err.message : String(err),
-      };
-    }
+    return await this.runtimeControls.stopClaudeRuntimeTask(taskId);
   }
 
   async interrupt(): Promise<boolean> {
-    if (this.persistentSession) {
-      await this.closePersistentAndSettle(this.persistentSession, "explicit_cancel");
-      this.toolPermissionController.abortPendingInputRequests();
-      return true;
-    }
-    const query = this.activeQuery;
-    if (!query) return false;
-    try {
-      await query.interrupt();
-    } catch (err) {
-      this.logger.warn({ err }, "Claude SDK interrupt failed; closing query");
-      query.close();
-    }
-    this.toolPermissionController.abortPendingInputRequests();
-    return true;
+    return await this.runtimeControls.interrupt();
   }
 
   async interruptActiveTurnForSteer(): Promise<boolean> {
-    if (this.persistentSession) {
-      const observation = this.persistentSession.interruptForeground();
-      this.toolPermissionController.abortPendingInputRequests();
-      const interrupted = await observation;
-      if (
-        this.lastRunOptions?.trackChildExit
-        && this.persistentSession?.snapshot().queryLifecycle !== "open"
-      ) {
-        await this.waitForChildExit();
-      }
-      return interrupted;
-    }
-    const query = this.activeQuery;
-    if (!query) return false;
-    try {
-      await query.interrupt();
-    } catch (err) {
-      this.logger.warn({ err }, "Claude SDK steer interrupt failed");
-      return false;
-    }
-    this.toolPermissionController.abortPendingInputRequests();
-    return true;
+    return await this.runtimeControls.interruptActiveTurnForSteer();
   }
 
   async close(
@@ -553,6 +434,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       await this.activeQueryPump?.catch(() => undefined);
     }
     await this.waitForChildExit();
+    await this.settlePersistentAccountQuery();
   }
 
   private async closePersistentAndSettle(
@@ -562,9 +444,16 @@ export class ClaudeSdkClient implements ClaudeClient {
     await persistent.close(reason);
     await persistent.settled();
     await this.waitForChildExit();
+    await this.settlePersistentAccountQuery();
     if (this.persistentSession === persistent) this.persistentSession = null;
     this.persistentConfigDir = null;
     this.persistentConfigDirKnown = false;
+  }
+
+  private async settlePersistentAccountQuery(): Promise<void> {
+    const onClosed = this.persistentAccountQueryClosed;
+    this.persistentAccountQueryClosed = null;
+    await onClosed?.();
   }
 
   private trackChildExit(closed: Promise<void>): void {
@@ -606,18 +495,5 @@ export class ClaudeSdkClient implements ClaudeClient {
     if (!input) return;
     input.close();
     if (this.activeInput === input) this.activeInput = null;
-  }
-}
-
-class AsyncMutex {
-  private tail: Promise<void> = Promise.resolve();
-
-  async acquire(): Promise<() => void> {
-    let release!: () => void;
-    const acquired = new Promise<void>((resolve) => { release = resolve; });
-    const previous = this.tail;
-    this.tail = previous.then(() => acquired);
-    await previous;
-    return release;
   }
 }

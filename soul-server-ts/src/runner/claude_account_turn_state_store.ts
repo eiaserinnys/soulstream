@@ -6,6 +6,7 @@ import type {
 } from "../engine/claude_account_pool.js";
 import {
   openRunnerSqliteDatabase,
+  openRunnerSqliteReadOnlyDatabase,
   requireRunnerSqliteWal,
   withRunnerSqliteTransaction,
 } from "./runner_sqlite_connection.js";
@@ -39,35 +40,21 @@ export class RunnerClaudeAccountTurnStateStore implements ClaudeAccountTurnState
     }
   }
 
+  static readFromDatabase(
+    databasePath: string,
+    sessionId: string,
+  ): ClaudeAccountTurnState | null {
+    const database = openRunnerSqliteReadOnlyDatabase(databasePath);
+    try {
+      return readAccountTurnState(database, sessionId);
+    } finally {
+      database.close();
+    }
+  }
+
   read(): ClaudeAccountTurnState | null {
     this.requireOpen();
-    const row = this.database.prepare(`
-      SELECT turn_id, account_id, attempted_ids_json, continuation_uuid, continuation_sent
-      FROM runner_claude_account_turn WHERE session_id = ?
-    `).get(this.sessionId) as {
-      turn_id: string;
-      account_id: string;
-      attempted_ids_json: string;
-      continuation_uuid: string | null;
-      continuation_sent: number;
-    } | undefined;
-    if (!row) return null;
-    let attemptedIds: unknown;
-    try {
-      attemptedIds = JSON.parse(row.attempted_ids_json);
-    } catch (error) {
-      throw new Error("runner Claude account turn has invalid attempted_ids_json", { cause: error });
-    }
-    if (!Array.isArray(attemptedIds) || attemptedIds.some((value) => typeof value !== "string")) {
-      throw new Error("runner Claude account turn has invalid attempted_ids_json");
-    }
-    return {
-      turn_id: row.turn_id,
-      account_id: row.account_id,
-      attempted_ids: attemptedIds,
-      continuation_uuid: row.continuation_uuid,
-      continuation_sent: row.continuation_sent === 1,
-    };
+    return readAccountTurnState(this.database, this.sessionId);
   }
 
   async write(state: ClaudeAccountTurnState): Promise<void> {
@@ -113,4 +100,37 @@ export class RunnerClaudeAccountTurnStateStore implements ClaudeAccountTurnState
   private requireOpen(): void {
     if (this.closed) throw new Error("runner Claude account turn store is closed");
   }
+}
+
+function readAccountTurnState(
+  database: DatabaseSync,
+  sessionId: string,
+): ClaudeAccountTurnState | null {
+  const row = database.prepare(`
+    SELECT turn_id, account_id, attempted_ids_json, continuation_uuid, continuation_sent
+    FROM runner_claude_account_turn WHERE session_id = ?
+  `).get(sessionId) as {
+    turn_id: string;
+    account_id: string;
+    attempted_ids_json: string;
+    continuation_uuid: string | null;
+    continuation_sent: number;
+  } | undefined;
+  if (!row) return null;
+  let attemptedIds: unknown;
+  try {
+    attemptedIds = JSON.parse(row.attempted_ids_json);
+  } catch (error) {
+    throw new Error("runner Claude account turn has invalid attempted_ids_json", { cause: error });
+  }
+  if (!Array.isArray(attemptedIds) || attemptedIds.some((value) => typeof value !== "string")) {
+    throw new Error("runner Claude account turn has invalid attempted_ids_json");
+  }
+  return {
+    turn_id: row.turn_id,
+    account_id: row.account_id,
+    attempted_ids: attemptedIds,
+    continuation_uuid: row.continuation_uuid,
+    continuation_sent: row.continuation_sent === 1,
+  };
 }

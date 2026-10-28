@@ -4,6 +4,10 @@ import type {
   SDKMessage,
   SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -166,6 +170,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
 
   it("waits for a failed persistent CLI to close before compact fallback spawns", async () => {
     const events: string[] = [];
+    const readyPath = join(tmpdir(), `claude-child-ready-${randomUUID()}`);
     const harnesses = [makeHarness(), makeHarness()];
     const children: import("node:child_process").ChildProcess[] = [];
     let queryIndex = 0;
@@ -180,10 +185,10 @@ describe("ClaudeSdkClient persistent runtime", () => {
           command: process.execPath,
           args: [
             "-e",
-            "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 250)); setInterval(() => {}, 1000);",
+            "process.on('SIGTERM', () => {}); process.on('SIGUSR1', () => process.exit(0)); require('node:fs').writeFileSync(process.env.CHILD_READY_FILE, 'ready'); setInterval(() => {}, 1000);",
           ],
           cwd: process.cwd(),
-          env: process.env,
+          env: { ...process.env, CHILD_READY_FILE: readyPath } as Record<string, string>,
           signal: new AbortController().signal,
         }) as unknown as import("node:child_process").ChildProcess;
         children.push(child);
@@ -203,22 +208,24 @@ describe("ClaudeSdkClient persistent runtime", () => {
       },
     }, silentLogger);
 
-    const first = collect(client.runPersistent({
-      ...runOptions("first"),
-      model: "claude-sonnet-4.5",
-      trackChildExit: true,
-      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
-    }, abortSignal()));
-    const firstInput = await harnesses[0]!.nextInput();
-    harnesses[0]!.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
-    await first;
-
     try {
+      const first = collect(client.runPersistent({
+        ...runOptions("first"),
+        model: "claude-sonnet-4.5",
+        trackChildExit: true,
+        env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+      }, abortSignal()));
+      const firstInput = await harnesses[0]!.nextInput();
+      harnesses[0]!.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+      await first;
+      await vi.waitFor(() => expect(existsSync(readyPath)).toBe(true));
+
       harnesses[0]!.end();
       await vi.waitFor(() => expect(events).toContain("query-close-1"));
       compactPromise = client.compact("sdk-session");
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(events).not.toContain("query-2");
+      children[0]!.kill("SIGUSR1");
       await vi.waitFor(() => expect(events).toContain("query-2"));
       expect(events.indexOf("child-close-1")).toBeLessThan(events.indexOf("query-2"));
 
@@ -232,12 +239,17 @@ describe("ClaudeSdkClient persistent runtime", () => {
       harnesses[1]!.push(sdkResult("sdk-session", undefined, "compacted"));
       harnesses[1]!.end();
       children[1]!.kill("SIGTERM");
+      children[1]!.kill("SIGUSR1");
       await compactPromise;
       compactPromise = null;
     } finally {
-      for (const child of children) child.kill("SIGTERM");
+      for (const child of children) {
+        child.kill("SIGUSR1");
+        child.kill("SIGTERM");
+      }
       for (const harness of harnesses) harness.end();
       await compactPromise?.catch(() => undefined);
+      rmSync(readyPath, { force: true });
       await client.close().catch(() => undefined);
     }
   });
@@ -284,6 +296,83 @@ describe("ClaudeSdkClient persistent runtime", () => {
       expect.objectContaining({ errorCode: "claude_persistent_query_ended" }),
     );
     await client.close();
+  });
+
+  it("keeps the account Query occupied after fatal Query end until its child exits", async () => {
+    const harness = makeHarness();
+    const readyPath = join(tmpdir(), `claude-fatal-child-ready-${randomUUID()}`);
+    const events: string[] = [];
+    let child: import("node:child_process").ChildProcess | undefined;
+    const client = new ClaudeSdkClient({
+      query: (params) => {
+        const spawnHook = (params.options as ClaudeSdkOptions).spawnClaudeCodeProcess;
+        if (!spawnHook) throw new Error("tracked Query did not install the Claude process hook");
+        child = spawnHook({
+          command: process.execPath,
+          args: [
+            "-e",
+            "process.on('SIGTERM', () => {}); process.on('SIGUSR1', () => process.exit(0)); require('node:fs').writeFileSync(process.env.CHILD_READY_FILE, 'ready'); setInterval(() => {}, 1000);",
+          ],
+          cwd: process.cwd(),
+          env: { ...process.env, CHILD_READY_FILE: readyPath } as Record<string, string>,
+          signal: new AbortController().signal,
+        }) as unknown as import("node:child_process").ChildProcess;
+        child.once("close", () => events.push("child-close"));
+        const query = harness.queryFn(params);
+        return {
+          close() {
+            events.push("query-close");
+            child!.kill("SIGTERM");
+            query.close();
+          },
+          interrupt: () => query.interrupt(),
+          backgroundTasks: (toolUseId?: string) => query.backgroundTasks(toolUseId),
+          stopTask: (taskId: string) => query.stopTask(taskId),
+          [Symbol.asyncIterator]: () => query[Symbol.asyncIterator](),
+        } as unknown as ClaudeSdkQuery;
+      },
+    }, silentLogger);
+    let turnSettled = false;
+    let sawFatalEvent = false;
+    const turn = (async () => {
+      for await (const event of client.runPersistent({
+        ...runOptions("foreground"),
+        model: "claude-sonnet-4.5",
+        trackChildExit: true,
+        env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+        onAccountQueryClosed: async () => events.push("account-release"),
+      }, abortSignal())) {
+        if (event.type === "error" && event.fatal) {
+          sawFatalEvent = true;
+          throw new Error("adapter stopped on fatal Query event");
+        }
+      }
+    })().finally(() => {
+      turnSettled = true;
+    });
+
+    try {
+      await harness.nextInput();
+      await vi.waitFor(() => expect(existsSync(readyPath)).toBe(true));
+      harness.end();
+      await vi.waitFor(() => expect(events).toContain("query-close"));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(turnSettled).toBe(false);
+      expect(events).not.toContain("account-release");
+      expect(sawFatalEvent).toBe(true);
+
+      child!.kill("SIGUSR1");
+      await expect(turn).rejects.toThrow("adapter stopped on fatal Query event");
+      expect(events.indexOf("child-close")).toBeLessThan(events.indexOf("account-release"));
+      expect(events).toContain("account-release");
+    } finally {
+      child?.kill("SIGUSR1");
+      child?.kill("SIGTERM");
+      harness.end();
+      await turn.catch(() => undefined);
+      rmSync(readyPath, { force: true });
+      await client.close().catch(() => undefined);
+    }
   });
 
   it("returns the post-compact CLI count as estimated through the same persistent Query", async () => {
