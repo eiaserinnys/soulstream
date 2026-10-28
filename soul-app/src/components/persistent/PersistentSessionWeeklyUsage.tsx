@@ -58,8 +58,8 @@ export function PersistentSessionWeeklyUsage({
   const renderGauge = (gauge: Props['gauges'][number], index: number) => {
     const percent = formatWeeklyRemainingPercent(gauge.remainingPercent);
     const warning = gauge.remainingPercent < 20;
-    const compactCountdown = formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, true);
-    const fullCountdown = formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, false);
+    const compactCountdown = gauge.resetLabel ?? formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, true);
+    const fullCountdown = gauge.resetLabel ?? formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, false);
     return <View key={gauge.id} testID={`persistent-session-weekly-usage-slot-${index}`}
       style={{ height: slotHeight, gap: t.spacing.xxs }}>
       <View testID={`persistent-session-weekly-usage-row-${gauge.id}`}

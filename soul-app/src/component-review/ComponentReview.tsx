@@ -59,12 +59,16 @@ import { ReviewChatUi } from './ReviewChatUi';
 import { ReviewPasCardExpand } from './ReviewPasCardExpand';
 import { ReviewAttachments } from './ReviewAttachments';
 import { ReviewIphoneDuo } from './ReviewIphoneDuo';
+import { ReviewClaudeAccountPool } from './ReviewClaudeAccountPool';
+import { ReviewClaudePoolPas } from './ReviewClaudePoolPas';
 
 const sections = [
   { value: 'rows', label: '행' }, { value: 'chat', label: '대화' },
   { value: 'chatUiComposer', label: '채팅 입력창' },
   { value: 'project', label: '프로젝트' }, { value: 'settings', label: '선택·설정' },
   { value: 'nativeSettings', label: '앱 설정' },
+  { value: 'claudePool', label: 'Claude 계정 풀' },
+  { value: 'claudePoolPas', label: 'PAS Claude 풀' },
   { value: 'pasSettings', label: 'PAS 설정' },
   { value: 'persistent', label: '영구 세션' },
   { value: 'pasCardExpand', label: 'PAS 카드 펼침 시안' },
@@ -200,6 +204,8 @@ function Gallery() {
   if (section === 'pasCardExpand') return <ReviewPasCardExpand />;
   if (section === 'chatUiComposer') return <ReviewChatUiComposer />;
   if (section === 'nativeSettings' || section === 'pasSettings') return <ReviewNativeSettings/>;
+  if (section === 'claudePool') return <ReviewClaudeAccountPool />;
+  if (section === 'claudePoolPas') return <ReviewClaudePoolPas />;
   if (section === 'persistent') {
     const sample = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('sample') : null;
     const persistentContent = sample === 'n7-task-list'
@@ -312,7 +318,8 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
     || params.get('section') === 'entryShell' || params.get('section') === 'contentLinks'
     || params.get('section') === 'contentLinkDocument' || params.get('section') === 'chatUi' || params.get('section') === 'chatUiRenderer';
   const fullHeightSample = params.get('section') === 'pasCardExpand' || cardChecks || chatUiComposerSample || params.get('section') === 'cardImages'
-    || params.get('section') === 'attachments';
+    || params.get('section') === 'attachments' || params.get('section') === 'claudePool'
+    || params.get('section') === 'claudePoolPas';
   if (!pasImageSample && !fullHeightSample && params.get('section') !== 'nativeSettings' && params.get('section') !== 'pasSettings') return null;
 
   return {

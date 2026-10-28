@@ -167,10 +167,7 @@ struct UsageWidgetView: View {
                     .font(.caption)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                if let resetCountdown = gauge.resetCountdown(
-                    at: entry.date,
-                    compact: compact
-                ) {
+                if let resetCountdown = gauge.resetLabel ?? gauge.resetCountdown(at: entry.date, compact: compact) {
                     Text(resetCountdown)
                         .font(.caption2)
                         .foregroundStyle(.secondary)

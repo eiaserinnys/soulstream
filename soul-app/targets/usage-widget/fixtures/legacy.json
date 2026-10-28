@@ -1,0 +1,24 @@
+{
+  "generatedAt": "2026-10-28T00:00:00.000Z",
+  "collectedAt": null,
+  "nodes": [
+    {
+      "nodeId": "node-a",
+      "fetchedAt": "2026-10-28T00:00:00.000Z",
+      "stale": false,
+      "staleSince": null,
+      "providers": {
+        "claude": {
+          "status": "auto",
+          "weeklyRemainingPercent": 62,
+          "weeklyResetAt": 1800352800,
+          "shortRemainingPercent": 58,
+          "shortResetAt": 1800270000,
+          "quotas": []
+        },
+        "codex": null,
+        "antigravity": null
+      }
+    }
+  ]
+}

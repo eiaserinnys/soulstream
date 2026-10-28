@@ -13,6 +13,7 @@ import { createApiClient } from '../../../api/client';
 import { ClaudeProviderSection } from '../ClaudeProviderSection';
 
 const api = {
+  getClaudeAuthAccounts: jest.fn(),
   getClaudeAuthStatus: jest.fn(),
   getClaudeProfile: jest.fn(),
   startClaudeAuth: jest.fn(),
@@ -25,6 +26,7 @@ const onTokenDeleted = jest.fn();
 beforeEach(() => {
   (createApiClient as jest.Mock).mockReturnValue(api);
   Object.values(api).forEach((fn) => fn.mockReset());
+  api.getClaudeAuthAccounts.mockResolvedValue({ mode: 'legacy', accounts: [], pool: null, fable_pool: null });
   api.getClaudeAuthStatus.mockResolvedValue({ has_token: false });
   api.getClaudeProfile.mockResolvedValue(null);
   onRefreshUsage.mockReset();
@@ -47,6 +49,28 @@ function renderProvider() {
     />,
   );
 }
+
+test.each(['legacy response', 'request error'] as const)('keeps the existing Claude section unchanged for %s', async (scenario) => {
+  if (scenario === 'request error') api.getClaudeAuthAccounts.mockRejectedValueOnce(new Error('not available'));
+  const screen = renderProvider();
+
+  expect(await screen.findByTestId('claude-login-action')).toBeTruthy();
+  expect(await screen.findByText('미인증')).toBeTruthy();
+  expect(screen.queryByLabelText('Claude 계정 추가')).toBeNull();
+  expect(screen.queryByTestId('claude-account-row-one')).toBeNull();
+});
+
+test('uses the account pool section only when the node reports pool mode', async () => {
+  api.getClaudeAuthAccounts.mockResolvedValueOnce({
+    mode: 'pool', accounts: [],
+    pool: { available_count: 2, total_count: 3, best_weekly_remaining_percent: 87, best_weekly_resets_at: null, earliest_available_at: null },
+    fable_pool: null,
+  });
+  const screen = renderProvider();
+
+  expect(await screen.findByText('2/3 가용 (주간 최대 잔여 87%)')).toBeTruthy();
+  expect(screen.queryByTestId('claude-login-action')).toBeNull();
+});
 
 test('Claude auth and profile remain provider-local', async () => {
   api.getClaudeAuthStatus.mockResolvedValueOnce({ has_token: true });

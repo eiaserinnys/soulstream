@@ -1,5 +1,10 @@
 import type { ApiRequestContext } from './clientCore';
 import type {
+  ClaudeAccountDeleteResult,
+  ClaudeAccountList,
+  ClaudeAuthLoginFlow,
+} from '../../../packages/soul-ui/src/lib/usage-summary';
+import type {
   UsageData,
   AccountProfile,
   ProfileResponse,
@@ -32,6 +37,50 @@ export function createAuthEndpoints({ base, authFetch, readJson }: ApiRequestCon
       authFetch(`${base}/api/nodes/${nodeId}/claude-auth/status`).then((r) =>
         readJson(r, 'getClaudeAuthStatus'),
       ),
+
+    getClaudeAuthAccounts: (nodeId: string): Promise<ClaudeAccountList> =>
+      authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/accounts`).then((r) =>
+        readJson(r, 'getClaudeAuthAccounts'),
+      ),
+
+    patchClaudeAuthAccount: (
+      nodeId: string,
+      accountId: string,
+      patch: { enabled?: boolean; priority?: number | null },
+    ): Promise<ClaudeAccountList> =>
+      authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/accounts/${encodeURIComponent(accountId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      }).then((r) => readJson(r, 'patchClaudeAuthAccount')),
+
+    deleteClaudeAuthAccount: (nodeId: string, accountId: string): Promise<ClaudeAccountDeleteResult> =>
+      authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/accounts/${encodeURIComponent(accountId)}`, {
+        method: 'DELETE',
+      }).then((r) => readJson(r, 'deleteClaudeAuthAccount')),
+
+    startClaudeAuthLogin: (nodeId: string, accountId?: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(accountId ? { account_id: accountId } : {}),
+      }).then((r) => readJson(r, 'startClaudeAuthLogin')),
+
+    getClaudeAuthLogin: (nodeId: string, loginId: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins/${encodeURIComponent(loginId)}`)
+        .then((r) => readJson(r, 'getClaudeAuthLogin')),
+
+    submitClaudeAuthLoginCode: (nodeId: string, loginId: string, code: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins/${encodeURIComponent(loginId)}/code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      }).then((r) => readJson(r, 'submitClaudeAuthLoginCode')),
+
+    cancelClaudeAuthLogin: (nodeId: string, loginId: string): Promise<ClaudeAuthLoginFlow> =>
+      authFetch(`${base}/api/nodes/${encodeURIComponent(nodeId)}/claude-auth/logins/${encodeURIComponent(loginId)}`, {
+        method: 'DELETE',
+      }).then((r) => readJson(r, 'cancelClaudeAuthLogin')),
 
     startClaudeAuth: (nodeId: string): Promise<{ authUrl: string }> =>
       authFetch(`${base}/api/nodes/${nodeId}/claude-auth/headless/start`).then((r) =>
