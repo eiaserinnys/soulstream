@@ -234,7 +234,7 @@ it('uses the existing internal-card link opener and https source policy', async 
   const card = host.querySelector<HTMLAnchorElement>('a[aria-label="카드 270번 열기"]')!;
   expect(card.getAttribute('href')).toBe(`/?card=${cardRow.id}`);
   await act(async () => card.click());
-  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`);
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`, '#270');
   expect(request).not.toHaveBeenCalled();
   const source = host.querySelector<HTMLAnchorElement>('a[href="https://example.test/"]')!;
   expect(source.target).toBe('_blank'); expect(source.rel).toContain('noopener');
@@ -259,7 +259,7 @@ it('resolves a missing number once across sheets, then opens its ID through Sour
   expect(openTarget).not.toHaveBeenCalled();
   await act(async () => { resolve({ cards: [cardRow] }); });
   expect(openTarget).toHaveBeenCalledTimes(1);
-  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`);
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`, '#270');
   expect(card.getAttribute('href')).toBe(`/?card=${cardRow.id}`);
   expect(host.querySelector('a[href="/?card=270"]')).toBeNull();
 });
@@ -272,7 +272,7 @@ it('supports Enter before lookup and preserves newer stored card versions', asyn
   expect(request).toHaveBeenCalledTimes(1);
   await act(async () => { useCardStore.getState().putCards([{ ...cardRow, version: 2, title: '새 카드' }]); resolve({ cards: [cardRow] }); });
   expect(useCardStore.getState().byId[cardRow.id].version).toBe(2);
-  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`);
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`, '#270');
 });
 it.each(['missing', 'failed'])('opens nothing and adds no error surface when lookup is %s', async failure => {
   if (failure === 'missing') request.mockResolvedValue({ cards: [] }); else request.mockRejectedValue(new Error('offline'));
@@ -319,7 +319,7 @@ it('allows an explicit retry after prefetch fails, without treating the number a
   const card = host.querySelector<HTMLAnchorElement>('[data-current="true"] a[aria-label="카드 270번 열기"]')!;
   await act(async () => card.click());
   expect(request).toHaveBeenCalledTimes(2);
-  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`);
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: cardRow.id }, `/?card=${cardRow.id}`, '#270');
 });
 it('keeps an outside focus, moves an inside focus to the replacement, then to the input when the last sheet leaves', async () => {
   const outside = document.createElement('input'); document.body.append(outside); outside.focus();

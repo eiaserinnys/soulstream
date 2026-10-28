@@ -63,7 +63,7 @@ it('loads the linked card and shows only its current panel, items, and two lates
   const openCard = host.querySelector<HTMLAnchorElement>('a[href="/?card=card-id"]')!;
   expect(openCard).not.toBeNull();
   await act(async () => openCard.click());
-  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: card.id }, `/?card=${card.id}`);
+  expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: card.id }, `/?card=${card.id}`, '카드 열기');
 });
 
 it('shows a detail load error when the card is already in the store list', async () => {

@@ -65,7 +65,7 @@ describe("SourceLink", () => {
     anchor.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
-    expect(openTarget).toHaveBeenCalledWith({ kind: "card", cardId: "card-1" }, anchor.href);
+    expect(openTarget).toHaveBeenCalledWith({ kind: "card", cardId: "card-1" }, anchor.href, "카드");
     expect(onParentClick).not.toHaveBeenCalled();
   });
 });
