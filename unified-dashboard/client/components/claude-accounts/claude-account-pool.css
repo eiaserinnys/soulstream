@@ -1,6 +1,6 @@
 .c724-node-card {
-  border-radius: var(--v3-radius-card);
-  border: var(--v3-hairline) solid var(--border);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
   background: color-mix(in oklch, var(--card) 86%, transparent);
   overflow: hidden;
 }
@@ -28,7 +28,7 @@
 
 .c724-pool-title {
   font: var(--v3-type-body) var(--v3-font-family);
-  font-weight: var(--v3-weight-semibold);
+  font-weight: 600;
   color: var(--foreground);
 }
 
@@ -49,8 +49,8 @@
   flex-direction: column;
   gap: var(--v3-space-2);
   padding: var(--v3-space-3);
-  border-radius: var(--v3-radius-card);
-  border: var(--v3-hairline) solid var(--border);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
   background: color-mix(in oklch, var(--background) 78%, transparent);
   transition: opacity 0.15s ease, border-color 0.15s ease;
 }
@@ -88,13 +88,13 @@
 .c724-status-dot {
   width: var(--v3-space-2);
   height: var(--v3-space-2);
-  border-radius: var(--v3-radius-pill);
+  border-radius: 50%;
   flex-shrink: 0;
 }
 
 .c724-account-email {
   font: var(--v3-type-body) var(--v3-font-family);
-  font-weight: var(--v3-weight-medium);
+  font-weight: 500;
   color: var(--foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -106,9 +106,9 @@
   align-items: center;
   gap: var(--v3-space-1);
   padding: 0 var(--v3-space-2);
-  border-radius: var(--v3-radius-pill);
+  border-radius: var(--v3-space-8);
   font: var(--v3-type-badge) var(--v3-font-family);
-  font-weight: var(--v3-weight-medium);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -178,7 +178,7 @@
 .c724-quota-name {
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--foreground);
-  font-weight: var(--v3-weight-medium);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   flex-shrink: 0;
@@ -186,7 +186,7 @@
 
 .c724-quota-pct {
   font: var(--v3-type-meta) var(--v3-font-family);
-  font-weight: var(--v3-weight-semibold);
+  font-weight: 600;
   color: var(--foreground);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -204,14 +204,14 @@
 .c724-quota-track {
   width: 100%;
   height: var(--v3-space-1);
-  border-radius: var(--v3-radius-pill);
+  border-radius: var(--v3-space-8);
   background: color-mix(in oklch, var(--foreground) 16%, transparent);
   overflow: hidden;
 }
 
 .c724-quota-fill {
   height: 100%;
-  border-radius: var(--v3-radius-pill);
+  border-radius: var(--v3-space-8);
 }
 
 .c724-idle-row {
@@ -228,7 +228,7 @@
   justify-content: space-between;
   gap: var(--v3-space-3);
   padding-top: var(--v3-space-2);
-  border-top: var(--v3-hairline) solid var(--border);
+  border-top: 1px solid var(--border);
 }
 
 .c724-confirm-text {
@@ -249,8 +249,8 @@
   flex-direction: column;
   gap: var(--v3-space-3);
   padding: var(--v3-space-3);
-  border-radius: var(--v3-radius-card);
-  border: var(--v3-hairline) solid color-mix(in oklch, var(--v3-accent) 50%, var(--border));
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in oklch, var(--v3-accent) 50%, var(--border));
   background: color-mix(in oklch, var(--background) 82%, transparent);
 }
 
@@ -263,7 +263,7 @@
 
 .c724-auth-sheet-title {
   font: var(--v3-type-body) var(--v3-font-family);
-  font-weight: var(--v3-weight-semibold);
+  font-weight: 600;
   color: var(--foreground);
 }
 
@@ -295,6 +295,10 @@
   display: flex;
   align-items: center;
   gap: var(--v3-space-2);
+}
+
+.c724-login-open-link {
+  align-self: flex-start;
 }
 
 .c724-pool-notice,

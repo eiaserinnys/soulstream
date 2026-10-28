@@ -5,7 +5,6 @@ import type { ClaudeAccount, ClaudeAccountUsageWindow } from "@seosoyoung/soul-u
 type Props = {
   account: ClaudeAccount;
   index: number;
-  totalCount: number;
   enabledCount: number;
   busy: boolean;
   confirmingDelete: boolean;
@@ -52,7 +51,7 @@ function quotaColor(usedPercent: number): string {
 }
 
 function statusColor(account: ClaudeAccount): string {
-  if (!account.enabled || account.auth_state === "idle") return "var(--v3-ink-muted)";
+  if (!account.enabled || account.auth_state === "idle") return "var(--v3-text-tertiary)";
   if (account.auth_state === "needs_relogin") return "var(--color-red-400)";
   if (account.blocked) return "var(--color-amber-400)";
   if (account.auth_state === "logging_in") return "var(--v3-accent)";
@@ -90,7 +89,6 @@ function QuotaCell({ label, value }: { label: string; value: ClaudeAccountUsageW
 export function ClaudeAccountRow({
   account,
   index,
-  totalCount,
   enabledCount,
   busy,
   confirmingDelete,
@@ -106,7 +104,7 @@ export function ClaudeAccountRow({
   const rowState = account.auth_state === "needs_relogin" ? "needs_relogin" : account.blocked ? "blocked" : "normal";
   const hasUsage = account.usage.five_hour !== null || account.usage.seven_day !== null || account.usage.fable_weekly !== null;
   const observed = account.observed_at ? localClock(account.observed_at) : null;
-  const showPriority = totalCount > 1 && account.enabled;
+  const showPriority = enabledCount > 1 && account.enabled;
 
   return <div
     className="c724-account-row"

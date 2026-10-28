@@ -5,10 +5,8 @@ import { Plus } from "lucide-react";
 import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow } from "@seosoyoung/soul-ui";
 import {
   accountPath,
-  claudeAccountsPath,
   ClaudeAuthRequestError,
   getClaudeAccounts,
-  loginPath,
   requestClaudeAuthData,
   requestErrorMessage,
   replaceAccount,
@@ -36,6 +34,7 @@ function summaryText(list: ClaudeAccountList): string {
   const pool = list.pool;
   if (!pool) return `${list.accounts.length}개 계정`;
   const weekly = pool.best_weekly_remaining_percent;
+  if (pool.total_count === 1) return `주간 잔여 ${weekly === null ? "—" : `${Math.round(weekly)}%`}`;
   return `${pool.available_count}/${pool.total_count} 가용${weekly === null ? "" : ` (주간 최대 잔여 ${Math.round(weekly)}%)`}`;
 }
 
@@ -69,10 +68,13 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
     return next;
   }, [nodeId, queryClient, queryKey, request]);
 
-  const refreshAccounts = useCallback(async () => {
+  const completeLogin = useCallback(async (accountId: string | null) => {
     const next = await reloadAccounts();
     const added = next.accounts.find((account) => !accountIdsBeforeLogin.current.has(account.id));
-    if (added) setHighlightAccountId(added.id);
+    const updated = accountId ? next.accounts.find((account) => account.id === accountId) : null;
+    const completed = added ?? updated;
+    if (completed) setHighlightAccountId(completed.id);
+    setLoginFlow(null);
   }, [reloadAccounts]);
 
   const startLogin = useCallback(async (accountId: string | null = null) => {
@@ -86,9 +88,13 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
     );
     setLoginFlow(next);
     if (next.error?.existing_account_id) setHighlightAccountId(next.error.existing_account_id);
-    if (next.state === "done") await refreshAccounts();
+    if (next.state === "done") await completeLogin(next.account_id ?? accountId);
     return next;
-  }, [accounts, nodeId, refreshAccounts, request]);
+  }, [accounts, completeLogin, nodeId, request]);
+
+  const completeCurrentLogin = useCallback(async () => {
+    await completeLogin(loginFlow?.account_id ?? null);
+  }, [completeLogin, loginFlow?.account_id]);
 
   const handleExistingAccount = useCallback((accountId: string) => {
     setHighlightAccountId(accountId);
@@ -186,7 +192,6 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
           key={account.id}
           account={account}
           index={index}
-          totalCount={list.pool?.total_count ?? enabledCount}
           enabledCount={enabledCount}
           busy={busyAccountId !== null || loginFlow !== null}
           confirmingDelete={confirmingDeleteId === account.id}
@@ -206,7 +211,7 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
         isAdditionalAccount={!loginFlow.account_id && accounts.length > 0}
         initialFlow={loginFlow}
         onClose={() => setLoginFlow(null)}
-        onComplete={refreshAccounts}
+        onComplete={completeCurrentLogin}
         onExistingAccount={handleExistingAccount}
         onRestart={() => startLogin(loginFlow.account_id)}
       /> : null}

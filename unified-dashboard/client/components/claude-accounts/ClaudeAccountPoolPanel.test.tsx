@@ -144,6 +144,21 @@ describe("ClaudeAccountPoolPanel", () => {
     expect(host.textContent).toContain("2/2 가용");
   });
 
+  it("shows weekly remaining alone for one account", async () => {
+    const initial = list([account("only", 1)]);
+    await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+
+    expect(host.querySelector(".c724-pool-summary")?.textContent).toBe("주간 잔여 88%");
+    expect(host.querySelector(".c724-pool-summary")?.textContent).not.toContain("1/1");
+  });
+
+  it("hides priority arrows when only one account is enabled", async () => {
+    const initial = list([account("enabled", 1), { ...account("disabled", 2), enabled: false }]);
+    await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+
+    expect(host.querySelectorAll('button[aria-label^="우선순위"]')).toHaveLength(0);
+  });
+
   it("optimistically moves priority and sends only the target PATCH", async () => {
     const initial = list([account("first", 1), account("second", 2), account("third", 3)]);
     let finish!: (response: Response) => void;
@@ -230,7 +245,12 @@ describe("ClaudeAccountPoolPanel", () => {
     expect(host.querySelector('[data-testid="claude-login-sheet"]')?.getAttribute("data-login-state")).toBe("url_ready");
 
     const code = host.querySelector<HTMLInputElement>('input[aria-label="Claude 인증 코드"]')!;
-    expect(host.textContent).toContain("두 번째 계정부터는 시크릿 창이나 별도 브라우저 프로필에서 승인하세요.");
+    expect(host.querySelector(".c724-login-state-row")).toBeNull();
+    expect(host.textContent).toContain("다른 계정은 시크릿 창이나 별도 브라우저 프로필에서 열어야 구분됩니다.");
+    expect(host.textContent).not.toContain("코드 입력 대기");
+    expect(host.textContent).not.toContain("인증 페이지에서 코드를 받은 뒤 붙여넣으세요.");
+    expect(host.querySelector(".c724-login-open-link")?.getAttribute("class")).toContain("c724-login-open-link");
+    expect(button("취소", host.querySelector('[data-testid="claude-login-sheet"]')!).textContent).toBe("취소");
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
       setter?.call(code, "synthetic-code#synthetic-state");
@@ -245,12 +265,37 @@ describe("ClaudeAccountPoolPanel", () => {
     await act(async () => resolveCode(data(flow("code_submitted"))));
     await settle();
     expect(code.value).toBe("");
+    expect(code.disabled).toBe(true);
+    expect(button("확인 중").disabled).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(host.querySelector('[data-testid="claude-login-sheet"]')?.getAttribute("data-login-state")).toBe("verifying");
+    expect(code.disabled).toBe(true);
+    expect(button("확인 중").disabled).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     await settle();
-    expect(host.querySelector('[data-testid="claude-login-sheet"]')?.getAttribute("data-login-state")).toBe("done");
+    expect(host.querySelector('[data-testid="claude-login-sheet"]')).toBeNull();
     expect(accountIds()).toEqual(["first", "new-account"]);
+    expect(host.querySelector('[data-account-id="new-account"]')?.getAttribute("data-highlighted")).toBe("true");
+  });
+
+  it("closes the sheet and highlights the account after relogin completes", async () => {
+    vi.useFakeTimers();
+    const initial = list([account("first", 1)]);
+    const refreshed = list([{ ...account("first", 1), email: "updated@example.test" }]);
+    const requestMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(data(flow("requested", { account_id: "first" })))
+      .mockResolvedValueOnce(data(flow("done", { account_id: "first" })))
+      .mockResolvedValueOnce(data(refreshed));
+    await mount(initial, requestMock as unknown as typeof fetch);
+
+    await act(async () => button("재로그인", host.querySelector('[data-account-id="first"]')!).click());
+    await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await settle();
+
+    expect(host.querySelector('[data-testid="claude-login-sheet"]')).toBeNull();
+    expect(host.querySelector('[data-account-id="first"]')?.getAttribute("data-highlighted")).toBe("true");
+    expect(host.textContent).toContain("updated@example.test");
   });
 
   it("retries login status polling after a transient request error", async () => {
@@ -318,7 +363,7 @@ describe("ClaudeAccountPoolPanel", () => {
 
     await act(async () => button("계정 추가").click());
     await settle();
-    await act(async () => button("로그인 닫기").click());
+    await act(async () => button("취소").click());
     await settle();
 
     expect(requestMock).toHaveBeenLastCalledWith("/api/nodes/node-a/claude-auth/logins/login-a", expect.objectContaining({ method: "DELETE" }));
