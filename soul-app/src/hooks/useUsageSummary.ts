@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   selectUsageSummaryNode,
-  weeklyUsageGauges,
   USAGE_SUMMARY_REFRESH_INTERVAL_MS,
-  type UsageSummaryGauge,
-  type UsageSummaryNode,
-  type UsageSummarySnapshot,
 } from '../../../packages/soul-ui/src/lib/usage-summary';
 
 import type { ApiClient } from '../api/client';
+import type { AppUsageSummaryNode, AppUsageSummarySnapshot } from '../api/usageEndpoints';
+import { usageSummaryGaugesForApp, type AppUsageSummaryGauge } from '../lib/usage-summary-pool';
 import { ApiHttpError } from '../api/clientCore';
 import { useAuthScopeGeneration } from '../lib/auth-scope';
 
@@ -22,9 +20,9 @@ export type UseUsageSummaryOptions = {
 };
 
 export type UseUsageSummaryResult = {
-  summary: UsageSummarySnapshot | null;
-  node: UsageSummaryNode | null;
-  gauges: UsageSummaryGauge[];
+  summary: AppUsageSummarySnapshot | null;
+  node: AppUsageSummaryNode | null;
+  gauges: AppUsageSummaryGauge[];
   loading: boolean;
   loadState: UsageSummaryLoadState;
   evaluatedAtMs: number;
@@ -34,7 +32,7 @@ export type UseUsageSummaryResult = {
 type RequestOutcome = 'idle' | 'success' | 'serverPending' | 'connectionError';
 type ScopedSummaryState = {
   scopeKey: string;
-  lastSuccess: UsageSummarySnapshot | null;
+  lastSuccess: AppUsageSummarySnapshot | null;
   hideSummary: boolean;
   outcome: RequestOutcome;
   loading: boolean;
@@ -135,8 +133,8 @@ export function useUsageSummary({
 
   const scopedState = state.scopeKey === scopeKey ? state : emptyState(scopeKey);
   const summary = scopedState.hideSummary ? null : scopedState.lastSuccess;
-  const node = selectUsageSummaryNode(summary, nodeId, selectedNodeId);
-  const gauges = useMemo(() => weeklyUsageGauges(node), [node]);
+  const node = selectUsageSummaryNode(summary, nodeId, selectedNodeId) as AppUsageSummaryNode | null;
+  const gauges = useMemo(() => usageSummaryGaugesForApp(node), [node]);
   let loadState: UsageSummaryLoadState;
   if (scopedState.outcome === 'connectionError') loadState = 'connectionError';
   else if (scopedState.outcome === 'serverPending') loadState = 'serverPending';

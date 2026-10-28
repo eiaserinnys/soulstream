@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useTokens } from '../../theme';
 import { GlassButton } from '../GlassSurface';
@@ -13,17 +13,24 @@ import type {
 import { useAuthStore } from '../../store/authStore';
 import { ClaudeProviderSection } from './ClaudeProviderSection';
 import { ProviderUsageSection } from './ProviderUsageSection';
+import type { ClaudeAccountPoolApi } from './ClaudeAccountPoolSection';
+
+export type NodeProviderSectionsApi = ClaudeAccountPoolApi;
 
 export function NodeProviderSections({
   nodeId,
   serverUrl,
+  apiClient,
 }: {
   nodeId: string;
   serverUrl: string;
+  apiClient?: NodeProviderSectionsApi;
 }) {
   const t = useTokens();
   const workspace = useSettingsWorkspace();
   const groupStyle = workspace ? { padding: t.cardLayout.padding, gap: t.spacing.md } : undefined;
+  const [claudePoolMode, setClaudePoolMode] = useState(false);
+  const accountApi = useMemo(() => apiClient ?? createApiClient(serverUrl), [apiClient, serverUrl]);
   const jwt = useAuthStore(state => state.jwt);
   const scopeRevision = useRef(0);
   const requests = useRef<Partial<Record<ProviderName, number>>>({});
@@ -56,39 +63,39 @@ export function NodeProviderSections({
     }
   }
 
-  const groups = (
-    <>
-      <View style={groupStyle}><ClaudeProviderSection
+  const groups = [
+      <View key="claude" style={workspace && claudePoolMode ? undefined : groupStyle}><ClaudeProviderSection
         separateUsage={Boolean(workspace)}
         nodeId={nodeId}
         serverUrl={serverUrl}
+        apiClient={accountApi}
+        onPoolModeChange={setClaudePoolMode}
         usage={usage}
         loadingUsage={Boolean(loadingProviders.claude)}
         usageError={usageErrors.claude ?? null}
         onRefreshUsage={() => void refreshUsage('claude')}
         onTokenDeleted={() => void refreshUsage('claude')}
-      /></View>
-      {workspace ? <View style={groupStyle}>
+      /></View>,
+      ...(workspace && !claudePoolMode ? [<View key="claude-usage" style={groupStyle}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary, fontWeight: '700' }}>Claude 사용량</Text>
         <GlassButton testID="claude-usage-action" onPress={() => void refreshUsage('claude')} disabled={Boolean(loadingProviders.claude)}>{loadingProviders.claude ? <ActivityIndicator color={t.colors.accent}/> : <Text style={{ ...t.foundation.typography.body, color: t.colors.accent }}>사용량</Text>}</GlassButton>
         {usage ? <ProviderUsageChart usage={usage} providers={['claude']}/> : null}
         {usageErrors.claude ? <Text accessibilityRole="alert" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{usageErrors.claude}</Text> : null}
-      </View> : null}
-      <View style={groupStyle}><ProviderUsageSection
+      </View>] : []),
+      <View key="codex" style={groupStyle}><ProviderUsageSection
         provider="codex"
         usage={usage}
         loadingUsage={Boolean(loadingProviders.codex)}
         usageError={usageErrors.codex ?? null}
         onRefreshUsage={() => void refreshUsage('codex')}
-      /></View>
-      <View style={groupStyle}><ProviderUsageSection
+      /></View>,
+      <View key="antigravity" style={groupStyle}><ProviderUsageSection
         provider="antigravity"
         usage={usage}
         loadingUsage={Boolean(loadingProviders.antigravity)}
         usageError={usageErrors.antigravity ?? null}
         onRefreshUsage={() => void refreshUsage('antigravity')}
-      /></View>
-    </>
-  );
-  return workspace ? <SettingsSection id="provider-groups" title="AI 연결과 사용량" flattened>{groups.props.children}</SettingsSection> : groups;
+      /></View>,
+  ];
+  return workspace ? <SettingsSection id="provider-groups" title="AI 연결과 사용량" flattened fullWidthChildIndexes={claudePoolMode ? [0] : []}>{groups}</SettingsSection> : <>{groups}</>;
 }

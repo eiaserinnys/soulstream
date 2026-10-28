@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useTokens, type DesignTokens } from '../../theme';
-import { NodeProviderSections } from './NodeProviderSections';
+import { NodeProviderSections, type NodeProviderSectionsApi } from './NodeProviderSections';
 import { SettingsOptionRow } from './SettingsOptionRow';
 import { GlassButton } from '../GlassSurface';
 import { SettingsSection } from './SettingsSection';
@@ -15,6 +15,7 @@ export function AIBackendSettingsSection({
   currentNodeId,
   nodes,
   loadingNodes,
+  apiClient,
   error, onRetry,
 }: {
   flattened: boolean;
@@ -23,6 +24,7 @@ export function AIBackendSettingsSection({
   currentNodeId: string;
   nodes: BackendNode[];
   loadingNodes: boolean;
+  apiClient?: NodeProviderSectionsApi;
   error?: string | null; onRetry?: () => void;
 }) {
   const t = useTokens();
@@ -63,7 +65,7 @@ export function AIBackendSettingsSection({
         </View>
       )}
     </SettingsSection>
-    {!error && !loadingNodes && selected ? <NodeProviderSections key={`${serverUrl}:${selected.nodeId}`} nodeId={selected.nodeId} serverUrl={serverUrl}/> : null}
+    {!error && !loadingNodes && selected ? <NodeProviderSections key={`${serverUrl}:${selected.nodeId}`} nodeId={selected.nodeId} serverUrl={serverUrl} apiClient={apiClient}/> : null}
     </View>
   );
 }

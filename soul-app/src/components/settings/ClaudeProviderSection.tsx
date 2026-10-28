@@ -14,21 +14,14 @@ import type {
   AccountProfile,
   ProviderUsageSnapshot,
 } from '../../api/claudeAuthTypes';
+import type { ClaudeAccountList } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import { useTokens, type DesignTokens } from '../../theme';
 import { useAuthStore } from '../../store/authStore';
 import { GlassButton } from '../GlassSurface';
 import { ProviderUsageChart } from '../ProviderUsageChart';
+import { ClaudeAccountPoolSection, type ClaudeAccountPoolApi } from './ClaudeAccountPoolSection';
 
-export function ClaudeProviderSection({
-  nodeId,
-  serverUrl,
-  usage,
-  loadingUsage,
-  usageError,
-  onRefreshUsage,
-  onTokenDeleted,
-  separateUsage = false,
-}: {
+type ClaudeProviderSectionProps = {
   nodeId: string;
   serverUrl: string;
   usage: ProviderUsageSnapshot | null;
@@ -37,7 +30,49 @@ export function ClaudeProviderSection({
   onRefreshUsage(): void;
   onTokenDeleted(): void;
   separateUsage?: boolean;
-}) {
+  apiClient?: ClaudeAccountPoolApi;
+  onPoolModeChange?(isPool: boolean): void;
+};
+
+export function ClaudeProviderSection(props: ClaudeProviderSectionProps) {
+  const jwt = useAuthStore(state => state.jwt);
+  const api = useMemo(() => props.apiClient ?? createApiClient(props.serverUrl), [props.apiClient, props.serverUrl]);
+  const [pool, setPool] = useState<ClaudeAccountList | null>(null);
+  const poolRequest = useRef(0);
+
+  useEffect(() => {
+    const request = ++poolRequest.current;
+    setPool(null);
+    props.onPoolModeChange?.(false);
+    if (!props.serverUrl || !props.nodeId) return;
+    void api.getClaudeAuthAccounts(props.nodeId).then(result => {
+      if (request !== poolRequest.current) return;
+      const isPool = result.mode === 'pool';
+      setPool(isPool ? result : null);
+      props.onPoolModeChange?.(isPool);
+    }).catch(() => {
+      if (request === poolRequest.current) {
+        setPool(null);
+        props.onPoolModeChange?.(false);
+      }
+    });
+    return () => { ++poolRequest.current; };
+  }, [api, props.nodeId, props.serverUrl, props.onPoolModeChange, jwt]);
+
+  if (pool) return <ClaudeAccountPoolSection nodeId={props.nodeId} initialList={pool} api={api} />;
+  return <LegacyClaudeProviderSection {...props} />;
+}
+
+function LegacyClaudeProviderSection({
+  nodeId,
+  serverUrl,
+  usage,
+  loadingUsage,
+  usageError,
+  onRefreshUsage,
+  onTokenDeleted,
+  separateUsage = false,
+}: ClaudeProviderSectionProps) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const jwt = useAuthStore(state => state.jwt);

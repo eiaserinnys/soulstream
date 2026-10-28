@@ -1,0 +1,57 @@
+{
+  "generatedAt": "2026-10-28T00:00:00.000Z",
+  "collectedAt": null,
+  "nodes": [
+    {
+      "nodeId": "node-a",
+      "fetchedAt": "2026-10-28T00:00:00.000Z",
+      "stale": false,
+      "staleSince": null,
+      "providers": {
+        "claude": {
+          "status": "auto",
+          "weeklyRemainingPercent": 87,
+          "weeklyResetAt": 1800352800,
+          "shortRemainingPercent": 76,
+          "shortResetAt": 1800270000,
+          "quotas": [],
+          "mode": "pool",
+          "accounts": [
+            {
+              "id": "fixture-account",
+              "email": "account@example.invalid",
+              "plan": "Max 5x",
+              "enabled": true,
+              "priority": 1,
+              "auth_state": "ok",
+              "usage": {
+                "five_hour": { "used_percent": 24, "resets_at": "2026-10-28T12:00:00.000Z" },
+                "seven_day": { "used_percent": 13, "resets_at": "2026-10-29T12:00:00.000Z" },
+                "fable_weekly": null
+              },
+              "observed_at": "2026-10-28T09:10:00.000Z",
+              "blocked": null,
+              "active_sessions": 0
+            }
+          ],
+          "pool": {
+            "available_count": 2,
+            "total_count": 3,
+            "best_weekly_remaining_percent": 87,
+            "best_weekly_resets_at": "2026-10-30T00:00:00.000Z",
+            "earliest_available_at": null
+          },
+          "fable_pool": {
+            "available_count": 2,
+            "total_count": 3,
+            "best_weekly_remaining_percent": 82,
+            "best_weekly_resets_at": "2026-10-30T00:00:00.000Z",
+            "earliest_available_at": null
+          }
+        },
+        "codex": null,
+        "antigravity": null
+      }
+    }
+  ]
+}

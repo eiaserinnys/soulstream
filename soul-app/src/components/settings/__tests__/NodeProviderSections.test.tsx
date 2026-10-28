@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
@@ -9,8 +10,12 @@ jest.mock('expo-web-browser', () => ({
 
 import { createApiClient } from '../../../api/client';
 import { NodeProviderSections } from '../NodeProviderSections';
+import { SettingsWorkspaceContext } from '../SettingsWorkspaceContext';
+import { SettingsSurface } from '../SettingsSurface';
+import type { SettingsCategory } from '../settingsCategories';
 
 const api = {
+  getClaudeAuthAccounts: jest.fn(),
   getClaudeAuthStatus: jest.fn(),
   getClaudeProfile: jest.fn(),
   getProviderUsage: jest.fn(),
@@ -22,6 +27,12 @@ const api = {
 beforeEach(() => {
   (createApiClient as jest.Mock).mockReturnValue(api);
   Object.values(api).forEach((fn) => fn.mockReset());
+  api.getClaudeAuthAccounts.mockResolvedValue({
+    mode: 'legacy',
+    accounts: [],
+    pool: null,
+    fable_pool: null,
+  });
   api.getClaudeAuthStatus.mockResolvedValue({ has_token: false });
   api.getClaudeProfile.mockResolvedValue(null);
   api.getProviderUsage.mockResolvedValue({
@@ -119,4 +130,36 @@ test('an older worker without Antigravity can refresh after another provider was
   expect(api.getProviderUsage).toHaveBeenCalledTimes(2);
   expect(screen.getByTestId('backend-provider-antigravity')).toBeTruthy();
   expect(screen.getByText('사용량 데이터 없음')).toBeTruthy();
+});
+
+test('workspace pool uses the full-width card and hides the duplicate Claude usage card', async () => {
+  api.getClaudeAuthAccounts.mockResolvedValue({
+    mode: 'pool',
+    accounts: [{ id: 'pool-one', email: 'pool@example.invalid', plan: null, enabled: true, priority: 1,
+      auth_state: 'ok', usage: { five_hour: null, seven_day: null, fable_weekly: null }, observed_at: null,
+      blocked: null, active_sessions: 0 }],
+    pool: { available_count: 1, total_count: 1, best_weekly_remaining_percent: 71, best_weekly_resets_at: null, earliest_available_at: null },
+    fable_pool: null,
+  });
+  const workspace = {
+    category: 'backends' as const,
+    wide: true,
+    columns: true,
+    jobs: { kind: 'list' as const }, setJobs: jest.fn(),
+    persistent: { kind: 'list' as const }, setPersistent: jest.fn(),
+    register: jest.fn(), changeConnection: (action: () => void) => action(),
+    select: jest.fn(), guard: (_id: SettingsCategory, action: () => void) => action(),
+  };
+  const screen = render(<SettingsWorkspaceContext.Provider value={workspace}>
+    <NodeProviderSections nodeId="node-a" serverUrl="https://soul.test" />
+  </SettingsWorkspaceContext.Provider>);
+
+  await screen.findByTestId('claude-account-pool-section');
+  const surfaces = screen.UNSAFE_getAllByType(SettingsSurface);
+  const poolSurface = StyleSheet.flatten(surfaces[0]!.props.style);
+  const codexSurface = StyleSheet.flatten(surfaces[1]!.props.style);
+  expect(poolSurface.width).toBe('100%');
+  expect(codexSurface.width).toBe('47%');
+  expect(screen.queryByText('Claude 사용량')).toBeNull();
+  expect(screen.queryByTestId('claude-usage-action')).toBeNull();
 });
