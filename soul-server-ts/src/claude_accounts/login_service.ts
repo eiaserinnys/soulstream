@@ -5,6 +5,7 @@ import type { ClaudeAuthError, ClaudeAuthLoginFlow } from "@soulstream/wire-sche
 import type { Logger } from "pino";
 
 import { resolveClaudeExecutableFromPath } from "../engine/claude_executable_path.js";
+import type { ClaudeLoginAccountPort } from "./types.js";
 import {
   type ChildExit,
   CLAUDE_CODE_EXECPATH_ENV,
@@ -25,22 +26,12 @@ import {
 
 export { ClaudeLoginError, type ClaudeLoginProfileFetcher } from "./login_cli_helpers.js";
 
+export type { ClaudeLoginAccountPort } from "./types.js";
+
 const DEFAULT_LOGIN_TIMEOUT_MS = 10 * 60 * 1_000;
 const DEFAULT_KILL_GRACE_PERIOD_MS = 5_000;
 const DEFAULT_ACTIVE_SESSION_POLL_INTERVAL_MS = 50;
 const DEFAULT_URL_CHUNK_IDLE_MS = 80;
-
-export interface ClaudeLoginAccountPort {
-  createPendingDir(loginId: string): Promise<string>;            // pending/<loginId>, 0700
-  profileDir(accountId: string): string | null;                  // profiles/<id>, 없으면 null
-  findAccount(accountId: string): Promise<{ id: string; email: string | null } | null>;
-  findByIdentity(input: { id: string; email: string | null }): Promise<{ id: string } | null>;
-  registerFromPending(input: { loginId: string; id: string; email: string | null; plan: string | null }): Promise<void>;
-  retirePending(loginId: string): Promise<void>;
-  beginRelogin(accountId: string): Promise<void>;
-  endRelogin(accountId: string, outcome: "ok" | "needs_relogin"): Promise<void>;
-  activeSessions(accountId: string): number;
-}
 
 export interface ClaudeLoginServiceConfig {
   port: ClaudeLoginAccountPort;

@@ -1,3 +1,7 @@
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRegistry } from "../../src/agent_registry.js";
@@ -10,6 +14,8 @@ import {
   ClaudeAuthCommands,
   type ClaudeAuthCommand,
 } from "../../src/upstream/claude_auth_commands.js";
+import { ClaudeAccountService } from "../../src/claude_accounts/service.js";
+import { ClaudeLoginService } from "../../src/claude_accounts/login_service.js";
 
 function createAgentRegistry(backends: string[]): Pick<AgentRegistry, "supportedBackends"> {
   return {
@@ -52,6 +58,31 @@ function createClaudeAuth(
     })),
     ...overrides,
   };
+}
+
+type LoginCommandResponse = {
+  success?: boolean;
+  data?: {
+    login_id: string;
+    account_id: string | null;
+    state: string;
+    auth_url: string | null;
+  };
+  error?: { code: string; message: string };
+};
+
+async function waitForLoginResponse(
+  read: () => Promise<LoginCommandResponse>,
+  predicate: (response: LoginCommandResponse) => boolean,
+): Promise<LoginCommandResponse> {
+  const deadline = Date.now() + 3_000;
+  let response = await read();
+  while (!predicate(response)) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for Claude login flow");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    response = await read();
+  }
+  return response;
 }
 
 describe("claude auth command boundary", () => {
@@ -330,5 +361,153 @@ describe("claude auth command boundary", () => {
         "Not implemented in soul-server-ts: claude_auth_login_start",
       ),
     );
+  });
+
+  it("runs the official CLI login through command handling and lists the registered account", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "claude-auth-command-test-"));
+    try {
+      const cliPath = join(rootDir, "fake-claude-cli.mjs");
+      const cliScript = [
+        "#!/usr/bin/env node",
+        "const [group, action] = process.argv.slice(2);",
+        "if (group === 'auth' && action === 'login') {",
+        "  process.stdout.write('Open: https://claude.ai/oauth/authorize?state=test-flow ');",
+        "  process.stdin.resume();",
+        "  process.stdin.once('end', () => process.exit(0));",
+        "} else if (group === 'auth' && action === 'status') {",
+        "  setTimeout(() => {",
+        "    process.stdout.write(JSON.stringify({loggedIn:true,accountUuid:'11111111-1111-4111-8111-111111111111',email:'alpha@example.com',plan:'pro'}));",
+        "    process.exit(0);",
+        "  }, 100);",
+        "} else {",
+        "  process.exit(2);",
+        "}",
+      ].join("\n");
+      await writeFile(cliPath, cliScript, { encoding: "utf8", mode: 0o755 });
+      await chmod(cliPath, 0o755);
+
+      const logEntries: unknown[][] = [];
+      const logger = {
+        info: (...args: unknown[]) => logEntries.push(args),
+      } as unknown as import("pino").Logger;
+      const accounts = new ClaudeAccountService({
+        accountsDir: join(rootDir, "accounts"),
+        homeDir: join(rootDir, "home"),
+      });
+      const login = new ClaudeLoginService({ port: accounts, logger, executablePath: cliPath });
+      const commands = new ClaudeAuthCommands({
+        agentRegistry: createAgentRegistry(["claude"]),
+        claudeAuth: createClaudeAuth(),
+        claudeAccounts: accounts,
+        claudeLoginService: login,
+        claudeAccountPoolEnabled: true,
+      } as unknown as ConstructorParameters<typeof ClaudeAuthCommands>[0]);
+
+      const started = await commands.handle({
+        type: "claude_auth_login_start",
+        requestId: "login-start",
+      }) as LoginCommandResponse;
+      expect(started).toMatchObject({
+        type: "claude_auth_login_start",
+        requestId: "login-start",
+        success: true,
+        data: { state: "requested", auth_url: null },
+      });
+      const loginId = started.data!.login_id;
+      const readStatus = () => commands.handle({
+        type: "claude_auth_login_status",
+        requestId: "login-status",
+        login_id: loginId,
+      }) as Promise<LoginCommandResponse>;
+      const urlReady = await waitForLoginResponse(
+        readStatus,
+        (response) => response.data?.state === "url_ready",
+      );
+      expect(urlReady.data?.auth_url).toBe("https://claude.ai/oauth/authorize?state=test-flow");
+
+      const submitted = await commands.handle({
+        type: "claude_auth_login_submit_code",
+        requestId: "login-submit",
+        login_id: loginId,
+        code: "synthetic-login-code",
+      }) as LoginCommandResponse;
+      expect(submitted).toMatchObject({
+        type: "claude_auth_login_submit_code",
+        requestId: "login-submit",
+        success: true,
+        data: { state: "code_submitted" },
+      });
+
+      const observedStates = new Set<string>();
+      const done = await waitForLoginResponse(
+        async () => {
+          const response = await readStatus();
+          if (response.data?.state) observedStates.add(response.data.state);
+          return response;
+        },
+        (response) => response.data?.state === "done",
+      );
+      expect(observedStates).toContain("verifying");
+      expect(done.data?.account_id).toBe("11111111-1111-4111-8111-111111111111");
+
+      const listed = await commands.handle({
+        type: "claude_auth_accounts_list",
+        requestId: "accounts-list",
+      });
+      expect(listed).toMatchObject({
+        type: "claude_auth_accounts_list",
+        requestId: "accounts-list",
+        success: true,
+        data: {
+          accounts: [{
+            id: "11111111-1111-4111-8111-111111111111",
+            email: "alpha@example.com",
+          }],
+        },
+      });
+      const logs = JSON.stringify(logEntries);
+      expect(logs).not.toContain("https://claude.ai/oauth/authorize");
+      expect(logs).not.toContain("synthetic-login-code");
+      expect(logs).not.toContain("loggedIn");
+
+      const cancelStart = await commands.handle({
+        type: "claude_auth_login_start",
+        requestId: "cancel-start",
+      }) as LoginCommandResponse;
+      const cancelled = await commands.handle({
+        type: "claude_auth_login_cancel",
+        requestId: "cancel-flow",
+        login_id: cancelStart.data!.login_id,
+      }) as LoginCommandResponse;
+      expect(cancelled).toMatchObject({
+        type: "claude_auth_login_cancel",
+        requestId: "cancel-flow",
+        success: true,
+        data: { state: "cancelled" },
+      });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects legacy token mutation commands with login_flow_required in pool mode", async () => {
+    const auth = createClaudeAuth();
+    const commands = new ClaudeAuthCommands({
+      agentRegistry: createAgentRegistry(["claude"]),
+      claudeAuth: auth,
+      claudeAccountPoolEnabled: true,
+    } as unknown as ConstructorParameters<typeof ClaudeAuthCommands>[0]);
+
+    await expect(commands.handle({
+      type: "claude_auth_set_token",
+      requestId: "legacy-set-token",
+      token: "synthetic-token",
+    })).rejects.toMatchObject({ code: "login_flow_required" });
+    await expect(commands.handle({
+      type: "claude_auth_delete_token",
+      requestId: "legacy-delete-token",
+    })).rejects.toMatchObject({ code: "login_flow_required" });
+    expect(auth.setToken).not.toHaveBeenCalled();
+    expect(auth.deleteToken).not.toHaveBeenCalled();
   });
 });

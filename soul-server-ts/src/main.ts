@@ -285,6 +285,11 @@ async function main(): Promise<void> {
     runtime.sessionPageBindingService.stop();
     await runtime.runnerRecoveryCoordinator?.stop();
     try {
+      await runtime.claudeLoginService?.shutdown();
+    } catch {
+      logger.warn("Claude CLI login shutdown cleanup failed");
+    }
+    try {
       runtime.scheduleDispatcher.stop();
       await runtime.taskManager.shutdown();
       if (runtime.claudeSessionClientRegistry) {

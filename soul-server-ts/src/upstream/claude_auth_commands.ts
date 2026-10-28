@@ -6,6 +6,7 @@ import type {
   ClaudeAuthAccountsList,
   ClaudeAuthAccountUpdate,
   ClaudeAuthLoginCancel,
+  ClaudeAuthLoginFlow,
   ClaudeAuthLoginStart,
   ClaudeAuthLoginStatus,
   ClaudeAuthLoginSubmitCode,
@@ -23,6 +24,10 @@ import {
   type ClaudeAccountService,
   type ClaudeAccountView,
 } from "../claude_accounts/index.js";
+import {
+  ClaudeLoginError,
+  type ClaudeLoginService,
+} from "../claude_accounts/login_service.js";
 
 interface CommandLike {
   type?: string;
@@ -73,18 +78,30 @@ export type ClaudeAuthCommandResponse =
   | ClaudeAuthApiResponse
   | ClaudeAuthAccountsList
   | ClaudeAuthAccountUpdate
-  | ClaudeAuthAccountDelete;
+  | ClaudeAuthAccountDelete
+  | ClaudeAuthLoginStart
+  | ClaudeAuthLoginStatus
+  | ClaudeAuthLoginSubmitCode
+  | ClaudeAuthLoginCancel;
 
 export class ClaudeAuthCommandError extends Error {
-  constructor(message: string) {
+  readonly code: string | undefined;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "ClaudeAuthCommandError";
+    this.code = code;
   }
 }
 
 export type ClaudeAccountsCommandHandler = Pick<
   ClaudeAccountService,
   "getAccountList" | "updateAccount" | "deleteAccount"
+>;
+
+export type ClaudeLoginCommandHandler = Pick<
+  ClaudeLoginService,
+  "start" | "status" | "submit_code" | "cancel"
 >;
 
 function toWireClaudeAccount(account: ClaudeAccountView): ClaudeAccount {
@@ -128,13 +145,30 @@ export class ClaudeAuthCommands {
       agentRegistry: Pick<AgentRegistry, "supportedBackends">;
       claudeAuth?: ClaudeAuthCommandHandler;
       claudeAccounts?: ClaudeAccountsCommandHandler;
+      claudeLoginService?: ClaudeLoginCommandHandler;
+      claudeAccountPoolEnabled?: boolean;
     },
   ) {}
 
   async handle(cmd: ClaudeAuthCommand): Promise<ClaudeAuthCommandResponse | null> {
     const requestId = commandRequestId(cmd);
     if (isClaudeAuthLoginCommand(cmd)) {
-      throw new ClaudeAuthCommandError(`Not implemented in soul-server-ts: ${cmd.type}`);
+      if (!this.deps.claudeAccountPoolEnabled) {
+        throw new ClaudeAuthCommandError(`Not implemented in soul-server-ts: ${cmd.type}`);
+      }
+      if (!this.deps.claudeLoginService) {
+        throw new ClaudeAuthCommandError("Claude login service is not configured in soul-server-ts");
+      }
+      return this.handleLoginCommand(cmd, requestId);
+    }
+    if (
+      this.deps.claudeAccountPoolEnabled &&
+      (cmd.type === "claude_auth_set_token" || cmd.type === "claude_auth_delete_token")
+    ) {
+      throw new ClaudeAuthCommandError(
+        "Use the Claude account login flow",
+        "login_flow_required",
+      );
     }
     if (isClaudeAuthAccountPoolCommand(cmd)) {
       return this.handleAccountPoolCommand(cmd, requestId);
@@ -157,6 +191,49 @@ export class ClaudeAuthCommands {
         return auth.fetchUsage(requestId, cmd.type);
       case "claude_auth_get_profile":
         return auth.fetchProfile(requestId, cmd.type);
+    }
+  }
+
+  private async handleLoginCommand(
+    cmd:
+      | ClaudeAuthLoginStartCmd
+      | ClaudeAuthLoginStatusCmd
+      | ClaudeAuthLoginSubmitCodeCmd
+      | ClaudeAuthLoginCancelCmd,
+    requestId: string,
+  ): Promise<ClaudeAuthCommandResponse> {
+    if (!this.deps.agentRegistry.supportedBackends().includes("claude")) {
+      throw new ClaudeAuthCommandError(
+        "Claude backend is not registered on this node; Claude auth commands are unsupported",
+      );
+    }
+    const loginService = this.deps.claudeLoginService!;
+    let data: ClaudeAuthLoginFlow;
+    try {
+      switch (cmd.type) {
+        case "claude_auth_login_start":
+          data = await loginService.start({ account_id: cmd.account_id });
+          break;
+        case "claude_auth_login_status":
+          data = await loginService.status({ login_id: cmd.login_id });
+          break;
+        case "claude_auth_login_submit_code":
+          data = await loginService.submit_code({ login_id: cmd.login_id, code: cmd.code });
+          break;
+        case "claude_auth_login_cancel":
+          data = await loginService.cancel({ login_id: cmd.login_id });
+          break;
+      }
+      return { type: cmd.type, requestId, success: true, data };
+    } catch (error) {
+      return {
+        type: cmd.type,
+        requestId,
+        success: false,
+        error: error instanceof ClaudeLoginError
+          ? error.toAuthError()
+          : { code: "login_flow_failed", message: "Claude CLI login failed" },
+      };
     }
   }
 

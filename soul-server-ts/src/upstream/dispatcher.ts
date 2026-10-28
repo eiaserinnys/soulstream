@@ -28,6 +28,7 @@ import { createAttachmentCommandFamily } from "./attachment_command_family.js";
 import {
   ClaudeAuthCommands,
   type ClaudeAccountsCommandHandler,
+  type ClaudeLoginCommandHandler,
 } from "./claude_auth_commands.js";
 import { createAuthCommandFamily } from "./auth_command_family.js";
 import {
@@ -75,6 +76,8 @@ export interface CommandDispatcherOptions {
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
   claudeAccounts?: ClaudeAccountsCommandHandler;
+  claudeLoginService?: ClaudeLoginCommandHandler;
+  claudeAccountPoolEnabled?: boolean;
   /** Missing wiring becomes an explicit command error instead of a silent fallback. */
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;
@@ -119,6 +122,8 @@ export class CommandDispatcher {
       attachmentStore = new FileAttachmentStore(".local/incoming", logger),
       claudeAuth,
       claudeAccounts,
+      claudeLoginService,
+      claudeAccountPoolEnabled,
       sessionDb,
       realtimeBroker,
       providerUsage,
@@ -149,6 +154,8 @@ export class CommandDispatcher {
       agentRegistry,
       claudeAuth,
       claudeAccounts,
+      claudeLoginService,
+      claudeAccountPoolEnabled,
     });
     const providerUsageCommands = new ProviderUsageCommands({
       providerUsage:

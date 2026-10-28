@@ -29,6 +29,7 @@ export type ClaudeAuthHarnessOptions<
   ackFor?: AckFactory;
   attachTransport?: boolean;
   registerNode?: boolean;
+  claudeAccountPoolEnabled?: boolean;
   tokenResponse?: ClaudeAuthTokenExchangeResponse;
   tokenExchange?: NodeClaudeAuthRouteOptions["tokenExchange"];
   profileResponse?: NodeClaudeAuthHttpResponse;
@@ -110,9 +111,18 @@ export function createClaudeAuthHarness(
   let connectionId: string | undefined;
 
   if (options.registerNode ?? true) {
+    const registration = loadContractFixtures().fakeNodeReconnect
+      .registration as NodeRegistrationPayload;
     connectionId = registry.registerNode(
-      loadContractFixtures().fakeNodeReconnect
-        .registration as NodeRegistrationPayload,
+      options.claudeAccountPoolEnabled
+        ? {
+            ...registration,
+            capabilities: {
+              ...(registration.capabilities ?? {}),
+              claude_account_pool_v1: true,
+            },
+          }
+        : registration,
     ).node.connectionId;
   }
 

@@ -5,7 +5,10 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { AttachmentStore } from "../attachments/file_manager.js";
 import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
-import type { ClaudeAccountsCommandHandler } from "./claude_auth_commands.js";
+import type {
+  ClaudeAccountsCommandHandler,
+  ClaudeLoginCommandHandler,
+} from "./claude_auth_commands.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -29,6 +32,7 @@ export interface UpstreamConfig {
   isProduction: boolean;
   runnerProcessEnabled?: boolean;
   worktreeMcpEnabled?: boolean;
+  claudeAccountPoolEnabled?: boolean;
   runnerStateDir?: string;
   heartbeatIntervalMs?: number;
   heartbeatMaxMissed?: number;
@@ -44,6 +48,8 @@ export interface UpstreamDependencies {
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
   claudeAccounts?: ClaudeAccountsCommandHandler;
+  claudeLoginService?: ClaudeLoginCommandHandler;
+  claudeAccountPoolEnabled?: boolean;
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;
   agentConfigService?: AgentConfigService;

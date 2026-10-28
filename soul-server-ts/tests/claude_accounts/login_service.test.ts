@@ -756,4 +756,36 @@ setInterval(() => {}, 1000);
     expect(closedStatus.state).toBe("cancelled");
     expect(state.retiredLogins).toContain(closeFlow.login_id);
   });
+
+  it("shutdown은 진행 중인 로그인 CLI를 종료하고 pending 계정을 격리한다", async () => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      `
+process.stdin.resume();
+process.stdout.write("https://claude.ai/oauth/authorize?state=shutdown\\n");
+process.on("SIGTERM", () => {});
+setInterval(() => {}, 1000);
+      `,
+    );
+    const service = new ClaudeLoginService({
+      port: state.port,
+      logger,
+      executablePath: cliPath,
+      killGracePeriodMs: 80,
+    });
+
+    const started = await service.start();
+    await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+
+    await service.shutdown();
+
+    expect((await service.status({ login_id: started.login_id })).state).toBe("cancelled");
+    expect(state.retiredLogins).toContain(started.login_id);
+  });
 });
