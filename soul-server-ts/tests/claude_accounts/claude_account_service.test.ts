@@ -283,6 +283,97 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(selSecondPriority?.account_id).toBe(ACC_A);
   });
 
+  it("selects the most available account when all are above 98%, releases avoidance after reset, and keeps affinity after restart", async () => {
+    const usageMap: Record<string, unknown> = {
+      [`tok-${ACC_A}`]: {
+        five_hour: { utilization: 20, resets_at: "2026-10-28T05:00:00.000Z" },
+        seven_day: { utilization: 99.5, resets_at: "2026-11-01T00:00:00.000Z" },
+      },
+      [`tok-${ACC_B}`]: {
+        five_hour: { utilization: 99, resets_at: "2026-10-28T06:00:00.000Z" },
+        seven_day: { utilization: 35, resets_at: "2026-11-01T00:00:00.000Z" },
+      },
+      [`tok-${ACC_C}`]: {
+        five_hour: { utilization: 98, resets_at: "2026-10-28T05:00:00.000Z" },
+        seven_day: { utilization: 40, resets_at: "2026-11-01T00:00:00.000Z" },
+      },
+    };
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const token = ((init?.headers as Record<string, string>).Authorization).replace(/^Bearer\s+/i, "");
+      return new Response(JSON.stringify(usageMap[token]), { status: 200 });
+    });
+    const options = { accountsDir, homeDir: fakeHomeDir, now: () => nowMs, fetchImpl: fetchImpl as unknown as typeof fetch };
+    const svc = new ClaudeAccountService(options);
+    for (const [idx, id] of [ACC_A, ACC_B, ACC_C].entries()) {
+      const pending = await svc.createPendingDir(`high-${idx}`);
+      writeCredentials(pending, { accessToken: `tok-${id}`, expiresAt: nowMs + 24 * 3600_000 });
+      await svc.registerFromPending({ loginId: `high-${idx}`, id, email: `${idx}@example.com`, plan: "max" });
+    }
+    await svc.getAccountList({ forceRefresh: true });
+
+    const selAllHigh = await svc.select({
+      session_id: "sess-all-high", turn_id: "turn-1", model: "claude-sonnet-4-6",
+    });
+    expect(selAllHigh?.account_id).toBe(ACC_C);
+
+    usageMap[`tok-${ACC_A}`] = {
+      five_hour: { utilization: 20, resets_at: "2026-10-28T05:00:00.000Z" },
+      seven_day: { utilization: 30, resets_at: "2026-11-01T00:00:00.000Z" },
+    };
+    await svc.getAccountList({ forceRefresh: true });
+    const bindingBeforeReset = await svc.select({
+      session_id: "sess-after-reset", turn_id: "turn-1", model: "claude-sonnet-4-6",
+      exclude_ids: [ACC_A, ACC_B],
+    });
+    expect(bindingBeforeReset?.account_id).toBe(ACC_C);
+    const selBeforeReset = await svc.select({
+      session_id: "sess-before-reset", turn_id: "turn-1", model: "claude-sonnet-4-6",
+    });
+    expect(selBeforeReset?.account_id).toBe(ACC_A);
+
+    nowMs = Date.parse("2026-10-28T05:01:00.000Z");
+    const selAfterReset = await svc.select({
+      session_id: "sess-after-reset", turn_id: "turn-2", model: "claude-sonnet-4-6",
+    });
+    expect(selAfterReset?.account_id).toBe(ACC_C);
+
+    const svcRestarted = new ClaudeAccountService(options);
+    const selRestartAffinity = await svcRestarted.select({
+      session_id: "sess-after-reset", turn_id: "turn-3", model: "claude-sonnet-4-6",
+    });
+    expect(selRestartAffinity?.account_id).toBe(ACC_C);
+  });
+
+  it("migrates a string binding on selection and preserves affinity after restart", async () => {
+    const options = { accountsDir, homeDir: fakeHomeDir, now: () => nowMs, fetchImpl: vi.fn() };
+    const svc = new ClaudeAccountService(options);
+    for (const [idx, id] of [ACC_A, ACC_C].entries()) {
+      const pending = await svc.createPendingDir(`binding-${idx}`);
+      writeCredentials(pending, { expiresAt: nowMs + 7200_000 });
+      await svc.registerFromPending({ loginId: `binding-${idx}`, id, email: `${idx}@example.com`, plan: "max" });
+    }
+    await svc.updateAccount(ACC_A, { priority: 1 });
+    const bindingsPath = path.join(accountsDir, "bindings.json");
+    const control = await svc.select({ session_id: "control", turn_id: "turn-1", model: "claude-sonnet-4-6" });
+    expect(control?.account_id).toBe(ACC_A);
+    fs.writeFileSync(bindingsPath, JSON.stringify({ version: 1, bindings: { control: ACC_A, "legacy-session": ACC_C } }));
+    const selected = await svc.select({ session_id: "legacy-session", turn_id: "turn-1", model: "claude-sonnet-4-6" });
+    expect(selected?.account_id).toBe(ACC_C);
+    expect(JSON.parse(fs.readFileSync(bindingsPath, "utf8"))).toEqual({
+      version: 1,
+      bindings: {
+        control: { account_id: ACC_A, turn_id: null },
+        "legacy-session": { account_id: ACC_C, turn_id: "turn-1" },
+      },
+    });
+
+    const restarted = new ClaudeAccountService(options);
+    const selectedAfterRestart = await restarted.select({
+      session_id: "legacy-session", turn_id: "turn-2", model: "claude-sonnet-4-6",
+    });
+    expect(selectedAfterRestart?.account_id).toBe(ACC_C);
+  });
+
   it("selects idle accounts, excludes disabled accounts from selection and total_count, and computes real service pool summary", async () => {
     // Use existing Fable weekly_scoped fixture format (from provider_usage_service.test.ts:639-647) on ACC_A
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -686,6 +777,72 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(list.accounts.find((a) => a.id === ACC_A)?.stale).toBe(false);
     expect(list.accounts.find((a) => a.id === ACC_B)?.stale).toBe(true);
     expect(list.accounts.find((a) => a.id === ACC_B)?.usage.five_hour?.used_percent).toBe(40);
+  });
+
+  it("keeps credentials unchanged while collecting usage and treats a single 401 as idle", async () => {
+    let status = 200;
+    const fetchImpl = vi.fn(async () => status === 200
+      ? new Response(JSON.stringify({ five_hour: { utilization: 15, resets_at: "2026-10-28T05:00:00.000Z" } }), { status })
+      : new Response("error", { status }));
+    const svc = new ClaudeAccountService({ accountsDir, homeDir: fakeHomeDir, now: () => nowMs, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const pending = await svc.createPendingDir("readonly");
+    writeCredentials(pending, { accessToken: `tok-${ACC_A}`, expiresAt: nowMs + 7200_000 });
+    await svc.registerFromPending({ loginId: "readonly", id: ACC_A, email: "a@example.com", plan: "max" });
+    const credPathA = path.join(svc.profileDir(ACC_A)!, ".credentials.json");
+    const credBefore = fs.readFileSync(credPathA, "utf8");
+
+    const initial = await svc.getAccountList({ forceRefresh: true });
+    expect(initial.accounts.find((a) => a.id === ACC_A)?.auth_state).toBe("ok");
+    expect(initial.accounts.find((a) => a.id === ACC_A)?.usage.five_hour?.used_percent).toBe(15);
+    status = 401;
+    nowMs += 6 * 60_000;
+    const list = await svc.getAccountList({ forceRefresh: true });
+    const accA3 = list.accounts.find((a) => a.id === ACC_A)!;
+    expect(accA3.auth_state).toBe("idle");
+    expect(fs.readFileSync(credPathA, "utf8")).toBe(credBefore);
+  });
+
+  it("preserves a newer successful observation when an overlapping collection times out", async () => {
+    let call = 0;
+    let notifySlowStarted!: () => void;
+    const slowStarted = new Promise<void>((resolve) => { notifySlowStarted = resolve; });
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      if (call === 2) {
+        notifySlowStarted();
+        return await new Promise<Response>(() => {});
+      }
+      const utilization = call === 1 ? 15 : 55;
+      return new Response(JSON.stringify({ five_hour: { utilization, resets_at: "2026-10-28T05:00:00.000Z" } }), { status: 200 });
+    });
+    const svc = new ClaudeAccountService({ accountsDir, homeDir: fakeHomeDir, now: () => nowMs, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const pending = await svc.createPendingDir("race");
+    writeCredentials(pending, { expiresAt: nowMs + 7200_000 });
+    await svc.registerFromPending({ loginId: "race", id: ACC_A, email: "a@example.com", plan: "max" });
+    const initial = await svc.getAccountList({ forceRefresh: true });
+    expect(initial.accounts[0]?.usage.five_hour?.used_percent).toBe(15);
+
+    vi.useFakeTimers();
+    try {
+      const slow = svc.getAccountList({ forceRefresh: true, deadlineAtMs: Date.now() + 50 });
+      await slowStarted;
+      nowMs += 1000;
+      const fast = await svc.getAccountList({ forceRefresh: true });
+      expect(fast.accounts[0]?.usage.five_hour?.used_percent).toBe(55);
+      expect(fast.accounts[0]?.stale).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(50);
+      const timedOut = await slow;
+      expect(timedOut.accounts[0]?.usage.five_hour?.used_percent).toBe(55);
+      expect(timedOut.accounts[0]?.observed_at).toBe(fast.accounts[0]?.observed_at);
+      expect(timedOut.accounts[0]?.stale).toBe(false);
+      const cached = await svc.getAccountList();
+      expect(cached.accounts[0]?.usage.five_hour?.used_percent).toBe(55);
+      expect(cached.accounts[0]?.stale).toBe(false);
+      expect(fetchImpl).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("adopts an existing profile directory via claude auth status --json without reading credentials and defaults unknown plan to null", async () => {

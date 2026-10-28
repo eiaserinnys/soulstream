@@ -380,13 +380,19 @@ export class ClaudeAccountUsageCollector {
         if (!item) {
           break;
         }
+        const previous = this.cache.get(item.input.accountId);
         const obs = await this.fetchSingleAccountUsage(
           item.input.accountId,
           item.accessToken,
           options,
         );
-        this.cache.set(item.input.accountId, obs);
-        results.set(item.input.accountId, obs);
+        const current = this.cache.get(item.input.accountId);
+        // A concurrent success must not be replaced by this request's stale fallback.
+        const result = obs.stale && current !== previous && current?.auth_state === "ok" && !current.stale
+          ? current
+          : obs;
+        this.cache.set(item.input.accountId, result);
+        results.set(item.input.accountId, result);
       }
     };
 

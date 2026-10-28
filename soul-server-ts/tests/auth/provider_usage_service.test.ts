@@ -1112,6 +1112,8 @@ describe("ProviderUsageService", () => {
       });
       expect("mode" in (legacyUnconfiguredRes.data as Record<string, unknown>)).toBe(false);
 
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-28T01:00:00.000Z"));
       const claudeAuth: ClaudeAuthCommandHandler = {
         getStatus: vi.fn(),
         setToken: vi.fn(),
@@ -1133,16 +1135,78 @@ describe("ProviderUsageService", () => {
         "provider_usage_get",
         "claude",
       );
-      const expectedLegacy = claudeLimitsFromUsageResponse({
-        five_hour: { utilization: 22, resets_at: "2026-04-14T15:00:00Z" },
-        seven_day: { utilization: 44, resets_at: "2026-04-20T00:00:00Z" },
-      });
+      // Fixtures below are derived from the legacy e0382faf response path.
+      const expectedLegacy = {
+        status: "auto",
+        source: "https://api.anthropic.com/api/oauth/usage",
+        sourceKind: "remote",
+        observedAt: "2026-10-28T01:00:00.000Z",
+        weeklyTokens: null,
+        monthlyTokens: null,
+        sessionTokens: null,
+        weeklyUsedPercent: 44,
+        weeklyResetAt: 1776643200,
+        shortUsedPercent: 22,
+        shortWindowMinutes: 300,
+        shortResetAt: 1776178800,
+        planType: null,
+        quotas: [
+          {
+            id: "claude:five_hour", label: "5시간", window: "5h", unit: "percent",
+            used: null, remaining: null, limit: null, usedPercent: 22, remainingPercent: 78,
+            resetAt: 1776178800, model: null, source: "https://api.anthropic.com/api/oauth/usage",
+            purpose: "execution",
+          },
+          {
+            id: "claude:seven_day", label: "7일", window: "7d", unit: "percent",
+            used: null, remaining: null, limit: null, usedPercent: 44, remainingPercent: 56,
+            resetAt: 1776643200, model: null, source: "https://api.anthropic.com/api/oauth/usage",
+            purpose: "execution",
+          },
+        ],
+      };
       expect(legacyConfiguredRes.data).toEqual({
         ...expectedLegacy,
         observedAt: expect.any(String),
       });
       expect("mode" in (legacyConfiguredRes.data as Record<string, unknown>)).toBe(false);
+      expect(legacyConfiguredRes).toEqual({
+        type: "provider_usage_get", requestId: "req-legacy-configured", success: true,
+        data: expectedLegacy,
+      });
+
+      const noToken = new ProviderUsageService({
+        claudeAuth: { ...claudeAuth, fetchUsage: vi.fn(async () => ({
+          type: "provider_usage_get", requestId: "", success: false, error: "no token",
+        })) },
+      });
+      expect(await noToken.fetchUsage("req-legacy-no-token", "provider_usage_get", "claude")).toEqual({
+        type: "provider_usage_get", requestId: "req-legacy-no-token", success: true,
+        data: {
+          status: "not_configured", source: "", sourceKind: "unknown", observedAt: null,
+          weeklyTokens: null, monthlyTokens: null, sessionTokens: null,
+          weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null,
+          shortWindowMinutes: null, shortResetAt: null, planType: null, quotas: [],
+        },
+      });
+
+      const transientError = new ProviderUsageService({
+        claudeAuth: { ...claudeAuth, fetchUsage: vi.fn(async () => ({
+          type: "provider_usage_get", requestId: "", success: false, error: "upstream unavailable",
+        })) },
+      });
+      expect(await transientError.fetchUsage("req-legacy-error", "provider_usage_get", "claude")).toEqual({
+        type: "provider_usage_get", requestId: "req-legacy-error", success: true,
+        data: {
+          status: "error", source: "", sourceKind: "unknown", observedAt: null,
+          weeklyTokens: null, monthlyTokens: null, sessionTokens: null,
+          weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null,
+          shortWindowMinutes: null, shortResetAt: null, planType: null, quotas: [],
+          error: "upstream unavailable",
+        },
+      });
     } finally {
+      vi.useRealTimers();
       await rm(root, { recursive: true, force: true });
     }
   });
