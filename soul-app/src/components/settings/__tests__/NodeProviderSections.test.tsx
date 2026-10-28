@@ -11,6 +11,7 @@ import { createApiClient } from '../../../api/client';
 import { NodeProviderSections } from '../NodeProviderSections';
 
 const api = {
+  getClaudeAuthAccounts: jest.fn(),
   getClaudeAuthStatus: jest.fn(),
   getClaudeProfile: jest.fn(),
   getProviderUsage: jest.fn(),
@@ -22,6 +23,12 @@ const api = {
 beforeEach(() => {
   (createApiClient as jest.Mock).mockReturnValue(api);
   Object.values(api).forEach((fn) => fn.mockReset());
+  api.getClaudeAuthAccounts.mockResolvedValue({
+    mode: 'legacy',
+    accounts: [],
+    pool: null,
+    fable_pool: null,
+  });
   api.getClaudeAuthStatus.mockResolvedValue({ has_token: false });
   api.getClaudeProfile.mockResolvedValue(null);
   api.getProviderUsage.mockResolvedValue({

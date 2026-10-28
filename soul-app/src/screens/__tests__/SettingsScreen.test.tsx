@@ -45,6 +45,7 @@ const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringif
 const mockApi = {
   getConfig: jest.fn(),
   listNodes: jest.fn(),
+  getClaudeAuthAccounts: jest.fn(),
   getClaudeAuthStatus: jest.fn(),
   getClaudeProfile: jest.fn(),
   getClaudeUsage: jest.fn(),
@@ -59,6 +60,12 @@ beforeEach(() => {
   (createApiClient as jest.Mock).mockReturnValue(mockApi);
   Object.values(mockApi).forEach((fn) => (fn as jest.Mock).mockReset());
   // 기본값 — 노드 카드의 자동 fetch가 unhandled rejection을 내지 않도록 안전한 응답으로 초기화.
+  mockApi.getClaudeAuthAccounts.mockResolvedValue({
+    mode: 'legacy',
+    accounts: [],
+    pool: null,
+    fable_pool: null,
+  });
   mockApi.getClaudeAuthStatus.mockResolvedValue({ has_token: false });
   mockApi.getClaudeProfile.mockResolvedValue(null);
   mockApi.getAuthStatus.mockResolvedValue({
